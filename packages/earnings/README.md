@@ -12,7 +12,7 @@ python src/db.py init_db
 
 # Earnings calendar source (DoltHub, free, no API key)
 pip install mysql-connector-python
-dolt clone dolthub/earnings && cd earnings && dolt sql-server   # leave running in a separate terminal
+dolt clone post-no-preference/earnings && cd earnings && dolt sql-server   # leave running in a separate terminal
 ```
 
 ## Project structure

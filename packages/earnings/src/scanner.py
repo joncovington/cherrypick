@@ -73,16 +73,16 @@ def _load_config() -> dict:
 
 
 def fetch_dolthub_calendar(date: str, config: dict) -> list[dict]:
-    """Query a locally-running `dolt sql-server` for dolthub/earnings.
+    """Query a locally-running `dolt sql-server` for post-no-preference/earnings.
 
-    Requires `dolt clone dolthub/earnings && cd earnings && dolt sql-server`
+    Requires `dolt clone post-no-preference/earnings && cd earnings && dolt sql-server`
     running separately (see README's DoltHub setup notes) and
     `pip install mysql-connector-python`.
 
-    NOTE: verify the earnings-repo's actual table/column names against your
-    checked-out copy (`dolt sql -q "show tables"` / `describe <table>`)
-    before relying on this query — schema below is unverified against a live
-    instance and may need adjusting.
+    Schema verified live against the DoltHub SQL API (2026-07-06):
+    earnings_calendar(act_symbol varchar(64), date date, "when" text),
+    e.g. `('EPAC', '2026-07-07', 'After market close')`. `when` is a MySQL
+    reserved word and must stay backtick-quoted in the query.
     """
     import mysql.connector
 
@@ -94,7 +94,7 @@ def fetch_dolthub_calendar(date: str, config: dict) -> list[dict]:
     try:
         cur = conn.cursor(dictionary=True)
         cur.execute(
-            "SELECT act_symbol AS symbol, date, time "
+            "SELECT act_symbol AS symbol, date, `when` AS timing "
             "FROM earnings_calendar WHERE date = %s",
             (date,),
         )
