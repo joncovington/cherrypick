@@ -483,6 +483,19 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
         if front_call.get("iv") is None or back_call.get("iv") is None:
             return {"ok": False, "error": "no greeks/iv data for front/back ATM strikes"}
 
+        # Combined OI (criterion #3) needs the whole front-month chain, not
+        # just the ATM window used for the straddle/IV calc above.
+        front_chain_oi = _call_tt([
+            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
+            "--include_oi", "--strike_count", "999",
+        ])
+        combined_oi = None
+        if front_chain_oi.get("ok"):
+            oi_entries = front_chain_oi["chain"].get(str(front_exp), [])
+            ois = [e["open_interest"] for e in oi_entries if e.get("open_interest") is not None]
+            if ois:
+                combined_oi = sum(ois)
+
         ts = compute_term_structure(
             symbol=symbol,
             underlying_price=price,
@@ -499,6 +512,10 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
                 "price": price,
                 "term_structure": ts.term_structure,
                 "expected_move_dollars": ts.expected_move,
+                "combined_open_interest": combined_oi,
+                "atm_delta_abs": abs(front_call["delta"]) if front_call.get("delta") is not None else None,
+                "front_expiration_days": (front_exp - date.today()).days,
+                "chain_complete": True,
             },
         }
     except Exception as exc:
@@ -508,11 +525,15 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
 def apply_tiering(criteria: dict, config: dict) -> dict:
     """Pure function -- no I/O. Applies docs/screening-criteria.md's hard
     filters and near-miss bands to an already-computed criteria dict.
-    `criteria` keys are all optional; a missing/None value for anything
-    that's not yet computable (today: price, term_structure, expected_move,
-    combined_open_interest, atm_delta_abs, front_expiration_days) is treated
-    as an unverified hard-filter failure, not a silent pass -- see the
-    winrate/IV-RV precedent of never defaulting an unknown to "pass."
+    `criteria` keys are all optional; a missing/None value for any
+    criterion is treated as an unverified hard-filter failure, not a
+    silent pass -- see the winrate/IV-RV precedent of never defaulting an
+    unknown to "pass." A present-but-out-of-range value for
+    combined_open_interest/atm_delta_abs/front_expiration_days is a
+    distinct, correctly-labeled rejection reason, not just "_unverified"
+    (a real gap caught during testing: this function originally only
+    checked these three for None, never against their actual thresholds
+    in config, so an out-of-range chain would have passed silently).
     """
     hard_fail: list[str] = []
 
@@ -531,9 +552,23 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
     elif criteria["expected_move_dollars"] < config["min_expected_move_dollars"]:
         hard_fail.append("expected_move_below_minimum")
 
-    for key in ("combined_open_interest", "atm_delta_abs", "front_expiration_days", "chain_complete"):
-        if criteria.get(key) is None:
-            hard_fail.append(f"{key}_unverified")
+    if criteria.get("combined_open_interest") is None:
+        hard_fail.append("combined_open_interest_unverified")
+    elif criteria["combined_open_interest"] < config["min_combined_open_interest"]:
+        hard_fail.append("combined_open_interest_below_minimum")
+
+    if criteria.get("atm_delta_abs") is None:
+        hard_fail.append("atm_delta_abs_unverified")
+    elif criteria["atm_delta_abs"] > config["max_atm_delta_abs"]:
+        hard_fail.append("atm_delta_abs_above_maximum")
+
+    if criteria.get("front_expiration_days") is None:
+        hard_fail.append("front_expiration_days_unverified")
+    elif criteria["front_expiration_days"] > config["max_front_expiration_days"]:
+        hard_fail.append("front_expiration_days_too_far_out")
+
+    if not criteria.get("chain_complete"):
+        hard_fail.append("chain_complete_unverified")
 
     near_miss: list[str] = []
 

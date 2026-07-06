@@ -8,7 +8,7 @@ Usage:
   python src/tt.py get_account_info [--account_number X]
   python src/tt.py get_quote --symbol AAPL
   python src/tt.py get_option_chain --symbol AAPL [--expiration YYYY-MM-DD]
-      [--include_greeks] [--include_quotes] [--strike_count N] [--around_price F]
+      [--include_greeks] [--include_quotes] [--include_oi] [--strike_count N] [--around_price F]
   python src/tt.py execute_trade --order '<JSON>' [--account_number X] [--live]
 
 Adapted from MEICAgent's src/tt.py, with the stream-cache layer removed --
@@ -169,6 +169,18 @@ async def _collect_quotes(symbols: list[str], timeout: float) -> dict:
     return await _collect_events(Quote, symbols, timeout)
 
 
+async def _collect_open_interest(symbols: list[str], timeout: float) -> dict:
+    """Summary events carry open_interest. Verified live: these fire on a
+    fresh on-demand subscribe within a few seconds, no persistent daemon
+    needed -- unlike MEICAgent's own comment ("OI only comes from Summary --
+    no live fallback"), which turned out to describe an architecture choice
+    MEICAgent made (only ever consuming Summary via its persistent streamer),
+    not a real limitation of the DXLink feed itself.
+    """
+    from tastytrade.dxfeed import Summary
+    return await _collect_events(Summary, symbols, timeout, extract=lambda e: e.open_interest)
+
+
 async def _collect_last_prices(symbols: list[str], timeout: float) -> dict:
     from tastytrade.dxfeed import Trade
     return await _collect_events(Trade, symbols, timeout, extract=lambda e: _num(e.price))
@@ -264,10 +276,12 @@ async def cmd_get_option_chain(args) -> dict:
         expirations = sorted(chain.keys())
         include_greeks = getattr(args, "include_greeks", False)
         include_quotes = getattr(args, "include_quotes", False)
+        include_oi = getattr(args, "include_oi", False)
         strike_count = getattr(args, "strike_count", 15)
         around_price = getattr(args, "around_price", None)
         greeks_timeout = getattr(args, "greeks_timeout", 6.0)
         quotes_timeout = getattr(args, "quotes_timeout", 6.0)
+        oi_timeout = getattr(args, "oi_timeout", 10.0)
 
         if expiration_filter:
             want = date.fromisoformat(expiration_filter)
@@ -278,7 +292,7 @@ async def cmd_get_option_chain(args) -> dict:
                     "available_expirations": [str(e) for e in expirations],
                 }
             selected = [want]
-        elif include_greeks or include_quotes:
+        elif include_greeks or include_quotes or include_oi:
             selected = [_nearest_expiration(expirations)]
         else:
             selected = expirations
@@ -341,6 +355,25 @@ async def cmd_get_option_chain(args) -> dict:
             result["quotes_included"] = True
             result["quotes_complete"] = received == len(streamer_symbols)
             result["quotes_received"] = received
+
+        if include_oi:
+            streamer_symbols = [
+                o.streamer_symbol
+                for opts in options_by_exp.values()
+                for o in opts
+                if getattr(o, "streamer_symbol", None)
+            ]
+            oi = await _collect_open_interest(streamer_symbols, oi_timeout)
+            received = 0
+            for entries in serialized.values():
+                for entry in entries:
+                    val = oi.get(entry.get("streamer_symbol"))
+                    if val is not None:
+                        entry["open_interest"] = int(val)
+                        received += 1
+            result["oi_included"] = True
+            result["oi_complete"] = received == len(streamer_symbols)
+            result["oi_received"] = received
 
         return result
     except Exception as exc:
@@ -484,6 +517,7 @@ def main() -> None:
     p_chain.add_argument("--expiration", default=None)
     p_chain.add_argument("--include_greeks", action="store_true")
     p_chain.add_argument("--include_quotes", action="store_true")
+    p_chain.add_argument("--include_oi", action="store_true")
     p_chain.add_argument("--strike_count", type=int, default=15)
     p_chain.add_argument("--around_price", type=float, default=None)
 
