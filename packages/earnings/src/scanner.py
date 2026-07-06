@@ -18,6 +18,7 @@ Commands (see CLAUDE.md's Tool Reference):
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
@@ -464,7 +465,8 @@ def cmd_get_calendar(args) -> dict:
     source = config.get("earnings_calendar_source", "dolthub")
     if source != "dolthub":
         raise NotImplementedError(f"calendar source '{source}' not implemented — only 'dolthub' is wired up")
-    rows = fetch_dolthub_calendar(args.date, config)
+    iso_date = datetime.strptime(args.date, "%m/%d/%Y").strftime("%Y-%m-%d")
+    rows = fetch_dolthub_calendar(iso_date, config)
     for row in rows:
         row["date"] = str(row["date"])
     return {"ok": True, "date": args.date, "source": source, "tickers": rows}

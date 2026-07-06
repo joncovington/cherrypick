@@ -18,7 +18,7 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -395,7 +395,8 @@ def cmd_get_candidates(args) -> dict:
     """
     config = scanner._load_config()
     strategy_config = _strategy_config(config)
-    calendar = scanner.fetch_dolthub_calendar(args.date, config)
+    iso_date = datetime.strptime(args.date, "%m/%d/%Y").strftime("%Y-%m-%d")
+    calendar = scanner.fetch_dolthub_calendar(iso_date, config)
     lookback = config.get("winrate_lookback_quarters", 8)
 
     candidates = []
