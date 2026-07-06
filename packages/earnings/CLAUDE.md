@@ -129,15 +129,16 @@ All reads and writes go through `src/db.py` (real) / `src/db_paper.py` (paper) s
 
 ---
 
-After completing Step 5, schedule the next wakeup using these intervals:
+After completing Step 5, schedule the next wakeup using these intervals. Windows are evaluated across every **enabled** strategy (today, only `iron_fly`) — take the union of each strategy's `entry_window_start`/`entry_window_end`/`close_window_start` and treat "inside the entry/close window" as true if any enabled strategy is inside its own window. This keeps the schedule correct once a second strategy is added under `strategies.<name>` without touching this table.
 
 | Condition | Interval |
 |---|---|
-| Outside both windows, no open positions, next window >90 min away | **end loop** |
-| Approaching entry window (30 min prior) | **300s** |
-| Inside entry window | **60s** (fills need timely repricing) |
-| Overnight, positions open, outside close window | **end loop / wake at close window start** |
-| Inside close window with open positions | **60s** |
-| Inside close window, no positions remain | **Step 5 then end loop** |
+| No open positions across every strategy, outside all windows, next window >90 min away | **end loop** |
+| No open positions, approaching some strategy's entry window (30 min prior) | **300s** |
+| Inside an entry window, `max_concurrent_earnings_positions` already reached | **end loop / wake at close window start** (no more entries possible tonight; polling for fills is pointless) |
+| Inside an entry window, capacity remaining | **60s** (fills need timely repricing) |
+| Overnight, positions open, outside every close window | **end loop / wake at close window start** |
+| Inside a close window, no positions remain (nothing to close, poll pointless) | **Step 5 then end loop** |
+| Inside a close window, ≥1 position open | **60s** |
 
-Use the longest applicable interval.
+Use the longest applicable interval. An empty portfolio (no open positions anywhere) should always collapse to the longest interval its other conditions allow — never poll on a fixed cadence just because a window is technically open.
