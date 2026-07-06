@@ -10,6 +10,9 @@
   "dolthub_user": "root",
   "dolthub_database": "earnings",
   "dolthub_options_database": "options",
+  "dolthub_stocks_database": "stocks",
+
+  "winrate_lookback_quarters": 8,
 
   "finnhub_api_key_env_var": "FINNHUB_API_KEY",
 
