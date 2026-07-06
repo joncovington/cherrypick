@@ -1,0 +1,21 @@
+{
+  "enable_live_trading": false,
+
+  "max_concurrent_earnings_positions": 3,
+  "max_risk_per_trade_pct": 0.02,
+
+  "min_term_structure": -0.004,
+  "min_iv_rv_ratio": 1.25,
+  "min_winrate": 0.50,
+
+  "wing_width_credit_multiple": 3.0,
+
+  "entry_window_start": "15:30",
+  "entry_window_end": "15:55",
+  "close_window_start": "09:45",
+
+  "correlation_block_list": [],
+
+  "reprice_interval_s": 10,
+  "reprice_step": 0.05
+}

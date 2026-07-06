@@ -1,0 +1,37 @@
+# Local config (copy config.example.json to config.json and customize)
+config.json
+
+# Trade database and WAL files
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Agent logs and EOD reports
+logs/*.log
+logs/eod-*.md
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Environment files
+.env
+.env.*
+
+# VS Code workspace (IDE-specific, not project config)
+.vscode/
+*.code-workspace
+
+# Local Claude Code overrides (machine-specific enablement flags)
+.claude/settings.local.json
+
+# MCP server config (machine-local)
+.mcp.json
+
+# Auto-installed Claude Code skills and agent plugins (machine-local)
+.claude/skills/
+.agents/
+skills-lock.json
+
+# Temp file space
+.tmp/
