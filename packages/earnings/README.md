@@ -9,6 +9,10 @@ An autonomous options trading agent running a short-volatility **iron fly** stra
 ```bash
 cp config.example.json config.json   # then edit config.json
 python src/db.py init_db
+
+# Earnings calendar source (DoltHub, free, no API key)
+pip install mysql-connector-python
+dolt clone dolthub/earnings && cd earnings && dolt sql-server   # leave running in a separate terminal
 ```
 
 ## Project structure

@@ -17,7 +17,10 @@ Intended commands (see CLAUDE.md's Tool Reference):
 import argparse
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+from pathlib import Path
+
+CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
 
 
 @dataclass
@@ -64,11 +67,49 @@ def compute_term_structure(
     )
 
 
-def cmd_get_calendar(args) -> dict:
-    raise NotImplementedError(
-        "wire up an earnings-calendar source (e.g. Finnhub free tier or DoltHub's "
-        "earnings dataset) — see config's earnings_calendar_source"
+def _load_config() -> dict:
+    with open(CONFIG_PATH) as f:
+        return json.load(f)
+
+
+def fetch_dolthub_calendar(date: str, config: dict) -> list[dict]:
+    """Query a locally-running `dolt sql-server` for dolthub/earnings.
+
+    Requires `dolt clone dolthub/earnings && cd earnings && dolt sql-server`
+    running separately (see README's DoltHub setup notes) and
+    `pip install mysql-connector-python`.
+
+    NOTE: verify the earnings-repo's actual table/column names against your
+    checked-out copy (`dolt sql -q "show tables"` / `describe <table>`)
+    before relying on this query — schema below is unverified against a live
+    instance and may need adjusting.
+    """
+    import mysql.connector
+
+    conn = mysql.connector.connect(
+        host=config.get("dolthub_host", "127.0.0.1"),
+        port=config.get("dolthub_port", 3306),
+        database=config.get("dolthub_database", "earnings"),
     )
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT act_symbol AS symbol, date, time "
+            "FROM earnings_calendar WHERE date = %s",
+            (date,),
+        )
+        return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def cmd_get_calendar(args) -> dict:
+    config = _load_config()
+    source = config.get("earnings_calendar_source", "dolthub")
+    if source != "dolthub":
+        raise NotImplementedError(f"calendar source '{source}' not implemented — only 'dolthub' is wired up")
+    rows = fetch_dolthub_calendar(args.date, config)
+    return {"ok": True, "date": args.date, "source": source, "tickers": rows}
 
 
 def cmd_get_candidates(args) -> dict:

@@ -4,7 +4,11 @@
   "max_concurrent_earnings_positions": 3,
   "max_risk_per_trade_pct": 0.02,
 
-  "earnings_calendar_source": "finnhub",
+  "earnings_calendar_source": "dolthub",
+  "dolthub_host": "127.0.0.1",
+  "dolthub_port": 3306,
+  "dolthub_database": "earnings",
+
   "finnhub_api_key_env_var": "FINNHUB_API_KEY",
 
   "min_term_structure": -0.004,
