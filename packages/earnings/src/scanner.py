@@ -58,8 +58,17 @@ def compute_term_structure(
     Term structure mirrors EarningsEdgeDetection's convention: negative
     values mean the front-month is richer than the back-month (the
     earnings-event IV premium the trade is designed to capture).
+
+    NOTE: the sign here is (back - front) / back, not (front - back) / back
+    -- caught live during testing, a real bug: the naive (front - back)/back
+    formula is POSITIVE when front is richer, which is backwards from this
+    function's own documented convention and from the -0.004 threshold in
+    docs/screening-criteria.md (which expects negative-is-good). With the
+    original sign, a real earnings candidate (EPAC, front IV ~64% richer
+    than back) would have been *rejected* as term_structure_insufficient --
+    exactly the opposite of the intended behavior.
     """
-    term_structure = (front_atm_iv - back_atm_iv) / back_atm_iv
+    term_structure = (back_atm_iv - front_atm_iv) / back_atm_iv
     expected_move = front_atm_call_mid + front_atm_put_mid
     return TermStructureResult(
         symbol=symbol,
@@ -399,8 +408,19 @@ def _atm_entry(entries: list[dict], option_type: str, underlying_price: float) -
     return min(matches, key=lambda e: abs(float(e["strike_price"]) - underlying_price))
 
 
-def fetch_price_and_term_structure(symbol: str, config: dict) -> dict:
+def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
     """Live price + term structure/expected move (criteria #1, #4, #6) via tt.py.
+
+    `earnings_date`/`earnings_timing` pick the correct front-month: the
+    nearest expiration on or after the earnings *reaction* date (the day
+    the market can actually trade on the news -- the next trading day for
+    an "After market close" report, the report day itself for "Before
+    market open"). This must NOT be "nearest expiration to today" -- a
+    same-day 0DTE expiration having nothing to do with a multi-day-out
+    earnings event was caught live during testing (AAPL: front_exp
+    defaulted to today's 0DTE chain, producing a nonsensical positive
+    term-structure reading for a symbol that wasn't even an earnings
+    candidate on that date).
 
     Returns {"ok": False, "error": ...} on any missing data (no credentials,
     no chain, incomplete ATM strikes, no suitable back-month expiration)
@@ -408,14 +428,6 @@ def fetch_price_and_term_structure(symbol: str, config: dict) -> dict:
     "insufficient data to verify these hard filters," not as a reason to
     crash the whole scan. On success, returns {"ok": True, "criteria":
     {"price": ..., "term_structure": ..., "expected_move_dollars": ...}}.
-
-    CAVEAT: unlike this file's DoltHub-backed functions, this has not been
-    exercised against a live tastytrade session (no credentials configured
-    in this development environment) -- the ATM/expiration selection logic
-    is implemented and internally consistent with tt.py's documented output
-    shape, but the exact field names/casing from the tastytrade SDK's
-    serialized Option model should be double-checked against a real
-    response the first time this runs with real credentials.
     """
     try:
         quote = _call_tt(["get_quote", "--symbol", symbol])
@@ -432,8 +444,16 @@ def fetch_price_and_term_structure(symbol: str, config: dict) -> dict:
         if not expirations:
             return {"ok": False, "error": "no expirations in chain"}
 
-        today = date.today()
-        front_exp = min(expirations, key=lambda e: abs((e - today).days))
+        from datetime import timedelta
+        if earnings_timing == "After market close":
+            reaction_date = earnings_date + timedelta(days=1)
+        else:
+            reaction_date = earnings_date
+
+        eligible = [e for e in expirations if e >= reaction_date]
+        if not eligible:
+            return {"ok": False, "error": f"no expiration on/after reaction date {reaction_date}"}
+        front_exp = min(eligible)
         back_candidates = [e for e in expirations if e > front_exp]
         if not back_candidates:
             return {"ok": False, "error": "no back-month expiration available for term structure"}
@@ -562,12 +582,11 @@ def cmd_get_candidates(args) -> dict:
     """Full tiered scan for a date: pulls the calendar, then for each symbol
     computes every criterion in docs/screening-criteria.md and tiers it via
     apply_tiering(). Price/term-structure/expected-move (criteria #1/#4/#6)
-    depend on tt.py's broker calls, which are not implemented yet (see
-    README) -- every candidate will currently land in "Reject" with those
-    three criteria (plus OI/delta/expiration-window, also broker-dependent)
-    listed as `_unverified` in `hard_fail_reasons`, not silently passed.
+    require a live tastytrade session via tt.py (see `tt.py secrets_set`);
+    OI/ATM-delta/expiration-window (part of #2/#3/#5/#7) are not computed by
+    fetch_price_and_term_structure yet and always show up as `_unverified`.
     Volume, IV/RV, and winrate (#8/#10/#9) are real, live DoltHub-backed
-    signals today and are reported accurately regardless of tt.py's status.
+    signals regardless of tt.py's credential status.
     """
     config = _load_config()
     calendar = fetch_dolthub_calendar(args.date, config)
@@ -578,7 +597,7 @@ def cmd_get_candidates(args) -> dict:
         symbol = entry["symbol"]
         criteria: dict = {}
 
-        broker = fetch_price_and_term_structure(symbol, config)
+        broker = fetch_price_and_term_structure(symbol, entry["date"], entry["timing"], config)
         if broker.get("ok"):
             criteria.update(broker["criteria"])
         broker_error = None if broker.get("ok") else broker.get("error")
