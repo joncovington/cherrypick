@@ -1,6 +1,6 @@
 # Paper Trading
 
-Simulates the iron fly strategy's entries, exits, and P&L throughout earnings season without ever touching the live tastytrade account's orders, positions, or buying power. Runs as a recurring `/loop`-driven process, using the exact same scanner (`src/scanner.py`) and screening criteria as live trading would, so paper results are a genuine test of the strategy's current calibration, not a separate toy implementation.
+Simulates the iron fly strategy's entries, exits, and P&L throughout earnings season without ever touching the live tastytrade account's orders, positions, or buying power. **There is no separate paper-trading loop or command** — `CLAUDE.md`'s Loop Steps are the single definition, and Step 0 (`paper_mode = not config.enable_live_trading`) branches persistence and order handling accordingly. Since `enable_live_trading` defaults to `false`, running the loop at all is paper mode by default; nothing changes about the scanner, ranking, or selection logic between modes, so paper results are a genuine test of the strategy's current calibration, not a separate toy implementation.
 
 ## Data separation (hard requirement)
 
@@ -8,11 +8,13 @@ Paper trades are stored in `data/paper_trades.db`, a **separate SQLite file** fr
 
 ## What gets simulated, and how
 
+See `CLAUDE.md`'s Loop Steps for the authoritative, single copy of this logic — summarized here:
+
 **Entry (during `entry_window_start`–`entry_window_end` ET, e.g. 15:30–15:55)**:
 1. Call `scanner.py get_candidates` for **today's date**, keep only rows with `earnings_timing == "After market close"` (their front-month/reaction-date logic is already correct for an afternoon-today entry).
 2. Call `scanner.py get_candidates` for **tomorrow's date**, keep only rows with `earnings_timing == "Before market open"` (a report before tomorrow's open is still ahead of us this afternoon; a same-day BMO report already happened this morning and must not be re-entered).
-3. Merge the two filtered candidate lists, then run `scanner.rank_candidates()` and `scanner.select_positions()` across the **combined** set — ranking/selecting on either date's raw output alone would miss half of today's real opportunity set. This merge-and-filter step happens at the orchestration layer (the loop command below), not inside `get_candidates` itself, to avoid destabilizing that function's already-tested single-date behavior.
-4. For each symbol in the merged `selected` list not already open today (check `db_paper.py get_open_positions` first — a tick runs every 60s during the entry window and must not re-enter the same candidate twice): call `scanner.py get_order` to build the concrete iron fly (strikes, legs, credit), then `db_paper.py save_trade` using that order's `credit` as `entry_credit`. **No call to `tt.py execute_trade` at any point** — a real order preflight checks the live account's actual buying power/margin (confirmed live during testing: a correctly-built order was rejected purely on account funding, not order validity), which would incorrectly couple a simulated fill to the real account's financial state.
+3. Merge the two filtered candidate lists, then run `scanner.rank_candidates()` and `scanner.select_positions()` across the **combined** set — ranking/selecting on either date's raw output alone would miss half of today's real opportunity set. This merge-and-filter step happens at the loop level, not inside `get_candidates` itself, to avoid destabilizing that function's already-tested single-date behavior.
+4. For each symbol in the merged `selected` list not already open today (check `db_paper.py get_open_positions` first — a tick runs every 60s during the entry window and must not re-enter the same candidate twice): call `scanner.py get_order` to build the concrete iron fly (strikes, legs, credit), then (in paper mode) `db_paper.py save_trade` using that order's `credit` as `entry_credit`. **No call to `tt.py execute_trade` at any point in paper mode** — a real order preflight checks the live account's actual buying power/margin (confirmed live during testing: a correctly-built order was rejected purely on account funding, not order validity), which would incorrectly couple a simulated fill to the real account's financial state.
 
 **Close (during `close_window_start` onward, e.g. 09:45 ET the next morning)**:
 1. For each row in `db_paper.py get_open_positions`, call `tt.py get_option_chain --symbol <sym> --expiration <stored expiration> --include_quotes --strike_count 40 --around_price <stored short_strike>` to get fresh quotes for the position's four legs.
@@ -31,13 +33,15 @@ Paper trades are stored in `data/paper_trades.db`, a **separate SQLite file** fr
 
 ## Running it
 
-Start a recurring loop against the tick command below:
+Confirm `enable_live_trading` is `false` (or absent) in `config.json` — this is the only switch between paper and live mode, and it defaults to paper. Then start a recurring loop:
 
 ```
-/loop /paper-trade-tick
+/loop <run one iteration of this project's Loop Steps>
 ```
 
-The command itself determines entry-vs-close-vs-idle behavior from the current ET time (see `.claude/commands/paper-trade-tick.md`) and reschedules its own next wakeup using the same interval table as `CLAUDE.md`'s live-trading design (short intervals during entry/close windows, long idle sleeps otherwise) — see that file's own wakeup table for the exact values, reused here rather than duplicated.
+Since `CLAUDE.md` is auto-loaded as this project's operating instructions, the loop just needs to be told to execute its Loop Steps each tick — there is no separate command file to point at. The loop determines entry-vs-close-vs-idle behavior from the current ET time and reschedules its own next wakeup per `CLAUDE.md`'s own interval table (short intervals during entry/close windows, long idle sleeps otherwise).
+
+**Switching to live trading later** requires no loop changes — set `enable_live_trading: true` in `config.json` and every subsequent iteration automatically persists via `db.py` and submits real orders via `tt.py execute_trade --live` instead.
 
 ## Reporting
 

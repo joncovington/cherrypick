@@ -19,6 +19,11 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 > - **NEVER** log or display account numbers. **Account numbers are masked in logs** to the last 4 digits (`****1234`).
 > - If you need a temporary scratchpad for Python scripts or tests, you **MUST** create a dedicated temporary file in your workspace under `.tmp/` and delete it when finished.
 
+## Documentation & Commit Rules
+- Do not mention Claude, Anthropic, or AI tools in the README.md or any other documentation file.
+- Write all documentation and pull request descriptions from a human developer's perspective.
+- Never include co-author attribution or AI signatures in git commit messages.
+
 ## Tool Reference
 
 All operations are called via `python src/tt.py <command>` (broker) and `python src/scanner.py <command>` (internal candidate scanner). Commands output JSON to stdout.
@@ -71,13 +76,20 @@ All reads and writes go through `src/db.py` subcommands.
 
 ## Loop Steps
 
-1. **Load state** — open positions, tonight's entry count so far, account NLV. Skip new entries entirely if `max_concurrent_earnings_positions` is already at cap.
+0. **Determine mode**: `paper_mode = not config.get("enable_live_trading", False)`. This one flag governs everything below — there is no separate paper-trading loop definition; these are the only Loop Steps.
+   - **`paper_mode = true`** (the default, and the expected state throughout a season before live trading is deliberately enabled): all persistence goes through `python src/db_paper.py` (never `db.py`), and order handling stops at `scanner.py get_order` — **never call `tt.py execute_trade`, not even dry-run**. This was a deliberate finding, not a simplification for its own sake: `execute_trade`'s dry-run still performs a real margin/buying-power check against the live account (confirmed live — a correctly-built order was rejected purely on account funding), which would couple a simulated fill to the real account's actual financial state. `get_order`'s returned `credit` is the simulated fill price directly.
+   - **`paper_mode = false`**: all persistence goes through `python src/db.py`, and Step 4b's entry submission actually calls `tt.py execute_trade --live`.
+   - See `docs/paper-trading.md` for the full paper-mode design and rationale.
+
+1. **Load state** — open positions, tonight's entry count so far, account NLV. Skip new entries entirely if `max_concurrent_earnings_positions` is already at cap. Fetch via `db_paper.py`/`db.py` per Step 0's mode.
 
 2. **Time gate** — this loop only does meaningful work in two windows: the **entry window** (`entry_window_start`–`entry_window_end` ET, before close) and the **close window** (`close_window_start` onward, next morning). Outside both, skip straight to Step 5 to schedule the next wakeup — there is no intraday management step by design; a position opened before close is meant to sit untouched through the overnight gap.
 
 3. **Close window** (if in close window and positions are open):
    - For each open iron fly, force-close regardless of P&L. The edge is front-loaded into the IV crush that already happened overnight; holding longer only adds new gap risk, not more edge.
-   - Log per-leg fill vs. entry credit and net P&L to `iron_fly_trades` via `save_close`.
+   - **`paper_mode = true`**: call `tt.py get_option_chain --symbol <sym> --expiration <stored expiration> --include_quotes --strike_count 40 --around_price <stored short_strike>`; match entries to the position's stored `short_strike`/`long_call_strike`/`long_put_strike`. Simulated exit debit uses the conservative same-side-of-spread price, not mid: `exit_debit = (short_call.ask + short_put.ask) - (long_call.bid + long_put.bid)` (buy back shorts at ask, sell longs at bid — the real cost of crossing the spread to close promptly). `pnl = (entry_credit - exit_debit) * 100`. If any leg's bid/ask is missing, log the gap and retry next tick rather than closing on incomplete data.
+   - **`paper_mode = false`**: submit the actual closing order live, log the real fill.
+   - Log per-leg fill vs. entry credit and net P&L via `save_close` (`db_paper.py` or `db.py` per Step 0).
 
 4. **Entry window** (if in entry window):
 
@@ -86,7 +98,9 @@ All reads and writes go through `src/db.py` subcommands.
    - Fetch buying power and NLV
    - Re-check `max_concurrent_earnings_positions` against currently open positions
 
-   **4b. Per candidate — use `get_candidates`' `selected` list, not the raw `candidates` list**: `selected` is already ranked (`scanner.rank_candidates()`) and cap/correlation-aware (`scanner.select_positions()`), so it directly answers "which of today's Tier 1/2 candidates to actually trade" rather than requiring the loop to re-derive that from `tier`/`hard_fail_reasons` itself. A low-`sample_size` winrate is still grounds to treat a nominal Tier 1 result with skepticism even after it appears in `selected` — see `docs/screening-criteria.md`'s #9 caveat.
+   **4b. Building today's candidate list — merge two calendar dates, not one**: `get_candidates` only queries a single calendar date per call, which is not sufficient for an afternoon entry window on its own. Call it twice: once `--date <today>` (keep only rows with `earnings_timing == "After market close"`), once `--date <tomorrow>` (keep only rows with `earnings_timing == "Before market open"`) — a same-day BMO report already happened this morning and must not be re-entered; a report tomorrow morning is still ahead of us this afternoon. Merge the two filtered lists, then re-run `scanner.rank_candidates()`/`scanner.select_positions()` (or equivalently combine each date's own `selected` and re-sort/re-cap) across the **combined** set — using either date's `selected` alone would apply `max_concurrent_earnings_positions` against only half the day's real opportunity set. This merge happens here, at the loop level, not inside `get_candidates` itself, to keep that function's tested single-date behavior stable.
+
+   **Per candidate in the merged, selected list** (already ranked via `scanner.rank_candidates()` and cap/correlation-aware via `scanner.select_positions()` — this directly answers "which candidates to actually trade," not just "which passed screening"). Skip any symbol already opened today (check open positions first — a tick runs every 60s during the entry window and must not double-enter). A low-`sample_size` winrate is still grounds to treat a nominal Tier 1 result with skepticism even after it appears in `selected` — see `docs/screening-criteria.md`'s #9 caveat.
    - **Re-verification hard stops** (layer 2 in the screening doc) — the scan ran hours ago; live IV/price may have moved:
      - Re-pull the live chain; re-check term structure and expected move still clear their thresholds
      - Re-confirm the earnings date/timing hasn't shifted
@@ -94,8 +108,10 @@ All reads and writes go through `src/db.py` subcommands.
      - If any re-check fails, reject and log (`action: "entry_skip"`, `reason: "reverify_failed_<criterion>"`) — do not fall back to the stale scan values
    - **Position-level risk cap hard stop**: reject if max loss (wing width − credit received) exceeds `max_risk_per_trade_pct` of NLV, independent of the scanner's own risk/reward ratio
    - **Correlation hard stop**: reject if this candidate shares a `correlation_block_list` grouping with an already-open or already-entered-tonight position
-   - If all checks pass: submit the iron fly as a single multi-leg limit order at live mid; reprice toward zero credit on a timer (e.g. every 10s) until filled or credit reaches zero — never cross the spread aggressively given earnings-week option liquidity
-   - **Log every candidate evaluated this window, not just entries** — write a `scan_log` row per candidate with its outcome (`entered`, `rejected_reverify`, `rejected_risk_cap`, `rejected_correlation`, `rejected_cap_reached`), so a quiet night and a broken re-verification step remain distinguishable after the fact
+   - If all checks pass: call `scanner.py get_order --symbol <SYM> --earnings_date <date> --earnings_timing "<timing>"` to build the concrete order (re-fetches live data rather than reusing the scan-time snapshot — see that function's own docstring). If `ok: false`, log the reason and move on; do not retry within the same tick.
+     - **`paper_mode = true`**: record the order via `db_paper.py save_trade` using `get_order`'s `credit` as `entry_credit`. Stop here — no `tt.py execute_trade` call at all.
+     - **`paper_mode = false`**: submit the order live via `tt.py execute_trade --order '<get_order's order>' --live`; reprice toward zero credit on a timer (e.g. every 10s) until filled or credit reaches zero — never cross the spread aggressively given earnings-week option liquidity. Record via `db.py save_trade`.
+   - **Log every candidate evaluated this window, not just entries** — write a `scan_log` row per candidate with its outcome (`entered`, `rejected_reverify`, `rejected_risk_cap`, `rejected_correlation`, `rejected_cap_reached`, `skipped_already_open`), so a quiet night and a broken re-verification step remain distinguishable after the fact
 
 5. **Record and notify** — log a one-line status summary (positions opened/closed, candidates evaluated, rejections), then schedule the next wakeup per the interval table below.
 
