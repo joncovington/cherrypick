@@ -1,18 +1,23 @@
 # EarningsFlyAgent
 
-An autonomous options trading agent running a short-volatility **iron fly** strategy around earnings announcements, built on [Claude Code](https://claude.ai/code). Candidates are found by this project's own internal scanner (`src/scanner.py`), which screens for IV term-structure inversion and expected move computed live from tastytrade option chains. Only "Tier A"-qualified candidates are eligible for automatic entry; a richer historical winrate/IV-RV-ratio signal (Tier B) is planned but not yet implemented. Unlike a continuously-managed intraday strategy, this agent opens positions once before the close and closes them once after the next morning's open — there is no active management step in between by design.
+An autonomous options trading agent running a short-volatility **iron fly** strategy around earnings announcements, built on [Claude Code](https://claude.ai/code). Candidates are found by this project's own internal scanner (`src/scanner.py`) against the rules in [`docs/screening-criteria.md`](docs/screening-criteria.md) — term structure and expected move computed live from tastytrade option chains, plus IV/RV ratio from DoltHub. Only Tier 1 candidates are eligible for automatic entry; that tier also needs a historical winrate backtest not yet implemented, so every candidate currently caps at Tier 2 (logged, not auto-traded). Unlike a continuously-managed intraday strategy, this agent opens positions once before the close and closes them once after the next morning's open — there is no active management step in between by design.
 
-**Status**: scaffold only. `src/tt.py`, `src/db.py`, and `src/scanner.py` are stubs/partial (`NotImplementedError` on live calls; the term-structure math itself is implemented as a pure function) defining the intended CLI surface — see `CLAUDE.md` for the full operating design.
+**Status**: scaffold, with the DoltHub-backed pieces of the scanner implemented and tested live. `src/tt.py` and `src/db.py` are still stubs (`NotImplementedError` on live broker calls); `src/scanner.py`'s `get_calendar` and `get_iv_rv` commands work end-to-end against a real DoltHub clone, `get_candidates` (which ties everything together) is not implemented yet. See `CLAUDE.md` for the full operating design.
 
 ## Setup
 
 ```bash
 cp config.example.json config.json   # then edit config.json
 python src/db.py init_db
-
-# Earnings calendar source (DoltHub, free, no API key)
 pip install mysql-connector-python
-dolt clone post-no-preference/earnings && cd earnings && dolt sql-server   # leave running in a separate terminal
+
+# Earnings calendar + IV/RV data (DoltHub, free, no API key).
+# Clone both repos into a common parent directory so one `dolt sql-server`
+# serves both as separate databases on the same port (verified live 2026-07-06).
+mkdir dolt-data && cd dolt-data
+dolt clone post-no-preference/earnings
+dolt clone post-no-preference/options
+dolt sql-server --data-dir .   # leave running in a separate terminal
 ```
 
 ## Project structure

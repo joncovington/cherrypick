@@ -7,7 +7,9 @@
   "earnings_calendar_source": "dolthub",
   "dolthub_host": "127.0.0.1",
   "dolthub_port": 3306,
+  "dolthub_user": "root",
   "dolthub_database": "earnings",
+  "dolthub_options_database": "options",
 
   "finnhub_api_key_env_var": "FINNHUB_API_KEY",
 

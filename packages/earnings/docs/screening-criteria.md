@@ -17,15 +17,15 @@ Run once per ticker per scan, in this order (cheapest/fastest-to-reject first, m
 ## Layer 1 — Additional criteria (soft; produce a near-miss band rather than an outright reject)
 
 8. **30-day average volume**: pass ≥ 1,500,000 shares; near-miss 1,000,000–1,499,999; reject below 1,000,000.
-9. **Winrate** (Tier B — historical: % of past earnings where the option-implied move overstated the actual realized move, min. 8 quarters sample): pass ≥ 50%; near-miss 40–49.9%; reject below 40%. **Not yet computable** — `scanner.py` has no historical realized-move source wired up. Until implemented, treat this criterion as unknown/skip rather than auto-pass; do not silently default it to "pass."
-10. **IV/RV ratio** (Tier B — implied vol vs. trailing realized vol): pass ≥ 1.25; near-miss 1.00–1.24; reject below 1.00. **Not yet computable**, same caveat as #9.
+9. **Winrate** (historical: % of past earnings where the option-implied move overstated the actual realized move, min. 8 quarters sample): pass ≥ 50%; near-miss 40–49.9%; reject below 40%. **Not yet computable** — needs a per-symbol backtest against DoltHub's `post-no-preference/options.option_chain` (historical chains) and `post-no-preference/stocks.ohlcv` (realized moves), both confirmed available live but not yet wired into a backtest loop. Until implemented, treat this criterion as unknown/skip rather than auto-pass; do not silently default it to "pass."
+10. **IV/RV ratio**: pass ≥ 1.25; near-miss 1.00–1.24; reject below 1.00. **Implemented** — `scanner.fetch_iv_rv_ratio()` queries `post-no-preference/options.volatility_history`'s `iv_current`/`hv_current` (falling back up to 5 trading days back if the most recent row has a null `iv_current`, which happens even for liquid large-caps). Verified live 2026-07-06 against a real dual-database `dolt sql-server` (AAPL: IV/RV ≈ 0.84 as of 2026-07-02 — below the 1.25 pass threshold, correctly landing in reject territory for that name on that day).
 
 ## Tiering (assigned after layer 1)
 
 - **Tier 1**: passes all hard filters (1–7) and all additional criteria (8–10) at the "pass" band. Only Tier 1 is eligible for automatic entry (per `CLAUDE.md`).
 - **Tier 2**: passes all hard filters, has exactly one additional criterion in its near-miss band. Logged, not auto-traded.
 - **Near Miss**: passes all hard filters, multiple criteria in near-miss band or below. Logged as a watchlist candidate only.
-- **Until Tier B (#9, #10) is implemented**, no candidate can currently qualify as Tier 1 by this definition — cap the practical result at **Tier 2 at best** (all hard filters + volume pass) and say so explicitly in the scan log, rather than quietly relaxing the Tier 1 bar to fit what's computable today. This is a deliberate, visible limitation, not a bug to route around.
+- **Until winrate (#9) is implemented**, no candidate can qualify as Tier 1 by this definition — cap the practical result at **Tier 2 at best** (all hard filters + volume + IV/RV pass) and say so explicitly in the scan log, rather than quietly relaxing the Tier 1 bar to fit what's computable today. This is a deliberate, visible limitation, not a bug to route around.
 
 ## Layer 2 — Entry-time re-verification (immediately before order submission, not at scan time)
 
