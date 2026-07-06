@@ -408,6 +408,116 @@ def _atm_entry(entries: list[dict], option_type: str, underlying_price: float) -
     return min(matches, key=lambda e: abs(float(e["strike_price"]) - underlying_price))
 
 
+def _nearest_strike_entry(entries: list[dict], option_type: str, target_strike: float, exclude_strike: float) -> dict | None:
+    """Like _atm_entry, but targets an arbitrary strike (for wing selection)
+    and excludes the short strike itself so a degenerate zero-width wing
+    can't be picked when strikes are sparse.
+    """
+    want = option_type[0].lower()
+    matches = [
+        e for e in entries
+        if str(e.get("option_type", "")).strip().lower().startswith(want)
+        and float(e["strike_price"]) != exclude_strike
+    ]
+    if not matches:
+        return None
+    return min(matches, key=lambda e: abs(float(e["strike_price"]) - target_strike))
+
+
+def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
+    """Build a concrete, tradeable iron fly order spec for `symbol`'s next
+    earnings-reaction front-month expiration: sell an ATM straddle, buy
+    wings at wing_width_credit_multiple x the straddle credit. Returns
+    {"ok": True, "order": {...tt.py execute_trade-shaped spec...},
+    "expiration": ..., "short_strike": ..., "wing_width": ..., "credit": ...}
+    or {"ok": False, "error": ...}.
+
+    Deliberately re-fetches live data at call time rather than reusing
+    fetch_price_and_term_structure's earlier snapshot -- this is meant to
+    be called at actual entry time (afternoon), potentially hours after
+    the scan that surfaced the candidate, so prices/strikes must be fresh.
+    """
+    try:
+        quote = _call_tt(["get_quote", "--symbol", symbol])
+        if not quote.get("ok"):
+            return {"ok": False, "error": quote.get("error", "get_quote failed")}
+        price = quote.get("price")
+        if price is None:
+            return {"ok": False, "error": "get_quote returned no price"}
+
+        chain_all = _call_tt(["get_option_chain", "--symbol", symbol])
+        if not chain_all.get("ok"):
+            return {"ok": False, "error": chain_all.get("error", "get_option_chain failed")}
+        expirations = sorted(date.fromisoformat(e) for e in chain_all["chain"].keys())
+        if not expirations:
+            return {"ok": False, "error": "no expirations in chain"}
+
+        from datetime import timedelta
+        reaction_date = earnings_date + timedelta(days=1) if earnings_timing == "After market close" else earnings_date
+        eligible = [e for e in expirations if e >= reaction_date]
+        if not eligible:
+            return {"ok": False, "error": f"no expiration on/after reaction date {reaction_date}"}
+        front_exp = min(eligible)
+
+        # Wide strike window: need both the ATM short strike and wings
+        # potentially far from it, unlike fetch_price_and_term_structure's
+        # narrow +/-3-strike window (which only needs the ATM point).
+        front_chain = _call_tt([
+            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
+            "--include_quotes", "--strike_count", "40", "--around_price", str(price),
+        ])
+        if not front_chain.get("ok"):
+            return {"ok": False, "error": front_chain.get("error", "get_option_chain failed")}
+        entries = front_chain["chain"][str(front_exp)]
+
+        short_call = _atm_entry(entries, "call", price)
+        short_put = _atm_entry(entries, "put", price)
+        if short_call is None or short_put is None:
+            return {"ok": False, "error": "incomplete ATM strikes"}
+        if short_call.get("mid") is None or short_put.get("mid") is None:
+            return {"ok": False, "error": "no quote data for ATM strikes"}
+
+        short_strike = float(short_call["strike_price"])
+        straddle_credit = short_call["mid"] + short_put["mid"]
+        wing_width = config.get("wing_width_credit_multiple", 3.0) * straddle_credit
+
+        long_call = _nearest_strike_entry(entries, "call", short_strike + wing_width, short_strike)
+        long_put = _nearest_strike_entry(entries, "put", short_strike - wing_width, short_strike)
+        if long_call is None or long_put is None:
+            return {"ok": False, "error": "no valid wing strikes found"}
+        if long_call.get("mid") is None or long_put.get("mid") is None:
+            return {"ok": False, "error": "no quote data for wing strikes"}
+
+        net_credit = straddle_credit - long_call["mid"] - long_put["mid"]
+
+        order = {
+            "order_type": "Limit",
+            "time_in_force": "Day",
+            "price": round(net_credit, 2),
+            "price_effect": "Credit",
+            "legs": [
+                {"symbol": short_call["symbol"], "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1},
+                {"symbol": short_put["symbol"], "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1},
+                {"symbol": long_call["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
+                {"symbol": long_put["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
+            ],
+        }
+        return {
+            "ok": True,
+            "order": order,
+            "symbol": symbol,
+            "expiration": str(front_exp),
+            "underlying_price": price,
+            "short_strike": short_strike,
+            "long_call_strike": float(long_call["strike_price"]),
+            "long_put_strike": float(long_put["strike_price"]),
+            "wing_width_target": wing_width,
+            "credit": round(net_credit, 2),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
     """Live price + term structure/expected move (criteria #1, #4, #6) via tt.py.
 
@@ -782,6 +892,16 @@ def cmd_get_candidates(args) -> dict:
     }
 
 
+def cmd_get_order(args) -> dict:
+    config = _load_config()
+    return fetch_iron_fly_order(
+        args.symbol.strip().upper(),
+        date.fromisoformat(args.earnings_date),
+        args.earnings_timing,
+        config,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -799,12 +919,18 @@ def main() -> None:
     p_cand = sub.add_parser("get_candidates")
     p_cand.add_argument("--date", required=True)
 
+    p_order = sub.add_parser("get_order")
+    p_order.add_argument("--symbol", required=True)
+    p_order.add_argument("--earnings_date", required=True)
+    p_order.add_argument("--earnings_timing", required=True)
+
     args = parser.parse_args()
     dispatch = {
         "get_calendar": cmd_get_calendar,
         "get_iv_rv": cmd_get_iv_rv,
         "get_winrate": cmd_get_winrate,
         "get_candidates": cmd_get_candidates,
+        "get_order": cmd_get_order,
     }
     result = dispatch[args.command](args)
     json.dump(result, sys.stdout)
