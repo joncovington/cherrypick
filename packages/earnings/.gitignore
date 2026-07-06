@@ -6,6 +6,9 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 
+# Local DoltHub clones (multi-GB, machine-local -- see README's setup steps)
+dolt-data/
+
 # Agent logs and EOD reports
 logs/*.log
 logs/eod-*.md

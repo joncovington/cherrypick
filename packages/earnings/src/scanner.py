@@ -828,6 +828,8 @@ def cmd_get_calendar(args) -> dict:
     if source != "dolthub":
         raise NotImplementedError(f"calendar source '{source}' not implemented — only 'dolthub' is wired up")
     rows = fetch_dolthub_calendar(args.date, config)
+    for row in rows:
+        row["date"] = str(row["date"])
     return {"ok": True, "date": args.date, "source": source, "tickers": rows}
 
 
@@ -933,7 +935,7 @@ def main() -> None:
         "get_order": cmd_get_order,
     }
     result = dispatch[args.command](args)
-    json.dump(result, sys.stdout)
+    json.dump(result, sys.stdout, default=str)
 
 
 if __name__ == "__main__":
