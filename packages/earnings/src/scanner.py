@@ -23,6 +23,7 @@ import argparse
 import json
 import sys
 from dataclasses import dataclass, asdict
+from datetime import date
 from pathlib import Path
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
@@ -365,9 +366,10 @@ def _call_tt(args_list: list[str]) -> dict:
     """Shell out to tt.py, matching this project's documented CLI-tool
     architecture (see CLAUDE.md's Tool Reference) rather than importing it,
     so scanner.py stays decoupled from tt.py's broker/credential setup.
-    Raises RuntimeError with tt.py's own error text on any non-zero exit --
-    today that's always tt.py's own NotImplementedError, since the broker
-    side isn't wired up yet (see README's Status section).
+    Raises RuntimeError on a non-zero exit (a real crash, not a normal
+    {"ok": false} response, which tt.py returns for expected failures like
+    missing credentials -- callers must check the returned dict's "ok" key
+    themselves rather than rely on this raising for every failure mode.
     """
     import subprocess
 
@@ -382,29 +384,103 @@ def _call_tt(args_list: list[str]) -> dict:
     return json.loads(result.stdout)
 
 
+def _atm_entry(entries: list[dict], option_type: str, underlying_price: float) -> dict | None:
+    """Closest-to-ATM entry of the given type ('call' or 'put') from a
+    tt.py get_option_chain 'chain' list for one expiration. tt.py's
+    entries come from the tastytrade SDK's serialized Option model, whose
+    `option_type` field is typically 'C'/'P' (or 'Call'/'Put' depending on
+    SDK version) -- matched case-insensitively on the first letter to be
+    resilient to either form, mirroring MEICAgent's own _is_call/_is_put.
+    """
+    want = option_type[0].lower()
+    matches = [e for e in entries if str(e.get("option_type", "")).strip().lower().startswith(want)]
+    if not matches:
+        return None
+    return min(matches, key=lambda e: abs(float(e["strike_price"]) - underlying_price))
+
+
 def fetch_price_and_term_structure(symbol: str, config: dict) -> dict:
     """Live price + term structure/expected move (criteria #1, #4, #6) via tt.py.
 
-    Returns {"ok": False, "error": ...} rather than raising when tt.py's
-    broker calls aren't available yet -- callers (cmd_get_candidates) treat
-    that as "insufficient data to verify these hard filters," not as a
-    reason to crash the whole scan. On success, returns
-    {"ok": True, "criteria": {"price": ..., "term_structure": ...,
-    "expected_move_dollars": ...}} for cmd_get_candidates to merge in
-    directly.
+    Returns {"ok": False, "error": ...} on any missing data (no credentials,
+    no chain, incomplete ATM strikes, no suitable back-month expiration)
+    rather than raising -- callers (cmd_get_candidates) treat that as
+    "insufficient data to verify these hard filters," not as a reason to
+    crash the whole scan. On success, returns {"ok": True, "criteria":
+    {"price": ..., "term_structure": ..., "expected_move_dollars": ...}}.
+
+    CAVEAT: unlike this file's DoltHub-backed functions, this has not been
+    exercised against a live tastytrade session (no credentials configured
+    in this development environment) -- the ATM/expiration selection logic
+    is implemented and internally consistent with tt.py's documented output
+    shape, but the exact field names/casing from the tastytrade SDK's
+    serialized Option model should be double-checked against a real
+    response the first time this runs with real credentials.
     """
     try:
         quote = _call_tt(["get_quote", "--symbol", symbol])
-        price = quote["price"]
-        # Front/back expiration selection and ATM straddle/IV extraction depend
-        # on tt.py get_option_chain's actual JSON shape, which doesn't exist
-        # yet (tt.py is still a stub -- see README). Once implemented, this
-        # should mirror fetch_atm_straddle_price's ATM-selection logic against
-        # live chain data for a front (nearest, post-earnings) and back
-        # (next monthly-ish) expiration, then call compute_term_structure()
-        # and populate term_structure/expected_move_dollars below from its
-        # .term_structure/.expected_move fields instead of raising.
-        raise NotImplementedError("tt.py get_option_chain is not implemented yet")
+        if not quote.get("ok"):
+            return {"ok": False, "error": quote.get("error", "get_quote failed")}
+        price = quote.get("price")
+        if price is None:
+            return {"ok": False, "error": "get_quote returned no price"}
+
+        chain_all = _call_tt(["get_option_chain", "--symbol", symbol])
+        if not chain_all.get("ok"):
+            return {"ok": False, "error": chain_all.get("error", "get_option_chain failed")}
+        expirations = sorted(date.fromisoformat(e) for e in chain_all["chain"].keys())
+        if not expirations:
+            return {"ok": False, "error": "no expirations in chain"}
+
+        today = date.today()
+        front_exp = min(expirations, key=lambda e: abs((e - today).days))
+        back_candidates = [e for e in expirations if e > front_exp]
+        if not back_candidates:
+            return {"ok": False, "error": "no back-month expiration available for term structure"}
+        back_exp = min(back_candidates, key=lambda e: abs((e - front_exp).days - 30))
+
+        front_chain = _call_tt([
+            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
+            "--include_greeks", "--include_quotes", "--strike_count", "3",
+            "--around_price", str(price),
+        ])
+        back_chain = _call_tt([
+            "get_option_chain", "--symbol", symbol, "--expiration", str(back_exp),
+            "--include_greeks", "--strike_count", "3", "--around_price", str(price),
+        ])
+        if not front_chain.get("ok") or not back_chain.get("ok"):
+            return {"ok": False, "error": "front/back chain fetch failed"}
+
+        front_entries = front_chain["chain"][str(front_exp)]
+        back_entries = back_chain["chain"][str(back_exp)]
+        front_call = _atm_entry(front_entries, "call", price)
+        front_put = _atm_entry(front_entries, "put", price)
+        back_call = _atm_entry(back_entries, "call", price)
+        if front_call is None or front_put is None or back_call is None:
+            return {"ok": False, "error": "incomplete ATM strikes in front/back chain"}
+        if front_call.get("mid") is None or front_put.get("mid") is None:
+            return {"ok": False, "error": "no quote data for front-month ATM strikes"}
+        if front_call.get("iv") is None or back_call.get("iv") is None:
+            return {"ok": False, "error": "no greeks/iv data for front/back ATM strikes"}
+
+        ts = compute_term_structure(
+            symbol=symbol,
+            underlying_price=price,
+            front_expiration=str(front_exp),
+            front_atm_call_mid=front_call["mid"],
+            front_atm_put_mid=front_put["mid"],
+            front_atm_iv=front_call["iv"],
+            back_expiration=str(back_exp),
+            back_atm_iv=back_call["iv"],
+        )
+        return {
+            "ok": True,
+            "criteria": {
+                "price": price,
+                "term_structure": ts.term_structure,
+                "expected_move_dollars": ts.expected_move,
+            },
+        }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
