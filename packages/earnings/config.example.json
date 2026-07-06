@@ -45,7 +45,13 @@
       "min_winrate": 0.50,
       "near_miss_min_winrate": 0.40,
 
-      "wing_width_credit_multiple": 3.0
+      "wing_width_credit_multiple": 3.0,
+      "_wing_width_note": "wing_width_credit_multiple is the fallback if iv_rv_ratio can't be refetched at entry time; otherwise superseded by the bands below, scaled to this candidate's own IV/RV ratio (not market-wide VIX -- an earnings move is idiosyncratic to one stock, so its own IV/RV is a more relevant regime signal here than broad market volatility). Reasoned proposal, not backtested for this strategy.",
+      "wing_width_multiple_low": 2.5,
+      "wing_width_multiple_mid": 3.0,
+      "wing_width_multiple_high": 3.5,
+      "wing_width_band_low_max": 1.25,
+      "wing_width_band_mid_max": 1.75
     }
   }
 }

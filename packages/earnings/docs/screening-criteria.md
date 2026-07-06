@@ -45,6 +45,18 @@ score = abs(term_structure) * iv_rv_ratio * shrunk_winrate
 
 `scanner.select_positions()` then walks the ranked list applying `max_concurrent_earnings_positions` and `correlation_block_list`, skipping (not silently dropping — each skip is reported with a reason) any candidate that collides with an already-selected name's correlation group, and backfilling the next-best candidate into that slot rather than leaving it empty. This diversifies across names instead of concentrating in whichever single candidate scores highest — earnings-move risk is idiosyncratic per name, and a composite score's precision doesn't warrant betting a whole position budget on the top-ranked name alone. Verified via unit test: a lower-ranked non-conflicting candidate correctly backfills a slot vacated by a correlation-blocked higher-ranked one.
 
+## Wing width sizing (at order construction, `strategies/iron_fly.py`'s `fetch_iron_fly_order()`)
+
+Wing width is `wing_multiple × straddle_credit`, where `wing_multiple` is chosen from a 3-tier scale keyed to **this candidate's own IV/RV ratio**, re-fetched fresh at entry time (not reused from the scan) — deliberately *not* a market-wide VIX-style band the way MEICAgent's delta-target scaling uses VIX. An earnings move is idiosyncratic to one stock; a single stock's own IV/RV ratio (already computed per-candidate from its own options and realized volatility) is the more relevant regime signal here than broad market volatility would be.
+
+| IV/RV ratio | Wing multiple |
+|---|---|
+| `< wing_width_band_low_max` (1.25) | `wing_width_multiple_low` (2.5) — thin edge, less excess width paid for against a marginal signal |
+| `< wing_width_band_mid_max` (1.75) | `wing_width_multiple_mid` (3.0) — the prior fixed default |
+| `>= wing_width_band_mid_max` | `wing_width_multiple_high` (3.5) — strong edge, more protective margin the position can afford |
+
+Verified live 2026-07-06: AAPL's real IV/RV ratio (0.84, below the low-band boundary) correctly selected the 2.5× multiple, fully transparent in `get_order`'s output (`iv_rv_ratio`, `wing_width_multiple_used`). Like the screening thresholds above, these band breakpoints are a reasoned proposal from the general logic of "size protection to edge strength," not independently backtested for this strategy — worth revisiting once enough live/paper trades exist to check whether the banding actually improves outcomes over the flat 3.0× multiple it replaces.
+
 ## Layer 2 — Entry-time re-verification (immediately before order submission, not at scan time)
 
 The scan runs once in the afternoon; by the entry window near the close, prices/IV may have moved. Re-check, live, right before submitting:

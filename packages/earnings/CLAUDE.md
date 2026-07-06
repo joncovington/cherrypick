@@ -72,7 +72,9 @@ See `config.example.json` for the authoritative list. Top-level options are proj
 | `min_term_structure` | Re-verification threshold at entry time (must re-check live, not trust the scan snapshot) |
 | `min_iv_rv_ratio` | Re-verification threshold at entry time |
 | `min_winrate` | Re-verification threshold at entry time |
-| `wing_width_credit_multiple` | Wing width sizing (default: 3× credit received) |
+| `wing_width_credit_multiple` | Fallback wing width sizing (3× credit) only if this candidate's IV/RV ratio can't be refetched at entry time |
+| `wing_width_multiple_low` / `_mid` / `_high` | `2.5` / `3.0` / `3.5` — wing width multiple by IV/RV band (see `wing_width_band_*_max`); scaled to *this candidate's own* IV/RV ratio, not market-wide VIX, since an earnings move is idiosyncratic to one stock (`strategies/iron_fly.py`'s `_wing_width_multiple()`) |
+| `wing_width_band_low_max` / `_mid_max` | `1.25` / `1.75` — IV/RV ratio boundaries for the wing-width scale above |
 | `require_weekly_options` | Hard-reject names without a genuine weekly (not just incidentally-nearby monthly) expiration cadence |
 
 **Correlation risk is not currently guarded**: opening multiple earnings names in the same sector on the same date can silently correlate their overnight gap risk — avoid configuring correlated block-list entries together until this guard is implemented and tested.

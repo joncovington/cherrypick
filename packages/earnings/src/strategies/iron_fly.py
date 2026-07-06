@@ -290,11 +290,42 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
     return {"tier": tier, "hard_fail_reasons": hard_fail, "near_miss_reasons": near_miss}
 
 
-def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
+def _wing_width_multiple(iv_rv_ratio: float | None, config: dict) -> float:
+    """Wing width sizing scaled by this candidate's own IV/RV ratio, rather
+    than one fixed wing_width_credit_multiple regardless of how overpriced
+    IV actually is. Deliberately does NOT use a market-wide VIX-style band
+    (the pattern MEICAgent uses for its own delta-target scaling) -- an
+    earnings move is an idiosyncratic, single-stock event, and this
+    candidate's own iv_rv_ratio (already computed per-symbol from its own
+    options and realized volatility) is a more relevant regime signal than
+    broad market VIX would be here.
+
+    Bands (config: wing_width_multiple_low/mid/high, iv_rv_ratio thresholds
+    wing_width_band_low_max/mid_max): a stronger IV/RV edge gets wider
+    wings (more protective margin, since the position can afford it), a
+    barely-qualifying edge gets tighter wings (less excess width paid for
+    against a marginal signal). This is a reasoned proposal, not backtested
+    for this strategy -- same caveat as MEICAgent's VIX-banded delta scale.
+    """
+    if iv_rv_ratio is None:
+        return config.get("wing_width_credit_multiple", 3.0)
+    low_max = config.get("wing_width_band_low_max", 1.25)
+    mid_max = config.get("wing_width_band_mid_max", 1.75)
+    if iv_rv_ratio < low_max:
+        return config.get("wing_width_multiple_low", 2.5)
+    if iv_rv_ratio < mid_max:
+        return config.get("wing_width_multiple_mid", 3.0)
+    return config.get("wing_width_multiple_high", 3.5)
+
+
+def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str, full_config: dict) -> dict:
     """Build a concrete, tradeable iron fly order spec for `symbol`'s next
     earnings-reaction front-month expiration: sell an ATM straddle, buy
-    wings at wing_width_credit_multiple x the straddle credit. `config`
-    here is this strategy's own sub-config. Returns
+    wings sized by _wing_width_multiple() (scaled to this candidate's own,
+    freshly-refetched IV/RV ratio, not the credit_multiple config value
+    alone). `full_config` is the whole project config (not just this
+    strategy's sub-config) since fetching IV/RV ratio needs the top-level
+    DoltHub connection settings. Returns
     {"ok": True, "order": {...tt.py execute_trade-shaped spec...},
     "expiration": ..., "short_strike": ..., "wing_width": ..., "credit": ...}
     or {"ok": False, "error": ...}.
@@ -303,7 +334,10 @@ def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str,
     fetch_price_and_term_structure's earlier snapshot -- this is meant to
     be called at actual entry time (afternoon), potentially hours after
     the scan that surfaced the candidate, so prices/strikes must be fresh.
+    IV/RV ratio is re-fetched here too, for the same reason -- it may have
+    moved since the scan.
     """
+    config = _strategy_config(full_config)
     try:
         quote = scanner.call_tt(["get_quote", "--symbol", symbol])
         if not quote.get("ok"):
@@ -345,7 +379,10 @@ def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str,
 
         short_strike = float(short_call["strike_price"])
         straddle_credit = short_call["mid"] + short_put["mid"]
-        wing_width = config.get("wing_width_credit_multiple", 3.0) * straddle_credit
+        ivrv = scanner.fetch_iv_rv_ratio(symbol, full_config)
+        iv_rv_ratio = ivrv["iv_rv_ratio"] if ivrv.get("ok") else None
+        wing_multiple = _wing_width_multiple(iv_rv_ratio, config)
+        wing_width = wing_multiple * straddle_credit
 
         long_call = scanner.nearest_strike_entry(entries, "call", short_strike + wing_width, short_strike)
         long_put = scanner.nearest_strike_entry(entries, "put", short_strike - wing_width, short_strike)
@@ -379,6 +416,8 @@ def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str,
             "long_call_strike": float(long_call["strike_price"]),
             "long_put_strike": float(long_put["strike_price"]),
             "wing_width_target": wing_width,
+            "wing_width_multiple_used": wing_multiple,
+            "iv_rv_ratio": iv_rv_ratio,
             "credit": round(net_credit, 2),
         }
     except Exception as exc:
@@ -448,12 +487,11 @@ def cmd_get_candidates(args) -> dict:
 
 def cmd_get_order(args) -> dict:
     config = scanner._load_config()
-    strategy_config = _strategy_config(config)
     return fetch_iron_fly_order(
         args.symbol.strip().upper(),
         date.fromisoformat(args.earnings_date),
         args.earnings_timing,
-        strategy_config,
+        config,
     )
 
 
