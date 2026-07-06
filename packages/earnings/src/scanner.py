@@ -444,6 +444,18 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
         if not expirations:
             return {"ok": False, "error": "no expirations in chain"}
 
+        # Weekly-options detection: a name with only monthly cycles can still
+        # incidentally have its nearest monthly expiration fall inside the
+        # max_front_expiration_days window some weeks (by luck of the
+        # calendar), which would otherwise pass the generic expiration-window
+        # check without actually being a liquid, weekly-optioned name. Check
+        # the real cadence instead: at least one gap between consecutive
+        # expirations of <=10 days indicates weeklies exist.
+        has_weekly_options = any(
+            (expirations[i + 1] - expirations[i]).days <= 10
+            for i in range(len(expirations) - 1)
+        )
+
         from datetime import timedelta
         if earnings_timing == "After market close":
             reaction_date = earnings_date + timedelta(days=1)
@@ -516,6 +528,7 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
                 "atm_delta_abs": abs(front_call["delta"]) if front_call.get("delta") is not None else None,
                 "front_expiration_days": (front_exp - date.today()).days,
                 "chain_complete": True,
+                "has_weekly_options": has_weekly_options,
             },
         }
     except Exception as exc:
@@ -570,6 +583,12 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
     if not criteria.get("chain_complete"):
         hard_fail.append("chain_complete_unverified")
 
+    if config.get("require_weekly_options", True):
+        if criteria.get("has_weekly_options") is None:
+            hard_fail.append("has_weekly_options_unverified")
+        elif not criteria["has_weekly_options"]:
+            hard_fail.append("no_weekly_options")
+
     near_miss: list[str] = []
 
     def _band(value, min_pass, min_near_miss, name):
@@ -597,6 +616,95 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
         tier = "Near Miss"
 
     return {"tier": tier, "hard_fail_reasons": hard_fail, "near_miss_reasons": near_miss}
+
+
+def _shrunk_winrate(winrate: float | None, sample_size: int, target_sample: int = 8) -> float:
+    """Shrink winrate toward a neutral 0.5 prior when sample_size is small,
+    so an 8-quarter 85% winrate doesn't lose to a 1-quarter 100% winrate --
+    the latter carries far less information despite the higher raw number.
+    """
+    if winrate is None or not sample_size:
+        return 0.5
+    shrink = min(sample_size / target_sample, 1.0)
+    return 0.5 + shrink * (winrate - 0.5)
+
+
+def compute_composite_score(criteria: dict, winrate_sample_size: int = 0) -> float | None:
+    """Composite ranking score for a Tier 1/2 candidate, built entirely from
+    signals apply_tiering already required to be present to reach that tier
+    -- no new data, just combining what's already computed.
+
+    Returns None if term_structure (the core signal) is missing; a
+    candidate can't be ranked without it. IV/RV ratio and winrate are
+    secondary confirmations of the same "is IV overpriced" question as
+    term structure, not independent signals, so they're applied as
+    multiplicative adjustments rather than summed as separate scores --
+    summing would let a strong term structure and a merely-neutral IV/RV
+    ratio look identical to two moderate signals combined, which isn't
+    the intent (a strong core signal should still rank higher than two
+    average ones).
+    """
+    ts = criteria.get("term_structure")
+    if ts is None:
+        return None
+    iv_rv = criteria.get("iv_rv_ratio") or 1.0
+    wr = _shrunk_winrate(criteria.get("winrate"), winrate_sample_size)
+    return abs(ts) * iv_rv * wr
+
+
+def rank_candidates(candidates: list[dict], config: dict) -> list[dict]:
+    """Rank Tier 1/2 candidates from get_candidates' output by
+    compute_composite_score, descending. Reject and Near Miss candidates
+    are excluded entirely -- ranking within tiers they didn't clear would
+    imply they're viable with enough of a score, which they aren't.
+    """
+    scored = []
+    for c in candidates:
+        if c.get("tier") not in ("Tier 1", "Tier 2"):
+            continue
+        score = compute_composite_score(c["criteria"], c.get("winrate_sample_size", 0))
+        if score is None:
+            continue
+        scored.append({**c, "composite_score": score})
+    scored.sort(key=lambda c: c["composite_score"], reverse=True)
+    return scored
+
+
+def select_positions(ranked: list[dict], config: dict) -> dict:
+    """Walk a ranked candidate list applying max_concurrent_earnings_positions
+    and correlation_block_list, selecting the top-scoring candidates that
+    don't collide. Diversifies across names rather than concentrating in
+    whichever single candidate scores highest -- earnings-move risk is
+    idiosyncratic per name, so spreading a limited position budget across
+    several qualifying names is sounder than betting it all on the top
+    score, whose precision doesn't warrant that much confidence.
+    """
+    max_positions = config.get("max_concurrent_earnings_positions", 3)
+    block_list = config.get("correlation_block_list", [])
+
+    def _group_of(symbol: str) -> int | None:
+        for i, group in enumerate(block_list):
+            if symbol in group:
+                return i
+        return None
+
+    selected: list[dict] = []
+    skipped: list[dict] = []
+    used_groups: set[int] = set()
+
+    for c in ranked:
+        if len(selected) >= max_positions:
+            skipped.append({"symbol": c["symbol"], "reason": "max_positions_reached"})
+            continue
+        group = _group_of(c["symbol"])
+        if group is not None and group in used_groups:
+            skipped.append({"symbol": c["symbol"], "reason": "correlation_block"})
+            continue
+        selected.append(c)
+        if group is not None:
+            used_groups.add(group)
+
+    return {"selected": selected, "skipped": skipped}
 
 
 def cmd_get_winrate(args) -> dict:
@@ -660,7 +768,18 @@ def cmd_get_candidates(args) -> dict:
         })
 
     candidates.sort(key=lambda c: {"Tier 1": 0, "Tier 2": 1, "Near Miss": 2, "Reject": 3}[c["tier"]])
-    return {"ok": True, "date": args.date, "candidates": candidates}
+
+    ranked = rank_candidates(candidates, config)
+    selection = select_positions(ranked, config)
+
+    return {
+        "ok": True,
+        "date": args.date,
+        "candidates": candidates,
+        "ranked": ranked,
+        "selected": selection["selected"],
+        "skipped_for_selection": selection["skipped"],
+    }
 
 
 def main() -> None:

@@ -13,6 +13,7 @@ Run once per ticker per scan, in this order (cheapest/fastest-to-reject first, m
 5. **ATM delta ≤ 0.57 in absolute value** — sanity check that the strike selected as "ATM" for the term-structure calc actually is ATM; a delta this far from 0.50 means the strike grid is too coarse near the money for this name and the term-structure reading is unreliable.
 6. **Expected move ≥ $0.90** (nearest expiration, dollar terms) — a straddle price below this is too cheap to be worth the transaction cost of a 4-leg order regardless of how attractive the ratios look.
 7. **Full option chain must be fetchable and both front/back expirations must exist** — reject outright (not a soft fail) if the chain is incomplete; do not guess or substitute a different expiration.
+7b. **Weekly options must exist** (`require_weekly_options` in config, default `true`; numbered 7b rather than renumbering #8–#10 below, which are referenced by number throughout this project) — checks the real expiration *cadence* (a gap of ≤10 days between two consecutive expirations somewhere in the chain), not just whether the nearest expiration happens to fall inside the `max_front_expiration_days` window. A monthly-only name's single nearest expiration can coincidentally land inside that window some weeks by luck of the calendar without the name actually having the liquid, frequent option cycle the strategy assumes. Verified live 2026-07-06: EPAC/PENG/SAR (all monthly-only) correctly flagged `no_weekly_options`, distinct from and in addition to their separate `front_expiration_days_too_far_out` rejections.
 
 ## Layer 1 — Additional criteria (soft; produce a near-miss band rather than an outright reject)
 
@@ -30,6 +31,19 @@ Run once per ticker per scan, in this order (cheapest/fastest-to-reject first, m
 - A low-`sample_size` winrate (see #9's caveat) is a further reason to treat even a Tier 1 result with more skepticism than the label alone conveys.
 - **A real sign-convention bug was caught and fixed during this live testing**: `compute_term_structure` originally computed `(front_iv - back_iv) / back_iv`, which is *positive* when the front month is IV-richer than the back month — backwards from this doc's own `≤ -0.004` threshold (negative-is-good) and from the function's own docstring. A real earnings candidate (EPAC, front IV ~64% richer than back) was being rejected as `term_structure_insufficient` — exactly the opposite of the intended behavior. Fixed to `(back_iv - front_iv) / back_iv`, re-verified live: EPAC's term structure flipped from `+0.64` (wrongly rejected) to `-0.64` (correctly passes).
 - A second bug caught in the same pass: front-month expiration was originally picked as "nearest expiration to today," ignoring the earnings date entirely — harmless for the four low-liquidity small-caps tested (they only had monthly expirations, so the nearest-to-today and nearest-to-reaction-date happened to coincide), but confirmed live against AAPL (which has weeklies including same-day expirations) that this would otherwise grab an irrelevant 0DTE chain. Fixed to select the nearest expiration on/after the earnings *reaction* date (next trading day for "After market close," the report day itself for "Before market open").
+
+## Ranking and position selection (after tiering, before entry)
+
+Tiering alone doesn't answer "which of several qualifying candidates do we actually trade" on a day with more Tier 1/2 names than `max_concurrent_earnings_positions` allows. `scanner.rank_candidates()` scores every Tier 1/2 candidate (Reject and Near Miss are excluded from ranking entirely — a score doesn't make a name that failed hard filters viable) via `compute_composite_score()`:
+
+```
+score = abs(term_structure) * iv_rv_ratio * shrunk_winrate
+```
+
+- **IV/RV ratio and winrate are multiplicative adjustments to term structure, not independent additive scores** — they're secondary confirmations of the same "is IV overpriced" question term structure already answers, so a strong core signal should outrank two merely-average ones, which summing wouldn't achieve.
+- **`shrunk_winrate`** pulls winrate toward a neutral 0.5 prior in proportion to how far `sample_size` is below 8 quarters (`0.5 + min(sample_size/8, 1) * (winrate - 0.5)`) — a 100% winrate on 1 quarter scores below a 60% winrate on 6 quarters, verified via unit test. This directly follows from the #9 sample-size caveat above: an unshrunk raw winrate would let a thin, noisy sample outrank a well-supported one.
+
+`scanner.select_positions()` then walks the ranked list applying `max_concurrent_earnings_positions` and `correlation_block_list`, skipping (not silently dropping — each skip is reported with a reason) any candidate that collides with an already-selected name's correlation group, and backfilling the next-best candidate into that slot rather than leaving it empty. This diversifies across names instead of concentrating in whichever single candidate scores highest — earnings-move risk is idiosyncratic per name, and a composite score's precision doesn't warrant betting a whole position budget on the top-ranked name alone. Verified via unit test: a lower-ranked non-conflicting candidate correctly backfills a slot vacated by a correlation-blocked higher-ranked one.
 
 ## Layer 2 — Entry-time re-verification (immediately before order submission, not at scan time)
 

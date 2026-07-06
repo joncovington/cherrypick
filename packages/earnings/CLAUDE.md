@@ -28,7 +28,7 @@ All operations are called via `python src/tt.py <command>` (broker) and `python 
 | `python src/scanner.py get_calendar --date MM/DD/YYYY` | Fetch tickers with earnings on this date from `earnings_calendar_source` | No |
 | `python src/scanner.py get_iv_rv --symbol X` | IV/RV ratio for symbol X from DoltHub's `volatility_history` | No |
 | `python src/scanner.py get_winrate --symbol X [--lookback_quarters N]` | Historical implied-vs-realized-move winrate backtest for symbol X | No |
-| `python src/scanner.py get_candidates --date MM/DD/YYYY` | Full tiered scan for that date, per candidate: `tier`, `hard_fail_reasons`, `near_miss_reasons`, `criteria`, `broker_data_error` | No |
+| `python src/scanner.py get_candidates --date MM/DD/YYYY` | Full tiered scan for that date: per-candidate `tier`/`hard_fail_reasons`/`near_miss_reasons`/`criteria`, plus `ranked` (Tier 1/2 candidates scored and sorted) and `selected` (the ranked list after applying `max_concurrent_earnings_positions`/`correlation_block_list`) | No |
 | `python src/tt.py secrets_status` | Check whether OAuth credentials are stored | No |
 | `python src/tt.py secrets_set` | Store OAuth client secret/refresh token in the OS keyring | No |
 | `python src/tt.py get_connection_status` | Verify OAuth session and account access | No |
@@ -86,7 +86,7 @@ All reads and writes go through `src/db.py` subcommands.
    - Fetch buying power and NLV
    - Re-check `max_concurrent_earnings_positions` against currently open positions
 
-   **4b. Per candidate (Tier 1 only per `docs/screening-criteria.md`; a low-`sample_size` winrate is grounds to treat a nominal Tier 1 result with skepticism — see that doc's #9 caveat):**
+   **4b. Per candidate — use `get_candidates`' `selected` list, not the raw `candidates` list**: `selected` is already ranked (`scanner.rank_candidates()`) and cap/correlation-aware (`scanner.select_positions()`), so it directly answers "which of today's Tier 1/2 candidates to actually trade" rather than requiring the loop to re-derive that from `tier`/`hard_fail_reasons` itself. A low-`sample_size` winrate is still grounds to treat a nominal Tier 1 result with skepticism even after it appears in `selected` — see `docs/screening-criteria.md`'s #9 caveat.
    - **Re-verification hard stops** (layer 2 in the screening doc) — the scan ran hours ago; live IV/price may have moved:
      - Re-pull the live chain; re-check term structure and expected move still clear their thresholds
      - Re-confirm the earnings date/timing hasn't shifted
