@@ -1,8 +1,8 @@
 # EarningsFlyAgent
 
-An autonomous options trading agent running a short-volatility **iron fly** strategy around earnings announcements, built on [Claude Code](https://claude.ai/code). Candidates come from an external scanner ([EarningsEdgeDetection](https://github.com/Jayesh-Chhabra/EarningsEdgeDetection)) that screens for IV term-structure inversion, IV/RV ratio, and historical winrate; only its Tier 1 recommendations are eligible for automatic entry. Unlike a continuously-managed intraday strategy, this agent opens positions once before the close and closes them once after the next morning's open — there is no active management step in between by design.
+An autonomous options trading agent running a short-volatility **iron fly** strategy around earnings announcements, built on [Claude Code](https://claude.ai/code). Candidates are found by this project's own internal scanner (`src/scanner.py`), which screens for IV term-structure inversion and expected move computed live from tastytrade option chains. Only "Tier A"-qualified candidates are eligible for automatic entry; a richer historical winrate/IV-RV-ratio signal (Tier B) is planned but not yet implemented. Unlike a continuously-managed intraday strategy, this agent opens positions once before the close and closes them once after the next morning's open — there is no active management step in between by design.
 
-**Status**: scaffold only. `src/tt.py`, `src/db.py`, and `src/scanner_bridge.py` are stubs (`NotImplementedError`) defining the intended CLI surface — see `CLAUDE.md` for the full operating design.
+**Status**: scaffold only. `src/tt.py`, `src/db.py`, and `src/scanner.py` are stubs/partial (`NotImplementedError` on live calls; the term-structure math itself is implemented as a pure function) defining the intended CLI surface — see `CLAUDE.md` for the full operating design.
 
 ## Setup
 
@@ -18,7 +18,7 @@ EarningsFlyAgent/
 ├── CLAUDE.md                # Agent operational brain (loaded every loop iteration)
 ├── config.example.json      # Config template — copy to config.json
 ├── src/
-│   ├── scanner_bridge.py    # Ingests EarningsEdgeDetection scanner output
+│   ├── scanner.py           # Internal candidate scanner — term structure, expected move
 │   ├── tt.py                # tastytrade CLI — quotes, chains, order execution
 │   └── db.py                # SQLite CLI helper
 ├── docs/                    # (empty — add setup/operating/strategy docs as it grows)

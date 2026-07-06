@@ -4,7 +4,11 @@
   "max_concurrent_earnings_positions": 3,
   "max_risk_per_trade_pct": 0.02,
 
+  "earnings_calendar_source": "finnhub",
+  "finnhub_api_key_env_var": "FINNHUB_API_KEY",
+
   "min_term_structure": -0.004,
+  "min_expected_move_pct": 0.03,
   "min_iv_rv_ratio": 1.25,
   "min_winrate": 0.50,
 
