@@ -1,19 +1,24 @@
-"""SQLite persistence for EarningsFlyAgent's PAPER TRADING simulation.
+"""SQLite persistence for EarningsAgent's PAPER TRADING simulation.
 
 A deliberately separate database (data/paper_trades.db) and separate CLI
 from db.py/earnings_trades.db -- paper and real trade data must never be
 queryable through the same connection or file, so there is no --paper
 flag on db.py and no shared code path that could blend the two.
 
+Schema is strategy-agnostic (see db.py's own docstring for the rationale):
+`trades.strategy` identifies which strategy opened a position, and
+`legs_json` holds that strategy's actual order legs verbatim.
+
 Commands:
   init_db
   get_open_positions
-  save_trade --data '{"order_id": "...", "symbol": "...", "expiration": "YYYY-MM-DD",
-      "short_strike": F, "long_call_strike": F, "long_put_strike": F, "entry_credit": F}'
+  save_trade --data '{"order_id": "...", "strategy": "iron_fly", "symbol": "...",
+      "expiration": "YYYY-MM-DD", "short_strike": F, "long_call_strike": F,
+      "long_put_strike": F, "legs_json": "...", "entry_credit": F}'
   save_close --data '{"order_id": "...", "exit_debit": F, "pnl": F}'
-  log_scan --data '{"scan_date": "YYYY-MM-DD", "symbol": "...", "tier": "...",
-      "outcome": "...", "reason": "..."}'
-  get_pnl_summary
+  log_scan --data '{"scan_date": "YYYY-MM-DD", "symbol": "...", "strategy": "iron_fly",
+      "tier": "...", "outcome": "...", "reason": "..."}'
+  get_pnl_summary [--strategy X]
 """
 
 import argparse
@@ -26,13 +31,15 @@ from pathlib import Path
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "paper_trades.db"
 
 _DDL = """
-CREATE TABLE IF NOT EXISTS iron_fly_trades (
+CREATE TABLE IF NOT EXISTS trades (
     order_id        TEXT PRIMARY KEY,
+    strategy        TEXT NOT NULL DEFAULT 'iron_fly',
     symbol          TEXT NOT NULL,
     expiration      TEXT NOT NULL,
     short_strike    REAL,
     long_call_strike REAL,
     long_put_strike REAL,
+    legs_json       TEXT,
     entry_credit    REAL,
     exit_debit      REAL,
     pnl             REAL,
@@ -43,6 +50,7 @@ CREATE TABLE IF NOT EXISTS iron_fly_trades (
 CREATE TABLE IF NOT EXISTS scan_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_date   TEXT NOT NULL,
+    strategy    TEXT NOT NULL DEFAULT 'iron_fly',
     symbol      TEXT NOT NULL,
     tier        TEXT,
     outcome     TEXT,
@@ -78,7 +86,7 @@ def cmd_get_open_positions(args) -> dict:
     conn = _conn()
     try:
         rows = conn.execute(
-            "SELECT * FROM iron_fly_trades WHERE closed_at IS NULL ORDER BY opened_at"
+            "SELECT * FROM trades WHERE closed_at IS NULL ORDER BY opened_at"
         ).fetchall()
     finally:
         conn.close()
@@ -95,17 +103,19 @@ def cmd_save_trade(args) -> dict:
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO iron_fly_trades "
-            "(order_id, symbol, expiration, short_strike, long_call_strike, "
-            " long_put_strike, entry_credit, opened_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO trades "
+            "(order_id, strategy, symbol, expiration, short_strike, long_call_strike, "
+            " long_put_strike, legs_json, entry_credit, opened_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["order_id"],
+                spec.get("strategy", "iron_fly"),
                 spec["symbol"],
                 spec["expiration"],
                 spec.get("short_strike"),
                 spec.get("long_call_strike"),
                 spec.get("long_put_strike"),
+                spec.get("legs_json"),
                 spec.get("entry_credit"),
                 spec.get("opened_at", time.time()),
             ),
@@ -127,7 +137,7 @@ def cmd_save_close(args) -> dict:
     conn = _conn()
     try:
         cur = conn.execute(
-            "UPDATE iron_fly_trades SET exit_debit = ?, pnl = ?, closed_at = ? "
+            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ? "
             "WHERE order_id = ?",
             (
                 spec.get("exit_debit"),
@@ -154,10 +164,11 @@ def cmd_log_scan(args) -> dict:
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO scan_log (scan_date, symbol, tier, outcome, reason, logged_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, logged_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["scan_date"],
+                spec.get("strategy", "iron_fly"),
                 spec["symbol"],
                 spec.get("tier"),
                 spec.get("outcome"),
@@ -172,23 +183,35 @@ def cmd_log_scan(args) -> dict:
 
 
 def cmd_get_pnl_summary(args) -> dict:
+    strategy = getattr(args, "strategy", None)
     conn = _conn()
     try:
-        rows = conn.execute(
-            "SELECT * FROM iron_fly_trades WHERE closed_at IS NOT NULL ORDER BY closed_at"
-        ).fetchall()
+        if strategy:
+            rows = conn.execute(
+                "SELECT * FROM trades WHERE closed_at IS NOT NULL AND strategy = ? ORDER BY closed_at",
+                (strategy,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM trades WHERE closed_at IS NOT NULL ORDER BY closed_at"
+            ).fetchall()
     finally:
         conn.close()
 
     closed = [dict(r) for r in rows]
-    total_trades = len(closed)
     pnls = [r["pnl"] for r in closed if r["pnl"] is not None]
     wins = [p for p in pnls if p > 0]
     losses = [p for p in pnls if p <= 0]
 
+    by_strategy: dict[str, list[float]] = {}
+    for r in closed:
+        if r["pnl"] is not None:
+            by_strategy.setdefault(r["strategy"], []).append(r["pnl"])
+
     return {
         "ok": True,
-        "total_trades": total_trades,
+        "strategy_filter": strategy,
+        "total_trades": len(closed),
         "total_pnl": sum(pnls) if pnls else 0.0,
         "avg_pnl": (sum(pnls) / len(pnls)) if pnls else None,
         "win_count": len(wins),
@@ -196,6 +219,10 @@ def cmd_get_pnl_summary(args) -> dict:
         "win_rate": (len(wins) / len(pnls)) if pnls else None,
         "avg_win": (sum(wins) / len(wins)) if wins else None,
         "avg_loss": (sum(losses) / len(losses)) if losses else None,
+        "by_strategy": {
+            s: {"trades": len(vals), "total_pnl": sum(vals), "avg_pnl": sum(vals) / len(vals)}
+            for s, vals in by_strategy.items()
+        },
         "trades": closed,
     }
 
@@ -206,7 +233,9 @@ def main() -> None:
 
     sub.add_parser("init_db")
     sub.add_parser("get_open_positions")
-    sub.add_parser("get_pnl_summary")
+
+    p_pnl = sub.add_parser("get_pnl_summary")
+    p_pnl.add_argument("--strategy", default=None)
 
     p_save_trade = sub.add_parser("save_trade")
     p_save_trade.add_argument("--data", required=True)
@@ -227,7 +256,7 @@ def main() -> None:
         "get_pnl_summary": cmd_get_pnl_summary,
     }
     result = dispatch[args.command](args)
-    json.dump(result, sys.stdout)
+    json.dump(result, sys.stdout, default=str)
 
 
 if __name__ == "__main__":

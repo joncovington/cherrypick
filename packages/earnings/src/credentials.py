@@ -5,7 +5,7 @@ from __future__ import annotations
 import keyring
 import keyring.errors
 
-SERVICE_NAME = "earningsflyagent"
+SERVICE_NAME = "earningsagent"
 
 CLIENT_SECRET = "client_secret"
 REFRESH_TOKEN = "refresh_token"

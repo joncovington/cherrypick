@@ -1,13 +1,22 @@
-"""SQLite persistence for EarningsFlyAgent.
+"""SQLite persistence for EarningsAgent's real (non-paper) trades.
+
+Schema is strategy-agnostic: `trades.strategy` identifies which strategy
+opened a position (e.g. "iron_fly"), and `legs_json` holds that
+strategy's actual order legs verbatim, so a future strategy with a
+different leg count/shape needs no schema change. `short_strike`/
+`long_call_strike`/`long_put_strike` remain as convenience columns
+specific to symmetric-wing strategies like iron fly -- left NULL for
+strategies that don't have that shape.
 
 Commands (see CLAUDE.md's Database section):
   init_db
   get_open_positions
-  save_trade --data '{"order_id": "...", "symbol": "...", "expiration": "YYYY-MM-DD",
-      "short_strike": F, "long_call_strike": F, "long_put_strike": F, "entry_credit": F}'
+  save_trade --data '{"order_id": "...", "strategy": "iron_fly", "symbol": "...",
+      "expiration": "YYYY-MM-DD", "short_strike": F, "long_call_strike": F,
+      "long_put_strike": F, "legs_json": "...", "entry_credit": F}'
   save_close --data '{"order_id": "...", "exit_debit": F, "pnl": F}'
-  log_scan --data '{"scan_date": "YYYY-MM-DD", "symbol": "...", "tier": "...",
-      "outcome": "...", "reason": "..."}'
+  log_scan --data '{"scan_date": "YYYY-MM-DD", "symbol": "...", "strategy": "iron_fly",
+      "tier": "...", "outcome": "...", "reason": "..."}'
 """
 
 import argparse
@@ -20,13 +29,15 @@ from pathlib import Path
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "earnings_trades.db"
 
 _DDL = """
-CREATE TABLE IF NOT EXISTS iron_fly_trades (
+CREATE TABLE IF NOT EXISTS trades (
     order_id        TEXT PRIMARY KEY,
+    strategy        TEXT NOT NULL DEFAULT 'iron_fly',
     symbol          TEXT NOT NULL,
     expiration      TEXT NOT NULL,
     short_strike    REAL,
     long_call_strike REAL,
     long_put_strike REAL,
+    legs_json       TEXT,
     entry_credit    REAL,
     exit_debit      REAL,
     pnl             REAL,
@@ -37,6 +48,7 @@ CREATE TABLE IF NOT EXISTS iron_fly_trades (
 CREATE TABLE IF NOT EXISTS scan_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_date   TEXT NOT NULL,
+    strategy    TEXT NOT NULL DEFAULT 'iron_fly',
     symbol      TEXT NOT NULL,
     tier        TEXT,
     outcome     TEXT,
@@ -72,7 +84,7 @@ def cmd_get_open_positions(args) -> dict:
     conn = _conn()
     try:
         rows = conn.execute(
-            "SELECT * FROM iron_fly_trades WHERE closed_at IS NULL ORDER BY opened_at"
+            "SELECT * FROM trades WHERE closed_at IS NULL ORDER BY opened_at"
         ).fetchall()
     finally:
         conn.close()
@@ -89,17 +101,19 @@ def cmd_save_trade(args) -> dict:
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO iron_fly_trades "
-            "(order_id, symbol, expiration, short_strike, long_call_strike, "
-            " long_put_strike, entry_credit, opened_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO trades "
+            "(order_id, strategy, symbol, expiration, short_strike, long_call_strike, "
+            " long_put_strike, legs_json, entry_credit, opened_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["order_id"],
+                spec.get("strategy", "iron_fly"),
                 spec["symbol"],
                 spec["expiration"],
                 spec.get("short_strike"),
                 spec.get("long_call_strike"),
                 spec.get("long_put_strike"),
+                spec.get("legs_json"),
                 spec.get("entry_credit"),
                 spec.get("opened_at", time.time()),
             ),
@@ -121,7 +135,7 @@ def cmd_save_close(args) -> dict:
     conn = _conn()
     try:
         cur = conn.execute(
-            "UPDATE iron_fly_trades SET exit_debit = ?, pnl = ?, closed_at = ? "
+            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ? "
             "WHERE order_id = ?",
             (
                 spec.get("exit_debit"),
@@ -148,10 +162,11 @@ def cmd_log_scan(args) -> dict:
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO scan_log (scan_date, symbol, tier, outcome, reason, logged_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, logged_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["scan_date"],
+                spec.get("strategy", "iron_fly"),
                 spec["symbol"],
                 spec.get("tier"),
                 spec.get("outcome"),
@@ -190,7 +205,7 @@ def main() -> None:
         "log_scan": cmd_log_scan,
     }
     result = dispatch[args.command](args)
-    json.dump(result, sys.stdout)
+    json.dump(result, sys.stdout, default=str)
 
 
 if __name__ == "__main__":

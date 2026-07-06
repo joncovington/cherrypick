@@ -1,4 +1,4 @@
-"""Tastytrade CLI for EarningsFlyAgent. All commands print JSON to stdout.
+"""Tastytrade CLI for EarningsAgent. All commands print JSON to stdout.
 
 Usage:
   python src/tt.py secrets_status
@@ -496,7 +496,7 @@ _ASYNC_COMMANDS = {
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="EarningsFlyAgent tastytrade CLI")
+    parser = argparse.ArgumentParser(description="EarningsAgent tastytrade CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("get_connection_status")

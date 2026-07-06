@@ -1,8 +1,8 @@
-# EarningsFlyAgent
+# EarningsAgent
 
-An autonomous options trading agent running a short-volatility **iron fly** strategy around earnings announcements. Candidates are found by this project's own internal scanner (`src/scanner.py`) against the rules in [`docs/screening-criteria.md`](docs/screening-criteria.md) — term structure and expected move computed live from tastytrade option chains, plus IV/RV ratio and a historical winrate backtest from DoltHub. Only Tier 1 candidates are eligible for automatic entry — check `sample_size` on any winrate result before trusting it, since historical chain coverage is limited (see the screening doc). Unlike a continuously-managed intraday strategy, this agent opens positions once before the close and closes them once after the next morning's open — there is no active management step in between by design.
+An autonomous options trading agent running earnings-announcement strategies. **Iron fly is the first and currently only implemented strategy** — a short-volatility play capturing the IV crush that follows an earnings print while strictly capping downside via defined-risk wings. The project is split into a strategy-agnostic engine (`src/scanner.py`: earnings calendar lookup, average volume, IV/RV ratio, historical winrate, candidate ranking/position selection) and per-strategy modules under `src/strategies/` (`iron_fly.py` today) that hold each strategy's own thresholds, tiering, and order construction — a second strategy plugs in without touching the shared engine or colliding with iron fly's config. Screening rules live in [`docs/screening-criteria.md`](docs/screening-criteria.md) — only Tier 1 candidates are eligible for automatic entry; check `sample_size` on any winrate result before trusting it, since historical chain coverage is limited (see the screening doc). Unlike a continuously-managed intraday strategy, this agent opens positions once before the close and closes them once after the next morning's open — there is no active management step in between by design.
 
-**Status**: every planned piece is implemented and tested — scanner (all screening criteria against real, live data, plus candidate ranking and cap/correlation-aware position selection), broker CLI (`src/tt.py`, real OAuth2 session verified against a live account), persistence (`src/db.py`, full open/close trade lifecycle and scan-audit logging), and a full **paper-trading simulation** (`src/db_paper.py`, a wholly separate database and CLI — see [`docs/paper-trading.md`](docs/paper-trading.md)) that never touches the live account's orders or buying power. Paper vs. live is a single config switch (`enable_live_trading`, default `false`): the same loop definition in `CLAUDE.md` handles both, with no separate paper-trading loop to keep in sync. Live testing along the way caught and fixed several real bugs, detailed in `docs/screening-criteria.md`: a swallowed-exception path that misreported missing credentials as a DXLink timeout, a `KeyError` on an expected-failure response shape, a term-structure **sign-convention bug** that would have rejected exactly the candidates the strategy wants, and a threshold-check gap in `apply_tiering`. Also worth knowing: a real order built by `scanner.py get_order` was confirmed valid by tastytrade's own preflight (rejected only on account buying power, not order structure) — which is exactly why paper trading never calls `execute_trade`, even in dry-run, to avoid coupling simulated fills to the real account's financial state. See `CLAUDE.md` for the full operating design.
+**Status**: every planned piece is implemented and tested — the shared engine and iron fly strategy module (all screening criteria against real, live data, plus candidate ranking and cap/correlation-aware position selection), broker CLI (`src/tt.py`, real OAuth2 session verified against a live account), persistence (`src/db.py`, a strategy-agnostic trade lifecycle and scan-audit log), and a full **paper-trading simulation** (`src/db_paper.py`, a wholly separate database and CLI — see [`docs/paper-trading.md`](docs/paper-trading.md)) that never touches the live account's orders or buying power. Paper vs. live is a single config switch (`enable_live_trading`, default `false`): the same loop definition in `CLAUDE.md` handles both, with no separate paper-trading loop to keep in sync. Live testing along the way caught and fixed several real bugs, detailed in `docs/screening-criteria.md`: a swallowed-exception path that misreported missing credentials as a DXLink timeout, a `KeyError` on an expected-failure response shape, a term-structure **sign-convention bug** that would have rejected exactly the candidates the strategy wants, and a threshold-check gap in `apply_tiering`. Also worth knowing: a real order built by `strategies/iron_fly.py get_order` was confirmed valid by tastytrade's own preflight (rejected only on account buying power, not order structure) — which is exactly why paper trading never calls `execute_trade`, even in dry-run, to avoid coupling simulated fills to the real account's financial state. See `CLAUDE.md` for the full operating design.
 
 ## Setup
 
@@ -14,7 +14,7 @@ python src/tt.py secrets_set   # store tastytrade OAuth client secret + refresh 
 
 # Earnings calendar, IV/RV, and winrate-backtest data (DoltHub, free, no API key).
 # Clone all three repos into a common parent directory so one `dolt sql-server`
-# serves them as separate databases on the same port (verified live 2026-07-06).
+# serves them as separate databases on the same port.
 mkdir dolt-data && cd dolt-data
 dolt clone post-no-preference/earnings
 dolt clone post-no-preference/options
@@ -25,23 +25,27 @@ dolt sql-server --data-dir .   # leave running in a separate terminal
 ## Project structure
 
 ```
-EarningsFlyAgent/
+EarningsAgent/
 ├── CLAUDE.md                # Agent operational brain (loaded every loop iteration)
-├── config.example.json      # Config template — copy to config.json
+├── config.example.json      # Config template — copy to config.json (top-level = project-wide,
+│                             #   "strategies.<name>" = per-strategy tuning)
 ├── src/
-│   ├── scanner.py           # Internal candidate scanner — term structure, IV/RV, winrate, tiering, ranking, order-building
+│   ├── scanner.py           # Strategy-agnostic engine — calendar, IV/RV, winrate, volume, ranking
+│   ├── strategies/
+│   │   └── iron_fly.py      # Iron fly strategy — term structure, tiering, order construction
 │   ├── tt.py                # tastytrade CLI — OAuth2 session, quotes, chains, order execution
 │   ├── session.py           # Cached tastytrade OAuth session
 │   ├── credentials.py       # OS-keyring credential storage
 │   ├── db.py                # SQLite CLI helper — real trade lifecycle, scan audit log
 │   └── db_paper.py          # SQLite CLI helper — PAPER trade lifecycle (separate DB, never mixed with real trades)
 ├── docs/
-│   ├── screening-criteria.md  # Source of truth for every screening threshold
+│   ├── screening-criteria.md  # Source of truth for iron fly's screening thresholds
 │   └── paper-trading.md       # Paper-trading simulation design (uses CLAUDE.md's Loop Steps directly)
 ├── .claude/
 │   └── commands/            # (empty — no separate paper/live command; CLAUDE.md's Loop Steps cover both)
+├── dolt-data/                # DoltHub clones (gitignored, machine-local, multi-GB)
 ├── data/                    # Created at first run (gitignored)
-│   ├── earnings_trades.db
+│   ├── earnings_trades.db   # trades/scan_log tagged by `strategy` column
 │   └── paper_trades.db      # Wholly separate from earnings_trades.db
 └── logs/                    # Created at first run (gitignored)
 ```

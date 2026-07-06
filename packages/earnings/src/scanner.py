@@ -1,85 +1,26 @@
-"""Internal earnings-candidate scanner.
+"""Strategy-agnostic earnings-signal engine, shared by every strategy in
+src/strategies/. Nothing in this file assumes iron flies specifically --
+calendar lookup, average volume, IV/RV ratio, historical winrate, generic
+option-chain ATM/wing helpers, and candidate ranking/position selection
+are all reusable by any earnings-vol strategy added later.
 
-Implements the hard filters and tiering in docs/screening-criteria.md.
-get_candidates ties every signal together into a full tiered scan across
-a day's calendar. The earnings calendar, average volume (#8), IV/RV
-ratio (#10), and winrate backtest (#9) are all queried from three
-DoltHub datasets served by one locally-running `dolt sql-server
---data-dir`: post-no-preference/earnings, post-no-preference/options,
-and post-no-preference/stocks -- all real and tested live. Price, term
-structure, expected move, OI, ATM delta, and expiration window (#1-#3,
-#5-#7) depend on tt.py's broker calls, not implemented yet -- every
-candidate currently rejects on those criteria specifically (see
-fetch_price_and_term_structure, apply_tiering).
+Strategy-specific screening thresholds, order construction, and tiering
+logic live in src/strategies/<strategy_name>.py (see strategies/iron_fly.py
+for the first and currently only implementation), which import from this
+module rather than duplicating it.
 
-Intended commands (see CLAUDE.md's Tool Reference):
+Commands (see CLAUDE.md's Tool Reference):
   get_calendar --date MM/DD/YYYY
   get_iv_rv --symbol X
   get_winrate --symbol X [--lookback_quarters N]
-  get_candidates --date MM/DD/YYYY
 """
 
 import argparse
 import json
 import sys
-from dataclasses import dataclass, asdict
-from datetime import date
 from pathlib import Path
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
-
-
-@dataclass
-class TermStructureResult:
-    symbol: str
-    front_expiration: str
-    back_expiration: str
-    front_atm_iv: float
-    back_atm_iv: float
-    term_structure: float  # (front_iv - back_iv) / back_iv; negative = front richer
-    expected_move: float   # front-month ATM straddle price
-    expected_move_pct: float  # expected_move / underlying_price
-
-
-def compute_term_structure(
-    symbol: str,
-    underlying_price: float,
-    front_expiration: str,
-    front_atm_call_mid: float,
-    front_atm_put_mid: float,
-    front_atm_iv: float,
-    back_expiration: str,
-    back_atm_iv: float,
-) -> TermStructureResult:
-    """Pure calculation — no network calls. Caller supplies ATM strike data
-    already pulled from `tt.py get_option_chain --include_greeks` for both
-    the front (post-earnings) and a later back-month expiration.
-
-    Term structure mirrors EarningsEdgeDetection's convention: negative
-    values mean the front-month is richer than the back-month (the
-    earnings-event IV premium the trade is designed to capture).
-
-    NOTE: the sign here is (back - front) / back, not (front - back) / back
-    -- caught live during testing, a real bug: the naive (front - back)/back
-    formula is POSITIVE when front is richer, which is backwards from this
-    function's own documented convention and from the -0.004 threshold in
-    docs/screening-criteria.md (which expects negative-is-good). With the
-    original sign, a real earnings candidate (EPAC, front IV ~64% richer
-    than back) would have been *rejected* as term_structure_insufficient --
-    exactly the opposite of the intended behavior.
-    """
-    term_structure = (back_atm_iv - front_atm_iv) / back_atm_iv
-    expected_move = front_atm_call_mid + front_atm_put_mid
-    return TermStructureResult(
-        symbol=symbol,
-        front_expiration=front_expiration,
-        back_expiration=back_expiration,
-        front_atm_iv=front_atm_iv,
-        back_atm_iv=back_atm_iv,
-        term_structure=term_structure,
-        expected_move=expected_move,
-        expected_move_pct=expected_move / underlying_price,
-    )
 
 
 def _load_config() -> dict:
@@ -120,12 +61,12 @@ def fetch_dolthub_calendar(date: str, config: dict) -> list[dict]:
 
 
 def fetch_iv_rv_ratio(symbol: str, config: dict) -> dict:
-    """Query post-no-preference/options's volatility_history for IV/RV (screening
-    criterion #10). Requires a second locally-cloned Dolt repo alongside the
-    earnings one, served by the same `dolt sql-server` (run it with
-    `--data-dir` pointing at a parent directory containing both `earnings/`
-    and `options/` clones — Dolt serves every repo under that directory as
-    its own database on one server).
+    """Query post-no-preference/options's volatility_history for IV/RV.
+    Requires a second locally-cloned Dolt repo alongside the earnings one,
+    served by the same `dolt sql-server` (run it with `--data-dir` pointing
+    at a parent directory containing both `earnings/` and `options/` clones
+    -- Dolt serves every repo under that directory as its own database on
+    one server).
 
     Schema verified live against the DoltHub SQL API (2026-07-06):
     volatility_history(date, act_symbol, hv_current, iv_current, ...).
@@ -223,7 +164,7 @@ def _nearest_close(symbol: str, date, direction: str, config: dict) -> dict | No
         conn.close()
 
 
-def _pre_and_reaction_closes(symbol: str, earnings_date, timing: str, config: dict) -> tuple[dict, dict] | None:
+def pre_and_reaction_closes(symbol: str, earnings_date, timing: str, config: dict) -> tuple[dict, dict] | None:
     """Pick the pre-earnings and post-reaction trading-day closes based on `when`.
 
     'After market close' -> pre = earnings_date's own close, reaction = next trading day.
@@ -296,12 +237,13 @@ def fetch_atm_straddle_price(symbol: str, as_of_date, reaction_date, underlying_
 
 
 def compute_winrate(symbol: str, config: dict, lookback_quarters: int = 8) -> dict:
-    """Backtest screening criterion #9: over the last `lookback_quarters` earnings
-    dates, what fraction had the option-implied move (ATM straddle price) exceed
-    the actual realized move? A high winrate means this name's options have
-    historically overpriced its earnings moves — exactly the edge an iron fly
-    seller wants. Quarters with any data gap (missing chain, ambiguous timing,
-    no ohlcv row) are skipped and counted separately, not silently treated as
+    """Historical: over the last `lookback_quarters` earnings dates, what
+    fraction had the option-implied move (ATM straddle price) exceed the
+    actual realized move? A high winrate means this name's options have
+    historically overpriced its earnings moves -- relevant to any strategy
+    that sells that overpriced premium, not just iron flies specifically.
+    Quarters with any data gap (missing chain, ambiguous timing, no ohlcv
+    row) are skipped and counted separately, not silently treated as
     losses or excluded from the reported sample size.
     """
     today = config.get("_as_of_date")  # test hook; production callers omit this
@@ -313,7 +255,7 @@ def compute_winrate(symbol: str, config: dict, lookback_quarters: int = 8) -> di
     for row in earnings_dates:
         if len(results) >= lookback_quarters:
             break
-        closes = _pre_and_reaction_closes(symbol, row["date"], row["timing"], config)
+        closes = pre_and_reaction_closes(symbol, row["date"], row["timing"], config)
         if closes is None:
             skipped.append({"date": str(row["date"]), "reason": "ambiguous_timing_or_no_price_data"})
             continue
@@ -348,10 +290,9 @@ def compute_winrate(symbol: str, config: dict, lookback_quarters: int = 8) -> di
 
 
 def fetch_avg_volume(symbol: str, config: dict, days: int = 30) -> float | None:
-    """30-day average daily volume from stocks.ohlcv (screening criterion #8).
-    No broker dependency -- this is real trailing exchange volume, computable
-    entirely from the DoltHub stocks dataset already used for the winrate
-    backtest.
+    """30-day average daily volume from stocks.ohlcv. No broker dependency --
+    this is real trailing exchange volume, computable entirely from the
+    DoltHub stocks dataset already used for the winrate backtest.
     """
     conn = _dolt_connect(config, config.get("dolthub_stocks_database", "stocks"))
     try:
@@ -371,10 +312,10 @@ def fetch_avg_volume(symbol: str, config: dict, days: int = 30) -> float | None:
     return float(row["avg_volume"])
 
 
-def _call_tt(args_list: list[str]) -> dict:
+def call_tt(args_list: list[str]) -> dict:
     """Shell out to tt.py, matching this project's documented CLI-tool
     architecture (see CLAUDE.md's Tool Reference) rather than importing it,
-    so scanner.py stays decoupled from tt.py's broker/credential setup.
+    so this engine stays decoupled from tt.py's broker/credential setup.
     Raises RuntimeError on a non-zero exit (a real crash, not a normal
     {"ok": false} response, which tt.py returns for expected failures like
     missing credentials -- callers must check the returned dict's "ok" key
@@ -393,7 +334,7 @@ def _call_tt(args_list: list[str]) -> dict:
     return json.loads(result.stdout)
 
 
-def _atm_entry(entries: list[dict], option_type: str, underlying_price: float) -> dict | None:
+def atm_entry(entries: list[dict], option_type: str, underlying_price: float) -> dict | None:
     """Closest-to-ATM entry of the given type ('call' or 'put') from a
     tt.py get_option_chain 'chain' list for one expiration. tt.py's
     entries come from the tastytrade SDK's serialized Option model, whose
@@ -408,10 +349,10 @@ def _atm_entry(entries: list[dict], option_type: str, underlying_price: float) -
     return min(matches, key=lambda e: abs(float(e["strike_price"]) - underlying_price))
 
 
-def _nearest_strike_entry(entries: list[dict], option_type: str, target_strike: float, exclude_strike: float) -> dict | None:
-    """Like _atm_entry, but targets an arbitrary strike (for wing selection)
-    and excludes the short strike itself so a degenerate zero-width wing
-    can't be picked when strikes are sparse.
+def nearest_strike_entry(entries: list[dict], option_type: str, target_strike: float, exclude_strike: float) -> dict | None:
+    """Like atm_entry, but targets an arbitrary strike (for wing/spread
+    selection) and excludes a given strike so a degenerate zero-width
+    spread can't be picked when strikes are sparse.
     """
     want = option_type[0].lower()
     matches = [
@@ -422,310 +363,6 @@ def _nearest_strike_entry(entries: list[dict], option_type: str, target_strike: 
     if not matches:
         return None
     return min(matches, key=lambda e: abs(float(e["strike_price"]) - target_strike))
-
-
-def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
-    """Build a concrete, tradeable iron fly order spec for `symbol`'s next
-    earnings-reaction front-month expiration: sell an ATM straddle, buy
-    wings at wing_width_credit_multiple x the straddle credit. Returns
-    {"ok": True, "order": {...tt.py execute_trade-shaped spec...},
-    "expiration": ..., "short_strike": ..., "wing_width": ..., "credit": ...}
-    or {"ok": False, "error": ...}.
-
-    Deliberately re-fetches live data at call time rather than reusing
-    fetch_price_and_term_structure's earlier snapshot -- this is meant to
-    be called at actual entry time (afternoon), potentially hours after
-    the scan that surfaced the candidate, so prices/strikes must be fresh.
-    """
-    try:
-        quote = _call_tt(["get_quote", "--symbol", symbol])
-        if not quote.get("ok"):
-            return {"ok": False, "error": quote.get("error", "get_quote failed")}
-        price = quote.get("price")
-        if price is None:
-            return {"ok": False, "error": "get_quote returned no price"}
-
-        chain_all = _call_tt(["get_option_chain", "--symbol", symbol])
-        if not chain_all.get("ok"):
-            return {"ok": False, "error": chain_all.get("error", "get_option_chain failed")}
-        expirations = sorted(date.fromisoformat(e) for e in chain_all["chain"].keys())
-        if not expirations:
-            return {"ok": False, "error": "no expirations in chain"}
-
-        from datetime import timedelta
-        reaction_date = earnings_date + timedelta(days=1) if earnings_timing == "After market close" else earnings_date
-        eligible = [e for e in expirations if e >= reaction_date]
-        if not eligible:
-            return {"ok": False, "error": f"no expiration on/after reaction date {reaction_date}"}
-        front_exp = min(eligible)
-
-        # Wide strike window: need both the ATM short strike and wings
-        # potentially far from it, unlike fetch_price_and_term_structure's
-        # narrow +/-3-strike window (which only needs the ATM point).
-        front_chain = _call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
-            "--include_quotes", "--strike_count", "40", "--around_price", str(price),
-        ])
-        if not front_chain.get("ok"):
-            return {"ok": False, "error": front_chain.get("error", "get_option_chain failed")}
-        entries = front_chain["chain"][str(front_exp)]
-
-        short_call = _atm_entry(entries, "call", price)
-        short_put = _atm_entry(entries, "put", price)
-        if short_call is None or short_put is None:
-            return {"ok": False, "error": "incomplete ATM strikes"}
-        if short_call.get("mid") is None or short_put.get("mid") is None:
-            return {"ok": False, "error": "no quote data for ATM strikes"}
-
-        short_strike = float(short_call["strike_price"])
-        straddle_credit = short_call["mid"] + short_put["mid"]
-        wing_width = config.get("wing_width_credit_multiple", 3.0) * straddle_credit
-
-        long_call = _nearest_strike_entry(entries, "call", short_strike + wing_width, short_strike)
-        long_put = _nearest_strike_entry(entries, "put", short_strike - wing_width, short_strike)
-        if long_call is None or long_put is None:
-            return {"ok": False, "error": "no valid wing strikes found"}
-        if long_call.get("mid") is None or long_put.get("mid") is None:
-            return {"ok": False, "error": "no quote data for wing strikes"}
-
-        net_credit = straddle_credit - long_call["mid"] - long_put["mid"]
-
-        order = {
-            "order_type": "Limit",
-            "time_in_force": "Day",
-            "price": round(net_credit, 2),
-            "price_effect": "Credit",
-            "legs": [
-                {"symbol": short_call["symbol"], "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1},
-                {"symbol": short_put["symbol"], "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1},
-                {"symbol": long_call["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
-                {"symbol": long_put["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
-            ],
-        }
-        return {
-            "ok": True,
-            "order": order,
-            "symbol": symbol,
-            "expiration": str(front_exp),
-            "underlying_price": price,
-            "short_strike": short_strike,
-            "long_call_strike": float(long_call["strike_price"]),
-            "long_put_strike": float(long_put["strike_price"]),
-            "wing_width_target": wing_width,
-            "credit": round(net_credit, 2),
-        }
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
-
-
-def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
-    """Live price + term structure/expected move (criteria #1, #4, #6) via tt.py.
-
-    `earnings_date`/`earnings_timing` pick the correct front-month: the
-    nearest expiration on or after the earnings *reaction* date (the day
-    the market can actually trade on the news -- the next trading day for
-    an "After market close" report, the report day itself for "Before
-    market open"). This must NOT be "nearest expiration to today" -- a
-    same-day 0DTE expiration having nothing to do with a multi-day-out
-    earnings event was caught live during testing (AAPL: front_exp
-    defaulted to today's 0DTE chain, producing a nonsensical positive
-    term-structure reading for a symbol that wasn't even an earnings
-    candidate on that date).
-
-    Returns {"ok": False, "error": ...} on any missing data (no credentials,
-    no chain, incomplete ATM strikes, no suitable back-month expiration)
-    rather than raising -- callers (cmd_get_candidates) treat that as
-    "insufficient data to verify these hard filters," not as a reason to
-    crash the whole scan. On success, returns {"ok": True, "criteria":
-    {"price": ..., "term_structure": ..., "expected_move_dollars": ...}}.
-    """
-    try:
-        quote = _call_tt(["get_quote", "--symbol", symbol])
-        if not quote.get("ok"):
-            return {"ok": False, "error": quote.get("error", "get_quote failed")}
-        price = quote.get("price")
-        if price is None:
-            return {"ok": False, "error": "get_quote returned no price"}
-
-        chain_all = _call_tt(["get_option_chain", "--symbol", symbol])
-        if not chain_all.get("ok"):
-            return {"ok": False, "error": chain_all.get("error", "get_option_chain failed")}
-        expirations = sorted(date.fromisoformat(e) for e in chain_all["chain"].keys())
-        if not expirations:
-            return {"ok": False, "error": "no expirations in chain"}
-
-        # Weekly-options detection: a name with only monthly cycles can still
-        # incidentally have its nearest monthly expiration fall inside the
-        # max_front_expiration_days window some weeks (by luck of the
-        # calendar), which would otherwise pass the generic expiration-window
-        # check without actually being a liquid, weekly-optioned name. Check
-        # the real cadence instead: at least one gap between consecutive
-        # expirations of <=10 days indicates weeklies exist.
-        has_weekly_options = any(
-            (expirations[i + 1] - expirations[i]).days <= 10
-            for i in range(len(expirations) - 1)
-        )
-
-        from datetime import timedelta
-        if earnings_timing == "After market close":
-            reaction_date = earnings_date + timedelta(days=1)
-        else:
-            reaction_date = earnings_date
-
-        eligible = [e for e in expirations if e >= reaction_date]
-        if not eligible:
-            return {"ok": False, "error": f"no expiration on/after reaction date {reaction_date}"}
-        front_exp = min(eligible)
-        back_candidates = [e for e in expirations if e > front_exp]
-        if not back_candidates:
-            return {"ok": False, "error": "no back-month expiration available for term structure"}
-        back_exp = min(back_candidates, key=lambda e: abs((e - front_exp).days - 30))
-
-        front_chain = _call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
-            "--include_greeks", "--include_quotes", "--strike_count", "3",
-            "--around_price", str(price),
-        ])
-        back_chain = _call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(back_exp),
-            "--include_greeks", "--strike_count", "3", "--around_price", str(price),
-        ])
-        if not front_chain.get("ok") or not back_chain.get("ok"):
-            return {"ok": False, "error": "front/back chain fetch failed"}
-
-        front_entries = front_chain["chain"][str(front_exp)]
-        back_entries = back_chain["chain"][str(back_exp)]
-        front_call = _atm_entry(front_entries, "call", price)
-        front_put = _atm_entry(front_entries, "put", price)
-        back_call = _atm_entry(back_entries, "call", price)
-        if front_call is None or front_put is None or back_call is None:
-            return {"ok": False, "error": "incomplete ATM strikes in front/back chain"}
-        if front_call.get("mid") is None or front_put.get("mid") is None:
-            return {"ok": False, "error": "no quote data for front-month ATM strikes"}
-        if front_call.get("iv") is None or back_call.get("iv") is None:
-            return {"ok": False, "error": "no greeks/iv data for front/back ATM strikes"}
-
-        # Combined OI (criterion #3) needs the whole front-month chain, not
-        # just the ATM window used for the straddle/IV calc above.
-        front_chain_oi = _call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
-            "--include_oi", "--strike_count", "999",
-        ])
-        combined_oi = None
-        if front_chain_oi.get("ok"):
-            oi_entries = front_chain_oi["chain"].get(str(front_exp), [])
-            ois = [e["open_interest"] for e in oi_entries if e.get("open_interest") is not None]
-            if ois:
-                combined_oi = sum(ois)
-
-        ts = compute_term_structure(
-            symbol=symbol,
-            underlying_price=price,
-            front_expiration=str(front_exp),
-            front_atm_call_mid=front_call["mid"],
-            front_atm_put_mid=front_put["mid"],
-            front_atm_iv=front_call["iv"],
-            back_expiration=str(back_exp),
-            back_atm_iv=back_call["iv"],
-        )
-        return {
-            "ok": True,
-            "criteria": {
-                "price": price,
-                "term_structure": ts.term_structure,
-                "expected_move_dollars": ts.expected_move,
-                "combined_open_interest": combined_oi,
-                "atm_delta_abs": abs(front_call["delta"]) if front_call.get("delta") is not None else None,
-                "front_expiration_days": (front_exp - date.today()).days,
-                "chain_complete": True,
-                "has_weekly_options": has_weekly_options,
-            },
-        }
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
-
-
-def apply_tiering(criteria: dict, config: dict) -> dict:
-    """Pure function -- no I/O. Applies docs/screening-criteria.md's hard
-    filters and near-miss bands to an already-computed criteria dict.
-    `criteria` keys are all optional; a missing/None value for any
-    criterion is treated as an unverified hard-filter failure, not a
-    silent pass -- see the winrate/IV-RV precedent of never defaulting an
-    unknown to "pass." A present-but-out-of-range value for
-    combined_open_interest/atm_delta_abs/front_expiration_days is a
-    distinct, correctly-labeled rejection reason, not just "_unverified"
-    (a real gap caught during testing: this function originally only
-    checked these three for None, never against their actual thresholds
-    in config, so an out-of-range chain would have passed silently).
-    """
-    hard_fail: list[str] = []
-
-    if criteria.get("price") is None:
-        hard_fail.append("price_unverified")
-    elif criteria["price"] < config["min_price"]:
-        hard_fail.append("price_below_minimum")
-
-    if criteria.get("term_structure") is None:
-        hard_fail.append("term_structure_unverified")
-    elif criteria["term_structure"] > config["min_term_structure"]:
-        hard_fail.append("term_structure_insufficient")
-
-    if criteria.get("expected_move_dollars") is None:
-        hard_fail.append("expected_move_unverified")
-    elif criteria["expected_move_dollars"] < config["min_expected_move_dollars"]:
-        hard_fail.append("expected_move_below_minimum")
-
-    if criteria.get("combined_open_interest") is None:
-        hard_fail.append("combined_open_interest_unverified")
-    elif criteria["combined_open_interest"] < config["min_combined_open_interest"]:
-        hard_fail.append("combined_open_interest_below_minimum")
-
-    if criteria.get("atm_delta_abs") is None:
-        hard_fail.append("atm_delta_abs_unverified")
-    elif criteria["atm_delta_abs"] > config["max_atm_delta_abs"]:
-        hard_fail.append("atm_delta_abs_above_maximum")
-
-    if criteria.get("front_expiration_days") is None:
-        hard_fail.append("front_expiration_days_unverified")
-    elif criteria["front_expiration_days"] > config["max_front_expiration_days"]:
-        hard_fail.append("front_expiration_days_too_far_out")
-
-    if not criteria.get("chain_complete"):
-        hard_fail.append("chain_complete_unverified")
-
-    if config.get("require_weekly_options", True):
-        if criteria.get("has_weekly_options") is None:
-            hard_fail.append("has_weekly_options_unverified")
-        elif not criteria["has_weekly_options"]:
-            hard_fail.append("no_weekly_options")
-
-    near_miss: list[str] = []
-
-    def _band(value, min_pass, min_near_miss, name):
-        if value is None:
-            near_miss.append(f"{name}_unknown")
-            return
-        if value >= min_pass:
-            return
-        if value >= min_near_miss:
-            near_miss.append(name)
-            return
-        hard_fail.append(f"{name}_below_near_miss")
-
-    _band(criteria.get("avg_volume"), config["min_avg_volume"], config["near_miss_min_avg_volume"], "avg_volume")
-    _band(criteria.get("iv_rv_ratio"), config["min_iv_rv_ratio"], config["near_miss_min_iv_rv_ratio"], "iv_rv_ratio")
-    _band(criteria.get("winrate"), config["min_winrate"], config["near_miss_min_winrate"], "winrate")
-
-    if hard_fail:
-        tier = "Reject"
-    elif not near_miss:
-        tier = "Tier 1"
-    elif len(near_miss) == 1:
-        tier = "Tier 2"
-    else:
-        tier = "Near Miss"
-
-    return {"tier": tier, "hard_fail_reasons": hard_fail, "near_miss_reasons": near_miss}
 
 
 def _shrunk_winrate(winrate: float | None, sample_size: int, target_sample: int = 8) -> float:
@@ -740,19 +377,19 @@ def _shrunk_winrate(winrate: float | None, sample_size: int, target_sample: int 
 
 
 def compute_composite_score(criteria: dict, winrate_sample_size: int = 0) -> float | None:
-    """Composite ranking score for a Tier 1/2 candidate, built entirely from
-    signals apply_tiering already required to be present to reach that tier
-    -- no new data, just combining what's already computed.
+    """Composite ranking score for a Tier 1/2 candidate, built from signals
+    common to any earnings-vol-selling strategy: term structure, IV/RV
+    ratio, winrate. No new data, just combining what a strategy's tiering
+    already required to be present.
 
-    Returns None if term_structure (the core signal) is missing; a
-    candidate can't be ranked without it. IV/RV ratio and winrate are
-    secondary confirmations of the same "is IV overpriced" question as
-    term structure, not independent signals, so they're applied as
-    multiplicative adjustments rather than summed as separate scores --
-    summing would let a strong term structure and a merely-neutral IV/RV
-    ratio look identical to two moderate signals combined, which isn't
-    the intent (a strong core signal should still rank higher than two
-    average ones).
+    Returns None if term_structure is missing; a candidate can't be ranked
+    without it. IV/RV ratio and winrate are secondary confirmations of the
+    same "is IV overpriced" question as term structure, not independent
+    signals, so they're applied as multiplicative adjustments rather than
+    summed as separate scores -- summing would let a strong term structure
+    and a merely-neutral IV/RV ratio look identical to two moderate
+    signals combined, which isn't the intent (a strong core signal should
+    still rank higher than two average ones).
     """
     ts = criteria.get("term_structure")
     if ts is None:
@@ -763,7 +400,7 @@ def compute_composite_score(criteria: dict, winrate_sample_size: int = 0) -> flo
 
 
 def rank_candidates(candidates: list[dict], config: dict) -> list[dict]:
-    """Rank Tier 1/2 candidates from get_candidates' output by
+    """Rank Tier 1/2 candidates from a strategy's get_candidates output by
     compute_composite_score, descending. Reject and Near Miss candidates
     are excluded entirely -- ranking within tiers they didn't clear would
     imply they're viable with enough of a score, which they aren't.
@@ -833,77 +470,6 @@ def cmd_get_calendar(args) -> dict:
     return {"ok": True, "date": args.date, "source": source, "tickers": rows}
 
 
-def cmd_get_candidates(args) -> dict:
-    """Full tiered scan for a date: pulls the calendar, then for each symbol
-    computes every criterion in docs/screening-criteria.md and tiers it via
-    apply_tiering(). Price/term-structure/expected-move (criteria #1/#4/#6)
-    require a live tastytrade session via tt.py (see `tt.py secrets_set`);
-    OI/ATM-delta/expiration-window (part of #2/#3/#5/#7) are not computed by
-    fetch_price_and_term_structure yet and always show up as `_unverified`.
-    Volume, IV/RV, and winrate (#8/#10/#9) are real, live DoltHub-backed
-    signals regardless of tt.py's credential status.
-    """
-    config = _load_config()
-    calendar = fetch_dolthub_calendar(args.date, config)
-    lookback = config.get("winrate_lookback_quarters", 8)
-
-    candidates = []
-    for entry in calendar:
-        symbol = entry["symbol"]
-        criteria: dict = {}
-
-        broker = fetch_price_and_term_structure(symbol, entry["date"], entry["timing"], config)
-        if broker.get("ok"):
-            criteria.update(broker["criteria"])
-        broker_error = None if broker.get("ok") else broker.get("error")
-
-        criteria["avg_volume"] = fetch_avg_volume(symbol, config)
-
-        ivrv = fetch_iv_rv_ratio(symbol, config)
-        criteria["iv_rv_ratio"] = ivrv["iv_rv_ratio"] if ivrv.get("ok") else None
-
-        winrate = compute_winrate(symbol, config, lookback)
-        criteria["winrate"] = winrate["winrate"]
-        winrate_sample_size = winrate["sample_size"]
-
-        tiering = apply_tiering(criteria, config)
-
-        candidates.append({
-            "symbol": symbol,
-            "earnings_timing": entry["timing"],
-            "tier": tiering["tier"],
-            "hard_fail_reasons": tiering["hard_fail_reasons"],
-            "near_miss_reasons": tiering["near_miss_reasons"],
-            "criteria": criteria,
-            "winrate_sample_size": winrate_sample_size,
-            "broker_data_error": broker_error,
-        })
-
-    candidates.sort(key=lambda c: {"Tier 1": 0, "Tier 2": 1, "Near Miss": 2, "Reject": 3}[c["tier"]])
-
-    ranked = rank_candidates(candidates, config)
-    selection = select_positions(ranked, config)
-
-    return {
-        "ok": True,
-        "date": args.date,
-        "candidates": candidates,
-        "ranked": ranked,
-        "selected": selection["selected"],
-        "skipped_for_selection": selection["skipped"],
-    }
-
-
-def cmd_get_order(args) -> dict:
-    config = _load_config()
-    return fetch_iron_fly_order(
-        args.symbol.strip().upper(),
-        date.fromisoformat(args.earnings_date),
-        args.earnings_timing,
-        config,
-    )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -918,21 +484,11 @@ def main() -> None:
     p_winrate.add_argument("--symbol", required=True)
     p_winrate.add_argument("--lookback_quarters", type=int, default=8)
 
-    p_cand = sub.add_parser("get_candidates")
-    p_cand.add_argument("--date", required=True)
-
-    p_order = sub.add_parser("get_order")
-    p_order.add_argument("--symbol", required=True)
-    p_order.add_argument("--earnings_date", required=True)
-    p_order.add_argument("--earnings_timing", required=True)
-
     args = parser.parse_args()
     dispatch = {
         "get_calendar": cmd_get_calendar,
         "get_iv_rv": cmd_get_iv_rv,
         "get_winrate": cmd_get_winrate,
-        "get_candidates": cmd_get_candidates,
-        "get_order": cmd_get_order,
     }
     result = dispatch[args.command](args)
     json.dump(result, sys.stdout, default=str)
