@@ -1,17 +1,20 @@
 """SQLite persistence for EarningsFlyAgent.
 
-Not yet implemented. Intended commands (see CLAUDE.md's Database section):
+Commands (see CLAUDE.md's Database section):
   init_db
   get_open_positions
-  save_trade --data '{...}'
-  save_close --data '{...}'
-  log_scan --data '{...}'
+  save_trade --data '{"order_id": "...", "symbol": "...", "expiration": "YYYY-MM-DD",
+      "short_strike": F, "long_call_strike": F, "long_put_strike": F, "entry_credit": F}'
+  save_close --data '{"order_id": "...", "exit_debit": F, "pnl": F}'
+  log_scan --data '{"scan_date": "YYYY-MM-DD", "symbol": "...", "tier": "...",
+      "outcome": "...", "reason": "..."}'
 """
 
 import argparse
 import json
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "earnings_trades.db"
@@ -50,8 +53,15 @@ CREATE TABLE IF NOT EXISTS daily_summary (
 """
 
 
-def cmd_init_db(args) -> dict:
+def _conn() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def cmd_init_db(args) -> dict:
+    conn = _conn()
     conn.executescript(_DDL)
     conn.commit()
     conn.close()
@@ -59,19 +69,100 @@ def cmd_init_db(args) -> dict:
 
 
 def cmd_get_open_positions(args) -> dict:
-    raise NotImplementedError
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM iron_fly_trades WHERE closed_at IS NULL ORDER BY opened_at"
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"ok": True, "positions": [dict(r) for r in rows]}
 
 
 def cmd_save_trade(args) -> dict:
-    raise NotImplementedError
+    spec = json.loads(args.data)
+    required = ("order_id", "symbol", "expiration")
+    missing = [k for k in required if not spec.get(k)]
+    if missing:
+        return {"ok": False, "error": f"missing required field(s): {', '.join(missing)}"}
+
+    conn = _conn()
+    try:
+        conn.execute(
+            "INSERT INTO iron_fly_trades "
+            "(order_id, symbol, expiration, short_strike, long_call_strike, "
+            " long_put_strike, entry_credit, opened_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                spec["order_id"],
+                spec["symbol"],
+                spec["expiration"],
+                spec.get("short_strike"),
+                spec.get("long_call_strike"),
+                spec.get("long_put_strike"),
+                spec.get("entry_credit"),
+                spec.get("opened_at", time.time()),
+            ),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        return {"ok": False, "error": f"save_trade failed: {exc}"}
+    finally:
+        conn.close()
+    return {"ok": True, "order_id": spec["order_id"]}
 
 
 def cmd_save_close(args) -> dict:
-    raise NotImplementedError
+    spec = json.loads(args.data)
+    order_id = spec.get("order_id")
+    if not order_id:
+        return {"ok": False, "error": "missing required field: order_id"}
+
+    conn = _conn()
+    try:
+        cur = conn.execute(
+            "UPDATE iron_fly_trades SET exit_debit = ?, pnl = ?, closed_at = ? "
+            "WHERE order_id = ?",
+            (
+                spec.get("exit_debit"),
+                spec.get("pnl"),
+                spec.get("closed_at", time.time()),
+                order_id,
+            ),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"ok": False, "error": f"no open trade found for order_id {order_id}"}
+    finally:
+        conn.close()
+    return {"ok": True, "order_id": order_id}
 
 
 def cmd_log_scan(args) -> dict:
-    raise NotImplementedError
+    spec = json.loads(args.data)
+    required = ("scan_date", "symbol")
+    missing = [k for k in required if not spec.get(k)]
+    if missing:
+        return {"ok": False, "error": f"missing required field(s): {', '.join(missing)}"}
+
+    conn = _conn()
+    try:
+        conn.execute(
+            "INSERT INTO scan_log (scan_date, symbol, tier, outcome, reason, logged_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                spec["scan_date"],
+                spec["symbol"],
+                spec.get("tier"),
+                spec.get("outcome"),
+                spec.get("reason"),
+                spec.get("logged_at", time.time()),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
 
 
 def main() -> None:
