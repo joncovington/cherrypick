@@ -1,13 +1,16 @@
 """Internal earnings-candidate scanner.
 
 Implements the hard filters and tiering in docs/screening-criteria.md.
-Term structure and expected move (criteria #4/#6) are computed live from
-tastytrade option chains via tt.py. The earnings calendar, IV/RV ratio
-(#10), and winrate backtest (#9) are all queried from three DoltHub
-datasets served by one locally-running `dolt sql-server --data-dir`:
-post-no-preference/earnings, post-no-preference/options, and
-post-no-preference/stocks. get_candidates (tying every signal together
-into a tiered scan across a day's calendar) is not implemented yet.
+get_candidates ties every signal together into a full tiered scan across
+a day's calendar. The earnings calendar, average volume (#8), IV/RV
+ratio (#10), and winrate backtest (#9) are all queried from three
+DoltHub datasets served by one locally-running `dolt sql-server
+--data-dir`: post-no-preference/earnings, post-no-preference/options,
+and post-no-preference/stocks -- all real and tested live. Price, term
+structure, expected move, OI, ATM delta, and expiration window (#1-#3,
+#5-#7) depend on tt.py's broker calls, not implemented yet -- every
+candidate currently rejects on those criteria specifically (see
+fetch_price_and_term_structure, apply_tiering).
 
 Intended commands (see CLAUDE.md's Tool Reference):
   get_calendar --date MM/DD/YYYY
@@ -334,6 +337,137 @@ def compute_winrate(symbol: str, config: dict, lookback_quarters: int = 8) -> di
     }
 
 
+def fetch_avg_volume(symbol: str, config: dict, days: int = 30) -> float | None:
+    """30-day average daily volume from stocks.ohlcv (screening criterion #8).
+    No broker dependency -- this is real trailing exchange volume, computable
+    entirely from the DoltHub stocks dataset already used for the winrate
+    backtest.
+    """
+    conn = _dolt_connect(config, config.get("dolthub_stocks_database", "stocks"))
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT AVG(volume) AS avg_volume FROM ("
+            "  SELECT volume FROM ohlcv WHERE act_symbol = %s "
+            "  ORDER BY date DESC LIMIT %s"
+            ") recent",
+            (symbol, days),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if row is None or row["avg_volume"] is None:
+        return None
+    return float(row["avg_volume"])
+
+
+def _call_tt(args_list: list[str]) -> dict:
+    """Shell out to tt.py, matching this project's documented CLI-tool
+    architecture (see CLAUDE.md's Tool Reference) rather than importing it,
+    so scanner.py stays decoupled from tt.py's broker/credential setup.
+    Raises RuntimeError with tt.py's own error text on any non-zero exit --
+    today that's always tt.py's own NotImplementedError, since the broker
+    side isn't wired up yet (see README's Status section).
+    """
+    import subprocess
+
+    tt_path = Path(__file__).resolve().parent / "tt.py"
+    result = subprocess.run(
+        [sys.executable, str(tt_path), *args_list],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"tt.py {' '.join(args_list)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}")
+    return json.loads(result.stdout)
+
+
+def fetch_price_and_term_structure(symbol: str, config: dict) -> dict:
+    """Live price + term structure/expected move (criteria #1, #4, #6) via tt.py.
+
+    Returns {"ok": False, "error": ...} rather than raising when tt.py's
+    broker calls aren't available yet -- callers (cmd_get_candidates) treat
+    that as "insufficient data to verify these hard filters," not as a
+    reason to crash the whole scan. On success, returns
+    {"ok": True, "criteria": {"price": ..., "term_structure": ...,
+    "expected_move_dollars": ...}} for cmd_get_candidates to merge in
+    directly.
+    """
+    try:
+        quote = _call_tt(["get_quote", "--symbol", symbol])
+        price = quote["price"]
+        # Front/back expiration selection and ATM straddle/IV extraction depend
+        # on tt.py get_option_chain's actual JSON shape, which doesn't exist
+        # yet (tt.py is still a stub -- see README). Once implemented, this
+        # should mirror fetch_atm_straddle_price's ATM-selection logic against
+        # live chain data for a front (nearest, post-earnings) and back
+        # (next monthly-ish) expiration, then call compute_term_structure()
+        # and populate term_structure/expected_move_dollars below from its
+        # .term_structure/.expected_move fields instead of raising.
+        raise NotImplementedError("tt.py get_option_chain is not implemented yet")
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def apply_tiering(criteria: dict, config: dict) -> dict:
+    """Pure function -- no I/O. Applies docs/screening-criteria.md's hard
+    filters and near-miss bands to an already-computed criteria dict.
+    `criteria` keys are all optional; a missing/None value for anything
+    that's not yet computable (today: price, term_structure, expected_move,
+    combined_open_interest, atm_delta_abs, front_expiration_days) is treated
+    as an unverified hard-filter failure, not a silent pass -- see the
+    winrate/IV-RV precedent of never defaulting an unknown to "pass."
+    """
+    hard_fail: list[str] = []
+
+    if criteria.get("price") is None:
+        hard_fail.append("price_unverified")
+    elif criteria["price"] < config["min_price"]:
+        hard_fail.append("price_below_minimum")
+
+    if criteria.get("term_structure") is None:
+        hard_fail.append("term_structure_unverified")
+    elif criteria["term_structure"] > config["min_term_structure"]:
+        hard_fail.append("term_structure_insufficient")
+
+    if criteria.get("expected_move_dollars") is None:
+        hard_fail.append("expected_move_unverified")
+    elif criteria["expected_move_dollars"] < config["min_expected_move_dollars"]:
+        hard_fail.append("expected_move_below_minimum")
+
+    for key in ("combined_open_interest", "atm_delta_abs", "front_expiration_days", "chain_complete"):
+        if criteria.get(key) is None:
+            hard_fail.append(f"{key}_unverified")
+
+    near_miss: list[str] = []
+
+    def _band(value, min_pass, min_near_miss, name):
+        if value is None:
+            near_miss.append(f"{name}_unknown")
+            return
+        if value >= min_pass:
+            return
+        if value >= min_near_miss:
+            near_miss.append(name)
+            return
+        hard_fail.append(f"{name}_below_near_miss")
+
+    _band(criteria.get("avg_volume"), config["min_avg_volume"], config["near_miss_min_avg_volume"], "avg_volume")
+    _band(criteria.get("iv_rv_ratio"), config["min_iv_rv_ratio"], config["near_miss_min_iv_rv_ratio"], "iv_rv_ratio")
+    _band(criteria.get("winrate"), config["min_winrate"], config["near_miss_min_winrate"], "winrate")
+
+    if hard_fail:
+        tier = "Reject"
+    elif not near_miss:
+        tier = "Tier 1"
+    elif len(near_miss) == 1:
+        tier = "Tier 2"
+    else:
+        tier = "Near Miss"
+
+    return {"tier": tier, "hard_fail_reasons": hard_fail, "near_miss_reasons": near_miss}
+
+
 def cmd_get_winrate(args) -> dict:
     config = _load_config()
     return compute_winrate(args.symbol.strip().upper(), config, args.lookback_quarters)
@@ -349,15 +483,54 @@ def cmd_get_calendar(args) -> dict:
 
 
 def cmd_get_candidates(args) -> dict:
-    raise NotImplementedError(
-        "for each symbol from get_calendar: pull front/back option chains via "
-        "tt.py get_option_chain --include_greeks, call compute_term_structure(), "
-        "call fetch_iv_rv_ratio() for criterion #10 and compute_winrate() for "
-        "criterion #9, filter all against docs/screening-criteria.md's "
-        "thresholds. Not implemented yet -- each signal works standalone "
-        "(see get_iv_rv/get_winrate) but nothing ties them together into a "
-        "tiered scan across the day's calendar."
-    )
+    """Full tiered scan for a date: pulls the calendar, then for each symbol
+    computes every criterion in docs/screening-criteria.md and tiers it via
+    apply_tiering(). Price/term-structure/expected-move (criteria #1/#4/#6)
+    depend on tt.py's broker calls, which are not implemented yet (see
+    README) -- every candidate will currently land in "Reject" with those
+    three criteria (plus OI/delta/expiration-window, also broker-dependent)
+    listed as `_unverified` in `hard_fail_reasons`, not silently passed.
+    Volume, IV/RV, and winrate (#8/#10/#9) are real, live DoltHub-backed
+    signals today and are reported accurately regardless of tt.py's status.
+    """
+    config = _load_config()
+    calendar = fetch_dolthub_calendar(args.date, config)
+    lookback = config.get("winrate_lookback_quarters", 8)
+
+    candidates = []
+    for entry in calendar:
+        symbol = entry["symbol"]
+        criteria: dict = {}
+
+        broker = fetch_price_and_term_structure(symbol, config)
+        if broker.get("ok"):
+            criteria.update(broker["criteria"])
+        broker_error = None if broker.get("ok") else broker.get("error")
+
+        criteria["avg_volume"] = fetch_avg_volume(symbol, config)
+
+        ivrv = fetch_iv_rv_ratio(symbol, config)
+        criteria["iv_rv_ratio"] = ivrv["iv_rv_ratio"] if ivrv.get("ok") else None
+
+        winrate = compute_winrate(symbol, config, lookback)
+        criteria["winrate"] = winrate["winrate"]
+        winrate_sample_size = winrate["sample_size"]
+
+        tiering = apply_tiering(criteria, config)
+
+        candidates.append({
+            "symbol": symbol,
+            "earnings_timing": entry["timing"],
+            "tier": tiering["tier"],
+            "hard_fail_reasons": tiering["hard_fail_reasons"],
+            "near_miss_reasons": tiering["near_miss_reasons"],
+            "criteria": criteria,
+            "winrate_sample_size": winrate_sample_size,
+            "broker_data_error": broker_error,
+        })
+
+    candidates.sort(key=lambda c: {"Tier 1": 0, "Tier 2": 1, "Near Miss": 2, "Reject": 3}[c["tier"]])
+    return {"ok": True, "date": args.date, "candidates": candidates}
 
 
 def main() -> None:
