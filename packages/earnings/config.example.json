@@ -51,7 +51,14 @@
       "wing_width_multiple_mid": 3.0,
       "wing_width_multiple_high": 3.5,
       "wing_width_band_low_max": 1.25,
-      "wing_width_band_mid_max": 1.75
+      "wing_width_band_mid_max": 1.75,
+
+      "_liquidity_note": "Shared liquidity gates (scanner.py's apply_liquidity_gates) -- reasoned starting points, not backtested for this strategy. max_bid_ask_spread_pct at 15% of mid is generous enough not to reject normal earnings-week widening but catches genuinely illiquid chains. min_market_cap at $2B (mid-cap floor) favors names liquid enough that options market-makers stay engaged around an earnings event. min_combined_option_volume (front-month chain-wide daily contract volume, same scope as min_combined_open_interest) is a conservative starting floor.",
+      "max_bid_ask_spread_pct": 0.15,
+      "min_market_cap": 2000000000,
+      "near_miss_min_market_cap": 1000000000,
+      "min_combined_option_volume": 500,
+      "near_miss_min_combined_option_volume": 200
     },
 
     "double_calendar": {
@@ -62,6 +69,7 @@
       "min_expected_move_pct": 0.05,
       "min_combined_open_interest": 2000,
       "back_month_min_days_after": 21,
+      "require_weekly_options": true,
 
       "min_avg_volume": 3000000,
       "near_miss_min_avg_volume": 1500000,
@@ -78,7 +86,13 @@
       "profit_target_pct": 0.25,
       "stop_loss_pct_of_debit": 1.0,
       "leg_stop_delta_abs": 0.45,
-      "exit_days_before_front_expiration": 5
+      "exit_days_before_front_expiration": 5,
+
+      "max_bid_ask_spread_pct": 0.15,
+      "min_market_cap": 2000000000,
+      "near_miss_min_market_cap": 1000000000,
+      "min_combined_option_volume": 500,
+      "near_miss_min_combined_option_volume": 200
     }
   }
 }

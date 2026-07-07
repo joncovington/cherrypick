@@ -18,7 +18,7 @@ Commands (see CLAUDE.md's Tool Reference):
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import date as _date, datetime, timedelta
 from pathlib import Path
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
@@ -335,6 +335,232 @@ def call_tt(args_list: list[str]) -> dict:
     return json.loads(result.stdout)
 
 
+def has_weekly_options(expirations: list) -> bool:
+    """True if `expirations` (need not be sorted) shows at least one gap of
+    <=10 days between consecutive dates -- a name with only monthly cycles
+    can still incidentally have its nearest monthly expiration fall inside
+    a strategy's front-expiration-window filter some weeks (by luck of the
+    calendar), which would otherwise pass a generic expiration-window check
+    without actually being a liquid, weekly-optioned name. Shared by every
+    strategy that wants a genuine weekly-cadence requirement, not just
+    "some expiration happens to be close."
+    """
+    exps = sorted(expirations)
+    return any((exps[i + 1] - exps[i]).days <= 10 for i in range(len(exps) - 1))
+
+
+def reaction_date(earnings_date, earnings_timing: str):
+    """The day the market can actually trade on an earnings print: the next
+    trading day for an "After market close" report, the report day itself
+    for "Before market open". NOT "nearest expiration to today" -- a
+    same-day 0DTE expiration having nothing to do with a multi-day-out
+    earnings event was a real bug caught live during iron_fly.py's testing.
+    """
+    return earnings_date + timedelta(days=1) if earnings_timing == "After market close" else earnings_date
+
+
+def select_front_expiration(expirations: list, earnings_date, earnings_timing: str):
+    """Nearest expiration on or after the earnings reaction date. Returns
+    (front_expiration, None) on success or (None, error_message) so callers
+    can return {"ok": False, "error": ...} without re-deriving the message.
+    """
+    rd = reaction_date(earnings_date, earnings_timing)
+    eligible = [e for e in expirations if e >= rd]
+    if not eligible:
+        return None, f"no expiration on/after reaction date {rd}"
+    return min(eligible), None
+
+
+def select_back_expiration(expirations: list, front_expiration, min_days_after: int):
+    """Nearest genuine monthly-cycle expiration at least `min_days_after`
+    days after `front_expiration` (documented convention for real
+    term-structure separation, not just "some later date"); falls back to
+    the nearest expiration at least that many days out if this name has no
+    monthly listing in the fetched window, rather than failing outright.
+    """
+    back_exp = nearest_expiration_at_least_days_after(expirations, front_expiration, min_days_after, monthly_only=True)
+    if back_exp is None:
+        back_exp = nearest_expiration_at_least_days_after(expirations, front_expiration, min_days_after, monthly_only=False)
+    return back_exp
+
+
+def fetch_quote_and_expirations(symbol: str) -> dict:
+    """Live underlying price + this symbol's full set of listed expirations,
+    via tt.py. The shared preamble every strategy's scan-side and
+    order-builder functions need before picking a front/back expiration.
+    Returns {"ok": False, "error": ...} on any missing data rather than
+    raising.
+    """
+    quote = call_tt(["get_quote", "--symbol", symbol])
+    if not quote.get("ok"):
+        return {"ok": False, "error": quote.get("error", "get_quote failed")}
+    price = quote.get("price")
+    if price is None:
+        return {"ok": False, "error": "get_quote returned no price"}
+
+    chain_all = call_tt(["get_option_chain", "--symbol", symbol])
+    if not chain_all.get("ok"):
+        return {"ok": False, "error": chain_all.get("error", "get_option_chain failed")}
+    expirations = sorted(_date.fromisoformat(e) for e in chain_all["chain"].keys())
+    if not expirations:
+        return {"ok": False, "error": "no expirations in chain"}
+
+    return {"ok": True, "price": price, "expirations": expirations}
+
+
+def fetch_front_back_atm_entries(symbol: str, front_expiration, back_expiration, price: float) -> dict:
+    """Narrow (+/-3 strike) front/back-month chain fetch + ATM call/put/call
+    lookups needed for a term-structure/expected-move calculation. Shared by
+    every strategy that computes expected move off a front-month ATM
+    straddle and compares it against a back-month IV. Returns
+    {"ok": True, "front_call": ..., "front_put": ..., "back_call": ...} or
+    an error dict.
+    """
+    front_chain = call_tt([
+        "get_option_chain", "--symbol", symbol, "--expiration", str(front_expiration),
+        "--include_greeks", "--include_quotes", "--strike_count", "3",
+        "--around_price", str(price),
+    ])
+    back_chain = call_tt([
+        "get_option_chain", "--symbol", symbol, "--expiration", str(back_expiration),
+        "--include_greeks", "--strike_count", "3", "--around_price", str(price),
+    ])
+    if not front_chain.get("ok") or not back_chain.get("ok"):
+        return {"ok": False, "error": "front/back chain fetch failed"}
+
+    front_entries = front_chain["chain"][str(front_expiration)]
+    back_entries = back_chain["chain"][str(back_expiration)]
+    front_call = atm_entry(front_entries, "call", price)
+    front_put = atm_entry(front_entries, "put", price)
+    back_call = atm_entry(back_entries, "call", price)
+    if front_call is None or front_put is None or back_call is None:
+        return {"ok": False, "error": "incomplete ATM strikes in front/back chain"}
+    if front_call.get("mid") is None or front_put.get("mid") is None:
+        return {"ok": False, "error": "no quote data for front-month ATM strikes"}
+    if front_call.get("iv") is None or back_call.get("iv") is None:
+        return {"ok": False, "error": "no greeks/iv data for front/back ATM strikes"}
+
+    return {"ok": True, "front_call": front_call, "front_put": front_put, "back_call": back_call}
+
+
+def compute_expected_move_and_term_structure(front_call_mid: float, front_put_mid: float, front_iv: float, back_iv: float, underlying_price: float) -> dict:
+    """Pure calculation, no I/O. Term structure mirrors EarningsEdgeDetection's
+    convention: negative values mean the front-month is richer than the
+    back-month (the earnings-event IV premium the trade is designed to
+    capture) -- (back_iv - front_iv) / back_iv, NOT (front - back) / back,
+    which is backwards from docs/screening-criteria.md's -0.004 threshold
+    (caught live during iron_fly.py's testing: the naive formula would have
+    rejected a real earnings candidate whose front IV was ~64% richer than
+    back). expected_move applies the standard 0.85x straddle-to-expected-
+    move correction (e.g. AAPL $14.00 straddle -> $11.90 expected move) --
+    this only affects screening thresholds, not wing/strike sizing, which
+    each strategy's order-builder computes independently from its own
+    freshly-fetched straddle/strike prices.
+    """
+    term_structure = (back_iv - front_iv) / back_iv
+    expected_move = 0.85 * (front_call_mid + front_put_mid)
+    return {
+        "term_structure": term_structure,
+        "expected_move_dollars": expected_move,
+        "expected_move_pct": expected_move / underlying_price,
+    }
+
+
+def fetch_liquidity_criteria(symbol: str, front_expiration, expirations: list, front_call: dict, front_put: dict) -> dict:
+    """Shared liquidity signals every earnings strategy should screen on:
+    bid/ask spread width at the front-month ATM strikes, weekly-vs-monthly
+    expiration cadence, market cap, and front-month chain-wide combined
+    open interest + combined daily option volume. One network round trip
+    (OI + volume together) instead of each strategy fetching its own OI-only
+    chain separately -- previously duplicated per strategy. Any individual
+    signal that can't be fetched/computed comes back None (never guessed),
+    matching this project's existing "unverified is a hard-fail, not a
+    silent pass" discipline -- enforced by the caller's apply_liquidity_gates,
+    not here.
+    """
+    spread_pct = None
+    if (
+        all(front_call.get(k) is not None for k in ("bid", "ask", "mid")) and front_call["mid"]
+        and all(front_put.get(k) is not None for k in ("bid", "ask", "mid")) and front_put["mid"]
+    ):
+        spread_pct = max(
+            (front_call["ask"] - front_call["bid"]) / front_call["mid"],
+            (front_put["ask"] - front_put["bid"]) / front_put["mid"],
+        )
+
+    market_cap = None
+    mc = call_tt(["get_market_metrics", "--symbol", symbol])
+    if mc.get("ok"):
+        market_cap = mc.get("market_cap")
+
+    combined_open_interest = None
+    combined_option_volume = None
+    chain = call_tt([
+        "get_option_chain", "--symbol", symbol, "--expiration", str(front_expiration),
+        "--include_oi", "--include_volume", "--strike_count", "999",
+    ])
+    if chain.get("ok"):
+        entries = chain["chain"].get(str(front_expiration), [])
+        ois = [e["open_interest"] for e in entries if e.get("open_interest") is not None]
+        vols = [e["day_volume"] for e in entries if e.get("day_volume") is not None]
+        if ois:
+            combined_open_interest = sum(ois)
+        if vols:
+            combined_option_volume = sum(vols)
+
+    return {
+        "bid_ask_spread_pct": spread_pct,
+        "has_weekly_options": has_weekly_options(expirations),
+        "market_cap": market_cap,
+        "combined_open_interest": combined_open_interest,
+        "combined_option_volume": combined_option_volume,
+    }
+
+
+def _band(value, min_pass, min_near_miss, name: str, near_miss: list, hard_fail: list) -> None:
+    """Shared near-miss banding: value >= min_pass passes silently, value in
+    [min_near_miss, min_pass) is a near-miss (Tier 2 candidate), below
+    min_near_miss is a hard fail, missing entirely is also a near-miss
+    (unverified, not an automatic pass). Mutates `near_miss`/`hard_fail` in
+    place, matching the list-building style already used throughout every
+    strategy's apply_tiering.
+    """
+    if value is None:
+        near_miss.append(f"{name}_unknown")
+        return
+    if value >= min_pass:
+        return
+    if value >= min_near_miss:
+        near_miss.append(name)
+        return
+    hard_fail.append(f"{name}_below_near_miss")
+
+
+def apply_liquidity_gates(criteria: dict, config: dict, hard_fail: list, near_miss: list) -> None:
+    """Shared liquidity hard-filters/near-miss bands, applied identically by
+    every earnings strategy's apply_tiering. `config` is the calling
+    strategy's own sub-config. Mutates `hard_fail`/`near_miss` in place.
+    """
+    if criteria.get("combined_open_interest") is None:
+        hard_fail.append("combined_open_interest_unverified")
+    elif criteria["combined_open_interest"] < config["min_combined_open_interest"]:
+        hard_fail.append("combined_open_interest_below_minimum")
+
+    if criteria.get("bid_ask_spread_pct") is None:
+        hard_fail.append("bid_ask_spread_pct_unverified")
+    elif criteria["bid_ask_spread_pct"] > config["max_bid_ask_spread_pct"]:
+        hard_fail.append("bid_ask_spread_too_wide")
+
+    if config.get("require_weekly_options", True):
+        if criteria.get("has_weekly_options") is None:
+            hard_fail.append("has_weekly_options_unverified")
+        elif not criteria["has_weekly_options"]:
+            hard_fail.append("no_weekly_options")
+
+    _band(criteria.get("market_cap"), config["min_market_cap"], config["near_miss_min_market_cap"], "market_cap", near_miss, hard_fail)
+    _band(criteria.get("combined_option_volume"), config["min_combined_option_volume"], config["near_miss_min_combined_option_volume"], "combined_option_volume", near_miss, hard_fail)
+
+
 def is_monthly_expiration(d) -> bool:
     """True if `d` is a standard monthly options expiration (the third
     Friday of its month). Used to distinguish "true" monthly cycles from
@@ -478,6 +704,104 @@ def select_positions(ranked: list[dict], config: dict) -> dict:
             used_groups.add(group)
 
     return {"selected": selected, "skipped": skipped}
+
+
+def run_candidate_scan(args_date: str, config: dict, fetch_criteria_fn, apply_tiering_fn, strategy_config: dict, extra_criteria_fn=None) -> dict:
+    """Shared cmd_get_candidates body: calendar fetch, per-symbol criteria
+    (strategy-specific fetch_criteria_fn plus the common avg_volume/
+    iv_rv_ratio/winrate signals), tiering, ranking, and position selection.
+    Every earnings strategy's cmd_get_candidates is a thin wrapper around
+    this -- only the strategy-specific fetch/tiering functions differ.
+
+    `extra_criteria_fn(symbol, config, lookback, criteria)`, if given, is
+    called after the common signals are populated and may mutate `criteria`
+    in place (e.g. double_calendar's realized_move_dispersion step) --
+    the one genuine per-strategy addition inside an otherwise identical loop.
+    """
+    iso_date = datetime.strptime(args_date, "%m/%d/%Y").strftime("%Y-%m-%d")
+    calendar = fetch_dolthub_calendar(iso_date, config)
+    lookback = config.get("winrate_lookback_quarters", 8)
+
+    candidates = []
+    for entry in calendar:
+        symbol = entry["symbol"]
+        criteria: dict = {}
+
+        broker = fetch_criteria_fn(symbol, entry["date"], entry["timing"], config)
+        if broker.get("ok"):
+            criteria.update(broker["criteria"])
+        broker_error = None if broker.get("ok") else broker.get("error")
+
+        criteria["avg_volume"] = fetch_avg_volume(symbol, config)
+
+        ivrv = fetch_iv_rv_ratio(symbol, config)
+        criteria["iv_rv_ratio"] = ivrv["iv_rv_ratio"] if ivrv.get("ok") else None
+
+        winrate = compute_winrate(symbol, config, lookback)
+        criteria["winrate"] = winrate["winrate"]
+        winrate_sample_size = winrate["sample_size"]
+
+        if extra_criteria_fn is not None:
+            extra_criteria_fn(symbol, config, lookback, criteria)
+
+        tiering = apply_tiering_fn(criteria, strategy_config)
+
+        candidates.append({
+            "symbol": symbol,
+            "earnings_timing": entry["timing"],
+            "tier": tiering["tier"],
+            "hard_fail_reasons": tiering["hard_fail_reasons"],
+            "near_miss_reasons": tiering["near_miss_reasons"],
+            "criteria": criteria,
+            "winrate_sample_size": winrate_sample_size,
+            "broker_data_error": broker_error,
+        })
+
+    candidates.sort(key=lambda c: {"Tier 1": 0, "Tier 2": 1, "Near Miss": 2, "Reject": 3}[c["tier"]])
+
+    ranked = rank_candidates(candidates, config)
+    selection = select_positions(ranked, config)
+
+    return {
+        "ok": True,
+        "date": args_date,
+        "candidates": candidates,
+        "ranked": ranked,
+        "selected": selection["selected"],
+        "skipped_for_selection": selection["skipped"],
+    }
+
+
+def run_strategy_main(cmd_get_candidates_fn, fetch_order_fn) -> None:
+    """Shared main()/argparse/dispatch scaffolding, byte-identical across
+    every strategy file before this consolidation. `fetch_order_fn` is the
+    strategy's own order-builder (e.g. fetch_iron_fly_order), called
+    directly here instead of each file keeping its own three-line
+    cmd_get_order wrapper.
+    """
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_cand = sub.add_parser("get_candidates")
+    p_cand.add_argument("--date", required=True)
+
+    p_order = sub.add_parser("get_order")
+    p_order.add_argument("--symbol", required=True)
+    p_order.add_argument("--earnings_date", required=True)
+    p_order.add_argument("--earnings_timing", required=True)
+
+    args = parser.parse_args()
+    if args.command == "get_candidates":
+        result = cmd_get_candidates_fn(args)
+    else:
+        config = _load_config()
+        result = fetch_order_fn(
+            args.symbol.strip().upper(),
+            _date.fromisoformat(args.earnings_date),
+            args.earnings_timing,
+            config,
+        )
+    json.dump(result, sys.stdout, default=str)
 
 
 def cmd_get_winrate(args) -> dict:

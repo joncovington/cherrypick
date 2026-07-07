@@ -32,11 +32,9 @@ Commands (see CLAUDE.md's Tool Reference):
   get_order --symbol X --earnings_date YYYY-MM-DD --earnings_timing "..."
 """
 
-import argparse
-import json
 import os
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -79,92 +77,49 @@ def realized_move_dispersion(symbol: str, config: dict, lookback_quarters: int =
 
 def fetch_price_and_expected_move(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
     """Live price, term structure, and expected move for double-calendar
-    screening. Mirrors iron_fly.py's fetch_price_and_term_structure but
-    reuses scanner.nearest_expiration_at_least_days_after for back-month
-    selection (a genuine monthly cycle >=21 days out, per documented
-    double-calendar convention) rather than iron_fly's own "nearest to
-    +30 days" comparison-only back-month.
+    screening, via scanner.py's shared helpers. Mirrors iron_fly.py's
+    fetch_price_and_term_structure but reads this strategy's own
+    back_month_min_days_after for back-month selection (a genuine monthly
+    cycle, per documented double-calendar convention) rather than
+    iron_fly's fixed 21-day comparison-only back-month.
 
     Returns {"ok": False, "error": ...} on any missing data rather than
     raising -- same discipline as iron_fly.py.
     """
     try:
-        quote = scanner.call_tt(["get_quote", "--symbol", symbol])
-        if not quote.get("ok"):
-            return {"ok": False, "error": quote.get("error", "get_quote failed")}
-        price = quote.get("price")
-        if price is None:
-            return {"ok": False, "error": "get_quote returned no price"}
+        qe = scanner.fetch_quote_and_expirations(symbol)
+        if not qe.get("ok"):
+            return qe
+        price, expirations = qe["price"], qe["expirations"]
 
-        chain_all = scanner.call_tt(["get_option_chain", "--symbol", symbol])
-        if not chain_all.get("ok"):
-            return {"ok": False, "error": chain_all.get("error", "get_option_chain failed")}
-        expirations = sorted(date.fromisoformat(e) for e in chain_all["chain"].keys())
-        if not expirations:
-            return {"ok": False, "error": "no expirations in chain"}
-
-        reaction_date = earnings_date + timedelta(days=1) if earnings_timing == "After market close" else earnings_date
-        eligible = [e for e in expirations if e >= reaction_date]
-        if not eligible:
-            return {"ok": False, "error": f"no expiration on/after reaction date {reaction_date}"}
-        front_exp = min(eligible)
+        front_exp, err = scanner.select_front_expiration(expirations, earnings_date, earnings_timing)
+        if front_exp is None:
+            return {"ok": False, "error": err}
 
         min_days = config.get("back_month_min_days_after", 21)
-        back_exp = scanner.nearest_expiration_at_least_days_after(expirations, front_exp, min_days, monthly_only=True)
-        if back_exp is None:
-            back_exp = scanner.nearest_expiration_at_least_days_after(expirations, front_exp, min_days, monthly_only=False)
+        back_exp = scanner.select_back_expiration(expirations, front_exp, min_days)
         if back_exp is None:
             return {"ok": False, "error": f"no monthly (or any) back-month expiration >={min_days} days after front"}
 
-        front_chain = scanner.call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
-            "--include_greeks", "--include_quotes", "--strike_count", "3",
-            "--around_price", str(price),
-        ])
-        back_chain = scanner.call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(back_exp),
-            "--include_greeks", "--strike_count", "3", "--around_price", str(price),
-        ])
-        if not front_chain.get("ok") or not back_chain.get("ok"):
-            return {"ok": False, "error": "front/back chain fetch failed"}
+        atm = scanner.fetch_front_back_atm_entries(symbol, front_exp, back_exp, price)
+        if not atm.get("ok"):
+            return atm
+        front_call, front_put, back_call = atm["front_call"], atm["front_put"], atm["back_call"]
 
-        front_entries = front_chain["chain"][str(front_exp)]
-        back_entries = back_chain["chain"][str(back_exp)]
-        front_call = scanner.atm_entry(front_entries, "call", price)
-        front_put = scanner.atm_entry(front_entries, "put", price)
-        back_call = scanner.atm_entry(back_entries, "call", price)
-        if front_call is None or front_put is None or back_call is None:
-            return {"ok": False, "error": "incomplete ATM strikes in front/back chain"}
-        if front_call.get("mid") is None or front_put.get("mid") is None:
-            return {"ok": False, "error": "no quote data for front-month ATM strikes"}
-        if front_call.get("iv") is None or back_call.get("iv") is None:
-            return {"ok": False, "error": "no greeks/iv data for front/back ATM strikes"}
-
-        term_structure = (back_call["iv"] - front_call["iv"]) / back_call["iv"]
-        # Standard 0.85x straddle-to-expected-move correction, same
-        # documented convention used in iron_fly.py's compute_term_structure.
-        expected_move = 0.85 * (front_call["mid"] + front_put["mid"])
-
-        front_chain_oi = scanner.call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
-            "--include_oi", "--strike_count", "999",
-        ])
-        combined_oi = None
-        if front_chain_oi.get("ok"):
-            oi_entries = front_chain_oi["chain"].get(str(front_exp), [])
-            ois = [e["open_interest"] for e in oi_entries if e.get("open_interest") is not None]
-            if ois:
-                combined_oi = sum(ois)
+        ts = scanner.compute_expected_move_and_term_structure(
+            front_call["mid"], front_put["mid"], front_call["iv"], back_call["iv"], price,
+        )
+        liquidity = scanner.fetch_liquidity_criteria(symbol, front_exp, expirations, front_call, front_put)
 
         return {
             "ok": True,
             "criteria": {
                 "price": price,
-                "term_structure": term_structure,
-                "expected_move_dollars": expected_move,
-                "expected_move_pct": expected_move / price,
-                "combined_open_interest": combined_oi,
+                "term_structure": ts["term_structure"],
+                "expected_move_dollars": ts["expected_move_dollars"],
+                "expected_move_pct": ts["expected_move_pct"],
                 "chain_complete": True,
+                **liquidity,
             },
         }
     except Exception as exc:
@@ -197,11 +152,6 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
     elif criteria["expected_move_pct"] < config["min_expected_move_pct"]:
         hard_fail.append("expected_move_pct_below_minimum")
 
-    if criteria.get("combined_open_interest") is None:
-        hard_fail.append("combined_open_interest_unverified")
-    elif criteria["combined_open_interest"] < config["min_combined_open_interest"]:
-        hard_fail.append("combined_open_interest_below_minimum")
-
     if not criteria.get("chain_complete"):
         hard_fail.append("chain_complete_unverified")
 
@@ -211,20 +161,10 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
 
     near_miss: list[str] = []
 
-    def _band(value, min_pass, min_near_miss, name):
-        if value is None:
-            near_miss.append(f"{name}_unknown")
-            return
-        if value >= min_pass:
-            return
-        if value >= min_near_miss:
-            near_miss.append(name)
-            return
-        hard_fail.append(f"{name}_below_near_miss")
-
-    _band(criteria.get("avg_volume"), config["min_avg_volume"], config["near_miss_min_avg_volume"], "avg_volume")
-    _band(criteria.get("iv_rv_ratio"), config["min_iv_rv_ratio"], config["near_miss_min_iv_rv_ratio"], "iv_rv_ratio")
-    _band(criteria.get("winrate"), config["min_winrate"], config["near_miss_min_winrate"], "winrate")
+    scanner.apply_liquidity_gates(criteria, config, hard_fail, near_miss)
+    scanner._band(criteria.get("avg_volume"), config["min_avg_volume"], config["near_miss_min_avg_volume"], "avg_volume", near_miss, hard_fail)
+    scanner._band(criteria.get("iv_rv_ratio"), config["min_iv_rv_ratio"], config["near_miss_min_iv_rv_ratio"], "iv_rv_ratio", near_miss, hard_fail)
+    scanner._band(criteria.get("winrate"), config["min_winrate"], config["near_miss_min_winrate"], "winrate", near_miss, hard_fail)
 
     if hard_fail:
         tier = "Reject"
@@ -251,30 +191,17 @@ def fetch_double_calendar_order(symbol: str, earnings_date: date, earnings_timin
     """
     config = _strategy_config(full_config)
     try:
-        quote = scanner.call_tt(["get_quote", "--symbol", symbol])
-        if not quote.get("ok"):
-            return {"ok": False, "error": quote.get("error", "get_quote failed")}
-        price = quote.get("price")
-        if price is None:
-            return {"ok": False, "error": "get_quote returned no price"}
+        qe = scanner.fetch_quote_and_expirations(symbol)
+        if not qe.get("ok"):
+            return qe
+        price, expirations = qe["price"], qe["expirations"]
 
-        chain_all = scanner.call_tt(["get_option_chain", "--symbol", symbol])
-        if not chain_all.get("ok"):
-            return {"ok": False, "error": chain_all.get("error", "get_option_chain failed")}
-        expirations = sorted(date.fromisoformat(e) for e in chain_all["chain"].keys())
-        if not expirations:
-            return {"ok": False, "error": "no expirations in chain"}
-
-        reaction_date = earnings_date + timedelta(days=1) if earnings_timing == "After market close" else earnings_date
-        eligible = [e for e in expirations if e >= reaction_date]
-        if not eligible:
-            return {"ok": False, "error": f"no expiration on/after reaction date {reaction_date}"}
-        front_exp = min(eligible)
+        front_exp, err = scanner.select_front_expiration(expirations, earnings_date, earnings_timing)
+        if front_exp is None:
+            return {"ok": False, "error": err}
 
         min_days = config.get("back_month_min_days_after", 21)
-        back_exp = scanner.nearest_expiration_at_least_days_after(expirations, front_exp, min_days, monthly_only=True)
-        if back_exp is None:
-            back_exp = scanner.nearest_expiration_at_least_days_after(expirations, front_exp, min_days, monthly_only=False)
+        back_exp = scanner.select_back_expiration(expirations, front_exp, min_days)
         if back_exp is None:
             return {"ok": False, "error": f"no monthly (or any) back-month expiration >={min_days} days after front"}
 
@@ -463,100 +390,31 @@ def evaluate_position(
     return {"action": "hold"}
 
 
+def _add_dispersion(symbol: str, config: dict, lookback: int, criteria: dict) -> None:
+    """extra_criteria_fn hook for scanner.run_candidate_scan -- the one
+    genuine per-strategy addition inside the otherwise shared candidate loop.
+    """
+    dispersion = realized_move_dispersion(symbol, config, lookback)
+    if dispersion.get("ok"):
+        criteria["realized_move_dispersion_pct"] = dispersion["realized_move_dispersion_pct"]
+
+
 def cmd_get_candidates(args) -> dict:
     """Full tiered scan for a date, mirroring iron_fly.py's cmd_get_candidates
     but with this strategy's own screening: stricter volume floor, a
     relative expected-move-percentage floor instead of a dollar one, and
     (when available) a realized-move-dispersion check, since a single
     tail-risk surprise hurts this debit strategy more than the iron fly's
-    width-defined max loss.
+    width-defined max loss. Thin wrapper around scanner.run_candidate_scan --
+    shared with every other strategy's cmd_get_candidates.
     """
     config = scanner._load_config()
     strategy_config = _strategy_config(config)
-    iso_date = datetime.strptime(args.date, "%m/%d/%Y").strftime("%Y-%m-%d")
-    calendar = scanner.fetch_dolthub_calendar(iso_date, config)
-    lookback = config.get("winrate_lookback_quarters", 8)
-
-    candidates = []
-    for entry in calendar:
-        symbol = entry["symbol"]
-        criteria: dict = {}
-
-        broker = fetch_price_and_expected_move(symbol, entry["date"], entry["timing"], config)
-        if broker.get("ok"):
-            criteria.update(broker["criteria"])
-        broker_error = None if broker.get("ok") else broker.get("error")
-
-        criteria["avg_volume"] = scanner.fetch_avg_volume(symbol, config)
-
-        ivrv = scanner.fetch_iv_rv_ratio(symbol, config)
-        criteria["iv_rv_ratio"] = ivrv["iv_rv_ratio"] if ivrv.get("ok") else None
-
-        winrate = scanner.compute_winrate(symbol, config, lookback)
-        criteria["winrate"] = winrate["winrate"]
-        winrate_sample_size = winrate["sample_size"]
-
-        dispersion = realized_move_dispersion(symbol, config, lookback)
-        if dispersion.get("ok"):
-            criteria["realized_move_dispersion_pct"] = dispersion["realized_move_dispersion_pct"]
-
-        tiering = apply_tiering(criteria, strategy_config)
-
-        candidates.append({
-            "symbol": symbol,
-            "earnings_timing": entry["timing"],
-            "tier": tiering["tier"],
-            "hard_fail_reasons": tiering["hard_fail_reasons"],
-            "near_miss_reasons": tiering["near_miss_reasons"],
-            "criteria": criteria,
-            "winrate_sample_size": winrate_sample_size,
-            "broker_data_error": broker_error,
-        })
-
-    candidates.sort(key=lambda c: {"Tier 1": 0, "Tier 2": 1, "Near Miss": 2, "Reject": 3}[c["tier"]])
-
-    ranked = scanner.rank_candidates(candidates, config)
-    selection = scanner.select_positions(ranked, config)
-
-    return {
-        "ok": True,
-        "date": args.date,
-        "candidates": candidates,
-        "ranked": ranked,
-        "selected": selection["selected"],
-        "skipped_for_selection": selection["skipped"],
-    }
-
-
-def cmd_get_order(args) -> dict:
-    config = scanner._load_config()
-    return fetch_double_calendar_order(
-        args.symbol.strip().upper(),
-        date.fromisoformat(args.earnings_date),
-        args.earnings_timing,
-        config,
-    )
+    return scanner.run_candidate_scan(args.date, config, fetch_price_and_expected_move, apply_tiering, strategy_config, extra_criteria_fn=_add_dispersion)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    p_cand = sub.add_parser("get_candidates")
-    p_cand.add_argument("--date", required=True)
-
-    p_order = sub.add_parser("get_order")
-    p_order.add_argument("--symbol", required=True)
-    p_order.add_argument("--earnings_date", required=True)
-    p_order.add_argument("--earnings_timing", required=True)
-
-    args = parser.parse_args()
-    dispatch = {
-        "get_candidates": cmd_get_candidates,
-        "get_order": cmd_get_order,
-    }
-    result = dispatch[args.command](args)
-    json.dump(result, sys.stdout, default=str)
+    scanner.run_strategy_main(cmd_get_candidates, fetch_double_calendar_order)
 
 
 if __name__ == "__main__":

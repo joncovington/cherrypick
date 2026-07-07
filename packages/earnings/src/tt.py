@@ -8,7 +8,9 @@ Usage:
   python src/tt.py get_account_info [--account_number X]
   python src/tt.py get_quote --symbol AAPL
   python src/tt.py get_option_chain --symbol AAPL [--expiration YYYY-MM-DD]
-      [--include_greeks] [--include_quotes] [--include_oi] [--strike_count N] [--around_price F]
+      [--include_greeks] [--include_quotes] [--include_oi] [--include_volume]
+      [--strike_count N] [--around_price F]
+  python src/tt.py get_market_metrics --symbol AAPL
   python src/tt.py execute_trade --order '<JSON>' [--account_number X] [--live]
 
 Adapted from MEICAgent's src/tt.py, with the stream-cache layer removed --
@@ -186,6 +188,17 @@ async def _collect_last_prices(symbols: list[str], timeout: float) -> dict:
     return await _collect_events(Trade, symbols, timeout, extract=lambda e: _num(e.price))
 
 
+async def _collect_option_volume(symbols: list[str], timeout: float) -> dict:
+    """Trade events carry day_volume (total volume traded for the day) in
+    addition to price -- get_quote/_collect_last_prices only ever extracted
+    .price, discarding it. Subscribing Trade on option streamer_symbols
+    gives per-contract daily options volume, same on-demand pattern as
+    _collect_open_interest's Summary subscription for open_interest.
+    """
+    from tastytrade.dxfeed import Trade
+    return await _collect_events(Trade, symbols, timeout, extract=lambda e: _num(e.day_volume))
+
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -262,6 +275,20 @@ async def cmd_get_quote(args) -> dict:
         return _error(exc)
 
 
+async def cmd_get_market_metrics(args) -> dict:
+    try:
+        from tastytrade.metrics import get_market_metrics
+        symbol = args.symbol.strip().upper()
+        session = get_session()
+        metrics = await get_market_metrics(session, [symbol])
+        if not metrics:
+            return {"ok": False, "error": f"no market metrics for {symbol}"}
+        m = metrics[0]
+        return {"ok": True, "symbol": symbol, "market_cap": _num(m.market_cap)}
+    except Exception as exc:
+        return _error(exc)
+
+
 async def cmd_get_option_chain(args) -> dict:
     try:
         from tastytrade.instruments import get_option_chain
@@ -277,11 +304,13 @@ async def cmd_get_option_chain(args) -> dict:
         include_greeks = getattr(args, "include_greeks", False)
         include_quotes = getattr(args, "include_quotes", False)
         include_oi = getattr(args, "include_oi", False)
+        include_volume = getattr(args, "include_volume", False)
         strike_count = getattr(args, "strike_count", 15)
         around_price = getattr(args, "around_price", None)
         greeks_timeout = getattr(args, "greeks_timeout", 6.0)
         quotes_timeout = getattr(args, "quotes_timeout", 6.0)
         oi_timeout = getattr(args, "oi_timeout", 10.0)
+        volume_timeout = getattr(args, "volume_timeout", 10.0)
 
         if expiration_filter:
             want = date.fromisoformat(expiration_filter)
@@ -292,7 +321,7 @@ async def cmd_get_option_chain(args) -> dict:
                     "available_expirations": [str(e) for e in expirations],
                 }
             selected = [want]
-        elif include_greeks or include_quotes or include_oi:
+        elif include_greeks or include_quotes or include_oi or include_volume:
             selected = [_nearest_expiration(expirations)]
         else:
             selected = expirations
@@ -374,6 +403,25 @@ async def cmd_get_option_chain(args) -> dict:
             result["oi_included"] = True
             result["oi_complete"] = received == len(streamer_symbols)
             result["oi_received"] = received
+
+        if include_volume:
+            streamer_symbols = [
+                o.streamer_symbol
+                for opts in options_by_exp.values()
+                for o in opts
+                if getattr(o, "streamer_symbol", None)
+            ]
+            vol = await _collect_option_volume(streamer_symbols, volume_timeout)
+            received = 0
+            for entries in serialized.values():
+                for entry in entries:
+                    val = vol.get(entry.get("streamer_symbol"))
+                    if val is not None:
+                        entry["day_volume"] = int(val)
+                        received += 1
+            result["volume_included"] = True
+            result["volume_complete"] = received == len(streamer_symbols)
+            result["volume_received"] = received
 
         return result
     except Exception as exc:
@@ -491,7 +539,7 @@ def cmd_secrets_set(args) -> dict:
 
 _ASYNC_COMMANDS = {
     "get_connection_status", "list_accounts", "get_account_info",
-    "get_quote", "get_option_chain", "execute_trade",
+    "get_quote", "get_option_chain", "execute_trade", "get_market_metrics",
 }
 
 
@@ -518,8 +566,12 @@ def main() -> None:
     p_chain.add_argument("--include_greeks", action="store_true")
     p_chain.add_argument("--include_quotes", action="store_true")
     p_chain.add_argument("--include_oi", action="store_true")
+    p_chain.add_argument("--include_volume", action="store_true")
     p_chain.add_argument("--strike_count", type=int, default=15)
     p_chain.add_argument("--around_price", type=float, default=None)
+
+    p_metrics = sub.add_parser("get_market_metrics")
+    p_metrics.add_argument("--symbol", required=True)
 
     p_exec = sub.add_parser("execute_trade")
     p_exec.add_argument("--order", required=True)
@@ -536,6 +588,7 @@ def main() -> None:
         "get_quote": cmd_get_quote,
         "get_option_chain": cmd_get_option_chain,
         "execute_trade": cmd_execute_trade,
+        "get_market_metrics": cmd_get_market_metrics,
     }
     handler = dispatch[args.command]
     if args.command in _ASYNC_COMMANDS:
