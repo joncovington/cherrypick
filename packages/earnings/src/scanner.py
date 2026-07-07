@@ -61,6 +61,31 @@ def fetch_dolthub_calendar(date: str, config: dict) -> list[dict]:
         conn.close()
 
 
+def fetch_entry_window_calendar(config: dict, today: _date | None = None) -> list[dict]:
+    """Merges today's After-market-close earnings with tomorrow's
+    Before-market-open earnings into one entry-window candidate list --
+    generalizes the merge that previously only existed as CLAUDE.md prose
+    (Step 4b's "merge two calendar dates" bullet, iron_fly-specific) into
+    shared, testable code any strategy/orchestrator can call.
+
+    A same-day BMO report already happened this morning and must not be
+    re-entered; a report tomorrow morning is still ahead of us this
+    afternoon -- same reasoning CLAUDE.md's Step 4b already documented,
+    just executable now instead of hand-derived each time.
+
+    `today` is a test hook (real callers omit it and get `_date.today()`).
+    """
+    today = today or _date.today()
+    tomorrow = today + timedelta(days=1)
+
+    today_rows = fetch_dolthub_calendar(str(today), config)
+    tomorrow_rows = fetch_dolthub_calendar(str(tomorrow), config)
+
+    merged = [r for r in today_rows if r.get("timing") == "After market close"]
+    merged += [r for r in tomorrow_rows if r.get("timing") == "Before market open"]
+    return merged
+
+
 def fetch_iv_rv_ratio(symbol: str, config: dict) -> dict:
     """Query post-no-preference/options's volatility_history for IV/RV.
     Requires a second locally-cloned Dolt repo alongside the earnings one,
@@ -630,25 +655,31 @@ def _shrunk_winrate(winrate: float | None, sample_size: int, target_sample: int 
 
 def compute_composite_score(criteria: dict, winrate_sample_size: int = 0) -> float | None:
     """Composite ranking score for a Tier 1/2 candidate, built from signals
-    common to any earnings-vol-selling strategy: term structure, IV/RV
-    ratio, winrate. No new data, just combining what a strategy's tiering
-    already required to be present.
+    common to any earnings-vol-selling strategy: term structure (or, absent
+    that, skew_abs -- expected_move_butterfly has no back-month/term-
+    structure signal at all, only a call/put skew reading, and needs a
+    comparable score too so it isn't silently unrankable next to the five
+    strategies that do have term_structure), IV/RV ratio, winrate. No new
+    data, just combining what a strategy's tiering already required to be
+    present.
 
-    Returns None if term_structure is missing; a candidate can't be ranked
-    without it. IV/RV ratio and winrate are secondary confirmations of the
-    same "is IV overpriced" question as term structure, not independent
-    signals, so they're applied as multiplicative adjustments rather than
-    summed as separate scores -- summing would let a strong term structure
-    and a merely-neutral IV/RV ratio look identical to two moderate
-    signals combined, which isn't the intent (a strong core signal should
-    still rank higher than two average ones).
+    Returns None if neither term_structure nor skew_abs is present; a
+    candidate can't be ranked without one of them. IV/RV ratio and winrate
+    are secondary confirmations of the same "is IV overpriced" question as
+    the core edge signal, not independent signals, so they're applied as
+    multiplicative adjustments rather than summed as separate scores --
+    summing would let a strong core signal and a merely-neutral IV/RV ratio
+    look identical to two moderate signals combined, which isn't the intent
+    (a strong core signal should still rank higher than two average ones).
     """
-    ts = criteria.get("term_structure")
-    if ts is None:
-        return None
+    edge = criteria.get("term_structure")
+    if edge is None:
+        edge = criteria.get("skew_abs")
+        if edge is None:
+            return None
     iv_rv = criteria.get("iv_rv_ratio") or 1.0
     wr = _shrunk_winrate(criteria.get("winrate"), winrate_sample_size)
-    return abs(ts) * iv_rv * wr
+    return abs(edge) * iv_rv * wr
 
 
 def rank_candidates(candidates: list[dict], config: dict) -> list[dict]:
