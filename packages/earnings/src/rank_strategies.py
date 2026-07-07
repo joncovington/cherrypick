@@ -155,6 +155,54 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
     return results
 
 
+_REGISTRY_BY_NAME = {entry["name"]: entry for entry in STRATEGY_REGISTRY}
+
+
+def reverify_symbol(symbol: str, strategy_name: str, earnings_date, earnings_timing: str, config: dict) -> dict:
+    """Re-runs a single strategy's own fetch/tiering (fully fresh -- avg_volume/
+    iv_rv_ratio/winrate are re-fetched here too, not reused from an earlier
+    scan) and confirms it still tiers Tier 1/2. Used by the loop's entry-time
+    re-verification step (CLAUDE.md Step 4b) instead of hand-rolled per-
+    criterion prose -- the strategy's own apply_tiering already knows its own
+    thresholds, so re-verification is just "run the same check again, right
+    now," not a second, separately-maintained description of what to check.
+
+    Returns {"ok": True} if still Tier 1/2, or {"ok": False, "reason":
+    "reverify_failed_<top hard-fail reason>"} otherwise (including if
+    `strategy_name` isn't a registered strategy at all, or its fetch
+    step itself failed).
+    """
+    entry = _REGISTRY_BY_NAME.get(strategy_name)
+    if entry is None:
+        return {"ok": False, "reason": f"reverify_failed_unknown_strategy_{strategy_name}"}
+
+    strategy_config = entry["strategy_config_fn"](config)
+    criteria: dict = {}
+
+    broker = entry["fetch_criteria_fn"](symbol, earnings_date, earnings_timing, config)
+    if broker.get("ok"):
+        criteria.update(broker["criteria"])
+    else:
+        return {"ok": False, "reason": f"reverify_failed_{broker.get('error', 'fetch_error')}"}
+
+    criteria["avg_volume"] = scanner.fetch_avg_volume(symbol, config)
+    ivrv = scanner.fetch_iv_rv_ratio(symbol, config)
+    criteria["iv_rv_ratio"] = ivrv["iv_rv_ratio"] if ivrv.get("ok") else None
+    lookback = config.get("winrate_lookback_quarters", 8)
+    winrate_result = scanner.compute_winrate(symbol, config, lookback)
+    criteria["winrate"] = winrate_result["winrate"]
+
+    extra_fn = entry.get("extra_criteria_fn")
+    if extra_fn is not None:
+        extra_fn(symbol, config, lookback, criteria)
+
+    tiering = entry["apply_tiering_fn"](criteria, strategy_config)
+    if tiering["tier"] not in ("Tier 1", "Tier 2"):
+        top_reason = (tiering["hard_fail_reasons"] or tiering["near_miss_reasons"] or ["tier_dropped"])[0]
+        return {"ok": False, "reason": f"reverify_failed_{top_reason}"}
+    return {"ok": True, "tier": tiering["tier"], "criteria": criteria}
+
+
 def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) -> None:
     """Writes one scan_log row per (symbol, strategy) evaluated plus one
     "_ranked" summary row per symbol, via the existing log_scan command --
