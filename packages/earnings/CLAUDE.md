@@ -187,7 +187,8 @@ All reads and writes go through `src/db.py` (real) / `src/db_paper.py` (paper) s
 
    **4a. Account-wide gate (once per iteration):**
    - Confirm broker connection is healthy
-   - Fetch buying power and NLV
+   - **`paper_mode = false`**: fetch buying power and NLV — buying power is a real capital-availability constraint that only matters when actually committing live capital.
+   - **`paper_mode = true`**: fetch NLV only (still used as the denominator for `max_risk_per_trade_pct`'s position-sizing check below), skip buying power entirely — paper trading has no simulated account balance or capital constraint (see `docs/paper-trading.md`: fixed at 1 contract per position regardless of price/account size, deliberately not introducing a simulated-balance concept), so there is nothing for a buying-power check to actually gate.
    - Re-check `max_concurrent_earnings_positions` against currently open positions
 
    **4b. Building today's ranked symbol list**: call `python src/rank_strategies.py get_ranked_symbols --date <today>` — one call evaluates every registered strategy (`iron_fly`, `double_calendar`, `expected_move_butterfly`, `iron_condor`, `short_strangle`, `jade_lizard`) against every symbol on the merged today-AMC/tomorrow-BMO calendar (`scanner.fetch_entry_window_calendar` handles that merge internally now), picks each symbol's single best-ranked viable strategy, and applies `scanner.select_positions()`'s cap/correlation logic across the resulting cross-symbol ranking. It also writes its own `scan_log` audit trail as a side effect (one row per symbol/strategy evaluated, plus a `_ranked` summary row per symbol) — this is a separate, earlier decision point ("would this have qualified") from Step 4b's own entry-time logging below ("did we actually act on it"); both exist without duplicating each other. Take the `symbols` entries where `outcome == "selected"`.
