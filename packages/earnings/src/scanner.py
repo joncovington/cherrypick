@@ -561,6 +561,21 @@ def _band(value, min_pass, min_near_miss, name: str, near_miss: list, hard_fail:
     hard_fail.append(f"{name}_below_near_miss")
 
 
+def naked_strategies_allowed(full_config: dict) -> bool:
+    """Whether a genuinely undefined-risk strategy (short_strangle, jade_lizard's
+    put side) is allowed to actually build/submit an order right now.
+
+    Paper mode is always allowed regardless of allow_naked_strategies -- there is
+    no real capital or margin at risk in paper mode (tt.py execute_trade is never
+    called; save_trade just records a simulated entry_credit), so the reason
+    live entries are gated (no live margin-check mechanism built yet) doesn't
+    apply. Live mode still requires the explicit allow_naked_strategies flag,
+    default False.
+    """
+    paper_mode = not full_config.get("enable_live_trading", False)
+    return paper_mode or full_config.get("allow_naked_strategies", False)
+
+
 def apply_liquidity_gates(criteria: dict, config: dict, hard_fail: list, near_miss: list) -> None:
     """Shared liquidity hard-filters/near-miss bands, applied identically by
     every earnings strategy's apply_tiering. `config` is the calling

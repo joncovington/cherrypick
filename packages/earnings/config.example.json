@@ -24,7 +24,7 @@
   "reprice_interval_s": 10,
   "reprice_step": 0.05,
 
-  "_allow_naked_strategies_note": "Project-wide risk-policy gate (not per-strategy), default false. Flipping this to true exposes the account to genuinely undefined-risk positions (short_strangle's naked strangle, jade_lizard's naked put side) -- do not enable without understanding the live margin implications; neither strategy has a defined max loss the way iron_fly/double_calendar/iron_condor/expected_move_butterfly do. Candidates for these two strategies are always screened/reviewable (get_candidates shows full criteria regardless), just never selectable for entry while this is false.",
+  "_allow_naked_strategies_note": "Project-wide, LIVE-MODE-ONLY risk-policy gate (see scanner.naked_strategies_allowed()) -- paper mode always allows short_strangle/jade_lizard entries regardless of this flag, since there's no real capital or margin at risk in paper mode. Flipping this to true exposes the LIVE account to genuinely undefined-risk positions -- do not enable without understanding the live margin implications; neither strategy has a defined max loss the way iron_fly/double_calendar/iron_condor/expected_move_butterfly do. Candidates for these two strategies are always screened/reviewable (get_candidates shows full criteria regardless), just never selectable for live entry while this is false.",
   "allow_naked_strategies": false,
 
   "strategies": {
@@ -159,7 +159,7 @@
     },
 
     "short_strangle": {
-      "_note": "NAKED strategy -- same short strikes as iron_condor (expected-move boundary), but no protective wings, so this has undefined risk. Gated by the project-wide allow_naked_strategies flag (default false): screenable/reviewable per symbol at any time via get_candidates, never selectable for entry unless that flag is explicitly enabled. Not wired into the live/paper loop. Documented follow-up, not built yet: position-level risk-cap for entry-time re-verification needs the account's actual live margin requirement (tt.py execute_trade's dry-run) rather than the wing-width-based max_risk_per_trade_pct formula the defined-risk strategies use, since there's no defined max loss here.",
+      "_note": "NAKED strategy -- same short strikes as iron_condor (expected-move boundary), but no protective wings, so this has undefined risk. Gated by scanner.naked_strategies_allowed(): paper mode always allows entry (no real capital/margin at risk); live mode requires the project-wide allow_naked_strategies flag (default false) AND is additionally hard-blocked in CLAUDE.md's Step 4b regardless of that flag, since the real risk-cap mechanism (the account's actual live margin requirement, via tt.py execute_trade's dry-run) isn't built yet -- only the wing-width-based max_risk_per_trade_pct formula the defined-risk strategies use exists today, and that doesn't apply here.",
 
       "min_price": 10.00,
       "max_front_expiration_days": 9,
@@ -185,7 +185,7 @@
     },
 
     "jade_lizard": {
-      "_note": "Short put + short call spread (short call, long call further OTM), structured so total credit exceeds the call-spread width (zero risk on the call side) -- adapted for earnings by sizing the call spread off this project's expected_move convention (not a fixed delta, the standard-strategy default) and adding an explicit put-side stop (put_stop_delta_abs, built as evaluate_position() but not loop-wired yet). Published guidance generally warns against this strategy close to earnings since it assumes elevated-but-orderly IV, not a binary move -- this is a deliberate adaptation, not the standard design. The put side is undefined risk (inherent to what makes this a jade lizard, not an iron condor), so it shares short_strangle's allow_naked_strategies gate. Not backtested for this project's specific adaptation.",
+      "_note": "Short put + short call spread (short call, long call further OTM), structured so total credit exceeds the call-spread width (zero risk on the call side) -- adapted for earnings by sizing the call spread off this project's expected_move convention (not a fixed delta, the standard-strategy default) and adding an explicit put-side stop (put_stop_delta_abs, built as evaluate_position() but not loop-wired yet). Published guidance generally warns against this strategy close to earnings since it assumes elevated-but-orderly IV, not a binary move -- this is a deliberate adaptation, not the standard design. The put side is undefined risk (inherent to what makes this a jade lizard, not an iron condor), so it shares short_strangle's scanner.naked_strategies_allowed() gate: paper mode always allows entry, live mode requires allow_naked_strategies=true AND is still hard-blocked in Step 4b regardless (no live margin-check mechanism built yet). Not backtested for this project's specific adaptation.",
 
       "min_price": 10.00,
       "max_front_expiration_days": 9,

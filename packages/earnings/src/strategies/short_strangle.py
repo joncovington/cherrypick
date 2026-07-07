@@ -2,20 +2,22 @@
 boundaries (short call at price + expected_move, short put at
 price - expected_move) -- same short strikes as iron_condor.py, but with
 NO protective wings. Undefined risk: this is a genuine naked strategy, not
-a defined-risk approximation, gated by the project-wide
-`allow_naked_strategies` config flag (default false) so it's always
-screenable/reviewable per symbol but never selectable for entry unless
-that flag is deliberately enabled.
+a defined-risk approximation, gated by scanner.naked_strategies_allowed()
+(project-wide `allow_naked_strategies` config flag, default false) --
+**paper mode is always allowed regardless of that flag** (no real capital
+or margin at risk in paper mode), live mode still requires the flag
+deliberately enabled.
 
 Uses src/scanner.py's shared engine for everything not specific to this
 strategy's structure or thresholds. Strategy-specific config lives under
 config.json's "strategies.short_strangle" key.
 
-NOT yet wired into the live/paper trading loop. Also documented follow-up,
-not built this pass: position-level risk-cap for entry-time re-verification
-can't use the existing max_risk_per_trade_pct formula (wing width - credit)
-since there's no defined max loss here -- the natural mechanism whenever
-this is wired in is the account's actual live margin requirement (tt.py
+Wired into the live/paper trading loop's Step 4b for paper-mode entries;
+live-mode entries are hard-blocked there regardless of ranking outcome --
+position-level risk-cap for live entry-time re-verification can't use the
+existing max_risk_per_trade_pct formula (wing width - credit) since
+there's no defined max loss here -- the natural mechanism whenever that's
+wired in is the account's actual live margin requirement (tt.py
 execute_trade's dry-run, which CLAUDE.md already documents as performing a
 real margin check), not a synthetic max-loss number.
 
@@ -81,7 +83,7 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
                 "expected_move_pct": ts["expected_move_pct"],
                 "front_expiration_days": (front_exp - date.today()).days,
                 "chain_complete": True,
-                "naked_strategies_allowed": full_config.get("allow_naked_strategies", False),
+                "naked_strategies_allowed": scanner.naked_strategies_allowed(full_config),
                 **liquidity,
             },
         }
@@ -148,14 +150,15 @@ def fetch_short_strangle_order(symbol: str, earnings_date: date, earnings_timing
     selection as fetch_iron_condor_order, but the order is just the two
     short legs.
 
-    Re-checks allow_naked_strategies as a hard stop before building any
-    legs -- defense in depth against a stale scan or a manually-invoked
-    get_order bypassing the screening-time gate.
+    Re-checks scanner.naked_strategies_allowed() (paper mode is always
+    allowed; live mode needs allow_naked_strategies=true) as a hard stop
+    before building any legs -- defense in depth against a stale scan or a
+    manually-invoked get_order bypassing the screening-time gate.
 
     Deliberately re-fetches live data at call time -- same discipline as
     every other strategy's order-builder.
     """
-    if not full_config.get("allow_naked_strategies", False):
+    if not scanner.naked_strategies_allowed(full_config):
         return {"ok": False, "error": "naked strategies disabled (allow_naked_strategies=false)"}
     try:
         qe = scanner.fetch_quote_and_expirations(symbol)

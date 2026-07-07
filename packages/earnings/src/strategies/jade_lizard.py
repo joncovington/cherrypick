@@ -13,14 +13,18 @@ earnings-scale downside risk otherwise.
 The put side is undefined risk (that's inherent to what makes this a jade
 lizard rather than an iron condor -- the whole point is trading away
 upside risk for extra put-side exposure), so it shares short_strangle.py's
-`allow_naked_strategies` gate.
+scanner.naked_strategies_allowed() gate -- paper mode is always allowed
+regardless of `allow_naked_strategies` (no real capital or margin at risk
+in paper mode), live mode still requires the flag deliberately enabled.
 
 Uses src/scanner.py's shared engine for everything not specific to this
 strategy's structure or thresholds. Strategy-specific config lives under
 config.json's "strategies.jade_lizard" key.
 
-NOT yet wired into the live/paper trading loop -- evaluate_position() is
-built and unit-tested but not called from a loop step, same state
+Wired into the live/paper trading loop's Step 4b for paper-mode entries;
+live-mode entries are hard-blocked there regardless of ranking outcome,
+same reasoning as short_strangle.py. evaluate_position() is built and
+unit-tested but not called from a loop step yet, same state
 double_calendar.py's exit logic was in before its own Step 3b wiring.
 
 Commands (see CLAUDE.md's Tool Reference):
@@ -163,7 +167,7 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
                 "expected_move_pct": ts["expected_move_pct"],
                 "front_expiration_days": (front_exp - date.today()).days,
                 "chain_complete": True,
-                "naked_strategies_allowed": full_config.get("allow_naked_strategies", False),
+                "naked_strategies_allowed": scanner.naked_strategies_allowed(full_config),
                 "call_side_riskless": call_side_riskless,
                 **liquidity,
             },
@@ -245,7 +249,7 @@ def fetch_jade_lizard_order(symbol: str, earnings_date: date, earnings_timing: s
     Deliberately re-fetches live data at call time -- same discipline as
     every other strategy's order-builder.
     """
-    if not full_config.get("allow_naked_strategies", False):
+    if not scanner.naked_strategies_allowed(full_config):
         return {"ok": False, "error": "naked strategies disabled (allow_naked_strategies=false)"}
     try:
         qe = scanner.fetch_quote_and_expirations(symbol)
