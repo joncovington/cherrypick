@@ -28,7 +28,9 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 
 ## Tool Reference
 
-All operations are called via `python src/tt.py <command>` (broker), `python src/scanner.py <command>` (shared engine), and `python src/strategies/iron_fly.py <command>` (iron-fly-specific scanning/order-building). Commands output JSON to stdout.
+All operations are called via `python src/tt.py <command>` (broker), `python src/scanner.py <command>` (shared engine), and `python src/strategies/<name>.py <command>` (strategy-specific scanning/order-building; `iron_fly` and `double_calendar` today). Commands output JSON to stdout.
+
+`double_calendar.py` builds valid orders (`get_candidates`/`get_order` both live-verified) but is **not yet wired into the live/paper trading loop below** — its stop-management and exit logic (partial-leg close on a threatened side, profit-target limit order, time-based exit before front expiration) is designed but not implemented, and the current `trades` schema has no way to represent a partial close. Only `iron_fly` is active in the loop until that's built.
 
 | Command | Purpose | Requires live trading? |
 |---|---|---|
@@ -37,6 +39,8 @@ All operations are called via `python src/tt.py <command>` (broker), `python src
 | `python src/scanner.py get_winrate --symbol X [--lookback_quarters N]` | Historical implied-vs-realized-move winrate backtest for symbol X | No |
 | `python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY` | Full tiered scan for that date: per-candidate `tier`/`hard_fail_reasons`/`near_miss_reasons`/`criteria`, plus `ranked` (Tier 1/2 candidates scored and sorted) and `selected` (the ranked list after applying `max_concurrent_earnings_positions`/`correlation_block_list`) | No |
 | `python src/strategies/iron_fly.py get_order --symbol X --earnings_date DATE --earnings_timing "..."` | Build a concrete, tradeable iron fly order (strikes, legs, credit) | No |
+| `python src/strategies/double_calendar.py get_candidates --date MM/DD/YYYY` | Same tiered-scan shape as iron fly's, using double calendar's own stricter thresholds (`strategies.double_calendar`) plus `realized_move_dispersion_pct` | No |
+| `python src/strategies/double_calendar.py get_order --symbol X --earnings_date DATE --earnings_timing "..."` | Build a concrete double calendar debit order (front short / back long, same strikes both expirations) | No |
 | `python src/tt.py secrets_status` | Check whether OAuth credentials are stored | No |
 | `python src/tt.py secrets_set` | Store OAuth client secret/refresh token in the OS keyring | No |
 | `python src/tt.py get_connection_status` | Verify OAuth session and account access | No |

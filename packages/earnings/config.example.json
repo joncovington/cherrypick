@@ -52,6 +52,27 @@
       "wing_width_multiple_high": 3.5,
       "wing_width_band_low_max": 1.25,
       "wing_width_band_mid_max": 1.75
+    },
+
+    "double_calendar": {
+      "_note": "Stricter liquidity/expected-move floors than iron_fly -- execution cost matters more across two expirations, and a single tail-risk surprise hurts a debit trade more than iron_fly's width-defined max loss. Reasoned starting points, not backtested for this strategy.",
+
+      "min_price": 10.00,
+      "min_term_structure": -0.004,
+      "min_expected_move_pct": 0.05,
+      "min_combined_open_interest": 2000,
+      "back_month_min_days_after": 21,
+
+      "min_avg_volume": 3000000,
+      "near_miss_min_avg_volume": 1500000,
+
+      "min_iv_rv_ratio": 1.25,
+      "near_miss_min_iv_rv_ratio": 1.00,
+
+      "min_winrate": 0.50,
+      "near_miss_min_winrate": 0.40,
+
+      "max_realized_move_dispersion_pct": 0.15
     }
   }
 }
