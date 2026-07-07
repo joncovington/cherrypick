@@ -85,7 +85,20 @@ def fetch_price_and_expected_move(symbol: str, earnings_date: date, earnings_tim
 
     Returns {"ok": False, "error": ...} on any missing data rather than
     raising -- same discipline as iron_fly.py.
+
+    `config` here is whatever run_candidate_scan (via cmd_get_candidates)
+    passes -- the full project config, not this strategy's own sub-config
+    -- so back_month_min_days_after is read from `_strategy_config(config)`
+    explicitly rather than off `config` directly. A real bug caught while
+    wiring up expected_move_butterfly.py's analogous skew_delta_target:
+    reading a strategy-specific key straight off this function's `config`
+    param silently falls back to the default every time, since that key
+    only exists under config["strategies"]["double_calendar"], not at the
+    top level -- harmless only because the default happened to match, but a
+    real inconsistency with fetch_double_calendar_order (the order-builder),
+    which correctly extracts its own sub-config via _strategy_config().
     """
+    strategy_config = _strategy_config(config)
     try:
         qe = scanner.fetch_quote_and_expirations(symbol)
         if not qe.get("ok"):
@@ -96,7 +109,7 @@ def fetch_price_and_expected_move(symbol: str, earnings_date: date, earnings_tim
         if front_exp is None:
             return {"ok": False, "error": err}
 
-        min_days = config.get("back_month_min_days_after", 21)
+        min_days = strategy_config.get("back_month_min_days_after", 21)
         back_exp = scanner.select_back_expiration(expirations, front_exp, min_days)
         if back_exp is None:
             return {"ok": False, "error": f"no monthly (or any) back-month expiration >={min_days} days after front"}

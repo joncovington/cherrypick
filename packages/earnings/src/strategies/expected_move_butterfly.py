@@ -46,28 +46,47 @@ def _strategy_config(config: dict) -> dict:
     return config.get("strategies", {}).get("expected_move_butterfly", {})
 
 
-def select_side(symbol: str, front_expiration, price: float, expected_move: float) -> dict:
-    """Compare front-month IV at the call short strike (price + expected_move)
-    vs. the put short strike (price - expected_move); pick whichever side is
-    richer (higher IV) to sell, since that side carries more of the
-    front-month IV-crush edge this strategy is designed to capture.
+def select_side(symbol: str, front_expiration, price: float, config: dict) -> dict:
+    """25-delta risk reversal (call IV - put IV at matched |delta|, the
+    industry-standard skew measure) to pick which side to sell -- NOT
+    measured at the expected-move strikes themselves. Deliberately separate
+    from strike placement: comparing IV at strikes chosen by raw dollar
+    distance from price (price +/- expected_move) is NOT delta-symmetric
+    whenever skew is already present, which distorts the very quantity being
+    measured, and single-stock options carry a persistent *structural* put
+    skew (investors chronically buying puts for downside protection) even
+    with zero earnings catalyst -- comparing raw IV at dollar-distance
+    strikes would pick "sell puts" on a large fraction of candidates
+    regardless of any real earnings-specific signal. Matching on delta
+    doesn't eliminate that structural baseline (still not backtested
+    per-name against its own pre-earnings skew history, which would need
+    data this project doesn't have), but it removes the additional,
+    avoidable distortion of comparing non-delta-symmetric strikes.
+
+    This function only decides direction; fetch_price_and_expected_move/
+    fetch_expected_move_butterfly_order still build the actual order at the
+    expected-move-boundary strikes on whichever side wins here.
     """
     chain = scanner.call_tt([
         "get_option_chain", "--symbol", symbol, "--expiration", str(front_expiration),
-        "--include_greeks", "--strike_count", "20", "--around_price", str(price),
+        "--include_greeks", "--strike_count", "40", "--around_price", str(price),
     ])
     if not chain.get("ok"):
         return {"ok": False, "error": chain.get("error", "get_option_chain failed")}
     entries = chain["chain"].get(str(front_expiration), [])
 
-    call_short = scanner.nearest_strike_entry(entries, "call", price + expected_move, -1.0)
-    put_short = scanner.nearest_strike_entry(entries, "put", price - expected_move, -1.0)
-    if call_short is None or put_short is None:
-        return {"ok": False, "error": "no strikes found near expected-move boundaries"}
-    if call_short.get("iv") is None or put_short.get("iv") is None:
-        return {"ok": False, "error": "no greeks/iv data for short-strike candidates"}
+    target_delta = config.get("skew_delta_target", 0.25)
+    calls = [e for e in entries if str(e.get("option_type", "")).strip().lower().startswith("c") and e.get("delta") is not None]
+    puts = [e for e in entries if str(e.get("option_type", "")).strip().lower().startswith("p") and e.get("delta") is not None]
+    if not calls or not puts:
+        return {"ok": False, "error": "no greeks/delta data for skew measurement"}
 
-    call_iv, put_iv = call_short["iv"], put_short["iv"]
+    call_ref = min(calls, key=lambda e: abs(abs(e["delta"]) - target_delta))
+    put_ref = min(puts, key=lambda e: abs(abs(e["delta"]) - target_delta))
+    if call_ref.get("iv") is None or put_ref.get("iv") is None:
+        return {"ok": False, "error": "no iv data for risk-reversal candidates"}
+
+    call_iv, put_iv = call_ref["iv"], put_ref["iv"]
     side = "call" if call_iv >= put_iv else "put"
     return {"ok": True, "side": side, "call_iv": call_iv, "put_iv": put_iv, "skew": call_iv - put_iv}
 
@@ -80,7 +99,16 @@ def fetch_price_and_expected_move(symbol: str, earnings_date: date, earnings_tim
 
     Returns {"ok": False, "error": ...} on any missing data rather than
     raising -- same discipline as iron_fly.py/double_calendar.py.
+
+    `config` here is whatever run_candidate_scan (via cmd_get_candidates)
+    passes -- the full project config, not this strategy's own sub-config
+    -- so select_side's skew_delta_target is read via
+    `_strategy_config(config)` explicitly, matching the fix applied to
+    double_calendar.py's analogous back_month_min_days_after bug (reading a
+    strategy-specific key straight off this function's `config` param
+    would silently fall back to the default every time).
     """
+    strategy_config = _strategy_config(config)
     try:
         qe = scanner.fetch_quote_and_expirations(symbol)
         if not qe.get("ok"):
@@ -105,7 +133,7 @@ def fetch_price_and_expected_move(symbol: str, earnings_date: date, earnings_tim
         expected_move = 0.85 * (front_call["mid"] + front_put["mid"])
         expected_move_pct = expected_move / price
 
-        side_result = select_side(symbol, front_exp, price, expected_move)
+        side_result = select_side(symbol, front_exp, price, strategy_config)
         if not side_result.get("ok"):
             return side_result
 
@@ -209,7 +237,7 @@ def fetch_expected_move_butterfly_order(symbol: str, earnings_date: date, earnin
             return atm_probe
         expected_move = 0.85 * (atm_probe["front_call"]["mid"] + atm_probe["front_put"]["mid"])
 
-        side_result = select_side(symbol, front_exp, price, expected_move)
+        side_result = select_side(symbol, front_exp, price, config)
         if not side_result.get("ok"):
             return side_result
         side = side_result["side"]
