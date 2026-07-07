@@ -697,6 +697,62 @@ def compute_composite_score(criteria: dict, winrate_sample_size: int = 0) -> flo
     return abs(edge) * iv_rv * wr
 
 
+def fetch_quotes_by_symbol(underlying_symbol: str, expiration, option_symbols: list, price: float) -> dict:
+    """Live quotes for a specific set of already-known option symbols (e.g.
+    a stored position's entry legs, parsed from `trades.legs_json`), keyed
+    by exact symbol -- not a nearest-strike lookup, since the legs are
+    already known precisely from when the position was opened. Shared by
+    every single-expiration strategy's close mechanism (see
+    compute_generic_exit_debit) so no strategy re-implements its own
+    quote-fetch-and-match logic for closing.
+    """
+    chain = call_tt([
+        "get_option_chain", "--symbol", underlying_symbol, "--expiration", str(expiration),
+        "--include_quotes", "--include_greeks", "--strike_count", "999", "--around_price", str(price),
+    ])
+    if not chain.get("ok"):
+        return {}
+    entries = chain["chain"].get(str(expiration), [])
+    wanted = set(option_symbols)
+    return {e["symbol"]: e for e in entries if e["symbol"] in wanted}
+
+
+def compute_generic_exit_debit(legs: list[dict], quotes: dict) -> float | None:
+    """Signed exit debit for closing an arbitrary multi-leg single-expiration
+    position, given its original entry legs (`{symbol, action, quantity}`,
+    e.g. parsed from `trades.legs_json`) and live quotes keyed by exact
+    option symbol (see fetch_quotes_by_symbol). Entry-`"Sell to Open"` legs
+    are bought back at ask, entry-`"Buy to Open"` legs are sold at bid --
+    the same conservative same-side-of-spread convention iron_fly's close
+    already used, generalized to any leg count/shape (iron_condor's two
+    distinct short strikes, expected_move_butterfly's asymmetric strikes
+    with a x2 short quantity) instead of duplicated per strategy.
+
+    Same sign convention as entry_credit: positive means it costs money to
+    close, negative means closing nets a credit -- `pnl = (entry_credit -
+    exit_debit) * 100` works unchanged for both credit and debit strategies.
+
+    Returns None if any leg's required quote side is missing -- callers
+    should retry next tick rather than close on incomplete data, same
+    discipline as iron_fly's existing close logic.
+    """
+    total = 0.0
+    for leg in legs:
+        q = quotes.get(leg["symbol"])
+        if q is None:
+            return None
+        qty = leg.get("quantity", 1)
+        if leg["action"] == "Sell to Open":
+            if q.get("ask") is None:
+                return None
+            total += qty * q["ask"]
+        elif leg["action"] == "Buy to Open":
+            if q.get("bid") is None:
+                return None
+            total -= qty * q["bid"]
+    return total
+
+
 def rank_candidates(candidates: list[dict], config: dict) -> list[dict]:
     """Rank Tier 1/2 candidates from a strategy's get_candidates output by
     compute_composite_score, descending. Reject and Near Miss candidates

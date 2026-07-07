@@ -21,6 +21,15 @@ wired in is the account's actual live margin requirement (tt.py
 execute_trade's dry-run, which CLAUDE.md already documents as performing a
 real margin check), not a synthetic max-loss number.
 
+evaluate_position() (an intraday delta-based stop on either short leg,
+closing the whole position if either breaches -- there's no long-dated
+leg worth preserving the way double_calendar/jade_lizard have) is wired
+into CLAUDE.md's Step 3c, which runs only between market open and
+close_window_start: undefined risk means waiting for the ordinary
+close-window sweep is itself the risk if a bad gap happens. Step 3's
+close-window sweep is still the unconditional final backstop for whatever
+Step 3c didn't already close.
+
 Commands (see CLAUDE.md's Tool Reference):
   get_candidates --date MM/DD/YYYY
   get_order --symbol X --earnings_date YYYY-MM-DD --earnings_timing "..."
@@ -218,6 +227,50 @@ def fetch_short_strangle_order(symbol: str, earnings_date: date, earnings_timing
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+def label_order_legs(order_result: dict) -> list[dict]:
+    """Tag fetch_short_strangle_order's 2 order legs with a `leg_role`
+    ('short_call'/'short_put') for save_trade's `legs` argument -- same
+    pattern as double_calendar.py's label_order_legs(), needed so
+    trade_legs rows exist at all for this strategy's evaluate_position()/
+    Step 3c to have anything to act on. Relies on fetch_short_strangle_
+    order's fixed leg order (short_call, short_put), a stable contract of
+    this module, not the broker's.
+    """
+    legs = order_result["order"]["legs"]
+    roles = ["short_call", "short_put"]
+    return [
+        {"leg_role": role, "symbol": leg["symbol"], "action": leg["action"], "quantity": leg["quantity"]}
+        for role, leg in zip(roles, legs)
+    ]
+
+
+def evaluate_position(position: dict, open_legs: list[dict], quotes: dict, config: dict) -> dict:
+    """Decide what (if anything) to do with an open short strangle position
+    this tick. Pure calculation, no I/O -- mirrors jade_lizard.py's
+    evaluate_position() pattern, but checks *both* short legs and stops the
+    whole position if either breaches, rather than a single side: unlike
+    double_calendar's untested side (a real back-month long with its own
+    ongoing value) or jade_lizard's already-riskless call spread, there's no
+    long-dated leg here worth preserving once one side is threatened -- both
+    legs are naked, so a stop closes everything.
+
+    `quotes` is `{symbol: {"bid": F, "ask": F, "delta": F}}` for each of
+    `open_legs`.
+
+    Returns:
+      {"action": "hold"}
+      {"action": "close_all", "reason": "leg_stop"}
+    """
+    leg_stop_delta_abs = config.get("leg_stop_delta_abs", 0.45)
+    for leg in open_legs:
+        q = quotes.get(leg["symbol"])
+        if q is None or q.get("delta") is None:
+            continue
+        if abs(q["delta"]) >= leg_stop_delta_abs:
+            return {"action": "close_all", "reason": "leg_stop"}
+    return {"action": "hold"}
 
 
 def cmd_get_candidates(args) -> dict:

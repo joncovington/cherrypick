@@ -23,9 +23,10 @@ config.json's "strategies.jade_lizard" key.
 
 Wired into the live/paper trading loop's Step 4b for paper-mode entries;
 live-mode entries are hard-blocked there regardless of ranking outcome,
-same reasoning as short_strangle.py. evaluate_position() is built and
-unit-tested but not called from a loop step yet, same state
-double_calendar.py's exit logic was in before its own Step 3b wiring.
+same reasoning as short_strangle.py. evaluate_position() is wired into
+Step 3c (runs only between market open and close_window_start, ahead of
+Step 3's unconditional close-window sweep), same intraday-urgency
+reasoning as short_strangle.py's.
 
 Commands (see CLAUDE.md's Tool Reference):
   get_candidates --date MM/DD/YYYY
@@ -311,6 +312,23 @@ def fetch_jade_lizard_order(symbol: str, earnings_date: date, earnings_timing: s
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+def label_order_legs(order_result: dict) -> list[dict]:
+    """Tag fetch_jade_lizard_order's 3 order legs with a `leg_role`
+    ('short_put'/'short_call'/'long_call') for save_trade's `legs`
+    argument -- same pattern as double_calendar.py's label_order_legs(),
+    needed so trade_legs rows exist at all for this strategy's
+    evaluate_position()/Step 3c to have anything to act on. Relies on
+    fetch_jade_lizard_order's fixed leg order (short_put, short_call,
+    long_call), a stable contract of this module, not the broker's.
+    """
+    legs = order_result["order"]["legs"]
+    roles = ["short_put", "short_call", "long_call"]
+    return [
+        {"leg_role": role, "symbol": leg["symbol"], "action": leg["action"], "quantity": leg["quantity"]}
+        for role, leg in zip(roles, legs)
+    ]
 
 
 def evaluate_position(position: dict, open_legs: list[dict], quotes: dict, config: dict) -> dict:
