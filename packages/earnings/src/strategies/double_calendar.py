@@ -370,6 +370,83 @@ def fetch_double_calendar_order(symbol: str, earnings_date: date, earnings_timin
         return {"ok": False, "error": str(exc)}
 
 
+def label_order_legs(order_result: dict) -> list[dict]:
+    """Tag `fetch_double_calendar_order`'s 4 order legs with a `leg_role`
+    ('front_call'/'front_put'/'back_call'/'back_put') for `save_trade`'s
+    `legs` argument. Relies on `fetch_double_calendar_order`'s fixed leg
+    order (front_call, front_put, back_call, back_put) rather than
+    re-parsing OCC symbols, since that order is a stable contract of this
+    module, not the broker's.
+    """
+    legs = order_result["order"]["legs"]
+    roles = ["front_call", "front_put", "back_call", "back_put"]
+    return [
+        {"leg_role": role, "symbol": leg["symbol"], "action": leg["action"], "quantity": leg["quantity"]}
+        for role, leg in zip(roles, legs)
+    ]
+
+
+def evaluate_position(position: dict, open_legs: list[dict], quotes: dict, config: dict) -> dict:
+    """Decide what (if anything) to do with an open double calendar position
+    this tick. Pure calculation, no I/O -- callers fetch `open_legs` (via
+    `db.py`/`db_paper.py get_open_legs`) and `quotes` (live bid/ask/delta per
+    open leg's symbol, via `tt.py get_option_chain`) themselves.
+
+    `quotes` is `{symbol: {"bid": F, "ask": F, "delta": F}}` for every symbol
+    in `open_legs`. `position` has at least `entry_credit` (stored as a
+    negative number -- see fetch_double_calendar_order's `debit` field) and
+    `expiration` (the front-month expiration, stored at entry).
+
+    Returns one of:
+      {"action": "hold"}
+      {"action": "close_all", "reason": "profit_target"|"stop_loss"|"time_exit"}
+      {"action": "close_side", "side": "call"|"put", "reason": "leg_stop"}
+    """
+    cfg = _strategy_config(config)
+    debit = abs(position["entry_credit"])
+    by_role = {leg["leg_role"]: leg for leg in open_legs}
+
+    def _missing_quote(role: str) -> bool:
+        leg = by_role.get(role)
+        return leg is not None and leg["symbol"] not in quotes
+
+    # Conservative same-side-of-spread pricing to close everything still open,
+    # mirroring iron_fly's exit-pricing convention: buy back shorts at ask,
+    # sell longs at bid.
+    if not any(_missing_quote(r) for r in ("front_call", "front_put", "back_call", "back_put")):
+        cost_to_close = 0.0
+        for role, leg in by_role.items():
+            q = quotes[leg["symbol"]]
+            if role.startswith("front"):
+                cost_to_close += q["ask"]
+            else:
+                cost_to_close -= q["bid"]
+        net_credit_on_close = -cost_to_close
+
+        if net_credit_on_close >= debit * (1 + cfg.get("profit_target_pct", 0.25)):
+            return {"action": "close_all", "reason": "profit_target"}
+        if -net_credit_on_close >= debit * cfg.get("stop_loss_pct_of_debit", 1.0):
+            return {"action": "close_all", "reason": "stop_loss"}
+
+    front_expiration = datetime.strptime(position["expiration"], "%Y-%m-%d").date()
+    days_to_front_expiration = (front_expiration - date.today()).days
+    if days_to_front_expiration <= cfg.get("exit_days_before_front_expiration", 5):
+        return {"action": "close_all", "reason": "time_exit"}
+
+    leg_stop_delta_abs = cfg.get("leg_stop_delta_abs", 0.45)
+    for side, role in (("call", "front_call"), ("put", "front_put")):
+        leg = by_role.get(role)
+        if leg is None:
+            continue
+        q = quotes.get(leg["symbol"])
+        if q is None or q.get("delta") is None:
+            continue
+        if abs(q["delta"]) >= leg_stop_delta_abs:
+            return {"action": "close_side", "side": side, "reason": "leg_stop"}
+
+    return {"action": "hold"}
+
+
 def cmd_get_candidates(args) -> dict:
     """Full tiered scan for a date, mirroring iron_fly.py's cmd_get_candidates
     but with this strategy's own screening: stricter volume floor, a

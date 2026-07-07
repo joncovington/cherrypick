@@ -16,9 +16,17 @@ Commands:
       "expiration": "YYYY-MM-DD", "short_strike": F, "long_call_strike": F,
       "long_put_strike": F, "legs_json": "...", "entry_credit": F}'
   save_close --data '{"order_id": "...", "exit_debit": F, "pnl": F}'
+  get_open_legs --order_id X
+  save_leg_close --data '{"order_id": "...", "leg_role": "...", "close_price": F}'
   log_scan --data '{"scan_date": "YYYY-MM-DD", "symbol": "...", "strategy": "iron_fly",
       "tier": "...", "outcome": "...", "reason": "..."}'
   get_pnl_summary [--strategy X]
+
+`legs` (optional array on save_trade, each `{leg_role, symbol, action, quantity}`) is for
+strategies with independently-closeable legs (e.g. double_calendar's threatened-side close)
+-- iron fly never passes it, so it never gets `trade_legs` rows. A trade's `trades.closed_at`
+stays NULL until every one of its legs is closed via save_leg_close and save_close is called
+for the position as a whole.
 """
 
 import argparse
@@ -45,6 +53,19 @@ CREATE TABLE IF NOT EXISTS trades (
     pnl             REAL,
     opened_at       REAL,
     closed_at       REAL
+);
+
+CREATE TABLE IF NOT EXISTS trade_legs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    TEXT NOT NULL,
+    leg_role    TEXT NOT NULL,
+    symbol      TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    quantity    INTEGER NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'open',
+    close_price REAL,
+    closed_at   REAL,
+    UNIQUE(order_id, leg_role)
 );
 
 CREATE TABLE IF NOT EXISTS scan_log (
@@ -120,12 +141,58 @@ def cmd_save_trade(args) -> dict:
                 spec.get("opened_at", time.time()),
             ),
         )
+        for leg in spec.get("legs", []):
+            conn.execute(
+                "INSERT INTO trade_legs (order_id, leg_role, symbol, action, quantity) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (spec["order_id"], leg["leg_role"], leg["symbol"], leg["action"], leg["quantity"]),
+            )
         conn.commit()
     except sqlite3.IntegrityError as exc:
         return {"ok": False, "error": f"save_trade failed: {exc}"}
     finally:
         conn.close()
     return {"ok": True, "order_id": spec["order_id"]}
+
+
+def cmd_get_open_legs(args) -> dict:
+    order_id = args.order_id
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM trade_legs WHERE order_id = ? AND status = 'open' ORDER BY leg_role",
+            (order_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"ok": True, "order_id": order_id, "legs": [dict(r) for r in rows]}
+
+
+def cmd_save_leg_close(args) -> dict:
+    spec = json.loads(args.data)
+    required = ("order_id", "leg_role")
+    missing = [k for k in required if not spec.get(k)]
+    if missing:
+        return {"ok": False, "error": f"missing required field(s): {', '.join(missing)}"}
+
+    conn = _conn()
+    try:
+        cur = conn.execute(
+            "UPDATE trade_legs SET status = 'closed', close_price = ?, closed_at = ? "
+            "WHERE order_id = ? AND leg_role = ? AND status = 'open'",
+            (
+                spec.get("close_price"),
+                spec.get("closed_at", time.time()),
+                spec["order_id"],
+                spec["leg_role"],
+            ),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"ok": False, "error": f"no open leg found for order_id={spec['order_id']} leg_role={spec['leg_role']}"}
+    finally:
+        conn.close()
+    return {"ok": True, "order_id": spec["order_id"], "leg_role": spec["leg_role"]}
 
 
 def cmd_save_close(args) -> dict:
@@ -243,6 +310,12 @@ def main() -> None:
     p_save_close = sub.add_parser("save_close")
     p_save_close.add_argument("--data", required=True)
 
+    p_get_open_legs = sub.add_parser("get_open_legs")
+    p_get_open_legs.add_argument("--order_id", required=True)
+
+    p_save_leg_close = sub.add_parser("save_leg_close")
+    p_save_leg_close.add_argument("--data", required=True)
+
     p_log_scan = sub.add_parser("log_scan")
     p_log_scan.add_argument("--data", required=True)
 
@@ -252,6 +325,8 @@ def main() -> None:
         "get_open_positions": cmd_get_open_positions,
         "save_trade": cmd_save_trade,
         "save_close": cmd_save_close,
+        "get_open_legs": cmd_get_open_legs,
+        "save_leg_close": cmd_save_leg_close,
         "log_scan": cmd_log_scan,
         "get_pnl_summary": cmd_get_pnl_summary,
     }
