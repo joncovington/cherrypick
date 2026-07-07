@@ -1,154 +1,138 @@
 # EarningsAgent
 
-An autonomous options trading agent running earnings-announcement strategies. Six strategies
-are implemented today — **iron fly**, **iron condor**, **expected-move butterfly**,
-**double calendar**, **short strangle**, and **jade lizard** — spanning defined-risk credit
-spreads, a debit calendar spread, a debit butterfly, and two genuinely undefined-risk
-strategies gated to paper trading by default. The project is split into a strategy-agnostic
-engine (`src/scanner.py`: earnings calendar lookup, average volume, IV/RV ratio, historical
-winrate, liquidity gates, candidate ranking/position selection) and per-strategy modules
-under `src/strategies/` that hold each strategy's own thresholds, tiering, and order
-construction — a new strategy plugs in without touching the shared engine or colliding with
-another strategy's config. A top-level orchestrator (`src/rank_strategies.py`) evaluates all
-six against every symbol on the day's earnings calendar and picks the single best-ranked
-strategy per symbol, so entries aren't decided strategy-by-strategy in isolation. Screening
-rules live in [`docs/screening-criteria.md`](docs/screening-criteria.md) — only Tier 1
-candidates are eligible for automatic entry; check `sample_size` on any winrate result before
-trusting it, since historical chain coverage is limited (see the screening doc). Positions
-open once before the close, get an early profit-target/stop-loss/delta-stop check right after
-the market reopens the next morning, and are unconditionally closed by the close window if
-nothing already closed them — there is no continuous intraday management in between by
-design (except `double_calendar`, which spans multiple weeks and gets its own management
-step). See **How it works** below for the full pipeline.
+EarningsAgent is a trading bot that specializes in one thing: options trades around
+company earnings announcements. Earnings reports are famous for causing implied volatility
+to spike beforehand and then collapse right after the news is out — this project is built to
+find good candidates for that pattern, pick the right options strategy for each one, place
+the trade, watch it, and close it out, night after night, without a human clicking anything.
 
-**Status**: every planned piece is implemented and tested — the shared engine and all six
-strategy modules (screening against real, live data, cross-strategy ranking, cap/correlation-
-aware position selection), broker CLI (`src/tt.py`, real OAuth2 session verified against a
-live account), persistence (`src/db.py`, a strategy-agnostic trade lifecycle and scan-audit
-log), and a full **paper-trading simulation** (`src/db_paper.py`, a wholly separate database
-and CLI — see [`docs/paper-trading.md`](docs/paper-trading.md)) that never touches the live
-account's orders or buying power. Paper vs. live is a single config switch
-(`enable_live_trading`, default `false`): the same loop definition in `CLAUDE.md` handles
-both, with no separate paper-trading loop to keep in sync. Live testing along the way caught
-and fixed several real bugs, detailed in `docs/screening-criteria.md`: a swallowed-exception
-path that misreported missing credentials as a DXLink timeout, a `KeyError` on an
-expected-failure response shape, a term-structure **sign-convention bug** that would have
-rejected exactly the candidates the strategy wants, and a threshold-check gap in
-`apply_tiering`. Also worth knowing: a real order built by `strategies/iron_fly.py get_order`
-was confirmed valid by tastytrade's own preflight (rejected only on account buying power, not
-order structure) — which is exactly why paper trading never calls `execute_trade`, even in
-dry-run, to avoid coupling simulated fills to the real account's financial state. See
-`CLAUDE.md` for the full operating design.
+It knows six different strategies, ranging from simple defined-risk spreads to a couple of
+higher-risk, no-safety-net trades that are only allowed to run in paper (simulated) mode
+unless you deliberately turn them loose. Every night, it looks at the whole list of
+companies reporting earnings, screens each one against all six strategies, and picks
+whichever single strategy looks best for each stock — rather than committing to one
+strategy ahead of time and hoping it fits.
 
-## How it works
+Everything below explains how it actually works, in plain terms, followed by the setup
+steps if you want to run it yourself.
 
-**1. Finding earnings symbols.** The candidate universe is rebuilt every entry-window tick,
-not cached from the morning: `scanner.fetch_entry_window_calendar()` queries the DoltHub
-earnings calendar for today (keeping only `After market close` reports — a same-day BMO
-report already happened this morning and must not be re-entered) and for tomorrow (keeping
-only `Before market open` reports, still ahead of us this afternoon), and merges the two.
+## The six strategies
 
-**2. Reviewing and selecting a strategy.** Every symbol on that merged calendar is screened
-against all six strategies before anything is entered. `rank_strategies.evaluate_symbol()`
-computes the shared signals once per symbol (average volume, IV/RV ratio, historical
-winrate), then runs each strategy's own criteria fetch and tiering, producing a tier
-(Tier 1 / Tier 2 / Near Miss / Reject) and a composite score
-(`|edge signal| × IV/RV ratio × shrunk winrate`, where the edge signal is term structure for
-five strategies or skew for the expected-move butterfly, which has no back-month to compare
-against) per strategy. The single best-ranked Tier 1/2 strategy wins each symbol — never two
-strategies on the same name, since one earnings surprise would hit both positions at once
-rather than diversify anything. Symbols are then ranked against each other by their winning
-strategy's score, and `scanner.select_positions()` applies `max_concurrent_earnings_positions`
-and `correlation_block_list` across that combined, cross-symbol list.
+- **Iron fly** — sell an at-the-money straddle, buy wings to cap the risk. The original
+  strategy this project was built around.
+- **Iron condor** — same shape as the iron fly, but the strikes you sell are further out
+  (at the edge of the expected move) instead of dead-center.
+- **Expected-move butterfly** — a debit trade: buy one at-the-money option, sell two further
+  out, buy one more beyond that. Which side (calls or puts) it uses depends on which side's
+  options look richer.
+- **Double calendar** — sells a near-term option and buys a longer-dated one at the same
+  strike, on both the call and put side. Profits when the near-term option's value decays
+  faster than the long-term one's.
+- **Short strangle** — sell an out-of-the-money call and put with nothing protecting you.
+  Real, uncapped risk — this one only trades automatically in paper mode by default.
+- **Jade lizard** — sell a put and a call spread together, sized so there's technically no
+  risk if the stock rallies. The downside on the put is still open-ended, though, so it gets
+  the same paper-mode-only treatment as the short strangle.
 
-**3. Entering a trade.** Selection isn't authorization to trade — every selected symbol still
-clears a re-verification gate using live data, not the scan-time snapshot:
-naked-strategy live-mode block (`short_strangle`/`jade_lizard` never enter live without
-`allow_naked_strategies` explicitly set, though paper mode always allows them) → re-verify
-via `reverify_symbol()` (reruns the winning strategy's own tiering fully fresh) →
-position-level risk cap (wing width minus credit, or debit paid, vs.
-`max_risk_per_trade_pct` of NLV) → build the order and record it. Every strategy's
-`get_order` returns the same `order.price`/`order.price_effect` shape, so `entry_credit` is
-derived the same way regardless of which strategy won: positive for a credit, negative for a
-debit. Paper mode stops at `db_paper.py save_trade` — no broker call at all; live mode
-submits via `tt.py execute_trade --live` and records through `db.py` instead.
+## How a night actually goes
 
-**4. Attaching stops.** Every open position gets one check between market open and the close
-window — reacting to an overnight gap the moment the market reopens, ahead of the mechanical
-close a few minutes later:
+**1. It finds tonight's (and tomorrow morning's) earnings reports.** Every time it wakes up
+during the trading window, it re-checks the earnings calendar fresh — companies reporting
+after today's close, plus companies reporting before tomorrow's open. It never trades on a
+stale list.
 
-| Strategy | Profit target | Stop | Basis |
-|---|---|---|---|
-| Iron fly / iron condor | 50% of credit | 1.5× credit | Earnings-specific short-straddle convention |
-| Expected-move butterfly | 25% of debit | 40% loss of debit | Debit-butterfly convention |
-| Double calendar | 25% of debit | 100% of debit (+ 5-day time exit) | Own multi-week research |
-| Short strangle / jade lizard | — | 0.45Δ on either short leg | Undefined risk — the stop *is* the risk management |
+**2. It screens every stock against all six strategies.** For each company reporting, it
+pulls the numbers that matter (trading volume, how rich the options are relative to how much
+the stock actually tends to move, and a track record of past earnings reactions), then checks
+each of the six strategies against that stock, one by one. Each strategy gets a tier — good
+candidate, borderline, or reject — and a score. Whichever single strategy scores best for that
+stock is the one that gets used; the same stock is never traded with two strategies at once,
+since one earnings surprise would hit both trades identically instead of spreading the risk
+around.
 
-**5. Reviewing for exit.** Three layers, in firing order, with the last always unconditional:
-an early profit-target/stop-loss/delta check (Step 3c) right after the open; `double_calendar`'s
-own multi-week management step (Step 3b), which can close just the threatened side and leave
-the rest running; and a close-window sweep (Step 3) that force-closes whatever remains,
-regardless of P&L, by reading each position's own stored order legs (`legs_json`) rather than
-strategy-specific strike columns — one mechanism covers every strategy's shape.
+**3. It ranks the whole night's opportunities against each other**, not just within one
+stock, and picks the best handful — capped by how many positions it's allowed to hold at
+once and by rules against piling into correlated names on the same night.
 
-**6. Logging and analyzing.** Every decision point writes to `scan_log` — one row per
-(symbol, strategy) evaluated whether or not it won, one reserved `_ranked` summary row per
-symbol naming the winner and where it landed against every other candidate that day, and one
-row per position at entry and at each exit decision. `get_pnl_summary` reads closed positions
-back out of `trades` — win rate, average win/loss, totals by strategy — from whichever
-database (paper or live) Step 0 selected. A quiet night and a broken filter look identical in
-the P&L alone; they don't in the log.
+**4. Before it actually places a trade, it double-checks everything.** Prices move between
+the afternoon scan and the moment it's ready to enter, so it re-verifies the trade still
+makes sense with fresh numbers, checks the position won't risk too much of the account, and
+only then builds and places the order. The two riskier strategies get an extra hard stop
+here too — they simply won't fire in a live account unless you've explicitly said it's okay.
 
-## Setup
+**5. Once a trade is on, it watches for a reason to close it early.** Right after the market
+reopens the next morning, it checks whether the trade has already hit a profit target or a
+stop-loss, and closes it right then if so. Most of these positions are meant to be held
+overnight, not managed all day — the double calendar is the one exception, since it runs for
+weeks rather than one night, so it gets checked throughout the trading day instead.
+
+**6. Whatever's still open gets closed no matter what**, once the morning "close window"
+arrives — win, lose, or draw. The idea is that the edge in these trades comes from the
+overnight move itself; there's nothing to gain by holding longer once the market has settled.
+
+**7. Every decision gets written down.** Not just the trades it made — every stock it looked
+at, every strategy it considered for that stock, and the reason each one passed or failed.
+That way a quiet night (nothing worth trading) and a broken screening rule (something's wrong)
+never look the same in hindsight.
+
+## Paper trading vs. real money
+
+This whole thing runs in a fully simulated "paper trading" mode by default — it never touches
+your real account, never places a real order, and keeps a completely separate results ledger
+from live trading. Flipping one setting (`enable_live_trading` in the config) switches it over
+to placing real trades through your tastytrade account. The two modes share the exact same
+decision-making logic; nothing about how it picks trades changes based on which one you're in,
+so paper results are a genuine preview of what live trading would do, not a toy version.
+
+## Getting it running yourself
+
+You'll need a tastytrade account (for live quotes and, if you want it, real order
+placement) and a local clone of some free earnings/options datasets from DoltHub.
 
 ```bash
-cp config.example.json config.json   # then edit config.json
+cp config.example.json config.json   # then edit config.json to taste
 python src/db.py init_db
 pip install mysql-connector-python tastytrade keyring
-python src/tt.py secrets_set   # store tastytrade OAuth client secret + refresh token in the OS keyring
+python src/tt.py secrets_set   # stores your tastytrade credentials in your OS's secure keyring
 
-# Earnings calendar, IV/RV, and winrate-backtest data (DoltHub, free, no API key).
-# Clone all three repos into a common parent directory so one `dolt sql-server`
-# serves them as separate databases on the same port.
+# Earnings calendar, IV/RV, and historical winrate data — free, no API key needed.
 mkdir dolt-data && cd dolt-data
 dolt clone post-no-preference/earnings
 dolt clone post-no-preference/options
 dolt clone post-no-preference/stocks
-dolt sql-server --data-dir .   # leave running in a separate terminal
+dolt sql-server --data-dir .   # leave this running in its own terminal window
 ```
 
-## Project structure
+Once that's done, `CLAUDE.md` has the full step-by-step operating logic the agent follows
+every time it runs.
+
+## What's in here
 
 ```
 EarningsAgent/
-├── CLAUDE.md                # Agent operational brain (loaded every loop iteration)
-├── config.example.json      # Config template — copy to config.json (top-level = project-wide,
-│                             #   "strategies.<name>" = per-strategy tuning)
+├── CLAUDE.md                # The agent's full playbook — read every time it runs
+├── config.example.json      # Copy this to config.json and fill in your own settings
 ├── src/
-│   ├── scanner.py           # Strategy-agnostic engine — calendar, IV/RV, winrate, volume, liquidity gates, ranking
-│   ├── rank_strategies.py   # Cross-strategy orchestrator — evaluates all six per symbol, ranks symbols against each other
-│   ├── strategies/
-│   │   ├── iron_fly.py               # ATM short straddle + wings
-│   │   ├── iron_condor.py            # Same shape, short strikes at the expected-move boundary
-│   │   ├── expected_move_butterfly.py  # 1-2-1 debit butterfly, side picked by skew
-│   │   ├── double_calendar.py         # Front short / back long calendar spread
-│   │   ├── short_strangle.py          # Condor's short strikes, no wings (undefined risk)
-│   │   └── jade_lizard.py             # Short put + riskless call spread (undefined risk on the put side)
-│   ├── tt.py                # tastytrade CLI — OAuth2 session, quotes, chains, order execution
-│   ├── session.py           # Cached tastytrade OAuth session
-│   ├── credentials.py       # OS-keyring credential storage
-│   ├── db.py                # SQLite CLI helper — real trade lifecycle, scan audit log
-│   └── db_paper.py          # SQLite CLI helper — PAPER trade lifecycle (separate DB, never mixed with real trades)
+│   ├── scanner.py           # Shared brains: calendar lookup, volume/IV checks, ranking
+│   ├── rank_strategies.py   # Screens every stock against all six strategies, picks the best fit
+│   ├── strategies/          # One file per strategy — its own rules and order-building logic
+│   │   ├── iron_fly.py
+│   │   ├── iron_condor.py
+│   │   ├── expected_move_butterfly.py
+│   │   ├── double_calendar.py
+│   │   ├── short_strangle.py
+│   │   └── jade_lizard.py
+│   ├── tt.py                # Talks to tastytrade — quotes, option chains, placing orders
+│   ├── session.py           # Keeps the tastytrade login session cached
+│   ├── credentials.py       # Reads/writes your credentials from the OS keyring — never plaintext
+│   ├── db.py                # Keeps a record of real trades
+│   └── db_paper.py          # Keeps a completely separate record of paper trades
 ├── docs/
-│   ├── screening-criteria.md  # Source of truth for iron fly's screening thresholds
-│   └── paper-trading.md       # Paper-trading simulation design (uses CLAUDE.md's Loop Steps directly)
-├── .claude/
-│   └── commands/            # (empty — no separate paper/live command; CLAUDE.md's Loop Steps cover both)
-├── dolt-data/                # DoltHub clones (gitignored, machine-local, multi-GB)
-├── data/                    # Created at first run (gitignored)
-│   ├── earnings_trades.db   # trades/scan_log tagged by `strategy` column
-│   └── paper_trades.db      # Wholly separate from earnings_trades.db
-└── logs/                    # Created at first run (gitignored)
+│   ├── screening-criteria.md  # The exact thresholds each strategy screens on, and why
+│   └── paper-trading.md       # How paper mode is kept honest and separate from real trading
+├── dolt-data/                # Your local earnings/options data clones (not checked in)
+├── data/                    # Trade history databases, created the first time you run it
+└── logs/                    # Run logs
 ```
 
 ## License
@@ -157,4 +141,6 @@ MIT — see [`LICENSE`](LICENSE).
 
 ## Disclaimer
 
-This software is provided for **educational and informational purposes only**. It is not financial advice. Options trading involves substantial risk of loss. You are solely responsible for all trading decisions and any resulting gains or losses.
+This software is provided for **educational and informational purposes only**. It is not
+financial advice. Options trading involves substantial risk of loss. You are solely
+responsible for all trading decisions and any resulting gains or losses.
