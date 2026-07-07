@@ -386,7 +386,10 @@ def label_order_legs(order_result: dict) -> list[dict]:
     ]
 
 
-def evaluate_position(position: dict, open_legs: list[dict], quotes: dict, config: dict) -> dict:
+def evaluate_position(
+    position: dict, open_legs: list[dict], quotes: dict, config: dict,
+    is_first_check_of_day: bool = False,
+) -> dict:
     """Decide what (if anything) to do with an open double calendar position
     this tick. Pure calculation, no I/O -- callers fetch `open_legs` (via
     `db.py`/`db_paper.py get_open_legs`) and `quotes` (live bid/ask/delta per
@@ -397,11 +400,24 @@ def evaluate_position(position: dict, open_legs: list[dict], quotes: dict, confi
     negative number -- see fetch_double_calendar_order's `debit` field) and
     `expiration` (the front-month expiration, stored at entry).
 
+    `is_first_check_of_day` should be True when this is the loop's first
+    Step 3b tick since the prior session close (the "wake at next market
+    open" case in CLAUDE.md's wakeup table, not a mid-session poll). It does
+    NOT change any threshold or action -- an earnings reaction gap happens
+    overnight, so no polling frequency could have caught it sooner regardless
+    of this flag. It only relabels a loss-driven stop's `reason` with an
+    `_overnight_gap` suffix so `scan_log` can distinguish "this stop fired on
+    the first possible tick after a gap" from "this stop fired mid-session,"
+    which matters for judging whether the stop thresholds themselves are
+    miscalibrated -- a gap-driven stop firing immediately is not evidence the
+    polling cadence is too slow.
+
     Returns one of:
       {"action": "hold"}
-      {"action": "close_all", "reason": "profit_target"|"stop_loss"|"time_exit"}
-      {"action": "close_side", "side": "call"|"put", "reason": "leg_stop"}
+      {"action": "close_all", "reason": "profit_target"|"stop_loss"|"stop_loss_overnight_gap"|"time_exit"}
+      {"action": "close_side", "side": "call"|"put", "reason": "leg_stop"|"leg_stop_overnight_gap"}
     """
+    gap_suffix = "_overnight_gap" if is_first_check_of_day else ""
     cfg = _strategy_config(config)
     debit = abs(position["entry_credit"])
     by_role = {leg["leg_role"]: leg for leg in open_legs}
@@ -426,7 +442,7 @@ def evaluate_position(position: dict, open_legs: list[dict], quotes: dict, confi
         if net_credit_on_close >= debit * (1 + cfg.get("profit_target_pct", 0.25)):
             return {"action": "close_all", "reason": "profit_target"}
         if -net_credit_on_close >= debit * cfg.get("stop_loss_pct_of_debit", 1.0):
-            return {"action": "close_all", "reason": "stop_loss"}
+            return {"action": "close_all", "reason": f"stop_loss{gap_suffix}"}
 
     front_expiration = datetime.strptime(position["expiration"], "%Y-%m-%d").date()
     days_to_front_expiration = (front_expiration - date.today()).days
@@ -442,7 +458,7 @@ def evaluate_position(position: dict, open_legs: list[dict], quotes: dict, confi
         if q is None or q.get("delta") is None:
             continue
         if abs(q["delta"]) >= leg_stop_delta_abs:
-            return {"action": "close_side", "side": side, "reason": "leg_stop"}
+            return {"action": "close_side", "side": side, "reason": f"leg_stop{gap_suffix}"}
 
     return {"action": "hold"}
 
