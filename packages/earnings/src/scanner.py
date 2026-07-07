@@ -335,6 +335,31 @@ def call_tt(args_list: list[str]) -> dict:
     return json.loads(result.stdout)
 
 
+def is_monthly_expiration(d) -> bool:
+    """True if `d` is a standard monthly options expiration (the third
+    Friday of its month). Used to distinguish "true" monthly cycles from
+    weekly expirations that happen to be some number of days out --
+    relevant wherever a strategy specifically wants term-structure
+    separation from a genuine monthly cycle, not just any later date.
+    """
+    if d.weekday() != 4:  # Friday
+        return False
+    return 15 <= d.day <= 21
+
+
+def nearest_expiration_at_least_days_after(expirations: list, after: object, min_days: int, monthly_only: bool = False):
+    """Nearest expiration that is at least `min_days` after `after`, optionally
+    restricted to true monthly cycles (see is_monthly_expiration). Returns
+    None if no candidate qualifies. `expirations` need not be pre-sorted.
+    """
+    candidates = [e for e in expirations if (e - after).days >= min_days]
+    if monthly_only:
+        candidates = [e for e in candidates if is_monthly_expiration(e)]
+    if not candidates:
+        return None
+    return min(candidates)
+
+
 def atm_entry(entries: list[dict], option_type: str, underlying_price: float) -> dict | None:
     """Closest-to-ATM entry of the given type ('call' or 'put') from a
     tt.py get_option_chain 'chain' list for one expiration. tt.py's

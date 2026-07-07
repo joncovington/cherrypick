@@ -67,9 +67,17 @@ def compute_term_structure(
     original sign, a real earnings candidate (EPAC, front IV ~64% richer
     than back) would have been *rejected* as term_structure_insufficient --
     exactly the opposite of the intended behavior.
+
+    expected_move applies the standard 0.85x straddle-to-expected-move
+    correction (documented convention, e.g. AAPL $14.00 straddle -> $11.90
+    expected move) rather than using the raw straddle price directly --
+    this only affects the screening threshold comparison
+    (min_expected_move_dollars in apply_tiering), not wing sizing, which
+    fetch_iron_fly_order computes independently from its own freshly-fetched
+    straddle_credit.
     """
     term_structure = (back_atm_iv - front_atm_iv) / back_atm_iv
-    expected_move = front_atm_call_mid + front_atm_put_mid
+    expected_move = 0.85 * (front_atm_call_mid + front_atm_put_mid)
     return TermStructureResult(
         symbol=symbol,
         front_expiration=front_expiration,
@@ -136,10 +144,15 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
         if not eligible:
             return {"ok": False, "error": f"no expiration on/after reaction date {reaction_date}"}
         front_exp = min(eligible)
-        back_candidates = [e for e in expirations if e > front_exp]
-        if not back_candidates:
+        # Prefer a genuine monthly cycle >=21 days out (documented convention
+        # for real term-structure separation, not just "some later date");
+        # fall back to the nearest expiration >=21 days out if this name has
+        # no monthly listing in the fetched window rather than failing outright.
+        back_exp = scanner.nearest_expiration_at_least_days_after(expirations, front_exp, 21, monthly_only=True)
+        if back_exp is None:
+            back_exp = scanner.nearest_expiration_at_least_days_after(expirations, front_exp, 21, monthly_only=False)
+        if back_exp is None:
             return {"ok": False, "error": "no back-month expiration available for term structure"}
-        back_exp = min(back_candidates, key=lambda e: abs((e - front_exp).days - 30))
 
         front_chain = scanner.call_tt([
             "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
