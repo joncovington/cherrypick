@@ -151,6 +151,10 @@ EarningsAgent/
 └── logs/                    # Created at first run (gitignored)
 ```
 
+## License
+
+MIT — see [`LICENSE`](LICENSE).
+
 ## Disclaimer
 
 This software is provided for **educational and informational purposes only**. It is not financial advice. Options trading involves substantial risk of loss. You are solely responsible for all trading decisions and any resulting gains or losses.
