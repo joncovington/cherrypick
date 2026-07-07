@@ -33,6 +33,7 @@ Commands (see CLAUDE.md's Tool Reference):
   get_order --symbol X --earnings_date YYYY-MM-DD --earnings_timing "..."
 """
 
+import json
 import os
 import sys
 from datetime import date
@@ -302,6 +303,23 @@ def fetch_expected_move_butterfly_order(symbol: str, earnings_date: date, earnin
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
+    """Decide whether to close an open expected-move-butterfly position
+    early (CLAUDE.md Step 3c) ahead of Step 3's unconditional close-window
+    sweep. Debit-strategy shape (net_debit, price_effect "Debit" the
+    normal case) -- delegates to scanner.evaluate_debit_spread_exit
+    (config: profit_target_pct, stop_loss_pct_of_debit), not the credit-
+    spread version iron_fly.py/iron_condor.py use. No `open_legs` argument
+    since this strategy never populates `trade_legs` either -- always
+    closes as a single unit via `legs_json`.
+    """
+    legs = json.loads(position["legs_json"])
+    exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
+    if exit_debit is None:
+        return {"action": "hold"}
+    return scanner.evaluate_debit_spread_exit(position["entry_credit"], exit_debit, config)
 
 
 def cmd_get_candidates(args) -> dict:

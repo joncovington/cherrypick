@@ -18,6 +18,7 @@ Commands (see CLAUDE.md's Tool Reference):
   get_order --symbol X --earnings_date YYYY-MM-DD --earnings_timing "..."
 """
 
+import json
 import os
 import sys
 from datetime import date
@@ -246,6 +247,22 @@ def fetch_iron_condor_order(symbol: str, earnings_date: date, earnings_timing: s
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
+    """Decide whether to close an open iron condor position early
+    (CLAUDE.md Step 3c) ahead of Step 3's unconditional close-window
+    sweep. Identical pattern to iron_fly.py's evaluate_position() -- same
+    credit-spread shape, same shared scanner.evaluate_credit_spread_exit
+    thresholds (config: profit_target_pct, stop_loss_credit_multiple).
+    No `open_legs` argument since iron_condor never populates `trade_legs`
+    either -- always closes as a single unit via `legs_json`.
+    """
+    legs = json.loads(position["legs_json"])
+    exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
+    if exit_debit is None:
+        return {"action": "hold"}
+    return scanner.evaluate_credit_spread_exit(position["entry_credit"], exit_debit, config)
 
 
 def cmd_get_candidates(args) -> dict:

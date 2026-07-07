@@ -30,7 +30,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 
 All operations are called via `python src/tt.py <command>` (broker), `python src/scanner.py <command>` (shared engine), and `python src/strategies/<name>.py <command>` (strategy-specific scanning/order-building; `iron_fly`, `double_calendar`, `expected_move_butterfly`, `iron_condor`, `short_strangle`, and `jade_lizard` today). Commands output JSON to stdout.
 
-All six strategies are wired into Step 4b's entry mechanism via `rank_strategies.py` (see below) and every strategy's positions are now closeable: `iron_fly.py`/`iron_condor.py`/`expected_move_butterfly.py` share one unconditional overnight-gap force-close (Step 3, keyed off `legs_json` — no strategy-specific strike matching needed); `double_calendar.py` has its own multi-week management step (Step 3b) that can close just the threatened side while leaving the other side's spread open, via per-leg tracking in `trade_legs`; `short_strangle.py`/`jade_lizard.py` get an intraday delta-based stop (Step 3c, narrower than Step 3b's whole-session window — just market-open to `close_window_start`) ahead of Step 3's unconditional sweep, since undefined risk means waiting for the ordinary close window is itself the risk. `short_strangle.py` and `jade_lizard.py` carry genuinely undefined risk (no protective wings on their naked side): entries are allowed in paper mode regardless of config (no real capital/margin at risk), but live-mode entries are hard-blocked in Step 4b and separately require the project-wide `allow_naked_strategies` flag (default `false`) just to rank as viable at all — see Config Options and `scanner.naked_strategies_allowed()`.
+All six strategies are wired into Step 4b's entry mechanism via `rank_strategies.py` (see below) and every strategy's positions are now closeable: `iron_fly.py`/`iron_condor.py`/`expected_move_butterfly.py` share one unconditional overnight-gap force-close (Step 3, keyed off `legs_json` — no strategy-specific strike matching needed), plus an earlier profit-target/stop-loss check (Step 3c, market-open to `close_window_start`) that can close a clearly-favorable or clearly-unfavorable position a few minutes early, calibrated against earnings-specific short-straddle/iron-butterfly/debit-butterfly research (not the generic weeks-long income-strategy conventions, which don't transfer to a ~16-hour overnight-gap trade); `double_calendar.py` has its own multi-week management step (Step 3b) that can close just the threatened side while leaving the other side's spread open, via per-leg tracking in `trade_legs`; `short_strangle.py`/`jade_lizard.py` get an intraday delta-based stop (also Step 3c) ahead of Step 3's unconditional sweep, since undefined risk means waiting for the ordinary close window is itself the risk. `short_strangle.py` and `jade_lizard.py` carry genuinely undefined risk (no protective wings on their naked side): entries are allowed in paper mode regardless of config (no real capital/margin at risk), but live-mode entries are hard-blocked in Step 4b and separately require the project-wide `allow_naked_strategies` flag (default `false`) just to rank as viable at all — see Config Options and `scanner.naked_strategies_allowed()`.
 
 | Command | Purpose | Requires live trading? |
 |---|---|---|
@@ -104,6 +104,8 @@ See `config.example.json` for the authoritative list. Top-level options are proj
 | `wing_width_credit_multiple` | Fallback wing width sizing (3× credit) only if this candidate's IV/RV ratio can't be refetched at entry time |
 | `wing_width_multiple_low` / `_mid` / `_high` | `2.5` / `3.0` / `3.5` — wing width multiple by IV/RV band (see `wing_width_band_*_max`); scaled to *this candidate's own* IV/RV ratio, not market-wide VIX, since an earnings move is idiosyncratic to one stock (`strategies/iron_fly.py`'s `_wing_width_multiple()`) |
 | `wing_width_band_low_max` / `_mid_max` | `1.25` / `1.75` — IV/RV ratio boundaries for the wing-width scale above |
+| `profit_target_pct` | Step 3c: close early once profit reaches `entry_credit * profit_target_pct` — `0.50` (50% of max profit), earnings-specific short-straddle/iron-butterfly convention (`scanner.evaluate_credit_spread_exit()`) |
+| `stop_loss_credit_multiple` | Step 3c: close if cost-to-close reaches `entry_credit * stop_loss_credit_multiple` — `1.5`× credit received |
 
 **`strategies.double_calendar`:**
 
@@ -123,6 +125,8 @@ See `config.example.json` for the authoritative list. Top-level options are proj
 | `min_expected_move_pct` | Needs a large enough expected move for the ATM/short/far strikes to actually separate on the real strike grid |
 | `min_skew_abs` | Hard-reject if the call/put IV difference at the short strikes is too small to be a real directional signal (`insufficient_skew_signal`) rather than picking an arbitrary side |
 | `max_front_expiration_days` | Same convention as iron fly's — keeps the trade's extrinsic value attributable to the earnings event, not generic time decay |
+| `profit_target_pct` | Step 3c: close early once profit reaches `entry_debit * profit_target_pct` — `0.25` (25% of max profit), debit-butterfly-specific convention (`scanner.evaluate_debit_spread_exit()`) |
+| `stop_loss_pct_of_debit` | Step 3c: close if the loss reaches `entry_debit * stop_loss_pct_of_debit` — `0.40` (a 40% loss of the debit paid), tighter than `double_calendar`'s `1.0` since this is a faster-resolving overnight position, not a multi-week calendar |
 
 **`strategies.iron_condor`:**
 
@@ -131,6 +135,7 @@ See `config.example.json` for the authoritative list. Top-level options are proj
 | `min_expected_move_pct` | Short strikes sit at the expected-move boundary (1.0×, same convention as `double_calendar`/`expected_move_butterfly`), so this needs a large enough move for real strike separation |
 | `min_term_structure` | Same convention as iron fly's — front-month IV must be inflated relative to back-month by a real margin |
 | `wing_width_credit_multiple` / `wing_width_multiple_low` / `_mid` / `_high` / `wing_width_band_low_max` / `_mid_max` | Same IV/RV-banded wing-sizing convention as `strategies.iron_fly`, applied outward from each short strike instead of from an ATM straddle |
+| `profit_target_pct` / `stop_loss_credit_multiple` | Step 3c, same convention and values as `strategies.iron_fly`'s (`0.50` / `1.5`×) |
 
 **`strategies.short_strangle`:**
 
@@ -167,7 +172,7 @@ All reads and writes go through `src/db.py` (real) / `src/db_paper.py` (paper) s
 
 1. **Load state** — open positions, tonight's entry count so far, account NLV. Skip new entries entirely if `max_concurrent_earnings_positions` is already at cap. Fetch via `db_paper.py`/`db.py` per Step 0's mode.
 
-2. **Time gate** — this loop only does meaningful work in two windows: the **entry window** (`entry_window_start`–`entry_window_end` ET, before close) and the **close window** (`close_window_start` onward, next morning). Outside both: `iron_fly`/`iron_condor`/`expected_move_butterfly` have no intraday management step by design — a position opened before close is meant to sit untouched through the overnight gap, closed unconditionally at the close window (Step 3). `double_calendar` is different: it spans multiple weeks, not one overnight gap, so if any `double_calendar` position is open and the market is currently in regular session hours, run **Step 3b** before continuing to Step 5. `short_strangle`/`jade_lizard` carry undefined risk on one or both sides, so "wait for the close window" is itself the risk if a bad gap happens — if any position in either is open **and** we're between market open and `close_window_start` (a narrower window than Step 3b's whole session), run **Step 3c** before continuing to Step 5. If none apply, skip straight to Step 5.
+2. **Time gate** — this loop only does meaningful work in two windows: the **entry window** (`entry_window_start`–`entry_window_end` ET, before close) and the **close window** (`close_window_start` onward, next morning). Outside both: `double_calendar` spans multiple weeks, not one overnight gap, so if any `double_calendar` position is open and the market is currently in regular session hours, run **Step 3b** before continuing to Step 5. Every other strategy (`iron_fly`, `iron_condor`, `expected_move_butterfly`, `short_strangle`, `jade_lizard`) holds only overnight — if any position in one of these five is open **and** we're between market open and `close_window_start` (a narrower window than Step 3b's whole session), run **Step 3c** before continuing to Step 5: a profit-target/stop-loss check for the first three, an undefined-risk delta stop for the last two. If none apply, skip straight to Step 5.
 
 3. **Close window** (if in close window and positions are open) — the unconditional final backstop for **every** strategy, no exceptions: whatever is still open when the close window arrives gets closed here, regardless of whether Step 3c already acted on part of a naked position.
    - For each open `iron_fly`/`iron_condor`/`expected_move_butterfly` position, force-close regardless of P&L. The edge is front-loaded into the IV crush that already happened overnight; holding longer only adds new gap risk, not more edge. All three share one mechanism, keyed off the position's stored `legs_json` (its entry legs verbatim, `{symbol, action, quantity}`) rather than iron-fly-specific strike columns — this is what lets the same close logic cover `iron_condor`'s two distinct short strikes and `expected_move_butterfly`'s asymmetric strikes-plus-×2-short-quantity without a separate mechanism per shape:
@@ -188,14 +193,23 @@ All reads and writes go through `src/db.py` (real) / `src/db_paper.py` (paper) s
    - `action: close_all` (profit target, stop loss, or time exit): close every still-open leg the same way, `save_leg_close` each. Once `get_open_legs` returns empty for that order_id, compute the aggregate P&L across all 4 legs' entry vs. close prices and call `save_close` to finalize the `trades` row.
    - Log the outcome per position (`action: "dc_hold"` / `"dc_close_side"` / `"dc_close_all"`, plus the `reason` `evaluate_position()` returned) via `scan_log`, same auditability convention as entries and iron fly closes.
 
-3c. **Naked-strategy intraday stop** (runs whenever Step 2 routes here — any open `short_strangle`/`jade_lizard` position, only between market open and `close_window_start`, not the whole session like Step 3b): the point is reacting to an overnight gap the moment the market reopens, ahead of Step 3's close-window sweep a few minutes later — an overnight gap is instantaneous, so this doesn't catch anything Step 3 wouldn't eventually catch anyway, it just catches it sooner, which matters specifically because these two carry undefined risk.
+3c. **Early exit checks** (runs whenever Step 2 routes here — any open position in one of the five overnight-hold strategies, only between market open and `close_window_start`, not the whole session like Step 3b): the point is resolving a clearly-favorable or clearly-unfavorable overnight gap the moment the market reopens, ahead of Step 3's close-window sweep a few minutes later. Step 3's unconditional sweep remains the final backstop regardless of what this step decides — this step only ever closes *earlier*, never *instead of*.
+
+   **Profit-target/stop-loss check** (`iron_fly`, `iron_condor`, `expected_move_butterfly` — none of these populate `trade_legs`; they always close as a single unit):
+   - For each open position: `scanner.fetch_quotes_by_symbol(symbol, stored_expiration, [leg["symbol"] for leg in json.loads(legs_json)], current_price)` — the same live-quote mechanism Step 3 uses.
+   - Call `strategies/<strategy>.py`'s `evaluate_position(position, quotes, config)` (per the position's own `strategy`) — `iron_fly.py`/`iron_condor.py` check `profit_target_pct`/`stop_loss_credit_multiple` (credit-spread thresholds); `expected_move_butterfly.py` checks `profit_target_pct`/`stop_loss_pct_of_debit` (debit-spread thresholds).
+   - `action: hold` — nothing to do this tick (the common case).
+   - `action: close_all` (`profit_target` or `stop_loss`): close now using the same `legs_json`-based mechanism Step 3 documents (`scanner.compute_generic_exit_debit`, same conservative pricing), `save_close` directly — no partial-leg state involved.
+   - Log the outcome (`action: "<strategy>_hold"`/`"<strategy>_close_all"`, plus the `reason` `evaluate_position()` returned) via `scan_log`.
+
+   **Naked-strategy delta stop** (`short_strangle`, `jade_lizard` — undefined risk means "wait for the close window" is itself the risk if a bad gap happens):
    - For each open position: `get_open_legs --order_id <id>` (a prior tick may have already closed `jade_lizard`'s put).
    - Pull live quotes/greeks for those legs via `tt.py get_option_chain --include_greeks --include_quotes`.
    - Call `strategies/short_strangle.py`'s or `strategies/jade_lizard.py`'s `evaluate_position()` (per the position's own `strategy`) with the position row, open legs, and quotes.
    - `action: hold` — nothing to do this tick.
    - `jade_lizard`'s `action: close_put`: close just that leg (buy back at ask) — same conservative pricing as Step 3b. `save_leg_close` for it; the already-riskless call spread stays open (Step 3's close-window sweep picks up whatever's left regardless).
    - `short_strangle`'s `action: close_all`: close both legs the same way, `save_leg_close` each, then `save_close` to finalize — there's no long-dated leg worth preserving once either side is threatened, unlike `double_calendar`'s untested side or `jade_lizard`'s riskless call spread.
-   - Log the outcome (`action: "ss_hold"`/`"ss_close_all"`/`"jl_hold"`/`"jl_close_put"`, plus the `reason` `evaluate_position()` returned) via `scan_log`, same convention as Step 3b.
+   - Log the outcome (`action: "ss_hold"`/`"ss_close_all"`/`"jl_hold"`/`"jl_close_put"`, plus the `reason` `evaluate_position()` returned) via `scan_log`, same convention as above.
 
 4. **Entry window** (if in entry window):
 
@@ -230,12 +244,11 @@ After completing Step 5, schedule the next wakeup using these intervals. Windows
 | No open positions, approaching some strategy's entry window (30 min prior) | **300s** |
 | Inside an entry window, `max_concurrent_earnings_positions` already reached | **end loop / wake at close window start** (no more entries possible tonight; polling for fills is pointless) |
 | Inside an entry window, capacity remaining | **60s** (fills need timely repricing) |
-| Overnight, `iron_fly`/`iron_condor`/`expected_move_butterfly` positions open, outside every close window | **end loop / wake at close window start** |
+| Overnight, any of the five Step 3c-eligible strategies' positions open, market closed | **wake at next market open** — nothing to check until the market reopens |
 | Inside a close window, no positions remain (nothing to close, poll pointless) | **Step 5 then end loop** |
 | Inside a close window, ≥1 position open | **60s** |
 | Any `double_calendar` position open, market in regular session hours, outside entry/close windows | **300s–600s** (Step 3b needs timely-enough checks for profit-target/leg-stop moves; no need for 60s given these aren't same-tick fills) |
 | Any `double_calendar` position open, market closed (overnight/weekend) | **wake at next market open** — Step 3b only evaluates during regular session hours |
-| Any `short_strangle`/`jade_lizard` position open, between market open and `close_window_start` | **60s–120s** (Step 3c — tighter than Step 3b's cadence given the narrow window and the urgency of reacting to a just-reopened market on an undefined-risk position) |
-| Any `short_strangle`/`jade_lizard` position open, market closed (overnight/weekend) | **wake at next market open** — Step 3c only evaluates between market open and the close window |
+| Any `iron_fly`/`iron_condor`/`expected_move_butterfly`/`short_strangle`/`jade_lizard` position open, between market open and `close_window_start` | **60s–120s** (Step 3c — tighter than Step 3b's cadence given the narrow window; matters most for the two undefined-risk strategies, but the same cadence costs nothing extra for the other three's profit-target/stop-loss check) |
 
 Use the longest applicable interval. An empty portfolio (no open positions anywhere) should always collapse to the longest interval its other conditions allow — never poll on a fixed cadence just because a window is technically open.

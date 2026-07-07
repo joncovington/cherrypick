@@ -56,6 +56,10 @@
       "wing_width_band_low_max": 1.25,
       "wing_width_band_mid_max": 1.75,
 
+      "_exit_note": "Step 3c (market-open-to-close-window) profit-target/stop-loss check via scanner.evaluate_credit_spread_exit, ahead of Step 3's unconditional close-window sweep. Calibrated against earnings-specific short-straddle/iron-butterfly research (not the generic weeks-long income-strategy conventions, which don't transfer to a ~16-hour overnight-gap trade): 50% of max profit as a target, stop at 1.5x credit received. Not backtested for this project specifically.",
+      "profit_target_pct": 0.50,
+      "stop_loss_credit_multiple": 1.5,
+
       "_liquidity_note": "Shared liquidity gates (scanner.py's apply_liquidity_gates) -- reasoned starting points, not backtested for this strategy. max_bid_ask_spread_pct at 15% of mid is generous enough not to reject normal earnings-week widening but catches genuinely illiquid chains. min_market_cap at $2B (mid-cap floor) favors names liquid enough that options market-makers stay engaged around an earnings event. min_combined_option_volume (front-month chain-wide daily contract volume, same scope as min_combined_open_interest) is a conservative starting floor.",
       "max_bid_ask_spread_pct": 0.15,
       "min_market_cap": 2000000000,
@@ -116,6 +120,10 @@
       "min_winrate": 0.50,
       "near_miss_min_winrate": 0.40,
 
+      "_exit_note": "Step 3c (market-open-to-close-window) profit-target/stop-loss check via scanner.evaluate_debit_spread_exit, ahead of Step 3's unconditional close-window sweep. Calibrated against debit-butterfly-specific research: 25% of max profit as a target, a stop at a 40% loss of the debit paid -- deliberately tighter than double_calendar's calendar-spread-calibrated stop_loss_pct_of_debit (1.0), since this is a structurally different, faster-resolving overnight position. Not backtested for this project specifically.",
+      "profit_target_pct": 0.25,
+      "stop_loss_pct_of_debit": 0.40,
+
       "require_weekly_options": true,
       "min_combined_open_interest": 2000,
       "max_bid_ask_spread_pct": 0.15,
@@ -148,6 +156,10 @@
       "wing_width_multiple_high": 3.5,
       "wing_width_band_low_max": 1.25,
       "wing_width_band_mid_max": 1.75,
+
+      "_exit_note": "Step 3c (market-open-to-close-window) profit-target/stop-loss check via scanner.evaluate_credit_spread_exit, same convention and rationale as iron_fly's -- 50% of max profit target, 1.5x credit stop. Not backtested for this project specifically.",
+      "profit_target_pct": 0.50,
+      "stop_loss_credit_multiple": 1.5,
 
       "require_weekly_options": true,
       "min_combined_open_interest": 2000,

@@ -13,6 +13,7 @@ Commands (see CLAUDE.md's Tool Reference):
   get_order --symbol X --earnings_date YYYY-MM-DD --earnings_timing "..."
 """
 
+import json
 import os
 import sys
 from datetime import date
@@ -280,6 +281,30 @@ def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str,
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
+    """Decide whether to close an open iron fly position early (CLAUDE.md
+    Step 3c, the narrow market-open-to-close-window slot) ahead of Step 3's
+    unconditional close-window sweep, which remains the final backstop
+    regardless of what this returns. Pure calculation, no I/O -- caller
+    fetches `quotes` via `scanner.fetch_quotes_by_symbol` for this
+    position's `legs_json` symbols.
+
+    No `open_legs` argument (unlike double_calendar/short_strangle/
+    jade_lizard's evaluate_position()) since iron_fly never populates
+    `trade_legs` -- it always closes as a single unit via `legs_json`, so
+    there's no partial-close state to track.
+
+    Returns {"action": "hold"} or {"action": "close_all", "reason":
+    "profit_target"|"stop_loss"} -- see scanner.evaluate_credit_spread_exit
+    for the thresholds (config: profit_target_pct, stop_loss_credit_multiple).
+    """
+    legs = json.loads(position["legs_json"])
+    exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
+    if exit_debit is None:
+        return {"action": "hold"}
+    return scanner.evaluate_credit_spread_exit(position["entry_credit"], exit_debit, config)
 
 
 def cmd_get_candidates(args) -> dict:

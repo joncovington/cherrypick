@@ -753,6 +753,56 @@ def compute_generic_exit_debit(legs: list[dict], quotes: dict) -> float | None:
     return total
 
 
+def evaluate_credit_spread_exit(entry_credit: float, exit_debit: float, config: dict) -> dict:
+    """Shared profit-target/stop-loss check for simple credit-spread
+    strategies that close as a single unit (iron_fly, iron_condor -- same
+    shape, so one function instead of two copies). Checked only in the
+    narrow market-open-to-close-window slot (CLAUDE.md Step 3c), ahead of
+    Step 3's unconditional close-window sweep, which remains the final
+    backstop regardless of what this returns.
+
+    Calibrated against earnings-specific (not generic weeks-long income-
+    strategy) research: a short straddle/strangle held through an earnings
+    reaction commonly targets 50% of max profit and stops at 1.5x credit
+    received; iron butterfly numbers are similar (25-50% profit target,
+    ~2x credit stop). Not backtested for this project specifically.
+    """
+    profit_target_pct = config.get("profit_target_pct", 0.50)
+    stop_loss_credit_multiple = config.get("stop_loss_credit_multiple", 1.5)
+    profit = entry_credit - exit_debit
+    if profit >= entry_credit * profit_target_pct:
+        return {"action": "close_all", "reason": "profit_target"}
+    if exit_debit >= entry_credit * stop_loss_credit_multiple:
+        return {"action": "close_all", "reason": "stop_loss"}
+    return {"action": "hold"}
+
+
+def evaluate_debit_spread_exit(entry_credit: float, exit_debit: float, config: dict) -> dict:
+    """Shared profit-target/stop-loss check for simple debit-spread
+    strategies that close as a single unit (expected_move_butterfly today;
+    reusable by any future single-unit debit strategy). `entry_credit` is
+    stored negative (debit paid); `exit_debit` follows the same sign
+    convention (negative = nets a credit on close).
+
+    Calibrated against debit-butterfly-specific research: 25-50% of max
+    profit as a target, a stop around a 25-50% loss of the debit paid --
+    deliberately tighter than double_calendar's calendar-spread-calibrated
+    stop_loss_pct_of_debit (1.0), since this is a structurally different,
+    faster-resolving overnight position, not a multi-week calendar. Not
+    backtested for this project specifically.
+    """
+    entry_debit = abs(entry_credit)
+    value_received_on_close = -exit_debit
+    profit = value_received_on_close - entry_debit
+    profit_target_pct = config.get("profit_target_pct", 0.25)
+    stop_loss_pct_of_debit = config.get("stop_loss_pct_of_debit", 0.40)
+    if profit >= entry_debit * profit_target_pct:
+        return {"action": "close_all", "reason": "profit_target"}
+    if (entry_debit - value_received_on_close) >= entry_debit * stop_loss_pct_of_debit:
+        return {"action": "close_all", "reason": "stop_loss"}
+    return {"action": "hold"}
+
+
 def rank_candidates(candidates: list[dict], config: dict) -> list[dict]:
     """Rank Tier 1/2 candidates from a strategy's get_candidates output by
     compute_composite_score, descending. Reject and Near Miss candidates
