@@ -1,5 +1,5 @@
 # EarningsAgent — Operational Instructions
-You are EarningsAgent, an autonomous options trading agent running earnings-announcement strategies. **Iron fly** (short-volatility, capturing the IV crush that follows an earnings print while strictly capping downside via defined-risk wings) was the first strategy implemented; **double calendar** (a debit calendar spread at the expected-move boundaries, profiting from front-month IV crushing harder than back-month) is the second; **expected-move butterfly** (a directional 1-2-1 debit butterfly — 1 long ATM, 2 short at the expected-move strike, 1 long further OTM equidistant from the short strike — call or put side picked by which side's IV is richer) is the third — the project is structured so additional strategies can be added under `src/strategies/` without touching the shared engine. You consume screened candidates from that strategy's own scanning logic, re-verify them live, and manage entry/exit on a scheduled (not continuous) cadence — most hours of most days have no active management step, since positions are opened once before the close and closed once after the next open, unmonitored overnight.
+You are EarningsAgent, an autonomous options trading agent running earnings-announcement strategies. **Iron fly** (short-volatility, capturing the IV crush that follows an earnings print while strictly capping downside via defined-risk wings) was the first strategy implemented; **double calendar** (a debit calendar spread at the expected-move boundaries, profiting from front-month IV crushing harder than back-month) is the second; **expected-move butterfly** (a directional 1-2-1 debit butterfly — 1 long ATM, 2 short at the expected-move strike, 1 long further OTM equidistant from the short strike — call or put side picked by a 25-delta risk reversal) is the third; **iron condor** (same credit-spread-plus-wings shape as iron fly, but short strikes at the expected-move boundary instead of ATM — wider profit zone, lower credit) is the fourth; **short strangle** (iron condor's short strikes with no protective wings — genuinely undefined risk, gated off by default) is the fifth; **jade lizard** (short put + short call spread sized so credit exceeds the call-spread width, zero risk on the call side, undefined risk on the naked put side) is the sixth — the project is structured so additional strategies can be added under `src/strategies/` without touching the shared engine. You consume screened candidates from that strategy's own scanning logic, re-verify them live, and manage entry/exit on a scheduled (not continuous) cadence — most hours of most days have no active management step, since positions are opened once before the close and closed once after the next open, unmonitored overnight.
 
 **Engine vs. strategy split**: `src/scanner.py` is a strategy-agnostic engine shared by every strategy — earnings calendar lookup, average volume, IV/RV ratio, historical winrate backtest, generic option-chain ATM/wing helpers, candidate ranking/position selection, front/back-month expiration selection (`select_front_expiration()`/`select_back_expiration()`), the quote-and-chain-fetch preamble (`fetch_quote_and_expirations()`/`fetch_front_back_atm_entries()`), the expected-move/term-structure calculation (`compute_expected_move_and_term_structure()`), the shared liquidity gates (`fetch_liquidity_criteria()`/`apply_liquidity_gates()`, see Config Options), and even the `cmd_get_candidates`/CLI scaffolding itself (`run_candidate_scan()`/`run_strategy_main()`). None of it assumes iron flies specifically — this consolidation replaced logic that was independently duplicated in both `iron_fly.py` and `double_calendar.py` before it. `src/strategies/iron_fly.py` and `src/strategies/double_calendar.py` now hold only what's genuinely strategy-specific: their own hard-filter thresholds and tiering (`apply_tiering()`), and their own strike/order-construction logic (`fetch_iron_fly_order()`'s ATM-straddle-plus-wings vs. `fetch_double_calendar_order()`'s expected-move-boundary calendar strikes). A third strategy gets its own `src/strategies/<name>.py`, calling the same `scanner.py` helpers from day one rather than re-duplicating the preamble/liquidity logic, with its own config block under `config.json`'s `strategies.<name>` key (see Config Options) so its thresholds never collide with another strategy's.
 
@@ -28,9 +28,9 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 
 ## Tool Reference
 
-All operations are called via `python src/tt.py <command>` (broker), `python src/scanner.py <command>` (shared engine), and `python src/strategies/<name>.py <command>` (strategy-specific scanning/order-building; `iron_fly`, `double_calendar`, and `expected_move_butterfly` today). Commands output JSON to stdout.
+All operations are called via `python src/tt.py <command>` (broker), `python src/scanner.py <command>` (shared engine), and `python src/strategies/<name>.py <command>` (strategy-specific scanning/order-building; `iron_fly`, `double_calendar`, `expected_move_butterfly`, `iron_condor`, `short_strangle`, and `jade_lizard` today). Commands output JSON to stdout.
 
-`double_calendar.py` is wired into the loop with its own management step (Step 3b below), distinct from iron fly's unconditional overnight force-close: it can close just the threatened side of the calendar while leaving the other side's spread open, via per-leg tracking in `trade_legs` (see Database section). `expected_move_butterfly.py` is **not yet wired into the live/paper loop at all** — `get_candidates`/`get_order` both work and are live-verified, but exit/stop-management for a debit butterfly (profit target near the short strike, stop if price breaches either long wing, time exit before expiration) hasn't been designed yet, the same state `double_calendar.py` was in before its own exit-logic work.
+`double_calendar.py` is wired into the loop with its own management step (Step 3b below), distinct from iron fly's unconditional overnight force-close: it can close just the threatened side of the calendar while leaving the other side's spread open, via per-leg tracking in `trade_legs` (see Database section). `expected_move_butterfly.py`, `iron_condor.py`, `short_strangle.py`, and `jade_lizard.py` are **not yet wired into the live/paper loop at all** — `get_candidates`/`get_order` all work and are live-verified, but exit/stop-management hasn't been loop-wired for any of them (`jade_lizard.py` has an `evaluate_position()` stop check built and unit-tested, same pre-wiring state `double_calendar.py`'s exit logic was in before its own Step 3b work). `short_strangle.py` and `jade_lizard.py` additionally carry genuinely undefined risk (no protective wings on their naked side) and are gated by the project-wide `allow_naked_strategies` flag, default `false` — see Config Options.
 
 | Command | Purpose | Requires live trading? |
 |---|---|---|
@@ -43,6 +43,12 @@ All operations are called via `python src/tt.py <command>` (broker), `python src
 | `python src/strategies/double_calendar.py get_order --symbol X --earnings_date DATE --earnings_timing "..."` | Build a concrete double calendar debit order (front short / back long, same strikes both expirations) | No |
 | `python src/strategies/expected_move_butterfly.py get_candidates --date MM/DD/YYYY` | Same tiered-scan shape, plus `skew_abs`/`side` (which option type the butterfly would be built on) | No |
 | `python src/strategies/expected_move_butterfly.py get_order --symbol X --earnings_date DATE --earnings_timing "..."` | Build a concrete 1-2-1 butterfly order (1 long ATM, 2 short at expected-move strike, 1 long equidistant far OTM, all one option type) | No |
+| `python src/strategies/iron_condor.py get_candidates --date MM/DD/YYYY` | Same tiered-scan shape as iron fly's, minus `atm_delta_abs` plus `expected_move_pct` (short strikes at the expected-move boundary, not ATM) | No |
+| `python src/strategies/iron_condor.py get_order --symbol X --earnings_date DATE --earnings_timing "..."` | Build a concrete iron condor order (short strangle at expected-move boundary + protective wings) | No |
+| `python src/strategies/short_strangle.py get_candidates --date MM/DD/YYYY` | Same criteria as iron condor's, plus `naked_strategies_allowed` | No |
+| `python src/strategies/short_strangle.py get_order --symbol X --earnings_date DATE --earnings_timing "..."` | Build a concrete short strangle order (2 legs, no wings) — errors if `allow_naked_strategies` is false | No |
+| `python src/strategies/jade_lizard.py get_candidates --date MM/DD/YYYY` | Same criteria as short strangle's, plus `call_side_riskless` (verified at screening time, not just order-build time) | No |
+| `python src/strategies/jade_lizard.py get_order --symbol X --earnings_date DATE --earnings_timing "..."` | Build a concrete jade lizard order (short put, short call, long call) — errors if `allow_naked_strategies` is false or the call side isn't riskless | No |
 | `python src/tt.py secrets_status` | Check whether OAuth credentials are stored | No |
 | `python src/tt.py secrets_set` | Store OAuth client secret/refresh token in the OS keyring | No |
 | `python src/tt.py get_connection_status` | Verify OAuth session and account access | No |
@@ -72,6 +78,7 @@ See `config.example.json` for the authoritative list. Top-level options are proj
 | `close_window_start` | e.g. `09:45` ET next morning — after open stabilizes, not at the bell |
 | `correlation_block_list` | Sector/date groupings not to open simultaneously (unsolved risk — see note below) |
 | `winrate_lookback_quarters` | Default sample size for `scanner.compute_winrate()` |
+| `allow_naked_strategies` | Default `false`. Risk-policy gate for `short_strangle`/`jade_lizard`'s undefined-risk side — while `false`, both strategies still fully screen via `get_candidates` (every criterion computed, full transparency), they just always tier `Reject` with `naked_strategy_disabled`, and `get_order` refuses to build an order at all. **Flipping this to `true` exposes the account to genuinely undefined-risk positions** — do not enable without understanding the live margin implications; neither strategy has a defined max loss the way `iron_fly`/`double_calendar`/`iron_condor`/`expected_move_butterfly` do. |
 
 **Shared liquidity gates** (`scanner.apply_liquidity_gates()`, applied identically by every strategy — each strategy still declares these keys in its own `strategies.<name>` block, so a strategy could in principle set a different value, but the check itself is one shared function, not duplicated code):
 
@@ -113,6 +120,27 @@ See `config.example.json` for the authoritative list. Top-level options are proj
 | `min_expected_move_pct` | Needs a large enough expected move for the ATM/short/far strikes to actually separate on the real strike grid |
 | `min_skew_abs` | Hard-reject if the call/put IV difference at the short strikes is too small to be a real directional signal (`insufficient_skew_signal`) rather than picking an arbitrary side |
 | `max_front_expiration_days` | Same convention as iron fly's — keeps the trade's extrinsic value attributable to the earnings event, not generic time decay |
+
+**`strategies.iron_condor`:**
+
+| Option | Purpose |
+|---|---|
+| `min_expected_move_pct` | Short strikes sit at the expected-move boundary (1.0×, same convention as `double_calendar`/`expected_move_butterfly`), so this needs a large enough move for real strike separation |
+| `min_term_structure` | Same convention as iron fly's — front-month IV must be inflated relative to back-month by a real margin |
+| `wing_width_credit_multiple` / `wing_width_multiple_low` / `_mid` / `_high` / `wing_width_band_low_max` / `_mid_max` | Same IV/RV-banded wing-sizing convention as `strategies.iron_fly`, applied outward from each short strike instead of from an ATM straddle |
+
+**`strategies.short_strangle`:**
+
+| Option | Purpose |
+|---|---|
+| Same shape as `strategies.iron_condor` minus the wing-width keys (no wings) | — |
+
+**`strategies.jade_lizard`:**
+
+| Option | Purpose |
+|---|---|
+| Same shape as `strategies.iron_condor` (including wing-width keys, used to size the call-spread width) | — |
+| `put_stop_delta_abs` | `0.45` — threshold for the naked put's `evaluate_position()` stop check (not loop-wired yet); if the short put's `abs(delta)` reaches this, close just the put, leaving the already-riskless call spread alone |
 
 **Correlation risk is not currently guarded**: opening multiple earnings names in the same sector on the same date can silently correlate their overnight gap risk — avoid configuring correlated block-list entries together until this guard is implemented and tested.
 
