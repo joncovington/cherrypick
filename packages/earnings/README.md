@@ -106,6 +106,21 @@ dolt sql-server --data-dir .   # leave this running in its own terminal window
 Once that's done, `CLAUDE.md` has the full step-by-step operating logic the agent follows
 every time it runs.
 
+### Starting it for the day
+
+Inside a Claude Code session opened in this project, just run:
+
+```
+/run-today
+```
+
+That's it — it reads `CLAUDE.md`, starts the loop from wherever the market is right now, and
+keeps itself running through the rest of today's session (checking on positions, watching for
+entry windows, handling the next close window) without you needing to restart it partway
+through the day. It won't start a second one if a loop is already running against the same
+trade database — if you're not sure whether one's already going, check for a live process
+holding `.claude/scheduled_tasks.lock` before starting another.
+
 ## What's in here
 
 ```
