@@ -6,6 +6,9 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 
+# Generated strategy selection results
+data/strategy_selection_results.json
+
 # Local DoltHub clones (multi-GB, machine-local -- see README's setup steps)
 dolt-data/
 
