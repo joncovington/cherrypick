@@ -332,32 +332,59 @@ def label_order_legs(order_result: dict) -> list[dict]:
 
 
 def evaluate_position(position: dict, open_legs: list[dict], quotes: dict, config: dict) -> dict:
-    """Decide what (if anything) to do with an open jade lizard position
-    this tick. Pure calculation, no I/O -- mirrors double_calendar.py's
-    evaluate_position() pattern. The call spread is riskless by
-    construction (credit >= width at entry), so this only ever needs to
-    watch the naked put side for earnings-scale downside risk -- the
-    original jade lizard design has no answer for that otherwise.
+    """Decide what (if anything) to do with an open jade lizard position.
+    Jade lizard is an overnight earnings play: naked short put (risky side) +
+    riskless short call spread. Enter day-of, hold through announcement, close
+    post-IV-crush when profit target is hit OR put goes deep ITM.
+
+    Two exit mechanisms, checked in order:
+    1. Profit target: close entire position at 50% of max profit (post-IV-crush)
+    2. Put stop: close entire position if put leg goes deep ITM (delta > 0.45)
+
+    The riskless call spread carries no stop (credit >= width, so max loss is
+    bounded by the width—already collected in credit). The naked put is the
+    active risk to manage. Profit target closes both sides together.
 
     `quotes` is `{symbol: {"bid": F, "ask": F, "delta": F}}` for the short
-    put's symbol (and, if still open, the call spread's legs, though those
-    are not evaluated here since they carry no directional stop -- the
-    credit already collected exceeds their max width).
+    put's symbol (and call spread legs, for profit-target calculation).
 
     Returns:
       {"action": "hold"}
-      {"action": "close_put", "reason": "put_stop"}
+      {"action": "close_all", "reason": "profit_target"|"put_stop"}
     """
     cfg = config
+    entry_credit = abs(position.get("entry_credit", 0))
+
+    # PROFIT TARGET: Close at 50% of max profit (post-IV-crush capture)
+    # Jade lizard max profit = entry_credit (short put + short call spread at expiry)
+    if entry_credit > 0:
+        # Compute cost to close: buy back short put at ask, buy back short calls at ask
+        cost_to_close = 0.0
+        for leg in open_legs:
+            # Only close the short legs (short put, short call of the spread)
+            if leg.get("leg_role") in ("short_put", "short_call"):
+                q = quotes.get(leg["symbol"])
+                if q is None or q.get("ask") is None:
+                    cost_to_close = None
+                    break
+                cost_to_close += q["ask"]
+
+        if cost_to_close is not None:
+            profit = entry_credit - cost_to_close
+            profit_target_pct = cfg.get("profit_target_pct", 0.50)
+            if profit >= entry_credit * profit_target_pct:
+                return {"action": "close_all", "reason": "profit_target"}
+
+    # PUT STOP: Close if naked put goes deep ITM (delta threshold breached)
+    # Naked put has unlimited loss; stop at 0.45 delta (deep ITM)
     put_stop_delta_abs = cfg.get("put_stop_delta_abs", 0.45)
     short_put_leg = next((leg for leg in open_legs if leg["leg_role"] == "short_put"), None)
-    if short_put_leg is None:
-        return {"action": "hold"}
-    q = quotes.get(short_put_leg["symbol"])
-    if q is None or q.get("delta") is None:
-        return {"action": "hold"}
-    if abs(q["delta"]) >= put_stop_delta_abs:
-        return {"action": "close_put", "reason": "put_stop"}
+    if short_put_leg is not None:
+        q = quotes.get(short_put_leg["symbol"])
+        if q is not None and q.get("delta") is not None:
+            if abs(q["delta"]) >= put_stop_delta_abs:
+                return {"action": "close_all", "reason": "put_stop"}
+
     return {"action": "hold"}
 
 

@@ -247,22 +247,49 @@ def label_order_legs(order_result: dict) -> list[dict]:
 
 
 def evaluate_position(position: dict, open_legs: list[dict], quotes: dict, config: dict) -> dict:
-    """Decide what (if anything) to do with an open short strangle position
-    this tick. Pure calculation, no I/O -- mirrors jade_lizard.py's
-    evaluate_position() pattern, but checks *both* short legs and stops the
-    whole position if either breaches, rather than a single side: unlike
-    double_calendar's untested side (a real back-month long with its own
-    ongoing value) or jade_lizard's already-riskless call spread, there's no
-    long-dated leg here worth preserving once one side is threatened -- both
-    legs are naked, so a stop closes everything.
+    """Decide what (if anything) to do with an open short strangle position.
+    Short strangles are overnight earnings plays: enter day-of or day-before,
+    hold through announcement, close post-IV-crush when profit target is hit.
+
+    Three exit mechanisms, checked in order:
+    1. Per-leg delta stop: close if either leg goes deep ITM (delta > 0.45)
+    2. Profit target: close at 50% of max profit (post-IV-crush standard)
+    3. Hold: wait for one of the above conditions
+
+    For naked short strategies, profit-taking is critical: leave money on the
+    table by holding too long, and the remaining marginal premium doesn't
+    justify the directional risk after IV crush completes.
 
     `quotes` is `{symbol: {"bid": F, "ask": F, "delta": F}}` for each of
     `open_legs`.
 
     Returns:
       {"action": "hold"}
-      {"action": "close_all", "reason": "leg_stop"}
+      {"action": "close_all", "reason": "leg_stop"|"profit_target"}
     """
+    # PROFIT TARGET: Close at 50% of max profit (post-IV-crush capture)
+    # Short strangle max profit = entry_credit (both legs expire worthless)
+    # Profit target = entry_credit - current cost to close
+    entry_credit = abs(position.get("entry_credit", 0))
+
+    if entry_credit > 0:
+        # Compute cost to close: buy both short legs at ask
+        cost_to_close = 0.0
+        for leg in open_legs:
+            q = quotes.get(leg["symbol"])
+            if q is None or q.get("ask") is None:
+                cost_to_close = None
+                break
+            cost_to_close += q["ask"]
+
+        if cost_to_close is not None:
+            profit = entry_credit - cost_to_close
+            profit_target_pct = config.get("profit_target_pct", 0.50)
+            if profit >= entry_credit * profit_target_pct:
+                return {"action": "close_all", "reason": "profit_target"}
+
+    # LEG STOP: Close if either leg goes deep ITM (delta threshold breached)
+    # Naked short legs have unlimited loss; stop at 0.45 delta (deep ITM)
     leg_stop_delta_abs = config.get("leg_stop_delta_abs", 0.45)
     for leg in open_legs:
         q = quotes.get(leg["symbol"])
@@ -270,6 +297,7 @@ def evaluate_position(position: dict, open_legs: list[dict], quotes: dict, confi
             continue
         if abs(q["delta"]) >= leg_stop_delta_abs:
             return {"action": "close_all", "reason": "leg_stop"}
+
     return {"action": "hold"}
 
 
