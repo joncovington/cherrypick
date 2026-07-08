@@ -109,10 +109,10 @@ Tier 1-3 allowed (score 60+). More trades but lower confidence. Use only if capi
 Can be scheduled to run automatically at 3:00 PM ET:
 ```bash
 # Windows Task Scheduler
-At 3:00 PM ET: python late_day_earnings_ranked.py
+At 3:00 PM ET: python src/late_day_earnings_ranked.py
 
 # Linux/Mac Crontab
-0 15 * * 1-5 cd /path/to/earnings-agent && python late_day_earnings_ranked.py
+0 15 * * 1-5 cd /path/to/earnings-agent && python src/late_day_earnings_ranked.py
 ```
 
 ## Common Issues

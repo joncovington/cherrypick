@@ -290,10 +290,10 @@ Track over time:
 Can be scheduled to run automatically at 4:00 PM ET:
 ```bash
 # Windows Task Scheduler
-At 4:00 PM ET: python generate_eod_report.py
+At 4:00 PM ET: python src/generate_eod_report.py
 
 # Linux/Mac Crontab
-0 16 * * 1-5 cd /path/to/earnings-agent && python generate_eod_report.py
+0 16 * * 1-5 cd /path/to/earnings-agent && python src/generate_eod_report.py
 ```
 
 Report will be ready for review by 4:15 PM ET.

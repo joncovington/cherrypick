@@ -8,8 +8,9 @@ System is complete and ready for paper trading.
 
 ### 1. Create Config (Copy Template)
 ```bash
-cp config.example.json config.json
-# Edit config.json with your settings
+cp config/config.example.json config/config.json
+# Edit config/config.json with your settings
+# Or directly edit src/late_day_earnings_ranked.py CONFIG dict
 ```
 
 ### 2. Create Logs Directory
@@ -19,13 +20,13 @@ mkdir -p paper_trading_logs
 
 ### 3. Run Analysis
 ```bash
-python late_day_earnings_ranked.py
+python src/late_day_earnings_ranked.py
 # Or use slash command: /paper-trading-start
 ```
 
 ### 4. Run EOD Report
 ```bash
-python generate_eod_report.py
+python src/generate_eod_report.py
 # Or use slash command: /paper-trading-eod-report
 ```
 

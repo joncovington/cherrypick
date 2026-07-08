@@ -354,7 +354,7 @@ Scale up after 10 winning trades
 ### Ready to Start?
 
 1. **Read:** `docs/README.md` (technical overview)
-2. **Configure:** Edit `late_day_earnings_ranked.py` CONFIG dict
+2. **Configure:** Edit `src/late_day_earnings_ranked.py` CONFIG dict
 3. **Test:** Run `/paper-trading-start` at 3:00 PM ET
 4. **Review:** Run `/paper-trading-eod-report` at 4:00 PM ET
 5. **Paper Trade:** Repeat for 2-4 weeks
