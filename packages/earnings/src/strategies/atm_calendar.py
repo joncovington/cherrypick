@@ -46,6 +46,34 @@ def _strategy_config(config: dict) -> dict:
     return config.get("strategies", {}).get("atm_calendar", {})
 
 
+def realized_move_dispersion(symbol: str, config: dict, lookback_quarters: int = 8) -> dict:
+    """Standard deviation of historical realized earnings moves (as a % of
+    pre-earnings price), computed from the same historical earnings dates
+    scanner.compute_winrate() already pulls. Low dispersion means the stock's
+    earnings-move behavior is consistent; high dispersion means occasional
+    blowout moves that could undermine a calendar spread's assumptions.
+    Shared with double_calendar.py for consistency.
+    """
+    winrate = scanner.compute_winrate(symbol, config, lookback_quarters)
+    pct_moves = [
+        q["realized_move"] / q["pre_close"]
+        for q in winrate["quarters"]
+        if q.get("pre_close")
+    ]
+    if len(pct_moves) < 2:
+        return {"ok": False, "symbol": symbol, "sample_size": len(pct_moves), "error": "insufficient sample for dispersion"}
+    mean = sum(pct_moves) / len(pct_moves)
+    variance = sum((m - mean) ** 2 for m in pct_moves) / (len(pct_moves) - 1)
+    std_dev = variance ** 0.5
+    return {
+        "ok": True,
+        "symbol": symbol,
+        "sample_size": len(pct_moves),
+        "mean_realized_move_pct": mean,
+        "realized_move_dispersion_pct": std_dev,
+    }
+
+
 def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
     """Live price, term structure, and expected move for atm_calendar
     screening, via scanner.py's shared helpers. Mirrors double_calendar.py's
@@ -110,7 +138,10 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
     Same discipline as every other strategy's apply_tiering: a missing
     value is an unverified hard-fail, never a silent pass; a
     present-but-out-of-range value gets its own distinct rejection reason.
-    No expected_move_pct or dispersion filter -- see module docstring.
+
+    Includes realized-move-dispersion check for consistency with
+    double_calendar: ensures historical earnings moves are consistent
+    enough to justify a calendar-spread entry.
     """
     hard_fail: list[str] = []
 
@@ -126,6 +157,10 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
 
     if not criteria.get("chain_complete"):
         hard_fail.append("chain_complete_unverified")
+
+    if criteria.get("realized_move_dispersion_pct") is not None and config.get("max_realized_move_dispersion_pct") is not None:
+        if criteria["realized_move_dispersion_pct"] > config["max_realized_move_dispersion_pct"]:
+            hard_fail.append("realized_move_too_inconsistent")
 
     near_miss: list[str] = []
 
@@ -285,15 +320,24 @@ def evaluate_position(
     return result
 
 
+def _add_dispersion(symbol: str, config: dict, lookback: int, criteria: dict) -> None:
+    """extra_criteria_fn hook for scanner.run_candidate_scan -- adds
+    realized-move-dispersion check, same as double_calendar.py's pattern.
+    """
+    dispersion = realized_move_dispersion(symbol, config, lookback)
+    if dispersion.get("ok"):
+        criteria["realized_move_dispersion_pct"] = dispersion["realized_move_dispersion_pct"]
+
+
 def cmd_get_candidates(args) -> dict:
     """Full tiered scan for a date, mirroring every other strategy's
-    cmd_get_candidates. Thin wrapper around scanner.run_candidate_scan --
-    no extra_criteria_fn, since this strategy adds no per-candidate signal
-    beyond what fetch_price_and_term_structure already computes.
+    cmd_get_candidates. Thin wrapper around scanner.run_candidate_scan
+    with realized-move-dispersion check (extra_criteria_fn), matching
+    double_calendar's pattern for consistency.
     """
     config = scanner._load_config()
     strategy_config = _strategy_config(config)
-    return scanner.run_candidate_scan(args.date, config, fetch_price_and_term_structure, apply_tiering, strategy_config)
+    return scanner.run_candidate_scan(args.date, config, fetch_price_and_term_structure, apply_tiering, strategy_config, extra_criteria_fn=_add_dispersion)
 
 
 def main() -> None:
