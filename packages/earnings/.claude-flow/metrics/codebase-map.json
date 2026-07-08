@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-08T08:05:41.246Z",
+  "timestamp": "2026-07-08T08:20:41.307Z",
   "projectRoot": "C:\\Users\\jonco\\Claude\\EarningsAgent",
   "structure": {
     "hasPackageJson": false,
@@ -7,5 +7,5 @@
     "hasClaudeConfig": true,
     "hasClaudeFlow": true
   },
-  "scannedAt": 1783497941247
+  "scannedAt": 1783498841307
 }
