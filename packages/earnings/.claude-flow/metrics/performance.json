@@ -1,0 +1,68 @@
+{
+  "timestamp": "2026-07-08T08:11:31.277Z",
+  "mode": "headless",
+  "workerType": "optimize",
+  "model": "sonnet",
+  "durationMs": 58499,
+  "executionId": "optimize_1783498232778_57aygc",
+  "success": true,
+  "findings": {
+    "sections": [
+      {
+        "title": "Performance Analysis — EarningsAgent",
+        "content": "\nNote: this is a Python CLI/backend trading system (no React/frontend), so the React-specific asks don't apply. Findings below are grounded in `src/scanner.py`, `src/rank_strategies.py`, and `src/strategies/*.py`.\n\n",
+        "level": 2
+      },
+      {
+        "title": "1. N+1 query pattern: per-quarter Dolt connections in `compute_winrate` (scanner.py:269-319)",
+        "content": "\nEach call opens a fresh MySQL/Dolt connection per row, not once for the whole backtest:\n\n```python\nfor row in earnings_dates:                       # up to lookback_quarters+4 rows\n    closes = pre_and_reaction_closes(...)         # -> 2 connections (_nearest_close x2)\n    straddle = fetch_atm_straddle_price(...)       # -> 1 connection\n```\n\nFor `lookback_quarters=8`, that's ~24-36 short-lived Dolt connections for **one symbol's** winrate. `rank_strategies.evaluate_symbol` calls this once per symbol (good), but `reverify_symbol` (scanner.py:185) reruns the *entire* backtest again per candidate at entry time with no caching between scan and re-verification — same 8 quarters, same connections, recomputed from scratch minutes later.\n\n**Fix**: thread a single connection through the whole `compute_winrate` call (open once, pass `conn` into `pre_and_reaction_closes`/`fetch_atm_straddle_price`/`_nearest_close`), and cache the winrate result (symbol, lookback, date) for the duration of one loop iteration so `evaluate_symbol` → `reverify_symbol` doesn't redo the same Dolt round trips:\n\n```python\ndef compute_winrate(symbol, config, lookback_quarters=8, conn=None):\n    owns_conn = conn is None\n    conn = conn or _dolt_connect(config, config.get(\"dolthub_database\", \"earnings\"))\n    try:\n        ...\n    finally:\n        if owns_conn:\n            conn.close()\n```\n\n",
+        "level": 3
+      },
+      {
+        "title": "2. N+1-shaped fan-out: broker subprocess spawn per strategy per symbol (rank_strategies.py:150-178)",
+        "content": "\n`evaluate_symbol` already dedupes `avg_volume`/`iv_rv_ratio`/`winrate` once per symbol — that part is right. But then it loops over all 10 registered strategies and calls each one's `entry[\"fetch_criteria_fn\"]`, and every one of those independently calls `scanner.call_tt(...)` (`get_quote`, `get_option_chain` ×2-3, `get_market_metrics`), each of which is a fresh `subprocess.run([sys.executable, \"tt.py\", ...])` (scanner.py:345-364). Six of the ten strategies share the identical \"front/back term-structure\" shape (`fetch_price_and_term_structure`), so for one symbol you're paying for the same underlying/chain/OI/volume data **6+ times over**, each as a separate Python process spawn + broker round trip.\n\n**Fix**: fetch the shared preamble (`fetch_quote_and_expirations`, `fetch_liquidity_criteria`, front/back ATM chain) once per symbol in `evaluate_symbol`, and pass the resulting `criteria` dict into each strategy's tiering function instead of each strategy re-fetching:\n\n```python\nshared = scanner.fetch_quote_and_expirations(symbol)\nliquidity = scanner.fetch_liquidity_criteria(symbol, front_exp, shared[\"expirations\"], front_call, front_put)\nfor entry in STRATEGY_REGISTRY:\n    criteria = {**shared_criteria, **liquidity}\n    # only call fetch_criteria_fn for strategy-unique parts (e.g. double_calendar's dispersion)\n```\n\nThis alone should cut broker round trips (and subprocess spawns) by roughly 5-6x per symbol during `get_ranked_symbols`.\n\n",
+        "level": 3
+      },
+      {
+        "title": "3. Subprocess-per-row logging (`rank_strategies.py:116-131, 230-262`)",
+        "content": "\n`_log_symbol_decision` calls `_call_db([\"log_scan\", ...])` once per (symbol, strategy) plus one `_ranked` summary row — each a full `subprocess.run` spawning `db_paper.py`/`db.py` as a new Python interpreter. For 30 symbols × 10 strategies that's 300+ process spawns just for audit logging in one scan.\n\n**Fix**: add a batch `log_scan_batch` command to `db.py`/`db_paper.py` that accepts a JSON array and writes all rows in one connection/transaction, called once per `get_ranked_symbols` run instead of per row.\n\n",
+        "level": 3
+      },
+      {
+        "title": "4. Redundant `_dolt_connect` churn generally",
+        "content": "\n`fetch_avg_volume`, `fetch_iv_rv_ratio`, `fetch_historical_earnings_dates`, `_nearest_close`, `fetch_atm_straddle_price` each open/close their own connection even when called back-to-back for the same symbol in `evaluate_symbol`/`run_candidate_scan`. Dolt/MySQL connection setup isn't free, especially repeated dozens of times per symbol across a nightly scan of many symbols.\n\n**Fix**: introduce a small `_dolt_connect` context manager cached per-database for the duration of a scan run (a connection pool of one connection per database name, reused across calls within `get_ranked_symbols`), e.g.:\n\n```python\n_conn_cache: dict[str, \"mysql.connector.MySQLConnection\"] = {}\n\ndef _dolt_connect(config, database):\n    if database not in _conn_cache or not _conn_cache[database].is_connected():\n        _conn_cache[database] = mysql.connector.connect(..., database=database)\n    return _conn_cache[database]\n```\n(Close all cached connections at the end of `cmd_get_ranked_symbols`/`run_candidate_scan`.)\n\n",
+        "level": 3
+      },
+      {
+        "title": "5. Redundant computation, not caching, N+1",
+        "content": "\n`compute_composite_score` and `_shrunk_winrate` are cheap pure functions — no issue there. No memory-leak-prone constructs found (no unbounded module-level caches, no growing global lists, no unclosed file handles — `_dolt_connect` connections are consistently closed in `finally` blocks today, just too frequently opened).\n\n",
+        "level": 3
+      },
+      {
+        "title": "Priority order",
+        "content": "1. Dedupe shared broker fetch across the 10-strategy loop in `evaluate_symbol` (#2) — biggest win, cuts live API/subprocess load ~5-6x on every scan.\n2. Batch `log_scan` writes (#3) — trivial, removes hundreds of subprocess spawns per run.\n3. Thread one Dolt connection through `compute_winrate` (#1) — cuts connection churn from dozens to 1 per symbol.\n4. Connection reuse across scanner.py's Dolt helpers (#4) — smaller but free once #1's pattern exists.",
+        "level": 3
+      }
+    ],
+    "codeBlocks": [
+      {
+        "language": "python",
+        "code": "for row in earnings_dates:                       # up to lookback_quarters+4 rows\n    closes = pre_and_reaction_closes(...)         # -> 2 connections (_nearest_close x2)\n    straddle = fetch_atm_straddle_price(...)       # -> 1 connection"
+      },
+      {
+        "language": "python",
+        "code": "def compute_winrate(symbol, config, lookback_quarters=8, conn=None):\n    owns_conn = conn is None\n    conn = conn or _dolt_connect(config, config.get(\"dolthub_database\", \"earnings\"))\n    try:\n        ...\n    finally:\n        if owns_conn:\n            conn.close()"
+      },
+      {
+        "language": "python",
+        "code": "shared = scanner.fetch_quote_and_expirations(symbol)\nliquidity = scanner.fetch_liquidity_criteria(symbol, front_exp, shared[\"expirations\"], front_call, front_put)\nfor entry in STRATEGY_REGISTRY:\n    criteria = {**shared_criteria, **liquidity}\n    # only call fetch_criteria_fn for strategy-unique parts (e.g. double_calendar's dispersion)"
+      },
+      {
+        "language": "python",
+        "code": "_conn_cache: dict[str, \"mysql.connector.MySQLConnection\"] = {}\n\ndef _dolt_connect(config, database):\n    if database not in _conn_cache or not _conn_cache[database].is_connected():\n        _conn_cache[database] = mysql.connector.connect(..., database=database)\n    return _conn_cache[database]"
+      }
+    ]
+  },
+  "rawOutputPreview": "Confirmed. This validates the finding: each strategy independently calls `fetch_quote_and_expirations` + `fetch_front_back_atm_entries` + `fetch_liquidity_criteria`, each of which shells out to `tt.py` via subprocess. Now I have enough to write the report.\n\n## Performance Analysis — EarningsAgent\n\nNote: this is a Python CLI/backend trading system (no React/frontend), so the React-specific asks don't apply. Findings below are grounded in `src/scanner.py`, `src/rank_strategies.py`, and `src/strategies/*.py`.\n\n### 1. N+1 query pattern: per-quarter Dolt connections in `compute_winrate` (scanner.py:269-319)\n\nEach call opens a fresh MySQL/Dolt connection per row, not once for the whole backtest:\n\n```python\nfor row in earnings_dates:                       # up to lookback_quarters+4 rows\n    closes = pre_and_reaction_closes(...)         # -> 2 connections (_nearest_close x2)\n    straddle = fetch_atm_straddle_price(...)       # -> 1 connection\n```\n\nFor `lookback_quarters=8`, that's ~24-36 short-lived Dolt connections for **one symbol's** winrate. `rank_strategies.evaluate_symbol` calls this once per symbol (good), but `reverify_symbol` (scanner.py:185) reruns the *entire* backtest again per candidate at entry time with no caching between scan and re-verification — same 8 quarters, same connections, recomputed from scratch minutes later.\n\n**Fix**: thread a single connection through the whole `compute_winrate` call (open once, pass `conn` into `pre_and_reaction_closes`/`fetch_atm_straddle_price`/`_nearest_close`), and cache the winrate result (symbol, lookback, date) for the duration of one loop iteration so `evaluate_symbol` → `reverify_symbol` doesn't redo the same Dolt round trips:\n\n```python\ndef compute_winrate(symbol, config, lookback_quarters=8, conn=None):\n    owns_conn = conn is None\n    conn = conn or _dolt_connect(config, config.get(\"dolthub_database\", \"earnings\"))\n    try:\n        ...\n    finally:\n        if owns_conn:\n            conn.close()\n```\n\n### 2. N+1-shape",
+  "rawOutputLength": 6036
+}

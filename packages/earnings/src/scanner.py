@@ -25,7 +25,7 @@ import sys
 from datetime import date as _date, datetime, timedelta
 from pathlib import Path
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
+CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.json"
 
 
 def _load_config() -> dict:

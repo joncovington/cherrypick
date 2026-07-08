@@ -45,7 +45,7 @@ from session import get_session
 
 def _load_config() -> dict:
     root = os.path.join(os.path.dirname(__file__), "..")
-    path = os.path.join(root, "config.json")
+    path = os.path.join(root, "config", "config.json")
     if os.path.exists(path):
         with open(path) as f:
             return json.load(f)
