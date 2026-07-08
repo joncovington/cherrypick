@@ -18,9 +18,9 @@ from typing import Dict, Optional
 class PaperTradingLogger:
     """Logs paper trading entries and exits."""
 
-    def __init__(self, log_dir="paper_trading_logs"):
+    def __init__(self, log_dir="logs/paper"):
         self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(exist_ok=True)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
         self.run_log = self.log_dir / f"runs_{datetime.now().strftime('%Y_%m')}.json"
         self.perf_log = self.log_dir / f"performance_{datetime.now().strftime('%Y_%m')}.json"
 

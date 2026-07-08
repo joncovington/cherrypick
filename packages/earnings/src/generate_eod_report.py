@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 class EODReportGenerator:
     """Generates end-of-day paper trading reports."""
 
-    def __init__(self, log_dir="paper_trading_logs"):
+    def __init__(self, log_dir="logs/paper"):
         self.log_dir = Path(log_dir)
         self.run_log = self.log_dir / f"runs_{datetime.now().strftime('%Y_%m')}.json"
         self.perf_log = self.log_dir / f"performance_{datetime.now().strftime('%Y_%m')}.json"
