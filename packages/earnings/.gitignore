@@ -12,6 +12,7 @@ dolt-data/
 # Agent logs and EOD reports
 logs/*.log
 logs/eod-*.md
+paper_trading_logs/
 
 # Python bytecode
 __pycache__/
@@ -36,8 +37,33 @@ __pycache__/
 
 # Auto-installed Claude Code skills and agent plugins (machine-local)
 .claude/skills/
-.agents/
+.claude/agents/
 skills-lock.json
+.swarm/
+.claude/helpers/
+.claude/agents/
+.claude/.proven-config-version
+.claude/proven-config.json
+.claude/commands/workflows
+.claude/commands/claude-flow-help.md
+.claude/commands/claude-flow-memory.md
+.claude/commands/claude-flow-swarm.md
+.claude/commands/swarm/
+.claude/commands/sparc/
+.claude/commands/optimization/
+.claude/commands/monitoring/
+.claude/commands/memory/
+.claude/commands/hooks/
+.claude/commands/hive-mind/
+.claude/commands/github/
+.claude/commands/coordination/
+.claude/commands/automation/
+.claude/commands/agents/
+.claude/commands/analysis/
 
 # Temp file space
 .tmp/
+
+# Dolt 
+config.yaml
+.dolt/
