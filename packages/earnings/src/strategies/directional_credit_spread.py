@@ -93,6 +93,15 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
             front_call["mid"], front_put["mid"], front_call["iv"], back_call["iv"], price,
         )
 
+        winrate_result = scanner.compute_winrate(symbol, config, config.get("winrate_lookback_quarters", 8))
+        realized_move_dispersion = None
+        if winrate_result.get("ok"):
+            realized_moves = [q["realized_move"] / q["pre_close"] for q in winrate_result["quarters"]]
+            if realized_moves:
+                mean_realized = sum(realized_moves) / len(realized_moves)
+                variance = sum((m - mean_realized) ** 2 for m in realized_moves) / len(realized_moves)
+                realized_move_dispersion = variance ** 0.5
+
         side_result = scanner.select_side(symbol, front_exp, price, strategy_config)
         if not side_result.get("ok"):
             return side_result
@@ -110,6 +119,7 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
                 "side": side_result["side"],
                 "front_expiration_days": (front_exp - date.today()).days,
                 "chain_complete": True,
+                "realized_move_dispersion_pct": realized_move_dispersion,
                 **liquidity,
             },
         }
@@ -149,6 +159,12 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
 
     if not criteria.get("chain_complete"):
         hard_fail.append("chain_complete_unverified")
+
+    # Entry condition: Realized move dispersion
+    if criteria.get("realized_move_dispersion_pct") is not None:
+        max_dispersion = config.get("max_realized_move_dispersion_pct", 0.25)
+        if criteria["realized_move_dispersion_pct"] > max_dispersion:
+            hard_fail.append("realized_move_too_inconsistent")
 
     if criteria.get("skew_abs") is None:
         hard_fail.append("skew_abs_unverified")
