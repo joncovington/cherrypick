@@ -48,6 +48,47 @@ sys.path.insert(0, os.path.dirname(__file__))
 import scanner
 from strategies import iron_fly, double_calendar, iron_condor, short_straddle, short_strangle, jade_lizard, atm_calendar, directional_credit_spread, broken_wing_butterfly, reverse_fly
 
+
+def _ensure_dolt_running():
+    """Ensure dolt SQL server is running before analysis."""
+    try:
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex(('127.0.0.1', 3306))
+        sock.close()
+        if result == 0:
+            return True
+    except:
+        pass
+
+    print("Starting dolt SQL server...", file=sys.stderr)
+    try:
+        subprocess.Popen(["dolt", "sql-server"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(2)
+        return True
+    except Exception as e:
+        print(f"Failed to start dolt: {e}", file=sys.stderr)
+        return False
+
+
+def _verify_tastytrade_connection():
+    """Verify tastytrade connection is active."""
+    try:
+        result = subprocess.run(
+            [sys.executable, "src/tt.py", "get_connection_status"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            if data.get("ok") and data.get("connected"):
+                return True
+    except Exception as e:
+        print(f"Connection check error: {e}", file=sys.stderr)
+    return False
+
+
 STRATEGY_REGISTRY = [
     {
         "name": "iron_fly",
@@ -263,6 +304,10 @@ def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) 
 
 
 def cmd_get_ranked_symbols(args) -> dict:
+    _ensure_dolt_running()
+    if not _verify_tastytrade_connection():
+        return {"ok": False, "error": "tastytrade connection failed"}
+
     config = scanner._load_config()
     paper_mode = not config.get("enable_live_trading", False)
     calendar = scanner.fetch_entry_window_calendar(config)

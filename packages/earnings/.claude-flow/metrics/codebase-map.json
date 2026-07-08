@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-07-08T08:05:41.246Z",
+  "projectRoot": "C:\\Users\\jonco\\Claude\\EarningsAgent",
+  "structure": {
+    "hasPackageJson": false,
+    "hasTsConfig": false,
+    "hasClaudeConfig": true,
+    "hasClaudeFlow": true
+  },
+  "scannedAt": 1783497941247
+}
