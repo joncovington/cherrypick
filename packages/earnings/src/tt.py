@@ -13,6 +13,10 @@ Usage:
   python src/tt.py get_market_metrics --symbol AAPL
   python src/tt.py execute_trade --order '<JSON>' [--account_number X] [--live]
 
+NOTE: This file exceeds 500-line guideline (602 lines). Documented exception
+in .claude/file-size-exceptions.md. Broker API wrapper with tightly coupled
+session/auth/order functions. Split would complicate credential handling.
+
 Adapted from MEICAgent's src/tt.py, with the stream-cache layer removed --
 this project has no persistent streamer daemon (its scan cadence is once a
 day, not every few minutes), so every call goes straight to a live DXLink
