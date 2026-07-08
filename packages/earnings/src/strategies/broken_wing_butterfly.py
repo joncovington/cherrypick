@@ -307,15 +307,14 @@ def evaluate_position(position: dict, quotes: dict, config: dict, is_first_check
     """Decide whether to close an open broken wing butterfly position early
     (CLAUDE.md Step 3c) ahead of Step 3's unconditional close-window sweep.
 
-    Broken wing butterfly enters for a net credit and closes as a single unit
-    via legs_json. Uses credit-spread exit logic (profit_target_pct of credit,
-    stop_loss_credit_multiple) with three key safety mechanisms:
+    Broken wing butterfly enters for a net credit, holds through earnings
+    announcement (the binary event), and closes post-announcement when IV crush
+    happens. Uses credit-spread exit logic with two key safety mechanisms:
 
-    1. Time-based exit: close 7+ days before earnings (convention: capture
-       IV crush without binary gap risk)
-    2. Per-leg delta stop: close if either short leg goes deep ITM (delta > 0.60),
-       preventing gamma blowout as expiration approaches
-    3. Profit target/stop loss: based on credit received, not debit paid
+    1. Per-leg delta stop: close if either short leg goes deep ITM (delta > 0.60),
+       preventing gamma blowout during announcement volatility
+    2. Profit target/stop loss: based on credit received, not debit paid;
+       closes post-announcement when position reaches 10-50% profit
 
     `is_first_check_of_day`: set to True on first post-gap tick to label
     gap-driven stops separately from mid-session stops.
@@ -325,17 +324,8 @@ def evaluate_position(position: dict, quotes: dict, config: dict, is_first_check
 
     legs = json.loads(position["legs_json"])
 
-    # TIME-BASED EXIT: Exit 7 days before earnings to capture IV crush
-    # without holding through the binary event
-    if position.get("earnings_date"):
-        earnings_date = datetime.fromisoformat(position["earnings_date"]).date()
-        days_to_earnings = (earnings_date - date.today()).days
-        exit_days_before = cfg.get("exit_days_before_earnings", 7)
-        if days_to_earnings <= exit_days_before:
-            return {"action": "close_all", "reason": f"time_exit_before_earnings{gap_suffix}"}
-
     # PER-LEG DELTA STOP: Close if either short body leg goes deep ITM
-    # (this prevents gamma blowout risk as expiration approaches)
+    # (this prevents gamma blowout risk during announcement volatility)
     leg_stop_delta_abs = cfg.get("leg_stop_delta_abs", 0.60)
     for leg in legs:
         q = quotes.get(leg["symbol"])
@@ -345,6 +335,8 @@ def evaluate_position(position: dict, quotes: dict, config: dict, is_first_check
                 return {"action": "close_all", "reason": f"leg_stop_delta{gap_suffix}"}
 
     # PROFIT TARGET / STOP LOSS: Use credit-spread exit logic
+    # Close when position reaches 10% profit (conservative post-IV-crush target)
+    # or stops at 2.0x credit loss (trader-tested threshold)
     exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
     if exit_debit is None:
         return {"action": "hold"}

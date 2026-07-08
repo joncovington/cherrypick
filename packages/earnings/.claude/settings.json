@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "PowerShell(*)",
+      "python(*)",
+      "Bash(python src/db.py get_open_positions*)",
+      "Bash(python src/db_paper.py get_open_positions)",
+      "Bash(python db.py get_open_trades*)",
+      "Bash(python src/db.py get_open_trades*)",
+      "Bash(python src/tt.py secrets_status*)",
+      "Bash(python src/tt.py get_connection_status*)",
+      "Bash(python src/scanner.py get_calendar *)",
+      "Bash(python src/streamer.py --status*)",
+      "Bash(curl -s http://127.0.0.1:7699/status*)",
+      "Bash(tastytrade-mcp secrets status *)",
+      "Bash(python src/scanner.py get_calendar --date 07/07/2026)",
+      "Bash(python src/strategies/iron_fly.py get_candidates --date 07/07/2026)",
+      "Bash(git add *)",
+      "Bash(git push origin main*)",
+      "Bash(python src/scanner.py *)"
+    ]
+  }
+}
