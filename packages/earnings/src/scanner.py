@@ -30,7 +30,17 @@ CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.json"
 
 def _load_config() -> dict:
     with open(CONFIG_PATH) as f:
-        return json.load(f)
+        config = json.load(f)
+
+    # Merge strategy_defaults into each strategy's config
+    defaults = config.get("strategy_defaults", {})
+    if defaults:
+        for strategy_name, strategy_config in config.get("strategies", {}).items():
+            # Create merged config: defaults + strategy-specific overrides
+            merged = {**defaults, **strategy_config}
+            config["strategies"][strategy_name] = merged
+
+    return config
 
 
 def fetch_dolthub_calendar(date: str, config: dict) -> list[dict]:
