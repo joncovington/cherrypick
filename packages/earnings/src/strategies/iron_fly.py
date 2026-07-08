@@ -16,6 +16,7 @@ Commands (see CLAUDE.md's Tool Reference):
 import json
 import os
 import sys
+import time
 from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -297,9 +298,21 @@ def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
     there's no partial-close state to track.
 
     Returns {"action": "hold"} or {"action": "close_all", "reason":
-    "profit_target"|"stop_loss"} -- see scanner.evaluate_credit_spread_exit
-    for the thresholds (config: profit_target_pct, stop_loss_credit_multiple).
+    "profit_target"|"stop_loss"|"iv_crush_backstop"} -- see
+    scanner.evaluate_credit_spread_exit for the thresholds (config:
+    profit_target_pct, stop_loss_credit_multiple). iv_crush_backstop is a
+    4-hour post-announcement max hold time to prevent sitting through
+    directional drift after IV crush completes.
     """
+    # IV-CRUSH BACKSTOP: Close after 4 hours have elapsed since entry
+    # (post-IV-crush window has passed, further holding adds directional risk)
+    exit_after_announcement_minutes = config.get("exit_after_announcement_minutes", 240)
+    if position.get("opened_at") is not None:
+        elapsed_minutes = (time.time() - position["opened_at"]) / 60.0
+        if elapsed_minutes >= exit_after_announcement_minutes:
+            return {"action": "close_all", "reason": "iv_crush_backstop"}
+
+    # PROFIT TARGET / STOP LOSS: Primary exit mechanisms (post-IV-crush capture)
     legs = json.loads(position["legs_json"])
     exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
     if exit_debit is None:

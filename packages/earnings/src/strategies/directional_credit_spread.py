@@ -43,6 +43,7 @@ Commands (see CLAUDE.md's Tool Reference):
 import json
 import os
 import sys
+import time
 from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -328,10 +329,20 @@ def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
     sweep. Identical pattern to iron_fly.py's/iron_condor.py's
     evaluate_position() -- same credit-spread shape, same shared
     scanner.evaluate_credit_spread_exit thresholds (config: profit_target_pct,
-    stop_loss_credit_multiple). No `open_legs` argument -- this strategy
+    stop_loss_credit_multiple), plus a 4-hour post-announcement backstop
+    (iv_crush_backstop) to prevent sitting through directional drift after
+    IV crush window closes. No `open_legs` argument -- this strategy
     never populates `trade_legs`, always closes as a single unit via
     `legs_json`.
     """
+    # IV-CRUSH BACKSTOP: Close after 4 hours have elapsed since entry
+    exit_after_announcement_minutes = config.get("exit_after_announcement_minutes", 240)
+    if position.get("opened_at") is not None:
+        elapsed_minutes = (time.time() - position["opened_at"]) / 60.0
+        if elapsed_minutes >= exit_after_announcement_minutes:
+            return {"action": "close_all", "reason": "iv_crush_backstop"}
+
+    # PROFIT TARGET / STOP LOSS: Primary exit mechanisms (post-IV-crush capture)
     legs = json.loads(position["legs_json"])
     exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
     if exit_debit is None:
