@@ -803,6 +803,34 @@ def evaluate_debit_spread_exit(entry_credit: float, exit_debit: float, config: d
     return {"action": "hold"}
 
 
+def evaluate_credit_spread_exit(entry_credit: float, exit_debit: float, config: dict) -> dict:
+    """Shared profit-target/stop-loss check for credit-spread strategies
+    that enter for a net credit and close as a single unit (broken_wing_butterfly).
+
+    Calibrated against earnings trading conventions: profit targets of 10% of
+    credit collected, stop losses at 2.0-2.6x credit received. Unlike
+    evaluate_debit_spread_exit which is for positions that PAY upfront,
+    this is for positions that COLLECT upfront (credit butterflies, iron spreads
+    that net credit).
+
+    `entry_credit`: credit received upfront (stored negative per convention, e.g., -2.00)
+    `exit_debit`: cost to close position (positive = costs money to close)
+
+    The key insight: a credit-receiving position has built-in loss protection
+    equal to the credit collected. Max loss = (far_strike - near_strike) - credit.
+    """
+    credit_received = abs(entry_credit)  # Convert from stored negative to positive
+    profit = credit_received - exit_debit
+    profit_target_pct = config.get("profit_target_pct", 0.10)
+    stop_loss_credit_multiple = config.get("stop_loss_credit_multiple", 2.0)
+
+    if profit >= credit_received * profit_target_pct:
+        return {"action": "close_all", "reason": "profit_target"}
+    if exit_debit >= credit_received * stop_loss_credit_multiple:
+        return {"action": "close_all", "reason": "stop_loss"}
+    return {"action": "hold"}
+
+
 def rank_candidates(candidates: list[dict], config: dict) -> list[dict]:
     """Rank Tier 1/2 candidates from a strategy's get_candidates output by
     compute_composite_score, descending. Reject and Near Miss candidates

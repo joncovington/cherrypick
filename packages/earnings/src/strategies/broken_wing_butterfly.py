@@ -38,7 +38,7 @@ Commands (see CLAUDE.md's Tool Reference):
 import json
 import os
 import sys
-from datetime import date
+from datetime import date, datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -303,21 +303,52 @@ def fetch_broken_wing_butterfly_order(symbol: str, earnings_date: date, earnings
         return {"ok": False, "error": str(exc)}
 
 
-def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
+def evaluate_position(position: dict, quotes: dict, config: dict, is_first_check_of_day: bool = False) -> dict:
     """Decide whether to close an open broken wing butterfly position early
     (CLAUDE.md Step 3c) ahead of Step 3's unconditional close-window sweep.
-    Identical to expected_move_butterfly.py's evaluate_position() -- same
-    debit-spread shape, delegates to scanner.evaluate_debit_spread_exit
-    (config: profit_target_pct, stop_loss_pct_of_debit), same inherited
-    caveat that a rare net-credit outcome isn't specially handled by that
-    shared formula. No `open_legs` argument -- this strategy never
-    populates `trade_legs`, always closes as a single unit via `legs_json`.
+
+    Broken wing butterfly enters for a net credit and closes as a single unit
+    via legs_json. Uses credit-spread exit logic (profit_target_pct of credit,
+    stop_loss_credit_multiple) with three key safety mechanisms:
+
+    1. Time-based exit: close 7+ days before earnings (convention: capture
+       IV crush without binary gap risk)
+    2. Per-leg delta stop: close if either short leg goes deep ITM (delta > 0.60),
+       preventing gamma blowout as expiration approaches
+    3. Profit target/stop loss: based on credit received, not debit paid
+
+    `is_first_check_of_day`: set to True on first post-gap tick to label
+    gap-driven stops separately from mid-session stops.
     """
+    gap_suffix = "_overnight_gap" if is_first_check_of_day else ""
+    cfg = _strategy_config(config)
+
     legs = json.loads(position["legs_json"])
+
+    # TIME-BASED EXIT: Exit 7 days before earnings to capture IV crush
+    # without holding through the binary event
+    if position.get("earnings_date"):
+        earnings_date = datetime.fromisoformat(position["earnings_date"]).date()
+        days_to_earnings = (earnings_date - date.today()).days
+        exit_days_before = cfg.get("exit_days_before_earnings", 7)
+        if days_to_earnings <= exit_days_before:
+            return {"action": "close_all", "reason": f"time_exit_before_earnings{gap_suffix}"}
+
+    # PER-LEG DELTA STOP: Close if either short body leg goes deep ITM
+    # (this prevents gamma blowout risk as expiration approaches)
+    leg_stop_delta_abs = cfg.get("leg_stop_delta_abs", 0.60)
+    for leg in legs:
+        q = quotes.get(leg["symbol"])
+        if q is not None and leg["action"] == "Sell to Open":
+            delta = q.get("delta")
+            if delta is not None and abs(delta) >= leg_stop_delta_abs:
+                return {"action": "close_all", "reason": f"leg_stop_delta{gap_suffix}"}
+
+    # PROFIT TARGET / STOP LOSS: Use credit-spread exit logic
     exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
     if exit_debit is None:
         return {"action": "hold"}
-    return scanner.evaluate_debit_spread_exit(position["entry_credit"], exit_debit, config)
+    return scanner.evaluate_credit_spread_exit(position["entry_credit"], exit_debit, config)
 
 
 def cmd_get_candidates(args) -> dict:
