@@ -15,7 +15,7 @@ dolt-data/
 # Agent logs and EOD reports
 logs/*.log
 logs/eod-*.md
-paper_trading_logs/*.*
+logs/paper/
 
 # Python bytecode
 __pycache__/
