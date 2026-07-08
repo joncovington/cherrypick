@@ -12,7 +12,7 @@ dolt-data/
 # Agent logs and EOD reports
 logs/*.log
 logs/eod-*.md
-paper_trading_logs/
+paper_trading_logs/*.*
 
 # Python bytecode
 __pycache__/
@@ -41,7 +41,6 @@ __pycache__/
 skills-lock.json
 .swarm/
 .claude/helpers/
-.claude/agents/
 .claude/.proven-config-version
 .claude/proven-config.json
 .claude/commands/workflows
