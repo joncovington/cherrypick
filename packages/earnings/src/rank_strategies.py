@@ -46,7 +46,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(__file__))
 
 import scanner
-from strategies import iron_fly, double_calendar, expected_move_butterfly, iron_condor, short_strangle, jade_lizard
+from strategies import iron_fly, double_calendar, expected_move_butterfly, iron_condor, short_strangle, jade_lizard, atm_calendar, directional_credit_spread, broken_wing_butterfly
 
 STRATEGY_REGISTRY = [
     {
@@ -85,6 +85,24 @@ STRATEGY_REGISTRY = [
         "fetch_criteria_fn": jade_lizard.fetch_price_and_term_structure,
         "apply_tiering_fn": jade_lizard.apply_tiering,
         "strategy_config_fn": jade_lizard._strategy_config,
+    },
+    {
+        "name": "atm_calendar",
+        "fetch_criteria_fn": atm_calendar.fetch_price_and_term_structure,
+        "apply_tiering_fn": atm_calendar.apply_tiering,
+        "strategy_config_fn": atm_calendar._strategy_config,
+    },
+    {
+        "name": "directional_credit_spread",
+        "fetch_criteria_fn": directional_credit_spread.fetch_price_and_term_structure,
+        "apply_tiering_fn": directional_credit_spread.apply_tiering,
+        "strategy_config_fn": directional_credit_spread._strategy_config,
+    },
+    {
+        "name": "broken_wing_butterfly",
+        "fetch_criteria_fn": broken_wing_butterfly.fetch_price_and_expected_move,
+        "apply_tiering_fn": broken_wing_butterfly.apply_tiering,
+        "strategy_config_fn": broken_wing_butterfly._strategy_config,
     },
 ]
 

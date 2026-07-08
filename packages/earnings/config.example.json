@@ -230,6 +230,115 @@
       "near_miss_min_market_cap": 1000000000,
       "min_combined_option_volume": 500,
       "near_miss_min_combined_option_volume": 200
+    },
+
+    "atm_calendar": {
+      "_note": "Sell a front-month ATM call, buy the same strike in a later monthly expiration -- same front/back term-structure edge as double_calendar, one option type instead of two, always the call side (config-fixed, not skew-selected -- call/put ATM calendars perform virtually identically). Always closes as a single 2-leg unit (legs_json only, never trade_legs), unlike double_calendar's independently-closeable sides. No expected-move-boundary filter -- this is a pure ATM term-structure play, not targeting where the stock lands. Reasoned starting points, not backtested for this strategy.",
+
+      "min_price": 10.00,
+      "min_term_structure": -0.004,
+      "min_combined_open_interest": 2000,
+      "back_month_min_days_after": 21,
+      "require_weekly_options": true,
+
+      "min_avg_volume": 1500000,
+      "near_miss_min_avg_volume": 1000000,
+
+      "min_iv_rv_ratio": 1.25,
+      "near_miss_min_iv_rv_ratio": 1.00,
+
+      "min_winrate": 0.50,
+      "near_miss_min_winrate": 0.40,
+
+      "_exit_note": "Same researched-convention shape as double_calendar's: profit target at 25-30% of max profit (midpoint of the 20-75% range described in practitioner guidance), stop when the debit has roughly doubled (stop_loss_pct_of_debit=1.0, matching evaluate_debit_spread_exit's convention -- note this is looser than expected_move_butterfly's 0.40 since a calendar's decay profile is slower-resolving), 5-day time-exit before front expiration for the same gamma-risk-overwhelms-theta reasoning as double_calendar's. Not backtested for this project specifically.",
+      "profit_target_pct": 0.30,
+      "stop_loss_pct_of_debit": 1.0,
+      "exit_days_before_front_expiration": 5,
+
+      "max_bid_ask_spread_pct": 0.15,
+      "min_market_cap": 2000000000,
+      "near_miss_min_market_cap": 1000000000,
+      "min_combined_option_volume": 500,
+      "near_miss_min_combined_option_volume": 200
+    },
+
+    "directional_credit_spread": {
+      "_note": "Single-sided vertical credit spread (put spread if bullish, call spread if bearish), sold on whichever side the 25-delta risk reversal shows richer (expected_move_butterfly.select_side(), reused as-is -- min_skew_abs/skew_delta_target share that module's meaning). Genuinely new strike-selection convention for this project: the short strike is chosen so BREAKEVEN (short strike minus/plus credit received) lands at the expected-move boundary, not the strike itself -- see directional_credit_spread.py's _select_short_strike. Same overnight-gap hold model and Step 3/3c close mechanism as iron_fly/iron_condor. Reasoned starting points, not backtested for this strategy.",
+
+      "min_price": 10.00,
+      "max_front_expiration_days": 9,
+      "min_term_structure": -0.004,
+      "min_expected_move_pct": 0.04,
+      "min_skew_abs": 0.02,
+      "skew_delta_target": 0.25,
+
+      "min_avg_volume": 1500000,
+      "near_miss_min_avg_volume": 1000000,
+
+      "min_iv_rv_ratio": 1.25,
+      "near_miss_min_iv_rv_ratio": 1.00,
+
+      "min_winrate": 0.50,
+      "near_miss_min_winrate": 0.40,
+
+      "wing_width_credit_multiple": 3.0,
+      "wing_width_multiple_low": 2.5,
+      "wing_width_multiple_mid": 3.0,
+      "wing_width_multiple_high": 3.5,
+      "wing_width_band_low_max": 1.25,
+      "wing_width_band_mid_max": 1.75,
+
+      "_exit_note": "Step 3c (market-open-to-close-window) profit-target/stop-loss check via scanner.evaluate_credit_spread_exit, same convention and rationale as iron_fly's/iron_condor's -- 50% of max profit target, 1.5x credit stop. Not backtested for this project specifically.",
+      "profit_target_pct": 0.50,
+      "stop_loss_credit_multiple": 1.5,
+
+      "require_weekly_options": true,
+      "min_combined_open_interest": 2000,
+      "max_bid_ask_spread_pct": 0.15,
+      "min_market_cap": 2000000000,
+      "near_miss_min_market_cap": 1000000000,
+      "min_combined_option_volume": 500,
+      "near_miss_min_combined_option_volume": 200
+    },
+
+    "broken_wing_butterfly": {
+      "_note": "Body-anchored (no ATM leg): 2 short contracts at the expected-move strike (the body, side picked via a 25-delta risk reversal), protected by a narrow long wing toward current price and a wide long wing away from it, both sized directly off the body strike -- NOT expected_move_butterfly's 1-2-1 ATM/short/far shape. Near wing width scales per-candidate off the body leg's own premium via the IV/RV-banded wing_width_multiple_low/_mid/_high bands (deliberately smaller than iron_fly's 2.5/3.0/3.5, since this sizes a single-leg premium, not a straddle credit); far wing is wide_wing_multiple times the near wing. Reasoned starting point, not backtested for this strategy.",
+      "_credit_only_note": "get_order hard-rejects (net_debit_positive_credit_required) any candidate that doesn't price out to a net credit or breakeven -- if a candidate's real premiums land as a net debit at these wing widths, they didn't buy back enough premium to finance the position, so it's rejected outright rather than entered as a smaller-debit butterfly. Raise wide_wing_multiple or the wing_width_multiple_* bands if too many real candidates are being rejected this way.",
+
+      "min_price": 10.00,
+      "min_expected_move_pct": 0.04,
+      "min_skew_abs": 0.02,
+      "skew_delta_target": 0.25,
+      "max_front_expiration_days": 9,
+
+      "wing_width_multiple_low": 1.0,
+      "wing_width_multiple_mid": 1.25,
+      "wing_width_multiple_high": 1.5,
+      "wing_width_band_low_max": 1.25,
+      "wing_width_band_mid_max": 1.75,
+
+      "wide_wing_multiple": 2.5,
+
+      "min_avg_volume": 1500000,
+      "near_miss_min_avg_volume": 1000000,
+
+      "min_iv_rv_ratio": 1.25,
+      "near_miss_min_iv_rv_ratio": 1.00,
+
+      "min_winrate": 0.50,
+      "near_miss_min_winrate": 0.40,
+
+      "_exit_note": "Step 3c (market-open-to-close-window) profit-target/stop-loss check via scanner.evaluate_debit_spread_exit, same convention and values as expected_move_butterfly's -- 25% of max profit target, a stop at a 40% loss of the debit paid. Not backtested for this project specifically.",
+      "profit_target_pct": 0.25,
+      "stop_loss_pct_of_debit": 0.40,
+
+      "require_weekly_options": true,
+      "min_combined_open_interest": 2000,
+      "max_bid_ask_spread_pct": 0.15,
+      "min_market_cap": 2000000000,
+      "near_miss_min_market_cap": 1000000000,
+      "min_combined_option_volume": 500,
+      "near_miss_min_combined_option_volume": 200
     }
   }
 }
