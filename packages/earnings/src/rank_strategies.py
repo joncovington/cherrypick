@@ -313,6 +313,7 @@ def _evaluate_and_rank_symbol(symbol: str, entry_date, earnings_timing: str, con
     )
     return {
         "symbol": symbol,
+        "earnings_date": str(entry_date),
         "earnings_timing": earnings_timing,
         "strategies": strategy_results,
         "viable": viable,
@@ -347,6 +348,7 @@ def cmd_get_ranked_symbols(args) -> dict:
                     print(f"Error evaluating {entry['symbol']}: {e}", file=sys.stderr)
                     per_symbol.append({
                         "symbol": entry["symbol"],
+                        "earnings_date": str(entry["date"]),
                         "earnings_timing": entry["timing"],
                         "strategies": [],
                         "viable": [],
@@ -409,6 +411,7 @@ def cmd_get_ranked_symbols(args) -> dict:
         "symbols": [
             {
                 "symbol": s["symbol"],
+                "earnings_date": s["earnings_date"],
                 "earnings_timing": s["earnings_timing"],
                 "outcome": s["outcome"],
                 "reason": s["reason"],
