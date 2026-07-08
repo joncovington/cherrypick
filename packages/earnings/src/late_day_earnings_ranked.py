@@ -29,8 +29,8 @@ class StrategyRanker:
 
     def __init__(self, config: Dict):
         self.config = config
-        self.log_dir = Path("paper_trading_logs")
-        self.log_dir.mkdir(exist_ok=True)
+        self.log_dir = Path("logs/paper")
+        self.log_dir.mkdir(parents=True, exist_ok=True)
 
     def get_mock_candidates(self) -> List[Dict]:
         """Get mock candidates for demonstration."""
@@ -213,7 +213,7 @@ class StrategyRanker:
             print()
 
         print("READY FOR 3:50 PM ENTRY WINDOW")
-        print(f"Entry orders logged to: paper_trading_logs/runs_{datetime.now().strftime('%Y_%m')}.json")
+        print(f"Entry orders logged to: logs/paper/runs_{datetime.now().strftime('%Y_%m')}.json")
         print("=" * 80)
 
 
