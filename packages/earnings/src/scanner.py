@@ -753,30 +753,6 @@ def compute_generic_exit_debit(legs: list[dict], quotes: dict) -> float | None:
     return total
 
 
-def evaluate_credit_spread_exit(entry_credit: float, exit_debit: float, config: dict) -> dict:
-    """Shared profit-target/stop-loss check for simple credit-spread
-    strategies that close as a single unit (iron_fly, iron_condor -- same
-    shape, so one function instead of two copies). Checked only in the
-    narrow market-open-to-close-window slot (CLAUDE.md Step 3c), ahead of
-    Step 3's unconditional close-window sweep, which remains the final
-    backstop regardless of what this returns.
-
-    Calibrated against earnings-specific (not generic weeks-long income-
-    strategy) research: a short straddle/strangle held through an earnings
-    reaction commonly targets 50% of max profit and stops at 1.5x credit
-    received; iron butterfly numbers are similar (25-50% profit target,
-    ~2x credit stop). Not backtested for this project specifically.
-    """
-    profit_target_pct = config.get("profit_target_pct", 0.50)
-    stop_loss_credit_multiple = config.get("stop_loss_credit_multiple", 1.5)
-    profit = entry_credit - exit_debit
-    if profit >= entry_credit * profit_target_pct:
-        return {"action": "close_all", "reason": "profit_target"}
-    if exit_debit >= entry_credit * stop_loss_credit_multiple:
-        return {"action": "close_all", "reason": "stop_loss"}
-    return {"action": "hold"}
-
-
 def evaluate_debit_spread_exit(entry_credit: float, exit_debit: float, config: dict) -> dict:
     """Shared profit-target/stop-loss check for simple debit-spread
     strategies that close as a single unit (expected_move_butterfly today;
