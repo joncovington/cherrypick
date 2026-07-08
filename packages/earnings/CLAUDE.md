@@ -16,7 +16,8 @@ CRITICAL_GUARDRAIL: NO ABSOLUTE PATHS OR MACHINE-SPECIFIC DATA
 ---
 
 > ⚠️ **CRITICAL INSTRUCTION**: This repo is pushed to a shared GitHub remote and must run correctly on any machine/OS, not just the one it was developed on.
-> - **NEVER** hardcode an absolute filesystem path (e.g. `C:\Users\...`, `/Users/...`, `/home/...`) in Python source, config files, or docs. Every path must be derived relative to the file's own location (`Path(__file__).resolve().parent...`, matching the existing pattern in `db.py`/`db_paper.py`/`scanner.py`) or be a config value the user supplies for their own environment.
+> - **NEVER** hardcode an absolute filesystem path (e.g. `C:\Users\...`, `/Users/...`, `/home/...`) in Python source, config files, or docs. Every path must be derived relative to the file's own location (`Path(__file__).resolve().parent...`, matching the existing pattern in `db.py`/`db_paper.py`/`scanner.py`) or be a config value /the user supplies for their own environment.
+> - **NEVER** save working files or tests to root — use `/src`, `/tests`, `/docs`, `/config`, `/scripts`
 > - **NEVER** hardcode a username, hostname (other than generic values like `127.0.0.1`/`localhost`), drive letter, or any other machine-specific detail in committed files.
 > - **NEVER** commit secrets, credentials, or `config.json` itself (already gitignored) — this guardrail is about *paths and machine identity*, not secrets, which are covered separately in the root `CLAUDE.md`.
 > - Before committing any new file that constructs a path, verify it's built from `Path(__file__)`, an environment variable, or a config value — never a literal path string pointing at this machine's directory structure.
