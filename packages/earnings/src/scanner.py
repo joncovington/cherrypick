@@ -10,7 +10,7 @@ for the first and currently only implementation), which import from this
 module rather than duplicating it.
 
 NOTE: This file exceeds 500-line guideline (1,038 lines). Documented exception
-in .claude/file-size-exceptions.md. Refactoring is high-risk due to circular
+in docs/file-size-exceptions.md. Refactoring is high-risk due to circular
 imports and cross-module state management. Current state is stable & tested.
 
 Commands (see CLAUDE.md's Tool Reference):
@@ -1040,3 +1040,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

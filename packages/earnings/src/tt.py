@@ -14,7 +14,7 @@ Usage:
   python src/tt.py execute_trade --order '<JSON>' [--account_number X] [--live]
 
 NOTE: This file exceeds 500-line guideline (602 lines). Documented exception
-in .claude/file-size-exceptions.md. Broker API wrapper with tightly coupled
+in docs/file-size-exceptions.md. Broker API wrapper with tightly coupled
 session/auth/order functions. Split would complicate credential handling.
 
 Adapted from MEICAgent's src/tt.py, with the stream-cache layer removed --
@@ -604,3 +604,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
