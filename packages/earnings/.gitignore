@@ -31,6 +31,9 @@ __pycache__/
 # MCP server config (machine-local)
 .mcp.json
 
+# Claude Flow (machine-local metrics and daemon state)
+.claude-flow/
+
 # Auto-installed Claude Code skills and agent plugins (machine-local)
 .claude/skills/
 .agents/
