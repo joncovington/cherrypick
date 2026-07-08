@@ -7,7 +7,7 @@ to the body strike itself, one narrow (toward current price -- the side
 price travels THROUGH to reach the body, the expected move itself) and one
 wide (away from current price -- an overshoot beyond what's expected, the
 side research says should sit at a low-probability-of-touching strike).
-Side (call or put) picked via expected_move_butterfly.select_side()'s
+Side (call or put) picked via expected_move_butterfly.scanner.select_side()'s
 25-delta risk reversal, reused directly.
 
 Widening the far wing relative to the near wing makes it cheaper
@@ -43,7 +43,6 @@ from datetime import date, datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import scanner
-from strategies.expected_move_butterfly import select_side
 
 
 def _strategy_config(config: dict) -> dict:
@@ -62,7 +61,7 @@ def fetch_price_and_expected_move(symbol: str, earnings_date: date, earnings_tim
     raising -- same discipline as every other strategy module.
 
     `config` here is the full project config, not this strategy's own
-    sub-config -- select_side's skew_delta_target is read via
+    sub-config -- scanner.select_side's skew_delta_target is read via
     `_strategy_config(config)` explicitly, same discipline documented in
     double_calendar.py/expected_move_butterfly.py for the same reason.
     """
@@ -85,7 +84,7 @@ def fetch_price_and_expected_move(symbol: str, earnings_date: date, earnings_tim
         expected_move = 0.85 * (front_call["mid"] + front_put["mid"])
         expected_move_pct = expected_move / price
 
-        side_result = select_side(symbol, front_exp, price, strategy_config)
+        side_result = scanner.select_side(symbol, front_exp, price, strategy_config)
         if not side_result.get("ok"):
             return side_result
 
@@ -206,7 +205,7 @@ def fetch_broken_wing_butterfly_order(symbol: str, earnings_date: date, earnings
             return atm_probe
         expected_move = 0.85 * (atm_probe["front_call"]["mid"] + atm_probe["front_put"]["mid"])
 
-        side_result = select_side(symbol, front_exp, price, config)
+        side_result = scanner.select_side(symbol, front_exp, price, config)
         if not side_result.get("ok"):
             return side_result
         side = side_result["side"]

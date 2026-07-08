@@ -290,7 +290,7 @@ def test_evaluate_credit_spread_exit_stop_loss():
 
 
 def test_evaluate_credit_spread_exit_hold():
-    result = scanner.evaluate_credit_spread_exit(entry_credit=2.0, exit_debit=1.5, config={})
+    result = scanner.evaluate_credit_spread_exit(entry_credit=2.0, exit_debit=1.5, config={"profit_target_pct": 0.50})
     assert result == {"action": "hold"}
 
 

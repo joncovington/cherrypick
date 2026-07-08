@@ -46,7 +46,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(__file__))
 
 import scanner
-from strategies import iron_fly, double_calendar, expected_move_butterfly, iron_condor, short_strangle, jade_lizard, atm_calendar, directional_credit_spread, broken_wing_butterfly
+from strategies import iron_fly, double_calendar, iron_condor, short_strangle, jade_lizard, atm_calendar, directional_credit_spread, broken_wing_butterfly
 
 STRATEGY_REGISTRY = [
     {
@@ -61,12 +61,6 @@ STRATEGY_REGISTRY = [
         "apply_tiering_fn": double_calendar.apply_tiering,
         "strategy_config_fn": double_calendar._strategy_config,
         "extra_criteria_fn": double_calendar._add_dispersion,
-    },
-    {
-        "name": "expected_move_butterfly",
-        "fetch_criteria_fn": expected_move_butterfly.fetch_price_and_expected_move,
-        "apply_tiering_fn": expected_move_butterfly.apply_tiering,
-        "strategy_config_fn": expected_move_butterfly._strategy_config,
     },
     {
         "name": "iron_condor",

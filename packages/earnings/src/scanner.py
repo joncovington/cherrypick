@@ -807,6 +807,39 @@ def evaluate_credit_spread_exit(entry_credit: float, exit_debit: float, config: 
     return {"action": "hold"}
 
 
+def select_side(symbol: str, front_expiration, price: float, config: dict) -> dict:
+    """25-delta risk reversal (call IV - put IV at matched |delta|, the
+    industry-standard skew measure) to pick which side to sell. Used by
+    directional_credit_spread to choose call or put side via skew analysis.
+
+    25-delta matched comparison avoids the structural put skew distortion
+    that would appear if comparing raw IV at dollar-distance strikes (price
+    +/- expected_move) with unequal deltas.
+    """
+    chain = call_tt([
+        "get_option_chain", "--symbol", symbol, "--expiration", str(front_expiration),
+        "--include_greeks", "--strike_count", "40", "--around_price", str(price),
+    ])
+    if not chain.get("ok"):
+        return {"ok": False, "error": chain.get("error", "get_option_chain failed")}
+    entries = chain["chain"].get(str(front_expiration), [])
+
+    target_delta = config.get("skew_delta_target", 0.25)
+    calls = [e for e in entries if str(e.get("option_type", "")).strip().lower().startswith("c") and e.get("delta") is not None]
+    puts = [e for e in entries if str(e.get("option_type", "")).strip().lower().startswith("p") and e.get("delta") is not None]
+    if not calls or not puts:
+        return {"ok": False, "error": "no greeks/delta data for skew measurement"}
+
+    call_ref = min(calls, key=lambda e: abs(abs(e["delta"]) - target_delta))
+    put_ref = min(puts, key=lambda e: abs(abs(e["delta"]) - target_delta))
+    if call_ref.get("iv") is None or put_ref.get("iv") is None:
+        return {"ok": False, "error": "no iv data for risk-reversal candidates"}
+
+    call_iv, put_iv = call_ref["iv"], put_ref["iv"]
+    side = "call" if call_iv >= put_iv else "put"
+    return {"ok": True, "side": side, "call_iv": call_iv, "put_iv": put_iv, "skew": call_iv - put_iv}
+
+
 def rank_candidates(candidates: list[dict], config: dict) -> list[dict]:
     """Rank Tier 1/2 candidates from a strategy's get_candidates output by
     compute_composite_score, descending. Reject and Near Miss candidates

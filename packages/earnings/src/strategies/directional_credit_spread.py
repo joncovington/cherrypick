@@ -9,7 +9,7 @@ Distinct from iron_condor.py in the ways that make this genuinely
 directional rather than neutral:
 - One side only, not a strangle -- iron_condor sells both the call and put
   expected-move boundaries; this strategy picks a single side via
-  expected_move_butterfly.select_side()'s 25-delta risk reversal (sell
+  expected_move_butterfly.scanner.select_side()'s 25-delta risk reversal (sell
   whichever side, call or put, carries the richer IV) and reuses that
   function directly rather than re-deriving the same skew calculation a
   third time. Research confirms this mapping holds for a credit spread too:
@@ -49,7 +49,6 @@ from datetime import date
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import scanner
-from strategies.expected_move_butterfly import select_side
 
 
 def _strategy_config(config: dict) -> dict:
@@ -58,7 +57,7 @@ def _strategy_config(config: dict) -> dict:
 
 def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
     """Live price + term structure/expected move + side selection, via
-    scanner.py's shared helpers and expected_move_butterfly.select_side().
+    scanner.py's shared helpers and expected_move_butterfly.scanner.select_side().
     Mirrors iron_condor.py's fetch_price_and_term_structure with skew/side
     folded in, same shape expected_move_butterfly.py's own function returns.
 
@@ -66,7 +65,7 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
     raising -- same discipline as every other strategy module.
 
     `config` here is the full project config (whatever run_candidate_scan
-    passes), not this strategy's own sub-config -- select_side's
+    passes), not this strategy's own sub-config -- scanner.select_side's
     skew_delta_target is read via `_strategy_config(config)` explicitly,
     same discipline documented in double_calendar.py/expected_move_butterfly.py
     for the same reason.
@@ -94,7 +93,7 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
             front_call["mid"], front_put["mid"], front_call["iv"], back_call["iv"], price,
         )
 
-        side_result = select_side(symbol, front_exp, price, strategy_config)
+        side_result = scanner.select_side(symbol, front_exp, price, strategy_config)
         if not side_result.get("ok"):
             return side_result
 
@@ -258,7 +257,7 @@ def fetch_directional_credit_spread_order(symbol: str, earnings_date: date, earn
         if front_exp is None:
             return {"ok": False, "error": err}
 
-        side_result = select_side(symbol, front_exp, price, config)
+        side_result = scanner.select_side(symbol, front_exp, price, config)
         if not side_result.get("ok"):
             return side_result
         side = side_result["side"]
