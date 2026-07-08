@@ -42,5 +42,49 @@
         "entry_quantity": 5
       }
     ]
+  },
+  {
+    "date": "2026-07-08",
+    "timestamp": "2026-07-08T02:28:55.447490",
+    "total_candidates": 5,
+    "selected": 3,
+    "trades": [
+      {
+        "symbol": "BMO",
+        "earnings_time": "Pre-market",
+        "expected_move": 3.2,
+        "iv_rank": 1.35,
+        "realized_vol_dispersion": 0.0125,
+        "strategy": "SHORT_STRADDLE",
+        "score": 84,
+        "tier": "TIER 1",
+        "entry_price": 5.1,
+        "entry_quantity": 3
+      },
+      {
+        "symbol": "AMC",
+        "earnings_time": "After close",
+        "expected_move": 8.5,
+        "iv_rank": 1.05,
+        "realized_vol_dispersion": 0.085,
+        "strategy": "IRON_CONDOR",
+        "score": 77,
+        "tier": "TIER 2",
+        "entry_price": 0.8,
+        "entry_quantity": 6
+      },
+      {
+        "symbol": "JPM",
+        "earnings_time": "Before open",
+        "expected_move": 2.8,
+        "iv_rank": 1.18,
+        "realized_vol_dispersion": 0.045,
+        "strategy": "IRON_FLY",
+        "score": 75,
+        "tier": "TIER 2",
+        "entry_price": 0.9,
+        "entry_quantity": 5
+      }
+    ]
   }
 ]
