@@ -41,6 +41,7 @@ import os
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -303,6 +304,23 @@ def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) 
     ], paper_mode)
 
 
+def _evaluate_and_rank_symbol(symbol: str, entry_date, earnings_timing: str, config: dict) -> dict:
+    """Evaluate a symbol's strategies and return ranking result."""
+    strategy_results = evaluate_symbol(symbol, entry_date, earnings_timing, config)
+    viable = sorted(
+        (r for r in strategy_results if r["tier"] in ("Tier 1", "Tier 2") and r["composite_score"] is not None),
+        key=lambda r: r["composite_score"], reverse=True,
+    )
+    return {
+        "symbol": symbol,
+        "earnings_timing": earnings_timing,
+        "strategies": strategy_results,
+        "viable": viable,
+        "best_strategy": viable[0]["name"] if viable else None,
+        "best_score": viable[0]["composite_score"] if viable else None,
+    }
+
+
 def cmd_get_ranked_symbols(args) -> dict:
     _ensure_dolt_running()
     if not _verify_tastytrade_connection():
@@ -313,21 +331,32 @@ def cmd_get_ranked_symbols(args) -> dict:
     calendar = scanner.fetch_entry_window_calendar(config)
 
     per_symbol = []
-    for entry in calendar:
-        symbol = entry["symbol"]
-        strategy_results = evaluate_symbol(symbol, entry["date"], entry["timing"], config)
-        viable = sorted(
-            (r for r in strategy_results if r["tier"] in ("Tier 1", "Tier 2") and r["composite_score"] is not None),
-            key=lambda r: r["composite_score"], reverse=True,
-        )
-        per_symbol.append({
-            "symbol": symbol,
-            "earnings_timing": entry["timing"],
-            "strategies": strategy_results,
-            "viable": viable,
-            "best_strategy": viable[0]["name"] if viable else None,
-            "best_score": viable[0]["composite_score"] if viable else None,
-        })
+    max_workers = min(4, len(calendar))
+    if max_workers > 1 and len(calendar) > 1:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_evaluate_and_rank_symbol, entry["symbol"], entry["date"], entry["timing"], config): entry
+                for entry in calendar
+            }
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    per_symbol.append(result)
+                except Exception as e:
+                    entry = futures[future]
+                    print(f"Error evaluating {entry['symbol']}: {e}", file=sys.stderr)
+                    per_symbol.append({
+                        "symbol": entry["symbol"],
+                        "earnings_timing": entry["timing"],
+                        "strategies": [],
+                        "viable": [],
+                        "best_strategy": None,
+                        "best_score": None,
+                    })
+    else:
+        for entry in calendar:
+            result = _evaluate_and_rank_symbol(entry["symbol"], entry["date"], entry["timing"], config)
+            per_symbol.append(result)
 
     rankable = [s for s in per_symbol if s["best_strategy"] is not None]
     rankable.sort(key=lambda s: s["best_score"], reverse=True)
