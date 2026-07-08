@@ -41,7 +41,22 @@ __pycache__/
 # Auto-installed Claude Code skills and agent plugins (machine-local)
 .claude/skills/
 .claude/agents/
-.claude/commands/
+.claude\commands\agents
+.claude\commands\analysis
+.claude\commands\automation
+.claude\commands\coordination
+.claude\commands\github
+.claude\commands\hive-mind
+.claude\commands\hooks
+.claude\commands\memory
+.claude\commands\monitoring
+.claude\commands\optimization
+.claude\commands\sparc
+.claude\commands\swarm
+.claude\commands\workflows
+.claude\commands\claude-flow-help.md
+.claude\commands\claude-flow-memory.md
+.claude\commands\claude-flow-swarm.md
 .claude/helpers/
 .claude/.proven-config-version
 .claude/proven-config.json
