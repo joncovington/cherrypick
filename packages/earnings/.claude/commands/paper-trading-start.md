@@ -6,7 +6,7 @@ Runs the real earnings-candidate scan for tonight's/tomorrow-morning's entry win
 
 Calls `rank_strategies.py get_ranked_symbols`, the production cross-strategy ranking engine (see CLAUDE.md's Loop Step 4b): fetches today's real AMC + tomorrow's real BMO earnings calendar from DoltHub, evaluates every registered strategy against live tastytrade/DoltHub data per symbol, and picks each symbol's single best-ranked viable strategy. For each selected symbol, builds a concrete tradeable order via that strategy's own `get_order`.
 
-This is a **one-shot analysis**, not the trading loop — it does not check today's account status, does not submit orders, and does not schedule any wakeup. Use `/run-today` to start the actual continuous loop.
+This is a **one-shot analysis**, not the trading loop — it does not check today's account status, does not submit orders, and does not schedule any wakeup. Use `/earnings-start` to start the actual continuous loop.
 
 ## Usage
 
@@ -62,7 +62,7 @@ If any are selected, each shows:
 
 1. Run command → see selected candidates (if any) with score, tier, and strategy
 2. Review the built order for each (credit, strikes, legs)
-3. Execute manually in your broker during the entry window, or let `/run-today`'s loop handle Step 4b automatically
+3. Execute manually in your broker during the entry window, or let `/earnings-start`'s loop handle Step 4b automatically
 4. Run `/paper-trading-eod-report` after close window handling
 
 ## Files Generated
@@ -74,7 +74,7 @@ Real trade persistence (for the actual loop, not this standalone scan) goes thro
 ## Related Commands
 
 - `/paper-trading-eod-report` — Generate end-of-day review
-- `/run-today` — Starts the actual continuous trading loop (Steps 0-5, self-scheduling)
+- `/earnings-start` — Starts the actual continuous trading loop (Steps 0-5, self-scheduling)
 
 ## Common Issues
 

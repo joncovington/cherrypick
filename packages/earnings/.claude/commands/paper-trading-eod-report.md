@@ -283,7 +283,7 @@ Track over time:
 ## Related Commands
 
 - `/paper-trading-start` — Begin daily analysis and entry
-- `/run-today` — Legacy continuous automation
+- `/earnings-start` — Legacy continuous automation
 
 ## Automation
 
