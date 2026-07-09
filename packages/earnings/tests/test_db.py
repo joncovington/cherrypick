@@ -71,14 +71,14 @@ def test_save_trade_duplicate_order_id_fails():
 
 def test_save_leg_close_updates_open_leg():
     trade = {
-        "order_id": "O3", "symbol": "TSLA", "strategy": "short_strangle",
+        "order_id": "O3", "symbol": "TSLA", "strategy": "double_calendar",
         "expiration": "2026-08-21", "entry_credit": 4.0, "legs_json": "[]",
-        "legs": [{"leg_role": "short_call", "symbol": "TSLA_SC", "action": "Sell to Open", "quantity": 1}],
+        "legs": [{"leg_role": "front_call", "symbol": "TSLA_FC", "action": "Sell to Open", "quantity": 1}],
     }
     db.cmd_save_trade(_ns(data=json.dumps(trade)))
 
     result = db.cmd_save_leg_close(_ns(data=json.dumps({
-        "order_id": "O3", "leg_role": "short_call", "close_price": 1.0,
+        "order_id": "O3", "leg_role": "front_call", "close_price": 1.0,
     })))
     assert result["ok"] is True
 

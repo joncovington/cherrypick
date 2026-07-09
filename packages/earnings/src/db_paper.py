@@ -14,19 +14,30 @@ Commands:
   get_open_positions
   save_trade --data '{"order_id": "...", "strategy": "iron_fly", "symbol": "...",
       "expiration": "YYYY-MM-DD", "short_strike": F, "long_call_strike": F,
-      "long_put_strike": F, "legs_json": "...", "entry_credit": F}'
-  save_close --data '{"order_id": "...", "exit_debit": F, "pnl": F}'
+      "long_put_strike": F, "legs_json": "...", "entry_credit": F,
+      "profile": "balanced", "quantity": N, "capital_at_risk": F, "entry_cost": F,
+      "entry_context": {...}}'
+  save_close --data '{"order_id": "...", "exit_debit": F, "pnl": F, "exit_cost": F}'
   get_open_legs --order_id X
   save_leg_close --data '{"order_id": "...", "leg_role": "...", "close_price": F}'
   log_scan --data '{"scan_date": "YYYY-MM-DD", "symbol": "...", "strategy": "iron_fly",
-      "tier": "...", "outcome": "...", "reason": "..."}'
-  get_pnl_summary [--strategy X]
+      "tier": "...", "outcome": "...", "reason": "...", "profile": "balanced"}'
+  get_pnl_summary [--strategy X] [--profile X]
 
 `legs` (optional array on save_trade, each `{leg_role, symbol, action, quantity}`) is for
 strategies with independently-closeable legs (e.g. double_calendar's threatened-side close)
 -- iron fly never passes it, so it never gets `trade_legs` rows. A trade's `trades.closed_at`
 stays NULL until every one of its legs is closed via save_leg_close and save_close is called
 for the position as a whole.
+
+`profile` (defaults to 'default') tags which named risk profile / test book opened a trade
+or produced a scan_log row (see docs/paper-trading-profiles.md) -- lets many isolated books
+share this one file without ever mixing their P&L or candidate history. `quantity` and
+`capital_at_risk` come from sizing.compute_position_size; `entry_cost`/`exit_cost` come from
+costs.py's tastytrade fee+slippage model (kept separate from entry_credit/exit_debit/pnl so
+cost impact is analyzable on its own). `entry_context` is a small JSON blob of the market
+conditions at entry (iv_rv_ratio, dispersion, skew, winrate_sample_size) for regime slicing
+in strategy_metrics.py -- stored verbatim, never parsed by db_paper.py itself.
 """
 
 import argparse
@@ -52,7 +63,15 @@ CREATE TABLE IF NOT EXISTS trades (
     exit_debit      REAL,
     pnl             REAL,
     opened_at       REAL,
-    closed_at       REAL
+    closed_at       REAL,
+    profile         TEXT NOT NULL DEFAULT 'default',
+    quantity        INTEGER,
+    capital_at_risk REAL,
+    entry_cost      REAL,
+    exit_cost       REAL,
+    entry_context   TEXT,
+    entry_iv        REAL,
+    exit_iv         REAL
 );
 
 CREATE TABLE IF NOT EXISTS trade_legs (
@@ -76,7 +95,8 @@ CREATE TABLE IF NOT EXISTS scan_log (
     tier        TEXT,
     outcome     TEXT,
     reason      TEXT,
-    logged_at   REAL
+    logged_at   REAL,
+    profile     TEXT NOT NULL DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS daily_summary (
@@ -87,11 +107,36 @@ CREATE TABLE IF NOT EXISTS daily_summary (
 );
 """
 
+# Idempotent migration for databases created before profile/sizing/cost attribution
+# existed (CREATE TABLE IF NOT EXISTS is a no-op on an already-existing table, so new
+# columns never appear there without this). Each entry: (table, column, ADD COLUMN clause).
+_MIGRATIONS = [
+    ("trades", "profile", "ALTER TABLE trades ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+    ("trades", "quantity", "ALTER TABLE trades ADD COLUMN quantity INTEGER"),
+    ("trades", "capital_at_risk", "ALTER TABLE trades ADD COLUMN capital_at_risk REAL"),
+    ("trades", "entry_cost", "ALTER TABLE trades ADD COLUMN entry_cost REAL"),
+    ("trades", "exit_cost", "ALTER TABLE trades ADD COLUMN exit_cost REAL"),
+    ("trades", "entry_context", "ALTER TABLE trades ADD COLUMN entry_context TEXT"),
+    ("trades", "entry_iv", "ALTER TABLE trades ADD COLUMN entry_iv REAL"),
+    ("trades", "exit_iv", "ALTER TABLE trades ADD COLUMN exit_iv REAL"),
+    ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+]
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    for table, column, alter_sql in _MIGRATIONS:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in existing:
+            conn.execute(alter_sql)
+    conn.commit()
+
 
 def _conn() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.executescript(_DDL)
+    _migrate(conn)
     return conn
 
 
@@ -121,13 +166,15 @@ def cmd_save_trade(args) -> dict:
     if missing:
         return {"ok": False, "error": f"missing required field(s): {', '.join(missing)}"}
 
+    entry_context = spec.get("entry_context")
     conn = _conn()
     try:
         conn.execute(
             "INSERT INTO trades "
             "(order_id, strategy, symbol, expiration, short_strike, long_call_strike, "
-            " long_put_strike, legs_json, entry_credit, opened_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " long_put_strike, legs_json, entry_credit, opened_at, profile, quantity, "
+            " capital_at_risk, entry_cost, entry_context, entry_iv) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["order_id"],
                 spec.get("strategy", "iron_fly"),
@@ -139,6 +186,12 @@ def cmd_save_trade(args) -> dict:
                 spec.get("legs_json"),
                 spec.get("entry_credit"),
                 spec.get("opened_at", time.time()),
+                spec.get("profile", "default"),
+                spec.get("quantity"),
+                spec.get("capital_at_risk"),
+                spec.get("entry_cost"),
+                json.dumps(entry_context) if entry_context is not None else None,
+                spec.get("entry_iv"),
             ),
         )
         for leg in spec.get("legs", []):
@@ -204,12 +257,14 @@ def cmd_save_close(args) -> dict:
     conn = _conn()
     try:
         cur = conn.execute(
-            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ? "
+            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, exit_iv = ? "
             "WHERE order_id = ?",
             (
                 spec.get("exit_debit"),
                 spec.get("pnl"),
                 spec.get("closed_at", time.time()),
+                spec.get("exit_cost"),
+                spec.get("exit_iv"),
                 order_id,
             ),
         )
@@ -231,8 +286,8 @@ def cmd_log_scan(args) -> dict:
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, logged_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, logged_at, profile) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["scan_date"],
                 spec.get("strategy", "iron_fly"),
@@ -241,6 +296,7 @@ def cmd_log_scan(args) -> dict:
                 spec.get("outcome"),
                 spec.get("reason"),
                 spec.get("logged_at", time.time()),
+                spec.get("profile", "default"),
             ),
         )
         conn.commit()
@@ -251,17 +307,18 @@ def cmd_log_scan(args) -> dict:
 
 def cmd_get_pnl_summary(args) -> dict:
     strategy = getattr(args, "strategy", None)
+    profile = getattr(args, "profile", None)
     conn = _conn()
     try:
+        query = "SELECT * FROM trades WHERE closed_at IS NOT NULL"
+        params: list = []
         if strategy:
-            rows = conn.execute(
-                "SELECT * FROM trades WHERE closed_at IS NOT NULL AND strategy = ? ORDER BY closed_at",
-                (strategy,),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM trades WHERE closed_at IS NOT NULL ORDER BY closed_at"
-            ).fetchall()
+            query += " AND strategy = ?"
+            params.append(strategy)
+        if profile:
+            query += " AND profile = ?"
+            params.append(profile)
+        rows = conn.execute(query + " ORDER BY closed_at", params).fetchall()
     finally:
         conn.close()
 
@@ -271,13 +328,16 @@ def cmd_get_pnl_summary(args) -> dict:
     losses = [p for p in pnls if p <= 0]
 
     by_strategy: dict[str, list[float]] = {}
+    by_profile: dict[str, list[float]] = {}
     for r in closed:
         if r["pnl"] is not None:
             by_strategy.setdefault(r["strategy"], []).append(r["pnl"])
+            by_profile.setdefault(r["profile"], []).append(r["pnl"])
 
     return {
         "ok": True,
         "strategy_filter": strategy,
+        "profile_filter": profile,
         "total_trades": len(closed),
         "total_pnl": sum(pnls) if pnls else 0.0,
         "avg_pnl": (sum(pnls) / len(pnls)) if pnls else None,
@@ -289,6 +349,10 @@ def cmd_get_pnl_summary(args) -> dict:
         "by_strategy": {
             s: {"trades": len(vals), "total_pnl": sum(vals), "avg_pnl": sum(vals) / len(vals)}
             for s, vals in by_strategy.items()
+        },
+        "by_profile": {
+            p: {"trades": len(vals), "total_pnl": sum(vals), "avg_pnl": sum(vals) / len(vals)}
+            for p, vals in by_profile.items()
         },
         "trades": closed,
     }
@@ -303,6 +367,7 @@ def main() -> None:
 
     p_pnl = sub.add_parser("get_pnl_summary")
     p_pnl.add_argument("--strategy", default=None)
+    p_pnl.add_argument("--profile", default=None)
 
     p_save_trade = sub.add_parser("save_trade")
     p_save_trade.add_argument("--data", required=True)
