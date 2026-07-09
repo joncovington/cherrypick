@@ -155,19 +155,6 @@ def test_band_missing_value_is_near_miss_not_pass():
     assert hard_fail == []
 
 
-# --- naked_strategies_allowed --------------------------------------------------
-
-@pytest.mark.parametrize("enable_live,allow_naked,expected", [
-    (False, False, True),   # paper mode always allowed
-    (False, True, True),
-    (True, False, False),   # live mode requires the flag
-    (True, True, True),
-])
-def test_naked_strategies_allowed(enable_live, allow_naked, expected):
-    config = {"enable_live_trading": enable_live, "allow_naked_strategies": allow_naked}
-    assert scanner.naked_strategies_allowed(config) is expected
-
-
 # --- apply_liquidity_gates ------------------------------------------------------
 
 def test_apply_liquidity_gates_all_pass(base_strategy_config, good_criteria):

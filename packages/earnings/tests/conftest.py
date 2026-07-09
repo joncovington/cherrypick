@@ -61,6 +61,4 @@ def good_criteria():
         "combined_open_interest": 3000,
         "combined_option_volume": 1000,
         "skew_abs": 0.05,
-        "naked_strategies_allowed": True,
-        "call_side_riskless": True,
     }

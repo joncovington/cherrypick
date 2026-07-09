@@ -312,10 +312,10 @@ def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
     fetches `quotes` via `scanner.fetch_quotes_by_symbol` for this
     position's `legs_json` symbols.
 
-    No `open_legs` argument (unlike double_calendar/short_strangle/
-    jade_lizard's evaluate_position()) since iron_fly never populates
-    `trade_legs` -- it always closes as a single unit via `legs_json`, so
-    there's no partial-close state to track.
+    No `open_legs` argument (unlike double_calendar's evaluate_position(),
+    the one strategy with independently-closeable legs) since iron_fly never
+    populates `trade_legs` -- it always closes as a single unit via
+    `legs_json`, so there's no partial-close state to track.
 
     Returns {"action": "hold"} or {"action": "close_all", "reason":
     "profit_target"|"stop_loss"|"iv_crush_backstop"} -- see

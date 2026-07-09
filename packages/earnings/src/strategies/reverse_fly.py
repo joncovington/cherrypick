@@ -10,7 +10,7 @@ Exits:
 2. Time-based exit at 4 hours post-announcement (IV-crush window close)
 3. Stop loss at max loss (defined-risk protection)
 
-Unlike short_straddle (which is naked on both sides), reverse_fly:
+Reverse fly (a long-volatility, defined-risk structure):
 - Buys ATM straddle (long call + long put)
 - Sells OTM wings (short call/put above/below ATM)
 - Defined max loss = wing width - net debit

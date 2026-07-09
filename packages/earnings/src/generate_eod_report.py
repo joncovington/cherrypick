@@ -161,14 +161,8 @@ class EODReportGenerator:
                 report.append("  RISK: Low capital utilization (<50%)")
                 report.append("        Conservative: Large buffer for adverse moves")
 
-        # Strategy risk mix
-        naked_count = len([t for t in selected if "STRADDLE" in t.get("strategy", "") or "STRANGLE" in t.get("strategy", "")])
+        # Strategy risk mix -- every strategy is defined-risk (max loss known at entry)
         spread_count = len([t for t in selected if "CONDOR" in t.get("strategy", "") or "FLY" in t.get("strategy", "")])
-
-        if naked_count > 0:
-            report.append("  RISK: Naked short strategies in portfolio")
-            report.append("        Unlimited: SHORT_STRADDLE/STRANGLE have undefined max loss")
-            report.append("        Tolerance: If uncomfortable, use --allow_naked_strategies false")
 
         if spread_count > 0:
             report.append("  RISK: Defined-risk spreads in portfolio")
@@ -181,13 +175,11 @@ class EODReportGenerator:
         report.append("    1. Reduce: max_positions_per_day (e.g., 3 -> 2)")
         report.append("    2. Lower: available_capital (triggers smaller position sizes)")
         report.append("    3. Tighten: min_conviction to 'high' (Tier 1 only, score 80+)")
-        report.append("    4. Avoid: naked strategies (--allow_naked_strategies false)")
         report.append("")
         report.append("  If confident with current risk:")
         report.append("    1. Increase: max_positions_per_day to 4-5")
         report.append("    2. Raise: available_capital for larger positions")
         report.append("    3. Loosen: min_conviction to 'medium' (Tier 1-2 allowed)")
-        report.append("    4. Embrace: naked strategies for max edge (SHORT_STRADDLE)")
         report.append("")
 
         report.append("=" * 80)

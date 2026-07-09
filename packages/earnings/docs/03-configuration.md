@@ -6,27 +6,41 @@ Complete reference for all configurable parameters.
 
 ## Quick Start
 
-Copy `config.example.json` to `config.json` and customize. All 10 strategies have configurable entry conditions.
+Copy `config.example.json` to `config.json` and customize. All 7 (defined-risk) strategies have configurable entry conditions.
 
 ---
 
 ## Global Settings
 
+### Paper Mode Capital
+
+```json
+{
+  "available_capital_paper_mode": 10000,
+  "available_capital_live_mode_source": "tastytrade"
+}
+```
+
+**available_capital_paper_mode**
+Simulated NLV used as the basis for paper mode's `max_risk_per_trade_pct` risk-cap check (Loop Step 4b). Paper mode never queries the real connected broker account's balance for this — it's fully decoupled from whatever capital actually sits in that account. Size this to whatever you'd actually deploy live; too low and the risk cap will reject every order regardless of candidate quality (a strategy needing a $300+ debit/credit per contract can never clear a 5% cap against a $1,500 basis, for example).
+
+**available_capital_live_mode_source**
+Documentation-only label (not read by code) — live mode always sources NLV/buying power from the real account via `tt.py get_account_info`, since real capital is genuinely at risk there.
+
+---
+
 ### Risk Configuration
 
 ```json
 {
-  "allow_naked_strategies": false,
   "win_rate_target": 0.65,
   "max_concurrent_earnings_positions": 3,
   "max_daily_earnings_trades": 5
 }
 ```
 
-**allow_naked_strategies**  
-Enable/disable undefined-risk strategies (SHORT_STRADDLE, SHORT_STRANGLE, JADE_LIZARD).  
-- `false` (default): Fallback to wide-wing alternatives  
-- `true`: Use naked strategies directly  
+Every strategy is defined-risk (max loss known at entry), so there is no naked/undefined-risk
+gate to configure.
 
 **win_rate_target**  
 Target win rate (0.0-1.0). Used to adjust entry thresholds. Lower target = relaxed gates.
@@ -64,7 +78,7 @@ Maximum loss as multiple of entry credit. 2.0 = lose 2x entry credit.
 Backstop exit time (4 hours = 240 min).
 
 **per_leg_delta_stop**  
-Delta threshold for protective stops. Default 0.60 for naked, 0.45 for spreads.
+Delta threshold for protective stops. Default 0.45 for spreads.
 
 ---
 
@@ -98,32 +112,7 @@ Entry window: 30-60 days to expiration.
 
 ## Strategy-Specific Configurations
 
-### 1. Short Straddle
-
-```json
-{
-  "strategies": {
-    "short_straddle": {
-      "max_realized_move_dispersion_pct": 0.08,
-      "min_iv_rank": 1.20,
-      "min_entry_credit_dollars": 3.00,
-      "profit_target_pct": 0.50,
-      "leg_stop_delta_abs": 0.60,
-      "stop_loss_credit_multiple": 2.0,
-      "exit_after_announcement_minutes": 240
-    }
-  }
-}
-```
-
-**When:** High IV (>1.20) + Ultra-predictable (σ<0.08)  
-**Dispersion gate:** 0.08 (tighter than global 0.15)  
-**Entry credit:** $3-5 typical  
-**Exit:** 50% target, delta stop 0.60, 4-hour backstop  
-
----
-
-### 2. Iron Fly
+### 1. Iron Fly
 
 ```json
 {
@@ -148,7 +137,7 @@ Entry window: 30-60 days to expiration.
 
 ---
 
-### 3. Iron Condor
+### 2. Iron Condor
 
 ```json
 {
@@ -172,31 +161,7 @@ Entry window: 30-60 days to expiration.
 
 ---
 
-### 4. Short Strangle
-
-```json
-{
-  "strategies": {
-    "short_strangle": {
-      "max_realized_move_dispersion_pct": 0.15,
-      "min_iv_rank": 1.00,
-      "min_entry_credit_dollars": 0.50,
-      "profit_target_pct": 0.50,
-      "leg_stop_delta_abs": 0.60,
-      "stop_loss_credit_multiple": 2.0,
-      "exit_after_announcement_minutes": 240
-    }
-  }
-}
-```
-
-**When:** OTM strikes preferred, lower capital  
-**Entry credit:** $0.50-1.20  
-**Exit:** 50% target, delta stop 0.60, 4-hour backstop  
-
----
-
-### 5. Reverse Fly
+### 3. Reverse Fly
 
 ```json
 {
@@ -220,31 +185,7 @@ Entry window: 30-60 days to expiration.
 
 ---
 
-### 6. Jade Lizard
-
-```json
-{
-  "strategies": {
-    "jade_lizard": {
-      "max_realized_move_dispersion_pct": 0.20,
-      "min_iv_rank": 0.80,
-      "min_entry_credit_dollars": 1.00,
-      "profit_target_pct": 0.50,
-      "directional_bias_required": true,
-      "leg_stop_delta_abs": 0.60,
-      "exit_after_announcement_minutes": 240
-    }
-  }
-}
-```
-
-**When:** Clear directional bias + IV skew  
-**Entry credit:** $1.00-2.00  
-**Exit:** 50% target, delta stop 0.60, 4-hour backstop  
-
----
-
-### 7. Directional Spread
+### 4. Directional Spread
 
 ```json
 {
@@ -268,7 +209,7 @@ Entry window: 30-60 days to expiration.
 
 ---
 
-### 8. Broken Wing Butterfly
+### 5. Broken Wing Butterfly
 
 ```json
 {
@@ -292,7 +233,7 @@ Entry window: 30-60 days to expiration.
 
 ---
 
-### 9. ATM Calendar
+### 6. ATM Calendar
 
 ```json
 {
@@ -315,7 +256,7 @@ Entry window: 30-60 days to expiration.
 
 ---
 
-### 10. Double Calendar
+### 7. Double Calendar
 
 ```json
 {
@@ -366,14 +307,14 @@ Entry window: 30-60 days to expiration.
 Above 1.10 = gap premium route.
 
 **secondary thresholds**  
-σ < 0.08 = ultra-predictable (naked OK).  
+σ < 0.08 = ultra-predictable (tight ATM structures OK).  
 0.08-0.20 = normal (spreads).  
 > 0.20 = wide wings or calendar only.
 
 **tertiary IV thresholds**  
 IV < 0.75 = calendar spreads.  
 IV 0.75-1.00 = Iron Fly/Condor.  
-IV > 1.00 = SHORT_STRADDLE/STRANGLE.
+IV > 1.00 = Iron Fly (max ATM premium, defined-risk).
 
 ---
 
@@ -401,7 +342,7 @@ IV > 1.00 = SHORT_STRADDLE/STRANGLE.
 }
 ```
 
-Used when `allow_naked_strategies: false`. Selects fallback wing width.
+Selects the wing-width profile for the wide-wing defined-risk structures.
 
 ---
 
@@ -411,7 +352,6 @@ For risk-averse portfolio:
 
 ```json
 {
-  "allow_naked_strategies": false,
   "win_rate_target": 0.65,
   "max_concurrent_earnings_positions": 2,
   "max_daily_earnings_trades": 2,
@@ -423,9 +363,9 @@ For risk-averse portfolio:
   },
   
   "strategies": {
-    "short_straddle": {
-      "max_realized_move_dispersion_pct": 0.06,
-      "min_iv_rank": 1.30
+    "iron_condor": {
+      "max_realized_move_dispersion_pct": 0.20,
+      "min_iv_rank": 0.70
     },
     "iron_fly": {
       "wing_width_credit_multiple": 4.0
@@ -439,11 +379,10 @@ For risk-averse portfolio:
 ```
 
 Changes:
-- No naked strategies allowed
 - Stricter dispersion gates (0.12 vs 0.15)
 - Conservative wing profile (4.0x)
 - Max 2 positions, 2 trades/day
-- Only ultra-tight SHORT_STRADDLE (σ < 0.06)
+- Favors the wider-profit-zone iron_condor over the ATM iron_fly
 
 ---
 
@@ -453,7 +392,6 @@ For experienced trader with capital:
 
 ```json
 {
-  "allow_naked_strategies": true,
   "win_rate_target": 0.60,
   "max_concurrent_earnings_positions": 5,
   "max_daily_earnings_trades": 8,
@@ -465,19 +403,18 @@ For experienced trader with capital:
   },
   
   "strategies": {
-    "short_straddle": {
-      "max_realized_move_dispersion_pct": 0.12,
-      "min_iv_rank": 1.00
+    "iron_fly": {
+      "max_realized_move_dispersion_pct": 0.24,
+      "min_iv_rank": 0.60
     },
-    "short_strangle": {
-      "min_iv_rank": 0.80
+    "broken_wing_butterfly": {
+      "min_iv_rank": 0.60
     }
   }
 }
 ```
 
 Changes:
-- Naked strategies allowed (SHORT_STRADDLE, SHORT_STRANGLE)
 - Looser dispersion gates (0.18 vs 0.15)
 - Lower IV requirements
 - Max 5 positions, 8 trades/day
