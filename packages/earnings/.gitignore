@@ -70,6 +70,10 @@ skills-lock.json
 cmd_save_close
 .tmp/
 
+# Runtime lock files (live PID markers, machine/session-local)
+.claude/*.lock
+.claude/*_lock
+
 # Dolt 
 config.yaml
 .dolt/
