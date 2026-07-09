@@ -1,6 +1,9 @@
-# Complete Strategy Guide: All 10 Strategies Explained
+# Complete Strategy Guide: All 7 Strategies Explained
 
-Deep dive on structure, entry conditions, exits, and when to use each strategy.
+Deep dive on structure, entry conditions, exits, and when to use each strategy. Every
+strategy is **defined-risk** — max loss is known at entry. Undefined-risk/naked strategies
+were deliberately removed, since a naked short on a single-name earnings gap can blow out
+arbitrarily during the unmonitored overnight hold.
 
 ---
 
@@ -8,93 +11,17 @@ Deep dive on structure, entry conditions, exits, and when to use each strategy.
 
 | # | Strategy | Entry | Risk | Entry Condition | Exit Target | Best For |
 |---|----------|-------|------|---|---|---|
-| 1 | **Short Straddle** | Sell ATM call + put | Unlimited | High IV + σ < 0.08 | 50% credit | Maximum edge, max premium |
-| 2 | **Reverse Fly** | Long ATM + short wings | Defined | Gap premium (ratio > 1.10) | 50% credit | Capture IV crush + gap |
-| 3 | **Iron Fly** | Short ATM + long wings | Defined | Medium IV + σ < 0.20 | 50% credit | Balanced risk/reward |
-| 4 | **Iron Condor** | Short OTM spread both sides | Defined | Wide range + σ < 0.25 | 50% credit | Directional-neutral |
-| 5 | **Short Strangle** | Sell OTM call + put | Unlimited | OTM strikes only | 50% credit | Lower capital, OTM only |
-| 6 | **Jade Lizard** | Short spread + naked opposite | Partial | Directional + σ 0.10-0.20 | 50% credit | Directional bias + hedge |
-| 7 | **Directional Spread** | Short call/put + long hedge | Defined | Directional + IV skew | 50% credit | One-sided move |
-| 8 | **Broken Wing Butterfly** | Short wide middle + long narrow wings | Defined | IV skew + σ < 0.20 | 50% credit | Asymmetric moves |
-| 9 | **ATM Calendar** | Short front + long back call | Defined | Low IV + σ < 0.10 | 25% debit | Term structure edge |
-| 10 | **Double Calendar** | Short call + short put (both front) | Defined | Low IV + both sides quiet | 25% debit | Symmetric term structure |
+| 1 | **Reverse Fly** | Long ATM + short wings | Defined | Gap premium (ratio > 1.10) | 50% credit | Capture IV crush + gap |
+| 2 | **Iron Fly** | Short ATM + long wings | Defined | Medium IV + σ < 0.20 | 50% credit | Balanced risk/reward |
+| 3 | **Iron Condor** | Short OTM spread both sides | Defined | Wide range + σ < 0.25 | 50% credit | Directional-neutral |
+| 4 | **Directional Spread** | Short call/put + long hedge | Defined | Directional + IV skew | 50% credit | One-sided move |
+| 5 | **Broken Wing Butterfly** | Short wide middle + long narrow wings | Defined | IV skew + σ < 0.20 | 50% credit | Asymmetric moves |
+| 6 | **ATM Calendar** | Short front + long back call | Defined | Low IV + σ < 0.10 | 25% debit | Term structure edge |
+| 7 | **Double Calendar** | Short call + short put (both front) | Defined | Low IV + both sides quiet | 25% debit | Symmetric term structure |
 
 ---
 
-## 1. SHORT STRADDLE (Unlimited Risk)
-
-### Structure
-
-```
-SELL ATM Call    (e.g., 150 call)
-SELL ATM Put     (e.g., 150 put)
-
-Entry:   Collect $5.00 (e.g., $2.50 call + $2.50 put)
-Max Profit:  $5.00 (if stock stays ATM)
-Max Loss:  UNLIMITED (stock can gap 20%+)
-```
-
-### Entry Conditions
-
-- **Dispersion** < 0.08 (ultra-predictable only)
-- **IV Rank** > 1.20 (high premium required)
-- **Entry Credit** > $3.00 (worth the risk)
-- **Realized Move Ratio** < 1.10 (not expecting gap)
-
-### Exit Strategy
-
-**Primary:** 50% profit target
-- Entry credit: $5.00
-- Profit target: $2.50
-- Exit at this level or earlier
-
-**Secondary:** Per-leg delta stops
-- Call stops if delta reaches 0.60
-- Put stops if delta reaches 0.60
-- Protects against one-sided blowout
-
-**Tertiary:** 4-hour IV-crush backstop
-- Exit at 4 hours post-announcement
-- IV crush main profit driver, capture it and get out
-
-**Priority order:** Backstop checked first (safety), then profit target, then delta stops
-
-### Real-World Example
-
-```
-AAPL Earnings, Expected Move: 3.2%, σ = 0.015 (ultra-tight)
-
-Entry (Day before close):
-  Sell 150 call for $2.60
-  Sell 150 put for $2.70
-  Entry credit: $5.30
-  Profit target: 50% = $2.65
-
-Post-announcement outcomes:
-  Stock closes at 150 (ATM):     Max profit ($5.30)
-  Stock closes at 152 (+1.3%):   Profit $3.30 (still safe)
-  Stock closes at 155 (+3.3%):   Profit $1.30 (wings don't exist!)
-  Stock closes at 160 (+6.7%):   UNLIMITED LOSS (stock at wing level)
-```
-
-### Why It Works
-
-- Ultra-tight historical moves justify naked risk
-- High IV provides generous entry premium ($3-5)
-- IV crush (20-40% drop) profits you even if stock moves slightly
-- Selective use on only most predictable stocks
-
-### Risk Profile
-
-- ✓ Highest entry credit ($3-5 per spread)
-- ✓ Highest win rate (70-75% on predictable stocks)
-- ✗ Unlimited max loss (tail risk)
-- ✗ Capital intensive (need reserves for gap risk)
-- ✗ Only for ultra-predictable stocks
-
----
-
-## 2. REVERSE FLY (Defined Risk)
+## 1. REVERSE FLY (Defined Risk)
 
 ### Structure
 
@@ -174,12 +101,12 @@ Entry (corrected):
 - ✓ Gap premium capture ($1.50-3.00 credit)
 - ✓ Defined max loss (manageable)
 - ✓ Good for portfolios with risk constraints
-- ✗ Lower credit than naked straddle
+- ✗ Net debit to enter (pays for the long straddle)
 - ✗ Complex structure
 
 ---
 
-## 3. IRON FLY (Defined Risk)
+## 2. IRON FLY (Defined Risk)
 
 ### Structure
 
@@ -256,11 +183,11 @@ Post-announcement outcomes:
 - ✓ Flexible wing widths (3x, 6x, 8x credit)
 - ✓ Works in most market conditions
 - ✗ Requires wider wings than normal for earnings
-- ✗ Lower credit than naked straddle
+- ✗ Wing cost caps the credit vs. an unhedged short (the defined-risk trade-off)
 
 ---
 
-## 4. IRON CONDOR (Defined Risk)
+## 3. IRON CONDOR (Defined Risk)
 
 ### Structure
 
@@ -334,117 +261,7 @@ Post-announcement:
 
 ---
 
-## 5. SHORT STRANGLE (Unlimited Risk)
-
-### Structure
-
-```
-SELL OTM Call    (e.g., 155 call, 5% OTM)
-SELL OTM Put     (e.g., 145 put, 5% OTM)
-
-Entry:   Collect $0.80 (smaller premium than straddle)
-Max Profit:  $0.80
-Max Loss:  UNLIMITED
-```
-
-### Entry Conditions
-
-- **Dispersion** < 0.15 (predictable)
-- **IV Rank** > 1.00 (high premium needed)
-- **Realized Move Ratio** < 1.10 (not gappy)
-- **Entry Credit** > $0.50
-
-### Exit Strategy
-
-**Primary:** 50% profit target
-- Entry: $0.80
-- Target: $0.40
-- Exit at level
-
-**Secondary:** Per-leg delta stops (0.60)
-**Tertiary:** 4-hour backstop
-
-### Real-World Example
-
-```
-Quiet blue-chip stock, tight earnings history
-
-Entry:
-  Sell 105 call (5% OTM) for $0.50
-  Sell 95 put (5% OTM) for $0.30
-  Entry credit: $0.80
-  Profit target: 50% = $0.40
-
-Advantage: Only collect $0.80 (vs $5.00 for straddle)
-Disadvantage: Same unlimited risk on premium
-
-Used when: Want smaller position size but still naked risk
-```
-
-### Risk Profile
-
-- ✓ Lower capital requirement
-- ✓ Undefined risk for smaller credit
-- ✗ Unlimited loss (same as straddle)
-- ✗ Often not worth it (why risk unlimited for $0.80?)
-
----
-
-## 6. JADE LIZARD (Partial Risk)
-
-### Structure
-
-```
-SELL OTM Call Spread (Short 155, Long 160 call)
-  — Defined risk on call side
-SELL OTM Naked Put (e.g., 145 put)
-  — Undefined risk on put side
-
-Entry:   Collect $0.60 from call spread + $0.40 naked put = $1.00
-Max Profit:  $1.00
-Max Loss:  UNLIMITED on put side
-Hedge:  Directional bias reduces one side
-```
-
-### Entry Conditions
-
-- **Clear directional bias** (IV skew strongly favors one side)
-- **Dispersion** 0.10-0.20 (moderate)
-- **IV Rank** > 0.80 (rich premium on short side)
-- **Entry Credit** > $1.00
-
-### Exit Strategy
-
-**Primary:** 50% profit target
-**Secondary:** Per-leg delta stops
-**Tertiary:** 4-hour backstop
-
-### Real-World Example
-
-```
-Tech stock expected to rally, IV skew shows put premium cheap
-
-Entry:
-  Sell 155 call / Buy 160 call — collect $0.60
-  Sell 145 put naked — collect $0.40
-  Total: $1.00
-  
-Profit zone: If stock rallies past 155, call spread maxes, naked put safe
-Drawdown: If stock crashes, naked put bleeds
-
-This is a "bullish" Jade Lizard (can also do bearish with call naked)
-```
-
-### Risk Profile
-
-- ✓ Directional hedge on one side
-- ✓ Good credit ($1.00-2.00)
-- ✗ Partial unlimited risk (one side still naked)
-- ✗ Wrong directional bias = losses
-
----
-
-## 7. DIRECTIONAL SPREAD (Defined Risk)
+## 4. DIRECTIONAL SPREAD (Defined Risk)
 
 ### Structure
 
@@ -499,7 +316,7 @@ If stock rallies too much past 155, you lose money (but capped)
 
 ---
 
-## 8. BROKEN WING BUTTERFLY (Defined Risk)
+## 5. BROKEN WING BUTTERFLY (Defined Risk)
 
 ### Structure
 
@@ -557,7 +374,7 @@ Result: Asymmetric profit zone, takes advantage of skew
 
 ---
 
-## 9. ATM CALENDAR (Defined Risk)
+## 6. ATM CALENDAR (Defined Risk)
 
 ### Structure
 
@@ -623,7 +440,7 @@ Exit timing: 5 days before expiration or profit target
 
 ---
 
-## 10. DOUBLE CALENDAR (Defined Risk)
+## 7. DOUBLE CALENDAR (Defined Risk)
 
 ### Structure
 
@@ -689,21 +506,19 @@ Entry:
 
 ## Strategy Selection Quick Reference
 
-**Want maximum credit?** → SHORT_STRADDLE (if σ < 0.08)
+**Want the most premium at the ATM?** → IRON_FLY (most common; short ATM straddle + wings)
 
-**Want defined risk?** → IRON_FLY (most common)
+**Want a wider profit zone?** → IRON_CONDOR
 
-**Expect gap premium?** → REVERSE_FLY
+**Expect gap premium (realized > expected move)?** → REVERSE_FLY
 
-**Neutral move expected?** → IRON_CONDOR
+**Directional bias / IV skew?** → DIRECTIONAL_SPREAD or BROKEN_WING_BUTTERFLY
 
-**Directional bias?** → JADE_LIZARD or DIRECTIONAL_SPREAD
+**Low IV environment (term-structure edge)?** → ATM_CALENDAR or DOUBLE_CALENDAR
 
-**Low IV environment?** → ATM_CALENDAR or DOUBLE_CALENDAR
+**Unpredictable stock?** → Wider wings or calendar spreads
 
-**Unpredictable stock?** → Wider wings or calendar spreads (avoid naked)
-
-**Portfolio has risk limits?** → FALLBACK to IRON_FLY_WIDE (8x wings)
+Every option here is defined-risk — max loss is always known at entry.
 
 ---
 

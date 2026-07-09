@@ -52,7 +52,6 @@ cp config.example.json config.json
 **Minimum setup:**
 ```json
 {
-  "allow_naked_strategies": false,
   "max_concurrent_earnings_positions": 3,
   
   "entry_condition_gates": {
@@ -64,15 +63,15 @@ cp config.example.json config.json
   },
   
   "strategies": {
-    "short_straddle": {
-      "max_realized_move_dispersion_pct": 0.08,
-      "min_iv_rank": 1.20,
-      "min_entry_credit_dollars": 3.00
-    },
     "iron_fly": {
       "max_realized_move_dispersion_pct": 0.20,
       "min_iv_rank": 0.75,
       "min_entry_credit_dollars": 0.80
+    },
+    "iron_condor": {
+      "max_realized_move_dispersion_pct": 0.25,
+      "min_iv_rank": 0.60,
+      "min_entry_credit_dollars": 0.50
     }
   }
 }
@@ -127,7 +126,7 @@ python -c "from src.strategies import iron_fly; print('Imports OK')"
 python -c "from src.rank_strategies import STRATEGY_REGISTRY; print(f'Found {len(STRATEGY_REGISTRY)} strategies')"
 ```
 
-**Expected:** "Found 10 strategies"
+**Expected:** "Found 7 strategies"
 
 ---
 
@@ -138,7 +137,7 @@ python -c "from src.rank_strategies import STRATEGY_REGISTRY; print(f'Found {len
 python -m pytest tests/ -v
 
 # Or specific test
-python -m pytest tests/test_short_straddle.py -v
+python -m pytest tests/test_iron_fly.py -v
 ```
 
 **Expected:** Most tests pass (some may fail if DB unavailable)
@@ -173,11 +172,11 @@ python get_order.py --symbol AAPL --strategy AUTO --dry_run
 **Output:**
 ```
 Symbol: AAPL
-Strategy: SHORT_STRADDLE
-Entry: Sell 150 call @ 2.55, Sell 150 put @ 2.55
-Entry credit: $5.10
-Profit target: $2.55 (50%)
-Max loss: Unlimited (ultra-predictable stock)
+Strategy: IRON_FLY
+Entry: Sell 150 call @ 1.50 / Buy 158 call @ 0.30; Sell 150 put @ 1.30 / Buy 142 put @ 0.10
+Entry credit: $2.40
+Profit target: $1.20 (50%)
+Max loss: $5.60 (defined: wing width - credit)
 Dry run (no real order submitted)
 ```
 
@@ -343,7 +342,6 @@ cp config.example.json config.json
 
 ```bash
 # Edit config.json
-"allow_naked_strategies": true
 "max_concurrent_earnings_positions": 4
 ```
 
@@ -351,7 +349,7 @@ cp config.example.json config.json
 
 ```bash
 # Edit config.json
-"allow_naked_strategies": true
+"max_concurrent_earnings_positions": 5
 "max_daily_earnings_trades": 8
 "max_realized_move_dispersion_pct": 0.20
 ```

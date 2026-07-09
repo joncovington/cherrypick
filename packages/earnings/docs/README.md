@@ -10,20 +10,17 @@ Automated overnight earnings options trading system using multi-strategy decisio
 
 The Earnings Agent is a rules-based options trading system that:
 - Scans daily earnings calendar for candidates
-- Analyzes 10 strategies using entry condition framework
+- Analyzes 7 defined-risk strategies using entry condition framework
 - Routes each candidate to optimal strategy based on market data
 - Executes pre-earnings positions and manages exits
 
-### 10 Strategies
+### 7 Strategies (all defined-risk)
 
 | Strategy | Entry Credit | Risk | Best For |
 |----------|---|---|---|
-| Short Straddle | $3.00-5.00 | Unlimited | Predictable, high IV |
 | Reverse Fly | $1.50-3.00 | Defined | Gap premium |
 | Iron Fly | $0.80-1.50 | Defined | Medium IV |
 | Iron Condor | $0.50-1.50 | Defined | Wide range |
-| Short Strangle | $0.50-1.20 | Unlimited | OTM, low IV |
-| Jade Lizard | $1.00-2.00 | Partial | Directional |
 | Directional Spread | $0.50-1.50 | Defined | IV skew |
 | Broken Wing Butterfly | $0.20-0.60 | Defined | Asymmetric IV |
 | ATM Calendar | $0.20-0.50 | Defined | Low IV |
@@ -100,10 +97,11 @@ Calendar Strategies (ATM, Double):
 ### Risk Framework
 
 ```
-Short Straddle: Undefined risk, high edge, capital intensive
-Iron Fly: Defined risk, medium edge, lower capital
-Reverse Fly: Defined risk, gap premium, hedge structure
-Calendar: Defined risk, term structure edge, time decay
+Every strategy is defined-risk -- max loss known at entry.
+Iron Fly:    Defined risk, most ATM premium, lower capital
+Iron Condor: Defined risk, wider profit zone
+Reverse Fly: Defined risk, gap premium, long-vol hedge structure
+Calendar:    Defined risk, term structure edge, time decay
 ```
 
 ---
@@ -113,20 +111,17 @@ Calendar: Defined risk, term structure edge, time decay
 ```
 ruflo_projects/
 ├── src/
-│   ├── strategies/        # 10 strategy modules
-│   │   ├── short_straddle.py
+│   ├── strategies/        # 7 defined-risk strategy modules
 │   │   ├── reverse_fly.py
 │   │   ├── iron_fly.py
 │   │   ├── iron_condor.py
-│   │   ├── short_strangle.py
-│   │   ├── jade_lizard.py
 │   │   ├── directional_credit_spread.py
 │   │   ├── broken_wing_butterfly.py
 │   │   ├── atm_calendar.py
 │   │   └── double_calendar.py
 │   ├── scanner.py         # Core scanning engine
 │   ├── rank_strategies.py # Multi-strategy ranking
-│   ├── strategy_fallback.py # Risk constraint fallback
+│   ├── sizing.py          # Code-enforced risk-cap sizing
 │   └── ...
 ├── config.json            # All parameters, per-strategy
 ├── tests/                 # Unit tests (174 tests)

@@ -47,7 +47,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(__file__))
 
 import scanner
-from strategies import iron_fly, double_calendar, iron_condor, short_straddle, short_strangle, jade_lizard, atm_calendar, directional_credit_spread, broken_wing_butterfly, reverse_fly
+from strategies import iron_fly, double_calendar, iron_condor, atm_calendar, directional_credit_spread, broken_wing_butterfly, reverse_fly
 
 
 def _ensure_dolt_running():
@@ -109,24 +109,6 @@ STRATEGY_REGISTRY = [
         "fetch_criteria_fn": iron_condor.fetch_price_and_term_structure,
         "apply_tiering_fn": iron_condor.apply_tiering,
         "strategy_config_fn": iron_condor._strategy_config,
-    },
-    {
-        "name": "short_straddle",
-        "fetch_criteria_fn": short_straddle.fetch_price_and_term_structure,
-        "apply_tiering_fn": short_straddle.apply_tiering,
-        "strategy_config_fn": short_straddle._strategy_config,
-    },
-    {
-        "name": "short_strangle",
-        "fetch_criteria_fn": short_strangle.fetch_price_and_term_structure,
-        "apply_tiering_fn": short_strangle.apply_tiering,
-        "strategy_config_fn": short_strangle._strategy_config,
-    },
-    {
-        "name": "jade_lizard",
-        "fetch_criteria_fn": jade_lizard.fetch_price_and_term_structure,
-        "apply_tiering_fn": jade_lizard.apply_tiering,
-        "strategy_config_fn": jade_lizard._strategy_config,
     },
     {
         "name": "atm_calendar",

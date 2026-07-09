@@ -94,8 +94,11 @@ Stop-loss on individual legs. Example: "stop if call delta reaches 0.60". Protec
 **4-Hour Backstop**  
 Hard exit 4 hours post-announcement. Ensures you exit after IV crush peak (typically 15-30 min post-announcement, fades over 4 hours). Safety mechanism to avoid extending positions.
 
-**Fallback**  
-Automatic substitution of unlimited-risk strategy with wide-wing defined-risk alternative when portfolio constraint `allow_naked_strategies: false`. Example: SHORT_STRADDLE → IRON_FLY_WIDE.
+**Defined risk**  
+Every strategy in the system has a maximum loss known at entry, computed from the order's own
+strikes/debit (see `src/sizing.py`). Undefined-risk/naked strategies were removed — a naked
+short on a single-name earnings gap can blow out arbitrarily during the unmonitored overnight
+hold.
 
 **Wide Wings**  
 Extended protective wings in spread. Normal Iron Fly has 3x wing width, wide-wing Iron Fly has 8x wing width. Wider wings ≈ closer to naked behavior while staying defined-risk.
@@ -180,14 +183,11 @@ Simulation of 10 market days of earnings scans and strategy selection. Validates
 Historical testing of strategy against past earnings. Example: run 2025 earnings through decision matrix, see if strategy selection was optimal.
 
 **Unit Test**  
-Automated test of single component. Example: test that SHORT_STRADDLE position exits at 50% profit target.
+Automated test of single component. Example: test that an IRON_FLY position exits at 50% profit target.
 
 ---
 
 ## Configuration
-
-**allow_naked_strategies**  
-Boolean config setting. If false, all naked strategies automatically fallback to wide-wing alternatives. Default: false (risk-constrained mode).
 
 **wing_width_credit_multiple**  
 Multiplier for spread wing width relative to credit collected. Default 3.0x means wings are 3x the credit width apart. Wide-wing fallback uses 8.0x.

@@ -28,7 +28,21 @@ from pathlib import Path
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.json"
 
 
-def _load_config() -> dict:
+def _load_config(profile: str | None = None) -> dict:
+    """Load config.json, merge strategy_defaults into each strategy, and
+    optionally layer a named risk profile on top.
+
+    Layering order (later wins): strategy_defaults -> per-strategy config ->
+    profile overrides. A profile (config["profiles"][profile]) may override
+    any top-level key directly, plus three profile-specific keys consumed by
+    sizing/selection: `risk_pct_multiplier` (scales every strategy's
+    max_risk_per_trade_pct), `tier_floor` ("Tier 1" or "Tier 2"), and
+    `strategy_overrides` (deep-merged per strategy). `description` is ignored.
+
+    `profile=None` (or "default") returns the base config unchanged, so every
+    existing caller keeps its current behavior. The active profile name is
+    recorded at config["_active_profile"] for downstream attribution.
+    """
     with open(CONFIG_PATH) as f:
         config = json.load(f)
 
@@ -39,6 +53,26 @@ def _load_config() -> dict:
             # Create merged config: defaults + strategy-specific overrides
             merged = {**defaults, **strategy_config}
             config["strategies"][strategy_name] = merged
+
+    config["_active_profile"] = profile or "default"
+    config.setdefault("risk_pct_multiplier", 1.0)
+    config.setdefault("tier_floor", "Tier 2")
+
+    if profile and profile != "default":
+        profiles = config.get("profiles", {})
+        if profile not in profiles:
+            raise ValueError(
+                f"unknown profile '{profile}' -- known profiles: {sorted(profiles)}"
+            )
+        profile_def = profiles[profile]
+        reserved = {"strategy_overrides", "description"}
+        for key, value in profile_def.items():
+            if key in reserved:
+                continue
+            config[key] = value
+        for strategy_name, overrides in profile_def.get("strategy_overrides", {}).items():
+            if strategy_name in config.get("strategies", {}):
+                config["strategies"][strategy_name].update(overrides)
 
     return config
 
@@ -573,21 +607,6 @@ def _band(value, min_pass, min_near_miss, name: str, near_miss: list, hard_fail:
         near_miss.append(name)
         return
     hard_fail.append(f"{name}_below_near_miss")
-
-
-def naked_strategies_allowed(full_config: dict) -> bool:
-    """Whether a genuinely undefined-risk strategy (short_strangle, jade_lizard's
-    put side) is allowed to actually build/submit an order right now.
-
-    Paper mode is always allowed regardless of allow_naked_strategies -- there is
-    no real capital or margin at risk in paper mode (tt.py execute_trade is never
-    called; save_trade just records a simulated entry_credit), so the reason
-    live entries are gated (no live margin-check mechanism built yet) doesn't
-    apply. Live mode still requires the explicit allow_naked_strategies flag,
-    default False.
-    """
-    paper_mode = not full_config.get("enable_live_trading", False)
-    return paper_mode or full_config.get("allow_naked_strategies", False)
 
 
 def apply_liquidity_gates(criteria: dict, config: dict, hard_fail: list, near_miss: list) -> None:
