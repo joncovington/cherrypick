@@ -25,6 +25,12 @@ strategies with independently-closeable legs (e.g. double_calendar's threatened-
 -- iron fly never passes it, so it never gets `trade_legs` rows. A trade's `trades.closed_at`
 stays NULL until every one of its legs is closed via save_leg_close and save_close is called
 for the position as a whole.
+
+`profile`/`quantity`/`capital_at_risk`/`entry_cost`/`exit_cost`/`entry_context`/`entry_iv`/
+`exit_iv` exist for schema parity with db_paper.py's paper-mode profile testing (see
+docs/paper-trading-profiles.md) -- live trading doesn't select a profile today, so these
+default to 'default'/NULL, but the two databases' `trades`/`scan_log` tables never drift
+apart as a result.
 """
 
 import argparse
@@ -50,7 +56,15 @@ CREATE TABLE IF NOT EXISTS trades (
     exit_debit      REAL,
     pnl             REAL,
     opened_at       REAL,
-    closed_at       REAL
+    closed_at       REAL,
+    profile         TEXT NOT NULL DEFAULT 'default',
+    quantity        INTEGER,
+    capital_at_risk REAL,
+    entry_cost      REAL,
+    exit_cost       REAL,
+    entry_context   TEXT,
+    entry_iv        REAL,
+    exit_iv         REAL
 );
 
 CREATE TABLE IF NOT EXISTS trade_legs (
@@ -74,7 +88,8 @@ CREATE TABLE IF NOT EXISTS scan_log (
     tier        TEXT,
     outcome     TEXT,
     reason      TEXT,
-    logged_at   REAL
+    logged_at   REAL,
+    profile     TEXT NOT NULL DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS daily_summary (
@@ -85,11 +100,36 @@ CREATE TABLE IF NOT EXISTS daily_summary (
 );
 """
 
+# Schema-parity migration with db_paper.py (see that module's own _MIGRATIONS docstring) --
+# kept identical so the two databases' trades/scan_log tables never drift apart, even though
+# live trading doesn't use named profiles/sizing/cost attribution today.
+_MIGRATIONS = [
+    ("trades", "profile", "ALTER TABLE trades ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+    ("trades", "quantity", "ALTER TABLE trades ADD COLUMN quantity INTEGER"),
+    ("trades", "capital_at_risk", "ALTER TABLE trades ADD COLUMN capital_at_risk REAL"),
+    ("trades", "entry_cost", "ALTER TABLE trades ADD COLUMN entry_cost REAL"),
+    ("trades", "exit_cost", "ALTER TABLE trades ADD COLUMN exit_cost REAL"),
+    ("trades", "entry_context", "ALTER TABLE trades ADD COLUMN entry_context TEXT"),
+    ("trades", "entry_iv", "ALTER TABLE trades ADD COLUMN entry_iv REAL"),
+    ("trades", "exit_iv", "ALTER TABLE trades ADD COLUMN exit_iv REAL"),
+    ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+]
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    for table, column, alter_sql in _MIGRATIONS:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in existing:
+            conn.execute(alter_sql)
+    conn.commit()
+
 
 def _conn() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.executescript(_DDL)
+    _migrate(conn)
     return conn
 
 
@@ -119,13 +159,15 @@ def cmd_save_trade(args) -> dict:
     if missing:
         return {"ok": False, "error": f"missing required field(s): {', '.join(missing)}"}
 
+    entry_context = spec.get("entry_context")
     conn = _conn()
     try:
         conn.execute(
             "INSERT INTO trades "
             "(order_id, strategy, symbol, expiration, short_strike, long_call_strike, "
-            " long_put_strike, legs_json, entry_credit, opened_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " long_put_strike, legs_json, entry_credit, opened_at, profile, quantity, "
+            " capital_at_risk, entry_cost, entry_context, entry_iv) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["order_id"],
                 spec.get("strategy", "iron_fly"),
@@ -137,6 +179,12 @@ def cmd_save_trade(args) -> dict:
                 spec.get("legs_json"),
                 spec.get("entry_credit"),
                 spec.get("opened_at", time.time()),
+                spec.get("profile", "default"),
+                spec.get("quantity"),
+                spec.get("capital_at_risk"),
+                spec.get("entry_cost"),
+                json.dumps(entry_context) if entry_context is not None else None,
+                spec.get("entry_iv"),
             ),
         )
         for leg in spec.get("legs", []):
@@ -202,12 +250,14 @@ def cmd_save_close(args) -> dict:
     conn = _conn()
     try:
         cur = conn.execute(
-            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ? "
+            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, exit_iv = ? "
             "WHERE order_id = ?",
             (
                 spec.get("exit_debit"),
                 spec.get("pnl"),
                 spec.get("closed_at", time.time()),
+                spec.get("exit_cost"),
+                spec.get("exit_iv"),
                 order_id,
             ),
         )
@@ -229,8 +279,8 @@ def cmd_log_scan(args) -> dict:
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, logged_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, logged_at, profile) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["scan_date"],
                 spec.get("strategy", "iron_fly"),
@@ -239,6 +289,7 @@ def cmd_log_scan(args) -> dict:
                 spec.get("outcome"),
                 spec.get("reason"),
                 spec.get("logged_at", time.time()),
+                spec.get("profile", "default"),
             ),
         )
         conn.commit()
