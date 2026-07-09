@@ -1,436 +1,212 @@
-# Examples & Case Studies: Real-World Trading Scenarios
+# Examples & Case Studies
 
-Complete worked examples showing decision-making, ranking, and execution.
-
----
-
-## Example 1: Late-Day Earnings Analysis (AMC & BMO)
-
-### Scenario
-
-**Time:** 3:00 PM ET  
-**Task:** Analyze AMC (after-close) and BMO (pre-market) earnings  
-**Constraints:** $50,000 available capital, max 3 positions/day  
-**Goal:** Rank candidates, select top 2-3 for entry at 3:50 PM
+Worked examples showing how a real night's candidates get ranked, sized, entered, and exited —
+grounded in the actual composite scoring formula and CLI commands, not a hypothetical scenario.
 
 ---
 
-### Analysis Results
+## Example 1: A Two-Symbol AMC/BMO Night
 
-#### Candidate 1: AMC (After Close)
+### Setup
 
-```
-Company: AMC Entertainment
-Earnings: 2026-07-08, 4:05 PM ET (after close)
+3:00 PM ET, two names reporting around tonight's/tomorrow's session: AMC-timed `NVEX` (after
+today's close) and BMO-timed `BNKX` (before tomorrow's open). `available_capital_paper_mode` is
+$100,000, `max_concurrent_earnings_positions` is 3.
 
-Entry Conditions:
-  Dispersion: 0.0882 (8.82%) - slightly high
-  IV Rank: 1.42 - very high, rich premiums
-  Expected Move: ±8.5%
-  
-Decision Matrix:
-  Gate check: PASS (0.0882 < 0.15)
-  Primary: Normal IV crush (ratio 0.01)
-  Secondary: High volatility (σ > 0.08)
-  Tertiary: Very high IV (1.42 > 1.20)
-  
-Result: IRON_CONDOR (defined risk preferred due to volatility)
-Tier: TIER 2 (medium conviction)
-Reason: High volatility requires hedging
+```bash
+python src/rank_strategies.py get_ranked_symbols --date 07/08/2026
 ```
 
-**Ranking Score: 77.0/100**
-- Dispersion score: 80 (not ultra-tight)
-- IV Rank score: 100 (very high, excellent premiums)
-- Strategy score: 65 (Iron Condor = balanced)
-- Tier score: 60 (Tier 2 = medium conviction)
-- Capital efficiency: 90 (defined risk)
+### What Each Symbol's Evaluation Looked Like
 
----
-
-#### Candidate 2: BMO (Before Open)
+**NVEX** — high IV/RV ratio, but term structure and skew both point toward a wide, less
+directional structure:
 
 ```
-Company: Bank of Montreal
-Earnings: 2026-07-09, 6:30 AM ET (before open)
-
-Entry Conditions:
-  Dispersion: 0.0222 (2.22%) - ultra-tight
-  IV Rank: 0.78 - medium premium
-  Expected Move: ±2.8%
-  
-Decision Matrix:
-  Gate check: PASS (0.0222 < 0.15)
-  Primary: Normal IV crush (ratio 0.01)
-  Secondary: Ultra-predictable (σ < 0.05)
-  Tertiary: Medium IV (0.75 < 0.78 < 1.00)
-  
-Result: SHORT_STRADDLE (naked strategy justified)
-Tier: TIER 1 (high conviction)
-Reason: Bank earnings very stable + medium IV
+iron_fly:    Tier 2 (near_miss: iv_rv_ratio_near_miss), score 0.0183
+iron_condor: Tier 1, score 0.0201
+reverse_fly: Reject (min_skew_abs not met)
+... other strategies: Reject or lower score
+→ best_strategy: iron_condor, best_score: 0.0201
 ```
 
-**Ranking Score: 84.0/100**
-- Dispersion score: 100 (ultra-tight)
-- IV Rank score: 50 (medium, less optimal)
-- Strategy score: 95 (Short Straddle = maximum edge)
-- Tier score: 100 (Tier 1 = highest conviction)
-- Capital efficiency: 50 (naked = capital intensive)
-
----
-
-### Ranking Decision
-
-**Top Candidates (In Order):**
-
-| Rank | Symbol | Score | Strategy | Tier | Capital Est. | Rationale |
-|------|--------|-------|----------|------|---|---|
-| 1 | BMO | 84.0 | SHORT_STRADDLE | 1 | $1,000 | Ultra-predictable, maximum edge |
-| 2 | AMC | 77.0 | IRON_CONDOR | 2 | $500 | High IV but too volatile for naked |
-
-**Capital Allocation:**
-```
-Available Capital: $50,000
-Position 1 (BMO): $1,000 risk (2%)
-Position 2 (AMC): $500 risk (1%)
-Remaining Capital: $48,500 (97%)
-
-Execution: Enter both (capital allows)
-```
-
----
-
-### Trade Execution
-
-#### Entry (3:50 PM ET)
-
-**BMO: SHORT_STRADDLE**
-```
-Order Type: Sell-to-open ATM straddle
-Entry strikes: 97 call + 97 put
-Entry credit: ~$3.18 per spread
-Quantity: 3 spreads
-Total credit: $954
-Profit target: 50% = $477
-Estimated max loss: Unlimited (but σ = 2.22% justifies)
-```
-
-**AMC: IRON_CONDOR**
-```
-Order Type: Sell-to-open call & put spreads
-Call spread: Sell 11 call / Buy 16 call
-Put spread: Sell 5 put / Buy 0 put
-Entry credit: ~$0.80 per spread
-Quantity: 6 spreads
-Total credit: $480
-Profit target: 50% = $240
-Max loss: $4.20 per spread = $2,520 max
-```
-
----
-
-#### Post-Entry Management
-
-**Timeline:**
-```
-4:00 PM     Market close
-4:05 PM     AMC earnings announced (+$0.75, +10% gap up!)
-            BMO: No announcement yet (tomorrow pre-market)
-
-4:08 PM     AMC position impact:
-            Call spread ITM by $0.75
-            Put spread OTM by $0.75 (protected)
-            
-            Delta stops:
-            Short call: delta +0.85 (EXCEEDS 0.45 threshold)
-            → STOP TRIGGERED on call side
-            → Buy back call spread @ $0.95 loss per spread
-            → Loss: 6 × $0.95 = $570
-            
-            Put spread: Still profitable
-            → Keep open until profit target or backstop
-
-4:15 PM     AMC put spread status:
-            Collected $0.30 on puts (ITM side still works)
-            Current P&L on AMC: -$570 (calls) + $180 (puts) = -$390
-            
-            Decision: Let backstop handle
-
-8:00 PM     4-hour backstop triggered
-            Force-exit all remaining AMC positions
-            Put spreads closed @ $0.15 credit remaining
-            
-            Final AMC P&L: -$390 + $90 = -$300 loss
-            
-            Learning: High-IV gap move hit stop. Defined risk worked.
-
-9:30 AM     BMO market open (earnings announced 6:30 AM pre-market)
-(Next day)  BMO stock: +1.2% gap up
-            
-            Short straddle impact:
-            Call: Now $1.80 (vs $1.59 entry)
-            Put: Now $1.20 (vs $1.59 entry)
-            Total credit: $3.00 remaining (collected $3.18)
-            
-            Already at 94% profit! (vs 50% target)
-            
-            Exit straddle immediately
-            Profit: $3.18 - $3.00 = $0.18 per spread = $54 total
-            
-            Actually, let me recalculate:
-            Need to buy to close both legs
-            Call cost: $1.80
-            Put cost: $1.20
-            Total cost: $3.00
-            Entry credit: $3.18
-            Profit: $3.18 - $3.00 = $0.18 × 3 spreads = $54
-```
-
----
-
-### Summary
-
-| Trade | Entry Credit | Exit | P&L | ROI |
-|-------|---|---|---|---|
-| AMC IRON_CONDOR | $480 | 4-hour backstop | -$300 | -62% |
-| BMO SHORT_STRADDLE | $954 | Profit target | +$54 | +5.7% |
-| **Total** | **$1,434** | — | **-$246** | **-17%** |
-
-**Lessons:**
-- ✓ Ranking worked: BMO (84 score) profited, AMC (77 score) took loss
-- ✓ Capital management: 3 spreads each, managed risk properly
-- ✗ AMC gap move vs predictions: High IV overrode dispersion concern
-- ✓ Stops protected against larger loss (could've been -$1,000+)
-
----
-
-## Example 2: Ranking with Capital Constraints
-
-### Scenario
-
-**Available Capital:** $10,000  
-**Max Positions:** 3  
-**Candidates:** 5 earnings today
-
----
-
-### Candidates & Scores
+**BNKX** — tight term structure, clean winrate sample, textbook iron_fly setup:
 
 ```
-1. AAPL   Score: 92.0  Strategy: SHORT_STRADDLE   Est Risk: $1,200
-2. MSFT   Score: 87.0  Strategy: IRON_FLY         Est Risk: $600
-3. JPM    Score: 82.0  Strategy: IRON_FLY         Est Risk: $500
-4. XOM    Score: 75.0  Strategy: IRON_CONDOR      Est Risk: $800
-5. KO     Score: 70.0  Strategy: ATM_CALENDAR     Est Risk: $300
+iron_fly:      Tier 1, score 0.0254
+directional_credit_spread: Tier 2, score 0.0198
+... others: Reject
+→ best_strategy: iron_fly, best_score: 0.0254
 ```
 
----
-
-### Capital Allocation
-
-```
-Position 1: AAPL (Score 92) - $1,200 risk
-  Remaining: $10,000 - $1,200 = $8,800
-
-Position 2: MSFT (Score 87) - $600 risk
-  Remaining: $8,800 - $600 = $8,200
-
-Position 3: JPM (Score 82) - $500 risk
-  Remaining: $8,200 - $500 = $7,700
-
-Position 4 attempt: XOM (Score 75) - $800 risk
-  Check: Can afford? Yes ($7,700 > $800)
-  Check: Max positions? No! (already 3)
-  Result: REJECTED - max positions reached
-
-Waitlist: XOM (score 75, capital available but position limit)
-Waitlist: KO (score 70, capital available but position limit)
-```
-
----
-
-### Execution Plan
-
-```
-Entry trades: AAPL, MSFT, JPM
-Waitlist: XOM, KO (if any position exits early)
-
-Capital Utilization: $2,300 / $10,000 = 23%
-Unused Capital: $7,700 (27% buffer for adverse moves)
-```
-
----
-
-## Example 3: Auto-Submit vs Manual Selection
-
-### Configuration Options
-
-#### Option A: Auto-Submit Top 2
+### Cross-Symbol Ranking
 
 ```json
 {
-  "auto_submit": true,
-  "auto_submit_count": 2,
-  "max_positions_per_day": 5,
-  "available_capital": 25000
+  "ranked": [
+    {"symbol": "BNKX", "composite_score": 0.0254},
+    {"symbol": "NVEX", "composite_score": 0.0201}
+  ],
+  "selected": ["BNKX", "NVEX"]
 }
 ```
 
-**Result:**
-- System automatically enters top 2 ranked candidates
-- No manual confirmation needed
-- All 5 candidates evaluated, top 2 selected by score
-- Useful for: Active traders who want speed
+Both clear `max_concurrent_earnings_positions` (only 2 of 3 slots used) and neither shares a
+`correlation_block_list` grouping, so both get selected — no waitlist logic needed tonight.
 
-#### Option B: Manual Selection (Recommended for Beginners)
+### Building the Orders
 
-```json
-{
-  "auto_submit": false,
-  "auto_submit_count": 0,
-  "max_positions_per_day": 3,
-  "available_capital": 50000
-}
+```bash
+python src/strategies/iron_fly.py get_order --symbol BNKX --earnings_date 2026-07-09 --earnings_timing "Before market open"
+python src/strategies/iron_condor.py get_order --symbol NVEX --earnings_date 2026-07-08 --earnings_timing "After market close"
 ```
 
-**Result:**
-- System ranks all candidates
-- Presents top N candidates to user
-- User chooses which to trade (select by rank or manually override)
-- Useful for: Learning, risk-averse trading, final approval
+```
+BNKX iron_fly: sell 97 straddle, wings at 90/104 (3.0x credit multiple),
+  entry credit $3.18/spread, quantity 8, capital_at_risk $1,940 (below max_risk_per_trade_pct)
 
-#### Option C: Hybrid (Best of Both)
-
-```json
-{
-  "auto_submit": false,
-  "auto_submit_count": 0,
-  "max_positions_per_day": 3,
-  "available_capital": 50000,
-  "require_approval_for": ["HIGH_RISK", "UNLIMITED_RISK"],
-  "auto_approve_if_score": 90
-}
+NVEX iron_condor: sell 11/16 call spread + 5/0 put spread,
+  entry credit $0.80/spread, quantity 12, capital_at_risk $3,840
 ```
 
-**Result:**
-- Scores >= 90: auto-submit (highest conviction)
-- Scores 80-89: require manual approval (good but review)
-- Scores < 80: require manual approval (lower conviction, be selective)
-- Useful for: Balanced approach with guardrails
+Paper mode: both recorded via `db_paper.py save_trade`, nothing submitted to the broker. Live
+mode would submit both via `tt.py execute_trade --live`.
+
+### Overnight and Next-Morning Outcome
+
+```
+NVEX announces after close, gaps +10%.
+Next morning 09:15 ET (Step 3c): iron_condor's exit_debit computed from live quotes —
+  profit came in under the 50% target, exit_debit stayed under the 1.5x stop → hold.
+09:45 ET (Step 3, unconditional close-window): still open → close regardless of P&L.
+  Realized: -$310 net (defined risk — the wings capped it well short of the raw
+  spread-width max loss).
+
+BNKX announces before tomorrow's open, moves +1.2%, mild and well within the straddle's
+  expected move.
+09:15 ET (Step 3c): exit_debit computed at $1.53/spread.
+  profit = $3.18 - $1.53 = $1.65, which is ≥ $3.18 * 0.50 ($1.59) → close_all, profit_target.
+  Realized: +$1,320 across 8 spreads (net of costs via costs.py, slightly lower than gross).
+```
+
+Net for the night: a loss on NVEX largely offset by a win on BNKX — a fairly ordinary two-name
+night, not a "everything worked" story. Read the actual `scan_log` rows for both symbols
+(`strategy = "_ranked"` summary plus each strategy's own evaluation row) to see this full trail
+persisted, not just the console output.
 
 ---
 
-## Example 4: Ranking System Scoring
+## Example 2: More Qualifying Candidates Than Capacity
 
-### Scoring Formula
+### Setup
+
+Five symbols tier Tier 1/2 across various strategies on the same night, but
+`max_concurrent_earnings_positions` is 3.
 
 ```
-Total Score = 
-  (Dispersion Score × 0.25) +
-  (IV Rank Score × 0.20) +
-  (Strategy Score × 0.20) +
-  (Tier Score × 0.25) +
-  (Capital Efficiency × 0.10)
-
-Score 90+:  Highest conviction (execute first)
-Score 80-89: High conviction (execute second)
-Score 70-79: Medium conviction (execute if capital)
-Score 60-69: Low conviction (waitlist or skip)
-Score <60:  Very low conviction (reject)
+Rank 1: SYMA  best_strategy: iron_fly              score 0.0231
+Rank 2: SYMB  best_strategy: iron_condor            score 0.0198
+Rank 3: SYMC  best_strategy: directional_credit_spread  score 0.0177
+Rank 4: SYMD  best_strategy: broken_wing_butterfly  score 0.0160
+Rank 5: SYME  best_strategy: atm_calendar           score 0.0142
 ```
+
+`scanner.select_positions()` walks this list top-down. The first 3 (SYMA, SYMB, SYMC) get
+selected. SYMD and SYME are logged with `outcome: "concurrency_cap_reached"` — not silently
+dropped, just recorded as skipped with the specific reason, visible in both the console output
+and `scan_log`.
+
+If SYMB had instead shared a `correlation_block_list` grouping with SYMA (say, both regional
+banks reporting the same night), `select_positions()` would skip SYMB with
+`outcome: "correlation_blocked"` and backfill SYMD into that third slot instead of leaving it
+empty — diversifying across names rather than concentrating in the two highest scorers alone.
 
 ---
 
-### Detailed Scoring Example
+## Example 3: Reading a Rejection Trail
 
-**BMO: SHORT_STRADDLE**
+A quiet night where nothing entered — this is the more common outcome on any given weeknight,
+and the point of this example is showing it's diagnosable, not mysterious:
 
+```bash
+python src/rank_strategies.py get_ranked_symbols --date 07/10/2026
 ```
-1. Dispersion Score: 100/100
-   σ = 0.0222 < 0.05
-   Very predictable (highest tier)
-   
-2. IV Rank Score: 50/100
-   IV = 0.78 (medium, not high)
-   Less than ideal for premium selling
-   
-3. Strategy Score: 95/100
-   SHORT_STRADDLE = maximum edge
-   Only naked short straddle ranks higher
-   
-4. Tier Score: 100/100
-   TIER 1 = highest conviction
-   Best positioning for earnings surprise
-   
-5. Capital Efficiency: 50/100
-   Naked strategy = capital intensive
-   No hedges, need large reserves
-   
-Total: (100×0.25) + (50×0.20) + (95×0.20) + (100×0.25) + (50×0.10)
-     = 25 + 10 + 19 + 25 + 5
-     = 84.0/100
-```
-
----
-
-## Example 5: Decision Logging & Audit Trail
-
-### Log Entry (Auto-Generated)
 
 ```json
 {
-  "timestamp": "2026-07-08T15:00:00",
-  "action": "RANKED",
-  "candidates_analyzed": 5,
-  "candidates_selected": 3,
-  "top_ranked": "BMO"
-},
-{
-  "timestamp": "2026-07-08T15:45:00",
-  "action": "SELECTED_FOR_TRADING",
-  "rank": 1,
-  "symbol": "BMO",
-  "strategy": "SHORT_STRADDLE",
-  "score": 84.0,
-  "conviction": "High",
-  "estimated_capital": 1000
-},
-{
-  "timestamp": "2026-07-08T15:50:00",
-  "action": "ORDER_SUBMITTED",
-  "symbol": "BMO",
-  "strategy": "SHORT_STRADDLE",
-  "entry_price": 3.18,
-  "quantity": 3,
-  "total_credit": 954
-},
-{
-  "timestamp": "2026-07-08T16:05:00",
-  "action": "TRADE_UPDATE",
-  "symbol": "BMO",
-  "event": "ANNOUNCEMENT_PENDING"
-},
-{
-  "timestamp": "2026-07-09T09:30:00",
-  "action": "TRADE_EXIT",
-  "symbol": "BMO",
-  "exit_reason": "PROFIT_TARGET_HIT",
-  "exit_price": 3.00,
-  "profit": 54
+  "symbols": [
+    {
+      "symbol": "SMLCAP",
+      "outcome": "rejected_no_viable_strategy",
+      "reason": "iron_fly: front_expiration_days_too_far_out; iron_condor: front_expiration_days_too_far_out; atm_calendar: no_weekly_options"
+    },
+    {
+      "symbol": "MEGACAP",
+      "outcome": "rejected_no_viable_strategy",
+      "reason": "iron_fly: iv_rv_ratio_below_threshold; iron_condor: iv_rv_ratio_below_threshold"
+    }
+  ]
 }
 ```
 
-### Benefits
+`SMLCAP` failed because it only has monthly options — a small/mid-cap name legitimately falling
+outside a 9-day front-expiration window built for weekly-optioned liquid names (see
+[Screening Criteria](./screening-criteria.md)'s note on this exact pattern). `MEGACAP` failed
+because its options simply weren't pricing in enough premium relative to its own historical
+realized moves that night — IV/RV below the 1.25 floor every strategy shares. Neither is a bug;
+both are the hard filters doing their job.
 
-- **Audit Trail:** Full history of every decision
-- **Learning:** Review past rankings vs actual performance
-- **Validation:** Confirm strategy selection was optimal
-- **Compliance:** Document all trades for regulatory review
-- **Improvement:** Identify which scoring factors predict wins
+---
+
+## Example 4: Forced-Sampling vs. Production Selection, Side by Side
+
+On the same night, `/paper-start`'s forced-sampling program and the production
+`rank_strategies.py` selection can produce different outcomes for the same symbol, and that
+difference is intentional:
+
+```bash
+python src/strategy_test_runner.py run_entries --date 07/08/2026 --profile balanced
+```
+
+If `NVEX` tiers Tier 1/2 under both `iron_condor` and `directional_credit_spread`,
+`strategy_test_runner.py` opens **both** into the `profile='strat_test'` book — every strategy
+that qualifies gets its own sample, not just the single best. Meanwhile that same night's
+`rank_strategies.py get_ranked_symbols` run would have picked only `iron_condor` (the
+higher-scoring one) for the actual production paper/live book. Both write to entirely separate
+`profile` values in the same database, so running both the same night doesn't conflict — it's
+how the forced-sampling program accumulates a usable sample for every strategy instead of
+starving whichever one rarely wins the head-to-head comparison.
+
+---
+
+## Example 5: Checking Accumulated Results
+
+Once a few weeks of `/paper-start` cycles have run:
+
+```bash
+python src/strategy_report.py --mode paper --profile strat_test --strategy iron_condor
+```
+
+```
+iron_condor (paper, profile=strat_test)
+  Trades: 34 / 30 target (directional sample reached)
+  Win rate: 58.8%
+  Profit factor: 1.42
+  Expectancy (cost-adjusted): $87.30/trade
+  Sharpe: 0.61
+  Max drawdown: -$1,240
+  IV crush (entry_iv - exit_iv, avg): 0.087
+```
+
+`python src/strategy_dashboard.py --mode paper --profile strat_test` writes the same numbers as
+an HTML dashboard with equity curves and a regime heatmap. See
+`docs/strategy-testing-plan.md` for what sample sizes actually mean here and
+`docs/strategy-optimization.md` for the specific hypotheses these numbers get checked against
+before any config value changes.
 
 ---
 
 ## Navigation
 
-**← Previous:** [Exit Strategy Guide](./10-exits.md)  
-**← Return to:** [README](./README.md)
+**← Previous:** [Exit Strategy Guide](./10-exits.md)
+**← Return to:** [Documentation Index](./README.md)

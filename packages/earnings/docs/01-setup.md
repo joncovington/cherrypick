@@ -1,404 +1,218 @@
-# Installation & Setup: Get the Earnings Agent Running
+# Installation & Setup
 
-Complete setup guide from fresh checkout to first trade.
+Complete setup from a fresh checkout to your first paper trading cycle.
 
 ---
 
 ## Prerequisites
 
-- Python 3.8+
-- pip (Python package manager)
-- Git (for version control)
-- Broker connection (API keys for live trading)
-- ~2 GB disk space
+- Python 3.10 or newer
+- A [tastytrade](https://tastytrade.com) account (sandbox or live) — required even for paper
+  mode, since paper mode still sources live quotes, chains, greeks, and open interest from the
+  real tastytrade session; only order submission is skipped.
+- [Dolt](https://docs.dolthub.com/introduction/installation) installed locally, to serve three
+  DoltHub datasets (`post-no-preference/earnings`, `post-no-preference/options`,
+  `post-no-preference/stocks`) over a local `dolt sql-server` — this is where the earnings
+  calendar, IV/RV history, and realized-move data come from.
+- Git
 
 ---
 
-## Step 1: Clone Repository
+## Step 1: Clone and install dependencies
 
 ```bash
-git clone https://github.com/your-org/earnings-agent.git
-cd earnings-agent
-```
+git clone <your-fork-or-remote-url>
+cd EarningsAgent
 
----
-
-## Step 2: Install Dependencies
-
-```bash
-# Create virtual environment (recommended)
 python -m venv venv
-source venv/bin/activate  # macOS/Linux
-# or: venv\Scripts\activate  # Windows
+source venv/bin/activate      # macOS/Linux
+# venv\Scripts\activate       # Windows
 
-# Install packages
 pip install -r requirements.txt
 ```
 
-**Dependencies:** requests, pandas, numpy, scipy, python-dateutil, python-dotenv
-
----
-
-## Step 3: Configure Settings
-
-### Create Config File
+For running tests or contributing, also install dev dependencies:
 
 ```bash
-cp config.example.json config.json
-```
-
-### Edit config.json
-
-**Minimum setup:**
-```json
-{
-  "max_concurrent_earnings_positions": 3,
-  
-  "entry_condition_gates": {
-    "max_realized_move_dispersion_pct": 0.15,
-    "min_iv_rank": 0.15,
-    "min_credit_dollars": 0.10,
-    "min_dte": 30,
-    "max_dte": 60
-  },
-  
-  "strategies": {
-    "iron_fly": {
-      "max_realized_move_dispersion_pct": 0.20,
-      "min_iv_rank": 0.75,
-      "min_entry_credit_dollars": 0.80
-    },
-    "iron_condor": {
-      "max_realized_move_dispersion_pct": 0.25,
-      "min_iv_rank": 0.60,
-      "min_entry_credit_dollars": 0.50
-    }
-  }
-}
-```
-
-See [Configuration Guide](./03-configuration.md) for all parameters.
-
----
-
-## Step 4: Set Up Broker Connection
-
-### Create .env File
-
-```bash
-touch .env
-```
-
-### Add Credentials
-
-```
-BROKER_API_KEY=your_api_key_here
-BROKER_SECRET=your_secret_here
-BROKER_ACCOUNT_ID=your_account_id
-LIVE_TRADING=false  # Start with false for testing
-```
-
-**Warning:** Never commit .env to git! It's in .gitignore.
-
----
-
-## Step 5: Validate Installation
-
-### Run Syntax Check
-
-```bash
-python -c "import json; json.load(open('config.json')); print('Config OK')"
-```
-
-**Expected:** "Config OK" prints
-
-### Test Imports
-
-```bash
-python -c "from src.strategies import iron_fly; print('Imports OK')"
-```
-
-**Expected:** "Imports OK" prints
-
-### List Available Strategies
-
-```bash
-python -c "from src.rank_strategies import STRATEGY_REGISTRY; print(f'Found {len(STRATEGY_REGISTRY)} strategies')"
-```
-
-**Expected:** "Found 7 strategies"
-
----
-
-## Step 6: Run Test Suite (Optional)
-
-```bash
-# Run all tests
-python -m pytest tests/ -v
-
-# Or specific test
-python -m pytest tests/test_iron_fly.py -v
-```
-
-**Expected:** Most tests pass (some may fail if DB unavailable)
-
----
-
-## Step 7: Test with Dry Run
-
-### Scan Earnings (Paper)
-
-```bash
-python get_candidates.py --date 2026-07-15 --dry_run
-```
-
-**Output:**
-```
-Scanning earnings for 2026-07-15...
-Found 8 candidates
-3 Tier 1: AAPL, MSFT, JPM
-5 Tier 2-3: XOM, BAC, PG, WMT, KO
-Dry run complete (no real orders)
-```
-
----
-
-### Generate Order Spec (Paper)
-
-```bash
-python get_order.py --symbol AAPL --strategy AUTO --dry_run
-```
-
-**Output:**
-```
-Symbol: AAPL
-Strategy: IRON_FLY
-Entry: Sell 150 call @ 1.50 / Buy 158 call @ 0.30; Sell 150 put @ 1.30 / Buy 142 put @ 0.10
-Entry credit: $2.40
-Profit target: $1.20 (50%)
-Max loss: $5.60 (defined: wing width - credit)
-Dry run (no real order submitted)
-```
-
----
-
-## Step 8: Connect to Live Broker (Optional)
-
-### Test Broker Connection
-
-```bash
-python -c "from src.broker import get_account_status; status = get_account_status(); print(f'Account: {status}')"
-```
-
-**Expected:** Account balance and status print
-
-### Enable Live Trading
-
-Edit .env:
-```
-LIVE_TRADING=true
-```
-
-**Warning:** Set to true ONLY after extensive paper trading!
-
----
-
-## Step 9: Schedule Daily Scans (Optional)
-
-### Create Cron Job (macOS/Linux)
-
-```bash
-# Edit crontab
-crontab -e
-
-# Add this line for 7:00 AM daily scan
-0 7 * * 1-5 cd /path/to/earnings-agent && python get_candidates.py --date TODAY --output scan_results_$(date +\%Y\%m\%d).json
-```
-
-### Windows Task Scheduler
-
-```
-1. Open Task Scheduler
-2. Create Basic Task
-3. Trigger: 7:00 AM on weekdays
-4. Action: Run python get_candidates.py --date TODAY
-5. Save
-```
-
----
-
-## First Trade Walkthrough
-
-### Day 1 (Morning, 7:00 AM)
-
-```bash
-# Scan today's earnings
-python get_candidates.py --date YYYY-MM-DD
-
-# Review candidates
-# Find 3-5 Tier 1 candidates
-
-# Pick one to test
-symbol = "AAPL"
-```
-
-### Day 1 (Mid-day, 11:00 AM)
-
-```bash
-# Get order spec
-python get_order.py --symbol AAPL --strategy AUTO
-
-# Review spec
-# - Entry: $5.10 credit
-# - Profit target: $2.55
-# - Stops: 0.60 delta, 4-hour backstop
-```
-
-### Day 1 (Entry, 3:45 PM)
-
-```bash
-# MANUALLY submit order through broker platform
-# Sell 150 call @ $2.55
-# Sell 150 put @ $2.55
-# Quantity: 1 spread (small test size)
-
-# Or use CLI if broker integration ready:
-python place_order.py --symbol AAPL --quantity 1 --live
-```
-
-### Day 1 (Post-exit, After Hours)
-
-```bash
-# Log the trade
-python log_trade --symbol AAPL --exit_price 2.55 --date YYYY-MM-DD
-
-# Review results
-# Profit/loss?
-# Time in position?
-# Decision matrix correct?
-```
-
----
-
-## Troubleshooting Setup
-
-### "Config validation failed"
-
-```bash
-# Check JSON syntax
-python -m json.tool config.json > /dev/null
-```
-
-**Fix:** Correct JSON syntax (missing comma, quote, brace)
-
----
-
-### "Broker connection refused"
-
-```bash
-# Verify API keys
-python -c "import os; print(os.getenv('BROKER_API_KEY'))"
-```
-
-**Fix:** Check .env file has correct API key, broker API status
-
----
-
-### "Module not found error"
-
-```bash
-# Verify venv is activated
-which python  # Should show venv path
-
-# Reinstall packages
-pip install -r requirements.txt
-```
-
-**Fix:** Activate virtual environment, reinstall requirements
-
----
-
-### "No earnings found for date"
-
-```bash
-# Check date format
-python get_candidates.py --date 2026-07-15  # Correct: YYYY-MM-DD
-```
-
-**Fix:** Use correct date format, verify it's a trading day
-
----
-
-## Configuration Profiles
-
-### Conservative (Start Here)
-
-```bash
-cp config.example.json config.json
-# Already conservative by default
-```
-
-### Moderate
-
-```bash
-# Edit config.json
-"max_concurrent_earnings_positions": 4
-```
-
-### Aggressive
-
-```bash
-# Edit config.json
-"max_concurrent_earnings_positions": 5
-"max_daily_earnings_trades": 8
-"max_realized_move_dispersion_pct": 0.20
-```
-
----
-
-## Development Setup (Optional)
-
-If contributing code:
-
-```bash
-# Install dev dependencies
 pip install -r requirements-dev.txt
-
-# Run linter
-pylint src/
-
-# Run tests with coverage
-pytest --cov=src tests/
-
-# Format code
-black src/ tests/
 ```
+
+`requirements.txt` pulls in `tastytrade` (broker SDK), `keyring` (OS-native credential storage
+for OAuth secrets), `mysql-connector-python` (talks to `dolt sql-server`, which speaks the MySQL
+wire protocol), and `matplotlib` (for `strategy_dashboard.py`'s charts).
+
+---
+
+## Step 2: Start the local Dolt data server
+
+Clone the three datasets this project reads from and serve them together:
+
+```bash
+mkdir dolt-data && cd dolt-data
+dolt clone post-no-preference/earnings earnings
+dolt clone post-no-preference/options options
+dolt clone post-no-preference/stocks stocks
+dolt sql-server --data-dir . --host 127.0.0.1 --port 3306
+```
+
+Leave this running in its own terminal — the scanner connects to it on demand for every scan.
+Default connection settings (`dolthub_host`/`dolthub_port`/`dolthub_user`/`dolthub_database`/
+`dolthub_options_database`/`dolthub_stocks_database`) live in `config/config.json` and match the
+defaults above; only change them if you're serving the databases elsewhere.
+
+---
+
+## Step 3: Configure
+
+```bash
+cp config/config.example.json config/config.json
+```
+
+The example ships with sane, documented defaults (`enable_live_trading: false`, i.e. paper mode,
+and an `available_capital_paper_mode` simulated capital basis rather than a real balance). Open
+`config/config.json` and review at minimum:
+
+- `available_capital_paper_mode` — simulated NLV for paper mode's risk-cap checks.
+- `max_concurrent_earnings_positions` — account-wide cap on simultaneous overnight positions.
+- `entry_window_start` / `entry_window_end` / `close_window_start` — your local timezone offset
+  from ET matters here; these are ET times.
+
+See [Configuration Guide](./03-configuration.md) for every parameter, and
+`config/config.example.json`'s inline `_..._note` fields for the reasoning behind each default.
+
+---
+
+## Step 4: Connect your tastytrade account
+
+Credentials are stored in your OS keyring (via the `keyring` package), never in a file:
+
+```bash
+python src/tt.py secrets_set
+```
+
+This interactively prompts for your tastytrade OAuth **client secret**, **refresh token**, and
+(optionally) a specific **account number**. Then verify:
+
+```bash
+python src/tt.py secrets_status
+python src/tt.py get_connection_status
+```
+
+`get_connection_status` should report `"connected": true`. This step is required in both paper
+and live mode — see `CLAUDE.md`'s Loop Step 0 for the paper/live distinction.
+
+---
+
+## Step 5: Validate the install
+
+```bash
+# Config is valid JSON
+python -c "import json; json.load(open('config/config.json')); print('Config OK')"
+
+# All 7 strategies register cleanly
+python -c "from src.rank_strategies import STRATEGY_REGISTRY; print(f'Found {len(STRATEGY_REGISTRY)} strategies')"
+# Expected: Found 7 strategies
+
+# Run the test suite
+pytest
+# Expected: all tests pass
+```
+
+---
+
+## Step 6: First dry run
+
+Pull today's earnings calendar and see what the scanner finds, without touching any account:
+
+```bash
+python src/scanner.py get_calendar --date MM/DD/YYYY
+```
+
+Then run a full one-shot candidate scan for a single strategy (no orders submitted):
+
+```bash
+python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
+```
+
+This prints Tier 1/2/3 candidates with pass/skip reasons per `docs/screening-criteria.md`'s hard
+filters. A quiet night with zero Tier 1/2 candidates is normal and not a bug.
+
+---
+
+## Step 7: Run the forced-sampling strategy test (recommended first)
+
+Before running the live/paper trading loop, use `/paper-start` (see
+`docs/strategy-testing-plan.md`) to force-sample all 7 strategies nightly into an isolated
+`profile='strat_test'` paper book — this validates the whole pipeline end-to-end (scan, tier,
+size, cost-adjust, persist, close) and starts building the sample size needed to evaluate each
+strategy, without affecting the real paper/live trading book:
+
+```
+/paper-start
+```
+
+Or run its underlying commands directly:
+
+```bash
+python src/strategy_test_runner.py run_entries --date MM/DD/YYYY --profile balanced
+python src/strategy_test_runner.py run_closes --profile balanced
+```
+
+Check progress at any time with:
+
+```bash
+python src/strategy_report.py
+python src/strategy_dashboard.py   # writes reports/strategy_dashboard.html
+```
+
+---
+
+## Step 8: Run the actual paper/live trading loop
+
+Once you're comfortable with the candidates it's finding, start the real loop (paper mode by
+default, since `enable_live_trading` is `false` in the example config):
+
+```
+/earnings-start
+```
+
+This executes `CLAUDE.md`'s Loop Steps continuously through the day's entry and close windows.
+Only flip `enable_live_trading: true` in `config/config.json` after you've validated results in
+paper mode — live mode submits real orders via `tt.py execute_trade --live`.
+
+---
+
+## Troubleshooting
+
+**"dolt sql-server not available" / scan hangs or errors on calendar/IV-RV fetch**
+Confirm the server from Step 2 is still running and reachable: `mysql-connector-python` connects
+to `dolthub_host`/`dolthub_port` from `config/config.json` (defaults `127.0.0.1:3306`).
+
+**`get_connection_status` reports `"connected": false`**
+Re-run `python src/tt.py secrets_set` to refresh credentials, then `secrets_status` to confirm
+they're stored, then `get_connection_status` again.
+
+**Everything comes back Tier 3 / rejected**
+Normal on a quiet night — check the specific `reason` fields in the output rather than assuming
+something's broken. See `docs/screening-criteria.md` for what each hard filter checks.
+
+**`pytest` fails on tests touching the database**
+Tests use isolated fixtures (see `tests/conftest.py`) and shouldn't require a live Dolt server or
+tastytrade connection — if a failure mentions either, check `tests/conftest.py`'s fixtures first.
 
 ---
 
 ## Next Steps
 
-1. **Read** [Quick Reference](./02-quick-reference.md) for daily workflows
-2. **Study** [Entry Conditions Framework](./04-entry-conditions.md) to understand strategy selection
-3. **Review** [Strategy Guide](./05-strategies.md) for detailed strategy rules
-4. **Practice** dry runs on 3-5 earnings days before live trading
-5. **Start small** with 1-2 spreads per trade for first 10 trades
-
----
-
-## Support
-
-### Common Questions
-
-- **How long does scan take?** 5-10 minutes (depends on data source)
-- **Can I run multiple scans?** Yes, they're independent
-- **What if I miss the entry window?** Use next day's earnings
-- **Can I trade in paper account first?** Yes, set LIVE_TRADING=false
-- **Do I need market data subscription?** Depends on broker API
+1. **Read** [Quick Reference](./02-quick-reference.md) for daily CLI workflows.
+2. **Read** `CLAUDE.md` in full — it's the authoritative operational spec (loop steps, tool
+   reference, config options, database schema).
+3. **Study** [Strategy Guide](./05-strategies.md) for how each of the 7 strategies works.
+4. **Run** `/paper-start` daily for a few weeks before considering live trading.
 
 ---
 
 ## Navigation
 
-**← Previous:** [README](./README.md)  
+**← Previous:** [README](./README.md)
 **Next →** [Quick Reference](./02-quick-reference.md)

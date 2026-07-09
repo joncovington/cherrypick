@@ -27,7 +27,6 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 > - If you need a temporary scratchpad for Python scripts or tests, you **MUST** create a dedicated temporary file in your workspace under .tmp/ and delete it when finished.
 
 ## Documentation & Commit Rules
-- Do not mention Claude, Anthropic, or AI tools in README.md or any documentation file.
 - Write all docs from a human developer's perspective.
 - Never include co-author attribution or AI signatures in git commit messages.
 

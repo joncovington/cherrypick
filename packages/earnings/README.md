@@ -1,407 +1,146 @@
-# 🚀 Earnings Agent: Automated Options Trading for Earnings Plays
+# EarningsAgent
 
-**Simple. Powerful. Data-Driven.**
+An autonomous options trading agent for overnight earnings plays. It scans the daily earnings
+calendar, evaluates seven defined-risk options strategies against live market data, ranks
+candidates, and manages entries and exits around a single overnight hold — position opened once
+before the close, closed once after the next open, unmonitored overnight.
 
-An automated system that analyzes earnings candidates and tells you exactly which strategy to trade, when to enter, and when to exit. Perfect for overnight earnings plays using options strategies that capture IV crush.
-
----
-
-## What It Does
-
-**In Plain English:**
-
-Every earnings day, this system:
-
-1. **Scans all earnings candidates** and gathers key info (implied move, historical patterns, current volatility)
-2. **Ranks them by opportunity** (which ones have the best edge?)
-3. **Picks the best strategy** for each one (naked short? defined risk? calendar spread?)
-4. **Tells you exactly what to trade** at 3:50 PM (entry price, quantity, profit target, stops)
-5. **Monitors exits** next day at market open (handles IV crush automatically)
-6. **Reports daily** on what worked and what to adjust
-
-**No guesswork. No discretion. Just data-driven decisions.**
+Every strategy is **defined-risk**: max loss is known at entry. Undefined-risk/naked strategies
+(naked straddles, strangles, naked puts/calls) were deliberately excluded — a single-name
+earnings gap on a naked short can blow out arbitrarily overnight with nobody watching.
 
 ---
 
-## Why This Works
+## Quick Start
 
-### The Problem
-- You know options trading but hate picking strategies manually
-- Every earnings day is different (sometimes high IV, sometimes low)
-- Some strategies work great in certain conditions, terrible in others
-- You enter based on feel, exit based on emotion
+```bash
+git clone <your-fork-or-remote-url>
+cd EarningsAgent
+python -m venv venv && source venv/bin/activate   # venv\Scripts\activate on Windows
+pip install -r requirements.txt
 
-### The Solution
-- **Automatic strategy selection** based on math, not emotion
-- **Consistent process** that adapts to market conditions
-- **Clear entry/exit rules** with no discretion
-- **Daily feedback** on what's working and what to adjust
+cp config/config.example.json config/config.json
+python src/tt.py secrets_set                       # store tastytrade OAuth credentials
+python src/tt.py get_connection_status              # confirm "connected": true
+```
 
-### The Edge
-This system captures **IV crush** (20-60% volatility drop in first 15-30 minutes after earnings):
-- Short strategies profit from IV collapse
-- Wide wings protect if stock moves big
-- Tight historical patterns = high confidence
-- Calendar spreads benefit from time decay
+You'll also need a local `dolt sql-server` serving three DoltHub datasets the scanner reads
+live earnings-calendar, IV/RV, and realized-move data from — see
+[Installation & Setup](./docs/01-setup.md) for the full walkthrough, including that step.
+
+Once connected, try a no-risk read of tonight's candidates:
+
+```bash
+python src/scanner.py get_calendar --date MM/DD/YYYY
+python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
+```
+
+Then run the forced-sampling paper-testing program to validate the whole pipeline end-to-end
+(scan → tier → size → cost-adjust → persist → close) without touching a real account:
+
+```
+/paper-start
+```
+
+Full setup details, troubleshooting, and the first-trade walkthrough are in
+[docs/01-setup.md](./docs/01-setup.md).
 
 ---
 
-## 10 Strategies (All Automated)
+## The 7 Strategies
 
-### Naked Shorts (Maximum Edge)
-- **Short Straddle** — Sell ATM call + put, profit if stock stays flat
-- **Short Strangle** — Sell OTM call + put, wider range than straddle
+All defined-risk, all evaluated nightly against live tastytrade chains and DoltHub data:
 
-### Defined Risk (Safer)
-- **Iron Fly** — Short ATM, long wings, known max loss (most popular)
-- **Iron Condor** — Short both sides spreads, very safe
-- **Reverse Fly** — Long ATM, short wings, captures gap premium
-- **Jade Lizard** — Directional with hedge (one side protected)
+| Strategy | Structure | Best For |
+|---|---|---|
+| `iron_fly` | Short ATM straddle + long OTM wings | Medium IV, balanced risk/reward |
+| `iron_condor` | Short OTM put spread + short OTM call spread | Wide expected range, directional-neutral |
+| `directional_credit_spread` | Short OTM put or call spread (side chosen by skew) | Directional bias / IV skew |
+| `broken_wing_butterfly` | Asymmetric (skip-strike) butterfly, wings sized to skew | Asymmetric expected moves |
+| `reverse_fly` | Long ATM + short OTM wings | Capturing gap premium (long-vol) |
+| `atm_calendar` | Short front-month + long back-month, same strike | Low IV, term-structure edge |
+| `double_calendar` | ATM calendar on both the call and put side | Low IV, symmetric term structure |
 
-### Spread Strategies
-- **Directional Spread** — One-sided play with hedge
-- **Broken Wing Butterfly** — Asymmetric structure (skew trading)
-
-### Time Decay Plays
-- **ATM Calendar** — Sell front month, buy back month (low risk)
-- **Double Calendar** — Both sides, ultimate time decay play
-
-**The system picks the right one for each day's conditions.**
+See [docs/05-strategies.md](./docs/05-strategies.md) for full structure, entry conditions, and
+exit rules per strategy, and [docs/screening-criteria.md](./docs/screening-criteria.md) for the
+shared hard filters and tiering every candidate passes through before a strategy sees it.
 
 ---
 
-## How It Works: Day-by-Day
+## How It Works
 
-### Morning (Optional Research)
-Read earnings calendar for today. Nothing required from you.
+- **`src/scanner.py`** is the strategy-agnostic engine: earnings calendar, IV/RV ratio, winrate
+  backtest, liquidity gates, ranking, expiration selection.
+- **`src/strategies/<name>.py`** holds only strategy-specific logic: hard-filter thresholds,
+  tiering, strike/order construction. New strategies can be added here without touching the
+  shared engine.
+- **`src/rank_strategies.py`** evaluates every enabled strategy against every candidate on the
+  merged today-AMC/tomorrow-BMO earnings calendar, and picks each symbol's single best strategy.
+- **`src/tt.py`** is the tastytrade broker interface — quotes, chains, greeks, account info, and
+  (in live mode only) order execution.
 
-### 3:00 PM ET: System Analyzes
-```
-/paper-trading-start
-```
-
-System runs analysis:
-- 8-12 candidates analyzed
-- Each ranked by edge quality (score 0-100)
-- Top 3-5 displayed with recommendations
-
-**You review in 5 minutes.**
-
-### 3:50 PM ET: You Execute (or System Can Auto-Submit)
-Based on system recommendations, you execute trades:
-- **Naked Short Straddle?** Sell ATM call + put
-- **Iron Fly?** Sell ATM, buy wings
-- **Calendar?** Sell front, buy back
-
-**Exact order spec provided by system.**
-
-### 4:00 PM ET: Daily Report
-```
-/paper-trading-eod-report
-```
-
-System generates report:
-- Today's analysis summary
-- Tomorrow's exit monitoring plan (profit targets, stops, backdoors)
-- Configuration recommendations (should you adjust risk tomorrow?)
-- Risk assessment (comfortable with overnight holds? Capital utilization?)
-
-**You review in 5 minutes. Decide if you like the recommendations.**
-
-### Next Day, 9:30 AM: Market Opens
-System's predictions come true:
-- IV crush happens (20-60% drop as expected)
-- Stock moves (usually less than options price change)
-- Your positions become profitable
-
-**You monitor exits per yesterday's plan.**
-
-### Next Day, 4:00 PM: Log Results
-You log exit prices and P&L. System calculates:
-- Did our entry condition analysis work?
-- Was the strategy selection correct?
-- How accurate were our profit targets?
+Full operational detail — loop steps, config options, database schema — lives in `CLAUDE.md`,
+the authoritative spec this system runs against.
 
 ---
 
-## Real Example: Tuesday Earnings
+## Paper vs. Live Mode
 
-### Before (Manual Trading)
-```
-Morning: "AAPL earnings today. Should I trade it?"
-         "What strategy? Straddle or strangle?"
-         "How much credit? What strikes?"
-         
-3:00 PM: "Let me check the bid-ask... looking at charts..."
-         "Feels like AAPL might stay flat. Let me sell ATM."
-         "Hope I picked good strikes."
-         
-4:05 PM: Earnings announced. Stock up 2%.
-         Your straddle is losing money on the put side.
-         "Ugh. Maybe I should have done a strangle."
-         
-4:30 PM: "Let me exit this mess before it gets worse."
-         Panic selling. Take a small loss.
-```
+Controlled by `enable_live_trading` in `config/config.json` (`false` by default):
 
-### After (Earnings Agent)
-```
-3:00 PM: /paper-trading-start
-         System: "AAPL — Score 84/100 — SHORT_STRADDLE"
-         System: "Entry: Sell 150 call @ $2.55, Sell 150 put @ $2.55"
-         System: "Profit target: $1.27 (50% of credit)"
-         You: "Looks good" → Submit order
-         
-3:50 PM: Order filled. Positions entered.
-         
-4:00 PM: /paper-trading-eod-report
-         System: "AAPL earnings at 4:05 PM. Expect IV crush."
-         System: "Monitor for profit target $1.27 remaining credit."
-         System: "Delta stops at 0.60 if stock gaps."
-         System: "Backstop exit at 8:00 PM if not at target."
-         
-4:05 PM: Earnings announced. Stock up 2%.
-         Your position shows -$150 loss.
-         System's delta stop hasn't triggered yet.
-         You're calm. You have a plan.
-         
-4:10 PM: IV crushes 40%. Premium collapses.
-         Your position now shows +$200 profit.
-         System's profit target was $127.
-         You're already past it.
-         
-4:15 PM: Close position. Lock in profit.
-         Time in trade: 25 minutes. Result: +$200.
+- **Paper mode**: persistence via `src/db_paper.py`, order handling stops at building the order
+  spec — no order is ever submitted. Paper mode still sources live quotes/chains/greeks from the
+  real tastytrade session (needed to size and price orders realistically); it just never trades.
+- **Live mode**: persistence via `src/db.py`, and entries submit real orders via
+  `tt.py execute_trade --live`.
+
+Two separate paper-testing programs exist, and can run concurrently since they write to
+isolated books:
+
+- **`/paper-start`** — forced-sampling strategy validation (`src/strategy_test_runner.py`):
+  opens every Tier 1/2 candidate for every strategy, not just each symbol's single best, so every
+  strategy accumulates a usable sample size quickly. Writes to `profile='strat_test'`.
+- **`/paper-trading-start`** — one-shot production-ranking analysis (`rank_strategies.py`): what
+  the real loop would pick tonight, without submitting anything.
+- **`/earnings-start`** — the actual continuous trading loop (paper or live per
+  `enable_live_trading`), run through a full market session.
+- **`/paper-trading-eod-report`** — end-of-day report on today's candidates, decisions, and
+  tomorrow's exit plan.
+
+Track accumulated results with `python src/strategy_report.py` (text) or
+`python src/strategy_dashboard.py` (self-contained HTML dashboard, written to `reports/`).
+
+---
+
+## Testing
+
+```bash
+pytest
 ```
 
 ---
 
-## Paper Trading Phase (2-4 Weeks)
+## Documentation
 
-**Before going live, test the system:**
-
-1. **Run daily at 3 PM** — Let system analyze
-2. **Execute trades** — Follow recommendations or go auto-mode
-3. **Monitor next day** — See if edge really exists
-4. **Log results** — Win rate, P&L, accuracy
-5. **Review weekly** — What's working? What to adjust?
-
-**After 40 trades:**
-- Win rate > 60%? → Ready for live (start small: 1-2 spreads)
-- Win rate 50-60%? → Continue refining, tweak parameters
-- Win rate < 50%? → Debug entry conditions
+- [docs/README.md](./docs/README.md) — full documentation index
+- [docs/01-setup.md](./docs/01-setup.md) — installation and first-run walkthrough
+- [docs/03-configuration.md](./docs/03-configuration.md) — every `config.json` parameter
+- [docs/05-strategies.md](./docs/05-strategies.md) — strategy-by-strategy structure and rules
+- [docs/screening-criteria.md](./docs/screening-criteria.md) — hard filters and tiering (source
+  of truth for what gates a candidate)
+- `CLAUDE.md` — the authoritative operational spec (loop steps, tool reference, config options,
+  database schema)
 
 ---
 
-## Key Numbers to Expect
+## Disclaimer
 
-### Win Rate
-- **Short Straddle:** 60-70% (naked, high quality only)
-- **Iron Fly:** 65-75% (defined risk, most consistent)
-- **Calendar Spreads:** 70-80% (time decay, very safe)
-
-### Average P&L Per Trade
-- Depends on credit collected and position size
-- System calculates: Profit target = 50% of entry credit
-- Example: $300 credit → $150 profit target → $0.60 credit spread
-
-### Time in Trade
-- Entry: 3:50 PM
-- Exit: Usually 9:35-10:30 AM next day (after IV crush)
-- Average hold: 15-40 minutes of market open trading
-
-### Capital Requirements
-- System adjusts position size based on your available capital
-- $25k account → 2-3 spreads typically
-- $50k account → 3-5 spreads typically
-- Configurable to your risk tolerance
+This is a research/personal trading tool, not investment advice. Options trading involves
+substantial risk of loss. Paper trade extensively before considering live capital, and never
+risk more than you can afford to lose.
 
 ---
 
-## Key Features
+## License
 
-### ✓ Automatic Strategy Selection
-Don't guess anymore. System picks based on:
-- IV level (high/medium/low)
-- Historical patterns (predictable? erratic?)
-- Market conditions (calm or choppy?)
-
-### ✓ Daily Recommendations
-Every day includes suggestions to adjust your risk:
-- "Candidates are high quality → consider more position size"
-- "Capital utilization at 80% → be careful with overnight holds"
-- "Your strategy mix is good → stay the course"
-
-### ✓ Clear Entry/Exit Rules
-No more ambiguity:
-- Entry: Exact strikes, credit target, entry time
-- Profit target: 50% of credit (automatic exit if hit)
-- Stops: Delta stops if stock gaps, 4-hour backstop
-- No emotion involved
-
-### ✓ Paper Trading Built In
-Simulate before risking real money:
-- Same system for testing
-- Real data, real prices, real results
-- See if edge holds up in live trading
-- Adjust parameters safely
-
-### ✓ Weekly Performance Tracking
-See the big picture:
-- Win rate trending up or down?
-- Which strategies are winning most?
-- P&L cumulative across week
-- Ready to increase size? Adjust settings?
-
----
-
-## Three Ways to Use It
-
-### Conservative (Manual Selection)
-```
-3:00 PM: /paper-trading-start
-         Review top candidates
-         Choose which to trade (you pick 1-2 best ones)
-         
-3:50 PM: Execute your picks
-```
-**Best for:** Learning, building confidence
-
-### Balanced (Semi-Automated)
-```
-3:00 PM: /paper-trading-start --config moderate
-         Review top 3 recommendations
-         Accept or reject system's picks
-         
-3:50 PM: Execute system picks or your modifications
-```
-**Best for:** Most traders
-
-### Aggressive (Full Auto)
-```
-3:00 PM: /paper-trading-start --mode auto --count 3
-         System auto-submits top 3
-         
-3:50 PM: Confirm fills (optional)
-```
-**Best for:** Experienced traders who trust the system
-
----
-
-## Getting Started
-
-### Step 1: Configure (5 minutes)
-Edit your risk tolerance:
-```
-max_positions_per_day: 3        # How many trades per day?
-available_capital: 50000         # Total capital available?
-min_conviction: "medium"         # Tier 1 only (strict) or Tier 1-2 (normal)?
-auto_submit: False               # Manual or automatic mode?
-```
-
-### Step 2: Test (1 day)
-```
-3:00 PM: /paper-trading-start
-4:00 PM: /paper-trading-eod-report
-```
-See how the system thinks. Does it make sense?
-
-### Step 3: Paper Trade (2-4 weeks)
-```
-Every day at 3:00 PM and 4:00 PM
-Track your win rate and P&L
-Review recommendations
-Adjust settings as needed
-```
-
-### Step 4: Go Live (Optional)
-```
-If win rate > 60% and you're confident
-Start small: 1-2 spreads per day
-Scale up after 10 winning trades
-```
-
----
-
-## The Real Talk
-
-### What You Get
-✓ System that adapts to market conditions  
-✓ Clear entry/exit rules (no emotion)  
-✓ 50-70% win rate (historical pattern based)  
-✓ 15-40 minute average hold time  
-✓ 50% profit target on entry credit  
-✓ Defined risk (spreads) or wide safety margin (naked)  
-
-### What You Need
-⚠ Discipline (follow the rules, don't override)  
-⚠ Paper trading period (build confidence first)  
-⚠ Capital buffer (for adverse moves)  
-⚠ Time to monitor exits next morning  
-⚠ Willingness to adjust based on results  
-
-### What You Don't Get
-✗ Guaranteed profits (no system guarantees that)  
-✗ Skip losing trades (50-70% win rate = 30-50% losses)  
-✗ Zero risk (we minimize it, don't eliminate)  
-✗ No work (monitoring and adjustment required)  
-✗ One-size-fits-all strategy (conditions matter)  
-
----
-
-## Next Steps
-
-### Ready to Start?
-
-1. **Read:** `docs/README.md` (technical overview)
-2. **Configure:** Edit `src/late_day_earnings_ranked.py` CONFIG dict
-3. **Test:** Run `/paper-trading-start` at 3:00 PM ET
-4. **Review:** Run `/paper-trading-eod-report` at 4:00 PM ET
-5. **Paper Trade:** Repeat for 2-4 weeks
-
-### Want More Details?
-
-- **Strategy Explanations:** `docs/05-strategies.md`
-- **Daily Workflow:** `docs/08-trading-workflow.md`
-- **Exit Rules:** `docs/10-exits.md`
-- **Real Examples:** `docs/11-examples.md`
-- **Command Reference:** `SLASH_COMMANDS_GUIDE.md`
-
----
-
-## Questions?
-
-**How much capital do I need?**  
-$10k minimum. System scales position size to your account. $50k is comfortable.
-
-**Can I trade this while working?**  
-Entry: 3:50 PM (5 min setup). Monitoring: 9:30-10:30 AM next day (during work okay if watching phone).
-
-**What if I can't monitor exits?**  
-System has automatic stops. You can set profit-target orders in your broker for hands-off management.
-
-**Can I run this on my phone?**  
-Yes. Commands are simple: `/paper-trading-start` at 3 PM, `/paper-trading-eod-report` at 4 PM.
-
-**What's the win rate?**  
-50-70% depending on strategy. Short Straddle highest (70%+). Calendars most consistent (70-80%).
-
-**When do I make money?**  
-Entry 3:50 PM, exit 9:30-10:30 AM next day (usually). Average hold: 15-40 minutes of market open trading.
-
-**Is this a get-rich scheme?**  
-No. 50-70% win rate, 50% profit on entry credit, defined risk. Realistic returns if you follow the system.
-
----
-
-## Ready?
-
-**Start today at 3:00 PM ET.**
-
-```
-/paper-trading-start
-```
-
-The system will guide you from there.
-
-Good luck. 🚀
+[MIT](./LICENSE)

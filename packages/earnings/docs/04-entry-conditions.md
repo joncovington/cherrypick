@@ -1,418 +1,129 @@
-# Entry Conditions Framework: Decision Matrix
+# Entry Conditions Framework
 
-Data-driven strategy selection based on market conditions.
-
----
-
-## Overview
-
-The Entry Conditions Framework automatically routes each earnings candidate to the optimal strategy using a multi-level decision matrix. No manual selection—metrics decide.
-
-**Core Principle:** Different market regimes favor different strategies.
-- **High IV, Predictable Moves** → Short Straddle
-- **Medium IV, Stable Moves** → Iron Fly
-- **Low IV, Quiet Stocks** → Calendar Spreads
+How a candidate actually gets from "reports earnings tonight" to "here's an order" — no
+decision tree lookup table, just each strategy's own tiering plus one cross-strategy ranking
+step.
 
 ---
 
-## Decision Matrix Levels
+## The Two-Layer Model
 
-### LEVEL 1: GATE (Hard Filter)
+There's no single global "entry conditions" gate that all seven strategies share and a router
+that then picks a bucket. Instead:
 
-All candidates must pass these gates or are rejected entirely.
+1. **Each strategy tiers itself.** `src/strategies/<name>.py`'s `apply_tiering()` runs that
+   strategy's own hard filters and near-miss bands against a symbol and returns `Tier 1`,
+   `Tier 2`, `Near Miss`, or `Reject` with specific reasons. `iron_fly`'s version is documented
+   in full in [Screening Criteria](./screening-criteria.md) — the source of truth for hard
+   filter numbers, near-miss bands, and the composite scoring formula. The other six strategies
+   share the same shared-engine plumbing (`scanner.py`'s liquidity gates, IV/RV computation,
+   winrate backtest) but plug in their own thresholds and a few strategy-specific criteria
+   (`double_calendar`'s realized-move dispersion, `broken_wing_butterfly`/`directional_credit_spread`/`reverse_fly`'s
+   skew gate, the calendars' `back_month_min_days_after`). See each strategy's own config block
+   in [Configuration Guide](./03-configuration.md) for its exact numbers.
 
-| Gate | Threshold | Reason |
-|------|---|---|
-| **Realized Move Dispersion (σ)** | < 0.15 | Stocks too unpredictable are rejected. Dispersion measures earnings move consistency over 8 quarters. |
-| **IV Rank** | > 0.15 | Premium must exist. IV Rank 0.0-1.0 scale; below 0.15 is too thin |
-| **Minimum Credit** | > $0.10 | Trade must have economic viability |
-| **Time to Expiration** | 30-60 DTE at entry | Earnings plays are short-dated (front month or next month) |
+2. **Cross-strategy ranking picks a winner per symbol.** A single symbol can tier Tier 1 or
+   Tier 2 under more than one strategy at once — a name with rich IV/RV and negative term
+   structure might legitimately qualify for `iron_fly`, `iron_condor`, and `directional_credit_spread`
+   all on the same night. Opening more than one of those on the same underlying would just be
+   the same overnight gap risk twice, not diversification. `src/rank_strategies.py` resolves
+   this: it runs every registered strategy's `apply_tiering()` against every symbol on the
+   merged today-AMC/tomorrow-BMO calendar, keeps only the Tier 1/Tier 2 results, and picks each
+   symbol's single highest-scoring strategy.
 
-**Example:** AAPL with σ=0.015 and IV Rank=1.25 passes all gates. TSLA with σ=0.40 fails the dispersion gate (rejected).
+```bash
+python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
+```
+
+This is what the live/paper loop's Step 4b actually calls at entry time (see `CLAUDE.md`'s Loop
+Steps) — there's no separate, hand-maintained routing table to keep in sync with it.
 
 ---
 
-### LEVEL 2: PRIMARY DECISION (Realized vs Expected)
+## How the Winning Strategy Is Chosen
 
-Routes candidates to naked (high edge) or hedged (medium edge) strategies.
+Within a symbol, `rank_strategies.py` reuses `scanner.compute_composite_score()` — the same
+scoring formula each strategy already uses to rank its own candidates against each other:
 
 ```
-realized_move_ratio = realized_move_dispersion / expected_move
-
-If ratio > 1.10:
-  → Move larger than expected, gap premium exists
-  → Favor SHORT_STRADDLE or REVERSE_FLY (long premium capture)
-
-If ratio ≤ 1.10:
-  → Move as expected, normal IV crush regime
-  → Favor IRON_FLY or IRON_CONDOR (hedged approach)
+score = abs(term_structure) * iv_rv_ratio * shrunk_winrate
 ```
 
-**Why this matters:**
-- **Ratio > 1.10** means earnings moves exceeded volatility expectations historically. Premium sellers are being compensated well.
-- **Ratio ≤ 1.10** means volatility is fairly priced; hedges protect against downside.
+(`shrunk_winrate` pulls a thin-sample winrate toward a neutral 0.5 prior — see Screening
+Criteria's ranking section for why.) Whichever strategy scores highest for that symbol wins;
+`double_calendar` and `broken_wing_butterfly`/`directional_credit_spread`/`reverse_fly` substitute their own
+signal (dispersion, skew) into the same formula shape rather than getting a separate scoring
+system. This is a **relative** score used only to break ties between strategies that already
+both cleared their own bar — it is not itself a pass/fail gate.
+
+**Important caveat, directly from the code's own docstring**: this comparison is not
+risk-adjusted for how differently these strategies pay off (defined-risk credit vs. debit,
+different capital consumption per contract). That calibration is deferred until there's enough
+real trade data (via `strategy_test_runner.py`'s forced-sampling paper program) to justify a
+specific adjustment — see [Strategy Optimization Research](./strategy-optimization.md) for the
+hypotheses queued to validate this properly.
 
 ---
 
-### LEVEL 3: SECONDARY DECISION (Dispersion)
+## After a Winner Is Picked: Portfolio-Level Selection
 
-Fine-tunes within the primary category based on predictability.
+Cross-strategy ranking produces one candidate per qualifying symbol, but a night can have more
+qualifying symbols than `max_concurrent_earnings_positions` allows, or two symbols that
+collide on `correlation_block_list`. `scanner.select_positions()` (the same function every
+single-strategy `get_candidates` already uses) walks the ranked list, applies the concurrency
+cap and correlation blocking, and backfills the next-best non-conflicting candidate into any
+skipped slot rather than leaving it empty. Every skip is logged with its specific reason, not
+silently dropped.
 
-```
-If σ < 0.08:
-  → Ultra-predictable stock (blue chips, staples)
-  → Consider naked strategies (SHORT_STRADDLE)
-  → Max risk tolerance justified by tight historical moves
-
-If σ 0.08-0.15:
-  → Normal predictability
-  → Favor hedged spreads (IRON_FLY, IRON_CONDOR)
-  → One-sided directional plays (JADE_LIZARD)
-
-If σ 0.15-0.25:
-  → Moderately unpredictable
-  → Hedge required; prefer wide-wing structures
-  → Calendar spreads safer than naked
-```
-
-**Example Decision Path:**
-```
-AAPL: σ=0.0125, IV=1.25, ratio=1.08
-  → GATE: PASS (σ < 0.15, IV > 0.15)
-  → PRIMARY: STRADDLE edge (high IV justifies naked)
-  → SECONDARY: ULTRA-PREDICTABLE (σ < 0.08)
-  → FINAL: SHORT_STRADDLE
-
-JPM: σ=0.045, IV=1.18, ratio=0.98
-  → GATE: PASS
-  → PRIMARY: Normal IV crush (ratio < 1.10)
-  → SECONDARY: Normal dispersion (0.08-0.15)
-  → FINAL: IRON_FLY
-```
+`rank_strategies.py` also writes a full audit trail to `scan_log` — one row per (symbol,
+strategy) evaluated, plus a summary row per symbol (`strategy = "_ranked"`) explaining both why
+the winning strategy beat its within-symbol runner-up and where that symbol ranked against the
+rest of the night's universe. Query `scan_log` directly if you want to see the full evaluation
+trail for a specific past night, not just tonight's console output.
 
 ---
 
-### LEVEL 4: TERTIARY DECISION (IV Rank)
+## Entry-Time Re-Verification
 
-Within the same strategy category, IV rank determines entry attractiveness.
-
-| IV Rank | Entry Premium | Best Strategy |
-|---|---|---|
-| **< 0.50** | Thin | PASS (not enough credit) |
-| **0.50-0.75** | Light | ATM_CALENDAR (term structure) |
-| **0.75-1.00** | Medium | IRON_FLY, IRON_CONDOR |
-| **> 1.00** | Rich | SHORT_STRADDLE, SHORT_STRANGLE |
-
-**Example:** Three stocks with same dispersion (σ=0.045):
-- BAC with IV Rank 0.60 → IRON_FLY (medium premium)
-- XOM with IV Rank 1.15 → SHORT_STRADDLE (high premium justifies nakedness)
-- KO with IV Rank 0.40 → PASS (insufficient credit)
+The scan that produces tonight's ranked list typically runs earlier in the afternoon; by the
+time the entry window actually opens, prices and IV may have moved. `rank_strategies.reverify_symbol()`
+re-runs the winning strategy's own `apply_tiering()` fresh, immediately before order submission,
+and rejects if it's fallen out of Tier 1/2 since the scan. This is Step 4b's re-verification
+check in `CLAUDE.md`'s Loop Steps, and Layer 2 of [Screening Criteria](./screening-criteria.md#layer-2--entry-time-re-verification-immediately-before-order-submission-not-at-scan-time) —
+same liquidity/term-structure/expected-move checks, just re-run live rather than trusted from
+the earlier scan.
 
 ---
 
-## Full Decision Tree
+## Seeing It Work on a Real Night
 
-```
-START: New earnings candidate
-  │
-  ├─→ CHECK GATES
-  │     ├─ Dispersion σ < 0.15? NO → REJECT
-  │     ├─ IV Rank > 0.15? NO → REJECT
-  │     ├─ Credit > $0.10? NO → REJECT
-  │     └─ 30-60 DTE? NO → REJECT
-  │
-  ├─→ PRIMARY (Realized vs Expected)
-  │     ├─ realized_move_ratio > 1.10?
-  │     │   YES → Gap premium route
-  │     │   NO  → Normal IV crush route
-  │     │
-  │     ├─ If gap premium (ratio > 1.10):
-  │     │   │
-  │     │   ├─ SECONDARY: σ < 0.08?
-  │     │   │   YES → SHORT_STRADDLE (naked naked)
-  │     │   │   NO  → REVERSE_FLY (hedged, captures gap)
-  │     │   │
-  │     │   └─ If REVERSE_FLY:
-  │     │       TERTIARY: IV Rank < 0.75?
-  │     │         YES → Lower entry debit
-  │     │         NO  → Higher entry debit (OK, gap justifies it)
-  │     │
-  │     └─ If normal crush (ratio ≤ 1.10):
-  │         │
-  │         ├─ SECONDARY: σ < 0.08?
-  │         │   NO  → IRON_FLY or IRON_CONDOR (hedged spreads)
-  │         │
-  │         ├─ SECONDARY: 0.08 < σ < 0.20?
-  │         │   YES → Directional possible, consider JADE_LIZARD
-  │         │
-  │         └─ If IRON_FLY / CONDOR:
-  │             TERTIARY: IV Rank check
-  │               < 0.60 → Medium credit, prefer CONDOR width
-  │               > 0.80 → Rich credit, prefer narrower wings
-  │
-  └─→ CAPITAL CHECK
-        └─ Can portfolio support max loss?
-           YES → Proceed
-           NO  → PASS or apply FALLBACK if enabled
+There's no separate "test the entry framework" script — the framework *is* the ranking command,
+so running it against a real date is the test:
+
+```bash
+python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
 ```
 
----
-
-## Configuration: Entry Condition Parameters
-
-All thresholds are in `config.json`:
-
-```json
-{
-  "entry_condition_gates": {
-    "max_realized_move_dispersion_pct": 0.15,
-    "min_iv_rank": 0.15,
-    "min_credit_dollars": 0.10,
-    "min_dte": 30,
-    "max_dte": 60
-  },
-  
-  "entry_condition_primary": {
-    "realized_move_ratio_threshold": 1.10
-  },
-  
-  "entry_condition_secondary": {
-    "ultra_predictable_dispersion": 0.08,
-    "normal_dispersion_floor": 0.15,
-    "normal_dispersion_ceiling": 0.25
-  },
-  
-  "entry_condition_tertiary": {
-    "iv_rank_thin_threshold": 0.50,
-    "iv_rank_light_threshold": 0.75,
-    "iv_rank_medium_threshold": 1.00
-  }
-}
-```
-
----
-
-## Per-Strategy Entry Conditions
-
-### Short Straddle
-
-**When to use:** High IV + Ultra-predictable (σ < 0.08) + Gap premium or high IV ratio
-
-```
-Entry Conditions:
-  - σ < 0.08 (hard gate in config: max 0.15, but we prefer < 0.08)
-  - IV Rank > 1.20 (high premium)
-  - Entry credit > $2.50 (meaningful premium)
-  - realized_move_ratio between 0.95-1.10 (not too gappy)
-  
-Profit Exit:
-  - Take 50% of entry credit
-  - Or exit at 4-hour post-announcement backstop
-```
-
-### Iron Fly
-
-**When to use:** Medium IV + Normal dispersion (0.08-0.20) + Defined risk preferred
-
-```
-Entry Conditions:
-  - σ < 0.20 (medium predictability OK)
-  - IV Rank 0.75-1.00 (medium premium)
-  - Entry credit > $0.80 (economical)
-  - realized_move_ratio < 1.10 (normal regime)
-  
-Profit Exit:
-  - Take 50% of entry credit
-  - Wider wings (6-8x) if portfolio needs risk constraint
-```
-
-### Reverse Fly
-
-**When to use:** Gap premium detected (ratio > 1.10) + Defined risk required
-
-```
-Entry Conditions:
-  - realized_move_ratio > 1.10 (gap premium)
-  - σ < 0.30 (not too unpredictable despite gap)
-  - Entry credit > $1.50 (long straddle cost worth it)
-  
-Profit Exit:
-  - Take 50% of max credit OR
-  - Hit max defined loss (stop at wing)
-```
-
-### Iron Condor
-
-**When to use:** Low directional bias + Wide range expected
-
-```
-Entry Conditions:
-  - σ < 0.25 (not too wide)
-  - IV Rank 0.60-0.95 (medium)
-  - Entry credit > $0.50
-  - No strong directional bias
-  
-Profit Exit:
-  - 50% of entry credit
-  - Wider wings for portfolio risk constraint
-```
-
-### ATM Calendar
-
-**When to use:** Low IV environment (< 0.65) + Ultra-predictable
-
-```
-Entry Conditions:
-  - IV Rank < 0.60 (thin premium on front month)
-  - σ < 0.10 (super stable stock)
-  - Entry debit small (< $0.30)
-  
-Profit Exit:
-  - 25% of entry debit (half-profit)
-  - Exit 5 days before front-month expiration
-```
-
-### Jade Lizard
-
-**When to use:** Directional bias + Medium dispersion (0.10-0.20)
-
-```
-Entry Conditions:
-  - Clear directional bias from IV skew
-  - σ 0.10-0.20 (moderate)
-  - IV Rank > 0.80 (rich premium on short side)
-  - Entry credit > $1.00
-  
-Profit Exit:
-  - 50% of entry credit
-  - Can close spread side early if protective
-```
-
----
-
-## Real-World Application: Daily Workflow
-
-### Step 1: Morning Scan (7:00 AM ET)
-
-```
-For each earnings candidate:
-1. Calculate: realized_move_dispersion (σ)
-2. Calculate: current IV Rank
-3. Fetch: expected move from option chain
-4. Compute: realized_move_ratio
-5. Check: GATES (all must pass)
-6. Run: Decision tree → PRIMARY → SECONDARY → TERTIARY
-7. Assign: Optimal strategy + tier ranking
-```
-
-### Step 2: Entry Window (3:30-3:55 PM ET)
-
-```
-For Tier 1 candidate (AAPL, SHORT_STRADDLE recommended):
-1. Verify: Entry conditions still met (re-check σ, IV)
-2. Generate: Order spec
-   - Sell ATM call + put
-   - Entry credit target: $4.50-5.00
-   - Profit target: 50% ($2.25-2.50)
-3. Submit: Order
-4. Post-fill: Set exits (backstop, delta stops)
-```
-
-### Step 3: Exit Management
-
-```
-For each position:
-- Monitor: Profit target (auto-exit if hit)
-- Monitor: 4-hour post-announcement backstop
-- Monitor: Per-leg delta stops (0.60 for naked)
-- Exit: Whichever trigger hits first
-```
-
----
-
-## Example: 10-Day Framework Test
-
-**Test Date Range:** 2026-07-08 to 2026-07-19
-
-**Results:**
-- Total candidates: 26
-- Rejected (failed gates): 0
-- SHORT_STRADDLE: 10 (38.5%)
-- IRON_FLY: 12 (46.2%)
-- ATM_CALENDAR: 4 (15.4%)
-
-**Why distribution makes sense:**
-- **Days with HIGH IV (07/09, 07/11, 07/16):** SHORT_STRADDLE dominated (67% of those days)
-- **Days with MEDIUM IV (07/08, 07/12, 07/15):** IRON_FLY dominated (71% of those days)
-- **Days with LOW IV (07/10, 07/17):** ATM_CALENDAR chosen (100% of those days)
-
-Framework successfully adapts to market regime changes.
+Read the `reason` field on each symbol in the output. A quiet night with mostly
+`rejected_no_viable_strategy` or `tier_excluded` outcomes isn't a bug — it means nothing on that
+night's calendar cleared any strategy's hard filters. See
+[Screening Criteria](./screening-criteria.md) for what each specific rejection reason means.
 
 ---
 
 ## Adjusting Thresholds
 
-### If Too Many Rejections
-- Lower `max_realized_move_dispersion_pct` (0.15 → 0.20)
-- Lower `min_iv_rank` (0.15 → 0.10)
-- Relax time gates
-
-### If Too Many Naked Strategies
-- Raise `ultra_predictable_dispersion` (0.08 → 0.10)
-- Lower `realized_move_ratio_threshold` (1.10 → 1.05)
-
-### If Not Enough Spreads
-- Lower IV Rank thresholds for IRON_FLY
-- Increase dispersion acceptable range
-
----
-
-## Advanced: Dispersion Calculation
-
-Realized move dispersion is the **standard deviation of earnings move magnitudes** over the past 8 earnings:
-
-```
-Realized moves (past 8 quarters): [1.2%, 1.5%, 1.8%, 1.1%, 2.0%, 1.4%, 1.3%, 1.6%]
-
-Mean = (1.2+1.5+1.8+1.1+2.0+1.4+1.3+1.6) / 8 = 1.48%
-
-Variance = sum((move - mean)^2) / 8 = 0.136
-
-Dispersion (σ) = sqrt(variance) = 0.0369 = 3.69%
-```
-
-**Interpretation:**
-- σ = 1-2% → Ultra-predictable (blue chips)
-- σ = 2-5% → Normal (most stocks)
-- σ = 5-10% → Volatile (biotech, small-cap)
-- σ > 10% → Too unpredictable (rejected)
-
----
-
-## Testing Entry Conditions
-
-To validate framework:
-
-```bash
-python run_strategy_selection_test.py --date 2026-07-08 --days 10
-```
-
-This simulates 10 days of earnings scans and shows strategy distribution.
-
-**Expected:** Diverse distribution (mostly IRON_FLY, some SHORT_STRADDLE, some calendar).
-
----
-
-## Next Steps
-
-1. **Verify thresholds** against live market data for your broker
-2. **Test decision tree** against 30 prior earnings (mock trades)
-3. **Adjust dispersion & IV gates** based on your win-rate targets
-4. **Monitor strategy selection** in real trading to refine thresholds
+There's no separate "entry condition" config block distinct from each strategy's own — every
+threshold mentioned above lives under `strategies.<name>` in `config/config.json`. See
+[Configuration Guide](./03-configuration.md) for the full parameter list per strategy, and
+`docs/strategy-optimization.md`'s "do not blind-tune" protocol before changing anything based on
+a single night's result: change one parameter, run a real sample through
+`strategy_test_runner.py`'s paper program, and compare cost-adjusted expectancy before deciding
+it actually helped.
 
 ---
 
 ## Navigation
 
-**← Previous:** [Configuration Guide](./03-configuration.md)  
+**← Previous:** [Configuration Guide](./03-configuration.md)
 **Next →** [Strategy Guide](./05-strategies.md)

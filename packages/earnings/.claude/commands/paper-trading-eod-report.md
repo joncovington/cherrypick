@@ -303,4 +303,4 @@ Report will be ready for review by 4:15 PM ET.
 - `SLASH_COMMANDS_GUIDE.md` — Complete usage guide
 - `PAPER_TRADING_SYSTEM_COMPLETE.md` — System overview
 - `docs/08-trading-workflow.md` — Daily workflow details
-- `docs/CORRECTED_EXECUTION_TIMELINE.md` — Exit timing explanation
+- `docs/10-exits.md` — Exit timing explanation

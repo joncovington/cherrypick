@@ -139,7 +139,7 @@
       "near_miss_min_combined_option_volume": 200
     },
 
-    "expected_move_butterfly": {
+    "reverse_fly": {
       "_note": "1 long ATM + 2 short at the expected-move strike + 1 long further OTM, equidistant (ATM-to-short == short-to-far). Side (call or put) picked via a 25-delta risk reversal (skew_delta_target) -- the industry-standard delta-symmetric skew measure, NOT compared at the expected-move strikes themselves (which aren't delta-symmetric once skew is present, and would conflate structural single-name put skew -- present on most names regardless of any earnings catalyst -- with a real earnings-specific signal). min_skew_abs is a reasoned starting point -- small enough not to reject every candidate, large enough to filter pure noise -- but does not fully correct for structural skew, which would need a per-name pre-earnings skew baseline this project doesn't have data for. Not backtested for this strategy.",
 
       "min_price": 10.00,

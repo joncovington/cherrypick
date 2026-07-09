@@ -160,6 +160,34 @@ $5-10 on stocks is typical, and a credit-multiple approach is fine.
 
 ---
 
+## 8. ATM bid-ask spread gate (`max_bid_ask_spread_pct`) — flagged for review
+
+**Observation (2026-07-09):** DAL — a $61B-market-cap, high-volume name, otherwise clean on
+every other criterion (term structure, expected move, delta, OI, weekly options) — was
+hard-rejected across all 7 strategies for `bid_ask_spread_too_wide`: measured ATM spread
+16.47% vs. the `max_bid_ask_spread_pct` 0.15 cap, a ~1.5-point miss. Single data point, not
+acted on yet — this section exists to track whether it recurs.
+
+**Current:** `max_bid_ask_spread_pct 0.15` (shared liquidity gate, `scanner.py:622-625`),
+documented in `config.example.json` as "generous enough not to reject normal earnings-week
+widening but catches genuinely illiquid chains" — a reasoned starting point, not backtested.
+
+**Why not act now:** one miss on one liquid name doesn't distinguish "threshold too tight"
+from "this stock's spread genuinely widened that night." Per the protocol below, this needs
+`scan_log` data across the accumulation window, not a single anecdote. Loosening it isn't
+free either — `costs.py`'s slippage haircut scales with spread width, so admitting wider-spread
+names also directly worsens cost-adjusted expectancy on those trades, partially offsetting any
+gain from more samples.
+
+**Review checkpoint: ~2026-07-23 (two weeks out).** Query `scan_log` (`profile='strat_test'`)
+for how often `bid_ask_spread_too_wide` appears as a rejection reason, how close the misses
+run (median/max overage), and whether it disproportionately hits otherwise-qualifying liquid
+names (high market cap / high volume) rather than genuinely illiquid ones. If it's a frequent,
+narrow-miss reason on liquid names, that's the signal to test loosening it (e.g. 0.15 → 0.18);
+if it's rare or mostly hitting genuinely thin names, leave it as-is.
+
+---
+
 ## Prioritized test queue
 
 Evaluate in this order, one parameter at a time, only once a strategy clears the **30-trade
@@ -173,6 +201,8 @@ directional gate** (see `docs/strategy-testing-plan.md`):
 5. **Calendar front-leg DTE** placement (§4).
 6. **Stop** 1.5× vs 2.0× (§6).
 7. Wing width (§7) — only if needed.
+8. **Bid-ask spread gate** (§8) — revisit at the 2026-07-23 checkpoint once `scan_log` shows
+   whether `bid_ask_spread_too_wide` is a frequent narrow-miss on otherwise-liquid names.
 
 ## Protocol (do not blind-tune)
 

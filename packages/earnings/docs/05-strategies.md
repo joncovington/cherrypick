@@ -1,528 +1,244 @@
-# Complete Strategy Guide: All 7 Strategies Explained
+# Strategy Guide
 
-Deep dive on structure, entry conditions, exits, and when to use each strategy. Every
-strategy is **defined-risk** — max loss is known at entry. Undefined-risk/naked strategies
-were deliberately removed, since a naked short on a single-name earnings gap can blow out
-arbitrarily during the unmonitored overnight hold.
+Structure, entry gates, and exit rules for all seven strategies. Every strategy is
+**defined-risk** — max loss is known at entry. Undefined-risk/naked strategies were deliberately
+excluded: a naked short on a single-name earnings gap can blow out arbitrarily during the
+unmonitored overnight hold this system is built around.
+
+Two shared facts apply to every strategy below, so they aren't repeated seven times:
+
+- **Exit mechanics are the same shape for all seven** — a Step 3c early-exit check (profit
+  target / stop loss, checked against live quotes the first morning after entry, from market
+  open until `close_window_start`) followed by Step 3's unconditional close-window backstop
+  (whatever's still open gets closed regardless of P&L). See
+  [Exit Strategy Guide](./10-exits.md) for the exact formulas. There is no same-day, hours-
+  after-the-announcement exit anywhere in this system.
+- **Every strategy shares the same liquidity/quality gates** (price floor, bid-ask spread,
+  market cap, option volume, open interest, IV/RV ratio, winrate) with its own threshold values
+  — see [Screening Criteria](./screening-criteria.md) for the full shared-gate reference and
+  [Configuration Guide](./03-configuration.md) for every strategy's actual current numbers.
 
 ---
 
 ## Strategy Overview Matrix
 
-| # | Strategy | Entry | Risk | Entry Condition | Exit Target | Best For |
-|---|----------|-------|------|---|---|---|
-| 1 | **Reverse Fly** | Long ATM + short wings | Defined | Gap premium (ratio > 1.10) | 50% credit | Capture IV crush + gap |
-| 2 | **Iron Fly** | Short ATM + long wings | Defined | Medium IV + σ < 0.20 | 50% credit | Balanced risk/reward |
-| 3 | **Iron Condor** | Short OTM spread both sides | Defined | Wide range + σ < 0.25 | 50% credit | Directional-neutral |
-| 4 | **Directional Spread** | Short call/put + long hedge | Defined | Directional + IV skew | 50% credit | One-sided move |
-| 5 | **Broken Wing Butterfly** | Short wide middle + long narrow wings | Defined | IV skew + σ < 0.20 | 50% credit | Asymmetric moves |
-| 6 | **ATM Calendar** | Short front + long back call | Defined | Low IV + σ < 0.10 | 25% debit | Term structure edge |
-| 7 | **Double Calendar** | Short call + short put (both front) | Defined | Low IV + both sides quiet | 25% debit | Symmetric term structure |
+| # | Strategy | Structure | Entry | Best For |
+|---|----------|-----------|-------|----------|
+| 1 | `iron_fly` | Short ATM straddle + long OTM wings | Credit | Medium IV, balanced risk/reward |
+| 2 | `iron_condor` | Short strangle at expected-move boundaries + wings | Credit | Wide expected range, directional-neutral |
+| 3 | `directional_credit_spread` | Single-sided vertical credit spread (side by skew) | Credit | Directional bias / IV skew |
+| 4 | `broken_wing_butterfly` | Body-anchored butterfly, asymmetric wings (skew) | Credit | Asymmetric expected moves |
+| 5 | `reverse_fly` | Long ATM straddle + short OTM wings | Debit | Historically bigger-than-priced-in moves |
+| 6 | `atm_calendar` | Short front-month ATM call + long back-month same strike | Debit | Low IV, term-structure edge |
+| 7 | `double_calendar` | ATM-ish calendar on both call and put side | Debit | Low IV, symmetric term structure |
 
 ---
 
-## 1. REVERSE FLY (Defined Risk)
+## 1. Iron Fly
 
-### Structure
+**Structure:** Sell the ATM call and put (a short straddle), buy protective OTM wings on both
+sides. Wing width is picked from IV/RV-banded multiples of the credit received
+(`wing_width_multiple_low/mid/high`, default 2.5×/3.0×/3.5×, scaled to this candidate's own
+IV/RV ratio — richer IV/RV earns a wider, more protective wing).
 
-```
-LONG ATM Call    (e.g., 150 call)
-SHORT ATM Call   (e.g., 150 call) x2
-LONG ATM Call    (e.g., 150 call)
-Minus:
-SHORT ATM Put    (e.g., 150 put)
-LONG ATM Put     (e.g., 150 put) x2
-SHORT ATM Put    (e.g., 150 put)
+**Entry gate:** negative term structure (front IV meaningfully above back IV,
+`min_term_structure`), expected move above a dollar floor, ATM delta sanity check
+(`max_atm_delta_abs`), plus the shared IV/RV/winrate/liquidity gates.
 
-Simplification: Long ATM straddle + short OTM wings
-Entry: Collect $2.00 (long straddle costs $1.00, wings collected)
-Max Profit: Limited to max credit
-Max Loss: DEFINED at wing width - credit
-```
-
-### Entry Conditions
-
-- **Realized Move Ratio** > 1.10 (gap premium detected)
-- **Dispersion** < 0.30 (not too unpredictable despite gap)
-- **Entry Credit** > $1.50 (worth the long straddle cost)
-
-### Exit Strategy
-
-**Primary:** 50% of max credit
-- Profit target: Half the net credit collected
-- Take at this level
-
-**Secondary:** Max defined loss
-- Stop if position drops below -100% of max loss
-- Max loss = wing width - credit
-
-### Real-World Example
+**Exit:** `evaluate_credit_spread_exit()` — default 50% of credit as the profit target, 1.5×
+credit as the stop.
 
 ```
-BioTech Stock, Gap Premium Detected, realized_move_ratio = 1.25
-
-Entry (day-of):
-  Long ATM 100 call - costs $2.50
-  Short ATM 100 call - receives $2.50
-  (Net so far: $0, call straddle is flat)
-  
-  Long ATM 100 put - costs $2.50
-  Short ATM 100 put - receives $2.50
-  (Net so far: $0)
-  
-  Buy OTM 108 call for $0.50
-  Buy OTM 92 put for $0.50
-  Net: PAYING $1.00 (wings cost, not collect)
-  
-Wait, that's a debit, not credit! Correction:
-
-Entry (corrected):
-  Sell ATM 100 call for $2.50
-  Buy ATM 100.50 call for $2.40
-  Net call spread: $0.10 credit
-  
-  Sell ATM 100 put for $2.50
-  Buy ATM 99.50 put for $2.40
-  Net put spread: $0.10 credit
-  
-  Total entry credit: $0.20
-  Max loss: ($0.50 spread width) - $0.20 credit = $0.30
-  Win rate: High because you only collect small credit but get defined loss
+Sell 150 call / Buy 158 call
+Sell 150 put / Buy 142 put
+Entry credit: $0.80/spread
+Profit target: $0.40  (50%)
+Stop loss: $1.20       (1.5x)
+Max loss: wing width - credit = $8.00 - $0.80 = $7.20
 ```
 
-### Why It Works
-
-- Captures gap premium (earnings surprise premium)
-- But defined risk protects on the downside
-- Better than long straddle (you're selling premium, not just buying)
-
-### Risk Profile
-
-- ✓ Gap premium capture ($1.50-3.00 credit)
-- ✓ Defined max loss (manageable)
-- ✓ Good for portfolios with risk constraints
-- ✗ Net debit to enter (pays for the long straddle)
-- ✗ Complex structure
+Most common strategy in this system's day-to-day scans — a straightforward, symmetric
+IV-crush play. See [Screening Criteria](./screening-criteria.md) for the exact hard-filter
+numbers, since `iron_fly` is that doc's reference implementation.
 
 ---
 
-## 2. IRON FLY (Defined Risk)
+## 2. Iron Condor
 
-### Structure
+**Structure:** Same credit-spread-plus-wings shape as `iron_fly`, but the short strikes sit at
+the expected-move boundary (price ± expected move) instead of ATM — a short strangle, not a
+short straddle. Wider profit zone, lower credit, a genuinely different historical win-rate
+profile than `iron_fly`, not just a config variant of it.
 
-```
-SELL ATM Call    (e.g., 150 call)
-BUY  OTM Call    (e.g., 158 call)  - 8% OTM
-SELL ATM Put     (e.g., 150 put)
-BUY  OTM Put     (e.g., 142 put)   - 8% OTM
+**Entry gate:** expected move above a percentage floor (`min_expected_move_pct`), negative term
+structure, plus the shared gates.
 
-Entry:   Collect $1.20 (net of short ATM, long wings)
-Max Profit:  $1.20 (if ATM stays safe)
-Max Loss:  DEFINED at wing width - credit = $8.00 - $1.20 = $6.80
-```
-
-### Entry Conditions
-
-- **Dispersion** < 0.20 (medium predictability)
-- **IV Rank** 0.75-1.00 (medium premium)
-- **Entry Credit** > $0.80 (economical)
-- **Realized Move Ratio** < 1.10 (normal IV crush regime)
-
-### Exit Strategy
-
-**Primary:** 50% profit target
-- Entry credit: $1.20
-- Profit target: $0.60
-- Exit at this level
-
-**Secondary:** Per-leg delta stops (0.45 for spreads)
-- Monitor short call + put deltas
-- Exit if either reaches 0.45
-
-**Tertiary:** 4-hour backstop
-- Exit at 4 hours post-announcement
-
-### Real-World Example
+**Exit:** same `evaluate_credit_spread_exit()` shape as `iron_fly` — 50% profit target, 1.5×
+stop by default.
 
 ```
-JPM Earnings, Medium IV, Dispersion = 0.045
-
-Entry (3:50 PM):
-  Sell 150 call for $1.50
-  Buy 158 call for $0.30
-  Net call spread: $1.20 credit
-  
-  Sell 150 put for $1.30
-  Buy 142 put for $0.10
-  Net put spread: $1.20 credit
-  
-  Total entry credit: $0.80 per spread
-  Max loss: $8.00 width - $0.80 = $7.20
-  Profit target: 50% of $0.80 = $0.40
-
-Post-announcement outcomes:
-  Stock at 150:      Max profit ($0.40 realized)
-  Stock at 152:      Profit $0.35 (still safe)
-  Stock at 156:      Profit $0.10 (getting close to wings)
-  Stock at 160:      Max loss ($7.20) hit
-  
-  But max loss is KNOWN upfront, easy to size
+Stock at 100, expected move $3.00 (3%)
+Sell 103 call / Buy 105 call — $0.30 credit
+Sell 97 put / Buy 95 put — $0.30 credit
+Entry credit: $0.60, max loss $5.00 - $0.60 = $4.40
+Profit zone: roughly 97 to 103 — wider than iron_fly's ATM-centered zone
 ```
-
-### Why It Works
-
-- Balanced: high entry credit ($0.80-1.50) but defined risk
-- Medium IV makes it economical
-- Wings protect if stock moves 6-8%
-- Most common strategy for earnings plays
-
-### Risk Profile
-
-- ✓ Defined risk (easy to size positions)
-- ✓ Good entry credit ($0.80-1.50)
-- ✓ Flexible wing widths (3x, 6x, 8x credit)
-- ✓ Works in most market conditions
-- ✗ Requires wider wings than normal for earnings
-- ✗ Wing cost caps the credit vs. an unhedged short (the defined-risk trade-off)
 
 ---
 
-## 3. IRON CONDOR (Defined Risk)
+## 3. Directional Credit Spread
 
-### Structure
+**Structure:** A single-sided vertical credit spread — sell a put spread if bullish, a call
+spread if bearish. Side is picked by a 25-delta risk reversal (`scanner.select_side()`, the same
+skew calculation `broken_wing_butterfly` and `reverse_fly` reuse): sell whichever side (calls or
+puts) is carrying richer IV.
 
-```
-Short Call Spread:
-  SELL OTM Call    (e.g., 155 call)
-  BUY  OTM Call    (e.g., 160 call)
-  Net credit: $0.30
+**What makes this genuinely directional, not just half an iron condor:** the short strike isn't
+placed directly at the expected-move boundary the way `iron_condor`'s is. Instead, the strike is
+chosen so that *breakeven* (short strike net of the credit received) lands at that boundary —
+the strike itself sits further OTM, with the credit providing the rest of the cushion. That
+means evaluating multiple candidate strikes at order-build time rather than a single formula
+lookup.
 
-Short Put Spread:
-  SELL OTM Put     (e.g., 145 put)
-  BUY  OTM Put     (e.g., 140 put)
-  Net credit: $0.30
+**Entry gate:** skew magnitude floor (`min_skew_abs`), expected move floor, negative term
+structure, plus the shared gates.
 
-Total entry:   $0.60 credit
-Max Loss:  DEFINED at width - credit = $5.00 - $0.60 = $4.40
-```
-
-### Entry Conditions
-
-- **Dispersion** < 0.25 (wide range OK)
-- **No directional bias** (move could be either direction)
-- **IV Rank** 0.60-0.95 (medium)
-- **Entry Credit** > $0.50
-
-### Exit Strategy
-
-**Primary:** 50% profit target
-- Entry: $0.60
-- Target: $0.30
-- Exit at level
-
-**Secondary:** Per-leg stops (0.45 delta)
-**Tertiary:** 4-hour backstop
-
-### Real-World Example
+**Exit:** same `evaluate_credit_spread_exit()` shape — 50% profit target, 1.5× stop by default.
 
 ```
-XOM Earnings, Expected Move: $3.00 (3%)
-
-Entry:
-  Stock at 100
-  Sell 103 call / Buy 105 call — collect $0.30
-  Sell 97 put / Buy 95 put — collect $0.30
-  Total: $0.60
-  
-Profit zone: 97 to 103 (wider than Iron Fly at ATM)
-
-Post-announcement:
-  Stock at 100: Max profit ($0.30)
-  Stock at 101: Profit $0.20
-  Stock at 102: Profit $0.10
-  Stock at 103: Call spread at edge, breakeven
-  Stock at 104: Call spread losing, put spread still safe
-  Stock at 105: Max loss on call side ($4.40)
+Tech stock, calls richer than puts (bearish skew signal)
+Sell 155 call / Buy 160 call
+Net credit: $0.40, max loss $5.00 - $0.40 = $4.60, breakeven near 155.40
 ```
-
-### Why It Works
-
-- One-directional expected move? Offset the bias with wider put spread vs call
-- Iron Condor is symmetrical; good when no directional bias
-- Wide profit zone (good win rate)
-
-### Risk Profile
-
-- ✓ Defined risk
-- ✓ Wider profitable range than Iron Fly
-- ✓ Good for neutral moves
-- ✗ Lower credit than Iron Fly at ATM
-- ✗ Requires two spreads (twice the management)
 
 ---
 
-## 4. DIRECTIONAL SPREAD (Defined Risk)
+## 4. Broken Wing Butterfly
 
-### Structure
+**Structure:** Body-anchored, no ATM leg — two short contracts at the expected-move strike
+(side picked by the same 25-delta risk reversal as `directional_credit_spread`), protected by a
+narrow long wing toward current price and a wide long wing away from it. The near wing scales
+off the body leg's own premium via IV/RV-banded multiples (`wing_width_multiple_low/mid/high`,
+default 1.0×/1.25×/1.5× — deliberately smaller than `iron_fly`'s bands, since this prices a
+single leg, not a straddle); the far wing is `wide_wing_multiple` (default 2.5×) times the near
+wing.
 
-```
-Bullish example:
-  SELL OTM Put Spread
-    Sell 95 put / Buy 90 put
-    Net credit: $0.40
-    
-Bearish example:
-  SELL OTM Call Spread
-    Sell 155 call / Buy 160 call
-    Net credit: $0.40
+**A hard rule at order-build time:** `get_order` rejects any candidate that doesn't price out to
+a net credit or breakeven. If the real premiums at these wing widths land as a net debit, the
+position didn't buy back enough premium to finance itself, and it's skipped rather than entered
+as a smaller-debit butterfly.
 
-Max Profit:  $0.40 (credit)
-Max Loss:  DEFINED (spread width - credit = $5.00 - $0.40 = $4.60)
-```
+**Entry gate:** skew magnitude floor, expected move floor, negative term structure not required
+(unlike the credit spreads above — this strategy doesn't gate on term structure), plus the
+shared gates.
 
-### Entry Conditions
-
-- **Directional bias** (clear IV skew)
-- **Dispersion** < 0.25
-- **Entry Credit** > $0.40
-
-### Exit Strategy
-
-**Primary:** 50% profit target ($0.20)
-**Secondary:** Per-leg delta stops
-**Tertiary:** 4-hour backstop
-
-### Real-World Example
+**Exit:** `evaluate_debit_spread_exit()` (despite pricing as a net credit, the exit math treats
+the position like a debit strategy's profit-zone check) — 25% profit target, 40% stop by
+default.
 
 ```
-Tech stock IV skew: calls expensive (high IV), puts cheap (low IV)
-
-Bearish strategy:
-  Sell 155 call for $0.50
-  Buy 160 call for $0.10
-  Net credit: $0.40
-  
-This is a "call spread" (bearish)
-If stock rallies too much past 155, you lose money (but capped)
+Earnings expected to move down (put side richer)
+Body: sell 2x 150 put (expected-move strike)
+Near wing: buy 1x 148 put (narrow, toward spot)
+Far wing: buy 1x 145 put (wide, away from spot)
 ```
-
-### Risk Profile
-
-- ✓ Defined risk
-- ✓ Directional positioning
-- ✓ Skew exploitation
-- ✗ Lower credit than Iron Fly
-- ✗ Requires directional conviction
 
 ---
 
-## 5. BROKEN WING BUTTERFLY (Defined Risk)
+## 5. Reverse Fly
 
-### Structure
+**Structure:** Long ATM straddle (long call + long put) plus short OTM wings above and below —
+a "reverse iron fly." Wing width is a flat percentage of the ATM strike (`wing_width_pct`,
+default 10%), not skew- or expected-move-anchored the way the credit strategies above are. Net
+debit; max profit and max loss are both capped at wing width minus the debit paid.
 
-```
-Short wide middle (e.g., sell 150 call, sell 150 put)
-Long narrow wings (e.g., buy 155 call, buy 145 put)
+**Entry gate — this is the strategy's real edge, and it's a different kind of signal than every
+other strategy here:** rather than gating on IV/RV ratio pricing the *options* rich, this
+strategy checks whether the *stock itself* has historically moved more than its own options
+priced in (`realized_move_pct >= expected_move_pct * min_realized_move_ratio`, default ratio
+`1.10`) — a persistent gap-premium pattern, plus a ceiling on how inconsistent those historical
+moves can be (`max_realized_move_dispersion_pct`, default `0.30`) so the edge isn't just noise.
 
-Net: Wider on one side, narrower on other
-
-Entry:   Collect $0.40
-Max Profit:  $0.40
-Max Loss:  DEFINED (asymmetric)
-```
-
-### Entry Conditions
-
-- **IV skew** favors asymmetric structure
-- **Dispersion** < 0.20
-- **Entry Credit** > $0.30
-
-### Exit Strategy
-
-**Primary:** 50% profit target
-**Secondary:** Per-leg delta stops
-**Tertiary:** 4-hour backstop
-
-### Real-World Example
+**Exit:** `evaluate_debit_spread_exit()` — 25% profit target, 40% stop by default.
 
 ```
-Earnings expected to move down (IV skew shows put premium high)
-
-Entry:
-  Sell 150 call for $1.50
-  Buy 155 call for $0.40
-  Net call spread: $1.10 credit
-  
-  Sell 150 put for $2.00
-  Buy 145 put for $0.80
-  Net put spread: $1.20 credit
-  
-But we break the wings:
-  Use $1.10 call credit + only $0.40 put credit = $1.50 total
-  (Not symmetric — wider on call side, narrower on put side)
-  
-Result: Asymmetric profit zone, takes advantage of skew
+Stock with a track record of earnings moves exceeding its own priced-in expected move
+Long ATM 100 call + long ATM 100 put (long straddle)
+Short 110 call + short 90 put (10% wings)
+Net debit paid, max loss/profit both capped at wing width minus debit
 ```
-
-### Risk Profile
-
-- ✓ Skew exploitation
-- ✓ Defined risk
-- ✓ Asymmetric P&L
-- ✗ Complex structure
-- ✗ Requires IV skew reading
 
 ---
 
-## 6. ATM CALENDAR (Defined Risk)
+## 6. ATM Calendar
 
-### Structure
+**Structure:** Sell a front-month ATM call, buy the same strike in a later monthly expiration.
+Always the call side — literature treats call and put ATM calendars as performing virtually
+identically, so this is a config-fixed choice, not a computed one. Always closes as a single
+2-leg unit (`legs_json`, never `trade_legs`).
 
-```
-SELL Front-month ATM Call (30 DTE)
-BUY  Back-month ATM Call  (60 DTE)
+**Entry gate:** negative term structure (the core signal — front IV must be inflated relative to
+back), `back_month_min_days_after` (back-month must land a documented distance past the front),
+plus the shared gates. No expected-move-boundary filter — this is a pure ATM term-structure
+play, not targeting where the stock lands.
 
-Entry:   PAY debit $0.30 (long back more expensive than short front)
-Max Profit:  Front expires worthless, back still has value (~$0.20)
-Max Loss:  DEFINED at entry debit = $0.30
-```
-
-### Entry Conditions
-
-- **IV Rank** < 0.60 (low premium environment)
-- **Dispersion** < 0.10 (ultra-stable)
-- **Entry Debit** small (< $0.30)
-
-### Exit Strategy
-
-**Primary:** 25% of entry debit (half-profit)
-- Entry: -$0.30
-- Target: Close for -$0.15 (half back)
-- Profit: $0.15
-
-**Secondary:** 5 days before front expiration
-- Exit remaining position
-- Don't let back-month expire, roll forward
-
-### Real-World Example
+**Exit:** `evaluate_debit_spread_exit()` at a looser 30%/100% target/stop (the position tolerates
+more round-trip noise since it decays over days, not hours), plus a hard time-stop
+(`exit_days_before_front_expiration`, default 5 days) — once the front leg is within 5 days of
+expiring, gamma risk on the short ATM option overwhelms any remaining theta benefit.
 
 ```
-Quiet stock, low IV, no gap expected
-
-Entry (3 weeks out):
-  Sell front-month 150 call for $0.50
-  Buy back-month 150 call for $0.80
-  Net debit: $0.30 paid
-
-Time decay works:
-  As weeks pass, front loses value faster
-  Back loses value slower (far-out still has theta)
-  Calendar spread narrows: pay $0.30, sell for $0.15 = profit $0.15
-
-Exit timing: 5 days before expiration or profit target
+Sell front-month 150 call ($0.40) / Buy back-month 150 call ($0.70)
+Entry debit: $0.30
+Profit target: 30% → close once back-front spread narrows to ~$0.21
 ```
-
-### Why It Works
-
-- Front-month IV crush after earnings = fast decay
-- Long back-month benefits from term structure
-- Low IV makes front cheap to sell
-
-### Risk Profile
-
-- ✓ Defined risk (entry debit is max loss)
-- ✓ Low capital requirement
-- ✓ Time decay works for you
-- ✓ Good for boring stocks
-- ✗ Low profit ($0.15 on $0.30 debit = 50% ROI)
-- ✗ Requires good timing (sell before crush, buy back after)
-- ✗ Not profitable if stock moves big (calendar spreads love stillness)
 
 ---
 
-## 7. DOUBLE CALENDAR (Defined Risk)
+## 7. Double Calendar
 
-### Structure
+**Structure:** An ATM calendar run on both the call and put side simultaneously — sell
+front-month calls and puts at the expected-move boundaries, buy the same two strikes in a later
+monthly expiration. The only strategy whose two sides can close independently (`trade_legs`
+persistence, not just `legs_json`), managed via Step 3b's intraday `evaluate_position()` check.
 
-```
-SELL Front-month ATM Call (30 DTE)
-BUY  Back-month ATM Call  (60 DTE)
-SELL Front-month ATM Put  (30 DTE)
-BUY  Back-month ATM Put   (60 DTE)
+**Entry gate:** stricter liquidity/volume floors than every other strategy — execution cost
+matters more across two expirations, and a tail-risk surprise hurts a debit trade worse than a
+width-defined credit strategy's max loss. Also gates on `max_realized_move_dispersion_pct` (how
+consistent the underlying's historical earnings moves have been), since this structure leans on
+the expected-move assumption more than a single-expiration credit spread does.
 
-Entry:   PAY debit $0.60 (both calendars pay)
-Max Profit:  Both expire worthless front, back still has value
-Max Loss:  DEFINED at $0.60
-```
-
-### Entry Conditions
-
-- **IV Rank** < 0.60 (low premium)
-- **Dispersion** < 0.10 (ultra-stable)
-- **No directional bias** (both sides same)
-
-### Exit Strategy
-
-**Primary:** 25% of entry debit (half-profit)
-- Entry: -$0.60
-- Target: Close for -$0.30 (half back)
-- Profit: $0.30
-
-**Secondary:** Exit 5 days before expiration
-
-### Real-World Example
+**Exit:** same 25%/100% target/stop shape and 5-day time-stop as `atm_calendar`, plus a per-side
+delta stop (`leg_stop_delta_abs`, default 0.45) checked during Step 3b — a side crossing this
+threshold gets closed independently while the other side, likely still healthy, stays open.
 
 ```
-Super quiet dividend stock, earnings expected to be boring
-
-Entry:
-  Sell front 150 call for $0.40
-  Buy back 150 call for $0.70
-  Call calendar: -$0.30
-  
-  Sell front 150 put for $0.40
-  Buy back 150 put for $0.70
-  Put calendar: -$0.30
-  
-  Total debit: -$0.60
-  Profit target: -$0.30 (half back)
+Sell front 150 call ($0.40) + front 150 put ($0.40)
+Buy back 150 call ($0.70) + back 150 put ($0.70)
+Total entry debit: $0.60 (both calendars)
 ```
-
-### Why It Works
-
-- Symmetric (both sides capture time decay)
-- Works on very stable stocks
-- Double the theta decay benefit
-
-### Risk Profile
-
-- ✓ Symmetric profit zone
-- ✓ Very low risk
-- ✗ Lowest profit ($0.30 on $0.60 = 50% ROI)
-- ✗ Requires very quiet stocks
-- ✗ Max profit very small
 
 ---
 
-## Strategy Selection Quick Reference
+## Strategy Selection at a Glance
 
-**Want the most premium at the ATM?** → IRON_FLY (most common; short ATM straddle + wings)
+There's no fixed lookup table mapping a market condition to a strategy — `rank_strategies.py`
+evaluates all seven against every symbol and picks whichever scores highest among those that
+clear their own tiering. As a rough mental model of what tends to win under which conditions:
 
-**Want a wider profit zone?** → IRON_CONDOR
+- **Rich IV/RV, negative term structure, no strong skew** → `iron_fly` or `iron_condor`
+  (the choice between them is a scoring outcome, not a rule — see
+  [Entry Conditions Framework](./04-entry-conditions.md))
+- **Clear directional skew** → `directional_credit_spread` or `broken_wing_butterfly`
+- **A name with a track record of moving more than its own options price in** → `reverse_fly`
+- **Low IV, clean term-structure edge, quiet historical moves** → `atm_calendar` or
+  `double_calendar`
 
-**Expect gap premium (realized > expected move)?** → REVERSE_FLY
-
-**Directional bias / IV skew?** → DIRECTIONAL_SPREAD or BROKEN_WING_BUTTERFLY
-
-**Low IV environment (term-structure edge)?** → ATM_CALENDAR or DOUBLE_CALENDAR
-
-**Unpredictable stock?** → Wider wings or calendar spreads
-
-Every option here is defined-risk — max loss is always known at entry.
+Every strategy here is defined-risk — max loss is always known at entry.
 
 ---
 
 ## Navigation
 
-**← Previous:** [Entry Conditions Framework](./04-entry-conditions.md)  
+**← Previous:** [Entry Conditions Framework](./04-entry-conditions.md)
 **Next →** [Earnings Scan Analysis](./06-scan-analysis.md)

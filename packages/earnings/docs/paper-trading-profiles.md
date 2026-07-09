@@ -43,27 +43,33 @@ starting-balance differences.
 
 ## Phasing
 
-### Phase 1 — foundation (this pass)
-- **Profiles config** — `profiles` block in `config.json`; `_load_config(profile)` layers
-  `strategy_defaults → per-strategy → profile overrides`. Backward-compatible when
-  `profile` is None.
-- **Code-enforced sizing** — new `src/sizing.py`. Given an order and the active profile,
-  it computes per-contract max loss, the risk budget (`capital × max_risk_per_trade_pct ×
+### Phase 1 — foundation (built)
+- **Profiles config** — `profiles` block in `config/config.json`; `scanner._load_config(profile)`
+  layers `strategy_defaults → per-strategy → profile overrides`. Backward-compatible when
+  `profile` is `None`.
+- **Code-enforced sizing** — `src/sizing.py`. Given an order and the active profile, it
+  computes per-contract max loss, the risk budget (`capital × max_risk_per_trade_pct ×
   risk_pct_multiplier`), and the resulting contract quantity — or rejects
-  `risk_cap_exceeded`. This replaces the agent applying the cap by hand in the loop, making
-  every night reproducible.
-- **DB attribution** — `trades` and `scan_log` gain a `profile` column; `trades` gains
+  `risk_cap_exceeded`. This replaces applying the cap by hand at entry time, making every
+  night reproducible.
+- **DB attribution** — `trades` and `scan_log` carry a `profile` column; `trades` carries
   `quantity` and `capital_at_risk`. Existing rows migrate to `profile = 'default'`.
 
-### Phase 2 — parallel books
-- Loop Step 4b runs the shared scan once, then iterates enabled profiles; each applies its
-  own tier floor / sizing and opens into its own book (same paper DB, tagged by `profile`).
-  Close logic (Steps 3/3b/3c/3d) already keys on open positions — it simply processes every
-  open position regardless of profile.
+### Phase 2 — parallel books (not yet built)
+- Today, running more than one profile means invoking `strategy_test_runner.py run_entries
+  --profile <name>` separately for each profile you want to compare — there's no single loop
+  pass that automatically iterates every enabled profile in one shot yet. Each invocation
+  still writes into the same paper database, correctly tagged by `profile`, so results from
+  separate runs are directly comparable; it's just a manual step to run each one rather than
+  an automatic parallel-books mechanism.
+- Close logic (Steps 3/3b/3c/3d) already keys on open positions regardless of profile, so
+  closing works correctly across profiles today even without this automation.
 
-### Phase 3 — analysis + promotion
-- `src/compare_profiles.py` — over a date range, per profile: trades, win rate, expectancy,
-  total/avg P&L, max drawdown, capital-at-risk utilization, and rejection-reason histogram.
+### Phase 3 — analysis + promotion (not yet built)
+- No `compare_profiles.py` exists yet. Until it does, compare profiles by running
+  `python src/strategy_report.py --profile <name>` (or `strategy_dashboard.py`) once per
+  profile and reading the numbers side by side — the same underlying `strategy_metrics.py`
+  computations Phase 3 would eventually automate into a single head-to-head report.
 - Promotion doc: after N weeks, copy the winning profile's parameter block into the live
   config root and flip `enable_live_trading` only after review.
 

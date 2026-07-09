@@ -1,250 +1,242 @@
-# Glossary: Earnings Agent Terms & Definitions
+# Glossary
 
 ---
 
-## Entry Conditions
+## Core Signals
 
-**Dispersion (σ)**  
-Standard deviation of historical earnings move magnitudes over past 8 quarters. Measures move consistency/predictability. Lower = tighter, more predictable. Typical range: 1-15%.
+**Term Structure**
+`(back_atm_iv - front_atm_iv) / back_atm_iv`, computed live via
+`scanner.compute_expected_move_and_term_structure()`. Negative and large in magnitude means the
+front month's IV is meaningfully inflated relative to the back month — the core "is there a real
+earnings-specific IV bump" signal most strategies gate on (`min_term_structure`, e.g. `-0.004`).
 
-**Expected Move**  
-Predicted stock movement around earnings, derived from at-the-money (ATM) option implied volatility and days to expiration. Formula: `(IV × √(DTE/365)) × Stock Price`. Example: 30% IV, 30 DTE, $100 stock = ~3.2% expected move.
+**IV/RV Ratio**
+Implied move vs. historical realized move, from `scanner.fetch_iv_rv_ratio()` against DoltHub's
+`volatility_history` table. Above 1.0 means the options are priced for more movement than the
+stock has actually delivered historically — the central "are these options overpriced" signal
+(`min_iv_rv_ratio`, e.g. `1.25`).
 
-**IV Rank (Implied Volatility Rank)**  
-Normalized IV metric (0.0-1.0) showing current IV as percentile of past 52-week range. 0.0 = lowest IV ever, 1.0 = highest IV ever. Used to identify premium environment: IV > 0.8 = rich, IV < 0.4 = thin.
+**Winrate**
+Historical percentage of past earnings where the option-implied move (ATM straddle mid) exceeded
+the actual realized move, over `winrate_lookback_quarters` (default 8). Computed by
+`scanner.compute_winrate()`. Always check the accompanying `sample_size` — Dolt's historical
+option-chain coverage only reaches back to roughly late 2024, so a "last 8 quarters" request can
+come back with a much smaller real sample, especially for less-liquid names.
 
-**Realized Move**  
-Actual stock movement on earnings announcement. Measured as (post-announcement price - pre-announcement price) / pre-announcement price. Example: Stock at $150 before, $153 after = 2% realized move.
+**Expected Move**
+The options-implied move around earnings, in percent (`min_expected_move_pct`) or dollar terms
+(`min_expected_move_dollars`), derived from ATM straddle pricing on the nearest expiration.
 
-**Realized Move Ratio**  
-Ratio of realized move dispersion (historical average) to expected move. Ratio > 1.10 = gap premium (stock moved more than IV suggested), ratio < 1.10 = normal regime.
+**Skew** (`min_skew_abs`, `skew_delta_target`)
+A 25-delta risk reversal — the IV difference between a delta-symmetric out-of-the-money call and
+put — used by `directional_credit_spread`, `broken_wing_butterfly`, and `reverse_fly` to pick
+which side (calls or puts) to sell/build around. Compared at a fixed delta target, not at the
+expected-move strikes themselves, since those aren't delta-symmetric once skew is present.
+
+**Composite Score**
+`abs(term_structure) * iv_rv_ratio * shrunk_winrate`, computed by
+`scanner.compute_composite_score()`. Used both to rank a single strategy's own candidates
+against each other and, via `rank_strategies.py`, to pick which strategy wins for a symbol that
+qualifies under more than one. `shrunk_winrate` pulls a thin-sample winrate toward a neutral 0.5
+prior in proportion to how far `sample_size` falls below the target lookback.
 
 ---
 
-## Option Greeks & Metrics
+## Option Greeks
 
-**Delta (Δ)**  
-Rate of change of option price for $1 move in stock. Call delta ranges 0.0-1.0, put delta ranges 0.0-(-1.0). Approximates probability of finishing in-the-money (ITM). Example: 0.50 delta = ~50% probability of being ITM at expiration.
+**Delta (Δ)**
+Rate of change of an option's price per $1 move in the underlying. Roughly approximates
+probability of finishing in-the-money. Used directly in `iron_fly`'s `max_atm_delta_abs` sanity
+check and `double_calendar`'s `leg_stop_delta_abs` intraday management trigger.
 
-**Implied Volatility (IV)**  
-Market's expectation of future volatility, backed out from option prices using Black-Scholes model. Higher IV = more expensive options, higher premiums. Range typically 10-100% annualized.
+**Theta (Θ)**
+Rate of option value decay per day from time passing. The core edge behind the calendar
+strategies (`atm_calendar`, `double_calendar`) — front-month theta decays faster than back-month.
 
-**Theta (Θ)**  
-Rate of option value decay per day due to time passing. Positive theta = position benefits from time decay (short options, calendar spreads). Negative theta = position loses value over time (long options).
+**Vega (ν)**
+Rate of change of option price per 1% change in IV. What actually gets captured by the overnight
+IV-crush edge this whole system is built around: short vega positions (credit strategies) profit
+when IV collapses after the earnings reaction.
 
-**Vega (ν)**  
-Rate of change of option price for 1% change in IV. Positive vega = position benefits from IV increase (long options). Negative vega = position benefits from IV decrease (short options, short straddles).
-
-**IV Crush**  
-Rapid drop in IV after earnings announcement, typically 20-60% in first 15-30 minutes. Short options (straddles, strangles) profit from IV crush. Long options (spreads with bought wings) lose from IV crush.
+**IV Crush**
+The rapid drop in implied volatility once earnings uncertainty resolves. This is the core edge
+every credit strategy in this system is built to capture — see
+[Exit Strategy Guide](./10-exits.md) for exactly when and how a position captures it.
 
 ---
 
-## Strategy Terms
+## Strategies (All Seven, All Defined-Risk)
 
-**At-The-Money (ATM)**  
-Option strike exactly at current stock price. Example: stock at $150, 150 strike = ATM. ATM options have highest theta decay and are most sensitive to stock movement.
+Full structure/entry/exit detail for each lives in [Strategy Guide](./05-strategies.md); this is
+a one-line reminder of the shape of each:
 
-**Out-of-The-Money (OTM)**  
-Option strike that is unprofitable if exercised immediately. Call OTM = strike > stock price, put OTM = strike < stock price. Example: stock at $150, 155 call = OTM.
+- **`iron_fly`** — short ATM straddle + long OTM wings.
+- **`iron_condor`** — short OTM put spread + short OTM call spread, strikes at the
+  expected-move boundary instead of ATM.
+- **`directional_credit_spread`** — a single-sided vertical credit spread, side chosen by skew.
+- **`broken_wing_butterfly`** — body-anchored (no ATM leg) butterfly with an asymmetric near/far
+  wing, sized to skew.
+- **`reverse_fly`** — long ATM + two shorts at the expected-move strike + a further long OTM,
+  aimed at gap-premium capture rather than IV crush.
+- **`atm_calendar`** — short front-month ATM call + long back-month same strike, single 2-leg
+  unit.
+- **`double_calendar`** — an ATM calendar run on both the call and put side, the only strategy
+  whose sides can close independently.
 
-**In-The-Money (ITM)**  
-Option strike that is profitable if exercised immediately. Call ITM = strike < stock price, put ITM = strike > stock price. Example: stock at $150, 145 call = ITM.
+Every strategy is **defined-risk** — max loss is known at entry. Undefined-risk/naked strategies
+(naked straddles, strangles, naked short verticals) were deliberately excluded from this system:
+a single-name earnings gap on a naked short can blow out arbitrarily during the unmonitored
+overnight hold.
 
-**Straddle**  
-Long or short position combining ATM call and ATM put. Long = pay debit, profit from big move. Short = collect credit, profit from no move (or small move). Most symmetric position structure.
+**At-The-Money (ATM) / Out-of-The-Money (OTM) / In-The-Money (ITM)**
+Standard option moneyness terms relative to the current stock price — ATM strike near spot, OTM
+unprofitable if exercised now, ITM profitable if exercised now.
 
-**Strangle**  
-Similar to straddle but OTM call and put (wider apart). Long = lower cost than straddle, requires bigger move. Short = lower credit than straddle, larger safety zone.
+**Straddle**
+A same-strike call+put position (long or short). `iron_fly`'s short straddle is the credit
+engine at the center of that strategy, hedged by long OTM wings.
 
-**Spread**  
-Two-leg position: short one strike, long another strike (or different expiration). Creates defined max loss. Example: Iron Fly short straddle with long wings is two spreads (call + put).
-
-**Iron Fly**  
-Defined-risk short ATM straddle with protective wings. Short ATM call + put, long OTM call + put. Max loss = wing width - credit collected.
-
-**Iron Condor**  
-Defined-risk position with call spread (short OTM call + long far OTM call) and put spread (short OTM put + long far OTM put). No directional bias. Max loss = spread width - credit.
-
-**Calendar Spread**  
-Position exploiting term structure: short front-month option, long back-month option (same strike, different expiration). Profits from front-month decay without back-month decay.
-
-**Jade Lizard**  
-Directional strategy combining defined-risk spread on one side with naked short on other side. Example: short call spread + naked put (bullish). Partial unlimited risk.
-
-**Broken Wing Butterfly**  
-Asymmetric spread using unequal wing widths. Exploits IV skew by making profit zone wider on one side than the other.
+**Wing / Wing Width**
+The long, further-OTM options that cap max loss in a credit structure. Wing width is normally
+picked from IV/RV-banded multiples (`wing_width_multiple_low/mid/high`) scaled to the
+candidate's own IV/RV ratio — see [Configuration Guide](./03-configuration.md).
 
 ---
 
 ## Position Management
 
-**Entry Credit**  
-Total premium received when entering a short position. Straddle might collect $5.00 credit. Profit target = 50% of entry credit.
+**Entry Credit / Entry Debit**
+Net premium received (credit strategies) or paid (debit strategies, e.g. the calendars and
+`reverse_fly`) at entry. Stored with a consistent sign convention in the database — see
+`CLAUDE.md`'s Database section.
 
-**Profit Target**  
-Exit point when position reaches profit threshold. Typical: 50% of max credit (for spreads/straddles), 25% of entry debit (for calendar spreads). Auto-exit trigger.
+**Profit Target** (`profit_target_pct`)
+Step 3c early-exit target, checked the first morning after entry — a fraction of max profit for
+credit strategies, or of max profit potential for debit strategies.
 
-**Max Loss (Max Risk)**  
-Maximum theoretical loss on position. Defined-risk strategies have known max loss. Naked strategies (straddle, strangle) have unlimited max loss.
+**Stop Loss** (`stop_loss_credit_multiple` for credit strategies, `stop_loss_pct_of_debit` for
+debit strategies)
+Step 3c early-exit stop threshold, checked alongside the profit target.
 
-**Per-Leg Delta Stop**  
-Stop-loss on individual legs. Example: "stop if call delta reaches 0.60". Protects against one-sided blowout. Used on naked/short strategies.
+**Close-Window Backstop**
+The unconditional exit (Step 3 in `CLAUDE.md`'s Loop Steps) that closes whatever's still open
+once `close_window_start` arrives, regardless of P&L. There's no same-day, hours-after-the-
+announcement backstop in this system — every strategy is either a single overnight hold or a
+multi-day calendar hold, closed out by this mechanism if nothing else has closed it first. See
+[Exit Strategy Guide](./10-exits.md).
 
-**4-Hour Backstop**  
-Hard exit 4 hours post-announcement. Ensures you exit after IV crush peak (typically 15-30 min post-announcement, fades over 4 hours). Safety mechanism to avoid extending positions.
+**`leg_stop_delta_abs`**
+`double_calendar`-specific per-side delta threshold, checked during its intraday management
+(Step 3b). A side crossing this gets closed independently of the other side.
 
-**Defined risk**  
-Every strategy in the system has a maximum loss known at entry, computed from the order's own
-strikes/debit (see `src/sizing.py`). Undefined-risk/naked strategies were removed — a naked
-short on a single-name earnings gap can blow out arbitrarily during the unmonitored overnight
-hold.
+**Defined Risk / Undefined Risk**
+Defined-risk: maximum loss is known at entry (every strategy in this system). Undefined risk:
+maximum loss is theoretically unbounded (naked strategies — deliberately not implemented here).
 
-**Wide Wings**  
-Extended protective wings in spread. Normal Iron Fly has 3x wing width, wide-wing Iron Fly has 8x wing width. Wider wings ≈ closer to naked behavior while staying defined-risk.
+**Tier 1 / Tier 2 / Near Miss / Reject**
+Per-strategy classification from that strategy's own `apply_tiering()`. Tier 1 clears every hard
+filter and every additional criterion at the "pass" band; Tier 2 clears every hard filter with
+exactly one criterion in its near-miss band; Near Miss clears hard filters but has multiple
+near-miss criteria; Reject fails a hard filter outright. Only Tier 1/2 are eligible for entry.
+See [Screening Criteria](./screening-criteria.md).
 
----
+**Position Sizing**
+Number of contracts per leg, computed by `src/sizing.py`'s `compute_position_size` to keep max
+loss within `max_risk_per_trade_pct` of NLV, capped by `max_contracts_per_leg` regardless of the
+risk budget.
 
-## Market Conditions
-
-**High IV Environment**  
-IV Rank > 0.80. Options expensive. Short premium strategies (straddles, strangles) more attractive. Entry credit higher.
-
-**Medium IV Environment**  
-IV Rank 0.60-0.80. Standard premium levels. Balanced strategies (Iron Fly, Iron Condor) most common.
-
-**Low IV Environment**  
-IV Rank < 0.60. Options cheap. Short premium strategies unattractive. Calendar spreads or directional spreads better.
-
-**IV Skew**  
-Asymmetric IV across strikes. Example: put IV 25% higher than call IV. Indicates market expects downside move more than upside. Used to select directional strategies (Jade Lizard, directional spreads).
-
-**Term Structure**  
-Relationship between IV at different expirations. Contango = back month IV < front month IV (typical). Backwardation = back month IV > front month IV (rare, crisis mode). Used in calendar spread analysis.
-
----
-
-## Earnings Specific
-
-**Overnight Earnings Play**  
-Strategy entered day-of (if after-hours) or day-before (if pre-market) earnings, held through announcement, exited same day. Example: AAPL earnings after close, enter before 4 PM, exit by 5 PM.
-
-**Earnings Announcement Time**  
-When company releases earnings. "After market close" = ~4:05 PM ET. "Before market open" = ~6:30 AM ET next day. Affects entry/exit timing.
-
-**Earnings Surprise**  
-Unexpected EPS or guidance, causes stock gap. Positive surprise = stock up, negative = stock down. Dispersions doesn't predict surprises, only move magnitude.
-
-**Realized Move Dispersion**  
-Same as dispersion. Standard deviation of historical earnings move magnitudes.
-
----
-
-## Risk & Portfolio
-
-**Defined Risk**  
-Strategy with known, limited maximum loss. Example: Iron Fly max loss = $3.50. Easy to position size.
-
-**Undefined Risk (Unlimited Risk)**  
-Strategy with unbounded maximum loss. Example: Short straddle can lose unlimited if stock gaps 20%. Hard to position size, requires capital reserves.
-
-**Tier 1 Candidate**  
-High-confidence earnings play. Tight dispersion, rich IV, clear strategy fit. Execute first.
-
-**Tier 2 Candidate**  
-Medium-confidence earnings play. Normal dispersion, normal IV. Execute if capital available.
-
-**Tier 3 Candidate**  
-Low-confidence earnings play. Borderline metrics, calendar spreads only. Execute for fill/activity only.
-
-**Position Sizing**  
-Number of spreads/contracts entered. Example: 5 spreads = 5 × 100 shares = 500 share exposure. Determined by account size and max loss tolerance.
-
-**Max Concurrent Positions**  
-Limit on total earnings positions held simultaneously. Example: "max 3 concurrent earnings plays". Risk management lever.
-
-**Daily Trade Target**  
-Desired number of trades per day. Example: 2-3 Tier 1 entries, maybe 1-2 Tier 2 if opportunity.
+**Max Concurrent Positions** (`max_concurrent_earnings_positions`)
+Account-wide cap on simultaneous overnight positions across every strategy.
 
 ---
 
 ## Analysis & Testing
 
-**Entry Condition Framework**  
-Multi-level decision matrix: Gates → Primary → Secondary → Tertiary. Used to automatically select optimal strategy for each candidate.
+**Cross-Strategy Ranking**
+`rank_strategies.py`'s process of evaluating every registered strategy against every symbol on
+the calendar and picking each symbol's single best-ranked strategy by composite score. See
+[Entry Conditions Framework](./04-entry-conditions.md).
 
-**Decision Matrix**  
-Framework for routing candidates to strategies. Primary decision = realized vs expected move. Secondary = dispersion. Tertiary = IV rank.
+**Forced-Sampling Paper Test**
+`strategy_test_runner.py`'s testing program (`/paper-start`) — opens every Tier 1/2 candidate
+under every qualifying strategy (not just each symbol's single best), so every strategy
+accumulates a usable sample size instead of only the ones that happen to win the head-to-head
+comparison. Writes to an isolated `profile='strat_test'` book. See
+`docs/strategy-testing-plan.md`.
 
-**10-Day Framework Test**  
-Simulation of 10 market days of earnings scans and strategy selection. Validates decision matrix. Example: 26 total candidates, 0 rejections, 46% IRON_FLY, 38% SHORT_STRADDLE, 15% CALENDAR.
+**Cost-Adjusted Expectancy**
+Expected P&L per trade after subtracting tastytrade's real commission/fee schedule (modeled in
+`src/costs.py`), computed downstream in `strategy_metrics.py` — kept separate from the raw
+`pnl` column stored per trade, which always stays gross.
 
-**Backtesting**  
-Historical testing of strategy against past earnings. Example: run 2025 earnings through decision matrix, see if strategy selection was optimal.
-
-**Unit Test**  
-Automated test of single component. Example: test that an IRON_FLY position exits at 50% profit target.
+**IV Crush (measured)**
+`entry_iv - exit_iv`, computed in `strategy_metrics.py` from the average live IV across a
+trade's Sell-to-Open leg(s), captured at entry and exit.
 
 ---
 
-## Configuration
+## Configuration Keys (Selected)
 
-**wing_width_credit_multiple**  
-Multiplier for spread wing width relative to credit collected. Default 3.0x means wings are 3x the credit width apart. Wide-wing fallback uses 8.0x.
+Full parameter reference, per strategy, lives in [Configuration Guide](./03-configuration.md).
+A few worth calling out by name since they show up throughout the other docs:
 
-**max_realized_move_dispersion_pct**  
-Maximum allowed dispersion for entry. Default 0.15 (15%). Candidates above this are rejected.
-
-**min_iv_rank**  
-Minimum IV rank threshold for entry. Default 0.15. Candidates below this are rejected (insufficient premium).
-
-**profit_target_pct**  
-Profit target as percentage of entry credit. Default 0.50 (50%). Exit when profit = 50% of credit.
-
-**leg_stop_delta_abs**  
-Delta threshold for per-leg protective stop. Default 0.60 for naked, 0.45 for spreads. If short leg delta reaches this, exit.
-
-**exit_after_announcement_minutes**  
-Backstop exit time. Default 240 (4 hours). Force exit 4 hours post-announcement.
+- **`available_capital_paper_mode`** — simulated NLV basis for paper-mode risk-cap checks.
+- **`max_risk_per_trade_pct`** — per-strategy fraction of NLV a single trade's max loss may
+  consume.
+- **`profit_target_pct`** / **`stop_loss_credit_multiple`** / **`stop_loss_pct_of_debit`** —
+  Step 3c early-exit thresholds, per strategy.
+- **`min_iv_rv_ratio`** / **`min_term_structure`** / **`min_winrate`** — the shared core
+  quality gates every strategy applies with its own threshold.
+- **`max_bid_ask_spread_pct`** / **`min_market_cap`** / **`min_combined_open_interest`** /
+  **`min_combined_option_volume`** — shared liquidity gates.
+- **`profiles`** — named risk profiles (`conservative`/`balanced`/`aggressive`) for paper-mode
+  testing via `--profile`.
 
 ---
 
 ## Commands
 
-**`get_candidates --date YYYY-MM-DD`**  
-Scan earnings calendar for given date. Returns all candidates with metrics and strategy assignments.
+**`python src/scanner.py get_calendar --date MM/DD/YYYY`**
+Fetch tickers with earnings on a given date.
 
-**`get_candidate --symbol AAPL --earnings_date YYYY-MM-DD`**  
-Get detailed analysis for single candidate. Returns dispersion, IV rank, expected move, strategy recommendation.
+**`python src/strategies/<name>.py get_candidates --date MM/DD/YYYY`**
+Full tiered scan for one strategy: Tier 1/2/3, pass/skip reasons, ranked candidates, selected.
 
-**`get_order --symbol AAPL --strategy SHORT_STRADDLE`**  
-Generate concrete order spec for entry. Returns strikes, quantities, expected credit, profit target, stops.
+**`python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY`**
+Cross-strategy ranking — evaluates all seven strategies against every symbol, picks each
+symbol's best.
 
-**`log_trade --symbol AAPL --date YYYY-MM-DD`**  
-Log completed trade results. Updates win/loss stats, decision matrix validation, learning.
+**`python src/strategies/<name>.py get_order --symbol X --earnings_date DATE --earnings_timing "..."`**
+Build a concrete tradeable order from live chain data.
+
+**`python src/tt.py execute_trade --order '<JSON>' [--live]`**
+Dry-run validate (no `--live`, still performs a real margin check) or submit a live order.
+
+**`python src/strategy_report.py`** / **`python src/strategy_dashboard.py`**
+Per-strategy expectancy/win-rate/IV-crush text report or self-contained HTML dashboard.
+
+See `CLAUDE.md`'s Tool Reference for the complete command list.
 
 ---
 
 ## Acronyms
 
 - **ATM** — At-The-Money
-- **OTM** — Out-of-The-Money  
+- **OTM** — Out-of-The-Money
 - **ITM** — In-The-Money
 - **IV** — Implied Volatility
+- **RV** — Realized Volatility
 - **DTE** — Days To Expiration
-- **EPS** — Earnings Per Share
-- **μ** — Mean (expected move)
+- **NLV** — Net Liquidating Value (account equity)
 - **σ** — Sigma (standard deviation / dispersion)
-- **ROI** — Return on Investment
+- **Δ** — Delta
+- **Θ** — Theta
+- **ν** — Vega
 - **P&L** — Profit & Loss
-- **Δ** — Delta (rate of change)
-- **Θ** — Theta (time decay)
-- **ν** — Vega (volatility sensitivity)
-- **VIX** — Volatility Index
 
 ---
 
 ## Navigation
 
-**← Previous:** [Troubleshooting](./13-troubleshooting.md)  
-**← Return to:** [README](./README.md)
+**← Previous:** [Examples & Case Studies](./11-examples.md)
+**← Return to:** [Documentation Index](./README.md)
