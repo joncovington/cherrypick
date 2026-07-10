@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import credentials as _creds
 from session import get_session
+from cherrypit import dxfeed as _dx
 
 
 def _load_config() -> dict:
@@ -130,77 +131,32 @@ def _atm_window(options: list, strike_count: int, around_price: float | None) ->
     return [o for o in options if _strike(o) in keep]
 
 
+# On-demand DXLink collectors — thin shims over cherrypit.dxfeed (src/_core). Passing get_session() in
+# as an argument preserves this module's deliberate design point: a missing-credentials CredentialError
+# surfaces to the caller (not swallowed as a fake feed timeout), because the session is built here,
+# outside the shared collector's broad except.
 async def _collect_events(event_cls, symbols: list[str], timeout: float, extract=None) -> dict:
-    from tastytrade import DXLinkStreamer
-    out: dict = {}
-    symbols = [s for s in symbols if s]
-    if not symbols:
-        return out
-
-    async def _drain(streamer):
-        remaining = set(symbols)
-        async for event in streamer.listen(event_cls):
-            value = extract(event) if extract else event
-            if value is not None:
-                out[event.event_symbol] = value
-            remaining.discard(event.event_symbol)
-            if not remaining:
-                return
-
-    # get_session() is deliberately outside the broad except below: a missing-
-    # credentials CredentialError must propagate to the caller so it's reported
-    # as a real error, not swallowed and misreported as "feed didn't respond
-    # in time" (caught during testing -- get_quote with no stored credentials
-    # returned {"ok": true, "price": null, "note": "...timeout..."}, which is
-    # wrong; the actual reason was no session at all).
-    session = get_session()
-    try:
-        async with DXLinkStreamer(session) as streamer:
-            await streamer.subscribe(event_cls, symbols)
-            await asyncio.wait_for(_drain(streamer), timeout=timeout)
-    except asyncio.TimeoutError:
-        pass
-    except Exception:
-        pass
-    return out
+    return await _dx.collect_events(get_session(), event_cls, symbols, timeout, extract=extract)
 
 
 async def _collect_greeks(symbols: list[str], timeout: float) -> dict:
-    from tastytrade.dxfeed import Greeks
-    return await _collect_events(Greeks, symbols, timeout)
+    return await _dx.collect_greeks(get_session(), symbols, timeout)
 
 
 async def _collect_quotes(symbols: list[str], timeout: float) -> dict:
-    from tastytrade.dxfeed import Quote
-    return await _collect_events(Quote, symbols, timeout)
+    return await _dx.collect_quotes(get_session(), symbols, timeout)
 
 
 async def _collect_open_interest(symbols: list[str], timeout: float) -> dict:
-    """Summary events carry open_interest. Verified live: these fire on a
-    fresh on-demand subscribe within a few seconds, no persistent daemon
-    needed -- unlike MEICAgent's own comment ("OI only comes from Summary --
-    no live fallback"), which turned out to describe an architecture choice
-    MEICAgent made (only ever consuming Summary via its persistent streamer),
-    not a real limitation of the DXLink feed itself.
-    """
-    from tastytrade.dxfeed import Summary
-    return await _collect_events(Summary, symbols, timeout, extract=lambda e: e.open_interest)
+    return await _dx.collect_open_interest(get_session(), symbols, timeout)
 
 
 async def _collect_last_prices(symbols: list[str], timeout: float) -> dict:
-    from tastytrade.dxfeed import Trade
-    return await _collect_events(Trade, symbols, timeout, extract=lambda e: _num(e.price))
+    return await _dx.collect_last_prices(get_session(), symbols, timeout)
 
 
 async def _collect_option_volume(symbols: list[str], timeout: float) -> dict:
-    """Trade events carry day_volume (total volume traded for the day) in
-    addition to price -- get_quote/_collect_last_prices only ever extracted
-    .price, discarding it. Subscribing Trade on option streamer_symbols
-    gives per-contract daily options volume, same on-demand pattern as
-    _collect_open_interest's Summary subscription for open_interest.
-    """
-    from tastytrade.dxfeed import Trade
-    return await _collect_events(Trade, symbols, timeout, extract=lambda e: _num(e.day_volume))
+    return await _dx.collect_option_volume(get_session(), symbols, timeout)
 
 
 # ---------------------------------------------------------------------------
