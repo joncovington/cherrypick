@@ -1,3 +1,12 @@
+"""Wiring tests for EarningsAgent's credentials shim over cherrypit-core.
+
+Exhaustive keyring behavior lives in cherrypit-core's own test suite. Here we verify EarningsAgent
+wires the shared CredentialStore with its service name (no legacy fallback) and preserves the
+module-level API. keyring's password functions are monkeypatched to an in-memory fake (patched
+globally, since the keyring calls now happen inside cherrypit-core).
+"""
+
+import keyring
 import keyring.errors
 import pytest
 
@@ -24,54 +33,49 @@ class _FakeKeyring:
 @pytest.fixture(autouse=True)
 def fake_keyring(monkeypatch):
     fake = _FakeKeyring()
-    monkeypatch.setattr(credentials.keyring, "get_password", fake.get_password)
-    monkeypatch.setattr(credentials.keyring, "set_password", fake.set_password)
-    monkeypatch.setattr(credentials.keyring, "delete_password", fake.delete_password)
+    monkeypatch.setattr(keyring, "get_password", fake.get_password)
+    monkeypatch.setattr(keyring, "set_password", fake.set_password)
+    monkeypatch.setattr(keyring, "delete_password", fake.delete_password)
     return fake
 
 
-def test_set_and_get_secret_roundtrip():
+def test_store_is_configured_for_earnings():
+    assert credentials.store.service_name == "earningsagent"
+    assert credentials.store.legacy_service_names == ()  # no legacy fallback
+
+
+def test_public_api_preserved():
+    for name in ("get_secret", "set_secret", "delete_secret",
+                 "secrets_present", "missing_secrets", "secrets_status"):
+        assert callable(getattr(credentials, name)), name
+    for const in ("CLIENT_SECRET", "REFRESH_TOKEN", "ACCOUNT_NUMBER",
+                  "REQUIRED_SECRETS", "ALL_SECRETS", "CredentialError"):
+        assert hasattr(credentials, const), const
+
+
+def test_set_and_get_secret_roundtrip(fake_keyring):
     credentials.set_secret(credentials.CLIENT_SECRET, "sekrit")
     assert credentials.get_secret(credentials.CLIENT_SECRET) == "sekrit"
+    assert fake_keyring.store[("earningsagent", "production:client_secret")] == "sekrit"
 
 
-def test_get_secret_missing_returns_none():
-    assert credentials.get_secret(credentials.CLIENT_SECRET) is None
-
-
-def test_secrets_present_false_when_required_missing():
+def test_present_missing_and_status(fake_keyring):
     assert credentials.secrets_present() is False
-
-
-def test_secrets_present_true_when_all_required_set():
-    for key in credentials.REQUIRED_SECRETS:
-        credentials.set_secret(key, "x")
-    assert credentials.secrets_present() is True
-
-
-def test_missing_secrets_lists_only_unset_required():
     credentials.set_secret(credentials.CLIENT_SECRET, "x")
-    missing = credentials.missing_secrets()
-    assert credentials.CLIENT_SECRET not in missing
-    assert credentials.REFRESH_TOKEN in missing
-
-
-def test_secrets_status_reports_each_key():
-    credentials.set_secret(credentials.CLIENT_SECRET, "x")
+    assert credentials.REFRESH_TOKEN in credentials.missing_secrets()
     status = credentials.secrets_status()
     assert status[credentials.CLIENT_SECRET] is True
     assert status[credentials.REFRESH_TOKEN] is False
 
 
-def test_delete_secret_removes_value():
-    credentials.set_secret(credentials.CLIENT_SECRET, "x")
-    credentials.delete_secret(credentials.CLIENT_SECRET)
-    assert credentials.get_secret(credentials.CLIENT_SECRET) is None
+def test_delete_secret_absent_is_a_noop(fake_keyring):
+    credentials.delete_secret(credentials.CLIENT_SECRET)  # must not raise
 
 
 def test_get_secret_translates_no_keyring_error(monkeypatch):
-    def _raise(service, entry):
+    def _raise(*_a, **_k):
         raise keyring.errors.NoKeyringError("no backend")
-    monkeypatch.setattr(credentials.keyring, "get_password", _raise)
+
+    monkeypatch.setattr(keyring, "get_password", _raise)
     with pytest.raises(credentials.CredentialError):
         credentials.get_secret(credentials.CLIENT_SECRET)
