@@ -267,6 +267,56 @@ def _read_heartbeat(path: Path) -> dict[str, Any]:
         return {}
 
 
+# --------------------------------------------------------------------------- drawdown (drift) alert
+def _drawdown_finding(key: str, label: str, net: float, floor: float, crit_mult: float) -> Finding | None:
+    """WARN when net P&L breaches `floor`; CRITICAL when it breaches floor*crit_mult. None if healthy."""
+    if net <= floor * crit_mult:
+        status = CRITICAL
+    elif net <= floor:
+        status = WARN
+    else:
+        return None
+    return Finding(
+        key,
+        status,
+        f"{label} paper drawdown",
+        f"Net paper P&L {net:+.2f} at/below alert floor {floor:+.2f} "
+        f"(critical below {floor * crit_mult:+.2f}).",
+    )
+
+
+def _check_drawdown(cfg: dict[str, Any]) -> list[Finding]:
+    """Report-driven drawdown alert. Opt-in via cfg['watchdog']['drawdown']; file-only, never trades."""
+    dd = cfg.get("watchdog", {}).get("drawdown") or {}
+    if not dd:
+        return []
+    from . import report  # local import: report is read-only and only needed when the alert is on
+
+    try:
+        rep = report.run(cfg)
+    except Exception:
+        return []  # a report hiccup must never break the reliability path
+
+    findings: list[Finding] = []
+    crit_mult = dd.get("critical_multiplier", 2)
+
+    suite = rep.get("suite", {})
+    if dd.get("suite_floor") is not None and suite.get("trades"):
+        f = _drawdown_finding(
+            "drawdown.suite", "Suite", suite.get("net_pnl", 0.0), dd["suite_floor"], crit_mult
+        )
+        if f:
+            findings.append(f)
+
+    for name, floor in (dd.get("module_floors") or {}).items():
+        m = rep.get("modules", {}).get(name, {})
+        if floor is not None and m.get("ok") and m.get("trades"):
+            f = _drawdown_finding(f"drawdown.{name}", name, m.get("net_pnl", 0.0), floor, crit_mult)
+            if f:
+                findings.append(f)
+    return findings
+
+
 # --------------------------------------------------------------------------- state + notify
 def _load_state() -> dict[str, Any]:
     return _read_heartbeat(_STATE_FILE) or {}
@@ -347,6 +397,9 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
                 )
             )
 
+    # Drift alert: report-driven paper-drawdown check (opt-in). Flows through the same notify path.
+    findings += _check_drawdown(cfg)
+
     overall = OK
     for f in findings:
         if _RANK[f.status] > _RANK[overall]:
@@ -365,6 +418,16 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         trade_notifier.run(cfg)
     except Exception:
         pass
+
+    # Regenerate the read-side dashboard (static HTML, file-only) — best-effort; a render hiccup must
+    # never break the reliability path.
+    if cfg.get("dashboard", {}).get("auto_regen", True):
+        try:
+            from . import dashboard
+
+            dashboard.render(cfg)
+        except Exception:
+            pass
 
     cfgmod.ensure_dirs()
     _HEARTBEAT.write_text(

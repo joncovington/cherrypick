@@ -9,6 +9,9 @@ __pycache__/
 logs/
 state/
 
+# Generated status dashboard (regenerated on each watchdog tick; not source)
+dashboard.html
+
 # Working config (copy from config.example.json; may hold machine-specific paths)
 config.json
 

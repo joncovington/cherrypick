@@ -49,7 +49,14 @@
   "watchdog": {
     "task_name": "Cherrypick-Watchdog",
     "interval_minutes": 10,
-    "renotify_minutes": 60
+    "renotify_minutes": 60,
+    "_drawdown_note": "Optional paper-P&L drift alert (net-of-cost). Add a 'drawdown' block to enable: {\"suite_floor\": -1000, \"module_floors\": {\"meic\": -750, \"earnings\": -750}, \"critical_multiplier\": 2}. net<=floor -> WARN; net<=floor*critical_multiplier -> CRITICAL. Paper only; never trades. Omit to disable."
+  },
+  "dashboard": {
+    "_comment": "Read-only status dashboard: static self-contained HTML regenerated on each watchdog tick and by `cherrypick dashboard`. 'output' is relative to this file's directory.",
+    "output": "dashboard.html",
+    "log_tail_lines": 50,
+    "auto_regen": true
   },
   "trade_notify": {
     "_comment": "Dedicated low-latency task that pushes new paper entries/exits to trade_channels. Runs far more often than the watchdog so fills reach you within ~interval_minutes instead of a full watchdog cycle.",

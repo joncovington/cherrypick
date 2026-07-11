@@ -66,8 +66,20 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       suite total. Profile grouping mirrors `cherrypick.core.profiles.compare_profiles` inline (Cherrypick is
       not yet a cherrypick-core consumer; the umbrella must not import a module's vendored `_core`). 6
       tests; verified against live paper data (13 MEIC closed trades across all four profiles).
-- [ ] **Next:** the Part-14 status/log **dashboard** (read-side UI over this + heartbeats + logs), and
-      drift/stall **alerts** (the silent-stall watchdog's reporting-hub home).
+- [x] **`cherrypick dashboard`** (Part-14 first slice): a read-only, file-only **status dashboard**
+      (`orchestrator/dashboard.py`). One self-contained static HTML page — suite header (overall status,
+      ET clock/session, watchdog heartbeat age, notify channels, suite P&L), an active WARN/CRITICAL
+      rollup, per-module cards (PAPER badge, P&L + per-profile table + that module's findings), and a
+      bounded, level-colored **log tail** with a client-side filter. Health comes from the watchdog
+      heartbeat (not a live `doctor`/broker call), so it never touches the broker/network. Regenerated
+      on each watchdog tick and by the command; written atomically to `dashboard.html`.
+- [x] **Paper-drawdown alert** (drift): opt-in, report-driven watchdog check
+      (`watchdog._check_drawdown`, config `watchdog.drawdown`). Suite/module net paper P&L at/below a
+      floor → WARN, below `floor*critical_multiplier` → CRITICAL, flowing through the existing
+      dedup/re-notify state machine. Off unless configured; paper-only, never trades.
+- [ ] **Next:** `--serve` live view; the `cherrypick-core` `DashboardSection`/`viz` contract so new
+      modules get a section for free; embedded module dashboards; the GEX panel (needs Part 15); and
+      broker-vs-DB **reconciliation** drift.
 
 ## Shipped since Stage 0 — cherrypick-core extraction + standards
 > Full design & running reconciliation live in `~/.claude/plans/cherrypick-plan.md` (see its
@@ -93,6 +105,11 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       user-supervised step.
 - [x] **Engineering standards** — ruff + GitHub Actions CI + pre-commit (`ruff-check`) across all
       three repos (cherrypick-core, MEICAgent, EarningsAgent).
+- [x] **Packaging & install** — `cherrypick-core` and the `cherrypick` umbrella are pip-installable
+      (single `cherrypick.*` PEP 420 namespace, a `cherrypick` console script, the `run.py` launcher, and
+      CI validating the editable install). All scheduled tasks were re-registered at the new launcher
+      (`run.py install`; `doctor` ALL GREEN), which surfaced and fixed two `src/_core` bootstrap-order
+      bugs (`paper_loop.py`, `session.py`).
 - [–] **Not extracted (by design):** metrics (MEIC daily-series vs Earnings event-trade — same names,
       different math; parameterize-not-unify), stdlib logging (n=1: Earnings is print-based), MEIC's
       cache/futures `_fetch_chain`, Earnings' strategy `sizing.py`, and the module dashboards.

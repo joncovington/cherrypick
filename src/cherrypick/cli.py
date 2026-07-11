@@ -13,6 +13,7 @@ Subcommands:
   doctor               One green/red readiness check (read-only).
   watchdog             Run one watchdog pass (this is what the scheduled task invokes).
   report               Unified cross-module paper P&L (read-only): totals + per-profile breakdown.
+  dashboard            Regenerate the read-only status dashboard (static HTML: health + P&L + logs).
   run-earnings-entry   Run EarningsAgent's paper entry now (invoked by its daily task).
   run-earnings-exit    Run EarningsAgent's paper exit now (invoked by its daily task).
   notify-test          Fire a test notification through all configured channels.
@@ -35,7 +36,7 @@ from pathlib import Path
 from cherrypick.notify import Notifier
 from cherrypick.notify import secrets as notify_secrets
 from cherrypick.orchestrator import config as cfgmod
-from cherrypick.orchestrator import doctor, report, tasks, timeutil, trade_notifier, watchdog
+from cherrypick.orchestrator import dashboard, doctor, report, tasks, timeutil, trade_notifier, watchdog
 from cherrypick.orchestrator.util import first_json
 
 # The OS scheduler invokes the in-place launcher `pythonw <repo>/run.py <cmd>`. This module is
@@ -272,6 +273,10 @@ def cmd_report(cfg) -> None:
     _emit(report.run(cfg))
 
 
+def cmd_dashboard(cfg) -> None:
+    _emit(dashboard.run(cfg))
+
+
 def cmd_notify_test(cfg) -> None:
     res = Notifier(cfg.get("notify")).notify(
         "INFO",
@@ -321,6 +326,7 @@ def main() -> None:
             "doctor",
             "watchdog",
             "report",
+            "dashboard",
             "run-earnings-entry",
             "run-earnings-exit",
             "notify-test",
@@ -348,6 +354,7 @@ def main() -> None:
         "doctor": lambda: cmd_doctor(cfg),
         "watchdog": lambda: cmd_watchdog(cfg),
         "report": lambda: cmd_report(cfg),
+        "dashboard": lambda: cmd_dashboard(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
