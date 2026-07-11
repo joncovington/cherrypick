@@ -114,6 +114,12 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       `--serve`-only pulsing live dot); still self-contained/offline, light mode preserved via
       `prefers-color-scheme`. Tests across `test_dashboard`/`test_serve`/`test_tasks_cron`, including a
       guard that no webhook URL ever reaches the page.
+- [x] **`doctor --fast` (shipped 2026-07-11).** `doctor.run(cfg, fast=True)` skips the one authenticated
+      broker round-trip (the 35s-timeout `get_connection_status` subprocess) and runs only the
+      local/cheap checks (interpreter, clock, paths, config, paper-DB writability, task registration,
+      streamer, Dolt, notify) — ~1.5s vs ~7s. The `--serve` live-checks card now polls in fast mode so
+      its 30s cadence never hammers the broker/its rate limits; `cherrypick doctor` (human, on-demand)
+      still runs the full check. Exposed on the CLI as `cherrypick doctor --fast`.
 - [ ] **Next:** embedded module dashboards; broker-vs-DB **reconciliation** drift.
       *(The parallel-shadow paper **run** orchestration that feeds calibration stays module-side.)*
 

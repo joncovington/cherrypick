@@ -46,7 +46,33 @@ def test_missing_database_is_fail():
     assert "earnings" in detail and "options" in detail and "stocks" in detail
 
 
-def test_dolt_databases_returns_none_without_client(monkeypatch):
+def test_fast_mode_skips_broker_check(tmp_path, monkeypatch):
+    """fast=True must not emit a broker/keyring check nor make the authenticated broker round-trip
+    (`_run`) — it's the one call unsafe to poll on the live-checks cadence. The cheap local checks
+    (interpreter, clock, module path/config, task registration, notify) still run."""
+    module = tmp_path / "meic"
+    module.mkdir()
+    (module / "config.json").write_text("{}", encoding="utf-8")
+
+    def fail_if_called(*a, **k):
+        raise AssertionError("_run (broker/streamer subprocess) must not be invoked in fast mode")
+
+    monkeypatch.setattr(doctor, "_run", fail_if_called)
+    cfg = {
+        "timezone": "America/New_York",
+        "modules": {
+            "meic": {
+                "enabled": True,
+                "path": str(module),
+                "paper": {"paper_db": "data/paper.db", "task_name": "cherrypick-meic-paper-loop"},
+                # no "streamer" block -> the only other _run caller is skipped too
+            }
+        },
+        "notify": {"channels": ["log"]},
+    }
+    names = {c.name for c in doctor.run(cfg, fast=True)}
+    assert "broker/keyring" not in names
+    assert "python" in names and "meic.path" in names  # local checks still ran
     # Force the optional import to fail -> graceful None, never raises.
     import builtins
 

@@ -45,7 +45,8 @@ def _make_handler(cfg: dict[str, Any]):
                 return
             if parsed.path == "/api/system":
                 try:
-                    checks = doctor.run(cfg)
+                    # fast=True: the card polls every 30s, so skip the authenticated broker round-trip.
+                    checks = doctor.run(cfg, fast=True)
                     payload = {
                         "ok": True,
                         "checks": [
