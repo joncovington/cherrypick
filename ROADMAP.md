@@ -170,6 +170,11 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
 - [x] **Module cutover complete.** Both new checkouts seeded with machine-local `config.json` + durable
       `data/` DBs (Earnings' multi-GB Dolt store left as a localhost service, not copied); `cherrypick
       install` re-registered every task at the new paths and moved the streamer to `cherrypick-meic`.
+- [x] **`cherrypick init` (onboarding, Part 12 Concept E).** Scaffolds `config.json` non-destructively
+      (the repo's `config.example.json`, or a compact embedded template for an installed copy that ships
+      none), then validates it structurally + checks each enabled module's checkout and prints the next
+      steps (`secrets-set` → `doctor` → `install`). Runs before the config pre-load so a fresh user with
+      no config can use it. Pure `validate_config`/`scaffold` are unit-tested (`tests/test_init.py`).
 
 ## Known Stage-0 limitations (hardened in later phases)
 - **Scheduler: Windows (`schtasks`) + a POSIX cron backend.** `tasks.py` now dispatches by platform —
