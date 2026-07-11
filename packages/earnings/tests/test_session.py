@@ -1,6 +1,6 @@
-"""Wiring tests for EarningsAgent's session shim over cherrypit-core's SessionManager.
+"""Wiring tests for EarningsAgent's session shim over cherrypick-core's SessionManager.
 
-Session-caching behavior is covered exhaustively in cherrypit-core's own test suite. Here we verify
+Session-caching behavior is covered exhaustively in cherrypick-core's own test suite. Here we verify
 EarningsAgent wires a *process-global* manager (thread_local=False — no persistent daemon, short-lived
 subprocesses) bound to its credential store, and preserves the get_session / reset_session API.
 tastytrade is never constructed — an injected fake factory stands in.
@@ -9,7 +9,7 @@ tastytrade is never constructed — an injected fake factory stands in.
 import threading
 
 import pytest
-from cherrypit.auth import SessionManager
+from cherrypick.core.auth import SessionManager
 
 import session
 

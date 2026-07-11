@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Pull the cherrypit-core submodule at src/_core so the credentials/session shims import.
+          # Pull the cherrypick-core submodule at src/_core so the credentials/session shims import.
           submodules: recursive
 
       - name: Set up Python ${{ matrix.python-version }}

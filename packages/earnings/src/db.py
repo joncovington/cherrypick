@@ -41,12 +41,12 @@ import sys
 import time
 from pathlib import Path
 
-# Make the cherrypit-core submodule (src/_core) importable before the cherrypit import below,
+# Make the cherrypick-core submodule (src/_core) importable before the cherrypick.core import below,
 # mirroring credentials.py's bootstrap so this module works even when imported before credentials.
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
-from cherrypit import db as _db
+from cherrypick.core import db as _db
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "earnings_trades.db"
 
@@ -129,7 +129,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
 
 def _conn() -> sqlite3.Connection:
-    conn = _db.connect(DB_PATH)  # mkdir parent + row_factory=Row (see cherrypit.db)
+    conn = _db.connect(DB_PATH)  # mkdir parent + row_factory=Row (see cherrypick.core.db)
     conn.executescript(_DDL)
     _migrate(conn)
     return conn

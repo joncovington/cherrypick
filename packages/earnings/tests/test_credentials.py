@@ -1,9 +1,9 @@
-"""Wiring tests for EarningsAgent's credentials shim over cherrypit-core.
+"""Wiring tests for EarningsAgent's credentials shim over cherrypick-core.
 
-Exhaustive keyring behavior lives in cherrypit-core's own test suite. Here we verify EarningsAgent
+Exhaustive keyring behavior lives in cherrypick-core's own test suite. Here we verify EarningsAgent
 wires the shared CredentialStore with its service name (no legacy fallback) and preserves the
 module-level API. keyring's password functions are monkeypatched to an in-memory fake (patched
-globally, since the keyring calls now happen inside cherrypit-core).
+globally, since the keyring calls now happen inside cherrypick-core).
 """
 
 import keyring
