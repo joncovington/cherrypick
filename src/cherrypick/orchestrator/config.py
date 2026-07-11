@@ -1,4 +1,4 @@
-"""Config loading and path resolution for Cherrypick.
+"""Config loading and path resolution for cherrypick.
 
 All paths are derived from this file's location or from config values — never hardcoded
 absolute paths (a portability guardrail inherited from both sibling modules).
@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Cherrypick runtime root — where config.json, logs/, and state/ live. In a source checkout that is the
+# cherrypick runtime root — where config.json, logs/, and state/ live. In a source checkout that is the
 # repo root; this module sits at <root>/src/cherrypick/orchestrator/config.py, so the root is 3 parents
 # up. An installed copy (no repo root) sets CHERRYPICK_HOME to its runtime dir instead.
 # The per-user runtime home for an installed copy (config.json, logs/, state/, dashboard.html, modules/).
@@ -20,7 +20,7 @@ _USER_HOME = Path.home() / ".cherrypick"
 
 
 def _default_root() -> Path:
-    """Cherrypick's runtime home (holds config.json, logs/, state/, dashboard.html).
+    """cherrypick's runtime home (holds config.json, logs/, state/, dashboard.html).
 
     CHERRYPICK_HOME always wins. Otherwise a *source checkout* keeps everything in the repo root
     (convenient for dev, matches historical behavior); an *installed copy* — where this file lives under
@@ -54,11 +54,11 @@ MODULES_HOME = Path(
 
 
 def load_config(path: Path | None = None) -> dict[str, Any]:
-    """Load and lightly validate the Cherrypick config."""
+    """Load and lightly validate the cherrypick config."""
     cfg_path = path or CONFIG_PATH
     if not cfg_path.exists():
         raise FileNotFoundError(
-            f"Cherrypick config not found at {cfg_path}. Copy config.example.json to config.json."
+            f"cherrypick config not found at {cfg_path}. Copy config.example.json to config.json."
         )
     with cfg_path.open("r", encoding="utf-8") as fh:
         cfg = json.load(fh)
@@ -82,7 +82,7 @@ def module_dirname(module_cfg: dict[str, Any], name: str | None = None) -> str:
 def module_root(module_cfg: dict[str, Any], name: str | None = None) -> Path:
     """Resolve a module's on-disk root.
 
-    An explicit 'path' (absolute, or relative to Cherrypick ROOT) always wins — the dev override for a
+    An explicit 'path' (absolute, or relative to cherrypick ROOT) always wins — the dev override for a
     working checkout. With no 'path', the module lives at its managed install location
     MODULES_HOME/<dirname> (see module_dirname), which is where `cherrypick install` clones it.
     """
@@ -101,7 +101,7 @@ def enabled_modules(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def python_exe() -> str:
-    """The interpreter to run module scripts with (same env as Cherrypick)."""
+    """The interpreter to run module scripts with (same env as cherrypick)."""
     return sys.executable
 
 

@@ -1,6 +1,6 @@
-# Cherrypick — Roadmap & Stage 0 status
+# cherrypick — Roadmap & Stage 0 status
 
-Cherrypick is the umbrella orchestrator for a trading-tool suite. It drives sibling modules
+cherrypick is the umbrella orchestrator for a trading-tool suite. It drives sibling modules
 (**MEICAgent**, **EarningsAgent**) in place for **unattended paper-trading data collection**, with a
 watchdog and notifications so a walk-away user is told — or at least has it logged — whenever anything
 stalls.
@@ -28,13 +28,13 @@ A user sets up paper plans, **walks away** for a day/night/week, and trusts the 
 silently interrupted: any failure is **notified**, or at an absolute floor **warned through logging**.
 
 ## Design invariants (inherited from both modules — do not violate)
-- **Umbrella only.** Cherrypick never edits a module's internals and never touches **live** trading.
+- **Umbrella only.** cherrypick never edits a module's internals and never touches **live** trading.
 - **No decision-path dependency.** The watchdog/notify path uses only stdlib + the OS shell — no MCP,
   no network client, no AI tooling — so it has no new failure mode. Opt-in AI tooling (agentmemory,
   graphify) is for authoring only, never runtime.
 - **Portable.** Paths come from `Path(__file__)` or config — never hardcoded absolute/machine paths.
 - **Credentials in the OS keyring only.** Secrets (e.g. Slack webhook) come from env vars, never files.
-- **Paper ↔ live isolation.** Cherrypick only invokes paper engines / paper DBs.
+- **Paper ↔ live isolation.** cherrypick only invokes paper engines / paper DBs.
 
 ## Stage 0 — built (tonight)
 - [x] Scaffold: `config.json`, `src/cherrypick/{orchestrator,notify}/`, `logs/`, `state/`, and the
@@ -42,10 +42,10 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       console script; the src-layout `cherrypick` namespace composes with `cherrypick.core`).
 - [x] **MEIC paper** wired via its own self-healing task (`paper_loop.py --install-task`) + streamer
       ensured up.
-- [x] **EarningsAgent paper** scheduled by Cherrypick (module has no scheduler of its own): daily
+- [x] **EarningsAgent paper** scheduled by cherrypick (module has no scheduler of its own): daily
       `run-earnings-entry` (~15:45 ET) and `run-earnings-exit` (~09:45 ET) via
       `strategy_test_runner.py run_entries/run_closes`.
-- [x] **Watchdog** (`Cherrypick-Watchdog`, every 10 min): task registration, session-time freshness,
+- [x] **Watchdog** (`cherrypick-watchdog`, every 10 min): task registration, session-time freshness,
       streamer liveness (benign auto-restart), Dolt reachability, and an earnings entry-SLA check —
       logs to `logs/watchdog.log` **and notifies** with de-dup + re-notify throttling.
 - [x] **Notifications**: logging floor (`logs/notify.log`) + desktop toast; Slack/Discord webhooks with
@@ -53,7 +53,7 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       files or env vars.
 - [x] **Trade notifier**: pushes each paper entry/exit to `notify.trade_channels` (log + Discord). Two
       schemas wired — MEIC `ic_trades` and Earnings `trades` (`orchestrator/trade_notifier.py`,
-      dispatched by `paper.trade_schema`). A dedicated **`Cherrypick-TradeNotify`** task (`trade_notify`
+      dispatched by `paper.trade_schema`). A dedicated **`cherrypick-trade-notify`** task (`trade_notify`
       config, every ~2 min) drives the low-latency path; the watchdog tick and the end of each earnings
       run also fire it as fallbacks. State is written atomically so overlapping runs can't corrupt it.
 - [x] **`cherrypick doctor`**: interpreter, config, module paths, broker/keyring, streamer, tasks,
@@ -63,7 +63,7 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
 - [x] **`cherrypick report`** (first slice): unified, read-only cross-module paper P&L
       (`orchestrator/report.py`). Reads each module's paper DB by `paper.trade_schema` (MEIC `ic_trades`,
       Earnings `trades`), computes net-of-cost P&L / win rate per module and **per risk profile**, plus a
-      suite total. Profile grouping mirrors `cherrypick.core.profiles.compare_profiles` inline (Cherrypick is
+      suite total. Profile grouping mirrors `cherrypick.core.profiles.compare_profiles` inline (cherrypick is
       not yet a cherrypick-core consumer; the umbrella must not import a module's vendored `_core`). 6
       tests; verified against live paper data (13 MEIC closed trades across all four profiles).
 - [x] **`cherrypick dashboard`** (Part-14 first slice): a read-only, file-only **status dashboard**
@@ -152,7 +152,7 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       behind the paper-DB isolation boundary). `profiles/` Phases A–D (merge engine, attribution
       contract, comparison engine, promotion advisor) are all shipped as core primitives. Then: new
       modules (wheel, roll manager, reporting hub), the Part-14 dashboard, watchdog hardening,
-      onboarding wizard, POSIX scheduler backend, and `git init` of Cherrypick itself.
+      onboarding wizard, POSIX scheduler backend, and `git init` of cherrypick itself.
 
 ## Suite modularization & install (shipped 2026-07-11)
 > First slice of the module re-architecture the plan had filed under "deferred": the trading modules
@@ -196,7 +196,7 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
 
 ## Known Stage-0 limitations (hardened in later phases)
 - **Scheduler: Windows (`schtasks`) + a POSIX cron backend.** `tasks.py` now dispatches by platform —
-  Windows uses `schtasks`; POSIX manages the user crontab (each Cherrypick line tagged
+  Windows uses `schtasks`; POSIX manages the user crontab (each cherrypick line tagged
   `# cherrypick:<name>` for idempotent upsert/remove). The cron-line + crontab-editing logic is pure and
   unit-tested cross-platform (`tests/test_tasks_cron.py`); end-to-end cron **execution** (env,
   notifications) still wants validation on a real POSIX host. launchd/systemd remain future options.
@@ -212,5 +212,5 @@ python run.py install       # register all tasks + start streamer
 python run.py status        # task state + last heartbeats
 python run.py watchdog      # one watchdog pass (what the task runs)
 python run.py notify-test   # prove notifications reach you
-python run.py uninstall     # remove Cherrypick-managed tasks
+python run.py uninstall     # remove cherrypick-managed tasks
 ```

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the Cherrypick CLI from a source checkout: `python run.py <command>`.
+"""Run the cherrypick CLI from a source checkout: `python run.py <command>`.
 
 Named `run.py` (not `cherrypick.py`) on purpose: a root module named `cherrypick.py` would shadow the
 `src/cherrypick` namespace package (a regular module outranks a PEP 420 namespace package on the path).

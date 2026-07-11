@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One-shot LIVE deploy-limit governor smoke (dry-run only; never submits).
 
-Runs unattended via a scheduled task (`Cherrypick-GovernorSmoke`). Each fire it gates on the ET
+Runs unattended via a scheduled task (`cherrypick-governor-smoke`). Each fire it gates on the ET
 trading session; outside a live session it exits immediately (cheap no-op through weekends/holidays).
 During a live session with a fresh 0DTE candidate it:
   1. fetches a real XSP iron-condor candidate from the module's `tt.py get_strategies`,
@@ -30,7 +30,7 @@ from cherrypick.notify import Notifier  # noqa: E402
 from cherrypick.orchestrator import config as cfgmod  # noqa: E402
 from cherrypick.orchestrator import timeutil  # noqa: E402
 
-TASK_NAME = "Cherrypick-GovernorSmoke"
+TASK_NAME = "cherrypick-governor-smoke"
 MODULE = "meic"
 SYMBOL = "XSP"
 TEST_LIMIT_PCT = 1  # capacity * 1% — any real 1-lot spread's BP effect far exceeds this → would block

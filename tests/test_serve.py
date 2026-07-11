@@ -79,7 +79,7 @@ def test_serve_handler_serves_page_and_section_api(monkeypatch):
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     try:
         page = urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5).read().decode()
-        assert "Cherrypick — suite status" in page and 'data-cp-section="gex"' in page
+        assert "cherrypick — suite status" in page and 'data-cp-section="gex"' in page
         raw = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/section/gex?symbol=QQQ", timeout=5).read()
         payload = json.loads(raw)
         assert payload["ok"] is True and payload["_params"]["symbol"] == "QQQ"

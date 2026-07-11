@@ -22,11 +22,11 @@ KNOWN_CHANNELS = {"log", "desktop", "slack", "discord"}
 # Minimal-but-valid fallback when config.example.json isn't on disk (e.g. a pip-installed copy). Kept
 # intentionally small — the user fills in modules; `validate_config` guides them.
 _MINIMAL_TEMPLATE: dict[str, Any] = {
-    "_comment": "Cherrypick config scaffolded by `cherrypick init`. Add modules by repo or path.",
+    "_comment": "cherrypick config scaffolded by `cherrypick init`. Add modules by repo or path.",
     "timezone": "America/New_York",
     "modules": {},
-    "watchdog": {"task_name": "Cherrypick-Watchdog", "interval_minutes": 10, "renotify_minutes": 60},
-    "notify": {"channels": ["log", "desktop"], "trade_channels": ["log"], "desktop_app_name": "Cherrypick"},
+    "watchdog": {"task_name": "cherrypick-watchdog", "interval_minutes": 10, "renotify_minutes": 60},
+    "notify": {"channels": ["log", "desktop"], "trade_channels": ["log"], "desktop_app_name": "cherrypick"},
 }
 
 

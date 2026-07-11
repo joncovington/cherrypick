@@ -218,7 +218,7 @@ def run(cfg: dict[str, Any] | None = None) -> list[Check]:
 
 
 def format_report(checks: list[Check]) -> tuple[str, int]:
-    lines = ["Cherrypick doctor", "=" * 60]
+    lines = ["cherrypick doctor", "=" * 60]
     worst = 0
     rank = {OK: 0, WARN: 1, FAIL: 2}
     for c in checks:

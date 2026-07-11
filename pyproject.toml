@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cherrypick"
 version = "0.1.0"
-description = "Unattended paper-trading orchestrator + reporting hub for the Cherrypick trading suite (drives MEICAgent / EarningsAgent in place). Imports as the cherrypick namespace package."
+description = "Unattended paper-trading orchestrator + reporting hub for the cherrypick trading suite (drives MEICAgent / EarningsAgent in place). Imports as the cherrypick namespace package."
 readme = "ROADMAP.md"
 requires-python = ">=3.10"
 authors = [{ name = "Jon Covington", email = "jon.covington@gmail.com" }]

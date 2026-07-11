@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Cherrypick is the **umbrella orchestrator** for a trading-tool suite. It drives the sibling module
+cherrypick is the **umbrella orchestrator** for a trading-tool suite. It drives the sibling module
 repos (`../MEICAgent`, `../EarningsAgent`) **in place** — via subprocess, using paths from config — for
 unattended **paper**-trading data collection, with a watchdog + notifications so a walk-away user is
 told (or at least has it logged) whenever something stalls. It never edits a module's internals and
@@ -26,7 +26,7 @@ python run.py watchdog       # one watchdog pass (what the scheduled task runs)
 python run.py report         # unified cross-module paper P&L (read-only)
 python run.py dashboard      # regenerate the static status dashboard -> dashboard.html
 python run.py calibrate      # per-profile calibration readings + promotion recommendations
-python run.py uninstall      # remove Cherrypick-managed tasks
+python run.py uninstall      # remove cherrypick-managed tasks
 
 # Tests (pytest; markers: unit [default lane], live, windows)
 python -m pytest                                   # default: `-m "not live" -q` (see pytest.ini)
@@ -76,7 +76,7 @@ is excluded from ruff and from the packaged wheel.
   read-only), watchdog state, and logs. In particular `dashboard.py` reads the **watchdog heartbeat**
   (`state/watchdog.last.json`) for health rather than re-running `doctor` (which shells out to the
   broker/streamer) — keep it that way so viewing status stays fast and offline.
-- **Paper ↔ live isolation.** Cherrypick only invokes paper engines / paper DBs. Anything advisory
+- **Paper ↔ live isolation.** cherrypick only invokes paper engines / paper DBs. Anything advisory
   (e.g. `calibrate`'s promotion recommendations, the drawdown alert) is advisory only — it never mutates
   a module's config or switches live risk.
 - **The watchdog's only trading-adjacent action is benign, non-trading remediation** (restart a dead
@@ -92,7 +92,7 @@ is excluded from ruff and from the packaged wheel.
 
 ## Suite-wide guardrails (inherited from MEICAgent & EarningsAgent)
 
-Cherrypick drives the module repos in place, so it operates under the same guardrails both modules
+cherrypick drives the module repos in place, so it operates under the same guardrails both modules
 declare in their own `CLAUDE.md` (MEIC also keeps a full entry-gate catalog in `../MEICAgent/GATES.md`).
 Honor these here too; several are already stated as Invariants above and are cross-referenced, not
 repeated.
@@ -106,14 +106,14 @@ repeated.
 - **Portable paths, disciplined layout.** Never hardcode absolute paths (`C:\Users\...`), usernames,
   hostnames (except `127.0.0.1`/`localhost`), or drive letters — derive paths from `Path(__file__)`, an
   env var, or config. Never drop working files/tests in the repo root; use `src/`, `tests/`, `docs/`,
-  `config/`. (Cherrypick resolves module paths relative to `config.json`'s directory.)
+  `config/`. (cherrypick resolves module paths relative to `config.json`'s directory.)
 - **Credentials in the OS keyring only.** Every secret — broker OAuth tokens in the modules, Slack/
   Discord webhooks here — lives in the OS keyring (Windows Credential Manager/DPAPI, macOS Keychain,
   Linux Secret Service), never in files, env vars, or logs.
 - **Account numbers masked to `****1234`** everywhere they surface (see Invariants).
 - **Paper ↔ live isolation.** Live-order tools in the modules are gated behind `enable_live_trading:
   true`, and paper mode never calls `execute_trade` (even a dry-run performs a real margin check).
-  Cherrypick only ever invokes paper engines / paper DBs; anything advisory stays advisory (see
+  cherrypick only ever invokes paper engines / paper DBs; anything advisory stays advisory (see
   Invariants). EarningsAgent is additionally **defined-risk only** — naked strategies were removed
   because an unmonitored overnight naked short can blow out arbitrarily.
 - **No MCP / network / AI on any loop-decision or reliability path** (see Invariants). The modules'
@@ -133,7 +133,7 @@ repeated.
 - **`config.json` and `state/`, `logs/`, `dashboard.html` are gitignored** (machine-local). Edit
   `config.example.json` when a config key should be documented for other machines.
 - **Scheduler dispatches by platform.** `orchestrator/tasks.py` uses `schtasks` on Windows and a crontab
-  backend on POSIX (Cherrypick lines tagged `# cherrypick:<name>`). The cron logic is pure + unit-tested;
+  backend on POSIX (cherrypick lines tagged `# cherrypick:<name>`). The cron logic is pure + unit-tested;
   cron *execution* on a real POSIX host is still unvalidated. launchd/systemd are future backends.
 - **Commit messages: no AI / co-author attribution or AI signatures** (a suite-wide rule from
   `ROADMAP.md`). Write docs and PRs from a human developer's perspective.
