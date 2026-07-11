@@ -23,6 +23,12 @@
         "status_argv": ["src/streamer.py", "--status"],
         "start_argv": ["src/streamer.py"],
         "auto_restart": true
+      },
+      "calibration": {
+        "_comment": "Optional. `cherrypick calibrate` reads paper P&L per risk profile and advises promotion up this ladder (advisory only; never switches live risk). Omit 'ladder' to get readings without recommendations. 'deliberate_only' rungs are never auto-recommended; 'rule' overrides the default {min_days:14, min_win_rate:0.6, min_sample:20}.",
+        "ladder": ["conservative", "moderate", "aggressive", "very-aggressive"],
+        "deliberate_only": ["very-aggressive"],
+        "rule": { "min_days": 14, "min_win_rate": 0.6, "min_sample": 20 }
       }
     },
     "earnings": {
@@ -43,6 +49,10 @@
         "requires_dolt": true,
         "dolt_host": "127.0.0.1",
         "dolt_port": 3306
+      },
+      "calibration": {
+        "ladder": ["conservative", "balanced", "aggressive"],
+        "deliberate_only": []
       }
     }
   },

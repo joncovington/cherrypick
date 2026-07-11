@@ -77,9 +77,17 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       (`watchdog._check_drawdown`, config `watchdog.drawdown`). Suite/module net paper P&L at/below a
       floor → WARN, below `floor*critical_multiplier` → CRITICAL, flowing through the existing
       dedup/re-notify state machine. Off unless configured; paper-only, never trades.
+- [x] **`cherrypick calibrate`** (Part-10 advisor surface): per-profile paper **calibration readings**
+      (sample, win rate, distinct sessions, net-of-cost P&L) + an **advisory promotion recommendation**
+      per risk-ladder rung (`orchestrator/calibrate.py`). Reuses `report`'s session-augmented readers;
+      inline-mirrors `cherrypick.core.profiles.recommend_promotion`/`PROMOTION_RULE` (umbrella isn't a
+      cherrypick-core consumer). Ladder/rule/deliberate-only come from each module's `calibration`
+      config; advisory only — never mutates config or switches live risk. Verified against live paper
+      data (per-profile net matches `report`'s `by_profile`).
 - [ ] **Next:** `--serve` live view; the `cherrypick-core` `DashboardSection`/`viz` contract so new
-      modules get a section for free; embedded module dashboards; the GEX panel (needs Part 15); and
-      broker-vs-DB **reconciliation** drift.
+      modules get a section for free; embedded module dashboards; broker-vs-DB **reconciliation** drift;
+      and vendoring cherrypick-core into the umbrella to drop the inline `report`/`calibrate` mirrors.
+      *(The parallel-shadow paper **run** orchestration that feeds calibration stays module-side.)*
 
 ## Shipped since Stage 0 — cherrypick-core extraction + standards
 > Full design & running reconciliation live in `~/.claude/plans/cherrypick-plan.md` (see its

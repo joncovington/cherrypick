@@ -21,7 +21,7 @@ cherrypick-core.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import config as cfgmod
@@ -38,9 +38,17 @@ def _connect_ro(db_path: Path) -> sqlite3.Connection:
 
 
 # --------------------------------------------------------------------------- per-schema readers
+def _session_from_epoch(closed_at) -> str:
+    """Trading-session date (ISO) from an epoch-seconds close time; '' if unparseable."""
+    try:
+        return date.fromtimestamp(float(closed_at)).isoformat()
+    except (TypeError, ValueError, OSError, OverflowError):
+        return ""
+
+
 def _meic_closed(conn) -> list[dict]:
     rows = conn.execute(
-        "SELECT symbol, risk_profile, pnl, fees FROM ic_trades WHERE exit_time IS NOT NULL"
+        "SELECT symbol, risk_profile, pnl, fees, exit_time FROM ic_trades WHERE exit_time IS NOT NULL"
     ).fetchall()
     return [
         {
@@ -48,6 +56,8 @@ def _meic_closed(conn) -> list[dict]:
             "symbol": r["symbol"],
             "strategy": None,
             "net_pnl": (r["pnl"] or 0.0) - (r["fees"] or 0.0),
+            # Session date for calibration (distinct-days count); ISO date prefix of exit_time.
+            "session": (r["exit_time"] or "")[:10],
         }
         for r in rows
     ]
@@ -55,7 +65,8 @@ def _meic_closed(conn) -> list[dict]:
 
 def _earnings_closed(conn) -> list[dict]:
     rows = conn.execute(
-        "SELECT symbol, profile, strategy, pnl, entry_cost, exit_cost FROM trades WHERE closed_at IS NOT NULL"
+        "SELECT symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at "
+        "FROM trades WHERE closed_at IS NOT NULL"
     ).fetchall()
     return [
         {
@@ -63,6 +74,7 @@ def _earnings_closed(conn) -> list[dict]:
             "symbol": r["symbol"],
             "strategy": r["strategy"],
             "net_pnl": (r["pnl"] or 0.0) - (r["entry_cost"] or 0.0) - (r["exit_cost"] or 0.0),
+            "session": _session_from_epoch(r["closed_at"]),
         }
         for r in rows
     ]
