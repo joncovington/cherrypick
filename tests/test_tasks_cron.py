@@ -7,7 +7,7 @@ import pytest
 from cherrypick.orchestrator import tasks
 
 CMD = '"/usr/bin/python3" "/opt/cherrypick/run.py" watchdog'
-NAME = "Cherrypick-Watchdog"
+NAME = "cherrypick-watchdog"
 
 
 def test_minute_schedule_common_cadences():
@@ -55,12 +55,12 @@ def test_upsert_replaces_existing_managed_line_no_duplicate():
 
 
 def test_remove_only_targets_named_entry():
-    other = tasks._cron_line("0 9 * * *", CMD, "Cherrypick-EarningsPaper-Entry")
+    other = tasks._cron_line("0 9 * * *", CMD, "cherrypick-earnings-paper-entry")
     text = tasks._cron_upsert(tasks._cron_upsert("", NAME, tasks._cron_line("*/10 * * * *", CMD, NAME)),
-                              "Cherrypick-EarningsPaper-Entry", other)
+                              "cherrypick-earnings-paper-entry", other)
     out = tasks._cron_remove(text, NAME)
     assert not tasks._cron_has(out, NAME)
-    assert tasks._cron_has(out, "Cherrypick-EarningsPaper-Entry")  # sibling survives
+    assert tasks._cron_has(out, "cherrypick-earnings-paper-entry")  # sibling survives
 
 
 def test_command_for_round_trips():

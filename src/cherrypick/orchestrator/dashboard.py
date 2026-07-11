@@ -357,7 +357,7 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     session = model.get("in_session")
     session_str = "in session" if session else ("off-hours" if session is not None else "unknown")
     header = (
-        '<div class="header"><h1>Cherrypick — suite status ' + _pill(overall, overall) + "</h1>"
+        '<div class="header"><h1>cherrypick — suite status ' + _pill(overall, overall) + "</h1>"
         '<div class="meta">'
         f"<span>watchdog: {html.escape(age_str)}</span>"
         f"<span>ET: {html.escape(str(model.get('et_clock') or '—'))} ({html.escape(session_str)})</span>"
@@ -386,7 +386,7 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>Cherrypick status</title><style>"
+        "<title>cherrypick status</title><style>"
         + _CSS
         + extra_style
         + "</style></head><body><div class='wrap'>"

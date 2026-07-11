@@ -1,4 +1,4 @@
-"""Pytest fixtures + path setup for Cherrypick tests.
+"""Pytest fixtures + path setup for cherrypick tests.
 
 Unit/reliability lane only: no broker, no network, no OS scheduler. Live/Windows-integration tests
 belong behind the `live` / `windows` markers (see pytest.ini).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cherrypick - unattended paper-trading orchestrator (CLI entry point).
+"""cherrypick - unattended paper-trading orchestrator (CLI entry point).
 
 Drives sibling trading modules (MEICAgent, EarningsAgent) in place for hands-off PAPER data
 collection, with a watchdog + notifications so a walk-away user is told (or at least has it logged)
@@ -9,7 +9,7 @@ Subcommands:
   init                 Scaffold + validate config.json (first-run onboarding); --force to overwrite.
   install              Register all scheduled tasks (MEIC paper, earnings entry/exit, watchdog,
                        fast trade-notify) and start the streamer if it is down.
-  uninstall            Remove Cherrypick-managed scheduled tasks.
+  uninstall            Remove cherrypick-managed scheduled tasks.
   status               Show task registration, last watchdog heartbeat, and last earnings run.
   doctor               One green/red readiness check (read-only).
   watchdog             Run one watchdog pass (this is what the scheduled task invokes).
@@ -143,7 +143,7 @@ def cmd_install(cfg) -> None:
                 results[f"{name}.streamer"] = _ensure_streamer(root, streamer)
 
         elif kind == "cherrypick_scheduled":
-            # Cherrypick owns the earnings schedule (the module has none).
+            # cherrypick owns the earnings schedule (the module has none).
             entry_tr = tasks.build_tr(pyw, str(_LAUNCHER), "run-earnings-entry")
             exit_tr = tasks.build_tr(pyw, str(_LAUNCHER), "run-earnings-exit")
             results[f"{name}.entry_task"] = tasks.create_daily_task(
@@ -349,7 +349,7 @@ def cmd_notify_test(cfg) -> None:
         "INFO",
         "notify_test",
         "Notification test",
-        "If you can see this (and it is in logs/notify.log), Cherrypick can reach you.",
+        "If you can see this (and it is in logs/notify.log), cherrypick can reach you.",
     )
     _emit({"ok": True, "channels": res})
 

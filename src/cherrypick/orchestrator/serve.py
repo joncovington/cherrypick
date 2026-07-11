@@ -70,7 +70,7 @@ def serve(cfg: dict[str, Any], host: str | None = None, port: int | None = None,
     httpd = ThreadingHTTPServer((host, port), _make_handler(cfg))
     url = f"http://{host}:{port}/"
     active = [s["id"] for s in sections.enabled_sections(cfg)]
-    print(f"Cherrypick dashboard serving at {url}  (Ctrl-C to stop)"
+    print(f"cherrypick dashboard serving at {url}  (Ctrl-C to stop)"
           + (f" · sections: {', '.join(active)}" if active else " · no live sections"))
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()

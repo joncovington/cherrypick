@@ -1,4 +1,4 @@
-"""Cherrypick watchdog — the walk-away reliability guarantee, minimal form.
+"""cherrypick watchdog — the walk-away reliability guarantee, minimal form.
 
 Runs on its own schedule (a Windows task, every N minutes). Each run it checks that every enabled
 module's paper pipeline is registered, alive, and producing fresh data during the trading session,

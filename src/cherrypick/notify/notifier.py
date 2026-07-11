@@ -39,7 +39,7 @@ class Notifier:
     def __init__(self, notify_cfg: dict[str, Any] | None = None):
         cfg = notify_cfg or {}
         self.channels = cfg.get("channels", ["log"])
-        self.app_name = cfg.get("desktop_app_name", "Cherrypick")
+        self.app_name = cfg.get("desktop_app_name", "cherrypick")
 
     # -- the floor -----------------------------------------------------------------
     def _write_log(self, level: str, key: str, title: str, message: str) -> None:
@@ -102,7 +102,7 @@ class Notifier:
             data=data,
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": "Cherrypick-Notifier/1.0 (+https://github.com/cherrypick)",
+                "User-Agent": "cherrypick-notifier/1.0 (+https://github.com/cherrypick)",
             },
         )
         try:
@@ -162,6 +162,6 @@ def notify(
 
 
 if __name__ == "__main__":  # `python notify/notifier.py "message"` fires a test notification
-    msg = sys.argv[1] if len(sys.argv) > 1 else "Cherrypick notification test"
+    msg = sys.argv[1] if len(sys.argv) > 1 else "cherrypick notification test"
     res = Notifier({"channels": ["log", "desktop"]}).notify("INFO", "test", "Test", msg)
     print(json.dumps(res, indent=2))

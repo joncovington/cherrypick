@@ -1,4 +1,4 @@
-"""Cherrypick notification layer.
+"""cherrypick notification layer.
 
 The logging floor is the guarantee: every notification is written as a structured NOTIFY line
 before any push channel is attempted, and a push-channel failure can never suppress that floor.

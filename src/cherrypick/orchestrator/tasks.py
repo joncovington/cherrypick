@@ -3,7 +3,7 @@
 The public functions (`create_minute_task`, `create_daily_task`, `exists`, `query_verbose`, `delete`,
 `run_now`, `build_tr`) dispatch by platform: Windows uses `schtasks` (mirroring MEICAgent's paper_loop
 `/F /IT` flags — interactive token, runs when the user is logged on); POSIX manages the user's crontab,
-tagging each Cherrypick-owned line with a `# cherrypick:<name>` marker so it can be found/updated/removed
+tagging each cherrypick-owned line with a `# cherrypick:<name>` marker so it can be found/updated/removed
 idempotently.
 
 The cron line construction and crontab editing are pure functions (`_minute_schedule`,
@@ -64,7 +64,7 @@ def _cron_line(schedule: str, command: str, name: str) -> str:
 
 
 def _cron_remove(text: str, name: str) -> str:
-    """Drop any Cherrypick-owned line(s) for `name`; leave everything else untouched."""
+    """Drop any cherrypick-owned line(s) for `name`; leave everything else untouched."""
     marker = _cron_marker(name)
     kept = [ln for ln in text.splitlines() if not ln.rstrip().endswith(marker)]
     return ("\n".join(kept) + "\n") if kept else ""
