@@ -69,8 +69,9 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
 - [x] **`cherrypick dashboard`** (Part-14 first slice): a read-only, file-only **status dashboard**
       (`orchestrator/dashboard.py`). One self-contained static HTML page — suite header (overall status,
       ET clock/session, watchdog heartbeat age, notify channels, suite P&L), an active WARN/CRITICAL
-      rollup, per-module cards (PAPER badge, P&L + per-profile table + that module's findings), and a
-      bounded, level-colored **log tail** with a client-side filter. Health comes from the watchdog
+      rollup, per-module cards (PAPER badge, P&L + per-profile table + that module's findings + a
+      **calibration** panel of advisory promotion recommendations), and a bounded, level-colored
+      **log tail** with a client-side filter. Health comes from the watchdog
       heartbeat (not a live `doctor`/broker call), so it never touches the broker/network. Regenerated
       on each watchdog tick and by the command; written atomically to `dashboard.html`.
 - [x] **Paper-drawdown alert** (drift): opt-in, report-driven watchdog check

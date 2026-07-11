@@ -20,8 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import calibrate, report, timeutil
 from . import config as cfgmod
-from . import report, timeutil
 
 _STATUS_COLORS = {
     "OK": "#1a7f37",
@@ -103,6 +103,12 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
             et_clock = None
 
     pnl = report.run(cfg)
+    # Per-profile promotion recommendations (advisory, file-only). Best-effort: a calibration hiccup
+    # must never break the dashboard render.
+    try:
+        cal = calibrate.run(cfg)
+    except Exception:
+        cal = {"modules": {}}
     modules_cfg = cfgmod.enabled_modules(cfg)
 
     module_views = []
@@ -115,7 +121,16 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
                 "entry": _read_json(cfgmod.STATE_DIR / "earnings_entry.last.json"),
                 "exit": _read_json(cfgmod.STATE_DIR / "earnings_exit.last.json"),
             }
-        module_views.append({"name": name, "pnl": mrep, "findings": mfindings, "sla": sla, "mode": "PAPER"})
+        module_views.append(
+            {
+                "name": name,
+                "pnl": mrep,
+                "findings": mfindings,
+                "sla": sla,
+                "calibration": cal.get("modules", {}).get(name, {}),
+                "mode": "PAPER",
+            }
+        )
 
     tail_n = int(cfg.get("dashboard", {}).get("log_tail_lines", 50))
     sources: list[tuple[str, Path]] = [
@@ -236,6 +251,30 @@ def _sla_html(sla: dict[str, Any]) -> str:
     return f'<div class="sla">{"".join(bits)}</div>' if bits else ""
 
 
+def _calibration_html(cal: dict[str, Any]) -> str:
+    """Advisory promotion recommendations per ladder profile (from calibrate.run). Omitted if none."""
+    profiles = (cal or {}).get("profiles", {})
+    rows = []
+    for tag, p in profiles.items():
+        rec = p.get("recommendation")
+        if not rec:  # off-ladder profiles carry a reading but no recommendation
+            continue
+        r = p.get("reading", {})
+        graduate = rec.get("recommendation", "hold").startswith("graduate")
+        wr = r.get("win_rate")
+        wr_str = f"{wr * 100:.0f}%" if isinstance(wr, (int, float)) else "—"
+        rows.append(
+            "<li>"
+            + _pill("eligible" if graduate else "hold", "OK" if graduate else "WARN")
+            + f" <b>{html.escape(str(tag))}</b> "
+            f'<span class="muted">n={int(r.get("sample", 0))} win {html.escape(wr_str)} '
+            f"days {int(r.get('days', 0))} — {html.escape(str(rec.get('reason', '')))}</span></li>"
+        )
+    if not rows:
+        return ""
+    return f'<h3 class="sub">calibration</h3><ul class="findings">{"".join(rows)}</ul>'
+
+
 def _module_card(mv: dict[str, Any]) -> str:
     name = mv["name"]
     rep = mv.get("pnl", {})
@@ -247,6 +286,7 @@ def _module_card(mv: dict[str, Any]) -> str:
             + _by_profile_table(rep.get("by_profile", {}))
             + _findings_html(mv.get("findings", []), "no health findings")
             + _sla_html(mv.get("sla", {}))
+            + _calibration_html(mv.get("calibration", {}))
         )
     return (
         '<section class="card">'
@@ -278,6 +318,7 @@ body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:
 .wrap{max-width:1100px;margin:0 auto;padding:16px}
 .header,.card{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:14px 16px;margin:0 0 14px}
 h1{font-size:18px;margin:0 0 8px}h2{font-size:15px;margin:0 0 8px}
+h3.sub{font-size:13px;margin:8px 0 2px;color:#57606a;text-transform:uppercase;letter-spacing:.03em}
 .pill{color:#fff;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600;vertical-align:middle}
 .muted{color:#6e7781}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .stats{display:flex;gap:16px;flex-wrap:wrap;margin:6px 0}.stats b{font-variant-numeric:tabular-nums}

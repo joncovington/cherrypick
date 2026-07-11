@@ -109,6 +109,7 @@ def env(tmp_path, monkeypatch):
                     "kind": "self_healing",
                     "log": "logs/paper.log",
                 },
+                "calibration": {"ladder": ["conservative", "moderate", "aggressive"]},
             },
             "earnings": {
                 "enabled": True,
@@ -132,6 +133,60 @@ def test_build_model_assembles_pnl_and_health(env):
     assert [f["key"] for f in m["active_findings"]] == ["meic.streamer"]
     # a CRITICAL notify line was tailed from notify.log
     assert any(e["level"] == "CRITICAL" and "boom" in e["text"] for e in m["logs"])
+
+
+def test_build_model_attaches_calibration_and_renders_panel(env):
+    _, cfg = env
+    m = dashboard.build_model(cfg)
+    views = {mv["name"]: mv for mv in m["modules"]}
+    # meic has a ladder -> its closed profiles (conservative, aggressive) carry recommendations.
+    meic_cal = views["meic"]["calibration"]
+    assert meic_cal["ok"] is True
+    assert "conservative" in meic_cal["profiles"]
+    assert meic_cal["profiles"]["conservative"]["recommendation"] is not None
+    # the rendered page shows the calibration section.
+    assert "calibration" in dashboard._render_html(m)
+
+
+def test_calibration_html_variants():
+    graduate = {
+        "profiles": {
+            "conservative": {
+                "reading": {"sample": 25, "win_rate": 0.7, "days": 20},
+                "recommendation": {"recommendation": "graduate:moderate", "reason": "eligible to graduate"},
+            }
+        }
+    }
+    out = dashboard._calibration_html(graduate)
+    assert "eligible" in out and "graduate" in out and "conservative" in out
+
+    hold = {
+        "profiles": {
+            "conservative": {
+                "reading": {"sample": 3, "win_rate": 0.5, "days": 1},
+                "recommendation": {"recommendation": "hold", "reason": "sample below threshold"},
+            }
+        }
+    }
+    assert "hold" in dashboard._calibration_html(hold)
+
+    # off-ladder (recommendation None) and empty -> panel omitted.
+    assert dashboard._calibration_html({"profiles": {"x": {"reading": {}, "recommendation": None}}}) == ""
+    assert dashboard._calibration_html({}) == ""
+
+
+def test_calibration_html_escapes_untrusted_text():
+    cal = {
+        "profiles": {
+            "<b>c</b>": {
+                "reading": {"sample": 1, "win_rate": None, "days": 1},
+                "recommendation": {"recommendation": "hold", "reason": "<script>x</script>"},
+            }
+        }
+    }
+    out = dashboard._calibration_html(cal)
+    assert "<script>x</script>" not in out and "&lt;script&gt;x" in out
+    assert "<b>c</b>" not in out and "&lt;b&gt;c" in out
 
 
 def test_findings_split_by_module(env):
