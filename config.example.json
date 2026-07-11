@@ -1,10 +1,13 @@
 {
-  "_comment": "Cherrypick orchestration config. Module paths are resolved relative to this file's directory; never hardcode absolute paths. Copy to config.json and adjust as needed.",
+  "_comment": "Cherrypick orchestration config. Copy to config.json and adjust. A module is located by 'repo' (cloned by `cherrypick install` into ~/.cherrypick/modules/<repo-name>) or by an explicit 'path' override; paths are relative to this file's directory. Never hardcode absolute machine paths.",
+  "_home_note": "Runtime home (this config.json, logs/, state/, dashboard.html) = CHERRYPICK_HOME if set, else the repo root in a source checkout, else ~/.cherrypick for a pip-installed copy. An installed copy thus reads ~/.cherrypick/config.json.",
+  "_modules_home_note": "Managed module checkouts live under CHERRYPICK_MODULES_HOME, else CHERRYPICK_HOME/modules, else ~/.cherrypick/modules. `install` clones a module only when its checkout is absent and never touches an existing one; `uninstall` leaves checkouts in place.",
   "timezone": "America/New_York",
   "modules": {
     "meic": {
       "enabled": true,
-      "path": "../MEICAgent",
+      "_path_note": "Locate the module by EITHER 'repo' (install clones it to the managed modules home) OR 'path' (an in-place dev checkout, absolute or relative to this file — never cloned over). Optional 'ref' picks a branch/tag to clone.",
+      "repo": "https://github.com/joncovington/cherrypick-meic.git",
       "paper": {
         "kind": "self_healing",
         "task_name": "MEICAgent-PaperLoop",
@@ -33,7 +36,7 @@
     },
     "earnings": {
       "enabled": true,
-      "path": "../EarningsAgent",
+      "repo": "https://github.com/joncovington/cherrypick-earnings.git",
       "paper": {
         "kind": "cherrypick_scheduled",
         "entry_task_name": "Cherrypick-EarningsPaper-Entry",
