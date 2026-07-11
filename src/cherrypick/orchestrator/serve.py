@@ -1,12 +1,13 @@
 """`dashboard --serve` — a localhost live view of the suite dashboard.
 
 The static dashboard writes an HTML file on each watchdog tick; this serves the *same* page rebuilt
-fresh per request so a walk-away user can leave it open and watch health, P&L, and (when the GEX module
-is enabled) a live GEX section update on their own. It reuses `dashboard.build_model` / `_render_html`
-unchanged — those stay pure and file-only — and adds one route, `/api/gex`, that the GEX card polls.
+fresh per request so a walk-away user can leave it open and watch health, P&L, and any enabled live
+sections update on their own. It reuses `dashboard.build_model` / `_render_html` unchanged — those stay
+pure and file-only — and adds one generic route, `/api/section/<id>`, that each section card polls.
 
-Read-only and loopback-only, like the rest of the read side: it reads files (and, for GEX, subprocesses
-the read-only GEX module), never the broker, and binds 127.0.0.1 so it is never exposed off-box.
+Read-only and loopback-only, like the rest of the read side: it reads files (and, for sections,
+subprocesses the read-only section module), never the broker, and binds 127.0.0.1 so it is never
+exposed off-box.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import dashboard, gex
+from . import dashboard, sections
 
 
 def _make_handler(cfg: dict[str, Any]):
@@ -42,13 +43,17 @@ def _make_handler(cfg: dict[str, Any]):
                 except Exception as exc:  # a render hiccup shows an error page, never crashes the server
                     self._send(500, f"dashboard render error: {exc}".encode(), "text/plain")
                 return
-            if parsed.path == "/api/gex":
-                qs = parse_qs(parsed.query)
-                sym = (qs.get("symbol", [gex.default_symbol(cfg)])[0] or gex.default_symbol(cfg))
+            if parsed.path.startswith("/api/section/"):
+                sid = parsed.path[len("/api/section/"):]
+                sec = sections.by_id(cfg, sid)
+                if sec is None:
+                    self._send(404, b'{"ok": false, "error": "unknown section"}', "application/json")
+                    return
+                params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
                 try:
-                    payload = gex.fetch(cfg, sym)
-                except Exception as exc:  # best-effort: the GEX side never breaks the page
-                    payload = {"ok": False, "symbol": sym, "error": str(exc)}
+                    payload = sections.fetch(sec, params)
+                except Exception as exc:  # best-effort: a section never breaks the page
+                    payload = {"ok": False, "error": str(exc)}
                 self._send(200, json.dumps(payload).encode("utf-8"), "application/json")
                 return
             self._send(404, b"not found", "text/plain")
@@ -64,8 +69,9 @@ def serve(cfg: dict[str, Any], host: str | None = None, port: int | None = None,
     port = int(port or scfg.get("port", 8787))
     httpd = ThreadingHTTPServer((host, port), _make_handler(cfg))
     url = f"http://{host}:{port}/"
+    active = [s["id"] for s in sections.enabled_sections(cfg)]
     print(f"Cherrypick dashboard serving at {url}  (Ctrl-C to stop)"
-          + (f" · GEX: {gex.default_symbol(cfg)}" if gex.is_enabled(cfg) else " · GEX module disabled"))
+          + (f" · sections: {', '.join(active)}" if active else " · no live sections"))
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
