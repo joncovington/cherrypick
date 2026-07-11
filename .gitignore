@@ -1,0 +1,17 @@
+# Cherrypick — local/runtime artifacts
+__pycache__/
+*.pyc
+.tmp/
+.pytest_cache/
+.ruff_cache/
+
+# Runtime state & logs (machine-local)
+logs/
+state/
+
+# Working config (copy from config.example.json; may hold machine-specific paths)
+config.json
+
+# Opt-in local tooling (never committed; see plan Concept H)
+graphify-out/
+.claude/
