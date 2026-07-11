@@ -20,7 +20,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import calibrate, gex, report, timeutil
+from cherrypick.core import viz
+
+from . import calibrate, report, sections, timeutil
 from . import config as cfgmod
 
 _STATUS_COLORS = {
@@ -161,11 +163,11 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         "suite": pnl.get("suite", {}),
         "modules": module_views,
         "logs": log_entries,
-        "gex": {
-            "enabled": gex.is_enabled(cfg),
-            "symbol": gex.default_symbol(cfg),
-            "refresh": gex.refresh_seconds(cfg),
-        },
+        "sections": [
+            {"id": s["id"], "title": s.get("title", s["id"]),
+             "endpoint": f"/api/section/{s['id']}", "refresh": sections.refresh_seconds(s)}
+            for s in sections.enabled_sections(cfg)
+        ],
     }
 
 
@@ -348,95 +350,6 @@ document.querySelectorAll('.logline[data-level="'+lvl+'"]').forEach(function(r){
 """
 
 
-# GEX section (serve mode only) — self-contained, no external assets: metrics + a compact inline
-# net-GEX-by-strike bar view comparing open interest (positioning) with traded volume (flow). The rich
-# interactive Chart.js view lives in the cherrypick-gex module's own `dashboard --serve`.
-_GEX_STYLE = (
-    ".gexcard h2 .muted{font-weight:400;font-size:13px}"
-    ".gexmetrics{display:flex;flex-wrap:wrap;gap:14px;margin:6px 0 12px}"
-    ".gexm{min-width:96px}.gexm .k{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.7}"
-    ".gexm .v{font-size:17px;font-weight:650}"
-    ".gexrow{display:grid;grid-template-columns:64px 1fr;align-items:center;gap:8px}"
-    ".gexrow{margin:2px 0;font-size:12px}"
-    ".gexbars{position:relative;height:16px}"
-    ".gexbar{position:absolute;top:2px;height:5px;border-radius:2px}"
-    ".gexbar.vol{top:9px;height:4px;opacity:.85}"
-    ".gexpos{background:#1a7f37}.gexneg{background:#cf222e}.gexvol{background:#9a6700}"
-    ".gexspot{color:#0969da;font-weight:650}.gexerr{color:#9a6700}"
-)
-
-
-_GEX_JS = r"""
-function gexFmt(v){ if(v==null||isNaN(v)) return '–'; var a=Math.abs(v), s=v<0?'-':'';
-  if(a>=1e9) return s+(a/1e9).toFixed(2)+'B'; if(a>=1e6) return s+(a/1e6).toFixed(1)+'M';
-  if(a>=1e3) return s+(a/1e3).toFixed(0)+'K'; return v.toFixed(0); }
-function gexMetric(k,v,cls){
-  return '<div class="gexm"><div class="k">'+k+'</div><div class="v '+(cls||'')+'">'+v+'</div></div>'; }
-function gexNearest(s, spot){
-  var best=1e18; s.forEach(function(x){ best=Math.min(best, Math.abs(x.strike-spot)); }); return best; }
-function gexRender(d){
-  var sub=document.getElementById('gexsub');
-  var met=document.getElementById('gexmetrics'), ch=document.getElementById('gexchart');
-  if(!d||!d.ok){
-    sub.className='gexerr'; sub.textContent=(d&&d.error)?d.error:'no data';
-    met.innerHTML=''; ch.innerHTML=''; return; }
-  var t=d.totals||{}, n=(d.series?d.series.length:0);
-  sub.className='muted';
-  sub.textContent='exp '+(d.expiration||'?')+' · '+n+' strikes · '+(d.source||'');
-  met.innerHTML =
-      gexMetric('Spot', d.underlying_price!=null?(+d.underlying_price).toFixed(2):'–','gexspot')
-    + gexMetric('Net GEX', gexFmt(t.net_gex), t.net_gex>=0?'gexpos':'gexneg')
-    + gexMetric('Gamma Flip', t.zero_gamma!=null?(+t.zero_gamma).toFixed(2):'–')
-    + gexMetric('Call Wall', t.call_wall!=null?t.call_wall:'–')
-    + gexMetric('Put Wall', t.put_wall!=null?t.put_wall:'–');
-  // Compact net-GEX-by-strike: OI (thick) vs volume (thin), zero at centre. Show up to 21 strikes
-  // centred on the spot so the near-the-money structure that matters is always visible.
-  var s=(d.series||[]).slice(); if(!s.length){ ch.innerHTML=''; return; }
-  var spot=d.underlying_price;
-  if(spot!=null && s.length>21){
-    var ci=0, best=1e18;
-    for(var i=0;i<s.length;i++){ var dd=Math.abs(s[i].strike-spot); if(dd<best){best=dd;ci=i;} }
-    s=s.slice(Math.max(0, ci-10), Math.max(0, ci-10)+21);
-  }
-  var mx=1; s.forEach(function(r){ mx=Math.max(mx, Math.abs(r.net_gex||0), Math.abs(r.net_gex_vol||0)); });
-  var near = spot!=null ? gexNearest(s, spot) : -1;
-  function bar(v,cls){
-    var w=Math.min(50, Math.abs(v)/mx*50), left=v>=0?50:(50-w);
-    return '<div class="gexbar '+cls+'" style="left:'+left+'%;width:'+w+'%"></div>'; }
-  var rows=s.map(function(r){
-    var isSpot = spot!=null && Math.abs(r.strike-spot)===near;
-    var oiCls = (r.net_gex>=0?'gexpos':'gexneg');
-    return '<div class="gexrow"><div'+(isSpot?' class="gexspot"':'')+'>'+r.strike+'</div>'
-      + '<div class="gexbars">'+bar(r.net_gex,oiCls)+bar(r.net_gex_vol,'gexvol vol')+'</div></div>';
-  }).join('');
-  ch.innerHTML = rows;
-}
-function gexTick(){
-  fetch('/api/gex?symbol='+encodeURIComponent(GEXCFG.symbol))
-    .then(function(r){return r.json();}).then(gexRender).catch(function(){});
-}
-gexTick(); setInterval(gexTick, GEXCFG.refresh*1000);
-"""
-
-
-def _gex_card_html(gex_model: dict[str, Any]) -> str:
-    sym = html.escape(str(gex_model.get("symbol", "SPX")))
-    return (
-        '<section class="card gexcard"><h2>GEX — <span id="gexsym">' + sym + "</span> "
-        '<span class="muted" id="gexsub">loading…</span></h2>'
-        '<div class="gexmetrics" id="gexmetrics"></div>'
-        '<div id="gexchart"></div>'
-        '<div class="meta"><span class="muted">positioning = open interest · flow = traded volume · '
-        "a simple self-hosted gexbot / SpotGamma / MenthorQ</span></div></section>"
-    )
-
-
-def _gex_script(gex_model: dict[str, Any]) -> str:
-    cfg = {"symbol": str(gex_model.get("symbol", "SPX")), "refresh": int(gex_model.get("refresh", 15))}
-    # json.dumps keeps the injected values safe inside the <script> block.
-    return "\nvar GEXCFG=" + json.dumps(cfg) + ";\n" + _GEX_JS
-
-
 def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     overall = model.get("overall", "UNKNOWN")
     age = model.get("heartbeat_age_min")
@@ -462,13 +375,14 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
         '<div class="meta"><span class="muted">read-only · paper · generated '
         f"{html.escape(str(model.get('generated_at')))}</span></div>"
     )
-    # The live GEX section is serve-only: it polls /api/gex, which exists only under `dashboard --serve`.
-    # A static file render omits it (there is no server to answer the poll).
-    gex_model = model.get("gex", {}) or {}
-    show_gex = bool(serve and gex_model.get("enabled"))
-    gex_section = _gex_card_html(gex_model) if show_gex else ""
-    extra_style = _GEX_STYLE if show_gex else ""
-    extra_script = _gex_script(gex_model) if show_gex else ""
+    # Live sections are serve-only: they poll /api/section/<id>, which exists only under
+    # `dashboard --serve`. A static file render omits them (no server to answer the poll).
+    live_sections = model.get("sections", []) if serve else []
+    section_cards = "".join(
+        viz.card_skeleton_html(s["id"], s["title"], s["endpoint"], s["refresh"]) for s in live_sections
+    )
+    extra_style = viz.SECTION_STYLE if live_sections else ""
+    extra_script = viz.SECTION_JS if live_sections else ""
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -477,7 +391,7 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
         + extra_style
         + "</style></head><body><div class='wrap'>"
         + header
-        + gex_section
+        + section_cards
         + f'<div class="grid">{cards}</div>'
         + logs
         + footer

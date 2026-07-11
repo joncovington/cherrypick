@@ -92,9 +92,27 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       Behavior unchanged (the mirrors were faithful; the existing tests are the regression guard). CI
       checks out submodules; `src/_core` is excluded from ruff + packaging. **Fresh clones:** run
       `git submodule update --init` (as the modules require).
-- [ ] **Next:** `--serve` live view; the `cherrypick-core` `DashboardSection`/`viz` contract so new
-      modules get a section for free; embedded module dashboards; broker-vs-DB **reconciliation** drift.
+- [x] **`dashboard --serve` live view + declarative section contract (shipped 2026-07-11).**
+      `dashboard --serve` runs a localhost `ThreadingHTTPServer` (`orchestrator/serve.py`) that
+      re-renders the suite page fresh per request. The `cherrypick.core.viz` `DashboardSection` contract
+      lets any module contribute a live card by emitting a small JSON payload (metrics tiles + a signed
+      bar series) — the umbrella renders it generically (`orchestrator/sections.py` subprocesses the
+      module by config-declared `fetch_argv`; never imports its internals), so a new module gets a card
+      for free. First consumer: **cherrypick-gex**, a self-hosted GEX (gamma-exposure) dashboard —
+      GEX-by-OI vs GEX-by-volume, gamma flip, call/put walls — with its own streaming (see below).
+- [ ] **Next:** embedded module dashboards; broker-vs-DB **reconciliation** drift.
       *(The parallel-shadow paper **run** orchestration that feeds calibration stays module-side.)*
+
+## GEX dashboard + shared streamer (shipped 2026-07-11)
+- [x] **`cherrypick.core.gex.compute_gex_profile`** — the rich per-strike OI+volume GEX aggregation
+      (net GEX by OI and by volume, call/put walls, gamma flip), shared so cherrypick-meic's dashboard
+      and the GEX module compute identically (retired the drift the GEX math was extracted to prevent).
+- [x] **`cherrypick-gex`** — a new standalone module: reads a stream cache read-only, computes GEX via
+      the shared core, serves its own Chart.js view, and emits a `core.viz` section for the umbrella.
+- [x] **`cherrypick.core.streamer` + `cherrypick.core.streamcache`** — the persistent DXLink streaming
+      engine + cache schema extracted from MEIC into one shared implementation. cherrypick-gex streams
+      standalone; MEIC's `streamer.py` migrated onto it (ORB / open-position policy / 7699 API injected
+      as hooks), retiring ~500 lines of duplicate engine. Verified live end-to-end.
 
 ## Shipped since Stage 0 — cherrypick-core extraction + standards
 > Full design & running reconciliation live in `~/.claude/plans/cherrypick-plan.md` (see its
