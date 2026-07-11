@@ -39,9 +39,10 @@ from typing import Any
 # Allow running as `python src/tt.py` from any working directory.
 sys.path.insert(0, os.path.dirname(__file__))
 
+from cherrypit import dxfeed as _dx
+
 import credentials as _creds
 from session import get_session
-from cherrypit import dxfeed as _dx
 
 
 def _load_config() -> dict:
@@ -397,7 +398,7 @@ _ACTION_MAP = {
 
 
 def _build_order(spec: dict):
-    from tastytrade.order import NewOrder, OrderAction, OrderTimeInForce, OrderType, Leg
+    from tastytrade.order import Leg, NewOrder, OrderAction, OrderTimeInForce, OrderType
 
     tif = OrderTimeInForce(str(spec.get("time_in_force", "Day")))
     otype = OrderType(str(spec.get("order_type", "Limit")))

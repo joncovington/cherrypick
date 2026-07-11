@@ -27,12 +27,13 @@ import argparse
 import base64
 import io
 import sys
-from datetime import datetime, timedelta, date as _date
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 

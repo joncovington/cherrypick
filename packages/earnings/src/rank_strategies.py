@@ -47,7 +47,15 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(__file__))
 
 import scanner
-from strategies import iron_fly, double_calendar, iron_condor, atm_calendar, directional_credit_spread, broken_wing_butterfly, reverse_fly
+from strategies import (
+    atm_calendar,
+    broken_wing_butterfly,
+    directional_credit_spread,
+    double_calendar,
+    iron_condor,
+    iron_fly,
+    reverse_fly,
+)
 
 
 def _ensure_dolt_running():
@@ -59,7 +67,7 @@ def _ensure_dolt_running():
         sock.close()
         if result == 0:
             return True
-    except:
+    except Exception:
         pass
 
     print("Starting dolt SQL server...", file=sys.stderr)

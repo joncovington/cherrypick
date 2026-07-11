@@ -2,7 +2,6 @@ import pytest
 
 import sizing
 
-
 BASE_CONFIG = {"available_capital_paper_mode": 100000, "risk_pct_multiplier": 1.0, "max_contracts_per_leg": 20}
 STRATEGY_CONFIG = {"max_risk_per_trade_pct": 0.05}
 

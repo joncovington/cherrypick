@@ -14,7 +14,6 @@ import json
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
 
 
 class EODReportGenerator:
@@ -72,8 +71,8 @@ class EODReportGenerator:
                 report.append(f"  {i}. {trade.get('symbol', 'N/A'):<8} - {trade.get('strategy', 'N/A')}")
                 report.append(f"     Entry: ${trade.get('entry_price', 0):.2f}")
                 report.append(f"     Quantity: {trade.get('entry_quantity', 0)}")
-                report.append(f"     Target: 50% of entry credit")
-                report.append(f"     Backstop: 4 hours post-announcement")
+                report.append("     Target: 50% of entry credit")
+                report.append("     Backstop: 4 hours post-announcement")
                 report.append("")
 
         # Next-Day Monitoring
@@ -244,7 +243,7 @@ class EODReportGenerator:
 
         return "\n".join(report)
 
-    def save_report(self, report: str, date: Optional[str] = None, report_type: str = "daily"):
+    def save_report(self, report: str, date: str | None = None, report_type: str = "daily"):
         """Save report to file."""
         if date is None:
             date = datetime.now().strftime("%Y_%m_%d")

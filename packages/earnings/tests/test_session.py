@@ -9,9 +9,9 @@ tastytrade is never constructed — an injected fake factory stands in.
 import threading
 
 import pytest
+from cherrypit.auth import SessionManager
 
 import session
-from cherrypit.auth import SessionManager
 
 
 @pytest.fixture(autouse=True)

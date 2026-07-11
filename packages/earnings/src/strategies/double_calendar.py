@@ -322,7 +322,7 @@ def label_order_legs(order_result: dict) -> list[dict]:
     roles = ["front_call", "front_put", "back_call", "back_put"]
     return [
         {"leg_role": role, "symbol": leg["symbol"], "action": leg["action"], "quantity": leg["quantity"]}
-        for role, leg in zip(roles, legs)
+        for role, leg in zip(roles, legs, strict=True)
     ]
 
 

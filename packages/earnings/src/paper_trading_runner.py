@@ -12,7 +12,6 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
 
 
 class PaperTradingLogger:
@@ -31,7 +30,7 @@ class PaperTradingLogger:
         entry_price: float,
         quantity: int,
         notes: str = "",
-    ) -> Dict:
+    ) -> dict:
         """Log trade entry."""
         entry = {
             "timestamp": datetime.now().isoformat(),
@@ -59,7 +58,7 @@ class PaperTradingLogger:
         quantity: int,
         reason: str = "manual",
         notes: str = "",
-    ) -> Dict:
+    ) -> dict:
         """Log trade exit."""
         entry_credit = entry_price * 100 * quantity
         exit_cost = exit_price * 100 * quantity
@@ -89,7 +88,7 @@ class PaperTradingLogger:
 
         return exit_record
 
-    def append_performance(self, exit_record: Dict) -> None:
+    def append_performance(self, exit_record: dict) -> None:
         """Append exit record to performance log."""
         records = []
         if self.perf_log.exists():
@@ -157,7 +156,7 @@ def main():
             elif arg == "--notes" and i + 1 < len(sys.argv[idx:]):
                 notes = sys.argv[idx + i + 1]
 
-        entry = logger.log_entry(symbol, strategy, entry_price, quantity, notes)
+        logger.log_entry(symbol, strategy, entry_price, quantity, notes)
         print()
 
     elif "--log-exit" in sys.argv:

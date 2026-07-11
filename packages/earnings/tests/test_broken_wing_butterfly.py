@@ -2,15 +2,14 @@
 
 import json
 import sys
-from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from strategies import broken_wing_butterfly as bwb
 import scanner
+from strategies import broken_wing_butterfly as bwb
 
 
 @pytest.fixture
@@ -188,7 +187,7 @@ class TestEvaluatePositionStopLoss:
             "BODY": {"bid": 2.05, "ask": 2.15, "delta": 0.75},
             "FAR": {"bid": 0.25, "ask": 0.35, "delta": 0.25},
         }
-        result2 = bwb.evaluate_position(position, quotes2, config)
+        bwb.evaluate_position(position, quotes2, config)
         # exit_debit = 2*2.15 - 0.25 - 0.35 = 3.70
         # If price moved more:
         quotes3 = {
@@ -196,7 +195,7 @@ class TestEvaluatePositionStopLoss:
             "BODY": {"bid": 2.10, "ask": 2.20, "delta": 0.80},
             "FAR": {"bid": 0.30, "ask": 0.40, "delta": 0.30},
         }
-        result3 = bwb.evaluate_position(position, quotes3, config)
+        bwb.evaluate_position(position, quotes3, config)
         # exit_debit = 2*2.20 - 0.30 - 0.40 = 3.70
         # Hmm, we need to be more aggressive to hit 4.00
         quotes4 = {
