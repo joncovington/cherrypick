@@ -15,10 +15,42 @@ from typing import Any
 # Cherrypick runtime root — where config.json, logs/, and state/ live. In a source checkout that is the
 # repo root; this module sits at <root>/src/cherrypick/orchestrator/config.py, so the root is 3 parents
 # up. An installed copy (no repo root) sets CHERRYPICK_HOME to its runtime dir instead.
-ROOT = Path(os.environ.get("CHERRYPICK_HOME") or Path(__file__).resolve().parents[3])
+# The per-user runtime home for an installed copy (config.json, logs/, state/, dashboard.html, modules/).
+_USER_HOME = Path.home() / ".cherrypick"
+
+
+def _default_root() -> Path:
+    """Cherrypick's runtime home (holds config.json, logs/, state/, dashboard.html).
+
+    CHERRYPICK_HOME always wins. Otherwise a *source checkout* keeps everything in the repo root
+    (convenient for dev, matches historical behavior); an *installed copy* — where this file lives under
+    site-packages, so the repo-root guess is meaningless/unwritable — falls back to the per-user
+    ~/.cherrypick so the `cherrypick` console script has a real, writable home.
+    """
+    env = os.environ.get("CHERRYPICK_HOME")
+    if env:
+        return Path(env)
+    repo_root = Path(__file__).resolve().parents[3]
+    if (repo_root / "run.py").exists() or (repo_root / "pyproject.toml").exists():
+        return repo_root
+    return _USER_HOME
+
+
+ROOT = _default_root()
 CONFIG_PATH = ROOT / "config.json"
 LOGS_DIR = ROOT / "logs"
 STATE_DIR = ROOT / "state"
+
+# Where `cherrypick install` materializes module checkouts when a module declares no explicit `path`.
+# Precedence: CHERRYPICK_MODULES_HOME (test/override) → CHERRYPICK_HOME/modules (unified with the rest of
+# the runtime home for an installed copy) → the per-user default ~/.cherrypick/modules. Kept independent
+# of ROOT so a source checkout still parks modules in the user dir rather than nesting them (and their
+# runtime data — e.g. Earnings' multi-GB Dolt store) inside the repo.
+_CH_HOME_ENV = os.environ.get("CHERRYPICK_HOME")
+MODULES_HOME = Path(
+    os.environ.get("CHERRYPICK_MODULES_HOME")
+    or (Path(_CH_HOME_ENV) / "modules" if _CH_HOME_ENV else _USER_HOME / "modules")
+)
 
 
 def load_config(path: Path | None = None) -> dict[str, Any]:
@@ -35,15 +67,32 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     return cfg
 
 
-def module_root(module_cfg: dict[str, Any]) -> Path:
-    """Resolve a module's on-disk root from its (relative) 'path', anchored at Cherrypick ROOT."""
+def module_dirname(module_cfg: dict[str, Any], name: str | None = None) -> str:
+    """Checkout directory name under MODULES_HOME: the repo basename
+    (…/cherrypick-meic.git → cherrypick-meic) when a 'repo' is configured, else the module's key."""
+    repo = module_cfg.get("repo")
+    if repo:
+        stem = str(repo).rstrip("/").rsplit("/", 1)[-1]
+        return stem[:-4] if stem.endswith(".git") else stem
+    if name:
+        return name
+    raise ValueError("module config needs a 'repo', a 'path', or a name to locate its checkout")
+
+
+def module_root(module_cfg: dict[str, Any], name: str | None = None) -> Path:
+    """Resolve a module's on-disk root.
+
+    An explicit 'path' (absolute, or relative to Cherrypick ROOT) always wins — the dev override for a
+    working checkout. With no 'path', the module lives at its managed install location
+    MODULES_HOME/<dirname> (see module_dirname), which is where `cherrypick install` clones it.
+    """
     raw = module_cfg.get("path")
-    if not raw:
-        raise ValueError("module config missing 'path'")
-    p = Path(raw)
-    if not p.is_absolute():
-        p = ROOT / p
-    return p.resolve()
+    if raw:
+        p = Path(raw)
+        if not p.is_absolute():
+            p = ROOT / p
+        return p.resolve()
+    return (MODULES_HOME / module_dirname(module_cfg, name)).resolve()
 
 
 def enabled_modules(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
