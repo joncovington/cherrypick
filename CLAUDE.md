@@ -132,7 +132,8 @@ repeated.
   install`.
 - **`config.json` and `state/`, `logs/`, `dashboard.html` are gitignored** (machine-local). Edit
   `config.example.json` when a config key should be documented for other machines.
-- **Windows-only scheduler.** `orchestrator/tasks.py` uses `schtasks` and raises on non-Windows; a POSIX
-  backend is a later phase.
+- **Scheduler dispatches by platform.** `orchestrator/tasks.py` uses `schtasks` on Windows and a crontab
+  backend on POSIX (Cherrypick lines tagged `# cherrypick:<name>`). The cron logic is pure + unit-tested;
+  cron *execution* on a real POSIX host is still unvalidated. launchd/systemd are future backends.
 - **Commit messages: no AI / co-author attribution or AI signatures** (a suite-wide rule from
   `ROADMAP.md`). Write docs and PRs from a human developer's perspective.

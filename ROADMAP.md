@@ -172,8 +172,11 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       install` re-registered every task at the new paths and moved the streamer to `cherrypick-meic`.
 
 ## Known Stage-0 limitations (hardened in later phases)
-- **Windows-only scheduler** (`schtasks`). POSIX (cron/launchd/systemd) backend is a later phase; the
-  `tasks.py` functions raise a clear error on non-Windows.
+- **Scheduler: Windows (`schtasks`) + a POSIX cron backend.** `tasks.py` now dispatches by platform —
+  Windows uses `schtasks`; POSIX manages the user crontab (each Cherrypick line tagged
+  `# cherrypick:<name>` for idempotent upsert/remove). The cron-line + crontab-editing logic is pure and
+  unit-tested cross-platform (`tests/test_tasks_cron.py`); end-to-end cron **execution** (env,
+  notifications) still wants validation on a real POSIX host. launchd/systemd remain future options.
 - **No watchdog-of-the-watchdog.** The Windows Task Scheduler durability + the logging floor are the
   Stage-0 backstop; `doctor` surfaces a missing watchdog task. Phase 6b promotes this into the shared
   reliability framework.
