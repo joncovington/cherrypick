@@ -1,0 +1,12 @@
+{
+  "source": {
+    "stream_cache_db": "../cherrypick-meic/data/stream_cache.db"
+  },
+  "symbols": ["SPX"],
+  "serve": {
+    "host": "127.0.0.1",
+    "port": 5055,
+    "refresh_seconds": 15
+  },
+  "history_db": "data/gex_history.db"
+}

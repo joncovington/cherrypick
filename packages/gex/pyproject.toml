@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick-gex"
+version = "0.1.0"
+description = "Live GEX (gamma exposure) dashboard — a simple self-hosted gexbot/SpotGamma/MenthorQ"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths  = ["tests"]
+pythonpath = ["tests", "src"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+# src/_core is the cherrypick-core submodule — it carries its own ruff config; never lint it here.
+extend-exclude = ["src/_core"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# service.py bootstraps src/_core onto sys.path before importing cherrypick.core (deliberate, like MEIC).
+"src/service.py" = ["E402"]
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src"]
+sources = ["src"]
+exclude = ["src/_core"]
