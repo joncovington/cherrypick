@@ -15,6 +15,7 @@ import sys
 import config as _config
 import serve as _serve
 import service as _service
+import streamer as _streamer
 
 
 def _cmd_gex(cfg: dict, args: argparse.Namespace) -> int:
@@ -29,6 +30,12 @@ def _cmd_gex(cfg: dict, args: argparse.Namespace) -> int:
     print(f"{payload['symbol']}  exp {payload['expiration']}  spot {payload['underlying_price']}")
     print(f"  net GEX {t['net_gex']:>14,}   flip {t['zero_gamma']}   "
           f"call wall {t['call_wall']}   put wall {t['put_wall']}   ({len(payload['series'])} strikes)")
+    return 0
+
+
+def _cmd_stream(cfg: dict, args: argparse.Namespace) -> int:
+    syms = args.symbol if args.symbol else None
+    _streamer.run(cfg, symbols=syms)
     return 0
 
 
@@ -49,6 +56,10 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--symbol", default=None, help="underlying symbol (default: config.symbols[0])")
     g.add_argument("--json", action="store_true", help="emit the raw payload as JSON")
 
+    st = sub.add_parser("stream", help="run the streamer to populate this module's own cache")
+    st.add_argument("--symbol", action="append", default=None,
+                    help="underlying to stream (repeatable; default: config.symbols)")
+
     d = sub.add_parser("dashboard", help="live GEX dashboard")
     d.add_argument("--serve", action="store_true", help="run the localhost live view")
     d.add_argument("--symbol", default=None)
@@ -60,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     cfg = _config.load()
     if args.command == "gex":
         return _cmd_gex(cfg, args)
+    if args.command == "stream":
+        return _cmd_stream(cfg, args)
     if args.command == "dashboard":
         return _cmd_dashboard(cfg, args)
     return 2

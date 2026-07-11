@@ -16,8 +16,9 @@ CONFIG_PATH = ROOT / "config.json"
 EXAMPLE_PATH = ROOT / "config.example.json"
 
 _DEFAULTS = {
-    "source": {"stream_cache_db": "../cherrypick-meic/data/stream_cache.db"},
+    "source": {"stream_cache_db": "data/stream_cache.db"},
     "symbols": ["SPX"],
+    "streamer": {"window_strike_count": 20},
     "serve": {"host": "127.0.0.1", "port": 5055, "refresh_seconds": 15},
     "history_db": "data/gex_history.db",
 }

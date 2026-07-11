@@ -69,39 +69,57 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:
         tr = conn.execute("SELECT last FROM stream_trades WHERE symbol = ?", (symbol,)).fetchone()
         spot = float(tr["last"]) if tr and tr["last"] is not None else None
 
-        # Nearest expiration for this underlying. The underlying_symbol filter matters: XSP and SPX
-        # share 0DTE dates, so an expiration-only match would blend two chains.
-        exp_row = conn.execute(
+        # Candidate expirations for this underlying, nearest first. The underlying_symbol filter
+        # matters: XSP and SPX share 0DTE dates, so an expiration-only match would blend two chains.
+        exps = [r["expiration"] for r in conn.execute(
             "SELECT expiration FROM stream_chain WHERE underlying_symbol = ? "
-            "ORDER BY ABS(JULIANDAY(expiration) - JULIANDAY('now')) LIMIT 1",
+            "GROUP BY expiration ORDER BY ABS(JULIANDAY(expiration) - JULIANDAY('now'))",
             (symbol,),
-        ).fetchone()
-        if not exp_row:
+        )]
+        if not exps:
             return GexSnapshot(symbol=symbol, spot=spot, expiration=None)
-        expiration = exp_row["expiration"]
 
-        chain_rows = conn.execute(
-            "SELECT data_json FROM stream_chain WHERE expiration = ? AND underlying_symbol = ?",
-            (expiration, symbol),
-        ).fetchall()
-
+        # Pick the nearest expiration that actually has LIVE greeks. Nearest-by-date alone can land on a
+        # future expiration that has chain metadata but no greeks yet — the streamer only subscribes
+        # Greeks/Summary/Trade for its active 0DTE ATM window, so an all-strikes metadata chain for a
+        # later date reads as all-zero GEX. Fall back to plain nearest (a "not ready" zero profile) when
+        # no cached expiration has greeks.
+        expiration = exps[0]
         entries: list[dict] = []
         chain_syms: list[str] = []
-        for row in chain_rows:
-            try:
-                opt = json.loads(row["data_json"])
-            except Exception:
+        for cand in exps:
+            cand_entries: list[dict] = []
+            cand_syms: list[str] = []
+            for row in conn.execute(
+                "SELECT data_json FROM stream_chain WHERE expiration = ? AND underlying_symbol = ?",
+                (cand, symbol),
+            ):
+                try:
+                    opt = json.loads(row["data_json"])
+                except Exception:
+                    continue
+                sym = opt.get("streamer_symbol")
+                if not sym:
+                    continue
+                cand_syms.append(sym)
+                cand_entries.append({
+                    "strike_price":        opt.get("strike_price"),
+                    "streamer_symbol":     sym,
+                    "option_type":         opt.get("option_type"),
+                    "shares_per_contract": opt.get("shares_per_contract") or 100,
+                })
+            if not cand_syms:
                 continue
-            sym = opt.get("streamer_symbol")
-            if not sym:
-                continue
-            chain_syms.append(sym)
-            entries.append({
-                "strike_price":        opt.get("strike_price"),
-                "streamer_symbol":     sym,
-                "option_type":         opt.get("option_type"),
-                "shares_per_contract": opt.get("shares_per_contract") or 100,
-            })
+            if cand == exps[0]:  # remember the nearest as the fallback
+                expiration, entries, chain_syms = cand, cand_entries, cand_syms
+            ph = ", ".join("?" * len(cand_syms))
+            has_greeks = conn.execute(
+                f"SELECT COUNT(*) FROM stream_greeks WHERE symbol IN ({ph}) "
+                "AND gamma IS NOT NULL AND gamma != 0", cand_syms,
+            ).fetchone()[0]
+            if has_greeks:
+                expiration, entries, chain_syms = cand, cand_entries, cand_syms
+                break
 
         greeks: dict[str, dict] = {}
         oi: dict[str, int] = {}

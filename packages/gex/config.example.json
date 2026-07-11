@@ -1,8 +1,12 @@
 {
+  "_comment": "Standalone by default: `run.py stream` populates this module's OWN stream_cache.db and `run.py gex`/dashboard read it. To piggyback on a running cherrypick-meic streamer instead, point source.stream_cache_db at MEIC's data/stream_cache.db and do NOT run this module's streamer (it opens the cache read-write).",
   "source": {
-    "stream_cache_db": "../cherrypick-meic/data/stream_cache.db"
+    "stream_cache_db": "data/stream_cache.db"
   },
   "symbols": ["SPX"],
+  "streamer": {
+    "window_strike_count": 20
+  },
   "serve": {
     "host": "127.0.0.1",
     "port": 5055,
