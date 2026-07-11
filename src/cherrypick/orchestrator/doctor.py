@@ -81,12 +81,18 @@ def run(cfg: dict[str, Any] | None = None) -> list[Check]:
 
     broker_checked = False
     for name, mcfg in modules.items():
-        root = cfgmod.module_root(mcfg)
+        root = cfgmod.module_root(mcfg, name)
+        in_place = bool(mcfg.get("path"))
+        missing_detail = (
+            f"in-place path missing: {root}"
+            if in_place
+            else f"not installed: {root} (run: cherrypick install)"
+        )
         checks.append(
             Check(
                 f"{name}.path",
                 OK if root.exists() else FAIL,
-                str(root) if root.exists() else f"module path missing: {root}",
+                str(root) if root.exists() else missing_detail,
             )
         )
         if not root.exists():

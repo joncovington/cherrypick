@@ -79,13 +79,49 @@ def _append_log(path: Path, record: dict) -> None:
 
 
 # --------------------------------------------------------------------------- install/uninstall
+def _ensure_module_checkout(name: str, mcfg: dict) -> dict:
+    """Make sure a module's code is on disk before we register its tasks.
+
+    Policy (confirmed): clone only when the managed checkout is absent; never touch an existing one.
+    An explicit `path` is a dev-managed working copy — we verify it exists but never clone over it.
+    Runs only at install time via the OS shell's `git`, so it stays off the watchdog reliability path.
+    """
+    root = cfgmod.module_root(mcfg, name)
+    if mcfg.get("path"):
+        detail = f"in-place path {root}" + ("" if root.exists() else " MISSING")
+        return {"ok": root.exists(), "detail": detail}
+    if root.exists():
+        return {"ok": True, "detail": f"already present at {root}"}
+    repo = mcfg.get("repo")
+    if not repo:
+        return {"ok": False, "detail": "no 'repo' and no 'path' configured; cannot locate module"}
+    root.parent.mkdir(parents=True, exist_ok=True)
+    argv = ["git", "clone"]
+    if mcfg.get("ref"):
+        argv += ["--branch", str(mcfg["ref"])]
+    argv += [str(repo), str(root)]
+    r = subprocess.run(argv, capture_output=True, text=True)
+    if r.returncode != 0:
+        return {"ok": False, "detail": f"git clone failed: {(r.stderr or r.stdout).strip()[:200]}"}
+    sm = subprocess.run(
+        ["git", "submodule", "update", "--init"], cwd=str(root), capture_output=True, text=True
+    )
+    note = "" if sm.returncode == 0 else f"; submodule init warn: {(sm.stderr or '').strip()[:120]}"
+    return {"ok": True, "detail": f"cloned to {root}{note}"}
+
+
 def cmd_install(cfg) -> None:
     results = {}
     pyw = cfgmod.pythonw_exe()
     modules = cfgmod.enabled_modules(cfg)
 
     for name, mcfg in modules.items():
-        root = cfgmod.module_root(mcfg)
+        # Materialize the module checkout first; skip task registration if it isn't on disk.
+        chk = _ensure_module_checkout(name, mcfg)
+        results[f"{name}.checkout"] = chk
+        if not chk.get("ok"):
+            continue
+        root = cfgmod.module_root(mcfg, name)
         paper = mcfg.get("paper", {})
         kind = paper.get("kind")
 
@@ -154,7 +190,7 @@ def _ensure_streamer(root: Path, streamer: dict) -> dict:
 def cmd_uninstall(cfg) -> None:
     results = {}
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
-        root = cfgmod.module_root(mcfg)
+        root = cfgmod.module_root(mcfg, name)
         paper = mcfg.get("paper", {})
         if paper.get("kind") == "self_healing" and paper.get("uninstall_argv"):
             r = subprocess.run(
@@ -218,7 +254,7 @@ def _run_earnings(cfg, phase: str) -> None:
         return
 
     paper = mcfg["paper"]
-    root = cfgmod.module_root(mcfg)
+    root = cfgmod.module_root(mcfg, "earnings")
     argv = [a.replace("{today}", today) for a in paper[f"{phase}_argv"]]
 
     try:
