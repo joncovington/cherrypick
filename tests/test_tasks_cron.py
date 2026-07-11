@@ -10,6 +10,24 @@ CMD = '"/usr/bin/python3" "/opt/cherrypick/run.py" watchdog'
 NAME = "cherrypick-watchdog"
 
 
+def test_allow_on_battery_noop_on_posix(monkeypatch):
+    monkeypatch.setattr(tasks, "_IS_WINDOWS", False)
+    assert tasks.allow_on_battery("cherrypick-watchdog") == {"ok": True, "detail": "n/a (posix)"}
+
+
+def test_allow_on_battery_is_best_effort(monkeypatch):
+    # A missing/failed PowerShell must never raise or invalidate the task creation that called it.
+    monkeypatch.setattr(tasks, "_IS_WINDOWS", True)
+
+    def boom(*a, **k):
+        raise OSError("powershell not found")
+
+    monkeypatch.setattr(tasks.subprocess, "run", boom)
+    res = tasks.allow_on_battery("cherrypick-watchdog")
+    assert res["ok"] is False
+    assert "OSError" in res["detail"]
+
+
 def test_minute_schedule_common_cadences():
     assert tasks._minute_schedule(2) == "*/2 * * * *"
     assert tasks._minute_schedule(10) == "*/10 * * * *"
@@ -56,8 +74,11 @@ def test_upsert_replaces_existing_managed_line_no_duplicate():
 
 def test_remove_only_targets_named_entry():
     other = tasks._cron_line("0 9 * * *", CMD, "cherrypick-earnings-paper-entry")
-    text = tasks._cron_upsert(tasks._cron_upsert("", NAME, tasks._cron_line("*/10 * * * *", CMD, NAME)),
-                              "cherrypick-earnings-paper-entry", other)
+    text = tasks._cron_upsert(
+        tasks._cron_upsert("", NAME, tasks._cron_line("*/10 * * * *", CMD, NAME)),
+        "cherrypick-earnings-paper-entry",
+        other,
+    )
     out = tasks._cron_remove(text, NAME)
     assert not tasks._cron_has(out, NAME)
     assert tasks._cron_has(out, "cherrypick-earnings-paper-entry")  # sibling survives

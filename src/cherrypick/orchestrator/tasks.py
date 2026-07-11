@@ -139,6 +139,31 @@ def query_verbose(name: str) -> dict[str, Any]:
     return fields
 
 
+def allow_on_battery(name: str) -> dict[str, Any]:
+    """Clear the two battery guards Task Scheduler sets by default — `DisallowStartIfOnBatteries` and
+    `StopIfGoingOnBatteries` — so an unattended task still runs on a laptop that isn't plugged in.
+    `schtasks` can't set these, so we patch via the ScheduledTasks PowerShell module (preserving all
+    other settings). Windows-only and best-effort: a failure here never invalidates task creation."""
+    if not _IS_WINDOWS:
+        return {"ok": True, "detail": "n/a (posix)"}
+    ps = (
+        f"$ErrorActionPreference='Stop';"
+        f"$s=(Get-ScheduledTask -TaskName '{name}').Settings;"
+        f"$s.DisallowStartIfOnBatteries=$false;$s.StopIfGoingOnBatteries=$false;"
+        f"Set-ScheduledTask -TaskName '{name}' -Settings $s | Out-Null"
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return {"ok": r.returncode == 0, "detail": (r.stderr.strip()[:200] or "battery guards cleared")}
+    except OSError as exc:
+        return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+
+
 def create_minute_task(name: str, tr: str, interval_minutes: int, run_now: bool = True) -> dict[str, Any]:
     if not _IS_WINDOWS:
         res = _cron_create(name, _minute_schedule(interval_minutes), tr)
@@ -146,14 +171,28 @@ def create_minute_task(name: str, tr: str, interval_minutes: int, run_now: bool 
             _run_command(tr)
         return res
     r = subprocess.run(
-        ["schtasks", "/Create", "/TN", name, "/TR", tr, "/SC", "MINUTE", "/MO",
-         str(interval_minutes), "/F", "/IT"],
+        [
+            "schtasks",
+            "/Create",
+            "/TN",
+            name,
+            "/TR",
+            tr,
+            "/SC",
+            "MINUTE",
+            "/MO",
+            str(interval_minutes),
+            "/F",
+            "/IT",
+        ],
         capture_output=True,
         text=True,
     )
     ok = r.returncode == 0
-    if ok and run_now:
-        subprocess.run(["schtasks", "/Run", "/TN", name], capture_output=True, text=True)
+    if ok:
+        allow_on_battery(name)
+        if run_now:
+            subprocess.run(["schtasks", "/Run", "/TN", name], capture_output=True, text=True)
     return {"ok": ok, "task": name, "detail": (r.stdout or r.stderr).strip()}
 
 
@@ -165,7 +204,10 @@ def create_daily_task(name: str, tr: str, at_hhmm: str) -> dict[str, Any]:
         capture_output=True,
         text=True,
     )
-    return {"ok": r.returncode == 0, "task": name, "detail": (r.stdout or r.stderr).strip()}
+    ok = r.returncode == 0
+    if ok:
+        allow_on_battery(name)
+    return {"ok": ok, "task": name, "detail": (r.stdout or r.stderr).strip()}
 
 
 def _run_command(command: str) -> None:
