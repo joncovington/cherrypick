@@ -54,6 +54,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
 from cherrypit import db as _db
+from cherrypit import profiles as _profiles
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "paper_trades.db"
 
@@ -334,7 +335,9 @@ def cmd_get_pnl_summary(args) -> dict:
     for r in closed:
         if r["pnl"] is not None:
             by_strategy.setdefault(r["strategy"], []).append(r["pnl"])
-            by_profile.setdefault(r["profile"], []).append(r["pnl"])
+            by_profile.setdefault(
+                _profiles.attribution_tag(r["profile"], untagged="default"), []
+            ).append(r["pnl"])
 
     return {
         "ok": True,
