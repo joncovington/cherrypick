@@ -61,7 +61,6 @@ import db_paper
 import rank_strategies
 import scanner
 import sizing
-
 from strategies import (
     atm_calendar,
     broken_wing_butterfly,

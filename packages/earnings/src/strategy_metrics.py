@@ -88,7 +88,8 @@ def load_closed_trades(profile: str | None = None, strategy: str | None = None, 
             except (TypeError, ValueError):
                 t["entry_context"] = None
         if since and t.get("opened_at"):
-            from datetime import datetime, date as _date
+            from datetime import date as _date
+            from datetime import datetime
             opened_date = datetime.fromtimestamp(t["opened_at"]).date()
             since_date = _date.fromisoformat(since) if len(since) == 10 else datetime.fromisoformat(since).date()
             if opened_date < since_date:

@@ -4,7 +4,6 @@ import pytest
 
 import scanner
 
-
 # --- has_weekly_options -----------------------------------------------------
 
 def test_has_weekly_options_true_when_gap_le_10_days():

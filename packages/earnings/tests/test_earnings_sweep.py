@@ -10,8 +10,8 @@ Tests the entry condition framework by:
 """
 
 import json
-import sys
 import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -54,7 +54,6 @@ def analyze_candidate(symbol: str, criteria: dict) -> dict:
 
     # Extract key metrics
     dispersion = criteria.get("realized_move_dispersion_pct")
-    expected_move = criteria.get("expected_move_pct", 0)
     iv_rank = criteria.get("iv_rv_ratio", 0)
 
     # Decision 1: Check dispersion
@@ -64,12 +63,6 @@ def analyze_candidate(symbol: str, criteria: dict) -> dict:
         return analysis
 
     analysis["decision_path"].append(f"✓ Dispersion: {dispersion:.4f}")
-
-    # Decision 2: Evaluate realized vs expected (estimate)
-    if expected_move > 0:
-        ratio_estimate = "≈ Expected" if dispersion < 0.20 else ">> Expected (high var)"
-    else:
-        ratio_estimate = "Unknown"
 
     # Route through decision matrix
     if dispersion < 0.15:

@@ -38,7 +38,7 @@ Commands (see CLAUDE.md's Tool Reference):
 import json
 import os
 import sys
-from datetime import date, datetime
+from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 

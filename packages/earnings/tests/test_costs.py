@@ -2,7 +2,6 @@ import pytest
 
 import costs
 
-
 CONFIG = {"tastytrade_costs": {
     "commission_open_per_contract": 1.00,
     "commission_close_per_contract": 0.00,

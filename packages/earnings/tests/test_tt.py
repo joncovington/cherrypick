@@ -2,10 +2,7 @@ import asyncio
 import json
 from datetime import date
 
-import pytest
-
 import tt
-
 
 # --- pure helpers ------------------------------------------------------------
 

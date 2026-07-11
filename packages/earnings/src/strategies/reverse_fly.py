@@ -72,7 +72,6 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
         liquidity = scanner.fetch_liquidity_criteria(symbol, front_exp, expirations, front_call, front_put)
 
         # Entry condition: Check realized move history vs expected move
-        strategy_config = _strategy_config(full_config)
         winrate_result = scanner.compute_winrate(symbol, full_config, full_config.get("winrate_lookback_quarters", 8))
 
         realized_move_pct = None
@@ -279,7 +278,7 @@ def label_order_legs(order_result: dict) -> list[dict]:
     roles = ["long_call", "long_put", "short_call", "short_put"]
     return [
         {"leg_role": role, "symbol": leg["symbol"], "action": leg["action"], "quantity": leg["quantity"]}
-        for role, leg in zip(roles, legs)
+        for role, leg in zip(roles, legs, strict=True)
     ]
 
 

@@ -8,8 +8,9 @@ short-lived ``tt.py`` subprocess, so one process-wide cached session suffices. T
 
 from __future__ import annotations
 
-import credentials
 from cherrypit.auth import SessionManager
+
+import credentials
 
 _manager = SessionManager(credentials.store, thread_local=False)
 
