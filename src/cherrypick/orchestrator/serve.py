@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import dashboard, sections
+from . import dashboard, doctor, sections
 
 
 def _make_handler(cfg: dict[str, Any]):
@@ -43,8 +43,21 @@ def _make_handler(cfg: dict[str, Any]):
                 except Exception as exc:  # a render hiccup shows an error page, never crashes the server
                     self._send(500, f"dashboard render error: {exc}".encode(), "text/plain")
                 return
+            if parsed.path == "/api/system":
+                try:
+                    checks = doctor.run(cfg)
+                    payload = {
+                        "ok": True,
+                        "checks": [
+                            {"name": c.name, "status": c.status.upper(), "detail": c.detail} for c in checks
+                        ],
+                    }
+                except Exception as exc:  # a doctor hiccup shows inline, never crashes the server
+                    payload = {"ok": False, "error": str(exc)}
+                self._send(200, json.dumps(payload).encode("utf-8"), "application/json")
+                return
             if parsed.path.startswith("/api/section/"):
-                sid = parsed.path[len("/api/section/"):]
+                sid = parsed.path[len("/api/section/") :]
                 sec = sections.by_id(cfg, sid)
                 if sec is None:
                     self._send(404, b'{"ok": false, "error": "unknown section"}', "application/json")
@@ -61,8 +74,9 @@ def _make_handler(cfg: dict[str, Any]):
     return _Handler
 
 
-def serve(cfg: dict[str, Any], host: str | None = None, port: int | None = None,
-          open_browser: bool = True) -> dict[str, Any]:
+def serve(
+    cfg: dict[str, Any], host: str | None = None, port: int | None = None, open_browser: bool = True
+) -> dict[str, Any]:
     """Run the live suite dashboard until interrupted. Returns a small summary dict when it stops."""
     scfg = cfg.get("dashboard", {}).get("serve", {}) or {}
     host = host or scfg.get("host", "127.0.0.1")
@@ -70,8 +84,10 @@ def serve(cfg: dict[str, Any], host: str | None = None, port: int | None = None,
     httpd = ThreadingHTTPServer((host, port), _make_handler(cfg))
     url = f"http://{host}:{port}/"
     active = [s["id"] for s in sections.enabled_sections(cfg)]
-    print(f"cherrypick dashboard serving at {url}  (Ctrl-C to stop)"
-          + (f" · sections: {', '.join(active)}" if active else " · no live sections"))
+    print(
+        f"cherrypick dashboard serving at {url}  (Ctrl-C to stop)"
+        + (f" · sections: {', '.join(active)}" if active else " · no live sections")
+    )
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:

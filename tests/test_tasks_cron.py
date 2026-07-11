@@ -10,6 +10,43 @@ CMD = '"/usr/bin/python3" "/opt/cherrypick/run.py" watchdog'
 NAME = "cherrypick-watchdog"
 
 
+def test_registry_snapshot_collects_every_declared_task(monkeypatch):
+    seen = []
+
+    def fake_query_verbose(name):
+        seen.append(name)
+        return {"exists": name != "cherrypick-earnings-paper-entry"}
+
+    monkeypatch.setattr(tasks, "query_verbose", fake_query_verbose)
+    cfg = {
+        "modules": {
+            "meic": {"enabled": True, "paper": {"task_name": "cherrypick-meic-paper-loop"}},
+            "earnings": {
+                "enabled": True,
+                "paper": {
+                    "entry_task_name": "cherrypick-earnings-paper-entry",
+                    "exit_task_name": "cherrypick-earnings-paper-exit",
+                    "dolt_service": {"task_name": "cherrypick-earnings-dolt"},
+                },
+            },
+            "disabled_mod": {"enabled": False, "paper": {"task_name": "should-not-appear"}},
+        },
+        "watchdog": {"task_name": "cherrypick-watchdog"},
+        "trade_notify": {"task_name": "cherrypick-trade-notify"},
+    }
+    snap = tasks.registry_snapshot(cfg)
+    assert set(snap) == {
+        "cherrypick-meic-paper-loop",
+        "cherrypick-earnings-paper-entry",
+        "cherrypick-earnings-paper-exit",
+        "cherrypick-earnings-dolt",
+        "cherrypick-watchdog",
+        "cherrypick-trade-notify",
+    }
+    assert snap["cherrypick-earnings-paper-entry"]["exists"] is False
+    assert "should-not-appear" not in seen
+
+
 def test_allow_on_battery_noop_on_posix(monkeypatch):
     monkeypatch.setattr(tasks, "_IS_WINDOWS", False)
     assert tasks.allow_on_battery("cherrypick-watchdog") == {"ok": True, "detail": "n/a (posix)"}

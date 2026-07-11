@@ -229,6 +229,30 @@ def run_now(name: str) -> dict[str, Any]:
     return {"ok": r.returncode == 0, "detail": (r.stdout or r.stderr).strip()}
 
 
+def registry_snapshot(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Every cherrypick-managed task name -> its `query_verbose()` state.
+
+    One source of truth for "what tasks exist and their state" — shared by `cherrypick status` and the
+    dashboard's System panel so they can't drift. Local OS scheduler queries only (no broker/network).
+    """
+    from . import config as cfgmod  # local import: avoids a cycle at module load
+
+    out: dict[str, dict[str, Any]] = {}
+    for mcfg in cfgmod.enabled_modules(cfg).values():
+        paper = mcfg.get("paper", {})
+        for tkey in ("task_name", "entry_task_name", "exit_task_name"):
+            if paper.get(tkey):
+                out[paper[tkey]] = query_verbose(paper[tkey])
+        svc_task = paper.get("dolt_service", {}).get("task_name")
+        if svc_task:
+            out[svc_task] = query_verbose(svc_task)
+    for section in ("watchdog", "trade_notify"):
+        tn = cfg.get(section, {}).get("task_name")
+        if tn:
+            out[tn] = query_verbose(tn)
+    return out
+
+
 def delete(name: str) -> dict[str, Any]:
     if not _IS_WINDOWS:
         ok, detail = _crontab_write(_cron_remove(_crontab_read(), name))

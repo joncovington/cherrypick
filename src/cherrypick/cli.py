@@ -231,19 +231,7 @@ def cmd_uninstall(cfg) -> None:
 
 # --------------------------------------------------------------------------- status
 def cmd_status(cfg) -> None:
-    out = {"tasks": {}, "heartbeats": {}}
-    for mcfg in cfgmod.enabled_modules(cfg).values():
-        paper = mcfg.get("paper", {})
-        for tkey in ("task_name", "entry_task_name", "exit_task_name"):
-            if paper.get(tkey):
-                out["tasks"][paper[tkey]] = tasks.query_verbose(paper[tkey])
-        svc_task = paper.get("dolt_service", {}).get("task_name")
-        if svc_task:
-            out["tasks"][svc_task] = tasks.query_verbose(svc_task)
-    for section in ("watchdog", "trade_notify"):
-        tn = cfg.get(section, {}).get("task_name")
-        if tn:
-            out["tasks"][tn] = tasks.query_verbose(tn)
+    out = {"tasks": tasks.registry_snapshot(cfg), "heartbeats": {}}
     for hb in ("watchdog.last.json", "earnings_entry.last.json", "earnings_exit.last.json"):
         p = cfgmod.STATE_DIR / hb
         if p.exists():

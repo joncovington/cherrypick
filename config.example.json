@@ -75,7 +75,7 @@
     "_drawdown_note": "Optional paper-P&L drift alert (net-of-cost). Add a 'drawdown' block to enable: {\"suite_floor\": -1000, \"module_floors\": {\"meic\": -750, \"earnings\": -750}, \"critical_multiplier\": 2}. net<=floor -> WARN; net<=floor*critical_multiplier -> CRITICAL. Paper only; never trades. Omit to disable."
   },
   "dashboard": {
-    "_comment": "Read-only status dashboard: static self-contained HTML regenerated on each watchdog tick and by `cherrypick dashboard`. 'output' is relative to this file's directory.",
+    "_comment": "Read-only status dashboard: static self-contained HTML regenerated on each watchdog tick and by `cherrypick dashboard`. Surfaces suite health + P&L + logs, plus a System panel (scheduled tasks, installed modules, and a redacted config summary — webhook state only, never URLs). Under --serve it adds a live checks card that polls doctor.run() (the only broker-touching part, kept off the static path). 'output' is relative to this file's directory.",
     "output": "dashboard.html",
     "log_tail_lines": 50,
     "auto_regen": true,

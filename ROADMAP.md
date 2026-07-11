@@ -100,6 +100,20 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       module by config-declared `fetch_argv`; never imports its internals), so a new module gets a card
       for free. First consumer: **cherrypick-gex**, a self-hosted GEX (gamma-exposure) dashboard —
       GEX-by-OI vs GEX-by-volume, gamma flip, call/put walls — with its own streaming (see below).
+- [x] **System panel + trading-terminal reskin (shipped 2026-07-11).** The dashboard gained a **System
+      card** answering "what is installed and running": the scheduled-task registry (`schtasks`/cron —
+      shared with `cherrypick status` via the new `tasks.registry_snapshot`), installed modules
+      (path/repo + local `git` short-ref, paper kind, streamer, ladder), and a **redacted config
+      summary** built from a fixed allowlist so a future secret-bearing key can't leak — webhook state
+      shows `set`/`not set` (via `notify.secrets`), never the URL. Task/module/config subsets are
+      static-safe (file + local-OS only); a **live checks** subsection is `--serve`-only, polling a new
+      `/api/system` route that runs `doctor.run()` — the one broker-touching piece, kept off the
+      auto-regenerated static path exactly like the section cards. The page was reskinned to a
+      dark-first retail-broker terminal look (CSS custom-property palette, tabular-nums monospace for
+      all numerics, green/red P&L + amber caution, `PAPER` badge, session `OPEN`/`CLOSED` pill, a
+      `--serve`-only pulsing live dot); still self-contained/offline, light mode preserved via
+      `prefers-color-scheme`. Tests across `test_dashboard`/`test_serve`/`test_tasks_cron`, including a
+      guard that no webhook URL ever reaches the page.
 - [ ] **Next:** embedded module dashboards; broker-vs-DB **reconciliation** drift.
       *(The parallel-shadow paper **run** orchestration that feeds calibration stays module-side.)*
 

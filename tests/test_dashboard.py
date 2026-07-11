@@ -108,7 +108,9 @@ def env(tmp_path, monkeypatch):
                     "trade_schema": "meic_ic",
                     "kind": "self_healing",
                     "log": "logs/paper.log",
+                    "task_name": "cherrypick-meic-paper-loop",
                 },
+                "streamer": {"enabled": True},
                 "calibration": {"ladder": ["conservative", "moderate", "aggressive"]},
             },
             "earnings": {
@@ -117,6 +119,8 @@ def env(tmp_path, monkeypatch):
                 "paper": {"paper_db": "paper.db", "trade_schema": "earnings", "kind": "cherrypick_scheduled"},
             },
         },
+        "watchdog": {"task_name": "cherrypick-watchdog", "interval_minutes": 10, "renotify_minutes": 60},
+        "trade_notify": {"task_name": "cherrypick-trade-notify", "interval_minutes": 2},
         "notify": {"channels": ["log", "discord"]},
         "dashboard": {"output": str(tmp_path / "dash.html"), "log_tail_lines": 50},
     }
@@ -209,6 +213,55 @@ def test_render_html_escapes_untrusted_text(env):
     assert "PAPER" in out and "meic" in out and "earnings" in out
     assert "<script>alert(1)</script>" not in out
     assert "&lt;script&gt;alert(1)" in out
+
+
+def test_build_model_includes_system_panel(env, monkeypatch):
+    from cherrypick.notify import secrets as notify_secrets
+    from cherrypick.orchestrator import tasks
+
+    monkeypatch.setattr(tasks, "query_verbose", lambda name: {"exists": False})
+    monkeypatch.setattr(notify_secrets, "is_set", lambda channel: False)
+    _, cfg = env
+    m = dashboard.build_model(cfg)
+    # scheduled tasks: every declared task_name shows up, even when not actually registered on this box.
+    task_names = {t["name"] for t in m["tasks"]}
+    assert task_names == {
+        "cherrypick-meic-paper-loop",
+        "cherrypick-watchdog",
+        "cherrypick-trade-notify",
+    }
+    assert all(t["exists"] is False for t in m["tasks"])  # none registered in the test env
+
+    modules = {mv["name"]: mv for mv in m["modules_installed"]}
+    assert modules["meic"]["source"].startswith("in-place:")
+    assert modules["meic"]["paper_kind"] == "self_healing"
+    assert modules["meic"]["streamer_enabled"] is True
+    assert modules["earnings"]["streamer_enabled"] is False
+
+    cs = m["config_summary"]
+    assert cs["timezone"] == "America/New_York"
+    assert cs["modules"]["meic"]["ladder"] == ["conservative", "moderate", "aggressive"]
+    assert cs["watchdog"]["interval_minutes"] == 10
+    # discord is a supported push channel with no webhook stored -> reported as "not set", never a URL.
+    assert cs["notify"]["webhooks"] == {"discord": "not set"}
+    for v in cs["notify"]["webhooks"].values():
+        assert "http" not in v
+
+
+def test_system_card_renders_and_never_leaks_webhook_url(env, monkeypatch):
+    from cherrypick.orchestrator import tasks
+
+    monkeypatch.setattr(tasks, "query_verbose", lambda name: {"exists": False})
+    _, cfg = env
+    m = dashboard.build_model(cfg)
+    static_html = dashboard._render_html(m, serve=False)
+    served_html = dashboard._render_html(m, serve=True)
+    for out in (static_html, served_html):
+        assert "scheduled tasks" in out and "modules installed" in out and "cherrypick-watchdog" in out
+        assert "http://" not in out and "https://" not in out  # never a webhook URL on the page
+    # live doctor checks card is serve-only, same gating pattern as the GEX-style sections.
+    assert "data-cp-doctor" in served_html and "/api/system" in served_html
+    assert "data-cp-doctor" not in static_html
 
 
 def test_render_writes_atomically(env):

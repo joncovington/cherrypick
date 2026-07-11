@@ -13,16 +13,23 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from cherrypick.orchestrator import dashboard, sections, serve
+from cherrypick.orchestrator import dashboard, doctor, sections, serve
 
 pytestmark = pytest.mark.unit
 
 _SECTION = {"id": "gex", "title": "GEX", "endpoint": "/api/section/gex", "refresh": 15}
 _MODEL = {
     "generated_at": "2026-07-11T00:00:00+00:00",
-    "overall": "OK", "heartbeat_age_min": 1.0, "et_clock": "2026-07-11T09:40:00-04:00",
-    "in_session": True, "is_trading_day": True, "notify_channels": ["log"],
-    "active_findings": [], "suite": {}, "modules": [], "logs": [],
+    "overall": "OK",
+    "heartbeat_age_min": 1.0,
+    "et_clock": "2026-07-11T09:40:00-04:00",
+    "in_session": True,
+    "is_trading_day": True,
+    "notify_channels": ["log"],
+    "active_findings": [],
+    "suite": {},
+    "modules": [],
+    "logs": [],
     "sections": [_SECTION],
 }
 
@@ -30,9 +37,15 @@ _MODEL = {
 # --- sections config helpers --------------------------------------------------------------------
 def test_enabled_sections_and_by_id():
     assert sections.enabled_sections({}) == []
-    cfg = {"dashboard": {"sections": [
-        {"id": "gex", "enabled": True}, {"id": "pnl", "enabled": False}, {"enabled": True},
-    ]}}
+    cfg = {
+        "dashboard": {
+            "sections": [
+                {"id": "gex", "enabled": True},
+                {"id": "pnl", "enabled": False},
+                {"enabled": True},
+            ]
+        }
+    }
     assert [s["id"] for s in sections.enabled_sections(cfg)] == ["gex"]
     assert sections.by_id(cfg, "gex")["id"] == "gex"
     assert sections.by_id(cfg, "pnl") is None
@@ -65,21 +78,35 @@ def test_no_sections_no_card():
 # --- end-to-end handler -------------------------------------------------------------------------
 def test_serve_handler_serves_page_and_section_api(monkeypatch):
     monkeypatch.setattr(dashboard, "build_model", lambda cfg: _MODEL)
-    canned = {"ok": True, "title": "GEX — SPX", "subtitle": "245 strikes",
-              "metrics": [{"label": "Net GEX", "value": "1K", "tone": "pos"}],
-              "bars": {"labels": [600], "focus": 600, "series": [{"name": "OI", "values": [1000]}]}}
+    canned = {
+        "ok": True,
+        "title": "GEX — SPX",
+        "subtitle": "245 strikes",
+        "metrics": [{"label": "Net GEX", "value": "1K", "tone": "pos"}],
+        "bars": {"labels": [600], "focus": 600, "series": [{"name": "OI", "values": [1000]}]},
+    }
     monkeypatch.setattr(sections, "fetch", lambda sec, params: dict(canned, _params=params))
 
-    cfg = {"dashboard": {"sections": [
-        {"id": "gex", "title": "GEX", "enabled": True, "path": ".", "default_symbol": "SPX",
-         "fetch_argv": ["run.py", "section", "--symbol", "{symbol}", "--json"]},
-    ]}}
+    cfg = {
+        "dashboard": {
+            "sections": [
+                {
+                    "id": "gex",
+                    "title": "GEX",
+                    "enabled": True,
+                    "path": ".",
+                    "default_symbol": "SPX",
+                    "fetch_argv": ["run.py", "section", "--symbol", "{symbol}", "--json"],
+                },
+            ]
+        }
+    }
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), serve._make_handler(cfg))
     port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     try:
         page = urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5).read().decode()
-        assert "cherrypick — suite status" in page and 'data-cp-section="gex"' in page
+        assert "suite status" in page and 'data-cp-section="gex"' in page
         raw = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/section/gex?symbol=QQQ", timeout=5).read()
         payload = json.loads(raw)
         assert payload["ok"] is True and payload["_params"]["symbol"] == "QQQ"
@@ -88,6 +115,50 @@ def test_serve_handler_serves_page_and_section_api(monkeypatch):
         with pytest.raises(urllib.error.HTTPError) as exc:
             urllib.request.urlopen(f"http://127.0.0.1:{port}/api/section/nope", timeout=5)
         assert exc.value.code == 404 and json.loads(exc.value.read())["ok"] is False
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_api_system_returns_doctor_checks(monkeypatch):
+    monkeypatch.setattr(dashboard, "build_model", lambda cfg: _MODEL)
+    checks = [
+        doctor.Check("python", doctor.OK, "3.13"),
+        doctor.Check("meic.streamer", doctor.WARN, "not running"),
+    ]
+    monkeypatch.setattr(doctor, "run", lambda cfg: checks)
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), serve._make_handler({}))
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        raw = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/system", timeout=5).read()
+        payload = json.loads(raw)
+        assert payload["ok"] is True
+        assert payload["checks"] == [
+            {"name": "python", "status": "OK", "detail": "3.13"},
+            {"name": "meic.streamer", "status": "WARN", "detail": "not running"},
+        ]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_api_system_degrades_on_doctor_error(monkeypatch):
+    monkeypatch.setattr(dashboard, "build_model", lambda cfg: _MODEL)
+
+    def boom(cfg):
+        raise RuntimeError("broker unreachable")
+
+    monkeypatch.setattr(doctor, "run", boom)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), serve._make_handler({}))
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/system", timeout=5)
+        assert resp.status == 200
+        payload = json.loads(resp.read())
+        assert payload["ok"] is False and "broker unreachable" in payload["error"]
     finally:
         httpd.shutdown()
         httpd.server_close()
