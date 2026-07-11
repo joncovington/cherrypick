@@ -36,5 +36,7 @@ jobs:
         run: ruff check .
 
       # Unit tests run offline (no Dolt / network); pytest.ini scopes collection away from src/_core.
+      # `python -m pytest` (not bare `pytest`) puts the repo root on sys.path so `from src import ...`
+      # in test_earnings_sweep resolves, matching local runs.
       - name: Test (pytest)
-        run: pytest
+        run: python -m pytest
