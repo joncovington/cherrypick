@@ -225,6 +225,19 @@ def run(cfg: dict[str, Any] | None = None) -> list[Check]:
             status, detail = _dolt_status(reachable, required, present)
             checks.append(Check(f"{name}.dolt", status, detail))
 
+            svc = paper.get("dolt_service")
+            if svc and svc.get("task_name"):
+                reg = tasks.exists(svc["task_name"])
+                checks.append(
+                    Check(
+                        f"{name}.dolt_service",
+                        OK if reg else WARN,
+                        "keep-alive task registered"
+                        if reg
+                        else "keep-alive task missing (run: cherrypick install)",
+                    )
+                )
+
     # watchdog task
     wt = cfg.get("watchdog", {}).get("task_name")
     if wt:

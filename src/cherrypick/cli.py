@@ -18,6 +18,7 @@ Subcommands:
   calibrate            Per-profile paper calibration readings + advisory promotion recommendations.
   run-earnings-entry   Run EarningsAgent's paper entry now (invoked by its daily task).
   run-earnings-exit    Run EarningsAgent's paper exit now (invoked by its daily task).
+  ensure-dolt          Start any module's declared Dolt server if down (invoked by its keep-alive task).
   notify-test          Fire a test notification through all configured channels.
   notify-trades        Push new paper entries/exits to the trade channels (also runs on each watchdog tick).
   secrets-set          Store a slack/discord webhook URL in the OS keyring (--channel; --url or prompt).
@@ -30,6 +31,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -153,6 +155,14 @@ def cmd_install(cfg) -> None:
                 paper["exit_task_name"], exit_tr, paper["exit_time"]
             )
 
+        # optional cherrypick-managed Dolt keep-alive (portable, idempotent; run_now starts it now)
+        svc = paper.get("dolt_service")
+        if svc and svc.get("task_name"):
+            svc_tr = tasks.build_tr(pyw, str(_LAUNCHER), "ensure-dolt")
+            results[f"{name}.dolt_service"] = tasks.create_minute_task(
+                svc["task_name"], svc_tr, svc.get("interval_minutes", 5)
+            )
+
     # watchdog task
     wd = cfg.get("watchdog", {})
     if wd.get("task_name"):
@@ -206,6 +216,9 @@ def cmd_uninstall(cfg) -> None:
         for tkey in ("entry_task_name", "exit_task_name"):
             if paper.get(tkey):
                 results[f"{name}.{tkey}"] = tasks.delete(paper[tkey])
+        svc = paper.get("dolt_service")
+        if svc and svc.get("task_name"):
+            results[f"{name}.dolt_service"] = tasks.delete(svc["task_name"])
     if cfg.get("watchdog", {}).get("task_name"):
         results["watchdog_task"] = tasks.delete(cfg["watchdog"]["task_name"])
     if cfg.get("trade_notify", {}).get("task_name"):
@@ -221,6 +234,9 @@ def cmd_status(cfg) -> None:
         for tkey in ("task_name", "entry_task_name", "exit_task_name"):
             if paper.get(tkey):
                 out["tasks"][paper[tkey]] = tasks.query_verbose(paper[tkey])
+        svc_task = paper.get("dolt_service", {}).get("task_name")
+        if svc_task:
+            out["tasks"][svc_task] = tasks.query_verbose(svc_task)
     for section in ("watchdog", "trade_notify"):
         tn = cfg.get(section, {}).get("task_name")
         if tn:
@@ -233,6 +249,62 @@ def cmd_status(cfg) -> None:
             except Exception:
                 out["heartbeats"][hb] = {"error": "unreadable"}
     _emit(out)
+
+
+# --------------------------------------------------------------------------- dolt keep-alive
+def _dolt_service_dir(svc: dict) -> Path:
+    """Resolve a `dolt_service.data_dir` portably: expand `~`, and resolve a relative path against the
+    cherrypick runtime ROOT. Config must not carry absolute/machine paths (a portability guardrail)."""
+    p = Path(svc.get("data_dir", "")).expanduser()
+    if not p.is_absolute():
+        p = (cfgmod.ROOT / p).resolve()
+    return p
+
+
+def _start_dolt(data_dir: Path) -> bool:
+    """Launch `dolt sql-server` detached from data_dir (benign, no window; dolt refuses to double-bind
+    the port). `dolt` comes from PATH so no install path is hardcoded."""
+    if not data_dir.exists():
+        return False
+    try:
+        flags = 0
+        if os.name == "nt":
+            flags = 0x00000008 | 0x08000000 | 0x00000200  # DETACHED | NO_WINDOW | NEW_GROUP
+        subprocess.Popen(
+            ["dolt", "sql-server"],
+            cwd=str(data_dir),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+        )
+        return True
+    except OSError:
+        return False
+
+
+def _ensure_dolt(cfg) -> None:
+    """Idempotently ensure each module's declared Dolt server is up. Invoked by the per-module
+    `dolt_service` keep-alive task. Decision is stdlib-only (socket reachability); remediation is a
+    benign, non-trading subprocess start — it never touches the broker or a paper DB. Keeping the port
+    occupied also stops a module runner from self-starting an empty Dolt in the wrong directory."""
+    results = {}
+    for name, mcfg in cfgmod.enabled_modules(cfg).items():
+        paper = mcfg.get("paper", {})
+        svc = paper.get("dolt_service")
+        if not svc:
+            continue
+        host = paper.get("dolt_host", "127.0.0.1")
+        port = paper.get("dolt_port", 3306)
+        if watchdog._dolt_reachable(host, port):
+            results[name] = {"ok": True, "detail": "already up"}
+            continue
+        data_dir = _dolt_service_dir(svc)
+        started = _start_dolt(data_dir)
+        results[name] = {
+            "ok": started,
+            "detail": f"started in {data_dir}" if started else f"start failed (missing dir? {data_dir})",
+        }
+    _emit({"ok": all(v["ok"] for v in results.values()) if results else True, "dolt": results})
 
 
 # --------------------------------------------------------------------------- earnings runners
@@ -398,6 +470,7 @@ def main() -> None:
             "calibrate",
             "run-earnings-entry",
             "run-earnings-exit",
+            "ensure-dolt",
             "notify-test",
             "notify-trades",
             "secrets-set",
@@ -413,11 +486,10 @@ def main() -> None:
     parser.add_argument(
         "--url", default=None, help="Webhook URL for secrets-set (omit to be prompted without echo)"
     )
+    parser.add_argument("--force", action="store_true", help="For init: overwrite an existing config.json")
     parser.add_argument(
-        "--force", action="store_true", help="For init: overwrite an existing config.json"
-    )
-    parser.add_argument(
-        "--serve", action="store_true",
+        "--serve",
+        action="store_true",
         help="For dashboard: run a localhost live server instead of writing a static file",
     )
     parser.add_argument("--host", default=None, help="For dashboard --serve: bind host (default 127.0.0.1)")
@@ -445,6 +517,7 @@ def main() -> None:
         "notify-trades": lambda: cmd_notify_trades(cfg),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
+        "ensure-dolt": lambda: _ensure_dolt(cfg),
         "notify-test": lambda: cmd_notify_test(cfg),
         "secrets-set": lambda: cmd_secrets_set(args.channel, args.url),
         "secrets-status": lambda: cmd_secrets_status(),

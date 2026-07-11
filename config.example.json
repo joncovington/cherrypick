@@ -54,7 +54,13 @@
         "dolt_port": 3306,
         "dolt_user": "root",
         "_dolt_databases_note": "Databases the runner needs served on dolt_host:dolt_port. doctor verifies each is present (not just that the port answers) when a MySQL client is available, catching a Dolt server rooted at the wrong data dir. Omit to check port reachability only.",
-        "dolt_databases": ["earnings", "options", "stocks"]
+        "dolt_databases": ["earnings", "options", "stocks"],
+        "_dolt_service_note": "Optional cherrypick-managed keep-alive. `install` registers a MINUTE task that runs `ensure-dolt` (starts `dolt sql-server` from data_dir only when nothing is on the port); `uninstall` removes it; `status`/`doctor` surface it. data_dir is portable: `~` expands, a relative path resolves against the cherrypick runtime ROOT. Omit this block to manage Dolt yourself.",
+        "dolt_service": {
+          "task_name": "cherrypick-earnings-dolt",
+          "data_dir": "~/.cherrypick/data/earnings",
+          "interval_minutes": 5
+        }
       },
       "calibration": {
         "ladder": ["conservative", "balanced", "aggressive"],
