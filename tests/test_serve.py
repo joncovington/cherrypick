@@ -13,7 +13,7 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from cherrypick.orchestrator import dashboard, doctor, sections, serve
+from cherrypick.orchestrator import dashboard, doctor, embeds, sections, serve
 
 pytestmark = pytest.mark.unit
 
@@ -31,6 +31,7 @@ _MODEL = {
     "modules": [],
     "logs": [],
     "sections": [_SECTION],
+    "embeds": [{"id": "meic", "title": "MEIC", "url": "/embed/meic", "kind": "server"}],
 }
 
 
@@ -165,3 +166,84 @@ def test_api_system_degrades_on_doctor_error(monkeypatch):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+# --- embedded module dashboards -----------------------------------------------------------------
+def test_embed_iframe_card_is_serve_only():
+    served = dashboard._render_html(_MODEL, serve=True)
+    assert 'class="card embed"' in served and 'src="/embed/meic"' in served
+    static = dashboard._render_html(_MODEL, serve=False)
+    assert "/embed/meic" not in static and "embedded module dashboards" not in static
+
+
+def _serve_cfg():
+    return {
+        "dashboard": {
+            "embeds": [
+                {"id": "meic", "title": "MEIC", "enabled": True, "kind": "server", "port": 8801},
+                {"id": "earn", "title": "Earnings", "enabled": True, "kind": "static", "output": "out.html"},
+            ]
+        }
+    }
+
+
+def test_embed_server_kind_redirects_to_module_port(monkeypatch):
+    monkeypatch.setattr(
+        embeds, "ensure_server", lambda e: {"ok": True, "running": True, "url": "http://127.0.0.1:8801/"}
+    )
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), serve._make_handler(_serve_cfg()))
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        # do not auto-follow: assert the 302 to the module's own port
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/embed/meic")
+        opener = urllib.request.build_opener(_NoRedirect())
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            opener.open(req, timeout=5)
+        assert exc.value.code == 302
+        assert exc.value.headers["Location"] == "http://127.0.0.1:8801/"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_embed_static_kind_serves_generated_html(monkeypatch):
+    monkeypatch.setattr(embeds, "build_static", lambda e: {"ok": True, "detail": "built"})
+    monkeypatch.setattr(embeds, "read_static", lambda e: b"<html>earnings</html>")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), serve._make_handler(_serve_cfg()))
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        body = urllib.request.urlopen(f"http://127.0.0.1:{port}/embed/earn", timeout=5).read()
+        assert body == b"<html>earnings</html>"
+        # unknown embed id -> 404
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/embed/nope", timeout=5)
+        assert exc.value.code == 404
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_embed_failure_renders_inline_never_500(monkeypatch):
+    # a module build blowing up must degrade to an inline message, not crash the umbrella server
+    def boom(e):
+        raise RuntimeError("module exploded")
+
+    monkeypatch.setattr(embeds, "build_static", boom)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), serve._make_handler(_serve_cfg()))
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/embed/earn", timeout=5)
+        assert resp.status == 200
+        body = resp.read()
+        assert b"unavailable" in body and b"module exploded" in body
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):
+        return None  # surface the 302 instead of following it

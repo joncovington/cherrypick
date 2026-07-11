@@ -25,7 +25,7 @@ from cherrypick.core import viz
 
 from cherrypick.notify import secrets as notify_secrets
 
-from . import calibrate, report, sections, tasks, timeutil
+from . import calibrate, embeds, report, sections, tasks, timeutil
 from . import config as cfgmod
 
 _STATUS_COLORS = {
@@ -277,6 +277,15 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
                 "refresh": sections.refresh_seconds(s),
             }
             for s in sections.enabled_sections(cfg)
+        ],
+        "embeds": [
+            {
+                "id": e["id"],
+                "title": e.get("title", e["id"]),
+                "url": f"/embed/{e['id']}",
+                "kind": e.get("kind", "static"),
+            }
+            for e in embeds.enabled_embeds(cfg)
         ],
     }
 
@@ -594,6 +603,12 @@ border:1px solid var(--border);border-radius:4px;background:var(--panel);color:v
 .logs{font:12px/1.5 var(--mono);background:#05070a;color:#e6edf3;
 border-radius:6px;padding:8px;max-height:340px;overflow:auto;border:1px solid var(--border)}
 .logline{white-space:pre-wrap}.lvl{display:inline-block}.src{color:var(--muted)}
+.embed-heading{font-size:15px;margin:2px 0 10px}
+.card.embed{padding:0;overflow:hidden}
+.card.embed h2{display:flex;align-items:center;gap:8px;margin:0;padding:10px 14px;
+border-bottom:1px solid var(--border)}
+.embed-open{margin-left:auto;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none}
+.embed-frame{display:block;width:100%;height:820px;border:0;background:var(--bg)}
 """
 
 _JS = """
@@ -621,6 +636,28 @@ _DOCTOR_JS = """
   tick(); setInterval(tick, 30000);
 })();
 """
+
+
+def _embed_cards_html(embed_views: list[dict[str, Any]]) -> str:
+    """One iframe card per embedded module dashboard (serve-only). Each `url` is the umbrella's local
+    `/embed/<id>` route: for a "server" embed it 302-redirects to the module's port (launching it if
+    down); for a "static" embed it regenerates and serves the module's HTML file. A per-card
+    open-in-new-tab link is the graceful fallback if a module server refuses to be framed."""
+    if not embed_views:
+        return ""
+    cards = []
+    for e in embed_views:
+        url = html.escape(e["url"])
+        cards.append(
+            '<section class="card embed">'
+            f"<h2>{html.escape(e['title'])} {_pill('PAPER', 'INFO')}"
+            f'<a class="embed-open" href="{url}" target="_blank" rel="noopener">open ↗</a></h2>'
+            f'<iframe class="embed-frame" src="{url}" loading="lazy" '
+            'referrerpolicy="no-referrer" title="'
+            f'{html.escape(e["title"])} dashboard"></iframe>'
+            "</section>"
+        )
+    return '<h2 class="embed-heading">embedded module dashboards</h2>' + "".join(cards)
 
 
 def _render_html(model: dict[str, Any], serve: bool = False) -> str:
@@ -665,6 +702,10 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     section_cards = "".join(
         viz.card_skeleton_html(s["id"], s["title"], s["endpoint"], s["refresh"]) for s in live_sections
     )
+    # Embedded module dashboards are serve-only too: each iframe points at /embed/<id>, a route the
+    # live server owns (it launches/regenerates the module dashboard on demand). Omitted in the static
+    # file render — there's no umbrella server to answer /embed/<id>.
+    embed_cards = _embed_cards_html(model.get("embeds", [])) if serve else ""
     extra_style = viz.SECTION_STYLE if live_sections else ""
     extra_script = (viz.SECTION_JS if live_sections else "") + (_DOCTOR_JS if serve else "")
     return (
@@ -679,6 +720,7 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
         + section_cards
         + f'<div class="grid">{cards}</div>'
         + logs
+        + embed_cards
         + footer
         + "</div><script>"
         + _JS

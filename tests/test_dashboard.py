@@ -122,7 +122,14 @@ def env(tmp_path, monkeypatch):
         "watchdog": {"task_name": "cherrypick-watchdog", "interval_minutes": 10, "renotify_minutes": 60},
         "trade_notify": {"task_name": "cherrypick-trade-notify", "interval_minutes": 2},
         "notify": {"channels": ["log", "discord"]},
-        "dashboard": {"output": str(tmp_path / "dash.html"), "log_tail_lines": 50},
+        "dashboard": {
+            "output": str(tmp_path / "dash.html"),
+            "log_tail_lines": 50,
+            "embeds": [
+                {"id": "meic", "title": "MEIC", "enabled": True, "kind": "server", "port": 8801},
+                {"id": "earn", "title": "Earnings", "enabled": False, "kind": "static"},
+            ],
+        },
     }
     return tmp_path, cfg
 
@@ -262,6 +269,21 @@ def test_system_card_renders_and_never_leaks_webhook_url(env, monkeypatch):
     # live doctor checks card is serve-only, same gating pattern as the GEX-style sections.
     assert "data-cp-doctor" in served_html and "/api/system" in served_html
     assert "data-cp-doctor" not in static_html
+
+
+def test_embeds_are_serve_only_iframe_cards(env, monkeypatch):
+    from cherrypick.orchestrator import tasks
+
+    monkeypatch.setattr(tasks, "query_verbose", lambda name: {"exists": False})
+    _, cfg = env
+    m = dashboard.build_model(cfg)
+    # only the enabled embed is in the model, with a local /embed/<id> iframe URL (no launch here)
+    assert [e["id"] for e in m["embeds"]] == ["meic"]
+    assert m["embeds"][0]["url"] == "/embed/meic"
+    served = dashboard._render_html(m, serve=True)
+    static = dashboard._render_html(m, serve=False)
+    assert 'src="/embed/meic"' in served and "embedded module dashboards" in served
+    assert "/embed/meic" not in static  # no iframe in the static file render
 
 
 def test_render_writes_atomically(env):

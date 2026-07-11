@@ -79,7 +79,11 @@ is excluded from ruff and from the packaged wheel.
   offline. The one exception is deliberate and gated: `dashboard --serve` exposes a `/api/system` route
   that runs `doctor.run()` for a live-checks card, polled client-side. That broker-touching call lives
   only on the served path (never the static regen), mirroring how the live section cards work — so the
-  file written on every watchdog tick still never touches the broker.
+  file written on every watchdog tick still never touches the broker. `dashboard --serve` also embeds
+  each module's own dashboard in an iframe (`orchestrator/embeds.py`, `/embed/<id>` route): it launches
+  a module's dashboard server or regenerates its static HTML on demand, driven by config-declared argv
+  with **PAPER mode forced** in that argv. This too is serve-only (the static file omits the iframes)
+  and never invokes a live/broker view.
 - **Paper ↔ live isolation.** cherrypick only invokes paper engines / paper DBs. Anything advisory
   (e.g. `calibrate`'s promotion recommendations, the drawdown alert) is advisory only — it never mutates
   a module's config or switches live risk.
