@@ -15,6 +15,8 @@ Subcommands:
                        broker round-trip (local/offline checks only).
   watchdog             Run one watchdog pass (this is what the scheduled task invokes).
   report               Unified cross-module paper P&L (read-only): totals + per-profile breakdown.
+  reconcile            Paper↔live isolation guard: query the real broker account (read-only) and flag
+                       any open positions/BP a paper-only suite shouldn't have. On-demand; never trades.
   dashboard            Regenerate the read-only status dashboard (static HTML: health + P&L + logs).
   calibrate            Per-profile paper calibration readings + advisory promotion recommendations.
   run-earnings-entry   Run EarningsAgent's paper entry now (invoked by its daily task).
@@ -45,6 +47,7 @@ from cherrypick.orchestrator import (
     dashboard,
     doctor,
     init,
+    reconcile,
     report,
     serve,
     tasks,
@@ -384,6 +387,14 @@ def cmd_watchdog(cfg) -> None:
     _emit(watchdog.run(cfg))
 
 
+def cmd_reconcile(cfg) -> None:
+    result = reconcile.run(cfg)
+    report_text, _worst = reconcile.format_report(result)
+    print(report_text)
+    # exit by verdict: FLAT -> 0, DRIFT (real account not flat) -> 1, UNKNOWN (couldn't check) -> 2
+    sys.exit({reconcile.FLAT: 0, reconcile.DRIFT: 1, reconcile.UNKNOWN: 2}.get(result.get("verdict"), 2))
+
+
 def cmd_notify_trades(cfg) -> None:
     _emit(trade_notifier.run(cfg))
 
@@ -458,6 +469,7 @@ def main() -> None:
             "doctor",
             "watchdog",
             "report",
+            "reconcile",
             "dashboard",
             "calibrate",
             "run-earnings-entry",
@@ -509,6 +521,7 @@ def main() -> None:
         "doctor": lambda: cmd_doctor(cfg, fast=args.fast),
         "watchdog": lambda: cmd_watchdog(cfg),
         "report": lambda: cmd_report(cfg),
+        "reconcile": lambda: cmd_reconcile(cfg),
         "dashboard": lambda: cmd_dashboard(cfg, args),
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),

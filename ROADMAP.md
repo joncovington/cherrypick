@@ -132,7 +132,19 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       render omits the iframes); loopback-only. First consumers: cherrypick-meic (`src/dashboard.py`,
       server) and cherrypick-earnings (`src/strategy_dashboard.py`, static). Verified end-to-end in a
       browser against both installed modules.
-- [ ] **Next:** broker-vs-DB **reconciliation** drift.
+- [x] **`cherrypick reconcile` — paper↔live isolation guard (shipped 2026-07-11).** Reframes
+      "broker-vs-DB reconciliation" for a paper-only umbrella: paper trades never hit the broker, so
+      instead of matching positions it verifies the *real* account stays flat. `orchestrator/reconcile.py`
+      queries the real account once (read-only `get_positions`/`get_account_info` via the first
+      positions-capable module's `tt.py`, like `doctor` checks the broker once) and returns a verdict —
+      `FLAT` (no open positions), `DRIFT` (real account carries positions/BP a paper-only suite
+      shouldn't), or `UNKNOWN` (couldn't check). Per-module paper open-position counts (a new
+      open-position reader registry mirroring `report._READERS`) are shown as context — a different
+      ledger, never the trigger. Account numbers masked via the new `util.mask_account`. Surfaced as the
+      `cherrypick reconcile` CLI command (exit 0/1/2 by verdict) and a serve-only dashboard card that
+      runs on load / on a Run button — **not** a background poll (each run authenticates to the broker),
+      and off the watchdog reliability path. Advisory: it never trades, cancels, closes, or mutates
+      config. Tests in `test_reconcile`/`test_util`/`test_serve`/`test_dashboard`.
       *(The parallel-shadow paper **run** orchestration that feeds calibration stays module-side.)*
 
 ## GEX dashboard + shared streamer (shipped 2026-07-11)

@@ -13,7 +13,7 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from cherrypick.orchestrator import dashboard, doctor, embeds, sections, serve
+from cherrypick.orchestrator import dashboard, doctor, embeds, reconcile, sections, serve
 
 pytestmark = pytest.mark.unit
 
@@ -247,3 +247,52 @@ def test_embed_failure_renders_inline_never_500(monkeypatch):
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k):
         return None  # surface the 302 instead of following it
+
+
+# --- reconcile (paper↔live isolation) -----------------------------------------------------------
+def test_reconcile_card_is_serve_only():
+    served = dashboard._render_html(_MODEL, serve=True)
+    assert "paper↔live isolation" in served and "data-cp-reconcile" in served
+    static = dashboard._render_html(_MODEL, serve=False)
+    assert "data-cp-reconcile" not in static and "paper↔live isolation" not in static
+
+
+def test_api_reconcile_returns_run_output(monkeypatch):
+    monkeypatch.setattr(dashboard, "build_model", lambda cfg: _MODEL)
+    result = {
+        "ok": True,
+        "verdict": "FLAT",
+        "broker": {"reachable": True, "account": "****1234"},
+        "paper": {},
+    }
+    monkeypatch.setattr(reconcile, "run", lambda cfg: result)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), serve._make_handler({}))
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        raw = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/reconcile", timeout=5).read()
+        payload = json.loads(raw)
+        assert payload["verdict"] == "FLAT" and payload["broker"]["account"] == "****1234"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_api_reconcile_degrades_on_error(monkeypatch):
+    monkeypatch.setattr(dashboard, "build_model", lambda cfg: _MODEL)
+
+    def boom(cfg):
+        raise RuntimeError("broker exploded")
+
+    monkeypatch.setattr(reconcile, "run", boom)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), serve._make_handler({}))
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/reconcile", timeout=5)
+        assert resp.status == 200
+        payload = json.loads(resp.read())
+        assert payload["ok"] is False and "broker exploded" in payload["error"]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
