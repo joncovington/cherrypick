@@ -19,7 +19,21 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import dashboard, doctor, sections
+from . import dashboard, doctor, embeds, sections
+
+
+def _embed_error(embed_cfg: dict[str, Any], detail: str) -> bytes:
+    """A small self-contained page rendered inside an embed iframe when the module dashboard can't be
+    delivered (checkout missing, launch/build failed). Keeps the umbrella page intact."""
+    from html import escape
+
+    title = escape(str(embed_cfg.get("title", embed_cfg.get("id", "module"))))
+    return (
+        "<!doctype html><meta charset='utf-8'>"
+        '<div style="font:14px system-ui,sans-serif;color:#8a97a3;padding:24px">'
+        f"<b>{title}</b> dashboard unavailable<br><span style='font-size:12px'>{escape(detail)}</span>"
+        "</div>"
+    ).encode()
 
 
 def _make_handler(cfg: dict[str, Any]):
@@ -33,6 +47,38 @@ def _make_handler(cfg: dict[str, Any]):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def _redirect(self, location: str) -> None:
+            self.send_response(302)
+            self.send_header("Location", location)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def _serve_embed(self, embed_id: str) -> None:
+            """Deliver an embedded module dashboard for its iframe. "server" kind: ensure the module's
+            own HTTP dashboard is up (launch in PAPER mode if down) and redirect to its port. "static"
+            kind: regenerate (throttled) the module's HTML file and serve it. Best-effort — any failure
+            renders an inline message in the iframe, never crashes the server."""
+            emb = embeds.by_id(cfg, embed_id)
+            if emb is None:
+                self._send(404, b"unknown embed", "text/plain")
+                return
+            try:
+                if emb.get("kind") == "server":
+                    res = embeds.ensure_server(emb)
+                    if res.get("ok"):
+                        self._redirect(res["url"])
+                    else:
+                        self._send(200, _embed_error(emb, res.get("detail", "unavailable")), "text/html")
+                    return
+                res = embeds.build_static(emb)
+                body = embeds.read_static(emb) if res.get("ok") else None
+                if body is not None:
+                    self._send(200, body, "text/html; charset=utf-8")
+                else:
+                    self._send(200, _embed_error(emb, res.get("detail", "unavailable")), "text/html")
+            except Exception as exc:  # a module hiccup shows inline, never breaks the umbrella server
+                self._send(200, _embed_error(emb, str(exc)), "text/html")
 
         def do_GET(self):  # noqa: N802
             parsed = urlparse(self.path)
@@ -70,6 +116,9 @@ def _make_handler(cfg: dict[str, Any]):
                     payload = {"ok": False, "error": str(exc)}
                 self._send(200, json.dumps(payload).encode("utf-8"), "application/json")
                 return
+            if parsed.path.startswith("/embed/"):
+                self._serve_embed(parsed.path[len("/embed/") :])
+                return
             self._send(404, b"not found", "text/plain")
 
     return _Handler
@@ -85,9 +134,11 @@ def serve(
     httpd = ThreadingHTTPServer((host, port), _make_handler(cfg))
     url = f"http://{host}:{port}/"
     active = [s["id"] for s in sections.enabled_sections(cfg)]
+    active_embeds = [e["id"] for e in embeds.enabled_embeds(cfg)]
     print(
         f"cherrypick dashboard serving at {url}  (Ctrl-C to stop)"
         + (f" · sections: {', '.join(active)}" if active else " · no live sections")
+        + (f" · embeds: {', '.join(active_embeds)}" if active_embeds else "")
     )
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()

@@ -120,7 +120,19 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       streamer, Dolt, notify) — ~1.5s vs ~7s. The `--serve` live-checks card now polls in fast mode so
       its 30s cadence never hammers the broker/its rate limits; `cherrypick doctor` (human, on-demand)
       still runs the full check. Exposed on the CLI as `cherrypick doctor --fast`.
-- [ ] **Next:** embedded module dashboards; broker-vs-DB **reconciliation** drift.
+- [x] **Embedded module dashboards (shipped 2026-07-11).** `dashboard --serve` now embeds each module's
+      *own* full dashboard in an iframe on the umbrella page (a single pane for the suite), via a new
+      `dashboard.embeds` config list and `orchestrator/embeds.py`. Two delivery kinds, both driven by
+      config-declared argv (the umbrella never imports a module) with **PAPER mode forced** in that argv:
+      `"server"` (the module runs its own HTTP dashboard — the umbrella launches it if the port is down,
+      reusing the streamer's benign detached launcher, then the iframe redirects to its port) and
+      `"static"` (the module regenerates a self-contained HTML file — the umbrella runs the generator,
+      throttled to `refresh_seconds`, and serves the file). One route, `/embed/<id>`, owns both; a module
+      failure renders inline in the iframe and never crashes the umbrella. Serve-only (the static file
+      render omits the iframes); loopback-only. First consumers: cherrypick-meic (`src/dashboard.py`,
+      server) and cherrypick-earnings (`src/strategy_dashboard.py`, static). Verified end-to-end in a
+      browser against both installed modules.
+- [ ] **Next:** broker-vs-DB **reconciliation** drift.
       *(The parallel-shadow paper **run** orchestration that feeds calibration stays module-side.)*
 
 ## GEX dashboard + shared streamer (shipped 2026-07-11)

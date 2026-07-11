@@ -96,6 +96,28 @@
         "default_symbol": "SPX",
         "refresh_seconds": 15
       }
+    ],
+    "embeds": [
+      {
+        "_comment": "Optional embedded module dashboards for `dashboard --serve` only: each module's OWN full dashboard, shown in an iframe on the umbrella page. The umbrella drives the module by config-declared argv (never imports it) and PAPER mode must be forced in that argv. Locate the module by 'path' (relative to this file) or 'repo'. Two kinds: 'server' (module runs its own HTTP dashboard — umbrella launches it if the port is down, iframe points at {port}) and 'static' (module regenerates a self-contained HTML file — umbrella runs build_argv, throttled to refresh_seconds, and serves 'output'). Disabled by default.",
+        "id": "meic",
+        "title": "MEIC",
+        "enabled": false,
+        "kind": "server",
+        "repo": "https://github.com/joncovington/cherrypick-meic.git",
+        "serve_argv": ["src/dashboard.py", "--mode", "paper", "--port", "{port}"],
+        "port": 8801
+      },
+      {
+        "id": "earnings",
+        "title": "Earnings",
+        "enabled": false,
+        "kind": "static",
+        "repo": "https://github.com/joncovington/cherrypick-earnings.git",
+        "build_argv": ["src/strategy_dashboard.py", "--mode", "paper"],
+        "output": "reports/strategy_dashboard.html",
+        "refresh_seconds": 30
+      }
     ]
   },
   "trade_notify": {
