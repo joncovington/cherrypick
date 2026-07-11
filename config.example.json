@@ -51,7 +51,10 @@
         "trade_schema": "earnings",
         "requires_dolt": true,
         "dolt_host": "127.0.0.1",
-        "dolt_port": 3306
+        "dolt_port": 3306,
+        "dolt_user": "root",
+        "_dolt_databases_note": "Databases the runner needs served on dolt_host:dolt_port. doctor verifies each is present (not just that the port answers) when a MySQL client is available, catching a Dolt server rooted at the wrong data dir. Omit to check port reachability only.",
+        "dolt_databases": ["earnings", "options", "stocks"]
       },
       "calibration": {
         "ladder": ["conservative", "balanced", "aggressive"],

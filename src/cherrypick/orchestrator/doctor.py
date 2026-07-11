@@ -41,6 +41,46 @@ def _run(module_root: Path, argv: list[str], timeout: int = 30) -> subprocess.Co
     )
 
 
+def _dolt_databases(host: str, port: int, user: str = "root") -> set[str] | None:
+    """The set of database names the Dolt (MySQL-protocol) server serves, or None if it couldn't
+    be determined — no MySQL client installed, or the query failed. Optional by design: doctor is
+    read-only diagnostics (never the reliability path, which stays stdlib-only), and a None result
+    degrades gracefully to a reachability-only report rather than a hard cherrypick dependency."""
+    try:
+        import mysql.connector  # optional; only this diagnostic uses it
+    except Exception:
+        return None
+    try:
+        conn = mysql.connector.connect(host=host, port=int(port), user=user, connection_timeout=5)
+        try:
+            cur = conn.cursor()
+            cur.execute("SHOW DATABASES")
+            names = {row[0] for row in cur.fetchall()}
+            cur.close()
+            return names
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
+def _dolt_status(reachable: bool, required: list[str], present: set[str] | None) -> tuple[str, str]:
+    """Classify the Dolt check. Reachability alone is not health: a server rooted at the wrong data
+    dir answers on the port while serving none of the required databases (the failure that silently
+    broke the earnings entry on 2026-07-11, masked by a port-only check). When `required` databases
+    are declared and a client is available, missing databases are a hard FAIL."""
+    if not reachable:
+        return WARN, "not reachable (earnings entry self-starts it)"
+    if not required:
+        return OK, "reachable"
+    if present is None:
+        return OK, "reachable (db-presence check skipped: no MySQL client)"
+    missing = [db for db in required if db not in present]
+    if missing:
+        return FAIL, f"reachable but MISSING databases: {', '.join(missing)} (serving wrong data dir?)"
+    return OK, f"reachable; databases present: {', '.join(required)}"
+
+
 def _writable(path: Path) -> bool:
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -169,18 +209,21 @@ def run(cfg: dict[str, Any] | None = None) -> list[Check]:
             except Exception as exc:
                 checks.append(Check(f"{name}.streamer", WARN, f"status error: {exc}"))
 
-        # dolt
+        # dolt — port reachability plus (when declared) that the required databases are actually served
         if paper.get("requires_dolt"):
             from .watchdog import _dolt_reachable  # local import avoids cycle at module load
 
-            reachable = _dolt_reachable(paper.get("dolt_host", "127.0.0.1"), paper.get("dolt_port", 3306))
-            checks.append(
-                Check(
-                    f"{name}.dolt",
-                    OK if reachable else WARN,
-                    "reachable" if reachable else "not reachable (earnings entry self-starts it)",
-                )
+            host = paper.get("dolt_host", "127.0.0.1")
+            port = paper.get("dolt_port", 3306)
+            reachable = _dolt_reachable(host, port)
+            required = paper.get("dolt_databases") or []
+            present = (
+                _dolt_databases(host, port, paper.get("dolt_user", "root"))
+                if reachable and required
+                else None
             )
+            status, detail = _dolt_status(reachable, required, present)
+            checks.append(Check(f"{name}.dolt", status, detail))
 
     # watchdog task
     wt = cfg.get("watchdog", {}).get("task_name")
