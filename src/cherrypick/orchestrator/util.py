@@ -32,3 +32,11 @@ def first_json(text: str | None) -> dict[str, Any]:
         except json.JSONDecodeError:
             continue
     return {}
+
+
+def mask_account(value: Any) -> str:
+    """Mask an account number to its last 4 digits (`****1234`) — the suite-wide rule for anything that
+    surfaces in logs/output. `****` when there are fewer than 4 characters (or the value is empty/None),
+    so a full account number is never emitted."""
+    s = str(value or "").strip()
+    return f"****{s[-4:]}" if len(s) >= 4 else "****"

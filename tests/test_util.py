@@ -1,12 +1,13 @@
-"""Unit tests for orchestrator.util.first_json.
+"""Unit tests for orchestrator.util.
 
-Guards the exact class of bug seen in Stage 0: streamer.py --status prints a JSON status line
-followed by extra log output, which a plain json.loads rejects with "Extra data".
+first_json guards the exact class of bug seen in Stage 0: streamer.py --status prints a JSON status
+line followed by extra log output, which a plain json.loads rejects with "Extra data". mask_account
+guards the suite-wide rule that account numbers are never emitted in full.
 """
 
 import pytest
 
-from cherrypick.orchestrator.util import first_json
+from cherrypick.orchestrator.util import first_json, mask_account
 
 pytestmark = pytest.mark.unit
 
@@ -38,3 +39,20 @@ def test_no_json_present():
 def test_top_level_non_dict_is_ignored():
     # A JSON array is valid JSON but not a status object.
     assert first_json("[1, 2, 3]") == {}
+
+
+def test_mask_account_keeps_last_four():
+    assert mask_account("5WT12345") == "****2345"
+    assert mask_account(12345678) == "****5678"
+
+
+def test_mask_account_short_or_empty_reveals_nothing():
+    assert mask_account("12") == "****"
+    assert mask_account("") == "****"
+    assert mask_account(None) == "****"
+
+
+def test_mask_account_never_contains_full_value():
+    full = "5WU987654321"
+    masked = mask_account(full)
+    assert masked == "****4321" and full not in masked

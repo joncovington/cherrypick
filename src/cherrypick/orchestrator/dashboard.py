@@ -507,6 +507,18 @@ def _doctor_live_html() -> str:
     )
 
 
+def _reconcile_card_html() -> str:
+    """Serve-only paper↔live isolation card. Broker-touching (`reconcile.run` → get_positions), so it
+    runs on page load and on the Run button — never on a background poll (broker rate limits, same
+    reasoning as `doctor --fast`). Omitted from the static file render (no server to answer the call)."""
+    return (
+        '<section class="card recon"><h2>paper↔live isolation '
+        '<button class="recon-btn" data-cp-reconcile-run>run check</button></h2>'
+        '<div class="recon-body" data-cp-reconcile data-endpoint="/api/reconcile">'
+        '<span class="muted">checking real account…</span></div></section>'
+    )
+
+
 def _system_card_html(model: dict[str, Any], serve: bool) -> str:
     body = (
         '<h3 class="sub">scheduled tasks</h3>'
@@ -609,6 +621,11 @@ border-radius:6px;padding:8px;max-height:340px;overflow:auto;border:1px solid va
 border-bottom:1px solid var(--border)}
 .embed-open{margin-left:auto;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none}
 .embed-frame{display:block;width:100%;height:820px;border:0;background:var(--bg)}
+.recon-btn{margin-left:auto;font:11px var(--mono);cursor:pointer;color:var(--text);
+border:1px solid var(--border);border-radius:4px;background:var(--panel);padding:2px 10px}
+.recon-btn:disabled{opacity:.5;cursor:default}
+.card.recon h2{display:flex;align-items:center;gap:8px}
+.recon-body .drow{margin:3px 0;font-size:12.5px}
 """
 
 _JS = """
@@ -634,6 +651,53 @@ _DOCTOR_JS = """
     }).join('');
   }).catch(function(){}); }
   tick(); setInterval(tick, 30000);
+})();
+"""
+
+# Serve-only: fetches /api/reconcile (broker-touching) on page load and on the Run button. NOT an
+# interval — each run authenticates to the broker. Kept out of the always-on _JS so its selector never
+# appears in the static render.
+_RECONCILE_JS = """
+(function(){
+  var body=document.querySelector('[data-cp-reconcile]'); if(!body) return;
+  var url=body.getAttribute('data-endpoint');
+  var btn=document.querySelector('[data-cp-reconcile-run]');
+  function esc(s){var d=document.createElement('div');d.textContent=s==null?'':(''+s);return d.innerHTML;}
+  function run(){
+    body.className='recon-body muted'; body.textContent='checking real account…';
+    if(btn){ btn.disabled=true; }
+    fetch(url).then(function(r){return r.json();}).then(function(d){
+      if(btn){ btn.disabled=false; }
+      if(!d){ body.className='recon-body muted'; body.textContent='unavailable'; return; }
+      if(d.ok===false && d.error){ body.className='recon-body muted'; body.textContent=d.error; return; }
+      var v=d.verdict||'UNKNOWN';
+      var color={FLAT:'var(--pos)',DRIFT:'var(--neg)',UNKNOWN:'var(--warn)'}[v]||'var(--muted)';
+      var b=d.broker||{}; var html='';
+      html+='<div class="drow"><span class="pill" style="background:'+color+'">'+v+'</span> ';
+      if(!b.reachable){ html+='<span class="muted">broker account could not be checked: '
+        +esc(b.detail||'unavailable')+'</span></div>'; }
+      else {
+        var pos=b.open_positions||[];
+        html+='real account <b>'+esc(b.account||'****')+'</b> '
+          +(pos.length? '<b style="color:var(--neg)">has '+pos.length+' open position(s)</b>'
+                      : '<span style="color:var(--pos)">is flat</span>')+'</div>';
+        pos.slice(0,20).forEach(function(p){
+          var sym=p['symbol']||p['underlying-symbol']||p['instrument-type']||'?';
+          var qty=p['quantity']||p['quantity-direction']||'';
+          html+='<div class="drow muted">· '+esc(sym)+' '+esc(qty)+'</div>';
+        });
+      }
+      var paper=d.paper||{};
+      Object.keys(paper).forEach(function(k){ var pv=paper[k]||{};
+        var t=pv.ok? (pv.open_count||0)+' open (paper, context)' : (pv.reason||'unavailable');
+        html+='<div class="drow muted">paper['+esc(k)+']: '+esc(t)+'</div>';
+      });
+      body.className='recon-body'; body.innerHTML=html;
+    }).catch(function(){ if(btn){ btn.disabled=false; }
+      body.className='recon-body muted'; body.textContent='request failed'; });
+  }
+  if(btn){ btn.addEventListener('click', run); }
+  run();
 })();
 """
 
@@ -706,8 +770,11 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     # live server owns (it launches/regenerates the module dashboard on demand). Omitted in the static
     # file render — there's no umbrella server to answer /embed/<id>.
     embed_cards = _embed_cards_html(model.get("embeds", [])) if serve else ""
+    # Reconcile is broker-touching, so its card is serve-only too (the /api/reconcile route only exists
+    # under `dashboard --serve`); the static file render omits it.
+    reconcile_card = _reconcile_card_html() if serve else ""
     extra_style = viz.SECTION_STYLE if live_sections else ""
-    extra_script = (viz.SECTION_JS if live_sections else "") + (_DOCTOR_JS if serve else "")
+    extra_script = (viz.SECTION_JS if live_sections else "") + (_DOCTOR_JS + _RECONCILE_JS if serve else "")
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -717,6 +784,7 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
         + "</style></head><body><div class='wrap'>"
         + header
         + system_card
+        + reconcile_card
         + section_cards
         + f'<div class="grid">{cards}</div>'
         + logs

@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import dashboard, doctor, embeds, sections
+from . import dashboard, doctor, embeds, reconcile, sections
 
 
 def _embed_error(embed_cfg: dict[str, Any], detail: str) -> bytes:
@@ -100,6 +100,15 @@ def _make_handler(cfg: dict[str, Any]):
                         ],
                     }
                 except Exception as exc:  # a doctor hiccup shows inline, never crashes the server
+                    payload = {"ok": False, "error": str(exc)}
+                self._send(200, json.dumps(payload).encode("utf-8"), "application/json")
+                return
+            if parsed.path == "/api/reconcile":
+                try:
+                    # Broker-touching (get_positions) — so this runs only when the card asks (on load /
+                    # button click), never on a background poll. Serve-only, like the doctor card.
+                    payload = reconcile.run(cfg)
+                except Exception as exc:  # a reconcile hiccup shows inline, never crashes the server
                     payload = {"ok": False, "error": str(exc)}
                 self._send(200, json.dumps(payload).encode("utf-8"), "application/json")
                 return
