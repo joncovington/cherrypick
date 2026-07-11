@@ -11,10 +11,11 @@ trade_notifier), each yielding a normalized closed-trade record `{profile, symbo
   - "earnings" : EarningsAgent's `trades`; closed = closed_at set; net = pnl - entry_cost - exit_cost;
                  tag = profile.
 
-The per-profile grouping mirrors cherrypit.profiles.compare_profiles (group closed trades by their
-attribution tag, summarize each group). It is reimplemented inline here rather than imported because
-Cherrypick is not yet a cherrypit-core consumer (no `_core` submodule) and the umbrella must not depend
-on a module's vendored copy. Swap to profiles.compare_profiles if/when Cherrypick vendors cherrypit-core.
+The per-profile grouping mirrors cherrypick.core.profiles.compare_profiles (group closed trades by
+their attribution tag, summarize each group). It is reimplemented inline here rather than imported
+because Cherrypick is not yet a cherrypick-core consumer (no `_core` submodule) and the umbrella must
+not depend on a module's vendored copy. Swap to profiles.compare_profiles if/when Cherrypick vendors
+cherrypick-core.
 """
 
 from __future__ import annotations

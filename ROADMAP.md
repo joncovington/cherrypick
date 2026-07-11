@@ -9,9 +9,18 @@ stalls.
 - Write all documentation and pull request descriptions from a human developer's perspective.
 - Never include co-author attribution or AI signatures in git commit messages.
 
+> - **NEVER** log personal changelogs or task trackers here.
+> - **NEVER** log or display account numbers. **Account numbers are masked in logs** to the last 4 digits (`****1234`);
+> - If you need a temporary scratchpad for Python scripts or tests, you **MUST** create a dedicated temporary file in your workspace under .tmp/ and delete it when finished.
+
+> ⚠️ **CRITICAL INSTRUCTION**: This repo runs correctly on any machine/OS, not just the dev machine.
+> - **NEVER** hardcode absolute paths (e.g. `C:\Users\...`, `/Users/...`). Build paths relative to file location (`Path(__file__).resolve().parent...`) or from config/environment.
+> - **NEVER** save working files/tests to root — use `/src`, `/tests`, `/docs`, `/config`
+> - **NEVER** hardcode machine-specific details (username, hostname except `127.0.0.1`/`localhost`, drive letters)
+> - Before committing new path-construction code, verify it uses `Path(__file__)`, env var, or config value — never a literal machine path.
 
 > **Full design & phased roadmap:** `~/.claude/plans/cherrypick-plan.md` (Stages 0–8, the
-> `cherrypit-core` shared-library extraction, new modules, onboarding, standards). This file tracks
+> `cherrypick-core` shared-library extraction, new modules, onboarding, standards). This file tracks
 > only what has actually been built.
 
 ## Prime directive
@@ -52,18 +61,18 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
 - [x] **`cherrypick report`** (first slice): unified, read-only cross-module paper P&L
       (`orchestrator/report.py`). Reads each module's paper DB by `paper.trade_schema` (MEIC `ic_trades`,
       Earnings `trades`), computes net-of-cost P&L / win rate per module and **per risk profile**, plus a
-      suite total. Profile grouping mirrors `cherrypit.profiles.compare_profiles` inline (Cherrypick is
-      not yet a cherrypit-core consumer; the umbrella must not import a module's vendored `_core`). 6
+      suite total. Profile grouping mirrors `cherrypick.core.profiles.compare_profiles` inline (Cherrypick is
+      not yet a cherrypick-core consumer; the umbrella must not import a module's vendored `_core`). 6
       tests; verified against live paper data (13 MEIC closed trades across all four profiles).
 - [ ] **Next:** the Part-14 status/log **dashboard** (read-side UI over this + heartbeats + logs), and
       drift/stall **alerts** (the silent-stall watchdog's reporting-hub home).
 
-## Shipped since Stage 0 — cherrypit-core extraction + standards
+## Shipped since Stage 0 — cherrypick-core extraction + standards
 > Full design & running reconciliation live in `~/.claude/plans/cherrypick-plan.md` (see its
-> **Build Status** section). `cherrypit-core` is a public GitHub repo, submoduled into both suite
+> **Build Status** section). `cherrypick-core` is a public GitHub repo, submoduled into both suite
 > modules at `src/_core`; each consumer keeps a thin shim and cut its call sites over. All CI-green.
 
-- [x] **`cherrypit-core` shared library (8 packages), consumed by MEICAgent & EarningsAgent:**
+- [x] **`cherrypick-core` shared library (8 packages), consumed by MEICAgent & EarningsAgent:**
       `auth` (credentials + session), `calendar`, `dxfeed`, `fees` (cost-adjusted fills +
       the IC open/`ic_close_fee`/`ic_expire_fee` schedule — MEIC's paper engine now draws from
       this one source too, the first brick of the Part 11 shared cost model), `gex`, `broker`
@@ -81,7 +90,7 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       (`account_deploy_limit_pct` in config, default 0). A live dry-run smoke is a pending
       user-supervised step.
 - [x] **Engineering standards** — ruff + GitHub Actions CI + pre-commit (`ruff-check`) across all
-      three repos (cherrypit-core, MEICAgent, EarningsAgent).
+      three repos (cherrypick-core, MEICAgent, EarningsAgent).
 - [–] **Not extracted (by design):** metrics (MEIC daily-series vs Earnings event-trade — same names,
       different math; parameterize-not-unify), stdlib logging (n=1: Earnings is print-based), MEIC's
       cache/futures `_fetch_chain`, Earnings' strategy `sizing.py`, and the module dashboards.
@@ -99,7 +108,7 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
 - **No watchdog-of-the-watchdog.** The Windows Task Scheduler durability + the logging floor are the
   Stage-0 backstop; `doctor` surfaces a missing watchdog task. Phase 6b promotes this into the shared
   reliability framework.
-- **Throwaway-tolerant.** This watchdog/notify logic is the seed Phase 6b absorbs into `cherrypit-core`.
+- **Throwaway-tolerant.** This watchdog/notify logic is the seed Phase 6b absorbs into `cherrypick-core`.
 
 ## Commands
 ```
