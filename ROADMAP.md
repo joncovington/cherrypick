@@ -222,10 +222,16 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       `dolt sql-server` start only when the port is down), `uninstall` removes it, and `status`/`doctor`
       surface it. Replaced the hand-written `.cmd` launcher entirely. Unit-tested
       (`tests/test_ensure_dolt.py`); `doctor` gained its first coverage too (`tests/test_doctor.py`).
-- [ ] **Task durability beyond login.** All tasks (Dolt, streamer, watchdog) register with `/IT` — they
-      run only while the user is logged on, so nothing self-restarts after a reboot at the logon screen.
-      Needs the elevation path for `/RU SYSTEM` (or a real service) worked out; `schtasks /Create /SC
-      ONLOGON|ONSTART` was Access-denied unelevated.
+- [~] **Task durability beyond login (Approach A: auto-login + never-sleep).** SYSTEM is ruled out —
+      broker auth lives in the user's DPAPI keyring, which SYSTEM/S4U can't decrypt — so durability comes
+      from keeping a real user session alive. **Shipped cherrypick-side:** `tasks.allow_on_battery`
+      clears the default `DisallowStartIfOnBatteries`/`StopIfGoingOnBatteries` guards on every task at
+      install (via the ScheduledTasks PS module; best-effort, unit-tested) so tasks run unplugged.
+      **One-time user step:** `tools/setup-walkaway-durability.ps1` (run elevated) stops sleep/hibernate,
+      sets lid-close to "do nothing" (the laptop gotcha), and then the user enables auto-login via
+      `netplwiz` (password stays an LSA secret cherrypick never touches). Tasks stay `/IT`; the screen may
+      still lock. **Later:** a proper server/service mode (whether-logged-on with a managed credential, or
+      a Windows service) so no interactive session is required at all.
 - [ ] **Populate the holiday calendar.** `doctor` shows `holidays_loaded=0`; entry/exit trading-day
       gating currently trusts weekday-only logic. Load a market-holiday source before the next holiday.
 - [ ] **Retire the legacy dirs.** `EarningsAgent` (+ its ~14GB `dolt-data`) and the pre-fresh-install

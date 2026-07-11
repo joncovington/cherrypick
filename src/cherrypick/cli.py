@@ -139,6 +139,9 @@ def cmd_install(cfg) -> None:
                 "ok": r.returncode == 0,
                 "detail": (r.stdout or r.stderr).strip(),
             }
+            # the module registers its own task; clear its battery guards too (laptop durability)
+            if r.returncode == 0 and paper.get("task_name"):
+                tasks.allow_on_battery(paper["task_name"])
             # start streamer if down
             streamer = mcfg.get("streamer", {})
             if streamer.get("enabled"):
