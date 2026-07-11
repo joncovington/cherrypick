@@ -6,6 +6,7 @@ collection, with a watchdog + notifications so a walk-away user is told (or at l
 whenever something stalls. Never touches live trading; never sits on a module's loop decision path.
 
 Subcommands:
+  init                 Scaffold + validate config.json (first-run onboarding); --force to overwrite.
   install              Register all scheduled tasks (MEIC paper, earnings entry/exit, watchdog,
                        fast trade-notify) and start the streamer if it is down.
   uninstall            Remove Cherrypick-managed scheduled tasks.
@@ -40,6 +41,7 @@ from cherrypick.orchestrator import (
     calibrate,
     dashboard,
     doctor,
+    init,
     report,
     tasks,
     timeutil,
@@ -300,6 +302,12 @@ def _run_earnings(cfg, phase: str) -> None:
 
 
 # --------------------------------------------------------------------------- misc
+def cmd_init(force: bool) -> None:
+    result = init.run(force=force)
+    _emit(result)
+    sys.exit(0 if result.get("ok") else 1)
+
+
 def cmd_doctor(cfg) -> None:
     checks = doctor.run(cfg)
     report, worst = doctor.format_report(checks)
@@ -370,6 +378,7 @@ def main() -> None:
     parser.add_argument(
         "command",
         choices=[
+            "init",
             "install",
             "uninstall",
             "status",
@@ -395,7 +404,15 @@ def main() -> None:
     parser.add_argument(
         "--url", default=None, help="Webhook URL for secrets-set (omit to be prompted without echo)"
     )
+    parser.add_argument(
+        "--force", action="store_true", help="For init: overwrite an existing config.json"
+    )
     args = parser.parse_args()
+
+    # `init` scaffolds config.json, so it must run before the config pre-load (a fresh user has none).
+    if args.command == "init":
+        cmd_init(args.force)
+        return
 
     cfg = cfgmod.load_config()
     dispatch = {
