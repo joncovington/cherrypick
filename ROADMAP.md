@@ -160,12 +160,16 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
 - [x] **`CLAUDE.md` added** — umbrella architecture guide + a **Suite-wide Guardrails** section
       consolidating the shared rules inherited from both modules (Part 13.5: guardrails documented in one
       place the umbrella honors).
-- [ ] **Follow-up (parked):** a pip-installed *umbrella* still can't import `cherrypick.core` for
-      `report`/`calibrate`/`dashboard` — the wheel excludes `src/_core` and `cherrypick-core` isn't a
-      declared dependency. Resolve by making `cherrypick-core` a real dependency (PyPI or VCS/URL). The
-      reliability path (install/watchdog/status/doctor) is unaffected. Also pending: seed each new
-      checkout's machine-local `config.json`/runtime data and re-run `install` to move the OS tasks +
-      streamer onto the new module paths.
+- [x] **Installed umbrella imports `cherrypick.core`.** `cherrypick-core` is now a declared dependency
+      (a direct git reference — it's Private :: Do Not Upload, so not on PyPI); a real install (wheel /
+      `pip install git+…` / pipx) pulls it, while source/editable checkouts still resolve core from the
+      `src/_core` submodule (which wins on `sys.path`). Also added `tzdata` and made
+      `timeutil._tz`'s pytz fallback fire at **call time** — the old import-time guard was dead code, so a
+      Windows install with no IANA tz database crashed on every timezone op. Validated in a clean venv
+      (non-editable + editable/CI-parity, full suite green).
+- [x] **Module cutover complete.** Both new checkouts seeded with machine-local `config.json` + durable
+      `data/` DBs (Earnings' multi-GB Dolt store left as a localhost service, not copied); `cherrypick
+      install` re-registered every task at the new paths and moved the streamer to `cherrypick-meic`.
 
 ## Known Stage-0 limitations (hardened in later phases)
 - **Windows-only scheduler** (`schtasks`). POSIX (cron/launchd/systemd) backend is a later phase; the

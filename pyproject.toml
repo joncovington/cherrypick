@@ -19,7 +19,20 @@ classifiers = [
     "Intended Audience :: Financial and Insurance Industry",
     "Topic :: Office/Business :: Financial :: Investment",
 ]
-dependencies = ["keyring>=24", "pytz>=2023"]
+# cherrypick-core supplies the `cherrypick.core` namespace that report/calibrate/dashboard import.
+# In a source checkout it's the `src/_core` submodule (bootstrapped onto sys.path, and excluded from
+# the wheel); a real install (wheel / `pip install git+…` / pipx) has no submodule, so it's declared
+# here as a direct git reference — allowed because cherrypick-core is Private :: Do Not Upload (not on
+# PyPI). Editable/source installs still resolve core from the submodule, which is inserted at sys.path[0]
+# and wins over this copy.
+dependencies = [
+    "keyring>=24",
+    # zoneinfo needs an IANA tz database; Windows (this suite's target) ships none, so tzdata supplies
+    # it for an installed copy. pytz remains a call-time fallback (see orchestrator/timeutil._tz).
+    "tzdata>=2023",
+    "pytz>=2023",
+    "cherrypick-core @ git+https://github.com/joncovington/cherrypick-core.git",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
