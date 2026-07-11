@@ -11,7 +11,8 @@ Subcommands:
                        fast trade-notify) and start the streamer if it is down.
   uninstall            Remove cherrypick-managed scheduled tasks.
   status               Show task registration, last watchdog heartbeat, and last earnings run.
-  doctor               One green/red readiness check (read-only).
+  doctor               One green/red readiness check (read-only). --fast skips the authenticated
+                       broker round-trip (local/offline checks only).
   watchdog             Run one watchdog pass (this is what the scheduled task invokes).
   report               Unified cross-module paper P&L (read-only): totals + per-profile breakdown.
   dashboard            Regenerate the read-only status dashboard (static HTML: health + P&L + logs).
@@ -372,8 +373,8 @@ def cmd_init(force: bool) -> None:
     sys.exit(0 if result.get("ok") else 1)
 
 
-def cmd_doctor(cfg) -> None:
-    checks = doctor.run(cfg)
+def cmd_doctor(cfg, fast: bool = False) -> None:
+    checks = doctor.run(cfg, fast=fast)
     report, worst = doctor.format_report(checks)
     print(report)
     sys.exit(0 if worst < 2 else 1)
@@ -479,6 +480,11 @@ def main() -> None:
     )
     parser.add_argument("--force", action="store_true", help="For init: overwrite an existing config.json")
     parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="For doctor: skip the authenticated broker check (local/offline checks only)",
+    )
+    parser.add_argument(
         "--serve",
         action="store_true",
         help="For dashboard: run a localhost live server instead of writing a static file",
@@ -500,7 +506,7 @@ def main() -> None:
         "install": lambda: cmd_install(cfg),
         "uninstall": lambda: cmd_uninstall(cfg),
         "status": lambda: cmd_status(cfg),
-        "doctor": lambda: cmd_doctor(cfg),
+        "doctor": lambda: cmd_doctor(cfg, fast=args.fast),
         "watchdog": lambda: cmd_watchdog(cfg),
         "report": lambda: cmd_report(cfg),
         "dashboard": lambda: cmd_dashboard(cfg, args),

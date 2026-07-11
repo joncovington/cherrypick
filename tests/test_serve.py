@@ -126,7 +126,8 @@ def test_api_system_returns_doctor_checks(monkeypatch):
         doctor.Check("python", doctor.OK, "3.13"),
         doctor.Check("meic.streamer", doctor.WARN, "not running"),
     ]
-    monkeypatch.setattr(doctor, "run", lambda cfg: checks)
+    seen = {}
+    monkeypatch.setattr(doctor, "run", lambda cfg, fast=False: seen.update(fast=fast) or checks)
 
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), serve._make_handler({}))
     port = httpd.server_address[1]
@@ -139,6 +140,8 @@ def test_api_system_returns_doctor_checks(monkeypatch):
             {"name": "python", "status": "OK", "detail": "3.13"},
             {"name": "meic.streamer", "status": "WARN", "detail": "not running"},
         ]
+        # the live-checks card must poll doctor in fast mode (no authenticated broker round-trip)
+        assert seen["fast"] is True
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -147,7 +150,7 @@ def test_api_system_returns_doctor_checks(monkeypatch):
 def test_api_system_degrades_on_doctor_error(monkeypatch):
     monkeypatch.setattr(dashboard, "build_model", lambda cfg: _MODEL)
 
-    def boom(cfg):
+    def boom(cfg, fast=False):
         raise RuntimeError("broker unreachable")
 
     monkeypatch.setattr(doctor, "run", boom)

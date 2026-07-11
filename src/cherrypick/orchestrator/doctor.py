@@ -92,7 +92,12 @@ def _writable(path: Path) -> bool:
         return False
 
 
-def run(cfg: dict[str, Any] | None = None) -> list[Check]:
+def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
+    """Run the readiness checks. `fast=True` skips the broker/keyring check — the only one that makes
+    an authenticated broker round-trip (a 35s-timeout subprocess) — so it's safe to poll on a short
+    cadence (the `dashboard --serve` live-checks card) without hammering the broker or its rate limits.
+    Everything else (interpreter, clock, paths, config, paper-DB writability, task registration,
+    streamer liveness, Dolt reachability, notify) is local/cheap and always runs."""
     checks: list[Check] = []
     try:
         cfg = cfg or cfgmod.load_config()
@@ -173,8 +178,9 @@ def run(cfg: dict[str, Any] | None = None) -> list[Check]:
                     )
                 )
 
-        # broker/keyring — check once, via the first module that can
-        if not broker_checked:
+        # broker/keyring — check once, via the first module that can. Skipped in fast mode: it's the
+        # only authenticated broker round-trip, unsafe to poll on the live-checks cadence.
+        if not broker_checked and not fast:
             try:
                 r = _run(root, ["src/tt.py", "get_connection_status"], timeout=35)
                 out = json.loads(r.stdout or "{}") if r.returncode == 0 else {}
