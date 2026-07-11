@@ -1,5 +1,7 @@
 {
   "enable_live_trading": false,
+  "account_deploy_limit_pct": 0,
+  "_account_deploy_limit_pct_note": "Account-level deploy cap (via cherrypit.risk). 0 = OFF (default). A positive value (e.g. 50) blocks a LIVE execute_trade whose buying power would push total deployed BP above that percent of account capacity (used + available derivative buying power). Fail-closed: if account state can't be read, the live order is blocked. Enforced only on live submits; a dry-run reports the governor verdict without blocking. Does not affect paper trading.",
 
   "_position_sizing_note": "available_capital_paper_mode is the simulated capital basis for paper mode's risk-cap checks (max_risk_per_trade_pct) -- no real broker balance is consulted in paper mode. Live mode always sources NLV/buying power from tastytrade directly via tt.py get_account_info.",
   "available_capital_paper_mode": 10000,
