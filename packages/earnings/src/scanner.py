@@ -21,10 +21,18 @@ Commands (see CLAUDE.md's Tool Reference):
 
 import argparse
 import json
+import os
 import sys
 from datetime import date as _date
 from datetime import datetime, timedelta
 from pathlib import Path
+
+# Make the cherrypit-core submodule (src/_core) importable before the cherrypit import below,
+# mirroring credentials.py's bootstrap so this module works even when imported before credentials.
+sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
+
+from cherrypit import profiles as _profiles
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.json"
 
@@ -60,20 +68,15 @@ def _load_config(profile: str | None = None) -> dict:
     config.setdefault("tier_floor", "Tier 2")
 
     if profile and profile != "default":
-        profiles = config.get("profiles", {})
-        if profile not in profiles:
-            raise ValueError(
-                f"unknown profile '{profile}' -- known profiles: {sorted(profiles)}"
-            )
-        profile_def = profiles[profile]
-        reserved = {"strategy_overrides", "description"}
-        for key, value in profile_def.items():
-            if key in reserved:
-                continue
-            config[key] = value
-        for strategy_name, overrides in profile_def.get("strategy_overrides", {}).items():
-            if strategy_name in config.get("strategies", {}):
-                config["strategies"][strategy_name].update(overrides)
+        # cherrypit.profiles (src/_core): flat top-level override + per-strategy strategy_overrides
+        # deep-merge; _active_profile (set above) is carried through by the merge.
+        registry = _profiles.load_profiles(config)
+        profile_def = _profiles.select_profile(registry, profile)  # raises ValueError on unknown name
+        config = _profiles.merge_profile(
+            config, profile_def,
+            reserved_keys=("description",),
+            nested_namespaces={"strategy_overrides": "strategies"},
+        )
 
     return config
 
