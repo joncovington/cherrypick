@@ -37,7 +37,8 @@ python run.py stream --symbol SPX               # run the streamer -> own data/s
 python run.py dashboard --serve                 # localhost live GEX view (default 127.0.0.1:5055)
 python run.py dashboard --serve --symbol SPX --port 5055
 python run.py gex --symbol SPX                  # one-shot summary to the terminal
-python run.py gex --symbol SPX --json           # raw payload (what the Cherrypick umbrella embeds)
+python run.py gex --symbol SPX --json           # raw GEX payload
+python run.py section --symbol SPX --json        # cherrypick.core.viz section payload (umbrella embeds this)
 
 python -m pytest                                # tests (seed a temp cache; no streamer needed)
 ruff check . && ruff format .                   # lint/format (src/_core is excluded)

@@ -13,6 +13,7 @@ import json
 import sys
 
 import config as _config
+import section as _section
 import serve as _serve
 import service as _service
 import streamer as _streamer
@@ -31,6 +32,12 @@ def _cmd_gex(cfg: dict, args: argparse.Namespace) -> int:
     print(f"  net GEX {t['net_gex']:>14,}   flip {t['zero_gamma']}   "
           f"call wall {t['call_wall']}   put wall {t['put_wall']}   ({len(payload['series'])} strikes)")
     return 0
+
+
+def _cmd_section(cfg: dict, args: argparse.Namespace) -> int:
+    payload = _section.build_section(cfg, args.symbol)
+    print(json.dumps(payload))
+    return 0 if payload.get("ok") else 1
 
 
 def _cmd_stream(cfg: dict, args: argparse.Namespace) -> int:
@@ -56,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--symbol", default=None, help="underlying symbol (default: config.symbols[0])")
     g.add_argument("--json", action="store_true", help="emit the raw payload as JSON")
 
+    se = sub.add_parser("section", help="emit a cherrypick.core.viz section payload (for the umbrella)")
+    se.add_argument("--symbol", default=None, help="underlying symbol (default: config.symbols[0])")
+    se.add_argument("--json", action="store_true", help="(payload is always JSON; accepted for symmetry)")
+
     st = sub.add_parser("stream", help="run the streamer to populate this module's own cache")
     st.add_argument("--symbol", action="append", default=None,
                     help="underlying to stream (repeatable; default: config.symbols)")
@@ -71,6 +82,8 @@ def main(argv: list[str] | None = None) -> int:
     cfg = _config.load()
     if args.command == "gex":
         return _cmd_gex(cfg, args)
+    if args.command == "section":
+        return _cmd_section(cfg, args)
     if args.command == "stream":
         return _cmd_stream(cfg, args)
     if args.command == "dashboard":

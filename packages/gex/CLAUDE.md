@@ -9,8 +9,8 @@ self-hosted version of gexbot.com / SpotGamma / MenthorQ. It computes GEX via th
 `cherrypick.core.gex` engine and serves a localhost live view. It places no orders and never touches
 live trading. Two modes: **standalone** (`run.py stream` runs `cherrypick.core.streamer` to populate its
 own `data/stream_cache.db`) or **piggyback** (point `source.stream_cache_db` at a cherrypick-meic cache
-and read it read-only). The umbrella (Cherrypick) embeds this module's GEX by subprocessing
-`python run.py gex --symbol <sym> --json`.
+and read it read-only). The umbrella (Cherrypick) embeds this module's GEX as a dashboard section by
+subprocessing `python run.py section --symbol <sym> --json` (a `cherrypick.core.viz` payload).
 
 ## Commands
 
@@ -39,7 +39,9 @@ config file's directory — never hardcode absolute paths.
   SQLite (`history_db`). Bootstraps `src/_core` onto `sys.path`.
 - **src/serve.py** — stdlib `ThreadingHTTPServer`, loopback-only, one self-contained page polling
   `/api/gex`.
-- **src/cli.py + run.py** — the CLI; `gex --json` is the umbrella's integration point.
+- **src/section.py** — maps `build_gex` output onto the `cherrypick.core.viz` section schema (metrics
+  tiles + a signed net-GEX-by-strike bar series). This is what the umbrella's generic dashboard renders.
+- **src/cli.py + run.py** — the CLI; `section --json` is the umbrella's integration point.
 - **src/_core** — the shared `cherrypick-core` submodule; the GEX math (`core.gex`), the streaming engine
   (`core.streamer`), and the cache schema (`core.streamcache`) live there so this module and
   cherrypick-meic compute/stream identically. Excluded from ruff and the wheel.
