@@ -181,18 +181,16 @@ def _resolve_subscriptions(symbols: list[str]) -> dict[str, list[str]]:
 # Streamer daemon
 # ---------------------------------------------------------------------------
 
-_RECONNECT_BASE   = 2.0
-_RECONNECT_MAX    = 60.0
-_SYMBOL_POLL_S    = 30.0    # how often to check for new open trades
+_SYMBOL_POLL_S    = 30.0    # how often to re-check open trades (passed as the engine's subscription poll)
 _HTTP_PORT        = 7699    # streamer API port
 
 # Per-symbol subscription window. Every traded symbol gets exactly one window sized to the
 # GEX requirement (wider than the ATM-only requirement of ~15 strikes) — GEX profile accuracy
 # needs strikes further from the money than entry strike selection does, and a single window
 # per symbol comfortably covers both needs rather than maintaining two separate windows.
+# (Reconnect backoff + window re-center cadence now live in cherrypick.core.streamer, whose defaults
+# match the values MEIC used here; only the strike count and poll interval are passed through.)
 _WINDOW_STRIKE_COUNT = 20   # strikes each side of center (~40 strikes × 2 types = ~80 symbols)
-_WINDOW_REFRESH_PTS  = 1.0  # re-center when the symbol's underlying moves this many points
-_WINDOW_POLL_S       = 5.0  # how often to check whether a re-center is due
 
 _NOMINAL_WING_PRICE = 0.01  # fallback price for a long wing leg with no quote at all
 
