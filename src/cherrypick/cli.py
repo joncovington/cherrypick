@@ -17,6 +17,10 @@ Subcommands:
   report               Unified cross-module paper P&L (read-only): totals + per-profile breakdown.
   reconcile            Paper↔live isolation guard: query the real broker account (read-only) and flag
                        any open positions/BP a paper-only suite shouldn't have. On-demand; never trades.
+  connect              Guided per-module onboarding (--module): set OAuth creds (via the module's own
+                       hidden-input tool) and select the live-trading account. Never trades.
+  account              List (--module), set (--set <last4|index>), or clear (--clear) a module's
+                       designated live-trading account. Masked; never trades.
   dashboard            Regenerate the read-only status dashboard (static HTML: health + P&L + logs).
   calibrate            Per-profile paper calibration readings + advisory promotion recommendations.
   run-earnings-entry   Run EarningsAgent's paper entry now (invoked by its daily task).
@@ -43,7 +47,9 @@ from pathlib import Path
 from cherrypick.notify import Notifier
 from cherrypick.notify import secrets as notify_secrets
 from cherrypick.orchestrator import (
+    accounts,
     calibrate,
+    connect,
     dashboard,
     doctor,
     init,
@@ -387,6 +393,63 @@ def cmd_watchdog(cfg) -> None:
     _emit(watchdog.run(cfg))
 
 
+def _account_table(listing: dict) -> None:
+    """Print a masked account listing for `cherrypick account`."""
+    if not listing.get("ok"):
+        print(f"account: {listing.get('error')}")
+        return
+    live = listing.get("live_enabled")
+    live_str = "on" if live is True else "off" if live is False else "unknown"
+    print(f"{listing['module']} — live trading: {live_str}")
+    desig = listing.get("designated")
+    print(f"designated live-trading account: {desig or '(none - SDK picks the first account)'}")
+    for i, a in enumerate(listing.get("accounts", []), 1):
+        mark = "  <- designated" if a.get("designated") else ""
+        bits = [a["account"]]
+        if a.get("nickname"):
+            bits.append(str(a["nickname"]))
+        if a.get("type"):
+            bits.append(str(a["type"]))
+        print(f"  {i}) {'  '.join(bits)}{mark}")
+
+
+def cmd_account(cfg, args) -> None:
+    """List / set / clear a module's designated live-trading account (masked)."""
+    module = args.module
+    if not module:
+        _emit({"ok": False, "error": "account requires --module <name>"})
+        sys.exit(2)
+    if args.clear:
+        _emit(accounts.clear_account(cfg, module))
+        return
+    if args.set:
+        # Setting the destination for LIVE orders — confirm unless --yes.
+        if not args.yes:
+            print(
+                f"This designates the account {module} will use for LIVE orders. cherrypick never places"
+                f" trades; it only records the destination."
+            )
+            if (
+                input(
+                    f"Type 'yes' to set {module}'s live-trading account to selection {args.set!r}: "
+                ).strip()
+                != "yes"
+            ):
+                _emit({"ok": False, "error": "aborted"})
+                return
+        _emit(accounts.set_account(cfg, module, args.set))
+        return
+    _account_table(accounts.list_accounts(cfg, module))
+
+
+def cmd_connect(cfg, args) -> None:
+    module = args.module
+    if not module:
+        _emit({"ok": False, "error": "connect requires --module <name>"})
+        sys.exit(2)
+    _emit(connect.run(cfg, module))
+
+
 def cmd_reconcile(cfg) -> None:
     result = reconcile.run(cfg)
     report_text, _worst = reconcile.format_report(result)
@@ -470,6 +533,8 @@ def main() -> None:
             "watchdog",
             "report",
             "reconcile",
+            "connect",
+            "account",
             "dashboard",
             "calibrate",
             "run-earnings-entry",
@@ -496,6 +561,15 @@ def main() -> None:
         action="store_true",
         help="For doctor: skip the authenticated broker check (local/offline checks only)",
     )
+    parser.add_argument("--module", default=None, help="For connect/account: which module to target")
+    parser.add_argument(
+        "--set",
+        dest="set",
+        default=None,
+        help="For account: designate this account (a last-4 or 1-based index)",
+    )
+    parser.add_argument("--clear", action="store_true", help="For account: unset the designated account")
+    parser.add_argument("--yes", action="store_true", help="For account --set: skip the confirmation prompt")
     parser.add_argument(
         "--serve",
         action="store_true",
@@ -522,6 +596,8 @@ def main() -> None:
         "watchdog": lambda: cmd_watchdog(cfg),
         "report": lambda: cmd_report(cfg),
         "reconcile": lambda: cmd_reconcile(cfg),
+        "connect": lambda: cmd_connect(cfg, args),
+        "account": lambda: cmd_account(cfg, args),
         "dashboard": lambda: cmd_dashboard(cfg, args),
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),

@@ -148,6 +148,20 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       and off the watchdog reliability path. Advisory: it never trades, cancels, closes, or mutates
       config. Tests in `test_reconcile`/`test_util`/`test_serve`/`test_dashboard`.
       *(The parallel-shadow paper **run** orchestration that feeds calibration stays module-side.)*
+- [x] **`cherrypick connect` / `cherrypick account` — per-module live-account onboarding (shipped
+      2026-07-11).** The Phase-8 onboarding slice, looking past paper mode: pick which tastytrade account
+      a module trades in when it goes live. `orchestrator/accounts.py` lists the login's accounts (masked)
+      and designates one by writing that module's keyring `ACCOUNT_NUMBER` via the shared
+      `cherrypick.core.auth.CredentialStore` (service from a new per-module `keyring_service` config);
+      `orchestrator/connect.py` wraps it in a guided flow that **delegates** the OAuth bearer secrets to
+      the module's own hidden-input `tt.py secrets_set` (the umbrella never sees client_secret/
+      refresh_token), verifies the connection, then selects the account. `reconcile` now honors the
+      designation: a designated live account is *expected* to hold positions (INFO, not DRIFT); only
+      non-designated accounts must be flat. This is the single narrow **live-config** exception to the
+      "never touch live trading" charter (documented in CLAUDE.md) — it still never places/cancels/closes
+      an order, never flips `enable_live_trading`, never edits module code/config. Per-module (no
+      fan-out); account writes human-confirmed; numbers masked. Tests in
+      `test_accounts`/`test_connect`/`test_reconcile`.
 
 ## GEX dashboard + shared streamer (shipped 2026-07-11)
 - [x] **`cherrypick.core.gex.compute_gex_profile`** — the rich per-strike OI+volume GEX aggregation
