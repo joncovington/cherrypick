@@ -42,10 +42,18 @@ in strategy_metrics.py -- stored verbatim, never parsed by db_paper.py itself.
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 import time
 from pathlib import Path
+
+# Make the cherrypit-core submodule (src/_core) importable before the cherrypit import below,
+# mirroring credentials.py's bootstrap so this module works even when imported before credentials.
+sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
+
+from cherrypit import db as _db
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "paper_trades.db"
 
@@ -124,17 +132,11 @@ _MIGRATIONS = [
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
-    for table, column, alter_sql in _MIGRATIONS:
-        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-        if column not in existing:
-            conn.execute(alter_sql)
-    conn.commit()
+    _db.apply_additive_migrations(conn, _MIGRATIONS)
 
 
 def _conn() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = _db.connect(DB_PATH)  # mkdir parent + row_factory=Row (see cherrypit.db)
     conn.executescript(_DDL)
     _migrate(conn)
     return conn
