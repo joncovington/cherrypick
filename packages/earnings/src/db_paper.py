@@ -331,13 +331,15 @@ def cmd_get_pnl_summary(args) -> dict:
     losses = [p for p in pnls if p <= 0]
 
     by_strategy: dict[str, list[float]] = {}
-    by_profile: dict[str, list[float]] = {}
     for r in closed:
         if r["pnl"] is not None:
             by_strategy.setdefault(r["strategy"], []).append(r["pnl"])
-            by_profile.setdefault(
-                _profiles.attribution_tag(r["profile"], untagged="default"), []
-            ).append(r["pnl"])
+
+    def _pnl_bundle(group: list) -> dict:
+        vals = [r["pnl"] for r in group]
+        return {"trades": len(vals), "total_pnl": sum(vals), "avg_pnl": sum(vals) / len(vals)}
+
+    scored = [r for r in closed if r["pnl"] is not None]
 
     return {
         "ok": True,
@@ -355,10 +357,8 @@ def cmd_get_pnl_summary(args) -> dict:
             s: {"trades": len(vals), "total_pnl": sum(vals), "avg_pnl": sum(vals) / len(vals)}
             for s, vals in by_strategy.items()
         },
-        "by_profile": {
-            p: {"trades": len(vals), "total_pnl": sum(vals), "avg_pnl": sum(vals) / len(vals)}
-            for p, vals in by_profile.items()
-        },
+        "by_profile": _profiles.compare_profiles(
+            scored, tag_key="profile", summarize=_pnl_bundle, untagged="default"),
         "trades": closed,
     }
 
