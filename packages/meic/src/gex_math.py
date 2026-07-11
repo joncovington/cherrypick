@@ -18,8 +18,9 @@ if _CORE.is_dir() and str(_CORE) not in _sys.path:
 
 from cherrypick.core.gex import (  # noqa: E402
     compute_gex,
+    compute_gex_profile,
     dollar_gamma,
     interpolate_zero_gamma,
 )
 
-__all__ = ["dollar_gamma", "interpolate_zero_gamma", "compute_gex"]
+__all__ = ["dollar_gamma", "interpolate_zero_gamma", "compute_gex", "compute_gex_profile"]

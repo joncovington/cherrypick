@@ -945,97 +945,48 @@ def _build_gex_data(symbol: str | None = None) -> dict:
     # gex_spot is the actual chain underlying price used in GEX math.
     gex_spot = (spot / strike_scale) if (spot and strike_scale != 1.0) else spot
 
-    # Aggregate per-strike
-    strikes: dict[float, dict] = {}
+    # Build the per-option snapshot the shared core aggregator consumes. The source-aware
+    # normalisation — which OI/volume source, and IV raw-decimal (cache) vs already-pct (REST) —
+    # stays here because it is data *provenance*. The pure per-strike OI+volume GEX aggregation
+    # (dollar-gamma, walls, zero-gamma) lives in cherrypick.core.gex so this dashboard and the
+    # umbrella's GEX module compute byte-identically, the reason the math was extracted (see
+    # gex_math.py; it once drifted ~75x across hand-maintained copies).
+    entries: list[dict] = []
+    oi_map: dict[str, int] = {}
+    vol_map: dict[str, int] = {}
+    greeks_norm: dict[str, dict] = {}
     for row in chain_rows:
         try:
             opt = _opt(row)
         except Exception:
             continue
-        strike = float(opt.get("strike_price") or 0)
-        otype  = (opt.get("option_type") or "").upper()
-        sym    = opt.get("streamer_symbol") or ""
-        mult   = float(opt.get("shares_per_contract") or 100)
+        sym = opt.get("streamer_symbol") or ""
+        entries.append({
+            "strike_price":        opt.get("strike_price"),
+            "streamer_symbol":     sym,
+            "option_type":         opt.get("option_type"),
+            "shares_per_contract": opt.get("shares_per_contract") or 100,
+        })
         if source == "stream_cache":
-            oi = int(oi_cache.get(sym) or 0)
-            vol = int(trade_volume.get(sym) or 0)
+            oi_map[sym] = int(oi_cache.get(sym) or 0)
+            vol_map[sym] = int(trade_volume.get(sym) or 0)
         else:
-            oi = int(opt.get("open_interest") or 0)
-            # REST fallback has no streamer-sourced live Trade volume to read; fall back to
-            # the slow-moving chain-metadata field in that path only.
-            vol = int(opt.get("average_daily_volume") or 0)
-
+            oi_map[sym] = int(opt.get("open_interest") or 0)
+            # REST fallback has no streamer-sourced live Trade volume to read; fall back to the
+            # slow-moving chain-metadata field in that path only.
+            vol_map[sym] = int(opt.get("average_daily_volume") or 0)
         g = greeks.get(sym, {})
-        gamma = float(g.get("gamma") or 0)
         raw_iv = float(g.get("iv") or 0)
         # cache stores raw decimal (0.20); REST path stores already-pct (20.0)
         iv = raw_iv if (source == "rest" or raw_iv > 1) else raw_iv * 100
+        greeks_norm[sym] = {"gamma": float(g.get("gamma") or 0), "iv": iv}
 
-        # Shared dollar-gamma formula (src/gex_math.py) -- kept in one place after
-        # this used to be a second hand-maintained copy that silently understated
-        # GEX by ~75x for SPX (missing the spot^2 * 0.01 scale) relative to the
-        # number the trading loop actually gates entries on via tt.py's get_gex.
-        _s = gex_spot or 0
-        gex = gex_math.dollar_gamma(gamma, oi, mult, _s)
-        # Volume-based GEX: same dollar-gamma formula, substituting traded volume for open
-        # interest — a "flow" reading alongside the "positioning" one. Note call_vol/put_vol
-        # here is average_daily_volume from chain metadata (see `vol` above), not today's
-        # live intraday volume, so this shares that same staleness characteristic.
-        gex_vol = gex_math.dollar_gamma(gamma, vol, mult, _s)
-        if "P" in otype:
-            gex = -gex
-            gex_vol = -gex_vol
-
-        if strike not in strikes:
-            strikes[strike] = {
-                "call_gamma": 0, "call_iv": 0, "call_oi": 0, "call_vol": 0, "call_gex": 0, "call_gex_vol": 0,
-                "put_gamma":  0, "put_iv":  0, "put_oi":  0, "put_vol":  0, "put_gex":  0, "put_gex_vol":  0,
-            }
-        d = strikes[strike]
-        if "C" in otype:
-            d["call_gamma"] = gamma
-            d["call_iv"] = round(iv, 2)
-            d["call_oi"] = oi
-            d["call_vol"] = vol
-            d["call_gex"] = gex
-            d["call_gex_vol"] = gex_vol
-        elif "P" in otype:
-            d["put_gamma"] = gamma
-            d["put_iv"] = round(iv, 2)
-            d["put_oi"] = oi
-            d["put_vol"] = vol
-            d["put_gex"] = gex
-            d["put_gex_vol"] = gex_vol
-
-    series = []
-    for strike in sorted(strikes):
-        d = strikes[strike]
-        net = d["call_gex"] + d["put_gex"]
-        net_vol = d["call_gex_vol"] + d["put_gex_vol"]
-        series.append({
-            "strike":      round(strike * strike_scale, 2),
-            "call_iv":     d["call_iv"],   "put_iv":      d["put_iv"],
-            "call_oi":     d["call_oi"],   "put_oi":      d["put_oi"],
-            "call_vol":    d["call_vol"],  "put_vol":     d["put_vol"],
-            "total_vol":   d["call_vol"] + d["put_vol"],
-            "call_gex":    round(d["call_gex"]),
-            "put_gex":     round(d["put_gex"]),   # negative value
-            "net_gex":     round(net),
-            "abs_gex":     round(abs(net)),
-            "net_gex_vol": round(net_vol),
-        })
-
-    total_call_gex = sum(s["call_gex"] for s in series if s["call_gex"] > 0)
-    total_put_gex  = abs(sum(s["put_gex"] for s in series if s["put_gex"] < 0))
-    net_gex_total  = sum(s["net_gex"] for s in series)
-    max_gex_s      = max(series, key=lambda s: s["abs_gex"], default=None)
-    # gex_math.interpolate_zero_gamma interpolates from series which already has scaled strikes
-    zero_gamma     = gex_math.interpolate_zero_gamma(series)
-    # Call/put walls: the strike with the largest gamma concentration on each side —
-    # dealer resistance levels. series stores put_gex as a negative value (see above),
-    # so the wall is the most negative entry, not the largest.
-    call_wall_s = max(series, key=lambda s: s["call_gex"], default=None)
-    put_wall_s  = min(series, key=lambda s: s["put_gex"], default=None)
+    # gex_spot is the actual chain underlying price used in the math; strike_scale maps the displayed
+    # strikes back into the requested symbol's price domain (e.g. XSP -> SPX x10).
+    profile = gex_math.compute_gex_profile(entries, greeks_norm, oi_map, vol_map,
+                                           gex_spot or 0, strike_scale=strike_scale)
+    if not profile.get("ok"):
+        return {"ok": False, "error": profile.get("error", f"No GEX data found for {symbol}")}
 
     hist_conn = sqlite3.connect(_CACHE_DB_PATH)
     hist_conn.row_factory = sqlite3.Row
@@ -1051,19 +1002,11 @@ def _build_gex_data(symbol: str | None = None) -> dict:
         "expiration":       expiration,
         "underlying_price": spot,
         "source":           source,
-        "series":           series,
+        "series":           profile["series"],
         "spot_history":     spot_history,
         "market_open_ts":   market_open_ts,
         "market_close_ts":  market_close_ts,
-        "totals": {
-            "total_call_gex": round(total_call_gex),
-            "total_put_gex":  round(total_put_gex),
-            "net_gex":        round(net_gex_total),
-            "max_gex_strike": max_gex_s["strike"] if max_gex_s else None,
-            "zero_gamma":     zero_gamma,
-            "call_wall":      call_wall_s["strike"] if call_wall_s else None,
-            "put_wall":       put_wall_s["strike"] if put_wall_s else None,
-        },
+        "totals":           profile["totals"],
     }
 
 
