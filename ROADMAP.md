@@ -135,8 +135,10 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
 - [x] **`cherrypick reconcile` — paper↔live isolation guard (shipped 2026-07-11).** Reframes
       "broker-vs-DB reconciliation" for a paper-only umbrella: paper trades never hit the broker, so
       instead of matching positions it verifies the *real* account stays flat. `orchestrator/reconcile.py`
-      queries the real account once (read-only `get_positions`/`get_account_info` via the first
-      positions-capable module's `tt.py`, like `doctor` checks the broker once) and returns a verdict —
+      enumerates **every** account on the login (`list_accounts` — tastytrade returns multiple per user)
+      and checks positions per account (read-only `get_positions`/`get_account_info` via the first
+      positions-capable module's `tt.py`), so a leftover position in any account is caught — and returns a
+      verdict —
       `FLAT` (no open positions), `DRIFT` (real account carries positions/BP a paper-only suite
       shouldn't), or `UNKNOWN` (couldn't check). Per-module paper open-position counts (a new
       open-position reader registry mirroring `report._READERS`) are shown as context — a different

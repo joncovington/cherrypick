@@ -262,7 +262,14 @@ def test_api_reconcile_returns_run_output(monkeypatch):
     result = {
         "ok": True,
         "verdict": "FLAT",
-        "broker": {"reachable": True, "account": "****1234"},
+        "broker": {
+            "reachable": True,
+            "accounts": [
+                {"account": "****4222", "open_positions": [], "open_count": 0},
+                {"account": "****8569", "open_positions": [], "open_count": 0},
+            ],
+            "total_open": 0,
+        },
         "paper": {},
     }
     monkeypatch.setattr(reconcile, "run", lambda cfg: result)
@@ -272,7 +279,8 @@ def test_api_reconcile_returns_run_output(monkeypatch):
     try:
         raw = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/reconcile", timeout=5).read()
         payload = json.loads(raw)
-        assert payload["verdict"] == "FLAT" and payload["broker"]["account"] == "****1234"
+        assert payload["verdict"] == "FLAT"
+        assert [a["account"] for a in payload["broker"]["accounts"]] == ["****4222", "****8569"]
     finally:
         httpd.shutdown()
         httpd.server_close()
