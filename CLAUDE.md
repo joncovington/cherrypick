@@ -8,8 +8,9 @@ cherrypick is the **umbrella orchestrator** for a trading-tool suite. It drives 
 repos (`../MEICAgent`, `../EarningsAgent`) **in place** — via subprocess, using paths from config — for
 unattended **paper**-trading data collection, with a watchdog + notifications so a walk-away user is
 told (or at least has it logged) whenever something stalls. It never edits a module's internals and
-**never touches live trading**. `ROADMAP.md` tracks what has actually shipped; the full design lives in
-`~/.claude/plans/cherrypick-plan.md`.
+**never places live trades** — the sole live-adjacent action is *onboarding config* (`connect`/`account`
+select a module's live-trading account; see the Invariants below), never order placement. `ROADMAP.md`
+tracks what has actually shipped; the full design lives in `~/.claude/plans/cherrypick-plan.md`.
 
 ## Commands
 
@@ -93,6 +94,18 @@ is excluded from ruff and from the packaged wheel.
   have. Like `doctor` it is a broker-touching, on-demand diagnostic — **off the watchdog reliability
   path**, read-only broker calls only (`list_accounts`/`get_positions`/`get_account_info`, never an
   order), account numbers masked, advisory. It never trades or mutates config.
+- **The onboarding surface (`connect`/`account`) is the one narrow live-config exception.**
+  `cherrypick connect --module <m>` and `cherrypick account --module <m>` (`orchestrator/connect.py`,
+  `orchestrator/accounts.py`) let a user set up a module for eventual **live** trading: they run the
+  module's *own* hidden-input credential tool for the OAuth bearer secrets (delegated — the umbrella
+  never sees/stores `client_secret`/`refresh_token`) and **select which account** the module trades in
+  when live, writing that account's `ACCOUNT_NUMBER` into the module's keyring via the shared
+  `cherrypick.core.auth.CredentialStore` (service from the module's `keyring_service` config). This is
+  the *only* live-trading *configuration* cherrypick performs, and the boundary is strict: it still
+  **never** places/cancels/closes/adjusts an order, never flips `enable_live_trading`, never runs a
+  module's live engine, and never edits a module's code/config files. Account writes are human-confirmed;
+  account numbers are masked everywhere (only the write to keyring uses the full number). `reconcile`
+  honors the designation — a designated live account is *expected* to hold positions (not drift).
 - **The watchdog's only trading-adjacent action is benign, non-trading remediation** (restart a dead
   streamer). It never places, cancels, or closes an order.
 - **Account numbers are masked** to the last 4 digits (`****1234`) anywhere they surface in logs or

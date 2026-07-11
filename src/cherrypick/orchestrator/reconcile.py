@@ -96,13 +96,30 @@ def _tt(root, *argv: str) -> dict[str, Any]:
     return first_json(doctor._run(root, ["src/tt.py", *argv], timeout=35).stdout)
 
 
-def _account_entry(root, number: str | None) -> dict[str, Any]:
+def _designated_numbers(cfg: dict[str, Any]) -> set[str]:
+    """Full account numbers each enabled module has designated for live trading (its keyring
+    `ACCOUNT_NUMBER`). Those accounts are *expected* to hold positions, so the isolation guard treats
+    them as expected rather than drift. Lazy import of `accounts` avoids an import cycle at load."""
+    from . import accounts  # local import: accounts imports reconcile._tt at module load
+
+    out: set[str] = set()
+    for name in cfgmod.enabled_modules(cfg):
+        store = accounts.keyring_store(cfg, name)
+        number = accounts._designated_number(store)
+        if number:
+            out.add(number)
+    return out
+
+
+def _account_entry(root, number: str | None, designated: set[str]) -> dict[str, Any]:
     """Positions (+ best-effort balances) for one account. `number` None = the module's default account
     (used only as a fallback when `list_accounts` yields nothing). The full number is passed to the
-    broker query but only the masked form is ever returned."""
+    broker query and matched against the designated set, but only the masked form is ever returned."""
     argv = ["get_positions"] + (["--account_number", str(number)] if number else [])
     payload = _tt(root, *argv)
-    account = mask_account(number if number is not None else payload.get("account_number"))
+    full = number if number is not None else payload.get("account_number")
+    account = mask_account(full)
+    is_designated = bool(full and full in designated)
     if not payload.get("ok") or "positions" not in payload:
         return {
             "account": account,
@@ -110,6 +127,7 @@ def _account_entry(root, number: str | None) -> dict[str, Any]:
             "open_positions": [],
             "open_count": 0,
             "balances": {},
+            "designated": is_designated,
         }
     positions = payload.get("positions") or []
     ai_argv = ["get_account_info"] + (["--account_number", str(number)] if number else [])
@@ -120,6 +138,7 @@ def _account_entry(root, number: str | None) -> dict[str, Any]:
         "open_positions": positions,
         "open_count": len(positions),
         "balances": balances,
+        "designated": is_designated,
     }
 
 
@@ -132,6 +151,7 @@ def _query_broker(cfg: dict[str, Any], forced_module: str | None) -> dict[str, A
     modules = cfgmod.enabled_modules(cfg)
     if forced_module and forced_module in modules:
         modules = {forced_module: modules[forced_module]}
+    designated = _designated_numbers(cfg)
     last_err = "no positions-capable module found"
     for name, mcfg in modules.items():
         root = cfgmod.module_root(mcfg, name)
@@ -143,7 +163,11 @@ def _query_broker(cfg: dict[str, Any], forced_module: str | None) -> dict[str, A
                 for a in (_tt(root, "list_accounts").get("accounts") or [])
                 if a.get("account_number")
             ]
-            entries = [_account_entry(root, n) for n in numbers] if numbers else [_account_entry(root, None)]
+            entries = (
+                [_account_entry(root, n, designated) for n in numbers]
+                if numbers
+                else [_account_entry(root, None, designated)]
+            )
         except Exception as exc:  # noqa: BLE001 — a launch failure just means try the next module
             last_err = f"{type(exc).__name__}: {exc}"
             continue
@@ -156,6 +180,9 @@ def _query_broker(cfg: dict[str, Any], forced_module: str | None) -> dict[str, A
             "module": name,
             "accounts": entries,
             "total_open": sum(e["open_count"] for e in entries),
+            # Only positions in NON-designated (paper-only) accounts count as drift; a designated live
+            # account is expected to hold positions.
+            "undesignated_open": sum(e["open_count"] for e in entries if not e.get("designated")),
         }
     return {"reachable": False, "detail": last_err}
 
@@ -171,9 +198,10 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 
     if not broker.get("reachable"):
         verdict = UNKNOWN
-    elif broker.get("total_open", 0) > 0:
+    elif broker.get("undesignated_open", 0) > 0:
         verdict = DRIFT
     else:
+        # FLAT even if a *designated* live account holds positions — those are expected, not drift.
         verdict = FLAT
 
     return {
@@ -201,15 +229,17 @@ def format_report(result: dict[str, Any]) -> tuple[str, int]:
                 lines.append(f"[WARN] account {a.get('account', '****')}: {a['error']}")
                 continue
             positions = a.get("open_positions") or []
-            mark = "[ OK ]" if not positions else "[DRIFT]"
-            lines.append(
-                f"{mark} account {a.get('account', '****')} "
-                + (
-                    "is flat (no open positions)"
-                    if not positions
-                    else f"has {len(positions)} OPEN position(s)"
-                )
-            )
+            is_desig = a.get("designated")
+            tag = " (live - expected)" if is_desig else ""
+            # A designated live account is expected to hold positions, so it's never DRIFT.
+            mark = "[ OK ]" if (not positions or is_desig) else "[DRIFT]"
+            if not positions:
+                state = "is flat (no open positions)"
+            elif is_desig:
+                state = f"has {len(positions)} open position(s) (expected)"
+            else:
+                state = f"has {len(positions)} OPEN position(s)"
+            lines.append(f"{mark} account {a.get('account', '****')}{tag} {state}")
             for p in positions[:20]:
                 sym = p.get("symbol") or p.get("underlying-symbol") or p.get("instrument-type") or "?"
                 qty = p.get("quantity") or p.get("quantity-direction") or ""

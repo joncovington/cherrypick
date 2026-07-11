@@ -55,13 +55,28 @@ def test_paper_open_positions_counts_only_unclosed(env):
     assert paper["meic"]["symbols"] == ["SPX", "XSP"]
 
 
-def _flat_acct(account):
-    return {"account": account, "open_positions": [], "open_count": 0, "balances": {}}
+def _flat_acct(account, designated=False):
+    return {
+        "account": account,
+        "open_positions": [],
+        "open_count": 0,
+        "balances": {},
+        "designated": designated,
+    }
+
+
+def _pos_acct(account, n=1, designated=False):
+    return {
+        "account": account,
+        "open_positions": [{"symbol": "AAPL", "quantity": 1}] * n,
+        "open_count": n,
+        "balances": {},
+        "designated": designated,
+    }
 
 
 def test_verdict_flat_when_all_accounts_empty(env, monkeypatch):
     _, cfg = env
-    # multiple accounts, all flat -> FLAT
     monkeypatch.setattr(
         reconcile,
         "_query_broker",
@@ -69,6 +84,7 @@ def test_verdict_flat_when_all_accounts_empty(env, monkeypatch):
             "reachable": True,
             "accounts": [_flat_acct("****4222"), _flat_acct("****8569")],
             "total_open": 0,
+            "undesignated_open": 0,
         },
     )
     out = reconcile.run(cfg)
@@ -84,16 +100,9 @@ def test_verdict_drift_when_any_account_has_positions(env, monkeypatch):
         "_query_broker",
         lambda cfg, forced: {
             "reachable": True,
-            "accounts": [
-                _flat_acct("****4222"),
-                {
-                    "account": "****8569",
-                    "open_positions": [{"symbol": "AAPL", "quantity": 1}],
-                    "open_count": 1,
-                    "balances": {},
-                },
-            ],
+            "accounts": [_flat_acct("****4222"), _pos_acct("****8569")],
             "total_open": 1,
+            "undesignated_open": 1,
         },
     )
     out = reconcile.run(cfg)
@@ -101,6 +110,25 @@ def test_verdict_drift_when_any_account_has_positions(env, monkeypatch):
     text, worst = reconcile.format_report(out)
     assert "DRIFT" in text and "1 OPEN position" in text and "****8569" in text and worst == 2
     assert "checked 2 real account(s)" in text
+
+
+def test_designated_live_account_with_positions_is_expected_not_drift(env, monkeypatch):
+    _, cfg = env
+    # the DESIGNATED live account holds a position (expected); no other account does -> FLAT
+    monkeypatch.setattr(
+        reconcile,
+        "_query_broker",
+        lambda cfg, forced: {
+            "reachable": True,
+            "accounts": [_flat_acct("****4222"), _pos_acct("****8569", designated=True)],
+            "total_open": 1,
+            "undesignated_open": 0,
+        },
+    )
+    out = reconcile.run(cfg)
+    assert out["verdict"] == reconcile.FLAT and out["ok"] is True
+    text, _ = reconcile.format_report(out)
+    assert "live - expected" in text and "expected)" in text and "DRIFT" not in text
 
 
 def test_verdict_unknown_when_broker_unreachable(env, monkeypatch):

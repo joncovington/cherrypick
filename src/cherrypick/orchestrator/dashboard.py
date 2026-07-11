@@ -685,9 +685,13 @@ _RECONCILE_JS = """
           if(a.error){ html+='<div class="drow muted">account <b>'+esc(a.account||'****')+'</b>: '
             +esc(a.error)+'</div>'; return; }
           var pos=a.open_positions||[];
-          html+='<div class="drow">account <b>'+esc(a.account||'****')+'</b> '
-            +(pos.length? '<b style="color:var(--neg)">has '+pos.length+' open position(s)</b>'
-                        : '<span style="color:var(--pos)">is flat</span>')+'</div>';
+          var tag=a.designated? ' <span class="muted">(live — expected)</span>' : '';
+          var state;
+          if(!pos.length){ state='<span style="color:var(--pos)">is flat</span>'; }
+          else if(a.designated){ state='<span style="color:var(--accent)">has '+pos.length
+            +' open position(s) (expected)</span>'; }
+          else { state='<b style="color:var(--neg)">has '+pos.length+' open position(s)</b>'; }
+          html+='<div class="drow">account <b>'+esc(a.account||'****')+'</b>'+tag+' '+state+'</div>';
           pos.slice(0,20).forEach(function(p){
             var sym=p['symbol']||p['underlying-symbol']||p['instrument-type']||'?';
             var qty=p['quantity']||p['quantity-direction']||'';
