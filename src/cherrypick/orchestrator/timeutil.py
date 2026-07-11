@@ -15,15 +15,25 @@ from pathlib import Path
 from typing import Any
 
 try:  # stdlib first (no third-party dep)
-    from zoneinfo import ZoneInfo
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+except Exception:  # pragma: no cover
+    ZoneInfo = None
+    ZoneInfoNotFoundError = Exception
 
-    def _tz(name: str):
-        return ZoneInfo(name)
-except Exception:  # pragma: no cover - fallback for older/edge environments
+
+def _tz(name: str):
+    """Resolve an IANA tz. Prefer stdlib ``zoneinfo`` — which needs a tz database; the ``tzdata``
+    dependency supplies one on Windows (which ships none). ``ZoneInfo`` imports fine but raises
+    ``ZoneInfoNotFoundError`` at call time when no database is present, so the ``pytz`` fallback must be
+    at call time, not import time (the earlier import-time guard was dead code on a db-less Windows)."""
+    if ZoneInfo is not None:
+        try:
+            return ZoneInfo(name)
+        except ZoneInfoNotFoundError:
+            pass
     import pytz
 
-    def _tz(name: str):
-        return pytz.timezone(name)
+    return pytz.timezone(name)
 
 
 _DEFAULT_TZ = "America/New_York"
