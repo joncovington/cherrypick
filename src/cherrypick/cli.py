@@ -43,6 +43,7 @@ from cherrypick.orchestrator import (
     doctor,
     init,
     report,
+    serve,
     tasks,
     timeutil,
     trade_notifier,
@@ -327,7 +328,15 @@ def cmd_report(cfg) -> None:
     _emit(report.run(cfg))
 
 
-def cmd_dashboard(cfg) -> None:
+def cmd_dashboard(cfg, args) -> None:
+    """One-shot static render (default), or a localhost live server with --serve.
+
+    Serve mode reuses the same build_model/_render_html as the file render; it adds a live GEX section
+    (polled from the cherrypick-gex module) when `gex.enabled` is set. Blocks until Ctrl-C.
+    """
+    if getattr(args, "serve", False):
+        _emit(serve.serve(cfg, host=args.host, port=args.port, open_browser=not args.no_browser))
+        return
     _emit(dashboard.run(cfg))
 
 
@@ -407,6 +416,15 @@ def main() -> None:
     parser.add_argument(
         "--force", action="store_true", help="For init: overwrite an existing config.json"
     )
+    parser.add_argument(
+        "--serve", action="store_true",
+        help="For dashboard: run a localhost live server instead of writing a static file",
+    )
+    parser.add_argument("--host", default=None, help="For dashboard --serve: bind host (default 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=None, help="For dashboard --serve: bind port (def 8787)")
+    parser.add_argument(
+        "--no-browser", action="store_true", help="For dashboard --serve: do not open a browser"
+    )
     args = parser.parse_args()
 
     # `init` scaffolds config.json, so it must run before the config pre-load (a fresh user has none).
@@ -422,7 +440,7 @@ def main() -> None:
         "doctor": lambda: cmd_doctor(cfg),
         "watchdog": lambda: cmd_watchdog(cfg),
         "report": lambda: cmd_report(cfg),
-        "dashboard": lambda: cmd_dashboard(cfg),
+        "dashboard": lambda: cmd_dashboard(cfg, args),
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),

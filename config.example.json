@@ -69,7 +69,21 @@
     "_comment": "Read-only status dashboard: static self-contained HTML regenerated on each watchdog tick and by `cherrypick dashboard`. 'output' is relative to this file's directory.",
     "output": "dashboard.html",
     "log_tail_lines": 50,
-    "auto_regen": true
+    "auto_regen": true,
+    "serve": {
+      "_comment": "`cherrypick dashboard --serve` runs a localhost live view (same page rebuilt per request) instead of writing the static file. Loopback-only, read-only. Override host/port on the CLI with --host/--port.",
+      "host": "127.0.0.1",
+      "port": 8787
+    }
+  },
+  "gex": {
+    "_comment": "Optional live GEX (gamma-exposure) section for `dashboard --serve` — a simple self-hosted gexbot/SpotGamma/MenthorQ. Read-only: the umbrella subprocesses the cherrypick-gex module (json_argv), which reads MEIC's stream_cache.db read-only. Deliberately NOT under 'modules' (that registry is for paper pipelines). Locate the module by 'path' (in-place checkout, relative to this file) or 'repo'. Requires the MEIC streamer to be running so the cache is populated.",
+    "enabled": false,
+    "path": "../cherrypick-gex",
+    "repo": "https://github.com/joncovington/cherrypick-gex.git",
+    "json_argv": ["run.py", "gex", "--json"],
+    "default_symbol": "SPX",
+    "refresh_seconds": 15
   },
   "trade_notify": {
     "_comment": "Dedicated low-latency task that pushes new paper entries/exits to trade_channels. Runs far more often than the watchdog so fills reach you within ~interval_minutes instead of a full watchdog cycle.",
