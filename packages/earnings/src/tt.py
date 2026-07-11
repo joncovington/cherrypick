@@ -36,7 +36,6 @@ import json
 import os
 import sys
 from datetime import date
-from decimal import Decimal
 from typing import Any
 
 # Allow running as `python src/tt.py` from any working directory, and make the cherrypit-core
@@ -361,37 +360,10 @@ async def cmd_get_option_chain(args) -> dict:
         return _error(exc)
 
 
-_ACTION_MAP = {
-    "buy to open": "BUY_TO_OPEN",
-    "sell to open": "SELL_TO_OPEN",
-    "buy to close": "BUY_TO_CLOSE",
-    "sell to close": "SELL_TO_CLOSE",
-}
-
-
 def _build_order(spec: dict):
-    from tastytrade.order import Leg, NewOrder, OrderAction, OrderTimeInForce, OrderType
-
-    tif = OrderTimeInForce(str(spec.get("time_in_force", "Day")))
-    otype = OrderType(str(spec.get("order_type", "Limit")))
-    legs = []
-    for leg in spec.get("legs", []):
-        action = OrderAction[_ACTION_MAP[str(leg["action"]).strip().lower()]]
-        legs.append(Leg(
-            instrument_type=leg["instrument_type"],
-            symbol=leg["symbol"],
-            action=action,
-            quantity=Decimal(str(leg["quantity"])),
-        ))
-    kwargs: dict = {"time_in_force": tif, "order_type": otype, "legs": legs}
-    if spec.get("price") is not None:
-        price = Decimal(str(spec["price"]))
-        effect = spec.get("price_effect")
-        if effect is not None:
-            magnitude = abs(price)
-            price = -magnitude if str(effect).strip().lower() == "credit" else magnitude
-        kwargs["price"] = price
-    return NewOrder(**kwargs)
+    # Delegates to cherrypit.broker (src/_core): pure order construction (dict spec -> NewOrder),
+    # no submission. cmd_execute_trade below still owns the dry-run/live place_order call.
+    return _broker.build_order(spec)
 
 
 async def cmd_execute_trade(args) -> dict:
