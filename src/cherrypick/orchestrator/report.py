@@ -11,11 +11,9 @@ trade_notifier), each yielding a normalized closed-trade record `{profile, symbo
   - "earnings" : EarningsAgent's `trades`; closed = closed_at set; net = pnl - entry_cost - exit_cost;
                  tag = profile.
 
-The per-profile grouping mirrors cherrypick.core.profiles.compare_profiles (group closed trades by
-their attribution tag, summarize each group). It is reimplemented inline here rather than imported
-because Cherrypick is not yet a cherrypick-core consumer (no `_core` submodule) and the umbrella must
-not depend on a module's vendored copy. Swap to profiles.compare_profiles if/when Cherrypick vendors
-cherrypick-core.
+The per-profile grouping uses cherrypick.core.profiles.compare_profiles (group closed trades by their
+attribution tag, summarize each group) via the src/_core submodule — bootstrapped onto sys.path in
+this package's __init__.
 """
 
 from __future__ import annotations
@@ -24,9 +22,11 @@ import sqlite3
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+from cherrypick.core.profiles import compare_profiles
+
 from . import config as cfgmod
 
-# Untagged sentinels match each module's own schema convention (see cherrypit.profiles.attribution_tag).
+# Untagged sentinels match each module's own schema convention (see cherrypick.core.profiles.attribution_tag).
 _MEIC_UNTAGGED = "unassigned"
 _EARNINGS_UNTAGGED = "default"
 
@@ -100,14 +100,6 @@ def _summarize(records: list[dict]) -> dict:
     }
 
 
-def _by_profile(records: list[dict]) -> dict:
-    """Group by attribution tag and summarize each group (mirrors profiles.compare_profiles)."""
-    groups: dict[str, list[dict]] = {}
-    for r in records:
-        groups.setdefault(r["profile"], []).append(r)
-    return {tag: _summarize(g) for tag, g in groups.items()}
-
-
 # --------------------------------------------------------------------------- entrypoint
 def run(cfg: dict | None = None) -> dict:
     """Unified paper P&L across all enabled modules. Read-only; never writes or trades."""
@@ -142,7 +134,7 @@ def run(cfg: dict | None = None) -> dict:
             "ok": True,
             "schema": schema,
             **_summarize(records),
-            "by_profile": _by_profile(records),
+            "by_profile": compare_profiles(records, tag_key="profile", summarize=_summarize),
         }
 
     return {

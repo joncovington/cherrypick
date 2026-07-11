@@ -14,6 +14,12 @@ _SRC = Path(__file__).resolve().parent.parent / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+# Also expose the cherrypick-core submodule (src/_core) so `import cherrypick.core` resolves in tests
+# that touch it directly (the orchestrator package also bootstraps this at import time).
+_CORE = _SRC / "_core"
+if _CORE.is_dir() and str(_CORE) not in sys.path:
+    sys.path.insert(0, str(_CORE))
+
 import pytest  # noqa: E402
 
 

@@ -34,14 +34,18 @@ Repository = "https://github.com/joncovington/cherrypick"
 
 [tool.setuptools.packages.find]
 # src layout + PEP 420 native namespace: `cherrypick` has no __init__.py, so it composes with the
-# cherrypick.core distribution under one `cherrypick.*` import namespace.
+# cherrypick.core distribution under one `cherrypick.*` import namespace. The cherrypick-core submodule
+# lives at src/_core and is bootstrapped onto sys.path at runtime — never packaged into this wheel.
 where = ["src"]
 include = ["cherrypick*"]
+exclude = ["_core*"]
 namespaces = true
 
 [tool.ruff]
 line-length = 110
 target-version = "py310"
+# src/_core is the cherrypick-core submodule — it carries its own ruff config and CI; never lint it here.
+extend-exclude = ["src/_core"]
 
 [tool.ruff.lint]
 # Match the suite's ruff profile (see cherrypick-core): E/W pycodestyle, F pyflakes, I import-sorting,

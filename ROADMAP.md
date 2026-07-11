@@ -84,9 +84,15 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       cherrypick-core consumer). Ladder/rule/deliberate-only come from each module's `calibration`
       config; advisory only — never mutates config or switches live risk. Verified against live paper
       data (per-profile net matches `report`'s `by_profile`).
+- [x] **Umbrella now consumes cherrypick-core.** Added `cherrypick-core` as a git submodule at
+      `src/_core` (bootstrapped onto `sys.path` in `orchestrator/__init__`, mirroring the trading
+      modules), and dropped the inline profile mirrors: `report.py` and `calibrate.py` now import
+      `compare_profiles`/`recommend_promotion`/`PROMOTION_RULE` from `cherrypick.core.profiles` directly.
+      Behavior unchanged (the mirrors were faithful; the existing tests are the regression guard). CI
+      checks out submodules; `src/_core` is excluded from ruff + packaging. **Fresh clones:** run
+      `git submodule update --init` (as the modules require).
 - [ ] **Next:** `--serve` live view; the `cherrypick-core` `DashboardSection`/`viz` contract so new
-      modules get a section for free; embedded module dashboards; broker-vs-DB **reconciliation** drift;
-      and vendoring cherrypick-core into the umbrella to drop the inline `report`/`calibrate` mirrors.
+      modules get a section for free; embedded module dashboards; broker-vs-DB **reconciliation** drift.
       *(The parallel-shadow paper **run** orchestration that feeds calibration stays module-side.)*
 
 ## Shipped since Stage 0 — cherrypick-core extraction + standards
