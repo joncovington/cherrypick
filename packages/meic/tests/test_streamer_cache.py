@@ -16,11 +16,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import streamer as _streamer
 from streamer import (
-    _DDL,
     _REST_TTL,
     _read_rest_cache,
     _write_rest_cache,
 )
+
+# The cache schema lives in the shared core now; reach it through the already-imported streamer module
+# (which bootstraps src/_core onto sys.path) so this stays independent of import ordering.
+_DDL = _streamer.streamcache.DDL
 
 # ---------------------------------------------------------------------------
 # Helpers
