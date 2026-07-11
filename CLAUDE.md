@@ -73,9 +73,13 @@ is excluded from ruff and from the packaged wheel.
   the stdlib + the OS shell (no MCP, no HTTP client, no AI tooling), so it has no new failure mode. A
   34-hour silent stall is the reason this rule exists.
 - **Read surfaces read files, never the broker.** `report`/`calibrate`/`dashboard` read paper DBs (SQLite
-  read-only), watchdog state, and logs. In particular `dashboard.py` reads the **watchdog heartbeat**
-  (`state/watchdog.last.json`) for health rather than re-running `doctor` (which shells out to the
-  broker/streamer) — keep it that way so viewing status stays fast and offline.
+  read-only), watchdog state, and logs. In particular the **static** `dashboard.py` render reads the
+  **watchdog heartbeat** (`state/watchdog.last.json`) for health rather than re-running `doctor` (which
+  shells out to the broker/streamer) — keep it that way so the auto-regenerated file stays fast and
+  offline. The one exception is deliberate and gated: `dashboard --serve` exposes a `/api/system` route
+  that runs `doctor.run()` for a live-checks card, polled client-side. That broker-touching call lives
+  only on the served path (never the static regen), mirroring how the live section cards work — so the
+  file written on every watchdog tick still never touches the broker.
 - **Paper ↔ live isolation.** cherrypick only invokes paper engines / paper DBs. Anything advisory
   (e.g. `calibrate`'s promotion recommendations, the drawdown alert) is advisory only — it never mutates
   a module's config or switches live risk.
