@@ -42,25 +42,30 @@ def _meic_closed(conn) -> list[dict]:
     rows = conn.execute(
         "SELECT symbol, risk_profile, pnl, fees FROM ic_trades WHERE exit_time IS NOT NULL"
     ).fetchall()
-    return [{
-        "profile": r["risk_profile"] or _MEIC_UNTAGGED,
-        "symbol": r["symbol"],
-        "strategy": None,
-        "net_pnl": (r["pnl"] or 0.0) - (r["fees"] or 0.0),
-    } for r in rows]
+    return [
+        {
+            "profile": r["risk_profile"] or _MEIC_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": None,
+            "net_pnl": (r["pnl"] or 0.0) - (r["fees"] or 0.0),
+        }
+        for r in rows
+    ]
 
 
 def _earnings_closed(conn) -> list[dict]:
     rows = conn.execute(
-        "SELECT symbol, profile, strategy, pnl, entry_cost, exit_cost FROM trades "
-        "WHERE closed_at IS NOT NULL"
+        "SELECT symbol, profile, strategy, pnl, entry_cost, exit_cost FROM trades WHERE closed_at IS NOT NULL"
     ).fetchall()
-    return [{
-        "profile": r["profile"] or _EARNINGS_UNTAGGED,
-        "symbol": r["symbol"],
-        "strategy": r["strategy"],
-        "net_pnl": (r["pnl"] or 0.0) - (r["entry_cost"] or 0.0) - (r["exit_cost"] or 0.0),
-    } for r in rows]
+    return [
+        {
+            "profile": r["profile"] or _EARNINGS_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": r["strategy"],
+            "net_pnl": (r["pnl"] or 0.0) - (r["entry_cost"] or 0.0) - (r["exit_cost"] or 0.0),
+        }
+        for r in rows
+    ]
 
 
 _READERS = {"meic_ic": _meic_closed, "earnings": _earnings_closed}
@@ -121,8 +126,12 @@ def run(cfg: dict | None = None) -> dict:
             conn.close()
 
         all_records.extend(records)
-        modules_out[name] = {"ok": True, "schema": schema, **_summarize(records),
-                             "by_profile": _by_profile(records)}
+        modules_out[name] = {
+            "ok": True,
+            "schema": schema,
+            **_summarize(records),
+            "by_profile": _by_profile(records),
+        }
 
     return {
         "ok": True,

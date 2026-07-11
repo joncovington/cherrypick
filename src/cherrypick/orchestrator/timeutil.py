@@ -9,7 +9,8 @@ absent that, we fall back to a weekday check and log the degradation to the call
 from __future__ import annotations
 
 import json
-from datetime import datetime, time as dtime
+from datetime import datetime
+from datetime import time as dtime
 from pathlib import Path
 from typing import Any
 

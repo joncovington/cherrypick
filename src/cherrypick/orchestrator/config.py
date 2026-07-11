@@ -7,12 +7,15 @@ absolute paths (a portability guardrail inherited from both sibling modules).
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
-# Cherrypick root = parent of the orchestrator/ package dir.
-ROOT = Path(__file__).resolve().parent.parent
+# Cherrypick runtime root — where config.json, logs/, and state/ live. In a source checkout that is the
+# repo root; this module sits at <root>/src/cherrypick/orchestrator/config.py, so the root is 3 parents
+# up. An installed copy (no repo root) sets CHERRYPICK_HOME to its runtime dir instead.
+ROOT = Path(os.environ.get("CHERRYPICK_HOME") or Path(__file__).resolve().parents[3])
 CONFIG_PATH = ROOT / "config.json"
 LOGS_DIR = ROOT / "logs"
 STATE_DIR = ROOT / "state"
@@ -39,17 +42,13 @@ def module_root(module_cfg: dict[str, Any]) -> Path:
         raise ValueError("module config missing 'path'")
     p = Path(raw)
     if not p.is_absolute():
-        p = (ROOT / p)
+        p = ROOT / p
     return p.resolve()
 
 
 def enabled_modules(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Return {name: module_cfg} for modules with enabled=true."""
-    return {
-        name: mcfg
-        for name, mcfg in cfg.get("modules", {}).items()
-        if mcfg.get("enabled", False)
-    }
+    return {name: mcfg for name, mcfg in cfg.get("modules", {}).items() if mcfg.get("enabled", False)}
 
 
 def python_exe() -> str:

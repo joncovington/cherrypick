@@ -34,8 +34,7 @@ def build_tr(exe: str, script: str, *args: str) -> str:
 def exists(name: str) -> bool:
     if os.name != "nt":
         return False
-    r = subprocess.run(["schtasks", "/Query", "/TN", name],
-                       capture_output=True, text=True)
+    r = subprocess.run(["schtasks", "/Query", "/TN", name], capture_output=True, text=True)
     return r.returncode == 0
 
 
@@ -43,8 +42,9 @@ def query_verbose(name: str) -> dict[str, Any]:
     """Return parsed key fields for a task (Status, Last Result, Last/Next Run Time)."""
     if not exists(name):
         return {"exists": False}
-    r = subprocess.run(["schtasks", "/Query", "/TN", name, "/V", "/FO", "LIST"],
-                       capture_output=True, text=True)
+    r = subprocess.run(
+        ["schtasks", "/Query", "/TN", name, "/V", "/FO", "LIST"], capture_output=True, text=True
+    )
     fields: dict[str, Any] = {"exists": True}
     for line in (r.stdout or "").splitlines():
         if ":" not in line:
@@ -59,9 +59,22 @@ def query_verbose(name: str) -> dict[str, Any]:
 def create_minute_task(name: str, tr: str, interval_minutes: int, run_now: bool = True) -> dict[str, Any]:
     _require_windows()
     r = subprocess.run(
-        ["schtasks", "/Create", "/TN", name, "/TR", tr,
-         "/SC", "MINUTE", "/MO", str(interval_minutes), "/F", "/IT"],
-        capture_output=True, text=True,
+        [
+            "schtasks",
+            "/Create",
+            "/TN",
+            name,
+            "/TR",
+            tr,
+            "/SC",
+            "MINUTE",
+            "/MO",
+            str(interval_minutes),
+            "/F",
+            "/IT",
+        ],
+        capture_output=True,
+        text=True,
     )
     ok = r.returncode == 0
     if ok and run_now:
@@ -72,9 +85,9 @@ def create_minute_task(name: str, tr: str, interval_minutes: int, run_now: bool 
 def create_daily_task(name: str, tr: str, at_hhmm: str) -> dict[str, Any]:
     _require_windows()
     r = subprocess.run(
-        ["schtasks", "/Create", "/TN", name, "/TR", tr,
-         "/SC", "DAILY", "/ST", at_hhmm, "/F", "/IT"],
-        capture_output=True, text=True,
+        ["schtasks", "/Create", "/TN", name, "/TR", tr, "/SC", "DAILY", "/ST", at_hhmm, "/F", "/IT"],
+        capture_output=True,
+        text=True,
     )
     return {"ok": r.returncode == 0, "task": name, "detail": (r.stdout or r.stderr).strip()}
 

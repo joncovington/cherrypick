@@ -44,14 +44,16 @@ class Notifier:
     # -- the floor -----------------------------------------------------------------
     def _write_log(self, level: str, key: str, title: str, message: str) -> None:
         _LOG.parent.mkdir(parents=True, exist_ok=True)
-        line = json.dumps({
-            "ts": _utcnow(),
-            "kind": "NOTIFY",
-            "level": level,
-            "key": key,
-            "title": title,
-            "message": message,
-        })
+        line = json.dumps(
+            {
+                "ts": _utcnow(),
+                "kind": "NOTIFY",
+                "level": level,
+                "key": key,
+                "title": title,
+                "message": message,
+            }
+        )
         with _LOG.open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")
 
@@ -74,9 +76,17 @@ class Notifier:
         encoded = base64.b64encode(ps.encode("utf-16-le")).decode("ascii")
         try:
             subprocess.Popen(
-                ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
-                 "-EncodedCommand", encoded],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-EncodedCommand",
+                    encoded,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
             return {"ok": True}
         except Exception as exc:  # never let a push failure escape
@@ -87,10 +97,14 @@ class Notifier:
         data = json.dumps(payload).encode("utf-8")
         # Discord (behind Cloudflare) rejects the default "Python-urllib" User-Agent with 403, so send
         # an explicit one. Harmless for Slack.
-        req = urllib.request.Request(url, data=data, headers={
-            "Content-Type": "application/json",
-            "User-Agent": "Cherrypick-Notifier/1.0 (+https://github.com/cherrypick)",
-        })
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "Cherrypick-Notifier/1.0 (+https://github.com/cherrypick)",
+            },
+        )
         try:
             with urllib.request.urlopen(req, timeout=6) as resp:
                 return {"ok": 200 <= resp.status < 300, "status": resp.status}
@@ -100,13 +114,19 @@ class Notifier:
     def _push_slack(self, level: str, title: str, message: str) -> dict[str, Any]:
         url = secrets.get_webhook("slack")
         if not url:
-            return {"ok": False, "skipped": "slack webhook not set (run: cherrypick secrets-set --channel slack)"}
+            return {
+                "ok": False,
+                "skipped": "slack webhook not set (run: cherrypick secrets-set --channel slack)",
+            }
         return self._post_json(url, {"text": f"[{level}] {self.app_name} — {title}\n{message}"})
 
     def _push_discord(self, level: str, title: str, message: str) -> dict[str, Any]:
         url = secrets.get_webhook("discord")
         if not url:
-            return {"ok": False, "skipped": "discord webhook not set (run: cherrypick secrets-set --channel discord)"}
+            return {
+                "ok": False,
+                "skipped": "discord webhook not set (run: cherrypick secrets-set --channel discord)",
+            }
         # Discord caps `content` at 2000 chars; keep well under with a margin for the prefix.
         body = f"**[{level}] {self.app_name} — {title}**\n{message}"[:1900]
         return self._post_json(url, {"content": body})
@@ -134,7 +154,9 @@ class Notifier:
         return results
 
 
-def notify(notify_cfg: dict[str, Any] | None, level: str, key: str, title: str, message: str) -> dict[str, Any]:
+def notify(
+    notify_cfg: dict[str, Any] | None, level: str, key: str, title: str, message: str
+) -> dict[str, Any]:
     """Module-level convenience: construct a Notifier and emit one notification."""
     return Notifier(notify_cfg).notify(level, key, title, message)
 

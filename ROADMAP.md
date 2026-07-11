@@ -37,7 +37,9 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
 - **Paper ↔ live isolation.** Cherrypick only invokes paper engines / paper DBs.
 
 ## Stage 0 — built (tonight)
-- [x] Scaffold: `config.json`, `orchestrator/`, `notify/`, `logs/`, `state/`, `cherrypick.py`.
+- [x] Scaffold: `config.json`, `src/cherrypick/{orchestrator,notify}/`, `logs/`, `state/`, and the
+      `run.py` launcher (packaged as the `cherrypick` distribution — `pipx install` gives a `cherrypick`
+      console script; the src-layout `cherrypick` namespace composes with `cherrypick.core`).
 - [x] **MEIC paper** wired via its own self-healing task (`paper_loop.py --install-task`) + streamer
       ensured up.
 - [x] **EarningsAgent paper** scheduled by Cherrypick (module has no scheduler of its own): daily
@@ -112,10 +114,10 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
 
 ## Commands
 ```
-python cherrypick.py doctor        # green/red readiness (read-only)
-python cherrypick.py install       # register all tasks + start streamer
-python cherrypick.py status        # task state + last heartbeats
-python cherrypick.py watchdog      # one watchdog pass (what the task runs)
-python cherrypick.py notify-test   # prove notifications reach you
-python cherrypick.py uninstall     # remove Cherrypick-managed tasks
+python run.py doctor        # green/red readiness (read-only)
+python run.py install       # register all tasks + start streamer
+python run.py status        # task state + last heartbeats
+python run.py watchdog      # one watchdog pass (what the task runs)
+python run.py notify-test   # prove notifications reach you
+python run.py uninstall     # remove Cherrypick-managed tasks
 ```

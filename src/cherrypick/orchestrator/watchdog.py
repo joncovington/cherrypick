@@ -17,16 +17,16 @@ import os
 import socket
 import subprocess
 import sys
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from cherrypick.notify import Notifier
+
 from . import config as cfgmod
-from . import tasks
-from . import timeutil
+from . import tasks, timeutil
 from .util import first_json
-from notify import Notifier
 
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
 _STATE_FILE = cfgmod.STATE_DIR / "watchdog_state.json"
@@ -61,7 +61,10 @@ def _file_age_minutes(path: Path) -> float | None:
 def _run_module(module_root: Path, argv: list[str], timeout: int = 25) -> subprocess.CompletedProcess:
     return subprocess.run(
         [cfgmod.python_exe(), *[str(a) for a in argv]],
-        cwd=str(module_root), capture_output=True, text=True, timeout=timeout,
+        cwd=str(module_root),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
 
 
@@ -83,8 +86,10 @@ def _start_streamer(module_root: Path, start_argv: list[str]) -> bool:
         subprocess.Popen(
             [exe, *[str(a) for a in start_argv]],
             cwd=str(module_root),
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            creationflags=flags, close_fds=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+            close_fds=True,
         )
         return True
     except Exception:
@@ -100,24 +105,46 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
     # (a) self-healing task registered
     task_name = paper.get("task_name")
     if task_name and not tasks.exists(task_name):
-        findings.append(Finding(f"{name}.task", CRITICAL, "MEIC paper task missing",
-                                f"Scheduled task '{task_name}' is not registered. Run: cherrypick install"))
+        findings.append(
+            Finding(
+                f"{name}.task",
+                CRITICAL,
+                "MEIC paper task missing",
+                f"Scheduled task '{task_name}' is not registered. Run: cherrypick install",
+            )
+        )
     else:
         findings.append(Finding(f"{name}.task", OK, "MEIC paper task", "registered"))
 
     # (b) freshness during the session
     if in_session:
-        ages = [a for a in (
-            _file_age_minutes(root / paper["paper_db"]) if paper.get("paper_db") else None,
-            _file_age_minutes(root / paper["log"]) if paper.get("log") else None,
-        ) if a is not None]
+        ages = [
+            a
+            for a in (
+                _file_age_minutes(root / paper["paper_db"]) if paper.get("paper_db") else None,
+                _file_age_minutes(root / paper["log"]) if paper.get("log") else None,
+            )
+            if a is not None
+        ]
         fresh_limit = paper.get("freshness_minutes", 20)
         if not ages:
-            findings.append(Finding(f"{name}.fresh", WARN, "MEIC paper has no output yet",
-                                    "No paper DB or log file found during market hours."))
+            findings.append(
+                Finding(
+                    f"{name}.fresh",
+                    WARN,
+                    "MEIC paper has no output yet",
+                    "No paper DB or log file found during market hours.",
+                )
+            )
         elif min(ages) > fresh_limit:
-            findings.append(Finding(f"{name}.fresh", WARN, "MEIC paper data is stale",
-                                    f"No paper write in {min(ages):.0f} min (limit {fresh_limit}). Is the task running?"))
+            findings.append(
+                Finding(
+                    f"{name}.fresh",
+                    WARN,
+                    "MEIC paper data is stale",
+                    f"No paper write in {min(ages):.0f} min (limit {fresh_limit}). Is the task running?",
+                )
+            )
         else:
             findings.append(Finding(f"{name}.fresh", OK, "MEIC paper fresh", f"{min(ages):.0f} min old"))
     else:
@@ -134,15 +161,34 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
             running = None
         if running is False and streamer.get("auto_restart"):
             started = _start_streamer(root, streamer["start_argv"])
-            findings.append(Finding(f"{name}.streamer", WARN, "Streamer was down — restarted"
-                                    if started else "Streamer down — restart failed",
-                                    "Auto-restart issued." if started else "Could not launch streamer; paper GEX/quotes degrade to REST."))
+            findings.append(
+                Finding(
+                    f"{name}.streamer",
+                    WARN,
+                    "Streamer was down — restarted" if started else "Streamer down — restart failed",
+                    "Auto-restart issued."
+                    if started
+                    else "Could not launch streamer; paper GEX/quotes degrade to REST.",
+                )
+            )
         elif running is False:
-            findings.append(Finding(f"{name}.streamer", WARN, "Streamer down",
-                                    "Streamer not running during market hours (auto_restart off)."))
+            findings.append(
+                Finding(
+                    f"{name}.streamer",
+                    WARN,
+                    "Streamer down",
+                    "Streamer not running during market hours (auto_restart off).",
+                )
+            )
         elif running is None:
-            findings.append(Finding(f"{name}.streamer", WARN, "Streamer status unknown",
-                                    "Could not read streamer --status; check manually."))
+            findings.append(
+                Finding(
+                    f"{name}.streamer",
+                    WARN,
+                    "Streamer status unknown",
+                    "Could not read streamer --status; check manually.",
+                )
+            )
         else:
             findings.append(Finding(f"{name}.streamer", OK, "Streamer", "running"))
     return findings
@@ -156,8 +202,14 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
     for tkey, label in (("entry_task_name", "entry"), ("exit_task_name", "exit")):
         tn = paper.get(tkey)
         if tn and not tasks.exists(tn):
-            findings.append(Finding(f"{name}.task.{label}", CRITICAL, f"Earnings {label} task missing",
-                                    f"Scheduled task '{tn}' is not registered. Run: cherrypick install"))
+            findings.append(
+                Finding(
+                    f"{name}.task.{label}",
+                    CRITICAL,
+                    f"Earnings {label} task missing",
+                    f"Scheduled task '{tn}' is not registered. Run: cherrypick install",
+                )
+            )
         elif tn:
             findings.append(Finding(f"{name}.task.{label}", OK, f"Earnings {label} task", "registered"))
 
@@ -166,8 +218,14 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
         if _dolt_reachable(paper.get("dolt_host", "127.0.0.1"), paper.get("dolt_port", 3306)):
             findings.append(Finding(f"{name}.dolt", OK, "Dolt server", "reachable"))
         else:
-            findings.append(Finding(f"{name}.dolt", WARN, "Dolt server unreachable",
-                                    "EarningsAgent paper entry self-starts Dolt, but a persistent outage will block entries."))
+            findings.append(
+                Finding(
+                    f"{name}.dolt",
+                    WARN,
+                    "Dolt server unreachable",
+                    "EarningsAgent paper entry self-starts Dolt, but a persistent outage will block entries.",
+                )
+            )
 
     # (c) entry SLA — after entry_time+grace on a trading day, the run must have happened
     if is_trading and paper.get("entry_time"):
@@ -180,11 +238,23 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
             hb = _read_heartbeat(cfgmod.STATE_DIR / "earnings_entry.last.json")
             today = now_et.strftime("%Y-%m-%d")
             if hb.get("date") != today:
-                findings.append(Finding(f"{name}.entry_sla", CRITICAL, "Earnings paper entry did not run",
-                                        f"No successful entry heartbeat for {today} after {paper['entry_time']} ET."))
+                findings.append(
+                    Finding(
+                        f"{name}.entry_sla",
+                        CRITICAL,
+                        "Earnings paper entry did not run",
+                        f"No successful entry heartbeat for {today} after {paper['entry_time']} ET.",
+                    )
+                )
             elif not hb.get("ok", False):
-                findings.append(Finding(f"{name}.entry_sla", WARN, "Earnings paper entry reported an error",
-                                        f"Last entry: {hb.get('error') or 'see logs/earnings_paper.log'}"))
+                findings.append(
+                    Finding(
+                        f"{name}.entry_sla",
+                        WARN,
+                        "Earnings paper entry reported an error",
+                        f"Last entry: {hb.get('error') or 'see logs/earnings_paper.log'}",
+                    )
+                )
             else:
                 findings.append(Finding(f"{name}.entry_sla", OK, "Earnings paper entry", "ran today"))
     return findings
@@ -210,12 +280,15 @@ def _save_state(state: dict[str, Any]) -> None:
 def _log_findings(findings: list[Finding], overall: str) -> None:
     cfgmod.ensure_dirs()
     with _WATCHDOG_LOG.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps({"ts": _utcnow(), "overall": overall,
-                             "findings": [asdict(f) for f in findings]}) + "\n")
+        fh.write(
+            json.dumps({"ts": _utcnow(), "overall": overall, "findings": [asdict(f) for f in findings]})
+            + "\n"
+        )
 
 
-def _process_notifications(findings: list[Finding], notifier: Notifier, renotify_minutes: int,
-                           now: datetime | None = None) -> None:
+def _process_notifications(
+    findings: list[Finding], notifier: Notifier, renotify_minutes: int, now: datetime | None = None
+) -> None:
     state = _load_state()
     now = now or datetime.now(timezone.utc)
     for f in findings:
@@ -225,14 +298,19 @@ def _process_notifications(findings: list[Finding], notifier: Notifier, renotify
             elapsed_ok = True
             if prev and prev.get("status") == f.status and last_notified:
                 try:
-                    elapsed_ok = (now - datetime.fromisoformat(last_notified)).total_seconds() >= renotify_minutes * 60
+                    elapsed_ok = (
+                        now - datetime.fromisoformat(last_notified)
+                    ).total_seconds() >= renotify_minutes * 60
                 except ValueError:
                     elapsed_ok = True
             changed = (prev is None) or (prev.get("status") != f.status)
             if changed or elapsed_ok:
                 notifier.notify(f.status, f.key, f.title, f.message)
-                state[f.key] = {"status": f.status, "first_seen": (prev or {}).get("first_seen", now.isoformat()),
-                                "last_notified": now.isoformat()}
+                state[f.key] = {
+                    "status": f.status,
+                    "first_seen": (prev or {}).get("first_seen", now.isoformat()),
+                    "last_notified": now.isoformat(),
+                }
             else:
                 state[f.key] = {**prev, "status": f.status}
         else:  # OK
@@ -260,8 +338,14 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
             elif kind == "cherrypick_scheduled":
                 findings += _check_earnings(name, mcfg, now, is_trading)
         except Exception as exc:
-            findings.append(Finding(f"{name}.error", CRITICAL, f"Watchdog check failed for {name}",
-                                    f"{type(exc).__name__}: {exc}"))
+            findings.append(
+                Finding(
+                    f"{name}.error",
+                    CRITICAL,
+                    f"Watchdog check failed for {name}",
+                    f"{type(exc).__name__}: {exc}",
+                )
+            )
 
     overall = OK
     for f in findings:
@@ -277,16 +361,26 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     # trade-notify hiccup can never break the reliability check.
     try:
         from . import trade_notifier
+
         trade_notifier.run(cfg)
     except Exception:
         pass
 
     cfgmod.ensure_dirs()
-    _HEARTBEAT.write_text(json.dumps({
-        "ts": _utcnow(), "et": now.isoformat(), "overall": overall,
-        "in_session": in_session, "is_trading_day": is_trading,
-        "findings": [asdict(f) for f in findings],
-    }, indent=2), encoding="utf-8")
+    _HEARTBEAT.write_text(
+        json.dumps(
+            {
+                "ts": _utcnow(),
+                "et": now.isoformat(),
+                "overall": overall,
+                "in_session": in_session,
+                "is_trading_day": is_trading,
+                "findings": [asdict(f) for f in findings],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     return {"overall": overall, "findings": [asdict(f) for f in findings]}
 

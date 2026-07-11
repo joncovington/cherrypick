@@ -8,9 +8,9 @@ import json
 
 import pytest
 
-import notify.notifier as notifier_mod
-import notify.secrets as secrets_mod
-from notify.notifier import Notifier
+import cherrypick.notify.notifier as notifier_mod
+import cherrypick.notify.secrets as secrets_mod
+from cherrypick.notify.notifier import Notifier
 
 pytestmark = pytest.mark.unit
 
@@ -63,11 +63,16 @@ def test_discord_posts_content_payload_from_keyring(temp_floor, monkeypatch):
         captured["url"], captured["payload"] = url, payload
         return {"ok": True, "status": 204}
 
-    monkeypatch.setattr(secrets_mod, "get_webhook",
-                        lambda ch: "https://discord.example/webhook/abc" if ch == "discord" else None)
+    monkeypatch.setattr(
+        secrets_mod,
+        "get_webhook",
+        lambda ch: "https://discord.example/webhook/abc" if ch == "discord" else None,
+    )
     monkeypatch.setattr(Notifier, "_post_json", staticmethod(fake_post))
-    res = Notifier({"channels": ["discord"]}).notify("CRITICAL", "meic.task", "Task missing", "not registered")
+    res = Notifier({"channels": ["discord"]}).notify(
+        "CRITICAL", "meic.task", "Task missing", "not registered"
+    )
     assert res["discord"]["ok"] is True
     assert captured["url"].endswith("/abc")
-    assert "content" in captured["payload"]              # Discord uses `content`, not `text`
+    assert "content" in captured["payload"]  # Discord uses `content`, not `text`
     assert "CRITICAL" in captured["payload"]["content"]

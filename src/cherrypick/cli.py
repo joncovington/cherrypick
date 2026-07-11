@@ -32,14 +32,17 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-_THIS = Path(__file__).resolve()
-sys.path.insert(0, str(_THIS.parent))  # make orchestrator/ + notify/ importable from any cwd
+from cherrypick.notify import Notifier
+from cherrypick.notify import secrets as notify_secrets
+from cherrypick.orchestrator import config as cfgmod
+from cherrypick.orchestrator import doctor, report, tasks, timeutil, trade_notifier, watchdog
+from cherrypick.orchestrator.util import first_json
 
-from orchestrator import config as cfgmod  # noqa: E402
-from orchestrator import tasks, timeutil, doctor, watchdog, trade_notifier, report  # noqa: E402
-from orchestrator.util import first_json  # noqa: E402
-from notify import Notifier  # noqa: E402
-from notify import secrets as notify_secrets  # noqa: E402
+# The OS scheduler invokes the in-place launcher `pythonw <repo>/run.py <cmd>`. This module is
+# <repo>/src/cherrypick/cli.py, so the repo-root launcher is two parents up. (Renamed from
+# cherrypick.py to run.py in the src-layout packaging — a root cherrypick.py would shadow the
+# cherrypick namespace package — so scheduled tasks must be re-registered via `python run.py install`.)
+_LAUNCHER = Path(__file__).resolve().parents[2] / "run.py"
 
 
 def _emit(obj) -> None:
@@ -77,9 +80,13 @@ def cmd_install(cfg) -> None:
 
         if kind == "self_healing":
             # MEIC manages its own self-healing task; just invoke its installer in place.
-            r = subprocess.run([cfgmod.python_exe(), *paper["install_argv"]],
-                               cwd=str(root), capture_output=True, text=True)
-            results[f"{name}.paper_task"] = {"ok": r.returncode == 0, "detail": (r.stdout or r.stderr).strip()}
+            r = subprocess.run(
+                [cfgmod.python_exe(), *paper["install_argv"]], cwd=str(root), capture_output=True, text=True
+            )
+            results[f"{name}.paper_task"] = {
+                "ok": r.returncode == 0,
+                "detail": (r.stdout or r.stderr).strip(),
+            }
             # start streamer if down
             streamer = mcfg.get("streamer", {})
             if streamer.get("enabled"):
@@ -87,30 +94,43 @@ def cmd_install(cfg) -> None:
 
         elif kind == "cherrypick_scheduled":
             # Cherrypick owns the earnings schedule (the module has none).
-            entry_tr = tasks.build_tr(pyw, str(_THIS), "run-earnings-entry")
-            exit_tr = tasks.build_tr(pyw, str(_THIS), "run-earnings-exit")
-            results[f"{name}.entry_task"] = tasks.create_daily_task(paper["entry_task_name"], entry_tr, paper["entry_time"])
-            results[f"{name}.exit_task"] = tasks.create_daily_task(paper["exit_task_name"], exit_tr, paper["exit_time"])
+            entry_tr = tasks.build_tr(pyw, str(_LAUNCHER), "run-earnings-entry")
+            exit_tr = tasks.build_tr(pyw, str(_LAUNCHER), "run-earnings-exit")
+            results[f"{name}.entry_task"] = tasks.create_daily_task(
+                paper["entry_task_name"], entry_tr, paper["entry_time"]
+            )
+            results[f"{name}.exit_task"] = tasks.create_daily_task(
+                paper["exit_task_name"], exit_tr, paper["exit_time"]
+            )
 
     # watchdog task
     wd = cfg.get("watchdog", {})
     if wd.get("task_name"):
-        wd_tr = tasks.build_tr(pyw, str(_THIS), "watchdog")
-        results["watchdog_task"] = tasks.create_minute_task(wd["task_name"], wd_tr, wd.get("interval_minutes", 10))
+        wd_tr = tasks.build_tr(pyw, str(_LAUNCHER), "watchdog")
+        results["watchdog_task"] = tasks.create_minute_task(
+            wd["task_name"], wd_tr, wd.get("interval_minutes", 10)
+        )
 
     # dedicated low-latency trade-notify task (polls paper DBs far more often than the watchdog)
     tn = cfg.get("trade_notify", {})
     if tn.get("task_name"):
-        tn_tr = tasks.build_tr(pyw, str(_THIS), "notify-trades")
-        results["trade_notify_task"] = tasks.create_minute_task(tn["task_name"], tn_tr, tn.get("interval_minutes", 2))
+        tn_tr = tasks.build_tr(pyw, str(_LAUNCHER), "notify-trades")
+        results["trade_notify_task"] = tasks.create_minute_task(
+            tn["task_name"], tn_tr, tn.get("interval_minutes", 2)
+        )
 
     _emit({"ok": all(v.get("ok", True) for v in results.values()), "installed": results})
 
 
 def _ensure_streamer(root: Path, streamer: dict) -> dict:
     try:
-        r = subprocess.run([cfgmod.python_exe(), *streamer["status_argv"]],
-                           cwd=str(root), capture_output=True, text=True, timeout=15)
+        r = subprocess.run(
+            [cfgmod.python_exe(), *streamer["status_argv"]],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
         running = bool(first_json(r.stdout).get("running")) if r.returncode == 0 else False
     except Exception:
         running = False
@@ -126,9 +146,13 @@ def cmd_uninstall(cfg) -> None:
         root = cfgmod.module_root(mcfg)
         paper = mcfg.get("paper", {})
         if paper.get("kind") == "self_healing" and paper.get("uninstall_argv"):
-            r = subprocess.run([cfgmod.python_exe(), *paper["uninstall_argv"]],
-                               cwd=str(root), capture_output=True, text=True)
-            results[f"{name}.paper_task"] = {"ok": r.returncode == 0, "detail": (r.stdout or r.stderr).strip()}
+            r = subprocess.run(
+                [cfgmod.python_exe(), *paper["uninstall_argv"]], cwd=str(root), capture_output=True, text=True
+            )
+            results[f"{name}.paper_task"] = {
+                "ok": r.returncode == 0,
+                "detail": (r.stdout or r.stderr).strip(),
+            }
         for tkey in ("entry_task_name", "exit_task_name"):
             if paper.get(tkey):
                 results[f"{name}.{tkey}"] = tasks.delete(paper[tkey])
@@ -142,7 +166,7 @@ def cmd_uninstall(cfg) -> None:
 # --------------------------------------------------------------------------- status
 def cmd_status(cfg) -> None:
     out = {"tasks": {}, "heartbeats": {}}
-    for name, mcfg in cfgmod.enabled_modules(cfg).items():
+    for mcfg in cfgmod.enabled_modules(cfg).values():
         paper = mcfg.get("paper", {})
         for tkey in ("task_name", "entry_task_name", "exit_task_name"):
             if paper.get(tkey):
@@ -187,8 +211,9 @@ def _run_earnings(cfg, phase: str) -> None:
     argv = [a.replace("{today}", today) for a in paper[f"{phase}_argv"]]
 
     try:
-        r = subprocess.run([cfgmod.python_exe(), *argv], cwd=str(root),
-                           capture_output=True, text=True, timeout=1800)
+        r = subprocess.run(
+            [cfgmod.python_exe(), *argv], cwd=str(root), capture_output=True, text=True, timeout=1800
+        )
         try:
             result = json.loads(r.stdout or "{}")
         except json.JSONDecodeError:
@@ -198,15 +223,24 @@ def _run_earnings(cfg, phase: str) -> None:
     except Exception as exc:
         ok, result, error = False, {}, f"{type(exc).__name__}: {exc}"
 
-    rec = {"date": today, "phase": phase, "ok": ok, "error": error,
-           "opened": (result or {}).get("opened"), "closed": (result or {}).get("closed")}
+    rec = {
+        "date": today,
+        "phase": phase,
+        "ok": ok,
+        "error": error,
+        "opened": (result or {}).get("opened"),
+        "closed": (result or {}).get("closed"),
+    }
     hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
     _append_log(log_path, {**rec, "result": result})
 
     if not ok:
         Notifier(cfg.get("notify")).notify(
-            "CRITICAL", f"earnings.{phase}", f"Earnings paper {phase} failed",
-            f"{error or 'see logs/earnings_paper.log'}")
+            "CRITICAL",
+            f"earnings.{phase}",
+            f"Earnings paper {phase} failed",
+            f"{error or 'see logs/earnings_paper.log'}",
+        )
 
     # Push any fills this run produced right away instead of waiting for the next trade-notify tick.
     # Best-effort: a notify hiccup must never fail the scheduled earnings run itself.
@@ -240,8 +274,11 @@ def cmd_report(cfg) -> None:
 
 def cmd_notify_test(cfg) -> None:
     res = Notifier(cfg.get("notify")).notify(
-        "INFO", "notify_test", "Notification test",
-        "If you can see this (and it is in logs/notify.log), Cherrypick can reach you.")
+        "INFO",
+        "notify_test",
+        "Notification test",
+        "If you can see this (and it is in logs/notify.log), Cherrypick can reach you.",
+    )
     _emit({"ok": True, "channels": res})
 
 
@@ -272,16 +309,35 @@ def cmd_secrets_delete(channel: str | None) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="cherrypick", description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=[
-        "install", "uninstall", "status", "doctor", "watchdog", "report",
-        "run-earnings-entry", "run-earnings-exit", "notify-test", "notify-trades",
-        "secrets-set", "secrets-status", "secrets-delete"])
-    parser.add_argument("--channel", choices=list(notify_secrets.SUPPORTED),
-                        help="Push channel for secrets-set/secrets-delete")
-    parser.add_argument("--url", default=None,
-                        help="Webhook URL for secrets-set (omit to be prompted without echo)")
+    parser = argparse.ArgumentParser(
+        prog="cherrypick", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "command",
+        choices=[
+            "install",
+            "uninstall",
+            "status",
+            "doctor",
+            "watchdog",
+            "report",
+            "run-earnings-entry",
+            "run-earnings-exit",
+            "notify-test",
+            "notify-trades",
+            "secrets-set",
+            "secrets-status",
+            "secrets-delete",
+        ],
+    )
+    parser.add_argument(
+        "--channel",
+        choices=list(notify_secrets.SUPPORTED),
+        help="Push channel for secrets-set/secrets-delete",
+    )
+    parser.add_argument(
+        "--url", default=None, help="Webhook URL for secrets-set (omit to be prompted without echo)"
+    )
     args = parser.parse_args()
 
     cfg = cfgmod.load_config()

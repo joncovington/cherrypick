@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cherrypick"
+version = "0.1.0"
+description = "Unattended paper-trading orchestrator + reporting hub for the Cherrypick trading suite (drives MEICAgent / EarningsAgent in place). Imports as the cherrypick namespace package."
+readme = "ROADMAP.md"
+requires-python = ">=3.10"
+authors = [{ name = "Jon Covington", email = "jon.covington@gmail.com" }]
+keywords = ["trading", "options", "orchestrator", "paper-trading", "cherrypick"]
+# License intentionally unset until the suite's licensing is decided (all rights reserved by default).
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = ["keyring>=24", "pytz>=2023"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+# `pipx install cherrypick` (or an editable install) exposes the `cherrypick` command; the in-place
+# root cherrypick.py launcher stays for source-checkout / scheduler use.
+[project.scripts]
+cherrypick = "cherrypick.cli:main"
+
+[project.urls]
+Repository = "https://github.com/joncovington/cherrypick"
+
+[tool.setuptools.packages.find]
+# src layout + PEP 420 native namespace: `cherrypick` has no __init__.py, so it composes with the
+# cherrypick.core distribution under one `cherrypick.*` import namespace.
+where = ["src"]
+include = ["cherrypick*"]
+namespaces = true
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+# Match the suite's ruff profile (see cherrypick-core): E/W pycodestyle, F pyflakes, I import-sorting,
+# UP pyupgrade, B bugbear.
+select = ["E", "F", "I", "W", "UP", "B"]

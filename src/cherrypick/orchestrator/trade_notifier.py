@@ -26,8 +26,9 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from cherrypick.notify import Notifier
+
 from . import config as cfgmod
-from notify import Notifier
 
 _STATE = cfgmod.STATE_DIR / "trade_notify.json"
 _ID_CAP = 4000  # bound the remembered-id lists (per schema, per direction)
@@ -66,7 +67,8 @@ def _meic_new_entries(conn, last_entry_id: int) -> list:
     return conn.execute(
         "SELECT id, symbol, risk_profile, put_strike, call_strike, wing_width, net_credit, quantity "
         "FROM ic_trades WHERE id > ? AND status NOT IN ('pending', 'cancelled', 'partial_entry') "
-        "ORDER BY id", (last_entry_id,),
+        "ORDER BY id",
+        (last_entry_id,),
     ).fetchall()
 
 
@@ -78,16 +80,20 @@ def _meic_new_exits(conn, notified_ids: set) -> list:
 
 
 def _fmt_meic_entry(r) -> str:
-    return (f"\U0001F7E2 MEIC paper ENTRY — {r['symbol']} "
-            f"{r['put_strike']:.0f}P/{r['call_strike']:.0f}C w{r['wing_width']:.0f} "
-            f"x{r['quantity']} credit ${r['net_credit']:.2f} [{r['risk_profile']}]")
+    return (
+        f"\U0001f7e2 MEIC paper ENTRY — {r['symbol']} "
+        f"{r['put_strike']:.0f}P/{r['call_strike']:.0f}C w{r['wing_width']:.0f} "
+        f"x{r['quantity']} credit ${r['net_credit']:.2f} [{r['risk_profile']}]"
+    )
 
 
 def _fmt_meic_exit(r) -> str:
     pnl = r["pnl"]
     pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
-    return (f"\U0001F534 MEIC paper EXIT — {r['symbol']} [{r['risk_profile']}] "
-            f"{r['exit_reason'] or 'closed'}, P&L {pnl_str}")
+    return (
+        f"\U0001f534 MEIC paper EXIT — {r['symbol']} [{r['risk_profile']}] "
+        f"{r['exit_reason'] or 'closed'}, P&L {pnl_str}"
+    )
 
 
 def _meic_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
@@ -151,31 +157,31 @@ def _fmt_earnings_entry(r) -> str:
     credit = r["entry_credit"]
     credit_str = f"${credit:.2f}" if credit is not None else "n/a"
     strike_str = f" {strikes}" if strikes else ""
-    return (f"\U0001F7E2 Earnings paper ENTRY — {r['symbol']} {strat}{strike_str} "
-            f"x{r['quantity'] or 1} credit {credit_str} [{r['profile']}]")
+    return (
+        f"\U0001f7e2 Earnings paper ENTRY — {r['symbol']} {strat}{strike_str} "
+        f"x{r['quantity'] or 1} credit {credit_str} [{r['profile']}]"
+    )
 
 
 def _fmt_earnings_exit(r) -> str:
     pnl = r["pnl"]
     pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
     strat = (r["strategy"] or "spread").replace("_", " ")
-    return f"\U0001F534 Earnings paper EXIT — {r['symbol']} {strat} [{r['profile']}], P&L {pnl_str}"
+    return f"\U0001f534 Earnings paper EXIT — {r['symbol']} {strat} [{r['profile']}], P&L {pnl_str}"
 
 
 def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     entered = set(st.get("notified_entry_ids", []))
     entries = _earnings_new_entries(conn, entered)
     for r in entries:
-        notifier.notify("INFO", f"trade.{name}.entry.{r['order_id']}", "Paper entry",
-                        _fmt_earnings_entry(r))
+        notifier.notify("INFO", f"trade.{name}.entry.{r['order_id']}", "Paper entry", _fmt_earnings_entry(r))
         entered.add(r["order_id"])
     st["notified_entry_ids"] = list(entered)[-_ID_CAP:]
 
     notified = set(st.get("notified_exit_ids", []))
     exits = _earnings_new_exits(conn, notified)
     for r in exits:
-        notifier.notify("INFO", f"trade.{name}.exit.{r['order_id']}", "Paper exit",
-                        _fmt_earnings_exit(r))
+        notifier.notify("INFO", f"trade.{name}.exit.{r['order_id']}", "Paper exit", _fmt_earnings_exit(r))
         notified.add(r["order_id"])
     st["notified_exit_ids"] = list(notified)[-_ID_CAP:]
 

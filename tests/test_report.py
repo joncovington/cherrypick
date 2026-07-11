@@ -9,7 +9,7 @@ import sqlite3
 
 import pytest
 
-from orchestrator import report
+from cherrypick.orchestrator import report
 
 pytestmark = pytest.mark.unit
 
@@ -21,8 +21,9 @@ def _meic_db(path, rows):
         "CREATE TABLE ic_trades (id INTEGER PRIMARY KEY, symbol TEXT, risk_profile TEXT, "
         "pnl REAL, fees REAL, exit_time TEXT)"
     )
-    conn.executemany("INSERT INTO ic_trades (symbol, risk_profile, pnl, fees, exit_time) "
-                     "VALUES (?, ?, ?, ?, ?)", rows)
+    conn.executemany(
+        "INSERT INTO ic_trades (symbol, risk_profile, pnl, fees, exit_time) VALUES (?, ?, ?, ?, ?)", rows
+    )
     conn.commit()
     conn.close()
 
@@ -36,7 +37,9 @@ def _earnings_db(path, rows):
     )
     conn.executemany(
         "INSERT INTO trades (symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
     conn.commit()
     conn.close()
 
@@ -46,10 +49,16 @@ def _cfg(tmp_path, meic_db="paper.db", earnings_db="paper.db", meic_dir="meic", 
     (tmp_path / earnings_dir).mkdir(exist_ok=True)
     return {
         "modules": {
-            "meic": {"enabled": True, "path": str(tmp_path / meic_dir),
-                     "paper": {"paper_db": meic_db, "trade_schema": "meic_ic"}},
-            "earnings": {"enabled": True, "path": str(tmp_path / earnings_dir),
-                         "paper": {"paper_db": earnings_db, "trade_schema": "earnings"}},
+            "meic": {
+                "enabled": True,
+                "path": str(tmp_path / meic_dir),
+                "paper": {"paper_db": meic_db, "trade_schema": "meic_ic"},
+            },
+            "earnings": {
+                "enabled": True,
+                "path": str(tmp_path / earnings_dir),
+                "paper": {"paper_db": earnings_db, "trade_schema": "earnings"},
+            },
         }
     }
 
@@ -57,23 +66,29 @@ def _cfg(tmp_path, meic_db="paper.db", earnings_db="paper.db", meic_dir="meic", 
 def test_report_unifies_pnl_net_of_costs_across_modules(tmp_path):
     cfg = _cfg(tmp_path)
     # MEIC: net = pnl - fees. Two closed trades: +100-5=95 (win), -40-5=-45 (loss). One open (skipped).
-    _meic_db(tmp_path / "meic" / "paper.db", [
-        ("SPX", "conservative", 100.0, 5.0, "2026-07-10T15:45"),
-        ("SPX", "aggressive", -40.0, 5.0, "2026-07-10T15:46"),
-        ("SPX", "conservative", 999.0, 5.0, None),  # open -> excluded
-    ])
+    _meic_db(
+        tmp_path / "meic" / "paper.db",
+        [
+            ("SPX", "conservative", 100.0, 5.0, "2026-07-10T15:45"),
+            ("SPX", "aggressive", -40.0, 5.0, "2026-07-10T15:46"),
+            ("SPX", "conservative", 999.0, 5.0, None),  # open -> excluded
+        ],
+    )
     # Earnings: net = pnl - entry_cost - exit_cost. One closed: 60-4-3=53 (win). One open (skipped).
-    _earnings_db(tmp_path / "earn" / "paper.db", [
-        ("AAPL", "balanced", "iron_fly", 60.0, 4.0, 3.0, 1_700_000_000.0),
-        ("MSFT", "balanced", "iron_fly", 20.0, 2.0, None, None),  # open -> excluded
-    ])
+    _earnings_db(
+        tmp_path / "earn" / "paper.db",
+        [
+            ("AAPL", "balanced", "iron_fly", 60.0, 4.0, 3.0, 1_700_000_000.0),
+            ("MSFT", "balanced", "iron_fly", 20.0, 2.0, None, None),  # open -> excluded
+        ],
+    )
 
     out = report.run(cfg)
     assert out["ok"] is True
 
     meic = out["modules"]["meic"]
     assert meic["ok"] and meic["trades"] == 2
-    assert meic["net_pnl"] == 50.0            # 95 + (-45)
+    assert meic["net_pnl"] == 50.0  # 95 + (-45)
     assert meic["wins"] == 1 and meic["losses"] == 1
     assert meic["by_profile"]["conservative"]["net_pnl"] == 95.0
     assert meic["by_profile"]["aggressive"]["net_pnl"] == -45.0
@@ -90,7 +105,7 @@ def test_report_unifies_pnl_net_of_costs_across_modules(tmp_path):
 
 def test_report_untagged_rows_group_under_module_sentinel(tmp_path):
     cfg = _cfg(tmp_path)
-    _meic_db(tmp_path / "meic" / "paper.db", [("SPX", None, 10.0, 1.0, "t")])       # NULL -> unassigned
+    _meic_db(tmp_path / "meic" / "paper.db", [("SPX", None, 10.0, 1.0, "t")])  # NULL -> unassigned
     _earnings_db(tmp_path / "earn" / "paper.db", [("AAPL", None, "x", 5.0, 0.0, 0.0, 1.0)])  # -> default
     out = report.run(cfg)
     assert "unassigned" in out["modules"]["meic"]["by_profile"]

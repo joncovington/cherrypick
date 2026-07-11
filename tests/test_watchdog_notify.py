@@ -9,8 +9,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from orchestrator import watchdog
-from orchestrator.watchdog import Finding, _process_notifications
+from cherrypick.orchestrator import watchdog
+from cherrypick.orchestrator.watchdog import Finding, _process_notifications
 
 pytestmark = pytest.mark.unit
 

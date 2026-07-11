@@ -6,7 +6,7 @@ followed by extra log output, which a plain json.loads rejects with "Extra data"
 
 import pytest
 
-from orchestrator.util import first_json
+from cherrypick.orchestrator.util import first_json
 
 pytestmark = pytest.mark.unit
 
@@ -22,7 +22,7 @@ def test_json_with_trailing_extra_data():
 
 
 def test_json_not_on_first_line():
-    out = "starting up...\n{\"ok\": true}\n"
+    out = 'starting up...\n{"ok": true}\n'
     assert first_json(out) == {"ok": True}
 
 

@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from orchestrator import timeutil
+from cherrypick.orchestrator import timeutil
 
 pytestmark = pytest.mark.unit
 
@@ -31,8 +31,8 @@ def test_holiday_is_not_a_trading_day():
 
 def test_market_hours_boundaries():
     assert timeutil.is_market_hours(_et(2026, 7, 10, 9, 29)) is False  # before open
-    assert timeutil.is_market_hours(_et(2026, 7, 10, 9, 30)) is True   # open
-    assert timeutil.is_market_hours(_et(2026, 7, 10, 16, 0)) is True   # close edge
+    assert timeutil.is_market_hours(_et(2026, 7, 10, 9, 30)) is True  # open
+    assert timeutil.is_market_hours(_et(2026, 7, 10, 16, 0)) is True  # close edge
     assert timeutil.is_market_hours(_et(2026, 7, 10, 16, 1)) is False  # after close
 
 

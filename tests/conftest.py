@@ -9,10 +9,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Make orchestrator/ and notify/ importable regardless of pytest's cwd.
-_ROOT = Path(__file__).resolve().parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+# Make the src-layout `cherrypick` package importable regardless of pytest's cwd (no install needed).
+_SRC = Path(__file__).resolve().parent.parent / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
 import pytest  # noqa: E402
 
