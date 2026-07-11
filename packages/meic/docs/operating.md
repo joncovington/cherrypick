@@ -46,7 +46,7 @@ Start a full unattended paper session:
 /paper-start
 ```
 
-This starts the shared DXLink streamer, launches the paper dashboard at `http://localhost:5051` (badged "Paper Mode — Simulated"), and registers a Windows scheduled task (`MEICAgent-PaperLoop`) that runs `python src/paper_loop.py --once` every 2 minutes — headless, time-gated to market hours, self-healing, and persistent across sessions. At the 16:00 ET settlement pass it writes a deterministic end-of-day report to `logs/paper-eod-<date>.md`.
+This starts the shared DXLink streamer, launches the paper dashboard at `http://localhost:5051` (badged "Paper Mode — Simulated"), and registers a Windows scheduled task (`cherrypick-meic-paper-loop`) that runs `python src/paper_loop.py --once` every 2 minutes — headless, time-gated to market hours, self-healing, and persistent across sessions. At the 16:00 ET settlement pass it writes a deterministic end-of-day report to `logs/paper-eod-<date>.md`.
 
 Manage the session directly:
 
