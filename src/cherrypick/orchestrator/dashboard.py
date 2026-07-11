@@ -673,18 +673,26 @@ _RECONCILE_JS = """
       var v=d.verdict||'UNKNOWN';
       var color={FLAT:'var(--pos)',DRIFT:'var(--neg)',UNKNOWN:'var(--warn)'}[v]||'var(--muted)';
       var b=d.broker||{}; var html='';
-      html+='<div class="drow"><span class="pill" style="background:'+color+'">'+v+'</span> ';
-      if(!b.reachable){ html+='<span class="muted">broker account could not be checked: '
-        +esc(b.detail||'unavailable')+'</span></div>'; }
-      else {
-        var pos=b.open_positions||[];
-        html+='real account <b>'+esc(b.account||'****')+'</b> '
-          +(pos.length? '<b style="color:var(--neg)">has '+pos.length+' open position(s)</b>'
-                      : '<span style="color:var(--pos)">is flat</span>')+'</div>';
-        pos.slice(0,20).forEach(function(p){
-          var sym=p['symbol']||p['underlying-symbol']||p['instrument-type']||'?';
-          var qty=p['quantity']||p['quantity-direction']||'';
-          html+='<div class="drow muted">· '+esc(sym)+' '+esc(qty)+'</div>';
+      if(!b.reachable){
+        html+='<div class="drow"><span class="pill" style="background:'+color+'">'+v+'</span> '
+          +'<span class="muted">broker accounts could not be checked: '+esc(b.detail||'unavailable')
+          +'</span></div>';
+      } else {
+        var accts=b.accounts||[];
+        html+='<div class="drow"><span class="pill" style="background:'+color+'">'+v+'</span> '
+          +'checked '+accts.length+' real account(s)</div>';
+        accts.forEach(function(a){
+          if(a.error){ html+='<div class="drow muted">account <b>'+esc(a.account||'****')+'</b>: '
+            +esc(a.error)+'</div>'; return; }
+          var pos=a.open_positions||[];
+          html+='<div class="drow">account <b>'+esc(a.account||'****')+'</b> '
+            +(pos.length? '<b style="color:var(--neg)">has '+pos.length+' open position(s)</b>'
+                        : '<span style="color:var(--pos)">is flat</span>')+'</div>';
+          pos.slice(0,20).forEach(function(p){
+            var sym=p['symbol']||p['underlying-symbol']||p['instrument-type']||'?';
+            var qty=p['quantity']||p['quantity-direction']||'';
+            html+='<div class="drow muted">· '+esc(sym)+' '+esc(qty)+'</div>';
+          });
         });
       }
       var paper=d.paper||{};

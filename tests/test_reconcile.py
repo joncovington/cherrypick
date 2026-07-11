@@ -55,34 +55,52 @@ def test_paper_open_positions_counts_only_unclosed(env):
     assert paper["meic"]["symbols"] == ["SPX", "XSP"]
 
 
-def test_verdict_flat_when_broker_account_empty(env, monkeypatch):
+def _flat_acct(account):
+    return {"account": account, "open_positions": [], "open_count": 0, "balances": {}}
+
+
+def test_verdict_flat_when_all_accounts_empty(env, monkeypatch):
     _, cfg = env
+    # multiple accounts, all flat -> FLAT
     monkeypatch.setattr(
         reconcile,
         "_query_broker",
-        lambda cfg, forced: {"reachable": True, "account": "****1234", "open_positions": [], "balances": {}},
+        lambda cfg, forced: {
+            "reachable": True,
+            "accounts": [_flat_acct("****4222"), _flat_acct("****8569")],
+            "total_open": 0,
+        },
     )
     out = reconcile.run(cfg)
     assert out["verdict"] == reconcile.FLAT and out["ok"] is True
     assert out["paper"]["meic"]["open_count"] == 2  # paper ledger still reported for context
 
 
-def test_verdict_drift_when_real_account_has_positions(env, monkeypatch):
+def test_verdict_drift_when_any_account_has_positions(env, monkeypatch):
     _, cfg = env
+    # first account flat, SECOND account carries a position -> DRIFT (the single-account bug this guards)
     monkeypatch.setattr(
         reconcile,
         "_query_broker",
         lambda cfg, forced: {
             "reachable": True,
-            "account": "****1234",
-            "open_positions": [{"symbol": "AAPL", "quantity": 1}],
-            "balances": {},
+            "accounts": [
+                _flat_acct("****4222"),
+                {
+                    "account": "****8569",
+                    "open_positions": [{"symbol": "AAPL", "quantity": 1}],
+                    "open_count": 1,
+                    "balances": {},
+                },
+            ],
+            "total_open": 1,
         },
     )
     out = reconcile.run(cfg)
     assert out["verdict"] == reconcile.DRIFT
     text, worst = reconcile.format_report(out)
-    assert "DRIFT" in text and "1 OPEN position" in text and worst == 2
+    assert "DRIFT" in text and "1 OPEN position" in text and "****8569" in text and worst == 2
+    assert "checked 2 real account(s)" in text
 
 
 def test_verdict_unknown_when_broker_unreachable(env, monkeypatch):
@@ -96,8 +114,8 @@ def test_verdict_unknown_when_broker_unreachable(env, monkeypatch):
     assert "could not be checked" in text and worst == 1
 
 
-def test_query_broker_masks_account_and_uses_get_positions(env, monkeypatch):
-    tmp_path, cfg = env
+def test_query_broker_checks_every_account_and_masks(env, monkeypatch):
+    _, cfg = env
 
     class _Proc:
         def __init__(self, stdout):
@@ -105,18 +123,34 @@ def test_query_broker_masks_account_and_uses_get_positions(env, monkeypatch):
             self.stderr = ""
             self.returncode = 0
 
-    calls = []
+    seen_position_accounts = []
 
     def fake_run(root, argv, timeout=30):
-        calls.append(argv[-1])
-        if argv[-1] == "get_positions":
-            return _Proc('{"ok": true, "account_number": "5WU987654321", "positions": []}')
+        cmd = argv[1]  # ["src/tt.py", <cmd>, ...]
+        if cmd == "list_accounts":
+            return _Proc(
+                '{"ok": true, "accounts": ['
+                '{"account_number": "5WU111114222"}, {"account_number": "5WU222228569"}]}'
+            )
+        num = argv[argv.index("--account_number") + 1]
+        if cmd == "get_positions":
+            seen_position_accounts.append(num)
+            # the SECOND account carries a position — must not be missed
+            positions = [] if num == "5WU111114222" else [{"symbol": "AAPL", "quantity": 1}]
+            import json as _json
+
+            return _Proc(_json.dumps({"ok": True, "account_number": num, "positions": positions}))
         return _Proc('{"ok": true, "balances": {"buying-power": "1000"}}')
 
     monkeypatch.setattr(reconcile.doctor, "_run", fake_run)
     broker = reconcile._query_broker(cfg, None)
     assert broker["reachable"] is True
-    assert broker["account"] == "****4321"  # masked, never the full number
-    assert "987654321" not in str(broker)
-    assert broker["balances"] == {"buying-power": "1000"}
-    assert "get_positions" in calls and "get_account_info" in calls
+    # BOTH accounts were queried by their full number...
+    assert seen_position_accounts == ["5WU111114222", "5WU222228569"]
+    # ...and the drift in the second account is captured
+    assert broker["total_open"] == 1
+    accounts = {a["account"]: a for a in broker["accounts"]}
+    assert set(accounts) == {"****4222", "****8569"}
+    assert accounts["****8569"]["open_count"] == 1
+    # never leak a full account number anywhere in the returned structure
+    assert "111114222" not in str(broker) and "222228569" not in str(broker)

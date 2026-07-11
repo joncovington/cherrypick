@@ -88,10 +88,11 @@ is excluded from ruff and from the packaged wheel.
   (e.g. `calibrate`'s promotion recommendations, the drawdown alert) is advisory only — it never mutates
   a module's config or switches live risk. The one place cherrypick reads the *real* broker account is
   `reconcile` (`orchestrator/reconcile.py`, `cherrypick reconcile` + the serve-only `/api/reconcile`
-  card): a paper↔live isolation guard that flags any open positions/BP a paper-only suite shouldn't
+  card): a paper↔live isolation guard that enumerates **every** account on the login (`list_accounts` —
+  tastytrade returns multiple per user) and flags any open positions/BP a paper-only suite shouldn't
   have. Like `doctor` it is a broker-touching, on-demand diagnostic — **off the watchdog reliability
-  path**, read-only broker calls only (`get_positions`/`get_account_info`, never an order), account
-  numbers masked, advisory. It never trades or mutates config.
+  path**, read-only broker calls only (`list_accounts`/`get_positions`/`get_account_info`, never an
+  order), account numbers masked, advisory. It never trades or mutates config.
 - **The watchdog's only trading-adjacent action is benign, non-trading remediation** (restart a dead
   streamer). It never places, cancels, or closes an order.
 - **Account numbers are masked** to the last 4 digits (`****1234`) anywhere they surface in logs or

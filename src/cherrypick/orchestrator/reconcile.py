@@ -2,9 +2,10 @@
 
 This umbrella is paper-only, and paper trades never hit the broker, so a naive "broker positions ==
 paper DB positions" match is meaningless here. Reframed for this suite, reconciliation is a paper↔live
-*isolation* check: a paper-only operation should leave the **real** broker account flat, so this queries
-the real account once and flags any open positions / used buying power — catching the scary drift cases
-(a module flipped to live, or a leftover/manual real position the all-paper dashboards would never show).
+*isolation* check: a paper-only operation should leave the **real** broker account flat, so this
+enumerates **every** account on the login (tastytrade returns multiple per user) and flags any open
+positions / used buying power in any of them — catching the scary drift cases (a module flipped to live,
+or a leftover/manual real position the all-paper dashboards would never show).
 
 Like `doctor`, this is an on-demand, broker-touching diagnostic — deliberately NOT on the watchdog
 reliability path (stdlib/OS-only) and NOT a file-only read surface. It is read-only w.r.t. the broker
@@ -90,9 +91,44 @@ def _balances_summary(balances: Any) -> dict[str, Any]:
     return summary
 
 
+def _tt(root, *argv: str) -> dict[str, Any]:
+    """Run a read-only `tt.py` command in a module and return its parsed JSON ({} on any failure)."""
+    return first_json(doctor._run(root, ["src/tt.py", *argv], timeout=35).stdout)
+
+
+def _account_entry(root, number: str | None) -> dict[str, Any]:
+    """Positions (+ best-effort balances) for one account. `number` None = the module's default account
+    (used only as a fallback when `list_accounts` yields nothing). The full number is passed to the
+    broker query but only the masked form is ever returned."""
+    argv = ["get_positions"] + (["--account_number", str(number)] if number else [])
+    payload = _tt(root, *argv)
+    account = mask_account(number if number is not None else payload.get("account_number"))
+    if not payload.get("ok") or "positions" not in payload:
+        return {
+            "account": account,
+            "error": (payload.get("error") or "get_positions not ok")[:200],
+            "open_positions": [],
+            "open_count": 0,
+            "balances": {},
+        }
+    positions = payload.get("positions") or []
+    ai_argv = ["get_account_info"] + (["--account_number", str(number)] if number else [])
+    ai = _tt(root, *ai_argv)
+    balances = _balances_summary(ai.get("balances")) if ai.get("ok") else {}
+    return {
+        "account": account,
+        "open_positions": positions,
+        "open_count": len(positions),
+        "balances": balances,
+    }
+
+
 def _query_broker(cfg: dict[str, Any], forced_module: str | None) -> dict[str, Any]:
-    """Query the real account's positions + balances once, via the first enabled module whose `tt.py`
-    answers `get_positions` (MEIC has it; earnings does not). Read-only broker calls; account masked."""
+    """Query **every** account on the real login (tastytrade returns multiple per user), via the first
+    enabled module whose `tt.py` answers `get_positions` (MEIC has it; earnings does not). Enumerate
+    accounts with `list_accounts`, then check positions per account — a leftover position could sit in
+    any account, so a single-account check would miss it. Read-only broker calls; account numbers masked.
+    Falls back to the module's default account only if `list_accounts` yields nothing."""
     modules = cfgmod.enabled_modules(cfg)
     if forced_module and forced_module in modules:
         modules = {forced_module: modules[forced_module]}
@@ -102,27 +138,24 @@ def _query_broker(cfg: dict[str, Any], forced_module: str | None) -> dict[str, A
         if not root.exists():
             continue
         try:
-            r = doctor._run(root, ["src/tt.py", "get_positions"], timeout=35)
+            numbers = [
+                a.get("account_number")
+                for a in (_tt(root, "list_accounts").get("accounts") or [])
+                if a.get("account_number")
+            ]
+            entries = [_account_entry(root, n) for n in numbers] if numbers else [_account_entry(root, None)]
         except Exception as exc:  # noqa: BLE001 — a launch failure just means try the next module
             last_err = f"{type(exc).__name__}: {exc}"
             continue
-        payload = first_json(r.stdout)
-        if not payload.get("ok") or "positions" not in payload:
-            last_err = (payload.get("error") or r.stderr or r.stdout or "get_positions not ok")[:200]
+        # Every account erroring means this module can't answer get_positions (e.g. earnings) — try next.
+        if entries and all(e.get("error") for e in entries):
+            last_err = entries[0]["error"]
             continue
-        positions = payload.get("positions") or []
-        balances: dict[str, Any] = {}
-        try:
-            ai = first_json(doctor._run(root, ["src/tt.py", "get_account_info"], timeout=35).stdout)
-            balances = _balances_summary(ai.get("balances")) if ai.get("ok") else {}
-        except Exception:  # noqa: BLE001 — balances are best-effort context, positions drive the verdict
-            balances = {}
         return {
             "reachable": True,
             "module": name,
-            "account": mask_account(payload.get("account_number")),
-            "open_positions": positions,
-            "balances": balances,
+            "accounts": entries,
+            "total_open": sum(e["open_count"] for e in entries),
         }
     return {"reachable": False, "detail": last_err}
 
@@ -138,7 +171,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 
     if not broker.get("reachable"):
         verdict = UNKNOWN
-    elif broker.get("open_positions"):
+    elif broker.get("total_open", 0) > 0:
         verdict = DRIFT
     else:
         verdict = FLAT
@@ -159,20 +192,30 @@ def format_report(result: dict[str, Any]) -> tuple[str, int]:
     # ASCII-only body: this prints to the terminal, which on Windows is cp1252 (can't encode ↔).
     lines = ["cherrypick reconcile - paper/live isolation", "=" * 60, f"verdict: {verdict}"]
     if not broker.get("reachable"):
-        lines.append(f"[WARN] broker account could not be checked: {broker.get('detail', 'unavailable')}")
+        lines.append(f"[WARN] broker accounts could not be checked: {broker.get('detail', 'unavailable')}")
     else:
-        positions = broker.get("open_positions") or []
-        mark = "[ OK ]" if not positions else "[DRIFT]"
-        lines.append(
-            f"{mark} real account {broker.get('account', '****')} "
-            + ("is flat (no open positions)" if not positions else f"has {len(positions)} OPEN position(s)")
-        )
-        for p in positions[:20]:
-            sym = p.get("symbol") or p.get("underlying-symbol") or p.get("instrument-type") or "?"
-            qty = p.get("quantity") or p.get("quantity-direction") or ""
-            lines.append(f"        - {sym} {qty}".rstrip())
-        if broker.get("balances"):
-            lines.append(f"        buying power / balances: {broker['balances']}")
+        accounts = broker.get("accounts") or []
+        lines.append(f"checked {len(accounts)} real account(s):")
+        for a in accounts:
+            if a.get("error"):
+                lines.append(f"[WARN] account {a.get('account', '****')}: {a['error']}")
+                continue
+            positions = a.get("open_positions") or []
+            mark = "[ OK ]" if not positions else "[DRIFT]"
+            lines.append(
+                f"{mark} account {a.get('account', '****')} "
+                + (
+                    "is flat (no open positions)"
+                    if not positions
+                    else f"has {len(positions)} OPEN position(s)"
+                )
+            )
+            for p in positions[:20]:
+                sym = p.get("symbol") or p.get("underlying-symbol") or p.get("instrument-type") or "?"
+                qty = p.get("quantity") or p.get("quantity-direction") or ""
+                lines.append(f"        - {sym} {qty}".rstrip())
+            if a.get("balances"):
+                lines.append(f"        buying power / balances: {a['balances']}")
     lines.append("-" * 60)
     for name, pv in (result.get("paper") or {}).items():
         if pv.get("ok"):

@@ -126,7 +126,7 @@
     "interval_minutes": 2
   },
   "reconcile": {
-    "_comment": "`cherrypick reconcile` (and the serve-only /api/reconcile dashboard card): a paper<->live isolation guard. It queries the REAL broker account once (read-only get_positions/get_account_info) and flags any open positions/BP a paper-only suite shouldn't have. On-demand and off the watchdog reliability path; never trades; account numbers masked. Optional 'broker_module' forces which module's tt.py to query; omit to auto-discover the first positions-capable one.",
+    "_comment": "`cherrypick reconcile` (and the serve-only /api/reconcile dashboard card): a paper<->live isolation guard. It enumerates EVERY account on the login (list_accounts - tastytrade returns multiple per user) and checks each (read-only get_positions/get_account_info), flagging any open positions/BP a paper-only suite shouldn't have. On-demand and off the watchdog reliability path; never trades; account numbers masked. Optional 'broker_module' forces which module's tt.py to query; omit to auto-discover the first positions-capable one.",
     "broker_module": null
   },
   "notify": {
