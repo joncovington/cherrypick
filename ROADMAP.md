@@ -136,6 +136,37 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       modules (wheel, roll manager, reporting hub), the Part-14 dashboard, watchdog hardening,
       onboarding wizard, POSIX scheduler backend, and `git init` of Cherrypick itself.
 
+## Suite modularization & install (shipped 2026-07-11)
+> First slice of the module re-architecture the plan had filed under "deferred": the trading modules
+> now live under `cherrypick-*` names, and the umbrella can materialize them on any machine.
+
+- [x] **Module repos split under the `cherrypick-*` name.** The current (namespace-migrated) state of
+      each module was forked into new private repos — `cherrypick-meic` ← MEICAgent, `cherrypick-earnings`
+      ← EarningsAgent (full history + tags + `src/_core` submodule preserved). The **original**
+      `MEICAgent`/`EarningsAgent` repos were rolled back to their pre-migration ~09:30-ET 2026-07-10
+      state; the discarded work is recoverable from the copies and from a `pre-rollback-2026-07-11` tag
+      on each original.
+- [x] **Managed modules home.** A module is located by a `repo` URL **or** an explicit `path` override
+      (in-place dev checkout). `cherrypick install` clones a module into `~/.cherrypick/modules/<name>`
+      (`+ git submodule update --init`, which pulls that module's own pinned `cherrypick-core`) **only
+      when the checkout is absent** — it never touches an existing one; `uninstall` leaves checkouts in
+      place. `doctor` reports `not installed (run: cherrypick install)`. Home precedence:
+      `CHERRYPICK_MODULES_HOME` → `CHERRYPICK_HOME/modules` → `~/.cherrypick/modules`; kept independent
+      of the source-checkout root so module runtime data (e.g. Earnings' Dolt store) never nests in a repo.
+- [x] **Runtime-home unification.** `ROOT` (config.json, logs/, state/, dashboard.html) defaults to
+      `~/.cherrypick` for a pip-installed copy, keeps the repo root for a source checkout, and honors
+      `CHERRYPICK_HOME` — fixing the installed console script's previously unwritable `site-packages`
+      home. `tests/test_config.py` covers the resolution.
+- [x] **`CLAUDE.md` added** — umbrella architecture guide + a **Suite-wide Guardrails** section
+      consolidating the shared rules inherited from both modules (Part 13.5: guardrails documented in one
+      place the umbrella honors).
+- [ ] **Follow-up (parked):** a pip-installed *umbrella* still can't import `cherrypick.core` for
+      `report`/`calibrate`/`dashboard` — the wheel excludes `src/_core` and `cherrypick-core` isn't a
+      declared dependency. Resolve by making `cherrypick-core` a real dependency (PyPI or VCS/URL). The
+      reliability path (install/watchdog/status/doctor) is unaffected. Also pending: seed each new
+      checkout's machine-local `config.json`/runtime data and re-run `install` to move the OS tasks +
+      streamer onto the new module paths.
+
 ## Known Stage-0 limitations (hardened in later phases)
 - **Windows-only scheduler** (`schtasks`). POSIX (cron/launchd/systemd) backend is a later phase; the
   `tasks.py` functions raise a clear error on non-Windows.
