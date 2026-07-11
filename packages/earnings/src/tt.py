@@ -17,7 +17,7 @@ NOTE: This file exceeds 500-line guideline (529 lines). Documented exception
 in docs/file-size-exceptions.md. Broker API wrapper with tightly coupled
 session/auth/order functions. Split would complicate credential handling.
 The shared read-side primitives (account resolution, option-chain strike
-helpers) now live in cherrypit.broker (src/_core); the order write path and
+helpers) now live in cherrypick.core.broker (src/_core); the order write path and
 CLI response shaping stay here.
 
 Adapted from MEICAgent's src/tt.py, with the stream-cache layer removed --
@@ -38,15 +38,15 @@ import sys
 from datetime import date
 from typing import Any
 
-# Allow running as `python src/tt.py` from any working directory, and make the cherrypit-core
-# submodule (src/_core) importable *before* the `from cherrypit import ...` lines below — mirroring
+# Allow running as `python src/tt.py` from any working directory, and make the cherrypick-core
+# submodule (src/_core) importable *before* the `from cherrypick.core import ...` lines below — mirroring
 # credentials.py's bootstrap, so a standalone CLI run doesn't depend on credentials being imported
-# first (import-sorting puts the cherrypit imports ahead of the local `import credentials`).
+# first (import-sorting puts the cherrypick.core imports ahead of the local `import credentials`).
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
-from cherrypit import broker as _broker
-from cherrypit import dxfeed as _dx
+from cherrypick.core import broker as _broker
+from cherrypick.core import dxfeed as _dx
 
 import credentials as _creds
 from session import get_session
@@ -104,7 +104,7 @@ def _num(value: Any) -> float | None:
 
 
 async def _get_account(account_number: str | None = None):
-    # Delegates to cherrypit.broker (src/_core). The stored account number is passed in as the
+    # Delegates to cherrypick.core.broker (src/_core). The stored account number is passed in as the
     # default so the core stays decoupled from this module's credentials shim.
     return await _broker.resolve_account(
         get_session(), account_number,
@@ -112,13 +112,13 @@ async def _get_account(account_number: str | None = None):
     )
 
 
-# Thin re-exports of the shared option-chain helpers now implemented in cherrypit.broker (src/_core).
+# Thin re-exports of the shared option-chain helpers now implemented in cherrypick.core.broker (src/_core).
 _strike = _broker.strike_of
 _nearest_expiration = _broker.nearest_expiration
 _atm_window = _broker.atm_window
 
 
-# On-demand DXLink collectors — thin shims over cherrypit.dxfeed (src/_core). Passing get_session() in
+# On-demand DXLink collectors — thin shims over cherrypick.core.dxfeed (src/_core). Passing get_session() in
 # as an argument preserves this module's deliberate design point: a missing-credentials CredentialError
 # surfaces to the caller (not swallowed as a fake feed timeout), because the session is built here,
 # outside the shared collector's broad except.
@@ -361,7 +361,7 @@ async def cmd_get_option_chain(args) -> dict:
 
 
 def _build_order(spec: dict):
-    # Delegates to cherrypit.broker (src/_core): pure order construction (dict spec -> NewOrder),
+    # Delegates to cherrypick.core.broker (src/_core): pure order construction (dict spec -> NewOrder),
     # no submission. cmd_execute_trade below still owns the dry-run/live place_order call.
     return _broker.build_order(spec)
 
@@ -374,7 +374,7 @@ async def cmd_execute_trade(args) -> dict:
         spec = json.loads(args.order)
         account = await _get_account(getattr(args, "account_number", None))
         order = _build_order(spec)
-        # cherrypit.broker owns the preflight-then-optionally-live submission core (src/_core); it
+        # cherrypick.core.broker owns the preflight-then-optionally-live submission core (src/_core); it
         # places a live order only when live=True, the dry-run preflight had no errors, and (when
         # configured) the account deploy-limit governor allows it. account_deploy_limit_pct defaults
         # to 0/off; a positive value caps deployed buying power at that % of account capacity.

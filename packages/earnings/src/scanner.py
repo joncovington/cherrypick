@@ -27,12 +27,12 @@ from datetime import date as _date
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Make the cherrypit-core submodule (src/_core) importable before the cherrypit import below,
+# Make the cherrypick-core submodule (src/_core) importable before the cherrypick.core import below,
 # mirroring credentials.py's bootstrap so this module works even when imported before credentials.
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
-from cherrypit import profiles as _profiles
+from cherrypick.core import profiles as _profiles
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.json"
 
@@ -68,7 +68,7 @@ def _load_config(profile: str | None = None) -> dict:
     config.setdefault("tier_floor", "Tier 2")
 
     if profile and profile != "default":
-        # cherrypit.profiles (src/_core): flat top-level override + per-strategy strategy_overrides
+        # cherrypick.core.profiles (src/_core): flat top-level override + per-strategy strategy_overrides
         # deep-merge; _active_profile (set above) is carried through by the merge.
         registry = _profiles.load_profiles(config)
         profile_def = _profiles.select_profile(registry, profile)  # raises ValueError on unknown name
