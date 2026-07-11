@@ -115,7 +115,9 @@ is excluded from ruff and from the packaged wheel.
   health check. Preserve this pattern when adding tick-time work.
 - **Opt-in AI/dev tooling is local-only and off every runtime path.** `graphify` / `agentmemory` are
   authoring aids; their artifacts (`graphify-out/`, `.claude/`) are gitignored and they are never a
-  runtime dependency.
+  runtime dependency. The one tracked exception is `.claude/commands/` — checked-in slash commands are
+  shared dev conveniences (e.g. `/serve-dashboard`); the rest of `.claude/` (settings.local.json,
+  session state, plans) stays local-only. Slash commands are never a runtime dependency either.
 
 ## Suite-wide guardrails (inherited from MEICAgent & EarningsAgent)
 
