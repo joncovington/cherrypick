@@ -216,11 +216,12 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       a hard FAIL. Optional/fail-safe: uses a MySQL client only if present (never the reliability path),
       degrades to reachability-only otherwise. Pure classifier `_dolt_status` is unit-tested
       (`tests/test_doctor.py`).
-- [ ] **Fold the Dolt keep-alive into cherrypick proper.** The earnings Dolt server is kept up by a
-      machine-local `cherrypick-earnings-dolt` scheduled task (`~/.cherrypick/ensure-earnings-dolt.cmd`,
-      idempotent, portable) that `install`/`uninstall`/`status` don't know about. Make it a first-class
-      supervised dependency: declared in config, registered by `install`, torn down by `uninstall`,
-      surfaced by `doctor`/`status`.
+- [x] **Dolt keep-alive is now first-class.** A module declares `paper.dolt_service` (task name,
+      portable `data_dir` — `~` expands, relative resolves against ROOT, `dolt` from PATH); `install`
+      registers a MINUTE task that runs the new `ensure-dolt` command (stdlib port check + a benign
+      `dolt sql-server` start only when the port is down), `uninstall` removes it, and `status`/`doctor`
+      surface it. Replaced the hand-written `.cmd` launcher entirely. Unit-tested
+      (`tests/test_ensure_dolt.py`); `doctor` gained its first coverage too (`tests/test_doctor.py`).
 - [ ] **Task durability beyond login.** All tasks (Dolt, streamer, watchdog) register with `/IT` — they
       run only while the user is logged on, so nothing self-restarts after a reboot at the logon screen.
       Needs the elevation path for `/RU SYSTEM` (or a real service) worked out; `schtasks /Create /SC
