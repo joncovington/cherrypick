@@ -19,7 +19,7 @@
         "uninstall_argv": ["src/paper_loop.py", "--uninstall-task"],
         "status_argv": ["src/paper_loop.py", "--status"],
         "once_argv": ["src/paper_loop.py", "--once", "--force"],
-        "_paper_db_note": "Path to the module's paper-trades SQLite DB — MUST point at the file the module actually WRITES (a mismatch silently blinds the umbrella's report/reconcile/dashboard and the watchdog freshness check). Relative resolves against the module checkout; a leading '~' or env var expands (use e.g. '~/.cherrypick/data/meic/paper_trades.db' when the module keeps its data in the managed home); an absolute path is used as-is.",
+        "_paper_db_note": "Path to the module's paper-trades SQLite DB — MUST point at the file the module actually WRITES (a mismatch silently blinds the orchestrator's report/reconcile/dashboard and the watchdog freshness check). Relative resolves against the module checkout; a leading '~' or env var expands (use e.g. '~/.cherrypick/data/meic/paper_trades.db' when the module keeps its data in the managed home); an absolute path is used as-is.",
         "paper_db": "data/paper_trades.db",
         "notify_trades": true,
         "trade_schema": "meic_ic",
@@ -93,7 +93,7 @@
     },
     "sections": [
       {
-        "_comment": "Optional live cards for `dashboard --serve`. Each section is subprocessed for a cherrypick.core.viz payload and rendered generically (the umbrella never imports the module). A new module gets a card by emitting the schema — add it here. Locate the module by 'path' (in-place checkout, relative to this file) or 'repo'. fetch_argv may use {symbol} etc. Deliberately NOT under 'modules' (that registry is for paper pipelines).",
+        "_comment": "Optional live cards for `dashboard --serve`. Each section is subprocessed for a cherrypick.core.viz payload and rendered generically (the orchestrator never imports the module). A new module gets a card by emitting the schema — add it here. Locate the module by 'path' (in-place checkout, relative to this file) or 'repo'. fetch_argv may use {symbol} etc. Deliberately NOT under 'modules' (that registry is for paper pipelines).",
         "id": "gex",
         "title": "GEX",
         "enabled": false,
@@ -106,7 +106,7 @@
     ],
     "embeds": [
       {
-        "_comment": "Optional embedded module dashboards for `dashboard --serve` only: each module's OWN full dashboard, shown in an iframe on the umbrella page. The umbrella drives the module by config-declared argv (never imports it) and PAPER mode must be forced in that argv. Locate the module by 'path' (relative to this file) or 'repo'. Two kinds: 'server' (module runs its own HTTP dashboard — umbrella launches it if the port is down, iframe points at {port}) and 'static' (module regenerates a self-contained HTML file — umbrella runs build_argv, throttled to refresh_seconds, and serves 'output'). Disabled by default.",
+        "_comment": "Optional embedded module dashboards for `dashboard --serve` only: each module's OWN full dashboard, shown in an iframe on the orchestrator page. The orchestrator drives the module by config-declared argv (never imports it) and PAPER mode must be forced in that argv. Locate the module by 'path' (relative to this file) or 'repo'. Two kinds: 'server' (module runs its own HTTP dashboard — orchestrator launches it if the port is down, iframe points at {port}) and 'static' (module regenerates a self-contained HTML file — orchestrator runs build_argv, throttled to refresh_seconds, and serves 'output'). Disabled by default.",
         "id": "meic",
         "title": "MEIC",
         "enabled": false,

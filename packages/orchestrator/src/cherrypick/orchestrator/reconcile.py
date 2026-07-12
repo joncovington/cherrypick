@@ -1,6 +1,6 @@
 """`cherrypick reconcile` — paper↔live isolation guard (broker-vs-DB drift).
 
-This umbrella is paper-only, and paper trades never hit the broker, so a naive "broker positions ==
+This orchestrator is paper-only, and paper trades never hit the broker, so a naive "broker positions ==
 paper DB positions" match is meaningless here. Reframed for this suite, reconciliation is a paper↔live
 *isolation* check: a paper-only operation should leave the **real** broker account flat, so this
 enumerates **every** account on the login (tastytrade returns multiple per user) and flags any open

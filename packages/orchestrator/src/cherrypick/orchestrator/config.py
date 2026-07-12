@@ -103,7 +103,7 @@ def paper_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path:
       - relative — resolved against the module checkout root (the historical default).
     Mirrors `dolt_service.data_dir` resolution. One source of truth so every read surface (report,
     reconcile, calibrate, dashboard) and the watchdog freshness check agree on which file the module
-    actually writes — a mismatch silently blinds the umbrella to a module's paper data.
+    actually writes — a mismatch silently blinds the orchestrator to a module's paper data.
     """
     rel = (module_cfg.get("paper", {}) or {}).get("paper_db", "data/paper_trades.db")
     p = Path(os.path.expandvars(os.path.expanduser(str(rel))))

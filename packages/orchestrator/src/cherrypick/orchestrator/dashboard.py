@@ -717,7 +717,7 @@ _RECONCILE_JS = """
 
 
 def _embed_cards_html(embed_views: list[dict[str, Any]]) -> str:
-    """One iframe card per embedded module dashboard (serve-only). Each `url` is the umbrella's local
+    """One iframe card per embedded module dashboard (serve-only). Each `url` is the orchestrator's local
     `/embed/<id>` route: for a "server" embed it 302-redirects to the module's port (launching it if
     down); for a "static" embed it regenerates and serves the module's HTML file. A per-card
     open-in-new-tab link is the graceful fallback if a module server refuses to be framed."""
@@ -782,7 +782,7 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     )
     # Embedded module dashboards are serve-only too: each iframe points at /embed/<id>, a route the
     # live server owns (it launches/regenerates the module dashboard on demand). Omitted in the static
-    # file render — there's no umbrella server to answer /embed/<id>.
+    # file render — there's no orchestrator server to answer /embed/<id>.
     embed_cards = _embed_cards_html(model.get("embeds", [])) if serve else ""
     # Reconcile is broker-touching, so its card is serve-only too (the /api/reconcile route only exists
     # under `dashboard --serve`); the static file render omits it.

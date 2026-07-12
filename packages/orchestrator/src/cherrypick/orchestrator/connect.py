@@ -2,7 +2,7 @@
 
 The Phase-8 onboarding surface: walk a single module through tastytrade setup. Three steps:
   1. OAuth credentials — **delegated to the module's own** `tt.py secrets_set` with the terminal
-     inherited (no output capture), so the module's proven hidden-input flow runs and the umbrella never
+     inherited (no output capture), so the module's proven hidden-input flow runs and the orchestrator never
      sees, prints, logs, or stores the bearer secrets (client_secret / refresh_token).
   2. Verify the broker connection (read-only `get_connection_status`).
   3. Select the live-trading account (`accounts.list_accounts` → pick → `accounts.set_account`).

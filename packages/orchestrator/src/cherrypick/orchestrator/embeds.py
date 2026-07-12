@@ -1,14 +1,14 @@
 """Embedded module dashboards for `dashboard --serve`.
 
-Each module ships its *own* full dashboard; this embeds them, one iframe per module, on the umbrella's
+Each module ships its *own* full dashboard; this embeds them, one iframe per module, on the orchestrator's
 live page — a single pane for the whole suite. Two delivery kinds, both driven by config-declared argv
-(the umbrella never imports a module's internals — same contract as `install`/`sections`):
+(the orchestrator never imports a module's internals — same contract as `install`/`sections`):
 
   - "server": the module runs its own localhost HTTP dashboard (e.g. cherrypick-meic `src/dashboard.py`).
-    The umbrella ensures it's up — launching it if the port is down, exactly like it starts the
+    The orchestrator ensures it's up — launching it if the port is down, exactly like it starts the
     streamer/Dolt — and the iframe points at the module's port.
   - "static": the module regenerates a self-contained HTML file (e.g. cherrypick-earnings
-    `src/strategy_dashboard.py`, which inlines its charts as base64). The umbrella runs the generator on
+    `src/strategy_dashboard.py`, which inlines its charts as base64). The orchestrator runs the generator on
     demand (throttled) and serves the file from a local route.
 
 Serve-only and loopback-only: launching/generating happens only under `dashboard --serve` (human-

@@ -9,7 +9,7 @@ You are an autonomous quantitative options trading agent. Your objective is to m
 
 - **Unattended paper (automated).** The parallel-shadow paper engine runs as a codified daemon,
   `src/paper_loop.py` — the same decisions as the agent loop below, in code — so a paper session runs in
-  the background like the streamer, with no per-iteration agent. The **cherrypick** umbrella owns its
+  the background like the streamer, with no per-iteration agent. The **cherrypick** orchestrator owns its
   lifecycle: it registers the self-healing OS task `cherrypick-meic-paper-loop`, starts the streamer, and
   watchdogs both. All writes go to `~/.cherrypick/data/meic/paper_trades.db`; the live account and `~/.cherrypick/data/meic/meic_trades.db` are
   never touched. This is what collects data day to day.
@@ -19,12 +19,12 @@ You are an autonomous quantitative options trading agent. Your objective is to m
 
 > ⚠️ **No new dependency on the loop path.** The loop's entry/stop/logging decisions must depend only on `src/tt.py`, `src/db.py`, `src/streamer.py`'s cache, and this file — introducing an MCP/network dependency there adds a new failure mode to a system that has already had silent-stall incidents from an external dependency (the DXLink streamer).
 
-## Umbrella & shared core
+## Orchestrator & shared core
 
 - **`cherrypick.core.*` lives in the `src/_core` submodule.** Shared logic used here — `cherrypick.core.calendar` (via `get_calendar`) and `cherrypick.core.fees` (via `get_fee_estimate`) — is a git submodule (`.gitmodules` → `cherrypick-core.git`), **not** vendored source. On a fresh clone run `git submodule update --init` first, or every `import cherrypick.core...` fails.
 - **Module files self-bootstrap `src/_core` onto `sys.path`.** `src/credentials.py` and `src/db.py` insert `src/_core` at import time so `import cherrypick.core...` resolves without a pip install (under the loop, tests, and the streamer alike). Those inserts look redundant but are load-bearing — **do not remove them**. Add a symbol's fee by extending `cherrypick.core.fees`, not by hardcoding here.
-- **The cherrypick umbrella drives this repo in place, and the boundary is strict.** It runs this module via subprocess for unattended **paper** collection: it registers/watchdogs the `cherrypick-meic-paper-loop` task and the streamer, and reads `~/.cherrypick/data/meic/paper_trades.db` for cross-module reporting. It **never edits this module's code or config**, only ever invokes the paper engine / paper DB, and **never places, cancels, adjusts, or closes an order and never flips `enable_live_trading`**. Its one live-config action is onboarding (`cherrypick connect`/`account`): it delegates to this module's own credential tool and writes the selected account's `ACCOUNT_NUMBER` into this module's keyring (service = `keyring_service`) — configuration only, never a trade.
-- **Two couplings the umbrella depends on — don't change silently.** (1) The paper DB path (`~/.cherrypick/data/meic/paper_trades.db`, resolved by `src/paths.py` — default `~/.cherrypick/data/meic`, override `MEIC_DATA_DIR`) and its `ic_trades` schema: the umbrella reads it through its `"meic_ic"` schema adapter, so renaming the DB or altering that schema breaks cross-module `report`/`calibrate`. (2) `keyring_service` and the live account designation: `connect`/`account`/`reconcile` rely on it.
+- **The cherrypick orchestrator drives this repo in place, and the boundary is strict.** It runs this module via subprocess for unattended **paper** collection: it registers/watchdogs the `cherrypick-meic-paper-loop` task and the streamer, and reads `~/.cherrypick/data/meic/paper_trades.db` for cross-module reporting. It **never edits this module's code or config**, only ever invokes the paper engine / paper DB, and **never places, cancels, adjusts, or closes an order and never flips `enable_live_trading`**. Its one live-config action is onboarding (`cherrypick connect`/`account`): it delegates to this module's own credential tool and writes the selected account's `ACCOUNT_NUMBER` into this module's keyring (service = `keyring_service`) — configuration only, never a trade.
+- **Two couplings the orchestrator depends on — don't change silently.** (1) The paper DB path (`~/.cherrypick/data/meic/paper_trades.db`, resolved by `src/paths.py` — default `~/.cherrypick/data/meic`, override `MEIC_DATA_DIR`) and its `ic_trades` schema: the orchestrator reads it through its `"meic_ic"` schema adapter, so renaming the DB or altering that schema breaks cross-module `report`/`calibrate`. (2) `keyring_service` and the live account designation: `connect`/`account`/`reconcile` rely on it.
 
 ---
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
