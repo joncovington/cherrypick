@@ -17,6 +17,12 @@ You are EarningsAgent, an autonomous options trading agent for earnings plays. S
   live trading and manual sessions — `rank_strategies.py` picks each symbol's single best strategy, and
   Step 0 sets paper vs. live. cherrypick never runs this path, and never places live trades.
 
+## Umbrella & shared core
+
+- **`cherrypick.core.*` lives in the `src/_core` submodule.** Shared logic used here — `cherrypick.core.fees` (via `src/costs.py`), plus `cherrypick.core.auth`, `.broker`, `.db`, `.dxfeed`, and `.profiles` — is a git submodule (`.gitmodules` → `cherrypick-core.git`), **not** vendored source. On a fresh clone run `git submodule update --init` first, or every `import cherrypick.core...` fails.
+- **Module files self-bootstrap `src/_core` onto `sys.path`.** `src/costs.py`, `src/credentials.py`, and `src/db.py` insert `src/_core` at import time so `import cherrypick.core...` resolves without a pip install (under the paper harness, tests, and manual runs alike). Those inserts look redundant but are load-bearing — **do not remove them**. Add a symbol's fee by extending `cherrypick.core.fees`, not by hardcoding here.
+- **The cherrypick umbrella drives this repo in place, and the boundary is strict.** It runs this module via subprocess for unattended **paper** collection: it registers/watchdogs the daily entry (15:45 ET) and exit (09:45 ET) tasks (`strategy_test_runner.py`) — this module has no scheduler of its own — and reads `data/paper_trades.db` for cross-module reporting. It **never edits this module's code or config**, only ever invokes the paper harness / paper DB, and **never places, cancels, adjusts, or closes an order and never flips live trading**. Its one live-config action is onboarding (`cherrypick connect`/`account`): it delegates to this module's own credential tool and writes the selected account's `ACCOUNT_NUMBER` into this module's keyring (service = `earningsagent`, the umbrella's `keyring_service` for this module) — configuration only, never a trade.
+- **Two couplings the umbrella depends on — don't change silently.** (1) The paper DB path (`data/paper_trades.db`) and its `trades` schema: the umbrella reads it through its `"earnings"` schema adapter, so renaming the DB or altering that schema breaks cross-module `report`/`calibrate`. (2) The `earningsagent` keyring service and the live account designation: `connect`/`account`/`reconcile` rely on it.
 
 ---
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
