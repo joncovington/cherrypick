@@ -42,7 +42,6 @@ REJECTED/WAITLISTED (6)
   ...
 
 READY FOR 3:50 PM ENTRY WINDOW
-Entry orders logged to: logs/paper/runs_2026_07.json
 ================================================================================
 ```
 
@@ -63,17 +62,17 @@ If any are selected, each shows:
 1. Run command → see selected candidates (if any) with score, tier, and strategy
 2. Review the built order for each (credit, strikes, legs)
 3. Execute manually in your broker during the entry window, or let `/earnings-start`'s loop handle Step 4b automatically
-4. Run `/paper-trading-eod-report` after close window handling
 
 ## Files Generated
 
-- `logs/paper/runs_YYYY_MM.json` — One appended entry per run: date, timestamp, total candidates, selected trades with full order detail
-
-Real trade persistence (for the actual loop, not this standalone scan) goes through `db_paper.py save_trade` into `data/paper_trades.db`, per CLAUDE.md's Step 4b — this command does not write there itself.
+None — this is a read-only ranking scan that prints to the terminal and persists nothing. Real trade
+persistence (for the actual loop, not this standalone scan) goes through `db_paper.py save_trade` into
+the shared `paper_trades.db`, per CLAUDE.md's Step 4b. The end-of-day summary is written separately by
+the forced-sampling close pass (`strategy_test_runner.py eod_report` → `logs/paper-eod-<date>.md`).
 
 ## Related Commands
 
-- `/paper-trading-eod-report` — Generate end-of-day review
+- `/paper-start` — Forced-sampling strategy test (opens the `strat_test` book; writes the daily EOD report)
 - `/earnings-start` — Starts the actual continuous trading loop (Steps 0-5, self-scheduling)
 
 ## Common Issues
