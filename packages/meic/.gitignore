@@ -1,0 +1,60 @@
+# Backups
+*.bak
+
+# Local config (copy config.example.json to config.json and customize)
+config.json
+
+# Trade database and WAL files
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/stream_store/
+
+# Streamer runtime files
+data/streamer.pid
+
+# Agent logs and EOD reports
+logs/*.log
+logs/*.log.*
+logs/eod-*.md
+logs/paper-*.md
+logs/streamer.*
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Environment files
+.env
+.env.*
+
+# VS Code workspace (IDE-specific, not project config)
+.vscode/
+*.code-workspace
+
+# Local Claude Code overrides (machine-specific enablement flags)
+.claude/settings.local.json
+
+# MCP server config (machine-local; includes agentmemory which is optional)
+.mcp.json
+
+# Auto-installed Claude Code skills and agent plugins (machine-local)
+.claude/skills/
+.agents/
+skills-lock.json
+
+# claude-flow/ruflo dev-session artifacts (dev-only tooling, not part of the trading agent)
+.swarm/
+.hive-mind/
+memory/
+.claude-flow/
+claude-flow.config.json
+claude-flow-metrics.json
+coordination/
+
+# Temp file space
+.tmp/
+
+# Research reports
+research/
+graphify-out/
