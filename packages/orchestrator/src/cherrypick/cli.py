@@ -512,9 +512,13 @@ def cmd_notify_eod(cfg, args) -> None:
     suite = res.get("suite", {})
     net = suite.get("net_pnl")
     money = "-" if net is None else (f"-${abs(net):,.2f}" if net < 0 else f"${net:,.2f}")
+    # The pushed message can leave the machine (Slack/Discord), so it names only the report *file*,
+    # never its absolute path — an absolute path leaks the OS username and directory layout to a
+    # third-party service. The full path stays in this command's local stdout envelope below.
+    digest_name = Path(res.get("digest", "")).name or f"eod-digest-{day}.md"
     message = (
         f"Paper suite {day}: {suite.get('trades', 0)} trades closed, net {money}, "
-        f"{suite.get('wins', 0)}W/{suite.get('losses', 0)}L. Digest: {res.get('digest')}"
+        f"{suite.get('wins', 0)}W/{suite.get('losses', 0)}L. See {digest_name} in the cherrypick logs."
     )
     channels = Notifier(cfg.get("notify")).notify("INFO", f"eod_{day}", f"EOD digest {day}", message)
     _emit({"ok": True, "session": day, "digest": res.get("digest"), "suite": suite, "channels": channels})

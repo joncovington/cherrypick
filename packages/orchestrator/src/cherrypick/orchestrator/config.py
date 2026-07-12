@@ -36,9 +36,18 @@ def _default_root() -> Path:
     return _USER_HOME
 
 
+def _logs_home() -> Path:
+    """Where cherrypick writes its logs. Always the per-user home (~/.cherrypick/logs), independent of
+    ROOT — so log output never lands inside a source checkout and its location is stable and
+    user-scoped regardless of how cherrypick is launched. CHERRYPICK_HOME overrides the home."""
+    env = os.environ.get("CHERRYPICK_HOME")
+    return (Path(env) if env else _USER_HOME) / "logs"
+
+
 ROOT = _default_root()
 CONFIG_PATH = ROOT / "config.json"
-LOGS_DIR = ROOT / "logs"
+# Logs live under the user home by default (see _logs_home); dashboard.html and state/ stay under ROOT.
+LOGS_DIR = _logs_home()
 STATE_DIR = ROOT / "state"
 
 # Where `cherrypick install` materializes module checkouts when a module declares no explicit `path`.

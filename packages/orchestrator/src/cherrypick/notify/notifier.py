@@ -27,8 +27,18 @@ from typing import Any
 
 from . import secrets
 
-_ROOT = Path(__file__).resolve().parent.parent
-_LOG = _ROOT / "logs" / "notify.log"
+
+def _default_log_dir() -> Path:
+    """cherrypick's per-user logs home (~/.cherrypick/logs, or CHERRYPICK_HOME/logs). Kept in sync with
+    config.LOGS_DIR but computed independently so the notifier — which sits on the reliability path —
+    stays free of a config import. Previously this wrote notify.log *inside the source tree*, which both
+    leaked logs into the repo and put them where the dashboard (which reads config.LOGS_DIR) never
+    looked; anchoring both at the user home fixes that mismatch."""
+    env = os.environ.get("CHERRYPICK_HOME")
+    return (Path(env) if env else (Path.home() / ".cherrypick")) / "logs"
+
+
+_LOG = _default_log_dir() / "notify.log"
 
 
 def _utcnow() -> str:
