@@ -1,231 +1,197 @@
-# cherrypick — Project Reference (Internal Wiki)
+# cherrypick — User Guide
 
-> **What it is.** cherrypick is the **umbrella orchestrator** for a paper-trading data-collection suite.
-> It drives sibling trading modules (MEIC, Earnings) **in place**, on an OS schedule, for hands-off
-> **paper**-trading data collection — with a watchdog and notifications so a walk-away operator is told
-> whenever something stalls. It **never places live trades**; its only live-adjacent action is
-> onboarding config (selecting which broker account a module *would* trade in live).
-
-The suite is a **monorepo**: `packages/umbrella` (this orchestrator) + `packages/meic` +
-`packages/earnings` (the trading modules) + a shared library (`cherrypick-core`) vendored per package as
-a git submodule at `packages/<pkg>/src/_core`.
+A friendly walkthrough for options traders. If you can follow a strategy checklist and copy-paste a few
+commands, you can run cherrypick.
 
 ---
 
-## 1. Architecture Overview
+## What cherrypick is (in one minute)
 
-### Layout
-```
-cherrypick/                     # monorepo
-├── packages/
-│   ├── umbrella/               # orchestrator (this doc's subject)
-│   │   ├── run.py              # launcher (puts src/ on sys.path, delegates to cli:main)
-│   │   ├── src/cherrypick/
-│   │   │   ├── cli.py          # CLI dispatch (all subcommands)
-│   │   │   ├── orchestrator/   # config, tasks, watchdog, doctor, report, calibrate,
-│   │   │   │                   #   reconcile, dashboard, serve, sections, embeds,
-│   │   │   │                   #   accounts, connect, timeutil, util
-│   │   │   └── notify/         # Notifier + keyring-backed webhook secrets
-│   │   ├── src/_core → submodule (cherrypick.core.*)
-│   │   ├── config.example.json # config template (copy to config.json, gitignored)
-│   │   └── tests/
-│   ├── meic/                   # MEIC 0DTE multiple-entry iron-condor module
-│   └── earnings/               # earnings-play module (defined-risk strategies)
-└── .gitmodules                 # 3 × cherrypick-core (one per package)
-```
+cherrypick lets you **test options strategies on paper, automatically.** You pick the strategies and
+symbols, turn it on, and walk away. On a schedule during market hours it runs the strategies in
+simulation, records every would-be trade (with realistic fills and commissions), and keeps an eye on
+itself — pinging you if anything stops working. Later you open a report or dashboard to see how your
+strategies would have performed.
 
-### How the components interact
-- **Drive-by-subprocess, never import.** The umbrella runs each module as a subprocess using
-  **config-declared argv** (`orchestrator/config.py` resolves module locations; `install`, the paper
-  runners, `sections`, `embeds`, `reconcile`, and `connect`/`account` all invoke module scripts in
-  place). It **never imports a module's internals** — the boundary is a directory boundary, and the
-  reliability/isolation guarantees rest on it.
-- **Two halves, one config.** Everything hangs off `config.json`:
-  - **Write side (the reliability guarantee).** `orchestrator/watchdog.py` runs on a schedule
-    (`orchestrator/tasks.py` → Windows `schtasks` / POSIX cron). Each tick it checks every module's
-    paper pipeline (task registered, data fresh in-session, streamer alive, earnings SLA met), logs
-    findings, and pushes alerts via `notify/notifier.py`. It has a dedup / re-notify / recovery state
-    machine (`state/watchdog_state.json`).
-  - **Read side (look anytime).** `report.py` (cross-module paper P&L), `calibrate.py` (per-profile
-    promotion advisor), `dashboard.py` (static HTML + a `--serve` live view), and `reconcile.py`
-    (paper↔live isolation guard). Read-only and file-only, **except** `reconcile` and the `--serve`
-    live cards, which make read-only broker queries on demand (off the reliability path).
-- **Per-schema dispatch.** Each module's paper DB has a different SQLite schema, selected by
-  `paper.trade_schema` (`"meic_ic"` → MEIC `ic_trades`; `"earnings"` → Earnings `trades`).
-  `report`, `calibrate`, `reconcile`, and `trade_notifier` each carry a small reader/adapter registry
-  keyed by that value — add a schema by extending the registries, not the callers.
-- **Shared logic** lives in `cherrypick.core.*` (the `cherrypick-core` submodule): `auth`, `broker`,
-  `calendar`, `db`, `dxfeed`, `fees`, `gex`, `profiles`, `risk`, `streamcache`, `streamer`, `viz`.
+It comes with two strategy engines:
 
-### Load-bearing invariants
-- **No network / service / AI on the reliability path.** The watchdog → notify path uses only the
-  stdlib + the OS shell (no MCP, no HTTP client, no AI tooling). A past 34-hour silent stall from an
-  external dependency is why this rule exists.
-- **Read surfaces read files, never the broker** — except the explicitly-gated, on-demand `reconcile`
-  and `--serve` doctor/section cards.
-- **Paper ↔ live isolation.** cherrypick only invokes paper engines / paper DBs. The single
-  live-*config* exception is onboarding (`connect` / `account`): it selects which account a module
-  trades in when live, but never places/cancels/closes an order and never flips `enable_live_trading`.
-- **Credentials in the OS keyring only** — never in files, env vars, or logs. Account numbers are
-  masked to `****1234` everywhere they surface.
+- **MEIC** — 0DTE **multiple-entry iron condors** on cash/ETF index products (SPX, XSP, QQQ, IWM, and
+  similar). It scales strike selection to volatility (VIX bands), respects credit floors and OTM
+  buffers, manages per-side stops, and force-closes or lets positions settle as appropriate.
+- **Earnings** — **defined-risk earnings plays** (iron fly, double calendar, iron condor, ATM calendar,
+  directional credit spread, broken-wing butterfly, reverse fly). It opens once before the close and
+  closes once after the next open, sized to a simulated capital base.
+
+Everything is **paper** — cherrypick never places, cancels, or closes a real order on its own.
 
 ---
 
-## 2. Setup & Installation
+## What you need
 
-**Prerequisites:** Python **3.11+** (tested on 3.13), `git`, and — for the Earnings module — a local
-[Dolt](https://github.com/dolthub/dolt) install on `PATH`. Windows is the primary target (Task
-Scheduler); a POSIX cron backend exists but end-to-end cron execution is not yet validated.
+- A **[tastytrade](https://tastytrade.com) account** (the data and pricing come from tastytrade).
+- A **computer that stays on** during the market sessions you want to capture. **Windows is
+  recommended** (it uses Windows Task Scheduler to run on a schedule; a Linux/Mac option exists but is
+  less battle-tested).
+- **Python 3.11 or newer** and **git** installed.
+- For the **Earnings** engine only: a local install of **[Dolt](https://github.com/dolthub/dolt)** (a
+  free database it uses for historical earnings/options data). MEIC doesn't need it.
+
+---
+
+## Installing it
 
 ```bash
-# 1. Clone with submodules (each package needs its src/_core — imports fail without it)
+# Download the project (the --recurse-submodules part pulls a shared library it needs)
 git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
 cd cherrypick
-git submodule update --init --recursive          # if you forgot --recurse-submodules
 
-# 2. Install the orchestrator (editable, with dev extras)
+# Install the orchestrator
 cd packages/umbrella
-pip install -e ".[dev]"                           # exposes the `cherrypick` console script
-#   The two trading modules install the same way (packages/meic: pip install -e ".[dev]";
-#   packages/earnings: pip install -r requirements.txt -r requirements-dev.txt).
+pip install -e ".[dev]"
+```
 
-# 3. Configure (config.json is gitignored / machine-local)
-cp config.example.json config.json                # then edit: module paths, notify channels, etc.
+The two strategy engines live under `packages/meic` and `packages/earnings`. You can install each the
+same way if you plan to run both (`pip install -e ".[dev]"` in `packages/meic`; the earnings engine uses
+`pip install -r requirements.txt`).
 
-# 4. Store broker credentials in the OS keyring (per module — see §3). Guided:
-python run.py connect --module meic               # OAuth creds + live-account selection
+---
 
-# 5. Verify readiness (read-only, never installs/trades)
-python run.py doctor                              # green/red across interpreter, config, broker,
-                                                  #   streamer, tasks, paper DBs, Dolt, notify
+## First-time setup
 
-# 6. Register the unattended schedule (Windows Task Scheduler / POSIX cron)
+**1. Adjust your settings.** Copy the template and open it in any text editor:
+
+```bash
+cp config.example.json config.json
+```
+
+`config.json` is where you say **which strategies to run, on what schedule, and how you want to be
+alerted**. It's kept only on your machine.
+
+**2. Link your tastytrade account.** cherrypick stores your credentials in your operating system's
+secure keyring (never in a file), and lets you pick which account it uses:
+
+```bash
+python run.py connect --module meic        # do the same for earnings if you'll run it
+```
+
+**3. Choose your strategy details.** The fine-grained trading rules — which symbols, target deltas,
+credit floors, entry windows, risk profiles — live in each engine's own config:
+
+- MEIC: `packages/meic/config.json` (e.g. the `symbols` list, `min_iv_rank`, entry/exit windows, and the
+  conservative → very-aggressive **risk profiles**).
+- Earnings: `packages/earnings/config/config.json` (position caps, entry/close windows, per-strategy
+  tuning).
+
+Each engine's own docs explain every setting in detail — start with the symbols and risk profile, and
+leave the rest at their sensible defaults.
+
+**4. Confirm you're ready:**
+
+```bash
+python run.py doctor
+```
+
+This prints a simple green/red checklist — Python, your settings, your broker connection, the data feed,
+the databases, and (for earnings) Dolt. Green means you're good to go.
+
+---
+
+## Turning it on
+
+```bash
 python run.py install
 ```
 
-> Run the CLI from a source checkout with **`python run.py <cmd>`** (not a root `cherrypick.py` — a
-> root module of that name would shadow the `cherrypick` namespace package). A pip-installed copy also
-> exposes `cherrypick <cmd>` and `python -m cherrypick`.
+That registers cherrypick to run on a schedule and starts the data feed. From now on it works on its
+own:
+
+- **MEIC** evaluates entries every couple of minutes during the session.
+- **Earnings** opens plays before the close and closes them after the next open, on daily timers.
+- A **monitor** checks in every few minutes and a **fill-notifier** pushes new paper trades to you
+  quickly.
+
+To pause everything: `python run.py uninstall`. Your recorded data and settings are untouched — you can
+turn it back on any time.
 
 ---
 
-## 3. Environment Variables
+## Reviewing your results
 
-**There is no `.env` file, by design.** Every secret — broker OAuth tokens and Slack/Discord webhook
-URLs — lives in the **OS keyring** (Windows Credential Manager/DPAPI, macOS Keychain, Linux Secret
-Service), never in files or environment variables. This is a load-bearing security guardrail.
-
-| Secret | Where it lives | How to set it |
-|---|---|---|
-| Broker OAuth (`client_secret`, `refresh_token`) | Each module's keyring service (`meicagent` / `earningsagent`) | `cherrypick connect --module <m>` (delegates to the module's own hidden-input tool) |
-| Live-trading account (`account_number`) | Same module keyring | `cherrypick account --module <m> --set <last4|index>` |
-| Slack/Discord webhook URLs | Umbrella keyring service `cherrypick-notify` | `cherrypick secrets-set --channel slack|discord` |
-
-The only actual **environment variables** are optional path overrides (never required):
-
-| Var | Purpose | Default |
-|---|---|---|
-| `CHERRYPICK_HOME` | Runtime home for `config.json`, `logs/`, `state/`, `dashboard.html` | repo root (source checkout) or `~/.cherrypick` (installed copy) |
-| `CHERRYPICK_MODULES_HOME` | Where `install` materializes module checkouts (when a module has no explicit `path`) | `~/.cherrypick/modules` |
-| `MEIC_DATA_DIR` *(module)* | MEIC's data dir (paper DB, stream cache) | `~/.cherrypick/data/meic` |
-
-### `config.json` (the real "environment")
-Machine-local, gitignored; see `config.example.json` for the authoritative, commented template. Key
-blocks: `modules.<name>` (`path`/`repo`, `keyring_service`, `paper.{kind,trade_schema,paper_db,…}`,
-`streamer`, `calibration`), `watchdog`, `dashboard` (`serve`, `sections`, `embeds`), `reconcile`,
-`trade_notify`, `notify` (`channels`, `trade_channels`). Note `paper.paper_db` accepts a `~`/env-prefixed
-or absolute path so it can point at a module's managed data home portably.
+| Command | What you get |
+|---|---|
+| `python run.py report` | Win rate and P&L (net of commissions) across strategies and risk profiles. |
+| `python run.py dashboard --serve` | A live dashboard in your browser: overall status, per-strategy P&L, recent activity, and health checks. |
+| `python run.py dashboard` | The same as a single self-contained web page you can open or share. |
+| `python run.py calibrate` | Advice on whether a risk profile has collected enough good results to consider stepping up (advisory only — it never changes anything). |
 
 ---
 
-## 4. Core Features
+## Staying informed
 
-- **Unattended paper data collection.** Drives each module's paper pipeline on an OS schedule. Two
-  pipeline *kinds*: `self_healing` (MEIC manages its own loop task; the umbrella registers/verifies +
-  starts the streamer) and `cherrypick_scheduled` (the umbrella owns daily entry/exit tasks for a
-  module that has no scheduler of its own).
-- **Watchdog reliability guarantee.** Periodic health checks (task registered, in-session data
-  freshness, streamer liveness, earnings SLA), benign auto-remediation (restart a dead streamer — never
-  a trading action), and alerting with dedup/re-notify/recovery.
-- **Notifications.** Pluggable channels — `log` (always-on floor), `desktop`, `slack`, `discord` —
-  with a dedicated low-latency **trade-notify** path that pushes new paper fills.
-- **Read surfaces:** cross-module **`report`** (paper P&L, net of costs, per profile), **`calibrate`**
-  (advisory promotion recommendations per risk-ladder rung), a **`dashboard`** (self-contained static
-  HTML, plus a `--serve` live view with a System panel, live GEX-style section cards, embedded
-  per-module dashboards, and a paper↔live reconcile card).
-- **`doctor`** one-shot readiness check (`--fast` skips the authenticated broker round-trip).
-- **`reconcile`** paper↔live isolation guard — queries every account on the real login and flags any
-  that isn't flat.
-- **`connect` / `account`** onboarding — set a module's OS-keyring credentials and select its
-  live-trading account (config only; never trades).
-- **Optional Dolt keep-alive** for the Earnings module (a cherrypick-managed minute task).
+Set your alert channels in `config.json` under `notify` — any of **`log`** (always on), **`desktop`**,
+**`discord`**, and **`slack`**. You'll get:
 
----
+- a **ping when a new paper trade fills**, and
+- a **warning if something stalls** (e.g. the data feed goes quiet mid-session) so you're never
+  surprised by a silent gap.
 
-## 5. CLI / Function Reference
-
-The CLI **is** the public API. Invoke as `python run.py <cmd>` (or `cherrypick <cmd>` when installed).
-All commands emit JSON to stdout unless noted; scheduled tasks run under `pythonw` where stdout is
-suppressed.
-
-| Command | Inputs | Output / effect |
-|---|---|---|
-| `init [--force]` | — | Scaffold + validate `config.json`. |
-| `install` | reads config | Register all scheduled tasks; start the streamer. **Windows/POSIX only.** |
-| `uninstall` | reads config | Remove cherrypick-managed tasks (leaves module checkouts). |
-| `status` | reads config | JSON: task registration state + last heartbeats. |
-| `doctor [--fast]` | reads config, broker | Human-readable green/red report; exit 0 if OK/WARN, 1 on FAIL. `--fast` skips the broker check. |
-| `watchdog` | reads config, files | Run one watchdog pass (what the scheduled task runs); writes heartbeat + logs; alerts on WARN/CRITICAL. |
-| `report` | paper DBs | JSON: suite + per-module + per-profile P&L (net of costs). Read-only, file-only. |
-| `calibrate` | paper DBs | JSON: per-profile readings + advisory promotion recs. Advisory only. |
-| `reconcile` | broker (read-only) | Human report: verdict `FLAT`/`DRIFT`/`UNKNOWN` across every real account (masked). Exit 0/1/2. |
-| `connect --module <m>` | interactive | Guided onboarding: OAuth creds (delegated to the module) + account selection. |
-| `account --module <m> [--set <last4|index>] [--clear] [--yes]` | broker (read) + keyring (write) | List / set / clear a module's live-trading account (masked). |
-| `dashboard [--serve] [--host H] [--port P] [--no-browser]` | files (+ broker on `--serve` cards) | Write `dashboard.html`, or serve a live localhost view. Loopback-only. |
-| `notify-test` | notify channels | Fire a test notification through every configured channel. |
-| `notify-trades` | paper DBs, channels | Push new paper entries/exits to `trade_channels`. |
-| `secrets-set/-status/-delete --channel slack|discord [--url U]` | keyring | Manage push-channel webhooks (secret-free status). |
-| `run-earnings-entry` / `run-earnings-exit` | module subprocess | Run the Earnings paper entry/exit (invoked by its daily task). |
-| `ensure-dolt` | socket + subprocess | Start any module's declared Dolt server if down (keep-alive task). |
-
-**Key internal helpers** (for contributors): `orchestrator/config.py::module_root` /
-`paper_db_path` (portable path resolution — the single source of truth for where a module's paper DB
-lives), `orchestrator/tasks.py::{create_minute_task,create_daily_task,registry_snapshot}` (OS scheduler
-wrappers + the shared task-state snapshot), `orchestrator/util.py::{first_json,mask_account,
-CREATE_NO_WINDOW}`, and `notify/secrets.py` (keyring webhook storage).
-
----
-
-## 6. Testing & Deployment
-
-### Testing
-Each package is tested independently with **pytest** (markers: `unit` [default lane], `live`, `windows`).
+Test that alerts actually reach you:
 
 ```bash
-# From a package dir (e.g. packages/umbrella):
-python -m pytest                    # default lane: -m "not live" -q  (per pytest config)
-python -m pytest tests/test_dashboard.py                     # one file
-ruff check . && ruff format --check .                        # lint + format (line length 110; src/_core excluded)
+python run.py notify-test
 ```
 
-**CI** (GitHub Actions, `.github/workflows/ci.yml`) runs a **matrix over all three packages**: checkout
-with `submodules: recursive` (so each `src/_core` is at its pinned `cherrypick-core` SHA), install, lint,
-and test. Current test totals: umbrella 137, meic 242, earnings 225.
-
-### Deployment
-cherrypick is **not a server** — it deploys as a set of **OS scheduled tasks** on the operating
-machine:
+To set up a Discord or Slack webhook (stored securely, not in a file):
 
 ```bash
-python run.py install     # registers: watchdog (~10 min), trade-notify (~2 min), meic paper-loop
-                          #   (self-healing, ~2 min), earnings entry/exit (daily 15:45 / 09:45),
-                          #   Dolt keep-alive (~5 min); starts the streamer.
-python run.py doctor      # confirm green (broker, Dolt, paper DBs, all tasks registered)
-python run.py status      # confirm tasks Enabled with next-run times
+python run.py secrets-set --channel discord      # paste your webhook URL when prompted
 ```
 
-Tasks run windowless (`pythonw`) and are hardened for walk-away operation (battery guards cleared,
-console-window suppression, optional Windows-Update active-hours pinning via
-`tools/setup-walkaway-durability.ps1`). Runtime state (paper DBs, Dolt store, keyring) lives outside the
-repo, so a redeploy or checkout move never disturbs collected data. To retire the schedule:
-`python run.py uninstall`.
+---
+
+## Everyday commands (cheat sheet)
+
+| Command | Purpose |
+|---|---|
+| `python run.py doctor` | Green/red readiness check (add `--fast` to skip the broker check). |
+| `python run.py status` | Shows the schedule and when things last ran / run next. |
+| `python run.py report` | Paper P&L summary. |
+| `python run.py dashboard --serve` | Live browser dashboard. |
+| `python run.py reconcile` | Safety check: confirms your **real** brokerage account has no unexpected open positions. |
+| `python run.py account --module meic` | See / choose which account a strategy would use if run live. |
+| `python run.py install` / `uninstall` | Turn the schedule on / off. |
+| `python run.py notify-test` | Send yourself a test alert. |
+
+---
+
+## How your account is protected
+
+- **Paper only.** cherrypick runs simulation engines and reads market data. It does **not** place,
+  cancel, close, or adjust real orders, and it does not flip on live trading.
+- **A real-account safety check.** `reconcile` looks at your actual brokerage account(s) and flags
+  anything that isn't flat — a guard against surprises. It's read-only and never trades.
+- **Credentials stay secure.** Your tastytrade login is kept in your OS keyring, and account numbers are
+  always masked (shown as `****1234`) anywhere they appear.
+- **The safety monitor never trades.** The most it will do on its own is restart a stalled data feed —
+  never anything order-related.
+
+---
+
+## Troubleshooting
+
+- **Start with `python run.py doctor`.** It pinpoints most problems (broker not connected, data feed
+  down, a database missing, Dolt not running for earnings).
+- **"Not much is happening."** Outside market hours, or when volatility/credit gates aren't met, the
+  engines correctly sit on their hands — that's normal. Check `status` to confirm the schedule is active.
+- **No alerts arriving?** Run `notify-test`; if desktop/Discord don't show up, re-check the `notify`
+  channels in `config.json` and (for Discord/Slack) that you stored the webhook with `secrets-set`.
+- **Laptop keeps sleeping.** There's a helper, `tools/setup-walkaway-durability.ps1`, to keep a Windows
+  machine awake and running scheduled tasks while you're away.
+
+---
+
+## Disclaimer
+
+For **educational and research purposes only** — **not financial or trading advice.** Options trading
+involves substantial risk of loss; paper results do not reflect real-world performance. See the
+[Disclaimer in the README](../README.md#disclaimer) and the [LICENSE](../LICENSE) for the full terms.
