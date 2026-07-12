@@ -1,3 +1,9 @@
-[submodule "src/_core"]
+[submodule "packages/umbrella/src/_core"]
 	path = packages/umbrella/src/_core
+	url = https://github.com/joncovington/cherrypick-core.git
+[submodule "packages/meic/src/_core"]
+	path = packages/meic/src/_core
+	url = https://github.com/joncovington/cherrypick-core.git
+[submodule "packages/earnings/src/_core"]
+	path = packages/earnings/src/_core
 	url = https://github.com/joncovington/cherrypick-core.git
