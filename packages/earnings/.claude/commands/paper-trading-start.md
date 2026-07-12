@@ -22,7 +22,7 @@ This is a **one-shot analysis**, not the trading loop — it does not check toda
 - `--config [conservative|moderate|aggressive]` — Risk profile (default: moderate)
   - `conservative`: Tier 1 only
   - `moderate` / `aggressive`: Tier 1-2 (rank_strategies.py's `viable` list only ever contains Tier 1/2 — there is no Tier 3 tier to relax into; `aggressive` currently behaves the same as `moderate`)
-- `--date MM/DD/YYYY` — Passed through for the log/report label only. **Does not change which calendar day is scanned** — `rank_strategies.py`'s calendar fetch always pulls today's AMC + tomorrow's BMO. For a different historical date, use `scanner.py get_calendar --date` directly.
+- `--date MM/DD/YYYY` — Passed through for the report label only. **Does not change which calendar day is scanned** — `rank_strategies.py`'s calendar fetch always pulls today's AMC + tomorrow's BMO. For a different historical date, use `scanner.py get_calendar --date` directly.
 
 ## Output
 
