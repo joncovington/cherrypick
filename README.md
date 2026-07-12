@@ -1,57 +1,80 @@
 # cherrypick
 
-**Unattended paper-trading data collection with a walk-away reliability guarantee.**
-cherrypick is the umbrella orchestrator for a trading-tool suite: it drives sibling trading modules on an
-OS schedule for hands-off **paper** data collection, and a watchdog + notifications tell you the moment
-anything stalls. It never places live trades.
+**Test your options strategies on autopilot — without babysitting a screen.**
 
-<!-- Badges: swap the repo owner/name if you fork -->
+cherrypick runs your trading strategies in **paper mode** on a schedule, records every simulated trade,
+and keeps watch so you don't have to. Walk away, and if anything stops working it pings you (desktop,
+Discord, or Slack). Come back whenever you like to see how your strategies would have done — real fills,
+real costs, real market conditions, **none of your real money.**
+
 ![CI](https://img.shields.io/github/actions/workflow/status/joncovington/cherrypick/ci.yml?branch=main)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Status](https://img.shields.io/badge/status-active-brightgreen)
 
 ---
 
+## What it does
+
+- **Trades on paper, automatically.** Two strategy engines come built in:
+  - **MEIC** — 0DTE multiple-entry iron condors on indices/ETFs (SPX, XSP, QQQ, IWM, …).
+  - **Earnings** — defined-risk earnings plays (iron flies, calendars, condors, and more).
+- **Records everything** to a local database so you can review win rate, P&L (net of commissions), and
+  per-profile performance any time.
+- **Watches itself.** A built-in monitor checks that data is flowing during market hours and restarts a
+  stalled data feed on its own — and **alerts you** if something needs attention.
+- **Never touches your live account.** It only ever runs the simulated (paper) engines.
+
 ## Quick Start
 
+> **You'll need:** a [tastytrade](https://tastytrade.com) account, a computer that stays on during market
+> hours (Windows recommended), Python 3.11+, and a few minutes in a terminal.
+
 ```bash
+# 1. Get the project
 git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
 cd cherrypick/packages/umbrella
 pip install -e ".[dev]"
 
-cp config.example.json config.json     # edit module paths + notify channels
-python run.py connect --module meic     # store broker creds + pick the account (OS keyring)
-python run.py doctor                     # green/red readiness check (read-only)
-python run.py install                    # register the unattended schedule (Windows/POSIX)
+# 2. Set your preferences (symbols, strategies, alert channels)
+cp config.example.json config.json     # open in any editor and adjust
+
+# 3. Link your tastytrade account (credentials are stored securely, never in a file)
+python run.py connect --module meic
+
+# 4. Make sure everything's ready
+python run.py doctor                     # a simple green/red checklist
+
+# 5. Turn it on — it now runs on its own, on a schedule
+python run.py install
 ```
 
-Look at collected data anytime: `python run.py report` · live dashboard: `python run.py dashboard --serve`.
+That's it. From here it collects data hands-off. To stop it later: `python run.py uninstall`.
 
-## Key Features
+## Checking your results
 
-- 🤖 **Hands-off paper collection** — drives each module's pipeline on an OS schedule (Task Scheduler / cron).
-- 🛟 **Watchdog reliability guarantee** — health checks, benign auto-restart of a dead streamer, and
-  dedup/re-notify/recovery alerting. Uses only the stdlib + OS shell — **no network/AI on the reliability path**.
-- 🔔 **Notifications** — log · desktop · Slack · Discord, plus a low-latency trade-fill push. Secrets in the OS keyring only.
-- 📊 **Read surfaces** — cross-module P&L (`report`), promotion advisor (`calibrate`), a self-contained
-  status **dashboard** (static + live `--serve` with embedded module dashboards), and a paper↔live
-  isolation guard (`reconcile`).
-- 🩺 **`doctor`** one-shot readiness check · **`connect`/`account`** guided onboarding + live-account selection.
-- 🔒 **Paper↔live isolation** — only ever touches paper engines/DBs; account numbers masked to `****1234`.
+```bash
+python run.py report              # win rate + P&L across strategies and risk profiles
+python run.py dashboard --serve   # a live dashboard in your browser
+python run.py calibrate           # advice on when a risk profile has "earned" a step up
+```
 
-## Tech Stack
+## Staying in the loop
 
-- **Python 3.11+** (stdlib-heavy; tested on 3.13) — monorepo: `packages/{umbrella,meic,earnings}`
-- **cherrypick-core** shared library (git submodule) · **SQLite** paper DBs · **Dolt** (earnings market data)
-- **tastytrade** OAuth broker SDK · **keyring** for all secrets · DXLink streaming
-- **Windows Task Scheduler / POSIX cron** scheduling · stdlib `http.server` dashboard (no web framework)
-- **pytest** · **Ruff** · **GitHub Actions** CI (matrix over all three packages)
+Set your alert channels in `config.json` (`log`, `desktop`, `discord`, `slack`). You'll get a heads-up
+when a new paper trade fills, and a warning if the system ever stalls — so you can walk away with
+confidence. Test it any time with `python run.py notify-test`.
 
-## Documentation
+## Good to know
 
-Full project reference — architecture, setup, config, CLI, testing & deployment — in
-**[`docs/PROJECT.md`](docs/PROJECT.md)**. Per-package guidance lives in each package's `CLAUDE.md`.
+- **Paper by default, always.** cherrypick never places, cancels, or closes a live order on its own.
+- **Your data stays yours.** Trades and credentials live on your machine (credentials in your operating
+  system's secure keyring — never in a plain file).
+- **Set-and-forget.** Once installed, it runs on a schedule and recovers from common hiccups by itself.
+- **Runs on your computer**, not a cloud service — so the machine needs to stay awake during the sessions
+  you want to capture. (There's a helper to keep a laptop from sleeping mid-session.)
+
+📖 **New here?** The [User Guide](docs/PROJECT.md) walks through setup, settings, daily use, and
+troubleshooting in plain language.
 
 ## Disclaimer
 
