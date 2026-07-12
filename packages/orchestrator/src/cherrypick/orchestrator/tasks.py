@@ -270,6 +270,9 @@ def registry_snapshot(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         tn = cfg.get(section, {}).get("task_name")
         if tn:
             out[tn] = query_verbose(tn)
+    ed = cfgmod.eod_digest_settings(cfg)
+    if ed["enabled"]:
+        out[ed["task_name"]] = query_verbose(ed["task_name"])
     return out
 
 

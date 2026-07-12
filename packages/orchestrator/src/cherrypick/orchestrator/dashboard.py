@@ -193,6 +193,28 @@ def _config_summary(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- model
+def _eod_view(cfg: dict[str, Any], modules_cfg: dict[str, Any], tz: str) -> dict[str, Any] | None:
+    """Today's (ET) session roll-up for the EOD card. File-only (report reads paper DBs; the paper-eod
+    pointers are file-existence checks) and best-effort — a hiccup returns None and the card is omitted.
+    Computed live so it stays current between the scheduled digest runs, and without writing a file on
+    every dashboard regen."""
+    try:
+        today = timeutil.now_et(tz).strftime("%Y-%m-%d")
+        rep = report.run(cfg, session=today)
+    except Exception:
+        return None
+    files = {}
+    for name, mcfg in modules_cfg.items():
+        p = cfgmod.module_root(mcfg) / "logs" / f"paper-eod-{today}.md"
+        files[name] = str(p) if p.exists() else None
+    return {
+        "session": today,
+        "suite": rep.get("suite", {}),
+        "modules": {n: rep.get("modules", {}).get(n, {}) for n in modules_cfg},
+        "files": files,
+    }
+
+
 def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     """Assemble the dashboard render model from on-disk state only (no broker/network)."""
     cfg = cfg or cfgmod.load_config()
@@ -266,6 +288,7 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         "notify_channels": cfg.get("notify", {}).get("channels", ["log"]),
         "active_findings": [f for f in findings if str(f.get("status", "")).upper() in ("WARN", "CRITICAL")],
         "suite": pnl.get("suite", {}),
+        "eod": _eod_view(cfg, modules_cfg, tz),
         "modules": module_views,
         "logs": log_entries,
         "tasks": _task_views(cfg),
@@ -342,6 +365,52 @@ def _by_profile_table(by_profile: dict[str, Any]) -> str:
     return (
         '<table class="prof"><thead><tr><th>profile</th><th>net</th><th>trades</th><th>w/l</th>'
         "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    )
+
+
+def _eod_card_html(eod: dict[str, Any] | None) -> str:
+    """Today's cross-module session P&L — the same numbers the scheduled digest writes, shown live.
+    File-only; safe on the static render (no broker touch)."""
+    if not eod:
+        return ""
+    rows = []
+    for name, m in eod.get("modules", {}).items():
+        if not m.get("ok"):
+            rows.append(
+                f"<tr><td>{html.escape(str(name))}</td>"
+                f'<td class="muted" colspan="3">{html.escape(str(m.get("reason", "—")))}</td></tr>'
+            )
+            continue
+        net = m.get("net_pnl") or 0
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(name))}</td>"
+            f'<td style="color:{_color("OK") if net >= 0 else _color("CRITICAL")}">'
+            f"{html.escape(_money(m.get('net_pnl')))}</td>"
+            f"<td>{int(m.get('trades', 0))}</td>"
+            f"<td>{int(m.get('wins', 0))}/{int(m.get('losses', 0))}</td>"
+            "</tr>"
+        )
+    table = (
+        '<table class="prof"><thead><tr><th>module</th><th>net</th><th>trades</th><th>w/l</th>'
+        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+        if rows
+        else '<div class="muted">no enabled modules</div>'
+    )
+    files = eod.get("files", {})
+    file_bits = " · ".join(
+        f"{html.escape(str(n))}: {'report ✓' if f else 'no file yet'}" for n, f in files.items()
+    )
+    files_line = (
+        f'<div class="meta"><span class="muted">module reports — {file_bits}</span></div>' if files else ""
+    )
+    return (
+        '<section class="card"><h2>end of day '
+        f'<span class="muted">{html.escape(str(eod.get("session", "")))}</span></h2>'
+        + _summary_stats(eod.get("suite", {}))
+        + table
+        + files_line
+        + "</section>"
     )
 
 
@@ -768,6 +837,7 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
         + "</div>"
     )
     system_card = _system_card_html(model, serve)
+    eod_card = _eod_card_html(model.get("eod"))
     cards = "".join(_module_card(mv) for mv in model.get("modules", []))
     logs = '<section class="card"><h2>recent logs</h2>' + _log_html(model.get("logs", [])) + "</section>"
     footer = (
@@ -798,6 +868,7 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
         + "</style></head><body><div class='wrap'>"
         + header
         + system_card
+        + eod_card
         + reconcile_card
         + section_cards
         + f'<div class="grid">{cards}</div>'

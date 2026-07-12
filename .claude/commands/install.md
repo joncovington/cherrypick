@@ -16,8 +16,15 @@ Do this:
    - Other WARNs like "streamer not running" or "tasks not registered" are expected before install.
 
 2. **Install**: `python packages/orchestrator/run.py install`. This registers the watchdog, trade-notify,
-   MEIC self-healing paper-loop, earnings entry/exit, and Dolt keep-alive tasks, and starts the streamer.
-   Report per-task ok/fail from its JSON output (`overall ok` + the `installed` map).
+   MEIC self-healing paper-loop, earnings entry/exit, Dolt keep-alive, and the suite **EOD-digest** tasks,
+   and starts the streamer. Report per-task ok/fail from its JSON output (`overall ok` + the `installed`
+   map).
+
+   The **EOD digest** (`cherrypick-eod-digest`, daily ~16:15 box-local) writes
+   `logs/eod-digest-<day>.md` and pushes a one-line net-P&L summary through the notify channels. It is
+   **on by default**. To opt out, set `"eod_digest": {"enabled": false}` in `config.json` before
+   installing (or set it and re-run `uninstall`/`install`); with it disabled, `install` skips the task and
+   `uninstall` still removes any previously-registered one.
 
 3. **Verify**:
    - `python packages/orchestrator/run.py status` — every task **Enabled** with a next-run time.
