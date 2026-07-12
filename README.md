@@ -53,6 +53,23 @@ Look at collected data anytime: `python run.py report` · live dashboard: `pytho
 Full project reference — architecture, setup, config, CLI, testing & deployment — in
 **[`docs/PROJECT.md`](docs/PROJECT.md)**. Per-package guidance lives in each package's `CLAUDE.md`.
 
+## Disclaimer
+
+**For educational and research purposes only.** This software is provided as-is for learning about
+market-data collection, paper-trading workflows, and automation. It is **not financial, investment, or
+trading advice**, and nothing here is a recommendation to buy or sell any security.
+
+- Trading options and other securities involves **substantial risk of loss** and is not suitable for
+  everyone. Paper-trading results do not guarantee — and rarely reflect — real-world performance.
+- The project **defaults to paper trading** and never places live orders on its own. If you enable or
+  extend any live-trading capability, **you do so entirely at your own risk**.
+- The authors and contributors accept **no liability** for any financial loss, data loss, or damages
+  arising from use of this software (see the warranty disclaimer in the [LICENSE](LICENSE)).
+- This project is **independent** and is not affiliated with, endorsed by, or sponsored by tastytrade,
+  DoltHub, or any broker or data provider.
+
+Do your own research and consult a licensed financial professional before making any investment decision.
+
 ## License
 
-[MIT](LICENSE) © joncovington
+[MIT](LICENSE) © 2026 Jon Covington
