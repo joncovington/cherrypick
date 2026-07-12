@@ -11,7 +11,7 @@ You are an autonomous quantitative options trading agent. Your objective is to m
   `src/paper_loop.py` — the same decisions as the agent loop below, in code — so a paper session runs in
   the background like the streamer, with no per-iteration agent. The **cherrypick** umbrella owns its
   lifecycle: it registers the self-healing OS task `cherrypick-meic-paper-loop`, starts the streamer, and
-  watchdogs both. All writes go to `data/paper_trades.db`; the live account and `data/meic_trades.db` are
+  watchdogs both. All writes go to `~/.cherrypick/data/meic/paper_trades.db`; the live account and `~/.cherrypick/data/meic/meic_trades.db` are
   never touched. This is what collects data day to day.
 - **Live / interactive (agent-driven).** The **Loop Steps** below are executed by you, the agent, for
   live trading and manual sessions; live-order tools require `enable_live_trading: true`. cherrypick
@@ -23,8 +23,8 @@ You are an autonomous quantitative options trading agent. Your objective is to m
 
 - **`cherrypick.core.*` lives in the `src/_core` submodule.** Shared logic used here — `cherrypick.core.calendar` (via `get_calendar`) and `cherrypick.core.fees` (via `get_fee_estimate`) — is a git submodule (`.gitmodules` → `cherrypick-core.git`), **not** vendored source. On a fresh clone run `git submodule update --init` first, or every `import cherrypick.core...` fails.
 - **Module files self-bootstrap `src/_core` onto `sys.path`.** `src/credentials.py` and `src/db.py` insert `src/_core` at import time so `import cherrypick.core...` resolves without a pip install (under the loop, tests, and the streamer alike). Those inserts look redundant but are load-bearing — **do not remove them**. Add a symbol's fee by extending `cherrypick.core.fees`, not by hardcoding here.
-- **The cherrypick umbrella drives this repo in place, and the boundary is strict.** It runs this module via subprocess for unattended **paper** collection: it registers/watchdogs the `cherrypick-meic-paper-loop` task and the streamer, and reads `data/paper_trades.db` for cross-module reporting. It **never edits this module's code or config**, only ever invokes the paper engine / paper DB, and **never places, cancels, adjusts, or closes an order and never flips `enable_live_trading`**. Its one live-config action is onboarding (`cherrypick connect`/`account`): it delegates to this module's own credential tool and writes the selected account's `ACCOUNT_NUMBER` into this module's keyring (service = `keyring_service`) — configuration only, never a trade.
-- **Two couplings the umbrella depends on — don't change silently.** (1) The paper DB path (`data/paper_trades.db`) and its `ic_trades` schema: the umbrella reads it through its `"meic_ic"` schema adapter, so renaming the DB or altering that schema breaks cross-module `report`/`calibrate`. (2) `keyring_service` and the live account designation: `connect`/`account`/`reconcile` rely on it.
+- **The cherrypick umbrella drives this repo in place, and the boundary is strict.** It runs this module via subprocess for unattended **paper** collection: it registers/watchdogs the `cherrypick-meic-paper-loop` task and the streamer, and reads `~/.cherrypick/data/meic/paper_trades.db` for cross-module reporting. It **never edits this module's code or config**, only ever invokes the paper engine / paper DB, and **never places, cancels, adjusts, or closes an order and never flips `enable_live_trading`**. Its one live-config action is onboarding (`cherrypick connect`/`account`): it delegates to this module's own credential tool and writes the selected account's `ACCOUNT_NUMBER` into this module's keyring (service = `keyring_service`) — configuration only, never a trade.
+- **Two couplings the umbrella depends on — don't change silently.** (1) The paper DB path (`~/.cherrypick/data/meic/paper_trades.db`, resolved by `src/paths.py` — default `~/.cherrypick/data/meic`, override `MEIC_DATA_DIR`) and its `ic_trades` schema: the umbrella reads it through its `"meic_ic"` schema adapter, so renaming the DB or altering that schema breaks cross-module `report`/`calibrate`. (2) `keyring_service` and the live account designation: `connect`/`account`/`reconcile` rely on it.
 
 ---
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
@@ -44,7 +44,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 
 All tastytrade operations are called via `python src/tt.py <command>`. Commands output JSON to stdout. Credentials are read from the OS keyring (set via `python src/tt.py secrets_set`; check status with `python src/tt.py secrets_status`). Live-order tools require `enable_live_trading: true` in `config.json`.
 
-`get_quote`, `get_option_chain`, and `get_strategies` check `data/stream_cache.db` first (data age < 10s) before opening a live DXLink connection. Start the streamer daemon for near-zero latency on these calls during active trading.
+`get_quote`, `get_option_chain`, and `get_strategies` check `~/.cherrypick/data/meic/stream_cache.db` first (data age < 10s) before opening a live DXLink connection. Start the streamer daemon for near-zero latency on these calls during active trading.
 
 | Command | Purpose | Requires live trading? |
 |---|---|---|
@@ -71,7 +71,7 @@ All tastytrade operations are called via `python src/tt.py <command>`. Commands 
 
 ## DXLink Streamer Daemon
 
-`src/streamer.py` maintains a persistent WebSocket to the DXLink feed and writes Quote, Greeks, and Trade events to `data/stream_cache.db`. Start it alongside the dashboard at session open.
+`src/streamer.py` maintains a persistent WebSocket to the DXLink feed and writes Quote, Greeks, and Trade events to `~/.cherrypick/data/meic/stream_cache.db`. Start it alongside the dashboard at session open.
 
 ```bash
 # Start (foreground — run in a separate terminal or as a background process)
@@ -181,7 +181,7 @@ See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, trade
 
 ## Database
 
-**Database**: `data/meic_trades.db` (SQLite, WAL mode). Three tables: `ic_trades` (one row per IC, primary key `ic_order_id`), `daily_summary` (one row per trading date, keyed on `summary_date`), `loop_log` (append-only iteration log). All reads and writes go through `src/db.py` subcommands — e.g. `python src/db.py save_trade --data '{...}'`.
+**Database**: `~/.cherrypick/data/meic/meic_trades.db` (SQLite, WAL mode) — the data dir lives under the shared cherrypick home, resolved by `src/paths.py` (default `~/.cherrypick/data/meic`; set `MEIC_DATA_DIR` to override, e.g. tests to a tmp path). Three tables: `ic_trades` (one row per IC, primary key `ic_order_id`), `daily_summary` (one row per trading date, keyed on `summary_date`), `loop_log` (append-only iteration log). All reads and writes go through `src/db.py` subcommands — e.g. `python src/db.py save_trade --data '{...}'`.
 
 ---
 
