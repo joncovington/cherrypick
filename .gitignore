@@ -1,0 +1,7 @@
+# Repo-root ignores. Each package under packages/* has its own .gitignore for its runtime files
+# (config.json, data/, logs/, state/, etc.).
+
+# .claude is local-only EXCEPT checked-in slash commands (.claude/commands/).
+# Use .claude/* (not .claude/) so the negation can re-include a subdirectory.
+.claude/*
+!.claude/commands/
