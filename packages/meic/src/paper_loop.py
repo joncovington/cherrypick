@@ -3,8 +3,9 @@
 Runs the parallel-shadow paper engine (src/paper.py) unattended across every configured
 symbol on the live market-hours cadence - the code counterpart to the agent-orchestrated
 .claude/commands/paper-loop.md, so a paper session runs in the background like the streamer
-instead of needing a per-iteration agent invocation. All writes go to data/paper_trades.db;
-the live account and data/meic_trades.db are never touched.
+instead of needing a per-iteration agent invocation. All writes go to paper_trades.db in the
+data home (~/.cherrypick/data/meic by default, see src/paths.py); the live account and
+meic_trades.db are never touched.
 
 Each iteration, for every symbol in config.json's `symbols`:
   - fetches the live underlying price + IV rank, the shared VIX / VIX1D (→ ratio), and GEX,
@@ -46,14 +47,6 @@ except ImportError:
         return datetime.now(UTC)
 
 _ROOT = Path(__file__).resolve().parent.parent
-_PID_FILE = _ROOT / "data" / "paper_loop.pid"
-_LOCK_FILE = _ROOT / "data" / "paper_loop.once.lock"
-_LOG_FILE = _ROOT / "logs" / "paper_loop.log"
-_TASK_NAME = "cherrypick-meic-paper-loop"
-_PAPER_DB = str(_ROOT / "data" / "paper_trades.db")
-_CONFIG_PATH = _ROOT / "config.json"
-_TT = [sys.executable, str(_ROOT / "src" / "tt.py")]
-_DB = [sys.executable, str(_ROOT / "src" / "db.py"), "--db", _PAPER_DB]
 
 sys.path.insert(0, str(_ROOT / "src"))
 # Bootstrap the cherrypick-core submodule (src/_core) onto sys.path *before* importing cherrypick.core
@@ -62,7 +55,18 @@ sys.path.insert(0, str(_ROOT / "src"))
 _CORE = str(_ROOT / "src" / "_core")
 if os.path.isdir(_CORE) and _CORE not in sys.path:
     sys.path.insert(0, _CORE)
+import paths as _paths  # noqa: E402  (data-home resolution: ~/.cherrypick/data/meic or MEIC_DATA_DIR)
 from cherrypick.core import calendar as _cal  # noqa: E402  (shared NYSE trading-day calendar)
+
+# Runtime data (DB, PID, lock) lives in the data home; config + logs stay in the package.
+_PID_FILE = _paths.data_path("paper_loop.pid")
+_LOCK_FILE = _paths.data_path("paper_loop.once.lock")
+_LOG_FILE = _ROOT / "logs" / "paper_loop.log"
+_TASK_NAME = "cherrypick-meic-paper-loop"
+_PAPER_DB = str(_paths.paper_db_path())
+_CONFIG_PATH = _ROOT / "config.json"
+_TT = [sys.executable, str(_ROOT / "src" / "tt.py")]
+_DB = [sys.executable, str(_ROOT / "src" / "db.py"), "--db", _PAPER_DB]
 
 import paper  # noqa: E402  (also bootstraps src/_core onto sys.path for cherrypick.core)
 

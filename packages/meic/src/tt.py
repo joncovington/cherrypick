@@ -45,6 +45,7 @@ from cherrypick.core import dxfeed as _dx
 
 import credentials as _creds
 import gex_math
+import paths as _paths
 from session import get_session
 
 # ---------------------------------------------------------------------------
@@ -135,7 +136,7 @@ def _live_trading_enabled() -> bool:
 # Stream cache helpers
 # ---------------------------------------------------------------------------
 
-_CACHE_DB = Path(__file__).parent.parent / "data" / "stream_cache.db"
+_CACHE_DB = _paths.stream_cache_path()
 _CACHE_MAX_AGE = 10.0  # seconds; older data falls back to live DXLink call
 # Greeks update far less often than Quotes/Trades on the DXLink feed (server recalculates
 # on a slower cadence, not tick-by-tick) — a 10s window means every strike is "stale" by

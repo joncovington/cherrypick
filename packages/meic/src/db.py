@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
+import paths as _paths
 from cherrypick.core import db as _db
 from cherrypick.core import profiles as _profiles
 
@@ -28,9 +29,9 @@ except ImportError:
     def _today_et():
         return datetime.now(UTC).strftime("%Y-%m-%d")
 
-_DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "meic_trades.db")
+_DEFAULT_DB_PATH = str(_paths.live_db_path())  # ~/.cherrypick/data/meic/meic_trades.db (or MEIC_DATA_DIR)
 # MEIC_DB_PATH lets the paper-trading engine (src/paper.py) and its skills point every
-# db.py subcommand at data/paper_trades.db instead, without duplicating this module.
+# db.py subcommand at paper_trades.db instead, without duplicating this module.
 _DB_PATH = os.environ.get("MEIC_DB_PATH") or _DEFAULT_DB_PATH
 
 
@@ -775,8 +776,8 @@ def main():
     parser = argparse.ArgumentParser(description="MEICAgent DB helper")
     parser.add_argument("--db", default=None,
                          help="Override the database path (defaults to MEIC_DB_PATH env var, "
-                              "then data/meic_trades.db). Used by the paper-trading engine to "
-                              "point at data/paper_trades.db.")
+                              "then the data home's meic_trades.db). Used by the paper-trading "
+                              "engine to point at paper_trades.db.")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("init_db")

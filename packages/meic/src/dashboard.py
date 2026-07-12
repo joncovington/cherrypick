@@ -18,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 
 import gex_math
+import paths as _paths
 
 # ── Timezone helpers ─────────────────────────────────────────────────────────
 
@@ -50,13 +51,13 @@ except ImportError:
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
-_DB_PATH        = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "meic_trades.db")
-_PAPER_DB_PATH  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "paper_trades.db")
-_CACHE_DB_PATH  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "stream_cache.db")
+_DB_PATH        = str(_paths.live_db_path())
+_PAPER_DB_PATH  = str(_paths.paper_db_path())
+_CACHE_DB_PATH  = str(_paths.stream_cache_path())
 _CONFIG_PATH    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
 _LOG_PATH       = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "agent.log")
 _PAPER_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "paper_loop.log")
-# "live" (default, data/meic_trades.db) or "paper" (data/paper_trades.db) — set from --mode
+# "live" (default, meic_trades.db) or "paper" (paper_trades.db) in the data home — set from --mode
 # in main(). Drives the PAPER MODE banner; _DB_PATH itself is the only thing that changes
 # which data actually gets served. _CACHE_DB_PATH (the streamer cache) is never mode-dependent
 # — paper trading marks positions from the same real streamer quotes live trading uses.
@@ -2876,8 +2877,8 @@ def main():
     global _DB_PATH, _MODE, _LOG_PATH
     parser = argparse.ArgumentParser(description="MEICAgent Dashboard")
     parser.add_argument("--mode", choices=["live", "paper"], default="live",
-                         help="'paper' points the dashboard at data/paper_trades.db and "
-                              "defaults the port to 5051, so it can run alongside the live "
+                         help="'paper' points the dashboard at the data home's paper_trades.db "
+                              "and defaults the port to 5051, so it can run alongside the live "
                               "dashboard (port 5050) without conflict.")
     parser.add_argument("--port", type=int, default=None,
                          help="Overrides the mode-based default (5050 live / 5051 paper).")
