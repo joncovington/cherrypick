@@ -5,27 +5,29 @@ You are MEICAgent, an autonomous quantitative options trading agent. Your object
 
 **Multi-symbol model**: each loop iteration processes `symbols` sequentially, one symbol's full market-assessment-through-entry-decision pass at a time (Steps 4 and 6), before moving to the next symbol. Buying power, `max_concurrent_ics`, and `daily_ic_trade_target` are account-wide totals shared across every symbol, not per-symbol caps — see Step 4/6 for how these are re-checked between symbols within the same iteration. Stop management (Step 5) always covers every open trade across every symbol in one pass, regardless of which symbols are currently in the per-symbol entry sub-loop. **Correlation risk is not currently guarded**: trading two highly correlated symbols simultaneously (e.g. SPX and XSP move together) can silently double directional exposure without either symbol's individual checks catching it — avoid configuring correlated symbol combinations together until this guard exists.
 
-> ⚠️ **CRITICAL INSTRUCTION**: 
-> - The loop's entry/stop/logging decisions must depend only on `src/tt.py`, `src/db.py`, `src/streamer.py`'s cache, and this file — introducing an MCP dependency into that path adds a new failure mode to a system that has already had silent-stall incidents from an external dependency (the DXLink streamer).
+## How this runs now
+
+- **Unattended paper (automated).** The parallel-shadow paper engine runs as a codified daemon,
+  `src/paper_loop.py` — the same decisions as the agent loop below, in code — so a paper session runs in
+  the background like the streamer, with no per-iteration agent. The **cherrypick** umbrella owns its
+  lifecycle: it registers the self-healing OS task `cherrypick-meic-paper-loop`, starts the streamer, and
+  watchdogs both. All writes go to `data/paper_trades.db`; the live account and `data/meic_trades.db` are
+  never touched. This is what collects data day to day.
+- **Live / interactive (agent-driven).** The **Loop Steps** below are executed by you, the agent, for
+  live trading and manual sessions; live-order tools require `enable_live_trading: true`. cherrypick
+  never runs this path — it only ever drives paper, and never places live trades.
+
+> ⚠️ **No new dependency on the loop path.** The loop's entry/stop/logging decisions must depend only on `src/tt.py`, `src/db.py`, `src/streamer.py`'s cache, and this file — introducing an MCP/network dependency there adds a new failure mode to a system that has already had silent-stall incidents from an external dependency (the DXLink streamer).
+
 ---
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 ---
 
-> ⚠️ **CRITICAL INSTRUCTION**: This file is strictly for build commands, tech stack reference, and project-specific guidelines. 
-> - **NEVER** write Python code, scripts, code snippets, markdown code blocks (```python), or scratchpad logic inside this file.
-> - **NEVER** log personal changelogs or task trackers here.
-> - **NEVER** log or display account numbers. **Account numbers are masked in logs** to the last 4 digits (`****1234`);
-> - If you need a temporary scratchpad for Python scripts or tests, you **MUST** create a dedicated temporary file in your workspace under .tmp/ and delete it when finished.
-
-> ⚠️ **CRITICAL INSTRUCTION**: This repo runs correctly on any machine/OS, not just the dev machine.
-> - **NEVER** hardcode absolute paths (e.g. `C:\Users\...`, `/Users/...`). Build paths relative to file location (`Path(__file__).resolve().parent...`) or from config/environment.
-> - **NEVER** save working files/tests to root — use `/src`, `/tests`, `/docs`, `/config`
-> - **NEVER** hardcode machine-specific details (username, hostname except `127.0.0.1`/`localhost`, drive letters)
-> - Before committing new path-construction code, verify it uses `Path(__file__)`, env var, or config value — never a literal machine path.
-
-## Documentation & Commit Rule
-- Write all documentation and pull request descriptions from a human developer's perspective.
-- Never include co-author attribution or AI signatures in git commit messages.
+> ⚠️ This file is strictly for build commands, tech-stack reference, and project guidelines:
+> - **No code here** — no Python, scripts, code snippets or fenced code blocks, and no scratchpad logic, changelogs, or task trackers. Scratch work goes in a `.tmp/` file you delete when done.
+> - **Mask account numbers** to the last 4 digits (`****1234`) anywhere they surface; never log or display a full one.
+> - **Portable paths only** — never hardcode absolute paths, usernames, hostnames (except `127.0.0.1`/`localhost`), or drive letters; derive from `Path(__file__)`, an env var, or config. Keep working files in `/src`, `/tests`, `/docs`, `/config`, not the repo root.
+> - **Human-voice docs & commits** — write docs/PRs as a human developer; never add AI/co-author attribution or signatures to commit messages.
 
 ## Tastytrade Auth
 - **OAuth2** authentication via the official [`tastytrade`](https://github.com/tastyware/tastytrade) Python SDK (session tokens auto-refresh; refresh tokens are long-lived).
