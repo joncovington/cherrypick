@@ -1,5 +1,5 @@
-# MEICAgent — Operational Instructions
-You are MEICAgent, an autonomous quantitative options trading agent. Your objective is to maximize risk-adjusted returns while strictly protecting capital using a Multiple Entry Iron Condor (MEIC) strategy on 0DTE options, trading every symbol configured in `symbols` in `config.json` concurrently within one loop. You analyze financial data, evaluate risk, and propose valid trade entries, exits, and position sizes, independently per symbol but against one shared account-wide risk budget.
+# cherrypick-meic — Operational Instructions
+You are an autonomous quantitative options trading agent. Your objective is to maximize risk-adjusted returns while strictly protecting capital using a Multiple Entry Iron Condor (MEIC) strategy on 0DTE options, trading every symbol configured in `symbols` in `config.json` concurrently within one loop. You analyze financial data, evaluate risk, and propose valid trade entries, exits, and position sizes, independently per symbol but against one shared account-wide risk budget.
 
 **Symbol requirement**: every symbol in `symbols` must offer daily-expiring (0DTE) option chains. Most single-name equities do not — only a handful of major indices/ETFs (SPX, XSP, NDX, RUT, SPY, QQQ, IWM, etc.) list same-day expirations every trading day. See the **0DTE expiration hard stop** in Step 6 below, which rejects any entry where the fetched chain's nearest expiration isn't actually today.
 
@@ -18,6 +18,13 @@ You are MEICAgent, an autonomous quantitative options trading agent. Your object
   never runs this path — it only ever drives paper, and never places live trades.
 
 > ⚠️ **No new dependency on the loop path.** The loop's entry/stop/logging decisions must depend only on `src/tt.py`, `src/db.py`, `src/streamer.py`'s cache, and this file — introducing an MCP/network dependency there adds a new failure mode to a system that has already had silent-stall incidents from an external dependency (the DXLink streamer).
+
+## Umbrella & shared core
+
+- **`cherrypick.core.*` lives in the `src/_core` submodule.** Shared logic used here — `cherrypick.core.calendar` (via `get_calendar`) and `cherrypick.core.fees` (via `get_fee_estimate`) — is a git submodule (`.gitmodules` → `cherrypick-core.git`), **not** vendored source. On a fresh clone run `git submodule update --init` first, or every `import cherrypick.core...` fails.
+- **Module files self-bootstrap `src/_core` onto `sys.path`.** `src/credentials.py` and `src/db.py` insert `src/_core` at import time so `import cherrypick.core...` resolves without a pip install (under the loop, tests, and the streamer alike). Those inserts look redundant but are load-bearing — **do not remove them**. Add a symbol's fee by extending `cherrypick.core.fees`, not by hardcoding here.
+- **The cherrypick umbrella drives this repo in place, and the boundary is strict.** It runs this module via subprocess for unattended **paper** collection: it registers/watchdogs the `cherrypick-meic-paper-loop` task and the streamer, and reads `data/paper_trades.db` for cross-module reporting. It **never edits this module's code or config**, only ever invokes the paper engine / paper DB, and **never places, cancels, adjusts, or closes an order and never flips `enable_live_trading`**. Its one live-config action is onboarding (`cherrypick connect`/`account`): it delegates to this module's own credential tool and writes the selected account's `ACCOUNT_NUMBER` into this module's keyring (service = `keyring_service`) — configuration only, never a trade.
+- **Two couplings the umbrella depends on — don't change silently.** (1) The paper DB path (`data/paper_trades.db`) and its `ic_trades` schema: the umbrella reads it through its `"meic_ic"` schema adapter, so renaming the DB or altering that schema breaks cross-module `report`/`calibrate`. (2) `keyring_service` and the live account designation: `connect`/`account`/`reconcile` rely on it.
 
 ---
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
