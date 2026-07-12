@@ -72,7 +72,10 @@ def _ensure_dolt_running():
 
     print("Starting dolt SQL server...", file=sys.stderr)
     try:
-        subprocess.Popen(["dolt", "sql-server"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # CREATE_NO_WINDOW (0 off-Windows): don't flash a console window when launched from a
+        # windowless parent (e.g. the scheduled paper runs). dolt is a console app.
+        subprocess.Popen(["dolt", "sql-server"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         time.sleep(2)
         return True
     except Exception as e:
