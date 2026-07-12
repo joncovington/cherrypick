@@ -15,8 +15,8 @@ Do this:
 1. **Remove the scheduled tasks** (idempotent):
    `python packages/orchestrator/run.py uninstall`
    Confirm from its JSON that the `cherrypick-*` tasks were removed (watchdog, trade-notify, meic
-   paper-loop, earnings entry/exit, Dolt keep-alive). Note: this command intentionally leaves running
-   services alone — that's why the next step exists.
+   paper-loop, earnings entry/exit, Dolt keep-alive, eod-digest). Note: this command intentionally leaves
+   running services alone — that's why the next step exists.
 
 2. **Stop the running services cleanly** (each is best-effort — "not running" is a fine result):
    - **Streamer** (meic DXLink data feed): `python packages/meic/src/streamer.py --stop`

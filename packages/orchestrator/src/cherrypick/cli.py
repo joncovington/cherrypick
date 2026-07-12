@@ -18,6 +18,8 @@ Subcommands:
                        --eod (today ET) or --date YYYY-MM-DD restricts to one session; default all-time.
   eod-digest           Write the suite end-of-day digest (logs/eod-digest-<day>.md): one session's
                        cross-module P&L + links to each module's paper-eod file. --date; default today.
+  notify-eod           Write the digest and push a one-line summary through the notify channels (the
+                       scheduled cherrypick-eod-digest task runs this). --date; default today.
   reconcile            Paper↔live isolation guard: query the real broker account (read-only) and flag
                        any open positions/BP a paper-only suite shouldn't have. On-demand; never trades.
   connect              Guided per-module onboarding (--module): set OAuth creds (via the module's own
@@ -200,6 +202,14 @@ def cmd_install(cfg) -> None:
             tn["task_name"], tn_tr, tn.get("interval_minutes", 2)
         )
 
+    # suite end-of-day digest: writes the roll-up + pushes a summary once per afternoon. ON by
+    # default (opt out with "eod_digest": {"enabled": false}); the default name/time mean a config
+    # predating the feature still gets it scheduled here.
+    ed = cfgmod.eod_digest_settings(cfg)
+    if ed["enabled"]:
+        ed_tr = tasks.build_tr(pyw, str(_LAUNCHER), "notify-eod")
+        results["eod_digest_task"] = tasks.create_daily_task(ed["task_name"], ed_tr, ed["at"])
+
     _emit({"ok": all(v.get("ok", True) for v in results.values()), "installed": results})
 
 
@@ -244,6 +254,9 @@ def cmd_uninstall(cfg) -> None:
         results["watchdog_task"] = tasks.delete(cfg["watchdog"]["task_name"])
     if cfg.get("trade_notify", {}).get("task_name"):
         results["trade_notify_task"] = tasks.delete(cfg["trade_notify"]["task_name"])
+    # Always attempt the digest task by its resolved name (idempotent) so opting out *after* an
+    # install still removes a previously-registered task.
+    results["eod_digest_task"] = tasks.delete(cfgmod.eod_digest_settings(cfg)["task_name"])
     _emit({"ok": True, "removed": results, "note": "streamer (if running) left untouched"})
 
 
@@ -490,6 +503,23 @@ def cmd_eod_digest(cfg, args) -> None:
     _emit(eod_digest.run(cfg, day=day))
 
 
+def cmd_notify_eod(cfg, args) -> None:
+    """Write the suite EOD digest, then push a one-line summary through the notify channels. This is
+    what the scheduled `cherrypick-eod-digest` task runs. The digest write and the push are both
+    best-effort: a notify hiccup never fails the file write."""
+    day = args.date or (timeutil.now_et().strftime("%Y-%m-%d"))
+    res = eod_digest.run(cfg, day=day)
+    suite = res.get("suite", {})
+    net = suite.get("net_pnl")
+    money = "-" if net is None else (f"-${abs(net):,.2f}" if net < 0 else f"${net:,.2f}")
+    message = (
+        f"Paper suite {day}: {suite.get('trades', 0)} trades closed, net {money}, "
+        f"{suite.get('wins', 0)}W/{suite.get('losses', 0)}L. Digest: {res.get('digest')}"
+    )
+    channels = Notifier(cfg.get("notify")).notify("INFO", f"eod_{day}", f"EOD digest {day}", message)
+    _emit({"ok": True, "session": day, "digest": res.get("digest"), "suite": suite, "channels": channels})
+
+
 def cmd_dashboard(cfg, args) -> None:
     """One-shot static render (default), or a localhost live server with --serve.
 
@@ -557,6 +587,7 @@ def main() -> None:
             "watchdog",
             "report",
             "eod-digest",
+            "notify-eod",
             "reconcile",
             "connect",
             "account",
@@ -627,6 +658,7 @@ def main() -> None:
         "watchdog": lambda: cmd_watchdog(cfg),
         "report": lambda: cmd_report(cfg, args),
         "eod-digest": lambda: cmd_eod_digest(cfg, args),
+        "notify-eod": lambda: cmd_notify_eod(cfg, args),
         "reconcile": lambda: cmd_reconcile(cfg),
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),

@@ -119,10 +119,15 @@ turn it back on any time.
 
 | Command | What you get |
 |---|---|
-| `python run.py report` | Win rate and P&L (net of commissions) across strategies and risk profiles. |
-| `python run.py dashboard --serve` | A live dashboard in your browser: overall status, per-strategy P&L, recent activity, and health checks. |
+| `python run.py report` | Win rate and P&L (net of commissions) across strategies and risk profiles. Add `--eod` (today) or `--date YYYY-MM-DD` for one day. |
+| `python run.py eod-digest` | An end-of-day write-up for one session across both tools, saved to `logs/eod-digest-<day>.md`. Runs automatically each afternoon (see below) — you rarely need to run it by hand. |
+| `python run.py dashboard --serve` | A live dashboard in your browser: overall status, per-strategy P&L, an end-of-day card, recent activity, and health checks. |
 | `python run.py dashboard` | The same as a single self-contained web page you can open or share. |
 | `python run.py calibrate` | Advice on whether a risk profile has collected enough good results to consider stepping up (advisory only — it never changes anything). |
+
+The end-of-day digest is **scheduled automatically when you install** and sends you a one-line summary
+each afternoon. If you'd rather not get it, set `"eod_digest": {"enabled": false}` in `config.json` and
+re-run install (or uninstall).
 
 ---
 

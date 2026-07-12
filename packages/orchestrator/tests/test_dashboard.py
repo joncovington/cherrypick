@@ -236,6 +236,7 @@ def test_build_model_includes_system_panel(env, monkeypatch):
         "cherrypick-meic-paper-loop",
         "cherrypick-watchdog",
         "cherrypick-trade-notify",
+        "cherrypick-eod-digest",  # on by default (opt out via eod_digest.enabled=false)
     }
     assert all(t["exists"] is False for t in m["tasks"])  # none registered in the test env
 
@@ -316,3 +317,25 @@ def test_build_model_survives_missing_state(tmp_path, monkeypatch):
     assert m["overall"] == "UNKNOWN"
     assert m["et_clock"]  # live ET fallback populated
     assert "<html" in dashboard._render_html(m)
+
+
+def test_build_model_includes_eod_session_card(env, monkeypatch):
+    # Pin "today" (ET) to the MEIC session date seeded in the fixture so the EOD card has data.
+    from datetime import datetime, timedelta, timezone
+
+    from cherrypick.orchestrator import timeutil
+
+    monkeypatch.setattr(
+        timeutil,
+        "now_et",
+        lambda tz=None: datetime(2026, 7, 10, 20, 0, 0, tzinfo=timezone(timedelta(hours=-4))),
+    )
+    _, cfg = env
+    m = dashboard.build_model(cfg)
+    eod = m["eod"]
+    assert eod["session"] == "2026-07-10"
+    # Only the MEIC +95 win settled on 2026-07-10; the earnings 1.7e9 close is a different day.
+    assert eod["suite"]["trades"] == 1
+    assert eod["modules"]["meic"]["net_pnl"] == 95.0
+    out = dashboard._render_html(m)
+    assert "end of day" in out and "2026-07-10" in out

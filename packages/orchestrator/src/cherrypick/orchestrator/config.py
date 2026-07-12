@@ -117,6 +117,19 @@ def enabled_modules(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {name: mcfg for name, mcfg in cfg.get("modules", {}).items() if mcfg.get("enabled", False)}
 
 
+def eod_digest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved suite end-of-day-digest scheduling. ON by default (opt out with
+    `"eod_digest": {"enabled": false}`), with a default task name and daily time — so a config
+    predating the feature still gets the digest scheduled at `install`. The time is the box's local
+    clock (assumed ET, like the modules' entry_time/exit_time)."""
+    ed = cfg.get("eod_digest", {}) or {}
+    return {
+        "enabled": ed.get("enabled", True),
+        "task_name": ed.get("task_name", "cherrypick-eod-digest"),
+        "at": ed.get("at", "16:15"),
+    }
+
+
 def python_exe() -> str:
     """The interpreter to run module scripts with (same env as cherrypick)."""
     return sys.executable

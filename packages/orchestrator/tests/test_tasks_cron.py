@@ -42,9 +42,16 @@ def test_registry_snapshot_collects_every_declared_task(monkeypatch):
         "cherrypick-earnings-dolt",
         "cherrypick-watchdog",
         "cherrypick-trade-notify",
+        "cherrypick-eod-digest",  # on by default even without an eod_digest section
     }
     assert snap["cherrypick-earnings-paper-entry"]["exists"] is False
     assert "should-not-appear" not in seen
+
+
+def test_registry_snapshot_omits_eod_digest_when_opted_out(monkeypatch):
+    monkeypatch.setattr(tasks, "query_verbose", lambda name: {"exists": True})
+    cfg = {"modules": {}, "eod_digest": {"enabled": False}}
+    assert "cherrypick-eod-digest" not in tasks.registry_snapshot(cfg)
 
 
 def test_allow_on_battery_noop_on_posix(monkeypatch):

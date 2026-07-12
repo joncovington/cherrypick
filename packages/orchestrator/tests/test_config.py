@@ -57,3 +57,15 @@ def test_default_root_uses_repo_root_in_source_checkout(monkeypatch):
     monkeypatch.delenv("CHERRYPICK_HOME", raising=False)
     root = c._default_root()
     assert (root / "run.py").exists() or (root / "pyproject.toml").exists()
+
+
+def test_eod_digest_settings_default_on():
+    # A config with no eod_digest section still schedules the digest (on by default) at defaults.
+    s = c.eod_digest_settings({"modules": {}})
+    assert s == {"enabled": True, "task_name": "cherrypick-eod-digest", "at": "16:15"}
+
+
+def test_eod_digest_settings_opt_out_and_overrides():
+    assert c.eod_digest_settings({"eod_digest": {"enabled": False}})["enabled"] is False
+    s = c.eod_digest_settings({"eod_digest": {"task_name": "my-eod", "at": "17:00"}})
+    assert s["enabled"] is True and s["task_name"] == "my-eod" and s["at"] == "17:00"

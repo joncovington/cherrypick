@@ -132,6 +132,12 @@
     "task_name": "cherrypick-trade-notify",
     "interval_minutes": 2
   },
+  "eod_digest": {
+    "_comment": "Suite end-of-day digest. Once per afternoon a scheduled task writes logs/eod-digest-<day>.md (one session's cross-module paper P&L, net of costs, plus a pointer to each module's own paper-eod file) and pushes a one-line summary through your notify channels. ON by default and registered by `install`. To OPT OUT set enabled=false, then re-run `install` (it will skip the task) or `uninstall` (it removes any previously-registered one). 'at' is the box's local clock (assumed ET, like the modules' entry_time/exit_time); 16:15 lands just after MEIC's 16:00 settlement so both modules' files exist. Read-only over the paper DBs; off the watchdog reliability path.",
+    "enabled": true,
+    "task_name": "cherrypick-eod-digest",
+    "at": "16:15"
+  },
   "reconcile": {
     "_comment": "`cherrypick reconcile` (and the serve-only /api/reconcile dashboard card): a paper<->live isolation guard. It enumerates EVERY account on the login (list_accounts - tastytrade returns multiple per user) and checks each (read-only get_positions/get_account_info), flagging any open positions/BP a paper-only suite shouldn't have. On-demand and off the watchdog reliability path; never trades; account numbers masked. Optional 'broker_module' forces which module's tt.py to query; omit to auto-discover the first positions-capable one.",
     "broker_module": null
