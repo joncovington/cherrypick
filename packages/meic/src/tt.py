@@ -30,7 +30,6 @@ import sqlite3
 import sys
 import time
 from datetime import date, datetime
-from pathlib import Path
 from typing import Any
 
 # Allow running as `python src/tt.py` from any working directory, and make the cherrypick-core
@@ -54,8 +53,8 @@ from session import get_session
 # fallback (see _try_streamer_http) would otherwise be invisible across
 # iterations. Append warnings to a file so degraded-mode calls are auditable.
 # ---------------------------------------------------------------------------
-_LOG_FILE = Path(__file__).parent.parent / "logs" / "tt.log"
-_LOG_FILE.parent.mkdir(exist_ok=True)
+_LOG_FILE = _paths.log_path("tt.log")
+_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     logger.setLevel(logging.WARNING)

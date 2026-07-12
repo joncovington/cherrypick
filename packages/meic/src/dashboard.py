@@ -55,8 +55,8 @@ _DB_PATH        = str(_paths.live_db_path())
 _PAPER_DB_PATH  = str(_paths.paper_db_path())
 _CACHE_DB_PATH  = str(_paths.stream_cache_path())
 _CONFIG_PATH    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
-_LOG_PATH       = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "agent.log")
-_PAPER_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "paper_loop.log")
+_LOG_PATH       = str(_paths.log_path("agent.log"))
+_PAPER_LOG_PATH = str(_paths.log_path("paper_loop.log"))
 # "live" (default, meic_trades.db) or "paper" (paper_trades.db) in the data home — set from --mode
 # in main(). Drives the PAPER MODE banner; _DB_PATH itself is the only thing that changes
 # which data actually gets served. _CACHE_DB_PATH (the streamer cache) is never mode-dependent

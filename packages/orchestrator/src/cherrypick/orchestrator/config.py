@@ -121,6 +121,16 @@ def paper_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path:
     return (module_root(module_cfg, name) / p).resolve()
 
 
+def module_logs_dir(name: str) -> Path:
+    """A module's logs home: `LOGS_DIR/<name>` (e.g. ~/.cherrypick/logs/meic) — the location the module's
+    own `paths.logs_dir()` writes to by the shared convention. Used to find each module's log tails and
+    the per-module `paper-eod-<day>.md` files the EOD digest links to. Both sides derive it the same way
+    from the (CHERRYPICK_HOME-aware) logs home, so they agree without the orchestrator importing the
+    module. A module-private override (MEIC_LOGS_DIR/EARNINGS_LOGS_DIR) is a test/machine escape hatch
+    only; in normal operation the convention holds."""
+    return LOGS_DIR / name
+
+
 def enabled_modules(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Return {name: module_cfg} for modules with enabled=true."""
     return {name: mcfg for name, mcfg in cfg.get("modules", {}).items() if mcfg.get("enabled", False)}

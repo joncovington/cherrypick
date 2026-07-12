@@ -166,7 +166,10 @@ The easiest way to watch the log live is the **Logs tab** in the dashboard — t
 
 To tail from the terminal instead:
 
+Logs live in the **logs home** — `~/.cherrypick/logs/meic/` by default (override with `MEIC_LOGS_DIR`, or
+`CHERRYPICK_HOME` for the whole suite):
+
 ```bash
-Get-Content logs/agent.log -Wait -Tail 20   # PowerShell
-tail -f logs/agent.log                       # bash
+Get-Content ~/.cherrypick/logs/meic/agent.log -Wait -Tail 20   # PowerShell
+tail -f ~/.cherrypick/logs/meic/agent.log                      # bash
 ```

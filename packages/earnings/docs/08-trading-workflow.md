@@ -121,7 +121,7 @@ greeks — but they still hit the same unconditional close-window backstop as a 
 ## End of Day
 
 The forced-sampling close pass (`run_closes`, driven by the orchestrator's 09:45 ET exit task)
-writes a deterministic end-of-day report automatically to `logs/paper-eod-<date>.md` — an
+writes a deterministic end-of-day report automatically to `~/.cherrypick/logs/earnings/paper-eod-<date>.md` — an
 account-wide net-P&L summary plus per-profile, per-strategy, and per-symbol breakdowns, all net of
 costs. Regenerate today's or backfill a past day on demand:
 

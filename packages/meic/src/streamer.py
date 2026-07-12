@@ -47,10 +47,10 @@ if os.path.isdir(_CORE) and _CORE not in sys.path:
 
 _ET = pytz.timezone("America/New_York")
 
-import paths as _paths  # noqa: E402
 from cherrypick.core import streamcache  # noqa: E402
 from cherrypick.core.streamer import ChainStreamer  # noqa: E402
 
+import paths as _paths  # noqa: E402
 from session import get_session  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -60,16 +60,16 @@ from session import get_session  # noqa: E402
 _ROOT = Path(__file__).parent.parent
 _CACHE_DB  = _paths.stream_cache_path()      # ~/.cherrypick/data/meic/ (or MEIC_DATA_DIR)
 _PID_FILE  = _paths.data_path("streamer.pid")
-_CONFIG    = _ROOT / "config.json"           # config + logs stay in the package, not the data home
+_CONFIG    = _ROOT / "config.json"           # config stays in the package; logs live in the logs home
 _TRADES_DB = _paths.live_db_path()
-_LOG_FILE  = _ROOT / "logs" / "streamer.log"
+_LOG_FILE  = _paths.log_path("streamer.log")
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 
 def _setup_logging() -> None:
-    (_ROOT / "logs").mkdir(exist_ok=True)
+    _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
     root = logging.getLogger()
     root.setLevel(logging.INFO)
