@@ -62,7 +62,7 @@ from cherrypick.orchestrator import (
     watchdog,
 )
 from cherrypick.orchestrator import config as cfgmod
-from cherrypick.orchestrator.util import first_json
+from cherrypick.orchestrator.util import CREATE_NO_WINDOW, first_json
 
 # The OS scheduler invokes the in-place launcher `pythonw <repo>/run.py <cmd>`. This module is
 # <repo>/src/cherrypick/cli.py, so the repo-root launcher is two parents up. (Renamed from
@@ -115,11 +115,15 @@ def _ensure_module_checkout(name: str, mcfg: dict) -> dict:
     if mcfg.get("ref"):
         argv += ["--branch", str(mcfg["ref"])]
     argv += [str(repo), str(root)]
-    r = subprocess.run(argv, capture_output=True, text=True)
+    r = subprocess.run(argv, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
     if r.returncode != 0:
         return {"ok": False, "detail": f"git clone failed: {(r.stderr or r.stdout).strip()[:200]}"}
     sm = subprocess.run(
-        ["git", "submodule", "update", "--init"], cwd=str(root), capture_output=True, text=True
+        ["git", "submodule", "update", "--init"],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        creationflags=CREATE_NO_WINDOW,
     )
     note = "" if sm.returncode == 0 else f"; submodule init warn: {(sm.stderr or '').strip()[:120]}"
     return {"ok": True, "detail": f"cloned to {root}{note}"}

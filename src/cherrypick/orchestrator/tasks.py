@@ -18,6 +18,8 @@ import os
 import subprocess
 from typing import Any
 
+from .util import CREATE_NO_WINDOW
+
 _IS_WINDOWS = os.name == "nt"
 
 
@@ -112,7 +114,12 @@ def _cron_create(name: str, schedule: str, command: str) -> dict[str, Any]:
 # =========================================================================== public API (dispatches)
 def exists(name: str) -> bool:
     if _IS_WINDOWS:
-        r = subprocess.run(["schtasks", "/Query", "/TN", name], capture_output=True, text=True)
+        r = subprocess.run(
+            ["schtasks", "/Query", "/TN", name],
+            capture_output=True,
+            text=True,
+            creationflags=CREATE_NO_WINDOW,
+        )
         return r.returncode == 0
     return _cron_has(_crontab_read(), name)
 
@@ -126,7 +133,10 @@ def query_verbose(name: str) -> dict[str, Any]:
         line = next((ln for ln in _crontab_read().splitlines() if ln.rstrip().endswith(marker)), "")
         return {"exists": True, "backend": "cron", "schedule": " ".join(line.split()[:5])}
     r = subprocess.run(
-        ["schtasks", "/Query", "/TN", name, "/V", "/FO", "LIST"], capture_output=True, text=True
+        ["schtasks", "/Query", "/TN", name, "/V", "/FO", "LIST"],
+        capture_output=True,
+        text=True,
+        creationflags=CREATE_NO_WINDOW,
     )
     fields: dict[str, Any] = {"exists": True}
     for line in (r.stdout or "").splitlines():
@@ -158,6 +168,7 @@ def allow_on_battery(name: str) -> dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=30,
+            creationflags=CREATE_NO_WINDOW,
         )
         return {"ok": r.returncode == 0, "detail": (r.stderr.strip()[:200] or "battery guards cleared")}
     except OSError as exc:
@@ -187,12 +198,18 @@ def create_minute_task(name: str, tr: str, interval_minutes: int, run_now: bool 
         ],
         capture_output=True,
         text=True,
+        creationflags=CREATE_NO_WINDOW,
     )
     ok = r.returncode == 0
     if ok:
         allow_on_battery(name)
         if run_now:
-            subprocess.run(["schtasks", "/Run", "/TN", name], capture_output=True, text=True)
+            subprocess.run(
+                ["schtasks", "/Run", "/TN", name],
+                capture_output=True,
+                text=True,
+                creationflags=CREATE_NO_WINDOW,
+            )
     return {"ok": ok, "task": name, "detail": (r.stdout or r.stderr).strip()}
 
 
@@ -203,6 +220,7 @@ def create_daily_task(name: str, tr: str, at_hhmm: str) -> dict[str, Any]:
         ["schtasks", "/Create", "/TN", name, "/TR", tr, "/SC", "DAILY", "/ST", at_hhmm, "/F", "/IT"],
         capture_output=True,
         text=True,
+        creationflags=CREATE_NO_WINDOW,
     )
     ok = r.returncode == 0
     if ok:
@@ -225,7 +243,9 @@ def run_now(name: str) -> dict[str, Any]:
             return {"ok": False, "detail": f"no cron entry for {name}"}
         _run_command(cmd)
         return {"ok": True, "detail": "launched"}
-    r = subprocess.run(["schtasks", "/Run", "/TN", name], capture_output=True, text=True)
+    r = subprocess.run(
+        ["schtasks", "/Run", "/TN", name], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
+    )
     return {"ok": r.returncode == 0, "detail": (r.stdout or r.stderr).strip()}
 
 
@@ -257,6 +277,13 @@ def delete(name: str) -> dict[str, Any]:
     if not _IS_WINDOWS:
         ok, detail = _crontab_write(_cron_remove(_crontab_read(), name))
         return {"ok": ok, "detail": detail or f"cron: removed {name}"}
-    subprocess.run(["schtasks", "/End", "/TN", name], capture_output=True, text=True)
-    r = subprocess.run(["schtasks", "/Delete", "/TN", name, "/F"], capture_output=True, text=True)
+    subprocess.run(
+        ["schtasks", "/End", "/TN", name], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
+    )
+    r = subprocess.run(
+        ["schtasks", "/Delete", "/TN", name, "/F"],
+        capture_output=True,
+        text=True,
+        creationflags=CREATE_NO_WINDOW,
+    )
     return {"ok": r.returncode == 0, "detail": (r.stdout or r.stderr).strip()}

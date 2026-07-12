@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
+
+# Windows: launch a *console* child (schtasks, git, dolt, …) without popping a console window when the
+# parent is windowless (pythonw, as the scheduled tasks run). Pass as `subprocess.run(..., creationflags=
+# CREATE_NO_WINDOW)`. 0 elsewhere (the subprocess default), so the same call is cross-platform-safe.
+CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
 def first_json(text: str | None) -> dict[str, Any]:
