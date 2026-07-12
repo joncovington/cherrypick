@@ -1,0 +1,340 @@
+"""SQLite persistence for EarningsAgent's real (non-paper) trades.
+
+Schema is strategy-agnostic: `trades.strategy` identifies which strategy
+opened a position (e.g. "iron_fly"), and `legs_json` holds that
+strategy's actual order legs verbatim, so a future strategy with a
+different leg count/shape needs no schema change. `short_strike`/
+`long_call_strike`/`long_put_strike` remain as convenience columns
+specific to symmetric-wing strategies like iron fly -- left NULL for
+strategies that don't have that shape.
+
+Commands (see CLAUDE.md's Database section):
+  init_db
+  get_open_positions
+  save_trade --data '{"order_id": "...", "strategy": "iron_fly", "symbol": "...",
+      "expiration": "YYYY-MM-DD", "short_strike": F, "long_call_strike": F,
+      "long_put_strike": F, "legs_json": "...", "entry_credit": F}'
+  save_close --data '{"order_id": "...", "exit_debit": F, "pnl": F}'
+  get_open_legs --order_id X
+  save_leg_close --data '{"order_id": "...", "leg_role": "...", "close_price": F}'
+  log_scan --data '{"scan_date": "YYYY-MM-DD", "symbol": "...", "strategy": "iron_fly",
+      "tier": "...", "outcome": "...", "reason": "..."}'
+
+`legs` (optional array on save_trade, each `{leg_role, symbol, action, quantity}`) is for
+strategies with independently-closeable legs (e.g. double_calendar's threatened-side close)
+-- iron fly never passes it, so it never gets `trade_legs` rows. A trade's `trades.closed_at`
+stays NULL until every one of its legs is closed via save_leg_close and save_close is called
+for the position as a whole.
+
+`profile`/`quantity`/`capital_at_risk`/`entry_cost`/`exit_cost`/`entry_context`/`entry_iv`/
+`exit_iv` exist for schema parity with db_paper.py's paper-mode profile testing (see
+docs/paper-trading-profiles.md) -- live trading doesn't select a profile today, so these
+default to 'default'/NULL, but the two databases' `trades`/`scan_log` tables never drift
+apart as a result.
+"""
+
+import argparse
+import json
+import os
+import sqlite3
+import sys
+import time
+from pathlib import Path
+
+# Make the cherrypick-core submodule (src/_core) importable before the cherrypick.core import below,
+# mirroring credentials.py's bootstrap so this module works even when imported before credentials.
+sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
+
+from cherrypick.core import db as _db
+
+DB_PATH = Path(__file__).resolve().parent.parent / "data" / "earnings_trades.db"
+
+_DDL = """
+CREATE TABLE IF NOT EXISTS trades (
+    order_id        TEXT PRIMARY KEY,
+    strategy        TEXT NOT NULL DEFAULT 'iron_fly',
+    symbol          TEXT NOT NULL,
+    expiration      TEXT NOT NULL,
+    short_strike    REAL,
+    long_call_strike REAL,
+    long_put_strike REAL,
+    legs_json       TEXT,
+    entry_credit    REAL,
+    exit_debit      REAL,
+    pnl             REAL,
+    opened_at       REAL,
+    closed_at       REAL,
+    profile         TEXT NOT NULL DEFAULT 'default',
+    quantity        INTEGER,
+    capital_at_risk REAL,
+    entry_cost      REAL,
+    exit_cost       REAL,
+    entry_context   TEXT,
+    entry_iv        REAL,
+    exit_iv         REAL
+);
+
+CREATE TABLE IF NOT EXISTS trade_legs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    TEXT NOT NULL,
+    leg_role    TEXT NOT NULL,
+    symbol      TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    quantity    INTEGER NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'open',
+    close_price REAL,
+    closed_at   REAL,
+    UNIQUE(order_id, leg_role)
+);
+
+CREATE TABLE IF NOT EXISTS scan_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_date   TEXT NOT NULL,
+    strategy    TEXT NOT NULL DEFAULT 'iron_fly',
+    symbol      TEXT NOT NULL,
+    tier        TEXT,
+    outcome     TEXT,
+    reason      TEXT,
+    logged_at   REAL,
+    profile     TEXT NOT NULL DEFAULT 'default'
+);
+
+CREATE TABLE IF NOT EXISTS daily_summary (
+    summary_date    TEXT PRIMARY KEY,
+    positions_opened INTEGER,
+    positions_closed INTEGER,
+    net_pnl        REAL
+);
+"""
+
+# Schema-parity migration with db_paper.py (see that module's own _MIGRATIONS docstring) --
+# kept identical so the two databases' trades/scan_log tables never drift apart, even though
+# live trading doesn't use named profiles/sizing/cost attribution today.
+_MIGRATIONS = [
+    ("trades", "profile", "ALTER TABLE trades ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+    ("trades", "quantity", "ALTER TABLE trades ADD COLUMN quantity INTEGER"),
+    ("trades", "capital_at_risk", "ALTER TABLE trades ADD COLUMN capital_at_risk REAL"),
+    ("trades", "entry_cost", "ALTER TABLE trades ADD COLUMN entry_cost REAL"),
+    ("trades", "exit_cost", "ALTER TABLE trades ADD COLUMN exit_cost REAL"),
+    ("trades", "entry_context", "ALTER TABLE trades ADD COLUMN entry_context TEXT"),
+    ("trades", "entry_iv", "ALTER TABLE trades ADD COLUMN entry_iv REAL"),
+    ("trades", "exit_iv", "ALTER TABLE trades ADD COLUMN exit_iv REAL"),
+    ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+]
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    _db.apply_additive_migrations(conn, _MIGRATIONS)
+
+
+def _conn() -> sqlite3.Connection:
+    conn = _db.connect(DB_PATH)  # mkdir parent + row_factory=Row (see cherrypick.core.db)
+    conn.executescript(_DDL)
+    _migrate(conn)
+    return conn
+
+
+def cmd_init_db(args) -> dict:
+    conn = _conn()
+    conn.executescript(_DDL)
+    conn.commit()
+    conn.close()
+    return {"ok": True, "db_path": str(DB_PATH)}
+
+
+def cmd_get_open_positions(args) -> dict:
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM trades WHERE closed_at IS NULL ORDER BY opened_at"
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"ok": True, "positions": [dict(r) for r in rows]}
+
+
+def cmd_save_trade(args) -> dict:
+    spec = json.loads(args.data)
+    required = ("order_id", "symbol", "expiration")
+    missing = [k for k in required if not spec.get(k)]
+    if missing:
+        return {"ok": False, "error": f"missing required field(s): {', '.join(missing)}"}
+
+    entry_context = spec.get("entry_context")
+    conn = _conn()
+    try:
+        conn.execute(
+            "INSERT INTO trades "
+            "(order_id, strategy, symbol, expiration, short_strike, long_call_strike, "
+            " long_put_strike, legs_json, entry_credit, opened_at, profile, quantity, "
+            " capital_at_risk, entry_cost, entry_context, entry_iv) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                spec["order_id"],
+                spec.get("strategy", "iron_fly"),
+                spec["symbol"],
+                spec["expiration"],
+                spec.get("short_strike"),
+                spec.get("long_call_strike"),
+                spec.get("long_put_strike"),
+                spec.get("legs_json"),
+                spec.get("entry_credit"),
+                spec.get("opened_at", time.time()),
+                spec.get("profile", "default"),
+                spec.get("quantity"),
+                spec.get("capital_at_risk"),
+                spec.get("entry_cost"),
+                json.dumps(entry_context) if entry_context is not None else None,
+                spec.get("entry_iv"),
+            ),
+        )
+        for leg in spec.get("legs", []):
+            conn.execute(
+                "INSERT INTO trade_legs (order_id, leg_role, symbol, action, quantity) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (spec["order_id"], leg["leg_role"], leg["symbol"], leg["action"], leg["quantity"]),
+            )
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        return {"ok": False, "error": f"save_trade failed: {exc}"}
+    finally:
+        conn.close()
+    return {"ok": True, "order_id": spec["order_id"]}
+
+
+def cmd_get_open_legs(args) -> dict:
+    order_id = args.order_id
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM trade_legs WHERE order_id = ? AND status = 'open' ORDER BY leg_role",
+            (order_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"ok": True, "order_id": order_id, "legs": [dict(r) for r in rows]}
+
+
+def cmd_save_leg_close(args) -> dict:
+    spec = json.loads(args.data)
+    required = ("order_id", "leg_role")
+    missing = [k for k in required if not spec.get(k)]
+    if missing:
+        return {"ok": False, "error": f"missing required field(s): {', '.join(missing)}"}
+
+    conn = _conn()
+    try:
+        cur = conn.execute(
+            "UPDATE trade_legs SET status = 'closed', close_price = ?, closed_at = ? "
+            "WHERE order_id = ? AND leg_role = ? AND status = 'open'",
+            (
+                spec.get("close_price"),
+                spec.get("closed_at", time.time()),
+                spec["order_id"],
+                spec["leg_role"],
+            ),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"ok": False, "error": f"no open leg found for order_id={spec['order_id']} leg_role={spec['leg_role']}"}
+    finally:
+        conn.close()
+    return {"ok": True, "order_id": spec["order_id"], "leg_role": spec["leg_role"]}
+
+
+def cmd_save_close(args) -> dict:
+    spec = json.loads(args.data)
+    order_id = spec.get("order_id")
+    if not order_id:
+        return {"ok": False, "error": "missing required field: order_id"}
+
+    conn = _conn()
+    try:
+        cur = conn.execute(
+            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, exit_iv = ? "
+            "WHERE order_id = ?",
+            (
+                spec.get("exit_debit"),
+                spec.get("pnl"),
+                spec.get("closed_at", time.time()),
+                spec.get("exit_cost"),
+                spec.get("exit_iv"),
+                order_id,
+            ),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"ok": False, "error": f"no open trade found for order_id {order_id}"}
+    finally:
+        conn.close()
+    return {"ok": True, "order_id": order_id}
+
+
+def cmd_log_scan(args) -> dict:
+    spec = json.loads(args.data)
+    required = ("scan_date", "symbol")
+    missing = [k for k in required if not spec.get(k)]
+    if missing:
+        return {"ok": False, "error": f"missing required field(s): {', '.join(missing)}"}
+
+    conn = _conn()
+    try:
+        conn.execute(
+            "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, logged_at, profile) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                spec["scan_date"],
+                spec.get("strategy", "iron_fly"),
+                spec["symbol"],
+                spec.get("tier"),
+                spec.get("outcome"),
+                spec.get("reason"),
+                spec.get("logged_at", time.time()),
+                spec.get("profile", "default"),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("init_db")
+    sub.add_parser("get_open_positions")
+
+    p_save_trade = sub.add_parser("save_trade")
+    p_save_trade.add_argument("--data", required=True)
+
+    p_save_close = sub.add_parser("save_close")
+    p_save_close.add_argument("--data", required=True)
+
+    p_get_open_legs = sub.add_parser("get_open_legs")
+    p_get_open_legs.add_argument("--order_id", required=True)
+
+    p_save_leg_close = sub.add_parser("save_leg_close")
+    p_save_leg_close.add_argument("--data", required=True)
+
+    p_log_scan = sub.add_parser("log_scan")
+    p_log_scan.add_argument("--data", required=True)
+
+    args = parser.parse_args()
+    dispatch = {
+        "init_db": cmd_init_db,
+        "get_open_positions": cmd_get_open_positions,
+        "save_trade": cmd_save_trade,
+        "save_close": cmd_save_close,
+        "get_open_legs": cmd_get_open_legs,
+        "save_leg_close": cmd_save_leg_close,
+        "log_scan": cmd_log_scan,
+    }
+    result = dispatch[args.command](args)
+    json.dump(result, sys.stdout, default=str)
+
+
+if __name__ == "__main__":
+    main()
