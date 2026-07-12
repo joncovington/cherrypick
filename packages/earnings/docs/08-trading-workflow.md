@@ -20,7 +20,6 @@ what you're trying to accomplish:
 | `/paper-start` | Forced-sampling strategy test — opens every Tier 1/2 candidate for every strategy (not just each symbol's best) into an isolated `profile='strat_test'` paper book, then closes them the next morning. Use this daily while you're still building a track record for each strategy. |
 | `/paper-trading-start` | One-shot production-ranking analysis — runs `rank_strategies.py get_ranked_symbols` and shows what the real loop would pick tonight, without opening anything. Good for a quick look at tonight's candidates without committing to a full cycle. |
 | `/earnings-start` | The actual continuous trading loop (paper or live, depending on `enable_live_trading`) — runs through a full entry window and the next morning's close window, following `CLAUDE.md`'s Loop Steps. |
-| `/paper-trading-eod-report` | End-of-day report on today's candidates, decisions, and tomorrow's exit plan. |
 
 Everything below walks through what's actually happening underneath these commands, in case you
 want to run the pieces by hand or understand what a slash command is doing on your behalf.
@@ -121,14 +120,17 @@ greeks — but they still hit the same unconditional close-window backstop as a 
 
 ## End of Day
 
+The forced-sampling close pass (`run_closes`, driven by the orchestrator's 09:45 ET exit task)
+writes a deterministic end-of-day report automatically to `logs/paper-eod-<date>.md` — an
+account-wide net-P&L summary plus per-profile, per-strategy, and per-symbol breakdowns, all net of
+costs. Regenerate today's or backfill a past day on demand:
+
 ```
-/paper-trading-eod-report
+python src/strategy_test_runner.py eod_report [--date YYYY-MM-DD]
 ```
 
-Summarizes today's candidates, what was opened (if anything), and tomorrow's exit plan. If
-you're running `/paper-start`'s forced-sampling program instead, its own daily cycle already
-reports opens and closes as it runs — see the command's own output rather than a separate
-report step.
+For accumulated (multi-day) results across the whole sample, use `python src/strategy_report.py`
+or the HTML `python src/strategy_dashboard.py` instead.
 
 To check accumulated results across many days:
 

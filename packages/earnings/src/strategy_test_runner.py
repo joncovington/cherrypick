@@ -53,6 +53,8 @@ import os
 import sys
 import time
 from datetime import date as _date
+from datetime import datetime
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -61,6 +63,7 @@ import db_paper
 import rank_strategies
 import scanner
 import sizing
+import strategy_metrics as metrics
 from strategies import (
     atm_calendar,
     broken_wing_butterfly,
@@ -164,6 +167,127 @@ def _entry_context(criteria: dict, composite_score) -> dict:
         "winrate": criteria.get("winrate"),
         "composite_score": composite_score,
     }
+
+
+# ---------------------------------------------------------------------------
+# Deterministic end-of-day paper report
+# ---------------------------------------------------------------------------
+
+def _logs_dir() -> Path:
+    """Package-local logs dir (logs/ stays in the checkout, not the data home -- see paths.py)."""
+    d = Path(__file__).resolve().parent.parent / "logs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _eod_report_path(day: str) -> Path:
+    return _logs_dir() / f"paper-eod-{day}.md"
+
+
+def _money(x) -> str:
+    if x is None:
+        return "-"
+    return f"-${abs(x):,.2f}" if x < 0 else f"${x:,.2f}"
+
+
+def _close_session(trade: dict) -> str:
+    """Trading-session date (ISO) an earnings trade belongs to = its close date. Earnings
+    positions open one afternoon and close the next morning, so closed_at (not opened_at) is
+    the settlement session -- the same rule the orchestrator's report.py applies, so this
+    module's daily file and the suite roll-up never disagree about a trade's day."""
+    try:
+        return _date.fromtimestamp(float(trade["closed_at"])).isoformat()
+    except (TypeError, ValueError, OSError, OverflowError, KeyError):
+        return ""
+
+
+def _group_stats(trades: list[dict]) -> dict:
+    """Win/loss/net/expectancy/profit-factor over a trade list, all net of costs
+    (metrics.net_pnl subtracts entry+exit cost) -- the same numbers strategy_report.py reports."""
+    n = len(trades)
+    net = sum(metrics.net_pnl(t) for t in trades)
+    wins = sum(1 for t in trades if metrics.net_pnl(t) > 0)
+    return {
+        "trades": n,
+        "wins": wins,
+        "losses": n - wins,
+        "win_rate": metrics.win_rate(trades),
+        "net_pnl": net,
+        "expectancy": metrics.expectancy(trades),
+        "profit_factor": metrics.profit_factor(trades),
+    }
+
+
+def _group_by(trades: list[dict], key: str) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = {}
+    for t in trades:
+        out.setdefault(t.get(key) or "?", []).append(t)
+    return out
+
+
+def _write_eod_report(day: str) -> Path:
+    """Write a deterministic end-of-day paper report for `day` to logs/paper-eod-<day>.md and
+    return the path. Code-generated (no agent) so the scheduled close pass can write it
+    unattended, mirroring the MEIC paper loop's settlement-time report. Scoped to trades whose
+    close session (see _close_session) is `day`. Reads the shared paper_trades.db through
+    strategy_metrics, so it can never disagree with strategy_report.py on the same data."""
+    trades = [t for t in metrics.load_closed_trades() if _close_session(t) == day]
+
+    overall = _group_stats(trades)
+    by_symbol: dict[str, float] = {}
+    for t in trades:
+        by_symbol[t["symbol"]] = by_symbol.get(t["symbol"], 0.0) + metrics.net_pnl(t)
+
+    wr = f"{overall['win_rate'] * 100:.0f}%" if overall["win_rate"] is not None else "-"
+
+    L = [f"# Earnings Paper Trading - EOD Report {day}", ""]
+    L.append("_Deterministic forced-sampling paper book (strat_test). Defined-risk strategies only; "
+             "each position opens once before a close and closes once after the next open. Scoped to "
+             "trades that settled (closed) this session; P&L is net of entry+exit costs._")
+    L.append("")
+    L.append("## Account-wide (all profiles)")
+    L.append(f"- Trades closed: **{overall['trades']}**")
+    L.append(f"- Net P&L (net of costs): **{_money(round(overall['net_pnl'], 2))}**")
+    L.append(f"- Wins / Losses: {overall['wins']} / {overall['losses']} (win rate {wr})")
+    if by_symbol:
+        L.append("- By symbol: " + ", ".join(
+            f"{s} {_money(round(v, 2))}" for s, v in sorted(by_symbol.items())))
+    L.append("")
+
+    def _table(heading: str, col_label: str, groups: dict[str, list[dict]]) -> None:
+        L.append(f"## {heading}")
+        L.append(f"| {col_label} | Trades | Wins | Losses | Win % | Net P&L | Expectancy | Profit Factor |")
+        L.append("|---|---|---|---|---|---|---|---|")
+        if not groups:
+            L.append("| _(none)_ | 0 | - | - | - | $0.00 | - | - |")
+        for name, grp in sorted(groups.items()):
+            s = _group_stats(grp)
+            gwr = f"{s['win_rate'] * 100:.0f}%" if s["win_rate"] is not None else "-"
+            pf = "inf" if s["profit_factor"] == float("inf") else (
+                f"{s['profit_factor']:.2f}" if s["profit_factor"] is not None else "-")
+            exp = _money(round(s["expectancy"], 2)) if s["expectancy"] is not None else "-"
+            L.append(f"| {name} | {s['trades']} | {s['wins']} | {s['losses']} | {gwr} | "
+                     f"{_money(round(s['net_pnl'], 2))} | {exp} | {pf} |")
+        L.append("")
+
+    _table("Per profile", "Profile", _group_by(trades, "profile"))
+    _table("Per strategy", "Strategy", _group_by(trades, "strategy"))
+
+    if not trades:
+        L.append("_No trades closed this session - flat day._")
+        L.append("")
+    L.append(f"_Generated {datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')} "
+             "· paper DB only; live account untouched._")
+
+    path = _eod_report_path(day)
+    path.write_text("\n".join(L), encoding="utf-8")
+    return path
+
+
+def cmd_eod_report(args) -> dict:
+    day = args.date or _date.today().isoformat()
+    path = _write_eod_report(day)
+    return {"ok": True, "date": day, "report": str(path)}
 
 
 def cmd_run_entries(args) -> dict:
@@ -333,6 +457,17 @@ def cmd_run_closes(args) -> dict:
             # must not lose every other open position's already-accumulated closes.
             skipped.append({"order_id": order_id, "reason": f"unexpected_error: {exc}"})
 
+    # Once-per-day EOD report, written on the settlement (close) pass -- mirrors the MEIC paper
+    # loop. Best-effort with a file-exists guard: a report failure must never fail the close
+    # result the scheduled exit task depends on, and a manual re-run of run_closes won't clobber
+    # an existing file (regenerate on demand with the eod_report subcommand instead).
+    today = _date.today().isoformat()
+    if not _eod_report_path(today).exists():
+        try:
+            _write_eod_report(today)
+        except Exception:
+            pass
+
     return {"ok": True, "closed": closed, "skipped": skipped}
 
 
@@ -347,10 +482,14 @@ def main() -> None:
     p_closes = sub.add_parser("run_closes")
     p_closes.add_argument("--profile", default="balanced")
 
+    p_eod = sub.add_parser("eod_report")
+    p_eod.add_argument("--date", default=None, help="Close-session day (YYYY-MM-DD); default today")
+
     args = parser.parse_args()
     dispatch = {
         "run_entries": cmd_run_entries,
         "run_closes": cmd_run_closes,
+        "eod_report": cmd_eod_report,
     }
     result = dispatch[args.command](args)
     json.dump(result, sys.stdout, default=str)

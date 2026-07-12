@@ -15,7 +15,7 @@ dolt-data/
 # Agent logs and EOD reports
 logs/*.log
 logs/eod-*.md
-logs/paper/
+logs/paper-*.md
 
 # Generated strategy testing dashboard/reports
 reports/
