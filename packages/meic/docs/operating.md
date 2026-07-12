@@ -26,7 +26,7 @@ To start components individually instead:
 
 ## Starting the loop
 
-Launch Claude Code from the MEICAgent folder (run `claude` in this directory), then start the loop **before 9:30 ET**:
+Launch Claude Code from this package's folder (`packages/meic` — run `claude` in this directory), then start the loop **before 9:30 ET**:
 
 ```
 /loop
@@ -64,6 +64,8 @@ For a multi-day, profile-by-profile performance write-up (equity curves, risk-ad
 ```
 
 On non-Windows hosts, run `python src/paper_loop.py` in a terminal or wire a cron job to `--once`. See [paper-trading.md](paper-trading.md) for the engine design, fee model, historical-replay accelerator, and graduation criteria.
+
+> **Inside the suite:** you don't have to manage this task yourself. The [orchestrator](../../orchestrator) registers and watchdogs the same `cherrypick-meic-paper-loop` task (via `cherrypick install`), restarts a stalled streamer, sends notifications, and adds the cross-module read side (`cherrypick report` / `dashboard` / `calibrate`). It drives this module by subprocess only — it never places live orders or edits this config. Running `/paper-start` here is the standalone equivalent, minus the watchdog and notifications.
 
 ---
 

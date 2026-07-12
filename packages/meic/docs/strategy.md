@@ -1,6 +1,6 @@
 # Strategy Overview
 
-MEICAgent runs a **Multiple Entry Iron Condor (MEIC)** strategy on 0DTE options. Rather than placing a single IC at the open, it evaluates market conditions on each loop iteration and enters additional ICs throughout the day when conditions are favorable.
+The `cherrypick-meic` module runs a **Multiple Entry Iron Condor (MEIC)** strategy on 0DTE options. Rather than placing a single IC at the open, it evaluates market conditions on each loop iteration and enters additional ICs throughout the day when conditions are favorable.
 
 ---
 

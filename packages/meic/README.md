@@ -1,6 +1,15 @@
-# MEICAgent
+# cherrypick-meic
+
+> **The MEIC module of the [cherrypick](../../README.md) suite.** cherrypick is a monorepo of trading modules
+> driven by a shared **orchestrator** orchestrator. This package (`packages/meic`) is the 0DTE iron-condor engine;
+> its siblings are [`packages/earnings`](../earnings) (overnight earnings plays) and
+> [`packages/orchestrator`](../orchestrator) (the orchestrator). It can run standalone from this folder for live /
+> interactive trading, or unattended for paper collection — where the orchestrator drives it by subprocess
+> (`cherrypick install`), never by import. See [How this fits the suite](#how-this-fits-the-suite) below.
 
 An autonomous options trading agent running the **Multiple Entry Iron Condor (MEIC)** strategy on 0DTE index options. Rather than a traditional rules-only trading-bot framework, the agent itself runs the decision loop every few minutes during market hours, reading live market data, checking a stack of risk gates, and deciding whether to enter, hold, or close positions. It runs inside **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** (Anthropic's CLI coding assistant), which executes the operating instructions in `CLAUDE.md` and the skills in `.claude/commands/`. It talks to tastytrade directly via their official Python SDK (OAuth2, no middleman broker API). Live trading is gated behind an explicit config flag and defaults to dry-run.
+
+Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`** library, vendored per package as the `src/_core` git submodule — so a fresh clone must pull submodules (`--recurse-submodules`, or `git submodule update --init --recursive`) before any `import cherrypick.core...` resolves.
 
 **New in this release:** a full **paper-trading system** that shadow-trades all four risk profiles against live quotes with zero capital, a dedicated paper dashboard, an unattended self-healing daemon, corrected MEIC exit rules (cash-settled positions are now left to expire, not force-closed), and automated end-of-day reports. See [What's new](#whats-new).
 
@@ -17,15 +26,16 @@ An autonomous options trading agent running the **Multiple Entry Iron Condor (ME
 - **macOS** — open **Terminal** (Applications → Utilities), or install Git via `xcode-select --install`.
 - **Linux** — open your terminal; install Git with your package manager (e.g. `sudo apt install git`).
 
-Then download this project and move into its folder:
+Then download the suite (with its shared-core submodules) and move into this package's folder:
 
 ```bash
-# 1. Download ("clone") the project, then move into the folder it creates
-git clone https://github.com/joncovington/MEICAgent.git
-cd MEICAgent
+# 1. Clone the cherrypick monorepo — --recurse-submodules pulls the shared cherrypick.core (src/_core)
+git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
+cd cherrypick/packages/meic
+# Already cloned without submodules? Run this once: git submodule update --init --recursive
 ```
 
-Every command below is run from inside that `MEICAgent` folder. On macOS/Linux, if `python`/`pip` aren't found, use `python3`/`pip3` instead.
+Every command below is run from inside `packages/meic`. On macOS/Linux, if `python`/`pip` aren't found, use `python3`/`pip3` instead.
 
 ```bash
 # 2. Install dependencies (tastytrade, keyring, pytz, flask from pyproject.toml)
@@ -65,6 +75,29 @@ Launches the market-data streamer, the paper dashboard at `http://localhost:5051
 Launches the streamer, the live dashboard at `http://localhost:5050`, and the agent loop.
 
 See [docs/setup.md](docs/setup.md) for the full walkthrough and [docs/paper-trading.md](docs/paper-trading.md) for the paper-trading design and graduation criteria.
+
+---
+
+## How this fits the suite
+
+This package is self-contained — everything below works from `packages/meic` on its own. Inside the
+cherrypick suite it plays two roles:
+
+- **Live / interactive (this package, standalone).** You drive the agent loop and the `/`-commands here,
+  in this folder. This is the only path that can place live orders, and only when you set
+  `enable_live_trading: true`. The orchestrator never touches it.
+- **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator) package registers and
+  watchdogs the self-healing OS task `cherrypick-meic-paper-loop`, which runs this module's
+  `src/paper_loop.py` on a schedule for hands-off paper collection, and reads the resulting
+  `data/paper_trades.db` for cross-module reporting. The orchestrator drives this module **by subprocess only** —
+  it never edits this code or config, never places or cancels an order, and never flips
+  `enable_live_trading`. Its one live-config action is onboarding (`cherrypick connect`), which delegates to
+  this module's own credential tool.
+
+You can run the paper daemon here directly too (`/paper-start`); letting the orchestrator manage it just adds
+the watchdog, notifications, and the cross-module read side (`cherrypick report` / `dashboard` /
+`calibrate`). The shared `cherrypick.core` code (calendar, fees) lives in the `src/_core` submodule — see
+[Orchestrator & shared core](CLAUDE.md#orchestrator--shared-core) in `CLAUDE.md` for the exact couplings.
 
 ---
 
@@ -157,63 +190,73 @@ Everything runs locally against your own tastytrade account — no cloud depende
 - [Setup](docs/setup.md) — installation, configuration, database init, going live
 - [Operating](docs/operating.md) — starting the loop, status, dashboard, EOD report, logs
 - [Strategy](docs/strategy.md) — MEIC structure, wing width selection, stops, exit rules, EOD settlement handling
+- [Entry gates](GATES.md) — the full entry-gate stack in evaluation order
 - [Paper trading](docs/paper-trading.md) — the parallel-shadow engine, fee model, historical replay, graduation gate, known limitations
 - [Risk Profiles](docs/risk-profiles.md) — trade-off tiers for entry-gate thresholds, when to switch, full rationale
+- [`CLAUDE.md`](CLAUDE.md) — the agent's operating instructions (loop steps, config reference, guardrails)
+
+**Suite-level:** [cherrypick README](../../README.md) · [suite user guide](../../docs/PROJECT.md) · [orchestrator](../orchestrator)
 
 ---
 
 ## Project structure
 
+This package lives at `packages/meic/` inside the [cherrypick](../../README.md) monorepo:
+
 ```
-MEICAgent/
-├── CLAUDE.md                        # Agent operational brain (loaded every loop iteration)
-├── config.example.json              # Config template — copy to config.json
-├── config.risk.json                 # Risk-profile presets (conservative → very-aggressive)
-├── src/
-│   ├── tt.py                        # tastytrade CLI — get_quote, get_strategies, execute_trade, etc.
-│   ├── streamer.py                  # Persistent DXLink streaming daemon (live quotes/greeks/OI/volume)
-│   ├── session.py                   # OAuth2 session management
-│   ├── credentials.py               # OS-keyring credential storage
-│   ├── db.py                        # SQLite CLI helper (live + paper databases)
-│   ├── notify.py                    # Structured log CLI helper
-│   ├── paper.py                     # Deterministic parallel-shadow paper engine (all 4 profiles)
-│   ├── paper_loop.py                # Unattended paper daemon / scheduled-task runner + EOD report
-│   ├── paper_replay.py              # SPX historical-replay mode (0DTESPX data)
-│   └── dashboard.py                 # Local browser dashboard (--mode live|paper)
-├── docs/
-│   ├── setup.md                     # Installation and configuration
-│   ├── operating.md                 # Running and monitoring the agent
-│   ├── strategy.md                  # MEIC strategy details and exit rules
-│   ├── paper-trading.md             # Paper-trading engine, fee model, graduation gate
-│   └── risk-profiles.md             # Entry-gate threshold presets and when to use each
-├── .claude/
-│   ├── settings.json                # Permissions and MCP environment overrides
-│   └── commands/
-│       ├── meic-start.md            # /meic-start — launch full live session
-│       ├── paper-start.md           # /paper-start — launch full paper session
-│       ├── setup.md                 # /setup — credentials and initial config
-│       ├── set-risk-profile.md      # /set-risk-profile — switch entry-gate preset
-│       ├── daily-check.md           # Daily broker-connection check (Step 3 of the loop)
-│       ├── execute-entry.md         # Entry execution (Step 7 of the loop)
-│       ├── stop-management.md       # Per-side stop management (Step 5 of the loop)
-│       ├── dashboard.md             # /dashboard — live dashboard (port 5050)
-│       ├── paper-dashboard.md       # /paper-dashboard — paper dashboard (port 5051)
-│       ├── paper-loop.md            # /paper-loop — one paper iteration
-│       ├── eod-report.md            # /eod-report — live and/or paper EOD report
-│       ├── paper-report.md          # /paper-report — multi-day profile comparison
-│       ├── meic-status.md           # /meic-status — quick session status
-│       └── check-chain.md           # /check-chain — verify chain and strike selection
-├── data/                            # Created at first run (gitignored)
-│   ├── meic_trades.db               # Live trade history, loop log, daily summaries
-│   ├── paper_trades.db              # Paper trade history (all four profiles)
-│   └── stream_cache.db              # Live streamer cache (quotes/greeks/OI/volume/GEX history)
-└── logs/                            # Created at first run (gitignored; all rotated)
-    ├── agent.log                    # Agent session log
-    ├── streamer.log                 # Streamer daemon log
-    ├── paper_loop.log               # Paper daemon log
-    ├── dashboard.log                # Dashboard server log
-    ├── eod-<date>.md                # Daily live end-of-day report
-    └── paper-eod-<date>.md          # Daily paper end-of-day report
+cherrypick/
+└── packages/meic/                   # ← this package (cherrypick-meic)
+    ├── CLAUDE.md                    # Agent operational brain (loaded every loop iteration)
+    ├── GATES.md                     # Reference: the full entry-gate stack in evaluation order
+    ├── config.example.json          # Config template — copy to config.json
+    ├── config.risk.json             # Risk-profile presets (conservative → very-aggressive)
+    ├── src/
+    │   ├── _core/                   # Shared cherrypick.core library (git submodule: calendar, fees)
+    │   ├── tt.py                    # tastytrade CLI — get_quote, get_strategies, execute_trade, etc.
+    │   ├── streamer.py              # Persistent DXLink streaming daemon (live quotes/greeks/OI/volume)
+    │   ├── session.py               # OAuth2 session management
+    │   ├── credentials.py           # OS-keyring credential storage
+    │   ├── db.py                    # SQLite CLI helper (live + paper databases)
+    │   ├── notify.py                # Structured log CLI helper
+    │   ├── gex_math.py              # Gamma-exposure (GEX) computation helpers
+    │   ├── paper.py                 # Deterministic parallel-shadow paper engine (all 4 profiles)
+    │   ├── paper_loop.py            # Unattended paper daemon / scheduled-task runner + EOD report
+    │   ├── paper_replay.py          # SPX historical-replay mode (0DTESPX data)
+    │   └── dashboard.py             # Local browser dashboard (--mode live|paper)
+    ├── docs/
+    │   ├── setup.md                 # Installation and configuration
+    │   ├── operating.md             # Running and monitoring the agent
+    │   ├── strategy.md              # MEIC strategy details and exit rules
+    │   ├── paper-trading.md         # Paper-trading engine, fee model, graduation gate
+    │   └── risk-profiles.md         # Entry-gate threshold presets and when to use each
+    ├── .claude/
+    │   ├── settings.json            # Permissions and MCP environment overrides
+    │   └── commands/
+    │       ├── meic-start.md        # /meic-start — launch full live session
+    │       ├── paper-start.md       # /paper-start — launch full paper session
+    │       ├── setup.md             # /setup — credentials and initial config
+    │       ├── set-risk-profile.md  # /set-risk-profile — switch entry-gate preset
+    │       ├── daily-check.md       # Daily broker-connection check (Step 3 of the loop)
+    │       ├── execute-entry.md     # Entry execution (Step 7 of the loop)
+    │       ├── stop-management.md   # Per-side stop management (Step 5 of the loop)
+    │       ├── dashboard.md         # /dashboard — live dashboard (port 5050)
+    │       ├── paper-dashboard.md   # /paper-dashboard — paper dashboard (port 5051)
+    │       ├── paper-loop.md        # /paper-loop — one paper iteration
+    │       ├── eod-report.md        # /eod-report — live and/or paper EOD report
+    │       ├── paper-report.md      # /paper-report — multi-day profile comparison
+    │       ├── meic-status.md       # /meic-status — quick session status
+    │       └── check-chain.md       # /check-chain — verify chain and strike selection
+    ├── data/                        # Created at first run (gitignored)
+    │   ├── meic_trades.db           # Live trade history, loop log, daily summaries
+    │   ├── paper_trades.db          # Paper trade history (all four profiles)
+    │   └── stream_cache.db          # Live streamer cache (quotes/greeks/OI/volume/GEX history)
+    └── logs/                        # Created at first run (gitignored; all rotated)
+        ├── agent.log                # Agent session log
+        ├── streamer.log             # Streamer daemon log
+        ├── paper_loop.log           # Paper daemon log
+        ├── dashboard.log            # Dashboard server log
+        ├── eod-<date>.md            # Daily live end-of-day report
+        └── paper-eod-<date>.md      # Daily paper end-of-day report
 ```
 
 ---
