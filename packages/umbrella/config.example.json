@@ -111,8 +111,7 @@
         "title": "MEIC",
         "enabled": false,
         "kind": "server",
-        "repo": "https://github.com/joncovington/cherrypick-meic.git",
-      "path": "../meic",
+        "path": "../meic",
         "serve_argv": ["src/dashboard.py", "--mode", "paper", "--port", "{port}"],
         "port": 8801
       },
@@ -121,8 +120,7 @@
         "title": "Earnings",
         "enabled": false,
         "kind": "static",
-        "repo": "https://github.com/joncovington/cherrypick-earnings.git",
-      "path": "../earnings",
+        "path": "../earnings",
         "build_argv": ["src/strategy_dashboard.py", "--mode", "paper"],
         "output": "reports/strategy_dashboard.html",
         "refresh_seconds": 30
