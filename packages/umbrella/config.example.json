@@ -8,6 +8,7 @@
       "enabled": true,
       "_path_note": "Locate the module by EITHER 'repo' (install clones it to the managed modules home) OR 'path' (an in-place dev checkout, absolute or relative to this file — never cloned over). Optional 'ref' picks a branch/tag to clone.",
       "repo": "https://github.com/joncovington/cherrypick-meic.git",
+      "path": "../meic",
       "_keyring_note": "The module's OS-keyring service name, used by `cherrypick account`/`connect` to read/select the module's live-trading account (ACCOUNT_NUMBER) via the shared CredentialStore. Optional 'keyring_legacy_services' lists read-only fallbacks (MEIC keeps 'tastytrade-mcp' for pre-rename creds). Omit to disable account selection for this module.",
       "keyring_service": "meicagent",
       "keyring_legacy_services": ["tastytrade-mcp"],
@@ -41,6 +42,7 @@
     "earnings": {
       "enabled": true,
       "repo": "https://github.com/joncovington/cherrypick-earnings.git",
+      "path": "../earnings",
       "keyring_service": "earningsagent",
       "paper": {
         "kind": "cherrypick_scheduled",
@@ -110,6 +112,7 @@
         "enabled": false,
         "kind": "server",
         "repo": "https://github.com/joncovington/cherrypick-meic.git",
+      "path": "../meic",
         "serve_argv": ["src/dashboard.py", "--mode", "paper", "--port", "{port}"],
         "port": 8801
       },
@@ -119,6 +122,7 @@
         "enabled": false,
         "kind": "static",
         "repo": "https://github.com/joncovington/cherrypick-earnings.git",
+      "path": "../earnings",
         "build_argv": ["src/strategy_dashboard.py", "--mode", "paper"],
         "output": "reports/strategy_dashboard.html",
         "refresh_seconds": 30
