@@ -101,8 +101,13 @@ def _summarize(records: list[dict]) -> dict:
 
 
 # --------------------------------------------------------------------------- entrypoint
-def run(cfg: dict | None = None) -> dict:
-    """Unified paper P&L across all enabled modules. Read-only; never writes or trades."""
+def run(cfg: dict | None = None, session: str | None = None) -> dict:
+    """Unified paper P&L across all enabled modules. Read-only; never writes or trades.
+
+    With `session` (an ISO 'YYYY-MM-DD'), restrict to trades whose settlement session matches — the
+    per-schema readers already emit a `session` per record, so a daily/EOD view is just a filter over
+    the same normalized records the all-time view uses. `session=None` keeps the cumulative behavior.
+    """
     cfg = cfg or cfgmod.load_config()
     modules_out: dict[str, dict] = {}
     all_records: list[dict] = []
@@ -129,6 +134,9 @@ def run(cfg: dict | None = None) -> dict:
         finally:
             conn.close()
 
+        if session is not None:
+            records = [r for r in records if r.get("session") == session]
+
         all_records.extend(records)
         modules_out[name] = {
             "ok": True,
@@ -140,6 +148,7 @@ def run(cfg: dict | None = None) -> dict:
     return {
         "ok": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "session": session,
         "modules": modules_out,
         "suite": _summarize(all_records),
     }
