@@ -24,7 +24,7 @@ from . import dashboard, doctor, embeds, reconcile, sections
 
 def _embed_error(embed_cfg: dict[str, Any], detail: str) -> bytes:
     """A small self-contained page rendered inside an embed iframe when the module dashboard can't be
-    delivered (checkout missing, launch/build failed). Keeps the umbrella page intact."""
+    delivered (checkout missing, launch/build failed). Keeps the orchestrator page intact."""
     from html import escape
 
     title = escape(str(embed_cfg.get("title", embed_cfg.get("id", "module"))))
@@ -77,7 +77,7 @@ def _make_handler(cfg: dict[str, Any]):
                     self._send(200, body, "text/html; charset=utf-8")
                 else:
                     self._send(200, _embed_error(emb, res.get("detail", "unavailable")), "text/html")
-            except Exception as exc:  # a module hiccup shows inline, never breaks the umbrella server
+            except Exception as exc:  # a module hiccup shows inline, never breaks the orchestrator server
                 self._send(200, _embed_error(emb, str(exc)), "text/html")
 
         def do_GET(self):  # noqa: N802

@@ -1,6 +1,6 @@
 # cherrypick — Roadmap & Stage 0 status
 
-cherrypick is the umbrella orchestrator for a trading-tool suite. It drives sibling modules
+cherrypick is the orchestrator for a trading-tool suite. It drives sibling modules
 (**MEICAgent**, **EarningsAgent**) in place for **unattended paper-trading data collection**, with a
 watchdog and notifications so a walk-away user is told — or at least has it logged — whenever anything
 stalls.
@@ -28,7 +28,7 @@ A user sets up paper plans, **walks away** for a day/night/week, and trusts the 
 silently interrupted: any failure is **notified**, or at an absolute floor **warned through logging**.
 
 ## Design invariants (inherited from both modules — do not violate)
-- **Umbrella only.** cherrypick never edits a module's internals and never touches **live** trading.
+- **Orchestrator only.** cherrypick never edits a module's internals and never touches **live** trading.
 - **No decision-path dependency.** The watchdog/notify path uses only stdlib + the OS shell — no MCP,
   no network client, no AI tooling — so it has no new failure mode. Opt-in AI tooling (agentmemory,
   graphify) is for authoring only, never runtime.
@@ -64,7 +64,7 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       (`orchestrator/report.py`). Reads each module's paper DB by `paper.trade_schema` (MEIC `ic_trades`,
       Earnings `trades`), computes net-of-cost P&L / win rate per module and **per risk profile**, plus a
       suite total. Profile grouping mirrors `cherrypick.core.profiles.compare_profiles` inline (cherrypick is
-      not yet a cherrypick-core consumer; the umbrella must not import a module's vendored `_core`). 6
+      not yet a cherrypick-core consumer; the orchestrator must not import a module's vendored `_core`). 6
       tests; verified against live paper data (13 MEIC closed trades across all four profiles).
 - [x] **`cherrypick dashboard`** (Part-14 first slice): a read-only, file-only **status dashboard**
       (`orchestrator/dashboard.py`). One self-contained static HTML page — suite header (overall status,
@@ -81,11 +81,11 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
 - [x] **`cherrypick calibrate`** (Part-10 advisor surface): per-profile paper **calibration readings**
       (sample, win rate, distinct sessions, net-of-cost P&L) + an **advisory promotion recommendation**
       per risk-ladder rung (`orchestrator/calibrate.py`). Reuses `report`'s session-augmented readers;
-      inline-mirrors `cherrypick.core.profiles.recommend_promotion`/`PROMOTION_RULE` (umbrella isn't a
+      inline-mirrors `cherrypick.core.profiles.recommend_promotion`/`PROMOTION_RULE` (orchestrator isn't a
       cherrypick-core consumer). Ladder/rule/deliberate-only come from each module's `calibration`
       config; advisory only — never mutates config or switches live risk. Verified against live paper
       data (per-profile net matches `report`'s `by_profile`).
-- [x] **Umbrella now consumes cherrypick-core.** Added `cherrypick-core` as a git submodule at
+- [x] **Orchestrator now consumes cherrypick-core.** Added `cherrypick-core` as a git submodule at
       `src/_core` (bootstrapped onto `sys.path` in `orchestrator/__init__`, mirroring the trading
       modules), and dropped the inline profile mirrors: `report.py` and `calibrate.py` now import
       `compare_profiles`/`recommend_promotion`/`PROMOTION_RULE` from `cherrypick.core.profiles` directly.
@@ -96,7 +96,7 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       `dashboard --serve` runs a localhost `ThreadingHTTPServer` (`orchestrator/serve.py`) that
       re-renders the suite page fresh per request. The `cherrypick.core.viz` `DashboardSection` contract
       lets any module contribute a live card by emitting a small JSON payload (metrics tiles + a signed
-      bar series) — the umbrella renders it generically (`orchestrator/sections.py` subprocesses the
+      bar series) — the orchestrator renders it generically (`orchestrator/sections.py` subprocesses the
       module by config-declared `fetch_argv`; never imports its internals), so a new module gets a card
       for free. First consumer: **cherrypick-gex**, a self-hosted GEX (gamma-exposure) dashboard —
       GEX-by-OI vs GEX-by-volume, gamma flip, call/put walls — with its own streaming (see below).
@@ -121,19 +121,19 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       its 30s cadence never hammers the broker/its rate limits; `cherrypick doctor` (human, on-demand)
       still runs the full check. Exposed on the CLI as `cherrypick doctor --fast`.
 - [x] **Embedded module dashboards (shipped 2026-07-11).** `dashboard --serve` now embeds each module's
-      *own* full dashboard in an iframe on the umbrella page (a single pane for the suite), via a new
+      *own* full dashboard in an iframe on the orchestrator page (a single pane for the suite), via a new
       `dashboard.embeds` config list and `orchestrator/embeds.py`. Two delivery kinds, both driven by
-      config-declared argv (the umbrella never imports a module) with **PAPER mode forced** in that argv:
-      `"server"` (the module runs its own HTTP dashboard — the umbrella launches it if the port is down,
+      config-declared argv (the orchestrator never imports a module) with **PAPER mode forced** in that argv:
+      `"server"` (the module runs its own HTTP dashboard — the orchestrator launches it if the port is down,
       reusing the streamer's benign detached launcher, then the iframe redirects to its port) and
-      `"static"` (the module regenerates a self-contained HTML file — the umbrella runs the generator,
+      `"static"` (the module regenerates a self-contained HTML file — the orchestrator runs the generator,
       throttled to `refresh_seconds`, and serves the file). One route, `/embed/<id>`, owns both; a module
-      failure renders inline in the iframe and never crashes the umbrella. Serve-only (the static file
+      failure renders inline in the iframe and never crashes the orchestrator. Serve-only (the static file
       render omits the iframes); loopback-only. First consumers: cherrypick-meic (`src/dashboard.py`,
       server) and cherrypick-earnings (`src/strategy_dashboard.py`, static). Verified end-to-end in a
       browser against both installed modules.
 - [x] **`cherrypick reconcile` — paper↔live isolation guard (shipped 2026-07-11).** Reframes
-      "broker-vs-DB reconciliation" for a paper-only umbrella: paper trades never hit the broker, so
+      "broker-vs-DB reconciliation" for a paper-only orchestrator: paper trades never hit the broker, so
       instead of matching positions it verifies the *real* account stays flat. `orchestrator/reconcile.py`
       enumerates **every** account on the login (`list_accounts` — tastytrade returns multiple per user)
       and checks positions per account (read-only `get_positions`/`get_account_info` via the first
@@ -154,7 +154,7 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       and designates one by writing that module's keyring `ACCOUNT_NUMBER` via the shared
       `cherrypick.core.auth.CredentialStore` (service from a new per-module `keyring_service` config);
       `orchestrator/connect.py` wraps it in a guided flow that **delegates** the OAuth bearer secrets to
-      the module's own hidden-input `tt.py secrets_set` (the umbrella never sees client_secret/
+      the module's own hidden-input `tt.py secrets_set` (the orchestrator never sees client_secret/
       refresh_token), verifies the connection, then selects the account. `reconcile` now honors the
       designation: a designated live account is *expected* to hold positions (INFO, not DRIFT); only
       non-designated accounts must be flat. This is the single narrow **live-config** exception to the
@@ -168,7 +168,7 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       (net GEX by OI and by volume, call/put walls, gamma flip), shared so cherrypick-meic's dashboard
       and the GEX module compute identically (retired the drift the GEX math was extracted to prevent).
 - [x] **`cherrypick-gex`** — a new standalone module: reads a stream cache read-only, computes GEX via
-      the shared core, serves its own Chart.js view, and emits a `core.viz` section for the umbrella.
+      the shared core, serves its own Chart.js view, and emits a `core.viz` section for the orchestrator.
 - [x] **`cherrypick.core.streamer` + `cherrypick.core.streamcache`** — the persistent DXLink streaming
       engine + cache schema extracted from MEIC into one shared implementation. cherrypick-gex streams
       standalone; MEIC's `streamer.py` migrated onto it (ORB / open-position policy / 7699 API injected
@@ -198,7 +198,7 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       user-supervised step.
 - [x] **Engineering standards** — ruff + GitHub Actions CI + pre-commit (`ruff-check`) across all
       three repos (cherrypick-core, MEICAgent, EarningsAgent).
-- [x] **Packaging & install** — `cherrypick-core` and the `cherrypick` umbrella are pip-installable
+- [x] **Packaging & install** — `cherrypick-core` and the `cherrypick` orchestrator are pip-installable
       (single `cherrypick.*` PEP 420 namespace, a `cherrypick` console script, the `run.py` launcher, and
       CI validating the editable install). All scheduled tasks were re-registered at the new launcher
       (`run.py install`; `doctor` ALL GREEN), which surfaced and fixed two `src/_core` bootstrap-order
@@ -216,7 +216,7 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
 
 ## Suite modularization & install (shipped 2026-07-11)
 > First slice of the module re-architecture the plan had filed under "deferred": the trading modules
-> now live under `cherrypick-*` names, and the umbrella can materialize them on any machine.
+> now live under `cherrypick-*` names, and the orchestrator can materialize them on any machine.
 
 - [x] **Module repos split under the `cherrypick-*` name.** The current (namespace-migrated) state of
       each module was forked into new private repos — `cherrypick-meic` ← MEICAgent, `cherrypick-earnings`
@@ -235,10 +235,10 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       `~/.cherrypick` for a pip-installed copy, keeps the repo root for a source checkout, and honors
       `CHERRYPICK_HOME` — fixing the installed console script's previously unwritable `site-packages`
       home. `tests/test_config.py` covers the resolution.
-- [x] **`CLAUDE.md` added** — umbrella architecture guide + a **Suite-wide Guardrails** section
+- [x] **`CLAUDE.md` added** — orchestrator architecture guide + a **Suite-wide Guardrails** section
       consolidating the shared rules inherited from both modules (Part 13.5: guardrails documented in one
-      place the umbrella honors).
-- [x] **Installed umbrella imports `cherrypick.core`.** `cherrypick-core` is now a declared dependency
+      place the orchestrator honors).
+- [x] **Installed orchestrator imports `cherrypick.core`.** `cherrypick-core` is now a declared dependency
       (a direct git reference — it's Private :: Do Not Upload, so not on PyPI); a real install (wheel /
       `pip install git+…` / pipx) pulls it, while source/editable checkouts still resolve core from the
       `src/_core` submodule (which wins on `sys.path`). Also added `tzdata` and made

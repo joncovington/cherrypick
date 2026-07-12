@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-cherrypick is the **umbrella orchestrator** for a trading-tool suite. It drives the sibling module
+cherrypick is the **orchestrator** for a trading-tool suite. It drives the sibling module
 repos (`../MEICAgent`, `../EarningsAgent`) **in place** — via subprocess, using paths from config — for
 unattended **paper**-trading data collection, with a watchdog + notifications so a walk-away user is
 told (or at least has it logged) whenever something stalls. It never edits a module's internals and
@@ -97,7 +97,7 @@ is excluded from ruff and from the packaged wheel.
 - **The onboarding surface (`connect`/`account`) is the one narrow live-config exception.**
   `cherrypick connect --module <m>` and `cherrypick account --module <m>` (`orchestrator/connect.py`,
   `orchestrator/accounts.py`) let a user set up a module for eventual **live** trading: they run the
-  module's *own* hidden-input credential tool for the OAuth bearer secrets (delegated — the umbrella
+  module's *own* hidden-input credential tool for the OAuth bearer secrets (delegated — the orchestrator
   never sees/stores `client_secret`/`refresh_token`) and **select which account** the module trades in
   when live, writing that account's `ACCOUNT_NUMBER` into the module's keyring via the shared
   `cherrypick.core.auth.CredentialStore` (service from the module's `keyring_service` config). This is

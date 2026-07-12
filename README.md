@@ -32,7 +32,7 @@ real costs, real market conditions, **none of your real money.**
 ```bash
 # 1. Get the project
 git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
-cd cherrypick/packages/umbrella
+cd cherrypick/packages/orchestrator
 pip install -e ".[dev]"
 
 # 2. Set your preferences (symbols, strategies, alert channels)

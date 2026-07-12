@@ -46,7 +46,7 @@ git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
 cd cherrypick
 
 # Install the orchestrator
-cd packages/umbrella
+cd packages/orchestrator
 pip install -e ".[dev]"
 ```
 

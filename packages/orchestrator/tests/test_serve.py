@@ -226,7 +226,7 @@ def test_embed_static_kind_serves_generated_html(monkeypatch):
 
 
 def test_embed_failure_renders_inline_never_500(monkeypatch):
-    # a module build blowing up must degrade to an inline message, not crash the umbrella server
+    # a module build blowing up must degrade to an inline message, not crash the orchestrator server
     def boom(e):
         raise RuntimeError("module exploded")
 

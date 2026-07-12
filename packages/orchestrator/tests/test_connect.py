@@ -1,7 +1,7 @@
 """Guided per-module onboarding (orchestrator.connect).
 
 Unit lane: asserts the bearer-secret step is DELEGATED to the module's own tool (launched with the tty
-inherited — never captured, so the umbrella never sees client_secret / refresh_token) and that the
+inherited — never captured, so the orchestrator never sees client_secret / refresh_token) and that the
 account step drives accounts.set_account with the user's selection.
 """
 

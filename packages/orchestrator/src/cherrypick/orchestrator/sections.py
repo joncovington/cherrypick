@@ -1,6 +1,6 @@
 """Generic dashboard-section bridge.
 
-The umbrella surfaces a live card for any module that speaks the `cherrypick.core.viz` section contract:
+The orchestrator surfaces a live card for any module that speaks the `cherrypick.core.viz` section contract:
 it subprocesses the module for a declarative payload and renders it generically (in `dashboard.py` via
 `core.viz`). It never imports a module's internals — it drives the module in place by config-declared
 argv, exactly like install/status/earnings — so a new module gets a dashboard card "for free" by

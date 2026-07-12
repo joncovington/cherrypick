@@ -949,7 +949,7 @@ def _build_gex_data(symbol: str | None = None) -> dict:
     # normalisation — which OI/volume source, and IV raw-decimal (cache) vs already-pct (REST) —
     # stays here because it is data *provenance*. The pure per-strike OI+volume GEX aggregation
     # (dollar-gamma, walls, zero-gamma) lives in cherrypick.core.gex so this dashboard and the
-    # umbrella's GEX module compute byte-identically, the reason the math was extracted (see
+    # orchestrator's GEX module compute byte-identically, the reason the math was extracted (see
     # gex_math.py; it once drifted ~75x across hand-maintained copies).
     entries: list[dict] = []
     oi_map: dict[str, int] = {}
