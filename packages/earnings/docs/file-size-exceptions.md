@@ -1,5 +1,7 @@
 # File Size Exceptions
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 Per CLAUDE.md: "Keep files under 500 lines"
 
 This project has documented exceptions where file size exceeds the guideline due to strategic importance and refactoring risk:

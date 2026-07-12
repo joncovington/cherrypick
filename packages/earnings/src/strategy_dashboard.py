@@ -445,9 +445,11 @@ function showTF(id) {{
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["live", "paper"], default="paper",
-                        help="'live' reads data/earnings_trades.db and writes "
+                        help="'live' reads earnings_trades.db and writes "
                              "reports/strategy_dashboard_live.html; 'paper' (default) reads "
-                             "data/paper_trades.db and writes reports/strategy_dashboard.html.")
+                             "paper_trades.db and writes reports/strategy_dashboard.html. Both DBs "
+                             "live under the cherrypick data home (~/.cherrypick/data/earnings by "
+                             "default or $EARNINGS_DATA_DIR); reports/ stays in the package.")
     parser.add_argument("--db", default=None, help="Overrides the mode-based default DB path.")
     parser.add_argument("--profile", default=None,
                         help="Book to report on. Defaults to 'strat_test' in paper mode, "

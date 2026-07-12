@@ -1,5 +1,7 @@
 # Paper Trading Profiles — Multi-Week Risk-Profile Testing Plan
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 Goal: run several **risk profiles** side by side in paper mode for a few weeks, on
 identical market conditions, then promote the best-performing profile's exact
 settings to live trading — no re-derivation, no guesswork.

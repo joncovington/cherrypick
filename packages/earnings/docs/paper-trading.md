@@ -1,5 +1,7 @@
 # Paper Trading
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 Simulates every strategy's entries, exits, and P&L across a real earnings calendar without ever
 touching the live tastytrade account's orders, positions, or buying power. **There is no
 separate paper-trading loop or command distinct from the real one** — `CLAUDE.md`'s Loop Steps
@@ -17,8 +19,9 @@ persistence at all). What follows describes the underlying mechanism both rely o
 
 ## Data separation (hard requirement)
 
-Paper trades are stored in `data/paper_trades.db`, a **separate SQLite file** from
-`data/earnings_trades.db`, written and read exclusively through `src/db_paper.py` — a separate
+Paper trades are stored in `paper_trades.db`, a **separate SQLite file** from
+`earnings_trades.db` — both in the shared cherrypick data home (`~/.cherrypick/data/earnings` by
+default, or `$EARNINGS_DATA_DIR`; resolved by `src/paths.py`) — written and read exclusively through `src/db_paper.py` — a separate
 CLI module from `src/db.py`, not a `--paper` flag on the same one. There is no code path, table,
 or flag that can query both databases through one connection. This was a deliberate design
 choice (a shared table with an `is_paper` column was considered and rejected) specifically so a

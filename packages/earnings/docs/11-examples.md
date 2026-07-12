@@ -1,5 +1,7 @@
 # Examples & Case Studies
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 Worked examples showing how a real night's candidates get ranked, sized, entered, and exited —
 grounded in the actual composite scoring formula and CLI commands, not a hypothetical scenario.
 

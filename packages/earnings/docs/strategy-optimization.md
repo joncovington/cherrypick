@@ -1,5 +1,7 @@
 # Strategy Optimization Research — Overnight Earnings (Defined-Risk)
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 Research-backed optimization hypotheses for the seven remaining **defined-risk** strategies
 (`iron_fly`, `iron_condor`, `double_calendar`, `atm_calendar`, `directional_credit_spread`,
 `broken_wing_butterfly`, `reverse_fly`), specific to this system's structure: **one position

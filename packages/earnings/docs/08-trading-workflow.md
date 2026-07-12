@@ -1,5 +1,7 @@
 # Trading Workflow
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 What a real day looks like running this system, from the afternoon scan through the next
 morning's close. The whole shape of this workflow follows from one architectural fact: every
 position opens once before today's close and closes once after tomorrow's open, unmonitored
@@ -22,6 +24,13 @@ what you're trying to accomplish:
 
 Everything below walks through what's actually happening underneath these commands, in case you
 want to run the pieces by hand or understand what a slash command is doing on your behalf.
+
+These slash commands are the **interactive / live** side you drive yourself from this package. The
+day-to-day paper collection runs the other way: the [orchestrator](../../orchestrator) drives the same
+`/paper-start` forced-sampling program **unattended** via OS-scheduled entry (15:45 ET) and exit
+(09:45 ET) tasks it watchdogs — this module has no scheduler of its own, and the orchestrator never
+places live orders. See the [package README](../README.md#how-this-fits-the-suite) for how the two roles
+divide up.
 
 ---
 

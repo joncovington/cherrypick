@@ -53,7 +53,7 @@
         "entry_argv": ["src/strategy_test_runner.py", "run_entries", "--date", "{today}", "--profile", "balanced"],
         "exit_argv": ["src/strategy_test_runner.py", "run_closes", "--profile", "balanced"],
         "log": "logs/earnings_paper.log",
-        "paper_db": "data/paper_trades.db",
+        "paper_db": "~/.cherrypick/data/earnings/paper_trades.db",
         "notify_trades": true,
         "trade_schema": "earnings",
         "requires_dolt": true,

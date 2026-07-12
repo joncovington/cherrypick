@@ -1,5 +1,7 @@
 # Strategy Testing Plan: Thoroughly Testing Each Strategy in Paper Mode
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 Multi-week forward-test of all 7 implemented (defined-risk) strategies (`iron_fly`,
 `double_calendar`, `iron_condor`, `atm_calendar`, `directional_credit_spread`,
 `broken_wing_butterfly`, `reverse_fly`), until each has enough cost-adjusted evidence to
@@ -11,6 +13,14 @@ It never touches `db.py`, never calls `tt.py execute_trade`, and never respects
 open more than the loop ever would, on purpose, so every strategy accumulates a usable
 sample.
 
+In normal suite operation this program runs **unattended under the [orchestrator](../../orchestrator)**:
+it registers and watchdogs the daily entry (15:45 ET) and exit (09:45 ET) OS tasks that invoke
+`strategy_test_runner.py` (`run_entries` / `run_closes`) into the `strat_test` book, then reads the
+resulting `paper_trades.db` (in the shared data home, `~/.cherrypick/data/earnings`) for cross-module
+reporting. This module has no scheduler of its own. Run `/paper-start` here for a single manual day; see
+the [package README](../README.md#how-this-fits-the-suite) for how the standalone and orchestrator-driven
+roles fit together.
+
 ## Why a separate harness
 
 `rank_strategies.py get_ranked_symbols` opens only the single best strategy per symbol per
@@ -19,7 +29,8 @@ natural single-best-per-symbol selection, most strategies would starve and never
 statistically meaningful sample in weeks. `strategy_test_runner.py` instead force-samples:
 it opens a paper trade for **every** strategy that tiers Tier 1/2 on **every** viable symbol
 each night, into its own isolated book (`profile='strat_test'` in the shared
-`data/paper_trades.db` — see `docs/paper-trading-profiles.md`'s "profile = book" design).
+`paper_trades.db` — in the cherrypick data home, `~/.cherrypick/data/earnings`; see
+`docs/paper-trading-profiles.md`'s "profile = book" design).
 
 ## Fixed testing basis
 
@@ -76,7 +87,7 @@ Per-week timeframe toggle. Both read `strategy_metrics.py`, so they can never di
 
 **Live vs paper (`--mode`)**: both tools default to `--mode paper` (this whole program is a
 paper test, and `enable_live_trading` is off). `--mode live` points them at
-`data/earnings_trades.db` instead of `data/paper_trades.db` — useful once live trading is
+`earnings_trades.db` instead of `paper_trades.db` (both in the cherrypick data home) — useful once live trading is
 enabled and you want the same views over real fills. In live mode the report header reads
 `MODE: LIVE`, the dashboard carries a red "LIVE — Real Money" badge (vs amber "PAPER —
 Simulated") and writes a separate `reports/strategy_dashboard_live.html` so it never clobbers

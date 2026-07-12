@@ -1,5 +1,7 @@
 # Strategy Guide
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 Structure, entry gates, and exit rules for all seven strategies. Every strategy is
 **defined-risk** — max loss is known at entry. Undefined-risk/naked strategies were deliberately
 excluded: a naked short on a single-name earnings gap can blow out arbitrarily during the

@@ -1,5 +1,7 @@
 # Earnings Scan Analysis
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 How to actually read a day's scan output — what each field means, how tiering and ranking flow
 into each other, and how to tell a genuinely quiet night from something broken.
 

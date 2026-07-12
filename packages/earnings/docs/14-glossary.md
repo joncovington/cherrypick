@@ -1,5 +1,7 @@
 # Glossary
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 ---
 
 ## Core Signals
