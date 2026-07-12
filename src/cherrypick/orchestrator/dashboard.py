@@ -27,6 +27,7 @@ from cherrypick.notify import secrets as notify_secrets
 
 from . import calibrate, embeds, report, sections, tasks, timeutil
 from . import config as cfgmod
+from .util import CREATE_NO_WINDOW
 
 _STATUS_COLORS = {
     "OK": "var(--pos)",
@@ -99,6 +100,7 @@ def _git_ref(root: Path) -> str | None:
             capture_output=True,
             text=True,
             timeout=5,
+            creationflags=CREATE_NO_WINDOW,
         )
         return r.stdout.strip() or None if r.returncode == 0 else None
     except OSError:
