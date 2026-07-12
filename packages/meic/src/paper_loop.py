@@ -516,7 +516,8 @@ def _running_pid():
 def _task_installed():
     if os.name != "nt":
         return False
-    r = subprocess.run(["schtasks", "/Query", "/TN", _TASK_NAME], capture_output=True, text=True)
+    r = subprocess.run(["schtasks", "/Query", "/TN", _TASK_NAME], capture_output=True, text=True,
+                       creationflags=_NO_WINDOW)
     return r.returncode == 0
 
 
@@ -657,11 +658,12 @@ def _install_task():
     tr = f'"{_pythonw()}" "{os.path.abspath(__file__)}" --once'
     r = subprocess.run(["schtasks", "/Create", "/TN", _TASK_NAME, "/TR", tr,
                         "/SC", "MINUTE", "/MO", "2", "/F", "/IT"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, creationflags=_NO_WINDOW)
     ok = r.returncode == 0
     # Fire one run immediately so positions are managed without waiting for the first tick.
     if ok:
-        subprocess.run(["schtasks", "/Run", "/TN", _TASK_NAME], capture_output=True, text=True)
+        subprocess.run(["schtasks", "/Run", "/TN", _TASK_NAME], capture_output=True, text=True,
+                       creationflags=_NO_WINDOW)
     _emit({"ok": ok, "task": _TASK_NAME, "cadence": "every 2 min",
                       "detail": (r.stdout or r.stderr).strip()})
 
@@ -670,8 +672,10 @@ def _uninstall_task():
     if os.name != "nt":
         _emit({"ok": False, "error": "Windows-only"})
         return
-    subprocess.run(["schtasks", "/End", "/TN", _TASK_NAME], capture_output=True, text=True)
-    r = subprocess.run(["schtasks", "/Delete", "/TN", _TASK_NAME, "/F"], capture_output=True, text=True)
+    subprocess.run(["schtasks", "/End", "/TN", _TASK_NAME], capture_output=True, text=True,
+                   creationflags=_NO_WINDOW)
+    r = subprocess.run(["schtasks", "/Delete", "/TN", _TASK_NAME, "/F"], capture_output=True, text=True,
+                       creationflags=_NO_WINDOW)
     _emit({"ok": r.returncode == 0, "detail": (r.stdout or r.stderr).strip()})
 
 
