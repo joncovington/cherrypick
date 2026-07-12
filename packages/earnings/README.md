@@ -159,7 +159,7 @@ isolated books:
   `enable_live_trading`), run through a full market session.
 
 The forced-sampling close pass writes a deterministic end-of-day file automatically
-(`logs/paper-eod-<date>.md`); regenerate or backfill one with
+(`~/.cherrypick/logs/earnings/paper-eod-<date>.md` by default); regenerate or backfill one with
 `python src/strategy_test_runner.py eod_report [--date YYYY-MM-DD]`. Track accumulated (multi-day)
 results with `python src/strategy_report.py` (text) or `python src/strategy_dashboard.py`
 (self-contained HTML dashboard, written to `reports/`).

@@ -15,9 +15,10 @@ Resolution:
     the earnings/options/stocks datasets from; the trade ledgers are plain SQLite files alongside
     those Dolt databases and never collide with them.
 
-Only *data* moves here. ``config.json``, ``logs/``, and ``reports/`` stay in the package directory
-(they are part of the checkout, not per-machine runtime state). Portability guardrail: never
-hardcode an absolute path — everything derives from ``Path.home()`` or ``EARNINGS_DATA_DIR``.
+*Data* moves to ``.cherrypick/data/earnings`` and *logs* to ``.cherrypick/logs/earnings`` under the user
+home, so nothing runtime lands in the checkout; only ``config.json`` and ``reports/`` stay in the package
+directory. Portability guardrail: never hardcode an absolute path — everything derives from
+``Path.home()`` (or ``CHERRYPICK_HOME``) or the ``EARNINGS_DATA_DIR`` / ``EARNINGS_LOGS_DIR`` overrides.
 """
 
 from __future__ import annotations
@@ -49,3 +50,21 @@ def live_db_path() -> Path:
 def paper_db_path() -> Path:
     """The paper-trading ledger (``paper_trades.db``)."""
     return data_path("paper_trades.db")
+
+
+def logs_dir() -> Path:
+    """Where this module writes its logs: ``~/.cherrypick/logs/earnings`` by default (the shared
+    cherrypick logs home; ``CHERRYPICK_HOME`` overrides the home so it stays aligned with the
+    orchestrator), or ``EARNINGS_LOGS_DIR`` for a machine/test override. A pure path — callers create it
+    when they actually write (mirrors the orchestrator's ``config.LOGS_DIR``)."""
+    env = os.environ.get("EARNINGS_LOGS_DIR")
+    if env:
+        return Path(os.path.expandvars(os.path.expanduser(env)))
+    home = os.environ.get("CHERRYPICK_HOME")
+    base = Path(home) if home else Path.home() / ".cherrypick"
+    return base / "logs" / "earnings"
+
+
+def log_path(name: str) -> Path:
+    """A named log file inside the logs home (see :func:`logs_dir`)."""
+    return logs_dir() / name

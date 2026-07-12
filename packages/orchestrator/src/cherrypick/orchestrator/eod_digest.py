@@ -29,9 +29,10 @@ def _pct(x: float | None) -> str:
 
 
 def _module_eod_file(mcfg: dict, name: str, day: str):
-    """The module's own deterministic paper EOD file for `day` (<root>/logs/paper-eod-<day>.md),
-    or None if the module hasn't written one for that session yet."""
-    p = cfgmod.module_root(mcfg, name) / "logs" / f"paper-eod-{day}.md"
+    """The module's own deterministic paper EOD file for `day`
+    (~/.cherrypick/logs/<name>/paper-eod-<day>.md), or None if it hasn't written one for that session
+    yet. `mcfg` is unused now that logs live in the shared logs home, kept for signature stability."""
+    p = cfgmod.module_logs_dir(name) / f"paper-eod-{day}.md"
     return p if p.exists() else None
 
 

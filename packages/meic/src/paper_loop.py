@@ -55,13 +55,15 @@ sys.path.insert(0, str(_ROOT / "src"))
 _CORE = str(_ROOT / "src" / "_core")
 if os.path.isdir(_CORE) and _CORE not in sys.path:
     sys.path.insert(0, _CORE)
-import paths as _paths  # noqa: E402  (data-home resolution: ~/.cherrypick/data/meic or MEIC_DATA_DIR)
 from cherrypick.core import calendar as _cal  # noqa: E402  (shared NYSE trading-day calendar)
 
-# Runtime data (DB, PID, lock) lives in the data home; config + logs stay in the package.
+import paths as _paths  # noqa: E402  (data-home resolution: ~/.cherrypick/data/meic or MEIC_DATA_DIR)
+
+# Runtime data (DB, PID, lock) lives in the data home and logs in the logs home; only config stays
+# in the package.
 _PID_FILE = _paths.data_path("paper_loop.pid")
 _LOCK_FILE = _paths.data_path("paper_loop.once.lock")
-_LOG_FILE = _ROOT / "logs" / "paper_loop.log"
+_LOG_FILE = _paths.log_path("paper_loop.log")
 _TASK_NAME = "cherrypick-meic-paper-loop"
 _PAPER_DB = str(_paths.paper_db_path())
 _CONFIG_PATH = _ROOT / "config.json"
@@ -92,7 +94,7 @@ def _emit(obj):
 
 
 def _setup_logging(console: bool = True):
-    _LOG_FILE.parent.mkdir(exist_ok=True)
+    _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     # Rotate so the log can't grow without bound (10 MB x 5 backups).
     handlers = [RotatingFileHandler(_LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")]
     # A detached, hidden-window process (Start-Process -WindowStyle Hidden) can have an

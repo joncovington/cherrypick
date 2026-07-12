@@ -176,8 +176,13 @@ def test_report_session_filter_restricts_to_one_day(tmp_path):
     assert eday["modules"]["meic"]["trades"] == 0
 
 
-def test_eod_digest_markdown_cites_report_numbers(tmp_path):
+def test_eod_digest_markdown_cites_report_numbers(tmp_path, monkeypatch):
+    from cherrypick.orchestrator import config as cfgmod
     from cherrypick.orchestrator import eod_digest
+
+    # Pin the logs home to tmp so the module-eod-file pointer check is hermetic (module logs now live
+    # under LOGS_DIR/<name>, not in the module checkout).
+    monkeypatch.setattr(cfgmod, "LOGS_DIR", tmp_path / "logs")
 
     cfg = _cfg(tmp_path)
     _meic_db(tmp_path / "meic" / "paper.db", [("SPX", "conservative", 100.0, 0.0, "2026-07-10T15:45")])
@@ -186,5 +191,12 @@ def test_eod_digest_markdown_cites_report_numbers(tmp_path):
     md = eod_digest.build_markdown(cfg, "2026-07-10")
     assert "Suite EOD Digest 2026-07-10" in md
     assert "$100.00" in md  # the MEIC net for that session, surfaced in the suite total + table
-    # No module has written its own paper-eod file in the tmp checkout -> the pointer says so.
+    # No module has written its own paper-eod file in the logs home -> the pointer says so.
     assert "no paper-eod-2026-07-10.md written" in md
+
+    # Once MEIC writes its own file to the logs home, the digest links to it.
+    meic_logs = cfgmod.module_logs_dir("meic")
+    meic_logs.mkdir(parents=True, exist_ok=True)
+    (meic_logs / "paper-eod-2026-07-10.md").write_text("x", encoding="utf-8")
+    md2 = eod_digest.build_markdown(cfg, "2026-07-10")
+    assert str(meic_logs / "paper-eod-2026-07-10.md") in md2

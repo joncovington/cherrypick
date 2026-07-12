@@ -11,9 +11,10 @@ Resolution:
   * otherwise the managed cherrypick home ``~/.cherrypick/data/meic`` — shared with the umbrella,
     whose config points at ``~/.cherrypick/data/meic/paper_trades.db`` for cross-module reads.
 
-Only *data* moves here. ``config.json`` and ``logs/`` stay in the package directory (they are part
-of the checkout, not per-machine runtime state). Portability guardrail: never hardcode an absolute
-path — everything derives from ``Path.home()`` or ``MEIC_DATA_DIR``.
+Both *data* and *logs* move to the user home (data under ``.cherrypick/data/meic``, logs under
+``.cherrypick/logs/meic``) so nothing runtime lands in the checkout; only ``config.json`` stays in the
+package directory. Portability guardrail: never hardcode an absolute path — everything derives from
+``Path.home()`` (or ``CHERRYPICK_HOME``) or the ``MEIC_DATA_DIR`` / ``MEIC_LOGS_DIR`` overrides.
 """
 
 from __future__ import annotations
@@ -50,3 +51,21 @@ def paper_db_path() -> Path:
 def stream_cache_path() -> Path:
     """The DXLink streamer cache (``stream_cache.db``)."""
     return data_path("stream_cache.db")
+
+
+def logs_dir() -> Path:
+    """Where this module writes its logs: ``~/.cherrypick/logs/meic`` by default (the shared cherrypick
+    logs home; ``CHERRYPICK_HOME`` overrides the home so it stays aligned with the orchestrator), or
+    ``MEIC_LOGS_DIR`` for a machine/test override. A pure path — callers create it when they actually
+    write (mirrors the orchestrator's ``config.LOGS_DIR``), so importing a module never touches disk."""
+    env = os.environ.get("MEIC_LOGS_DIR")
+    if env:
+        return Path(os.path.expandvars(os.path.expanduser(env)))
+    home = os.environ.get("CHERRYPICK_HOME")
+    base = Path(home) if home else Path.home() / ".cherrypick"
+    return base / "logs" / "meic"
+
+
+def log_path(name: str) -> Path:
+    """A named log file inside the logs home (see :func:`logs_dir`)."""
+    return logs_dir() / name

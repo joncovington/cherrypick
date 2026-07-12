@@ -269,7 +269,9 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     for name, mcfg in modules_cfg.items():
         log_rel = mcfg.get("paper", {}).get("log")
         if log_rel:
-            sources.append((name, cfgmod.module_root(mcfg) / log_rel))
+            # Module logs now live in the shared logs home (~/.cherrypick/logs/<name>); take just the
+            # filename from the configured path so a stale "logs/…" prefix still resolves correctly.
+            sources.append((name, cfgmod.module_logs_dir(name) / Path(log_rel).name))
     log_entries: list[dict[str, Any]] = []
     for src, path in sources:
         for raw in _tail(path, tail_n):

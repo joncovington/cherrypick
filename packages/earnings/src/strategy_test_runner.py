@@ -60,6 +60,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import costs
 import db_paper
+import paths
 import rank_strategies
 import scanner
 import sizing
@@ -174,8 +175,9 @@ def _entry_context(criteria: dict, composite_score) -> dict:
 # ---------------------------------------------------------------------------
 
 def _logs_dir() -> Path:
-    """Package-local logs dir (logs/ stays in the checkout, not the data home -- see paths.py)."""
-    d = Path(__file__).resolve().parent.parent / "logs"
+    """The earnings logs home (~/.cherrypick/logs/earnings by default; see paths.logs_dir). Created on
+    demand since paths.logs_dir returns a pure path."""
+    d = paths.logs_dir()
     d.mkdir(parents=True, exist_ok=True)
     return d
 
