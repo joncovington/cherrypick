@@ -14,8 +14,8 @@ Usage:
 
 Note: rank_strategies.py's calendar fetch is always "today's AMC +
 tomorrow's BMO" (scanner.fetch_entry_window_calendar) -- --date is passed
-through for logging only and does not change which calendar day is
-scanned. Use scanner.py get_calendar directly for historical dates.
+through for the report label only and does not change which calendar day
+is scanned. Use scanner.py get_calendar directly for historical dates.
 """
 
 import json
@@ -50,8 +50,6 @@ class StrategyRanker:
 
     def __init__(self, config: dict):
         self.config = config
-        self.log_dir = Path("logs/paper")
-        self.log_dir.mkdir(parents=True, exist_ok=True)
         self.src_dir = Path(__file__).resolve().parent
 
     def get_ranked_candidates(self, date_str: str) -> dict:
@@ -136,26 +134,6 @@ class StrategyRanker:
             ),
         }
 
-    def log_analysis(self, analysis: dict) -> None:
-        """Append this run to the monthly log file."""
-        log_file = self.log_dir / f"runs_{datetime.now().strftime('%Y_%m')}.json"
-
-        runs = []
-        if log_file.exists():
-            with open(log_file) as f:
-                runs = json.load(f)
-
-        runs.append({
-            "date": analysis["date"],
-            "timestamp": analysis["timestamp"],
-            "total_candidates": analysis["total_candidates"],
-            "selected": len(analysis["selected"]),
-            "trades": analysis["selected"],
-        })
-
-        with open(log_file, "w") as f:
-            json.dump(runs, f, indent=2, default=str)
-
     def print_report(self, analysis: dict) -> None:
         """Print analysis report."""
         if not analysis.get("ok"):
@@ -192,7 +170,6 @@ class StrategyRanker:
             print()
 
         print("READY FOR 3:50 PM ENTRY WINDOW")
-        print(f"Entry orders logged to: logs/paper/runs_{datetime.now().strftime('%Y_%m')}.json")
         print("=" * 80)
 
 
@@ -218,9 +195,6 @@ def main():
 
     ranker = StrategyRanker(config)
     analysis = ranker.analyze(date_str)
-
-    if analysis.get("ok"):
-        ranker.log_analysis(analysis)
     ranker.print_report(analysis)
 
 
