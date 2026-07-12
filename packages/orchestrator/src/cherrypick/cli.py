@@ -15,6 +15,9 @@ Subcommands:
                        broker round-trip (local/offline checks only).
   watchdog             Run one watchdog pass (this is what the scheduled task invokes).
   report               Unified cross-module paper P&L (read-only): totals + per-profile breakdown.
+                       --eod (today ET) or --date YYYY-MM-DD restricts to one session; default all-time.
+  eod-digest           Write the suite end-of-day digest (logs/eod-digest-<day>.md): one session's
+                       cross-module P&L + links to each module's paper-eod file. --date; default today.
   reconcile            Paper↔live isolation guard: query the real broker account (read-only) and flag
                        any open positions/BP a paper-only suite shouldn't have. On-demand; never trades.
   connect              Guided per-module onboarding (--module): set OAuth creds (via the module's own
@@ -52,6 +55,7 @@ from cherrypick.orchestrator import (
     connect,
     dashboard,
     doctor,
+    eod_digest,
     init,
     reconcile,
     report,
@@ -466,8 +470,24 @@ def cmd_notify_trades(cfg) -> None:
     _emit(trade_notifier.run(cfg))
 
 
-def cmd_report(cfg) -> None:
-    _emit(report.run(cfg))
+def _resolve_session(args) -> str | None:
+    """The session an EOD-scoped command targets: an explicit --date wins, else --eod means today
+    (ET), else None (the all-time cumulative view)."""
+    if getattr(args, "date", None):
+        return args.date
+    if getattr(args, "eod", False):
+        return timeutil.now_et().strftime("%Y-%m-%d")
+    return None
+
+
+def cmd_report(cfg, args) -> None:
+    _emit(report.run(cfg, session=_resolve_session(args)))
+
+
+def cmd_eod_digest(cfg, args) -> None:
+    # --date selects the day; otherwise today (ET). (--eod is redundant here but accepted.)
+    day = args.date or (timeutil.now_et().strftime("%Y-%m-%d"))
+    _emit(eod_digest.run(cfg, day=day))
 
 
 def cmd_dashboard(cfg, args) -> None:
@@ -536,6 +556,7 @@ def main() -> None:
             "doctor",
             "watchdog",
             "report",
+            "eod-digest",
             "reconcile",
             "connect",
             "account",
@@ -560,6 +581,12 @@ def main() -> None:
         "--url", default=None, help="Webhook URL for secrets-set (omit to be prompted without echo)"
     )
     parser.add_argument("--force", action="store_true", help="For init: overwrite an existing config.json")
+    parser.add_argument(
+        "--date", default=None, help="For report/eod-digest: a session day 'YYYY-MM-DD' (default today)"
+    )
+    parser.add_argument(
+        "--eod", action="store_true", help="For report: restrict to today's (ET) session instead of all-time"
+    )
     parser.add_argument(
         "--fast",
         action="store_true",
@@ -598,7 +625,8 @@ def main() -> None:
         "status": lambda: cmd_status(cfg),
         "doctor": lambda: cmd_doctor(cfg, fast=args.fast),
         "watchdog": lambda: cmd_watchdog(cfg),
-        "report": lambda: cmd_report(cfg),
+        "report": lambda: cmd_report(cfg, args),
+        "eod-digest": lambda: cmd_eod_digest(cfg, args),
         "reconcile": lambda: cmd_reconcile(cfg),
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),

@@ -142,3 +142,49 @@ def test_report_unknown_schema_reported(tmp_path):
     out = report.run(cfg)
     assert out["modules"]["meic"]["ok"] is False
     assert "unknown schema" in out["modules"]["meic"]["reason"]
+
+
+def test_report_session_filter_restricts_to_one_day(tmp_path):
+    cfg = _cfg(tmp_path)
+    _meic_db(
+        tmp_path / "meic" / "paper.db",
+        [
+            ("SPX", "conservative", 100.0, 0.0, "2026-07-10T15:45"),  # session 2026-07-10
+            ("SPX", "conservative", -30.0, 0.0, "2026-07-11T15:45"),  # session 2026-07-11
+        ],
+    )
+    # Earnings epoch's local session comes from the same helper the reader uses, so the assertion
+    # is tz-independent (1.7e9 is 2023-11-14, distinct from either MEIC day above).
+    ep = 1_700_000_000.0
+    earnings_session = report._session_from_epoch(ep)
+    _earnings_db(tmp_path / "earn" / "paper.db", [("AAPL", "balanced", "iron_fly", 60.0, 0.0, 0.0, ep)])
+
+    # No filter -> all-time, all three closed trades.
+    assert report.run(cfg)["suite"]["trades"] == 3
+
+    # Filter to the MEIC 07-10 session only.
+    day = report.run(cfg, session="2026-07-10")
+    assert day["session"] == "2026-07-10"
+    assert day["modules"]["meic"]["trades"] == 1
+    assert day["modules"]["meic"]["net_pnl"] == 100.0
+    assert day["modules"]["earnings"]["trades"] == 0
+    assert day["suite"]["trades"] == 1
+
+    # Filter to the earnings session -> only the earnings trade.
+    eday = report.run(cfg, session=earnings_session)
+    assert eday["modules"]["earnings"]["trades"] == 1
+    assert eday["modules"]["meic"]["trades"] == 0
+
+
+def test_eod_digest_markdown_cites_report_numbers(tmp_path):
+    from cherrypick.orchestrator import eod_digest
+
+    cfg = _cfg(tmp_path)
+    _meic_db(tmp_path / "meic" / "paper.db", [("SPX", "conservative", 100.0, 0.0, "2026-07-10T15:45")])
+    _earnings_db(tmp_path / "earn" / "paper.db", [])  # table exists, no rows
+
+    md = eod_digest.build_markdown(cfg, "2026-07-10")
+    assert "Suite EOD Digest 2026-07-10" in md
+    assert "$100.00" in md  # the MEIC net for that session, surfaced in the suite total + table
+    # No module has written its own paper-eod file in the tmp checkout -> the pointer says so.
+    assert "no paper-eod-2026-07-10.md written" in md
