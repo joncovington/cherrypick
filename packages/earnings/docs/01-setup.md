@@ -18,11 +18,15 @@ Complete setup from a fresh checkout to your first paper trading cycle.
 
 ---
 
-## Step 1: Clone and install dependencies
+## Step 1: Clone the suite and enter this package
+
+`cherrypick-earnings` is the earnings module of the [cherrypick](../../../README.md) monorepo. Clone the
+whole suite with its shared-core submodules, then work from `packages/earnings`:
 
 ```bash
-git clone <your-fork-or-remote-url>
-cd EarningsAgent
+git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
+cd cherrypick/packages/earnings
+# Already cloned without --recurse-submodules? Run once: git submodule update --init --recursive
 
 python -m venv venv
 source venv/bin/activate      # macOS/Linux
@@ -30,6 +34,11 @@ source venv/bin/activate      # macOS/Linux
 
 pip install -r requirements.txt
 ```
+
+The `--recurse-submodules` flag (or the follow-up `git submodule update`) pulls the shared
+`cherrypick.core` library into `src/_core`; without it every `import cherrypick.core...` — and therefore
+the calendar and fee lookups the scanner and cost model depend on — fails. All commands below run from
+`packages/earnings`.
 
 For running tests or contributing, also install dev dependencies:
 
@@ -164,6 +173,13 @@ Check progress at any time with:
 python src/strategy_report.py
 python src/strategy_dashboard.py   # writes reports/strategy_dashboard.html
 ```
+
+> **Inside the suite:** you don't have to run this by hand day to day. The [orchestrator](../../orchestrator)
+> registers and watchdogs two daily OS tasks (via `cherrypick install`) — an entry task at 15:45 ET and an
+> exit task at 09:45 ET — that run the same `strategy_test_runner.py` `run_entries` / `run_closes` into the
+> `strat_test` book, then surface the results through `cherrypick report` / `dashboard` / `calibrate`. It
+> drives this module by subprocess only — it never places live orders or edits this config. Running
+> `/paper-start` here is the standalone equivalent, minus the watchdog and notifications.
 
 ---
 

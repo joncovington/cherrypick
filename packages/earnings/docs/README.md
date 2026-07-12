@@ -2,6 +2,12 @@
 
 Automated overnight earnings options trading system using multi-strategy decision matrix framework.
 
+> **Part of the [cherrypick](../../../README.md) suite.** This is the `cherrypick-earnings` module
+> (`packages/earnings`). It runs standalone from this folder for live / interactive trading, and is driven
+> unattended by the [orchestrator](../../orchestrator) for paper collection (by subprocess, never by
+> import). Shared logic (`cherrypick.core`) is vendored as the `src/_core` submodule. See the
+> [package README](../README.md#how-this-fits-the-suite) for how the two roles fit together.
+
 ---
 
 ## Quick Start
@@ -113,33 +119,38 @@ Calendar:    Defined risk, term structure edge, time decay
 
 ## Project Structure
 
+This package lives at `packages/earnings/` inside the [cherrypick](../../../README.md) monorepo:
+
 ```
-EarningsAgent/
-├── src/
-│   ├── strategies/        # 7 defined-risk strategy modules
-│   │   ├── reverse_fly.py
-│   │   ├── iron_fly.py
-│   │   ├── iron_condor.py
-│   │   ├── directional_credit_spread.py
-│   │   ├── broken_wing_butterfly.py
-│   │   ├── atm_calendar.py
-│   │   └── double_calendar.py
-│   ├── scanner.py           # Strategy-agnostic scanning engine
-│   ├── rank_strategies.py   # Multi-strategy ranking
-│   ├── sizing.py            # Code-enforced risk-cap sizing
-│   ├── tt.py                # tastytrade broker interface
-│   ├── db.py / db_paper.py  # Persistence (live / paper, separate SQLite files)
-│   ├── strategy_test_runner.py  # Forced-sampling paper-testing program
-│   ├── strategy_report.py / strategy_dashboard.py  # Per-strategy metrics & charts
-│   └── ...
-├── config/
-│   ├── config.example.json  # Template — copy to config.json
-│   └── config.json          # Your actual settings (gitignored)
-├── data/                    # SQLite trade databases (earnings_trades.db, paper_trades.db)
-├── tests/                   # Unit tests
-├── docs/                    # This documentation
-├── CLAUDE.md                # Authoritative operational spec
-└── README.md                # Project overview
+cherrypick/
+└── packages/earnings/           # ← this package (cherrypick-earnings)
+    ├── src/
+    │   ├── _core/               # Shared cherrypick.core library (git submodule: calendar, fees)
+    │   ├── strategies/          # 7 defined-risk strategy modules
+    │   │   ├── reverse_fly.py
+    │   │   ├── iron_fly.py
+    │   │   ├── iron_condor.py
+    │   │   ├── directional_credit_spread.py
+    │   │   ├── broken_wing_butterfly.py
+    │   │   ├── atm_calendar.py
+    │   │   └── double_calendar.py
+    │   ├── scanner.py           # Strategy-agnostic scanning engine
+    │   ├── rank_strategies.py   # Multi-strategy ranking
+    │   ├── sizing.py            # Code-enforced risk-cap sizing
+    │   ├── costs.py             # Cost model over cherrypick.core.fees
+    │   ├── tt.py                # tastytrade broker interface
+    │   ├── db.py / db_paper.py  # Persistence (live / paper, separate SQLite files)
+    │   ├── strategy_test_runner.py  # Forced-sampling paper-testing program (orchestrator-driven)
+    │   ├── strategy_report.py / strategy_dashboard.py  # Per-strategy metrics & charts
+    │   └── ...
+    ├── config/
+    │   ├── config.example.json  # Template — copy to config.json
+    │   └── config.json          # Your actual settings (gitignored)
+    ├── data/                    # SQLite trade databases (earnings_trades.db, paper_trades.db)
+    ├── tests/                   # Unit tests
+    ├── docs/                    # This documentation
+    ├── CLAUDE.md                # Authoritative operational spec
+    └── README.md                # Project overview
 ```
 
 ---
