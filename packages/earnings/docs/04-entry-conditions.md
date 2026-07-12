@@ -1,5 +1,7 @@
 # Entry Conditions Framework
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 How a candidate actually gets from "reports earnings tonight" to "here's an order" — no
 decision tree lookup table, just each strategy's own tiering plus one cross-strategy ranking
 step.

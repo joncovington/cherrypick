@@ -1,5 +1,7 @@
 # Exit Strategy Guide
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 How positions actually get closed — there's no same-day announcement backstop in this system;
 every strategy is either an overnight hold or a short multi-day calendar hold, and the exit
 mechanics follow directly from that.

@@ -1,5 +1,7 @@
 # Screening Criteria
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 This document covers `iron_fly.py`'s own hard-filter numbers and tiering specifically — the other defined-risk strategies (`double_calendar.py`, `iron_condor.py`, `atm_calendar.py`, `directional_credit_spread.py`, `broken_wing_butterfly.py`, `reverse_fly.py`) have their own thresholds under their own `strategies.<name>` config blocks (see `CLAUDE.md`'s Config Options), reusing the same shared engine (`scanner.py`) and the same liquidity gates (#3, #7b, #7c, #11 below) but with strategy-specific values and additional criteria (e.g. double_calendar's `realized_move_dispersion_pct`, broken_wing_butterfly's `skew_abs`, reverse_fly's `min_realized_move_ratio`). Every strategy is defined-risk, so max loss is always known at entry.
 
 Two layers, run in this order: **(1) universe hard filters** (cheap, run against every ticker on the day's earnings calendar to cut the list down fast) then **(2) entry-time re-verification** (run only against candidates that survive layer 1, right before submitting an order — see `CLAUDE.md`'s Step 4b). A candidate must clear both layers; layer 1 alone is not sufficient to trade on.

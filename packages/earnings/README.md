@@ -77,7 +77,8 @@ own. Inside the cherrypick suite it plays two roles:
 - **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator) package registers
   and watchdogs two self-healing daily OS tasks — an entry task (15:45 ET) and an exit task (09:45 ET) —
   that run this module's forced-sampling paper harness (`src/strategy_test_runner.py`, `run_entries` /
-  `run_closes`) into the isolated `strat_test` book, and reads the resulting `data/paper_trades.db` for
+  `run_closes`) into the isolated `strat_test` book, and reads the resulting `paper_trades.db` — which
+  lives in the shared cherrypick data home (`~/.cherrypick/data/earnings` by default) — for
   cross-module reporting. This module has no scheduler of its own. The orchestrator drives it **by
   subprocess only** — it never edits this code or config, never places, cancels, adjusts, or closes an
   order, and never flips `enable_live_trading`. Its one live-config action is onboarding
@@ -125,6 +126,11 @@ shared hard filters and tiering every candidate passes through before a strategy
 - **`src/_core/`** is the shared **`cherrypick.core`** library (git submodule), used here for the market
   calendar and the tastytrade fee schedule (via `src/costs.py`). Module files self-bootstrap `src/_core`
   onto `sys.path` at import, so no pip install is needed — but the submodule must be checked out.
+- **`src/paths.py`** resolves the **data home** — the trade ledgers (`earnings_trades.db`,
+  `paper_trades.db`) live under `~/.cherrypick/data/earnings` by default (override with
+  `EARNINGS_DATA_DIR`), the same managed location the orchestrator reads for cross-module reporting and
+  where the local `dolt sql-server` serves the earnings/options/stocks datasets. Only *data* lives there;
+  `config/`, `logs/`, and `reports/` stay in the package checkout.
 
 Full operational detail — loop steps, config options, database schema — lives in `CLAUDE.md`,
 the authoritative spec this system runs against.

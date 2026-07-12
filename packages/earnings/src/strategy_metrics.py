@@ -18,12 +18,20 @@ reader of the trades table has always assumed was gross.
 
 import json
 import math
+import os
 import sqlite3
+import sys
 from pathlib import Path
 
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-PAPER_DB_PATH = _DATA_DIR / "paper_trades.db"
-LIVE_DB_PATH = _DATA_DIR / "earnings_trades.db"
+# Ensure src/ is importable so `import paths` resolves when this module is imported directly.
+sys.path.insert(0, os.path.dirname(__file__))
+
+import paths as _paths
+
+# Resolved from the shared cherrypick data home (~/.cherrypick/data/earnings by default, or
+# EARNINGS_DATA_DIR) so report/dashboard read the same ledgers the loop and harness write. See paths.py.
+PAPER_DB_PATH = _paths.paper_db_path()
+LIVE_DB_PATH = _paths.live_db_path()
 
 # The database load_closed_trades (and the dashboard's own rejection-histogram query)
 # reads. Defaults to paper so existing importers are unchanged; the strategy_report.py /

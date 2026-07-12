@@ -87,8 +87,9 @@ def print_strategy_block(name: str, trades: list[dict], capital_basis: float | N
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["live", "paper"], default="paper",
-                        help="'live' reads data/earnings_trades.db; 'paper' (default) reads "
-                             "data/paper_trades.db.")
+                        help="'live' reads earnings_trades.db; 'paper' (default) reads "
+                             "paper_trades.db (both under the cherrypick data home, "
+                             "~/.cherrypick/data/earnings by default or $EARNINGS_DATA_DIR).")
     parser.add_argument("--db", default=None, help="Overrides the mode-based default DB path.")
     parser.add_argument("--profile", default=None,
                         help="Book to report on. Defaults to 'strat_test' in paper mode, "

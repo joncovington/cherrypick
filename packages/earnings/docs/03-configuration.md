@@ -1,5 +1,7 @@
 # Configuration Guide
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 Everything here describes real keys in `config/config.example.json`. Copy it to
 `config/config.json` (gitignored) and edit that copy — the example stays in version control as
 the documented template, `config.json` is yours.

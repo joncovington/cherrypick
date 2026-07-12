@@ -1,5 +1,7 @@
 # Quick Reference: Common Commands & Workflows
 
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
 Everything here is a real command you can run today — no placeholder scripts. All operations go
 through `python src/tt.py <command>` (broker), `python src/scanner.py <command>` (shared engine),
 or `python src/strategies/<name>.py <command>` (strategy-specific). Every command prints JSON to

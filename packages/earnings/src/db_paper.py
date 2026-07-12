@@ -53,10 +53,13 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
+import paths as _paths
 from cherrypick.core import db as _db
 from cherrypick.core import profiles as _profiles
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "paper_trades.db"
+# Resolved from the shared cherrypick data home (~/.cherrypick/data/earnings by default, or
+# EARNINGS_DATA_DIR) so this checkout and the orchestrator read/write the same paper book. See paths.py.
+DB_PATH = _paths.paper_db_path()
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS trades (

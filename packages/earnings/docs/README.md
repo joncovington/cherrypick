@@ -140,13 +140,13 @@ cherrypick/
     │   ├── costs.py             # Cost model over cherrypick.core.fees
     │   ├── tt.py                # tastytrade broker interface
     │   ├── db.py / db_paper.py  # Persistence (live / paper, separate SQLite files)
+    │   ├── paths.py             # Resolves the data home (~/.cherrypick/data/earnings)
     │   ├── strategy_test_runner.py  # Forced-sampling paper-testing program (orchestrator-driven)
     │   ├── strategy_report.py / strategy_dashboard.py  # Per-strategy metrics & charts
     │   └── ...
     ├── config/
     │   ├── config.example.json  # Template — copy to config.json
     │   └── config.json          # Your actual settings (gitignored)
-    ├── data/                    # SQLite trade databases (earnings_trades.db, paper_trades.db)
     ├── tests/                   # Unit tests
     ├── docs/                    # This documentation
     ├── CLAUDE.md                # Authoritative operational spec
