@@ -27,10 +27,11 @@ quotes**, and only stubbing the two broker-mutating calls (submit, close).
   profile's fee-aware credit floor; entry price = `ic_natural_bid`; no discretionary skips.
   This means paper results measure the **profile parameters**, reproducibly — not the live
   agent's session-by-session judgment, which sits on top of a graduated profile afterward.
-- **Isolated storage.** All paper (and replay) trades live in `data/paper_trades.db`, written
-  via `python src/db.py --db data/paper_trades.db <command>` — the same schema and commands as
-  the live DB, with a `risk_profile` and `execution_mode` (`paper` | `replay`) column added.
-  The live loop and `data/meic_trades.db` are never touched by this system.
+- **Isolated storage.** All paper (and replay) trades live in `paper_trades.db` in the data home
+  (`~/.cherrypick/data/meic/` by default; see [`src/paths.py`](../src/paths.py)), written via
+  `python src/db.py --db <that path> <command>` — the same schema and commands as the live DB, with a
+  `risk_profile` and `execution_mode` (`paper` | `replay`) column added. The live loop and
+  `meic_trades.db` are never touched by this system.
 - **$100,000 virtual bankroll per profile.** Anchors each profile's equity/drawdown curve
   (and the dashboard's Performance view) on a common baseline so the four are visually and
   numerically comparable.
@@ -81,7 +82,7 @@ gamma/theta/vega/IV. Two consequences, both handled explicitly rather than silen
 drain; market-data calls cost 0–150 credits each). A per-second full-day pull is infeasible,
 so replay marks are taken at the same 120-second cadence as the live loop's in-position
 polling (~195 marks/session), fetched via the time-range snapshot endpoint and cached locally
-under `data/replay_cache/<date>.json` so re-running a day never re-hits the API.
+under the data home's `replay_cache/<date>.json` so re-running a day never re-hits the API.
 
 **Licensing:** 0DTESPX's `/llms.txt` states the platform is "free for registered users" but
 does not spell out terms for driving an external engine from its API. **Confirm this is

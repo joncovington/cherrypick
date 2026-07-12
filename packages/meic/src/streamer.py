@@ -1,7 +1,7 @@
 """MEICAgent DXLink Streamer Daemon.
 
 Maintains a single persistent WebSocket to tastytrade's DXLink feed and writes
-the latest Quote, Greeks, and Trade events to data/stream_cache.db, for every
+the latest Quote, Greeks, and Trade events to stream_cache.db in the data home, for every
 symbol configured in config.json's `symbols` list. Each traded symbol gets its
 own subscription window (near-the-money option strikes) on the same connection —
 that window doubles as both the entry-strike-selection data and that symbol's
@@ -47,6 +47,7 @@ if os.path.isdir(_CORE) and _CORE not in sys.path:
 
 _ET = pytz.timezone("America/New_York")
 
+import paths as _paths  # noqa: E402
 from cherrypick.core import streamcache  # noqa: E402
 from cherrypick.core.streamer import ChainStreamer  # noqa: E402
 
@@ -57,10 +58,10 @@ from session import get_session  # noqa: E402
 # ---------------------------------------------------------------------------
 
 _ROOT = Path(__file__).parent.parent
-_CACHE_DB  = _ROOT / "data" / "stream_cache.db"
-_PID_FILE  = _ROOT / "data" / "streamer.pid"
-_CONFIG    = _ROOT / "config.json"
-_TRADES_DB = _ROOT / "data" / "meic_trades.db"
+_CACHE_DB  = _paths.stream_cache_path()      # ~/.cherrypick/data/meic/ (or MEIC_DATA_DIR)
+_PID_FILE  = _paths.data_path("streamer.pid")
+_CONFIG    = _ROOT / "config.json"           # config + logs stay in the package, not the data home
+_TRADES_DB = _paths.live_db_path()
 _LOG_FILE  = _ROOT / "logs" / "streamer.log"
 
 # ---------------------------------------------------------------------------

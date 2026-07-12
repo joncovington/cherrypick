@@ -38,7 +38,7 @@ The agent runs every ~2-30 minutes depending on session and open positions (see 
 
 ## Paper trading
 
-Before committing real capital, run the parallel-shadow paper engine. It evaluates all four risk profiles (conservative / moderate / aggressive / very-aggressive) against the same live-quote snapshot per symbol, each on its own $100,000 virtual bankroll, and never touches the live account or `data/meic_trades.db`.
+Before committing real capital, run the parallel-shadow paper engine. It evaluates all four risk profiles (conservative / moderate / aggressive / very-aggressive) against the same live-quote snapshot per symbol, each on its own $100,000 virtual bankroll, and never touches the live account or the live `meic_trades.db`.
 
 Start a full unattended paper session:
 
@@ -106,7 +106,7 @@ Opens at `http://localhost:5050` and auto-refreshes every 30 seconds.
 - Avg P&L by IV rank bucket
 - All-time fee drag summary
 
-The dashboard reads directly from `data/meic_trades.db` — no extra dependencies beyond what is already installed. Stop it by closing the terminal window it opened.
+The dashboard reads directly from `meic_trades.db` in the data home (`~/.cherrypick/data/meic/` by default) — no extra dependencies beyond what is already installed. Stop it by closing the terminal window it opened.
 
 For paper trading, run the same dashboard against the paper database on a separate port so both can be open at once:
 
@@ -114,7 +114,7 @@ For paper trading, run the same dashboard against the paper database on a separa
 /paper-dashboard        # http://localhost:5051, badged "Paper Mode — Simulated"
 ```
 
-Or directly: `python src/dashboard.py --mode paper` (drives both the `data/paper_trades.db` path and the 5051 port). In paper mode the Performance view can be filtered by risk profile as well as by symbol.
+Or directly: `python src/dashboard.py --mode paper` (drives both the `paper_trades.db` path in the data home and the 5051 port). In paper mode the Performance view can be filtered by risk profile as well as by symbol.
 
 ---
 

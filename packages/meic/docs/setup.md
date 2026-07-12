@@ -96,7 +96,10 @@ Key fields to update in `config.json`:
 python src/db.py init_db
 ```
 
-This creates `data/meic_trades.db` (SQLite, WAL mode). Safe to run multiple times.
+This creates `meic_trades.db` (SQLite, WAL mode) in the **data home** — `~/.cherrypick/data/meic/` by
+default, shared with the umbrella orchestrator so both read the same files. Override the location with the
+`MEIC_DATA_DIR` environment variable (tests point it at a tmp path). The path is resolved centrally by
+[`src/paths.py`](../src/paths.py); `config.json` and `logs/` stay in the package. Safe to run multiple times.
 
 ### 6. Start the streamer daemon (recommended)
 

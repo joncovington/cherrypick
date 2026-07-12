@@ -18,8 +18,8 @@ unsigned delta per strike, but no gamma/theta/vega/IV. Consequences, both handle
 Rate limits (leaky bucket, ~0.116 credits/sec drain, market-data 0-150 credits/request)
 make a per-second full-day pull infeasible, so replay marks are taken at the same 120s
 cadence as the live loop (~195 marks/session) via the time-range snapshot endpoint, and
-each day's fetched snapshots are cached locally under data/replay_cache/ so re-running a
-day never re-hits the API.
+each day's fetched snapshots are cached locally under the data home's replay_cache/ so
+re-running a day never re-hits the API.
 """
 
 import argparse
@@ -36,11 +36,12 @@ import keyring.errors
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import paper  # noqa: E402
+import paths as _paths  # noqa: E402
 
 _API_BASE = "https://api.0dtespx.com"
 _SERVICE_NAME = "meicagent"
 _TOKEN_KEY = "0dtespx:bearer_token"
-_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "replay_cache")
+_CACHE_DIR = str(_paths.data_path("replay_cache"))
 _LOOP_INTERVAL_SECONDS = 120  # matches the live loop's in-position cadence
 _WING_WIDTHS = [2, 5, 10]      # candidate widths scanned each mark, widest-first in paper.py
 
@@ -245,8 +246,7 @@ def run_day(date: str, db_path: str, profiles_filter=None, force_fetch: bool = F
 
 def main():
     parser = argparse.ArgumentParser(description="SPX 0DTE historical replay for the paper-trading engine")
-    parser.add_argument("--db", default=os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                                       "..", "data", "paper_trades.db"))
+    parser.add_argument("--db", default=str(_paths.paper_db_path()))
     sub = parser.add_subparsers(dest="command")
 
     p_tok = sub.add_parser("set_token", help="Store the 0DTESPX bearer token in the OS keyring")

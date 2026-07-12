@@ -89,7 +89,7 @@ cherrypick suite it plays two roles:
 - **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator) package registers and
   watchdogs the self-healing OS task `cherrypick-meic-paper-loop`, which runs this module's
   `src/paper_loop.py` on a schedule for hands-off paper collection, and reads the resulting
-  `data/paper_trades.db` for cross-module reporting. The orchestrator drives this module **by subprocess only** —
+  `paper_trades.db` (in the shared data home) for cross-module reporting. The orchestrator drives this module **by subprocess only** —
   it never edits this code or config, never places or cancels an order, and never flips
   `enable_live_trading`. Its one live-config action is onboarding (`cherrypick connect`), which delegates to
   this module's own credential tool.
@@ -162,7 +162,7 @@ python src/paper_loop.py --status         # daemon/task status + open-position c
 python src/paper_loop.py --uninstall-task # stop the unattended session
 ```
 
-Every 2 minutes during market hours, the engine takes one live-quote snapshot per symbol and runs all four risk profiles against it deterministically — synthetic fills at natural bid, each profile on its own $100,000 virtual bankroll, tastytrade's exact fee schedule applied per leg. Writes go only to `data/paper_trades.db`; the live account and `data/meic_trades.db` are never touched, and no live order is ever submitted (paper mode is not gated by `enable_live_trading`).
+Every 2 minutes during market hours, the engine takes one live-quote snapshot per symbol and runs all four risk profiles against it deterministically — synthetic fills at natural bid, each profile on its own $100,000 virtual bankroll, tastytrade's exact fee schedule applied per leg. Writes go only to `paper_trades.db` in the data home; the live account and `meic_trades.db` are never touched, and no live order is ever submitted (paper mode is not gated by `enable_live_trading`).
 
 A pre-registered **graduation gate** (≥30 filled ICs, positive expectancy, ≥65% win rate, profit factor 1.3–4.0, bounded drawdown and worst day) decides when a profile has earned live capital. See [docs/paper-trading.md](docs/paper-trading.md) for the full design, the SPX historical-replay accelerator, and the known limitations of a frictionless paper model.
 
@@ -246,10 +246,6 @@ cherrypick/
     │       ├── paper-report.md      # /paper-report — multi-day profile comparison
     │       ├── meic-status.md       # /meic-status — quick session status
     │       └── check-chain.md       # /check-chain — verify chain and strike selection
-    ├── data/                        # Created at first run (gitignored)
-    │   ├── meic_trades.db           # Live trade history, loop log, daily summaries
-    │   ├── paper_trades.db          # Paper trade history (all four profiles)
-    │   └── stream_cache.db          # Live streamer cache (quotes/greeks/OI/volume/GEX history)
     └── logs/                        # Created at first run (gitignored; all rotated)
         ├── agent.log                # Agent session log
         ├── streamer.log             # Streamer daemon log
@@ -257,6 +253,18 @@ cherrypick/
         ├── dashboard.log            # Dashboard server log
         ├── eod-<date>.md            # Daily live end-of-day report
         └── paper-eod-<date>.md      # Daily paper end-of-day report
+```
+
+Runtime **data** does not live in the package — it's kept in the shared cherrypick data home so the
+umbrella and this module read the same files. Resolved by [`src/paths.py`](src/paths.py):
+
+```
+~/.cherrypick/data/meic/             # default; override with the MEIC_DATA_DIR env var
+├── meic_trades.db                   # Live trade history, loop log, daily summaries
+├── paper_trades.db                  # Paper trade history (all four profiles)
+├── stream_cache.db                  # Live streamer cache (quotes/greeks/OI/volume/GEX history)
+├── replay_cache/                    # Cached SPX historical-replay snapshots
+└── streamer.pid / paper_loop.pid    # Daemon PID + lock files
 ```
 
 ---

@@ -5,7 +5,7 @@ broker. The calling skill (.claude/commands/paper-loop.md) fetches each symbol's
 quotes, VIX, and GEX once per iteration (exactly like the live loop's Step 4) and hands
 the result to `process_symbol`, which evaluates all four risk profiles from
 config.risk.json against that one snapshot, synthesizes fills/exits, and writes to the
-paper database (data/paper_trades.db, selected via --db or MEIC_DB_PATH).
+paper database (paper_trades.db in the data home, selected via --db or MEIC_DB_PATH).
 
 Design mirrors the live Step 6 hard-stops (CLAUDE.md) and the entry/stop math specified
 in .claude/commands/execute-entry.md and .claude/commands/stop-management.md, but applies
@@ -39,9 +39,12 @@ _DB_PY = os.path.join(_HERE, "db.py")
 # this pure engine is importable standalone (tests, subprocess) with no install — mirrors the
 # credentials.py bootstrap. The calendar computes NYSE holidays / quarterly + triple-witching expiries
 # from rules (no hand-maintained per-year config lists, and no drift like the old 2026-06-18 bug).
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)  # so `import paths` resolves when imported (tests, paper_loop), not just as a script
 _CORE = os.path.join(_HERE, "_core")
 if os.path.isdir(_CORE) and _CORE not in sys.path:
     sys.path.insert(0, _CORE)
+import paths as _paths  # noqa: E402
 from datetime import date as _date  # noqa: E402
 
 from cherrypick.core import calendar as _cal  # noqa: E402
@@ -686,7 +689,7 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
 
 def main():
     parser = argparse.ArgumentParser(description="MEICAgent paper-trading engine")
-    parser.add_argument("--db", default=os.path.join(_REPO_ROOT, "data", "paper_trades.db"))
+    parser.add_argument("--db", default=str(_paths.paper_db_path()))
     sub = parser.add_subparsers(dest="command")
 
     p_proc = sub.add_parser("process_symbol",
