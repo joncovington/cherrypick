@@ -53,7 +53,7 @@ def _paper_open_positions(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         paper = mcfg.get("paper", {})
         schema = paper.get("trade_schema", "meic_ic")
         reader = _OPEN_READERS.get(schema)
-        db_path = cfgmod.module_root(mcfg, name) / paper.get("paper_db", "data/paper_trades.db")
+        db_path = cfgmod.paper_db_path(mcfg, name)
         if reader is None:
             out[name] = {"ok": False, "reason": f"unknown schema {schema!r}"}
             continue

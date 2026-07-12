@@ -111,7 +111,7 @@ def run(cfg: dict | None = None) -> dict:
         paper = mcfg.get("paper", {})
         schema = paper.get("trade_schema", "meic_ic")
         reader = _READERS.get(schema)
-        db_path = cfgmod.module_root(mcfg) / paper.get("paper_db", "data/paper_trades.db")
+        db_path = cfgmod.paper_db_path(mcfg, name)
 
         if reader is None:
             modules_out[name] = {"ok": False, "reason": f"unknown schema {schema!r}"}

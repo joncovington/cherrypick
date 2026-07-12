@@ -121,7 +121,7 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
         ages = [
             a
             for a in (
-                _file_age_minutes(root / paper["paper_db"]) if paper.get("paper_db") else None,
+                _file_age_minutes(cfgmod.paper_db_path(mcfg, name)) if paper.get("paper_db") else None,
                 _file_age_minutes(root / paper["log"]) if paper.get("log") else None,
             )
             if a is not None
