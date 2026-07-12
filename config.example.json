@@ -18,6 +18,7 @@
         "uninstall_argv": ["src/paper_loop.py", "--uninstall-task"],
         "status_argv": ["src/paper_loop.py", "--status"],
         "once_argv": ["src/paper_loop.py", "--once", "--force"],
+        "_paper_db_note": "Path to the module's paper-trades SQLite DB — MUST point at the file the module actually WRITES (a mismatch silently blinds the umbrella's report/reconcile/dashboard and the watchdog freshness check). Relative resolves against the module checkout; a leading '~' or env var expands (use e.g. '~/.cherrypick/data/meic/paper_trades.db' when the module keeps its data in the managed home); an absolute path is used as-is.",
         "paper_db": "data/paper_trades.db",
         "notify_trades": true,
         "trade_schema": "meic_ic",

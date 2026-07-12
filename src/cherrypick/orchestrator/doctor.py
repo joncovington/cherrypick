@@ -154,9 +154,9 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         )
 
         paper = mcfg.get("paper", {})
-        # paper DB dir writable
-        db_rel = paper.get("paper_db") or "data/paper_trades.db"
-        db_dir = (root / db_rel).parent
+        # paper DB dir writable (resolved the same way every read surface resolves it, so this checks
+        # the file the module actually writes — not a stale checkout-relative default)
+        db_dir = cfgmod.paper_db_path(mcfg, name).parent
         checks.append(
             Check(
                 f"{name}.paper_db",

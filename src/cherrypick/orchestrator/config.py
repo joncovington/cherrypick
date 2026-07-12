@@ -95,6 +95,23 @@ def module_root(module_cfg: dict[str, Any], name: str | None = None) -> Path:
     return (MODULES_HOME / module_dirname(module_cfg, name)).resolve()
 
 
+def paper_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path:
+    """Resolve a module's paper-trades DB file. `paper.paper_db` may be:
+      - absolute (used as-is);
+      - `~`- or env-prefixed — expanded, so a module whose data lives in the managed home can be pointed
+        at e.g. `~/.cherrypick/data/meic/paper_trades.db` without a hardcoded machine path; or
+      - relative — resolved against the module checkout root (the historical default).
+    Mirrors `dolt_service.data_dir` resolution. One source of truth so every read surface (report,
+    reconcile, calibrate, dashboard) and the watchdog freshness check agree on which file the module
+    actually writes — a mismatch silently blinds the umbrella to a module's paper data.
+    """
+    rel = (module_cfg.get("paper", {}) or {}).get("paper_db", "data/paper_trades.db")
+    p = Path(os.path.expandvars(os.path.expanduser(str(rel))))
+    if p.is_absolute():
+        return p.resolve()
+    return (module_root(module_cfg, name) / p).resolve()
+
+
 def enabled_modules(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Return {name: module_cfg} for modules with enabled=true."""
     return {name: mcfg for name, mcfg in cfg.get("modules", {}).items() if mcfg.get("enabled", False)}
