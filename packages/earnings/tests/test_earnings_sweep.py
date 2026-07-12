@@ -10,14 +10,13 @@ Tests the entry condition framework by:
 """
 
 import json
-import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from src import scanner
+import scanner  # noqa: E402  # intentional: after the sys.path bootstrap above
 
 
 def get_next_market_days(start_date_str: str, num_days: int = 10) -> list[str]:

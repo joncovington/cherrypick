@@ -46,16 +46,16 @@ import os
 import sqlite3
 import sys
 import time
-from pathlib import Path
 
 # Make the cherrypick-core submodule (src/_core) importable before the cherrypick.core import below,
 # mirroring credentials.py's bootstrap so this module works even when imported before credentials.
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
-import paths as _paths
 from cherrypick.core import db as _db
 from cherrypick.core import profiles as _profiles
+
+import paths as _paths
 
 # Resolved from the shared cherrypick data home (~/.cherrypick/data/earnings by default, or
 # EARNINGS_DATA_DIR) so this checkout and the orchestrator read/write the same paper book. See paths.py.
