@@ -18,12 +18,15 @@ per tick so credit cost is per-tick not per-profile. Per-IC results are written 
 (ic_trades schema, execution_mode='practice_0dtespx') so get_range_summary / the dashboard / the EOD
 roll-up work unchanged. Hardened in Phase 1 (fill confirmation via position reconciliation,
 idempotency keys, 429 backoff). Phase 3 resolves the iv_rank gate with a ToS-safe VIX-band pseudo
-rank (vix_band_iv_rank — no historical reads; see _VIX_IV_RANK_BANDS). Still open: multi-day batching
-(Phase 4). SPX-only; runs on 0DTESPX's fee/slippage cost basis.
+rank (vix_band_iv_rank — no historical reads; see _VIX_IV_RANK_BANDS). Phase 4 adds multi-day batching
+(run_range) with rate-limit pacing and a range roll-up. SPX-only; runs on 0DTESPX's fee/slippage cost
+basis.
 
 CLI:
   python src/paper_practice.py run --date 2026-07-09 [--profiles a,b | --profile large-spx]
                                    [--cadence 120] [--dry] [--db <path>]
+  python src/paper_practice.py run --start 2026-07-01 --end 2026-07-10   # paced multi-day batch
+  python src/paper_practice.py report --start 2026-07-01 --end 2026-07-10 # per-profile roll-up
   python src/paper_practice.py status         # rate-limit bucket fill (usage_percent)
   python src/paper_practice.py login --email <you>   # store a token (delegates to paper_replay)
 """
@@ -134,6 +137,11 @@ class Client:
     def usage_percent(self):
         _, u = self._request("GET", "/user")
         return u.get("usage_percent") if isinstance(u, dict) else None
+
+    def available_sessions(self):
+        """Set of dates 0DTESPX has data for (GET /market-data/sessions, public)."""
+        _, d = self._request("GET", "/market-data/sessions")
+        return set(d.keys()) if isinstance(d, dict) else set()
 
 
 # ---------------------------------------------------------------------------
@@ -276,8 +284,27 @@ def _db(db_path, args):
     subprocess.run([sys.executable, _DB_PY, "--db", db_path] + args, capture_output=True, text=True)
 
 
+def _db_json(db_path, args):
+    r = subprocess.run([sys.executable, _DB_PY, "--db", db_path] + args, capture_output=True, text=True)
+    try:
+        return json.loads(r.stdout.strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        return None
+
+
 def _save_ic(db_path, row):
     _db(db_path, ["save_trade", "--data", json.dumps(row, default=str)])
+
+
+def _range_summary(db_path, start, end):
+    d = _db_json(db_path, ["get_range_summary", "--start", start, "--end", end])
+    return d.get("profiles") if isinstance(d, dict) else None
+
+
+def _days_in_range(start, end, available):
+    """Sorted YYYY-MM-DD dates in [start, end] that 0DTESPX actually has sessions for (lexical
+    compare is valid for zero-padded ISO dates). Pure — unit-tested without network."""
+    return sorted(d for d in available if start <= d <= end)
 
 
 class _Book:
@@ -556,15 +583,72 @@ def run_day(date, profile_name="large-spx", cadence=120, dry=False, db_path=None
 
 
 # ---------------------------------------------------------------------------
+# Multi-day batch (rate-limit paced)
+# ---------------------------------------------------------------------------
+
+# ~credit cost of one day's metered reads (chain snapshots + the once-daily series). Conservative,
+# used only to decide when to pause for the leaky bucket to refill (10k cap, ~0.116 credits/s).
+_EST_DAY_CREDITS = 1000
+_BUCKET_CAP = 10000
+_DRAIN_PER_SEC = 0.116
+
+
+def _pace(client, log, floor=_EST_DAY_CREDITS):
+    """Before a day, make sure the rate-limit bucket has ~a day's worth of credits left; if not,
+    sleep for it to refill so a mid-day snapshot never 429s and silently drops an entry (which would
+    corrupt the backtest rather than the strategy). Bounded per sleep; the caller loops days."""
+    used = client.usage_percent()
+    if used is None:
+        return
+    remaining = (100 - used) / 100 * _BUCKET_CAP
+    if remaining >= floor:
+        return
+    wait = min(int((floor - remaining) / _DRAIN_PER_SEC) + 5, 3600)
+    log(f"# pacing: bucket {used}% used (~{int(remaining)} cr left); waiting {wait}s to refill")
+    time.sleep(wait)
+
+
+def run_range(start, end, profile_names=None, cadence=120, db_path=None, client=None,
+              log=print, pace=True):
+    """Backtest every available 0DTESPX session in [start, end] (inclusive) for the given (or all
+    SPX-eligible) profiles, accumulating per-IC rows into db_path. Paces against the rate-limit
+    bucket between days. Returns per-day net P&L plus a get_range_summary roll-up over the range."""
+    client = client or Client()
+    days = _days_in_range(start, end, client.available_sessions())
+    if not days:
+        return {"ok": False, "error": f"no available 0DTESPX sessions in {start}..{end}"}
+    per_day = {}
+    for day in days:
+        if pace:
+            _pace(client, log)
+        try:
+            res = run(day, profile_names, cadence=cadence, dry=False, db_path=db_path,
+                      client=client, log=log)
+            per_day[day] = {p: s["net_pnl"] for p, s in res["profiles"].items()}
+            hits = ", ".join(f"{p} {s['net_pnl']:+.0f}" for p, s in res["profiles"].items() if s["entries"])
+            log(f"# {day}: {hits or 'no entries'}")
+        except Exception as exc:  # one bad day must not abort the batch
+            log(f"# {day}: ERROR {exc}")
+            per_day[day] = {"error": str(exc)}
+    out = {"start": start, "end": end, "days": len(days), "per_day": per_day,
+           "db": db_path, "cost_basis": "0dtespx"}
+    if db_path:
+        out["range_summary"] = _range_summary(db_path, start, end)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="0DTESPX practice-session MEIC backtester (Phase 2)")
+    parser = argparse.ArgumentParser(description="0DTESPX practice-session MEIC backtester (Phase 4)")
     sub = parser.add_subparsers(dest="command")
 
-    p_run = sub.add_parser("run", help="Backtest one SPX day across profiles through practice sessions")
-    p_run.add_argument("--date", required=True, help="YYYY-MM-DD")
+    p_run = sub.add_parser("run", help="Backtest one SPX day, or a date range, across profiles")
+    p_run.add_argument("--date", default=None, help="a single day YYYY-MM-DD")
+    p_run.add_argument("--start", default=None, help="range start YYYY-MM-DD (with --end)")
+    p_run.add_argument("--end", default=None, help="range end YYYY-MM-DD (with --start)")
     p_run.add_argument("--profiles", default=None,
                        help="comma-separated profiles; default = all SPX-eligible")
     p_run.add_argument("--profile", default=None, help="a single profile (back-compat shortcut)")
@@ -572,6 +656,11 @@ def main():
     p_run.add_argument("--dry", action="store_true", help="log intended entries without placing orders")
     p_run.add_argument("--db", default=None,
                        help="results DB path (default practice_trades.db in the data home)")
+
+    p_rep = sub.add_parser("report", help="Per-profile P&L roll-up over a date range from the practice DB")
+    p_rep.add_argument("--start", required=True)
+    p_rep.add_argument("--end", required=True)
+    p_rep.add_argument("--db", default=None)
 
     sub.add_parser("status", help="Print the rate-limit bucket usage_percent")
 
@@ -585,8 +674,18 @@ def main():
         names = (args.profiles.split(",") if args.profiles
                  else [args.profile] if args.profile else None)
         db_path = args.db or str(_paths.data_path("practice_trades.db"))
-        result = run(args.date, names, cadence=args.cadence, dry=args.dry, db_path=db_path)
+        if args.start and args.end:
+            result = run_range(args.start, args.end, names, cadence=args.cadence, db_path=db_path)
+        elif args.date:
+            result = run(args.date, names, cadence=args.cadence, dry=args.dry, db_path=db_path)
+        else:
+            print(json.dumps({"ok": False, "error": "provide --date or --start/--end"}))
+            sys.exit(1)
         print(json.dumps({"ok": True, "result": result}, default=str))
+    elif args.command == "report":
+        db_path = args.db or str(_paths.data_path("practice_trades.db"))
+        print(json.dumps({"ok": True, "start": args.start, "end": args.end,
+                          "profiles": _range_summary(db_path, args.start, args.end)}, default=str))
     elif args.command == "status":
         print(json.dumps({"ok": True, "usage_percent": Client().usage_percent()}))
     elif args.command == "login":
