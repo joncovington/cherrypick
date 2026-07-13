@@ -104,6 +104,8 @@ Instead of hand-editing `config.json` to change entry thresholds, use the **risk
 
 See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, trade-off tables per tier, and progression guidance.
 
+**Paper-only experiment cells** (beyond the ladder): `config.risk.json` also holds symbol/wing/credit experiment profiles (`small-`/`medium-`/`large-`/`explore-`) that the parallel-shadow paper engine runs alongside the ladder to study optimal risk profiles per account size. Unlike the ladder, each is a *partial* overlay that pins one `(symbol, wing, min-credit)` cell via three new per-profile keys — `symbols` (the subset it trades), `wing_widths_by_symbol` + `wing_selection` (`widest`/`narrowest`/`fixed`) — and opts into staggering via `stagger_entries` (spreads its `daily_ic_trade_target` across the session using `min_minutes_between_entries` and the entry window, the latter otherwise unenforced in paper). The ladder carries none of these keys, so it is unchanged. These are **paper-only** and never affect live trading. See [docs/paper-experiments.md](docs/paper-experiments.md).
+
 ## Config Options
 
 | Option | Current Value | What it controls |

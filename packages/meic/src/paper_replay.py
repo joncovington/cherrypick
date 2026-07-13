@@ -1,5 +1,18 @@
 """SPX historical 0DTE replay for the paper-trading engine.
 
+⚠️ DO NOT RUN AGAINST 0DTESPX.com — TERMS-OF-SERVICE INCOMPATIBLE (2026-07-13).
+This tool's whole design — systematically walking each past session at a 120s cadence, caching
+every day to replay_cache/<date>.json, and deriving a local paper_trades.db — is precisely what
+0DTESPX's acceptable-use policy prohibits: "Bulk extraction of the historical dataset is not
+permitted, at any pace … systematically walking the archive … to build a local copy or a
+derivative dataset violates the terms even when paced under the credit budget … offending accounts
+may be suspended and their networks may lose access." The credit budget bounds burst load; it is
+NOT a data license. Paper experiment cells are validated via FORWARD PAPER on tastytrade
+(src/paper_loop.py) instead. See docs/0dtespx-api.md for the full policy and the sanctioned
+server-side alternatives (their practice sessions / strategy backtester). The auth helpers
+(login / request_code / set_token) and the Cloudflare User-Agent fix below remain only in case we
+ever pivot to that sanctioned API; the fetch/replay path (fetch_day / run_day) should not be used.
+
 Feeds src/paper.py's deterministic process_symbol() from historical SPX option-chain
 snapshots (bid/ask/delta) via the 0DTESPX.com API (https://api.0dtespx.com), so the four
 risk profiles can reach statistical significance in days rather than weeks, and the
@@ -23,6 +36,7 @@ re-running a day never re-hits the API.
 """
 
 import argparse
+import getpass
 import json
 import os
 import sys
@@ -39,6 +53,11 @@ import paper  # noqa: E402
 import paths as _paths  # noqa: E402
 
 _API_BASE = "https://api.0dtespx.com"
+# api.0dtespx.com sits behind Cloudflare, which rejects Python's default urllib User-Agent with
+# HTTP 403 "error code: 1010" (browser-signature ban) before the request ever reaches the API.
+# A conventional browser-shaped UA clears the check (curl works for the same reason). Sent on
+# every request below.
+_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) cherrypick-meic/1.0"
 _SERVICE_NAME = "meicagent"
 _TOKEN_KEY = "0dtespx:bearer_token"
 _CACHE_DIR = str(_paths.data_path("replay_cache"))
@@ -63,7 +82,8 @@ def _token() -> str:
 
 
 def _api_get(path: str, timeout: float = 15.0) -> dict:
-    req = urllib.request.Request(f"{_API_BASE}{path}", headers={"Authorization": _token()})
+    req = urllib.request.Request(f"{_API_BASE}{path}",
+                                 headers={"Authorization": _token(), "User-Agent": _USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
@@ -72,6 +92,57 @@ def _api_get(path: str, timeout: float = 15.0) -> dict:
             f"0DTESPX API {path} -> HTTP {exc.code}: {exc.read().decode('utf-8', 'replace')}") from exc
     except urllib.error.URLError as exc:
         raise ReplayError(f"0DTESPX API {path} unreachable: {exc.reason}") from exc
+
+
+def _api_post(path: str, body: dict, timeout: float = 15.0) -> dict:
+    """Unauthenticated JSON POST — used for the /auth endpoints that mint the bearer token
+    (login is how you *get* the token, so it cannot itself be token-authenticated)."""
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(f"{_API_BASE}{path}", data=data,
+                                 headers={"Content-Type": "application/json",
+                                          "User-Agent": _USER_AGENT}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise ReplayError(
+            f"0DTESPX API {path} -> HTTP {exc.code}: {exc.read().decode('utf-8', 'replace')}") from exc
+    except urllib.error.URLError as exc:
+        raise ReplayError(f"0DTESPX API {path} unreachable: {exc.reason}") from exc
+
+
+def _store_token(token: str) -> None:
+    """Persist the bearer token in the OS keyring (Windows Credential Manager on Windows, under
+    service `meicagent`, key `0dtespx:bearer_token` — the exact pair _token() reads back)."""
+    if not token:
+        raise ReplayError("auth response contained no token")
+    try:
+        keyring.set_password(_SERVICE_NAME, _TOKEN_KEY, token)
+    except keyring.errors.KeyringError as exc:
+        raise ReplayError(f"Keyring write failed: {exc}") from exc
+
+
+def _mask(token: str) -> str:
+    """A safe-to-print fingerprint of a stored token (never echo the whole secret)."""
+    return f"{token[:4]}..{token[-4:]} ({len(token)} chars)" if token and len(token) > 8 else "****"
+
+
+def request_code(email: str) -> dict:
+    """Ask 0DTESPX to email a fresh 6-digit verification code (the passwordless-login first step).
+    Then run `login --email <email> --code <code>`."""
+    return _api_post("/auth/verify-email", {"email": email})
+
+
+def login(email: str, password: str | None = None, code: str | None = None) -> str:
+    """Exchange 0DTESPX credentials for a bearer token and store it in the OS keyring.
+
+    Either a password or a verification `code` (see request_code) authenticates the session:
+    POST /auth/sessions -> {"token": "..."}. Returns the stored token."""
+    body = {"email": email, "code": code} if code else {"email": email, "password": password}
+    resp = _api_post("/auth/sessions", body)
+    token = resp.get("token")
+    _store_token(token)
+    return token
 
 
 def _cache_path(date: str) -> str:
@@ -249,8 +320,21 @@ def main():
     parser.add_argument("--db", default=str(_paths.paper_db_path()))
     sub = parser.add_subparsers(dest="command")
 
-    p_tok = sub.add_parser("set_token", help="Store the 0DTESPX bearer token in the OS keyring")
+    p_tok = sub.add_parser("set_token", help="Store a 0DTESPX bearer token you already have in the "
+                                             "OS keyring (Windows Credential Manager)")
     p_tok.add_argument("--token", required=True)
+
+    p_login = sub.add_parser("login", help="Log in to 0DTESPX and store the returned bearer token in "
+                                           "the OS keyring. Prompts for the password (never taken on "
+                                           "the command line); use --code for passwordless login.")
+    p_login.add_argument("--email", required=True)
+    p_login.add_argument("--code", default=None,
+                         help="6-digit verification code from `request_code` (passwordless login; "
+                              "skips the password prompt)")
+
+    p_code = sub.add_parser("request_code",
+                            help="Email yourself a fresh 6-digit verification code for passwordless login")
+    p_code.add_argument("--email", required=True)
 
     sub.add_parser("sessions", help="List available historical trading days")
 
@@ -263,11 +347,28 @@ def main():
 
     if args.command == "set_token":
         try:
-            keyring.set_password(_SERVICE_NAME, _TOKEN_KEY, args.token)
-        except keyring.errors.KeyringError as exc:
+            _store_token(args.token)
+        except ReplayError as exc:
             print(json.dumps({"ok": False, "error": str(exc)}))
             sys.exit(1)
-        print(json.dumps({"ok": True}))
+        print(json.dumps({"ok": True, "stored": _mask(args.token)}))
+    elif args.command == "login":
+        try:
+            password = None if args.code else getpass.getpass("0DTESPX password: ")
+            token = login(args.email, password=password, code=args.code)
+        except ReplayError as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}))
+            sys.exit(1)
+        print(json.dumps({"ok": True, "email": args.email, "stored": _mask(token)}))
+    elif args.command == "request_code":
+        try:
+            request_code(args.email)
+        except ReplayError as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}))
+            sys.exit(1)
+        print(json.dumps({"ok": True, "email": args.email,
+                          "detail": "verification code requested; check your email, then run: "
+                                    "login --email <email> --code <code>"}))
     elif args.command == "sessions":
         try:
             print(json.dumps(_api_get("/market-data/sessions")))

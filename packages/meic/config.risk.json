@@ -1,5 +1,6 @@
 {
   "_description": "Named risk-profile overrides for config.json, applied by /set-risk-profile. See docs/risk-profiles.md for full rationale and when to use each profile.",
+  "_experiment_note": "Beyond the four-tier risk ladder, `profiles` also holds symbol/wing/credit experiment cells for the paper-only account-size study (see docs/paper-experiments.md), prefixed small-/medium-/large-/explore-. Each pins one (symbol, wing, min-credit) cell via `symbols` + `wing_widths_by_symbol` + `wing_selection`, and opts into staggering (`stagger_entries`) so its `daily_ic_trade_target` spreads across the session via `min_minutes_between_entries` and the entry window. `late_entry_bias_enabled: false` lets spacing govern timing. Account-size character lives in wing width + symbol (dollar risk/IC), not in throttling sample count -- throughput caps (concurrency 4 / daily 6) hold several time-cohorts at once. Reconstruct a strict small account by filtering the tagged rows in analysis. The ladder is untouched (no `symbols`/`stagger_entries` -> prior behavior).",
   "active_profile": "conservative",
 
   "profiles": {
@@ -89,6 +90,105 @@
       "max_concurrent_ics": 2,
       "stop_trigger_ratio": 0.85,
       "daily_ic_trade_target": 5
+    },
+
+    "small-xsp": {
+      "_note": "Small account, cash-settled XSP, narrow wings (2-3), narrowest-clearing. Dollar risk ~$200-300/IC.",
+      "symbols": ["XSP"],
+      "wing_widths_by_symbol": {"XSP": [2, 3]},
+      "wing_selection": "narrowest",
+      "min_credit_pct_of_width": 0.12,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false
+    },
+
+    "small-iwm": {
+      "_note": "Small account, physically-settled IWM (~$230), narrow wings (3-5). Exercises the physical force-close + friction path. Dollar risk ~$300-500/IC.",
+      "symbols": ["IWM"],
+      "wing_widths_by_symbol": {"IWM": [3, 5]},
+      "wing_selection": "narrowest",
+      "min_credit_pct_of_width": 0.12,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false
+    },
+
+    "medium-qqq": {
+      "_note": "Medium account, physically-settled QQQ, 5-wide fixed. Dollar risk ~$500/IC.",
+      "symbols": ["QQQ"],
+      "wing_widths_by_symbol": {"QQQ": [5]},
+      "wing_selection": "fixed",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false
+    },
+
+    "medium-xsp-wide": {
+      "_note": "Wing-risk contrast vs small-xsp: same symbol (XSP), wide wings (5-10), widest-first. Isolates the effect of wing width on the same underlying.",
+      "symbols": ["XSP"],
+      "wing_widths_by_symbol": {"XSP": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false
+    },
+
+    "large-spx": {
+      "_note": "Large account, cash-settled SPX, wide wings (5-10), widest-first. Dollar risk ~$500-1000/IC.",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false
+    },
+
+    "explore-spx-tightcredit": {
+      "_note": "Credit-floor sweep (stricter): SPX 5-wide, min_credit 0.20 -- fewer, higher-quality entries. Compare fill rate + expectancy vs large-spx (0.15).",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5]},
+      "wing_selection": "fixed",
+      "min_credit_pct_of_width": 0.20,
+      "low_iv_min_credit_pct_of_width": 0.15,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false
+    },
+
+    "explore-xsp-loosecredit": {
+      "_note": "Credit-floor sweep (looser): XSP 2-wide, min_credit 0.10, relaxed IV floor (0.22) -- more entries, thinner credit. Compare vs small-xsp (0.12); watch fee drag on the narrow width.",
+      "symbols": ["XSP"],
+      "wing_widths_by_symbol": {"XSP": [2]},
+      "wing_selection": "fixed",
+      "min_iv_rank": 0.22,
+      "min_credit_pct_of_width": 0.10,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false
     }
   }
 }

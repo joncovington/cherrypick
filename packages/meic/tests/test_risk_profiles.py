@@ -10,6 +10,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
+# The canonical four-tier risk ladder. config.risk.json may additionally carry
+# symbol/wing/credit experiment cells (small-/medium-/large-/explore-) for the paper
+# account-size study — those are partial overlays merged onto config.json, not full presets.
+LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
+EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore"}
+
+
 @pytest.fixture
 def sample_risk_profiles():
     """Load the actual config.risk.json from the repo."""
@@ -34,10 +41,13 @@ def test_config_risk_json_valid_structure(sample_risk_profiles):
     assert isinstance(sample_risk_profiles["profiles"], dict)
 
 
-def test_config_risk_json_has_four_profiles(sample_risk_profiles):
-    """Verify all four profiles exist."""
-    expected = {"conservative", "moderate", "aggressive", "very-aggressive"}
-    assert set(sample_risk_profiles["profiles"].keys()) == expected
+def test_config_risk_json_has_ladder_profiles(sample_risk_profiles):
+    """The four-tier ladder must always be present. Any additional profiles must be recognized
+    experiment/exploratory cells (small-/medium-/large-/explore-) for the paper account-size study."""
+    names = set(sample_risk_profiles["profiles"].keys())
+    assert LADDER <= names
+    for extra in names - LADDER:
+        assert extra.split("-")[0] in EXPERIMENT_PREFIXES, f"unexpected non-ladder profile {extra!r}"
 
 
 def test_conservative_profile_matches_config_defaults(sample_risk_profiles, sample_config):
@@ -135,8 +145,9 @@ def test_very_aggressive_profile_relaxes_regime_gates(sample_risk_profiles):
     assert very_aggressive["daily_ic_trade_target"] == 5
 
 
-def test_all_profiles_have_required_gate_keys(sample_risk_profiles):
-    """Verify every profile includes all required gate keys."""
+def test_ladder_profiles_have_required_gate_keys(sample_risk_profiles):
+    """The ladder profiles are complete presets — every required gate key present. (Experiment
+    profiles are partial overlays merged onto config.json, validated separately below.)"""
     required_keys = {
         "min_iv_rank",
         "min_credit_pct_of_width",
@@ -158,10 +169,27 @@ def test_all_profiles_have_required_gate_keys(sample_risk_profiles):
         "daily_ic_trade_target",
     }
 
-    for profile_name, profile in sample_risk_profiles["profiles"].items():
+    for profile_name in LADDER:
+        profile = sample_risk_profiles["profiles"][profile_name]
         profile_gates = {k: v for k, v in profile.items() if not k.startswith("_")}
         for key in required_keys:
             assert key in profile_gates, f"Profile {profile_name} missing required key: {key}"
+
+
+def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):
+    """Experiment cells must pin the axes they vary: a symbol subset, per-symbol wings for each
+    declared symbol, and — if they stagger — a daily target + spacing to spread entries."""
+    profiles = sample_risk_profiles["profiles"]
+    for name in set(profiles) - LADDER:
+        p = profiles[name]
+        assert isinstance(p.get("symbols"), list) and p["symbols"], f"{name} must pin `symbols`"
+        wbs = p.get("wing_widths_by_symbol")
+        assert isinstance(wbs, dict) and wbs, f"{name} must set `wing_widths_by_symbol`"
+        for sym in p["symbols"]:
+            assert sym in wbs and wbs[sym], f"{name} missing wings for {sym}"
+        if p.get("stagger_entries"):
+            assert "daily_ic_trade_target" in p and "min_minutes_between_entries" in p, \
+                f"{name} staggers but lacks daily target / spacing"
 
 
 def test_all_profiles_have_description_note(sample_risk_profiles):
