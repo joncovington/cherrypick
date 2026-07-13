@@ -153,3 +153,54 @@ def test_stop_triggers_when_side_cost_reaches_ratio():
     assert call_cost >= stop_trigger * ic["net_credit"]   # 1.30 >= 0.90*1.40=1.26 -> stop
     put_cost = pp.side_cost(ic, "put", marks)             # 0.50
     assert not (put_cost >= stop_trigger * ic["net_credit"])
+
+
+# ── SPX-eligible profile selection ───────────────────────────────────────────
+
+def test_spx_eligible_profiles_includes_ladder_and_spx_cells_only():
+    names = pp.spx_eligible_profiles()
+    # ladder tiers trade all base symbols (SPX included) and the SPX-pinned cells qualify
+    assert {"conservative", "moderate", "aggressive", "very-aggressive",
+            "large-spx", "explore-spx-tightcredit"} <= set(names)
+    # XSP/QQQ/IWM-pinned cells are excluded
+    for excluded in ("small-xsp", "small-iwm", "medium-qqq", "medium-xsp-wide", "explore-xsp-loosecredit"):
+        assert excluded not in names
+
+
+# ── settlement / per-IC P&L accounting ───────────────────────────────────────
+
+def _finalizable_ic(**over):
+    ic = {"legs": {"sp_k": 7450.0, "sc_k": 7540.0}, "net_credit": 1.40, "open_fee": 6.88, "wing": 5,
+          "exit": {"call": None, "put": None}, "exit_fee": {"call": 0.0, "put": 0.0},
+          "exit_reason": {"call": None, "put": None}}
+    ic.update(over)
+    return ic
+
+
+def test_finalize_ic_both_sides_expire_otm_keeps_full_credit():
+    # spot 7500 between the shorts (7450 put / 7540 call) -> both settle worthless
+    ic = _finalizable_ic()
+    pnl, fees, status, reason = pp._finalize_ic(ic, spot_close=7500.0)
+    assert pnl == 140.0                      # 1.40 credit * 100, nothing paid to exit
+    assert fees == 6.88                       # open fee only (expiry has no fee)
+    assert status == "expired" and reason == "expired_settlement"
+
+
+def test_finalize_ic_stopped_put_plus_expired_call():
+    # put side was stopped intraday for a 1.50 debit (+0.72 fee); call left to expire OTM
+    ic = _finalizable_ic(exit={"call": None, "put": 1.50}, exit_fee={"call": 0.0, "put": 0.72},
+                         exit_reason={"call": None, "put": "per_side_stop"})
+    pnl, fees, status, reason = pp._finalize_ic(ic, spot_close=7500.0)
+    assert pnl == round((1.40 - 0.0 - 1.50) * 100, 2)   # -10.0
+    assert fees == round(6.88 + 0.0 + 0.72, 2)          # 7.60
+    assert status == "stopped"                          # any stopped side -> stopped
+    assert "per_side_stop" in reason and "expired_settlement" in reason
+
+
+def test_finalize_ic_settles_itm_call_at_intrinsic():
+    # spot 7546 -> call short 7540 is 6 ITM (< wing 5? capped at wing) -> settles at wing 5
+    ic = _finalizable_ic()
+    pnl, fees, status, reason = pp._finalize_ic(ic, spot_close=7546.0)
+    # call exit = min(7546-7540, wing 5) = 5 ; put OTM = 0 -> pnl = (1.40 - 5 - 0)*100
+    assert pnl == round((1.40 - 5.0 - 0.0) * 100, 2)    # -360.0 (near max loss on the ITM side)
+    assert status == "expired"

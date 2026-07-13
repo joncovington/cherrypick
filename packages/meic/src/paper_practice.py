@@ -12,19 +12,24 @@ Compliance posture (enforced by construction):
     are ever stored. This is trading/research use, not systematically walking the archive to build
     a local copy or derivative dataset.
 
-Phase 1 scope: a hardened single-profile (default 'large-spx'), single-day driver — the prototype
-made production-grade with fill confirmation via position reconciliation, idempotency keys, and 429
-backoff. Multi-profile shared-snapshot runs, the results DB, the real iv_rank source, and multi-day
-batching are Phases 2–4 (see the plan). SPX-only; runs on 0DTESPX's fee/slippage cost basis.
+Phase 2 scope: all SPX-eligible profiles (the four ladder tiers + large-spx + explore-spx-tightcredit)
+in one run, each its own practice session for position isolation, sharing ONE metered chain snapshot
+per tick so credit cost is per-tick not per-profile. Per-IC results are written to a practice DB
+(ic_trades schema, execution_mode='practice_0dtespx') so get_range_summary / the dashboard / the EOD
+roll-up work unchanged. Hardened in Phase 1 (fill confirmation via position reconciliation,
+idempotency keys, 429 backoff). Still open: the real iv_rank source (Phase 3 — a placeholder for now)
+and multi-day batching (Phase 4). SPX-only; runs on 0DTESPX's fee/slippage cost basis.
 
 CLI:
-  python src/paper_practice.py run --date 2026-07-09 [--profile large-spx] [--cadence 120] [--dry]
+  python src/paper_practice.py run --date 2026-07-09 [--profiles a,b | --profile large-spx]
+                                   [--cadence 120] [--dry] [--db <path>]
   python src/paper_practice.py status         # rate-limit bucket fill (usage_percent)
   python src/paper_practice.py login --email <you>   # store a token (delegates to paper_replay)
 """
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.error
@@ -34,8 +39,11 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import paper  # noqa: E402  (reused: evaluate_entry, profiles, merge)
+import paper  # noqa: E402  (reused: evaluate_entry, profiles, merge, settlement value)
 import paper_replay as _replay  # noqa: E402  (reused: _API_BASE, _USER_AGENT, _token, login helpers)
+import paths as _paths  # noqa: E402  (practice_trades.db default path in the data home)
+
+_DB_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "db.py")
 
 _ET = ZoneInfo("America/New_York")
 _TARGET_DELTA = 0.15
@@ -230,11 +238,67 @@ def side_cost(ic, side, marks):
     return None
 
 
+def spx_eligible_profiles(base=None, profiles=None) -> list:
+    """The profiles this SPX-only backtester runs: every profile whose merged config trades SPX —
+    the four ladder tiers (they trade all base symbols, SPX included) plus the SPX-pinned experiment
+    cells (large-spx, explore-spx-tightcredit). XSP/QQQ/IWM-pinned cells are excluded."""
+    base = base or paper.load_base_config()
+    profiles = profiles or paper.load_profiles()
+    out = []
+    for name in paper.all_profile_names(profiles):
+        params = paper._merged_params(base, profiles[name])
+        if "SPX" in [s.upper() for s in params.get("symbols", ["SPX"])]:
+            out.append(name)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Results DB (per-IC rows via db.py, tagged execution_mode="practice_0dtespx")
+# ---------------------------------------------------------------------------
+
+def _db(db_path, args):
+    subprocess.run([sys.executable, _DB_PY, "--db", db_path] + args, capture_output=True, text=True)
+
+
+def _save_ic(db_path, row):
+    _db(db_path, ["save_trade", "--data", json.dumps(row, default=str)])
+
+
+class _Book:
+    """One profile's isolated virtual account = its own 0DTESPX practice session (positions can't
+    commingle across profiles, so each profile gets its own session; the metered chain snapshot is
+    still read once per tick and shared across all books)."""
+
+    def __init__(self, name, params, sid):
+        self.name = name
+        self.params = params
+        self.sid = sid
+        self.widths = params.get("wing_widths_by_symbol", {}).get("SPX") or [5, 10]
+        self.stop_trig = params["stop_trigger_ratio"]
+        self.max_adj = params.get("max_stop_adjustments_per_ic", 3)
+        self.max_conc = params["max_concurrent_ics"]
+        self.daily_target = params.get("daily_ic_trade_target", 10 ** 9)
+        self.spacing = params.get("min_minutes_between_entries", 0)
+        self.open_ics = []
+        self.todays = 0
+        self.last_min = None
+        self.seq = 0
+
+    def account_open(self):
+        return sum(1 for ic in self.open_ics if ic["call"] == "open" or ic["put"] == "open")
+
+    def eligible(self, now_min):
+        return (600 <= now_min < 870
+                and self.account_open() < self.max_conc
+                and self.todays < self.daily_target
+                and (self.last_min is None or now_min - self.last_min >= self.spacing))
+
+
 # ---------------------------------------------------------------------------
 # Order placement
 # ---------------------------------------------------------------------------
 
-def _place_ic(client, sid, chosen, yymmdd, now_min, log):
+def _place_ic(client, sid, chosen, yymmdd, now_min, entry_iso, spot):
     L = {"sp": occ(chosen["short_put"]["strike"], "P", yymmdd),
          "lp": occ(chosen["long_put"]["strike"], "P", yymmdd),
          "sc": occ(chosen["short_call"]["strike"], "C", yymmdd),
@@ -252,12 +316,17 @@ def _place_ic(client, sid, chosen, yymmdd, now_min, log):
     fill = resp.get("fill_price") or resp.get("execution_price")
     if fill is None:
         return None
-    return {"legs": L, "net_credit": float(fill), "entry_min": now_min,
+    return {"legs": L, "net_credit": float(fill), "open_fee": float(resp.get("fees") or 0),
+            "entry_min": now_min, "entry_iso": entry_iso, "spot_entry": spot,
             "wing": chosen["wing_width"], "call": "open", "put": "open",
-            "retry": {"call": 0, "put": 0}}
+            "retry": {"call": 0, "put": 0},
+            # per-side exit debit (points) paid to close a stopped side; filled at settlement for the
+            # sides left to expire. drives per-IC P&L: net_credit - call_exit - put_exit.
+            "exit": {"call": None, "put": None}, "exit_fee": {"call": 0.0, "put": 0.0},
+            "exit_reason": {"call": None, "put": None}}
 
 
-def _place_close(client, sid, ic, side, cost, log, now_et, retry=False):
+def _place_close(client, sid, ic, side, cost, log, tag, retry=False):
     short_i, long_i = _sides(ic)[side]
     # A defined-risk spread never costs more than its wing to close, so bid the wing width as the
     # debit limit: always marketable (the sim fills at the true, better price via improvement),
@@ -269,36 +338,87 @@ def _place_close(client, sid, ic, side, cost, log, now_et, retry=False):
     st, resp = client.place(sid, order)
     ic[side] = "pending_close"
     fp = resp.get("fill_price") if isinstance(resp, dict) else None
-    log(f"{now_et} {'STOP-retry' if retry else 'STOP'} {side} cost {cost:.2f} bid {price} "
+    fee = resp.get("fees") if isinstance(resp, dict) else None
+    if fp is not None and ic["exit"][side] is None:   # record the realized close debit once
+        ic["exit"][side] = float(fp)
+        ic["exit_fee"][side] = float(fee or 0)
+        ic["exit_reason"][side] = "per_side_stop"
+    log(f"{tag} {'STOP-retry' if retry else 'STOP'} {side} cost {cost:.2f} bid {price} "
         f"http {st} fill {fp}")
 
 
 # ---------------------------------------------------------------------------
-# One-day driver
+# Settlement / results row
 # ---------------------------------------------------------------------------
 
-def run_day(date, profile_name="large-spx", cadence=120, dry=False,
-            iv_rank=_IV_RANK_PLACEHOLDER, client=None, log=print):
+def _finalize_ic(ic, spot_close):
+    """Close out an IC at settlement: any side not stopped intraday expires and settles at its
+    intrinsic value (capped at the wing) via paper._settlement_value. Returns
+    (pnl, fees, status, exit_reason). Per-IC P&L = net_credit − call_exit − put_exit (points ×100),
+    fees separate — mirrors paper.py's accounting, sourced from real 0DTESPX fills + settlement."""
+    for side in ("call", "put"):
+        if ic["exit"][side] is None:
+            strike = ic["legs"]["sc_k"] if side == "call" else ic["legs"]["sp_k"]
+            ic["exit"][side] = paper._settlement_value(strike, spot_close, ic["wing"], side)
+            ic["exit_reason"][side] = "expired_settlement"
+    pnl = round((ic["net_credit"] - ic["exit"]["call"] - ic["exit"]["put"]) * 100, 2)
+    fees = round(ic["open_fee"] + ic["exit_fee"]["call"] + ic["exit_fee"]["put"], 2)
+    reasons = [r for r in (ic["exit_reason"]["call"], ic["exit_reason"]["put"]) if r]
+    status = "stopped" if "per_side_stop" in reasons else "expired"
+    return pnl, fees, status, "+".join(sorted(set(reasons)))
+
+
+def _ic_row(book_name, date, ic, pnl, fees, status, exit_reason, exit_iso):
+    L = ic["legs"]
+    return {
+        "ic_order_id": ic["oid"], "trade_date": date, "entry_time": ic["entry_iso"],
+        "exit_time": exit_iso, "expiration": date, "symbol": "SPX",
+        "put_strike": L["sp_k"], "call_strike": L["sc_k"], "wing_width": ic["wing"],
+        "net_credit": ic["net_credit"], "quantity": 1,
+        "underlying_price_entry": ic["spot_entry"], "iv_rank_at_entry": _IV_RANK_PLACEHOLDER,
+        "session_quality": session_quality(ic["entry_min"]),
+        "risk_profile": book_name, "execution_mode": "practice_0dtespx",
+        "iv_rank_source": "placeholder", "pnl": pnl, "fees": fees,
+        "status": status, "exit_reason": exit_reason,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Multi-profile day driver (all SPX-eligible books, one shared per-tick snapshot)
+# ---------------------------------------------------------------------------
+
+def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
+        iv_rank=_IV_RANK_PLACEHOLDER, client=None, log=print):
+    """Backtest one SPX day for every given (or all SPX-eligible) profile at once. Each profile is
+    its own practice session (position isolation), but the metered option-chain snapshot is read
+    ONCE per tick and shared across all books — so credit cost is per-tick, not per-profile. Writes
+    one ic_trades row per IC to db_path (tagged execution_mode='practice_0dtespx')."""
     client = client or Client()
     base = paper.load_base_config()
     profiles = paper.load_profiles()
-    if profile_name not in profiles:
-        raise ValueError(f"unknown profile {profile_name!r}")
-    params = paper._merged_params(base, profiles[profile_name])
-    if "SPX" not in [s.upper() for s in params.get("symbols", ["SPX"])]:
-        raise ValueError(f"{profile_name} does not trade SPX (this backtester is SPX-only)")
-    widths = params.get("wing_widths_by_symbol", {}).get("SPX") or [5, 10]
-    stop_trig = params["stop_trigger_ratio"]
-    max_adj = params.get("max_stop_adjustments_per_ic", 3)
-    yymmdd = yymmdd_of(date)
+    names = list(profile_names) if profile_names else spx_eligible_profiles(base, profiles)
+    for n in names:
+        if n not in profiles:
+            raise ValueError(f"unknown profile {n!r}")
+        p = paper._merged_params(base, profiles[n])
+        if "SPX" not in [s.upper() for s in p.get("symbols", ["SPX"])]:
+            raise ValueError(f"{n} does not trade SPX (this backtester is SPX-only)")
 
+    if db_path and not dry:
+        _db(db_path, ["init_db"])
     used = client.usage_percent()
     if used is not None:
         log(f"# rate-limit bucket usage: {used}%")
 
-    sid = client.open_practice(date)
-    if not sid:
-        raise RuntimeError("could not open practice session (auth/token? run `login`)")
+    yymmdd = yymmdd_of(date)
+    union_widths = paper.union_widths_for_symbol("SPX", base, profiles)
+    books = []
+    for n in names:
+        sid = client.open_practice(date)
+        if not sid:
+            raise RuntimeError("could not open practice session (auth/token? run `login`)")
+        books.append(_Book(n, paper._merged_params(base, profiles[n]), sid))
+
     series = client.historical(date, "spx,vix")
     spot_map = {int(r["datetimeUnix"]): float(r["spx"]) for r in series if r.get("spx")}
     vix_map = {int(r["datetimeUnix"]): float(r["vix"]) for r in series if r.get("vix")}
@@ -311,85 +431,107 @@ def run_day(date, profile_name="large-spx", cadence=120, dry=False,
     y, m, d = (int(x) for x in date.split("-"))
     cur = datetime(y, m, d, 9, 35, tzinfo=_ET)
     end = datetime(y, m, d, 16, 0, tzinfo=_ET)
-    open_ics, todays, last_min, snaps = [], 0, None, 0
+    snaps = 0
 
     while cur <= end:
         utc = cur.astimezone(timezone.utc)
-        client.set_clock(sid, utc.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        utcZ = utc.strftime("%Y-%m-%dT%H:%M:%SZ")
         now_et = cur.strftime("%H:%M")
         now_min = cur.hour * 60 + cur.minute
         spot, vix = lookup(int(utc.timestamp()))
 
-        # 1. stop management off FREE position marks (reconcile first = fill confirmation)
-        if not dry and open_ics:
-            marks = mark_map(client.positions(sid))
-            for ic in open_ics:
+        # advance each book's clock + manage its stops off FREE marks
+        for b in books:
+            client.set_clock(b.sid, utcZ)
+            if dry or not b.open_ics:
+                continue
+            marks = mark_map(client.positions(b.sid))
+            for ic in b.open_ics:
                 reconcile(ic, marks)
                 for side in ("call", "put"):
                     if ic[side] == "open":
                         cost = side_cost(ic, side, marks)
-                        if cost is not None and cost >= stop_trig * ic["net_credit"]:
-                            _place_close(client, sid, ic, side, cost, log, now_et)
+                        if cost is not None and cost >= b.stop_trig * ic["net_credit"]:
+                            _place_close(client, b.sid, ic, side, cost, log, f"{now_et} {b.name}")
                     elif ic[side] == "pending_close":
-                        cost = side_cost(ic, side, marks)  # still marked => not yet filled
+                        cost = side_cost(ic, side, marks)
                         if cost is not None:
                             ic["retry"][side] += 1
-                            if ic["retry"][side] <= max_adj:
-                                _place_close(client, sid, ic, side, cost, log, now_et, retry=True)
+                            if ic["retry"][side] <= b.max_adj:
+                                _place_close(client, b.sid, ic, side, cost, log,
+                                             f"{now_et} {b.name}", retry=True)
                             else:
-                                log(f"{now_et} WARN {side} close unconfirmed after {max_adj} retries")
+                                log(f"{now_et} {b.name} WARN {side} close unconfirmed")
 
-        # 2. entry — one metered snapshot, this profile only (Phase 2 shares it across profiles)
-        account_open = sum(1 for ic in open_ics if ic["call"] == "open" or ic["put"] == "open")
-        eligible = (600 <= now_min < 870
-                    and account_open < params["max_concurrent_ics"]
-                    and todays < params.get("daily_ic_trade_target", 10 ** 9)
-                    and (last_min is None or now_min - last_min >= params.get("min_minutes_between_entries", 0)))
-        if eligible:
+        # entry — ONE shared metered snapshot serves every eligible book this tick
+        elig = [b for b in books if b.eligible(now_min)]
+        if elig:
             snap = client.snapshot(utc.strftime("%Y-%m-%dT%H:%M:%S"))
             snaps += 1
-            cands = build_candidates(snap, spot, widths, _TARGET_DELTA, yymmdd)
-            view = {"symbol": "SPX", "date": date, "now_et": now_et, "dte": 0,
-                    "underlying_price": spot, "iv_rank": iv_rank, "vix": vix,
-                    "vix1d_ratio": None, "atr_5day": None,
-                    "session_quality": session_quality(now_min), "gex": {"ok": False},
-                    "candidates": cands, "leg_quotes": {}}
-            overlap = [{"put_strike": ic["legs"]["sp_k"], "call_strike": ic["legs"]["sc_k"]}
-                       for ic in open_ics if not (ic["call"] == "closed" and ic["put"] == "closed")]
-            entered, reason, chosen = paper.evaluate_entry(
-                view, params, overlap, account_open_count=account_open,
-                todays_entry_count=todays, last_entry_min=last_min)
-            if entered and dry:
-                log(f"{now_et} DRY would ENTER {chosen['wing_width']}w credit~{chosen['ic_natural_bid']}")
-                todays += 1
-                last_min = now_min
-            elif entered:
-                ic = _place_ic(client, sid, chosen, yymmdd, now_min, log)
+            cands = build_candidates(snap, spot, union_widths, _TARGET_DELTA, yymmdd)
+            for b in elig:
+                view = {"symbol": "SPX", "date": date, "now_et": now_et, "dte": 0,
+                        "underlying_price": spot, "iv_rank": iv_rank, "vix": vix,
+                        "vix1d_ratio": None, "atr_5day": None,
+                        "session_quality": session_quality(now_min), "gex": {"ok": False},
+                        "candidates": cands, "leg_quotes": {}}
+                overlap = [{"put_strike": ic["legs"]["sp_k"], "call_strike": ic["legs"]["sc_k"]}
+                           for ic in b.open_ics if not (ic["call"] == "closed" and ic["put"] == "closed")]
+                entered, reason, chosen = paper.evaluate_entry(
+                    view, b.params, overlap, account_open_count=b.account_open(),
+                    todays_entry_count=b.todays, last_entry_min=b.last_min)
+                if not entered:
+                    continue
+                if dry:
+                    log(f"{now_et} {b.name} DRY would ENTER {chosen['wing_width']}w "
+                        f"credit~{chosen['ic_natural_bid']}")
+                    b.todays += 1
+                    b.last_min = now_min
+                    continue
+                ic = _place_ic(client, b.sid, chosen, yymmdd, now_min, utcZ, spot)
                 if ic:
-                    open_ics.append(ic)
-                    todays += 1
-                    last_min = now_min
-                    log(f"{now_et} ENTER {ic['wing']}w sp{ic['legs']['sp_k']:.0f}/sc{ic['legs']['sc_k']:.0f} "
-                        f"credit {ic['net_credit']}")
+                    b.seq += 1
+                    ic["oid"] = f"PRAC-{b.name}-{b.sid[:8]}-{b.seq}"
+                    b.open_ics.append(ic)
+                    b.todays += 1
+                    b.last_min = now_min
+                    log(f"{now_et} {b.name} ENTER {ic['wing']}w "
+                        f"sp{ic['legs']['sp_k']:.0f}/sc{ic['legs']['sc_k']:.0f} credit {ic['net_credit']}")
                 else:
-                    log(f"{now_et} ENTER failed (no fill confirmed)")
+                    log(f"{now_et} {b.name} ENTER failed (no fill)")
         cur += timedelta(seconds=cadence)
 
-    # 3. settlement — advance to the close; SPX cash-settles server-side
-    client.set_clock(sid, end.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-    sess = client.session(sid)
-    txns = client.transactions(sid)
-    summary = {
-        "date": date, "profile": profile_name, "dry": dry,
-        "entries": todays, "metered_snapshots": snaps + 1,  # +1 historical series
-        "realized_pnl": sess.get("equity_options_realized_profit_loss") if isinstance(sess, dict) else None,
-        "fees": sess.get("equity_options_fees") if isinstance(sess, dict) else None,
-        "day_pnl": sess.get("profit_loss") if isinstance(sess, dict) else None,
-        "nlv": sess.get("net_liquidation_value") if isinstance(sess, dict) else None,
-        "transactions": len(txns) if isinstance(txns, list) else None,
-        "cost_basis": "0dtespx", "iv_rank_source": "placeholder", "sid": sid,
-    }
-    return summary
+    # settlement — advance to the close, finalize each book's ICs, write rows
+    end_utc = end.astimezone(timezone.utc)
+    exit_iso = end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    spot_close = lookup(int(end_utc.timestamp()))[0]
+    result = {"date": date, "dry": dry, "metered_snapshots": snaps + 1,
+              "db": db_path if (db_path and not dry) else None, "profiles": {}}
+    for b in books:
+        client.set_clock(b.sid, exit_iso)
+        sess = client.session(b.sid)
+        net = 0.0
+        for ic in b.open_ics:
+            pnl, fees, status, exit_reason = _finalize_ic(ic, spot_close)
+            net += pnl - fees
+            if db_path and not dry:
+                _save_ic(db_path, _ic_row(b.name, date, ic, pnl, fees, status, exit_reason, exit_iso))
+        result["profiles"][b.name] = {
+            "entries": b.todays, "net_pnl": round(net, 2),
+            "session_realized": sess.get("equity_options_realized_profit_loss") if isinstance(sess, dict) else None,
+            "session_fees": sess.get("equity_options_fees") if isinstance(sess, dict) else None,
+            "sid": b.sid,
+        }
+    return result
+
+
+def run_day(date, profile_name="large-spx", cadence=120, dry=False, db_path=None,
+            iv_rank=_IV_RANK_PLACEHOLDER, client=None, log=print):
+    """Single-profile convenience wrapper over run() (back-compat / focused runs)."""
+    res = run(date, [profile_name], cadence=cadence, dry=dry, db_path=db_path,
+              iv_rank=iv_rank, client=client, log=log)
+    return {"date": date, "profile": profile_name, "dry": dry,
+            "metered_snapshots": res["metered_snapshots"], **res["profiles"].get(profile_name, {})}
 
 
 # ---------------------------------------------------------------------------
@@ -397,14 +539,18 @@ def run_day(date, profile_name="large-spx", cadence=120, dry=False,
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="0DTESPX practice-session MEIC backtester (Phase 1)")
+    parser = argparse.ArgumentParser(description="0DTESPX practice-session MEIC backtester (Phase 2)")
     sub = parser.add_subparsers(dest="command")
 
-    p_run = sub.add_parser("run", help="Backtest one SPX day through a practice session")
+    p_run = sub.add_parser("run", help="Backtest one SPX day across profiles through practice sessions")
     p_run.add_argument("--date", required=True, help="YYYY-MM-DD")
-    p_run.add_argument("--profile", default="large-spx", help="SPX-trading profile (default large-spx)")
+    p_run.add_argument("--profiles", default=None,
+                       help="comma-separated profiles; default = all SPX-eligible")
+    p_run.add_argument("--profile", default=None, help="a single profile (back-compat shortcut)")
     p_run.add_argument("--cadence", type=int, default=120, help="clock step seconds (live loop uses 120)")
     p_run.add_argument("--dry", action="store_true", help="log intended entries without placing orders")
+    p_run.add_argument("--db", default=None,
+                       help="results DB path (default practice_trades.db in the data home)")
 
     sub.add_parser("status", help="Print the rate-limit bucket usage_percent")
 
@@ -415,8 +561,11 @@ def main():
     args = parser.parse_args()
 
     if args.command == "run":
-        summary = run_day(args.date, args.profile, cadence=args.cadence, dry=args.dry)
-        print(json.dumps({"ok": True, "summary": summary}, default=str))
+        names = (args.profiles.split(",") if args.profiles
+                 else [args.profile] if args.profile else None)
+        db_path = args.db or str(_paths.data_path("practice_trades.db"))
+        result = run(args.date, names, cadence=args.cadence, dry=args.dry, db_path=db_path)
+        print(json.dumps({"ok": True, "result": result}, default=str))
     elif args.command == "status":
         print(json.dumps({"ok": True, "usage_percent": Client().usage_percent()}))
     elif args.command == "login":
