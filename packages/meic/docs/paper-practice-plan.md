@@ -121,17 +121,28 @@ Recommendation: **(A) or (C)** — retain a per-day scalar and compute a rolling
 practice trade `iv_rank_source="vix_percentile"` / `"expected_move_percentile"` so it's auditable and
 distinct from forward-paper's native rank.
 
-## Fee & slippage alignment
+## Fee & slippage alignment — investigated (Phase 5): no alignment needed
 
-0DTESPX applies a per-user `fee_schedule` (open 1.72/leg, close 0.72/leg, exercise 5) and `slippage`
-(0.05) — richer/pricier than our tastytrade model. Decide:
+Finding (probed 2026-07-13): **0DTESPX's per-SPX-IC fees already match our tastytrade model to the
+cent**, so there is nothing to align:
 
-- **Default: run on 0DTESPX's cost basis** (realistic for their platform) and record their `fees` per
-  trade; tag results `cost_basis="0dtespx"`. Do **not** silently compare to tastytrade P&L.
-- **Investigate** whether `fee_schedule`/`slippage` are user-tunable (`PATCH /user`?). If so, offer a
-  mode that sets them to match `cherrypick.core.fees` for an apples-to-apples cross-check against
-  forward paper. (The entry *decision* already uses our fee model via `evaluate_entry`'s
-  fee-adjusted floor; only the *fill* uses theirs.)
+| Action (SPX IC) | 0DTESPX (`fee_schedule`) | ours (`cherrypick.core.fees`) |
+|---|---|---|
+| open (4 legs) | 4 × 1.72 = **6.88** | **6.8866** |
+| close one side (2 legs) | 2 × 0.72 = **1.44** | **1.4433** |
+| close full (4 legs) | 2.88 | 2.8866 |
+| expire | 0 | 0 |
+
+`PATCH /user` **does** accept `fee_schedule`/`slippage` (204), so they are tunable — but that mutates
+the account **globally** (it would change the web app too), and since the fees already match, aligning
+them would move per-IC P&L by <$0.01 while risking the user's real settings. **Decision: do not mutate
+the account; run on 0DTESPX's cost basis (tagged `cost_basis="0dtespx"`), which is already ≈ our
+tastytrade fees.**
+
+The one residual vs. forward paper is 0DTESPX's **0.05 slippage**, which is baked into their fills and
+cannot be removed retroactively — so practice P&L is fee-comparable to forward paper but carries a
+small extra modeled slippage cost on each entry/stop. (The entry *decision* already uses our fee model
+via `evaluate_entry`'s fee-adjusted floor; only the *fill* uses theirs — and the two fee models agree.)
 
 ## Results storage & reporting
 

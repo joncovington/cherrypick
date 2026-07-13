@@ -19,8 +19,11 @@ per tick so credit cost is per-tick not per-profile. Per-IC results are written 
 roll-up work unchanged. Hardened in Phase 1 (fill confirmation via position reconciliation,
 idempotency keys, 429 backoff). Phase 3 resolves the iv_rank gate with a ToS-safe VIX-band pseudo
 rank (vix_band_iv_rank — no historical reads; see _VIX_IV_RANK_BANDS). Phase 4 adds multi-day batching
-(run_range) with rate-limit pacing and a range roll-up. SPX-only; runs on 0DTESPX's fee/slippage cost
-basis.
+(run_range) with rate-limit pacing and a range roll-up. Phase 5 investigated fee alignment and found
+0DTESPX's SPX fee schedule already matches cherrypick.core.fees to the cent, so results (tagged
+cost_basis='0dtespx') are fee-comparable to tastytrade forward paper with no alignment; the only
+residual is 0DTESPX's 0.05 slippage, baked into fills. We deliberately do NOT mutate the account's
+fee settings (PATCH /user would, but globally). SPX-only.
 
 CLI:
   python src/paper_practice.py run --date 2026-07-09 [--profiles a,b | --profile large-spx]

@@ -128,6 +128,16 @@ disallowed regardless of pacing** (see verdict above).
   use lowercase `vix`. There is **no** multi-day series in one call, so a VIX-percentile `iv_rank`
   would require one call per past date (which the acceptable-use policy forbids anyway).
 
+## Fees & slippage (per-user, `GET /user`)
+
+`GET /user` returns a per-user `fee_schedule` and `slippage` (default `0.05`). For SPX options the
+schedule is `open 1.72/leg`, `close 0.72/leg`, `exercise 5` — which **matches cherrypick.core.fees to
+the cent** (open 4×1.72 = 6.88 vs 6.8866; close/side 1.44 vs 1.4433). `PATCH /user` accepts
+`fee_schedule`/`slippage` (204), so they are tunable, but that mutates the account **globally** (web
+app included). The practice backtester (`src/paper_practice.py`) therefore runs on 0DTESPX's basis
+without alignment (it already ≈ ours); the only residual vs. tastytrade forward paper is the 0.05
+slippage baked into fills. See docs/paper-practice-plan.md § Fee & slippage.
+
 ## Bottom line for cherrypick-meic
 
 `src/paper_replay.py` cannot be used against this API without violating its terms. The Cloudflare/UA
