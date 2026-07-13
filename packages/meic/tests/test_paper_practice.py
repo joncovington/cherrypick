@@ -209,6 +209,16 @@ def test_finalize_ic_stopped_put_plus_expired_call():
     assert "per_side_stop" in reason and "expired_settlement" in reason
 
 
+def test_days_in_range_intersects_available_sessions():
+    available = {"2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10",
+                 "2026-07-13", "2026-06-30"}
+    # weekend 07-11/07-12 aren't sessions and are excluded; bounds inclusive
+    assert pp._days_in_range("2026-07-07", "2026-07-10", available) == \
+        ["2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10"]
+    # a range with no available sessions -> empty
+    assert pp._days_in_range("2026-07-11", "2026-07-12", available) == []
+
+
 def test_finalize_ic_settles_itm_call_at_intrinsic():
     # spot 7546 -> call short 7540 is 6 ITM (< wing 5? capped at wing) -> settles at wing 5
     ic = _finalizable_ic()
