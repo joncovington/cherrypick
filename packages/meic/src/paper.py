@@ -765,8 +765,12 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
             _db(["record_leg_exit", "--ic_order_id", ic_order_id, "--side", "call",
                  "--status", "expired", "--exit_time", now, "--exit_reason", "expired_settlement",
                  "--exit_price", str(decision["call_exit_price"]), "--pnl", str(call_pnl)], db_path)
+        # If a side was already stopped intraday, the IC ends as 'stopped' (not 'expired') so stop
+        # vs. expiry stays distinguishable at the IC level; a clean both-sides-expire is 'expired'.
+        was_stopped = trade.get("put_stop_cost") is not None or trade.get("call_stop_cost") is not None
         _update_trade(ic_order_id, {
-            "status": "expired", "exit_time": now, "exit_reason": "expired_settlement",
+            "status": "stopped" if was_stopped else "expired", "exit_time": now,
+            "exit_reason": "stopped+expired_settlement" if was_stopped else "expired_settlement",
             "pnl": existing_pnl + delta_pnl,
         }, db_path)
         return
@@ -817,8 +821,11 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
             _db(["record_leg_exit", "--ic_order_id", ic_order_id, "--side", "call",
                  "--status", "force_closed", "--exit_time", now, "--exit_reason", reason,
                  "--exit_price", str(decision["call_exit_price"]), "--pnl", str(call_pnl)], db_path)
+        # Preserve a prior per-side stop in the IC-level status (stop vs. force-close stays legible).
+        was_stopped = trade.get("put_stop_cost") is not None or trade.get("call_stop_cost") is not None
         _update_trade(ic_order_id, {
-            "status": "force_closed", "exit_time": now, "exit_reason": reason,
+            "status": "stopped" if was_stopped else "force_closed", "exit_time": now,
+            "exit_reason": (reason + "+prior_stop") if was_stopped else reason,
             "pnl": existing_pnl + delta_pnl, "fees": (trade.get("fees") or 0) + fee,
         }, db_path)
         return

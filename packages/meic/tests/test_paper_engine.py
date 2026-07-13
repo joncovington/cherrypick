@@ -627,6 +627,70 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
     assert open_out["open_trades"][0]["risk_profile"] == "conservative"
 
 
+# ── Stop persistence + stopped-vs-expired (regression for the P&L-accumulation bug) ──
+
+_DBPY = str(Path(__file__).parent.parent / "src" / "db.py")
+
+
+def _init_db(tmp_path):
+    db_path = str(tmp_path / "stop.db")
+    subprocess.run([sys.executable, _DBPY, "--db", db_path, "init_db"], check=True, capture_output=True)
+    return db_path
+
+
+def _row(db_path, oid):
+    import sqlite3
+    con = sqlite3.connect(db_path); con.row_factory = sqlite3.Row
+    r = dict(con.execute("SELECT * FROM ic_trades WHERE ic_order_id=?", (oid,)).fetchone())
+    con.close()
+    return r
+
+
+def test_update_trade_cli_accepts_stop_cost(tmp_path):
+    # Root cause: db.py update_trade must accept put_stop_cost/call_stop_cost, or the stop path's
+    # whole update (status + stop_cost + fees) is silently rejected and only pnl lands -> the side
+    # re-stops every iteration and pnl compounds. Guard the CLI accepts these flags and persists.
+    db_path = _init_db(tmp_path)
+    subprocess.run([sys.executable, _DBPY, "--db", db_path, "save_trade", "--data", json.dumps({
+        "ic_order_id": "S1", "trade_date": "2026-07-09", "symbol": "SPX", "status": "open",
+        "net_credit": 2.1, "put_credit": 0.65, "call_credit": 1.45})], check=True, capture_output=True)
+    r = subprocess.run([sys.executable, _DBPY, "--db", db_path, "update_trade", "--ic_order_id", "S1",
+                        "--call_stop_cost", "1.5", "--status", "partial"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    row = _row(db_path, "S1")
+    assert row["status"] == "partial" and row["call_stop_cost"] == 1.5
+
+
+def test_stop_persists_then_settlement_stays_stopped_without_double_counting(tmp_path):
+    db_path = _init_db(tmp_path)
+    subprocess.run([sys.executable, _DBPY, "--db", db_path, "save_trade", "--data", json.dumps({
+        "ic_order_id": "S2", "trade_date": "2026-07-09", "symbol": "SPX", "status": "open",
+        "net_credit": 2.1, "put_credit": 0.65, "call_credit": 1.45,
+        "put_strike": 7525, "call_strike": 7585, "wing_width": 10})], check=True, capture_output=True)
+    trade = _row(db_path, "S2")
+
+    # 1) stop the call side -> status partial, call_stop_cost persists, pnl = (1.45 - 2.0)*100
+    paper._apply_exit_decision(trade, {"action": "stop_call", "call_exit_price": 2.0}, "SPX", db_path)
+    t2 = _row(db_path, "S2")
+    assert t2["status"] == "partial"
+    assert t2["call_stop_cost"] == 2.0
+    assert t2["pnl"] == pytest.approx((1.45 - 2.0) * 100)   # -55.0
+
+    # 2) a *second* iteration must NOT re-stop the (already-closed) call side and double the pnl
+    from_db_decision = paper.evaluate_open_trade(
+        t2, {}, _params(MODERATE), force_close=False, underlying_price=7560.0)
+    assert from_db_decision["action"] == "hold"   # call already closed, put quotes absent -> hold
+
+    # 3) settle the remaining put side at expiry (put OTM -> 0). The IC must end 'stopped', NOT
+    #    'expired' (a side was stopped), and pnl must be the SUM, not an accumulation.
+    paper._apply_exit_decision(
+        t2, {"action": "expire", "put_open": True, "call_open": False,
+             "put_exit_price": 0.0, "call_exit_price": None}, "SPX", db_path)
+    t3 = _row(db_path, "S2")
+    assert t3["status"] == "stopped"
+    assert t3["pnl"] == pytest.approx(-55.0 + (0.65 - 0.0) * 100)   # -55 + 65 = 10, bounded
+
+
 # ── Per-profile symbol + wing selection (experiment profiles) ────────────────
 
 def test_wing_selection_narrowest_picks_narrowest_clearing():
