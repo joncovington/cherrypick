@@ -45,12 +45,13 @@ if _HERE not in sys.path:
 _CORE = os.path.join(_HERE, "_core")
 if os.path.isdir(_CORE) and _CORE not in sys.path:
     sys.path.insert(0, _CORE)
-import paths as _paths  # noqa: E402
 from datetime import date as _date  # noqa: E402
 
 from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import fees as _fees  # noqa: E402
 from cherrypick.core import profiles as _profiles  # noqa: E402
+
+import paths as _paths  # noqa: E402
 
 
 def _is_event_day(today, predicate) -> bool:

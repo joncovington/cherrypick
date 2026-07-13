@@ -12,9 +12,10 @@ from datetime import UTC, datetime
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
-import paths as _paths
 from cherrypick.core import db as _db
 from cherrypick.core import profiles as _profiles
+
+import paths as _paths
 
 try:
     import pytz
