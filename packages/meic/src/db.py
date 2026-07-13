@@ -565,6 +565,7 @@ def cmd_update_trade(args):
     fields = {}
     for attr in ("status", "exit_price", "exit_time", "exit_reason", "exit_analysis",
                  "put_stop_order_id", "call_stop_order_id",
+                 "put_stop_cost", "call_stop_cost",
                  "put_spread_entry_order_id", "call_spread_entry_order_id",
                  "stop_trigger_current", "stop_limit_current",
                  "pnl", "fees", "fill_confirmed_at"):
@@ -818,6 +819,7 @@ def main():
     p_upd.add_argument("--ic_order_id", required=True)
     for f in ("status", "exit_price", "exit_time", "exit_reason", "exit_analysis",
               "put_stop_order_id", "call_stop_order_id",
+              "put_stop_cost", "call_stop_cost",
               "put_spread_entry_order_id", "call_spread_entry_order_id",
               "stop_trigger_current", "stop_limit_current",
               "pnl", "fees", "fill_confirmed_at"):

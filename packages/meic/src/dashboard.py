@@ -482,7 +482,7 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     }
 
     trades_sql = """
-        SELECT ic_order_id, symbol, entry_time, fill_confirmed_at,
+        SELECT ic_order_id, symbol, risk_profile, entry_time, fill_confirmed_at,
                put_strike, call_strike, wing_width, net_credit, quantity,
                put_credit, call_credit, status, session_quality,
                iv_rank_at_entry, iv_skew_signal, price_action_signal,
@@ -1301,14 +1301,14 @@ nav{flex:1;padding:10px 0}
         <table class="ttbl">
           <thead>
             <tr>
-              <th>TIME</th><th>SYMBOL</th><th>WIDTH</th><th>PUT STRIKE</th><th>CALL STRIKE</th>
+              <th>TIME</th><th>SYMBOL</th><th>PROFILE</th><th>WIDTH</th><th>PUT STRIKE</th><th>CALL STRIKE</th>
               <th>PUT $</th><th>CALL $</th><th>NET CREDIT</th>
               <th>PUT STATUS</th><th>CALL STATUS</th>
               <th style="text-align:right">P&amp;L</th>
             </tr>
           </thead>
           <tbody id="tbody">
-            <tr><td colspan="11" class="empty">Loading&hellip;</td></tr>
+            <tr><td colspan="12" class="empty">Loading&hellip;</td></tr>
           </tbody>
         </table>
       </div>
@@ -1705,7 +1705,7 @@ function renderTrades(trades) {
   const tbody = document.getElementById('tbody');
   const lbl   = document.getElementById('trade-count');
   if (!trades || !trades.length) {
-    tbody.innerHTML = '<tr><td colspan="11" class="empty">No trades today — agent is monitoring</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">No trades today — agent is monitoring</td></tr>';
     lbl.textContent = '';
     return;
   }
@@ -1722,6 +1722,7 @@ function renderTrades(trades) {
     return '<tr title="' + tip + '">' +
       '<td>' + fTime(t.entry_time) + '</td>' +
       '<td style="color:#6b7280;font-size:10px">' + (t.symbol || '—') + '</td>' +
+      '<td style="color:#8b5cf6;font-size:10px">' + (t.risk_profile || '—') + '</td>' +
       '<td class="tr">' + (t.wing_width != null ? t.wing_width : '—') + '</td>' +
       '<td class="tr">' + (t.put_strike  != null ? t.put_strike  : '—') + '</td>' +
       '<td class="tr">' + (t.call_strike != null ? t.call_strike : '—') + '</td>' +
