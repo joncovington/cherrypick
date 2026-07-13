@@ -17,8 +17,9 @@ in one run, each its own practice session for position isolation, sharing ONE me
 per tick so credit cost is per-tick not per-profile. Per-IC results are written to a practice DB
 (ic_trades schema, execution_mode='practice_0dtespx') so get_range_summary / the dashboard / the EOD
 roll-up work unchanged. Hardened in Phase 1 (fill confirmation via position reconciliation,
-idempotency keys, 429 backoff). Still open: the real iv_rank source (Phase 3 — a placeholder for now)
-and multi-day batching (Phase 4). SPX-only; runs on 0DTESPX's fee/slippage cost basis.
+idempotency keys, 429 backoff). Phase 3 resolves the iv_rank gate with a ToS-safe VIX-band pseudo
+rank (vix_band_iv_rank — no historical reads; see _VIX_IV_RANK_BANDS). Still open: multi-day batching
+(Phase 4). SPX-only; runs on 0DTESPX's fee/slippage cost basis.
 
 CLI:
   python src/paper_practice.py run --date 2026-07-09 [--profiles a,b | --profile large-spx]
@@ -47,10 +48,13 @@ _DB_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "db.py")
 
 _ET = ZoneInfo("America/New_York")
 _TARGET_DELTA = 0.15
-# PLACEHOLDER iv_rank (Phase 3 replaces this with a real percentile source — see the plan). A true
-# VIX-percentile rank needs multi-day history the per-date endpoint doesn't give; until then every
-# practice run passes a fixed rank and tags it so results stay auditable/distinct.
-_IV_RANK_PLACEHOLDER = 0.45
+# VIX-band pseudo iv_rank for practice runs (Phase 3; ToS-safe — no historical reads). A true
+# iv_rank is a multi-day VIX percentile, which would mean systematically walking past sessions to
+# seed it; instead each tick's live VIX maps to a monotonic rank via these documented bands
+# (reasoned starting points, tunable — not backtested-optimal). Feeding the existing iv_rank gate
+# keeps per-profile min_iv_rank floors and the low-IV credit relief working; rows are tagged
+# iv_rank_source="vix_band" so they stay distinct from forward-paper's native rank.
+_VIX_IV_RANK_BANDS = [(12, 0.10), (15, 0.25), (18, 0.40), (22, 0.55), (27, 0.70), (35, 0.85)]
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +148,18 @@ def occ(strike, cp, yymmdd) -> str:
 
 def yymmdd_of(date: str) -> str:
     return datetime.strptime(date, "%Y-%m-%d").strftime("%y%m%d")
+
+
+def vix_band_iv_rank(vix):
+    """Map a tick's VIX onto a pseudo iv_rank via _VIX_IV_RANK_BANDS (see that constant). Practice
+    runs use this instead of a true multi-day VIX percentile, which the 0DTESPX ToS won't let us
+    bulk-seed. Returns a neutral 0.40 when VIX is unavailable this tick."""
+    if vix is None:
+        return 0.40
+    for ceiling, rank in _VIX_IV_RANK_BANDS:
+        if vix <= ceiling:
+            return rank
+    return 0.95
 
 
 def session_quality(now_min: int) -> str:
@@ -375,10 +391,10 @@ def _ic_row(book_name, date, ic, pnl, fees, status, exit_reason, exit_iso):
         "exit_time": exit_iso, "expiration": date, "symbol": "SPX",
         "put_strike": L["sp_k"], "call_strike": L["sc_k"], "wing_width": ic["wing"],
         "net_credit": ic["net_credit"], "quantity": 1,
-        "underlying_price_entry": ic["spot_entry"], "iv_rank_at_entry": _IV_RANK_PLACEHOLDER,
+        "underlying_price_entry": ic["spot_entry"], "iv_rank_at_entry": ic.get("iv_rank"),
         "session_quality": session_quality(ic["entry_min"]),
         "risk_profile": book_name, "execution_mode": "practice_0dtespx",
-        "iv_rank_source": "placeholder", "pnl": pnl, "fees": fees,
+        "iv_rank_source": ic.get("iv_rank_source", "vix_band"), "pnl": pnl, "fees": fees,
         "status": status, "exit_reason": exit_reason,
     }
 
@@ -388,7 +404,7 @@ def _ic_row(book_name, date, ic, pnl, fees, status, exit_reason, exit_iso):
 # ---------------------------------------------------------------------------
 
 def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
-        iv_rank=_IV_RANK_PLACEHOLDER, client=None, log=print):
+        iv_rank=None, client=None, log=print):
     """Backtest one SPX day for every given (or all SPX-eligible) profile at once. Each profile is
     its own practice session (position isolation), but the metered option-chain snapshot is read
     ONCE per tick and shared across all books — so credit cost is per-tick, not per-profile. Writes
@@ -469,9 +485,12 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
             snap = client.snapshot(utc.strftime("%Y-%m-%dT%H:%M:%S"))
             snaps += 1
             cands = build_candidates(snap, spot, union_widths, _TARGET_DELTA, yymmdd)
+            # VIX-band pseudo iv_rank (ToS-safe) unless an explicit override was passed.
+            rank = iv_rank if iv_rank is not None else vix_band_iv_rank(vix)
+            rank_source = "override" if iv_rank is not None else "vix_band"
             for b in elig:
                 view = {"symbol": "SPX", "date": date, "now_et": now_et, "dte": 0,
-                        "underlying_price": spot, "iv_rank": iv_rank, "vix": vix,
+                        "underlying_price": spot, "iv_rank": rank, "vix": vix,
                         "vix1d_ratio": None, "atr_5day": None,
                         "session_quality": session_quality(now_min), "gex": {"ok": False},
                         "candidates": cands, "leg_quotes": {}}
@@ -492,6 +511,8 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
                 if ic:
                     b.seq += 1
                     ic["oid"] = f"PRAC-{b.name}-{b.sid[:8]}-{b.seq}"
+                    ic["iv_rank"] = rank
+                    ic["iv_rank_source"] = rank_source
                     b.open_ics.append(ic)
                     b.todays += 1
                     b.last_min = now_min
@@ -526,7 +547,7 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
 
 
 def run_day(date, profile_name="large-spx", cadence=120, dry=False, db_path=None,
-            iv_rank=_IV_RANK_PLACEHOLDER, client=None, log=print):
+            iv_rank=None, client=None, log=print):
     """Single-profile convenience wrapper over run() (back-compat / focused runs)."""
     res = run(date, [profile_name], cadence=cadence, dry=dry, db_path=db_path,
               iv_rank=iv_rank, client=client, log=log)

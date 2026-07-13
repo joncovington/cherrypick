@@ -26,6 +26,18 @@ def test_yymmdd_of():
     assert pp.yymmdd_of("2026-07-09") == "260709"
 
 
+def test_vix_band_iv_rank_monotonic_and_bounded():
+    # documented VIX->pseudo-rank bands (ToS-safe, no historical reads)
+    assert pp.vix_band_iv_rank(11) == 0.10
+    assert pp.vix_band_iv_rank(15) == 0.25
+    assert pp.vix_band_iv_rank(16) == 0.40    # 15 < 16 <= 18
+    assert pp.vix_band_iv_rank(40) == 0.95    # above the top band
+    assert pp.vix_band_iv_rank(None) == 0.40  # neutral default when VIX unavailable
+    # monotonic non-decreasing in VIX
+    ranks = [pp.vix_band_iv_rank(v) for v in range(10, 45, 2)]
+    assert ranks == sorted(ranks)
+
+
 def test_session_quality_bands():
     assert pp.session_quality(9 * 60 + 40) == "open_volatile"  # 09:40
     assert pp.session_quality(11 * 60) == "prime"              # 11:00
