@@ -277,25 +277,33 @@ def _open_count():
 # Iteration
 # ---------------------------------------------------------------------------
 
-_PROF_ABBR = {"conservative": "cons", "moderate": "mod", "aggressive": "agg", "very-aggressive": "vagg"}
+def _is_action_outcome(o) -> bool:
+    """A fill or exit (vs. a plain skip-reason string) — these stand out in the one-line log."""
+    return isinstance(o, str) and (o.startswith("FILL") or o.startswith("EXIT"))
 
 
 def _fmt_symbol(sym, info):
-    """One readable clause per symbol. Collapses the common case where all four profiles did
-    the same thing (e.g. all skipped for the same reason) into 'all <reason>'; otherwise lists
-    each profile's outcome. Fills/exits already read as 'FILL $x' / 'EXIT <action>'."""
+    """One readable clause per symbol. With the full experiment roster a per-profile dump would
+    be unreadable, so fills/exits are listed explicitly and the (typically many) skipped profiles
+    are collapsed — into 'all <reason>' when every profile skipped for the same reason, else a
+    bare skip count."""
     if info.get("error"):
         return f"{sym}: ERROR {info['error']}"
     ivr = info.get("ivr")
     ivr_s = f"{ivr:.2f}" if isinstance(ivr, (int, float)) else "-"
     outc = info.get("outcomes") or {}
-    ordered = [outc.get(p) for p in paper.ALL_PROFILE_NAMES]
-    if not any(ordered):
+    if not outc:
         return f"{sym}(ivr {ivr_s}): -"
-    if len(set(ordered)) == 1 and ordered[0] is not None:
-        return f"{sym}(ivr {ivr_s}): all {ordered[0]}"
-    parts = " ".join(f"{_PROF_ABBR.get(p, p)}:{outc.get(p, '-')}" for p in paper.ALL_PROFILE_NAMES)
-    return f"{sym}(ivr {ivr_s}): {parts}"
+    active = [f"{p}:{o}" for p, o in outc.items() if _is_action_outcome(o)]
+    skips = [o for o in outc.values() if not _is_action_outcome(o)]
+    parts = []
+    if active:
+        parts.append(" ".join(active))
+    if skips:
+        uniq = set(skips)
+        parts.append(f"all {next(iter(uniq))}" if (len(uniq) == 1 and not active)
+                     else f"{len(skips)} skip")
+    return f"{sym}(ivr {ivr_s}): {'  '.join(parts) if parts else '-'}"
 
 
 def _format_iteration(now_et, vix, vix1d_ratio, delta_target, summary):
@@ -327,14 +335,14 @@ def _write_eod_report(day):
     summ = _run_json(_DB + ["get_range_summary", "--start", day, "--end", day])
     profiles = summ.get("profiles", {}) if summ.get("ok") else {}
 
-    exits, by_symbol = {}, {}
+    exits, by_symbol, prof_symbols = {}, {}, {}
     entries = open_n = 0
     net_total = 0.0
     try:
         con = sqlite3.connect(_PAPER_DB)
         con.row_factory = sqlite3.Row
         rows = con.execute(
-            "SELECT symbol, status, exit_reason, pnl, fees FROM ic_trades WHERE trade_date=?",
+            "SELECT symbol, risk_profile, status, exit_reason, pnl, fees FROM ic_trades WHERE trade_date=?",
             (day,)).fetchall()
         con.close()
     except sqlite3.Error:
@@ -347,6 +355,7 @@ def _write_eod_report(day):
         net = (r["pnl"] or 0) - (r["fees"] or 0)
         net_total += net
         by_symbol[r["symbol"]] = by_symbol.get(r["symbol"], 0.0) + net
+        prof_symbols.setdefault(r["risk_profile"], set()).add(r["symbol"])
         if st in ("open", "partial", "pending", "partial_entry"):
             open_n += 1
             reason = "(still open)"
@@ -367,20 +376,37 @@ def _write_eod_report(day):
         L.append("- By symbol: " + ", ".join(f"{s} {_money(round(v, 2))}" for s, v in sorted(by_symbol.items())))
     L.append("")
 
+    # Roster order: the canonical ladder first, then experiment/exploratory profiles, then any
+    # tag present in the data but not the registry (e.g. 'unassigned'). Each experiment profile
+    # pins one (symbol, wing, credit) cell, so the Symbol column + per-profile metrics read
+    # directly as an account-size / cell comparison. Empty profiles are noted, not tabled.
+    try:
+        ordered = paper.all_profile_names()
+    except Exception:
+        ordered = list(profiles.keys())
+    for tag in profiles:
+        if tag not in ordered:
+            ordered.append(tag)
+
     L.append("## Per profile")
-    L.append("| Profile | Trades | Wins | Losses | Win % | Net P&L | Expectancy/IC | Profit Factor | Max DD |")
-    L.append("|---|---|---|---|---|---|---|---|---|")
-    for name in ("conservative", "moderate", "aggressive", "very-aggressive"):
-        s = profiles.get(name)
-        if not s:
-            L.append(f"| {name} | 0 | - | - | - | $0.00 | - | - | - |")
-            continue
+    L.append("| Profile | Symbol | Trades | Wins | Losses | Win % | Net P&L | Expectancy/IC | Profit Factor | Max DD |")
+    L.append("|---|---|---|---|---|---|---|---|---|---|")
+    active_names = [n for n in ordered if profiles.get(n)]
+    for name in active_names:
+        s = profiles[name]
+        syms = ",".join(sorted(prof_symbols.get(name, set()))) or "-"
         wr = f"{s['win_rate_pct']:.0f}%" if s.get("win_rate_pct") is not None else "-"
         pf = f"{s['profit_factor']:.2f}" if s.get("profit_factor") is not None else "-"
         exp = _money(s.get("expectancy_per_trade")) if s.get("expectancy_per_trade") is not None else "-"
-        L.append(f"| {name} | {s.get('total_trades', 0)} | {s.get('win_count', 0)} | "
+        L.append(f"| {name} | {syms} | {s.get('total_trades', 0)} | {s.get('win_count', 0)} | "
                  f"{s.get('loss_count', 0)} | {wr} | {_money(s.get('net_pnl'))} | {exp} | {pf} | "
                  f"{_money(s.get('max_drawdown'))} |")
+    if not active_names:
+        L.append("| _(none)_ | - | 0 | - | - | - | $0.00 | - | - | - |")
+    idle = [n for n in ordered if not profiles.get(n)]
+    if idle:
+        L.append("")
+        L.append(f"_No entries today: {', '.join(idle)}._")
     L.append("")
 
     L.append("## Exits by reason")
@@ -410,7 +436,9 @@ def run_iteration(cfg, force=False):
     vix1d = _run_json(_TT + ["get_vix1d"]).get("last")
     vix1d_ratio = round(vix1d / vix, 3) if (vix1d and vix) else None
     delta_target = _delta_target(cfg, vix)
-    widths_by_sym = cfg.get("wing_widths_by_symbol", {})
+    # Load the profile registry once per iteration so each symbol's candidate menu is the UNION
+    # of every profile's wing widths (each profile then picks its own allowed subset in paper.py).
+    profiles = paper.load_profiles()
     session = _session_quality(now)
 
     summary = {}
@@ -419,7 +447,7 @@ def run_iteration(cfg, force=False):
         if price is None:
             summary[symbol] = {"error": "no price"}
             continue
-        widths = widths_by_sym.get(symbol, widths_by_sym.get("DEFAULT", [2, 5, 10]))
+        widths = paper.union_widths_for_symbol(symbol, cfg, profiles)
         candidates, leg_quotes, cand_err = _build_candidates(symbol, price, widths, delta_target, today)
         gex = _run_json(_TT + ["get_gex", "--symbol", symbol])
         snapshot = {

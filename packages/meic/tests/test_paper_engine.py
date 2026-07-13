@@ -90,6 +90,8 @@ def _base_snapshot(**overrides):
 
 CONSERVATIVE = paper.load_profiles()["conservative"]
 MODERATE = paper.load_profiles()["moderate"]
+SMALL_XSP = paper.load_profiles()["small-xsp"]
+MEDIUM_XSP_WIDE = paper.load_profiles()["medium-xsp-wide"]
 BASE_CONFIG = paper.load_base_config()
 
 
@@ -623,3 +625,90 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
     open_out = json.loads(open_check.stdout.strip())
     assert len(open_out["open_trades"]) == 1
     assert open_out["open_trades"][0]["risk_profile"] == "conservative"
+
+
+# ── Per-profile symbol + wing selection (experiment profiles) ────────────────
+
+def test_wing_selection_narrowest_picks_narrowest_clearing():
+    # small-xsp's shortlist is [2,3] with wing_selection "narrowest": prefer the 2-wide.
+    snap = _base_snapshot(now_et="13:00",
+                          candidates=[_candidate(2, 583, 598), _candidate(3, 583, 598)])
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(SMALL_XSP), [])
+    assert entered is True and reason == "entered"
+    assert chosen["wing_width"] == 2
+
+
+def test_wing_filter_excludes_widths_outside_profile_shortlist():
+    # medium-xsp-wide only trades [5,10]; a lone 2-wide candidate is filtered out entirely, so
+    # no candidate clears — even though it would otherwise pass every gate.
+    snap = _base_snapshot(now_et="13:00", iv_rank=0.32,
+                          candidates=[_candidate(2, 583, 598, sp_bid=1.2, sp_ask=1.3,
+                                                 sc_bid=1.1, sc_ask=1.2)])
+    entered, reason, _ = paper.evaluate_entry(snap, _params(MEDIUM_XSP_WIDE), [])
+    assert entered is False
+    assert reason == "no_candidate_cleared_all_gates"
+
+
+# ── Staggering: entry window, daily cap, spacing (opt-in via stagger_entries) ─
+
+def test_stagger_outside_entry_window_rejected():
+    snap = _base_snapshot(now_et="15:00")  # past the 14:30 entry-window end
+    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [])
+    assert entered is False and reason == "outside_entry_window"
+
+
+def test_stagger_before_entry_window_rejected():
+    snap = _base_snapshot(now_et="09:45")  # before the 10:00 entry-window start
+    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [])
+    assert entered is False and reason == "outside_entry_window"
+
+
+def test_stagger_daily_target_reached_rejected():
+    snap = _base_snapshot(now_et="13:00")
+    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [], todays_entry_count=6)
+    assert entered is False and reason == "daily_target_reached"
+
+
+def test_stagger_spacing_wait_rejected():
+    # last entry 30 min ago < the 45-min min spacing → wait.
+    snap = _base_snapshot(now_et="13:00")  # 780 min
+    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [],
+                                              todays_entry_count=1, last_entry_min=780 - 30)
+    assert entered is False and reason == "entry_spacing_wait"
+
+
+def test_stagger_spacing_ok_after_interval():
+    # last entry 50 min ago ≥ the 45-min min spacing → proceeds.
+    snap = _base_snapshot(now_et="13:00")
+    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [],
+                                              todays_entry_count=1, last_entry_min=780 - 50)
+    assert entered is True and reason == "entered"
+
+
+def test_ladder_profile_ignores_stagger_and_entry_window():
+    # conservative has no stagger_entries → a 15:00 snapshot is NOT window-blocked and a large
+    # entry count does NOT cap it (the window/cap/spacing gates are opt-in). iv_rank 0.50 also
+    # clears the late-entry bias, so the entry proceeds normally.
+    snap = _base_snapshot(now_et="15:00", iv_rank=0.50)
+    entered, reason, _ = paper.evaluate_entry(snap, _params(CONSERVATIVE), [], todays_entry_count=99)
+    assert reason not in ("outside_entry_window", "daily_target_reached", "entry_spacing_wait")
+
+
+def test_process_symbol_skips_profile_not_trading_symbol(tmp_path):
+    # small-xsp is pinned to XSP; against an SPX snapshot it must be skipped entirely (absent from
+    # results), while large-spx (pinned to SPX) is evaluated.
+    db_path = str(tmp_path / "paper_pin.db")
+    subprocess.run([sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"),
+                    "--db", db_path, "init_db"], check=True, capture_output=True)
+    snapshot = _base_snapshot(symbol="SPX", now_et="13:00", underlying_price=7500.0, iv_rank=0.32,
+                              candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)])
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).parent.parent / "src" / "paper.py"),
+         "--db", db_path, "process_symbol", "--snapshot", json.dumps(snapshot),
+         "--profiles", "small-xsp,large-spx"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    out = json.loads(result.stdout.strip().splitlines()[-1])
+    assert "small-xsp" not in out["results"]   # pinned to XSP → skipped for SPX
+    assert "large-spx" in out["results"]        # pinned to SPX → evaluated

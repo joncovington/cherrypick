@@ -55,15 +55,32 @@ negative — net P&L instead of an optimistic flat-average estimate.
 
 ## SPX historical replay
 
+> ⚠️ **Disabled by policy — do not run against 0DTESPX (ToS-incompatible, confirmed 2026-07-13).**
+> `src/paper_replay.py`'s design (systematically walking past sessions, caching each day locally,
+> deriving a local dataset) is exactly what 0DTESPX's acceptable-use policy forbids — "bulk
+> extraction of the historical dataset is not permitted, at any pace … building a local copy or a
+> derivative dataset violates the terms even when paced under the credit budget; offending accounts
+> may be suspended." The credit budget bounds burst load, it is not a data license. **All paper
+> experiment cells are validated by forward paper on tastytrade (the automated `paper_loop.py`
+> below) instead.** See [0dtespx-api.md](0dtespx-api.md) for the full policy and the platform's
+> sanctioned server-side alternatives (practice sessions / strategy backtester, which run the sim
+> on their side and never extract the dataset). The section below is retained for reference only.
+
 `src/paper_replay.py` feeds the same deterministic engine from historical SPX 0DTE chains via
 [0DTESPX.com](https://www.0dtespx.com/)'s API (`api.0dtespx.com`), so statistical significance
 is reached in days instead of weeks and the dashboard's timeframe charts are backfilled
 immediately. **SPX only** — the API doesn't cover XSP/NDX/RUT; those stay forward-paper-only
 until a paid provider (ORATS 1-minute, or Databento OPRA) is justified.
 
-**Setup:** `python src/paper_replay.py set_token --token <bearer token>` stores the token in
-the OS keyring (same `keyring` mechanism as tastytrade credentials, distinct key). Register at
-0DTESPX.com first.
+**Setup:** register at 0DTESPX.com, then store a bearer token in the OS keyring (Windows
+Credential Manager on Windows; same `keyring` mechanism as tastytrade credentials, distinct
+key — service `meicagent`, key `0dtespx:bearer_token`). Two ways:
+- `python src/paper_replay.py login --email <you@example.com>` — prompts for your 0DTESPX
+  password (never taken on the command line), calls `POST /auth/sessions`, and stores the
+  returned token. Passwordless: `request_code --email <…>` emails a 6-digit code, then
+  `login --email <…> --code <code>`.
+- `python src/paper_replay.py set_token --token <bearer token>` — if you already have a token
+  (e.g. copied from an authenticated browser session), store it directly.
 
 **Known data limitation:** 0DTESPX provides bid/ask and **unsigned delta only** — no
 gamma/theta/vega/IV. Two consequences, both handled explicitly rather than silently:
