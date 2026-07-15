@@ -640,7 +640,8 @@ def _init_db(tmp_path):
 
 def _row(db_path, oid):
     import sqlite3
-    con = sqlite3.connect(db_path); con.row_factory = sqlite3.Row
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
     r = dict(con.execute("SELECT * FROM ic_trades WHERE ic_order_id=?", (oid,)).fetchone())
     con.close()
     return r

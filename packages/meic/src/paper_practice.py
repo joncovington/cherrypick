@@ -42,7 +42,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -480,7 +480,7 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
     snaps = 0
 
     while cur <= end:
-        utc = cur.astimezone(timezone.utc)
+        utc = cur.astimezone(UTC)
         utcZ = utc.strftime("%Y-%m-%dT%H:%M:%SZ")
         now_et = cur.strftime("%H:%M")
         now_min = cur.hour * 60 + cur.minute
@@ -553,7 +553,7 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
         cur += timedelta(seconds=cadence)
 
     # settlement — advance to the close, finalize each book's ICs, write rows
-    end_utc = end.astimezone(timezone.utc)
+    end_utc = end.astimezone(UTC)
     exit_iso = end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
     spot_close = lookup(int(end_utc.timestamp()))[0]
     result = {"date": date, "dry": dry, "metered_snapshots": snaps + 1,
