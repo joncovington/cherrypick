@@ -1,6 +1,6 @@
 {
   "instrument_and_sizing_header": "===== Instrument & Sizing =====",
-  "symbols": ["SPX"],
+  "symbols": ["XSP", "SPX"],
   "_symbols_note": "List of underlyings to trade concurrently, e.g. [\"SPX\", \"XSP\"]. Each symbol gets its own live ATM subscription window and its own GEX channel (net_gex/gamma_flip/call_wall/put_wall computed from that symbol's own OI+greeks) — there is no longer a separate gex_symbol; GEX is 1:1 with every traded symbol. The single-symbol 'symbol' key is still accepted as a deprecated alias for [\"symbol\"] if 'symbols' is absent, but new configs should use 'symbols'. max_concurrent_ics and max_entries_per_day are account-wide totals shared across every symbol in this list, not per-symbol caps. Correlated symbols (e.g. SPX and XSP) are not currently exposure-limited against each other — avoid combinations that double up on the same directional risk until that guard exists.",
   "delta_target": 0.18,
   "_delta_target_note": "Superseded by the VIX-banded scale below when the market-wide VIX (fetched once per iteration in Step 4a) falls in a defined band -- delta_target itself is the fallback only if VIX is unavailable. See delta_target_vix_low/elevated/high/crisis and vix_band_low_max/elevated_max/high_max.",
