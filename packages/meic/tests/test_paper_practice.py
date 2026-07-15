@@ -9,7 +9,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import paper_practice as pp
 
-
 # ── OCC / date formatting ────────────────────────────────────────────────────
 
 def test_occ_format_put_and_call():
