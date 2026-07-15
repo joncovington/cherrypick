@@ -390,6 +390,35 @@ def fetch_avg_volume(symbol: str, config: dict, days: int = 30) -> float | None:
     return float(row["avg_volume"])
 
 
+# Wall-clock ceiling for a single tt.py call. tt.py's own DXLink collectors
+# already time out (greeks/quotes ~6s + OI/volume ~10s each, summing to ~32s on a
+# name whose events never arrive); this outer bound guards against a hung session/
+# connection that would otherwise stall the whole scan with no ceiling. On expiry we
+# return a normal {"ok": False} so callers reject the criterion (as *_unverified)
+# rather than crashing -- same shape tt.py returns for expected failures.
+_TT_CALL_TIMEOUT = 45
+
+# Per-symbol read-through cache for call_tt. Every strategy independently re-fetches
+# the same option chain for a symbol (~9 identical get_option_chain calls per symbol
+# across the 7 strategies); memoizing within one symbol's evaluation collapses those
+# to one broker round-trip each. Off by default and scoped explicitly by the caller
+# (rank_strategies.evaluate_symbol) because chain data is live -- never a process-wide
+# cache. Keyed on the full arg list, so different symbols/expirations never collide.
+_tt_cache: dict[tuple, dict] | None = None
+
+
+def begin_tt_cache() -> None:
+    """Start memoizing call_tt reads for the current symbol. Resets any prior cache."""
+    global _tt_cache
+    _tt_cache = {}
+
+
+def end_tt_cache() -> None:
+    """Stop memoizing and drop the cached reads (call in a finally)."""
+    global _tt_cache
+    _tt_cache = None
+
+
 def call_tt(args_list: list[str]) -> dict:
     """Shell out to tt.py, matching this project's documented CLI-tool
     architecture (see CLAUDE.md's Tool Reference) rather than importing it,
@@ -398,18 +427,37 @@ def call_tt(args_list: list[str]) -> dict:
     {"ok": false} response, which tt.py returns for expected failures like
     missing credentials -- callers must check the returned dict's "ok" key
     themselves rather than rely on this raising for every failure mode.
+
+    Bounded by `_TT_CALL_TIMEOUT`; on expiry returns {"ok": False,
+    "error": "tt_timeout"}. When a per-symbol cache is active (see
+    `begin_tt_cache`), identical calls (including a timeout result) are served
+    from the cache so one hung/slow fetch isn't paid once per strategy.
     """
     import subprocess
 
+    key = tuple(args_list) if _tt_cache is not None else None
+    if key is not None and key in _tt_cache:
+        return _tt_cache[key]
+
     tt_path = Path(__file__).resolve().parent / "tt.py"
-    result = subprocess.run(
-        [sys.executable, str(tt_path), *args_list],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, str(tt_path), *args_list],
+            capture_output=True,
+            text=True,
+            timeout=_TT_CALL_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        data = {"ok": False, "error": "tt_timeout"}
+        if key is not None:
+            _tt_cache[key] = data
+        return data
     if result.returncode != 0:
         raise RuntimeError(f"tt.py {' '.join(args_list)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}")
-    return json.loads(result.stdout)
+    data = json.loads(result.stdout)
+    if key is not None:
+        _tt_cache[key] = data
+    return data
 
 
 def has_weekly_options(expirations: list) -> bool:
