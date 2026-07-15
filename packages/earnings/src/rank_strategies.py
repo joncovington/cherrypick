@@ -166,6 +166,47 @@ def _call_db(args_list: list[str], paper_mode: bool) -> dict:
     return json.loads(result.stdout)
 
 
+def _has_listed_options(symbol: str) -> bool | None:
+    """Cheap REST-only gate: does `symbol` have any listed option expirations?
+
+    A bare `get_option_chain` (no expiration, no --include_* flags) returns just the
+    chain structure over REST and skips every slow DXLink collector, so this costs one
+    quick round-trip. Strategies make the identical bare call, so with the per-symbol
+    cache active this is reused for free by names that pass.
+
+    Returns True (has options), False (definitively none -- safe to skip), or None
+    (ambiguous: a transient/timeout/connection error -- caller should run the full
+    evaluation rather than wrongly discard a tradeable name).
+    """
+    try:
+        chain = scanner.call_tt(["get_option_chain", "--symbol", symbol])
+    except Exception:
+        return None
+    if chain.get("ok"):
+        return bool(chain.get("chain"))
+    # Only the explicit "no chain" response is definitive; anything else (tt_timeout,
+    # connection) stays ambiguous so a message change degrades to the slow path, never
+    # to a wrong skip.
+    if "no option chain" in (chain.get("error") or "").lower():
+        return False
+    return None
+
+
+def _no_options_result(name: str) -> dict:
+    """A uniform Reject result for a symbol pre-filtered out for having no options,
+    shaped like a normal `evaluate_symbol` entry so downstream logging/ranking is
+    unchanged (one `no_listed_options` scan_log row per strategy)."""
+    return {
+        "name": name,
+        "tier": "Reject",
+        "hard_fail_reasons": ["no_listed_options"],
+        "near_miss_reasons": [],
+        "criteria": {},
+        "composite_score": 0.0,
+        "broker_data_error": None,
+    }
+
+
 def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: dict) -> list[dict]:
     """Evaluate every registered strategy for one symbol. Common signals
     (avg_volume, iv_rv_ratio, winrate) are fetched once here, not once per
@@ -181,36 +222,49 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
     winrate = winrate_result["winrate"]
     winrate_sample_size = winrate_result["sample_size"]
 
-    results = []
-    for entry in STRATEGY_REGISTRY:
-        strategy_config = entry["strategy_config_fn"](config)
-        criteria: dict = {}
+    # Every strategy's fetch re-requests the same option chain for this symbol; a
+    # per-symbol cache collapses those ~9 identical broker round-trips to one each.
+    # Scoped to this symbol only (chain data is live) and always torn down.
+    scanner.begin_tt_cache()
+    try:
+        # A name with no listed options can't trade any strategy -- skip the 7 live
+        # chain fetches and reject it outright. Only a definitive "no chain" skips;
+        # an ambiguous error falls through to the full evaluation below.
+        if _has_listed_options(symbol) is False:
+            return [_no_options_result(entry["name"]) for entry in STRATEGY_REGISTRY]
 
-        broker = entry["fetch_criteria_fn"](symbol, earnings_date, earnings_timing, config)
-        if broker.get("ok"):
-            criteria.update(broker["criteria"])
-        broker_error = None if broker.get("ok") else broker.get("error")
+        results = []
+        for entry in STRATEGY_REGISTRY:
+            strategy_config = entry["strategy_config_fn"](config)
+            criteria: dict = {}
 
-        criteria["avg_volume"] = avg_volume
-        criteria["iv_rv_ratio"] = iv_rv_ratio
-        criteria["winrate"] = winrate
+            broker = entry["fetch_criteria_fn"](symbol, earnings_date, earnings_timing, config)
+            if broker.get("ok"):
+                criteria.update(broker["criteria"])
+            broker_error = None if broker.get("ok") else broker.get("error")
 
-        extra_fn = entry.get("extra_criteria_fn")
-        if extra_fn is not None:
-            extra_fn(symbol, config, lookback, criteria)
+            criteria["avg_volume"] = avg_volume
+            criteria["iv_rv_ratio"] = iv_rv_ratio
+            criteria["winrate"] = winrate
 
-        tiering = entry["apply_tiering_fn"](criteria, strategy_config)
-        score = scanner.compute_composite_score(criteria, winrate_sample_size)
+            extra_fn = entry.get("extra_criteria_fn")
+            if extra_fn is not None:
+                extra_fn(symbol, config, lookback, criteria)
 
-        results.append({
-            "name": entry["name"],
-            "tier": tiering["tier"],
-            "hard_fail_reasons": tiering["hard_fail_reasons"],
-            "near_miss_reasons": tiering["near_miss_reasons"],
-            "criteria": criteria,
-            "composite_score": score,
-            "broker_data_error": broker_error,
-        })
+            tiering = entry["apply_tiering_fn"](criteria, strategy_config)
+            score = scanner.compute_composite_score(criteria, winrate_sample_size)
+
+            results.append({
+                "name": entry["name"],
+                "tier": tiering["tier"],
+                "hard_fail_reasons": tiering["hard_fail_reasons"],
+                "near_miss_reasons": tiering["near_miss_reasons"],
+                "criteria": criteria,
+                "composite_score": score,
+                "broker_data_error": broker_error,
+            })
+    finally:
+        scanner.end_tt_cache()
     return results
 
 
