@@ -46,6 +46,31 @@ def now_et(tz_name: str = _DEFAULT_TZ) -> datetime:
     return datetime.now(_tz(tz_name))
 
 
+def to_local_hhmm(hhmm: str, tz_name: str = _DEFAULT_TZ) -> str:
+    """Convert a wall-clock ``HH:MM`` expressed in ``tz_name`` (the market timezone) to the host's
+    local ``HH:MM``.
+
+    Daily OS-scheduler triggers (Windows ``schtasks /ST``, POSIX cron) fire on the machine's local
+    time, but the suite expresses entry/exit/digest times in the market timezone (config
+    ``timezone``). Without this, a "15:45" ET entry registered on a non-ET host fires at 15:45
+    *local* — e.g. 17:45 ET on a Mountain-time box, after the close.
+
+    The offset is resolved against today's date so DST is handled for the common case. Caveat: on a
+    host whose DST rules differ from the market's (e.g. Arizona, which never observes DST) the baked
+    local time drifts by an hour across a market DST transition until ``install`` is re-run; hosts
+    that share US DST (ET/CT/MT/PT) stay correct year-round.
+    """
+    hh, mm = (int(x) for x in hhmm.split(":"))
+    market = _tz(tz_name)
+    today = datetime.now(market).date()
+    naive = datetime(today.year, today.month, today.day, hh, mm)
+    if hasattr(market, "localize"):  # pytz fallback needs localize(), not tzinfo=
+        aware = market.localize(naive)
+    else:  # zoneinfo
+        aware = naive.replace(tzinfo=market)
+    return aware.astimezone().strftime("%H:%M")
+
+
 def load_holidays(cfg: dict[str, Any], module_root_fn) -> set[str]:
     """Read NYSE holiday ISO dates from the MEIC module config, if reachable. Best-effort."""
     holidays: set[str] = set()
