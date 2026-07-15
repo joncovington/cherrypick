@@ -139,6 +139,9 @@ def cmd_install(cfg) -> None:
     results = {}
     pyw = cfgmod.pythonw_exe()
     modules = cfgmod.enabled_modules(cfg)
+    # Daily task times (entry/exit/digest) are expressed in the market timezone but the OS scheduler
+    # fires on local time — convert so e.g. 15:45 ET registers correctly on a non-ET host.
+    tz = cfg.get("timezone", "America/New_York")
 
     for name, mcfg in modules.items():
         # Materialize the module checkout first; skip task registration if it isn't on disk.
@@ -172,10 +175,10 @@ def cmd_install(cfg) -> None:
             entry_tr = tasks.build_tr(pyw, str(_LAUNCHER), "run-earnings-entry")
             exit_tr = tasks.build_tr(pyw, str(_LAUNCHER), "run-earnings-exit")
             results[f"{name}.entry_task"] = tasks.create_daily_task(
-                paper["entry_task_name"], entry_tr, paper["entry_time"]
+                paper["entry_task_name"], entry_tr, timeutil.to_local_hhmm(paper["entry_time"], tz)
             )
             results[f"{name}.exit_task"] = tasks.create_daily_task(
-                paper["exit_task_name"], exit_tr, paper["exit_time"]
+                paper["exit_task_name"], exit_tr, timeutil.to_local_hhmm(paper["exit_time"], tz)
             )
 
         # optional cherrypick-managed Dolt keep-alive (portable, idempotent; run_now starts it now)
@@ -208,7 +211,9 @@ def cmd_install(cfg) -> None:
     ed = cfgmod.eod_digest_settings(cfg)
     if ed["enabled"]:
         ed_tr = tasks.build_tr(pyw, str(_LAUNCHER), "notify-eod")
-        results["eod_digest_task"] = tasks.create_daily_task(ed["task_name"], ed_tr, ed["at"])
+        results["eod_digest_task"] = tasks.create_daily_task(
+            ed["task_name"], ed_tr, timeutil.to_local_hhmm(ed["at"], tz)
+        )
 
     _emit({"ok": all(v.get("ok", True) for v in results.values()), "installed": results})
 
