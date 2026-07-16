@@ -109,6 +109,42 @@ def expire_fees() -> float:
 
 
 # ---------------------------------------------------------------------------
+# Modeled slippage (parity with cherrypick.core.fees / earnings)
+#
+# MEIC previously priced every paper fill at the worst case -- natural bid to open
+# (short legs at bid, longs at ask) and ask/bid * stop_limit to close -- baking ~100%
+# of the spread in as implicit slippage. That is far stricter than the earnings model
+# (0.125 of the spread from mid). These helpers price a vertical at MID plus/minus a
+# `slippage_frac_of_spread` haircut so both suite modules assume the same worked-limit
+# fill. Settlement (cash-settled intrinsic value) has no spread and is unaffected.
+# ---------------------------------------------------------------------------
+
+DEFAULT_SLIPPAGE_FRAC = 0.125
+
+
+def _leg_mid(q: dict) -> float:
+    """Mid of a leg quote, falling back to (bid+ask)/2 when no explicit mid is present."""
+    m = q.get("mid")
+    return m if m is not None else (q.get("bid", 0.0) + q.get("ask", 0.0)) / 2.0
+
+
+def _leg_spread(q: dict) -> float:
+    return max(q.get("ask", 0.0) - q.get("bid", 0.0), 0.0)
+
+
+def _open_credit(short_q: dict, long_q: dict, slippage_frac: float) -> float:
+    """Credit received opening a vertical (sell short, buy long): mid MINUS the haircut."""
+    mid = _leg_mid(short_q) - _leg_mid(long_q)
+    return mid - slippage_frac * (_leg_spread(short_q) + _leg_spread(long_q))
+
+
+def _close_cost(short_q: dict, long_q: dict, slippage_frac: float) -> float:
+    """Cost to close a vertical (buy back short, sell long): mid PLUS the same haircut."""
+    mid = _leg_mid(short_q) - _leg_mid(long_q)
+    return mid + slippage_frac * (_leg_spread(short_q) + _leg_spread(long_q))
+
+
+# ---------------------------------------------------------------------------
 # Risk-profile loading
 # ---------------------------------------------------------------------------
 
@@ -239,6 +275,12 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
     gex = snapshot.get("gex") or {}
     if gex.get("ok") and gex.get("gex_positive") is False:
         return False, "regime_gex_negative", None
+    # Strict variant (opt-in per profile): require GEX to be explicitly positive, so entries
+    # also pause when GEX is unknown/unavailable -- not just when it is confirmed negative. Used
+    # by the large-spx-gexstrict experiment cell to isolate the effect of the GEX gate.
+    if params.get("regime_gex_require_positive", False) and not (
+            gex.get("ok") and gex.get("gex_positive") is True):
+        return False, "regime_gex_not_positive", None
 
     now_min = _time_to_minutes(snapshot["now_et"])
 
@@ -340,27 +382,36 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
             last_reason = "put_otm_below_floor"
             continue
 
-        # Credit floor (with low-IV relief) + fee-adjusted floor
-        ic_natural_bid = (sp["bid"] + sc["bid"]) - (lp["ask"] + lc["ask"])
-        if ic_natural_bid <= 0:
+        # Credit floor (with low-IV relief) + fee-adjusted floor. Priced at mid minus the
+        # slippage haircut (see _open_credit) so the gate screens on the credit we model
+        # actually receiving -- consistent with the recorded fill and with the earnings model.
+        slippage_frac = params.get("slippage_frac_of_spread", DEFAULT_SLIPPAGE_FRAC)
+        put_credit = _open_credit(sp, lp, slippage_frac)
+        call_credit = _open_credit(sc, lc, slippage_frac)
+        net_credit = put_credit + call_credit
+        if net_credit <= 0:
             last_reason = "non_positive_credit"
             continue
         low_iv_relief = iv_rank <= params.get("low_iv_credit_floor_iv_rank_max", 0.35)
         pct_floor = params.get("low_iv_min_credit_pct_of_width", 0.10) if low_iv_relief \
             else params["min_credit_pct_of_width"]
-        if ic_natural_bid < pct_floor * wing_width:
+        if net_credit < pct_floor * wing_width:
             last_reason = "credit_below_floor"
             continue
 
         multiplier = 100
-        gross_credit_dollars = ic_natural_bid * multiplier
+        gross_credit_dollars = net_credit * multiplier
         fee = open_fees(symbol, quantity=1)
         if gross_credit_dollars - fee < pct_floor * wing_width * multiplier:
             last_reason = "credit_below_fee_adjusted_floor"
             continue
 
         chosen = dict(cand)
-        chosen["ic_natural_bid"] = round(ic_natural_bid, 4)
+        chosen["net_credit"] = round(net_credit, 4)
+        chosen["put_credit"] = round(put_credit, 4)
+        chosen["call_credit"] = round(call_credit, 4)
+        # Worst-case natural bid retained for reference/back-compat (dashboards, diagnostics).
+        chosen["ic_natural_bid"] = round((sp["bid"] + sc["bid"]) - (lp["ask"] + lc["ask"]), 4)
         chosen["open_fee"] = fee
         return True, "entered", chosen
 
@@ -372,7 +423,7 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
 # ---------------------------------------------------------------------------
 
 def synthetic_entry_fill(snapshot: dict, profile_name: str, chosen: dict, params: dict, execution_mode: str) -> dict:
-    """Build the ic_trades row for a synthetic fill at ic_natural_bid."""
+    """Build the ic_trades row for a synthetic fill priced at mid minus the slippage haircut."""
     now = str(_now_et())
     today = snapshot["date"]
     sp, lp, sc, lc = chosen["short_put"], chosen["long_put"], chosen["short_call"], chosen["long_call"]
@@ -390,9 +441,9 @@ def synthetic_entry_fill(snapshot: dict, profile_name: str, chosen: dict, params
         "call_symbol": sc.get("streamer_symbol"),
         "long_put_symbol": lp.get("streamer_symbol"),
         "long_call_symbol": lc.get("streamer_symbol"),
-        "put_credit": round(sp["bid"] - lp["ask"], 4),
-        "call_credit": round(sc["bid"] - lc["ask"], 4),
-        "net_credit": chosen["ic_natural_bid"],
+        "put_credit": chosen["put_credit"],
+        "call_credit": chosen["call_credit"],
+        "net_credit": chosen["net_credit"],
         "quantity": 1,
         "put_delta_at_entry": sp.get("delta"),
         "call_delta_at_entry": sc.get("delta"),
@@ -546,11 +597,12 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
         return {"action": "hold", "reason": "quotes_unavailable"}
 
     net_credit = trade["net_credit"]
+    slippage_frac = params.get("slippage_frac_of_spread", DEFAULT_SLIPPAGE_FRAC)
     # MEIC has no profit target: an iron condor is only ever closed by a per-side stop, a
     # (non-cash-settled) time-based force-close, or an event force-close. See docs/strategy.md.
     if force_close:
-        put_exit = max(sq["bid"] - lpq["ask"], 0) if put_open else None
-        call_exit = max(cq["bid"] - lcq["ask"], 0) if call_open else None
+        put_exit = max(_close_cost(sq, lpq, slippage_frac), 0) if put_open else None
+        call_exit = max(_close_cost(cq, lcq, slippage_frac), 0) if call_open else None
         friction_applied = False
         if not is_cash_settled:
             # Physically-settled symbols pay a modeled friction on the force-close (wider
@@ -579,23 +631,24 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
         }
 
     stop_trigger = trade.get("stop_trigger_current") or params["stop_trigger_ratio"]
-    stop_limit = trade.get("stop_limit_current") or params.get("stop_limit_ratio", 1.02)
     call_cost_mid = cq["mid"] - lcq["mid"]
     put_cost_mid = sq["mid"] - lpq["mid"]
 
     call_trigger = call_open and call_cost_mid >= stop_trigger * net_credit
     put_trigger = put_open and put_cost_mid >= stop_trigger * net_credit
 
+    # Closing fills priced at mid + slippage haircut (see _close_cost); the former
+    # (short_ask - long_bid) * stop_limit worst-case model is superseded by the parity model.
     if call_trigger and put_trigger:
         return {
             "action": "stop_both",
-            "put_exit_price": round((sq["ask"] - lpq["bid"]) * stop_limit, 4),
-            "call_exit_price": round((cq["ask"] - lcq["bid"]) * stop_limit, 4),
+            "put_exit_price": round(_close_cost(sq, lpq, slippage_frac), 4),
+            "call_exit_price": round(_close_cost(cq, lcq, slippage_frac), 4),
         }
     if call_trigger:
-        return {"action": "stop_call", "call_exit_price": round((cq["ask"] - lcq["bid"]) * stop_limit, 4)}
+        return {"action": "stop_call", "call_exit_price": round(_close_cost(cq, lcq, slippage_frac), 4)}
     if put_trigger:
-        return {"action": "stop_put", "put_exit_price": round((sq["ask"] - lpq["bid"]) * stop_limit, 4)}
+        return {"action": "stop_put", "put_exit_price": round(_close_cost(sq, lpq, slippage_frac), 4)}
 
     return {"action": "hold"}
 
