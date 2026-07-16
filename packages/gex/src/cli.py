@@ -46,6 +46,10 @@ def _cmd_stream(cfg: dict, args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_record(cfg: dict, args: argparse.Namespace) -> int:
+    return _service.run_recorder(cfg, interval=args.interval, once=args.once)
+
+
 def _cmd_dashboard(cfg: dict, args: argparse.Namespace) -> int:
     if not args.serve:
         print("cherrypick-gex dashboard is serve-only; pass --serve.", file=sys.stderr)
@@ -71,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
     st.add_argument("--symbol", action="append", default=None,
                     help="underlying to stream (repeatable; default: config.symbols)")
 
+    rec = sub.add_parser("record", help="always-on spot-trail recorder (run alongside the streamer)")
+    rec.add_argument("--once", action="store_true", help="sample one tick and exit")
+    rec.add_argument("--interval", type=int, default=None,
+                     help="seconds between samples (default: serve.refresh_seconds)")
+
     d = sub.add_parser("dashboard", help="live GEX dashboard")
     d.add_argument("--serve", action="store_true", help="run the localhost live view")
     d.add_argument("--symbol", default=None)
@@ -86,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_section(cfg, args)
     if args.command == "stream":
         return _cmd_stream(cfg, args)
+    if args.command == "record":
+        return _cmd_record(cfg, args)
     if args.command == "dashboard":
         return _cmd_dashboard(cfg, args)
     return 2
