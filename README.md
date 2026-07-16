@@ -36,7 +36,8 @@ cd cherrypick/packages/orchestrator
 pip install -e ".[dev]"
 
 # 2. Set your preferences (symbols, strategies, alert channels)
-cp config.example.json config.json     # open in any editor and adjust
+python run.py init                       # creates ~/.cherrypick/config.json from the template
+                                         # then open ~/.cherrypick/config.json in any editor and adjust
 
 # 3. Link your tastytrade account (credentials are stored securely, never in a file)
 python run.py connect --module meic
@@ -60,7 +61,7 @@ python run.py calibrate           # advice on when a risk profile has "earned" a
 
 ## Staying in the loop
 
-Set your alert channels in `config.json` (`log`, `desktop`, `discord`, `slack`). You'll get a heads-up
+Set your alert channels in `~/.cherrypick/config.json` (`log`, `desktop`, `discord`, `slack`). You'll get a heads-up
 when a new paper trade fills, and a warning if the system ever stalls — so you can walk away with
 confidence. Test it any time with `python run.py notify-test`.
 
