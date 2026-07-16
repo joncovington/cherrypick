@@ -13,8 +13,9 @@ Resolution (delegated to ``cherrypick.core.home``):
     (relocated wholesale by ``CHERRYPICK_HOME``) — shared with the umbrella, whose config points at
     ``~/.cherrypick/data/meic/paper_trades.db`` for cross-module reads.
 
-Nothing runtime lands in the checkout; only ``config.json`` stays in the package directory. Portability
-guardrail: never hardcode an absolute path — the home derives from ``Path.home()`` (or the overrides).
+Nothing runtime lands in the checkout — data, logs, and (once migrated) the config all resolve under the
+home; only the checked-in ``config.example.json`` template stays in the package. Portability guardrail:
+never hardcode an absolute path — the home derives from ``Path.home()`` (or the overrides).
 """
 
 from __future__ import annotations

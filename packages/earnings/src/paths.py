@@ -15,9 +15,10 @@ Resolution (delegated to ``cherrypick.core.home``):
     same directory the locally-running ``dolt sql-server`` serves the earnings/options/stocks datasets
     from; the trade ledgers are plain SQLite files alongside those Dolt databases and never collide.
 
-Nothing runtime lands in the checkout; only ``config/`` and ``reports/`` stay in the package directory.
-Portability guardrail: never hardcode an absolute path — the home derives from ``Path.home()`` (or the
-overrides).
+Nothing runtime lands in the checkout — data, logs, and (once migrated) the config all resolve under the
+home; only the checked-in config example under ``config/`` and generated ``reports/`` stay in the
+package. Portability guardrail: never hardcode an absolute path — the home derives from ``Path.home()``
+(or the overrides).
 """
 
 from __future__ import annotations
