@@ -162,6 +162,50 @@
       "late_entry_bias_enabled": false
     },
 
+    "large-spx-trim": {
+      "_note": "Isolation cell (vs large-spx control): ONLY change is trimmed allocation -- max_concurrent_ics 4->2 and daily_ic_trade_target 6->3 (half the exposure). Everything else matches large-spx. Measures the effect of reducing SPX size alone. See docs/paper-experiments.md.",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 2,
+      "daily_ic_trade_target": 3,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false
+    },
+
+    "large-spx-directional": {
+      "_note": "Isolation cell (vs large-spx control): ONLY change is a tighter directional/vol-expansion guard -- regime_vix1d_ratio_pause_threshold 1.30->1.10, so it pauses when near-term (VIX1D) vol is running hot relative to VIX (a trend-day proxy). Everything else matches large-spx. Measures the directional guard alone.",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false,
+      "regime_vix1d_ratio_pause_threshold": 1.10
+    },
+
+    "large-spx-gexstrict": {
+      "_note": "Isolation cell (vs large-spx control): ONLY change is a stricter GEX gate -- regime_gex_require_positive requires GEX to be confirmed POSITIVE to enter (baseline only pauses on confirmed-negative, so it also trades on unknown/positive GEX). Everything else matches large-spx. Measures requiring positive gamma alone.",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false,
+      "regime_gex_require_positive": true
+    },
+
     "explore-spx-tightcredit": {
       "_note": "Credit-floor sweep (stricter): SPX 5-wide, min_credit 0.20 -- fewer, higher-quality entries. Compare fill rate + expectancy vs large-spx (0.15).",
       "symbols": ["SPX"],

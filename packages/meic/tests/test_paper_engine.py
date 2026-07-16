@@ -145,6 +145,20 @@ def test_evaluate_entry_rejects_regime_gex_negative():
     assert reason == "regime_gex_negative"
 
 
+def test_evaluate_entry_gexstrict_requires_positive_gex():
+    # The large-spx-gexstrict isolation cell sets regime_gex_require_positive: entries pause
+    # unless GEX is CONFIRMED positive (baseline only pauses on confirmed-negative).
+    strict = _params(paper.load_profiles()["large-spx-gexstrict"])
+    spx = dict(symbol="SPX", now_et="13:00", underlying_price=7500.0, iv_rank=0.32,
+               candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)])
+    # GEX unknown/unavailable -> strict gate pauses (baseline would not).
+    unknown = paper.evaluate_entry(_base_snapshot(gex={"ok": False}, **spx), strict, [])
+    assert unknown[0] is False and unknown[1] == "regime_gex_not_positive"
+    # GEX confirmed positive -> strict gate clears (rejection, if any, is for another reason).
+    positive = paper.evaluate_entry(_base_snapshot(gex={"ok": True, "gex_positive": True}, **spx), strict, [])
+    assert positive[1] != "regime_gex_not_positive"
+
+
 def test_evaluate_entry_late_entry_bias_blocks_before_start_time():
     # Conservative's late_entry_bias_start_time is 12:00; iv_rank 0.32 <= 0.45 bias threshold
     snap = _base_snapshot(now_et="10:30", iv_rank=0.32)
@@ -287,11 +301,18 @@ def test_evaluate_entry_prefers_widest_clearing_candidate():
 
 # ── Synthetic fill / exit math ───────────────────────────────────────────────
 
-def test_synthetic_entry_fill_records_natural_bid_as_net_credit():
+def test_synthetic_entry_fill_prices_at_mid_minus_slippage():
     snap = _base_snapshot(now_et="13:00")
     _, _, chosen = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])
     row = paper.synthetic_entry_fill(snap, "conservative", chosen, _params(CONSERVATIVE), "paper")
-    assert row["net_credit"] == chosen["ic_natural_bid"]
+    # 5-wide candidate priced at mid minus 0.125 of each vertical's combined spread:
+    #   put  = (0.60-0.20) - 0.125*((0.65-0.55)+(0.25-0.15)) = 0.40 - 0.025 = 0.375
+    #   call = (0.55-0.17) - 0.125*((0.60-0.50)+(0.22-0.12)) = 0.38 - 0.025 = 0.355
+    assert row["put_credit"] == pytest.approx(0.375, abs=1e-4)
+    assert row["call_credit"] == pytest.approx(0.355, abs=1e-4)
+    assert row["net_credit"] == pytest.approx(0.73, abs=1e-4)
+    # Strictly between the worst-case natural bid (0.58) and the full mid (0.78).
+    assert chosen["ic_natural_bid"] < row["net_credit"] < 0.78
     assert row["risk_profile"] == "conservative"
     assert row["execution_mode"] == "paper"
     assert row["status"] == "open"
@@ -446,9 +467,10 @@ def test_is_cash_settled_classification():
 def test_cash_settled_force_close_has_no_friction():
     base = paper.evaluate_open_trade(_force_close_trade(), _FC_LEG_QUOTES, _params(MODERATE),
                                      force_close=True, underlying_price=590.5, is_cash_settled=True)
-    # No friction: exit = short_bid - long_ask
+    # No friction: exit = mid cost to close + 0.125 * spread (see _close_cost)
     assert base["physical_friction_applied"] is False
-    assert base["put_exit_price"] == pytest.approx(max(0.24 - 0.09, 0), abs=1e-6)
+    assert base["put_exit_price"] == pytest.approx(
+        (0.27 - 0.075) + 0.125 * ((0.30 - 0.24) + (0.09 - 0.06)), abs=1e-4)
 
 
 def test_physical_force_close_adds_friction():
@@ -456,9 +478,12 @@ def test_physical_force_close_adds_friction():
     phys = paper.evaluate_open_trade(_force_close_trade(), _FC_LEG_QUOTES, _params(MODERATE),
                                      force_close=True, underlying_price=590.5, is_cash_settled=False)
     assert phys["physical_friction_applied"] is True
-    # underlying 590.5 is far from both strikes (583 put / 598 call) → no pin penalty, only friction
-    assert phys["put_exit_price"] == pytest.approx(max(0.24 - 0.09, 0) + friction, abs=1e-6)
-    assert phys["call_exit_price"] == pytest.approx(max(0.20 - 0.08, 0) + friction, abs=1e-6)
+    # underlying 590.5 is far from both strikes (583 put / 598 call) → no pin penalty, only friction.
+    # Base close cost is now mid + 0.125*spread (see _close_cost), plus the physical friction.
+    assert phys["put_exit_price"] == pytest.approx(
+        (0.27 - 0.075) + 0.125 * ((0.30 - 0.24) + (0.09 - 0.06)) + friction, abs=1e-4)
+    assert phys["call_exit_price"] == pytest.approx(
+        (0.23 - 0.065) + 0.125 * ((0.26 - 0.20) + (0.08 - 0.05)) + friction, abs=1e-4)
     # friction makes the physical close strictly more expensive (worse P&L) than cash-settled
     base = paper.evaluate_open_trade(_force_close_trade(), _FC_LEG_QUOTES, _params(MODERATE),
                                      force_close=True, underlying_price=590.5, is_cash_settled=True)
@@ -471,10 +496,12 @@ def test_pin_penalty_fires_when_short_strike_atm():
     # underlying pinned right at the 598 short call → pin penalty on the call side only
     phys = paper.evaluate_open_trade(_force_close_trade(), _FC_LEG_QUOTES, _params(MODERATE),
                                      force_close=True, underlying_price=598.0, is_cash_settled=False)
-    expected_call = max(0.20 - 0.08, 0) + friction + pen_pct * 5  # wing_width 5
-    assert phys["call_exit_price"] == pytest.approx(expected_call, abs=1e-6)
+    # close cost (mid + 0.125*spread) + friction + pin penalty, wing_width 5
+    expected_call = (0.23 - 0.065) + 0.125 * ((0.26 - 0.20) + (0.08 - 0.05)) + friction + pen_pct * 5
+    assert phys["call_exit_price"] == pytest.approx(expected_call, abs=1e-4)
     # put strike 583 is ~2.5% away from 598 → no pin penalty on the put side
-    assert phys["put_exit_price"] == pytest.approx(max(0.24 - 0.09, 0) + friction, abs=1e-6)
+    assert phys["put_exit_price"] == pytest.approx(
+        (0.27 - 0.075) + 0.125 * ((0.30 - 0.24) + (0.09 - 0.06)) + friction, abs=1e-4)
 
 
 def test_pin_penalty_zero_when_underlying_missing():
