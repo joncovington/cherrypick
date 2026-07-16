@@ -54,7 +54,6 @@ except ImportError:
 _DB_PATH        = str(_paths.live_db_path())
 _PAPER_DB_PATH  = str(_paths.paper_db_path())
 _CACHE_DB_PATH  = str(_paths.stream_cache_path())
-_CONFIG_PATH    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
 _LOG_PATH       = str(_paths.log_path("agent.log"))
 _PAPER_LOG_PATH = str(_paths.log_path("paper_loop.log"))
 # "live" (default, meic_trades.db) or "paper" (paper_trades.db) in the data home — set from --mode
@@ -148,12 +147,14 @@ def _spread_wins_losses(trade_status: str, trade_pnl: float | None, put_leg: dic
 
 
 def _stats_for_period(conn: sqlite3.Connection, start: str | None = None, end: str | None = None,
-                       symbol: str | None = None) -> dict:
+                       symbol: str | None = None, profile: str | None = None) -> dict:
     """Compute stats for a date range, querying ic_trades directly for accuracy.
     start/end are inclusive YYYY-MM-DD strings; omit to mean unbounded. symbol filters to
     one traded symbol; omit (or "ALL") for the account-wide total across every symbol —
     this is what the global risk caps (max_concurrent_ics, max_entries_per_day) are checked
-    against, so "ALL" is the economically meaningful default, not just a UI convenience."""
+    against, so "ALL" is the economically meaningful default, not just a UI convenience.
+    profile filters to one risk_profile (paper-trading DB only, behind a column-exists check,
+    so it's a no-op on the live DB); omit (or "ALL") for the profile-blended total."""
     where = ["status NOT IN ('cancelled', 'pending', 'partial_entry')"]
     params: list = []
     if start:
@@ -165,6 +166,9 @@ def _stats_for_period(conn: sqlite3.Connection, start: str | None = None, end: s
     if symbol and symbol.upper() != "ALL":
         where.append("symbol = ?")
         params.append(symbol.upper())
+    if profile and profile.upper() != "ALL" and _has_column(conn, "ic_trades", "risk_profile"):
+        where.append("risk_profile = ?")
+        params.append(profile)
     rows = _rows(conn,
         f"SELECT ic_order_id, pnl, status FROM ic_trades WHERE {' AND '.join(where)}",
         params)
@@ -461,10 +465,10 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     account's actual risk caps (max_concurrent_ics, max_entries_per_day, buying power) are
     checked against the combined total, not any one symbol in isolation.
 
-    profile filters only the `performance` series (risk_profile, paper-trading DB) — trades/
-    stats/nlv_series/analytics stay unfiltered/blended across profiles, matching how `symbol`
-    already behaves for those. Scoped this way because profile comparison is specifically a
-    Performance-view concern, not a Today/History-view one."""
+    profile filters to one risk_profile (paper-trading DB only, behind a column-exists check,
+    so it's inert on the live DB) across trades/stats/analytics/performance alike — a peer of
+    `symbol`; omit (or "ALL") for the profile-blended view. nlv_series stays blended (closing
+    NLV is an account-level daily figure, not attributable to a single profile)."""
     if not os.path.exists(_DB_PATH):
         return {"ok": False, "error": "Database not found — run: python src/db.py init_db"}
 
@@ -473,12 +477,15 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     conn = _connect()
     today = _today()
 
+    prof_filter = profile if (profile and profile.upper() != "ALL"
+                              and _has_column(conn, "ic_trades", "risk_profile")) else None
+
     stats = {
-        "today":    _stats_for_period(conn, start=today, end=today, symbol=sym_filter),
-        "week":     _stats_for_period(conn, start=_week_start(),  end=today, symbol=sym_filter),
-        "month":    _stats_for_period(conn, start=_month_start(), end=today, symbol=sym_filter),
-        "year":     _stats_for_period(conn, start=_year_start(),  end=today, symbol=sym_filter),
-        "all_time": _stats_for_period(conn, end=today, symbol=sym_filter),
+        "today":    _stats_for_period(conn, start=today, end=today, symbol=sym_filter, profile=prof_filter),
+        "week":     _stats_for_period(conn, start=_week_start(),  end=today, symbol=sym_filter, profile=prof_filter),
+        "month":    _stats_for_period(conn, start=_month_start(), end=today, symbol=sym_filter, profile=prof_filter),
+        "year":     _stats_for_period(conn, start=_year_start(),  end=today, symbol=sym_filter, profile=prof_filter),
+        "all_time": _stats_for_period(conn, end=today, symbol=sym_filter, profile=prof_filter),
     }
 
     trades_sql = """
@@ -496,6 +503,9 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     if sym_filter:
         trades_sql += " AND symbol = ?"
         trades_params.append(sym_filter)
+    if prof_filter:
+        trades_sql += " AND risk_profile = ?"
+        trades_params.append(prof_filter)
     trades_sql += " ORDER BY entry_time"
     raw_trades = _rows(conn, trades_sql, trades_params)
 
@@ -524,8 +534,13 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         ORDER BY summary_date ASC
     """)
 
+    # Combined symbol+profile predicate reused by every analytics/history query below, so both
+    # filters scope them identically (the name stays `sym_*` to leave those f-strings untouched).
     sym_clause = " AND symbol = ?" if sym_filter else ""
     sym_params = [sym_filter] if sym_filter else []
+    if prof_filter:
+        sym_clause += " AND risk_profile = ?"
+        sym_params.append(prof_filter)
 
     by_session = _rows(conn, f"""
         SELECT session_quality,
@@ -670,7 +685,7 @@ def _load_symbols() -> list[str]:
     """Every traded symbol, in config order. Falls back to the deprecated
     single-symbol 'symbol' key, then to ["XSP"], if 'symbols' is absent."""
     try:
-        with open(_CONFIG_PATH) as f:
+        with open(_paths.config_path()) as f:
             cfg = json.load(f)
     except Exception:
         return ["XSP"]
@@ -1243,6 +1258,11 @@ nav{flex:1;padding:10px 0}
                 border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;outline:none;margin-left:10px">
           <option value="ALL" selected>All symbols</option>
         </select>
+        <select id="main-profile-select" disabled title="Enabled once paper-trading risk_profile data exists"
+                style="background:#0d1117;color:#e6edf3;border:1px solid #1e2430;
+                border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;outline:none;margin-left:6px">
+          <option value="ALL" selected>All profiles</option>
+        </select>
         <span class="frame-sub" id="as-of"></span>
       </div>
       <div class="stats-wrap">
@@ -1661,7 +1681,7 @@ document.querySelectorAll('.nav-item').forEach(el => {
 function fPnl(v, cls) {
   if (v == null) return '<span class="dash">—</span>';
   const c = cls || (v > 0 ? 'pos' : v < 0 ? 'neg' : 'neu');
-  const s = v > 0 ? '+' : '';
+  const s = v > 0 ? '+' : v < 0 ? '-' : '';
   return '<span class="' + c + '">' + s + '$' + Math.abs(v).toFixed(2) + '</span>';
 }
 function fNum(v) {
@@ -1900,27 +1920,38 @@ function populateSymbolSelectors(symbols) {
 // time as each accrues its first trade — so this re-populates whenever the server's
 // profile list actually changes, rather than a single-shot guard, while preserving the
 // current selection if it's still valid.
+// Two synced profile selectors — the global one in the Today header (peer of the symbol
+// filter) and the one in the Performance view — are populated identically so a choice in
+// either scopes the whole dashboard. An "All profiles" option leads (the blended default).
+const PROFILE_SELECT_IDS = ['main-profile-select', 'perf-profile-select'];
 let lastProfilesKey = '';
 function populateProfileSelector(profiles) {
   if (!profiles || !profiles.length) return;
   const key = profiles.join(',');
   if (key === lastProfilesKey) return;
   lastProfilesKey = key;
-  const sel = document.getElementById('perf-profile-select');
-  const current = sel.value;
-  sel.innerHTML = '';
-  profiles.forEach(p => {
-    const o = document.createElement('option');
-    o.value = p;
-    o.textContent = p === 'live' ? 'Live' : p.charAt(0).toUpperCase() + p.slice(1);
-    sel.appendChild(o);
+  // Both selects are kept in sync, so either one carries the current selection.
+  const current = document.getElementById('main-profile-select').value;
+  PROFILE_SELECT_IDS.forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '';
+    const all = document.createElement('option');
+    all.value = 'ALL'; all.textContent = 'All profiles';
+    sel.appendChild(all);
+    profiles.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p;
+      o.textContent = p === 'live' ? 'Live' : p.charAt(0).toUpperCase() + p.slice(1);
+      sel.appendChild(o);
+    });
+    sel.value = (current === 'ALL' || profiles.includes(current)) ? current : 'ALL';
+    // Only real multi-profile data (paper trades tagged with a risk_profile) makes the
+    // selector meaningful — a live dashboard or an empty paper DB stays on the inert
+    // single "All profiles" placeholder, disabled, as before this feature existed.
+    sel.disabled = profiles.length <= 1;
+    sel.title = sel.disabled ? 'Enabled once paper-trading risk_profile data exists' : '';
   });
-  if (profiles.includes(current)) sel.value = current;
-  // Only real multi-profile data (paper trades tagged with a risk_profile) makes the
-  // selector meaningful — a live dashboard or an empty paper DB stays on the inert
-  // single "Live" placeholder, disabled, exactly as before this feature existed.
-  sel.disabled = profiles.length <= 1;
-  sel.title = sel.disabled ? 'Enabled once paper-trading risk_profile data exists' : '';
 }
 
 // ── performance view ─────────────────────────────────────────────────────────
@@ -2193,7 +2224,7 @@ function renderAll(d) {
 async function fetchData() {
   try {
     const sym = document.getElementById('main-symbol-select').value || 'ALL';
-    const prof = document.getElementById('perf-profile-select').value || 'ALL';
+    const prof = document.getElementById('main-profile-select').value || 'ALL';
     const r = await fetch('/api/data?symbol=' + encodeURIComponent(sym) + '&profile=' + encodeURIComponent(prof));
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
@@ -2211,7 +2242,17 @@ async function fetchData() {
 }
 
 document.getElementById('main-symbol-select').addEventListener('change', fetchData);
-document.getElementById('perf-profile-select').addEventListener('change', fetchData);
+// A profile choice in either select mirrors to the other, then reloads — one filter, two entry points.
+function onProfileChange(e) {
+  const v = e.target.value;
+  PROFILE_SELECT_IDS.forEach(id => {
+    const s = document.getElementById(id);
+    if (s && s.value !== v) s.value = v;
+  });
+  fetchData();
+}
+PROFILE_SELECT_IDS.forEach(id =>
+  document.getElementById(id).addEventListener('change', onProfileChange));
 
 // ── log tail ──────────────────────────────────────────────────────────────────
 let logPaused = false;
