@@ -560,6 +560,23 @@ def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
     httpd = ThreadingHTTPServer((host, port), make_handler(cfg, sym))
     url = f"http://{host}:{port}/"
     print(f"cherrypick-gex dashboard serving {sym} at {url}  (Ctrl-C to stop)")
+
+    # Background spot-trail recorder: sample EVERY offered symbol's spot on the refresh cadence (not just
+    # the one on screen), so each symbol's trail stays continuous and there's no gap when the viewer
+    # switches symbols. Runs once per server; the per-request build_gex only reads the trail.
+    refresh = int(cfg["serve"].get("refresh_seconds", 15))
+    stop = threading.Event()
+
+    def _record_loop():
+        while not stop.is_set():
+            try:
+                _service.record_spots(cfg)
+            except Exception:  # a data hiccup must never kill the recorder
+                pass
+            stop.wait(refresh)
+
+    threading.Thread(target=_record_loop, name="gex-spot-recorder", daemon=True).start()
+
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
@@ -567,4 +584,5 @@ def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
     except KeyboardInterrupt:
         pass
     finally:
+        stop.set()
         httpd.server_close()
