@@ -47,6 +47,12 @@ def _cmd_stream(cfg: dict, args: argparse.Namespace) -> int:
 
 
 def _cmd_record(cfg: dict, args: argparse.Namespace) -> int:
+    if args.status:
+        print(json.dumps(_service.recorder_status(cfg)))
+        return 0
+    if args.stop:
+        print(json.dumps(_service.stop_recorder(cfg)))
+        return 0
     return _service.run_recorder(cfg, interval=args.interval, once=args.once)
 
 
@@ -79,6 +85,8 @@ def main(argv: list[str] | None = None) -> int:
     rec.add_argument("--once", action="store_true", help="sample one tick and exit")
     rec.add_argument("--interval", type=int, default=None,
                      help="seconds between samples (default: serve.refresh_seconds)")
+    rec.add_argument("--status", action="store_true", help="print {running,pid} JSON and exit")
+    rec.add_argument("--stop", action="store_true", help="stop a running recorder daemon")
 
     d = sub.add_parser("dashboard", help="live GEX dashboard")
     d.add_argument("--serve", action="store_true", help="run the localhost live view")

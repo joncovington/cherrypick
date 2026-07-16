@@ -10,6 +10,8 @@ from __future__ import annotations
 
 # Bootstrap the cherrypick-core submodule (src/_core) onto sys.path without an install, so a fresh
 # `git clone --recursive` works out of the box (mirrors MEIC's credentials.py).
+import os
+import signal
 import sys as _sys
 import time
 from datetime import datetime
@@ -98,11 +100,73 @@ def record_spots(cfg: dict, symbols: list[str] | None = None) -> int:
         conn.close()
 
 
+def _recorder_pid_file(cfg: dict) -> Path:
+    """PID file for the recorder daemon, alongside its history DB (the module's data home)."""
+    return Path(cfg["history_db_path"]).parent / "recorder.pid"
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            SYNCHRONIZE = 0x00100000
+            h = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+            if h:
+                ctypes.windll.kernel32.CloseHandle(h)
+                return True
+            return False
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError, ValueError):
+        return False
+
+
+def _running_recorder_pid(cfg: dict) -> int | None:
+    """The live recorder daemon's pid, or None. Clears a stale pid file (process gone)."""
+    pf = _recorder_pid_file(cfg)
+    if not pf.exists():
+        return None
+    try:
+        pid = int(pf.read_text().strip())
+    except (ValueError, OSError):
+        pf.unlink(missing_ok=True)
+        return None
+    if _pid_alive(pid):
+        return pid
+    pf.unlink(missing_ok=True)
+    return None
+
+
+def recorder_status(cfg: dict) -> dict:
+    """{"ok", "running", "pid"} — the daemon-liveness contract the orchestrator's status_argv reads."""
+    pid = _running_recorder_pid(cfg)
+    return {"ok": True, "running": pid is not None, "pid": pid}
+
+
+def stop_recorder(cfg: dict) -> dict:
+    """SIGTERM a running recorder daemon (idempotent — 'not running' is a fine result)."""
+    pid = _running_recorder_pid(cfg)
+    if pid is None:
+        return {"ok": True, "running": False, "detail": "not running"}
+    try:
+        os.kill(pid, signal.SIGTERM)
+        _recorder_pid_file(cfg).unlink(missing_ok=True)
+        return {"ok": True, "signal": "SIGTERM", "pid": pid}
+    except OSError as exc:
+        return {"ok": False, "pid": pid, "error": str(exc)}
+
+
 def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) -> int:
     """Always-on spot-trail recorder: sample every offered symbol's spot into the history DB on a fixed
     cadence, independent of the dashboard. Run it alongside the streamer (its data source) so each
     symbol's trail builds all session and persists across dashboard restarts — the dashboard then only
-    reads the trail. ``once`` samples a single tick and returns; otherwise it loops until Ctrl-C."""
+    reads the trail. ``once`` samples a single tick and returns; otherwise it loops until Ctrl-C.
+
+    Single-instance: refuses to start if a recorder is already running (so the orchestrator's install +
+    watchdog keep-alive can call start freely without spawning duplicates)."""
     import logging
 
     syms = [str(s).strip().upper() for s in (cfg.get("symbols") or [])]
@@ -113,7 +177,21 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
         print(f"recorded spot for {n}/{len(syms)} symbols")
         return 0
 
+    existing = _running_recorder_pid(cfg)
+    if existing is not None:
+        print(f"recorder already running (pid {existing})")
+        return 0
+
     import config as _config  # local — config bootstraps nothing
+
+    pid_file = _recorder_pid_file(cfg)
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    pid_file.write_text(str(os.getpid()))
+
+    def _on_term(*_):  # POSIX: SIGTERM -> graceful stop (Windows kills forcefully; pid cleaned lazily)
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _on_term)
 
     log_dir = _config.logs_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -139,6 +217,8 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
             time.sleep(interval)
     except KeyboardInterrupt:
         log.info("spot recorder stopped (%d ticks)", ticks)
+    finally:
+        pid_file.unlink(missing_ok=True)
     return 0
 
 
