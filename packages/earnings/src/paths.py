@@ -53,6 +53,17 @@ def paper_db_path() -> Path:
     return data_path("paper_trades.db")
 
 
+def config_path() -> Path:
+    """Earnings' config file. The home config (``~/.cherrypick/config/earnings.json``) once it exists,
+    else the legacy in-repo ``config/config.json`` until migrated. A pure lookup — never writes — so it
+    is safe from tests and from a standalone checkout (which keeps using its in-repo config)."""
+    home_cfg = _home.config_path("earnings")
+    if home_cfg.exists():
+        return home_cfg
+    legacy = Path(__file__).resolve().parent.parent / "config" / "config.json"
+    return legacy if legacy.exists() else home_cfg
+
+
 def logs_dir() -> Path:
     """Where this module writes its logs: ``~/.cherrypick/logs/earnings`` by default (relocated wholesale
     by ``CHERRYPICK_HOME``), or ``EARNINGS_LOGS_DIR`` for a machine/test override. A pure path — callers

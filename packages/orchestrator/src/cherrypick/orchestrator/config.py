@@ -23,14 +23,13 @@ from cherrypick.core import home as _home
 _USER_HOME = Path.home() / ".cherrypick"
 
 
-def _default_root() -> Path:
-    """cherrypick's runtime home (holds config.json, logs/, state/, dashboard.html).
-
-    CHERRYPICK_HOME always wins. Otherwise a *source checkout* keeps everything in the repo root
-    (convenient for dev, matches historical behavior); an *installed copy* — where this file lives under
-    site-packages, so the repo-root guess is meaningless/unwritable — falls back to the per-user
-    ~/.cherrypick so the `cherrypick` console script has a real, writable home.
-    """
+def _source_root() -> Path:
+    """The **source anchor** for resolving a module's relative `path` in config (e.g. `../meic`) — the
+    orchestrator checkout dir (this file sits at <root>/src/cherrypick/orchestrator/config.py, so it is
+    3 parents up). This stays tied to the checkout even though runtime files (config/state/dashboard/
+    logs) now live under the per-user home, so an in-place `path: ../meic` keeps resolving into the repo
+    regardless of where config.json physically lives. CHERRYPICK_HOME overrides it for an installed copy
+    (where modules come from MODULES_HOME, not a relative checkout)."""
     env = os.environ.get("CHERRYPICK_HOME")
     if env:
         return Path(env)
@@ -48,11 +47,13 @@ def _logs_home() -> Path:
     return _home.logs_dir()
 
 
-ROOT = _default_root()
-CONFIG_PATH = ROOT / "config.json"
-# Logs live under the user home by default (see _logs_home); dashboard.html and state/ stay under ROOT.
+# ROOT is the source anchor for relative module paths (see _source_root); the runtime files themselves
+# — config.json, state/, dashboard.html, logs/ — all live under the per-user home now, so nothing runtime
+# is written into the checkout.
+ROOT = _source_root()
+CONFIG_PATH = _home.config_path()
 LOGS_DIR = _logs_home()
-STATE_DIR = ROOT / "state"
+STATE_DIR = _home.state_dir()
 
 # Where `cherrypick install` materializes module checkouts when a module declares no explicit `path`.
 # Precedence: CHERRYPICK_MODULES_HOME (test/override) → CHERRYPICK_HOME/modules → ~/.cherrypick/modules.
@@ -61,12 +62,27 @@ STATE_DIR = ROOT / "state"
 MODULES_HOME = _home.modules_dir()
 
 
+LEGACY_CONFIG_PATH = ROOT / "config.json"
+
+
+def effective_config_path() -> Path:
+    """The config file to read: the per-user home config (`~/.cherrypick/config.json`) once it exists,
+    otherwise a legacy in-repo `config.json` (a source checkout that predates the move). A pure lookup —
+    it never writes, so importing/reading has no side effects and test runs can't pollute the real home;
+    the actual file move into the home is an explicit step (`cherrypick migrate-home`). Falls back to the
+    home path for the 'not found' message when neither exists."""
+    if CONFIG_PATH.exists():
+        return CONFIG_PATH
+    return LEGACY_CONFIG_PATH if LEGACY_CONFIG_PATH.exists() else CONFIG_PATH
+
+
 def load_config(path: Path | None = None) -> dict[str, Any]:
-    """Load and lightly validate the cherrypick config."""
-    cfg_path = path or CONFIG_PATH
+    """Load and lightly validate the cherrypick config (home config, or a legacy in-repo one until
+    migrated — see :func:`effective_config_path`)."""
+    cfg_path = path or effective_config_path()
     if not cfg_path.exists():
         raise FileNotFoundError(
-            f"cherrypick config not found at {cfg_path}. Copy config.example.json to config.json."
+            f"cherrypick config not found at {cfg_path}. Copy config.example.json there to create it."
         )
     with cfg_path.open("r", encoding="utf-8") as fh:
         cfg = json.load(fh)

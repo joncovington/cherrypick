@@ -41,11 +41,23 @@ def _resolve(base: Path, value: str) -> Path:
     return p if p.is_absolute() else (base / p).resolve()
 
 
+def _config_source() -> Path:
+    """Which config to read: the home config (``~/.cherrypick/config/gex.json``) once it exists, else a
+    legacy in-repo ``config.json``, else the checked-in example. Pure lookup — never writes."""
+    home_cfg = _home.config_path("gex")
+    if home_cfg.exists():
+        return home_cfg
+    if CONFIG_PATH.exists():
+        return CONFIG_PATH
+    return EXAMPLE_PATH
+
+
 def load() -> dict:
-    """Load config.json (falling back to config.example.json, then built-in defaults). A path key that
-    is present is resolved (``~``/``$VAR``/absolute honored, else relative to the config dir); a key that
-    is omitted defaults under the suite-wide cherrypick home."""
-    path = CONFIG_PATH if CONFIG_PATH.exists() else EXAMPLE_PATH
+    """Load the gex config (home config, or a legacy in-repo one until migrated; falling back to
+    config.example.json, then built-in defaults). A path key that is present is resolved (``~``/``$VAR``/
+    absolute honored, else relative to the config dir); a key that is omitted defaults under the
+    suite-wide cherrypick home."""
+    path = _config_source()
     cfg = dict(_DEFAULTS)
     if path.exists():
         cfg.update(json.loads(path.read_text(encoding="utf-8")))

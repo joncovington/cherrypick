@@ -33,7 +33,6 @@ except ImportError:
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.join(_HERE, "..")
 _RISK_PROFILES_PATH = os.path.join(_REPO_ROOT, "config.risk.json")
-_CONFIG_PATH = os.path.join(_REPO_ROOT, "config.json")
 _DB_PY = os.path.join(_HERE, "db.py")
 
 # Shared market calendar from the cherrypick-core submodule (src/_core). Bootstrap it onto sys.path so
@@ -118,7 +117,7 @@ def load_profiles() -> dict:
 
 
 def load_base_config() -> dict:
-    with open(_CONFIG_PATH) as f:
+    with open(_paths.config_path()) as f:
         return json.load(f)
 
 

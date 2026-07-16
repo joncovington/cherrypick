@@ -14,6 +14,8 @@ from datetime import time as dtime
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import home as _home
+
 try:  # stdlib first (no third-party dep)
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 except Exception:  # pragma: no cover
@@ -78,9 +80,14 @@ def load_holidays(cfg: dict[str, Any], module_root_fn) -> set[str]:
     if not meic:
         return holidays
     try:
+        # Prefer MEIC's home config (~/.cherrypick/config/meic.json); fall back to its legacy in-repo
+        # config until migrated. Same home-first/legacy order the module itself resolves with.
         root = module_root_fn(meic)
-        mc_path = Path(root) / "config.json"
-        if not mc_path.exists():
+        mc_path = next(
+            (c for c in (_home.config_path("meic"), Path(root) / "config.json") if c.exists()),
+            None,
+        )
+        if mc_path is None:
             return holidays
         with mc_path.open("r", encoding="utf-8") as fh:
             mc = json.load(fh)
