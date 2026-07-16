@@ -23,7 +23,7 @@ Do this:
    - **Paper-loop daemon** (meic — only if one is running in daemon mode; a no-op for the normal
      `--once` scheduled runs): `python packages/meic/src/paper_loop.py --stop`
    - **Dashboard server** (only if a `dashboard --serve` is up): stop the process on its port
-     (default **8787**, or `dashboard.serve.port` from `config.json`):
+     (default **8787**, or `dashboard.serve.port` from the cherrypick config — `~/.cherrypick/config.json`, or the in-repo `config.json` until migrated):
      `Get-NetTCPConnection -LocalPort 8787 -State Listen -EA SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`
    - **Dolt sql-server** (earnings' local market-data DB, kept alive by the task removed in step 1):
      stop the process serving port **3306**:

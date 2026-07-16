@@ -10,7 +10,7 @@ directory and adds a mode pre-check.
 1. **Work from `packages/meic`.** The module's command and `CLAUDE.md` use paths relative to it —
    `src/…`, `CLAUDE.md`, `.claude/…` all live under `packages/meic/`. Run the steps from there.
 
-2. **Mode pre-check.** Read `packages/meic/config.json` → `enable_live_trading`. If `true`, this session
+2. **Mode pre-check.** Read MEIC's config (`~/.cherrypick/config/meic.json`, or `packages/meic/config.json` until migrated) → `enable_live_trading`. If `true`, this session
    can place **live orders** — stop and confirm with me before starting. If `false`/absent (paper),
    continue.
 
