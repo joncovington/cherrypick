@@ -9,6 +9,7 @@ symbol list, and serve defaults, nothing more.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent          # repo root (holds config.json / run.py)
@@ -25,6 +26,11 @@ _DEFAULTS = {
 
 
 def _resolve(base: Path, value: str) -> Path:
+    # Expand ~ and $ENV first, so a config can point at the shared cherrypick data home
+    # (e.g. "~/.cherrypick/data/meic/stream_cache.db") the same way the sibling modules do,
+    # rather than only a path relative to this module. Anything still relative resolves
+    # against the config file's own directory (the standalone default).
+    value = os.path.expandvars(os.path.expanduser(value))
     p = Path(value)
     return p if p.is_absolute() else (base / p).resolve()
 
