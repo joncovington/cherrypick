@@ -58,14 +58,14 @@ same way if you plan to run both (`pip install -e ".[dev]"` in `packages/meic`; 
 
 ## First-time setup
 
-**1. Adjust your settings.** Copy the template and open it in any text editor:
+**1. Adjust your settings.** Create your config from the template and open it in any text editor:
 
 ```bash
-cp config.example.json config.json
+python run.py init      # writes ~/.cherrypick/config.json from the template
 ```
 
-`config.json` is where you say **which strategies to run, on what schedule, and how you want to be
-alerted**. It's kept only on your machine.
+`~/.cherrypick/config.json` is where you say **which strategies to run, on what schedule, and how you
+want to be alerted**. It lives under your user home (not the repo) and is kept only on your machine.
 
 **2. Link your tastytrade account.** cherrypick stores your credentials in your operating system's
 secure keyring (never in a file), and lets you pick which account it uses:
@@ -77,10 +77,14 @@ python run.py connect --module meic        # do the same for earnings if you'll 
 **3. Choose your strategy details.** The fine-grained trading rules — which symbols, target deltas,
 credit floors, entry windows, risk profiles — live in each engine's own config:
 
-- MEIC: `packages/meic/config.json` (e.g. the `symbols` list, `min_iv_rank`, entry/exit windows, and the
-  conservative → very-aggressive **risk profiles**).
-- Earnings: `packages/earnings/config/config.json` (position caps, entry/close windows, per-strategy
+- MEIC: `~/.cherrypick/config/meic.json` (e.g. the `symbols` list, `min_iv_rank`, entry/exit windows, and
+  the conservative → very-aggressive **risk profiles**).
+- Earnings: `~/.cherrypick/config/earnings.json` (position caps, entry/close windows, per-strategy
   tuning).
+
+(These per-engine configs live under your user home too. Copy each engine's `config.example.json` into
+`~/.cherrypick/config/<engine>.json`; upgrading from an older checkout, `python run.py migrate-home`
+moves an existing in-repo config there for you.)
 
 Each engine's own docs explain every setting in detail — start with the symbols and risk profile, and
 leave the rest at their sensible defaults.
@@ -126,14 +130,14 @@ turn it back on any time.
 | `python run.py calibrate` | Advice on whether a risk profile has collected enough good results to consider stepping up (advisory only — it never changes anything). |
 
 The end-of-day digest is **scheduled automatically when you install** and sends you a one-line summary
-each afternoon. If you'd rather not get it, set `"eod_digest": {"enabled": false}` in `config.json` and
+each afternoon. If you'd rather not get it, set `"eod_digest": {"enabled": false}` in `~/.cherrypick/config.json` and
 re-run install (or uninstall).
 
 ---
 
 ## Staying informed
 
-Set your alert channels in `config.json` under `notify` — any of **`log`** (always on), **`desktop`**,
+Set your alert channels in `~/.cherrypick/config.json` under `notify` — any of **`log`** (always on), **`desktop`**,
 **`discord`**, and **`slack`**. You'll get:
 
 - a **ping when a new paper trade fills**, and
@@ -189,7 +193,7 @@ python run.py secrets-set --channel discord      # paste your webhook URL when p
 - **"Not much is happening."** Outside market hours, or when volatility/credit gates aren't met, the
   engines correctly sit on their hands — that's normal. Check `status` to confirm the schedule is active.
 - **No alerts arriving?** Run `notify-test`; if desktop/Discord don't show up, re-check the `notify`
-  channels in `config.json` and (for Discord/Slack) that you stored the webhook with `secrets-set`.
+  channels in `~/.cherrypick/config.json` and (for Discord/Slack) that you stored the webhook with `secrets-set`.
 - **Laptop keeps sleeping.** There's a helper, `tools/setup-walkaway-durability.ps1`, to keep a Windows
   machine awake and running scheduled tasks while you're away.
 
