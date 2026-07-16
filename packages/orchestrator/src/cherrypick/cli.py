@@ -59,6 +59,7 @@ from cherrypick.orchestrator import (
     doctor,
     eod_digest,
     init,
+    migrate,
     reconcile,
     report,
     serve,
@@ -541,6 +542,26 @@ def cmd_dashboard(cfg, args) -> None:
     _emit(dashboard.run(cfg))
 
 
+def cmd_migrate_home(cfg, apply: bool) -> None:
+    """Move config files into ~/.cherrypick and sweep regenerable leftovers out of the checkouts.
+    Dry-run by default (prints the plan and touches nothing); pass --apply to perform it."""
+    res = migrate.run(cfg, dry_run=not apply)
+    mode = "dry-run - nothing changed" if res["dry_run"] else "applied"
+    verb = "would move" if res["dry_run"] else "moved"
+    swept = "would sweep" if res["dry_run"] else "swept"
+    print(f"cherrypick migrate-home ({mode})")
+    for mv in res["moved"]:
+        print(f"  {verb} config: {mv['src']} -> {mv['dest']}")
+    for d in res["deleted"]:
+        print(f"  {swept}: {d}")
+    for db in res["db_review"]:
+        print(f"  REVIEW (left in place — may hold data): {db}")
+    if not (res["moved"] or res["deleted"] or res["db_review"]):
+        print("  nothing to migrate — already clean")
+    elif res["dry_run"]:
+        print("Re-run with --apply to perform the migration.")
+
+
 def cmd_calibrate(cfg) -> None:
     _emit(calibrate.run(cfg))
 
@@ -601,6 +622,7 @@ def main() -> None:
             "connect",
             "account",
             "dashboard",
+            "migrate-home",
             "calibrate",
             "run-earnings-entry",
             "run-earnings-exit",
@@ -651,6 +673,9 @@ def main() -> None:
     parser.add_argument(
         "--no-browser", action="store_true", help="For dashboard --serve: do not open a browser"
     )
+    parser.add_argument(
+        "--apply", action="store_true", help="For migrate-home: perform the move (default is a dry run)"
+    )
     args = parser.parse_args()
 
     # `init` scaffolds config.json, so it must run before the config pre-load (a fresh user has none).
@@ -672,6 +697,7 @@ def main() -> None:
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),
         "dashboard": lambda: cmd_dashboard(cfg, args),
+        "migrate-home": lambda: cmd_migrate_home(cfg, args.apply),
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
