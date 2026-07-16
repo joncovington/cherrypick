@@ -49,12 +49,12 @@ from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx
 
 import credentials as _creds
+import paths as _paths
 from session import get_session
 
 
 def _load_config() -> dict:
-    root = os.path.join(os.path.dirname(__file__), "..")
-    path = os.path.join(root, "config", "config.json")
+    path = _paths.config_path()
     if os.path.exists(path):
         with open(path) as f:
             return json.load(f)

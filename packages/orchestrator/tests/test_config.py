@@ -47,15 +47,16 @@ def test_module_root_defaults_to_modules_home_by_name(monkeypatch, tmp_path):
     assert c.module_root({}, "earnings") == (tmp_path / "earnings").resolve()
 
 
-def test_default_root_honors_cherrypick_home(monkeypatch, tmp_path):
+def test_source_root_honors_cherrypick_home(monkeypatch, tmp_path):
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
-    assert c._default_root() == tmp_path
+    assert c._source_root() == tmp_path
 
 
-def test_default_root_uses_repo_root_in_source_checkout(monkeypatch):
+def test_source_root_uses_repo_root_in_source_checkout(monkeypatch):
     # No env override, running from the source tree -> the repo root (has run.py + pyproject.toml).
+    # ROOT is the *source anchor* for relative module paths; runtime files live under the per-user home.
     monkeypatch.delenv("CHERRYPICK_HOME", raising=False)
-    root = c._default_root()
+    root = c._source_root()
     assert (root / "run.py").exists() or (root / "pyproject.toml").exists()
 
 

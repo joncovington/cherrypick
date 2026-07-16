@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import home as _home
 from cherrypick.core import viz
 
 from cherrypick.notify import secrets as notify_secrets
@@ -886,9 +887,11 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
 
 # --------------------------------------------------------------------------- entrypoints
 def _output_path(cfg: dict[str, Any]) -> Path:
+    # Default lands at ~/.cherrypick/dashboard.html; a relative override resolves under the same home, so
+    # the generated page never lands inside the checkout. An absolute override is honored as-is.
     out = Path(cfg.get("dashboard", {}).get("output", "dashboard.html"))
     if not out.is_absolute():
-        out = cfgmod.ROOT / out
+        out = _home.home() / out
     return out
 
 

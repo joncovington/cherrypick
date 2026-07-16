@@ -66,7 +66,6 @@ _LOCK_FILE = _paths.data_path("paper_loop.once.lock")
 _LOG_FILE = _paths.log_path("paper_loop.log")
 _TASK_NAME = "cherrypick-meic-paper-loop"
 _PAPER_DB = str(_paths.paper_db_path())
-_CONFIG_PATH = _ROOT / "config.json"
 _TT = [sys.executable, str(_ROOT / "src" / "tt.py")]
 _DB = [sys.executable, str(_ROOT / "src" / "db.py"), "--db", _PAPER_DB]
 
@@ -139,7 +138,7 @@ def _run_json(cmd, timeout=90):
 
 
 def _load_config():
-    with open(_CONFIG_PATH) as f:
+    with open(_paths.config_path()) as f:
         return json.load(f)
 
 
