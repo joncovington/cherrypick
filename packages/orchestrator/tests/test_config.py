@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 
 from cherrypick.orchestrator import config as c
@@ -58,6 +61,20 @@ def test_source_root_uses_repo_root_in_source_checkout(monkeypatch):
     monkeypatch.delenv("CHERRYPICK_HOME", raising=False)
     root = c._source_root()
     assert (root / "run.py").exists() or (root / "pyproject.toml").exists()
+
+
+def test_runtime_paths_resolve_under_home_not_repo():
+    # config.json, state/, and logs/ live under ~/.cherrypick — never inside the checkout. ROOT is only
+    # the source anchor for relative module paths now. (Skipped if a CHERRYPICK_HOME override was active
+    # when config was imported, since that relocates the whole tree.)
+    if os.environ.get("CHERRYPICK_HOME"):
+        pytest.skip("CHERRYPICK_HOME override in effect")
+    home = Path.home() / ".cherrypick"
+    assert c.CONFIG_PATH == home / "config.json"
+    assert c.STATE_DIR == home / "state"
+    assert c.LOGS_DIR == home / "logs"
+    # explicitly not under the source checkout
+    assert c.ROOT not in c.CONFIG_PATH.parents
 
 
 def test_eod_digest_settings_default_on():
