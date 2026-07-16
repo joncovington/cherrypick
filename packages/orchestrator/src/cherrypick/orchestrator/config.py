@@ -12,6 +12,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# The orchestrator package bootstraps src/_core onto sys.path in its __init__, which runs before this
+# submodule's body — so the shared home resolver is importable here.
+from cherrypick.core import home as _home
+
 # cherrypick runtime root — where config.json, logs/, and state/ live. In a source checkout that is the
 # repo root; this module sits at <root>/src/cherrypick/orchestrator/config.py, so the root is 3 parents
 # up. An installed copy (no repo root) sets CHERRYPICK_HOME to its runtime dir instead.
@@ -39,9 +43,9 @@ def _default_root() -> Path:
 def _logs_home() -> Path:
     """Where cherrypick writes its logs. Always the per-user home (~/.cherrypick/logs), independent of
     ROOT — so log output never lands inside a source checkout and its location is stable and
-    user-scoped regardless of how cherrypick is launched. CHERRYPICK_HOME overrides the home."""
-    env = os.environ.get("CHERRYPICK_HOME")
-    return (Path(env) if env else _USER_HOME) / "logs"
+    user-scoped regardless of how cherrypick is launched. Delegates to the suite-wide resolver, so
+    CHERRYPICK_HOME relocates it uniformly with every other package's logs."""
+    return _home.logs_dir()
 
 
 ROOT = _default_root()
@@ -51,15 +55,10 @@ LOGS_DIR = _logs_home()
 STATE_DIR = ROOT / "state"
 
 # Where `cherrypick install` materializes module checkouts when a module declares no explicit `path`.
-# Precedence: CHERRYPICK_MODULES_HOME (test/override) → CHERRYPICK_HOME/modules (unified with the rest of
-# the runtime home for an installed copy) → the per-user default ~/.cherrypick/modules. Kept independent
-# of ROOT so a source checkout still parks modules in the user dir rather than nesting them (and their
-# runtime data — e.g. Earnings' multi-GB Dolt store) inside the repo.
-_CH_HOME_ENV = os.environ.get("CHERRYPICK_HOME")
-MODULES_HOME = Path(
-    os.environ.get("CHERRYPICK_MODULES_HOME")
-    or (Path(_CH_HOME_ENV) / "modules" if _CH_HOME_ENV else _USER_HOME / "modules")
-)
+# Precedence: CHERRYPICK_MODULES_HOME (test/override) → CHERRYPICK_HOME/modules → ~/.cherrypick/modules.
+# Kept independent of ROOT (via the shared resolver) so a source checkout still parks modules in the user
+# dir rather than nesting them (and their runtime data — e.g. Earnings' multi-GB Dolt store) in the repo.
+MODULES_HOME = _home.modules_dir()
 
 
 def load_config(path: Path | None = None) -> dict[str, Any]:
