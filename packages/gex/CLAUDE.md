@@ -9,8 +9,10 @@ self-hosted version of gexbot.com / SpotGamma / MenthorQ. It computes GEX via th
 `cherrypick.core.gex` engine and serves a localhost live view. It places no orders and never touches
 live trading. Two modes: **standalone** (`run.py stream` runs `cherrypick.core.streamer` to populate its
 own `data/stream_cache.db`) or **piggyback** (point `source.stream_cache_db` at a cherrypick-meic cache
-and read it read-only). The umbrella (Cherrypick) embeds this module's GEX as a dashboard section by
-subprocessing `python run.py section --symbol <sym> --json` (a `cherrypick.core.viz` payload).
+and read it read-only). The umbrella (Cherrypick) surfaces this module two ways: a compact live GEX
+**section** card (subprocessing `python run.py section --symbol <sym> --json`, a `cherrypick.core.viz`
+payload) and the full **dashboard embed** (an iframe onto `run.py dashboard --serve`). This dashboard is
+the GEX/IV-Skew/Volume view the suite used to render inside MEIC's dashboard, moved here.
 
 ## Commands
 
@@ -38,7 +40,8 @@ config file's directory — never hardcode absolute paths.
   → chart payload. The pure, HTTP-free seam; also records the spot trail in this module's **own**
   SQLite (`history_db`). Bootstraps `src/_core` onto `sys.path`.
 - **src/serve.py** — stdlib `ThreadingHTTPServer`, loopback-only, one self-contained page polling
-  `/api/gex`.
+  `/api/gex`, with three tabs (GEX net-by-strike + spot trail, IV Skew, Volume) and a traded-symbol
+  selector — full parity with MEIC's former in-dashboard GEX view.
 - **src/section.py** — maps `build_gex` output onto the `cherrypick.core.viz` section schema (metrics
   tiles + a signed net-GEX-by-strike bar series). This is what the umbrella's generic dashboard renders.
 - **src/cli.py + run.py** — the CLI; `section --json` is the umbrella's integration point.
