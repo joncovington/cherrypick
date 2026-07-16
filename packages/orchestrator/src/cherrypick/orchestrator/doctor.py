@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import home as _home
+
 from . import config as cfgmod
 from . import tasks, timeutil
 from .util import first_json
@@ -174,13 +176,21 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         if not root.exists():
             continue
 
-        # module config present
-        mc = root / ("config/config.json" if (root / "config/config.json").exists() else "config.json")
+        # module config present — home-first (~/.cherrypick/config/<pkg>.json), else the legacy in-repo
+        # config, mirroring how the module itself resolves it (see each module's paths.config_path()).
+        mc = next(
+            (
+                c
+                for c in (_home.config_path(name), root / "config" / "config.json", root / "config.json")
+                if c.exists()
+            ),
+            None,
+        )
         checks.append(
             Check(
                 f"{name}.config",
-                OK if mc.exists() else WARN,
-                str(mc) if mc.exists() else "module config.json not found",
+                OK if mc else WARN,
+                str(mc) if mc else "module config not found (home or in-repo)",
             )
         )
 
