@@ -772,6 +772,37 @@ def test_wing_filter_excludes_widths_outside_profile_shortlist():
     assert reason == "no_candidate_cleared_all_gates"
 
 
+# ── Multi-delta candidate menu (short_delta_target routing) ──────────────────
+
+def _tagged(cand, short_delta, is_default):
+    return {**cand, "short_delta": short_delta, "is_default_delta": is_default}
+
+
+def test_select_candidates_delta_bands_route_to_the_right_profile():
+    # A multi-delta menu: default band (0.15) + a far-OTM band (0.10), both 10-wide.
+    menu = [_tagged(_candidate(10, 7380, 7560), 0.15, True),
+            _tagged(_candidate(10, 7300, 7640), 0.10, False)]
+    ctrl = _params(paper.load_profiles()["large-spx"])
+    far = _params(paper.load_profiles()["large-spx-farotm"])
+    # Control (no short_delta_target) sees ONLY the default band -> unperturbed by the extra band.
+    assert [c["short_delta"] for c in paper._select_candidates(menu, ctrl, "SPX")] == [0.15]
+    # farotm (short_delta_target 0.10) sees ONLY its band.
+    assert [c["short_delta"] for c in paper._select_candidates(menu, far, "SPX")] == [0.10]
+
+
+def test_select_candidates_untagged_menu_unchanged():
+    # Legacy/test menus with no short_delta tag pass through untouched (back-compat).
+    menu = [_candidate(5, 583, 598), _candidate(2, 583, 598)]
+    sel = paper._select_candidates(menu, _params(CONSERVATIVE), "XSP")
+    assert len(sel) == 2 and all("short_delta" not in c for c in sel)
+
+
+def test_union_short_deltas_collects_requested_bands():
+    spx = paper.union_short_deltas_for_symbol("SPX")
+    assert 0.10 in spx and 0.25 in spx           # farotm + closeotm cells
+    assert paper.union_short_deltas_for_symbol("XSP") == []   # no XSP cell requests a custom band
+
+
 # ── Staggering: entry window, daily cap, spacing (opt-in via stagger_entries) ─
 
 def test_stagger_outside_entry_window_rejected():

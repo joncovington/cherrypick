@@ -197,6 +197,28 @@ def union_widths_for_symbol(symbol: str, base_config: dict | None = None,
     return sorted(widths)
 
 
+def union_short_deltas_for_symbol(symbol: str, base_config: dict | None = None,
+                                  profiles: dict | None = None) -> list[float]:
+    """Distinct `short_delta_target` values any profile requests for `symbol` beyond the loop's
+    VIX-banded default, so paper_loop can build candidates at each band. Profiles that declare
+    none contribute nothing -- they use the banded-default candidate. Mirrors
+    `union_widths_for_symbol`: one shared candidate menu per symbol, each profile picks its band."""
+    base_config = base_config or load_base_config()
+    profiles = profiles or load_profiles()
+    deltas: set = set()
+    for _name, pdef in profiles.items():
+        if _name.startswith("_"):
+            continue  # documentation note, not a profile
+        params = _merged_params(base_config, pdef)
+        prof_syms = [s.upper() for s in params.get("symbols", [])]
+        if prof_syms and symbol.upper() not in prof_syms:
+            continue
+        d = params.get("short_delta_target")
+        if d is not None:
+            deltas.add(float(d))
+    return sorted(deltas)
+
+
 # ---------------------------------------------------------------------------
 # Deterministic gate evaluator
 # ---------------------------------------------------------------------------
@@ -212,6 +234,17 @@ def _select_candidates(candidates: list, params: dict, symbol: str) -> list:
     no `wing_selection` — is the historical behavior: every candidate, widest-first (the fee-drag
     bias). `narrowest` reverses it (small-account cells); `fixed` preserves the profile's own
     width-list order (first listed = preferred)."""
+    # Short-delta-band filter (multi-delta menus). A profile with short_delta_target sees only
+    # candidates built at that band; a profile without it sees the loop's default (VIX-banded)
+    # candidates. Menus with no short_delta tag at all (unit tests, legacy snapshots) pass through
+    # untouched, so existing behavior is exactly preserved.
+    target = params.get("short_delta_target")
+    if target is not None:
+        candidates = [c for c in candidates if c.get("short_delta") is not None
+                      and abs(c["short_delta"] - target) < 1e-6]
+    elif any(c.get("short_delta") is not None for c in candidates):
+        candidates = [c for c in candidates if c.get("is_default_delta")]
+
     allowed = _profile_widths_for_symbol(params, symbol)
     if allowed is not None:
         candidates = [c for c in candidates if c["wing_width"] in allowed]
