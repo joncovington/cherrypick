@@ -159,6 +159,21 @@ def test_evaluate_entry_gexstrict_requires_positive_gex():
     assert positive[1] != "regime_gex_not_positive"
 
 
+def test_evaluate_entry_gexmag_requires_deep_positive_gamma():
+    # large-spx-gexmag: positive GEX is not enough -- spot must sit >= 0.5% from the gamma-flip strike.
+    mag = _params(paper.load_profiles()["large-spx-gexmag"])
+    spx = dict(symbol="SPX", now_et="13:00", underlying_price=7500.0, iv_rank=0.32,
+               candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)])
+    # Spot 7500 only ~0.13% from the flip (7490) -> too close, paused.
+    near = paper.evaluate_entry(_base_snapshot(
+        gex={"ok": True, "gex_positive": True, "gamma_flip": 7490.0, "spot": 7500.0}, **spx), mag, [])
+    assert near[0] is False and near[1] == "regime_gex_flip_too_close"
+    # Spot 7500 is ~2% above the flip (7350) -> deep in positive gamma, gate clears.
+    deep = paper.evaluate_entry(_base_snapshot(
+        gex={"ok": True, "gex_positive": True, "gamma_flip": 7350.0, "spot": 7500.0}, **spx), mag, [])
+    assert deep[1] != "regime_gex_flip_too_close"
+
+
 def test_evaluate_entry_late_entry_bias_blocks_before_start_time():
     # Conservative's late_entry_bias_start_time is 12:00; iv_rank 0.32 <= 0.45 bias threshold
     snap = _base_snapshot(now_et="10:30", iv_rank=0.32)
@@ -411,6 +426,22 @@ def test_evaluate_open_trade_stops_call_side_when_cost_reaches_trigger():
     }
     decision = paper.evaluate_open_trade(trade, leg_quotes, _params(MODERATE), force_close=False)
     assert decision["action"] == "stop_call"
+
+
+def test_per_side_stop_management_false_disables_stops():
+    # large-spx-holdtoexpiry sets per_side_stop_management: false -> a side whose cost blows past the
+    # trigger is NOT stopped; the IC holds to force-close/settlement. Same quotes stop a normal profile.
+    trade = {"put_symbol": "SP", "call_symbol": "SC", "long_put_symbol": "LP", "long_call_symbol": "LC",
+             "net_credit": 0.58, "status": "open", "put_credit": 0.30, "call_credit": 0.28,
+             "stop_trigger_current": 0.93, "stop_limit_current": 1.02}
+    leg_quotes = {
+        "SP": {"bid": 0.20, "ask": 0.26, "mid": 0.23}, "LP": {"bid": 0.05, "ask": 0.08, "mid": 0.065},
+        "SC": {"bid": 0.60, "ask": 0.68, "mid": 0.64}, "LC": {"bid": 0.03, "ask": 0.06, "mid": 0.045},
+    }
+    hold = _params(paper.load_profiles()["large-spx-holdtoexpiry"])
+    assert paper.evaluate_open_trade(trade, leg_quotes, hold, force_close=False)["action"] == "hold"
+    assert paper.evaluate_open_trade(trade, leg_quotes, _params(MODERATE),
+                                     force_close=False)["action"] == "stop_call"
 
 
 def test_evaluate_open_trade_does_not_restop_an_already_stopped_side():
