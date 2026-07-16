@@ -281,6 +281,16 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
     if params.get("regime_gex_require_positive", False) and not (
             gex.get("ok") and gex.get("gex_positive") is True):
         return False, "regime_gex_not_positive", None
+    # Magnitude variant (opt-in): require positive GEX AND spot at least this fraction from the
+    # gamma-flip strike -- deep enough inside positive-gamma territory that pinning dominates, not
+    # hovering near the flip where the regime is fragile. Used by the large-spx-gexmag cell.
+    min_flip_dist = params.get("regime_gex_min_flip_distance_pct")
+    if min_flip_dist is not None:
+        flip, spot = gex.get("gamma_flip"), gex.get("spot")
+        deep_positive = (gex.get("ok") and gex.get("gex_positive") is True and flip and spot
+                         and abs(spot - flip) / spot >= min_flip_dist)
+        if not deep_positive:
+            return False, "regime_gex_flip_too_close", None
 
     now_min = _time_to_minutes(snapshot["now_et"])
 
@@ -634,8 +644,11 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
     call_cost_mid = cq["mid"] - lcq["mid"]
     put_cost_mid = sq["mid"] - lpq["mid"]
 
-    call_trigger = call_open and call_cost_mid >= stop_trigger * net_credit
-    put_trigger = put_open and put_cost_mid >= stop_trigger * net_credit
+    # per_side_stop_management: false disables per-side stops entirely (the large-spx-holdtoexpiry
+    # cell), so the IC is only ever closed by a force-close or settlement -- held to expiry.
+    stops_on = params.get("per_side_stop_management", True)
+    call_trigger = stops_on and call_open and call_cost_mid >= stop_trigger * net_credit
+    put_trigger = stops_on and put_open and put_cost_mid >= stop_trigger * net_credit
 
     # Closing fills priced at mid + slippage haircut (see _close_cost); the former
     # (short_ask - long_bid) * stop_limit worst-case model is superseded by the parity model.
