@@ -53,6 +53,23 @@ def _normalise_iv(raw_iv: float) -> float:
     return raw_iv if raw_iv > 1 else raw_iv * 100
 
 
+def read_spot(db_path: Path | str, symbol: str) -> float | None:
+    """The underlying's latest spot (``stream_trades.last``) for one symbol, read-only — a light lookup
+    the dashboard's spot-trail recorder uses to sample every offered symbol without building a full
+    snapshot. ``None`` when the cache is missing or the symbol isn't cached."""
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return None
+    conn = _connect_ro(db_path)
+    try:
+        r = conn.execute(
+            "SELECT last FROM stream_trades WHERE symbol = ?", (symbol.strip().upper(),)
+        ).fetchone()
+        return float(r["last"]) if r and r["last"] is not None else None
+    finally:
+        conn.close()
+
+
 def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:
     """Build a ``GexSnapshot`` for ``symbol`` from a MEIC-style stream cache, read-only.
 

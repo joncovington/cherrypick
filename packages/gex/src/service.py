@@ -41,31 +41,59 @@ def _market_open_close_ts() -> tuple[float, float]:
     return open_dt.timestamp(), close_dt.timestamp()
 
 
-def _record_and_fetch_spot_history(db_path: Path, symbol: str, spot: float | None) -> list[dict]:
-    """Append one spot tick and return today's trail, in this module's OWN sqlite — we never write to
-    MEIC's read-only stream cache. Persisted so the chart's spot trail survives page reloads/restarts.
-    """
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+def _ensure_history_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS gex_spot_history ("
+        "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, spot REAL NOT NULL)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gsh_sym_date ON gex_spot_history(symbol, trade_date)")
+
+
+def _fetch_spot_history(db_path: Path, symbol: str) -> list[dict]:
+    """Today's recorded spot trail for `symbol` (read-only) from this module's OWN sqlite — we never
+    write to MEIC's read-only stream cache."""
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return []
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS gex_spot_history ("
-            "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, spot REAL NOT NULL)"
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_gsh_sym_date ON gex_spot_history(symbol, trade_date)")
-        today = _today()
-        if spot is not None:
-            conn.execute(
-                "INSERT INTO gex_spot_history (symbol, trade_date, ts, spot) VALUES (?,?,?,?)",
-                (symbol, today, time.time(), spot),
-            )
-            conn.commit()
         rows = conn.execute(
             "SELECT ts, spot FROM gex_spot_history WHERE symbol = ? AND trade_date = ? ORDER BY ts",
-            (symbol, today),
+            (symbol.strip().upper(), _today()),
         ).fetchall()
         return [{"ts": r["ts"], "spot": r["spot"]} for r in rows]
+    finally:
+        conn.close()
+
+
+def record_spots(cfg: dict, symbols: list[str] | None = None) -> int:
+    """Record the current spot for EVERY offered symbol (default `cfg['symbols']`) into this module's
+    history DB — not just the one on screen — so each symbol's trail stays continuous and there is no
+    gap when the viewer switches symbols. Best-effort: spots come from the read-only stream cache, and a
+    symbol with no cached spot is skipped. The dashboard server calls this on a fixed cadence. Persisted
+    so the trail survives page reloads/restarts. Returns how many symbols were recorded."""
+    syms = [str(s).strip().upper() for s in (symbols if symbols is not None else cfg.get("symbols") or [])]
+    if not syms:
+        return 0
+    db_path = Path(cfg["history_db_path"])
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    try:
+        _ensure_history_table(conn)
+        today = _today()
+        now = time.time()
+        n = 0
+        for sym in syms:
+            spot = _provider.read_spot(cfg["stream_cache_db"], sym)
+            if spot is not None:
+                conn.execute(
+                    "INSERT INTO gex_spot_history (symbol, trade_date, ts, spot) VALUES (?,?,?,?)",
+                    (sym, today, now, spot),
+                )
+                n += 1
+        conn.commit()
+        return n
     finally:
         conn.close()
 
@@ -96,7 +124,9 @@ def build_gex(cfg: dict, symbol: str | None = None) -> dict:
     if not profile.get("ok"):
         return {"ok": False, "symbol": symbol, "error": profile.get("error", "insufficient GEX data")}
 
-    spot_history = _record_and_fetch_spot_history(Path(cfg["history_db_path"]), symbol, snap.spot)
+    # Read-only: the continuous recording of every symbol's spot is done by the dashboard's background
+    # recorder (service.record_spots) so a symbol's trail has no gap while a different one is on screen.
+    spot_history = _fetch_spot_history(Path(cfg["history_db_path"]), symbol)
     market_open_ts, market_close_ts = _market_open_close_ts()
 
     return {

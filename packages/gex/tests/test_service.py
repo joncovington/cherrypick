@@ -91,8 +91,21 @@ def test_build_gex_payload_shape_and_oi_vs_volume(tmp_path):
     t = out["totals"]
     assert t["call_wall"] == 610 and t["put_wall"] == 600
     assert t["zero_gamma"] is not None
-    # spot history recorded a tick in the module's own db (never the read-only cache)
-    assert len(out["spot_history"]) >= 1
+    # build_gex reads the spot trail read-only (the dashboard's recorder writes it) — a list, empty
+    # until record_spots has run.
+    assert isinstance(out["spot_history"], list)
+
+
+def test_record_spots_records_every_symbol_then_build_gex_reads_the_trail(tmp_path):
+    cfg = _cfg(tmp_path)
+    # record_spots samples EVERY offered symbol with a cached spot (not just the one on screen), so a
+    # symbol's trail has no gap when the viewer switches — the whole point of the background recorder.
+    assert service.record_spots(cfg) == 1  # only SPX has a cached spot in this fixture
+    assert service.record_spots(cfg) == 1  # a second sample -> a second point
+    out = service.build_gex(cfg, "SPX")
+    assert len(out["spot_history"]) == 2  # build_gex reads back both recorded ticks
+    # a symbol with no cached spot is simply skipped, never errors
+    assert service.record_spots(cfg, symbols=["NOPE"]) == 0
 
 
 def test_build_gex_reports_not_ready_when_symbol_absent(tmp_path):
