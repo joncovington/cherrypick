@@ -8,14 +8,15 @@
   "available_capital_live_mode_source": "tastytrade",
   "max_contracts_per_leg": 1,
 
-  "_tastytrade_costs_note": "Models tastytrade's real commission schedule (source: tastytrade.com/pricing, 'Commissions & Fees' doc last updated 2026-04-06) for paper-mode cost-adjusted P&L -- see src/costs.py. commission_close_per_contract is 0 by design (tastytrade's distinctive open-only model). clearing/regulatory rates are approximations of pass-through exchange/ORF/FINRA-TAF/SEC fees and change periodically -- re-check the source doc periodically.",
+  "_tastytrade_costs_note": "Models tastytrade's real commission schedule (source: tastytrade.com/pricing, 'Commissions & Fees' doc last updated 2026-04-06) for paper-mode cost-adjusted P&L -- see src/costs.py. commission_close_per_contract is 0 by design (tastytrade's distinctive open-only model). clearing/regulatory rates are approximations of pass-through exchange/ORF/FINRA-TAF/SEC fees and change periodically -- re-check the source doc periodically. slippage_frac_of_spread is the fraction of each leg's bid-ask conceded from mid per fill (0.125 = a quarter of the way from mid to the far touch, a worked-combo-limit assumption; was 0.25); slippage_cap_frac_of_mid caps a leg's slippage at that fraction of its mid so deep-OTM junk wings don't dominate.",
   "tastytrade_costs": {
     "commission_open_per_contract": 1.00,
     "commission_close_per_contract": 0.00,
     "commission_cap_per_leg": 10.00,
     "clearing_fee_per_contract": 0.10,
     "regulatory_fee_per_contract": 0.04,
-    "slippage_frac_of_spread": 0.25
+    "slippage_frac_of_spread": 0.125,
+    "slippage_cap_frac_of_mid": 0.15
   },
 
   "max_concurrent_earnings_positions": 3,
