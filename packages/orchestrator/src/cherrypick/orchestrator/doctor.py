@@ -318,6 +318,25 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         )
     )
 
+    # background services (e.g. the gex spot-trail recorder): report each enabled daemon's status
+    for svc in cfgmod.enabled_services(cfg):
+        sid = svc["id"]
+        root = cfgmod.module_root(svc, sid)
+        if not root.exists():
+            checks.append(Check(f"service.{sid}", WARN, f"checkout not found at {root}"))
+            continue
+        try:
+            r = _run(root, svc["status_argv"], timeout=15)
+            running = bool(first_json(r.stdout).get("running")) if r.returncode == 0 else None
+        except Exception:
+            running = None
+        if running:
+            checks.append(Check(f"service.{sid}", OK, "running"))
+        elif running is False:
+            checks.append(Check(f"service.{sid}", WARN, "not running (install/watchdog starts it)"))
+        else:
+            checks.append(Check(f"service.{sid}", WARN, "status unknown (could not read status_argv)"))
+
     # no-leak guard: runtime output (DBs, logs, dashboard, state, reports) must live under the cherrypick
     # home, never inside a checkout. Advisory (WARN) — leftovers don't break anything, but they signal a
     # path resolver regressed or a pre-home-cutover file needs sweeping (see `cherrypick migrate-home`).

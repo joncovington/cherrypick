@@ -115,7 +115,10 @@ is excluded from ruff and from the packaged wheel.
   account numbers are masked everywhere (only the write to keyring uses the full number). `reconcile`
   honors the designation — a designated live account is *expected* to hold positions (not drift).
 - **The watchdog's only trading-adjacent action is benign, non-trading remediation** (restart a dead
-  streamer). It never places, cancels, or closes an order.
+  streamer, or a dead managed **service** — top-level `services`, background daemons like the gex
+  spot-trail recorder that `install` starts, the watchdog keeps alive via `status_argv`/`start_argv`,
+  and `uninstall` stops; single-instance guarded, located by `path`/`repo` like modules but with no
+  paper DB or schedule of their own). It never places, cancels, or closes an order.
 - **Account numbers are masked** to the last 4 digits (`****1234`) anywhere they surface in logs or
   output — never emit a full account number (suite-wide rule from `ROADMAP.md`).
 - **Best-effort side calls never break the reliability path.** The watchdog tick fires
