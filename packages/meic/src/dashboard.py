@@ -51,8 +51,6 @@ except ImportError:
 _DB_PATH        = str(_paths.live_db_path())
 _PAPER_DB_PATH  = str(_paths.paper_db_path())
 _CACHE_DB_PATH  = str(_paths.stream_cache_path())
-_LOG_PATH       = str(_paths.log_path("agent.log"))
-_PAPER_LOG_PATH = str(_paths.log_path("paper_loop.log"))
 # "live" (default, meic_trades.db) or "paper" (paper_trades.db) in the data home — set from --mode
 # in main(). Drives the PAPER MODE banner; _DB_PATH itself is the only thing that changes
 # which data actually gets served. _CACHE_DB_PATH (the streamer cache) is never mode-dependent
@@ -416,44 +414,6 @@ def _spread_statuses(trade: dict, put_leg: dict | None = None, call_leg: dict | 
 _LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "WARN", "ERROR", "CRITICAL"}
 
 
-def _parse_plain_log_line(raw: str) -> dict:
-    """Parse a stdlib-logging line like '2026-07-09 14:00:04,306 INFO message' into the
-    {ts, level, msg} shape the Logs tab expects (paper_loop.log uses this format, not the
-    JSONL that agent.log uses). Falls back to the whole line as an INFO message."""
-    parts = raw.split(None, 3)
-    if len(parts) >= 4 and parts[2] in _LOG_LEVELS:
-        ts = parts[1].split(",")[0]              # HH:MM:SS (drop milliseconds)
-        level = "WARN" if parts[2] == "WARNING" else parts[2]
-        return {"ts": ts, "level": level, "msg": parts[3]}
-    return {"ts": "", "level": "INFO", "msg": raw}
-
-
-def _build_log_data(n: int = 200) -> dict:
-    if not os.path.exists(_LOG_PATH):
-        return {"ok": True, "lines": [], "note": "Log file not found"}
-    try:
-        with open(_LOG_PATH, encoding="utf-8", errors="replace") as f:
-            all_lines = f.readlines()
-        tail = all_lines[-n:] if len(all_lines) > n else all_lines
-        lines = []
-        for raw in tail:
-            raw = raw.strip()
-            if not raw:
-                continue
-            try:
-                obj = json.loads(raw)
-                ts  = str(obj.get("timestamp", ""))
-                # shorten ISO timestamp to HH:MM:SS
-                if "T" in ts:
-                    ts = ts.split("T")[1][:8]
-                lines.append({"ts": ts, "level": obj.get("level", "INFO"), "msg": obj.get("message", raw)})
-            except (json.JSONDecodeError, ValueError):
-                lines.append(_parse_plain_log_line(raw))
-        return {"ok": True, "lines": lines}
-    except OSError as exc:
-        return {"ok": False, "error": str(exc), "lines": []}
-
-
 # ── API data builder ──────────────────────────────────────────────────────────
 
 def _build_api_data(symbol: str | None = None, profile: str | None = None) -> dict:
@@ -811,25 +771,6 @@ nav{flex:1;padding:10px 0}
 .fee-val{font-size:17px;font-weight:700;color:#e6edf3}
 .fee-val.neg{color:#e8423a}.fee-val.warn{color:#f5a623}
 
-/* Log view */
-.log-toolbar{display:flex;align-items:center;gap:10px;padding:10px 18px;
-              border-bottom:1px solid #1e2430;flex-shrink:0}
-.log-toolbar .frame-title{flex:1}
-.log-filter{display:flex;gap:6px}
-.log-filter label{font-size:11px;color:#6b7280;cursor:pointer;display:flex;align-items:center;gap:3px}
-.log-filter input{accent-color:#00c896;cursor:pointer}
-.log-paused-badge{font-size:9px;font-weight:700;letter-spacing:.5px;color:#f5a623;
-                   background:#2a2510;padding:2px 7px;border-radius:3px;
-                   text-transform:uppercase;display:none}
-.log-scroll{flex:1;overflow-y:auto;padding:8px 0;font-family:'Cascadia Code','Fira Mono',
-             'Consolas',monospace;font-size:11.5px;line-height:1.55}
-.log-line{display:flex;gap:0;padding:1px 18px;white-space:pre-wrap;word-break:break-all}
-.log-line:hover{background:#0f1318}
-.log-ts{color:#3d4451;min-width:70px;flex-shrink:0}
-.log-lvl{min-width:46px;flex-shrink:0;font-weight:700}
-.log-lvl.INFO{color:#3d4451}.log-lvl.WARN{color:#f5a623}.log-lvl.ERROR{color:#e8423a}
-.log-msg{color:#c9d1d9;flex:1}
-.log-msg.WARN{color:#f5a623}.log-msg.ERROR{color:#e8423a}
 </style>
 </head>
 <body>
@@ -850,12 +791,6 @@ nav{flex:1;padding:10px 0}
     </div>
     <div class="nav-item" data-view="performance">
       <span class="nav-icon">&#128200;</span> Performance
-    </div>
-    <div class="nav-item" data-view="logs">
-      <span class="nav-icon">&#9776;</span> Logs
-    </div>
-    <div class="nav-item" data-view="settings">
-      <span class="nav-icon">&#9881;</span> Settings
     </div>
   </nav>
   <div class="sidebar-footer">
@@ -1117,30 +1052,6 @@ nav{flex:1;padding:10px 0}
     </div>
   </div>
 
-  <!-- LOGS VIEW -->
-  <div class="view" id="view-logs">
-    <div class="log-toolbar">
-      <span class="frame-title">Agent Log</span>
-      <div class="log-filter">
-        <label><input type="checkbox" id="log-warn" checked> WARN</label>
-        <label><input type="checkbox" id="log-error" checked> ERROR</label>
-        <label><input type="checkbox" id="log-info" checked> INFO</label>
-      </div>
-      <span class="log-paused-badge" id="log-paused">&#9646;&#9646; PAUSED</span>
-    </div>
-    <div class="log-scroll" id="log-scroll">
-      <div class="log-line"><span class="log-msg">Loading&hellip;</span></div>
-    </div>
-  </div>
-
-  <!-- SETTINGS VIEW -->
-  <div class="view" id="view-settings">
-    <div style="padding:36px;color:#6b7280">
-      <h2 style="color:#e6edf3;margin-bottom:8px;font-size:16px">Settings</h2>
-      <p style="font-size:13px">Configuration is managed via <code style="background:#111519;padding:1px 6px;border-radius:3px">config.json</code> in the project root.</p>
-    </div>
-  </div>
-
 </main>
 </div>
 
@@ -1159,7 +1070,6 @@ document.querySelectorAll('.nav-item').forEach(el => {
     document.getElementById('view-' + el.dataset.view).classList.add('active');
     if (el.dataset.view === 'history' && cache) renderHistory(cache);
     if (el.dataset.view === 'performance' && cache) renderPerformance(cache);
-    if (el.dataset.view === 'logs') fetchLog();
   });
 });
 
@@ -1725,61 +1635,6 @@ function onProfileChange(e) {
 PROFILE_SELECT_IDS.forEach(id =>
   document.getElementById(id).addEventListener('change', onProfileChange));
 
-// ── log tail ──────────────────────────────────────────────────────────────────
-let logPaused = false;
-let lastLogCount = 0;
-const logScroll = document.getElementById('log-scroll');
-
-logScroll.addEventListener('scroll', () => {
-  const atBottom = logScroll.scrollTop + logScroll.clientHeight >= logScroll.scrollHeight - 20;
-  logPaused = !atBottom;
-  document.getElementById('log-paused').style.display = logPaused ? 'inline-block' : 'none';
-});
-
-function logVisible() {
-  return document.getElementById('view-logs').classList.contains('active');
-}
-
-function renderLog(lines) {
-  const showInfo  = document.getElementById('log-info').checked;
-  const showWarn  = document.getElementById('log-warn').checked;
-  const showError = document.getElementById('log-error').checked;
-  const filtered  = lines.filter(l => {
-    const lv = (l.level || 'INFO').toUpperCase();
-    if (lv === 'WARN'  && !showWarn)  return false;
-    if (lv === 'ERROR' && !showError) return false;
-    if (lv === 'INFO'  && !showInfo)  return false;
-    return true;
-  });
-  if (filtered.length === lastLogCount && logScroll.innerHTML !== '') return;
-  lastLogCount = filtered.length;
-  logScroll.innerHTML = filtered.map(l => {
-    const lv  = (l.level || 'INFO').toUpperCase();
-    const msg = (l.msg || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    return '<div class="log-line">' +
-      '<span class="log-ts">' + (l.ts || '        ') + '  </span>' +
-      '<span class="log-lvl ' + lv + '">' + lv.padEnd(6) + '</span>' +
-      '<span class="log-msg ' + lv + '">' + msg + '</span>' +
-      '</div>';
-  }).join('');
-  if (!logPaused) logScroll.scrollTop = logScroll.scrollHeight;
-}
-
-async function fetchLog() {
-  if (!logVisible()) return;
-  try {
-    const r = await fetch('/api/log');
-    if (!r.ok) return;
-    const d = await r.json();
-    if (d.lines) renderLog(d.lines);
-  } catch(_) {}
-}
-
-// Re-render when filters change
-['log-info','log-warn','log-error'].forEach(id => {
-  document.getElementById(id).addEventListener('change', () => { lastLogCount = -1; fetchLog(); });
-});
-
 // ── auto-refresh ──────────────────────────────────────────────────────────────
 fetchData();
 setInterval(() => {
@@ -1787,7 +1642,6 @@ setInterval(() => {
   document.getElementById('scountdown').textContent = 'Refresh in ' + cd + 's';
   if (cd <= 0) { cd = 30; fetchData(); }
 }, 1000);
-setInterval(fetchLog, 10000);
 </script>
 </body>
 </html>"""
@@ -1820,18 +1674,6 @@ class _Handler(BaseHTTPRequestHandler):
                 result = _build_api_data(sym, prof)
             except Exception as exc:
                 result = {"ok": False, "error": str(exc)}
-            body = json.dumps(result, default=str).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-cache")
-            self.end_headers()
-            self.wfile.write(body)
-        elif self.path.startswith("/api/log"):
-            try:
-                result = _build_log_data()
-            except Exception as exc:
-                result = {"ok": False, "error": str(exc), "lines": []}
             body = json.dumps(result, default=str).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -1873,7 +1715,7 @@ def _resolve_mode_defaults(mode: str, db_arg: str | None, port_arg: int | None,
 
 
 def main():
-    global _DB_PATH, _MODE, _LOG_PATH
+    global _DB_PATH, _MODE
     parser = argparse.ArgumentParser(description="MEICAgent Dashboard")
     parser.add_argument("--mode", choices=["live", "paper"], default="live",
                          help="'paper' points the dashboard at the data home's paper_trades.db "
@@ -1889,12 +1731,6 @@ def main():
     _DB_PATH, port = _resolve_mode_defaults(args.mode, args.db, args.port)
     # `python dashboard.py` with no args resolves to (today's default meic_trades.db path, 5050)
     # — byte-identical to pre-paper-mode behavior.
-    # The Logs tab tails the mode's own log: the paper session writes logs/paper_loop.log,
-    # the live loop writes logs/agent.log. Without this the paper dashboard showed the (stale)
-    # live log and no paper activity.
-    if args.mode == "paper":
-        _LOG_PATH = _PAPER_LOG_PATH
-
     # Check if already running
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     already = probe.connect_ex(("127.0.0.1", port)) == 0
