@@ -177,8 +177,7 @@ Both can run at once. Views:
 
 - **Performance view** — P&L by day/week/month/all-time, equity and underwater curves, win-rate/profit-factor/expectancy trends, and risk-adjusted tiles (Sharpe/Sortino/Calmar/recovery factor); filterable by symbol, and by risk profile in paper mode
 - **Today view** — live open positions with per-spread credits and per-side stop badges, plus a multi-period stats grid
-- **GEX view** — horizontal by-strike gamma exposure profile (classic dealer-positioning chart style) with call wall / put wall / zero-gamma reference lines and a live spot-price trail; toggle OI-based vs volume-based GEX side by side
-- **IV Skew & Volume tabs** — call/put IV curve and open-interest/volume-by-strike from the same live data
+- **GEX / IV Skew / Volume** — moved to the standalone [cherrypick-gex](../gex) dashboard (`run.py dashboard --serve`), which renders the same by-strike gamma-exposure, IV-skew, and volume views off the same live stream cache. MEIC's trading loop still uses the shared GEX engine (`cherrypick.core.gex`, via `tt.py get_gex`) for its regime gate and stop tightening.
 - **Live log tail** — streaming agent log with level filtering, so you can watch the reasoning in real time
 
 Everything runs locally against your own tastytrade account — no cloud dependency for trade execution.

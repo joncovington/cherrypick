@@ -1,12 +1,17 @@
 # cherrypick-gex
 
 A simple, self-hosted GEX (gamma-exposure) dashboard — a lightweight take on what gexbot.com,
-SpotGamma, and MenthorQ sell. It shows **net GEX by strike** for an index option chain with **open
-interest ("positioning") and traded volume ("flow") side by side**, the **gamma-flip / zero-gamma**
-level, and the **call/put walls**, plus a live spot marker and intraday spot trail.
+SpotGamma, and MenthorQ sell. Three tabs off one live option chain:
 
-It computes GEX with the shared `cherrypick.core.gex` engine — the same math cherrypick-meic's own
-dashboard uses, so the two agree to the dollar — and never places orders or touches live trading.
+- **GEX** — **net GEX by strike** with **open interest ("positioning") and traded volume ("flow") side
+  by side**, the **gamma-flip / zero-gamma** level, the **call/put walls**, and a live spot marker with
+  an intraday spot trail.
+- **IV Skew** — call vs put implied-volatility curve and open interest by strike.
+- **Volume** — call/put/total traded volume by strike.
+
+It computes GEX with the shared `cherrypick.core.gex` engine — the same math the suite's MEIC trading
+loop uses for its GEX regime gate — and never places orders or touches live trading. (This is the full
+GEX view the suite used to render inside MEIC's dashboard; it now lives here.)
 
 ## Two ways to run
 
