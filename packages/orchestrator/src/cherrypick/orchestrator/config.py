@@ -151,6 +151,15 @@ def enabled_modules(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {name: mcfg for name, mcfg in cfg.get("modules", {}).items() if mcfg.get("enabled", False)}
 
 
+def enabled_services(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Long-running background daemons the orchestrator keeps alive (top-level `services`): started at
+    `install`, kept up by the watchdog, and located by `path`/`repo` like modules. Each declares
+    `status_argv` (prints `{"running": bool}`), `start_argv`, and `auto_restart`. Distinct from the
+    `modules` registry (paper pipelines) — a service has no paper DB or schedule of its own, e.g. the gex
+    spot-trail recorder that runs alongside the streamer."""
+    return [s for s in (cfg.get("services") or []) if s.get("enabled") and s.get("id")]
+
+
 def eod_digest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved suite end-of-day-digest scheduling. ON by default (opt out with
     `"eod_digest": {"enabled": false}`), with a default task name and daily time — so a config
