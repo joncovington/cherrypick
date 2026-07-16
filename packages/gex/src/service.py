@@ -98,6 +98,50 @@ def record_spots(cfg: dict, symbols: list[str] | None = None) -> int:
         conn.close()
 
 
+def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) -> int:
+    """Always-on spot-trail recorder: sample every offered symbol's spot into the history DB on a fixed
+    cadence, independent of the dashboard. Run it alongside the streamer (its data source) so each
+    symbol's trail builds all session and persists across dashboard restarts — the dashboard then only
+    reads the trail. ``once`` samples a single tick and returns; otherwise it loops until Ctrl-C."""
+    import logging
+
+    syms = [str(s).strip().upper() for s in (cfg.get("symbols") or [])]
+    interval = int(interval or (cfg.get("serve", {}) or {}).get("refresh_seconds", 15))
+
+    if once:
+        n = record_spots(cfg)
+        print(f"recorded spot for {n}/{len(syms)} symbols")
+        return 0
+
+    import config as _config  # local — config bootstraps nothing
+
+    log_dir = _config.logs_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[logging.FileHandler(log_dir / "recorder.log", encoding="utf-8"), logging.StreamHandler()],
+    )
+    log = logging.getLogger("cherrypick-gex.recorder")
+    log.info("spot recorder starting: %s every %ss -> %s", syms, interval, cfg["history_db_path"])
+    print(f"cherrypick-gex spot recorder: {syms} every {interval}s  (Ctrl-C to stop)")
+
+    heartbeat_every = max(1, 300 // interval)  # a ~5-minute INFO heartbeat; otherwise stay quiet
+    ticks = 0
+    try:
+        while True:
+            try:
+                n = record_spots(cfg)
+                ticks += 1
+                if ticks % heartbeat_every == 0:
+                    log.info("recorded %d/%d symbols (tick %d)", n, len(syms), ticks)
+            except Exception as exc:  # a data hiccup must never kill the recorder
+                log.warning("record failed: %s", exc)
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        log.info("spot recorder stopped (%d ticks)", ticks)
+    return 0
+
+
 def build_gex(cfg: dict, symbol: str | None = None) -> dict:
     """Read a snapshot from the configured stream cache, aggregate it, and return the chart payload.
 
