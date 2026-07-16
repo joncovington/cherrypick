@@ -122,7 +122,7 @@
         "kind": "static",
         "path": "../earnings",
         "build_argv": ["src/strategy_dashboard.py", "--mode", "paper"],
-        "output": "reports/strategy_dashboard.html",
+        "output": "~/.cherrypick/data/earnings/reports/strategy_dashboard.html",
         "refresh_seconds": 30
       }
     ]

@@ -15,10 +15,10 @@ Resolution (delegated to ``cherrypick.core.home``):
     same directory the locally-running ``dolt sql-server`` serves the earnings/options/stocks datasets
     from; the trade ledgers are plain SQLite files alongside those Dolt databases and never collide.
 
-Nothing runtime lands in the checkout — data, logs, and (once migrated) the config all resolve under the
-home; only the checked-in config example under ``config/`` and generated ``reports/`` stay in the
-package. Portability guardrail: never hardcode an absolute path — the home derives from ``Path.home()``
-(or the overrides).
+Nothing runtime lands in the checkout — data, logs, generated reports, and (once migrated) the config
+all resolve under the home; only the checked-in config example under ``config/`` stays in the package.
+Portability guardrail: never hardcode an absolute path — the home derives from ``Path.home()`` (or the
+overrides).
 """
 
 from __future__ import annotations
@@ -52,6 +52,13 @@ def live_db_path() -> Path:
 def paper_db_path() -> Path:
     """The paper-trading ledger (``paper_trades.db``)."""
     return data_path("paper_trades.db")
+
+
+def reports_dir() -> Path:
+    """Generated strategy-dashboard HTML lives under the module data home
+    (``~/.cherrypick/data/earnings/reports``), so it never lands in the checkout. A pure path — the
+    caller creates it when it writes (``strategy_dashboard.py`` mkdirs before rendering)."""
+    return _home.data_dir("earnings", env="EARNINGS_DATA_DIR") / "reports"
 
 
 def config_path() -> Path:

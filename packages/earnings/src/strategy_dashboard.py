@@ -37,11 +37,14 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+import paths as _paths
 import scanner
 import strategy_metrics as sm
 from strategy_report import STRATEGY_NAMES
 
-REPORTS_DIR = Path(__file__).resolve().parent.parent / "reports"
+# Generated dashboards live under the shared cherrypick home (~/.cherrypick/data/earnings/reports),
+# resolved by paths.py — never in the checkout. Pure path; main() mkdirs before writing.
+REPORTS_DIR = _paths.reports_dir()
 
 # Dark palette -- background/text tuned for a dark page, categorical hues
 # chosen for contrast against that background and against each other
@@ -254,6 +257,132 @@ def _weekly_pnl_chart(trades: list[dict]) -> str:
     return _fig_to_base64(fig)
 
 
+def _open_positions_section(profile: str) -> str:
+    """Active (unclosed) positions for `profile`, in dollar terms, preceded by a short legend
+    defining the columns. `entry_credit` is stored in premium points (per the
+    `pnl = (entry_credit - exit_debit) * 100` convention), so it is x100 here for dollars;
+    `capital_at_risk` and `entry_cost` are already dollar-denominated."""
+    try:
+        import sqlite3
+        conn = sqlite3.connect(sm.DB_PATH)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT strategy, symbol, quantity, entry_credit, capital_at_risk, entry_cost, expiration "
+            "FROM trades WHERE profile = ? AND closed_at IS NULL ORDER BY symbol, strategy",
+            (profile,),
+        ).fetchall()
+        conn.close()
+    except Exception:
+        rows = []
+
+    legend = f"""
+    <div style="color:{MUTED};font-size:11px;margin-bottom:10px;line-height:1.6;">
+      <b style="color:{FG};">Credit / (Debit)</b> — premium collected at entry (&times; $100 per
+      contract); a value in (parentheses) is a net <b>debit paid</b> instead. &nbsp;&middot;&nbsp;
+      <b style="color:{FG};">Net of cost</b> — that credit/debit after subtracting the modeled entry
+      cost; the approximate cash you actually keep (credit) or lay out (debit). &nbsp;&middot;&nbsp;
+      <b style="color:{FG};">Max loss</b> — capital at risk: the most a defined-risk position can
+      lose, already net of the credit collected. &nbsp;&middot;&nbsp;
+      <b style="color:{FG};">Entry cost</b> — modeled tastytrade fees + a slippage haircut charged at
+      entry; held out of P&amp;L until the trade closes.
+    </div>
+    """
+
+    if not rows:
+        return legend + f'<div style="color:{MUTED};font-size:12px;">No open positions.</div>'
+
+    trs = []
+    tot_risk = tot_cost = 0.0
+    for r in rows:
+        credit_usd = (r["entry_credit"] or 0.0) * 100
+        cost = r["entry_cost"] or 0.0
+        risk = r["capital_at_risk"] or 0.0
+        net = credit_usd - cost
+        tot_risk += risk
+        tot_cost += cost
+        credit_str = f"${credit_usd:,.0f}" if credit_usd >= 0 else f"(${abs(credit_usd):,.0f})"
+        net_str = f"${net:,.0f}" if net >= 0 else f"(${abs(net):,.0f})"
+        net_color = GOOD if net >= 0 else BAD
+        trs.append(
+            f'<tr>'
+            f'<td style="padding:3px 10px;">{r["strategy"]}</td>'
+            f'<td style="padding:3px 10px;">{r["symbol"]}</td>'
+            f'<td style="padding:3px 10px;text-align:right;">{r["quantity"]}</td>'
+            f'<td style="padding:3px 10px;text-align:right;">{credit_str}</td>'
+            f'<td style="padding:3px 10px;text-align:right;color:{net_color};">{net_str}</td>'
+            f'<td style="padding:3px 10px;text-align:right;">${risk:,.0f}</td>'
+            f'<td style="padding:3px 10px;text-align:right;">${cost:,.0f}</td>'
+            f'<td style="padding:3px 10px;">{r["expiration"] or ""}</td>'
+            f'</tr>'
+        )
+    total_row = (
+        f'<tr style="border-top:1px solid {GRID};color:{MUTED};">'
+        f'<td style="padding:3px 10px;" colspan="5">Total ({len(rows)} open)</td>'
+        f'<td style="padding:3px 10px;text-align:right;">${tot_risk:,.0f}</td>'
+        f'<td style="padding:3px 10px;text-align:right;">${tot_cost:,.0f}</td>'
+        f'<td></td></tr>'
+    )
+    table = f"""
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="color:{MUTED};border-bottom:1px solid {GRID};">
+        <th style="text-align:left;padding:3px 10px;">Strategy</th>
+        <th style="text-align:left;padding:3px 10px;">Symbol</th>
+        <th style="text-align:right;padding:3px 10px;">Qty</th>
+        <th style="text-align:right;padding:3px 10px;">Credit / (Debit)</th>
+        <th style="text-align:right;padding:3px 10px;">Net of cost</th>
+        <th style="text-align:right;padding:3px 10px;">Max loss</th>
+        <th style="text-align:right;padding:3px 10px;">Entry cost</th>
+        <th style="text-align:left;padding:3px 10px;">Expiration</th>
+      </tr></thead>
+      <tbody>{"".join(trs)}{total_row}</tbody>
+    </table>
+    """
+
+    # Per-contract breakdown -- the unit economics behind the quantities above. Each strategy is
+    # sized to ~equal dollar risk, so quantity = risk budget / max loss per contract; showing the
+    # per-contract figures makes why (e.g.) a butterfly trades 8 lots and an iron fly trades 1 legible.
+    pc_trs = []
+    for r in rows:
+        qty = r["quantity"] or 1
+        credit_pc = (r["entry_credit"] or 0.0) / qty * 100
+        risk_pc = (r["capital_at_risk"] or 0.0) / qty
+        cost_pc = (r["entry_cost"] or 0.0) / qty
+        credit_pc_str = f"${credit_pc:,.0f}" if credit_pc >= 0 else f"(${abs(credit_pc):,.0f})"
+        pc_trs.append(
+            f'<tr>'
+            f'<td style="padding:3px 10px;">{r["strategy"]}</td>'
+            f'<td style="padding:3px 10px;">{r["symbol"]}</td>'
+            f'<td style="padding:3px 10px;text-align:right;">{r["quantity"]}</td>'
+            f'<td style="padding:3px 10px;text-align:right;">{credit_pc_str}</td>'
+            f'<td style="padding:3px 10px;text-align:right;">${risk_pc:,.0f}</td>'
+            f'<td style="padding:3px 10px;text-align:right;">${cost_pc:,.0f}</td>'
+            f'</tr>'
+        )
+    pc_note = f"""
+    <div style="color:{MUTED};font-size:11px;margin:14px 0 8px 0;line-height:1.6;">
+      <b style="color:{FG};">Per contract</b> — the single-lot economics behind the quantities above.
+      Each strategy is sized to roughly <b>equal dollar risk</b>, so <b>quantity = risk budget &divide;
+      max loss per contract</b> (that's why a $609-risk butterfly trades 8 lots while a $4,058-risk iron
+      fly trades 1). For these defined-risk structures, <b>max loss per contract = capital at risk per
+      contract</b> — risk and max loss are the same figure.
+    </div>
+    """
+    pc_table = f"""
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="color:{MUTED};border-bottom:1px solid {GRID};">
+        <th style="text-align:left;padding:3px 10px;">Strategy</th>
+        <th style="text-align:left;padding:3px 10px;">Symbol</th>
+        <th style="text-align:right;padding:3px 10px;">Qty</th>
+        <th style="text-align:right;padding:3px 10px;">Credit / (Debit) / ct</th>
+        <th style="text-align:right;padding:3px 10px;">Max loss (risk) / ct</th>
+        <th style="text-align:right;padding:3px 10px;">Entry cost / ct</th>
+      </tr></thead>
+      <tbody>{"".join(pc_trs)}</tbody>
+    </table>
+    """
+    return legend + table + pc_note + pc_table
+
+
 def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str:
     config = scanner._load_config()
     capital_basis = config.get("available_capital_paper_mode")
@@ -349,6 +478,8 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
     </table>
     """
 
+    open_positions_html = _open_positions_section(profile)
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Mode badge -- amber "PAPER" vs red "LIVE" (red signals real-money caution, matching the
@@ -411,7 +542,10 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
   <div id="tf-perweek" class="tf-panel" style="display:none;">{_img_tag(tf_images['perweek'])}</div>
 </div>
 
-<h2 style="font-size:15px;border-bottom:1px solid {GRID};padding-bottom:6px;">Cross-strategy comparison</h2>
+<h2 style="font-size:15px;border-bottom:1px solid {GRID};padding-bottom:6px;">Open positions</h2>
+{open_positions_html}
+
+<h2 style="font-size:15px;border-bottom:1px solid {GRID};padding-bottom:6px;margin-top:20px;">Cross-strategy comparison</h2>
 {comparison_table}
 
 <h2 style="font-size:15px;border-bottom:1px solid {GRID};padding-bottom:6px;margin-top:20px;">Regime coverage &amp; rejections</h2>
@@ -446,10 +580,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["live", "paper"], default="paper",
                         help="'live' reads earnings_trades.db and writes "
-                             "reports/strategy_dashboard_live.html; 'paper' (default) reads "
-                             "paper_trades.db and writes reports/strategy_dashboard.html. Both DBs "
-                             "live under the cherrypick data home (~/.cherrypick/data/earnings by "
-                             "default or $EARNINGS_DATA_DIR); reports/ stays in the package.")
+                             "strategy_dashboard_live.html; 'paper' (default) reads "
+                             "paper_trades.db and writes strategy_dashboard.html. Both the DBs and the "
+                             "generated reports live under the cherrypick data home "
+                             "(~/.cherrypick/data/earnings by default or $EARNINGS_DATA_DIR); the reports "
+                             "subdir is created on write.")
     parser.add_argument("--db", default=None, help="Overrides the mode-based default DB path.")
     parser.add_argument("--profile", default=None,
                         help="Book to report on. Defaults to 'strat_test' in paper mode, "
