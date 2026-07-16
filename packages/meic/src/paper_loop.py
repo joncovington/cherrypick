@@ -215,11 +215,16 @@ def _fetch_overview(symbol):
     return None, None
 
 
-def _build_candidates(symbol, last, widths, delta_target, today):
+def _build_candidates(symbol, last, widths, delta_targets, default_delta, today):
     """Fetch the 0DTE chain and build wing-width candidates + leg_quotes. Mirrors the
     strike-selection the live loop/paper-loop.md describe: nearest-delta short strikes,
     wings at each configured width. A wide strike window (80) also covers near-money legs
-    of already-open ICs so they mark this iteration."""
+    of already-open ICs so they mark this iteration.
+
+    `delta_targets` is the set of short-delta bands to build (the VIX-banded default plus any
+    `short_delta_target` a profile requests). Each candidate is tagged with its `short_delta` and
+    `is_default_delta`; `_select_candidates` then hands each profile only its own band, so profiles
+    without a `short_delta_target` see exactly the default-band menu they saw before."""
     chain = _run_json(_TT + ["get_option_chain", "--symbol", symbol, "--expiration", today,
                              "--include_quotes", "--include_greeks",
                              "--around_price", str(last), "--strike_count", "80"])
@@ -251,19 +256,24 @@ def _build_candidates(symbol, last, widths, delta_target, today):
         c = [x for x in pool if x["delta"] is not None]
         return min(c, key=lambda x: abs(abs(x["delta"]) - target)) if c else None
 
-    short_call = nearest([c for c in calls if c["strike"] > last], delta_target)
-    short_put = nearest([p for p in puts if p["strike"] < last], delta_target)
-    if not short_call or not short_put:
-        return [], leg_quotes, "no short strike near delta"
     by_call = {c["strike"]: c for c in calls}
     by_put = {p["strike"]: p for p in puts}
     candidates = []
-    for w in widths:
-        lc = by_call.get(short_call["strike"] + w)
-        lp = by_put.get(short_put["strike"] - w)
-        if lc and lp:
-            candidates.append({"wing_width": w, "short_put": short_put, "long_put": lp,
-                               "short_call": short_call, "long_call": lc})
+    for dt in delta_targets:
+        short_call = nearest([c for c in calls if c["strike"] > last], dt)
+        short_put = nearest([p for p in puts if p["strike"] < last], dt)
+        if not short_call or not short_put:
+            continue  # this band has no short strike in range; other bands may still yield candidates
+        is_default = abs(dt - default_delta) < 1e-9
+        for w in widths:
+            lc = by_call.get(short_call["strike"] + w)
+            lp = by_put.get(short_put["strike"] - w)
+            if lc and lp:
+                candidates.append({"wing_width": w, "short_put": short_put, "long_put": lp,
+                                   "short_call": short_call, "long_call": lc,
+                                   "short_delta": dt, "is_default_delta": is_default})
+    if not candidates:
+        return [], leg_quotes, "no short strike near delta"
     return candidates, leg_quotes, None
 
 
@@ -447,7 +457,10 @@ def run_iteration(cfg, force=False):
             summary[symbol] = {"error": "no price"}
             continue
         widths = paper.union_widths_for_symbol(symbol, cfg, profiles)
-        candidates, leg_quotes, cand_err = _build_candidates(symbol, price, widths, delta_target, today)
+        extra_deltas = paper.union_short_deltas_for_symbol(symbol, cfg, profiles)
+        delta_targets = [delta_target] + [d for d in extra_deltas if abs(d - delta_target) > 1e-9]
+        candidates, leg_quotes, cand_err = _build_candidates(symbol, price, widths, delta_targets,
+                                                             delta_target, today)
         gex = _run_json(_TT + ["get_gex", "--symbol", symbol])
         snapshot = {
             "symbol": symbol, "date": today, "now_et": now_et, "expiration": today, "dte": 0,
@@ -471,7 +484,7 @@ def run_iteration(cfg, force=False):
                     act = a["decision"].get("action")
                     if act and act != "hold":
                         outcomes[prof] = f"EXIT {act}"
-        summary[symbol] = {"ivr": ivr, "widths": [c["wing_width"] for c in candidates],
+        summary[symbol] = {"ivr": ivr, "widths": sorted({c["wing_width"] for c in candidates}),
                            "outcomes": outcomes, "cand_err": cand_err}
 
     reason = _format_iteration(now_et, vix, vix1d_ratio, delta_target, summary)
