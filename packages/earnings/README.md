@@ -129,8 +129,9 @@ shared hard filters and tiering every candidate passes through before a strategy
 - **`src/paths.py`** resolves the **data home** — the trade ledgers (`earnings_trades.db`,
   `paper_trades.db`) live under `~/.cherrypick/data/earnings` by default (override with
   `EARNINGS_DATA_DIR`), the same managed location the orchestrator reads for cross-module reporting and
-  where the local `dolt sql-server` serves the earnings/options/stocks datasets. Only *data* lives there;
-  `config/`, `logs/`, and `reports/` stay in the package checkout.
+  where the local `dolt sql-server` serves the earnings/options/stocks datasets. Data, logs, and (once
+  migrated) config all live under `~/.cherrypick`; only the checked-in config example under `config/`
+  and generated `reports/` stay in the package checkout.
 
 Full operational detail — loop steps, config options, database schema — lives in `CLAUDE.md`,
 the authoritative spec this system runs against.
