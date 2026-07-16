@@ -19,6 +19,7 @@ the GEX/IV-Skew/Volume view the suite used to render inside MEIC's dashboard, mo
 ```bash
 git submodule update --init          # pull the cherrypick-core submodule (src/_core); imports fail without it
 python run.py stream --symbol SPX    # run the streamer -> own data/stream_cache.db (standalone mode)
+python run.py record                 # always-on spot-trail recorder (run alongside the streamer; --once/--interval)
 python run.py dashboard --serve      # localhost live GEX view (default 127.0.0.1:5055)
 python run.py gex --symbol SPX --json # one-shot payload (what the umbrella consumes)
 python -m pytest                     # tests seed a temp cache; no streamer required
@@ -37,11 +38,15 @@ config file's directory — never hardcode absolute paths.
   and picks the nearest expiration that actually has live greeks. It owns the stream-cache read shape;
   add a new source by adding a provider, not by editing the schema-aware reader.
 - **src/service.py** — `build_gex(cfg, symbol)`: provider → `cherrypick.core.gex.compute_gex_profile`
-  → chart payload. The pure, HTTP-free seam; also records the spot trail in this module's **own**
-  SQLite (`history_db`). Bootstraps `src/_core` onto `sys.path`.
+  → chart payload (reads the spot trail **read-only**). The pure, HTTP-free seam. `record_spots(cfg)`
+  samples **every** offered symbol's spot into this module's **own** SQLite (`history_db`) so a trail has
+  no gap when the viewer switches symbols; `run_recorder(cfg)` is the always-on loop (`run.py record`).
+  Bootstraps `src/_core` onto `sys.path`.
 - **src/serve.py** — stdlib `ThreadingHTTPServer`, loopback-only, one self-contained page polling
   `/api/gex`, with three tabs (GEX net-by-strike + spot trail, IV Skew, Volume) and a traded-symbol
-  selector — full parity with MEIC's former in-dashboard GEX view.
+  selector — full parity with MEIC's former in-dashboard GEX view. Spawns a background `record_spots`
+  loop so trails stay continuous while the dashboard is up (the standalone `record` daemon covers
+  all-session, dashboard-independent recording).
 - **src/section.py** — maps `build_gex` output onto the `cherrypick.core.viz` section schema (metrics
   tiles + a signed net-GEX-by-strike bar series). This is what the umbrella's generic dashboard renders.
 - **src/cli.py + run.py** — the CLI; `section --json` is the umbrella's integration point.
