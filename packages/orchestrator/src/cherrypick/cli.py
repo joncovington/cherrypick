@@ -169,7 +169,7 @@ def cmd_install(cfg) -> None:
             # start streamer if down
             streamer = mcfg.get("streamer", {})
             if streamer.get("enabled"):
-                results[f"{name}.streamer"] = _ensure_streamer(root, streamer)
+                results[f"{name}.streamer"] = _ensure_daemon(root, streamer)
 
         elif kind == "cherrypick_scheduled":
             # cherrypick owns the earnings schedule (the module has none).
@@ -216,13 +216,25 @@ def cmd_install(cfg) -> None:
             ed["task_name"], ed_tr, timeutil.to_local_hhmm(ed["at"], tz)
         )
 
+    # generic background services (e.g. the gex spot-trail recorder): start each detached if it's down.
+    # The watchdog keeps them alive thereafter; single-instance guards prevent duplicate starts.
+    for svc in cfgmod.enabled_services(cfg):
+        sroot = cfgmod.module_root(svc, svc["id"])
+        results[f"service.{svc['id']}"] = (
+            _ensure_daemon(sroot, svc)
+            if sroot.exists()
+            else {"ok": False, "detail": f"checkout not found at {sroot}"}
+        )
+
     _emit({"ok": all(v.get("ok", True) for v in results.values()), "installed": results})
 
 
-def _ensure_streamer(root: Path, streamer: dict) -> dict:
+def _ensure_daemon(root: Path, spec: dict) -> dict:
+    """Ensure a detached background daemon is up: check `status_argv` (prints {"running": bool}) and
+    launch `start_argv` detached if it is down. Shared by the streamer and the generic `services`."""
     try:
         r = subprocess.run(
-            [cfgmod.python_exe(), *streamer["status_argv"]],
+            [cfgmod.python_exe(), *spec["status_argv"]],
             cwd=str(root),
             capture_output=True,
             text=True,
@@ -233,7 +245,7 @@ def _ensure_streamer(root: Path, streamer: dict) -> dict:
         running = False
     if running:
         return {"ok": True, "detail": "already running"}
-    started = watchdog._start_streamer(root, streamer["start_argv"])
+    started = watchdog._start_streamer(root, spec["start_argv"])
     return {"ok": started, "detail": "started" if started else "start failed"}
 
 
@@ -263,7 +275,23 @@ def cmd_uninstall(cfg) -> None:
     # Always attempt the digest task by its resolved name (idempotent) so opting out *after* an
     # install still removes a previously-registered task.
     results["eod_digest_task"] = tasks.delete(cfgmod.eod_digest_settings(cfg)["task_name"])
-    _emit({"ok": True, "removed": results, "note": "streamer (if running) left untouched"})
+    # Stop generic background services (e.g. the gex recorder) — unlike the streamer, these are the
+    # orchestrator's own daemons, so a full uninstall stops them.
+    for svc in cfgmod.enabled_services(cfg):
+        if svc.get("stop_argv"):
+            sroot = cfgmod.module_root(svc, svc["id"])
+            try:
+                r = subprocess.run(
+                    [cfgmod.python_exe(), *svc["stop_argv"]], cwd=str(sroot),
+                    capture_output=True, text=True, timeout=15,
+                )
+                results[f"service.{svc['id']}"] = {
+                    "ok": r.returncode == 0,
+                    "detail": (r.stdout or r.stderr).strip()[:200],
+                }
+            except Exception as exc:
+                results[f"service.{svc['id']}"] = {"ok": False, "detail": str(exc)}
+    _emit({"ok": True, "removed": results, "note": "streamer (if running) left untouched; services stopped"})
 
 
 # --------------------------------------------------------------------------- status

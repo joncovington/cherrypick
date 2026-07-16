@@ -137,6 +137,18 @@
       }
     ]
   },
+  "services": [
+    {
+      "_comment": "Long-running background daemons the orchestrator keeps alive: started at `install`, restarted by the watchdog if down (single-instance guarded), stopped at `uninstall`. Located by 'path' (relative to this file) or 'repo'. status_argv must print {\"running\": bool}. The gex spot-trail recorder samples every symbol's spot continuously so the GEX dashboard's spot trail has no gaps and builds all session, independent of whether the dashboard is open. Disabled by default.",
+      "id": "gex-recorder",
+      "enabled": false,
+      "path": "../gex",
+      "status_argv": ["run.py", "record", "--status"],
+      "start_argv": ["run.py", "record"],
+      "stop_argv": ["run.py", "record", "--stop"],
+      "auto_restart": true
+    }
+  ],
   "trade_notify": {
     "_comment": "Dedicated low-latency task that pushes new paper entries/exits to trade_channels. Runs far more often than the watchdog so fills reach you within ~interval_minutes instead of a full watchdog cycle.",
     "task_name": "cherrypick-trade-notify",
