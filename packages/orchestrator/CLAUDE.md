@@ -166,12 +166,15 @@ repeated.
   the `src/cherrypick` namespace package (a regular module outranks a PEP 420 namespace on `sys.path`).
   Scheduled tasks invoke `run.py`; renaming it breaks them until re-registered via `python run.py
   install`.
-- **Logs live under the user home, not the repo.** `config.LOGS_DIR` defaults to `~/.cherrypick/logs`
-  (or `$CHERRYPICK_HOME/logs`) regardless of whether cherrypick runs from a source checkout or an
-  installed copy — so log output never lands in the tree. `config.json`, `state/`, and `dashboard.html`
-  stay under `ROOT` (the repo root in a checkout) and are gitignored (machine-local). The notifier
-  computes the same logs home independently (it stays free of a config import on the reliability path).
-  Edit `config.example.json` when a config key should be documented for other machines.
+- **Everything runtime lives under the per-user home, not the repo.** All path resolution now goes
+  through `cherrypick.core.home` (the shared resolver): `config.json`, `state/`, `dashboard.html`, and
+  `logs/` all resolve under `~/.cherrypick` (relocated wholesale by `$CHERRYPICK_HOME`), so nothing
+  runtime lands in a source checkout. `ROOT` is no longer the runtime home — it is only the *source
+  anchor* for resolving a relative module `path` in config (e.g. `../meic`), derived from `__file__`.
+  `load_config` reads `~/.cherrypick/config.json`, falling back to a legacy in-repo `config.json` until
+  an explicit migrate moves it. The notifier computes the same logs home independently (it stays free of
+  a config import on the reliability path). Edit `config.example.json` when a config key should be
+  documented for other machines.
 - **Scheduler dispatches by platform.** `orchestrator/tasks.py` uses `schtasks` on Windows and a crontab
   backend on POSIX (cherrypick lines tagged `# cherrypick:<name>`). The cron logic is pure + unit-tested;
   cron *execution* on a real POSIX host is still unvalidated. launchd/systemd are future backends.

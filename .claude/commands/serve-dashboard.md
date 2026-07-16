@@ -10,7 +10,8 @@ dashboards) — not the static `dashboard.html` file. It is read-only and loopba
 Do this:
 
 1. **Pick the port.** Use `$ARGUMENTS` if a port was given; otherwise use `dashboard.serve.port` from
-   `config.json` if set, else the default **8787**.
+   the cherrypick config (`~/.cherrypick/config.json`, or the in-repo `config.json` until migrated) if
+   set, else the default **8787**.
 
 2. **Don't double-start.** Check whether something is already listening on that port
    (PowerShell: `Get-NetTCPConnection -LocalPort <port> -State Listen`). If a dashboard is already

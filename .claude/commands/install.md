@@ -22,7 +22,8 @@ Do this:
 
    The **EOD digest** (`cherrypick-eod-digest`, daily ~16:15 box-local) writes
    `logs/eod-digest-<day>.md` and pushes a one-line net-P&L summary through the notify channels. It is
-   **on by default**. To opt out, set `"eod_digest": {"enabled": false}` in `config.json` before
+   **on by default**. To opt out, set `"eod_digest": {"enabled": false}` in the cherrypick config
+   (`~/.cherrypick/config.json`, or the in-repo `config.json` until migrated) before
    installing (or set it and re-run `uninstall`/`install`); with it disabled, `install` skips the task and
    `uninstall` still removes any previously-registered one.
 
