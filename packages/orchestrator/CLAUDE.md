@@ -29,6 +29,7 @@ python run.py eod-digest     # write logs/eod-digest-<day>.md: one session's cro
 python run.py notify-eod     # write the digest + push a one-line summary (the scheduled cherrypick-eod-digest task runs this)
 python run.py dashboard      # regenerate the static status dashboard -> dashboard.html
 python run.py calibrate      # per-profile calibration readings + promotion recommendations
+python run.py migrate-home   # dry-run: move config files into ~/.cherrypick + sweep leftovers (--apply to perform)
 python run.py uninstall      # remove cherrypick-managed tasks
 
 # Tests (pytest; markers: unit [default lane], live, windows)
