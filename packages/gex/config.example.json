@@ -1,7 +1,7 @@
 {
   "_comment": "By default cherrypick-gex writes its own cache/history under the shared cherrypick home (~/.cherrypick/data/gex) and logs under ~/.cherrypick/logs/gex — omit the path keys to accept those. Standalone: `run.py stream` populates ~/.cherrypick/data/gex/stream_cache.db and `run.py gex`/dashboard read it. To piggyback on a running cherrypick-meic streamer instead, set source.stream_cache_db to MEIC's cache (e.g. \"~/.cherrypick/data/meic/stream_cache.db\") and do NOT run this module's streamer (it opens the cache read-write).",
   "_symbols_note": "The dashboard's symbol selector and default (symbols[0]) — list the underlyings the source stream cache is actively streaming, most-active first. In piggyback mode these should match the cherrypick-meic streamer's symbols; only symbols the streamer keeps fresh have a live spot/GEX.",
-  "symbols": ["XSP", "SPX", "QQQ", "IWM"],
+  "symbols": ["SPX", "XSP", "QQQ", "IWM"],
   "streamer": {
     "window_strike_count": 20
   },
