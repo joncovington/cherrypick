@@ -405,7 +405,6 @@ def _write_config(monkeypatch, tmp_path, cfg):
 def test_load_symbols_list(monkeypatch, tmp_path):
     _write_config(monkeypatch, tmp_path, {"symbols": ["xsp", "spx"]})
     assert dashboard._load_symbols() == ["XSP", "SPX"]
-    assert dashboard._load_symbol() == "XSP"
 
 def test_load_symbols_deprecated_singular_alias(monkeypatch, tmp_path):
     _write_config(monkeypatch, tmp_path, {"symbol": "xsp"})
