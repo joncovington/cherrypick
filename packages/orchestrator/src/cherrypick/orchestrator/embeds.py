@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,8 @@ from .watchdog import _dolt_reachable as _port_reachable
 from .watchdog import _start_streamer as _launch_detached
 
 _last_build: dict[str, float] = {}  # embed id -> monotonic ts of last static regen (throttle)
+_build_lock = threading.Lock()
+_building: set[str] = set()  # embed ids with a background regen in flight (single-flight guard)
 
 
 def _output_path(embed_cfg: dict[str, Any], root: Path) -> Path | None:
@@ -94,18 +97,9 @@ def ensure_server(embed_cfg: dict[str, Any], wait_seconds: float = 6.0) -> dict[
     return {"ok": True, "running": False, "url": url, "detail": "launched (still starting)"}
 
 
-def build_static(embed_cfg: dict[str, Any]) -> dict[str, Any]:
-    """Regenerate a "static"-kind embed's HTML via its `build_argv`, throttled to `refresh_seconds` so a
-    reloaded iframe doesn't re-run the generator on every request. Returns the output file path."""
-    eid = embed_cfg["id"]
-    root = cfgmod.module_root(embed_cfg, eid)
-    if not root.exists():
-        return {"ok": False, "detail": f"module checkout not found at {root}"}
-    out_path = _output_path(embed_cfg, root)
-    interval = float(embed_cfg.get("refresh_seconds", 30))
-    now = time.monotonic()
-    if out_path and out_path.exists() and (now - _last_build.get(eid, 0.0)) < interval:
-        return {"ok": True, "path": str(out_path), "detail": "cached"}
+def _run_build(embed_cfg: dict[str, Any], root: Path, out_path: Path | None) -> dict[str, Any]:
+    """Actually run the embed's `build_argv` generator (a module dashboard subprocess, e.g. matplotlib →
+    base64 HTML). Blocking; callers decide whether to run it inline or on a background thread."""
     argv = _subst(embed_cfg.get("build_argv"), {})
     if not argv:
         return {"ok": False, "detail": "embed has no build_argv"}
@@ -121,12 +115,80 @@ def build_static(embed_cfg: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "detail": "static build timed out"}
     except OSError as exc:
         return {"ok": False, "detail": f"could not launch static build: {exc}"}
-    _last_build[eid] = now
     if proc.returncode != 0:
         return {"ok": False, "detail": ((proc.stderr or proc.stdout) or "build failed").strip()[:300]}
     if out_path and not out_path.exists():
         return {"ok": False, "detail": f"build ran but output missing: {out_path}"}
-    return {"ok": True, "path": str(out_path), "detail": "built"}
+    return {"ok": True, "path": str(out_path) if out_path else None, "detail": "built"}
+
+
+def _spawn_rebuild(embed_cfg: dict[str, Any], eid: str, root: Path, out_path: Path | None) -> bool:
+    """Kick off a background regen for `eid`, single-flight (skip if one is already running). Marks the
+    build time immediately so the throttle holds even before the subprocess finishes. Returns whether a
+    build was started."""
+    with _build_lock:
+        if eid in _building:
+            return False
+        _building.add(eid)
+        _last_build[eid] = time.monotonic()
+
+    def _work() -> None:
+        try:
+            _run_build(embed_cfg, root, out_path)
+        finally:
+            with _build_lock:
+                _building.discard(eid)
+
+    threading.Thread(target=_work, name=f"embed-build-{eid}", daemon=True).start()
+    return True
+
+
+def build_static(embed_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Ensure a "static"-kind embed's HTML is available, without blocking the request on a *stale* regen.
+
+    - **File exists (the common case):** serve it immediately. If it's older than `refresh_seconds`, a
+      regen runs on a **background** thread so the next load is fresh — the iframe never waits on the
+      matplotlib generator. This is what fixes the recurring slowness (a stale reload used to block on
+      the ~seconds-long subprocess every `refresh_seconds`).
+    - **No file yet, a build already in flight** (e.g. `prewarm` at startup): report `building` so the
+      caller can show an auto-refreshing placeholder instead of double-running the generator.
+    - **No file yet and nothing building** (first ever, pre-warm skipped/failed): build **once
+      synchronously** so the first view is correct and a generator error surfaces on the request rather
+      than hiding behind a perpetual placeholder.
+
+    Returns the output path, a `building` flag, or a failure `detail`."""
+    eid = embed_cfg["id"]
+    root = cfgmod.module_root(embed_cfg, eid)
+    if not root.exists():
+        return {"ok": False, "detail": f"module checkout not found at {root}"}
+    out_path = _output_path(embed_cfg, root)
+    interval = float(embed_cfg.get("refresh_seconds", 30))
+    now = time.monotonic()
+
+    if out_path and out_path.exists():
+        fresh = (now - _last_build.get(eid, 0.0)) < interval
+        if not fresh:
+            _spawn_rebuild(embed_cfg, eid, root, out_path)  # revalidate in the background
+        return {"ok": True, "path": str(out_path), "detail": "cached" if fresh else "revalidating"}
+
+    with _build_lock:
+        building = eid in _building
+    if building:
+        return {"ok": False, "building": True, "detail": "building"}
+
+    # Nothing to serve and nothing in flight — build once, inline, so errors surface.
+    _last_build[eid] = now
+    return _run_build(embed_cfg, root, out_path)
+
+
+def prewarm(cfg: dict[str, Any]) -> None:
+    """Best-effort: kick off a background build of every enabled static embed so a file already exists by
+    the time the user opens the dashboard. Called once when `dashboard --serve` starts."""
+    for emb in enabled_embeds(cfg):
+        if emb.get("kind") == "static":
+            root = cfgmod.module_root(emb, emb["id"])
+            if root.exists():
+                _spawn_rebuild(emb, emb["id"], root, _output_path(emb, root))
 
 
 def read_static(embed_cfg: dict[str, Any]) -> bytes | None:
