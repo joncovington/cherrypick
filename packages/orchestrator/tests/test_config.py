@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 
 from cherrypick.orchestrator import config as c
@@ -47,16 +50,31 @@ def test_module_root_defaults_to_modules_home_by_name(monkeypatch, tmp_path):
     assert c.module_root({}, "earnings") == (tmp_path / "earnings").resolve()
 
 
-def test_default_root_honors_cherrypick_home(monkeypatch, tmp_path):
+def test_source_root_honors_cherrypick_home(monkeypatch, tmp_path):
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
-    assert c._default_root() == tmp_path
+    assert c._source_root() == tmp_path
 
 
-def test_default_root_uses_repo_root_in_source_checkout(monkeypatch):
+def test_source_root_uses_repo_root_in_source_checkout(monkeypatch):
     # No env override, running from the source tree -> the repo root (has run.py + pyproject.toml).
+    # ROOT is the *source anchor* for relative module paths; runtime files live under the per-user home.
     monkeypatch.delenv("CHERRYPICK_HOME", raising=False)
-    root = c._default_root()
+    root = c._source_root()
     assert (root / "run.py").exists() or (root / "pyproject.toml").exists()
+
+
+def test_runtime_paths_resolve_under_home_not_repo():
+    # config.json, state/, and logs/ live under ~/.cherrypick — never inside the checkout. ROOT is only
+    # the source anchor for relative module paths now. (Skipped if a CHERRYPICK_HOME override was active
+    # when config was imported, since that relocates the whole tree.)
+    if os.environ.get("CHERRYPICK_HOME"):
+        pytest.skip("CHERRYPICK_HOME override in effect")
+    home = Path.home() / ".cherrypick"
+    assert c.CONFIG_PATH == home / "config.json"
+    assert c.STATE_DIR == home / "state"
+    assert c.LOGS_DIR == home / "logs"
+    # explicitly not under the source checkout
+    assert c.ROOT not in c.CONFIG_PATH.parents
 
 
 def test_eod_digest_settings_default_on():

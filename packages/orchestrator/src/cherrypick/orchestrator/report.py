@@ -55,6 +55,9 @@ def _meic_closed(conn) -> list[dict]:
             "profile": r["risk_profile"] or _MEIC_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": None,
+            # gross = spread P&L (already at the modeled fill prices); cost = exchange fees.
+            "gross_pnl": (r["pnl"] or 0.0),
+            "cost": (r["fees"] or 0.0),
             "net_pnl": (r["pnl"] or 0.0) - (r["fees"] or 0.0),
             # Session date for calibration (distinct-days count); ISO date prefix of exit_time.
             "session": (r["exit_time"] or "")[:10],
@@ -73,6 +76,9 @@ def _earnings_closed(conn) -> list[dict]:
             "profile": r["profile"] or _EARNINGS_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": r["strategy"],
+            # gross = mid-priced spread P&L; cost = commission + pass-through + slippage.
+            "gross_pnl": (r["pnl"] or 0.0),
+            "cost": (r["entry_cost"] or 0.0) + (r["exit_cost"] or 0.0),
             "net_pnl": (r["pnl"] or 0.0) - (r["entry_cost"] or 0.0) - (r["exit_cost"] or 0.0),
             "session": _session_from_epoch(r["closed_at"]),
         }
@@ -85,18 +91,26 @@ _READERS = {"meic_ic": _meic_closed, "earnings": _earnings_closed}
 
 # --------------------------------------------------------------------------- summarization
 def _summarize(records: list[dict]) -> dict:
-    """P&L stats over a set of normalized closed-trade records (net_pnl already cost-adjusted)."""
-    pnls = [r["net_pnl"] for r in records]
-    n = len(pnls)
-    wins = [p for p in pnls if p > 0]
-    losses = [p for p in pnls if p <= 0]
+    """P&L stats over normalized closed-trade records. net_pnl is cost-adjusted; gross_pnl is
+    before costs and cost is the total modeled cost (MEIC fees; earnings commission+slippage).
+    win_rate is on net P&L; gross_win_rate is on gross -- the gap shows how many trades have edge
+    before costs but not after (the signal at 1-contract sizing, where cost dominates)."""
+    net = [r["net_pnl"] for r in records]
+    gross = [r.get("gross_pnl", r["net_pnl"]) for r in records]
+    cost = [r.get("cost", 0.0) for r in records]
+    n = len(net)
+    wins = [p for p in net if p > 0]
+    gross_wins = [p for p in gross if p > 0]
     return {
         "trades": n,
-        "net_pnl": round(sum(pnls), 2),
+        "gross_pnl": round(sum(gross), 2),
+        "cost": round(sum(cost), 2),
+        "net_pnl": round(sum(net), 2),
         "wins": len(wins),
-        "losses": len(losses),
+        "losses": n - len(wins),
         "win_rate": round(len(wins) / n, 4) if n else None,
-        "avg_pnl": round(sum(pnls) / n, 2) if n else None,
+        "gross_win_rate": round(len(gross_wins) / n, 4) if n else None,
+        "avg_pnl": round(sum(net) / n, 2) if n else None,
     }
 
 

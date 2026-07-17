@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import home as _home
+
 from . import config as cfgmod
 from . import tasks, timeutil
 from .util import first_json
@@ -29,6 +31,37 @@ class Check:
     name: str
     status: str
     detail: str
+
+
+_ARTIFACT_SUFFIXES = (".db", ".log")
+_ARTIFACT_NAMES = ("dashboard.html",)
+_SKIP_DIRS = {".git", "_core", "__pycache__", ".pytest_cache", ".ruff_cache", "node_modules", ".tmp", ".venv"}
+
+
+def find_stray_artifacts(roots: list[Path], *, limit: int = 50) -> list[Path]:
+    """Runtime files that leaked into a checkout — everything runtime now lives under the cherrypick
+    home, so a `*.db`/`*.log` anywhere, a generated `dashboard.html`, a `state/*.json`, or a
+    `reports/*.html` inside a checkout root is a leak. Vendored/cache dirs (`_core`, `.git`,
+    `__pycache__`, …) are skipped. Pure filesystem read — the `no-leak` guard and its test share it."""
+    found: list[Path] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+            here = Path(dirpath)
+            for fn in filenames:
+                is_leak = (
+                    fn.endswith(_ARTIFACT_SUFFIXES)
+                    or fn in _ARTIFACT_NAMES
+                    or (here.name == "reports" and fn.endswith(".html"))
+                    or (here.name == "state" and fn.endswith(".json"))
+                )
+                if is_leak:
+                    found.append(here / fn)
+                    if len(found) >= limit:
+                        return found
+    return found
 
 
 def _run(module_root: Path, argv: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
@@ -143,13 +176,21 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         if not root.exists():
             continue
 
-        # module config present
-        mc = root / ("config/config.json" if (root / "config/config.json").exists() else "config.json")
+        # module config present — home-first (~/.cherrypick/config/<pkg>.json), else the legacy in-repo
+        # config, mirroring how the module itself resolves it (see each module's paths.config_path()).
+        mc = next(
+            (
+                c
+                for c in (_home.config_path(name), root / "config" / "config.json", root / "config.json")
+                if c.exists()
+            ),
+            None,
+        )
         checks.append(
             Check(
                 f"{name}.config",
-                OK if mc.exists() else WARN,
-                str(mc) if mc.exists() else "module config.json not found",
+                OK if mc else WARN,
+                str(mc) if mc else "module config not found (home or in-repo)",
             )
         )
 
@@ -276,6 +317,42 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
             f"{', '.join(detail_bits)}" + ("" if has_push else "  (no push channel active; log floor only)"),
         )
     )
+
+    # background services (e.g. the gex spot-trail recorder): report each enabled daemon's status
+    for svc in cfgmod.enabled_services(cfg):
+        sid = svc["id"]
+        root = cfgmod.module_root(svc, sid)
+        if not root.exists():
+            checks.append(Check(f"service.{sid}", WARN, f"checkout not found at {root}"))
+            continue
+        try:
+            r = _run(root, svc["status_argv"], timeout=15)
+            running = bool(first_json(r.stdout).get("running")) if r.returncode == 0 else None
+        except Exception:
+            running = None
+        if running:
+            checks.append(Check(f"service.{sid}", OK, "running"))
+        elif running is False:
+            checks.append(Check(f"service.{sid}", WARN, "not running (install/watchdog starts it)"))
+        else:
+            checks.append(Check(f"service.{sid}", WARN, "status unknown (could not read status_argv)"))
+
+    # no-leak guard: runtime output (DBs, logs, dashboard, state, reports) must live under the cherrypick
+    # home, never inside a checkout. Advisory (WARN) — leftovers don't break anything, but they signal a
+    # path resolver regressed or a pre-home-cutover file needs sweeping (see `cherrypick migrate-home`).
+    roots = [cfgmod.ROOT] + [cfgmod.module_root(m, n) for n, m in cfgmod.enabled_modules(cfg).items()]
+    stray = find_stray_artifacts(roots)
+    if stray:
+        sample = ", ".join(p.name for p in stray[:4]) + (" …" if len(stray) > 4 else "")
+        checks.append(
+            Check(
+                "repo.no_leak",
+                WARN,
+                f"{len(stray)} runtime file(s) inside a checkout (should be under ~/.cherrypick): {sample}",
+            )
+        )
+    else:
+        checks.append(Check("repo.no_leak", OK, "no runtime artifacts in the checkout"))
     return checks
 
 

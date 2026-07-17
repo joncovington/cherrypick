@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
 from cherrypick.core import profiles as _profiles
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.json"
+import paths as _paths
 
 
 def _load_config(profile: str | None = None) -> dict:
@@ -52,7 +52,7 @@ def _load_config(profile: str | None = None) -> dict:
     existing caller keeps its current behavior. The active profile name is
     recorded at config["_active_profile"] for downstream attribution.
     """
-    with open(CONFIG_PATH) as f:
+    with open(_paths.config_path()) as f:
         config = json.load(f)
 
     # Merge strategy_defaults into each strategy's config

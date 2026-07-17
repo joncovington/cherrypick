@@ -18,8 +18,10 @@ through the config-declared argv (`--mode paper`) so an embedded view never surf
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from . import config as cfgmod
@@ -31,6 +33,18 @@ from .watchdog import _dolt_reachable as _port_reachable
 from .watchdog import _start_streamer as _launch_detached
 
 _last_build: dict[str, float] = {}  # embed id -> monotonic ts of last static regen (throttle)
+
+
+def _output_path(embed_cfg: dict[str, Any], root: Path) -> Path | None:
+    """Resolve a static embed's `output`. `~` and `$VARS` are expanded and an absolute path is used
+    as-is, so an embed can point at the module's generated file in the shared home
+    (e.g. `~/.cherrypick/data/earnings/reports/strategy_dashboard.html`); a relative path resolves
+    against the module checkout root (the historical default)."""
+    out_rel = embed_cfg.get("output")
+    if not out_rel:
+        return None
+    p = Path(os.path.expandvars(os.path.expanduser(str(out_rel))))
+    return p if p.is_absolute() else (root / p)
 
 
 def enabled_embeds(cfg: dict[str, Any]) -> list[dict[str, Any]]:
@@ -87,8 +101,7 @@ def build_static(embed_cfg: dict[str, Any]) -> dict[str, Any]:
     root = cfgmod.module_root(embed_cfg, eid)
     if not root.exists():
         return {"ok": False, "detail": f"module checkout not found at {root}"}
-    out_rel = embed_cfg.get("output")
-    out_path = (root / out_rel) if out_rel else None
+    out_path = _output_path(embed_cfg, root)
     interval = float(embed_cfg.get("refresh_seconds", 30))
     now = time.monotonic()
     if out_path and out_path.exists() and (now - _last_build.get(eid, 0.0)) < interval:
@@ -117,11 +130,11 @@ def build_static(embed_cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def read_static(embed_cfg: dict[str, Any]) -> bytes | None:
-    out_rel = embed_cfg.get("output")
-    if not out_rel:
-        return None
     root = cfgmod.module_root(embed_cfg, embed_cfg.get("id"))
+    out_path = _output_path(embed_cfg, root)
+    if out_path is None:
+        return None
     try:
-        return (root / out_rel).read_bytes()
+        return out_path.read_bytes()
     except OSError:
         return None

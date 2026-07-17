@@ -336,6 +336,49 @@ def _log_findings(findings: list[Finding], overall: str) -> None:
         )
 
 
+def _check_services(cfg: dict[str, Any]) -> list[Finding]:
+    """Keep the generic background services (e.g. the gex spot-trail recorder) alive: check each one's
+    `status_argv` and, if down and `auto_restart`, relaunch it detached. Benign, non-trading remediation
+    — the same shape as the streamer's keep-alive. Not session-gated: a service says on its own whether
+    it should be up (the recorder is cheap to run all day)."""
+    findings: list[Finding] = []
+    for svc in cfgmod.enabled_services(cfg):
+        sid = svc["id"]
+        root = cfgmod.module_root(svc, sid)
+        if not root.exists():
+            findings.append(
+                Finding(f"service.{sid}", WARN, f"{sid} checkout missing", f"not found at {root}")
+            )
+            continue
+        running = None
+        try:
+            r = _run_module(root, svc["status_argv"], timeout=15)
+            running = bool(first_json(r.stdout).get("running")) if r.returncode == 0 else None
+        except Exception:
+            running = None
+        if running is False and svc.get("auto_restart"):
+            started = _start_streamer(root, svc["start_argv"])
+            findings.append(
+                Finding(
+                    f"service.{sid}",
+                    WARN,
+                    f"{sid} was down — restarted" if started else f"{sid} down — restart failed",
+                    "Auto-restart issued." if started else "Could not launch service.",
+                )
+            )
+        elif running is False:
+            findings.append(
+                Finding(f"service.{sid}", WARN, f"{sid} down", "Service not running (auto_restart off).")
+            )
+        elif running is None:
+            findings.append(
+                Finding(f"service.{sid}", WARN, f"{sid} status unknown", "Could not read status_argv.")
+            )
+        else:
+            findings.append(Finding(f"service.{sid}", OK, sid, "running"))
+    return findings
+
+
 def _process_notifications(
     findings: list[Finding], notifier: Notifier, renotify_minutes: int, now: datetime | None = None
 ) -> None:
@@ -399,6 +442,9 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 
     # Drift alert: report-driven paper-drawdown check (opt-in). Flows through the same notify path.
     findings += _check_drawdown(cfg)
+
+    # Keep generic background services (e.g. the gex spot-trail recorder) alive.
+    findings += _check_services(cfg)
 
     overall = OK
     for f in findings:

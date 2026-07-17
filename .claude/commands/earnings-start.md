@@ -10,7 +10,7 @@ command; the root just sets the working directory and adds a mode pre-check.
 1. **Work from `packages/earnings`.** The module's command and `CLAUDE.md` use paths relative to it
    (`CLAUDE.md`, `.claude/…`, `src/…`). Run the steps from there.
 
-2. **Mode pre-check.** Read `packages/earnings/config/config.json` → `enable_live_trading`. If `true`,
+2. **Mode pre-check.** Read Earnings' config (`~/.cherrypick/config/earnings.json`, or `packages/earnings/config/config.json` until migrated) → `enable_live_trading`. If `true`,
    this session can place **live orders** — stop and confirm with me before starting. If `false`/absent
    (paper), continue.
 

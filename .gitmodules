@@ -7,3 +7,6 @@
 [submodule "packages/earnings/src/_core"]
 	path = packages/earnings/src/_core
 	url = https://github.com/joncovington/cherrypick-core.git
+[submodule "packages/gex/src/_core"]
+	path = packages/gex/src/_core
+	url = https://github.com/joncovington/cherrypick-core.git

@@ -60,7 +60,6 @@ from session import get_session  # noqa: E402
 _ROOT = Path(__file__).parent.parent
 _CACHE_DB  = _paths.stream_cache_path()      # ~/.cherrypick/data/meic/ (or MEIC_DATA_DIR)
 _PID_FILE  = _paths.data_path("streamer.pid")
-_CONFIG    = _ROOT / "config.json"           # config stays in the package; logs live in the logs home
 _TRADES_DB = _paths.live_db_path()
 _LOG_FILE  = _paths.log_path("streamer.log")
 
@@ -135,8 +134,9 @@ def _read_rest_cache(conn: sqlite3.Connection, key: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 def _load_config() -> dict:
-    if _CONFIG.exists():
-        return json.loads(_CONFIG.read_text())
+    p = _paths.config_path()   # home-first (~/.cherrypick/config/meic.json), in-repo fallback
+    if p.exists():
+        return json.loads(p.read_text())
     return {}
 
 

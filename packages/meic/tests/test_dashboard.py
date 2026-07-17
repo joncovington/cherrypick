@@ -399,13 +399,12 @@ def _write_config(monkeypatch, tmp_path, cfg):
     path = str(tmp_path / "config.json")
     with open(path, "w") as f:
         json.dump(cfg, f)
-    monkeypatch.setattr(dashboard, "_CONFIG_PATH", path)
+    monkeypatch.setattr(dashboard._paths, "config_path", lambda: path)
 
 
 def test_load_symbols_list(monkeypatch, tmp_path):
     _write_config(monkeypatch, tmp_path, {"symbols": ["xsp", "spx"]})
     assert dashboard._load_symbols() == ["XSP", "SPX"]
-    assert dashboard._load_symbol() == "XSP"
 
 def test_load_symbols_deprecated_singular_alias(monkeypatch, tmp_path):
     _write_config(monkeypatch, tmp_path, {"symbol": "xsp"})
@@ -416,7 +415,7 @@ def test_load_symbols_default_when_missing(monkeypatch, tmp_path):
     assert dashboard._load_symbols() == ["XSP"]
 
 def test_load_symbols_missing_config_file(monkeypatch, tmp_path):
-    monkeypatch.setattr(dashboard, "_CONFIG_PATH", str(tmp_path / "nonexistent.json"))
+    monkeypatch.setattr(dashboard._paths, "config_path", lambda: str(tmp_path / "nonexistent.json"))
     assert dashboard._load_symbols() == ["XSP"]
 
 
@@ -530,7 +529,7 @@ def test_build_api_data_profiles_derived_from_distinct_values(db_path):
     assert result["performance"]["profiles"] == ["conservative", "moderate"]
 
 
-def test_build_api_data_profile_filter_scopes_performance_series_only(db_path):
+def test_build_api_data_profile_filter_scopes_trades_stats_and_performance(db_path):
     conn = dashboard._connect()
     _insert_trade(conn, ic_order_id="IC-1", status="expired", pnl=100.0, fees=1.0, risk_profile="conservative")
     _insert_trade(conn, ic_order_id="IC-2", status="expired", pnl=50.0, fees=1.0, risk_profile="moderate")
@@ -539,14 +538,15 @@ def test_build_api_data_profile_filter_scopes_performance_series_only(db_path):
     filtered = dashboard._build_api_data(None, "conservative")
     unfiltered = dashboard._build_api_data(None, None)
 
-    # performance.daily is scoped to the requested profile. net_pnl sums the `pnl` column
-    # directly (not fee-subtracted) to match _pnl_series/_stats_for_period's shared
-    # convention — see the consistency guard between them.
+    # profile is a peer of symbol: it scopes Today's Trades, the stats grid, and the
+    # performance series alike. net_pnl sums the `pnl` column directly (not fee-subtracted)
+    # to match _pnl_series/_stats_for_period's shared convention.
+    assert len(filtered["trades"]) == 1
+    assert filtered["trades"][0]["ic_order_id"] == "IC-1"
+    assert filtered["stats"]["all_time"]["net_pnl"] == pytest.approx(100.0)
     assert sum(b["net_pnl"] for b in filtered["performance"]["daily"]) == pytest.approx(100.0)
-    # ...but trades/stats stay blended across profiles regardless of the profile filter,
-    # matching how `symbol` already behaves for those (profile comparison is a
-    # Performance-view-specific concern, not a Today/History-view one).
-    assert len(filtered["trades"]) == 2
+    # ...while the blended (ALL) view keeps every profile's trades and their combined stats.
     assert len(unfiltered["trades"]) == 2
+    assert unfiltered["stats"]["all_time"]["net_pnl"] == pytest.approx(150.0)
     assert filtered["performance"]["selected_profile"] == "conservative"
     assert unfiltered["performance"]["selected_profile"] == "ALL"

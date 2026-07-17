@@ -145,6 +145,35 @@ def test_evaluate_entry_rejects_regime_gex_negative():
     assert reason == "regime_gex_negative"
 
 
+def test_evaluate_entry_gexstrict_requires_positive_gex():
+    # The large-spx-gexstrict isolation cell sets regime_gex_require_positive: entries pause
+    # unless GEX is CONFIRMED positive (baseline only pauses on confirmed-negative).
+    strict = _params(paper.load_profiles()["large-spx-gexstrict"])
+    spx = dict(symbol="SPX", now_et="13:00", underlying_price=7500.0, iv_rank=0.32,
+               candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)])
+    # GEX unknown/unavailable -> strict gate pauses (baseline would not).
+    unknown = paper.evaluate_entry(_base_snapshot(gex={"ok": False}, **spx), strict, [])
+    assert unknown[0] is False and unknown[1] == "regime_gex_not_positive"
+    # GEX confirmed positive -> strict gate clears (rejection, if any, is for another reason).
+    positive = paper.evaluate_entry(_base_snapshot(gex={"ok": True, "gex_positive": True}, **spx), strict, [])
+    assert positive[1] != "regime_gex_not_positive"
+
+
+def test_evaluate_entry_gexmag_requires_deep_positive_gamma():
+    # large-spx-gexmag: positive GEX is not enough -- spot must sit >= 0.5% from the gamma-flip strike.
+    mag = _params(paper.load_profiles()["large-spx-gexmag"])
+    spx = dict(symbol="SPX", now_et="13:00", underlying_price=7500.0, iv_rank=0.32,
+               candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)])
+    # Spot 7500 only ~0.13% from the flip (7490) -> too close, paused.
+    near = paper.evaluate_entry(_base_snapshot(
+        gex={"ok": True, "gex_positive": True, "gamma_flip": 7490.0, "spot": 7500.0}, **spx), mag, [])
+    assert near[0] is False and near[1] == "regime_gex_flip_too_close"
+    # Spot 7500 is ~2% above the flip (7350) -> deep in positive gamma, gate clears.
+    deep = paper.evaluate_entry(_base_snapshot(
+        gex={"ok": True, "gex_positive": True, "gamma_flip": 7350.0, "spot": 7500.0}, **spx), mag, [])
+    assert deep[1] != "regime_gex_flip_too_close"
+
+
 def test_evaluate_entry_late_entry_bias_blocks_before_start_time():
     # Conservative's late_entry_bias_start_time is 12:00; iv_rank 0.32 <= 0.45 bias threshold
     snap = _base_snapshot(now_et="10:30", iv_rank=0.32)
@@ -287,11 +316,18 @@ def test_evaluate_entry_prefers_widest_clearing_candidate():
 
 # ── Synthetic fill / exit math ───────────────────────────────────────────────
 
-def test_synthetic_entry_fill_records_natural_bid_as_net_credit():
+def test_synthetic_entry_fill_prices_at_mid_minus_slippage():
     snap = _base_snapshot(now_et="13:00")
     _, _, chosen = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])
     row = paper.synthetic_entry_fill(snap, "conservative", chosen, _params(CONSERVATIVE), "paper")
-    assert row["net_credit"] == chosen["ic_natural_bid"]
+    # 5-wide candidate priced at mid minus 0.125 of each vertical's combined spread:
+    #   put  = (0.60-0.20) - 0.125*((0.65-0.55)+(0.25-0.15)) = 0.40 - 0.025 = 0.375
+    #   call = (0.55-0.17) - 0.125*((0.60-0.50)+(0.22-0.12)) = 0.38 - 0.025 = 0.355
+    assert row["put_credit"] == pytest.approx(0.375, abs=1e-4)
+    assert row["call_credit"] == pytest.approx(0.355, abs=1e-4)
+    assert row["net_credit"] == pytest.approx(0.73, abs=1e-4)
+    # Strictly between the worst-case natural bid (0.58) and the full mid (0.78).
+    assert chosen["ic_natural_bid"] < row["net_credit"] < 0.78
     assert row["risk_profile"] == "conservative"
     assert row["execution_mode"] == "paper"
     assert row["status"] == "open"
@@ -392,6 +428,22 @@ def test_evaluate_open_trade_stops_call_side_when_cost_reaches_trigger():
     assert decision["action"] == "stop_call"
 
 
+def test_per_side_stop_management_false_disables_stops():
+    # large-spx-holdtoexpiry sets per_side_stop_management: false -> a side whose cost blows past the
+    # trigger is NOT stopped; the IC holds to force-close/settlement. Same quotes stop a normal profile.
+    trade = {"put_symbol": "SP", "call_symbol": "SC", "long_put_symbol": "LP", "long_call_symbol": "LC",
+             "net_credit": 0.58, "status": "open", "put_credit": 0.30, "call_credit": 0.28,
+             "stop_trigger_current": 0.93, "stop_limit_current": 1.02}
+    leg_quotes = {
+        "SP": {"bid": 0.20, "ask": 0.26, "mid": 0.23}, "LP": {"bid": 0.05, "ask": 0.08, "mid": 0.065},
+        "SC": {"bid": 0.60, "ask": 0.68, "mid": 0.64}, "LC": {"bid": 0.03, "ask": 0.06, "mid": 0.045},
+    }
+    hold = _params(paper.load_profiles()["large-spx-holdtoexpiry"])
+    assert paper.evaluate_open_trade(trade, leg_quotes, hold, force_close=False)["action"] == "hold"
+    assert paper.evaluate_open_trade(trade, leg_quotes, _params(MODERATE),
+                                     force_close=False)["action"] == "stop_call"
+
+
 def test_evaluate_open_trade_does_not_restop_an_already_stopped_side():
     # A 'partial' IC whose call side was already stopped (call_stop_cost recorded) must NOT
     # re-stop the call, even with the call spread expensive — it should manage only the put.
@@ -446,9 +498,10 @@ def test_is_cash_settled_classification():
 def test_cash_settled_force_close_has_no_friction():
     base = paper.evaluate_open_trade(_force_close_trade(), _FC_LEG_QUOTES, _params(MODERATE),
                                      force_close=True, underlying_price=590.5, is_cash_settled=True)
-    # No friction: exit = short_bid - long_ask
+    # No friction: exit = mid cost to close + 0.125 * spread (see _close_cost)
     assert base["physical_friction_applied"] is False
-    assert base["put_exit_price"] == pytest.approx(max(0.24 - 0.09, 0), abs=1e-6)
+    assert base["put_exit_price"] == pytest.approx(
+        (0.27 - 0.075) + 0.125 * ((0.30 - 0.24) + (0.09 - 0.06)), abs=1e-4)
 
 
 def test_physical_force_close_adds_friction():
@@ -456,9 +509,12 @@ def test_physical_force_close_adds_friction():
     phys = paper.evaluate_open_trade(_force_close_trade(), _FC_LEG_QUOTES, _params(MODERATE),
                                      force_close=True, underlying_price=590.5, is_cash_settled=False)
     assert phys["physical_friction_applied"] is True
-    # underlying 590.5 is far from both strikes (583 put / 598 call) → no pin penalty, only friction
-    assert phys["put_exit_price"] == pytest.approx(max(0.24 - 0.09, 0) + friction, abs=1e-6)
-    assert phys["call_exit_price"] == pytest.approx(max(0.20 - 0.08, 0) + friction, abs=1e-6)
+    # underlying 590.5 is far from both strikes (583 put / 598 call) → no pin penalty, only friction.
+    # Base close cost is now mid + 0.125*spread (see _close_cost), plus the physical friction.
+    assert phys["put_exit_price"] == pytest.approx(
+        (0.27 - 0.075) + 0.125 * ((0.30 - 0.24) + (0.09 - 0.06)) + friction, abs=1e-4)
+    assert phys["call_exit_price"] == pytest.approx(
+        (0.23 - 0.065) + 0.125 * ((0.26 - 0.20) + (0.08 - 0.05)) + friction, abs=1e-4)
     # friction makes the physical close strictly more expensive (worse P&L) than cash-settled
     base = paper.evaluate_open_trade(_force_close_trade(), _FC_LEG_QUOTES, _params(MODERATE),
                                      force_close=True, underlying_price=590.5, is_cash_settled=True)
@@ -471,10 +527,12 @@ def test_pin_penalty_fires_when_short_strike_atm():
     # underlying pinned right at the 598 short call → pin penalty on the call side only
     phys = paper.evaluate_open_trade(_force_close_trade(), _FC_LEG_QUOTES, _params(MODERATE),
                                      force_close=True, underlying_price=598.0, is_cash_settled=False)
-    expected_call = max(0.20 - 0.08, 0) + friction + pen_pct * 5  # wing_width 5
-    assert phys["call_exit_price"] == pytest.approx(expected_call, abs=1e-6)
+    # close cost (mid + 0.125*spread) + friction + pin penalty, wing_width 5
+    expected_call = (0.23 - 0.065) + 0.125 * ((0.26 - 0.20) + (0.08 - 0.05)) + friction + pen_pct * 5
+    assert phys["call_exit_price"] == pytest.approx(expected_call, abs=1e-4)
     # put strike 583 is ~2.5% away from 598 → no pin penalty on the put side
-    assert phys["put_exit_price"] == pytest.approx(max(0.24 - 0.09, 0) + friction, abs=1e-6)
+    assert phys["put_exit_price"] == pytest.approx(
+        (0.27 - 0.075) + 0.125 * ((0.30 - 0.24) + (0.09 - 0.06)) + friction, abs=1e-4)
 
 
 def test_pin_penalty_zero_when_underlying_missing():
@@ -712,6 +770,37 @@ def test_wing_filter_excludes_widths_outside_profile_shortlist():
     entered, reason, _ = paper.evaluate_entry(snap, _params(MEDIUM_XSP_WIDE), [])
     assert entered is False
     assert reason == "no_candidate_cleared_all_gates"
+
+
+# ── Multi-delta candidate menu (short_delta_target routing) ──────────────────
+
+def _tagged(cand, short_delta, is_default):
+    return {**cand, "short_delta": short_delta, "is_default_delta": is_default}
+
+
+def test_select_candidates_delta_bands_route_to_the_right_profile():
+    # A multi-delta menu: default band (0.15) + a far-OTM band (0.10), both 10-wide.
+    menu = [_tagged(_candidate(10, 7380, 7560), 0.15, True),
+            _tagged(_candidate(10, 7300, 7640), 0.10, False)]
+    ctrl = _params(paper.load_profiles()["large-spx"])
+    far = _params(paper.load_profiles()["large-spx-farotm"])
+    # Control (no short_delta_target) sees ONLY the default band -> unperturbed by the extra band.
+    assert [c["short_delta"] for c in paper._select_candidates(menu, ctrl, "SPX")] == [0.15]
+    # farotm (short_delta_target 0.10) sees ONLY its band.
+    assert [c["short_delta"] for c in paper._select_candidates(menu, far, "SPX")] == [0.10]
+
+
+def test_select_candidates_untagged_menu_unchanged():
+    # Legacy/test menus with no short_delta tag pass through untouched (back-compat).
+    menu = [_candidate(5, 583, 598), _candidate(2, 583, 598)]
+    sel = paper._select_candidates(menu, _params(CONSERVATIVE), "XSP")
+    assert len(sel) == 2 and all("short_delta" not in c for c in sel)
+
+
+def test_union_short_deltas_collects_requested_bands():
+    spx = paper.union_short_deltas_for_symbol("SPX")
+    assert 0.10 in spx and 0.25 in spx           # farotm + closeotm cells
+    assert paper.union_short_deltas_for_symbol("XSP") == []   # no XSP cell requests a custom band
 
 
 # ── Staggering: entry window, daily cap, spacing (opt-in via stagger_entries) ─

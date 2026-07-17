@@ -29,6 +29,7 @@ python run.py eod-digest     # write logs/eod-digest-<day>.md: one session's cro
 python run.py notify-eod     # write the digest + push a one-line summary (the scheduled cherrypick-eod-digest task runs this)
 python run.py dashboard      # regenerate the static status dashboard -> dashboard.html
 python run.py calibrate      # per-profile calibration readings + promotion recommendations
+python run.py migrate-home   # dry-run: move config files into ~/.cherrypick + sweep leftovers (--apply to perform)
 python run.py uninstall      # remove cherrypick-managed tasks
 
 # Tests (pytest; markers: unit [default lane], live, windows)
@@ -114,7 +115,10 @@ is excluded from ruff and from the packaged wheel.
   account numbers are masked everywhere (only the write to keyring uses the full number). `reconcile`
   honors the designation — a designated live account is *expected* to hold positions (not drift).
 - **The watchdog's only trading-adjacent action is benign, non-trading remediation** (restart a dead
-  streamer). It never places, cancels, or closes an order.
+  streamer, or a dead managed **service** — top-level `services`, background daemons like the gex
+  spot-trail recorder that `install` starts, the watchdog keeps alive via `status_argv`/`start_argv`,
+  and `uninstall` stops; single-instance guarded, located by `path`/`repo` like modules but with no
+  paper DB or schedule of their own). It never places, cancels, or closes an order.
 - **Account numbers are masked** to the last 4 digits (`****1234`) anywhere they surface in logs or
   output — never emit a full account number (suite-wide rule from `ROADMAP.md`).
 - **Best-effort side calls never break the reliability path.** The watchdog tick fires
@@ -166,12 +170,15 @@ repeated.
   the `src/cherrypick` namespace package (a regular module outranks a PEP 420 namespace on `sys.path`).
   Scheduled tasks invoke `run.py`; renaming it breaks them until re-registered via `python run.py
   install`.
-- **Logs live under the user home, not the repo.** `config.LOGS_DIR` defaults to `~/.cherrypick/logs`
-  (or `$CHERRYPICK_HOME/logs`) regardless of whether cherrypick runs from a source checkout or an
-  installed copy — so log output never lands in the tree. `config.json`, `state/`, and `dashboard.html`
-  stay under `ROOT` (the repo root in a checkout) and are gitignored (machine-local). The notifier
-  computes the same logs home independently (it stays free of a config import on the reliability path).
-  Edit `config.example.json` when a config key should be documented for other machines.
+- **Everything runtime lives under the per-user home, not the repo.** All path resolution now goes
+  through `cherrypick.core.home` (the shared resolver): `config.json`, `state/`, `dashboard.html`, and
+  `logs/` all resolve under `~/.cherrypick` (relocated wholesale by `$CHERRYPICK_HOME`), so nothing
+  runtime lands in a source checkout. `ROOT` is no longer the runtime home — it is only the *source
+  anchor* for resolving a relative module `path` in config (e.g. `../meic`), derived from `__file__`.
+  `load_config` reads `~/.cherrypick/config.json`, falling back to a legacy in-repo `config.json` until
+  an explicit migrate moves it. The notifier computes the same logs home independently (it stays free of
+  a config import on the reliability path). Edit `config.example.json` when a config key should be
+  documented for other machines.
 - **Scheduler dispatches by platform.** `orchestrator/tasks.py` uses `schtasks` on Windows and a crontab
   backend on POSIX (cherrypick lines tagged `# cherrypick:<name>`). The cron logic is pure + unit-tested;
   cron *execution* on a real POSIX host is still unvalidated. launchd/systemd are future backends.
