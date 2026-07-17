@@ -161,7 +161,8 @@ channels any time with `python run.py notify-test`.
   you want to capture. (There's a helper to keep a laptop from sleeping mid-session.)
 
 📖 **New here?** The [User Guide](docs/PROJECT.md) walks through setup, settings, daily use, and
-troubleshooting in plain language.
+troubleshooting in plain language. For the full functionality reference — architecture, the CLI, the
+reporting/dashboard stack, configuration, and the safety model — see the [documentation index](docs/README.md).
 
 ## Disclaimer
 
