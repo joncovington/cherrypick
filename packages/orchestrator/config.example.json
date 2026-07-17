@@ -167,6 +167,14 @@
     "day": 1,
     "at": "03:30"
   },
+  "eod_insight": {
+    "_comment": "AI EOD insight (`cherrypick eod-insight`). When enabled AND Claude Code (`claude`) is on PATH, a daily task pipes the day's DETERMINISTIC reports (each module's eod-analysis + paper-eod, and the suite digest) to Claude in headless print mode and writes a synthesized cross-module narrative to logs/eod-insight-<day>.md (linked from the dashboard EOD card). Claude runs read-only with NO execution/edit/network tools (Bash/Edit/Write/WebFetch/WebSearch/Task disallowed) and never touches the broker or config - files in, text out; the orchestrator writes the file. OFF by default (needs Claude + an authenticated session + a paid API call); the deterministic eod-analysis remains the source of record. Off the watchdog reliability path; best-effort. Turn on with enabled=true then re-run `install`. 'model' null uses Claude's configured default. Paper/educational only, not financial advice.",
+    "enabled": false,
+    "task_name": "cherrypick-eod-insight",
+    "at": "16:20",
+    "model": null,
+    "timeout_seconds": 120
+  },
   "reconcile": {
     "_comment": "`cherrypick reconcile` (and the serve-only /api/reconcile dashboard card): a paper<->live isolation guard. It enumerates EVERY account on the login (list_accounts - tastytrade returns multiple per user) and checks each (read-only get_positions/get_account_info), flagging any open positions/BP a paper-only suite shouldn't have. On-demand and off the watchdog reliability path; never trades; account numbers masked. Optional 'broker_module' forces which module's tt.py to query; omit to auto-discover the first positions-capable one.",
     "broker_module": null
