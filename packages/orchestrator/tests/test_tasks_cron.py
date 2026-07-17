@@ -43,6 +43,7 @@ def test_registry_snapshot_collects_every_declared_task(monkeypatch):
         "cherrypick-watchdog",
         "cherrypick-trade-notify",
         "cherrypick-eod-digest",  # on by default even without an eod_digest section
+        "cherrypick-log-archive",  # monthly rotation, on by default too
     }
     assert snap["cherrypick-earnings-paper-entry"]["exists"] is False
     assert "should-not-appear" not in seen
@@ -52,6 +53,18 @@ def test_registry_snapshot_omits_eod_digest_when_opted_out(monkeypatch):
     monkeypatch.setattr(tasks, "query_verbose", lambda name: {"exists": True})
     cfg = {"modules": {}, "eod_digest": {"enabled": False}}
     assert "cherrypick-eod-digest" not in tasks.registry_snapshot(cfg)
+
+
+def test_registry_snapshot_omits_log_archive_when_opted_out(monkeypatch):
+    monkeypatch.setattr(tasks, "query_verbose", lambda name: {"exists": True})
+    cfg = {"modules": {}, "log_archive": {"enabled": False}}
+    assert "cherrypick-log-archive" not in tasks.registry_snapshot(cfg)
+
+
+def test_monthly_schedule_cron_format():
+    assert tasks._monthly_schedule(1, "03:30") == "30 3 1 * *"
+    with pytest.raises(ValueError):
+        tasks._monthly_schedule(31, "03:30")  # day must be 1..28
 
 
 def test_allow_on_battery_noop_on_posix(monkeypatch):

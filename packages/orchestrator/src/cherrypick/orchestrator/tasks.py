@@ -60,6 +60,15 @@ def _daily_schedule(at_hhmm: str) -> str:
     return f"{m} {h} * * *"
 
 
+def _monthly_schedule(day: int, at_hhmm: str) -> str:
+    """A cron schedule firing on `day` of every month at HH:MM."""
+    hh, mm = at_hhmm.split(":")
+    h, m, d = int(hh), int(mm), int(day)
+    if not (0 <= h <= 23 and 0 <= m <= 59 and 1 <= d <= 28):
+        raise ValueError(f"invalid monthly schedule day={day!r} time={at_hhmm!r} (day must be 1..28)")
+    return f"{m} {h} {d} * *"
+
+
 def _cron_line(schedule: str, command: str, name: str) -> str:
     """One crontab line: schedule + command (output discarded) + the ownership marker."""
     return f"{schedule} {command} >/dev/null 2>&1 {_cron_marker(name)}"
@@ -228,6 +237,25 @@ def create_daily_task(name: str, tr: str, at_hhmm: str) -> dict[str, Any]:
     return {"ok": ok, "task": name, "detail": (r.stdout or r.stderr).strip()}
 
 
+def create_monthly_task(name: str, tr: str, day: int, at_hhmm: str) -> dict[str, Any]:
+    """Register a task firing on `day` of every month at `at_hhmm` (local time). Windows uses
+    `schtasks /SC MONTHLY /D <day>`; POSIX uses a cron `m h D * *` line. Day is clamped to 1..28 by
+    `_monthly_schedule` so it exists in every month."""
+    if not _IS_WINDOWS:
+        return _cron_create(name, _monthly_schedule(day, at_hhmm), tr)
+    r = subprocess.run(
+        ["schtasks", "/Create", "/TN", name, "/TR", tr, "/SC", "MONTHLY", "/D", str(int(day)),
+         "/ST", at_hhmm, "/F", "/IT"],
+        capture_output=True,
+        text=True,
+        creationflags=CREATE_NO_WINDOW,
+    )
+    ok = r.returncode == 0
+    if ok:
+        allow_on_battery(name)
+    return {"ok": ok, "task": name, "detail": (r.stdout or r.stderr).strip()}
+
+
 def _run_command(command: str) -> None:
     """Fire a cron-managed command once now (POSIX has no `schtasks /Run`)."""
     try:
@@ -273,6 +301,9 @@ def registry_snapshot(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     ed = cfgmod.eod_digest_settings(cfg)
     if ed["enabled"]:
         out[ed["task_name"]] = query_verbose(ed["task_name"])
+    la = cfgmod.archive_settings(cfg)
+    if la["enabled"]:
+        out[la["task_name"]] = query_verbose(la["task_name"])
     return out
 
 

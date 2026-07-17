@@ -237,6 +237,7 @@ def test_build_model_includes_system_panel(env, monkeypatch):
         "cherrypick-watchdog",
         "cherrypick-trade-notify",
         "cherrypick-eod-digest",  # on by default (opt out via eod_digest.enabled=false)
+        "cherrypick-log-archive",  # monthly rotation, on by default (opt out via log_archive.enabled=false)
     }
     assert all(t["exists"] is False for t in m["tasks"])  # none registered in the test env
 

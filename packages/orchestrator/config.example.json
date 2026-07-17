@@ -160,6 +160,13 @@
     "task_name": "cherrypick-eod-digest",
     "at": "16:15"
   },
+  "log_archive": {
+    "_comment": "End-of-month log/report rotation (`cherrypick archive`). A monthly scheduled task zips each FINISHED month's dated reports (paper-eod / eod-analysis / eod-digest / live eod) and rotated log backups (*.log.N) into logs/archive/<YYYY-MM>/<scope>.zip - one zip per scope (the suite logs root + each module dir) - then removes the originals once the zip verifies. Idempotent and safe: it never touches the current month or an active .log, and re-runs converge. ON by default and registered by `install`; OPT OUT with enabled=false then re-run `install`/`uninstall`. 'day' is the day of month it fires (1..28), 'at' the box's local clock. Files only; off the watchdog reliability path. Run on demand any time with `cherrypick archive` (add --dry-run to preview, --month YYYY-MM to scope to one month).",
+    "enabled": true,
+    "task_name": "cherrypick-log-archive",
+    "day": 1,
+    "at": "03:30"
+  },
   "reconcile": {
     "_comment": "`cherrypick reconcile` (and the serve-only /api/reconcile dashboard card): a paper<->live isolation guard. It enumerates EVERY account on the login (list_accounts - tastytrade returns multiple per user) and checks each (read-only get_positions/get_account_info), flagging any open positions/BP a paper-only suite shouldn't have. On-demand and off the watchdog reliability path; never trades; account numbers masked. Optional 'broker_module' forces which module's tt.py to query; omit to auto-discover the first positions-capable one.",
     "broker_module": null
