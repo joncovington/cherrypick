@@ -2,14 +2,14 @@
 
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
-Structure, entry gates, and exit rules for all seven strategies. Every strategy is
+Structure, entry gates, and exit rules for all six strategies. Every strategy is
 **defined-risk** — max loss is known at entry. Undefined-risk/naked strategies were deliberately
 excluded: a naked short on a single-name earnings gap can blow out arbitrarily during the
 unmonitored overnight hold this system is built around.
 
-Two shared facts apply to every strategy below, so they aren't repeated seven times:
+Two shared facts apply to every strategy below, so they aren't repeated six times:
 
-- **Exit mechanics are the same shape for all seven** — a Step 3c early-exit check (profit
+- **Exit mechanics are the same shape for all six** — a Step 3c early-exit check (profit
   target / stop loss, checked against live quotes the first morning after entry, from market
   open until `close_window_start`) followed by Step 3's unconditional close-window backstop
   (whatever's still open gets closed regardless of P&L). See
@@ -30,9 +30,8 @@ Two shared facts apply to every strategy below, so they aren't repeated seven ti
 | 2 | `iron_condor` | Short strangle at expected-move boundaries + wings | Credit | Wide expected range, directional-neutral |
 | 3 | `directional_credit_spread` | Single-sided vertical credit spread (side by skew) | Credit | Directional bias / IV skew |
 | 4 | `broken_wing_butterfly` | Body-anchored butterfly, asymmetric wings (skew) | Credit | Asymmetric expected moves |
-| 5 | `reverse_fly` | Long ATM straddle + short OTM wings | Debit | Historically bigger-than-priced-in moves |
-| 6 | `atm_calendar` | Short front-month ATM call + long back-month same strike | Debit | Low IV, term-structure edge |
-| 7 | `double_calendar` | ATM-ish calendar on both call and put side | Debit | Low IV, symmetric term structure |
+| 5 | `atm_calendar` | Short front-month ATM call + long back-month same strike | Debit | Low IV, term-structure edge |
+| 6 | `double_calendar` | ATM-ish calendar on both call and put side | Debit | Low IV, symmetric term structure |
 
 ---
 
@@ -92,7 +91,7 @@ Profit zone: roughly 97 to 103 — wider than iron_fly's ATM-centered zone
 
 **Structure:** A single-sided vertical credit spread — sell a put spread if bullish, a call
 spread if bearish. Side is picked by a 25-delta risk reversal (`scanner.select_side()`, the same
-skew calculation `broken_wing_butterfly` and `reverse_fly` reuse): sell whichever side (calls or
+skew calculation `broken_wing_butterfly` reuse): sell whichever side (calls or
 puts) is carrying richer IV.
 
 **What makes this genuinely directional, not just half an iron condor:** the short strike isn't
@@ -147,32 +146,7 @@ Far wing: buy 1x 145 put (wide, away from spot)
 
 ---
 
-## 5. Reverse Fly
-
-**Structure:** Long ATM straddle (long call + long put) plus short OTM wings above and below —
-a "reverse iron fly." Wing width is a flat percentage of the ATM strike (`wing_width_pct`,
-default 10%), not skew- or expected-move-anchored the way the credit strategies above are. Net
-debit; max profit and max loss are both capped at wing width minus the debit paid.
-
-**Entry gate — this is the strategy's real edge, and it's a different kind of signal than every
-other strategy here:** rather than gating on IV/RV ratio pricing the *options* rich, this
-strategy checks whether the *stock itself* has historically moved more than its own options
-priced in (`realized_move_pct >= expected_move_pct * min_realized_move_ratio`, default ratio
-`1.10`) — a persistent gap-premium pattern, plus a ceiling on how inconsistent those historical
-moves can be (`max_realized_move_dispersion_pct`, default `0.30`) so the edge isn't just noise.
-
-**Exit:** `evaluate_debit_spread_exit()` — 25% profit target, 40% stop by default.
-
-```
-Stock with a track record of earnings moves exceeding its own priced-in expected move
-Long ATM 100 call + long ATM 100 put (long straddle)
-Short 110 call + short 90 put (10% wings)
-Net debit paid, max loss/profit both capped at wing width minus debit
-```
-
----
-
-## 6. ATM Calendar
+## 5. ATM Calendar
 
 **Structure:** Sell a front-month ATM call, buy the same strike in a later monthly expiration.
 Always the call side — literature treats call and put ATM calendars as performing virtually
@@ -197,7 +171,7 @@ Profit target: 30% → close once back-front spread narrows to ~$0.21
 
 ---
 
-## 7. Double Calendar
+## 6. Double Calendar
 
 **Structure:** An ATM calendar run on both the call and put side simultaneously — sell
 front-month calls and puts at the expected-move boundaries, buy the same two strikes in a later
@@ -225,14 +199,13 @@ Total entry debit: $0.60 (both calendars)
 ## Strategy Selection at a Glance
 
 There's no fixed lookup table mapping a market condition to a strategy — `rank_strategies.py`
-evaluates all seven against every symbol and picks whichever scores highest among those that
+evaluates all six against every symbol and picks whichever scores highest among those that
 clear their own tiering. As a rough mental model of what tends to win under which conditions:
 
 - **Rich IV/RV, negative term structure, no strong skew** → `iron_fly` or `iron_condor`
   (the choice between them is a scoring outcome, not a rule — see
   [Entry Conditions Framework](./04-entry-conditions.md))
 - **Clear directional skew** → `directional_credit_spread` or `broken_wing_butterfly`
-- **A name with a track record of moving more than its own options price in** → `reverse_fly`
 - **Low IV, clean term-structure edge, quiet historical moves** → `atm_calendar` or
   `double_calendar`
 

@@ -21,7 +21,7 @@ import strategy_metrics as sm
 
 STRATEGY_NAMES = [
     "iron_fly", "double_calendar", "iron_condor", "atm_calendar",
-    "directional_credit_spread", "broken_wing_butterfly", "reverse_fly",
+    "directional_credit_spread", "broken_wing_butterfly",
 ]
 
 

@@ -31,7 +31,7 @@ The options-implied move around earnings, in percent (`min_expected_move_pct`) o
 
 **Skew** (`min_skew_abs`, `skew_delta_target`)
 A 25-delta risk reversal — the IV difference between a delta-symmetric out-of-the-money call and
-put — used by `directional_credit_spread`, `broken_wing_butterfly`, and `reverse_fly` to pick
+put — used by `directional_credit_spread`, `broken_wing_butterfly`, to pick
 which side (calls or puts) to sell/build around. Compared at a fixed delta target, not at the
 expected-move strikes themselves, since those aren't delta-symmetric once skew is present.
 
@@ -67,7 +67,7 @@ every credit strategy in this system is built to capture — see
 
 ---
 
-## Strategies (All Seven, All Defined-Risk)
+## Strategies (All Six, All Defined-Risk)
 
 Full structure/entry/exit detail for each lives in [Strategy Guide](./05-strategies.md); this is
 a one-line reminder of the shape of each:
@@ -78,8 +78,6 @@ a one-line reminder of the shape of each:
 - **`directional_credit_spread`** — a single-sided vertical credit spread, side chosen by skew.
 - **`broken_wing_butterfly`** — body-anchored (no ATM leg) butterfly with an asymmetric near/far
   wing, sized to skew.
-- **`reverse_fly`** — long ATM + two shorts at the expected-move strike + a further long OTM,
-  aimed at gap-premium capture rather than IV crush.
 - **`atm_calendar`** — short front-month ATM call + long back-month same strike, single 2-leg
   unit.
 - **`double_calendar`** — an ATM calendar run on both the call and put side, the only strategy
@@ -108,8 +106,7 @@ candidate's own IV/RV ratio — see [Configuration Guide](./03-configuration.md)
 ## Position Management
 
 **Entry Credit / Entry Debit**
-Net premium received (credit strategies) or paid (debit strategies, e.g. the calendars and
-`reverse_fly`) at entry. Stored with a consistent sign convention in the database — see
+Net premium received (credit strategies) or paid (debit strategies, e.g. the calendars) at entry. Stored with a consistent sign convention in the database — see
 `CLAUDE.md`'s Database section.
 
 **Profit Target** (`profit_target_pct`)
@@ -205,7 +202,7 @@ Fetch tickers with earnings on a given date.
 Full tiered scan for one strategy: Tier 1/2/3, pass/skip reasons, ranked candidates, selected.
 
 **`python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY`**
-Cross-strategy ranking — evaluates all seven strategies against every symbol, picks each
+Cross-strategy ranking — evaluates all six strategies against every symbol, picks each
 symbol's best.
 
 **`python src/strategies/<name>.py get_order --symbol X --earnings_date DATE --earnings_timing "..."`**

@@ -142,37 +142,6 @@
       "near_miss_min_combined_option_volume": 200
     },
 
-    "reverse_fly": {
-      "_note": "1 long ATM + 2 short at the expected-move strike + 1 long further OTM, equidistant (ATM-to-short == short-to-far). Side (call or put) picked via a 25-delta risk reversal (skew_delta_target) -- the industry-standard delta-symmetric skew measure, NOT compared at the expected-move strikes themselves (which aren't delta-symmetric once skew is present, and would conflate structural single-name put skew -- present on most names regardless of any earnings catalyst -- with a real earnings-specific signal). min_skew_abs is a reasoned starting point -- small enough not to reject every candidate, large enough to filter pure noise -- but does not fully correct for structural skew, which would need a per-name pre-earnings skew baseline this project doesn't have data for. Not backtested for this strategy.",
-
-      "min_price": 10.00,
-      "min_expected_move_pct": 0.04,
-      "min_skew_abs": 0.02,
-      "skew_delta_target": 0.25,
-      "max_front_expiration_days": 9,
-
-      "min_avg_volume": 1500000,
-      "near_miss_min_avg_volume": 1000000,
-
-      "min_iv_rv_ratio": 1.25,
-      "near_miss_min_iv_rv_ratio": 1.00,
-
-      "min_winrate": 0.50,
-      "near_miss_min_winrate": 0.40,
-
-      "_exit_note": "Step 3c (market-open-to-close-window) profit-target/stop-loss check via scanner.evaluate_debit_spread_exit, ahead of Step 3's unconditional close-window sweep. Calibrated against debit-butterfly-specific research: 25% of max profit as a target, a stop at a 40% loss of the debit paid -- deliberately tighter than double_calendar's calendar-spread-calibrated stop_loss_pct_of_debit (1.0), since this is a structurally different, faster-resolving overnight position. Not backtested for this project specifically.",
-      "profit_target_pct": 0.25,
-      "stop_loss_pct_of_debit": 0.40,
-
-      "require_weekly_options": true,
-      "min_combined_open_interest": 2000,
-      "max_bid_ask_spread_pct": 0.15,
-      "min_market_cap": 2000000000,
-      "near_miss_min_market_cap": 1000000000,
-      "min_combined_option_volume": 500,
-      "near_miss_min_combined_option_volume": 200
-    },
-
     "iron_condor": {
       "_note": "Same credit-spread-plus-wings shape as iron_fly, but short strikes sit at the expected-move boundary (1.0x, same convention as double_calendar/expected_move_butterfly) instead of ATM -- backtests show a wider profit zone, lower credit, and a materially different historical win rate than iron fly. Not backtested for this project's specific implementation.",
 

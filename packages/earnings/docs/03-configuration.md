@@ -121,8 +121,8 @@ profile overrides.
 
 ## `strategies.<name>`
 
-Every one of the 7 strategies (`iron_fly`, `iron_condor`, `directional_credit_spread`,
-`broken_wing_butterfly`, `reverse_fly`, `atm_calendar`, `double_calendar`) gets its own block
+Every one of the 6 strategies (`iron_fly`, `iron_condor`, `directional_credit_spread`,
+`broken_wing_butterfly`, `atm_calendar`, `double_calendar`) gets its own block
 under `strategies`, keyed by the exact module name in `src/strategies/`. This avoids threshold
 collisions — each strategy tunes its own liquidity/quality bars independently, even though many
 of them share the same starting values today.
@@ -316,43 +316,6 @@ premium to finance itself, so it's skipped rather than entered as a smaller-debi
 you see a lot of rejections for that specific reason, that's the knob to revisit
 (`wide_wing_multiple` or the `wing_width_multiple_*` bands), not the liquidity gates.
 
-### `reverse_fly`
-
-Long ATM + two shorts at the expected-move strike + a further long OTM, equidistant — a
-long-vol structure aimed at capturing gap premium rather than IV crush.
-
-```json
-"reverse_fly": {
-  "min_price": 10.00,
-  "min_expected_move_pct": 0.04,
-  "min_skew_abs": 0.02,
-  "skew_delta_target": 0.25,
-  "max_front_expiration_days": 9,
-  "min_avg_volume": 1500000,
-  "near_miss_min_avg_volume": 1000000,
-  "min_iv_rv_ratio": 1.25,
-  "near_miss_min_iv_rv_ratio": 1.00,
-  "min_winrate": 0.50,
-  "near_miss_min_winrate": 0.40,
-  "profit_target_pct": 0.25,
-  "stop_loss_pct_of_debit": 0.40,
-  "require_weekly_options": true,
-  "min_combined_open_interest": 2000,
-  "max_bid_ask_spread_pct": 0.15,
-  "min_market_cap": 2000000000,
-  "near_miss_min_market_cap": 1000000000,
-  "min_combined_option_volume": 500,
-  "near_miss_min_combined_option_volume": 200
-}
-```
-
-Side (call or put) is picked the same way as `directional_credit_spread` — a 25-delta risk
-reversal — deliberately *not* compared at the expected-move strikes themselves, since those
-aren't delta-symmetric once skew is present and would conflate ordinary structural single-name
-put skew with a genuine earnings-specific signal. `min_skew_abs` is a reasoned floor, not a full
-correction for structural skew — this project doesn't have a per-name pre-earnings skew
-baseline to net that out against.
-
 ### `atm_calendar`
 
 Sell a front-month ATM call, buy the same strike in a later monthly expiration — always the call
@@ -485,7 +448,7 @@ expectancy before and after.
 # Confirm it's still valid JSON
 python -c "import json; json.load(open('config/config.json')); print('Config OK')"
 
-# Confirm all 7 strategies still register
+# Confirm all 6 strategies still register
 python -c "from src.rank_strategies import STRATEGY_REGISTRY; print(f'Found {len(STRATEGY_REGISTRY)} strategies')"
 
 # Run a dry-run scan to see the change reflected in candidate output

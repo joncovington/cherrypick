@@ -18,15 +18,14 @@ built on a multi-strategy decision framework.
 
 The Earnings Agent is a rules-based options trading system that:
 - Scans daily earnings calendar for candidates
-- Analyzes 7 defined-risk strategies using entry condition framework
+- Analyzes 6 defined-risk strategies using entry condition framework
 - Routes each candidate to optimal strategy based on market data
 - Executes pre-earnings positions and manages exits
 
-### 7 Strategies (all defined-risk)
+### 6 Strategies (all defined-risk)
 
 | Strategy | Entry Credit | Risk | Best For |
 |----------|---|---|---|
-| Reverse Fly | $1.50-3.00 | Defined | Gap premium |
 | Iron Fly | $0.80-1.50 | Defined | Medium IV |
 | Iron Condor | $0.50-1.50 | Defined | Wide range |
 | Directional Spread | $0.50-1.50 | Defined | IV skew |
@@ -94,7 +93,7 @@ GATE:      Capital requirements
 
 ```
 Credit Strategies (Iron Fly, Iron Condor, Directional Spread,
-Broken Wing Butterfly, Reverse Fly):
+Broken Wing Butterfly):
   Profit Target: 50% of entry credit
   Stop Loss: 1.5x entry credit
   Backstop: unconditional close-window exit next morning
@@ -113,7 +112,6 @@ past the overnight IV-crush event. See `CLAUDE.md`'s Loop Steps for the exact me
 Every strategy is defined-risk -- max loss known at entry.
 Iron Fly:    Defined risk, most ATM premium, lower capital
 Iron Condor: Defined risk, wider profit zone
-Reverse Fly: Defined risk, gap premium, long-vol hedge structure
 Calendar:    Defined risk, term structure edge, time decay
 ```
 
@@ -128,8 +126,7 @@ cherrypick/
 └── packages/earnings/           # ← this package (cherrypick-earnings)
     ├── src/
     │   ├── _core/               # Shared cherrypick.core library (git submodule: calendar, fees)
-    │   ├── strategies/          # 7 defined-risk strategy modules
-    │   │   ├── reverse_fly.py
+    │   ├── strategies/          # 6 defined-risk strategy modules
     │   │   ├── iron_fly.py
     │   │   ├── iron_condor.py
     │   │   ├── directional_credit_spread.py
@@ -162,7 +159,7 @@ cherrypick/
 ### Afternoon, Before the Close
 ```bash
 python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
-# Evaluates all 7 strategies against tonight's/tomorrow's calendar, picks each symbol's best
+# Evaluates all 6 strategies against tonight's/tomorrow's calendar, picks each symbol's best
 ```
 
 ### Entry Window (default 15:30-15:55 ET)

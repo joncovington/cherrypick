@@ -16,12 +16,12 @@ one strategy:
 python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
 ```
 
-Works identically for any of the seven (`iron_condor`, `directional_credit_spread`,
-`broken_wing_butterfly`, `reverse_fly`, `atm_calendar`, `double_calendar`) — every strategy's
+Works identically for any of the six (`iron_condor`, `directional_credit_spread`,
+`broken_wing_butterfly`, `atm_calendar`, `double_calendar`) — every strategy's
 `get_candidates` is a thin wrapper around the same shared engine function,
 `scanner.run_candidate_scan()`.
 
-**Cross-strategy, one date** — evaluates all seven against every symbol and picks each symbol's
+**Cross-strategy, one date** — evaluates all six against every symbol and picks each symbol's
 best:
 
 ```bash

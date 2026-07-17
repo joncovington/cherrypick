@@ -39,9 +39,8 @@ breakout) debit spread runs alongside and *is* allowed in the trending regimes t
 
 ## Earnings — defined-risk earnings plays
 
-**What it trades.** Seven **defined-risk** strategies (max loss known at entry): `iron_fly`,
-`double_calendar`, `iron_condor`, `atm_calendar`, `directional_credit_spread`, `broken_wing_butterfly`,
-`reverse_fly`. Naked/undefined-risk strategies were deliberately removed — an unmonitored overnight naked
+**What it trades.** Six **defined-risk** strategies (max loss known at entry): `iron_fly`,
+`double_calendar`, `iron_condor`, `atm_calendar`, `directional_credit_spread`, `broken_wing_butterfly`. Naked/undefined-risk strategies were deliberately removed — an unmonitored overnight naked
 short can blow out arbitrarily. Positions open once before the close and close once after the next open,
 unmonitored overnight.
 

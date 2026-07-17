@@ -21,7 +21,6 @@ def test_occ_expiration_handles_short_root_symbol():
     ({"strategy": "atm_calendar", "debit": 3.12}, -3.12),
     ({"strategy": "double_calendar", "debit": 0.45}, -0.45),
     ({"strategy": "broken_wing_butterfly", "net_debit": 0.45}, -0.45),
-    ({"strategy": "reverse_fly", "net_debit": 1.75, "max_loss": 3.0}, -1.75),
     # total_credit is not produced by any current strategy, but _per_contract_credit
     # keeps it as a general fallback for a future multi-credit-leg strategy:
     ({"strategy": "hypothetical_multi_credit", "total_credit": 1.25}, 1.25),
@@ -30,7 +29,7 @@ def test_per_contract_credit_covers_every_strategys_field_name(order, expected):
     """Regression test: each strategy's get_order result uses a different
     field name for its entry price -- iron_fly/iron_condor/directional use
     "credit", atm_calendar/double_calendar use "debit", and
-    broken_wing_butterfly/reverse_fly use "net_debit". A naive
+    broken_wing_butterfly uses "net_debit". A naive
     `order["credit"] if "credit" in order else -order["debit"]` would
     KeyError on the net_debit strategies."""
     assert runner._per_contract_credit(order) == pytest.approx(expected)

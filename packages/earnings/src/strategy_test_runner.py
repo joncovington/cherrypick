@@ -72,7 +72,6 @@ from strategies import (
     double_calendar,
     iron_condor,
     iron_fly,
-    reverse_fly,
 )
 
 TEST_PROFILE = "strat_test"
@@ -84,7 +83,6 @@ _ORDER_FNS = {
     "atm_calendar": atm_calendar.fetch_atm_calendar_order,
     "directional_credit_spread": directional_credit_spread.fetch_directional_credit_spread_order,
     "broken_wing_butterfly": broken_wing_butterfly.fetch_broken_wing_butterfly_order,
-    "reverse_fly": reverse_fly.fetch_reverse_fly_order,
 }
 
 
@@ -148,7 +146,7 @@ def _per_contract_credit(order: dict) -> float:
     nets a credit -- stays consistent for every strategy). Field names vary
     per strategy's get_order result: iron_fly/iron_condor/directional use
     "credit", atm_calendar/double_calendar use "debit", and
-    broken_wing_butterfly/reverse_fly use "net_debit". "total_credit" is kept
+    broken_wing_butterfly uses "net_debit". "total_credit" is kept
     in the lookup as a general fallback for any future credit strategy that
     aggregates multiple credit legs."""
     for key in ("credit", "total_credit"):

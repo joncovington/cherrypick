@@ -48,7 +48,7 @@ Then run the cross-strategy ranking to see what the loop would actually pick ton
 python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
 ```
 
-This evaluates all seven strategies against every symbol on the merged today-AMC/tomorrow-BMO
+This evaluates all six strategies against every symbol on the merged today-AMC/tomorrow-BMO
 calendar and picks each symbol's single best-ranked strategy — see
 [Entry Conditions Framework](./04-entry-conditions.md) for how that ranking works and
 [Earnings Scan Analysis](./06-scan-analysis.md) for how to read the output.
@@ -90,7 +90,7 @@ this system is defined-risk: an undefined-risk position left unmonitored overnig
 against you by an amount that isn't capped, which is why naked strategies were removed from
 this system entirely.
 
-Two of the seven strategies (`double_calendar`, `atm_calendar`) do get intraday management
+Two of the six strategies (`double_calendar`, `atm_calendar`) do get intraday management
 during *regular session hours* if a position happens to still be open then (Step 3b/3d in
 `CLAUDE.md`'s Loop Steps) — but this doesn't apply overnight, only during market hours the
 position is open across a multi-day hold.
@@ -103,8 +103,7 @@ Two things can happen the next morning, in this order:
 
 1. **Early exit check (Step 3c)**, from market open until `close_window_start` — profit-target
    and stop-loss checks run against live quotes for the five overnight-hold credit/debit
-   strategies (`iron_fly`, `iron_condor`, `directional_credit_spread`, `broken_wing_butterfly`,
-   `reverse_fly`). If the position already hit its `profit_target_pct` or
+   strategies (`iron_fly`, `iron_condor`, `directional_credit_spread`, `broken_wing_butterfly`). If the position already hit its `profit_target_pct` or
    `stop_loss_credit_multiple`/`stop_loss_pct_of_debit`, it closes right there.
 2. **Unconditional close-window backstop (Step 3)** — whatever's still open once
    `close_window_start` arrives gets closed, full stop, regardless of P&L. The IV crush already

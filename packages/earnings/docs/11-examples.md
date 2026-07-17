@@ -27,7 +27,6 @@ directional structure:
 ```
 iron_fly:    Tier 2 (near_miss: iv_rv_ratio_near_miss), score 0.0183
 iron_condor: Tier 1, score 0.0201
-reverse_fly: Reject (min_skew_abs not met)
 ... other strategies: Reject or lower score
 → best_strategy: iron_condor, best_score: 0.0201
 ```

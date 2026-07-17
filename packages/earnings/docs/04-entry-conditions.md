@@ -10,7 +10,7 @@ step.
 
 ## The Two-Layer Model
 
-There's no single global "entry conditions" gate that all seven strategies share and a router
+There's no single global "entry conditions" gate that all six strategies share and a router
 that then picks a bucket. Instead:
 
 1. **Each strategy tiers itself.** `src/strategies/<name>.py`'s `apply_tiering()` runs that
@@ -20,7 +20,7 @@ that then picks a bucket. Instead:
    filter numbers, near-miss bands, and the composite scoring formula. The other six strategies
    share the same shared-engine plumbing (`scanner.py`'s liquidity gates, IV/RV computation,
    winrate backtest) but plug in their own thresholds and a few strategy-specific criteria
-   (`double_calendar`'s realized-move dispersion, `broken_wing_butterfly`/`directional_credit_spread`/`reverse_fly`'s
+   (`double_calendar`'s realized-move dispersion, `broken_wing_butterfly`/`directional_credit_spread`'s
    skew gate, the calendars' `back_month_min_days_after`). See each strategy's own config block
    in [Configuration Guide](./03-configuration.md) for its exact numbers.
 
@@ -53,7 +53,7 @@ score = abs(term_structure) * iv_rv_ratio * shrunk_winrate
 
 (`shrunk_winrate` pulls a thin-sample winrate toward a neutral 0.5 prior — see Screening
 Criteria's ranking section for why.) Whichever strategy scores highest for that symbol wins;
-`double_calendar` and `broken_wing_butterfly`/`directional_credit_spread`/`reverse_fly` substitute their own
+`double_calendar` and `broken_wing_butterfly`/`directional_credit_spread` substitute their own
 signal (dispersion, skew) into the same formula shape rather than getting a separate scoring
 system. This is a **relative** score used only to break ties between strategies that already
 both cleared their own bar — it is not itself a pass/fail gate.

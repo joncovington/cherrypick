@@ -2,16 +2,16 @@
 
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
-Research-backed optimization hypotheses for the seven remaining **defined-risk** strategies
+Research-backed optimization hypotheses for the six remaining **defined-risk** strategies
 (`iron_fly`, `iron_condor`, `double_calendar`, `atm_calendar`, `directional_credit_spread`,
-`broken_wing_butterfly`, `reverse_fly`), specific to this system's structure: **one position
+`broken_wing_butterfly`), specific to this system's structure: **one position
 opened before the close, closed once after the next open, unmonitored overnight** — so the
 entire edge is the single overnight IV-crush event, and strike/structure choices at entry
 matter more than intraday management (there is none).
 
 **These are hypotheses to validate, not changes to apply.** The right way to act on them is
 the existing paper-testing program (`docs/strategy-testing-plan.md`): `strategy_test_runner`
-already force-samples all 7 strategies nightly, and `strategy_metrics` already computes
+already force-samples all 6 strategies nightly, and `strategy_metrics` already computes
 cost-adjusted expectancy and captured IV crush per strategy. Change **one** parameter,
 re-run the paper program, compare expectancy — do not blind-tune to the literature. The
 research itself warns that "if all your backtest metrics are excellent, you probably have
@@ -36,7 +36,7 @@ implements that. This is already done; everything below optimizes *within* defin
 (vs. the ~50% standard for non-event condors), because IV crush deflates the position in one
 move and holding past that only re-exposes you to gamma/gap risk.
 
-**Current values:** `iron_fly` / `iron_condor` / `directional_credit_spread` / `reverse_fly`
+**Current values:** `iron_fly` / `iron_condor` / `directional_credit_spread`
 = `0.50`; `atm_calendar` / `double_calendar` = `0.25`; `broken_wing_butterfly` = **`0.10`**.
 
 **Hypotheses:**
@@ -142,8 +142,7 @@ floor (e.g. 1.25 → 1.35) improves per-trade expectancy at the cost of fewer tr
 **Research:** a common stop is **2-3× credit collected** ("don't hope and pray").
 
 **Current:** `stop_loss_credit_multiple 1.5` on the credit strategies (tighter than the
-research norm); calendars use `stop_loss_pct_of_debit 1.0`; `reverse_fly` stops at its defined
-max loss.
+research norm); calendars use `stop_loss_pct_of_debit 1.0`.
 
 **Hypothesis:** because the stop is only checked at the **open** (unmonitored overnight), a
 tight 1.5× may cut positions that would have recovered intraday, while a looser 2-3× may just
@@ -166,7 +165,7 @@ $5-10 on stocks is typical, and a credit-multiple approach is fine.
 
 **Observation (2026-07-09):** DAL — a $61B-market-cap, high-volume name, otherwise clean on
 every other criterion (term structure, expected move, delta, OI, weekly options) — was
-hard-rejected across all 7 strategies for `bid_ask_spread_too_wide`: measured ATM spread
+hard-rejected across all 6 strategies for `bid_ask_spread_too_wide`: measured ATM spread
 16.47% vs. the `max_bid_ask_spread_pct` 0.15 cap, a ~1.5-point miss. Single data point, not
 acted on yet — this section exists to track whether it recurs.
 
@@ -234,5 +233,5 @@ directional gate** (see `docs/strategy-testing-plan.md`):
 ## See also
 
 - `docs/strategy-testing-plan.md` — the paper program that validates every hypothesis here
-- `docs/05-strategies.md` — the 7 strategies' structures and current parameters
+- `docs/05-strategies.md` — the 6 strategies' structures and current parameters
 - `src/strategy_metrics.py` — expectancy / IV-crush / regime metrics the tests are judged on

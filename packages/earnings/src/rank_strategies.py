@@ -54,7 +54,6 @@ from strategies import (
     double_calendar,
     iron_condor,
     iron_fly,
-    reverse_fly,
 )
 
 
@@ -138,12 +137,6 @@ STRATEGY_REGISTRY = [
         "fetch_criteria_fn": broken_wing_butterfly.fetch_price_and_expected_move,
         "apply_tiering_fn": broken_wing_butterfly.apply_tiering,
         "strategy_config_fn": broken_wing_butterfly._strategy_config,
-    },
-    {
-        "name": "reverse_fly",
-        "fetch_criteria_fn": reverse_fly.fetch_price_and_term_structure,
-        "apply_tiering_fn": reverse_fly.apply_tiering,
-        "strategy_config_fn": reverse_fly._strategy_config,
     },
 ]
 
