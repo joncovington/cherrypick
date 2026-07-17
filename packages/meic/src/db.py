@@ -5,7 +5,7 @@ import json
 import os
 import sqlite3
 import sys
-from datetime import UTC, datetime
+from datetime import datetime
 
 # Make the cherrypick-core submodule (src/_core) importable before the cherrypick.core import below,
 # mirroring credentials.py's bootstrap so this module works even when imported before credentials.
@@ -17,18 +17,20 @@ from cherrypick.core import profiles as _profiles
 
 import paths as _paths
 
-try:
+try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
     _ET = pytz.timezone("America/New_York")
-    def _now_et():
-        return datetime.now(_ET)
-    def _today_et():
-        return _now_et().strftime("%Y-%m-%d")
-except ImportError:
-    def _now_et():
-        return datetime.now(UTC)
-    def _today_et():
-        return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
+def _now_et():
+    return datetime.now(_ET)
+
+
+def _today_et():
+    return _now_et().strftime("%Y-%m-%d")
 
 _DEFAULT_DB_PATH = str(_paths.live_db_path())  # ~/.cherrypick/data/meic/meic_trades.db (or MEIC_DATA_DIR)
 # MEIC_DB_PATH lets the paper-trading engine (src/paper.py) and its skills point every
@@ -164,6 +166,15 @@ CREATE TABLE IF NOT EXISTS loop_log (
     mcp_errors       TEXT DEFAULT '[]',
     duration_ms      INTEGER,
     created_at       TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS market_context (
+    context_date  TEXT PRIMARY KEY,
+    vix           REAL,
+    vix1d         REAL,
+    vix1d_ratio   REAL,
+    symbols_json  TEXT DEFAULT '{}',
+    updated_at    TEXT NOT NULL
 );
 
 """
@@ -769,6 +780,46 @@ def cmd_save_daily_summary(args):
     _out({"ok": True, "date": date})
 
 
+_MARKET_CONTEXT_DDL = """
+CREATE TABLE IF NOT EXISTS market_context (
+    context_date  TEXT PRIMARY KEY,
+    vix           REAL,
+    vix1d         REAL,
+    vix1d_ratio   REAL,
+    symbols_json  TEXT DEFAULT '{}',
+    updated_at    TEXT NOT NULL
+)"""
+
+
+def cmd_save_market_context(args):
+    """Upsert one per-day market-context snapshot (VIX / VIX1D / per-symbol price+IV rank) for the
+    EOD analysis report. Called once per paper-loop iteration; the last write of the session wins,
+    landing closest to the close. Creates the table on demand so it works on paper DBs that predate
+    this schema addition without re-running init_db."""
+    now = str(_now_et())
+    date = args.date or _today_et()
+    try:
+        json.loads(args.symbols)  # validate; stored verbatim
+    except (TypeError, ValueError):
+        args.symbols = "{}"
+    conn = _connect()
+    conn.execute(_MARKET_CONTEXT_DDL)
+    conn.execute(
+        """INSERT INTO market_context (context_date, vix, vix1d, vix1d_ratio, symbols_json, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(context_date) DO UPDATE SET
+             vix = excluded.vix,
+             vix1d = excluded.vix1d,
+             vix1d_ratio = excluded.vix1d_ratio,
+             symbols_json = excluded.symbols_json,
+             updated_at = excluded.updated_at""",
+        (date, args.vix, args.vix1d, args.vix1d_ratio, args.symbols, now),
+    )
+    conn.commit()
+    conn.close()
+    _out({"ok": True, "date": date})
+
+
 # ---------------------------------------------------------------------------
 # CLI dispatch
 # ---------------------------------------------------------------------------
@@ -849,6 +900,14 @@ def main():
     p_dsum.add_argument("--summary", default=None)
     p_dsum.add_argument("--closing_nlv", default=None, type=float)
 
+    p_mctx = sub.add_parser("save_market_context")
+    p_mctx.add_argument("--date", default=None)
+    p_mctx.add_argument("--vix", default=None, type=float)
+    p_mctx.add_argument("--vix1d", default=None, type=float)
+    p_mctx.add_argument("--vix1d_ratio", default=None, type=float)
+    p_mctx.add_argument("--symbols", default="{}",
+                         help="JSON: {SYM: {price, iv_rank}} snapshot for the EOD analysis report")
+
     p_log = sub.add_parser("log_loop_action")
     p_log.add_argument("--symbol", default=None,
                         help="Symbol this log row is for; omit for an iteration-level summary row spanning all symbols")
@@ -885,6 +944,7 @@ def main():
         "save_trade": cmd_save_trade,
         "update_trade": cmd_update_trade,
         "save_daily_summary": cmd_save_daily_summary,
+        "save_market_context": cmd_save_market_context,
         "record_stop_adjustment": cmd_record_stop_adjustment,
         "log_loop_action": cmd_log_loop_action,
         "record_leg_exit": cmd_record_leg_exit,

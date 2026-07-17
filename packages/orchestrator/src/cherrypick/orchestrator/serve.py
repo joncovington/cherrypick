@@ -12,14 +12,36 @@ exposed off-box.
 
 from __future__ import annotations
 
+import html
 import json
+import re
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from . import config as cfgmod
 from . import dashboard, doctor, embeds, reconcile, sections
+
+_SESSION_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _md_page(title: str, md_text: str) -> bytes:
+    """Render an EOD markdown report as a minimal, self-contained dark page (raw markdown in a
+    monospace block — no converter/dependency; the reports' pipe tables read fine aligned)."""
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        f"<title>{html.escape(title)}</title>"
+        "<style>body{background:#0a0e12;color:#e6edf3;margin:0;"
+        "font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}"
+        ".wrap{max-width:920px;margin:0 auto;padding:24px}"
+        "h1{font-size:15px;color:#e6edf3;border-bottom:1px solid #23303c;padding-bottom:10px;margin:0 0 14px}"
+        "pre{white-space:pre-wrap;word-wrap:break-word;margin:0}</style></head>"
+        f"<body><div class='wrap'><h1>{html.escape(title)}</h1>"
+        f"<pre>{html.escape(md_text)}</pre></div></body></html>"
+    ).encode()
 
 
 def _embed_error(embed_cfg: dict[str, Any], detail: str) -> bytes:
@@ -80,8 +102,40 @@ def _make_handler(cfg: dict[str, Any]):
             except Exception as exc:  # a module hiccup shows inline, never breaks the orchestrator server
                 self._send(200, _embed_error(emb, str(exc)), "text/html")
 
+        def _serve_eod_report(self, params: dict[str, list[str]]) -> None:
+            """Serve an EOD markdown report (a module's paper-eod-<day>.md, or the suite digest) as a
+            readable page opened in a new tab. Path-traversal-safe: session is regex-validated and the
+            file path is derived from config resolvers + the validated day, never from client input."""
+            session = (params.get("session") or [""])[0]
+            module = (params.get("module") or [None])[0]
+            is_suite = bool(params.get("suite"))
+            if not _SESSION_RE.match(session):
+                self._send(400, b"bad session", "text/plain")
+                return
+            if is_suite:
+                path = cfgmod.log_file(f"eod-digest-{session}.md")
+                title = f"suite EOD digest — {session}"
+            else:
+                if module not in cfgmod.enabled_modules(cfg):
+                    self._send(404, b"unknown module", "text/plain")
+                    return
+                path = cfgmod.module_logs_dir(module) / f"paper-eod-{session}.md"
+                title = f"{module} EOD report — {session}"
+            if not path.exists():
+                self._send(404, b"report not found", "text/plain")
+                return
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                self._send(500, f"read error: {exc}".encode(), "text/plain")
+                return
+            self._send(200, _md_page(title, text), "text/html; charset=utf-8")
+
         def do_GET(self):  # noqa: N802
             parsed = urlparse(self.path)
+            if parsed.path == "/eod-report":
+                self._serve_eod_report(parse_qs(parsed.query))
+                return
             if parsed.path in ("/", "/index.html"):
                 try:
                     page = dashboard._render_html(dashboard.build_model(cfg), serve=True)

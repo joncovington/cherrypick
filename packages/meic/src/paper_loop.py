@@ -33,18 +33,20 @@ import sqlite3
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-try:
+try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
     _ET = pytz.timezone("America/New_York")
-    def _now_et():
-        return datetime.now(_ET)
-except ImportError:
-    def _now_et():
-        return datetime.now(UTC)
+
+
+def _now_et():
+    return datetime.now(_ET)
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -434,6 +436,290 @@ def _write_eod_report(day):
     return path
 
 
+# ---------------------------------------------------------------------------
+# EOD analysis report — conversational, 7-section, still fully deterministic
+# ---------------------------------------------------------------------------
+
+def _analysis_path(day):
+    return _LOG_FILE.parent / f"eod-analysis-{day}.md"
+
+
+def _read_market_context(day):
+    """Return (today_row, prior_row) dicts from the paper DB's market_context table, or (None, None).
+    prior_row is the most recent earlier day, used only for the VIX/underlying deltas."""
+    try:
+        con = sqlite3.connect(_PAPER_DB)
+        con.row_factory = sqlite3.Row
+        today = con.execute("SELECT * FROM market_context WHERE context_date=?", (day,)).fetchone()
+        prior = con.execute(
+            "SELECT * FROM market_context WHERE context_date < ? ORDER BY context_date DESC LIMIT 1",
+            (day,)).fetchone()
+        con.close()
+    except sqlite3.Error:
+        return None, None
+    return (dict(today) if today else None, dict(prior) if prior else None)
+
+
+def _signed(x):
+    return f"+{x:.2f}" if x is not None and x >= 0 else (f"{x:.2f}" if x is not None else "?")
+
+
+def _write_eod_analysis(day):
+    """Write a conversational 7-section end-of-day analysis for `day` to logs/eod-analysis-<day>.md.
+    Deterministic templated prose (no agent/LLM/network) so it runs unattended from the settlement
+    pass, sitting alongside the terse paper-eod-<day>.md. Reads only the paper DB + the day's captured
+    market_context, so its numbers reconcile with the paper report and the suite digest."""
+    cfg = _load_config()
+    cash_settled = {str(s).upper() for s in cfg.get("cash_settled_symbols", ["SPX", "XSP", "NDX", "RUT"])}
+
+    try:
+        con = sqlite3.connect(_PAPER_DB)
+        con.row_factory = sqlite3.Row
+        rows = [dict(r) for r in con.execute(
+            "SELECT * FROM ic_trades WHERE trade_date=? ORDER BY entry_time", (day,)).fetchall()]
+        legs = [dict(r) for r in con.execute(
+            "SELECT l.side, l.exit_time, l.exit_reason, l.exit_price, l.pnl, l.ic_order_id "
+            "FROM ic_spread_legs l JOIN ic_trades t ON l.ic_order_id=t.ic_order_id "
+            "WHERE t.trade_date=? AND l.status='closed'", (day,)).fetchall()]
+        con.close()
+    except sqlite3.Error:
+        rows, legs = [], []
+    active = [r for r in rows if r.get("status") != "cancelled"]
+
+    def _net(r):
+        return (r.get("pnl") or 0.0) - (r.get("fees") or 0.0)
+
+    nets = [_net(r) for r in active]
+    gross = sum(r.get("pnl") or 0.0 for r in active)
+    fees = sum(r.get("fees") or 0.0 for r in active)
+    net_total = sum(nets)
+    wins = [n for n in nets if n > 0]
+    losses = [n for n in nets if n <= 0]
+    avg_win = sum(wins) / len(wins) if wins else None
+    avg_loss = sum(losses) / len(losses) if losses else None
+    open_n = sum(1 for r in active if r.get("status") in ("open", "partial", "pending", "partial_entry"))
+    by_symbol = {}
+    for r in active:
+        by_symbol[r["symbol"]] = by_symbol.get(r["symbol"], 0.0) + _net(r)
+
+    today_ctx, prior_ctx = _read_market_context(day)
+
+    L = [f"# MEIC Paper - EOD Analysis {day}", ""]
+    L.append("_Plain-English read on the paper session. Auto-generated from the paper DB (no agent) - "
+             "conversational, but rule-based, not a hand-written synthesis. MEIC has no profit target: "
+             "exits are per-side stops, non-cash-settled time force-close, or cash-settled expiration._")
+    L.append("")
+
+    # 1. Executive snapshot ----------------------------------------------------
+    L.append("## 1. Executive snapshot")
+    if not active:
+        L.append("Flat session - no ICs were filled today. Every profile's gates held the book out "
+                 "(insufficient IV rank, credit floor, regime pause, or simply no qualifying setup). "
+                 "A day with no trade is a decision, not a gap.")
+    else:
+        best = max(by_symbol.items(), key=lambda kv: kv[1]) if by_symbol else None
+        worst = min(by_symbol.items(), key=lambda kv: kv[1]) if by_symbol else None
+        drag = f" - fees were {_money(round(fees, 2))}, {(fees / gross * 100):.0f}% of the {_money(round(gross, 2))} gross" if gross > 0 else f" - fees added {_money(round(fees, 2))} on top of a losing gross"
+        L.append(
+            f"The book filled **{len(active)}** IC{'s' if len(active) != 1 else ''} today and closed the "
+            f"session **{_money(round(net_total, 2))}** net of fees ({len(wins)} up, {len(losses)} down"
+            f"{f', {open_n} still open at report time' if open_n else ''}){drag}.")
+        line = "Average winner ran " + (_money(round(avg_win, 2)) if avg_win is not None else "-")
+        line += ", average loser " + (_money(round(avg_loss, 2)) if avg_loss is not None else "-") + "."
+        if best and worst and best[0] != worst[0]:
+            line += f" {best[0]} carried the day ({_money(round(best[1], 2))}); {worst[0]} lagged ({_money(round(worst[1], 2))})."
+        elif best:
+            line += f" All of it came from {best[0]}."
+        L.append(line)
+    L.append("")
+
+    # 2. Position-level detail -------------------------------------------------
+    L.append("## 2. Position-level detail")
+    L.append("_Iron condors, 0DTE. Greeks are captured at entry; there is no end-of-day greek snapshot "
+             "because the positions settle the same day._")
+    if active:
+        L.append("")
+        L.append("| Symbol | Profile | Put / Call strikes | Width | Net credit | Short-call Δ | Call OTM | IV rank | Net P&L |")
+        L.append("|---|---|---|---|---|---|---|---|---|")
+        for r in active:
+            up = r.get("underlying_price_entry")
+            call_otm = f"{((r['call_strike'] - up) / up * 100):.2f}%" if up and r.get("call_strike") else "-"
+            cd = f"{r['call_delta_at_entry']:.2f}" if r.get("call_delta_at_entry") is not None else "-"
+            ivr = f"{r['iv_rank_at_entry'] * 100:.0f}%" if r.get("iv_rank_at_entry") is not None else "-"
+            strikes = f"{r.get('put_strike', '-')} / {r.get('call_strike', '-')}"
+            L.append(f"| {r['symbol']} | {r.get('risk_profile', '-')} | {strikes} | "
+                     f"{r.get('wing_width', '-')} | {_money(r.get('net_credit'))} | {cd} | {call_otm} | "
+                     f"{ivr} | {_money(round(_net(r), 2))} |")
+    else:
+        L.append("")
+        L.append("_No open or closed positions to detail._")
+    L.append("")
+
+    # 3. Trade activity log ----------------------------------------------------
+    L.append("## 3. Trade activity log")
+    if active:
+        L.append("**Entries** (credit collected, fees at open):")
+        L.append("")
+        L.append("| Entry time | Symbol | Profile | Net credit | Open fees |")
+        L.append("|---|---|---|---|---|")
+        for r in active:
+            et = (r.get("entry_time") or "")[11:19] or (r.get("entry_time") or "-")
+            L.append(f"| {et} | {r['symbol']} | {r.get('risk_profile', '-')} | "
+                     f"{_money(r.get('net_credit'))} | {_money(r.get('fees'))} |")
+        if legs:
+            L.append("")
+            L.append("**Side exits** (per-side stops / settlements):")
+            L.append("")
+            L.append("| Exit time | Side | Reason | Exit price | Side P&L |")
+            L.append("|---|---|---|---|---|")
+            for lg in sorted(legs, key=lambda x: x.get("exit_time") or ""):
+                xt = (lg.get("exit_time") or "")[11:19] or (lg.get("exit_time") or "-")
+                px = f"{lg['exit_price']:.2f}" if lg.get("exit_price") is not None else "-"
+                L.append(f"| {xt} | {lg.get('side', '-')} | {lg.get('exit_reason', '-')} | {px} | "
+                         f"{_money(lg.get('pnl'))} |")
+    else:
+        L.append("_No fills - nothing to log._")
+    L.append("")
+
+    # 4. Risk metrics ----------------------------------------------------------
+    L.append("## 4. Risk metrics")
+    if active:
+        # Net position delta at entry: short legs contribute the negative of the option's delta.
+        net_delta = 0.0
+        have_delta = False
+        for r in active:
+            q = r.get("quantity") or 1
+            parts = [
+                (-1, r.get("call_delta_at_entry")), (-1, r.get("put_delta_at_entry")),
+                (1, r.get("long_call_delta_at_entry")), (1, r.get("long_put_delta_at_entry")),
+            ]
+            for sign, d in parts:
+                if d is not None:
+                    net_delta += sign * d * q
+                    have_delta = True
+        max_loss = sum(((r.get("wing_width") or 0) - (r.get("net_credit") or 0)) * (r.get("dollar_multiplier") or 100) * (r.get("quantity") or 1) for r in active)
+        max_gain = sum((r.get("net_credit") or 0) * (r.get("dollar_multiplier") or 100) * (r.get("quantity") or 1) for r in active)
+        delta_txt = f"**{_signed(net_delta)}** (short legs negated; near zero = the book entered delta-balanced)" if have_delta else "not available (entry greeks missing)"
+        L.append(f"- Net position delta at entry: {delta_txt}.")
+        L.append(f"- Defined risk on the book: max loss **{_money(round(max_loss, 2))}**, max credit "
+                 f"**{_money(round(max_gain, 2))}** (wing width minus credit, times the multiplier - "
+                 f"paper carries no NLV/buying-power basis, so defined risk stands in for margin used).")
+        conc = ", ".join(f"{s} {len([r for r in active if r['symbol'] == s])} IC(s), {_money(round(v, 2))}"
+                         for s, v in sorted(by_symbol.items()))
+        L.append(f"- Concentration by underlying: {conc}.")
+        if len(by_symbol) == 1:
+            L.append("  - Single-underlying day: all risk sat in one name (no cross-symbol diversification, "
+                     "but also no correlated double-up).")
+    else:
+        L.append("- No open risk - the book is flat.")
+    L.append("")
+
+    # 5. Market context --------------------------------------------------------
+    L.append("## 5. Market context")
+    if today_ctx and today_ctx.get("vix") is not None:
+        vix = today_ctx["vix"]
+        dv = f" ({_signed(vix - prior_ctx['vix'])} vs the prior session)" if (prior_ctx and prior_ctx.get("vix") is not None) else ""
+        line = f"VIX sat around **{vix:.1f}**{dv}."
+        if today_ctx.get("vix1d_ratio") is not None:
+            line += f" VIX1D/VIX ratio {today_ctx['vix1d_ratio']:.2f} (>1.30 flags an event-day regime)."
+        L.append(line)
+        try:
+            syms = json.loads(today_ctx.get("symbols_json") or "{}")
+            prior_syms = json.loads(prior_ctx.get("symbols_json") or "{}") if prior_ctx else {}
+        except (TypeError, ValueError):
+            syms, prior_syms = {}, {}
+        for s, info in sorted(syms.items()):
+            px = info.get("price")
+            ivr = info.get("iv_rank")
+            move = ""
+            if px is not None and prior_syms.get(s, {}).get("price"):
+                pv = prior_syms[s]["price"]
+                move = f", {((px - pv) / pv * 100):+.2f}% vs prior close" if pv else ""
+            ivr_txt = f"IV rank {ivr * 100:.0f}%" if ivr is not None else "IV rank -"
+            L.append(f"- {s}: last ~{px}{move}; {ivr_txt}.")
+    else:
+        L.append("No market-context snapshot was captured for this session (the loop records VIX / VIX1D / "
+                 "per-symbol IV rank each iteration - none landed, e.g. a backfilled or pre-capture day).")
+    try:
+        d = datetime.strptime(day, "%Y-%m-%d").date()
+        catalysts = []
+        if _cal.is_fomc_day(d):
+            catalysts.append("FOMC decision day")
+        if _cal.is_triple_witching(d):
+            catalysts.append("triple-witching expiry")
+        elif _cal.is_quarterly_expiry(d):
+            catalysts.append("quarterly expiry")
+        if catalysts:
+            L.append(f"- Calendar catalyst: {', '.join(catalysts)} - the loop applies its blackout / "
+                     "tightened-gate rules on these dates.")
+    except ValueError:
+        pass
+    L.append("")
+
+    # 6. Tax / accounting notes ------------------------------------------------
+    L.append("## 6. Tax / accounting notes")
+    L.append("_Informational only - not tax advice. Paper book, so nothing here is a real taxable event._")
+    if active:
+        syms = sorted({r["symbol"] for r in active})
+        s1256 = [s for s in syms if s in cash_settled]
+        equity = [s for s in syms if s not in cash_settled]
+        if s1256:
+            L.append(f"- **Section 1256** (broad-based cash-settled index options): {', '.join(s1256)}. "
+                     "These mark-to-market at 60% long-term / 40% short-term regardless of holding period "
+                     "and are exempt from the wash-sale rule.")
+        if equity:
+            L.append(f"- **Equity-option treatment** (not 1256): {', '.join(equity)}. Ordinary "
+                     "short-term/long-term rules apply and wash-sale can bite on repeated same-name losses.")
+        L.append("- Holding period: every position is 0DTE (opened and settled same day) - short-term / "
+                 "intraday across the board.")
+    else:
+        L.append("- No positions - no lots to classify.")
+    L.append("")
+
+    # 7. Notes / journal -------------------------------------------------------
+    L.append("## 7. Notes / journal")
+    if not active:
+        L.append("- Quiet by design. Worth a glance at the loop log to confirm the gates that fired match "
+                 "the day's conditions (a flat day and a silently-broken entry check look identical in P&L).")
+    else:
+        # Which exit reasons dominated, and on which side.
+        exit_counts = {}
+        side_counts = {"put": 0, "call": 0}
+        for lg in legs:
+            exit_counts[lg.get("exit_reason") or "?"] = exit_counts.get(lg.get("exit_reason") or "?", 0) + 1
+            if lg.get("side") in side_counts:
+                side_counts[lg["side"]] += 1
+        if exit_counts:
+            top = max(exit_counts.items(), key=lambda kv: kv[1])
+            L.append(f"- Exits were dominated by **{top[0]}** ({top[1]} of {sum(exit_counts.values())} side "
+                     f"exits). Put-side stops: {side_counts['put']}, call-side: {side_counts['call']}.")
+            if side_counts["call"] > side_counts["put"] and side_counts["call"] >= 2:
+                L.append("  - Call side did most of the stopping - consistent with an up-drift pressing the "
+                         "short calls. Wider call OTM (or the VIX-band delta scale) is the lever if this repeats.")
+            elif side_counts["put"] > side_counts["call"] and side_counts["put"] >= 2:
+                L.append("  - Put side did most of the stopping - a down-move pressed the short puts.")
+        else:
+            L.append("- No side stops fired - the ICs rode to settlement (the intended path for cash-settled "
+                     "names with an OTM close).")
+        if gross > 0 and fees / gross > 0.30:
+            L.append(f"- **Recommendation:** fees ate {(fees / gross * 100):.0f}% of gross - lean toward wider "
+                     "widths / fewer narrow entries, where the fixed per-contract fee is a smaller drag.")
+        if avg_loss is not None and avg_win is not None and abs(avg_loss) > 2 * avg_win:
+            L.append("- **Recommendation:** average loser is more than 2x the average winner - the stop is "
+                     "letting losses run relative to the credit; revisit stop_trigger_ratio for these profiles.")
+        if net_total < 0 and not wins:
+            L.append("- Every fill lost today. One session is noise, but if the pattern holds, check whether "
+                     "entries are clearing the fee-adjusted credit floor with real margin.")
+    L.append("")
+    L.append(f"_Generated {_now_et().strftime('%Y-%m-%d %H:%M:%S %Z')} · paper DB only; live account "
+             "untouched. Companion to paper-eod-" + day + ".md._")
+
+    path = _analysis_path(day)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(L), encoding="utf-8")
+    return path
+
+
 def run_iteration(cfg, force=False):
     now = _now_et()
     if not force and not _is_trading_time(now, cfg):
@@ -451,11 +737,13 @@ def run_iteration(cfg, force=False):
     session = _session_quality(now)
 
     summary = {}
+    mkt_symbols = {}  # per-symbol price + IV rank snapshot for the EOD market-context capture
     for symbol in _symbols(cfg):
         price, ivr = _fetch_overview(symbol)
         if price is None:
             summary[symbol] = {"error": "no price"}
             continue
+        mkt_symbols[symbol] = {"price": price, "iv_rank": ivr}
         widths = paper.union_widths_for_symbol(symbol, cfg, profiles)
         extra_deltas = paper.union_short_deltas_for_symbol(symbol, cfg, profiles)
         delta_targets = [delta_target] + [d for d in extra_deltas if abs(d - delta_target) > 1e-9]
@@ -494,6 +782,21 @@ def run_iteration(cfg, force=False):
         pass
     logger.info("%s", reason)
 
+    # Capture a per-day market-context snapshot (VIX / VIX1D / per-symbol price+IV rank) for the EOD
+    # analysis report. Once per iteration, upserted — the last write of the session lands closest to
+    # the close. Best-effort and stdlib/DB-only: it never blocks or fails the iteration.
+    try:
+        ctx_cmd = _DB + ["save_market_context", "--date", today, "--symbols", json.dumps(mkt_symbols)]
+        if vix is not None:
+            ctx_cmd += ["--vix", str(vix)]
+        if vix1d is not None:
+            ctx_cmd += ["--vix1d", str(vix1d)]
+        if vix1d_ratio is not None:
+            ctx_cmd += ["--vix1d_ratio", str(vix1d_ratio)]
+        _subrun(ctx_cmd)
+    except Exception:
+        pass
+
     # Once-per-day EOD report, written on the first pass at/after the settlement time (16:00),
     # i.e. after positions have settled. The file-exists guard makes it fire exactly once even
     # though the daemon keeps ticking through the 16:00–16:05 settlement window.
@@ -504,6 +807,12 @@ def run_iteration(cfg, force=False):
             logger.info("wrote EOD report: %s", p)
         except Exception as exc:
             logger.warning("EOD report failed: %s", exc)
+        # Companion conversational analysis, written the same once-per-day pass (guarded on its own file).
+        try:
+            pa = _write_eod_analysis(today)
+            logger.info("wrote EOD analysis: %s", pa)
+        except Exception as exc:
+            logger.warning("EOD analysis failed: %s", exc)
     return summary
 
 
@@ -741,8 +1050,11 @@ def main():
     parser.add_argument("--force", action="store_true",
                         help="With --once, run even outside market hours (for testing)")
     parser.add_argument("--eod-report", action="store_true",
-                        help="Write the deterministic end-of-day paper report now (regenerates)")
-    parser.add_argument("--date", default=None, help="With --eod-report, the day (YYYY-MM-DD); default today")
+                        help="Write the deterministic paper report AND the conversational analysis now (regenerates both)")
+    parser.add_argument("--eod-analysis", action="store_true",
+                        help="Write only the conversational 7-section EOD analysis now (regenerates)")
+    parser.add_argument("--date", default=None,
+                        help="With --eod-report/--eod-analysis, the day (YYYY-MM-DD); default today")
     parser.add_argument("--_run", action="store_true", help=argparse.SUPPRESS)  # internal: the detached child
     args = parser.parse_args()
 
@@ -752,7 +1064,13 @@ def main():
     if args.eod_report:
         day = args.date or _now_et().strftime("%Y-%m-%d")
         path = _write_eod_report(day)
-        _emit({"ok": True, "report": str(path)})
+        analysis = _write_eod_analysis(day)
+        _emit({"ok": True, "report": str(path), "analysis": str(analysis)})
+        return
+    if args.eod_analysis:
+        day = args.date or _now_et().strftime("%Y-%m-%d")
+        analysis = _write_eod_analysis(day)
+        _emit({"ok": True, "analysis": str(analysis)})
         return
     if args.stop:
         _cmd_stop()

@@ -289,7 +289,259 @@ def _write_eod_report(day: str) -> Path:
 def cmd_eod_report(args) -> dict:
     day = args.date or _date.today().isoformat()
     path = _write_eod_report(day)
-    return {"ok": True, "date": day, "report": str(path)}
+    analysis = _write_eod_analysis(day)
+    return {"ok": True, "date": day, "report": str(path), "analysis": str(analysis)}
+
+
+# ---------------------------------------------------------------------------
+# EOD analysis report -- conversational, 7-section, still fully deterministic
+# ---------------------------------------------------------------------------
+
+def _analysis_path(day: str) -> Path:
+    return _logs_dir() / f"eod-analysis-{day}.md"
+
+
+def _signed(x) -> str:
+    return f"+{x:.2f}" if x is not None and x >= 0 else (f"{x:.2f}" if x is not None else "?")
+
+
+def _write_eod_analysis(day: str) -> Path:
+    """Write a conversational 7-section end-of-day analysis for `day` to logs/eod-analysis-<day>.md.
+    Deterministic templated prose (no agent/LLM/network) so the scheduled close pass can write it
+    unattended, sitting alongside the terse paper-eod-<day>.md. Reads the same paper book through
+    strategy_metrics, so its numbers reconcile with strategy_report.py and the suite digest. Scoped
+    to trades whose close session (see _close_session) is `day`."""
+    trades = [t for t in metrics.load_closed_trades() if _close_session(t) == day]
+    try:
+        config = scanner._load_config(TEST_PROFILE)
+    except Exception:
+        config = {}
+    block_list = config.get("correlation_block_list", []) or []
+
+    nets = [metrics.net_pnl(t) for t in trades]
+    gross = sum(t.get("pnl") or 0.0 for t in trades)
+    costs_total = sum((t.get("entry_cost") or 0.0) + (t.get("exit_cost") or 0.0) for t in trades)
+    net_total = sum(nets)
+    wins = [n for n in nets if n > 0]
+    losses = [n for n in nets if n <= 0]
+    avg_win = sum(wins) / len(wins) if wins else None
+    avg_loss = sum(losses) / len(losses) if losses else None
+    by_symbol = {}
+    for t in trades:
+        by_symbol[t["symbol"]] = by_symbol.get(t["symbol"], 0.0) + metrics.net_pnl(t)
+    crush = metrics.avg_iv_crush(trades)
+
+    def _entry_ctx(t):
+        # load_closed_trades already parses entry_context into a dict; tolerate a raw string too.
+        ec = t.get("entry_context")
+        if isinstance(ec, dict):
+            return ec
+        try:
+            return json.loads(ec or "{}")
+        except (TypeError, ValueError):
+            return {}
+
+    L = [f"# Earnings Paper - EOD Analysis {day}", ""]
+    L.append("_Plain-English read on the forced-sampling paper book (strat_test). Auto-generated from the "
+             "paper DB (no agent) - conversational, but rule-based, not a hand-written synthesis. Defined-risk "
+             "strategies only; each position opens one afternoon and closes the next morning. Scoped to trades "
+             "that settled (closed) this session; P&L is net of entry+exit costs._")
+    L.append("")
+
+    # 1. Executive snapshot ----------------------------------------------------
+    L.append("## 1. Executive snapshot")
+    if not trades:
+        L.append("Flat session - nothing settled this morning. Either no names qualified into the book last "
+                 "afternoon, or none were held into this close. A quiet book is a decision, not a gap - the "
+                 "scan_log shows which names were evaluated and why they were passed.")
+    else:
+        best = max(by_symbol.items(), key=lambda kv: kv[1])
+        worst = min(by_symbol.items(), key=lambda kv: kv[1])
+        wr = f"{len(wins) / len(trades) * 100:.0f}%" if trades else "-"
+        drag = f", after {_money(round(costs_total, 2))} in costs ({(costs_total / gross * 100):.0f}% of the {_money(round(gross, 2))} gross)" if gross > 0 else f", with {_money(round(costs_total, 2))} of costs on top of a losing gross"
+        L.append(
+            f"**{len(trades)}** position{'s' if len(trades) != 1 else ''} closed out this session for "
+            f"**{_money(round(net_total, 2))}** net ({len(wins)} up, {len(losses)} down, win rate {wr}){drag}.")
+        line = "Average winner " + (_money(round(avg_win, 2)) if avg_win is not None else "-")
+        line += ", average loser " + (_money(round(avg_loss, 2)) if avg_loss is not None else "-") + "."
+        if best[0] != worst[0]:
+            line += f" {best[0]} was the standout ({_money(round(best[1], 2))}); {worst[0]} the drag ({_money(round(worst[1], 2))})."
+        L.append(line)
+    L.append("")
+
+    # 2. Position-level detail -------------------------------------------------
+    L.append("## 2. Position-level detail")
+    L.append("_Defined-risk earnings structures. Capital at risk is the known max loss set at entry; the IV "
+             "crush column is the entry-to-exit drop in the sold legs' implied vol - the edge these plays harvest._")
+    if trades:
+        L.append("")
+        L.append("| Symbol | Strategy | Legs | Qty | Max loss (cap@risk) | Entry IV | Exit IV | IV crush | Net P&L |")
+        L.append("|---|---|---|---|---|---|---|---|---|")
+        for t in trades:
+            try:
+                nlegs = len(json.loads(t.get("legs_json") or "[]"))
+            except (TypeError, ValueError):
+                nlegs = "-"
+            ivc = metrics.iv_crush(t)
+            ei = f"{t['entry_iv']:.1f}" if t.get("entry_iv") is not None else "-"
+            xi = f"{t['exit_iv']:.1f}" if t.get("exit_iv") is not None else "-"
+            ivc_txt = _signed(ivc) if ivc is not None else "-"
+            L.append(f"| {t['symbol']} | {t.get('strategy', '-')} | {nlegs} | {t.get('quantity', '-')} | "
+                     f"{_money(t.get('capital_at_risk'))} | {ei} | {xi} | {ivc_txt} | "
+                     f"{_money(round(metrics.net_pnl(t), 2))} |")
+    else:
+        L.append("")
+        L.append("_No positions settled - nothing to detail._")
+    L.append("")
+
+    # 3. Trade activity log ----------------------------------------------------
+    L.append("## 3. Trade activity log")
+    if trades:
+        L.append("| Opened | Closed | Symbol | Strategy | Entry credit | Exit debit | Entry cost | Exit cost |")
+        L.append("|---|---|---|---|---|---|---|---|")
+        for t in sorted(trades, key=lambda x: x.get("opened_at") or 0):
+            def _ts(v):
+                try:
+                    return datetime.fromtimestamp(float(v)).strftime("%m-%d %H:%M")
+                except (TypeError, ValueError, OSError, OverflowError):
+                    return "-"
+            L.append(f"| {_ts(t.get('opened_at'))} | {_ts(t.get('closed_at'))} | {t['symbol']} | "
+                     f"{t.get('strategy', '-')} | {_money(t.get('entry_credit'))} | "
+                     f"{_money(t.get('exit_debit'))} | {_money(t.get('entry_cost'))} | "
+                     f"{_money(t.get('exit_cost'))} |")
+    else:
+        L.append("_No settlements - nothing to log._")
+    L.append("")
+
+    # 4. Risk metrics ----------------------------------------------------------
+    L.append("## 4. Risk metrics")
+    if trades:
+        total_risk = sum(t.get("capital_at_risk") or 0.0 for t in trades)
+        L.append(f"- Total capital that was at risk overnight (defined max loss, summed): "
+                 f"**{_money(round(total_risk, 2))}** across {len(trades)} position(s).")
+        conc = ", ".join(f"{s} {len([t for t in trades if t['symbol'] == s])} pos, {_money(round(v, 2))}"
+                         for s, v in sorted(by_symbol.items()))
+        L.append(f"- Concentration by name: {conc}.")
+        # Correlation groups from the block list (names that share overnight-gap risk).
+        groups = {}
+        for t in trades:
+            for i, grp in enumerate(block_list):
+                if t["symbol"] in grp:
+                    groups.setdefault(i, set()).add(t["symbol"])
+        collisions = {i: names for i, names in groups.items() if len(names) > 1}
+        if collisions:
+            for names in collisions.values():
+                L.append(f"  - Correlation flag: {', '.join(sorted(names))} sit in the same block-list group - "
+                         "the forced-sampling book intentionally ignores the correlation cap, so their overnight "
+                         "gap risk was effectively correlated (the live loop would not hold these together).")
+        else:
+            L.append("  - No two names shared a correlation block-list group - overnight risk was idiosyncratic per name.")
+    else:
+        L.append("- No positions - no overnight risk was carried.")
+    L.append("")
+
+    # 5. Market context --------------------------------------------------------
+    L.append("## 5. Market context")
+    mctx = db_paper.cmd_get_market_context(argparse.Namespace(date=day))
+    today_ctx, prior_ctx = mctx.get("today"), mctx.get("prior")
+    if today_ctx and today_ctx.get("vix") is not None:
+        dv = f" ({_signed(today_ctx['vix'] - prior_ctx['vix'])} vs the prior capture, roughly entry-evening)" if (prior_ctx and prior_ctx.get("vix") is not None) else ""
+        L.append(f"VIX at this close sat around **{today_ctx['vix']:.1f}**{dv}.")
+    else:
+        L.append("No VIX snapshot was captured around this session (best-effort capture; the per-name IV crush "
+                 "below is the volatility signal that actually matters for these plays).")
+    if crush["sample_count"]:
+        direction = "fell as expected (the post-earnings crush paid)" if crush["avg_crush"] and crush["avg_crush"] > 0 else "actually rose (no crush - the move outran the vol drop)"
+        L.append(f"- Average IV crush across the {crush['sample_count']} measured position(s): "
+                 f"**{_signed(crush['avg_crush'])}** vol points - implied vol {direction}.")
+    ivrvs = [c.get("iv_rv_ratio") for c in (_entry_ctx(t) for t in trades) if c.get("iv_rv_ratio") is not None]
+    if ivrvs:
+        L.append(f"- Entry edge: average IV/RV ratio at entry was {sum(ivrvs) / len(ivrvs):.2f} "
+                 "(>1 means options were pricing more move than the stock had realized - the setup these plays want).")
+    L.append("- Catalyst: each position's own earnings release overnight is the event - there is no shared "
+             "market catalyst across names the way an index book has.")
+    L.append("")
+
+    # 6. Tax / accounting notes ------------------------------------------------
+    L.append("## 6. Tax / accounting notes")
+    L.append("_Informational only - not tax advice. Paper book, so nothing here is a real taxable event._")
+    if trades:
+        L.append("- **Equity-option treatment** (not Section 1256): these are single-name equity options, so "
+                 "ordinary short-term/long-term capital-gains rules apply - not the 60/40 mark-to-market that "
+                 "broad-based index options get.")
+        L.append("- Holding period: opened one afternoon, closed the next morning - **short-term** across the board.")
+        loss_names = {}
+        for t in trades:
+            if metrics.net_pnl(t) <= 0:
+                loss_names[t["symbol"]] = loss_names.get(t["symbol"], 0) + 1
+        repeats = [s for s, n in loss_names.items() if n > 1]
+        if repeats:
+            L.append(f"- **Wash-sale watch**: {', '.join(sorted(repeats))} closed at a loss more than once this "
+                     "session - repeated same-name losses within 30 days are where the wash-sale rule can defer a "
+                     "loss (equity options, unlike 1256, are subject to it).")
+    else:
+        L.append("- No positions - no lots to classify.")
+    L.append("")
+
+    # 7. Notes / journal -------------------------------------------------------
+    L.append("## 7. Notes / journal")
+    if not trades:
+        L.append("- Nothing settled. Worth confirming the entry pass actually ran last afternoon (a scan that "
+                 "found no candidates and a scan that silently failed look identical here).")
+    else:
+        by_strategy = {}
+        for t in trades:
+            by_strategy.setdefault(t.get("strategy", "?"), []).append(metrics.net_pnl(t))
+        strat_net = {s: sum(v) for s, v in by_strategy.items()}
+        best_s = max(strat_net.items(), key=lambda kv: kv[1])
+        worst_s = min(strat_net.items(), key=lambda kv: kv[1])
+        L.append(f"- Best strategy today: **{best_s[0]}** ({_money(round(best_s[1], 2))}); weakest: "
+                 f"**{worst_s[0]}** ({_money(round(worst_s[1], 2))}).")
+        if crush["sample_count"] and crush["avg_crush"] is not None:
+            if crush["avg_crush"] > 0 and net_total > 0:
+                L.append("- The thesis held: IV crushed and the book kept the premium. Textbook earnings-vol session.")
+            elif crush["avg_crush"] <= 0:
+                L.append("- **Recommendation:** IV rose rather than crushed - the stocks moved more than the vol "
+                         "gave back. If this recurs, the entry IV/RV bar may be too low for the current regime.")
+        if gross > 0 and costs_total / gross > 0.30:
+            L.append(f"- **Recommendation:** costs ate {(costs_total / gross * 100):.0f}% of gross - these are "
+                     "small defined-risk plays where the fixed per-contract fee bites; favor higher-conviction, "
+                     "better-liquidity names to keep the cost share down.")
+        if avg_loss is not None and avg_win is not None and abs(avg_loss) > 2 * (avg_win or 0):
+            L.append("- **Recommendation:** the average loser is more than 2x the average winner - defined risk "
+                     "capped the damage, but the win/loss asymmetry says the losers are running to their max. "
+                     "Consider earlier profit-taking or tighter names.")
+    L.append("")
+    L.append(f"_Generated {datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')} · paper DB only; "
+             "live account untouched. Companion to paper-eod-" + day + ".md._")
+
+    path = _analysis_path(day)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(L), encoding="utf-8")
+    return path
+
+
+def cmd_eod_analysis(args) -> dict:
+    day = args.date or _date.today().isoformat()
+    path = _write_eod_analysis(day)
+    return {"ok": True, "date": day, "analysis": str(path)}
+
+
+def _capture_market_context(day: str) -> None:
+    """Best-effort VIX snapshot for the EOD analysis report, keyed on the action date. Never a
+    trading input and never fails the pass -- earnings' real volatility signal is per-name IV crush;
+    this only colors the market-context section with the overnight index move. The report reads the
+    close-session row plus the prior day's row (roughly entry-evening VIX) for the overnight delta."""
+    try:
+        q = scanner.call_tt(["get_quote", "--symbol", "VIX"])
+        vix = q.get("price") if isinstance(q, dict) and q.get("ok") else None
+        if vix is None:
+            return
+        db_paper.cmd_save_market_context(argparse.Namespace(data=json.dumps({
+            "context_date": day, "vix": vix, "updated_at": time.time(),
+        })))
+    except Exception:
+        pass
 
 
 def cmd_run_entries(args) -> dict:
@@ -305,6 +557,7 @@ def cmd_run_entries(args) -> dict:
 
     calendar = scanner.fetch_entry_window_calendar(config)
     scan_date = str(_date.today())
+    _capture_market_context(scan_date)  # entry-evening VIX for the next close session's analysis
 
     opened: list[dict] = []
     skipped: list[dict] = []
@@ -404,6 +657,7 @@ def cmd_run_closes(args) -> dict:
         return {"ok": False, "error": "tastytrade connection failed"}
 
     config = scanner._load_config(args.profile)
+    _capture_market_context(_date.today().isoformat())  # close-session morning VIX for the analysis
     positions = db_paper.cmd_get_open_positions(argparse.Namespace())["positions"]
     positions = [p for p in positions if p.get("profile") == TEST_PROFILE]
 
@@ -469,6 +723,11 @@ def cmd_run_closes(args) -> dict:
             _write_eod_report(today)
         except Exception:
             pass
+        # Companion conversational analysis, written the same once-per-day pass.
+        try:
+            _write_eod_analysis(today)
+        except Exception:
+            pass
 
     return {"ok": True, "closed": closed, "skipped": skipped}
 
@@ -487,11 +746,15 @@ def main() -> None:
     p_eod = sub.add_parser("eod_report")
     p_eod.add_argument("--date", default=None, help="Close-session day (YYYY-MM-DD); default today")
 
+    p_eoda = sub.add_parser("eod_analysis")
+    p_eoda.add_argument("--date", default=None, help="Close-session day (YYYY-MM-DD); default today")
+
     args = parser.parse_args()
     dispatch = {
         "run_entries": cmd_run_entries,
         "run_closes": cmd_run_closes,
         "eod_report": cmd_eod_report,
+        "eod_analysis": cmd_eod_analysis,
     }
     result = dispatch[args.command](args)
     json.dump(result, sys.stdout, default=str)

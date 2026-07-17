@@ -1,0 +1,13 @@
+{
+  "name": "cherrypick-orchestrator-browser-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Headless-browser tests for the orchestrator dashboard (drag-to-reorder + collapsible sections).",
+  "type": "module",
+  "scripts": {
+    "test": "node dashboard.browser.test.mjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "^23.0.0"
+  }
+}
