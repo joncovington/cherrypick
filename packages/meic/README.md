@@ -1,13 +1,15 @@
 # cherrypick-meic
 
-> **The MEIC module of the [cherrypick](../../README.md) suite.** cherrypick is a monorepo of trading modules
-> driven by a shared **orchestrator** orchestrator. This package (`packages/meic`) is the 0DTE iron-condor engine;
-> its siblings are [`packages/earnings`](../earnings) (overnight earnings plays) and
-> [`packages/orchestrator`](../orchestrator) (the orchestrator). It can run standalone from this folder for live /
-> interactive trading, or unattended for paper collection — where the orchestrator drives it by subprocess
-> (`cherrypick install`), never by import. See [How this fits the suite](#how-this-fits-the-suite) below.
+> **The MEIC module of the [cherrypick](../../README.md) suite.** cherrypick is a monorepo of trading
+> modules driven by a shared **orchestrator**. This package (`packages/meic`) is the 0DTE iron-condor
+> engine; its siblings are [`packages/earnings`](../earnings) (overnight earnings plays),
+> [`packages/gex`](../gex) (the gamma-exposure dashboard), and [`packages/orchestrator`](../orchestrator)
+> (the orchestrator). It can run standalone from this folder for live / interactive trading, or unattended
+> for paper collection — where the orchestrator drives it by subprocess (`cherrypick install`), never by
+> import. See [How this fits the suite](#how-this-fits-the-suite) below, this module's own
+> [docs/](docs/README.md), and the suite-wide [documentation index](../../docs/README.md).
 
-An autonomous options trading agent running the **Multiple Entry Iron Condor (MEIC)** strategy on 0DTE index options. Rather than a traditional rules-only trading-bot framework, the agent itself runs the decision loop every few minutes during market hours, reading live market data, checking a stack of risk gates, and deciding whether to enter, hold, or close positions. It runs inside **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** (Anthropic's CLI coding assistant), which executes the operating instructions in `CLAUDE.md` and the skills in `.claude/commands/`. It talks to tastytrade directly via their official Python SDK (OAuth2, no middleman broker API). Live trading is gated behind an explicit config flag and defaults to dry-run.
+An autonomous options trading agent running the **Multiple Entry Iron Condor (MEIC)** strategy on 0DTE index options. Rather than a traditional rules-only trading-bot framework, the agent itself runs the decision loop every few minutes during market hours, reading live market data, checking a stack of risk gates, and deciding whether to enter, hold, or close positions. It runs inside **[Claude Code](https://docs.claude.com/en/docs/claude-code)** (Anthropic's agentic CLI), which executes the operating instructions in `CLAUDE.md` and the skills in `.claude/commands/`. It talks to tastytrade directly via their official Python SDK (OAuth2, no middleman broker API). Live trading is gated behind an explicit config flag and defaults to dry-run.
 
 Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`** library, vendored per package as the `src/_core` git submodule — so a fresh clone must pull submodules (`--recurse-submodules`, or `git submodule update --init --recursive`) before any `import cherrypick.core...` resolves.
 
@@ -250,12 +252,13 @@ cherrypick/
         ├── streamer.log             # Streamer daemon log
         ├── paper_loop.log           # Paper daemon log
         ├── dashboard.log            # Dashboard server log
-        ├── eod-<date>.md            # Daily live end-of-day report
-        └── paper-eod-<date>.md      # Daily paper end-of-day report
+        ├── eod-<date>.md            # Daily live end-of-day report (agent-synthesized)
+        ├── paper-eod-<date>.md      # Daily paper end-of-day report (deterministic metrics)
+        └── eod-analysis-<date>.md   # Daily paper 7-section conversational analysis (deterministic)
 ```
 
 Runtime **data** does not live in the package — it's kept in the shared cherrypick data home so the
-umbrella and this module read the same files. Resolved by [`src/paths.py`](src/paths.py):
+orchestrator and this module read the same files. Resolved by [`src/paths.py`](src/paths.py):
 
 ```
 ~/.cherrypick/data/meic/             # default; override with the MEIC_DATA_DIR env var

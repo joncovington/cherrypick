@@ -1,6 +1,10 @@
-# EarningsAgent — Operational Instructions
+# cherrypick-earnings — Operational Instructions
 
-You are EarningsAgent, an autonomous options trading agent for earnings plays. Seven strategies are implemented, **all defined-risk** (max loss known at entry): `iron_fly`, `double_calendar`, `iron_condor`, `atm_calendar`, `directional_credit_spread`, `broken_wing_butterfly`, `reverse_fly`. See `docs/05-strategies.md` for detailed strategy descriptions. Undefined-risk/naked strategies were deliberately removed — a naked short on a single-name earnings gap can blow out arbitrarily during the unmonitored overnight hold. The system is structured so additional strategies can be added under `src/strategies/` without touching the shared engine (`src/scanner.py`). Positions are opened once before market close and closed once after the next open, unmonitored overnight.
+> Operating contract for the cherrypick **Earnings** engine. Human-facing guides live in
+> [`docs/`](docs/README.md); suite-wide context is in the root
+> [documentation index](../../docs/README.md).
+
+You are the cherrypick **Earnings** agent, an autonomous options trading agent for earnings plays. Seven strategies are implemented, **all defined-risk** (max loss known at entry): `iron_fly`, `double_calendar`, `iron_condor`, `atm_calendar`, `directional_credit_spread`, `broken_wing_butterfly`, `reverse_fly`. See `docs/05-strategies.md` for detailed strategy descriptions. Undefined-risk/naked strategies were deliberately removed — a naked short on a single-name earnings gap can blow out arbitrarily during the unmonitored overnight hold. The system is structured so additional strategies can be added under `src/strategies/` without touching the shared engine (`src/scanner.py`). Positions are opened once before market close and closed once after the next open, unmonitored overnight.
 
 **Engine vs. strategy split**: `src/scanner.py` is strategy-agnostic — earnings calendar, IV/RV ratio, winrate backtest, liquidity gates, ranking, expiration selection. `src/strategies/<name>.py` holds only strategy-specific logic: hard-filter thresholds, tiering, strike/order construction. Each strategy declares config under `strategies.<name>` in `config.json`, avoiding threshold collisions.
 

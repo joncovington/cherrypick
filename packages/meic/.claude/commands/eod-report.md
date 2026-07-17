@@ -1,4 +1,4 @@
-Produce the end-of-day report(s) for MEICAgent. Reproduces the **live** report, the **paper** report, or both.
+Produce the end-of-day report(s) for MEIC. Reproduces the **live** report, the **paper** report, or both.
 
 ## Scope
 

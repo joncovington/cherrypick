@@ -1,4 +1,4 @@
-Start the full MEICAgent session: streamer and agent loop.
+Start the full MEIC session: streamer and agent loop.
 
 ## Step 1 — DXLink Streamer
 
