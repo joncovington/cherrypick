@@ -216,17 +216,23 @@ def _eod_view(cfg: dict[str, Any], modules_cfg: dict[str, Any], tz: str) -> dict
     # Reports are written under the per-user logs home (~/.cherrypick/logs/<name>/), not the package
     # checkout — resolve them there via module_logs_dir, or the existence check always misses.
     files = {}
+    analysis = {}
     for name in modules_cfg:
         p = cfgmod.module_logs_dir(name) / f"paper-eod-{session}.md"
         files[name] = str(p) if p.exists() else None
+        a = cfgmod.module_logs_dir(name) / f"eod-analysis-{session}.md"
+        analysis[name] = str(a) if a.exists() else None
     digest = cfgmod.log_file(f"eod-digest-{session}.md")
+    insight = cfgmod.log_file(f"eod-insight-{session}.md")
     return {
         "session": session,
         "is_today": session == today,
         "suite": rep.get("suite", {}),
         "modules": {n: rep.get("modules", {}).get(n, {}) for n in modules_cfg},
         "files": files,
+        "analysis": analysis,
         "digest": str(digest) if digest.exists() else None,
+        "insight": str(insight) if insight.exists() else None,
     }
 
 
@@ -416,24 +422,49 @@ def _eod_card_html(eod: dict[str, Any] | None, serve: bool = False) -> str:
         else '<div class="muted">no enabled modules</div>'
     )
     files = eod.get("files", {})
-    session = str(eod.get("session", ""))
+    analysis = eod.get("analysis", {})
+    sess = html.escape(str(eod.get("session", "")))
     bits = []
     for n, f in files.items():
         name = html.escape(str(n))
+        a = analysis.get(n)
+        links = []
+        # Each module surfaces its terse metrics report and its conversational analysis. When served
+        # both open in a new tab via /eod-report; on the static render they're existence markers.
         if f and serve:
-            bits.append(
-                f'<a href="/eod-report?module={name}&amp;session={html.escape(session)}" '
-                f'target="_blank" rel="noopener">{name} report ↗</a>'
+            links.append(
+                f'<a href="/eod-report?module={name}&amp;session={sess}" '
+                f'target="_blank" rel="noopener">metrics ↗</a>'
             )
         elif f:
-            bits.append(f'{name}: report ✓')  # static render: file exists but no server to open it
+            links.append("metrics ✓")
+        if a and serve:
+            links.append(
+                f'<a href="/eod-report?module={name}&amp;kind=analysis&amp;session={sess}" '
+                f'target="_blank" rel="noopener">analysis ↗</a>'
+            )
+        elif a:
+            links.append("analysis ✓")
+        if links:
+            bits.append(f"{name}: " + " / ".join(links))
         else:
-            bits.append(f'<span class="muted">{name}: no file yet</span>')
-    if eod.get("digest") and serve:
-        bits.append(
-            f'<a href="/eod-report?suite=1&amp;session={html.escape(session)}" '
-            'target="_blank" rel="noopener">suite digest ↗</a>'
-        )
+            bits.append(f'<span class="muted">{name}: no files yet</span>')
+    if eod.get("digest"):
+        if serve:
+            bits.append(
+                f'<a href="/eod-report?suite=1&amp;session={sess}" '
+                'target="_blank" rel="noopener">suite digest ↗</a>'
+            )
+        else:
+            bits.append("suite digest ✓")
+    if eod.get("insight"):
+        if serve:
+            bits.append(
+                f'<a href="/eod-report?insight=1&amp;session={sess}" '
+                'target="_blank" rel="noopener">AI insight ↗</a>'
+            )
+        else:
+            bits.append("AI insight ✓")
     files_line = f'<div class="meta">reports — {" · ".join(bits)}</div>' if bits else ""
     label = html.escape(str(eod.get("session", "")))
     if not eod.get("is_today", True):

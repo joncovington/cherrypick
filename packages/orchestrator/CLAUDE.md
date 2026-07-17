@@ -28,6 +28,7 @@ python run.py report         # unified cross-module paper P&L (read-only); --eod
 python run.py eod-digest     # write logs/eod-digest-<day>.md: one session's cross-module P&L + module paper-eod links
 python run.py notify-eod     # write the digest + push a one-line summary (the scheduled cherrypick-eod-digest task runs this)
 python run.py archive        # end-of-month rotation: zip each finished month's reports + rotated logs to logs/archive/ (--dry-run / --month YYYY-MM); scheduled monthly as cherrypick-log-archive
+python run.py eod-insight    # opt-in AI synthesis over the day's deterministic reports -> logs/eod-insight-<day>.md (needs Claude Code on PATH + eod_insight.enabled); scheduled daily as cherrypick-eod-insight
 python run.py dashboard      # regenerate the static status dashboard -> dashboard.html
 python run.py calibrate      # per-profile calibration readings + promotion recommendations
 python run.py migrate-home   # dry-run: move config files into ~/.cherrypick + sweep leftovers (--apply to perform)
@@ -69,7 +70,13 @@ resolved **relative to the config file's directory** — never hardcode absolute
   on that path must invoke it best-effort). `logrotate.py` (`cherrypick archive`) is the maintenance
   counterpart: a monthly `cherrypick-log-archive` task zips each finished month's reports + rotated logs
   into `logs/archive/<YYYY-MM>/<scope>.zip` and removes the originals (idempotent, never touches the
-  current month or an active `.log`) — also files-only and off the reliability path.
+  current month or an active `.log`) — also files-only and off the reliability path. `eod_insight.py`
+  (`cherrypick eod-insight`) is the one place AI is invoked, and it is deliberately fenced: **opt-in and
+  feature-detected** (`eod_insight.enabled` + Claude Code on PATH — off by default), it pipes the day's
+  deterministic reports to `claude -p` in headless mode with **no execution/edit/network tools** and
+  writes `eod-insight-<day>.md` (surfaced on the dashboard EOD card). It is a scheduled/enrichment
+  surface **off the watchdog reliability path**, best-effort, paper-reports-only — the deterministic
+  `eod-analysis` stays the source of record, so the "no AI on the reliability path" invariant holds.
 
 **Per-schema dispatch.** Each module's paper DB has a different schema, selected by
 `paper.trade_schema` in config (`"meic_ic"` → MEICAgent `ic_trades`; `"earnings"` → EarningsAgent
