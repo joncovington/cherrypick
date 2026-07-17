@@ -54,14 +54,16 @@ def test_success_writes_insight_file(tmp_path, monkeypatch):
 
     captured = {}
 
-    def fake_run(prompt, stdin_text, model, timeout):
+    def fake_run(prompt, stdin_text, model, timeout, research=False):
         captured["stdin"] = stdin_text
+        captured["research"] = research
         return {"ok": True, "text": "**Read:** the day went sideways.\n- widen call OTM"}
 
     monkeypatch.setattr(eod_insight, "_run_claude", fake_run)
     res = eod_insight.run({"eod_insight": {"enabled": True}, **_CFG}, day="2026-07-16")
 
     assert res["ok"] is True
+    assert captured["research"] is True  # research (upcoming-events) is on by default
     # The stdin fed to Claude concatenated all six deterministic files, labelled.
     for label in ("meic eod-analysis", "earnings paper-eod", "suite digest"):
         assert label in captured["stdin"]
@@ -80,16 +82,43 @@ def test_run_claude_forbids_dangerous_tools(monkeypatch):
         return types.SimpleNamespace(returncode=0, stdout="synthesis", stderr="")
 
     monkeypatch.setattr(eod_insight.subprocess, "run", fake_subprocess_run)
-    res = eod_insight._run_claude("prompt", "reports", None, 120)
+    res = eod_insight._run_claude("prompt", "reports", None, 120)  # research off (default)
 
     assert res == {"ok": True, "text": "synthesis"}
     cmd = seen["cmd"]
     assert cmd[:2] == ["claude", "-p"]
     assert "--output-format" in cmd and "text" in cmd
     assert "--disallowed-tools" in cmd
+    # Offline path: every dangerous tool AND WebSearch are denied; no tool is granted.
     for tool in ("Bash", "Edit", "Write", "WebFetch", "WebSearch", "Task"):
         assert tool in cmd
+    assert "--allowed-tools" not in cmd
     # Never bypass permissions.
     assert "--dangerously-skip-permissions" not in cmd
     # The pipe is forced to UTF-8 so non-cp1252 report characters (e.g. Δ) don't blow up on Windows.
     assert seen["kwargs"].get("encoding") == "utf-8"
+
+
+def test_run_claude_grants_only_websearch_when_researching(monkeypatch):
+    seen = {}
+
+    def fake_subprocess_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        return types.SimpleNamespace(returncode=0, stdout="synthesis", stderr="")
+
+    monkeypatch.setattr(eod_insight.subprocess, "run", fake_subprocess_run)
+    eod_insight._run_claude("prompt", "reports", None, 300, research=True)
+    cmd = seen["cmd"]
+    # WebSearch is granted (and bounded); the dangerous tools stay denied; WebSearch is NOT in the
+    # disallowed set on this path.
+    assert "--allowed-tools" in cmd and "WebSearch" in cmd
+    assert "--max-turns" in cmd
+    # The disallowed *tool names* run until the next flag; WebSearch must not be among them.
+    i = cmd.index("--disallowed-tools") + 1
+    disallowed = []
+    while i < len(cmd) and not cmd[i].startswith("--"):
+        disallowed.append(cmd[i])
+        i += 1
+    assert "Bash" in disallowed and "WebFetch" in disallowed
+    assert "WebSearch" not in disallowed
+    assert "--dangerously-skip-permissions" not in cmd

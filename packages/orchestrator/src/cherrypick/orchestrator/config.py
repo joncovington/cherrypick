@@ -198,6 +198,9 @@ def insight_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "at": ei.get("at", "16:20"),
         "model": ei.get("model"),
         "timeout_seconds": int(ei.get("timeout_seconds", 120)),
+        # When on (default), the insight may use WebSearch to research upcoming macro/earnings events for
+        # its forward-looking section. Set false for a purely offline, reports-only synthesis.
+        "research_events": ei.get("research_events", True),
     }
 
 
