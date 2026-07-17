@@ -246,6 +246,7 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
             criteria["avg_volume"] = avg_volume
             criteria["iv_rv_ratio"] = iv_rv_ratio
             criteria["winrate"] = winrate
+            criteria["winrate_sample_size"] = winrate_sample_size
 
             extra_fn = entry.get("extra_criteria_fn")
             if extra_fn is not None:

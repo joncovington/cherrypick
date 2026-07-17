@@ -116,11 +116,20 @@ def _meic_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
 # EarningsAgent's `trades` table keys on a text `order_id` (no integer id) and timestamps opens/closes
 # with `opened_at`/`closed_at` (epoch seconds). We watermark by remembering notified order_ids per
 # direction — earnings paper volume is a handful of trades a day, so the capped id lists never grow big.
+def _all_review_ids(conn) -> list:
+    """Every entry_reviews id (guarded — the table is absent on DBs predating the feature)."""
+    try:
+        return [r["id"] for r in conn.execute("SELECT id FROM entry_reviews").fetchall()]
+    except sqlite3.Error:
+        return []
+
+
 def _earnings_seed(conn) -> dict:
     rows = conn.execute("SELECT order_id, closed_at FROM trades").fetchall()
     return {
         "notified_entry_ids": [r["order_id"] for r in rows],
         "notified_exit_ids": [r["order_id"] for r in rows if r["closed_at"] is not None],
+        "notified_review_ids": _all_review_ids(conn),
     }
 
 
@@ -170,6 +179,48 @@ def _fmt_earnings_exit(r) -> str:
     return f"\U0001f534 Earnings paper EXIT — {r['symbol']} {strat} [{r['profile']}], P&L {pnl_str}"
 
 
+def _earnings_new_reviews(conn, notified_ids: set) -> list:
+    """New per-symbol entry reviews (id watermark). Guarded — the table is absent on older DBs."""
+    try:
+        rows = conn.execute(
+            "SELECT id, scan_date, symbol, timing, price, volume, winrate, winrate_sample, "
+            "iv_rv_ratio, term_structure, market_cap, expected_move, best_tier, selected, reason, "
+            "profile FROM entry_reviews ORDER BY id"
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    return [r for r in rows if r["id"] not in notified_ids]
+
+
+def _fmt_earnings_review(r) -> str:
+    """Per-symbol review summary — the data reviewed for entry plus the chosen/rejected decision, in the
+    bullet layout the account owner asked for."""
+    icon = "\U0001f7e2" if r["selected"] else "⚪"  # green vs white circle
+    decision = "chosen" if r["selected"] else "rejected"
+    timing = f" ({r['timing']})" if r["timing"] else ""
+    lines = [f"{icon} Earnings review — {r['symbol']}{timing}: {decision} — {r['reason']} [{r['profile']}]"]
+    if r["price"] is not None:
+        lines.append(f"• Price: ${r['price']:,.2f}")
+    if r["volume"] is not None:
+        lines.append(f"• Volume: {int(r['volume']):,}")
+    if r["winrate"] is not None:
+        wr = f"{r['winrate'] * 100:.1f}%"
+        if r["winrate_sample"] is not None:
+            wr += f" over last {int(r['winrate_sample'])} earnings"
+        lines.append(f"• Winrate: {wr}")
+    if r["iv_rv_ratio"] is not None:
+        lines.append(f"• IV/RV Ratio: {r['iv_rv_ratio']:.2f}")
+    if r["term_structure"] is not None:
+        lines.append(f"• Term Structure: {r['term_structure']:.3f}")
+    if r["market_cap"] is not None:
+        lines.append(f"• Market Cap: {int(r['market_cap']):,}")
+    if r["expected_move"] is not None:
+        lines.append(f"• Expected Move: ${r['expected_move']:,.2f}")
+    if r["best_tier"]:
+        lines.append(f"• Best tier: {r['best_tier']}")
+    return "\n".join(lines)
+
+
 def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     entered = set(st.get("notified_entry_ids", []))
     entries = _earnings_new_entries(conn, entered)
@@ -185,7 +236,16 @@ def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
         notified.add(r["order_id"])
     st["notified_exit_ids"] = list(notified)[-_ID_CAP:]
 
-    return {"entries_notified": len(entries), "exits_notified": len(exits)}
+    # Per-symbol entry reviews: the data reviewed for each symbol during the entry scan + the
+    # chosen/rejected decision. One push per symbol, id-watermarked like entries/exits.
+    reviewed = set(st.get("notified_review_ids", []))
+    reviews = _earnings_new_reviews(conn, reviewed)
+    for r in reviews:
+        notifier.notify("INFO", f"trade.{name}.review.{r['id']}", "Earnings review", _fmt_earnings_review(r))
+        reviewed.add(r["id"])
+    st["notified_review_ids"] = list(reviewed)[-_ID_CAP:]
+
+    return {"entries_notified": len(entries), "exits_notified": len(exits), "reviews_notified": len(reviews)}
 
 
 # Registry: paper.trade_schema -> (seed_fn, process_fn). Schemas not listed here skip cleanly.
