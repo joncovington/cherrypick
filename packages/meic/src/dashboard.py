@@ -765,11 +765,16 @@ nav{flex:1;padding:10px 0}
 .atable td{padding:5px 8px;border-bottom:1px solid #111519;text-align:right;color:#e6edf3}
 .atable td:first-child{text-align:left;color:#8b949e}
 .atable tr:last-child td{border-bottom:none}
-.fee-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* Card grid: auto-fit so cards reflow to as many columns as the viewer's width allows
+   (4 across when wide, down to 1 when narrow) with no fixed breakpoints. */
+.fee-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
 .fee-card{padding:10px 12px;background:#111519;border-radius:5px}
 .fee-lbl{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
 .fee-val{font-size:17px;font-weight:700;color:#e6edf3}
 .fee-val.neg{color:#e8423a}.fee-val.warn{color:#f5a623}
+
+/* Two-panel analytics grid: side-by-side when there's room, stacked on narrow viewports. */
+@media (max-width:820px){.ana-grid{grid-template-columns:1fr}}
 
 </style>
 </head>
@@ -981,7 +986,7 @@ nav{flex:1;padding:10px 0}
     <div class="frame" style="flex:0 0 auto">
       <div class="frame-hdr"><span class="frame-title">Risk-Adjusted Metrics</span>
         <span class="frame-sub" id="perf-overfit-note"></span></div>
-      <div class="fee-grid" style="grid-template-columns:repeat(4,1fr);padding:14px 18px 18px">
+      <div class="fee-grid" style="padding:14px 18px 18px">
         <div class="fee-card"><div class="fee-lbl">Sharpe</div><div class="fee-val" id="rm-sharpe">&mdash;</div></div>
         <div class="fee-card"><div class="fee-lbl">Sortino</div><div class="fee-val" id="rm-sortino">&mdash;</div></div>
         <div class="fee-card"><div class="fee-lbl">Calmar</div><div class="fee-val" id="rm-calmar">&mdash;</div></div>
