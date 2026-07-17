@@ -1,36 +1,40 @@
 """Data-home path resolution for cherrypick-meic.
 
 All runtime *data* — the live and paper SQLite databases, the streamer cache, and the daemon
-PID/lock files — lives under a single data home. This is the one source of truth for that
-location so every writer (loop, streamer, paper engine) and every reader (dashboard, the
-umbrella orchestrator's report/reconcile/calibrate) agree on which files the module uses.
+PID/lock files — lives under a single data home, and all *logs* under a single logs home. This is a
+thin, module-specific facade over :mod:`cherrypick.core.home`, the suite-wide resolver, so every writer
+(loop, streamer, paper engine) and every reader (dashboard, the umbrella orchestrator's
+report/reconcile/calibrate) agree on which files the module uses.
 
-Resolution:
-  * ``MEIC_DATA_DIR`` env var, if set (``~`` and ``$VARS`` are expanded) — used by tests to point
-    at a tmp path, and available as a machine-specific override.
-  * otherwise the managed cherrypick home ``~/.cherrypick/data/meic`` — shared with the umbrella,
-    whose config points at ``~/.cherrypick/data/meic/paper_trades.db`` for cross-module reads.
+Resolution (delegated to ``cherrypick.core.home``):
+  * ``MEIC_DATA_DIR`` / ``MEIC_LOGS_DIR`` env var, if set (``~`` and ``$VARS`` expanded) — a per-module
+    override used by tests to point at a tmp path, and available as a machine escape hatch.
+  * otherwise the managed cherrypick home ``~/.cherrypick/data/meic`` and ``~/.cherrypick/logs/meic``
+    (relocated wholesale by ``CHERRYPICK_HOME``) — shared with the umbrella, whose config points at
+    ``~/.cherrypick/data/meic/paper_trades.db`` for cross-module reads.
 
-Both *data* and *logs* move to the user home (data under ``.cherrypick/data/meic``, logs under
-``.cherrypick/logs/meic``) so nothing runtime lands in the checkout; only ``config.json`` stays in the
-package directory. Portability guardrail: never hardcode an absolute path — everything derives from
-``Path.home()`` (or ``CHERRYPICK_HOME``) or the ``MEIC_DATA_DIR`` / ``MEIC_LOGS_DIR`` overrides.
+Nothing runtime lands in the checkout — data, logs, and (once migrated) the config all resolve under the
+home; only the checked-in ``config.example.json`` template stays in the package. Portability guardrail:
+never hardcode an absolute path — the home derives from ``Path.home()`` (or the overrides).
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
-_DEFAULT_HOME = Path.home() / ".cherrypick" / "data" / "meic"
+# Make the cherrypick-core submodule (src/_core) importable before the cherrypick.core import below.
+# paths.py is imported very early (before credentials.py/db.py run their own bootstrap), so it must put
+# _core on sys.path itself. Idempotent — a duplicate entry is harmless.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
+
+from cherrypick.core import home as _home  # noqa: E402
 
 
 def data_dir() -> Path:
     """The resolved data home, created if it does not yet exist."""
-    env = os.environ.get("MEIC_DATA_DIR")
-    base = Path(os.path.expandvars(os.path.expanduser(env))) if env else _DEFAULT_HOME
-    base.mkdir(parents=True, exist_ok=True)
-    return base
+    return _home.ensure(_home.data_dir("meic", env="MEIC_DATA_DIR"))
 
 
 def data_path(name: str) -> Path:
@@ -53,17 +57,22 @@ def stream_cache_path() -> Path:
     return data_path("stream_cache.db")
 
 
+def config_path() -> Path:
+    """MEIC's config file. The home config (``~/.cherrypick/config/meic.json``) once it exists, else the
+    legacy in-repo ``config.json`` until migrated. A pure lookup — never writes — so it is safe to call
+    from tests and from a standalone checkout (which keeps using its in-repo config)."""
+    home_cfg = _home.config_path("meic")
+    if home_cfg.exists():
+        return home_cfg
+    legacy = Path(__file__).resolve().parent.parent / "config.json"
+    return legacy if legacy.exists() else home_cfg
+
+
 def logs_dir() -> Path:
-    """Where this module writes its logs: ``~/.cherrypick/logs/meic`` by default (the shared cherrypick
-    logs home; ``CHERRYPICK_HOME`` overrides the home so it stays aligned with the orchestrator), or
-    ``MEIC_LOGS_DIR`` for a machine/test override. A pure path — callers create it when they actually
-    write (mirrors the orchestrator's ``config.LOGS_DIR``), so importing a module never touches disk."""
-    env = os.environ.get("MEIC_LOGS_DIR")
-    if env:
-        return Path(os.path.expandvars(os.path.expanduser(env)))
-    home = os.environ.get("CHERRYPICK_HOME")
-    base = Path(home) if home else Path.home() / ".cherrypick"
-    return base / "logs" / "meic"
+    """Where this module writes its logs: ``~/.cherrypick/logs/meic`` by default (relocated wholesale by
+    ``CHERRYPICK_HOME``), or ``MEIC_LOGS_DIR`` for a machine/test override. A pure path — callers create
+    it when they actually write, so importing a module never touches disk."""
+    return _home.logs_dir("meic", env="MEIC_LOGS_DIR")
 
 
 def log_path(name: str) -> Path:

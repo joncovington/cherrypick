@@ -70,9 +70,8 @@ if not logger.handlers:
 # ---------------------------------------------------------------------------
 
 def _load_config() -> dict:
-    root = os.path.join(os.path.dirname(__file__), "..")
-    path = os.path.join(root, "config.json")
-    if os.path.exists(path):
+    path = _paths.config_path()   # home-first (~/.cherrypick/config/meic.json), in-repo fallback
+    if path.exists():
         with open(path) as f:
             return json.load(f)
     return {}

@@ -6,6 +6,39 @@ from cherrypick.orchestrator import doctor
 from cherrypick.orchestrator.doctor import FAIL, OK, WARN
 
 
+def test_find_stray_artifacts_empty_tree(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("x = 1")
+    assert doctor.find_stray_artifacts([tmp_path]) == []
+
+
+def test_find_stray_artifacts_flags_runtime_outputs(tmp_path):
+    (tmp_path / "paper_trades.db").write_text("")
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "logs" / "watchdog.log").write_text("")
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "watchdog.last.json").write_text("{}")
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "reports" / "strategy_dashboard.html").write_text("<html>")
+    (tmp_path / "dashboard.html").write_text("<html>")
+    found = {p.name for p in doctor.find_stray_artifacts([tmp_path])}
+    assert found == {"paper_trades.db", "watchdog.log", "watchdog.last.json",
+                     "strategy_dashboard.html", "dashboard.html"}
+
+
+def test_find_stray_artifacts_skips_vendored_and_cache_dirs(tmp_path):
+    for skip in ("_core", "__pycache__", ".git"):
+        d = tmp_path / skip
+        d.mkdir()
+        (d / "leftover.db").write_text("")  # a db inside a vendored/cache dir is not a leak
+    (tmp_path / "config.example.json").write_text("{}")  # non-runtime file, ignored
+    assert doctor.find_stray_artifacts([tmp_path]) == []
+
+
+def test_find_stray_artifacts_missing_root_is_safe(tmp_path):
+    assert doctor.find_stray_artifacts([tmp_path / "does-not-exist"]) == []
+
+
 def test_unreachable_is_warn():
     status, detail = doctor._dolt_status(reachable=False, required=["earnings"], present=None)
     assert status == WARN

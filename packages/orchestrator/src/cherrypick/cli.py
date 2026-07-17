@@ -59,6 +59,7 @@ from cherrypick.orchestrator import (
     doctor,
     eod_digest,
     init,
+    migrate,
     reconcile,
     report,
     serve,
@@ -168,7 +169,7 @@ def cmd_install(cfg) -> None:
             # start streamer if down
             streamer = mcfg.get("streamer", {})
             if streamer.get("enabled"):
-                results[f"{name}.streamer"] = _ensure_streamer(root, streamer)
+                results[f"{name}.streamer"] = _ensure_daemon(root, streamer)
 
         elif kind == "cherrypick_scheduled":
             # cherrypick owns the earnings schedule (the module has none).
@@ -215,13 +216,25 @@ def cmd_install(cfg) -> None:
             ed["task_name"], ed_tr, timeutil.to_local_hhmm(ed["at"], tz)
         )
 
+    # generic background services (e.g. the gex spot-trail recorder): start each detached if it's down.
+    # The watchdog keeps them alive thereafter; single-instance guards prevent duplicate starts.
+    for svc in cfgmod.enabled_services(cfg):
+        sroot = cfgmod.module_root(svc, svc["id"])
+        results[f"service.{svc['id']}"] = (
+            _ensure_daemon(sroot, svc)
+            if sroot.exists()
+            else {"ok": False, "detail": f"checkout not found at {sroot}"}
+        )
+
     _emit({"ok": all(v.get("ok", True) for v in results.values()), "installed": results})
 
 
-def _ensure_streamer(root: Path, streamer: dict) -> dict:
+def _ensure_daemon(root: Path, spec: dict) -> dict:
+    """Ensure a detached background daemon is up: check `status_argv` (prints {"running": bool}) and
+    launch `start_argv` detached if it is down. Shared by the streamer and the generic `services`."""
     try:
         r = subprocess.run(
-            [cfgmod.python_exe(), *streamer["status_argv"]],
+            [cfgmod.python_exe(), *spec["status_argv"]],
             cwd=str(root),
             capture_output=True,
             text=True,
@@ -232,7 +245,7 @@ def _ensure_streamer(root: Path, streamer: dict) -> dict:
         running = False
     if running:
         return {"ok": True, "detail": "already running"}
-    started = watchdog._start_streamer(root, streamer["start_argv"])
+    started = watchdog._start_streamer(root, spec["start_argv"])
     return {"ok": started, "detail": "started" if started else "start failed"}
 
 
@@ -262,7 +275,23 @@ def cmd_uninstall(cfg) -> None:
     # Always attempt the digest task by its resolved name (idempotent) so opting out *after* an
     # install still removes a previously-registered task.
     results["eod_digest_task"] = tasks.delete(cfgmod.eod_digest_settings(cfg)["task_name"])
-    _emit({"ok": True, "removed": results, "note": "streamer (if running) left untouched"})
+    # Stop generic background services (e.g. the gex recorder) — unlike the streamer, these are the
+    # orchestrator's own daemons, so a full uninstall stops them.
+    for svc in cfgmod.enabled_services(cfg):
+        if svc.get("stop_argv"):
+            sroot = cfgmod.module_root(svc, svc["id"])
+            try:
+                r = subprocess.run(
+                    [cfgmod.python_exe(), *svc["stop_argv"]], cwd=str(sroot),
+                    capture_output=True, text=True, timeout=15,
+                )
+                results[f"service.{svc['id']}"] = {
+                    "ok": r.returncode == 0,
+                    "detail": (r.stdout or r.stderr).strip()[:200],
+                }
+            except Exception as exc:
+                results[f"service.{svc['id']}"] = {"ok": False, "detail": str(exc)}
+    _emit({"ok": True, "removed": results, "note": "streamer (if running) left untouched; services stopped"})
 
 
 # --------------------------------------------------------------------------- status
@@ -541,6 +570,26 @@ def cmd_dashboard(cfg, args) -> None:
     _emit(dashboard.run(cfg))
 
 
+def cmd_migrate_home(cfg, apply: bool) -> None:
+    """Move config files into ~/.cherrypick and sweep regenerable leftovers out of the checkouts.
+    Dry-run by default (prints the plan and touches nothing); pass --apply to perform it."""
+    res = migrate.run(cfg, dry_run=not apply)
+    mode = "dry-run - nothing changed" if res["dry_run"] else "applied"
+    verb = "would move" if res["dry_run"] else "moved"
+    swept = "would sweep" if res["dry_run"] else "swept"
+    print(f"cherrypick migrate-home ({mode})")
+    for mv in res["moved"]:
+        print(f"  {verb} config: {mv['src']} -> {mv['dest']}")
+    for d in res["deleted"]:
+        print(f"  {swept}: {d}")
+    for db in res["db_review"]:
+        print(f"  REVIEW (left in place — may hold data): {db}")
+    if not (res["moved"] or res["deleted"] or res["db_review"]):
+        print("  nothing to migrate — already clean")
+    elif res["dry_run"]:
+        print("Re-run with --apply to perform the migration.")
+
+
 def cmd_calibrate(cfg) -> None:
     _emit(calibrate.run(cfg))
 
@@ -601,6 +650,7 @@ def main() -> None:
             "connect",
             "account",
             "dashboard",
+            "migrate-home",
             "calibrate",
             "run-earnings-entry",
             "run-earnings-exit",
@@ -651,6 +701,9 @@ def main() -> None:
     parser.add_argument(
         "--no-browser", action="store_true", help="For dashboard --serve: do not open a browser"
     )
+    parser.add_argument(
+        "--apply", action="store_true", help="For migrate-home: perform the move (default is a dry run)"
+    )
     args = parser.parse_args()
 
     # `init` scaffolds config.json, so it must run before the config pre-load (a fresh user has none).
@@ -672,6 +725,7 @@ def main() -> None:
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),
         "dashboard": lambda: cmd_dashboard(cfg, args),
+        "migrate-home": lambda: cmd_migrate_home(cfg, args.apply),
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),

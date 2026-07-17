@@ -7,17 +7,14 @@ import json
 import os
 import socket
 import sqlite3
-import subprocess
 import sys
 import threading
-import time
 import urllib.parse
 import webbrowser
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 
-import gex_math
 import paths as _paths
 
 # ── Timezone helpers ─────────────────────────────────────────────────────────
@@ -54,9 +51,6 @@ except ImportError:
 _DB_PATH        = str(_paths.live_db_path())
 _PAPER_DB_PATH  = str(_paths.paper_db_path())
 _CACHE_DB_PATH  = str(_paths.stream_cache_path())
-_CONFIG_PATH    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
-_LOG_PATH       = str(_paths.log_path("agent.log"))
-_PAPER_LOG_PATH = str(_paths.log_path("paper_loop.log"))
 # "live" (default, meic_trades.db) or "paper" (paper_trades.db) in the data home — set from --mode
 # in main(). Drives the PAPER MODE banner; _DB_PATH itself is the only thing that changes
 # which data actually gets served. _CACHE_DB_PATH (the streamer cache) is never mode-dependent
@@ -148,12 +142,14 @@ def _spread_wins_losses(trade_status: str, trade_pnl: float | None, put_leg: dic
 
 
 def _stats_for_period(conn: sqlite3.Connection, start: str | None = None, end: str | None = None,
-                       symbol: str | None = None) -> dict:
+                       symbol: str | None = None, profile: str | None = None) -> dict:
     """Compute stats for a date range, querying ic_trades directly for accuracy.
     start/end are inclusive YYYY-MM-DD strings; omit to mean unbounded. symbol filters to
     one traded symbol; omit (or "ALL") for the account-wide total across every symbol —
     this is what the global risk caps (max_concurrent_ics, max_entries_per_day) are checked
-    against, so "ALL" is the economically meaningful default, not just a UI convenience."""
+    against, so "ALL" is the economically meaningful default, not just a UI convenience.
+    profile filters to one risk_profile (paper-trading DB only, behind a column-exists check,
+    so it's a no-op on the live DB); omit (or "ALL") for the profile-blended total."""
     where = ["status NOT IN ('cancelled', 'pending', 'partial_entry')"]
     params: list = []
     if start:
@@ -165,6 +161,9 @@ def _stats_for_period(conn: sqlite3.Connection, start: str | None = None, end: s
     if symbol and symbol.upper() != "ALL":
         where.append("symbol = ?")
         params.append(symbol.upper())
+    if profile and profile.upper() != "ALL" and _has_column(conn, "ic_trades", "risk_profile"):
+        where.append("risk_profile = ?")
+        params.append(profile)
     rows = _rows(conn,
         f"SELECT ic_order_id, pnl, status FROM ic_trades WHERE {' AND '.join(where)}",
         params)
@@ -415,44 +414,6 @@ def _spread_statuses(trade: dict, put_leg: dict | None = None, call_leg: dict | 
 _LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "WARN", "ERROR", "CRITICAL"}
 
 
-def _parse_plain_log_line(raw: str) -> dict:
-    """Parse a stdlib-logging line like '2026-07-09 14:00:04,306 INFO message' into the
-    {ts, level, msg} shape the Logs tab expects (paper_loop.log uses this format, not the
-    JSONL that agent.log uses). Falls back to the whole line as an INFO message."""
-    parts = raw.split(None, 3)
-    if len(parts) >= 4 and parts[2] in _LOG_LEVELS:
-        ts = parts[1].split(",")[0]              # HH:MM:SS (drop milliseconds)
-        level = "WARN" if parts[2] == "WARNING" else parts[2]
-        return {"ts": ts, "level": level, "msg": parts[3]}
-    return {"ts": "", "level": "INFO", "msg": raw}
-
-
-def _build_log_data(n: int = 200) -> dict:
-    if not os.path.exists(_LOG_PATH):
-        return {"ok": True, "lines": [], "note": "Log file not found"}
-    try:
-        with open(_LOG_PATH, encoding="utf-8", errors="replace") as f:
-            all_lines = f.readlines()
-        tail = all_lines[-n:] if len(all_lines) > n else all_lines
-        lines = []
-        for raw in tail:
-            raw = raw.strip()
-            if not raw:
-                continue
-            try:
-                obj = json.loads(raw)
-                ts  = str(obj.get("timestamp", ""))
-                # shorten ISO timestamp to HH:MM:SS
-                if "T" in ts:
-                    ts = ts.split("T")[1][:8]
-                lines.append({"ts": ts, "level": obj.get("level", "INFO"), "msg": obj.get("message", raw)})
-            except (json.JSONDecodeError, ValueError):
-                lines.append(_parse_plain_log_line(raw))
-        return {"ok": True, "lines": lines}
-    except OSError as exc:
-        return {"ok": False, "error": str(exc), "lines": []}
-
-
 # ── API data builder ──────────────────────────────────────────────────────────
 
 def _build_api_data(symbol: str | None = None, profile: str | None = None) -> dict:
@@ -461,10 +422,10 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     account's actual risk caps (max_concurrent_ics, max_entries_per_day, buying power) are
     checked against the combined total, not any one symbol in isolation.
 
-    profile filters only the `performance` series (risk_profile, paper-trading DB) — trades/
-    stats/nlv_series/analytics stay unfiltered/blended across profiles, matching how `symbol`
-    already behaves for those. Scoped this way because profile comparison is specifically a
-    Performance-view concern, not a Today/History-view one."""
+    profile filters to one risk_profile (paper-trading DB only, behind a column-exists check,
+    so it's inert on the live DB) across trades/stats/analytics/performance alike — a peer of
+    `symbol`; omit (or "ALL") for the profile-blended view. nlv_series stays blended (closing
+    NLV is an account-level daily figure, not attributable to a single profile)."""
     if not os.path.exists(_DB_PATH):
         return {"ok": False, "error": "Database not found — run: python src/db.py init_db"}
 
@@ -473,12 +434,15 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     conn = _connect()
     today = _today()
 
+    prof_filter = profile if (profile and profile.upper() != "ALL"
+                              and _has_column(conn, "ic_trades", "risk_profile")) else None
+
     stats = {
-        "today":    _stats_for_period(conn, start=today, end=today, symbol=sym_filter),
-        "week":     _stats_for_period(conn, start=_week_start(),  end=today, symbol=sym_filter),
-        "month":    _stats_for_period(conn, start=_month_start(), end=today, symbol=sym_filter),
-        "year":     _stats_for_period(conn, start=_year_start(),  end=today, symbol=sym_filter),
-        "all_time": _stats_for_period(conn, end=today, symbol=sym_filter),
+        "today":    _stats_for_period(conn, start=today, end=today, symbol=sym_filter, profile=prof_filter),
+        "week":     _stats_for_period(conn, start=_week_start(),  end=today, symbol=sym_filter, profile=prof_filter),
+        "month":    _stats_for_period(conn, start=_month_start(), end=today, symbol=sym_filter, profile=prof_filter),
+        "year":     _stats_for_period(conn, start=_year_start(),  end=today, symbol=sym_filter, profile=prof_filter),
+        "all_time": _stats_for_period(conn, end=today, symbol=sym_filter, profile=prof_filter),
     }
 
     trades_sql = """
@@ -496,6 +460,9 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     if sym_filter:
         trades_sql += " AND symbol = ?"
         trades_params.append(sym_filter)
+    if prof_filter:
+        trades_sql += " AND risk_profile = ?"
+        trades_params.append(prof_filter)
     trades_sql += " ORDER BY entry_time"
     raw_trades = _rows(conn, trades_sql, trades_params)
 
@@ -524,8 +491,13 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         ORDER BY summary_date ASC
     """)
 
+    # Combined symbol+profile predicate reused by every analytics/history query below, so both
+    # filters scope them identically (the name stays `sym_*` to leave those f-strings untouched).
     sym_clause = " AND symbol = ?" if sym_filter else ""
     sym_params = [sym_filter] if sym_filter else []
+    if prof_filter:
+        sym_clause += " AND risk_profile = ?"
+        sym_params.append(prof_filter)
 
     by_session = _rows(conn, f"""
         SELECT session_quality,
@@ -664,13 +636,13 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     }
 
 
-# ── GEX data builder ──────────────────────────────────────────────────────────
+# ── symbols ────────────────────────────────────────────────────────────────
 
 def _load_symbols() -> list[str]:
     """Every traded symbol, in config order. Falls back to the deprecated
     single-symbol 'symbol' key, then to ["XSP"], if 'symbols' is absent."""
     try:
-        with open(_CONFIG_PATH) as f:
+        with open(_paths.config_path()) as f:
             cfg = json.load(f)
     except Exception:
         return ["XSP"]
@@ -679,336 +651,6 @@ def _load_symbols() -> list[str]:
     if cfg.get("symbol"):
         return [str(cfg["symbol"]).strip().upper()]
     return ["XSP"]
-
-
-def _load_symbol() -> str:
-    """The default/first traded symbol — used when no symbol is specified explicitly."""
-    return _load_symbols()[0]
-
-
-_TT_CMD = [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "tt.py")]
-_STREAMER_API = "http://127.0.0.1:7699/api"
-
-# GEX preview is restricted to actively traded symbols (config's `symbols` list). Open
-# interest — required for any meaningful GEX number — only ever comes from a live DXLink
-# Summary subscription; REST never carries it. Every traded symbol already has a permanent,
-# OI-backed subscription window (see streamer.py's _symbol_refresher), so there is no
-# REST-only "preview any symbol" mode anymore — an arbitrary non-traded symbol would just
-# show a flat zero-OI GEX profile, which is worse than not offering it at all.
-
-
-def _fetch_spot_rest(symbol: str) -> float | None:
-    """Get the current spot price for a symbol via tt.py."""
-    try:
-        proc = subprocess.run(
-            _TT_CMD + ["get_quote", "--symbol", symbol],
-            capture_output=True, text=True, timeout=10,
-        )
-        data = json.loads(proc.stdout)
-        price = data.get("last") or data.get("mid")
-        return float(price) if price else None
-    except Exception:
-        return None
-
-
-def _parse_streamer_underlying(streamer_symbol: str) -> str | None:
-    """Extract the underlying ticker from a streamer option symbol.
-    E.g. '.XSP260630C740' -> 'XSP', '.SPXW260630P5500' -> 'SPXW'
-    """
-    import re
-    m = re.match(r'\.([A-Z]+)\d{6}[CP]', streamer_symbol)
-    return m.group(1) if m else None
-
-
-def _fetch_chain_rest(symbol: str, around_price: float | None = None) -> tuple[list[dict], dict, dict, str | None]:
-    """Fetch option chain via tt.py subprocess for symbols not in the stream cache.
-    Returns (options_list, greeks_map, quotes_map, actual_underlying_ticker).
-    actual_underlying_ticker is the ticker embedded in the returned streamer symbols
-    (may differ from symbol — e.g. 'SPX' request returns 'XSP' streamer symbols).
-    """
-    cmd = _TT_CMD + ["get_option_chain", "--symbol", symbol,
-                     "--include_greeks", "--include_quotes",
-                     "--strike_count", "60"]
-    if around_price is not None:
-        cmd += ["--around_price", str(around_price)]
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-        data = json.loads(proc.stdout)
-    except Exception as exc:
-        raise RuntimeError(f"REST chain fetch failed: {exc}") from exc
-
-    if not data.get("ok"):
-        raise RuntimeError(data.get("error", "chain fetch returned ok=false"))
-
-    options: list[dict] = []
-    greeks: dict[str, dict] = {}
-    quotes: dict[str, dict] = {}
-    actual_underlying: str | None = None
-
-    for _exp, legs in (data.get("chain") or {}).items():
-        for leg in legs:
-            sym = leg.get("streamer_symbol") or ""
-            options.append(leg)
-            if actual_underlying is None and sym:
-                actual_underlying = _parse_streamer_underlying(sym)
-            if leg.get("delta") is not None:
-                greeks[sym] = {
-                    "gamma": leg.get("gamma"),
-                    "iv":    (leg.get("iv") or 0) * 100,
-                }
-            if leg.get("bid") is not None:
-                quotes[sym] = {"bid": leg["bid"], "ask": leg["ask"], "mid": leg.get("mid")}
-
-    return options, greeks, quotes, actual_underlying
-
-
-def _market_open_close_ts() -> tuple[float, float]:
-    """Today's 09:30/16:00 ET as unix timestamps, for the client to map spot_history's
-    ts values onto a time x-axis spanning the trading session."""
-    try:
-        now = datetime.now(_ET)
-        open_dt = now.replace(hour=9, minute=30, second=0, microsecond=0)
-        close_dt = now.replace(hour=16, minute=0, second=0, microsecond=0)
-    except NameError:
-        now = datetime.now(UTC)
-        open_dt = now.replace(hour=13, minute=30, second=0, microsecond=0)
-        close_dt = now.replace(hour=20, minute=0, second=0, microsecond=0)
-    return open_dt.timestamp(), close_dt.timestamp()
-
-
-def _ensure_spot_history_table(conn: sqlite3.Connection) -> None:
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS gex_spot_history (
-            symbol      TEXT NOT NULL,
-            trade_date  TEXT NOT NULL,
-            ts          REAL NOT NULL,
-            spot        REAL NOT NULL
-        )
-    """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_gex_spot_history_sym_date "
-                 "ON gex_spot_history(symbol, trade_date)")
-
-
-def _record_and_fetch_spot_history(conn: sqlite3.Connection, symbol: str, spot: float | None) -> list[dict]:
-    """Append today's spot price tick (if available) and return the day's trail so far.
-
-    One row per GEX fetch (client polls roughly every 15s) — plotted as a persistent
-    light-blue point trail on the GEX chart, surviving page reloads/dashboard restarts
-    since it's stored in stream_cache.db rather than kept only in browser memory.
-    """
-    _ensure_spot_history_table(conn)
-    today = _today()
-    if spot is not None:
-        conn.execute(
-            "INSERT INTO gex_spot_history (symbol, trade_date, ts, spot) VALUES (?,?,?,?)",
-            (symbol, today, time.time(), spot),
-        )
-        conn.commit()
-    rows = conn.execute(
-        "SELECT ts, spot FROM gex_spot_history WHERE symbol = ? AND trade_date = ? ORDER BY ts",
-        (symbol, today),
-    ).fetchall()
-    return [{"ts": r["ts"], "spot": r["spot"]} for r in rows]
-
-
-def _build_gex_data(symbol: str | None = None) -> dict:
-    symbol = (symbol or _load_symbol()).strip().upper()
-
-    # Load stream cache if available
-    cache_conn = None
-    if os.path.exists(_CACHE_DB_PATH):
-        cache_conn = sqlite3.connect(_CACHE_DB_PATH)
-        cache_conn.row_factory = sqlite3.Row
-
-    # Underlying spot price — try cache first, then skip gracefully
-    spot: float | None = None
-    if cache_conn:
-        tr = cache_conn.execute(
-            "SELECT last FROM stream_trades WHERE symbol = ?", (symbol,)
-        ).fetchone()
-        spot = float(tr["last"]) if tr and tr["last"] is not None else None
-
-    # Check if this symbol's chain is in the cache
-    chain_rows = []
-    expiration: str | None = None
-    greeks: dict[str, dict] = {}
-    quotes: dict[str, dict] = {}
-    oi_cache: dict[str, int] = {}
-    trade_volume: dict[str, float] = {}
-    source = "stream_cache"
-
-    if cache_conn:
-        exp_row = cache_conn.execute(
-            "SELECT expiration FROM stream_chain WHERE underlying_symbol = ? "
-            "ORDER BY ABS(JULIANDAY(expiration) - JULIANDAY('now')) LIMIT 1",
-            (symbol,),
-        ).fetchone()
-        if exp_row:
-            expiration = exp_row["expiration"]
-            # underlying_symbol filter matters: XSP and SPX (and other index
-            # symbols) share the same 0DTE expiration date, so an
-            # expiration-only WHERE clause mixes both chains together.
-            chain_rows = cache_conn.execute(
-                "SELECT data_json FROM stream_chain WHERE expiration = ? AND underlying_symbol = ?",
-                (expiration, symbol),
-            ).fetchall()
-            # Filter greeks/quotes/OI to just this chain's own option symbols — with
-            # multiple traded symbols, an unfiltered SELECT * would scan and load every
-            # other symbol's cached rows too on every GEX refresh, for no benefit.
-            chain_syms: list[str] = []
-            for row in chain_rows:
-                try:
-                    opt = json.loads(row["data_json"])
-                except Exception:
-                    continue
-                s = opt.get("streamer_symbol")
-                if s:
-                    chain_syms.append(s)
-            if chain_syms:
-                placeholders = ", ".join(["?"] * len(chain_syms))
-                for r in cache_conn.execute(
-                    f"SELECT * FROM stream_greeks WHERE symbol IN ({placeholders})", chain_syms
-                ).fetchall():
-                    greeks[r["symbol"]] = dict(r)
-                for r in cache_conn.execute(
-                    f"SELECT * FROM stream_quotes WHERE symbol IN ({placeholders})", chain_syms
-                ).fetchall():
-                    quotes[r["symbol"]] = dict(r)
-                # Live open interest comes from DXLink Summary events (stream_oi),
-                # not the static chain snapshot — the chain's own open_interest
-                # field is never populated by the initial metadata fetch, so
-                # reading it directly always yields zero.
-                for r in cache_conn.execute(
-                    f"SELECT * FROM stream_oi WHERE symbol IN ({placeholders})", chain_syms
-                ).fetchall():
-                    oi_cache[r["symbol"]] = r["open_interest"]
-                # Live per-option volume comes from DXLink Trade events (stream_trades,
-                # written by the same generic _listen_trade the underlyings use) now that
-                # the streamer subscribes Trade for the whole ATM/GEX window, not just
-                # average_daily_volume chain-metadata (which was always 0/stale here).
-                for r in cache_conn.execute(
-                    f"SELECT symbol, volume FROM stream_trades WHERE symbol IN ({placeholders})", chain_syms
-                ).fetchall():
-                    trade_volume[r["symbol"]] = r["volume"]
-
-    if cache_conn:
-        cache_conn.close()
-
-    # Scale factor applied to strikes after series is built (default 1.0 = no scaling)
-    strike_scale: float = 1.0
-
-    # Fall back to REST fetch if symbol not in cache
-    if not chain_rows:
-        try:
-            # Probe fetch: detect the actual streamer underlying ticker.
-            # tastytrade maps several symbols to a scaled equivalent
-            # (e.g. SPX/SPXW → XSP options at 1/10 scale).
-            probe_opts, _, _, actual_und = _fetch_chain_rest(symbol)
-            probe_ticker = actual_und or symbol
-
-            # Get spot of the actual streamer underlying to center the strike range
-            chain_spot = _fetch_spot_rest(probe_ticker)
-            if chain_spot is None:
-                chain_spot = _fetch_spot_rest(symbol)
-
-            # If tastytrade mapped us to a different underlying, compute a scale factor
-            # so the chart displays strikes in the requested symbol's price domain.
-            if probe_ticker and probe_ticker.upper() != symbol.upper() and chain_spot:
-                requested_spot = _fetch_spot_rest(symbol)
-                if requested_spot and chain_spot:
-                    strike_scale = requested_spot / chain_spot
-
-            # Re-fetch centered on the real underlying's spot price
-            rest_opts, greeks, quotes, _ = _fetch_chain_rest(symbol, around_price=chain_spot)
-            # Display spot in the requested symbol's price domain
-            spot = chain_spot * strike_scale if chain_spot else None
-            source = "rest"
-            # Infer expiration from options
-            expirations = sorted({o.get("expiration_date", "") for o in rest_opts if o.get("expiration_date")})
-            expiration = expirations[0] if expirations else None
-            chain_rows = rest_opts  # already dicts
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    if not expiration:
-        return {"ok": False, "error": f"No chain data found for {symbol}"}
-
-    # Normalise chain_rows: accept sqlite3.Row objects or plain dicts
-    def _opt(row) -> dict:
-        if isinstance(row, dict):
-            return row
-        try:
-            return json.loads(row["data_json"])
-        except Exception:
-            return {}
-
-    # spot is the display price (scaled to requested symbol's domain).
-    # gex_spot is the actual chain underlying price used in GEX math.
-    gex_spot = (spot / strike_scale) if (spot and strike_scale != 1.0) else spot
-
-    # Build the per-option snapshot the shared core aggregator consumes. The source-aware
-    # normalisation — which OI/volume source, and IV raw-decimal (cache) vs already-pct (REST) —
-    # stays here because it is data *provenance*. The pure per-strike OI+volume GEX aggregation
-    # (dollar-gamma, walls, zero-gamma) lives in cherrypick.core.gex so this dashboard and the
-    # orchestrator's GEX module compute byte-identically, the reason the math was extracted (see
-    # gex_math.py; it once drifted ~75x across hand-maintained copies).
-    entries: list[dict] = []
-    oi_map: dict[str, int] = {}
-    vol_map: dict[str, int] = {}
-    greeks_norm: dict[str, dict] = {}
-    for row in chain_rows:
-        try:
-            opt = _opt(row)
-        except Exception:
-            continue
-        sym = opt.get("streamer_symbol") or ""
-        entries.append({
-            "strike_price":        opt.get("strike_price"),
-            "streamer_symbol":     sym,
-            "option_type":         opt.get("option_type"),
-            "shares_per_contract": opt.get("shares_per_contract") or 100,
-        })
-        if source == "stream_cache":
-            oi_map[sym] = int(oi_cache.get(sym) or 0)
-            vol_map[sym] = int(trade_volume.get(sym) or 0)
-        else:
-            oi_map[sym] = int(opt.get("open_interest") or 0)
-            # REST fallback has no streamer-sourced live Trade volume to read; fall back to the
-            # slow-moving chain-metadata field in that path only.
-            vol_map[sym] = int(opt.get("average_daily_volume") or 0)
-        g = greeks.get(sym, {})
-        raw_iv = float(g.get("iv") or 0)
-        # cache stores raw decimal (0.20); REST path stores already-pct (20.0)
-        iv = raw_iv if (source == "rest" or raw_iv > 1) else raw_iv * 100
-        greeks_norm[sym] = {"gamma": float(g.get("gamma") or 0), "iv": iv}
-
-    # gex_spot is the actual chain underlying price used in the math; strike_scale maps the displayed
-    # strikes back into the requested symbol's price domain (e.g. XSP -> SPX x10).
-    profile = gex_math.compute_gex_profile(entries, greeks_norm, oi_map, vol_map,
-                                           gex_spot or 0, strike_scale=strike_scale)
-    if not profile.get("ok"):
-        return {"ok": False, "error": profile.get("error", f"No GEX data found for {symbol}")}
-
-    hist_conn = sqlite3.connect(_CACHE_DB_PATH)
-    hist_conn.row_factory = sqlite3.Row
-    try:
-        spot_history = _record_and_fetch_spot_history(hist_conn, symbol, spot)
-    finally:
-        hist_conn.close()
-    market_open_ts, market_close_ts = _market_open_close_ts()
-
-    return {
-        "ok":               True,
-        "symbol":           symbol,
-        "expiration":       expiration,
-        "underlying_price": spot,
-        "source":           source,
-        "series":           profile["series"],
-        "spot_history":     spot_history,
-        "market_open_ts":   market_open_ts,
-        "market_close_ts":  market_close_ts,
-        "totals":           profile["totals"],
-    }
 
 
 # ── HTML ──────────────────────────────────────────────────────────────────────
@@ -1123,71 +765,17 @@ nav{flex:1;padding:10px 0}
 .atable td{padding:5px 8px;border-bottom:1px solid #111519;text-align:right;color:#e6edf3}
 .atable td:first-child{text-align:left;color:#8b949e}
 .atable tr:last-child td{border-bottom:none}
-.fee-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* Card grid: auto-fit so cards reflow to as many columns as the viewer's width allows
+   (4 across when wide, down to 1 when narrow) with no fixed breakpoints. */
+.fee-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
 .fee-card{padding:10px 12px;background:#111519;border-radius:5px}
 .fee-lbl{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
 .fee-val{font-size:17px;font-weight:700;color:#e6edf3}
 .fee-val.neg{color:#e8423a}.fee-val.warn{color:#f5a623}
 
-/* GEX view */
-.gex-view{overflow-y:auto;padding:0 0 24px}
-.gex-section{padding:20px 24px 0}
-.gex-section-title{font-size:15px;font-weight:700;color:#e6edf3;margin-bottom:4px;display:flex;align-items:center;gap:8px}
-.gex-section-sub{font-size:11px;color:#6b7280;margin-bottom:14px}
-.gex-divider{height:1px;background:#1e2430;margin:20px 24px 0}
-.gex-row{display:grid;gap:16px;margin-bottom:16px}
-.gex-row-2{grid-template-columns:1fr 1fr}
-.gex-row-main{grid-template-columns:1fr 280px}
-.gex-body{display:flex;align-items:flex-start}
-.gex-tabs{display:flex;flex-direction:column;gap:2px;padding:12px 8px;flex:0 0 84px;
-          border-right:1px solid #1e2430;align-self:stretch}
-.gex-tab{font-size:11px;font-weight:700;color:#6b7280;padding:8px 10px;cursor:pointer;
-         border-right:2px solid transparent;margin-right:-1px;text-transform:uppercase;
-         letter-spacing:.8px;transition:color .15s,border-color .15s;border-radius:4px 0 0 4px}
-.gex-tab:hover{color:#e6edf3}
-.gex-tab.active{color:#00c896;border-right-color:#00c896;background:#0d2018}
-.gex-tab-panels{flex:1;min-width:0}
-.gex-tab-panel{display:none}.gex-tab-panel.active{display:block}
-.chart-card{background:#0d1117;border:1px solid #1e2430;border-radius:6px;padding:14px 16px}
-.chart-card-title{font-size:10px;font-weight:700;color:#6b7280;letter-spacing:1.2px;
-                   text-transform:uppercase;margin-bottom:10px}
-.chart-card canvas{display:block;width:100%!important}
-.radio-group{display:flex;gap:4px;margin-bottom:10px}
-.radio-group label{display:flex;align-items:center;gap:5px;cursor:pointer;
-                    font-size:11px;color:#6b7280;padding:4px 10px;
-                    border:1px solid #1e2430;border-radius:4px;transition:all .15s}
-.radio-group label:hover{color:#e6edf3;border-color:#3d4451}
-.radio-group input{display:none}
-.radio-group input:checked+span{color:#e6edf3}
-.radio-group label:has(input:checked){color:#e6edf3;border-color:#00c896;background:#0d2018}
-.metrics-panel{background:#0d1117;border:1px solid #1e2430;border-radius:6px;padding:16px}
-.metrics-panel-title{font-size:10px;font-weight:700;color:#6b7280;letter-spacing:1.2px;
-                      text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:6px}
-.metric-row{margin-bottom:14px}
-.metric-lbl{font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px}
-.metric-val{font-size:22px;font-weight:700;color:#e6edf3;line-height:1.1}
-.metric-val.pos{color:#00c896}.metric-val.neg{color:#e8423a}
-.metric-divider{height:1px;background:#1e2430;margin:10px 0}
+/* Two-panel analytics grid: side-by-side when there's room, stacked on narrow viewports. */
+@media (max-width:820px){.ana-grid{grid-template-columns:1fr}}
 
-/* Log view */
-.log-toolbar{display:flex;align-items:center;gap:10px;padding:10px 18px;
-              border-bottom:1px solid #1e2430;flex-shrink:0}
-.log-toolbar .frame-title{flex:1}
-.log-filter{display:flex;gap:6px}
-.log-filter label{font-size:11px;color:#6b7280;cursor:pointer;display:flex;align-items:center;gap:3px}
-.log-filter input{accent-color:#00c896;cursor:pointer}
-.log-paused-badge{font-size:9px;font-weight:700;letter-spacing:.5px;color:#f5a623;
-                   background:#2a2510;padding:2px 7px;border-radius:3px;
-                   text-transform:uppercase;display:none}
-.log-scroll{flex:1;overflow-y:auto;padding:8px 0;font-family:'Cascadia Code','Fira Mono',
-             'Consolas',monospace;font-size:11.5px;line-height:1.55}
-.log-line{display:flex;gap:0;padding:1px 18px;white-space:pre-wrap;word-break:break-all}
-.log-line:hover{background:#0f1318}
-.log-ts{color:#3d4451;min-width:70px;flex-shrink:0}
-.log-lvl{min-width:46px;flex-shrink:0;font-weight:700}
-.log-lvl.INFO{color:#3d4451}.log-lvl.WARN{color:#f5a623}.log-lvl.ERROR{color:#e8423a}
-.log-msg{color:#c9d1d9;flex:1}
-.log-msg.WARN{color:#f5a623}.log-msg.ERROR{color:#e8423a}
 </style>
 </head>
 <body>
@@ -1208,15 +796,6 @@ nav{flex:1;padding:10px 0}
     </div>
     <div class="nav-item" data-view="performance">
       <span class="nav-icon">&#128200;</span> Performance
-    </div>
-    <div class="nav-item" data-view="gex">
-      <span class="nav-icon">&#9699;</span> GEX
-    </div>
-    <div class="nav-item" data-view="logs">
-      <span class="nav-icon">&#9776;</span> Logs
-    </div>
-    <div class="nav-item" data-view="settings">
-      <span class="nav-icon">&#9881;</span> Settings
     </div>
   </nav>
   <div class="sidebar-footer">
@@ -1242,6 +821,11 @@ nav{flex:1;padding:10px 0}
         <select id="main-symbol-select" style="background:#0d1117;color:#e6edf3;border:1px solid #1e2430;
                 border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;outline:none;margin-left:10px">
           <option value="ALL" selected>All symbols</option>
+        </select>
+        <select id="main-profile-select" disabled title="Enabled once paper-trading risk_profile data exists"
+                style="background:#0d1117;color:#e6edf3;border:1px solid #1e2430;
+                border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;outline:none;margin-left:6px">
+          <option value="ALL" selected>All profiles</option>
         </select>
         <span class="frame-sub" id="as-of"></span>
       </div>
@@ -1402,7 +986,7 @@ nav{flex:1;padding:10px 0}
     <div class="frame" style="flex:0 0 auto">
       <div class="frame-hdr"><span class="frame-title">Risk-Adjusted Metrics</span>
         <span class="frame-sub" id="perf-overfit-note"></span></div>
-      <div class="fee-grid" style="grid-template-columns:repeat(4,1fr);padding:14px 18px 18px">
+      <div class="fee-grid" style="padding:14px 18px 18px">
         <div class="fee-card"><div class="fee-lbl">Sharpe</div><div class="fee-val" id="rm-sharpe">&mdash;</div></div>
         <div class="fee-card"><div class="fee-lbl">Sortino</div><div class="fee-val" id="rm-sortino">&mdash;</div></div>
         <div class="fee-card"><div class="fee-lbl">Calmar</div><div class="fee-val" id="rm-calmar">&mdash;</div></div>
@@ -1473,167 +1057,6 @@ nav{flex:1;padding:10px 0}
     </div>
   </div>
 
-  <!-- GEX VIEW -->
-  <div class="view" id="view-gex">
-    <div class="gex-view" id="gex-inner">
-
-      <div class="gex-body">
-      <!-- Sub-tabs: narrow vertical nav on the left, one panel visible at a time -->
-      <div class="gex-tabs">
-        <div class="gex-tab active" data-gex-tab="gex">GEX</div>
-        <div class="gex-tab" data-gex-tab="ivskew">IV Skew</div>
-        <div class="gex-tab" data-gex-tab="volume">Volume</div>
-      </div>
-      <div class="gex-tab-panels">
-
-      <!-- Tab: GEX -->
-      <div class="gex-tab-panel active" id="gex-panel-gex">
-        <div class="gex-section">
-          <div class="gex-section-sub" id="gex-main-sub">&nbsp;</div>
-          <div class="gex-row gex-row-main">
-            <div class="chart-card">
-              <div class="chart-card-title" id="gex-chart-title">GEX by Strike &mdash; Net GEX</div>
-              <div style="position:relative;height:260px"><canvas id="gex-main-chart"></canvas></div>
-            </div>
-            <div id="gex-main-sidebar">
-              <!-- Symbol selector — restricted to actively traded symbols (config.json's
-                   `symbols`); GEX needs live open interest, which only ever comes from a
-                   subscribed symbol, so there's no "preview any symbol" free-text option
-                   anymore. Lives here (GEX tab only) rather than page-level, so it can only
-                   be changed while this tab is active — IV Skew/Volume read whatever symbol
-                   was last selected here. -->
-              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px">
-                <span style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.8px">Symbol</span>
-                <select id="gex-symbol-select" class="gex-symbol-select" style="background:#0d1117;color:#e6edf3;border:1px solid #1e2430;
-                        border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer;outline:none">
-                </select>
-                <span id="gex-source-badge" class="gex-source-badge" style="font-size:10px;color:#6b7280"></span>
-              </div>
-              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px">
-                <span style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.8px">GEX View</span>
-                <div class="radio-group" id="gex-view-group">
-                  <label><input type="radio" name="gex_view" value="oivol"><span>Net GEX (OI vs Volume)</span></label>
-                  <label><input type="radio" name="gex_view" value="net" checked><span>&#11044; Net GEX</span></label>
-                  <label><input type="radio" name="gex_view" value="abs"><span>Absolute GEX</span></label>
-                </div>
-              </div>
-            <div class="metrics-panel">
-              <div class="metrics-panel-title">&#128202; Total GEX</div>
-              <div class="metric-row">
-                <div class="metric-lbl">Total Call GEX</div>
-                <div class="metric-val pos" id="m-call-gex">&mdash;</div>
-              </div>
-              <div class="metric-row">
-                <div class="metric-lbl">Total Put GEX</div>
-                <div class="metric-val neg" id="m-put-gex">&mdash;</div>
-              </div>
-              <div class="metric-divider"></div>
-              <div class="metric-row">
-                <div class="metric-lbl">Net GEX</div>
-                <div class="metric-val" id="m-net-gex">&mdash;</div>
-              </div>
-              <div class="metric-divider"></div>
-              <div class="metric-row">
-                <div class="metric-lbl">Max GEX Strike</div>
-                <div class="metric-val" id="m-max-strike">&mdash;</div>
-              </div>
-              <div class="metric-divider"></div>
-              <div class="metric-row">
-                <div class="metric-lbl">Call Wall <span title="Strike with the largest call-side gamma concentration — dealer resistance above spot" style="cursor:help;color:#3d4451">&#9432;</span></div>
-                <div class="metric-val pos" id="m-call-wall">&mdash;</div>
-              </div>
-              <div class="metric-row">
-                <div class="metric-lbl">Put Wall <span title="Strike with the largest put-side gamma concentration — dealer support below spot" style="cursor:help;color:#3d4451">&#9432;</span></div>
-                <div class="metric-val neg" id="m-put-wall">&mdash;</div>
-              </div>
-              <div class="metric-divider"></div>
-              <div class="metric-row" style="margin-bottom:0">
-                <div class="metric-lbl">Zero Gamma (Flip) <span title="Strike where dealer GEX transitions from negative to positive" style="cursor:help;color:#3d4451">&#9432;</span></div>
-                <div class="metric-val" id="m-zero-gamma">&mdash;</div>
-              </div>
-            </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tab: IV Skew -->
-      <div class="gex-tab-panel" id="gex-panel-ivskew">
-        <div class="gex-section">
-          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px">
-            <span style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.8px">Symbol</span>
-            <select id="gex-symbol-select-iv" class="gex-symbol-select" style="background:#0d1117;color:#e6edf3;border:1px solid #1e2430;
-                    border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer;outline:none">
-            </select>
-            <span id="gex-source-badge-iv" class="gex-source-badge" style="font-size:10px;color:#6b7280"></span>
-          </div>
-          <div class="gex-section-sub" id="gex-iv-sub">&nbsp;</div>
-          <div class="gex-row gex-row-2">
-            <div class="chart-card">
-              <div class="chart-card-title">Call IV vs Put IV by Strike</div>
-              <div style="position:relative;height:220px"><canvas id="gex-iv-chart"></canvas></div>
-            </div>
-            <div class="chart-card">
-              <div class="chart-card-title">Open Interest by Strike</div>
-              <div style="position:relative;height:220px"><canvas id="gex-oi-chart"></canvas></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tab: Volume -->
-      <div class="gex-tab-panel" id="gex-panel-volume">
-        <div class="gex-section">
-          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px">
-            <span style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.8px">Symbol</span>
-            <select id="gex-symbol-select-vol" class="gex-symbol-select" style="background:#0d1117;color:#e6edf3;border:1px solid #1e2430;
-                    border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer;outline:none">
-            </select>
-            <span id="gex-source-badge-vol" class="gex-source-badge" style="font-size:10px;color:#6b7280"></span>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-            <div class="gex-section-title" style="margin:0">&#128200; Volume by Strike</div>
-            <div class="radio-group" id="vol-view-group" style="margin-bottom:0">
-              <label><input type="radio" name="vol_view" value="split"><span>Calls vs Puts</span></label>
-              <label><input type="radio" name="vol_view" value="total" checked><span>&#11044; Total Volume</span></label>
-            </div>
-          </div>
-          <div class="chart-card">
-            <div style="position:relative;height:260px"><canvas id="gex-vol-chart"></canvas></div>
-          </div>
-        </div>
-      </div>
-
-      </div>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- LOGS VIEW -->
-  <div class="view" id="view-logs">
-    <div class="log-toolbar">
-      <span class="frame-title">Agent Log</span>
-      <div class="log-filter">
-        <label><input type="checkbox" id="log-warn" checked> WARN</label>
-        <label><input type="checkbox" id="log-error" checked> ERROR</label>
-        <label><input type="checkbox" id="log-info" checked> INFO</label>
-      </div>
-      <span class="log-paused-badge" id="log-paused">&#9646;&#9646; PAUSED</span>
-    </div>
-    <div class="log-scroll" id="log-scroll">
-      <div class="log-line"><span class="log-msg">Loading&hellip;</span></div>
-    </div>
-  </div>
-
-  <!-- SETTINGS VIEW -->
-  <div class="view" id="view-settings">
-    <div style="padding:36px;color:#6b7280">
-      <h2 style="color:#e6edf3;margin-bottom:8px;font-size:16px">Settings</h2>
-      <p style="font-size:13px">Configuration is managed via <code style="background:#111519;padding:1px 6px;border-radius:3px">config.json</code> in the project root.</p>
-    </div>
-  </div>
-
 </main>
 </div>
 
@@ -1652,8 +1075,6 @@ document.querySelectorAll('.nav-item').forEach(el => {
     document.getElementById('view-' + el.dataset.view).classList.add('active');
     if (el.dataset.view === 'history' && cache) renderHistory(cache);
     if (el.dataset.view === 'performance' && cache) renderPerformance(cache);
-    if (el.dataset.view === 'gex') { _initGexSymbol(); fetchGex(); }
-    if (el.dataset.view === 'logs') fetchLog();
   });
 });
 
@@ -1661,7 +1082,7 @@ document.querySelectorAll('.nav-item').forEach(el => {
 function fPnl(v, cls) {
   if (v == null) return '<span class="dash">—</span>';
   const c = cls || (v > 0 ? 'pos' : v < 0 ? 'neg' : 'neu');
-  const s = v > 0 ? '+' : '';
+  const s = v > 0 ? '+' : v < 0 ? '-' : '';
   return '<span class="' + c + '">' + s + '$' + Math.abs(v).toFixed(2) + '</span>';
 }
 function fNum(v) {
@@ -1868,10 +1289,7 @@ function renderHistory(d) {
 
 // ── symbol selectors ─────────────────────────────────────────────────────────
 // Populated once from the traded-symbols list the server reports (config.json's
-// `symbols`) — both the main-view filter and the GEX picker draw from the same
-// list, since GEX preview is restricted to actively traded symbols (open interest
-// only ever comes from a live subscription, never REST, so previewing a
-// non-traded symbol's GEX would just show a flat zero profile).
+// `symbols`) so the main-view symbol filter matches what the suite trades.
 let symbolsPopulated = false;
 function populateSymbolSelectors(symbols) {
   if (symbolsPopulated || !symbols || !symbols.length) return;
@@ -1881,18 +1299,6 @@ function populateSymbolSelectors(symbols) {
     const o1 = document.createElement('option'); o1.value = sym; o1.textContent = sym;
     mainSel.appendChild(o1);
   });
-  // Three synced copies of the GEX symbol selector — one per sub-tab (GEX/IV Skew/Volume)
-  // — so it's usable no matter which one is active, not just the GEX tab. Default to SPX
-  // when it's among the traded symbols (regardless of its position in config.json's
-  // `symbols` list), otherwise fall back to whichever symbol is first.
-  const defaultGexSymbol = symbols.includes('SPX') ? 'SPX' : symbols[0];
-  document.querySelectorAll('.gex-symbol-select').forEach(sel => {
-    symbols.forEach(sym => {
-      const o = document.createElement('option'); o.value = sym; o.textContent = sym;
-      sel.appendChild(o);
-    });
-    sel.value = defaultGexSymbol;
-  });
 }
 
 // ── profile selector (paper-trading dashboard) ──────────────────────────────────
@@ -1900,27 +1306,38 @@ function populateSymbolSelectors(symbols) {
 // time as each accrues its first trade — so this re-populates whenever the server's
 // profile list actually changes, rather than a single-shot guard, while preserving the
 // current selection if it's still valid.
+// Two synced profile selectors — the global one in the Today header (peer of the symbol
+// filter) and the one in the Performance view — are populated identically so a choice in
+// either scopes the whole dashboard. An "All profiles" option leads (the blended default).
+const PROFILE_SELECT_IDS = ['main-profile-select', 'perf-profile-select'];
 let lastProfilesKey = '';
 function populateProfileSelector(profiles) {
   if (!profiles || !profiles.length) return;
   const key = profiles.join(',');
   if (key === lastProfilesKey) return;
   lastProfilesKey = key;
-  const sel = document.getElementById('perf-profile-select');
-  const current = sel.value;
-  sel.innerHTML = '';
-  profiles.forEach(p => {
-    const o = document.createElement('option');
-    o.value = p;
-    o.textContent = p === 'live' ? 'Live' : p.charAt(0).toUpperCase() + p.slice(1);
-    sel.appendChild(o);
+  // Both selects are kept in sync, so either one carries the current selection.
+  const current = document.getElementById('main-profile-select').value;
+  PROFILE_SELECT_IDS.forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '';
+    const all = document.createElement('option');
+    all.value = 'ALL'; all.textContent = 'All profiles';
+    sel.appendChild(all);
+    profiles.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p;
+      o.textContent = p === 'live' ? 'Live' : p.charAt(0).toUpperCase() + p.slice(1);
+      sel.appendChild(o);
+    });
+    sel.value = (current === 'ALL' || profiles.includes(current)) ? current : 'ALL';
+    // Only real multi-profile data (paper trades tagged with a risk_profile) makes the
+    // selector meaningful — a live dashboard or an empty paper DB stays on the inert
+    // single "All profiles" placeholder, disabled, as before this feature existed.
+    sel.disabled = profiles.length <= 1;
+    sel.title = sel.disabled ? 'Enabled once paper-trading risk_profile data exists' : '';
   });
-  if (profiles.includes(current)) sel.value = current;
-  // Only real multi-profile data (paper trades tagged with a risk_profile) makes the
-  // selector meaningful — a live dashboard or an empty paper DB stays on the inert
-  // single "Live" placeholder, disabled, exactly as before this feature existed.
-  sel.disabled = profiles.length <= 1;
-  sel.title = sel.disabled ? 'Enabled once paper-trading risk_profile data exists' : '';
 }
 
 // ── performance view ─────────────────────────────────────────────────────────
@@ -2193,7 +1610,7 @@ function renderAll(d) {
 async function fetchData() {
   try {
     const sym = document.getElementById('main-symbol-select').value || 'ALL';
-    const prof = document.getElementById('perf-profile-select').value || 'ALL';
+    const prof = document.getElementById('main-profile-select').value || 'ALL';
     const r = await fetch('/api/data?symbol=' + encodeURIComponent(sym) + '&profile=' + encodeURIComponent(prof));
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
@@ -2211,571 +1628,25 @@ async function fetchData() {
 }
 
 document.getElementById('main-symbol-select').addEventListener('change', fetchData);
-document.getElementById('perf-profile-select').addEventListener('change', fetchData);
-
-// ── log tail ──────────────────────────────────────────────────────────────────
-let logPaused = false;
-let lastLogCount = 0;
-const logScroll = document.getElementById('log-scroll');
-
-logScroll.addEventListener('scroll', () => {
-  const atBottom = logScroll.scrollTop + logScroll.clientHeight >= logScroll.scrollHeight - 20;
-  logPaused = !atBottom;
-  document.getElementById('log-paused').style.display = logPaused ? 'inline-block' : 'none';
-});
-
-function logVisible() {
-  return document.getElementById('view-logs').classList.contains('active');
-}
-
-function renderLog(lines) {
-  const showInfo  = document.getElementById('log-info').checked;
-  const showWarn  = document.getElementById('log-warn').checked;
-  const showError = document.getElementById('log-error').checked;
-  const filtered  = lines.filter(l => {
-    const lv = (l.level || 'INFO').toUpperCase();
-    if (lv === 'WARN'  && !showWarn)  return false;
-    if (lv === 'ERROR' && !showError) return false;
-    if (lv === 'INFO'  && !showInfo)  return false;
-    return true;
+// A profile choice in either select mirrors to the other, then reloads — one filter, two entry points.
+function onProfileChange(e) {
+  const v = e.target.value;
+  PROFILE_SELECT_IDS.forEach(id => {
+    const s = document.getElementById(id);
+    if (s && s.value !== v) s.value = v;
   });
-  if (filtered.length === lastLogCount && logScroll.innerHTML !== '') return;
-  lastLogCount = filtered.length;
-  logScroll.innerHTML = filtered.map(l => {
-    const lv  = (l.level || 'INFO').toUpperCase();
-    const msg = (l.msg || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    return '<div class="log-line">' +
-      '<span class="log-ts">' + (l.ts || '        ') + '  </span>' +
-      '<span class="log-lvl ' + lv + '">' + lv.padEnd(6) + '</span>' +
-      '<span class="log-msg ' + lv + '">' + msg + '</span>' +
-      '</div>';
-  }).join('');
-  if (!logPaused) logScroll.scrollTop = logScroll.scrollHeight;
+  fetchData();
 }
-
-async function fetchLog() {
-  if (!logVisible()) return;
-  try {
-    const r = await fetch('/api/log');
-    if (!r.ok) return;
-    const d = await r.json();
-    if (d.lines) renderLog(d.lines);
-  } catch(_) {}
-}
-
-// Re-render when filters change
-['log-info','log-warn','log-error'].forEach(id => {
-  document.getElementById(id).addEventListener('change', () => { lastLogCount = -1; fetchLog(); });
-});
-
-// ── GEX ───────────────────────────────────────────────────────────────────────
-let gexData = null;
-let gexIvChart = null, gexOiChart = null, gexVolChart = null, gexMainChart = null;
-
-function fGex(v) {
-  if (v == null) return '—';
-  const abs = Math.abs(v);
-  const sign = v < 0 ? '-' : '';
-  if (abs >= 1e9) return sign + '$' + (abs / 1e9).toFixed(2) + 'B';
-  if (abs >= 1e6) return sign + '$' + (abs / 1e6).toFixed(2) + 'M';
-  if (abs >= 1e3) return sign + '$' + (abs / 1e3).toFixed(1) + 'K';
-  return sign + '$' + abs.toFixed(0);
-}
-
-function _vline(x, label, color) {
-  return {
-    id: 'vline_' + label,
-    beforeDatasetsDraw(chart) {
-      const {ctx, scales} = chart;
-      if (!scales.x) return;
-      const xPx = scales.x.getPixelForValue(x);
-      if (xPx == null || isNaN(xPx)) return;
-      const {top, bottom} = chart.chartArea;
-      ctx.save();
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(xPx, top); ctx.lineTo(xPx, bottom); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = color;
-      ctx.font = '9px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(label, xPx, bottom + 12);
-      ctx.restore();
-    }
-  };
-}
-
-// The strike (y) axis is a Chart.js category scale — its own getPixelForValue() only
-// resolves values that exactly match one of its labels (it does a plain indexOf), so a
-// continuous price like spot or gamma_flip that falls between two strikes returns nothing.
-// Find the two labels bracketing `value` and interpolate the pixel position between their
-// (reliable) tick positions instead.
-function _categoryPixelForValue(scale, labels, value) {
-  if (!labels || !labels.length) return null;
-  const n = labels.length;
-  if (n === 1) return (scale.top + scale.bottom) / 2;
-  // Find value's fractional position within the (ascending) labels array first, as a
-  // continuous "logical index" in [0, n-1], then map that fraction onto the two real
-  // endpoint pixels (index 0 and n-1).
-  let loIdx;
-  if (value <= labels[0]) {
-    loIdx = 0;
-  } else if (value >= labels[n - 1]) {
-    loIdx = n - 2;
-  } else {
-    loIdx = 0;
-    for (let i = 0; i < n - 1; i++) {
-      if (value >= labels[i] && value <= labels[i + 1]) { loIdx = i; break; }
-    }
-  }
-  const lo = labels[loIdx], hi = labels[loIdx + 1];
-  const frac = hi === lo ? 0 : (value - lo) / (hi - lo);
-  const logicalIdx = loIdx + frac;
-
-  // Both getPixelForTick(index) and getPixelForValue(value, index) gave wrong or
-  // out-of-range results here across two attempts — bypassing Chart.js's per-index scale
-  // methods entirely. scale.top/scale.bottom are the axis's own plain pixel bounds, and
-  // scale.options.reverse tells us which end index 0 (the lowest strike) is drawn at; from
-  // there this is just linear interpolation, nothing left for Chart.js to get "clever" about.
-  const top = scale.top, bottom = scale.bottom;
-  if (top == null || bottom == null || isNaN(top) || isNaN(bottom)) return null;
-  const reversed = !!(scale.options && scale.options.reverse);
-  const posFrac = logicalIdx / (n - 1);  // 0 = lowest-strike label, 1 = highest-strike label
-  return reversed ? (bottom - posFrac * (bottom - top)) : (top + posFrac * (bottom - top));
-}
-
-function _hline(y, label, color, opts) {
-  const solid = opts && opts.solid;
-  return {
-    id: 'hline_' + label,
-    beforeDatasetsDraw(chart) {
-      const {ctx, scales} = chart;
-      if (!scales.y) return;
-      let yPx = _categoryPixelForValue(scales.y, chart.data.labels, y);
-      if (yPx == null || isNaN(yPx)) return;
-      const {left, right, top, bottom} = chart.chartArea;
-      // Clamp — spot/gamma_flip can fall outside the (trimmed) strike window shown, in
-      // which case the interpolated pixel would land off the plot area.
-      yPx = Math.max(top, Math.min(bottom, yPx));
-      ctx.save();
-      if (!solid) ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = solid ? 2 : 1.5;
-      ctx.beginPath(); ctx.moveTo(left, yPx); ctx.lineTo(right, yPx); ctx.stroke();
-      ctx.setLineDash([]);
-      // Price tag: a filled badge at the right edge, sitting on the line, instead of
-      // plain floating text — matches the reference GEX-profile layout.
-      ctx.font = 'bold 10px sans-serif';
-      const textW = ctx.measureText(label).width;
-      const padX = 6, tagH = 15;
-      const tagX = right - textW - padX * 2;
-      const tagY = yPx - tagH / 2;
-      ctx.fillStyle = '#0d1117';
-      ctx.beginPath();
-      if (ctx.roundRect) ctx.roundRect(tagX, tagY, textW + padX * 2, tagH, 3);
-      else ctx.rect(tagX, tagY, textW + padX * 2, tagH);
-      ctx.fill();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.fillStyle = color;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, tagX + padX, yPx + 1);
-      ctx.restore();
-    }
-  };
-}
-
-// Trim a by-strike series to the contiguous band around its non-zero data, padded by
-// `pad` strikes on each side — a horizontal strike ladder otherwise wastes most of its
-// height on far-OTM strikes with no meaningful bar (the fetched window is wider than
-// what's worth plotting).
-function _trimToData(series, valueKeys, pad) {
-  let lo = -1, hi = -1;
-  for (let i = 0; i < series.length; i++) {
-    const nonZero = valueKeys.some(k => Math.abs(series[i][k] || 0) > 0);
-    if (nonZero) { if (lo === -1) lo = i; hi = i; }
-  }
-  if (lo === -1) return series;
-  return series.slice(Math.max(0, lo - pad), Math.min(series.length, hi + pad + 1));
-}
-
-// Sizes the gamma-exposure chart's container to exactly fill the remaining viewport height
-// below it, so the chart spans the view without ever causing page scroll — bar thickness
-// then falls out of Chart.js's own relative sizing (barPercentage/categoryPercentage
-// defaults) dividing that fixed height across however many strikes are shown, same as
-// OI/Volume, rather than growing the container per strike.
-function _fitChartToViewport(canvasId, bottomPad, minH) {
-  const canvas = document.getElementById(canvasId);
-  const wrap = canvas && canvas.parentElement;
-  if (!wrap) return;
-  const top = wrap.getBoundingClientRect().top;
-  const avail = window.innerHeight - top - (bottomPad || 24);
-  wrap.style.height = Math.max(minH || 220, avail) + 'px';
-}
-
-function _baseOpts(plugins) {
-  return {
-    responsive: true, maintainAspectRatio: false,
-    animation: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: { mode: 'index', intersect: false, backgroundColor: '#1a1f2e',
-                 titleColor: '#e6edf3', bodyColor: '#8b949e', borderColor: '#1e2430', borderWidth: 1 },
-      ...(plugins || {})
-    },
-    scales: {
-      x: { grid: { color: '#1a1f2a' }, ticks: { color: '#4a5568', font: { size: 9 }, maxRotation: 0 } },
-      y: { grid: { color: '#1a1f2a' }, ticks: { color: '#4a5568', font: { size: 9 } } }
-    }
-  };
-}
-
-function renderIvChart(series, spot) {
-  const labels = series.map(s => s.strike);
-  const ds = [
-    { label: 'Call IV', data: series.map(s => s.call_iv || null),
-      borderColor: 'green', backgroundColor: 'rgba(0,128,0,0.1)',
-      pointRadius: 4, pointHoverRadius: 6, borderWidth: 2, tension: 0, fill: false },
-    { label: 'Put IV',  data: series.map(s => s.put_iv  || null),
-      borderColor: 'red', backgroundColor: 'rgba(255,0,0,0.1)',
-      pointRadius: 4, pointHoverRadius: 6, borderWidth: 2, tension: 0, fill: false },
-  ];
-  const opts = _baseOpts();
-  opts.scales.x.title = { display: true, text: 'Strike Price', color: '#6b7280' };
-  opts.scales.y.title = { display: true, text: 'Implied Volatility (%)', color: '#6b7280' };
-  opts.scales.y.ticks.callback = v => v.toFixed(1) + '%';
-  opts.plugins.tooltip.mode = 'index';
-  opts.plugins.tooltip.callbacks = { label: ctx => ctx.dataset.label + ': ' + (ctx.parsed.y || 0).toFixed(2) + '%' };
-  opts.plugins.vline = spot != null ? _vline(spot, '$' + spot.toFixed(2), '#f5a623') : {};
-  if (gexIvChart) { gexIvChart.data.labels = labels; gexIvChart.data.datasets = ds; gexIvChart.update(); return; }
-  gexIvChart = new Chart(document.getElementById('gex-iv-chart'), { type: 'line', data: { labels, datasets: ds }, options: opts });
-}
-
-function renderOiChart(series, spot) {
-  series = _trimToData(series, ['call_oi', 'put_oi', 'call_vol', 'put_vol'], 3);
-  const labels = series.map(s => s.strike);
-  // Calls positive (right), puts negated (left) — mirrored horizontal bars. OI (dark) and
-  // Volume (light) share the same origin and overlap rather than stack — Volume is drawn
-  // second so it renders in front, appearing as a short highlighted segment near the base
-  // of the (usually much larger) OI bar.
-  const ds = [
-    { label: 'Call OI',     data: series.map(s => s.call_oi),   backgroundColor: 'green' },
-    { label: 'Put OI',      data: series.map(s => -s.put_oi),   backgroundColor: 'red' },
-    { label: 'Call Volume', data: series.map(s => s.call_vol),  backgroundColor: 'lightgreen' },
-    { label: 'Put Volume',  data: series.map(s => -s.put_vol),  backgroundColor: 'lightcoral' },
-  ];
-  const opts = _baseOpts();
-  opts.indexAxis = 'y';
-  // Tooltip/hover hit-testing must search along the same axis as indexAxis, but
-  // Chart.js's interaction.axis defaults to 'x' regardless of indexAxis -- without
-  // this the tooltip picks the nearest point by X (GEX $ value) instead of Y
-  // (strike), so it jumps around and shows the wrong strike while hovering.
-  opts.interaction = { mode: 'index', intersect: false, axis: 'y' };
-  opts.scales.y.title = { display: true, text: 'Strike', color: '#6b7280' };
-  opts.scales.y.reverse = true;  // highest strike at top, lowest at bottom
-  opts.scales.x.title = { display: true, text: 'Open Interest / Volume', color: '#6b7280' };
-  // grouped:false makes same-category datasets overlap (full width, drawn in array order)
-  // instead of Chart.js's default of splitting each dataset into its own thin sub-bar.
-  opts.scales.y.grouped = false;
-  opts.plugins.tooltip.callbacks = {
-    label: ctx => (ctx.dataset.label || '') + ': ' + Math.abs(ctx.parsed.x).toLocaleString()
-  };
-  opts.plugins.hline = spot != null ? _hline(spot, '$' + spot.toFixed(2), '#00b4ff', {solid: true}) : {};
-  if (gexOiChart) { gexOiChart.destroy(); gexOiChart = null; }
-  gexOiChart = new Chart(document.getElementById('gex-oi-chart'),
-    { type: 'bar', data: { labels, datasets: ds }, options: opts,
-      plugins: spot != null ? [_hline(spot, '$' + spot.toFixed(2), '#00b4ff', {solid: true})] : [] });
-}
-
-function renderVolChart(series, spot, mode) {
-  series = _trimToData(series, ['call_vol', 'put_vol', 'total_vol'], 3);
-  const labels = series.map(s => s.strike);
-  let ds;
-  if (mode === 'split') {
-    // Calls positive (right), puts negated (left) — mirrored horizontal bars
-    ds = [
-      { label: 'Call Volume', data: series.map(s => s.call_vol),  backgroundColor: 'lightgreen' },
-      { label: 'Put Volume',  data: series.map(s => -s.put_vol),  backgroundColor: 'lightcoral' },
-    ];
-  } else {
-    ds = [{ label: 'Total Volume', data: series.map(s => s.total_vol), backgroundColor: 'purple' }];
-  }
-  const opts = _baseOpts();
-  opts.indexAxis = 'y';
-  // Tooltip/hover hit-testing must search along the same axis as indexAxis, but
-  // Chart.js's interaction.axis defaults to 'x' regardless of indexAxis -- without
-  // this the tooltip picks the nearest point by X (GEX $ value) instead of Y
-  // (strike), so it jumps around and shows the wrong strike while hovering.
-  opts.interaction = { mode: 'index', intersect: false, axis: 'y' };
-  opts.scales.y.title = { display: true, text: 'Strike', color: '#6b7280' };
-  opts.scales.y.reverse = true;  // highest strike at top, lowest at bottom
-  opts.scales.x.title = { display: true, text: 'Volume', color: '#6b7280' };
-  if (mode === 'split') { opts.scales.x.stacked = true; opts.scales.y.stacked = true; }
-  opts.plugins.tooltip.callbacks = { label: ctx => (ctx.dataset.label||'') + ': ' + Math.abs(ctx.parsed.x).toLocaleString() };
-  if (gexVolChart) { gexVolChart.destroy(); gexVolChart = null; }
-  gexVolChart = new Chart(document.getElementById('gex-vol-chart'),
-    { type: 'bar', data: { labels, datasets: ds }, options: opts,
-      plugins: spot != null ? [_hline(spot, '$' + spot.toFixed(2), '#00b4ff', {solid: true})] : [] });
-}
-
-// Traces the day's spot price as a light-blue line overlaid directly on the GEX profile:
-// Y comes from the same strike-axis category interpolation used for the reference lines
-// (so it lines up with the GEX bars' rows exactly), but X is computed independently from
-// wall-clock time (market open -> close) rather than the bars' own $-value x-axis — the
-// chart's real x-scale is left alone entirely; this is pure manual canvas drawing sharing
-// only the chartArea and y-scale of the underlying chart.
-function _spotHistoryPlugin(history, labels, openTs, closeTs) {
-  return {
-    id: 'spotHistory',
-    // afterDatasetsDraw, not before — a point near a bar's own origin would otherwise be
-    // hidden underneath it.
-    afterDatasetsDraw(chart) {
-      const {ctx, scales, chartArea} = chart;
-      if (!scales.y || !history || !history.length) return;
-      if (openTs == null || closeTs == null || closeTs <= openTs) return;
-      const pts = [];
-      for (const pt of history) {
-        const frac = (pt.ts - openTs) / (closeTs - openTs);
-        if (frac < 0 || frac > 1) continue;  // outside the trading session
-        let yPx = _categoryPixelForValue(scales.y, labels, pt.spot);
-        if (yPx == null || isNaN(yPx)) continue;
-        yPx = Math.max(chartArea.top, Math.min(chartArea.bottom, yPx));
-        const xPx = chartArea.left + frac * (chartArea.right - chartArea.left);
-        pts.push([xPx, yPx]);
-      }
-      if (!pts.length) return;
-      ctx.save();
-      ctx.strokeStyle = '#7ec8f2';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      pts.forEach(([x, y], i) => { i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
-      ctx.stroke();
-      ctx.fillStyle = '#7ec8f2';
-      pts.forEach(([x, y]) => {
-        ctx.beginPath();
-        ctx.arc(x, y, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-      });
-      ctx.restore();
-    }
-  };
-}
-
-function renderGexMainChart(series, spot, zero, mode, callWall, putWall, spotHistory, marketOpenTs, marketCloseTs) {
-  series = _trimToData(series, ['call_gex', 'put_gex', 'net_gex', 'abs_gex', 'net_gex_vol'], 3);
-  const labels = series.map(s => s.strike);
-  let ds, titleText, stacked = false;
-  if (mode === 'oivol') {
-    // Two side-by-side (grouped, not stacked/overlapping) bars per strike: net GEX from
-    // open interest (dark green/red) vs. net GEX from volume (light green/red) — a
-    // "positioning" vs. "flow" comparison at each strike.
-    ds = [
-      { label: 'Net GEX (OI)',
-        data: series.map(s => s.net_gex),
-        backgroundColor: series.map(s => s.net_gex >= 0 ? 'green' : 'red') },
-      { label: 'Net GEX (Volume)',
-        data: series.map(s => s.net_gex_vol),
-        backgroundColor: series.map(s => s.net_gex_vol >= 0 ? 'lightgreen' : 'lightcoral') },
-    ];
-    titleText = 'GEX by Strike — Net GEX (OI vs Volume)';
-  } else if (mode === 'abs') {
-    ds = [{ label: '|Net GEX|', data: series.map(s => s.abs_gex), backgroundColor: 'blue' }];
-    titleText = 'GEX by Strike — Absolute GEX';
-  } else {
-    // Net GEX: green where positive (call-heavy), red where negative (put-heavy)
-    ds = [{ label: 'Net GEX',
-            data: series.map(s => s.net_gex),
-            backgroundColor: series.map(s => s.net_gex >= 0 ? 'green' : 'red') }];
-    titleText = 'GEX by Strike — Net GEX (Green=Call Heavy, Red=Put Heavy)';
-  }
-  document.getElementById('gex-chart-title').textContent = titleText;
-  const opts = _baseOpts();
-  opts.indexAxis = 'y';
-  // Tooltip/hover hit-testing must search along the same axis as indexAxis, but
-  // Chart.js's interaction.axis defaults to 'x' regardless of indexAxis -- without
-  // this the tooltip picks the nearest point by X (GEX $ value) instead of Y
-  // (strike), so it jumps around and shows the wrong strike while hovering.
-  opts.interaction = { mode: 'index', intersect: false, axis: 'y' };
-  opts.scales.y.title = { display: true, text: 'Strike Price', color: '#6b7280' };
-  opts.scales.y.reverse = true;  // highest strike at top, lowest at bottom
-  opts.scales.x.title = { display: true, text: 'Gamma Exposure ($)', color: '#6b7280' };
-  if (stacked) { opts.scales.x.stacked = true; opts.scales.y.stacked = true; }
-  opts.scales.x.ticks.callback = v => fGex(v);
-  opts.plugins.tooltip.callbacks = {
-    label: ctx => (ctx.dataset.label||'') + ': ' + fGex(ctx.parsed.x)
-  };
-  // Fits the chart to exactly the remaining viewport height so it spans the view without
-  // causing page scroll; bar thickness then comes from Chart.js's own relative sizing
-  // across whatever strikes are in view, same as OI/Volume.
-  _fitChartToViewport('gex-main-chart', 24, 220);
-  const hlinePlugins = [];
-  if (spot != null) hlinePlugins.push(_hline(spot, '$' + spot.toFixed(2), '#00b4ff', {solid: true}));
-  if (zero != null) hlinePlugins.push(_hline(zero, 'Zero Γ: $' + zero.toFixed(2), 'purple'));
-  if (callWall != null) hlinePlugins.push(_hline(callWall, 'Call Wall: $' + callWall.toFixed(2), 'yellow'));
-  if (putWall != null) hlinePlugins.push(_hline(putWall, 'Put Wall: $' + putWall.toFixed(2), 'orange'));
-  opts.plugins.customHlines = { id: 'customHlines', beforeDatasetsDraw(chart) {
-    hlinePlugins.forEach(p => p.beforeDatasetsDraw(chart));
-  }};
-  if (gexMainChart) { gexMainChart.destroy(); gexMainChart = null; }
-  gexMainChart = new Chart(document.getElementById('gex-main-chart'),
-    { type: 'bar', data: { labels, datasets: ds },
-      options: opts,
-      plugins: [opts.plugins.customHlines,
-                _spotHistoryPlugin(spotHistory, labels, marketOpenTs, marketCloseTs)] });
-}
-
-function renderGexMetrics(totals) {
-  const t = totals || {};
-  document.getElementById('m-call-gex').textContent  = fGex(t.total_call_gex);
-  const putEl = document.getElementById('m-put-gex');
-  putEl.textContent = t.total_put_gex != null ? fGex(-t.total_put_gex) : '—';
-  const netEl = document.getElementById('m-net-gex');
-  netEl.textContent = fGex(t.net_gex);
-  netEl.className = 'metric-val ' + (t.net_gex >= 0 ? 'pos' : 'neg');
-  document.getElementById('m-max-strike').textContent = t.max_gex_strike != null ? '$' + t.max_gex_strike : '—';
-  document.getElementById('m-call-wall').textContent = t.call_wall != null ? '$' + t.call_wall : '—';
-  document.getElementById('m-put-wall').textContent = t.put_wall != null ? '$' + t.put_wall : '—';
-  document.getElementById('m-zero-gamma').textContent = t.zero_gamma != null ? '$' + t.zero_gamma.toFixed(2) : '—';
-}
-
-function renderGex(d) {
-  gexData = d;
-  if (!d.ok) {
-    document.getElementById('gex-iv-sub').textContent = d.error || 'No data';
-    return;
-  }
-  const series = d.series || [];
-  const spot   = d.underlying_price;
-  const zero   = d.totals && d.totals.zero_gamma;
-  const callWall = d.totals && d.totals.call_wall;
-  const putWall  = d.totals && d.totals.put_wall;
-  const spotHistory = d.spot_history || [];
-  const marketOpenTs  = d.market_open_ts;
-  const marketCloseTs = d.market_close_ts;
-  const sym    = d.symbol || '';
-  const exp    = d.expiration || '';
-  document.getElementById('gex-iv-sub').textContent   = sym + ' Implied Volatility Skew — Exp: ' + exp;
-  document.getElementById('gex-main-sub').textContent = sym + ' — Exp: ' + exp + (spot ? '  |  Spot: $' + spot.toFixed(2) : '');
-
-  const gexMode = document.querySelector('input[name="gex_view"]:checked')?.value || 'net';
-  const volMode = document.querySelector('input[name="vol_view"]:checked')?.value || 'total';
-
-  renderIvChart(series, spot);
-  renderOiChart(series, spot);
-  renderVolChart(series, spot, volMode);
-  renderGexMainChart(series, spot, zero, gexMode, callWall, putWall, spotHistory, marketOpenTs, marketCloseTs);
-  renderGexMetrics(d.totals);
-}
-
-function _initGexSymbol() {
-  // Sync all three dropdowns to the last-loaded symbol; otherwise leave the HTML default
-  if (!gexData) return;
-  const sym = (gexData.symbol || '').toUpperCase();
-  document.querySelectorAll('.gex-symbol-select').forEach(sel => {
-    if ([...sel.options].some(o => o.value === sym)) sel.value = sym;
-  });
-}
-
-function gexSymbol() {
-  // Any of the three selectors could be the one the user just changed — all three are
-  // kept in sync on 'change' (see the listener below), so reading the first is enough.
-  const sel = document.querySelector('.gex-symbol-select');
-  if (!sel) return '';
-  return sel.value || (sel.options.length ? sel.options[0].value : '');
-}
-
-function _setGexBadges(text, color) {
-  document.querySelectorAll('.gex-source-badge').forEach(b => {
-    b.textContent = text;
-    b.style.color = color || '#6b7280';
-  });
-}
-
-async function fetchGex() {
-  const sym = gexSymbol();
-  if (!sym) return;  // selector not populated yet — wait for the next auto-refresh tick
-  _setGexBadges('Loading…');
-  try {
-    const r = await fetch('/api/gex?symbol=' + encodeURIComponent(sym));
-    if (!r.ok) {
-      _setGexBadges('HTTP ' + r.status, '#e8423a');
-      return;
-    }
-    const d = await r.json();
-    if (!d.ok) {
-      // The server always answers with HTTP 200 even on internal failure
-      // (e.g. no chain data cached yet for this symbol) — d.ok is the real
-      // success signal. Without this check the badge was left stuck on
-      // "Loading…" and renderGex(d) would run against a response with no
-      // `series`, rendering blank/broken charts with no visible error.
-      _setGexBadges('error: ' + (d.error || 'unknown'), '#e8423a');
-      return;
-    }
-    if (d.source === 'rest') {
-      _setGexBadges('⚡ live REST fetch', '#f5a623');
-    } else if (d.source === 'stream_cache') {
-      _setGexBadges('● stream cache', '#00c896');
-    } else {
-      _setGexBadges('');
-    }
-    renderGex(d);
-  } catch(_) { _setGexBadges('error', '#e8423a'); }
-}
-
-// GEX sub-tabs
-document.querySelectorAll('.gex-tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.gex-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.gex-tab-panel').forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('gex-panel-' + tab.dataset.gexTab).classList.add('active');
-    // A viewport-fit computed while this panel was display:none (hidden elements report a
-    // zero-valued bounding rect) would be wrong — recompute now that it's visible again,
-    // before resize() picks up the container's current (now-correct) height.
-    if (tab.dataset.gexTab === 'gex' && gexData) {
-      _fitChartToViewport('gex-main-chart', 24, 220);
-    }
-    // resize charts that were rendered while their panel was hidden
-    [gexMainChart, gexIvChart, gexOiChart, gexVolChart].forEach(c => { if (c) c.resize(); });
-  });
-});
-
-// Keep the gamma-exposure chart fit to the viewport across window resizes.
-window.addEventListener('resize', () => {
-  if (!gexMainChart) return;
-  _fitChartToViewport('gex-main-chart', 24, 220);
-  gexMainChart.resize();
-});
-
-// Symbol selector
-document.querySelectorAll('.gex-symbol-select').forEach(sel => {
-  sel.addEventListener('change', () => {
-    const sym = sel.value;
-    document.querySelectorAll('.gex-symbol-select').forEach(other => { other.value = sym; });
-    fetchGex();
-  });
-});
-
-// GEX radio toggle listeners
-document.querySelectorAll('input[name="gex_view"]').forEach(el =>
-  el.addEventListener('change', () => { if (gexData) renderGex(gexData); }));
-document.querySelectorAll('input[name="vol_view"]').forEach(el =>
-  el.addEventListener('change', () => { if (gexData) renderGex(gexData); }));
+PROFILE_SELECT_IDS.forEach(id =>
+  document.getElementById(id).addEventListener('change', onProfileChange));
 
 // ── auto-refresh ──────────────────────────────────────────────────────────────
-// fetchGex() no-ops until the symbol selector is populated (by fetchData()'s response),
-// so chain the first GEX fetch after the first data fetch rather than firing in parallel.
-fetchData().then(fetchGex);
+fetchData();
 setInterval(() => {
   cd--;
   document.getElementById('scountdown').textContent = 'Refresh in ' + cd + 's';
-  if (cd <= 0) { cd = 30; fetchData(); fetchGex(); }
+  if (cd <= 0) { cd = 30; fetchData(); }
 }, 1000);
-setInterval(fetchLog, 10000);
-setInterval(fetchGex, 15000);
 </script>
 </body>
 </html>"""
@@ -2808,32 +1679,6 @@ class _Handler(BaseHTTPRequestHandler):
                 result = _build_api_data(sym, prof)
             except Exception as exc:
                 result = {"ok": False, "error": str(exc)}
-            body = json.dumps(result, default=str).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-cache")
-            self.end_headers()
-            self.wfile.write(body)
-        elif self.path.startswith("/api/gex"):
-            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            sym = (qs.get("symbol") or [None])[0]
-            try:
-                result = _build_gex_data(sym)
-            except Exception as exc:
-                result = {"ok": False, "error": str(exc)}
-            body = json.dumps(result, default=str).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-cache")
-            self.end_headers()
-            self.wfile.write(body)
-        elif self.path.startswith("/api/log"):
-            try:
-                result = _build_log_data()
-            except Exception as exc:
-                result = {"ok": False, "error": str(exc), "lines": []}
             body = json.dumps(result, default=str).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -2875,7 +1720,7 @@ def _resolve_mode_defaults(mode: str, db_arg: str | None, port_arg: int | None,
 
 
 def main():
-    global _DB_PATH, _MODE, _LOG_PATH
+    global _DB_PATH, _MODE
     parser = argparse.ArgumentParser(description="MEICAgent Dashboard")
     parser.add_argument("--mode", choices=["live", "paper"], default="live",
                          help="'paper' points the dashboard at the data home's paper_trades.db "
@@ -2891,12 +1736,6 @@ def main():
     _DB_PATH, port = _resolve_mode_defaults(args.mode, args.db, args.port)
     # `python dashboard.py` with no args resolves to (today's default meic_trades.db path, 5050)
     # — byte-identical to pre-paper-mode behavior.
-    # The Logs tab tails the mode's own log: the paper session writes logs/paper_loop.log,
-    # the live loop writes logs/agent.log. Without this the paper dashboard showed the (stale)
-    # live log and no paper activity.
-    if args.mode == "paper":
-        _LOG_PATH = _PAPER_LOG_PATH
-
     # Check if already running
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     already = probe.connect_ex(("127.0.0.1", port)) == 0

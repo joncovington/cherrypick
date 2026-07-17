@@ -54,25 +54,29 @@ def build_markdown(cfg: dict, day: str, rep: dict | None = None) -> str:
 
     L.append("## Suite total")
     L.append(f"- Trades closed: **{suite.get('trades', 0)}**")
-    L.append(f"- Net P&L (net of costs): **{_money(suite.get('net_pnl'))}**")
+    L.append(
+        f"- Gross **{_money(suite.get('gross_pnl'))}** &minus; costs "
+        f"**{_money(suite.get('cost'))}** = **Net {_money(suite.get('net_pnl'))}**"
+    )
     L.append(
         f"- Wins / Losses: {suite.get('wins', 0)} / {suite.get('losses', 0)} "
-        f"(win rate {_pct(suite.get('win_rate'))})"
+        f"(net win rate {_pct(suite.get('win_rate'))}, gross {_pct(suite.get('gross_win_rate'))})"
     )
     L.append("")
 
     L.append("## Per module")
-    L.append("| Module | Trades | Wins | Losses | Win % | Net P&L |")
-    L.append("|---|---|---|---|---|---|")
+    L.append("| Module | Trades | Wins | Losses | Win % | Gross | Cost | Net P&L |")
+    L.append("|---|---|---|---|---|---|---|---|")
     for name in enabled:
         m = modules.get(name, {})
         if not m.get("ok"):
             reason = m.get("reason", "no data")
-            L.append(f"| {name} | - | - | - | - | _{reason}_ |")
+            L.append(f"| {name} | - | - | - | - | - | - | _{reason}_ |")
             continue
         L.append(
             f"| {name} | {m.get('trades', 0)} | {m.get('wins', 0)} | {m.get('losses', 0)} | "
-            f"{_pct(m.get('win_rate'))} | {_money(m.get('net_pnl'))} |"
+            f"{_pct(m.get('win_rate'))} | {_money(m.get('gross_pnl'))} | "
+            f"{_money(m.get('cost'))} | {_money(m.get('net_pnl'))} |"
         )
     L.append("")
 

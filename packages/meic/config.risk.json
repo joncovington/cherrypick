@@ -162,6 +162,125 @@
       "late_entry_bias_enabled": false
     },
 
+    "large-spx-trim": {
+      "_note": "Isolation cell (vs large-spx control): ONLY change is trimmed allocation -- max_concurrent_ics 4->2 and daily_ic_trade_target 6->3 (half the exposure). Everything else matches large-spx. Measures the effect of reducing SPX size alone. See docs/paper-experiments.md.",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 2,
+      "daily_ic_trade_target": 3,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false
+    },
+
+    "large-spx-directional": {
+      "_note": "Isolation cell (vs large-spx control): ONLY change is a tighter directional/vol-expansion guard -- regime_vix1d_ratio_pause_threshold 1.30->1.10, so it pauses when near-term (VIX1D) vol is running hot relative to VIX (a trend-day proxy). Everything else matches large-spx. Measures the directional guard alone.",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false,
+      "regime_vix1d_ratio_pause_threshold": 1.10
+    },
+
+    "large-spx-gexstrict": {
+      "_note": "Isolation cell (vs large-spx control): ONLY change is a stricter GEX gate -- regime_gex_require_positive requires GEX to be confirmed POSITIVE to enter (baseline only pauses on confirmed-negative, so it also trades on unknown/positive GEX). Everything else matches large-spx. Measures requiring positive gamma alone.",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false,
+      "regime_gex_require_positive": true
+    },
+
+    "large-spx-holdtoexpiry": {
+      "_note": "Isolation cell (vs large-spx control): ONLY change is exit policy -- per_side_stop_management false disables the per-side stop, so the condor is HELD TO SETTLEMENT (closed only by force-close/expiry). Tests whether MEIC's per-side stop adds or destroys value (today's SPX losses were stopped-then-expired-against). Everything else matches large-spx.",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false,
+      "per_side_stop_management": false
+    },
+
+    "large-spx-lateonly": {
+      "_note": "Isolation cell (vs large-spx control): ONLY change is entry timing -- entry_window_start 10:00->13:00 (power-hour-only entries: less time to be run over, less gamma exposure). Everything else matches large-spx. Measures the effect of late entry alone.",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false,
+      "entry_window_start": "13:00"
+    },
+
+    "large-spx-gexmag": {
+      "_note": "Isolation cell (vs large-spx control): ONLY change is a magnitude-based GEX gate -- regime_gex_min_flip_distance_pct requires spot to sit at least 0.5% from the gamma-flip strike (deep inside positive gamma, where dealer hedging pins price) rather than just positive-signed. Everything else matches large-spx. Measures requiring STRONG positive gamma alone.",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false,
+      "regime_gex_min_flip_distance_pct": 0.005
+    },
+
+    "large-spx-farotm": {
+      "_note": "Delta-sweep cell (vs large-spx control): ONLY change is short_delta_target 0.10 -- shorts placed further OTM than the VIX-banded default (~0.14-0.16), so the condor survives bigger moves but collects less credit. Judge on GROSS (does the wider strike pick better?) vs NET (does the thinner credit clear costs?). Everything else matches large-spx. Needs the multi-delta candidate menu (paper_loop builds this band alongside the default).",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false,
+      "short_delta_target": 0.10
+    },
+
+    "large-spx-closeotm": {
+      "_note": "Delta-sweep cell (vs large-spx control): ONLY change is short_delta_target 0.25 -- shorts closer to the money than the default, collecting more credit but with more blow-up risk. The high-credit end of the delta sweep (pairs with large-spx-farotm at 0.10). Everything else matches large-spx.",
+      "symbols": ["SPX"],
+      "wing_widths_by_symbol": {"SPX": [5, 10]},
+      "wing_selection": "widest",
+      "min_credit_pct_of_width": 0.15,
+      "low_iv_min_credit_pct_of_width": 0.10,
+      "max_concurrent_ics": 4,
+      "daily_ic_trade_target": 6,
+      "min_minutes_between_entries": 45,
+      "stagger_entries": true,
+      "late_entry_bias_enabled": false,
+      "short_delta_target": 0.25
+    },
+
     "explore-spx-tightcredit": {
       "_note": "Credit-floor sweep (stricter): SPX 5-wide, min_credit 0.20 -- fewer, higher-quality entries. Compare fill rate + expectancy vs large-spx (0.15).",
       "symbols": ["SPX"],
