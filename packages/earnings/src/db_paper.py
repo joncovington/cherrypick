@@ -124,6 +124,28 @@ CREATE TABLE IF NOT EXISTS market_context (
     vix1d         REAL,
     updated_at    REAL
 );
+
+CREATE TABLE IF NOT EXISTS entry_reviews (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_date      TEXT NOT NULL,
+    symbol         TEXT NOT NULL,
+    timing         TEXT,
+    price          REAL,
+    volume         REAL,
+    winrate        REAL,
+    winrate_sample INTEGER,
+    iv_rv_ratio    REAL,
+    term_structure REAL,
+    market_cap     REAL,
+    expected_move  REAL,
+    best_tier      TEXT,
+    selected       INTEGER NOT NULL DEFAULT 0,
+    reason         TEXT,
+    criteria_json  TEXT,
+    logged_at      REAL,
+    profile        TEXT NOT NULL DEFAULT 'default',
+    UNIQUE(scan_date, symbol, profile)
+);
 """
 
 # Idempotent migration for databases created before profile/sizing/cost attribution
@@ -311,6 +333,69 @@ def cmd_save_market_context(args) -> dict:
     return {"ok": True, "context_date": date}
 
 
+def cmd_save_entry_review(args) -> dict:
+    """Upsert one per-symbol entry-review record — the data reviewed for a symbol during an entry scan
+    plus the chosen/rejected decision. Read by the orchestrator's trade-notify (per-symbol push) and by
+    the EOD analysis. Idempotent on (scan_date, symbol, profile) so a re-run of the scan overwrites."""
+    spec = json.loads(args.data)
+    for req in ("scan_date", "symbol"):
+        if not spec.get(req):
+            return {"ok": False, "error": f"missing required field: {req}"}
+    crit = spec.get("criteria")
+    conn = _conn()
+    try:
+        conn.execute(
+            "INSERT INTO entry_reviews (scan_date, symbol, timing, price, volume, winrate, "
+            " winrate_sample, iv_rv_ratio, term_structure, market_cap, expected_move, best_tier, "
+            " selected, reason, criteria_json, logged_at, profile) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(scan_date, symbol, profile) DO UPDATE SET "
+            " timing=excluded.timing, price=excluded.price, volume=excluded.volume, "
+            " winrate=excluded.winrate, winrate_sample=excluded.winrate_sample, "
+            " iv_rv_ratio=excluded.iv_rv_ratio, term_structure=excluded.term_structure, "
+            " market_cap=excluded.market_cap, expected_move=excluded.expected_move, "
+            " best_tier=excluded.best_tier, selected=excluded.selected, reason=excluded.reason, "
+            " criteria_json=excluded.criteria_json, logged_at=excluded.logged_at",
+            (
+                spec["scan_date"], spec["symbol"], spec.get("timing"), spec.get("price"),
+                spec.get("volume"), spec.get("winrate"), spec.get("winrate_sample"),
+                spec.get("iv_rv_ratio"), spec.get("term_structure"), spec.get("market_cap"),
+                spec.get("expected_move"), spec.get("best_tier"), 1 if spec.get("selected") else 0,
+                spec.get("reason"), json.dumps(crit) if crit is not None else None,
+                spec.get("logged_at", time.time()), spec.get("profile", "default"),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "scan_date": spec["scan_date"], "symbol": spec["symbol"]}
+
+
+def cmd_get_entry_reviews(args) -> dict:
+    """Entry reviews for a scan date (default: the most recent scan on or before --date, i.e. the entry
+    round whose positions are settling by that session). Ordered selected-first, then by symbol."""
+    conn = _conn()
+    try:
+        scan_date = getattr(args, "scan_date", None)
+        if not scan_date:
+            on_or_before = getattr(args, "date", None)
+            q = "SELECT MAX(scan_date) FROM entry_reviews"
+            params: list = []
+            if on_or_before:
+                q += " WHERE scan_date <= ?"
+                params.append(on_or_before)
+            row = conn.execute(q, params).fetchone()
+            scan_date = row[0] if row else None
+        if not scan_date:
+            return {"ok": True, "scan_date": None, "reviews": []}
+        rows = conn.execute(
+            "SELECT * FROM entry_reviews WHERE scan_date = ? ORDER BY selected DESC, symbol", (scan_date,)
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"ok": True, "scan_date": scan_date, "reviews": [dict(r) for r in rows]}
+
+
 def cmd_get_market_context(args) -> dict:
     """Return the market_context row for --date plus the most recent earlier row (for the overnight
     VIX delta). Either may be None."""
@@ -443,6 +528,13 @@ def main() -> None:
     p_get_mctx = sub.add_parser("get_market_context")
     p_get_mctx.add_argument("--date", required=True)
 
+    p_save_rev = sub.add_parser("save_entry_review")
+    p_save_rev.add_argument("--data", required=True)
+
+    p_get_rev = sub.add_parser("get_entry_reviews")
+    p_get_rev.add_argument("--date", default=None, help="Most recent scan on or before this session day")
+    p_get_rev.add_argument("--scan_date", default=None, help="Exact scan date (overrides --date)")
+
     args = parser.parse_args()
     dispatch = {
         "init_db": cmd_init_db,
@@ -454,6 +546,8 @@ def main() -> None:
         "log_scan": cmd_log_scan,
         "save_market_context": cmd_save_market_context,
         "get_market_context": cmd_get_market_context,
+        "save_entry_review": cmd_save_entry_review,
+        "get_entry_reviews": cmd_get_entry_reviews,
         "get_pnl_summary": cmd_get_pnl_summary,
     }
     result = dispatch[args.command](args)

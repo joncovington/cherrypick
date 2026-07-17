@@ -80,3 +80,22 @@ def test_analysis_flat_session_renders(seeded):
     md = path.read_text(encoding="utf-8")
     assert "Flat session" in md
     assert "## 7. Notes / journal" in md
+
+
+def test_analysis_includes_symbols_reviewed_for_entry(seeded):
+    # The entry scan the evening before the close session (2026-07-15) reviewed these symbols.
+    db_paper.cmd_save_entry_review(_ns(data=json.dumps({
+        "scan_date": "2026-07-15", "symbol": "ISRG", "timing": "AMC", "price": 402.05,
+        "volume": 2702779, "winrate": 0.75, "winrate_sample": 12, "iv_rv_ratio": 1.47,
+        "term_structure": -0.019, "market_cap": 142391166303, "best_tier": "Tier 1",
+        "selected": True, "reason": "opened iron_fly, iron_condor", "profile": "strat_test"})))
+    db_paper.cmd_save_entry_review(_ns(data=json.dumps({
+        "scan_date": "2026-07-15", "symbol": "NFLX", "winrate": 0.60, "selected": False,
+        "reason": "tier_excluded (7 strategies evaluated)", "profile": "strat_test"})))
+
+    md = runner._write_eod_analysis("2026-07-16").read_text(encoding="utf-8")  # close session
+    assert "## Symbols reviewed for entry" in md
+    # The most-recent scan on or before the session (2026-07-15) is used.
+    assert "2026-07-15 entry scan reviewed **2** symbol(s)" in md
+    assert "ISRG" in md and "$402.05" in md and "2,702,779" in md and "142,391,166,303" in md
+    assert "chosen" in md and "rejected" in md and "opened iron_fly, iron_condor" in md
