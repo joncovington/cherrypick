@@ -464,6 +464,33 @@ def _signed(x):
     return f"+{x:.2f}" if x is not None and x >= 0 else (f"{x:.2f}" if x is not None else "?")
 
 
+def _loop_gate_tail(day):
+    """(iteration_count, per-symbol gate line) from the day's loop log — what the entry gates decided
+    per symbol, at the last iteration. This is the 'why entries did/didn't fire' the trade tables can't
+    show (e.g. `SPX(ivr 0.43): all regime_gex_negative`), so a flat/gated day is explainable rather than
+    a blank. Best-effort; (0, None) if the log is unavailable."""
+    try:
+        con = sqlite3.connect(_PAPER_DB)
+        con.row_factory = sqlite3.Row
+        n = con.execute(
+            "SELECT COUNT(*) FROM loop_log WHERE loop_date=? AND action='paper_iteration'", (day,)
+        ).fetchone()[0]
+        r = con.execute(
+            "SELECT reasoning FROM loop_log WHERE loop_date=? AND action='paper_iteration' "
+            "ORDER BY loop_time DESC LIMIT 1", (day,)
+        ).fetchone()
+        con.close()
+    except sqlite3.Error:
+        return 0, None
+    if not r or not r["reasoning"]:
+        return n, None
+    # Strip the leading "[HH:MM ET] VIX .. 1D-ratio .. delta .." prefix; keep the per-symbol gate part.
+    import re
+    m = re.search(r"[A-Z]{2,5}\(ivr", r["reasoning"])
+    tail = r["reasoning"][m.start():].strip() if m else r["reasoning"].strip()
+    return n, tail
+
+
 def _write_eod_analysis(day):
     """Write a conversational 7-section end-of-day analysis for `day` to logs/eod-analysis-<day>.md.
     Deterministic templated prose (no agent/LLM/network) so it runs unattended from the settlement
@@ -503,6 +530,7 @@ def _write_eod_analysis(day):
         by_symbol[r["symbol"]] = by_symbol.get(r["symbol"], 0.0) + _net(r)
 
     today_ctx, prior_ctx = _read_market_context(day)
+    loop_iters, gate_tail = _loop_gate_tail(day)
 
     L = [f"# MEIC Paper - EOD Analysis {day}", ""]
     L.append("_Plain-English read on the paper session. Auto-generated from the paper DB (no agent) - "
@@ -513,9 +541,14 @@ def _write_eod_analysis(day):
     # 1. Executive snapshot ----------------------------------------------------
     L.append("## 1. Executive snapshot")
     if not active:
-        L.append("Flat session - no ICs were filled today. Every profile's gates held the book out "
-                 "(insufficient IV rank, credit floor, regime pause, or simply no qualifying setup). "
-                 "A day with no trade is a decision, not a gap.")
+        L.append("Flat session - no ICs were filled today. A day with no trade is a decision, not a gap: "
+                 "the entry gates (IV-rank floor, credit floor, VIX/ATR/GEX regime, late-entry bias) held "
+                 "the book out.")
+        if gate_tail:
+            L.append(f"Across **{loop_iters}** loop iterations, the end-of-session gate by symbol was: "
+                     f"`{gate_tail}`. (e.g. `regime_gex_negative` = net GEX below the gamma flip, the "
+                     "trending regime where short condors are gated off; `skip`/IV-rank = below the "
+                     "premium floor.)")
     else:
         best = max(by_symbol.items(), key=lambda kv: kv[1]) if by_symbol else None
         worst = min(by_symbol.items(), key=lambda kv: kv[1]) if by_symbol else None
@@ -654,6 +687,9 @@ def _write_eod_analysis(day):
                      "tightened-gate rules on these dates.")
     except ValueError:
         pass
+    if gate_tail:
+        L.append(f"- Entry gates at the last of **{loop_iters}** iterations: `{gate_tail}` "
+                 "(what the regime/IV/GEX gates decided per symbol - the reason entries did or didn't fire).")
     L.append("")
 
     # 6. Tax / accounting notes ------------------------------------------------
