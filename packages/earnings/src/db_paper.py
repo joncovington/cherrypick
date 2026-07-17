@@ -117,6 +117,13 @@ CREATE TABLE IF NOT EXISTS daily_summary (
     positions_closed INTEGER,
     net_pnl        REAL
 );
+
+CREATE TABLE IF NOT EXISTS market_context (
+    context_date  TEXT PRIMARY KEY,
+    vix           REAL,
+    vix1d         REAL,
+    updated_at    REAL
+);
 """
 
 # Idempotent migration for databases created before profile/sizing/cost attribution
@@ -282,6 +289,44 @@ def cmd_save_close(args) -> dict:
     return {"ok": True, "order_id": order_id}
 
 
+def cmd_save_market_context(args) -> dict:
+    """Upsert one per-day VIX snapshot for the EOD analysis report. Called at the entry pass
+    (evening) and the close pass (next morning); the report reads the close-session row plus the
+    prior day's row to show the overnight VIX move. Best-effort context, never a trading input."""
+    spec = json.loads(args.data)
+    date = spec.get("context_date")
+    if not date:
+        return {"ok": False, "error": "missing required field: context_date"}
+    conn = _conn()
+    try:
+        conn.execute(
+            "INSERT INTO market_context (context_date, vix, vix1d, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(context_date) DO UPDATE SET vix=excluded.vix, vix1d=excluded.vix1d, "
+            "updated_at=excluded.updated_at",
+            (date, spec.get("vix"), spec.get("vix1d"), spec.get("updated_at", time.time())),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "context_date": date}
+
+
+def cmd_get_market_context(args) -> dict:
+    """Return the market_context row for --date plus the most recent earlier row (for the overnight
+    VIX delta). Either may be None."""
+    conn = _conn()
+    try:
+        today = conn.execute(
+            "SELECT * FROM market_context WHERE context_date = ?", (args.date,)).fetchone()
+        prior = conn.execute(
+            "SELECT * FROM market_context WHERE context_date < ? ORDER BY context_date DESC LIMIT 1",
+            (args.date,)).fetchone()
+    finally:
+        conn.close()
+    return {"ok": True, "today": dict(today) if today else None,
+            "prior": dict(prior) if prior else None}
+
+
 def cmd_log_scan(args) -> dict:
     spec = json.loads(args.data)
     required = ("scan_date", "symbol")
@@ -392,6 +437,12 @@ def main() -> None:
     p_log_scan = sub.add_parser("log_scan")
     p_log_scan.add_argument("--data", required=True)
 
+    p_save_mctx = sub.add_parser("save_market_context")
+    p_save_mctx.add_argument("--data", required=True)
+
+    p_get_mctx = sub.add_parser("get_market_context")
+    p_get_mctx.add_argument("--date", required=True)
+
     args = parser.parse_args()
     dispatch = {
         "init_db": cmd_init_db,
@@ -401,6 +452,8 @@ def main() -> None:
         "get_open_legs": cmd_get_open_legs,
         "save_leg_close": cmd_save_leg_close,
         "log_scan": cmd_log_scan,
+        "save_market_context": cmd_save_market_context,
+        "get_market_context": cmd_get_market_context,
         "get_pnl_summary": cmd_get_pnl_summary,
     }
     result = dispatch[args.command](args)

@@ -36,6 +36,53 @@ def _module_eod_file(mcfg: dict, name: str, day: str):
     return p if p.exists() else None
 
 
+def _module_analysis_file(name: str, day: str):
+    """The module's conversational 7-section EOD analysis for `day`
+    (~/.cherrypick/logs/<name>/eod-analysis-<day>.md), the companion to the terse paper-eod file, or
+    None if the module hasn't written one for that session yet."""
+    p = cfgmod.module_logs_dir(name) / f"eod-analysis-{day}.md"
+    return p if p.exists() else None
+
+
+def _snapshot(suite: dict, modules: dict) -> list[str]:
+    """A short conversational read on the suite session, templated from the same `report` numbers the
+    tables below cite (so it can never disagree with them). No synthesis, no live data."""
+    trades = suite.get("trades", 0)
+    if not trades:
+        return ["_Flat suite session - no module closed a trade today. Each module's own report says which "
+                "gates held its book out; a quiet day is a decision, not a gap._"]
+    net = suite.get("net_pnl")
+    gross = suite.get("gross_pnl")
+    cost = suite.get("cost") or 0.0
+    ok_mods = {n: m for n, m in modules.items() if m.get("ok") and m.get("trades")}
+    carrier = max(ok_mods.items(), key=lambda kv: kv[1].get("net_pnl") or 0.0) if ok_mods else None
+    if gross and gross > 0:
+        drag = f" Costs took {_money(cost)} - {cost / gross * 100:.0f}% of the {_money(gross)} gross."
+    else:
+        drag = f" Costs took {_money(cost)} on top of a losing gross."
+    lead = (f"Across the enabled modules the suite closed **{trades}** trade{'s' if trades != 1 else ''} "
+            f"for **Net {_money(net)}**.{drag}")
+    out = [lead]
+    # The gross-vs-net win-rate gap: how many trades had edge before costs but not after.
+    gwr, nwr = suite.get("gross_win_rate"), suite.get("win_rate")
+    if gwr is not None and nwr is not None:
+        flipped = round((gwr - nwr) * trades)
+        gap = f" {_pct(gwr)} of trades were green before costs but only {_pct(nwr)} after"
+        if flipped > 0:
+            gap += f" - costs alone flipped ~{flipped} trade{'s' if flipped != 1 else ''} from win to loss."
+        else:
+            gap += "."
+        out.append("Edge check:" + gap)
+    if carrier:
+        cname, cm = carrier
+        laggards = [n for n, m in ok_mods.items() if (m.get("net_pnl") or 0.0) < 0]
+        tail = f" {cname} carried the session ({_money(cm.get('net_pnl'))})."
+        if laggards:
+            tail += f" Dragged by: {', '.join(laggards)}."
+        out.append(tail.strip())
+    return out
+
+
 def build_markdown(cfg: dict, day: str, rep: dict | None = None) -> str:
     """Render the digest markdown for `day` from the shared report roll-up. Pure; no file writes.
     Pass a precomputed `rep` (report.run(cfg, session=day)) to avoid re-reading the paper DBs."""
@@ -50,6 +97,10 @@ def build_markdown(cfg: dict, day: str, rep: dict | None = None) -> str:
         "DBs only; live accounts untouched. Numbers match `cherrypick report --date` for the "
         "same day._"
     )
+    L.append("")
+
+    L.append("## Snapshot")
+    L.extend(_snapshot(suite, modules))
     L.append("")
 
     L.append("## Suite total")
@@ -81,9 +132,15 @@ def build_markdown(cfg: dict, day: str, rep: dict | None = None) -> str:
     L.append("")
 
     L.append("## Module reports")
+    L.append("_Each module writes a terse metrics file (paper-eod) and a conversational 7-section read "
+             "(eod-analysis) for the session._")
     for name, mcfg in enabled.items():
         f = _module_eod_file(mcfg, name, day)
-        L.append(f"- **{name}**: {f}" if f else f"- **{name}**: _(no paper-eod-{day}.md written)_")
+        a = _module_analysis_file(name, day)
+        parts = []
+        parts.append(f"metrics: {f}" if f else f"metrics: _(no paper-eod-{day}.md yet)_")
+        parts.append(f"analysis: {a}" if a else f"analysis: _(no eod-analysis-{day}.md yet)_")
+        L.append(f"- **{name}** - " + "; ".join(parts))
     L.append("")
 
     L.append(

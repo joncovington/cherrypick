@@ -191,12 +191,32 @@ def test_eod_digest_markdown_cites_report_numbers(tmp_path, monkeypatch):
     md = eod_digest.build_markdown(cfg, "2026-07-10")
     assert "Suite EOD Digest 2026-07-10" in md
     assert "$100.00" in md  # the MEIC net for that session, surfaced in the suite total + table
-    # No module has written its own paper-eod file in the logs home -> the pointer says so.
-    assert "no paper-eod-2026-07-10.md written" in md
+    # The conversational snapshot renders from the same numbers (non-flat: MEIC closed a winning trade).
+    assert "## Snapshot" in md
+    assert "the suite closed **1** trade" in md
+    # No module has written its own paper-eod / analysis file in the logs home -> the pointer says so.
+    assert "no paper-eod-2026-07-10.md yet" in md
+    assert "no eod-analysis-2026-07-10.md yet" in md
 
-    # Once MEIC writes its own file to the logs home, the digest links to it.
+    # Once MEIC writes both files to the logs home, the digest links to each.
     meic_logs = cfgmod.module_logs_dir("meic")
     meic_logs.mkdir(parents=True, exist_ok=True)
     (meic_logs / "paper-eod-2026-07-10.md").write_text("x", encoding="utf-8")
+    (meic_logs / "eod-analysis-2026-07-10.md").write_text("y", encoding="utf-8")
     md2 = eod_digest.build_markdown(cfg, "2026-07-10")
     assert str(meic_logs / "paper-eod-2026-07-10.md") in md2
+    assert str(meic_logs / "eod-analysis-2026-07-10.md") in md2
+
+
+def test_eod_digest_snapshot_flat_session(tmp_path, monkeypatch):
+    from cherrypick.orchestrator import config as cfgmod
+    from cherrypick.orchestrator import eod_digest
+
+    monkeypatch.setattr(cfgmod, "LOGS_DIR", tmp_path / "logs")
+    cfg = _cfg(tmp_path)
+    _meic_db(tmp_path / "meic" / "paper.db", [])  # no trades either module
+    _earnings_db(tmp_path / "earn" / "paper.db", [])
+
+    md = eod_digest.build_markdown(cfg, "2026-07-10")
+    assert "## Snapshot" in md
+    assert "Flat suite session" in md
