@@ -170,6 +170,60 @@ def _entry_context(criteria: dict, composite_score) -> dict:
     }
 
 
+# --- Per-symbol entry review (the data reviewed for a symbol + the chosen/rejected decision) ---------
+_TIER_RANK = {"Tier 1": 1, "Tier 2": 2, "Tier 3": 3, "Near-Miss": 4, "Reject": 5}
+
+
+def _best_tier(results: list[dict]) -> str | None:
+    tiers = [r.get("tier") for r in results if r.get("tier")]
+    return min(tiers, key=lambda t: _TIER_RANK.get(t, 9)) if tiers else None
+
+
+def _richest_criteria(results: list[dict]) -> dict:
+    """The fullest criteria dict across a symbol's per-strategy results (they share the symbol-level
+    fields; some strategies add extras, so take the largest)."""
+    best: dict = {}
+    for r in results:
+        c = r.get("criteria") or {}
+        if len(c) > len(best):
+            best = c
+    return best
+
+
+def _summarize_skips(reasons: list[str]) -> str:
+    """A compact rejection reason from the per-strategy skip reasons for one symbol."""
+    heads = [rr.split(":")[0].strip() for rr in reasons if rr]
+    if not heads:
+        return "no qualifying strategy"
+    counts: dict[str, int] = {}
+    for h in heads:
+        counts[h] = counts.get(h, 0) + 1
+    top = max(counts.items(), key=lambda kv: kv[1])[0]
+    n = len(reasons)
+    return f"{top} ({n} strateg{'y' if n == 1 else 'ies'} evaluated)"
+
+
+def _save_entry_review(scan_date, symbol, timing, results, opened_strategies, skip_reasons) -> None:
+    """Persist one per-symbol review — the reviewed data + the chosen/rejected decision — for the
+    orchestrator's per-symbol notification and the EOD analysis. Best-effort; never breaks the scan."""
+    crit = _richest_criteria(results)
+    selected = bool(opened_strategies)
+    reason = ("opened " + ", ".join(sorted(set(opened_strategies)))) if selected else _summarize_skips(skip_reasons)
+    try:
+        db_paper.cmd_save_entry_review(argparse.Namespace(data=json.dumps({
+            "scan_date": scan_date, "symbol": symbol, "timing": timing,
+            "price": crit.get("price"), "volume": crit.get("avg_volume"),
+            "winrate": crit.get("winrate"), "winrate_sample": crit.get("winrate_sample_size"),
+            "iv_rv_ratio": crit.get("iv_rv_ratio"), "term_structure": crit.get("term_structure"),
+            "market_cap": crit.get("market_cap"),
+            "expected_move": crit.get("expected_move_dollars") or crit.get("expected_move"),
+            "best_tier": _best_tier(results), "selected": selected, "reason": reason,
+            "criteria": crit, "profile": TEST_PROFILE,
+        })))
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Deterministic end-of-day paper report
 # ---------------------------------------------------------------------------
@@ -512,6 +566,38 @@ def _write_eod_analysis(day: str) -> Path:
                      "capped the damage, but the win/loss asymmetry says the losers are running to their max. "
                      "Consider earlier profit-taking or tighter names.")
     L.append("")
+
+    # --- Symbols reviewed for entry (the scan behind these positions) ---------
+    L.append("## Symbols reviewed for entry")
+    scan_date, reviews = _entry_reviews_for(day)
+    if reviews:
+        chosen = sum(1 for rv in reviews if rv.get("selected"))
+        L.append(f"_The {scan_date} entry scan reviewed **{len(reviews)}** symbol(s) — {chosen} chosen, "
+                 f"{len(reviews) - chosen} rejected. The data reviewed per symbol and why each was taken "
+                 "or passed:_")
+        L.append("")
+        L.append("| Symbol | Decision | Price | Volume | Winrate | IV/RV | Term struct | Market cap | Tier | Reason |")
+        L.append("|---|---|---|---|---|---|---|---|---|---|")
+        for rv in reviews:
+            price = f"${rv['price']:,.2f}" if rv.get("price") is not None else "-"
+            vol = f"{int(rv['volume']):,}" if rv.get("volume") is not None else "-"
+            if rv.get("winrate") is not None:
+                wr = f"{rv['winrate'] * 100:.0f}%"
+                if rv.get("winrate_sample") is not None:
+                    wr += f" ({int(rv['winrate_sample'])})"
+            else:
+                wr = "-"
+            ivrv = f"{rv['iv_rv_ratio']:.2f}" if rv.get("iv_rv_ratio") is not None else "-"
+            term = f"{rv['term_structure']:.3f}" if rv.get("term_structure") is not None else "-"
+            mcap = f"{int(rv['market_cap']):,}" if rv.get("market_cap") is not None else "-"
+            decision = "✅ chosen" if rv.get("selected") else "⚪ rejected"
+            L.append(f"| {rv['symbol']} | {decision} | {price} | {vol} | {wr} | {ivrv} | {term} | "
+                     f"{mcap} | {rv.get('best_tier') or '-'} | {rv.get('reason') or '-'} |")
+    else:
+        L.append("_No entry-review records for the scan behind this session (the scan predates this "
+                 "feature, or ran on a different book)._")
+    L.append("")
+
     L.append(f"_Generated {datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')} · paper DB only; "
              "live account untouched. Companion to paper-eod-" + day + ".md._")
 
@@ -519,6 +605,16 @@ def _write_eod_analysis(day: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(L), encoding="utf-8")
     return path
+
+
+def _entry_reviews_for(day: str) -> tuple:
+    """(scan_date, reviews) for the most recent entry scan on or before `day` — the entries whose
+    positions are settling by this session. Best-effort; ([], None) if unavailable."""
+    try:
+        res = db_paper.cmd_get_entry_reviews(argparse.Namespace(date=day, scan_date=None))
+        return res.get("scan_date"), res.get("reviews", [])
+    except Exception:
+        return None, []
 
 
 def cmd_eod_analysis(args) -> dict:
@@ -568,8 +664,10 @@ def cmd_run_entries(args) -> dict:
             results = rank_strategies.evaluate_symbol(symbol, earnings_date, timing, config)
         except Exception as exc:
             skipped.append({"symbol": symbol, "strategy": None, "reason": f"evaluate_symbol_error: {exc}"})
+            _save_entry_review(scan_date, symbol, timing, [], [], [f"evaluate_symbol_error: {exc}"])
             continue
 
+        op0, sk0 = len(opened), len(skipped)  # this symbol's slice of the run-wide result lists
         for r in results:
             strategy_name = r["name"]
             reasons = r["hard_fail_reasons"] or r["near_miss_reasons"]
@@ -648,6 +746,14 @@ def cmd_run_entries(args) -> dict:
                 # the night -- log and move on, same discipline as the evaluate_symbol
                 # try/except above.
                 skipped.append({"symbol": symbol, "strategy": strategy_name, "reason": f"unexpected_error: {exc}"})
+
+        # After all of this symbol's strategies: record the per-symbol review (data reviewed + the
+        # chosen/rejected decision) for the notifier and the EOD analysis.
+        _save_entry_review(
+            scan_date, symbol, timing, results,
+            [o["strategy"] for o in opened[op0:]],
+            [s.get("reason", "") for s in skipped[sk0:]],
+        )
 
     return {"ok": True, "date": scan_date, "profile": profile, "opened": opened, "skipped": skipped}
 
