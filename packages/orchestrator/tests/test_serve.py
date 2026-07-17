@@ -7,6 +7,7 @@ subprocess stubbed so the test needs no cherrypick-gex checkout or streamer.
 
 import json
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -269,6 +270,61 @@ def test_embed_static_kind_serves_generated_html(monkeypatch):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_embed_building_shows_autorefreshing_placeholder(monkeypatch):
+    # No built file yet -> the request must NOT block on the generator; it shows a refreshing placeholder.
+    monkeypatch.setattr(embeds, "build_static", lambda e: {"ok": False, "building": True})
+    monkeypatch.setattr(embeds, "read_static", lambda e: None)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), serve._make_handler(_serve_cfg()))
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        body = urllib.request.urlopen(f"http://127.0.0.1:{port}/embed/earn", timeout=5).read()
+        assert b"building" in body and b"http-equiv='refresh'" in body  # placeholder, not an error
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_build_static_serves_existing_file_without_blocking(tmp_path, monkeypatch):
+    # Stale-while-revalidate: an existing (even stale) file is returned immediately; the regen runs on a
+    # background thread, so build_static never blocks the request on the matplotlib subprocess.
+    out = tmp_path / "out.html"
+    out.write_text("cached", encoding="utf-8")
+    monkeypatch.setattr(embeds.cfgmod, "module_root", lambda e, i=None: tmp_path)
+    ran = []
+    monkeypatch.setattr(embeds, "_run_build", lambda *a, **k: (ran.append(1), {"ok": True})[1])
+    embeds._last_build.pop("earnX", None)
+    embeds._building.discard("earnX")
+    emb = {"id": "earnX", "kind": "static", "output": "out.html", "refresh_seconds": 0}  # always stale
+
+    res = embeds.build_static(emb)
+    assert res["ok"] and res["path"].endswith("out.html")  # served immediately, not blocked
+    for _ in range(100):  # the background regen eventually fires
+        if ran:
+            break
+        time.sleep(0.02)
+    assert ran, "a background rebuild should have been spawned"
+
+
+def test_build_static_reports_building_when_regen_in_flight(tmp_path, monkeypatch):
+    # No file yet AND a build already in flight (e.g. prewarm) -> report `building` (placeholder),
+    # never double-run the generator or block.
+    monkeypatch.setattr(embeds.cfgmod, "module_root", lambda e, i=None: tmp_path)
+
+    def must_not_run(*a, **k):
+        raise AssertionError("must not build inline while a regen is in flight")
+
+    monkeypatch.setattr(embeds, "_run_build", must_not_run)
+    embeds._last_build.pop("earnY", None)
+    emb = {"id": "earnY", "kind": "static", "output": "missing.html"}
+    embeds._building.add("earnY")  # simulate prewarm's background build in progress
+    try:
+        res = embeds.build_static(emb)
+        assert res.get("building") is True and res["ok"] is False
+    finally:
+        embeds._building.discard("earnY")
 
 
 def test_embed_failure_renders_inline_never_500(monkeypatch):
