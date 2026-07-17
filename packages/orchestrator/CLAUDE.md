@@ -27,6 +27,7 @@ python run.py watchdog       # one watchdog pass (what the scheduled task runs)
 python run.py report         # unified cross-module paper P&L (read-only); --eod / --date YYYY-MM-DD scopes to one session
 python run.py eod-digest     # write logs/eod-digest-<day>.md: one session's cross-module P&L + module paper-eod links
 python run.py notify-eod     # write the digest + push a one-line summary (the scheduled cherrypick-eod-digest task runs this)
+python run.py archive        # end-of-month rotation: zip each finished month's reports + rotated logs to logs/archive/ (--dry-run / --month YYYY-MM); scheduled monthly as cherrypick-log-archive
 python run.py dashboard      # regenerate the static status dashboard -> dashboard.html
 python run.py calibrate      # per-profile calibration readings + promotion recommendations
 python run.py migrate-home   # dry-run: move config files into ~/.cherrypick + sweep leftovers (--apply to perform)
@@ -60,11 +61,15 @@ resolved **relative to the config file's directory** — never hardcode absolute
 - **Read side (look whenever you want):** `report.py` (cross-module paper P&L; `run(session=…)` scopes
   to one settlement day for the daily/EOD views), `calibrate.py` (per-profile promotion advisor),
   `eod_digest.py` (one session's cross-module roll-up → `logs/eod-digest-<day>.md`, citing `report`'s
-  numbers so it can't drift, + links to each module's own `paper-eod-<day>.md`), and `dashboard.py` (a
-  single static HTML page composing all of it + a log tail). These are **read-only and file-only**. The
-  EOD digest is also surfaced through the notifier and scheduled at `install` (`cherrypick-eod-digest`,
-  on by default; opt out with `"eod_digest": {"enabled": false}`) — a scheduled/notify surface, but
-  **off** the watchdog reliability path (a caller on that path must invoke it best-effort).
+  numbers so it can't drift, + links to each module's own `paper-eod-<day>.md` and conversational
+  `eod-analysis-<day>.md`), and `dashboard.py` (a single static HTML page composing all of it + a log
+  tail). These are **read-only and file-only**. The EOD digest is also surfaced through the notifier and
+  scheduled at `install` (`cherrypick-eod-digest`, on by default; opt out with `"eod_digest":
+  {"enabled": false}`) — a scheduled/notify surface, but **off** the watchdog reliability path (a caller
+  on that path must invoke it best-effort). `logrotate.py` (`cherrypick archive`) is the maintenance
+  counterpart: a monthly `cherrypick-log-archive` task zips each finished month's reports + rotated logs
+  into `logs/archive/<YYYY-MM>/<scope>.zip` and removes the originals (idempotent, never touches the
+  current month or an active `.log`) — also files-only and off the reliability path.
 
 **Per-schema dispatch.** Each module's paper DB has a different schema, selected by
 `paper.trade_schema` in config (`"meic_ic"` → MEICAgent `ic_trades`; `"earnings"` → EarningsAgent

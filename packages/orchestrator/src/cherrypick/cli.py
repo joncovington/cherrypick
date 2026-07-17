@@ -20,6 +20,9 @@ Subcommands:
                        cross-module P&L + links to each module's paper-eod file. --date; default today.
   notify-eod           Write the digest and push a one-line summary through the notify channels (the
                        scheduled cherrypick-eod-digest task runs this). --date; default today.
+  archive              End-of-month rotation: zip each finished month's dated reports + rotated log
+                       backups into logs/archive/<YYYY-MM>/<scope>.zip and remove the originals (the
+                       scheduled cherrypick-log-archive task runs this). --month YYYY-MM; --dry-run.
   reconcile            Paper↔live isolation guard: query the real broker account (read-only) and flag
                        any open positions/BP a paper-only suite shouldn't have. On-demand; never trades.
   connect              Guided per-module onboarding (--module): set OAuth creds (via the module's own
@@ -59,6 +62,7 @@ from cherrypick.orchestrator import (
     doctor,
     eod_digest,
     init,
+    logrotate,
     migrate,
     reconcile,
     report,
@@ -216,6 +220,16 @@ def cmd_install(cfg) -> None:
             ed["task_name"], ed_tr, timeutil.to_local_hhmm(ed["at"], tz)
         )
 
+    # end-of-month log/report rotation: zip each finished month's reports + rotated logs into
+    # logs/archive/. ON by default (opt out with "log_archive": {"enabled": false}); the archive is
+    # idempotent and only touches complete prior months, so the exact fire day/time isn't critical.
+    la = cfgmod.archive_settings(cfg)
+    if la["enabled"]:
+        la_tr = tasks.build_tr(pyw, str(_LAUNCHER), "archive")
+        results["log_archive_task"] = tasks.create_monthly_task(
+            la["task_name"], la_tr, la["day"], timeutil.to_local_hhmm(la["at"], tz)
+        )
+
     # generic background services (e.g. the gex spot-trail recorder): start each detached if it's down.
     # The watchdog keeps them alive thereafter; single-instance guards prevent duplicate starts.
     for svc in cfgmod.enabled_services(cfg):
@@ -272,9 +286,10 @@ def cmd_uninstall(cfg) -> None:
         results["watchdog_task"] = tasks.delete(cfg["watchdog"]["task_name"])
     if cfg.get("trade_notify", {}).get("task_name"):
         results["trade_notify_task"] = tasks.delete(cfg["trade_notify"]["task_name"])
-    # Always attempt the digest task by its resolved name (idempotent) so opting out *after* an
-    # install still removes a previously-registered task.
+    # Always attempt the digest + log-archive tasks by their resolved names (idempotent) so opting out
+    # *after* an install still removes a previously-registered task.
     results["eod_digest_task"] = tasks.delete(cfgmod.eod_digest_settings(cfg)["task_name"])
+    results["log_archive_task"] = tasks.delete(cfgmod.archive_settings(cfg)["task_name"])
     # Stop generic background services (e.g. the gex recorder) — unlike the streamer, these are the
     # orchestrator's own daemons, so a full uninstall stops them.
     for svc in cfgmod.enabled_services(cfg):
@@ -558,6 +573,13 @@ def cmd_notify_eod(cfg, args) -> None:
     _emit({"ok": True, "session": day, "digest": res.get("digest"), "suite": suite, "channels": channels})
 
 
+def cmd_archive(cfg, args) -> None:
+    """End-of-month log/report rotation: zip each finished month's dated reports + rotated log backups
+    into logs/archive/ and remove the originals. What the scheduled `cherrypick-log-archive` task runs.
+    Read/maintenance side, files only — never touches the current month or an active .log."""
+    _emit(logrotate.run(cfg, month=args.month, dry_run=args.dry_run))
+
+
 def cmd_dashboard(cfg, args) -> None:
     """One-shot static render (default), or a localhost live server with --serve.
 
@@ -646,6 +668,7 @@ def main() -> None:
             "report",
             "eod-digest",
             "notify-eod",
+            "archive",
             "reconcile",
             "connect",
             "account",
@@ -704,6 +727,14 @@ def main() -> None:
     parser.add_argument(
         "--apply", action="store_true", help="For migrate-home: perform the move (default is a dry run)"
     )
+    parser.add_argument(
+        "--month", default=None,
+        help="For archive: restrict to one month 'YYYY-MM' (default: all finished months)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="For archive: report what would be archived without writing or deleting",
+    )
     args = parser.parse_args()
 
     # `init` scaffolds config.json, so it must run before the config pre-load (a fresh user has none).
@@ -721,6 +752,7 @@ def main() -> None:
         "report": lambda: cmd_report(cfg, args),
         "eod-digest": lambda: cmd_eod_digest(cfg, args),
         "notify-eod": lambda: cmd_notify_eod(cfg, args),
+        "archive": lambda: cmd_archive(cfg, args),
         "reconcile": lambda: cmd_reconcile(cfg),
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),
