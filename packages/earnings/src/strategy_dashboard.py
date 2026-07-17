@@ -42,6 +42,13 @@ import scanner
 import strategy_metrics as sm
 from strategy_report import STRATEGY_NAMES
 
+try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+except Exception:  # pragma: no cover - only where zoneinfo has no tz database
+    import pytz
+    _ET = pytz.timezone("America/New_York")
+
 # Generated dashboards live under the shared cherrypick home (~/.cherrypick/data/earnings/reports),
 # resolved by paths.py — never in the checkout. Pure path; main() mkdirs before writing.
 REPORTS_DIR = _paths.reports_dir()
@@ -480,7 +487,7 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
 
     open_positions_html = _open_positions_section(profile)
 
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now_str = datetime.now(_ET).strftime("%Y-%m-%d %H:%M:%S")
 
     # Mode badge -- amber "PAPER" vs red "LIVE" (red signals real-money caution, matching the
     # dashboard's existing status coloring). The whole point of this flag is to never confuse
@@ -503,7 +510,7 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
     <h1 style="margin:0;font-size:18px;">EarningsAgent -- Strategy Test Dashboard</h1>
     {mode_badge}
   </div>
-  <div style="color:{MUTED};font-size:12px;">profile={profile} | last updated {now_str}</div>
+  <div style="color:{MUTED};font-size:12px;">profile={profile} | last updated {now_str} ET</div>
 </div>
 
 <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;">

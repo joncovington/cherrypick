@@ -5,7 +5,7 @@ import json
 import os
 import sqlite3
 import sys
-from datetime import UTC, datetime
+from datetime import datetime
 
 # Make the cherrypick-core submodule (src/_core) importable before the cherrypick.core import below,
 # mirroring credentials.py's bootstrap so this module works even when imported before credentials.
@@ -17,18 +17,20 @@ from cherrypick.core import profiles as _profiles
 
 import paths as _paths
 
-try:
+try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
     _ET = pytz.timezone("America/New_York")
-    def _now_et():
-        return datetime.now(_ET)
-    def _today_et():
-        return _now_et().strftime("%Y-%m-%d")
-except ImportError:
-    def _now_et():
-        return datetime.now(UTC)
-    def _today_et():
-        return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
+def _now_et():
+    return datetime.now(_ET)
+
+
+def _today_et():
+    return _now_et().strftime("%Y-%m-%d")
 
 _DEFAULT_DB_PATH = str(_paths.live_db_path())  # ~/.cherrypick/data/meic/meic_trades.db (or MEIC_DATA_DIR)
 # MEIC_DB_PATH lets the paper-trading engine (src/paper.py) and its skills point every
