@@ -23,15 +23,18 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from datetime import date, timedelta
 from pathlib import Path
 
 from . import config as cfgmod
 from . import timeutil
 
-# The agent gets no execution, file-write, or network tools. Read-only tools (Read/Glob/Grep) are
-# harmless (local report files) and left alone; everything that could run a command, mutate the tree,
-# or leave the box is denied. No MCP config is passed, so there are no MCP tools either.
-_DISALLOWED_TOOLS = ["Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Task"]
+# The agent never gets execution, file-write, or arbitrary-URL tools — everything that could run a
+# command, mutate the tree, or fetch a page is denied. **WebSearch is the one exception**, and only when
+# `eod_insight.research_events` is on: it lets the debrief research upcoming macro/earnings events. No MCP
+# config is passed, so there are no MCP tools either. (Read/Glob/Grep are harmless and unused — input is
+# on stdin.)
+_DISALLOWED_TOOLS = ["Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "Task"]
 
 _SYSTEM = (
     "You are a seasoned options-trading analyst writing a daily debrief for the operator of the cherrypick "
@@ -77,6 +80,48 @@ def build_input(inputs: list[tuple[str, Path]]) -> str:
     return "\n\n".join(parts)
 
 
+def _upcoming_calendar(day: str, horizon_days: int = 45) -> str:
+    """A deterministic block of the suite's own known market-calendar events in the next `horizon_days`
+    (FOMC decisions, quarterly / triple-witching expiries, NYSE holidays), computed by
+    cherrypick.core.calendar — no network. This is the *authoritative anchor* for the forward-looking
+    section; web research supplements it (data releases, anticipated earnings). Empty string on failure."""
+    try:
+        from cherrypick.core import calendar as _cal
+        d0 = date.fromisoformat(day)
+    except Exception:
+        return ""
+    end = d0 + timedelta(days=horizon_days)
+    years = sorted({d0.year, end.year})
+
+    def _between(fn):
+        out = []
+        for y in years:
+            try:
+                out += [x for x in fn(y) if d0 < x <= end]
+            except Exception:
+                continue
+        return sorted(out)
+
+    lines = []
+    fomc = _between(_cal.fomc_dates)
+    if fomc:
+        lines.append("- FOMC decision: " + ", ".join(x.isoformat() for x in fomc))
+    tw = _between(_cal.triple_witching_dates)
+    if tw:
+        lines.append("- Triple-witching expiry: " + ", ".join(x.isoformat() for x in tw))
+    q = [x for x in _between(_cal.quarterly_expiry_dates) if x not in set(tw)]
+    if q:
+        lines.append("- Quarterly expiry: " + ", ".join(x.isoformat() for x in q))
+    hol = _between(_cal.nyse_holidays)
+    if hol:
+        lines.append("- NYSE holiday (market closed): " + ", ".join(x.isoformat() for x in hol))
+    if not lines:
+        return ""
+    header = (f"===== suite market calendar — next ~{horizon_days} days from {day} "
+              "(deterministic, authoritative) =====")
+    return header + "\n" + "\n".join(lines)
+
+
 def _prompt(day: str) -> str:
     return (
         f"Below are today's ({day}) deterministic paper-trading EOD reports for the cherrypick suite "
@@ -99,19 +144,34 @@ def _prompt(day: str) -> str:
         "environment: what negative vs positive GEX implies here, why this IV rank / VIX level matters, how "
         "correlated the traded names were. Make it teach.\n"
         "4. **What worked, what didn't, and patterns worth watching** across sessions.\n"
-        "5. **2–4 concrete paper-tuning recommendations** (gates, widths, deltas, stops, timing) — or, if "
+        "5. **Upcoming events to watch** — a forward-looking section. Use **WebSearch** to research the "
+        "notable macro events in the next ~2 weeks (FOMC / rate decisions, CPI, PCE, jobs / NFP, PPI, GDP, "
+        "major Fed speakers) and any highly anticipated earnings (mega-caps and high-implied-move names). "
+        "Anchor on the deterministic 'suite market calendar' block provided below (FOMC / expiries / "
+        "holidays are authoritative from it); use search for the data-release dates and earnings names. "
+        "For each, note the date and, briefly, the likely effect on these strategies (e.g. an event day "
+        "pushes VIX1D up and MEIC's regime gate stands aside; a big single-name print is an earnings "
+        "opportunity or an underlying-move risk). Give dates as specifically as the sources allow, and "
+        "flag where a date/expectation is uncertain or should be verified — do not invent specifics.\n"
+        "6. **2–4 concrete paper-tuning recommendations** (gates, widths, deltas, stops, timing) — or, if "
         "the day validated the current settings, say so plainly.\n\n"
         "Be specific and quantitative where the reports allow, but prefer the 'why' over restating figures. "
-        "Depth over brevity is welcome (~400–800 words). Paper/educational only — not financial advice."
+        "Depth over brevity is welcome (~450–900 words). Paper/educational only — not financial advice."
     )
 
 
-def _run_claude(prompt: str, stdin_text: str, model: str | None, timeout: int) -> dict:
-    """Invoke Claude Code headless (print mode, no dangerous tools). Injectable seam so tests never call
-    the real CLI. Returns {"ok": True, "text": ...} or {"ok": False, "error": ...}."""
+def _run_claude(prompt: str, stdin_text: str, model: str | None, timeout: int,
+                research: bool = False) -> dict:
+    """Invoke Claude Code headless (print mode). Dangerous tools are always denied; WebSearch is granted
+    only when `research` is on (for the upcoming-events section). Injectable seam so tests never call the
+    real CLI. Returns {"ok": True, "text": ...} or {"ok": False, "error": ...}."""
+    disallowed = list(_DISALLOWED_TOOLS) if research else [*_DISALLOWED_TOOLS, "WebSearch"]
     cmd = ["claude", "-p", prompt, "--output-format", "text",
-           "--disallowed-tools", *_DISALLOWED_TOOLS,
+           "--disallowed-tools", *disallowed,
            "--append-system-prompt", _SYSTEM]
+    if research:
+        # Grant WebSearch and bound the tool-use loop so a research session can't run away.
+        cmd += ["--allowed-tools", "WebSearch", "--max-turns", "8"]
     if model:
         cmd += ["--model", model]
     try:
@@ -127,12 +187,15 @@ def _run_claude(prompt: str, stdin_text: str, model: str | None, timeout: int) -
     return {"ok": True, "text": text} if text else {"ok": False, "error": "empty output"}
 
 
-def _wrap(day: str, text: str) -> str:
+def _wrap(day: str, text: str, researched: bool) -> str:
+    tools = ("read-only over the day's reports, with web search for the upcoming-events section"
+             if researched else "read-only over the day's reports, no tools")
     return (
         f"# cherrypick - EOD Insight {day}\n\n"
-        "_AI-synthesized narrative over the day's deterministic paper reports (Claude Code, read-only, "
-        "no tools). Paper data only; educational, not financial advice — the deterministic eod-analysis "
-        "files remain the source of record._\n\n"
+        f"_AI-synthesized narrative over the day's deterministic paper reports (Claude Code, {tools}). "
+        "Paper data only; educational, not financial advice — the deterministic eod-analysis files remain "
+        "the source of record, and any forward-looking / researched notes are best-effort, verify before "
+        "relying on them._\n\n"
         f"{text.strip()}\n"
     )
 
@@ -151,10 +214,20 @@ def run(cfg: dict | None = None, day: str | None = None) -> dict:
     inputs = _gather_inputs(cfg, day)
     if not inputs:
         return {"ok": False, "session": day, "skipped": "no_reports"}
-    res = _run_claude(_prompt(day), build_input(inputs), st.get("model"), st.get("timeout_seconds", 120))
+    research = bool(st.get("research_events", True))
+    stdin_text = build_input(inputs)
+    if research:
+        cal = _upcoming_calendar(day)
+        if cal:
+            stdin_text += "\n\n" + cal
+    # Web research needs headroom over the offline synthesis, so give the research path a longer timeout.
+    timeout = st.get("timeout_seconds", 120)
+    if research:
+        timeout = max(timeout, 300)
+    res = _run_claude(_prompt(day), stdin_text, st.get("model"), timeout, research=research)
     if not res.get("ok"):
         return {"ok": False, "session": day, "error": res.get("error")}
     path = cfgmod.log_file(f"eod-insight-{day}.md")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_wrap(day, res["text"]), encoding="utf-8")
+    path.write_text(_wrap(day, res["text"], research), encoding="utf-8")
     return {"ok": True, "session": day, "insight": str(path), "sources": [lbl for lbl, _ in inputs]}
