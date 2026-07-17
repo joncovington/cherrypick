@@ -46,14 +46,15 @@ Start a full unattended paper session:
 /paper-start
 ```
 
-This starts the shared DXLink streamer, launches the paper dashboard at `http://localhost:5051` (badged "Paper Mode — Simulated"), and registers a Windows scheduled task (`cherrypick-meic-paper-loop`) that runs `python src/paper_loop.py --once` every 2 minutes — headless, time-gated to market hours, self-healing, and persistent across sessions. At the 16:00 ET settlement pass it writes a deterministic end-of-day report to `logs/paper-eod-<date>.md`.
+This starts the shared DXLink streamer, launches the paper dashboard at `http://localhost:5051` (badged "Paper Mode — Simulated"), and registers a Windows scheduled task (`cherrypick-meic-paper-loop`) that runs `python src/paper_loop.py --once` every 2 minutes — headless, time-gated to market hours, self-healing, and persistent across sessions. At the 16:00 ET settlement pass it writes both deterministic end-of-day files — `logs/meic/paper-eod-<date>.md` (metrics) and `logs/meic/eod-analysis-<date>.md` (the 7-section analysis).
 
 Manage the session directly:
 
 ```bash
 python src/paper_loop.py --status          # task status + open-position count
 python src/paper_loop.py --once            # run a single manual iteration
-python src/paper_loop.py --eod-report      # regenerate today's paper EOD report (--date to backfill)
+python src/paper_loop.py --eod-report      # regenerate both paper EOD files (metrics + analysis; --date to backfill)
+python src/paper_loop.py --eod-analysis    # regenerate just the 7-section analysis
 python src/paper_loop.py --uninstall-task  # stop the unattended session
 ```
 
@@ -152,7 +153,17 @@ You can also trigger it manually at any time. `/eod-report` accepts a scope argu
 /eod-report paper --date 2026-07-08
 ```
 
-The live report is a plain-English synthesis; the paper report is deterministic and code-generated (a per-profile metrics table, exits-by-reason breakdown, and per-symbol P&L across all four profiles).
+The **live** report is a plain-English synthesis (agent-written). The **paper** side is deterministic and
+code-generated — two files per session in `~/.cherrypick/logs/meic/`:
+
+- `paper-eod-<date>.md` — the terse metrics report (per-profile table, exits-by-reason, per-symbol P&L
+  across all profiles).
+- `eod-analysis-<date>.md` — a conversational **7-section** read on the same session (executive snapshot,
+  position detail, trade log, risk metrics, market context, tax notes, notes/journal). Still rule-based,
+  no agent; regenerate just this one with `python src/paper_loop.py --eod-analysis [--date <d>]`.
+
+The orchestrator's suite digest and (opt-in) AI insight build on these files — see the suite
+[reporting docs](../../../docs/reporting-and-dashboard.md).
 
 ---
 
