@@ -220,3 +220,25 @@ def test_eod_digest_snapshot_flat_session(tmp_path, monkeypatch):
     md = eod_digest.build_markdown(cfg, "2026-07-10")
     assert "## Snapshot" in md
     assert "Flat suite session" in md
+
+
+def test_eod_digest_snapshot_all_negative_session(tmp_path, monkeypatch):
+    """When every module finishes red, the snapshot names least-bad + worst rather than calling the
+    least-negative module a 'carrier' it wasn't (and never lists it as its own laggard)."""
+    from cherrypick.orchestrator import config as cfgmod
+    from cherrypick.orchestrator import eod_digest
+
+    monkeypatch.setattr(cfgmod, "LOGS_DIR", tmp_path / "logs")
+    cfg = _cfg(tmp_path)
+    from datetime import datetime
+    closed_at = datetime(2026, 7, 10, 12, 0).timestamp()  # settles on the 2026-07-10 session
+    # meic loses less than earnings; both red.
+    _meic_db(tmp_path / "meic" / "paper.db", [("SPX", "c", -100.0, 5.0, "2026-07-10T15:45")])
+    _earnings_db(tmp_path / "earn" / "paper.db",
+                 [("AAPL", "strat_test", "iron_fly", -200.0, 3.0, 3.0, closed_at)])
+
+    md = eod_digest.build_markdown(cfg, "2026-07-10", rep=report.run(cfg, session="2026-07-10"))
+    assert "No module finished green" in md
+    assert "carried the session" not in md
+    # The least-bad module is never also named as a laggard/"dragged by".
+    assert "Dragged by" not in md

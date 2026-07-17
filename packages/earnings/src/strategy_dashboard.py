@@ -345,49 +345,7 @@ def _open_positions_section(profile: str) -> str:
     </table>
     """
 
-    # Per-contract breakdown -- the unit economics behind the quantities above. Each strategy is
-    # sized to ~equal dollar risk, so quantity = risk budget / max loss per contract; showing the
-    # per-contract figures makes why (e.g.) a butterfly trades 8 lots and an iron fly trades 1 legible.
-    pc_trs = []
-    for r in rows:
-        qty = r["quantity"] or 1
-        credit_pc = (r["entry_credit"] or 0.0) / qty * 100
-        risk_pc = (r["capital_at_risk"] or 0.0) / qty
-        cost_pc = (r["entry_cost"] or 0.0) / qty
-        credit_pc_str = f"${credit_pc:,.0f}" if credit_pc >= 0 else f"(${abs(credit_pc):,.0f})"
-        pc_trs.append(
-            f'<tr>'
-            f'<td style="padding:3px 10px;">{r["strategy"]}</td>'
-            f'<td style="padding:3px 10px;">{r["symbol"]}</td>'
-            f'<td style="padding:3px 10px;text-align:right;">{r["quantity"]}</td>'
-            f'<td style="padding:3px 10px;text-align:right;">{credit_pc_str}</td>'
-            f'<td style="padding:3px 10px;text-align:right;">${risk_pc:,.0f}</td>'
-            f'<td style="padding:3px 10px;text-align:right;">${cost_pc:,.0f}</td>'
-            f'</tr>'
-        )
-    pc_note = f"""
-    <div style="color:{MUTED};font-size:11px;margin:14px 0 8px 0;line-height:1.6;">
-      <b style="color:{FG};">Per contract</b> — the single-lot economics behind the quantities above.
-      Each strategy is sized to roughly <b>equal dollar risk</b>, so <b>quantity = risk budget &divide;
-      max loss per contract</b> (that's why a $609-risk butterfly trades 8 lots while a $4,058-risk iron
-      fly trades 1). For these defined-risk structures, <b>max loss per contract = capital at risk per
-      contract</b> — risk and max loss are the same figure.
-    </div>
-    """
-    pc_table = f"""
-    <table style="width:100%;border-collapse:collapse;font-size:12px;">
-      <thead><tr style="color:{MUTED};border-bottom:1px solid {GRID};">
-        <th style="text-align:left;padding:3px 10px;">Strategy</th>
-        <th style="text-align:left;padding:3px 10px;">Symbol</th>
-        <th style="text-align:right;padding:3px 10px;">Qty</th>
-        <th style="text-align:right;padding:3px 10px;">Credit / (Debit) / ct</th>
-        <th style="text-align:right;padding:3px 10px;">Max loss (risk) / ct</th>
-        <th style="text-align:right;padding:3px 10px;">Entry cost / ct</th>
-      </tr></thead>
-      <tbody>{"".join(pc_trs)}</tbody>
-    </table>
-    """
-    return legend + table + pc_note + pc_table
+    return legend + table
 
 
 def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str:

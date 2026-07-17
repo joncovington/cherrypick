@@ -75,11 +75,22 @@ def _snapshot(suite: dict, modules: dict) -> list[str]:
         out.append("Edge check:" + gap)
     if carrier:
         cname, cm = carrier
-        laggards = [n for n, m in ok_mods.items() if (m.get("net_pnl") or 0.0) < 0]
-        tail = f" {cname} carried the session ({_money(cm.get('net_pnl'))})."
-        if laggards:
-            tail += f" Dragged by: {', '.join(laggards)}."
-        out.append(tail.strip())
+        cnet = cm.get("net_pnl") or 0.0
+        if cnet > 0:
+            # At least one module finished green — it carried the day; name any that dragged.
+            tail = f"{cname} carried the session ({_money(cnet)})."
+            laggards = [n for n, m in ok_mods.items() if n != cname and (m.get("net_pnl") or 0.0) < 0]
+            if laggards:
+                tail += f" Dragged by: {', '.join(laggards)}."
+        elif len(ok_mods) == 1:
+            tail = f"{cname} finished in the red ({_money(cnet)})."
+        else:
+            # Every module finished flat/negative — name the least-bad and the worst rather than
+            # calling the least-bad module a "carrier" it wasn't.
+            worst_name, worst_m = min(ok_mods.items(), key=lambda kv: kv[1].get("net_pnl") or 0.0)
+            tail = (f"No module finished green — {cname} least-bad ({_money(cnet)}), "
+                    f"{worst_name} worst ({_money(worst_m.get('net_pnl'))}).")
+        out.append(tail)
     return out
 
 
