@@ -82,10 +82,36 @@ real transaction costs.
 Credentials live in your operating system's secure keyring — never in a file — and paper and live books are
 kept strictly separate.
 
+## Requirements
+
+| You'll need | Why |
+|---|---|
+| A [tastytrade](https://tastytrade.com) account | Supplies the live market data the paper engines fill against (and your real account, if you ever choose to trade live). |
+| **Python 3.11+** | Runs the orchestrator, both strategy engines, and the reporting. |
+| **[Claude Code](https://docs.claude.com/en/docs/claude-code)** | Anthropic's agentic CLI. It drives the interactive and live-trading sessions, the slash-command workflows (`/meic-start`, `/earnings-start`, `/eod-report`), and the agent-synthesized analysis. The unattended **paper** automation runs on its own without it — but the agent-driven features need it. Installs via npm (needs [Node.js](https://nodejs.org) 18+). |
+| A computer that stays awake during market hours | cherrypick runs on your machine on a schedule, so it has to be on to capture a session. **Windows is recommended** — the scheduler and self-healing are most complete there. |
+| **[Dolt](https://github.com/dolthub/dolt)** *(earnings engine only)* | The earnings module reads its historical datasets from a local `dolt sql-server`. Not needed for MEIC or the GEX dashboard. |
+
 ## Quick Start
 
-> **You'll need:** a [tastytrade](https://tastytrade.com) account, a computer that stays on during market
-> hours (Windows recommended), Python 3.11+, and a few minutes in a terminal.
+> **You'll need** the pieces listed under [Requirements](#requirements) — a tastytrade account, Python 3.11+,
+> Claude Code, and a machine that stays on during market hours — plus a few minutes in a terminal.
+
+### Install Claude Code
+
+Install [Claude Code](https://docs.claude.com/en/docs/claude-code), Anthropic's agentic CLI — it's what
+drives the interactive/live sessions, the slash-command workflows, and the synthesized analysis reports
+(the unattended paper automation below runs without it):
+
+```bash
+npm install -g @anthropic-ai/claude-code   # needs Node.js 18+
+claude --version                           # verify the install
+```
+
+Then run `claude` from the project directory to use the suite's slash commands (`/meic-start`,
+`/earnings-start`, `/eod-report`, …). See the [Claude Code docs](https://docs.claude.com/en/docs/claude-code) for sign-in and setup.
+
+### Set up the suite
 
 ```bash
 # 1. Get the project
