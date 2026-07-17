@@ -39,8 +39,8 @@ def select_strategy(c: Candidate) -> dict:
         strategy = "DIRECTIONAL_SPREAD" if iv > 1.15 else "IRON_CONDOR"
         reason = "Medium dispersion - Some variance accepted"
     elif d < 0.30:
-        strategy = "REVERSE_FLY"
-        reason = "Medium-high dispersion - Gap premium environment"
+        strategy = "IRON_CONDOR"
+        reason = "Medium-high dispersion - Wide expected range"
     else:
         strategy = "REJECT"
         reason = "Dispersion too high - Skip candidate"

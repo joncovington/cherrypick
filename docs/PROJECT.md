@@ -24,7 +24,7 @@ It comes with two strategy engines:
   buffers, applies regime gates (VIX, VIX1D, ATR, and dealer gamma / GEX), manages per-side stops, and
   force-closes or lets positions settle as appropriate.
 - **Earnings** — **defined-risk earnings plays** (iron fly, double calendar, iron condor, ATM calendar,
-  directional credit spread, broken-wing butterfly, reverse fly). It opens once before the close and
+  directional credit spread, broken-wing butterfly). It opens once before the close and
   closes once after the next open, sized to a simulated capital base.
 
 By default everything runs in **paper mode** — the automation never places, cancels, or closes a real

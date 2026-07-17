@@ -29,7 +29,7 @@ future live-trading bug can never accidentally blend simulated and real P&L by a
 filter.
 
 Both databases' `trades` table is strategy-agnostic — a `strategy` column identifies which of
-the seven opened it — so every strategy's paper results land in the same database,
+the six opened it — so every strategy's paper results land in the same database,
 distinguishable via `get_pnl_summary --strategy <name>` or its `by_strategy` breakdown, without a
 schema change. A `profile` column does the same for named risk profiles / test books (default
 `'default'`, `'strat_test'` for the forced-sampling program).
@@ -39,7 +39,7 @@ schema change. A `profile` column does the same for named risk profiles / test b
 See `CLAUDE.md`'s Loop Steps for the authoritative, single copy of this logic — summarized here:
 
 **Entry (during `entry_window_start`–`entry_window_end` ET, e.g. `15:30`–`15:55`):**
-1. `rank_strategies.py get_ranked_symbols` evaluates all seven strategies against the merged
+1. `rank_strategies.py get_ranked_symbols` evaluates all six strategies against the merged
    today-AMC/tomorrow-BMO calendar and picks each symbol's single best-ranked strategy.
 2. Re-verify each selected symbol fresh (`rank_strategies.reverify_symbol()`) — confirm it's
    still Tier 1/2 right before building an order, since the scan and the entry window aren't the

@@ -4,7 +4,7 @@
 > [`docs/`](docs/README.md); suite-wide context is in the root
 > [documentation index](../../docs/README.md).
 
-You are the cherrypick **Earnings** agent, an autonomous options trading agent for earnings plays. Seven strategies are implemented, **all defined-risk** (max loss known at entry): `iron_fly`, `double_calendar`, `iron_condor`, `atm_calendar`, `directional_credit_spread`, `broken_wing_butterfly`, `reverse_fly`. See `docs/05-strategies.md` for detailed strategy descriptions. Undefined-risk/naked strategies were deliberately removed — a naked short on a single-name earnings gap can blow out arbitrarily during the unmonitored overnight hold. The system is structured so additional strategies can be added under `src/strategies/` without touching the shared engine (`src/scanner.py`). Positions are opened once before market close and closed once after the next open, unmonitored overnight.
+You are the cherrypick **Earnings** agent, an autonomous options trading agent for earnings plays. Six strategies are implemented, **all defined-risk** (max loss known at entry): `iron_fly`, `double_calendar`, `iron_condor`, `atm_calendar`, `directional_credit_spread`, `broken_wing_butterfly`. See `docs/05-strategies.md` for detailed strategy descriptions. Undefined-risk/naked strategies were deliberately removed — a naked short on a single-name earnings gap can blow out arbitrarily during the unmonitored overnight hold. The system is structured so additional strategies can be added under `src/strategies/` without touching the shared engine (`src/scanner.py`). Positions are opened once before market close and closed once after the next open, unmonitored overnight.
 
 **Engine vs. strategy split**: `src/scanner.py` is strategy-agnostic — earnings calendar, IV/RV ratio, winrate backtest, liquidity gates, ranking, expiration selection. `src/strategies/<name>.py` holds only strategy-specific logic: hard-filter thresholds, tiering, strike/order construction. Each strategy declares config under `strategies.<name>` in `config.json`, avoiding threshold collisions.
 
@@ -87,7 +87,7 @@ See `config.example.json` for authoritative list. Top-level options are project-
 | `max_contracts_per_leg` | Hard ceiling on contracts per leg for `sizing.py`'s code-enforced risk cap, regardless of the risk budget. |
 | `tastytrade_costs` | Real tastytrade fee schedule for paper-mode cost-adjusted P&L (see `src/costs.py` and `docs/strategy-testing-plan.md`) — open-only commission ($1/contract open, $0 close, $10/leg cap) + clearing/regulatory pass-throughs + a slippage haircut off bid-ask width. Source: tastytrade.com/pricing, checked 2026-04-06 — re-verify periodically, these rates change. |
 
-**Strategy-specific options** (iron_fly, double_calendar, iron_condor, atm_calendar, directional_credit_spread, broken_wing_butterfly, reverse_fly): See their respective strategy docs (`docs/05-strategies.md`) and `config.example.json` for detailed parameters (wing width multiples, profit targets, stops, exit thresholds, etc.). Each has its own tiering/entry condition tuning.
+**Strategy-specific options** (iron_fly, double_calendar, iron_condor, atm_calendar, directional_credit_spread, broken_wing_butterfly): See their respective strategy docs (`docs/05-strategies.md`) and `config.example.json` for detailed parameters (wing width multiples, profit targets, stops, exit thresholds, etc.). Each has its own tiering/entry condition tuning.
 
 **Correlation risk is not currently guarded**: opening multiple earnings names in the same sector on the same date can silently correlate overnight gap risk — avoid correlated block-list entries together until guard is implemented.
 
@@ -111,7 +111,7 @@ All reads/writes via `src/db.py` (real) / `src/db_paper.py` (paper). Both apply 
 2. **Time gate** — meaningful work only in **entry window** (before close) and **close window** (next morning). Outside both: for multi-day strategies (`double_calendar`, `atm_calendar`), run Step 3b/3d if any position open during session hours. For overnight-hold strategies, if any position open between market open and `close_window_start`, run Step 3c (profit-target/stop-loss and delta-stop checks). Outside all: skip to Step 5.
 
 3. **Close window** — unconditional final backstop for every strategy. Whatever is open when close window arrives gets closed, regardless of P&L. IV crush already happened overnight; no more edge from holding.
-   - For positions with `legs_json` (iron_fly, iron_condor, directional_credit_spread, broken_wing_butterfly, atm_calendar, reverse_fly): fetch live quotes, compute generic exit debit, `save_close`.
+   - For positions with `legs_json` (iron_fly, iron_condor, directional_credit_spread, broken_wing_butterfly, atm_calendar): fetch live quotes, compute generic exit debit, `save_close`.
    - For positions with `trade_legs` (`double_calendar` only): `get_open_legs`, close remaining via conservative pricing, `save_leg_close` each, then `save_close`.
    - Paper mode: simulate fill from live quotes. Live mode: submit actual closing order.
 

@@ -19,7 +19,7 @@ mechanics follow directly from that.
    no more edge in continuing to hold.
 
 That's the entire exit model for the five overnight-hold strategies (`iron_fly`, `iron_condor`,
-`directional_credit_spread`, `broken_wing_butterfly`, `reverse_fly`). The two calendar
+`directional_credit_spread`, `broken_wing_butterfly`). The two calendar
 strategies (`atm_calendar`, `double_calendar`) add their own intraday management on top of this
 during the days they're held — covered separately below.
 
@@ -54,7 +54,7 @@ Profit target: 50% → close if buying back costs ≤ $0.40
 Stop loss: 1.5x → close if buying back would cost ≥ $1.20
 ```
 
-### Debit strategies with a single-unit close (`broken_wing_butterfly`, `reverse_fly`)
+### Debit strategies with a single-unit close (`broken_wing_butterfly`)
 
 `scanner.evaluate_debit_spread_exit()`:
 

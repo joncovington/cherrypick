@@ -24,7 +24,6 @@ Per-contract max loss (strikes in points, one contract = 100 shares):
   iron_fly / iron_condor           (widest wing - credit) * 100
   directional_credit_spread        (|long - short| - credit) * 100
   atm_calendar / double_calendar   debit * 100
-  reverse_fly                      max_loss field * 100
   broken_wing_butterfly            (far_width - near_width + net_debit) * 100
 
 Every strategy is defined-risk (max loss known at entry from the order's own strikes/
@@ -71,12 +70,6 @@ def per_contract_max_loss(order: dict, config: dict) -> float | None:
         if debit is None:
             return None
         return debit * CONTRACT_MULTIPLIER
-
-    if strategy == "reverse_fly":
-        max_loss = order.get("max_loss")
-        if max_loss is None:
-            return None
-        return max_loss * CONTRACT_MULTIPLIER
 
     if strategy == "broken_wing_butterfly":
         near_w = order.get("near_width")

@@ -2,9 +2,9 @@
 
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
-Multi-week forward-test of all 7 implemented (defined-risk) strategies (`iron_fly`,
+Multi-week forward-test of all 6 implemented (defined-risk) strategies (`iron_fly`,
 `double_calendar`, `iron_condor`, `atm_calendar`, `directional_credit_spread`,
-`broken_wing_butterfly`, `reverse_fly`), until each has enough cost-adjusted evidence to
+`broken_wing_butterfly`), until each has enough cost-adjusted evidence to
 decide: enable live, keep paper, or retire.
 
 This is a **separate program** from the live/paper trading loop (CLAUDE.md's Loop Steps).
@@ -110,12 +110,12 @@ momentarily unavailable, same discipline as every other None-able metric here).
 
 Don't conclude anything from a strategy with fewer than 30 trades. A strategy sitting at,
 say, 12 trades after several weeks isn't a bug — check `regime_buckets` in the report before
-assuming a gate needs loosening; some strategies (e.g. `reverse_fly`) are inherently
+assuming a gate needs loosening; some strategies (e.g. `broken_wing_butterfly`) are inherently
 rare-regime and may only ever reach a directional read within a reasonable horizon.
 
 ## Schedule
 
-- **Week 0 — setup & dry run.** One night, confirm all 7 strategies construct, size, cost,
+- **Week 0 — setup & dry run.** One night, confirm all 6 strategies construct, size, cost,
   persist, and close with no error.
 - **Weeks 1-2 — calibration.** Nightly `run_entries`/`run_closes`. Goal is plumbing
   shakeout, not statistics: confirm every strategy fires at least a few times and every exit
@@ -129,9 +129,9 @@ rare-regime and may only ever reach a directional read within a reasonable horiz
 
 - **Common-regime** (`iron_fly`, `iron_condor`, `directional_credit_spread`, the two
   calendars): expect to reach 30-100 within the horizon on a typical earnings calendar.
-- **Rare-regime**: `reverse_fly` needs a realized/expected move gap ratio > 1.10, and
-  `broken_wing_butterfly` needs a steep enough IV skew — both fire less often, so they may
-  only reach a directional read (30) rather than full significance (100) in the tested window.
+- **Rare-regime**: `broken_wing_butterfly` needs a steep enough IV skew, so it fires less often
+  and may only reach a directional read (30) rather than full significance (100) in the tested
+  window.
 
 ## Evaluation & promotion
 

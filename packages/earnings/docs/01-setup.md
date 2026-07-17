@@ -123,9 +123,9 @@ and live mode — see `CLAUDE.md`'s Loop Step 0 for the paper/live distinction.
 # Config is valid JSON
 python -c "import json; json.load(open('config/config.json')); print('Config OK')"
 
-# All 7 strategies register cleanly
+# All 6 strategies register cleanly
 python -c "from src.rank_strategies import STRATEGY_REGISTRY; print(f'Found {len(STRATEGY_REGISTRY)} strategies')"
-# Expected: Found 7 strategies
+# Expected: Found 6 strategies
 
 # Run the test suite
 pytest
@@ -156,7 +156,7 @@ filters. A quiet night with zero Tier 1/2 candidates is normal and not a bug.
 ## Step 7: Run the forced-sampling strategy test (recommended first)
 
 Before running the live/paper trading loop, use `/paper-start` (see
-`docs/strategy-testing-plan.md`) to force-sample all 7 strategies nightly into an isolated
+`docs/strategy-testing-plan.md`) to force-sample all 6 strategies nightly into an isolated
 `profile='strat_test'` paper book — this validates the whole pipeline end-to-end (scan, tier,
 size, cost-adjust, persist, close) and starts building the sample size needed to evaluate each
 strategy, without affecting the real paper/live trading book:
@@ -228,7 +228,7 @@ tastytrade connection — if a failure mentions either, check `tests/conftest.py
 1. **Read** [Quick Reference](./02-quick-reference.md) for daily CLI workflows.
 2. **Read** `CLAUDE.md` in full — it's the authoritative operational spec (loop steps, tool
    reference, config options, database schema).
-3. **Study** [Strategy Guide](./05-strategies.md) for how each of the 7 strategies works.
+3. **Study** [Strategy Guide](./05-strategies.md) for how each of the 6 strategies works.
 4. **Run** `/paper-start` daily for a few weeks before considering live trading.
 
 ---

@@ -99,8 +99,8 @@ def analyze_candidate(symbol: str, criteria: dict) -> dict:
 
     elif dispersion < 0.30:
         analysis["decision_path"].append("✓ Medium-high dispersion (0.25 ≤ σ < 0.30)")
-        analysis["recommended_strategy"] = "REVERSE_FLY"
-        analysis["reasoning"] = f"High dispersion ({dispersion:.4f}) suggests historical gap premium. Long straddle hedge with defined risk."
+        analysis["recommended_strategy"] = "IRON_CONDOR"
+        analysis["reasoning"] = f"High dispersion ({dispersion:.4f}) suggests a wide expected range. Strangle at expected-move boundaries with defined risk."
 
     else:
         analysis["decision_path"].append("❌ High dispersion (σ ≥ 0.30)")

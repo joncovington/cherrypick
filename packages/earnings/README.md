@@ -10,7 +10,7 @@
 > [docs/](docs/README.md), and the suite-wide [documentation index](../../docs/README.md).
 
 An autonomous options trading agent for overnight earnings plays. It scans the daily earnings
-calendar, evaluates seven defined-risk options strategies against live market data, ranks
+calendar, evaluates six defined-risk options strategies against live market data, ranks
 candidates, and manages entries and exits around a single overnight hold — position opened once
 before the close, closed once after the next open, unmonitored overnight.
 
@@ -94,7 +94,7 @@ adds the watchdog, notifications, and the cross-module read side (`cherrypick re
 
 ---
 
-## The 7 Strategies
+## The 6 Strategies
 
 All defined-risk, all evaluated nightly against live tastytrade chains and DoltHub data:
 
@@ -104,7 +104,6 @@ All defined-risk, all evaluated nightly against live tastytrade chains and DoltH
 | `iron_condor` | Short OTM put spread + short OTM call spread | Wide expected range, directional-neutral |
 | `directional_credit_spread` | Short OTM put or call spread (side chosen by skew) | Directional bias / IV skew |
 | `broken_wing_butterfly` | Asymmetric (skip-strike) butterfly, wings sized to skew | Asymmetric expected moves |
-| `reverse_fly` | Long ATM + short OTM wings | Capturing gap premium (long-vol) |
 | `atm_calendar` | Short front-month + long back-month, same strike | Low IV, term-structure edge |
 | `double_calendar` | ATM calendar on both the call and put side | Low IV, symmetric term structure |
 

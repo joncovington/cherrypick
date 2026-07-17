@@ -28,7 +28,7 @@ python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
 ```
 
 Same command shape for any strategy (`iron_condor`, `directional_credit_spread`,
-`broken_wing_butterfly`, `reverse_fly`, `atm_calendar`, `double_calendar`). Returns Tier 1/2/3
+`broken_wing_butterfly`, `atm_calendar`, `double_calendar`). Returns Tier 1/2/3
 candidates with pass/skip reasons per `docs/screening-criteria.md`, ranked candidates, and which
 ones survived the account-wide cap/correlation filter.
 
@@ -64,7 +64,6 @@ Medium IV, symmetric expected move           → iron_fly
 Wide expected range, directional-neutral     → iron_condor
 Directional bias / IV skew                   → directional_credit_spread
 Asymmetric skew, skip-strike structure       → broken_wing_butterfly
-Gap-premium / long-vol setups                → reverse_fly
 Low IV, term-structure edge                  → atm_calendar or double_calendar
 ```
 
@@ -78,8 +77,8 @@ Every candidate has to clear the shared liquidity/quality gates in
 
 1. **Early exit check (Step 3c/3b/3d)** — the first morning after entry, between market open and
    `close_window_start` (default `09:45` ET): profit-target and stop-loss checks run against
-   live quotes. `iron_fly`/`iron_condor`/`directional_credit_spread`/`broken_wing_butterfly`/
-   `reverse_fly` hit at 50% of credit / 1.5x credit stop; calendars hit at 25-30% of debit.
+   live quotes. `iron_fly`/`iron_condor`/`directional_credit_spread`/`broken_wing_butterfly`
+   hit at 50% of credit / 1.5x credit stop; calendars hit at 25-30% of debit.
 2. **Unconditional close-window backstop (Step 3)** — whatever is still open when the close
    window arrives gets closed regardless of P&L. IV crush already happened overnight; there's no
    more edge from holding, so this is a hard stop, not a target.
@@ -149,7 +148,7 @@ See [Configuration Guide](./03-configuration.md) for every parameter and what it
 
 ## Strategy Comparison
 
-All seven strategies are defined-risk — max loss is known at entry for every one of them.
+All six strategies are defined-risk — max loss is known at entry for every one of them.
 
 | Strategy | Structure | Entry | Hold |
 |---|---|---|---|
@@ -157,7 +156,6 @@ All seven strategies are defined-risk — max loss is known at entry for every o
 | `iron_condor` | Short OTM put spread + short OTM call spread | Credit | Overnight |
 | `directional_credit_spread` | Short OTM put or call spread (side by skew) | Credit | Overnight |
 | `broken_wing_butterfly` | Skip-strike butterfly, wings sized to skew | Credit | Overnight |
-| `reverse_fly` | Long ATM + short OTM wings | Debit or small credit | Overnight |
 | `atm_calendar` | Short front-month + long back-month, one side | Debit | Multi-day |
 | `double_calendar` | ATM calendar on both call and put side | Debit | Multi-day |
 
@@ -202,7 +200,7 @@ python src/strategy_report.py           # per-strategy expectancy, win rate, IV 
 python src/strategy_dashboard.py        # writes reports/strategy_dashboard.html
 ```
 
-For accumulating a real sample across all 7 strategies before trusting any of the above, use
+For accumulating a real sample across all 6 strategies before trusting any of the above, use
 `/paper-start` daily — see `docs/strategy-testing-plan.md`.
 
 ---

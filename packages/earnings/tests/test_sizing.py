@@ -36,11 +36,6 @@ def test_calendar_max_loss_is_debit():
     assert sizing.per_contract_max_loss(order2, {}) == pytest.approx(0.45 * 100)
 
 
-def test_reverse_fly_uses_max_loss_field():
-    order = {"strategy": "reverse_fly", "max_loss": 1.75}
-    assert sizing.per_contract_max_loss(order, {}) == pytest.approx(1.75 * 100)
-
-
 def test_broken_wing_butterfly_max_loss():
     order = {"strategy": "broken_wing_butterfly", "near_width": 2.0, "far_width": 5.0, "net_debit": 0.20}
     assert sizing.per_contract_max_loss(order, {}) == pytest.approx((5.0 - 2.0 + 0.20) * 100)

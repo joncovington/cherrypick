@@ -88,7 +88,6 @@ one contract controls 100 shares.
 | iron_condor | (widest wing − credit) × 100 |
 | directional_credit_spread | (\|long−short\| − credit) × 100 |
 | atm_calendar / double_calendar | debit × 100 |
-| reverse_fly | its own `max_loss` field × 100 |
 | broken_wing_butterfly | (far_width − near_width + net_debit) × 100 |
 
 Every strategy is defined-risk, so max loss comes straight from the order's own
