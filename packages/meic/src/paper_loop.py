@@ -33,18 +33,20 @@ import sqlite3
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-try:
+try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
     _ET = pytz.timezone("America/New_York")
-    def _now_et():
-        return datetime.now(_ET)
-except ImportError:
-    def _now_et():
-        return datetime.now(UTC)
+
+
+def _now_et():
+    return datetime.now(_ET)
 
 _ROOT = Path(__file__).resolve().parent.parent
 
