@@ -164,6 +164,23 @@ def _embed_error(embed_cfg: dict[str, Any], detail: str) -> bytes:
     ).encode()
 
 
+def _embed_building(embed_cfg: dict[str, Any]) -> bytes:
+    """A lightweight placeholder shown while a static embed's first build runs in the background. It
+    auto-refreshes so the iframe swaps to the real dashboard as soon as the file lands — the request
+    never blocks on the generator."""
+    from html import escape
+
+    title = escape(str(embed_cfg.get("title", embed_cfg.get("id", "module"))))
+    return (
+        "<!doctype html><meta charset='utf-8'>"
+        "<meta http-equiv='refresh' content='2'>"
+        '<div style="font:14px system-ui,sans-serif;color:#8a97a3;padding:24px">'
+        f"<b>{title}</b> dashboard building…<br>"
+        "<span style='font-size:12px'>generating charts; this view refreshes automatically.</span>"
+        "</div>"
+    ).encode()
+
+
 def _make_handler(cfg: dict[str, Any]):
     class _Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):  # keep the terminal quiet — no per-request spam
@@ -203,6 +220,10 @@ def _make_handler(cfg: dict[str, Any]):
                 body = embeds.read_static(emb) if res.get("ok") else None
                 if body is not None:
                     self._send(200, body, "text/html; charset=utf-8")
+                elif res.get("building"):
+                    # First build is running in the background — show an auto-refreshing placeholder
+                    # rather than blocking the iframe on the generator.
+                    self._send(200, _embed_building(emb), "text/html; charset=utf-8")
                 else:
                     self._send(200, _embed_error(emb, res.get("detail", "unavailable")), "text/html")
             except Exception as exc:  # a module hiccup shows inline, never breaks the orchestrator server
@@ -320,6 +341,9 @@ def serve(
         + (f" · sections: {', '.join(active)}" if active else " · no live sections")
         + (f" · embeds: {', '.join(active_embeds)}" if active_embeds else "")
     )
+    # Pre-warm static embeds in the background so their (matplotlib) HTML already exists by the time the
+    # user opens the page — the first iframe load then serves instantly instead of triggering a build.
+    embeds.prewarm(cfg)
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
