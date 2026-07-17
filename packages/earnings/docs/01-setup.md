@@ -77,9 +77,14 @@ defaults above; only change them if you're serving the databases elsewhere.
 cp config/config.example.json config/config.json
 ```
 
+> **Config location.** This in-repo `config/config.json` is the standalone-checkout path. Under the
+> orchestrated cherrypick suite the config resolves **home-first** to `~/.cherrypick/config/earnings.json`
+> (see `src/paths.py`); `cherrypick migrate-home` moves an in-repo config up to the home. The keys are the
+> same either way — edit whichever `paths.config_path()` resolves to.
+
 The example ships with sane, documented defaults (`enable_live_trading: false`, i.e. paper mode,
 and an `available_capital_paper_mode` simulated capital basis rather than a real balance). Open
-`config/config.json` and review at minimum:
+your config and review at minimum:
 
 - `available_capital_paper_mode` — simulated NLV for paper mode's risk-cap checks.
 - `max_concurrent_earnings_positions` — account-wide cap on simultaneous overnight positions.

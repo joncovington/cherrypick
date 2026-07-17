@@ -15,6 +15,12 @@ behind each default — read those inline notes alongside this guide rather than
 page as the only source. Where this guide and the example file ever disagree, trust the file;
 it's what the code actually reads.
 
+> **Where the config lives.** `src/paths.py` resolves the config **home-first**: the orchestrated
+> suite reads `~/.cherrypick/config/earnings.json` when it exists, falling back to the in-repo
+> `config/config.json` for a standalone checkout (or until `cherrypick migrate-home` moves it up).
+> The keys below are identical either way — edit whichever file `paths.config_path()` resolves to on
+> your machine.
+
 ---
 
 ## Top-Level Options

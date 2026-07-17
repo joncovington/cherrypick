@@ -121,13 +121,25 @@ greeks — but they still hit the same unconditional close-window backstop as a 
 ## End of Day
 
 The forced-sampling close pass (`run_closes`, driven by the orchestrator's 09:45 ET exit task)
-writes a deterministic end-of-day report automatically to `~/.cherrypick/logs/earnings/paper-eod-<date>.md` — an
-account-wide net-P&L summary plus per-profile, per-strategy, and per-symbol breakdowns, all net of
-costs. Regenerate today's or backfill a past day on demand:
+writes **two** deterministic end-of-day files automatically to `~/.cherrypick/logs/earnings/`:
+
+- `paper-eod-<date>.md` — the terse metrics report: an account-wide net-P&L summary plus per-profile,
+  per-strategy, and per-symbol breakdowns, all net of costs.
+- `eod-analysis-<date>.md` — a conversational **7-section** read on the same session (executive
+  snapshot, position detail, trade log, risk metrics, market context, tax notes, and a notes/journal
+  with recommendations). Still fully deterministic/code-generated — no agent — just written in
+  plain-English analysis language.
+
+Regenerate today's or backfill a past day on demand (`eod_report` writes both; `eod_analysis` writes just
+the analysis):
 
 ```
 python src/strategy_test_runner.py eod_report [--date YYYY-MM-DD]
+python src/strategy_test_runner.py eod_analysis [--date YYYY-MM-DD]
 ```
+
+The orchestrator's suite digest and (opt-in) AI insight build on these files — see the suite
+[reporting docs](../../../docs/reporting-and-dashboard.md).
 
 For accumulated (multi-day) results across the whole sample, use `python src/strategy_report.py`
 or the HTML `python src/strategy_dashboard.py` instead.
