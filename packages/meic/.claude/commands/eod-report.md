@@ -48,6 +48,10 @@ The paper report is **deterministic and code-generated** (no synthesis needed) �
 python src/paper_loop.py --eod-report [--date <YYYY-MM-DD>]
 ```
 
-It writes `paper-eod-<date>.md` to the MEIC logs home (`~/.cherrypick/logs/meic/` by default, or `$MEIC_LOGS_DIR`) — a per-profile metrics table (trades, win rate, net P&L, expectancy, profit factor, max drawdown), an exits-by-reason breakdown, and per-symbol P&L across all four risk profiles. Report the path it prints; optionally show the user the file contents. (This is distinct from `/paper-report`, which is the agent-synthesized multi-day write-up.)
+It writes **two** files to the MEIC logs home (`~/.cherrypick/logs/meic/` by default, or `$MEIC_LOGS_DIR`):
+- `paper-eod-<date>.md` — the terse per-profile metrics table (trades, win rate, net P&L, expectancy, profit factor, max drawdown), exits-by-reason breakdown, and per-symbol P&L across all four risk profiles.
+- `eod-analysis-<date>.md` — a conversational 7-section read on the same session (executive snapshot, position-level detail, trade activity log, risk metrics, market context, tax/accounting notes, notes/journal). Still fully deterministic/code-generated (no agent), just written in plain-English analysis language. Regenerate only this one with `python src/paper_loop.py --eod-analysis [--date <YYYY-MM-DD>]`.
 
-Note: the paper loop daemon already writes this file automatically at the 16:00 settlement pass; running it here just regenerates it on demand (or backfills a past `--date`).
+Report the paths it prints; optionally show the user the file contents. (Both are distinct from `/paper-report`, which is the agent-synthesized multi-day write-up.)
+
+Note: the paper loop daemon already writes both files automatically at the 16:00 settlement pass; running it here just regenerates them on demand (or backfills a past `--date`).
