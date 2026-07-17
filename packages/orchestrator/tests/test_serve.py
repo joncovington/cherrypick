@@ -58,6 +58,52 @@ def test_fetch_missing_module_returns_not_ok(tmp_path):
     assert out["ok"] is False and "not found" in out["error"]
 
 
+def test_md_to_html_renders_report_subset():
+    md = (
+        "# EOD Analysis 2026-07-16\n\n"
+        "_intro line_\n\n"
+        "## 1. Snapshot\n"
+        "The book closed **-$73.98** net; call `per_side_stop_call` fired.\n\n"
+        "| Symbol | Net |\n|---|---|\n| XSP | $90 |\n| QQQ | -$164 |\n\n"
+        "## 7. Notes\n"
+        "- top point\n"
+        "  - nested detail\n"
+    )
+    h = serve._md_to_html(md)
+    assert "<h1>EOD Analysis 2026-07-16</h1>" in h
+    assert "<h2>1. Snapshot</h2>" in h and "<h2>7. Notes</h2>" in h
+    assert "<strong>-$73.98</strong>" in h
+    assert "<em>intro line</em>" in h
+    assert "<code>per_side_stop_call</code>" in h  # intra-word underscores stay literal, not italicized
+    assert "<table>" in h and "<th>Symbol</th>" in h and "<td>XSP</td>" in h
+    assert "<ul><li>top point<ul><li>nested detail</li></ul></li></ul>" in h
+    # No raw markdown leaks through.
+    assert "## " not in h and "\n|" not in h
+
+    page = serve._md_page("meic EOD analysis — 2026-07-16", md)
+    assert b"<table>" in page and b"font-size:22px" in page  # styled, not a <pre> dump
+    assert b"<pre>" not in page
+
+
+def test_eod_card_links_metrics_analysis_digest_insight():
+    eod = {
+        "session": "2026-07-16", "is_today": False,
+        "modules": {"meic": {"ok": True, "net_pnl": -1.0, "trades": 1, "wins": 0, "losses": 1}},
+        "files": {"meic": "x"}, "analysis": {"meic": "xa"}, "digest": "d", "insight": "i",
+    }
+    served = dashboard._eod_card_html(eod, serve=True)
+    assert "/eod-report?module=meic&amp;session=2026-07-16" in served       # metrics
+    assert "kind=analysis" in served                                        # analysis
+    assert "/eod-report?suite=1&amp;session=2026-07-16" in served           # digest
+    assert "/eod-report?insight=1&amp;session=2026-07-16" in served         # AI insight
+    assert "AI insight" in served
+
+    static = dashboard._eod_card_html(eod, serve=False)
+    assert "metrics ✓" in static and "analysis ✓" in static
+    assert "suite digest ✓" in static and "AI insight ✓" in static
+    assert "/eod-report?" not in static  # static file has no server to link to
+
+
 def test_argv_substitutes_params():
     argv = sections._argv({"fetch_argv": ["run.py", "section", "--symbol", "{symbol}"]}, {"symbol": "SPX"})
     assert argv == ["run.py", "section", "--symbol", "SPX"]

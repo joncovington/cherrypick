@@ -186,6 +186,21 @@ def archive_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def insight_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved AI EOD-insight scheduling. **OFF by default** — it needs Claude Code (`claude`) on PATH,
+    an authenticated session, and a paid call, so it's opt-in (`"eod_insight": {"enabled": true}`). When
+    on, a daily task synthesizes a cross-module narrative over the deterministic reports into
+    `eod-insight-<day>.md`. `model` None → Claude's configured default. Off the reliability path."""
+    ei = cfg.get("eod_insight", {}) or {}
+    return {
+        "enabled": ei.get("enabled", False),
+        "task_name": ei.get("task_name", "cherrypick-eod-insight"),
+        "at": ei.get("at", "16:20"),
+        "model": ei.get("model"),
+        "timeout_seconds": int(ei.get("timeout_seconds", 120)),
+    }
+
+
 def python_exe() -> str:
     """The interpreter to run module scripts with (same env as cherrypick)."""
     return sys.executable

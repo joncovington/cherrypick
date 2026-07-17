@@ -23,6 +23,8 @@ Subcommands:
   archive              End-of-month rotation: zip each finished month's dated reports + rotated log
                        backups into logs/archive/<YYYY-MM>/<scope>.zip and remove the originals (the
                        scheduled cherrypick-log-archive task runs this). --month YYYY-MM; --dry-run.
+  eod-insight          AI synthesis over the day's deterministic reports → logs/eod-insight-<day>.md
+                       (opt-in; needs Claude Code on PATH + eod_insight.enabled). --date; default today.
   reconcile            Paper↔live isolation guard: query the real broker account (read-only) and flag
                        any open positions/BP a paper-only suite shouldn't have. On-demand; never trades.
   connect              Guided per-module onboarding (--module): set OAuth creds (via the module's own
@@ -61,6 +63,7 @@ from cherrypick.orchestrator import (
     dashboard,
     doctor,
     eod_digest,
+    eod_insight,
     init,
     logrotate,
     migrate,
@@ -230,6 +233,15 @@ def cmd_install(cfg) -> None:
             la["task_name"], la_tr, la["day"], timeutil.to_local_hhmm(la["at"], tz)
         )
 
+    # AI EOD insight: a daily task synthesizes the deterministic reports via Claude Code. OFF by default
+    # (opt in with "eod_insight": {"enabled": true} and Claude on PATH); registered only when enabled.
+    ei = cfgmod.insight_settings(cfg)
+    if ei["enabled"]:
+        ei_tr = tasks.build_tr(pyw, str(_LAUNCHER), "eod-insight")
+        results["eod_insight_task"] = tasks.create_daily_task(
+            ei["task_name"], ei_tr, timeutil.to_local_hhmm(ei["at"], tz)
+        )
+
     # generic background services (e.g. the gex spot-trail recorder): start each detached if it's down.
     # The watchdog keeps them alive thereafter; single-instance guards prevent duplicate starts.
     for svc in cfgmod.enabled_services(cfg):
@@ -290,6 +302,7 @@ def cmd_uninstall(cfg) -> None:
     # *after* an install still removes a previously-registered task.
     results["eod_digest_task"] = tasks.delete(cfgmod.eod_digest_settings(cfg)["task_name"])
     results["log_archive_task"] = tasks.delete(cfgmod.archive_settings(cfg)["task_name"])
+    results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
     # Stop generic background services (e.g. the gex recorder) — unlike the streamer, these are the
     # orchestrator's own daemons, so a full uninstall stops them.
     for svc in cfgmod.enabled_services(cfg):
@@ -580,6 +593,15 @@ def cmd_archive(cfg, args) -> None:
     _emit(logrotate.run(cfg, month=args.month, dry_run=args.dry_run))
 
 
+def cmd_eod_insight(cfg, args) -> None:
+    """AI synthesis over the day's deterministic reports → logs/eod-insight-<day>.md. What the scheduled
+    `cherrypick-eod-insight` task runs. Opt-in + feature-detected (Claude Code on PATH); read-only, no
+    dangerous tools, off the reliability path. Best-effort: prints a `skipped`/`error` envelope rather
+    than failing when Claude is absent, disabled, or the reports aren't written yet."""
+    day = args.date or (timeutil.now_et().strftime("%Y-%m-%d"))
+    _emit(eod_insight.run(cfg, day=day))
+
+
 def cmd_dashboard(cfg, args) -> None:
     """One-shot static render (default), or a localhost live server with --serve.
 
@@ -669,6 +691,7 @@ def main() -> None:
             "eod-digest",
             "notify-eod",
             "archive",
+            "eod-insight",
             "reconcile",
             "connect",
             "account",
@@ -753,6 +776,7 @@ def main() -> None:
         "eod-digest": lambda: cmd_eod_digest(cfg, args),
         "notify-eod": lambda: cmd_notify_eod(cfg, args),
         "archive": lambda: cmd_archive(cfg, args),
+        "eod-insight": lambda: cmd_eod_insight(cfg, args),
         "reconcile": lambda: cmd_reconcile(cfg),
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),

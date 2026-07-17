@@ -304,6 +304,9 @@ def registry_snapshot(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     la = cfgmod.archive_settings(cfg)
     if la["enabled"]:
         out[la["task_name"]] = query_verbose(la["task_name"])
+    ei = cfgmod.insight_settings(cfg)
+    if ei["enabled"]:
+        out[ei["task_name"]] = query_verbose(ei["task_name"])
     return out
 
 
