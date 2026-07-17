@@ -1,4 +1,4 @@
-Display the current MEICAgent session status as a clear, readable summary.
+Display the current MEIC session status as a clear, readable summary.
 
 Run the following in parallel:
 ```bash

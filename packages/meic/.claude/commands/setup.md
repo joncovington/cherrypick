@@ -1,4 +1,4 @@
-Set up MEICAgent credentials and verify the broker connection.
+Set up MEIC credentials and verify the broker connection.
 
 ## Step 1 — Check current credential status
 
