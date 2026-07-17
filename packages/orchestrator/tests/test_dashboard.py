@@ -237,6 +237,7 @@ def test_build_model_includes_system_panel(env, monkeypatch):
         "cherrypick-watchdog",
         "cherrypick-trade-notify",
         "cherrypick-eod-digest",  # on by default (opt out via eod_digest.enabled=false)
+        "cherrypick-log-archive",  # monthly rotation, on by default (opt out via log_archive.enabled=false)
     }
     assert all(t["exists"] is False for t in m["tasks"])  # none registered in the test env
 
@@ -283,7 +284,7 @@ def test_embeds_are_serve_only_iframe_cards(env, monkeypatch):
     assert m["embeds"][0]["url"] == "/embed/meic"
     served = dashboard._render_html(m, serve=True)
     static = dashboard._render_html(m, serve=False)
-    assert 'src="/embed/meic"' in served and "embedded module dashboards" in served
+    assert 'src="/embed/meic"' in served and '<div class="embed-grid">' in served
     assert "/embed/meic" not in static  # no iframe in the static file render
 
 

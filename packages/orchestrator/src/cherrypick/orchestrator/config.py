@@ -173,6 +173,19 @@ def eod_digest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def archive_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved end-of-month log/report rotation scheduling. ON by default (opt out with
+    `"log_archive": {"enabled": false}`): a monthly task zips each finished month's dated reports and
+    rotated log backups into `logs/archive/`. `day` is the day of month it fires; `at` is local time."""
+    la = cfg.get("log_archive", {}) or {}
+    return {
+        "enabled": la.get("enabled", True),
+        "task_name": la.get("task_name", "cherrypick-log-archive"),
+        "day": int(la.get("day", 1)),
+        "at": la.get("at", "03:30"),
+    }
+
+
 def python_exe() -> str:
     """The interpreter to run module scripts with (same env as cherrypick)."""
     return sys.executable

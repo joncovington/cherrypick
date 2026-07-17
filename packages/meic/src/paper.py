@@ -19,16 +19,18 @@ import os
 import sqlite3
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import datetime
 
-try:
+try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
     _ET = pytz.timezone("America/New_York")
-    def _now_et():
-        return datetime.now(_ET)
-except ImportError:
-    def _now_et():
-        return datetime.now(UTC)
+
+
+def _now_et():
+    return datetime.now(_ET)
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.join(_HERE, "..")

@@ -11,7 +11,7 @@ import sys
 import threading
 import urllib.parse
 import webbrowser
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 
@@ -19,32 +19,33 @@ import paths as _paths
 
 # ── Timezone helpers ─────────────────────────────────────────────────────────
 
-try:
-    import pytz as _pytz
-    _ET = _pytz.timezone("America/New_York")
-    def _today() -> str:
-        return datetime.now(_ET).strftime("%Y-%m-%d")
-    def _now_iso() -> str:
-        return datetime.now(_ET).isoformat()
-    def _week_start() -> str:
-        now = datetime.now(_ET)
-        return (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
-    def _month_start() -> str:
-        return datetime.now(_ET).strftime("%Y-%m-01")
-    def _year_start() -> str:
-        return datetime.now(_ET).strftime("%Y-01-01")
-except ImportError:
-    def _today() -> str:
-        return datetime.now(UTC).strftime("%Y-%m-%d")
-    def _now_iso() -> str:
-        return datetime.now(UTC).isoformat()
-    def _week_start() -> str:
-        now = datetime.now(UTC)
-        return (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
-    def _month_start() -> str:
-        return datetime.now(UTC).strftime("%Y-%m-01")
-    def _year_start() -> str:
-        return datetime.now(UTC).strftime("%Y-01-01")
+try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+except Exception:  # pragma: no cover - only where zoneinfo has no tz database
+    import pytz
+    _ET = pytz.timezone("America/New_York")
+
+
+def _today() -> str:
+    return datetime.now(_ET).strftime("%Y-%m-%d")
+
+
+def _now_iso() -> str:
+    return datetime.now(_ET).isoformat()
+
+
+def _week_start() -> str:
+    now = datetime.now(_ET)
+    return (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+
+
+def _month_start() -> str:
+    return datetime.now(_ET).strftime("%Y-%m-01")
+
+
+def _year_start() -> str:
+    return datetime.now(_ET).strftime("%Y-01-01")
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
@@ -414,6 +415,200 @@ def _spread_statuses(trade: dict, put_leg: dict | None = None, call_leg: dict | 
 _LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "WARN", "ERROR", "CRITICAL"}
 
 
+# ── History / Performance analytics ────────────────────────────────────────────
+# net convention here is explicit: gross = SUM(pnl) (spread P&L before costs), fees =
+# SUM(fees), net = gross - fees. This matches the gross-vs-net split the report/EOD digest
+# emit — and is deliberately labelled so it isn't confused with the stats-grid "net_pnl",
+# which is SUM(pnl) (gross-of-fees) for backward-compat.
+
+_HIST_TRADE_COLS = (
+    "ic_order_id, trade_date, symbol, risk_profile, entry_time, exit_time, "
+    "put_strike, call_strike, wing_width, net_credit, quantity, "
+    "put_credit, call_credit, status, session_quality, "
+    "iv_rank_at_entry, iv_skew_signal, price_action_signal, "
+    "put_delta_at_entry, call_delta_at_entry, "
+    "exit_reason, pnl, fees, ai_entry_reasoning"
+)
+
+
+def _history_trades(conn, sym_filter, prof_filter, limit=1000):
+    """Full Today's-Trades-shape rows across every date (newest first), for the filterable
+    trade log. Client filters/sorts within this window; the server just scopes by the two
+    global selectors (symbol, profile) and caps the set."""
+    sql = (f"SELECT {_HIST_TRADE_COLS} FROM ic_trades "
+           "WHERE status NOT IN ('cancelled','pending','partial_entry')")
+    params: list = []
+    if sym_filter:
+        sql += " AND symbol = ?"
+        params.append(sym_filter)
+    if prof_filter:
+        sql += " AND risk_profile = ?"
+        params.append(prof_filter)
+    sql += " ORDER BY trade_date DESC, entry_time DESC LIMIT ?"
+    params.append(limit)
+    raw = _rows(conn, sql, params)
+    legs = _fetch_spread_legs(conn, [t["ic_order_id"] for t in raw])
+    out = []
+    for t in raw:
+        tl = legs.get(t["ic_order_id"], {})
+        put_s, call_s = _spread_statuses(t, tl.get("put"), tl.get("call"))
+        row = dict(t)
+        row["put_status"] = put_s
+        row["call_status"] = call_s
+        out.append(row)
+    return out
+
+
+def _by_profile_compare(conn, sym_filter):
+    """Side-by-side per-profile scorecard (all profiles, ranked by net) — the variance-testing
+    payoff. Symbol filter is honoured; the profile selector is intentionally NOT (the whole
+    point is to compare every profile at once). Returns [] on a DB with no risk_profile column."""
+    if not _has_column(conn, "ic_trades", "risk_profile"):
+        return []
+    where = ["status NOT IN ('cancelled','pending','partial_entry')", "risk_profile IS NOT NULL"]
+    params: list = []
+    if sym_filter:
+        where.append("symbol = ?")
+        params.append(sym_filter)
+    rows = _rows(conn,
+        f"SELECT risk_profile, trade_date, entry_time, pnl, fees FROM ic_trades "
+        f"WHERE {' AND '.join(where)} ORDER BY risk_profile, trade_date, entry_time", params)
+    groups: dict[str, list] = {}
+    for r in rows:
+        groups.setdefault(r["risk_profile"], []).append(r)
+    out = []
+    for prof, rs in groups.items():
+        nets = [float(r.get("pnl") or 0) - float(r.get("fees") or 0) for r in rs]
+        trades = len(rs)
+        gross = sum(float(r.get("pnl") or 0) for r in rs)
+        fees = sum(float(r.get("fees") or 0) for r in rs)
+        net = gross - fees
+        wins = sum(1 for x in nets if x > 0)
+        gw = sum(x for x in nets if x > 0)
+        gl = abs(sum(x for x in nets if x <= 0))
+        running = peak = maxdd = 0.0
+        for x in nets:  # rs is date/time-ordered, so this is the real equity path
+            running += x
+            peak = max(peak, running)
+            maxdd = max(maxdd, peak - running)
+        out.append({
+            "profile":       prof,
+            "trades":        trades,
+            "gross_pnl":     round(gross, 2),
+            "fees":          round(fees, 2),
+            "net_pnl":       round(net, 2),
+            "win_rate_pct":  round(wins / trades * 100, 1) if trades else None,
+            "expectancy":    round(net / trades, 2) if trades else None,
+            "profit_factor": round(gw / gl, 2) if gl > 0 else None,
+            "max_drawdown":  round(maxdd, 2),
+        })
+    out.sort(key=lambda d: d["net_pnl"], reverse=True)
+    return out
+
+
+_DELTA_BANDS = ("<0.10", "0.10-0.15", "0.15-0.20", ">=0.20")
+_DOW_ORDER = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def _delta_band(d):
+    if d is None:
+        return None
+    d = abs(float(d))
+    if d < 0.10:
+        return "<0.10"
+    if d < 0.15:
+        return "0.10-0.15"
+    if d < 0.20:
+        return "0.15-0.20"
+    return ">=0.20"
+
+
+def _by_signal(conn, sym_clause, sym_params):
+    """'Does this pre-trade attribute predict outcome?' breakdowns — avg NET P&L, trades, and
+    win-rate by short-call delta band, wing width, symbol, and weekday. (IV-skew and
+    price-action signals are captured columns but the paper engine leaves them NULL, and stored
+    entry_time mixes timezones, so neither is surfaced.) Honours both global filters via
+    sym_clause."""
+    rows = _rows(conn, f"""
+        SELECT trade_date, symbol, call_delta_at_entry, wing_width, pnl, fees
+        FROM ic_trades
+        WHERE pnl IS NOT NULL
+          AND status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
+    """, sym_params)
+
+    def agg(keyfn, order=None):
+        buckets: dict[str, dict] = {}
+        for r in rows:
+            k = keyfn(r)
+            if k is None:
+                continue
+            net = float(r.get("pnl") or 0) - float(r.get("fees") or 0)
+            b = buckets.setdefault(k, {"bucket": k, "trades": 0, "net_sum": 0.0, "wins": 0})
+            b["trades"] += 1
+            b["net_sum"] += net
+            if net > 0:
+                b["wins"] += 1
+        result = []
+        for k, b in buckets.items():
+            result.append({
+                "bucket":       k,
+                "trades":       b["trades"],
+                "avg_pnl":      round(b["net_sum"] / b["trades"], 2) if b["trades"] else None,
+                "win_rate_pct": round(b["wins"] / b["trades"] * 100, 1) if b["trades"] else None,
+            })
+        if order:
+            idx = {v: i for i, v in enumerate(order)}
+            result.sort(key=lambda d: idx.get(d["bucket"], len(order)))
+        else:
+            result.sort(key=lambda d: -d["trades"])
+        return result
+
+    def _dow(r):
+        try:
+            return datetime.strptime(r["trade_date"], "%Y-%m-%d").strftime("%a")
+        except Exception:
+            return None
+
+    def _wing(r):
+        w = r.get("wing_width")
+        if w is None:
+            return None
+        return (str(int(w)) if float(w).is_integer() else str(w)) + "-wide"
+
+    return {
+        "by_delta":  agg(lambda r: _delta_band(r.get("call_delta_at_entry")), _DELTA_BANDS),
+        "by_wing":   agg(_wing),
+        "by_symbol": agg(lambda r: r.get("symbol")),
+        "by_dow":    agg(_dow, _DOW_ORDER),
+    }
+
+
+def _daily_pnl(conn, sym_clause, sym_params):
+    """Per-date gross/fees/net + trade count for the calendar heatmap. Honours both filters."""
+    rows = _rows(conn, f"""
+        SELECT trade_date,
+               COALESCE(SUM(pnl), 0)  AS gross,
+               COALESCE(SUM(fees), 0) AS fees,
+               COUNT(*)               AS trades
+        FROM ic_trades
+        WHERE status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
+        GROUP BY trade_date
+        ORDER BY trade_date ASC
+    """, sym_params)
+    out = []
+    for r in rows:
+        gross = float(r.get("gross") or 0)
+        fees = float(r.get("fees") or 0)
+        out.append({
+            "date":      r["trade_date"],
+            "trades":    r["trades"],
+            "gross_pnl": round(gross, 2),
+            "fees":      round(fees, 2),
+            "net_pnl":   round(gross - fees, 2),
+        })
+    return out
+
+
 # ── API data builder ──────────────────────────────────────────────────────────
 
 def _build_api_data(symbol: str | None = None, profile: str | None = None) -> dict:
@@ -611,7 +806,13 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         "risk_metrics":  _risk_metrics(daily_series),
         "profiles":      profiles,
         "selected_profile": profile or "ALL",
+        # Ranked all-profiles scorecard — ignores the profile selector by design (symbol only).
+        "by_profile":    _by_profile_compare(conn, sym_filter),
     }
+
+    history_trades = _history_trades(conn, sym_filter, prof_filter)
+    signals = _by_signal(conn, sym_clause, sym_params)
+    daily_pnl = _daily_pnl(conn, sym_clause, sym_params)
 
     conn.close()
 
@@ -632,6 +833,9 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
             "by_iv":         by_iv,
             "fee_summary":   fee_summary,
             "recent_trades": recent_trades,
+            "history":       history_trades,
+            "signals":       signals,
+            "daily_pnl":     daily_pnl,
         },
     }
 
@@ -776,6 +980,58 @@ nav{flex:1;padding:10px 0}
 /* Two-panel analytics grid: side-by-side when there's room, stacked on narrow viewports. */
 @media (max-width:820px){.ana-grid{grid-template-columns:1fr}}
 
+/* Drag-to-reorder: cards/panels within a grid can be dragged by their handle to
+   reorder; order persists per-browser in localStorage. Column reflow (auto-fit /
+   the 820px breakpoint above) still runs on top of the manual order. */
+.apanel,.fee-card{position:relative}
+.reorder-handle{position:absolute;top:4px;right:5px;z-index:3;cursor:grab;
+                color:#6b7280;font-size:12px;line-height:1;letter-spacing:-1px;
+                padding:2px 4px;border-radius:3px;user-select:none;opacity:.5;
+                border:1px solid #1e2430;background:#0d1117;
+                transition:opacity .12s,color .12s,border-color .12s}
+.apanel:hover>.reorder-handle,.fee-card:hover>.reorder-handle{opacity:.9}
+.reorder-handle:hover{opacity:1;color:#e6edf3;border-color:#2f81f7}
+.reorder-handle:active{cursor:grabbing}
+.reorder-drag{opacity:.35}
+.reorder-over{outline:1px dashed #2f81f7;outline-offset:-2px}
+.reset-layout{margin-top:8px;font-size:9px;letter-spacing:.5px;text-transform:uppercase;
+              color:#4a5568;background:none;border:none;cursor:pointer;padding:2px 0;
+              text-align:left;display:none}
+.reset-layout:hover{color:#8b949e;text-decoration:underline}
+.reset-layout.show{display:block}
+
+/* History analytics stack: let the analytics frame flow and scroll rather than force a
+   single full-height grid, so the heatmap, breakdowns, and trade log can stack below. */
+.ana-grid.flow{height:auto;flex:none;min-height:0}
+.ana-grid.flow>.apanel{overflow:visible}
+
+/* Sortable table headers (trade log + profile comparison) */
+.atable th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
+.atable th.sortable:hover{color:#8b949e}
+.atable th.sortable .ar{opacity:.45;font-size:8px;margin-left:2px}
+.atable th.sortable.sorted{color:#e6edf3}
+.atable th.sortable.sorted .ar{opacity:1;color:#2f81f7}
+
+/* Trade-log filter bar */
+.log-filters{display:flex;flex-wrap:wrap;gap:8px 10px;margin:8px 0 10px;align-items:center}
+.log-filters input,.log-filters select{background:#0d1117;color:#e6edf3;border:1px solid #1e2430;
+  border-radius:4px;padding:4px 7px;font-size:11px;outline:none}
+.log-filters input[type=date]{color-scheme:dark;min-width:120px}
+.log-filters input[type=search]{min-width:150px}
+.lf-lbl{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px}
+.lf-clear{font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:#4a5568;
+  background:none;border:none;cursor:pointer;padding:2px 0}
+.lf-clear:hover{color:#8b949e;text-decoration:underline}
+
+/* Daily Net P&L calendar heatmap */
+.cal-heat{display:flex;flex-wrap:wrap;gap:16px;margin-top:8px}
+.cal-month .cm-name{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,15px);grid-auto-rows:15px;gap:2px}
+.cal-cell{width:15px;height:15px;border-radius:2px;background:#111519}
+.cal-cell.has{cursor:default}
+.cal-legend{display:flex;align-items:center;gap:4px;font-size:9px;color:#6b7280;margin-top:8px}
+.cal-legend .cal-cell{width:11px;height:11px}
+
 </style>
 </head>
 <body>
@@ -807,6 +1063,8 @@ nav{flex:1;padding:10px 0}
       <div id="smeta">&mdash;</div>
       <div id="scountdown" style="color:#4a5568"></div>
     </div>
+    <button type="button" class="reset-layout" id="reset-layout"
+            title="Restore the original card order">&#8635; Reset layout</button>
   </div>
 </aside>
 
@@ -912,8 +1170,15 @@ nav{flex:1;padding:10px 0}
         </div>
       </div>
     </div>
-    <div class="frame" style="flex:1;min-height:0;overflow:hidden">
-      <div class="ana-grid">
+    <div class="frame" style="flex:1;min-height:0">
+      <!-- Daily net P&L calendar heatmap -->
+      <div class="apanel" style="overflow:visible">
+        <div class="ptitle">Daily Net P&amp;L (after fees)</div>
+        <div id="cal-heat" class="cal-heat"></div>
+        <div class="empty" id="cal-heat-empty" style="display:none;padding:8px 0">No closed sessions yet.</div>
+      </div>
+
+      <div class="ana-grid flow" style="margin-top:10px">
         <div class="apanel">
           <div class="ptitle">Win Rate by Session</div>
           <table class="atable" id="sess-tbl">
@@ -945,15 +1210,74 @@ nav{flex:1;padding:10px 0}
           </div>
         </div>
       </div>
-      <div class="apanel" style="margin-top:10px">
-        <div class="ptitle">Recent Trades (last 60)</div>
+
+      <!-- Signal-outcome breakdowns (avg NET P&L per pre-trade attribute) -->
+      <div class="ana-grid flow" style="margin-top:10px">
+        <div class="apanel">
+          <div class="ptitle">Net P&amp;L by Short-Call Delta</div>
+          <table class="atable" id="sig-delta-tbl">
+            <thead><tr><th>Delta band</th><th>Trades</th><th>Win %</th><th>Avg Net</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="apanel">
+          <div class="ptitle">Net P&amp;L by Wing Width</div>
+          <table class="atable" id="sig-wing-tbl">
+            <thead><tr><th>Width</th><th>Trades</th><th>Win %</th><th>Avg Net</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="apanel">
+          <div class="ptitle">Net P&amp;L by Symbol</div>
+          <table class="atable" id="sig-symbol-tbl">
+            <thead><tr><th>Symbol</th><th>Trades</th><th>Win %</th><th>Avg Net</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="apanel">
+          <div class="ptitle">Net P&amp;L by Weekday</div>
+          <table class="atable" id="sig-dow-tbl">
+            <thead><tr><th>Weekday</th><th>Trades</th><th>Win %</th><th>Avg Net</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Filterable trade log (full Today's-Trades shape across all dates) -->
+      <div class="apanel" style="margin-top:10px;overflow:visible">
+        <div class="ptitle">Trade Log <span id="log-count" style="color:#4a5568;font-weight:400"></span></div>
+        <div class="log-filters">
+          <span class="lf-lbl">From</span>
+          <input type="date" id="lf-from">
+          <span class="lf-lbl">To</span>
+          <input type="date" id="lf-to">
+          <select id="lf-outcome">
+            <option value="ALL">All outcomes</option>
+            <option value="win">Net wins</option>
+            <option value="loss">Net losses</option>
+            <option value="open">Open</option>
+          </select>
+          <select id="lf-exit"><option value="ALL">All exits</option></select>
+          <select id="lf-session"><option value="ALL">All sessions</option></select>
+          <input type="search" id="lf-search" placeholder="search symbol / profile / strike">
+          <button type="button" class="lf-clear" id="lf-clear">clear</button>
+        </div>
         <div style="overflow-x:auto">
-          <table class="atable" id="recent-tbl" style="width:100%;min-width:700px">
+          <table class="atable" id="log-tbl" style="width:100%;min-width:1080px">
             <thead><tr>
-              <th>Date</th><th>Symbol</th><th>Strikes</th><th>Width</th>
-              <th>Credit</th><th>Put</th><th>Put $</th>
-              <th>Call</th><th>Call $</th>
-              <th>P&amp;L</th><th>Session</th>
+              <th class="sortable" data-k="trade_date">Date<span class="ar"></span></th>
+              <th class="sortable" data-k="entry_time">Time<span class="ar"></span></th>
+              <th class="sortable" data-k="symbol">Symbol<span class="ar"></span></th>
+              <th class="sortable" data-k="risk_profile">Profile<span class="ar"></span></th>
+              <th class="sortable" data-k="wing_width">Width<span class="ar"></span></th>
+              <th class="sortable" data-k="put_strike">Put K<span class="ar"></span></th>
+              <th class="sortable" data-k="call_strike">Call K<span class="ar"></span></th>
+              <th>Put $</th><th>Call $</th>
+              <th class="sortable" data-k="net_credit">Net Cr<span class="ar"></span></th>
+              <th>Put</th><th>Call</th>
+              <th class="sortable" data-k="gross_pnl">Gross<span class="ar"></span></th>
+              <th class="sortable" data-k="net_pnl">Net<span class="ar"></span></th>
+              <th class="sortable" data-k="exit_reason">Exit<span class="ar"></span></th>
             </tr></thead>
             <tbody></tbody>
           </table>
@@ -980,6 +1304,27 @@ nav{flex:1;padding:10px 0}
                 border-radius:4px;padding:4px 8px;font-size:12px;outline:none" title="Enabled once paper-trading risk_profile data exists">
           <option value="live">Live</option>
         </select>
+      </div>
+    </div>
+
+    <div class="frame" style="flex:0 0 auto">
+      <div class="frame-hdr"><span class="frame-title">Profile Comparison</span>
+        <span class="frame-sub">every profile &middot; ranked by net &middot; gross vs. net after fees (ignores the profile filter)</span></div>
+      <div style="overflow-x:auto;padding:6px 18px 16px">
+        <table class="atable" id="prof-cmp-tbl" style="width:100%;min-width:760px">
+          <thead><tr>
+            <th class="sortable" data-k="profile">Profile<span class="ar"></span></th>
+            <th class="sortable" data-k="trades">Trades<span class="ar"></span></th>
+            <th class="sortable" data-k="gross_pnl">Gross<span class="ar"></span></th>
+            <th class="sortable" data-k="fees">Fees<span class="ar"></span></th>
+            <th class="sortable" data-k="net_pnl">Net<span class="ar"></span></th>
+            <th class="sortable" data-k="win_rate_pct">Win %<span class="ar"></span></th>
+            <th class="sortable" data-k="expectancy">Expectancy<span class="ar"></span></th>
+            <th class="sortable" data-k="profit_factor">Profit Factor<span class="ar"></span></th>
+            <th class="sortable" data-k="max_drawdown">Max DD<span class="ar"></span></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
     </div>
 
@@ -1094,9 +1439,30 @@ function fWl(v) {
   const c = v >= 70 ? 'wh' : v >= 50 ? 'wm' : 'wl';
   return '<span class="' + c + '">' + v.toFixed(1) + '%</span>';
 }
+// Parse a stored timestamp (ISO, usually with a -04:00/-05:00 ET offset; space or 'T'
+// separator; microsecond precision) into a Date. Trims sub-millisecond digits so Date
+// can parse it, and preserves the offset so the instant is unambiguous.
+function parseTs(ts) {
+  if (!ts) return null;
+  let s = String(ts).trim().replace(' ', 'T').replace(/(\\.\\d{3})\\d+/, '$1');
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+// Render an instant as Eastern wall-clock HH:MM regardless of the stored offset or the
+// viewer's own timezone — so a value that ever arrives in UTC still reads correctly in ET.
 function fTime(ts) {
-  if (!ts) return '—';
-  return String(ts).replace('T', ' ').substring(11, 16);
+  const d = parseTs(ts);
+  if (!d) return '—';
+  return d.toLocaleTimeString('en-US',
+    { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+function fDateTimeET(ts) {
+  const d = parseTs(ts);
+  if (!d) return '';
+  const date = d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });   // YYYY-MM-DD
+  const time = d.toLocaleTimeString('en-US',
+    { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  return date + ' ' + time;
 }
 function fMoney(v) {
   if (v == null) return '—';
@@ -1262,29 +1628,201 @@ function renderHistory(d) {
   fnet.className    = 'fee-val ' + (f.net_pnl >= 0 ? 'pos' : 'neg');
   document.getElementById('f-drag').textContent = f.fee_drag_pct != null ? f.fee_drag_pct.toFixed(1) + '%' : '—';
 
-  // Recent trades
-  const rb = document.querySelector('#recent-tbl tbody');
-  const rt = a.recent_trades || [];
-  rb.innerHTML = !rt.length ? '<tr><td colspan="11" class="empty">No trade history</td></tr>'
-    : rt.map(t => {
-        const pnlNet = (t.pnl != null && t.fees != null) ? t.pnl - t.fees : t.pnl;
-        const pc = pnlNet != null ? (pnlNet >= 0 ? 'pos' : 'neg') : '';
-        const dateStr = (t.trade_date || '').substring(5);  // MM-DD
-        const strikes = (t.put_strike != null ? t.put_strike : '—') + '/' + (t.call_strike != null ? t.call_strike : '—');
-        return '<tr>' +
-          '<td>' + dateStr + '</td>' +
+  // Signal-outcome breakdowns (avg NET P&L per pre-trade attribute)
+  const sig = a.signals || {};
+  renderSignalTable('sig-delta-tbl',  sig.by_delta);
+  renderSignalTable('sig-wing-tbl',   sig.by_wing);
+  renderSignalTable('sig-symbol-tbl', sig.by_symbol);
+  renderSignalTable('sig-dow-tbl',    sig.by_dow);
+
+  // Daily net P&L calendar heatmap
+  renderCalHeat(a.daily_pnl || []);
+
+  // Filterable trade log
+  logRows = a.history || [];
+  populateLogFilters(logRows);
+  renderTradeLog();
+}
+
+// One signal breakdown table: Bucket | Trades | Win % | Avg Net.
+function renderSignalTable(tblId, rows) {
+  const tb = document.querySelector('#' + tblId + ' tbody');
+  if (!tb) return;
+  rows = rows || [];
+  tb.innerHTML = !rows.length ? '<tr><td colspan="4" class="empty">No data</td></tr>'
+    : rows.map(r => {
+        const ac = r.avg_pnl > 0 ? 'pos' : r.avg_pnl < 0 ? 'neg' : '';
+        const wc = r.win_rate_pct == null ? '' : r.win_rate_pct >= 70 ? 'wh' : r.win_rate_pct >= 50 ? 'wm' : 'wl';
+        return '<tr><td>' + (r.bucket || '—') + '</td><td>' + r.trades + '</td>' +
+          '<td class="' + wc + '">' + (r.win_rate_pct != null ? r.win_rate_pct.toFixed(1) + '%' : '—') + '</td>' +
+          '<td class="' + ac + '">' + (r.avg_pnl != null ? fMoney(r.avg_pnl) : '—') + '</td></tr>';
+      }).join('');
+}
+
+// ── calendar heatmap ──────────────────────────────────────────────────────────
+// Month grids of daily net P&L; cell colour scales green(+)/red(−) by magnitude
+// relative to the window's largest absolute day. Weeks run Mon→Sun (top→bottom rows).
+function renderCalHeat(days) {
+  const host  = document.getElementById('cal-heat');
+  const empty = document.getElementById('cal-heat-empty');
+  if (!host) return;
+  if (!days.length) { host.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  const byDate = {};
+  let maxAbs = 0;
+  days.forEach(d => { byDate[d.date] = d; maxAbs = Math.max(maxAbs, Math.abs(d.net_pnl || 0)); });
+  if (maxAbs <= 0) maxAbs = 1;
+
+  const dates = days.map(d => d.date).sort();
+  const first = new Date(dates[0] + 'T00:00:00');
+  const last  = new Date(dates[dates.length - 1] + 'T00:00:00');
+
+  // group months present in the range
+  const months = [];
+  let cur = new Date(first.getFullYear(), first.getMonth(), 1);
+  const end = new Date(last.getFullYear(), last.getMonth(), 1);
+  while (cur <= end) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1); }
+
+  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const cellColor = net => {
+    if (net == null) return '#111519';
+    const t = Math.min(1, Math.abs(net) / maxAbs);
+    const a = 0.18 + 0.72 * t;                       // opacity ramp
+    return net >= 0 ? 'rgba(22,199,132,' + a.toFixed(2) + ')'
+                    : 'rgba(232,66,58,'  + a.toFixed(2) + ')';
+  };
+
+  host.innerHTML = months.map(m => {
+    const y = m.getFullYear(), mo = m.getMonth();
+    const dim = new Date(y, mo + 1, 0).getDate();
+    // Monday-based weekday of the 1st (0=Mon..6=Sun)
+    let lead = (new Date(y, mo, 1).getDay() + 6) % 7;
+    let cells = '';
+    for (let i = 0; i < lead; i++) cells += '<div class="cal-cell"></div>';
+    for (let dnum = 1; dnum <= dim; dnum++) {
+      const iso = y + '-' + String(mo + 1).padStart(2, '0') + '-' + String(dnum).padStart(2, '0');
+      const rec = byDate[iso];
+      if (rec) {
+        const tip = iso + ' · ' + fMoney(rec.net_pnl) + ' net · ' + rec.trades + ' trade' + (rec.trades !== 1 ? 's' : '');
+        cells += '<div class="cal-cell has" title="' + tip + '" style="background:' + cellColor(rec.net_pnl) + '"></div>';
+      } else {
+        cells += '<div class="cal-cell"></div>';
+      }
+    }
+    return '<div class="cal-month"><div class="cm-name">' + MN[mo] + ' ' + y + '</div>' +
+           '<div class="cal-grid">' + cells + '</div></div>';
+  }).join('') +
+  '<div class="cal-legend"><span>loss</span>' +
+  '<div class="cal-cell" style="background:rgba(232,66,58,.8)"></div>' +
+  '<div class="cal-cell" style="background:#111519"></div>' +
+  '<div class="cal-cell" style="background:rgba(22,199,132,.8)"></div><span>gain</span></div>';
+}
+
+// ── filterable trade log ──────────────────────────────────────────────────────
+let logRows = [];
+let logSort = { k: 'trade_date', dir: -1 };   // default: newest first (date desc, then time)
+
+function populateLogFilters(rows) {
+  const fill = (id, values, label) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const keep = sel.value;
+    const uniq = [...new Set(values.filter(v => v != null && v !== ''))].sort();
+    sel.innerHTML = '<option value="ALL">' + label + '</option>' +
+      uniq.map(v => '<option value="' + v + '">' + String(v).replace(/_/g, ' ') + '</option>').join('');
+    if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  };
+  fill('lf-exit',    rows.map(r => r.exit_reason),     'All exits');
+  fill('lf-session', rows.map(r => r.session_quality), 'All sessions');
+}
+
+function logNet(t) { return (t.pnl != null && t.fees != null) ? t.pnl - t.fees : t.pnl; }
+
+function logFiltered() {
+  const from = document.getElementById('lf-from').value;
+  const to   = document.getElementById('lf-to').value;
+  const out  = document.getElementById('lf-outcome').value;
+  const ex   = document.getElementById('lf-exit').value;
+  const ss   = document.getElementById('lf-session').value;
+  const q    = document.getElementById('lf-search').value.trim().toLowerCase();
+
+  let rows = logRows.filter(t => {
+    if (from && (t.trade_date || '') < from) return false;
+    if (to   && (t.trade_date || '') > to)   return false;
+    if (ex !== 'ALL' && (t.exit_reason || '') !== ex) return false;
+    if (ss !== 'ALL' && (t.session_quality || '') !== ss) return false;
+    if (out !== 'ALL') {
+      const n = logNet(t);
+      const open = (t.status || '').toLowerCase() === 'open' || (t.status || '').toLowerCase() === 'partial' || n == null;
+      if (out === 'open' && !open) return false;
+      if (out === 'win'  && !(n != null && n > 0)) return false;
+      if (out === 'loss' && !(n != null && n <= 0)) return false;
+    }
+    if (q) {
+      const hay = [t.symbol, t.risk_profile, t.put_strike, t.call_strike, t.exit_reason]
+        .map(v => String(v == null ? '' : v).toLowerCase()).join(' ');
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const k = logSort.k, dir = logSort.dir;
+  rows.sort((a, b) => {
+    let av, bv;
+    if (k === 'gross_pnl') { av = a.pnl; bv = b.pnl; }
+    else if (k === 'net_pnl') { av = logNet(a); bv = logNet(b); }
+    else { av = a[k]; bv = b[k]; }
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+    return String(av).localeCompare(String(bv)) * dir;
+  });
+  return rows;
+}
+
+function renderTradeLog() {
+  const tb  = document.querySelector('#log-tbl tbody');
+  const cnt = document.getElementById('log-count');
+  if (!tb) return;
+  const rows = logFiltered();
+  cnt.textContent = rows.length + ' of ' + logRows.length + ' trade' + (logRows.length !== 1 ? 's' : '');
+  tb.innerHTML = !rows.length ? '<tr><td colspan="15" class="empty">No trades match the filters</td></tr>'
+    : rows.map(t => {
+        const net = logNet(t);
+        const gc  = t.pnl != null ? (t.pnl >= 0 ? 'pos' : 'neg') : '';
+        const nc  = net   != null ? (net   >= 0 ? 'pos' : 'neg') : '';
+        const tip = (t.ai_entry_reasoning || '')
+          .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return '<tr title="' + tip + '">' +
+          '<td>' + (t.trade_date || '—').substring(5) + '</td>' +
+          '<td>' + fTime(t.entry_time) + '</td>' +
           '<td style="color:#6b7280;font-size:10px">' + (t.symbol || '—') + '</td>' +
-          '<td class="tr">' + strikes + '</td>' +
+          '<td style="color:#8b5cf6;font-size:10px">' + (t.risk_profile || '—') + '</td>' +
           '<td class="tr">' + (t.wing_width != null ? t.wing_width : '—') + '</td>' +
+          '<td class="tr">' + (t.put_strike  != null ? t.put_strike  : '—') + '</td>' +
+          '<td class="tr">' + (t.call_strike != null ? t.call_strike : '—') + '</td>' +
+          '<td class="tr" style="color:#6b7280">$' + Number(t.put_credit  || 0).toFixed(2) + '</td>' +
+          '<td class="tr" style="color:#6b7280">$' + Number(t.call_credit || 0).toFixed(2) + '</td>' +
           '<td class="tr tcredit">$' + Number(t.net_credit || 0).toFixed(2) + '</td>' +
           '<td>' + bdg(t.put_status)  + '</td>' +
-          '<td class="tr" style="color:#6b7280">$' + Number(t.put_credit || 0).toFixed(2)  + '</td>' +
           '<td>' + bdg(t.call_status) + '</td>' +
-          '<td class="tr" style="color:#6b7280">$' + Number(t.call_credit || 0).toFixed(2) + '</td>' +
-          '<td class="tr ' + pc + '">' + (pnlNet != null ? fMoney(pnlNet) : '—') + '</td>' +
-          '<td style="color:#6b7280;font-size:10px">' + (t.session_quality || '—') + '</td>' +
+          '<td class="tr ' + gc + '">' + (t.pnl != null ? fMoney(t.pnl) : '—') + '</td>' +
+          '<td class="tr ' + nc + '">' + (net != null ? fMoney(net) : '—') + '</td>' +
+          '<td style="color:#6b7280;font-size:10px">' + (t.exit_reason || '—').replace(/_/g, ' ') + '</td>' +
           '</tr>';
       }).join('');
+  syncSortIndicators('log-tbl', logSort);
+}
+
+// Reflect the active sort key/direction in a table's header arrows.
+function syncSortIndicators(tblId, sort) {
+  document.querySelectorAll('#' + tblId + ' th.sortable').forEach(th => {
+    const ar = th.querySelector('.ar');
+    if (th.dataset.k === sort.k) { th.classList.add('sorted'); if (ar) ar.textContent = sort.dir < 0 ? '▼' : '▲'; }
+    else { th.classList.remove('sorted'); if (ar) ar.textContent = ''; }
+  });
 }
 
 // ── symbol selectors ─────────────────────────────────────────────────────────
@@ -1367,6 +1905,7 @@ function renderPerformance(d) {
   const series = _perfSeries(d);
   const isCumulative = g === 'cumulative';
 
+  renderProfileCompare(perf.by_profile || []);
   renderRiskMetrics(perf.risk_metrics || {});
   renderPerfEquity(series);
   renderPerfDrawdown(series);
@@ -1388,6 +1927,47 @@ function renderPerformance(d) {
   renderPerfTable(series);
 }
 
+// ── profile comparison ────────────────────────────────────────────────────────
+let profCmpRows = [];
+let profCmpSort = { k: 'net_pnl', dir: -1 };   // default: best net first
+
+function renderProfileCompare(rows) {
+  profCmpRows = rows || [];
+  const tb = document.querySelector('#prof-cmp-tbl tbody');
+  if (!tb) return;
+  if (!profCmpRows.length) {
+    tb.innerHTML = '<tr><td colspan="9" class="empty">No profile-tagged trades yet</td></tr>';
+    return;
+  }
+  const k = profCmpSort.k, dir = profCmpSort.dir;
+  const sorted = [...profCmpRows].sort((a, b) => {
+    const av = a[k], bv = b[k];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+    return String(av).localeCompare(String(bv)) * dir;
+  });
+  tb.innerHTML = sorted.map(r => {
+    const gc = r.gross_pnl >= 0 ? 'pos' : 'neg';
+    const nc = r.net_pnl   >= 0 ? 'pos' : 'neg';
+    const ec = r.expectancy == null ? '' : r.expectancy >= 0 ? 'pos' : 'neg';
+    const wc = r.win_rate_pct == null ? '' : r.win_rate_pct >= 70 ? 'wh' : r.win_rate_pct >= 50 ? 'wm' : 'wl';
+    return '<tr>' +
+      '<td style="color:#8b5cf6">' + (r.profile || '—') + '</td>' +
+      '<td class="tr">' + r.trades + '</td>' +
+      '<td class="tr ' + gc + '">' + fMoney(r.gross_pnl) + '</td>' +
+      '<td class="tr" style="color:#6b7280">$' + Number(r.fees || 0).toFixed(2) + '</td>' +
+      '<td class="tr ' + nc + '">' + fMoney(r.net_pnl) + '</td>' +
+      '<td class="tr ' + wc + '">' + (r.win_rate_pct != null ? r.win_rate_pct.toFixed(1) + '%' : '—') + '</td>' +
+      '<td class="tr ' + ec + '">' + (r.expectancy != null ? fMoney(r.expectancy) : '—') + '</td>' +
+      '<td class="tr">' + (r.profit_factor != null ? r.profit_factor.toFixed(2) : '—') + '</td>' +
+      '<td class="tr neg">' + (r.max_drawdown ? '-$' + Number(r.max_drawdown).toFixed(2) : '$0.00') + '</td>' +
+      '</tr>';
+  }).join('');
+  syncSortIndicators('prof-cmp-tbl', profCmpSort);
+}
+
 function renderRiskMetrics(rm) {
   const fmt = v => v == null ? '—' : v.toFixed(2);
   document.getElementById('rm-sharpe').textContent = fmt(rm.sharpe);
@@ -1403,6 +1983,23 @@ function renderRiskMetrics(rm) {
   } else {
     note.textContent = '';
   }
+}
+
+// Fresh Chart.js base options for the Performance charts — a factory (new object each
+// call) so per-chart tweaks (tooltip/tick callbacks, y-min/max, legend) never bleed across
+// charts. Dark theme matches the NLV chart above (#1e2430 grid, #6b7280 ticks).
+function _baseOpts() {
+  return {
+    responsive: true, maintainAspectRatio: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: {},
+    },
+    scales: {
+      x: { grid: { color: '#1e2430' }, ticks: { color: '#6b7280', font: { size: 9 }, maxRotation: 0, autoSkip: true } },
+      y: { grid: { color: '#1e2430' }, ticks: { color: '#6b7280', font: { size: 9 } } },
+    },
+  };
 }
 
 function renderPerfEquity(series) {
@@ -1591,12 +2188,34 @@ function renderPerfTable(series) {
 document.querySelectorAll('input[name="perf_granularity"]').forEach(el =>
   el.addEventListener('change', () => { if (cache) renderPerformance(cache); }));
 
+// ── trade-log filters + sortable headers (wired once) ────────────────────────
+['lf-from','lf-to','lf-outcome','lf-exit','lf-session','lf-search'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', renderTradeLog);
+});
+const lfClear = document.getElementById('lf-clear');
+if (lfClear) lfClear.addEventListener('click', () => {
+  ['lf-from','lf-to','lf-search'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  ['lf-outcome','lf-exit','lf-session'].forEach(id => { const e = document.getElementById(id); if (e) e.value = 'ALL'; });
+  renderTradeLog();
+});
+document.querySelectorAll('#log-tbl th.sortable').forEach(th => th.addEventListener('click', () => {
+  const k = th.dataset.k;
+  logSort = { k, dir: logSort.k === k ? -logSort.dir : (k === 'trade_date' || k === 'entry_time' ? -1 : 1) };
+  renderTradeLog();
+}));
+document.querySelectorAll('#prof-cmp-tbl th.sortable').forEach(th => th.addEventListener('click', () => {
+  const k = th.dataset.k;
+  profCmpSort = { k, dir: profCmpSort.k === k ? -profCmpSort.dir : (k === 'profile' ? 1 : -1) };
+  renderProfileCompare(profCmpRows);
+}));
+
 // ── render all ────────────────────────────────────────────────────────────────
 function renderAll(d) {
   cache = d;
   document.getElementById('disc-banner').style.display = 'none';
   document.getElementById('as-of').textContent = d.as_of
-    ? d.as_of.substring(0, 19).replace('T', ' ') + ' ET' : '';
+    ? fDateTimeET(d.as_of) + ' ET' : '';
   populateSymbolSelectors(d.symbols);
   populateProfileSelector((d.performance && d.performance.profiles) || []);
   renderStats(d.stats || {});
@@ -1621,9 +2240,21 @@ async function fetchData() {
     }
     renderAll(d);
   } catch(e) {
-    document.getElementById('disc-banner').style.display = 'block';
+    // Distinguish an unreachable server (fetch/network failure) from a client-side render
+    // bug (data arrived but rendering threw) — reporting the latter as "DISCONNECTED" is
+    // misleading and hides real dashboard errors.
+    const reach = (e instanceof TypeError) || /^HTTP /.test(e && e.message || '');
+    const banner = document.getElementById('disc-banner');
+    banner.style.display = 'block';
+    banner.textContent = reach
+      ? '● DISCONNECTED — unable to reach dashboard server'
+      : '● DASHBOARD ERROR — ' + (e && e.message || e);
     document.getElementById('sdot').className = 'dot err';
-    document.getElementById('slabel').textContent = 'DISCONNECTED';
+    document.getElementById('slabel').textContent = reach ? 'DISCONNECTED' : 'RENDER ERROR';
+    console.error('fetchData/render error:', e);
+    // A brief server blip (e.g. a restart) shouldn't strand the page on the banner for a
+    // full refresh cycle — retry soon so it reconnects within a few seconds, not up to 30.
+    if (reach) cd = 4;
   }
 }
 
@@ -1647,6 +2278,160 @@ setInterval(() => {
   document.getElementById('scountdown').textContent = 'Refresh in ' + cd + 's';
   if (cd <= 0) { cd = 30; fetchData(); }
 }, 1000);
+
+// ── drag-to-reorder cards/panels ──────────────────────────────────────────────
+// Self-contained (no libraries). Every .ana-grid / .fee-grid becomes a reorderable
+// group: its direct children can be dragged by a grip handle to reorder, and the
+// order is saved per-browser in localStorage. Column reflow (CSS auto-fit and the
+// 820px breakpoint) keeps working on top of whatever order the user sets.
+(function () {
+  const LS_KEY = 'meic-dash-layout-v1';
+  const GROUP_SEL = '.ana-grid, .fee-grid';
+
+  const slug = s => (s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+  function loadSaved() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }
+    catch (e) { return {}; }
+  }
+  function persist(store) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {}
+  }
+
+  // Stable id for a group: which view it lives in + its class + its index among
+  // same-class groups in that view. Independent of card order, so it survives reorders.
+  function groupKey(group) {
+    const view = group.closest('.view');
+    const viewId = view ? view.id : 'root';
+    const cls = group.classList.contains('ana-grid') ? 'ana' : 'fee';
+    const peers = [...(view || document).querySelectorAll('.' + (cls === 'ana' ? 'ana-grid' : 'fee-grid'))];
+    return viewId + ':' + cls + ':' + peers.indexOf(group);
+  }
+  // Stable id for a child: slug of its label (ptitle / fee-lbl), else its source index.
+  function childKey(child, idx) {
+    const lbl = child.querySelector('.ptitle, .fee-lbl');
+    const s = lbl ? slug(lbl.textContent) : '';
+    return s || ('idx-' + idx);
+  }
+
+  const store = loadSaved();
+  const srcOrder = new Map(); // groupKey -> original child-key order (for Reset)
+  let dragged = null, dragGroup = null;
+
+  function childrenOf(group) {
+    return [...group.children].filter(c => c.hasAttribute('data-rkey'));
+  }
+
+  function applyOrder(group, gk) {
+    const order = store[gk];
+    if (!order || !order.length) return;
+    const byKey = new Map(childrenOf(group).map(c => [c.getAttribute('data-rkey'), c]));
+    order.forEach(k => { const el = byKey.get(k); if (el) group.appendChild(el); });
+    // Any child not present in the saved order (e.g. a newly added card) keeps its
+    // relative position by being appended after the known ones.
+    byKey.forEach((el, k) => { if (!order.includes(k)) group.appendChild(el); });
+  }
+
+  function saveOrder(group, gk) {
+    store[gk] = childrenOf(group).map(c => c.getAttribute('data-rkey'));
+    persist(store);
+  }
+
+  // Row-major "insert before" target for the current pointer position.
+  function dragAfter(group, x, y) {
+    let best = null, bestScore = Infinity;
+    for (const el of childrenOf(group)) {
+      if (el === dragged) continue;
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2, gap = r.height * 0.5;
+      let before;
+      if (y < cy - gap) before = true;        // pointer is in an earlier row
+      else if (y > cy + gap) before = false;  // later row
+      else before = x < cx;                   // same row → compare x
+      if (before) {
+        const score = (cy - y) * (cy - y) + (cx - x) * (cx - x);
+        if (score < bestScore) { bestScore = score; best = el; }
+      }
+    }
+    return best;
+  }
+
+  function initGroup(group) {
+    const gk = groupKey(group);
+    const kids = [...group.children];
+    kids.forEach((child, idx) => {
+      // Only treat real cards/panels as reorderable (skip stray text nodes/wrappers).
+      if (!(child.classList.contains('apanel') || child.classList.contains('fee-card'))) return;
+      let key = childKey(child, idx);
+      // Guard against duplicate keys within a group.
+      let uniq = key, n = 2;
+      while (childrenOf(group).some(c => c.getAttribute('data-rkey') === uniq)) uniq = key + '-' + (n++);
+      child.setAttribute('data-rkey', uniq);
+
+      // The grip handle itself is the drag source (draggable=true) rather than toggling the
+      // card's draggable on mousedown — that toggle is unreliable in Chrome (draggability is
+      // decided before the mousedown handler runs), so grabbing a card did nothing.
+      const handle = document.createElement('span');
+      handle.className = 'reorder-handle';
+      handle.title = 'Drag to reorder';
+      handle.textContent = '⠇'; // ⠇ braille grip
+      handle.setAttribute('draggable', 'true');
+      child.insertBefore(handle, child.firstChild);
+
+      handle.addEventListener('dragstart', e => {
+        dragged = child; dragGroup = group;
+        child.classList.add('reorder-drag');
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', uniq); } catch (_) {}
+        try { e.dataTransfer.setDragImage(child, 20, 20); } catch (_) {}  // drag the whole card
+      });
+      handle.addEventListener('dragend', () => {
+        child.classList.remove('reorder-drag');
+        group.querySelectorAll('.reorder-over').forEach(el => el.classList.remove('reorder-over'));
+        if (dragged === child) { saveOrder(group, gk); showReset(); }
+        dragged = null; dragGroup = null;
+      });
+    });
+
+    srcOrder.set(gk, childrenOf(group).map(c => c.getAttribute('data-rkey')));
+
+    group.addEventListener('dragover', e => {
+      if (!dragged || dragGroup !== group) return;    // ignore drags from other groups
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const after = dragAfter(group, e.clientX, e.clientY);
+      if (after == null) group.appendChild(dragged);
+      else if (after !== dragged) group.insertBefore(dragged, after);
+    });
+
+    applyOrder(group, gk);
+  }
+
+  function showReset() {
+    const btn = document.getElementById('reset-layout');
+    if (btn) btn.classList.add('show');
+  }
+
+  document.querySelectorAll(GROUP_SEL).forEach(initGroup);
+
+  // Show Reset if any saved layout already exists on load.
+  if (Object.keys(store).length) showReset();
+
+  const resetBtn = document.getElementById('reset-layout');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      document.querySelectorAll(GROUP_SEL).forEach(group => {
+        const gk = groupKey(group), order = srcOrder.get(gk);
+        if (!order) return;
+        const byKey = new Map(childrenOf(group).map(c => [c.getAttribute('data-rkey'), c]));
+        order.forEach(k => { const el = byKey.get(k); if (el) group.appendChild(el); });
+      });
+      for (const k in store) delete store[k];
+      localStorage.removeItem(LS_KEY);
+      resetBtn.classList.remove('show');
+    });
+  }
+})();
 </script>
 </body>
 </html>"""

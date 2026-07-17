@@ -35,8 +35,6 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-import pytz
-
 # Allow running as `python src/streamer.py` from the project root, and put the cherrypick-core submodule
 # (src/_core) on sys.path so `import cherrypick.core...` resolves without an install — the persistent
 # DXLink engine and cache schema now live in the shared core.
@@ -45,7 +43,12 @@ _CORE = os.path.join(os.path.dirname(__file__), "_core")
 if os.path.isdir(_CORE) and _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
-_ET = pytz.timezone("America/New_York")
+try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+except Exception:  # pragma: no cover - only where zoneinfo has no tz database
+    import pytz
+    _ET = pytz.timezone("America/New_York")
 
 from cherrypick.core import streamcache  # noqa: E402
 from cherrypick.core.streamer import ChainStreamer  # noqa: E402
