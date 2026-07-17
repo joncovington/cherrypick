@@ -25,8 +25,11 @@ Usage:
 
 import argparse
 import base64
+import hashlib
 import io
+import json
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -92,6 +95,70 @@ def _fig_to_base64(fig) -> str:
 
 def _img_tag(b64: str, alt: str = "") -> str:
     return f'<img alt="{alt}" src="data:image/png;base64,{b64}" style="max-width:100%;">'
+
+
+# --- Chart cache -------------------------------------------------------------
+# Each dashboard build is a cold subprocess, so matplotlib re-renders every chart from scratch even
+# when nothing changed — paper trades only move once a day at the close pass. Cache each chart's
+# base64 PNG to disk keyed by a hash of its actual input data: an unchanged dataset hits the cache and
+# skips rendering entirely, cutting a rebuild to roughly the (unavoidable) matplotlib import + data load.
+_CACHE_DISABLED = False  # set by build_dashboard if the cache dir isn't writable
+
+
+def _chart_cache_dir() -> Path:
+    d = _paths.reports_dir() / ".chart_cache"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _sig(trades: list[dict]) -> list:
+    """A compact, order-stable signature of a trade list for cache keys (identity + the fields every
+    chart derives from). Cheaper to hash than the full rows."""
+    return [
+        [t.get("order_id"), t.get("closed_at"), t.get("pnl"), t.get("entry_cost"),
+         t.get("exit_cost"), t.get("entry_iv"), t.get("exit_iv")]
+        for t in trades
+    ]
+
+
+def _cached_chart(chart_id: str, key_data, render) -> str:
+    """Return `render()`'s base64, memoized on disk under (chart_id, key_data). `render` is only called
+    on a cache miss. Any cache I/O failure falls back to rendering directly — the cache is an
+    optimization, never a correctness dependency."""
+    if _CACHE_DISABLED:
+        return render()
+    try:
+        blob = json.dumps([chart_id, key_data], default=str, sort_keys=True)
+    except (TypeError, ValueError):
+        return render()
+    key = hashlib.sha256(blob.encode()).hexdigest()
+    path = _chart_cache_dir() / f"{key}.b64"
+    try:
+        if path.exists():
+            return path.read_text(encoding="ascii")
+    except OSError:
+        pass
+    b64 = render()
+    try:
+        path.write_text(b64, encoding="ascii")
+    except OSError:
+        pass
+    return b64
+
+
+def _prune_chart_cache(max_age_days: float = 14.0) -> None:
+    """Drop cache entries whose fingerprint stopped being produced (old dataset states), so the dir
+    stays bounded. Best-effort."""
+    try:
+        cutoff = time.time() - max_age_days * 86400
+        for p in _chart_cache_dir().glob("*.b64"):
+            try:
+                if p.stat().st_mtime < cutoff:
+                    p.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
 
 
 def plot_equity_curve(curve: list[tuple[float, float]], title: str) -> str:
@@ -349,8 +416,13 @@ def _open_positions_section(profile: str) -> str:
 
 
 def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str:
+    global _CACHE_DISABLED
     config = scanner._load_config()
     capital_basis = config.get("available_capital_paper_mode")
+    try:
+        _prune_chart_cache()
+    except Exception:
+        _CACHE_DISABLED = True
 
     all_trades = sm.load_closed_trades(profile=profile, since=since)
     per_strategy = {name: sm.load_closed_trades(profile=profile, strategy=name, since=since) for name in STRATEGY_NAMES}
@@ -370,12 +442,13 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
     tf_images = {}
     for key, (days, label) in timeframes.items():
         curve = _portfolio_curve_for_window(all_trades, days)
-        tf_images[key] = plot_equity_curve(curve, f"Portfolio net P&L -- {label}")
-    tf_images["perweek"] = _weekly_pnl_chart(all_trades)
+        tf_images[key] = _cached_chart(
+            f"tf:{key}", curve, lambda c=curve, lbl=label: plot_equity_curve(c, f"Portfolio net P&L -- {lbl}"))
+    tf_images["perweek"] = _cached_chart("tf:perweek", _sig(all_trades), lambda: _weekly_pnl_chart(all_trades))
 
     # --- Regime heatmap + rejection histogram ---
     all_buckets = {name: sm.regime_buckets(trades) for name, trades in per_strategy.items() if trades}
-    regime_img = plot_regime_heatmap(all_buckets)
+    regime_img = _cached_chart("regime", all_buckets, lambda: plot_regime_heatmap(all_buckets))
 
     reason_counts: dict[str, int] = {}
     try:
@@ -392,7 +465,7 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
                     reason_counts[part] = reason_counts.get(part, 0) + 1
     except Exception:
         pass
-    rejection_img = plot_rejection_histogram(reason_counts)
+    rejection_img = _cached_chart("rejection", reason_counts, lambda: plot_rejection_histogram(reason_counts))
 
     # --- Per-strategy cards ---
     strategy_cards = []
@@ -400,8 +473,9 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
     for name in STRATEGY_NAMES:
         trades = per_strategy[name]
         summary = sm.strategy_summary(trades, capital_basis)
-        curve_img = plot_equity_curve(summary["equity_curve"], f"{name} -- equity curve")
-        underwater_img = plot_underwater(summary["equity_curve"], f"{name} -- underwater")
+        ec = summary["equity_curve"]
+        curve_img = _cached_chart(f"equity:{name}", ec, lambda ec=ec, name=name: plot_equity_curve(ec, f"{name} -- equity curve"))
+        underwater_img = _cached_chart(f"underwater:{name}", ec, lambda ec=ec, name=name: plot_underwater(ec, f"{name} -- underwater"))
         metrics_html = _metrics_table_html(summary["core_five"], summary["iv_crush"])
         sample_html = _sample_bar(summary["sample"])
 
