@@ -1,6 +1,8 @@
-# MEICAgent Entry Gates & Constraints
+# MEIC Entry Gates & Constraints
 
-Complete reference of all gates, blocks, and constraints that control IC and ORB entry decisions.
+Complete reference of all gates, blocks, and constraints that control IC and ORB entry decisions in the
+cherrypick **MEIC** engine. See also [docs/](docs/README.md) for the strategy and operating guides, and
+the suite-wide [documentation index](../../docs/README.md).
 
 ## Sequential Gate Flow
 

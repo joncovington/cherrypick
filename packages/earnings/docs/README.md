@@ -1,12 +1,14 @@
-# Earnings Agent: Complete Documentation
+# cherrypick Earnings — documentation
 
-Automated overnight earnings options trading system using multi-strategy decision matrix framework.
+Guides for the cherrypick **Earnings** engine — automated overnight, defined-risk earnings options plays
+built on a multi-strategy decision framework.
 
 > **Part of the [cherrypick](../../../README.md) suite.** This is the `cherrypick-earnings` module
 > (`packages/earnings`). It runs standalone from this folder for live / interactive trading, and is driven
 > unattended by the [orchestrator](../../orchestrator) for paper collection (by subprocess, never by
 > import). Shared logic (`cherrypick.core`) is vendored as the `src/_core` submodule. See the
-> [package README](../README.md#how-this-fits-the-suite) for how the two roles fit together.
+> [package README](../README.md#how-this-fits-the-suite) for how the two roles fit together, and the
+> suite-wide [documentation index](../../../docs/README.md) for the big picture.
 
 ---
 

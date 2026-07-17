@@ -13,6 +13,9 @@ It computes GEX with the shared `cherrypick.core.gex` engine — the same math t
 loop uses for its GEX regime gate — and never places orders or touches live trading. (This is the full
 GEX view the suite used to render inside MEIC's dashboard; it now lives here.)
 
+Part of the **cherrypick** trading-tool suite; the orchestrator embeds this dashboard and its GEX section
+card. See the suite's [documentation index](../../docs/README.md) for the big picture.
+
 ## Two ways to run
 
 **Standalone (default).** `run.py stream` runs the shared `cherrypick.core.streamer` engine with this

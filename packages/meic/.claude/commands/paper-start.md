@@ -1,4 +1,4 @@
-Start the full MEICAgent paper-trading session: streamer and paper-trading loop.
+Start the full MEIC paper-trading session: streamer and paper-trading loop.
 
 This is the paper-trading counterpart to `/meic-start` — it starts the same shared DXLink streamer (paper trading marks positions from real market quotes, exactly like live) but runs the isolated `/paper-loop` instead of the live trading loop. It never touches `data/meic_trades.db`, never submits a live order, and is not gated by `enable_live_trading` — see `docs/paper-trading.md` for the full design.
 

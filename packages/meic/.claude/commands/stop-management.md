@@ -1,4 +1,4 @@
-Run the MEICAgent stop management step. Executes every loop iteration for all open trades **across every configured symbol in one pass** (not scoped to one symbol) — each trade record already carries its own `symbol`, so every rule below that references "the symbol" means that specific trade's symbol, not a single configured default.
+Run the MEIC stop management step. Executes every loop iteration for all open trades **across every configured symbol in one pass** (not scoped to one symbol) — each trade record already carries its own `symbol`, so every rule below that references "the symbol" means that specific trade's symbol, not a single configured default.
 
 Requires: open trades list and current market data (underlying price, option chain) already gathered this iteration.
 

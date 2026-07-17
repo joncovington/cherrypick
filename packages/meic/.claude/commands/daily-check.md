@@ -1,4 +1,4 @@
-Run the MEICAgent daily connection check. Executes once per trading day at the start of the first market-hours iteration.
+Run the MEIC daily connection check. Executes once per trading day at the start of the first market-hours iteration.
 
 1. Check whether the daily connection check has already run today:
 ```bash
