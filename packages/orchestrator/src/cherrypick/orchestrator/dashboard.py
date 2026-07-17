@@ -16,6 +16,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -202,17 +203,30 @@ def _eod_view(cfg: dict[str, Any], modules_cfg: dict[str, Any], tz: str) -> dict
     try:
         today = timeutil.now_et(tz).strftime("%Y-%m-%d")
         rep = report.run(cfg, session=today)
+        session = today
+        # Overnight / pre-market the ET date rolls to a session that hasn't traded yet, which would
+        # show an all-zero card. Fall back to the last session that actually has trades so the EOD
+        # card reflects the most recent real results, not an empty new day.
+        if (rep.get("suite", {}).get("trades") or 0) == 0:
+            last = report.latest_session(cfg)
+            if last and last != today:
+                session, rep = last, report.run(cfg, session=last)
     except Exception:
         return None
+    # Reports are written under the per-user logs home (~/.cherrypick/logs/<name>/), not the package
+    # checkout — resolve them there via module_logs_dir, or the existence check always misses.
     files = {}
-    for name, mcfg in modules_cfg.items():
-        p = cfgmod.module_root(mcfg) / "logs" / f"paper-eod-{today}.md"
+    for name in modules_cfg:
+        p = cfgmod.module_logs_dir(name) / f"paper-eod-{session}.md"
         files[name] = str(p) if p.exists() else None
+    digest = cfgmod.log_file(f"eod-digest-{session}.md")
     return {
-        "session": today,
+        "session": session,
+        "is_today": session == today,
         "suite": rep.get("suite", {}),
         "modules": {n: rep.get("modules", {}).get(n, {}) for n in modules_cfg},
         "files": files,
+        "digest": str(digest) if digest.exists() else None,
     }
 
 
@@ -371,9 +385,10 @@ def _by_profile_table(by_profile: dict[str, Any]) -> str:
     )
 
 
-def _eod_card_html(eod: dict[str, Any] | None) -> str:
+def _eod_card_html(eod: dict[str, Any] | None, serve: bool = False) -> str:
     """Today's cross-module session P&L — the same numbers the scheduled digest writes, shown live.
-    File-only; safe on the static render (no broker touch)."""
+    File-only; safe on the static render (no broker touch). When served, the report pointers become
+    links that open each `paper-eod-<day>.md` (and the suite digest) in a new tab via /eod-report."""
     if not eod:
         return ""
     rows = []
@@ -401,15 +416,31 @@ def _eod_card_html(eod: dict[str, Any] | None) -> str:
         else '<div class="muted">no enabled modules</div>'
     )
     files = eod.get("files", {})
-    file_bits = " · ".join(
-        f"{html.escape(str(n))}: {'report ✓' if f else 'no file yet'}" for n, f in files.items()
-    )
-    files_line = (
-        f'<div class="meta"><span class="muted">module reports — {file_bits}</span></div>' if files else ""
-    )
+    session = str(eod.get("session", ""))
+    bits = []
+    for n, f in files.items():
+        name = html.escape(str(n))
+        if f and serve:
+            bits.append(
+                f'<a href="/eod-report?module={name}&amp;session={html.escape(session)}" '
+                f'target="_blank" rel="noopener">{name} report ↗</a>'
+            )
+        elif f:
+            bits.append(f'{name}: report ✓')  # static render: file exists but no server to open it
+        else:
+            bits.append(f'<span class="muted">{name}: no file yet</span>')
+    if eod.get("digest") and serve:
+        bits.append(
+            f'<a href="/eod-report?suite=1&amp;session={html.escape(session)}" '
+            'target="_blank" rel="noopener">suite digest ↗</a>'
+        )
+    files_line = f'<div class="meta">reports — {" · ".join(bits)}</div>' if bits else ""
+    label = html.escape(str(eod.get("session", "")))
+    if not eod.get("is_today", True):
+        label += ' <span class="muted">· last session</span>'
     return (
         '<section class="card"><h2>end of day '
-        f'<span class="muted">{html.escape(str(eod.get("session", "")))}</span></h2>'
+        f'<span class="muted">{label}</span></h2>'
         + _summary_stats(eod.get("suite", {}))
         + table
         + files_line
@@ -581,15 +612,16 @@ def _doctor_live_html() -> str:
     )
 
 
-def _reconcile_card_html() -> str:
-    """Serve-only paper↔live isolation card. Broker-touching (`reconcile.run` → get_positions), so it
-    runs on page load and on the Run button — never on a background poll (broker rate limits, same
-    reasoning as `doctor --fast`). Omitted from the static file render (no server to answer the call)."""
+def _reconcile_subsection_html() -> str:
+    """Serve-only paper↔live isolation panel, rendered as a subsection of the System card. Broker-
+    touching (`reconcile.run` → get_positions), so it runs on page load and on the Run button — never
+    on a background poll (broker rate limits, same reasoning as `doctor --fast`). The `data-cp-reconcile`
+    hooks are class/attr based, so `_RECONCILE_JS` finds them wherever they live."""
     return (
-        '<section class="card recon"><h2>paper↔live isolation '
-        '<button class="recon-btn" data-cp-reconcile-run>run check</button></h2>'
+        '<div class="recon-sub"><h3 class="sub">paper↔live isolation</h3>'
+        '<button class="recon-btn" data-cp-reconcile-run>run check</button></div>'
         '<div class="recon-body" data-cp-reconcile data-endpoint="/api/reconcile">'
-        '<span class="muted">checking real account…</span></div></section>'
+        '<span class="muted">checking real account…</span></div>'
     )
 
 
@@ -604,6 +636,7 @@ def _system_card_html(model: dict[str, Any], serve: bool) -> str:
     )
     if serve:
         body += _doctor_live_html()
+        body += _reconcile_subsection_html()  # paper↔live isolation now lives inside System
     return f'<section class="card"><h2>system</h2>{body}</section>'
 
 
@@ -620,8 +653,11 @@ def _module_card(mv: dict[str, Any]) -> str:
             + _sla_html(mv.get("sla", {}))
             + _calibration_html(mv.get("calibration", {}))
         )
+    # data-rkey is a stable per-module id so the client-side drag-reorder (persisted in
+    # localStorage) keys off the module, not its position — order survives every regen.
+    rkey = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "card"
     return (
-        '<section class="card">'
+        f'<section class="card" data-rkey="{html.escape(rkey)}">'
         f"<h2>{html.escape(name)} {_pill(mv.get('mode', 'PAPER'), 'INFO')}</h2>"
         f"{body}</section>"
     )
@@ -661,7 +697,10 @@ h3.sub{font-size:12px;margin:12px 0 4px;color:var(--muted);text-transform:upperc
 border:1px solid var(--warn);border-radius:4px;padding:1px 6px}
 .pill{color:#0a0e12;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;vertical-align:middle}
 .muted{color:var(--muted)}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+/* Module cards auto-fit to the viewport width: 1 column when narrow, 2-3 when there's
+   room (no fixed breakpoint), and each card is drag-reorderable by its grip handle
+   with the order saved per-browser in localStorage. */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px}
 .stats{display:flex;gap:18px;flex-wrap:wrap;margin:8px 0}
 .stats b{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:15px}
 .meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);align-items:center;
@@ -700,12 +739,193 @@ border:1px solid var(--border);border-radius:4px;background:var(--panel);padding
 .recon-btn:disabled{opacity:.5;cursor:default}
 .card.recon h2{display:flex;align-items:center;gap:8px}
 .recon-body .drow{margin:3px 0;font-size:12.5px}
+.embed-grid{display:block}
+.grid>.card,.embed-grid>.card,.wrap>.card{position:relative}
+/* leave room at the header's right edge for the grip handle */
+.embed-grid>.card.embed>h2{padding-right:44px}
+.wrap>.card>h2{padding-right:32px}
+.reorder-handle{position:absolute;top:6px;right:6px;z-index:3;cursor:grab;color:var(--muted);
+font-size:13px;line-height:1;letter-spacing:-1px;padding:2px 5px;border-radius:4px;
+border:1px solid var(--border);background:var(--bg);user-select:none;opacity:.55;
+transition:opacity .12s,color .12s,border-color .12s}
+.grid>.card:hover>.reorder-handle,.embed-grid>.card:hover>.reorder-handle,.wrap>.card:hover>.reorder-handle{opacity:.9}
+.reorder-handle:hover{opacity:1;color:var(--text);border-color:var(--accent)}
+.reorder-handle:active{cursor:grabbing}
+.reorder-drag{opacity:.35}
+.reorder-over{outline:1px dashed var(--accent);outline-offset:-2px}
+.reset-layout{font:11px var(--mono);color:var(--muted);background:none;border:none;
+cursor:pointer;padding:0;margin-left:6px;display:none}
+.reset-layout:hover{color:var(--text);text-decoration:underline}
+.reset-layout.show{display:inline}
+/* Collapsible sections: click the header to expand/collapse; state saved per-browser. */
+.card.collapsible>h2{cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px}
+.sec-caret{color:var(--muted);font-size:18px;line-height:1;flex:0 0 auto;transition:transform .15s}
+.recon-sub{display:flex;align-items:center;gap:10px;margin-top:12px}
+.recon-sub .sub{margin:0}
+.card.collapsed>h2{margin-bottom:0}
+.card.collapsed>h2 .sec-caret{transform:rotate(-90deg)}
+.card.collapsed>*:not(h2):not(.reorder-handle){display:none!important}
+.meta a{color:var(--accent);text-decoration:none}
+.meta a:hover{text-decoration:underline}
 """
 
 _JS = """
 function flt(btn,lvl){btn.classList.toggle('off');btn.classList.toggle('on');
 var show=btn.classList.contains('on');
 document.querySelectorAll('.logline[data-level="'+lvl+'"]').forEach(function(r){r.style.display=show?'':'none'});}
+
+// Drag-to-reorder the module cards (self-contained, no libraries). Each .grid card can be
+// dragged by its grip handle; the order is saved per-browser in localStorage and re-applied
+// on load, so it survives every dashboard regeneration. Column count still auto-fits to width.
+(function(){
+  var LS_KEY='cherrypick-dash-layout-v1';
+  var store; try{store=JSON.parse(localStorage.getItem(LS_KEY))||{};}catch(e){store={};}
+  function persist(){try{localStorage.setItem(LS_KEY,JSON.stringify(store));}catch(e){}}
+  // Three reorder groups: the module summary .grid, the .embed-grid of dashboards, and .wrap
+  // itself (the stacked top-level sections — system, eod, logs, live sections).
+  var grids=[].slice.call(document.querySelectorAll('.grid, .embed-grid, .wrap'));
+  var srcOrder={};
+  var dragged=null,dragGroup=null;
+
+  function kids(g){return [].slice.call(g.children).filter(function(c){return c.hasAttribute('data-rkey');});}
+  function keys(g){return kids(g).map(function(c){return c.getAttribute('data-rkey');});}
+  function slug(s){return (s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');}
+  // Stable group id (independent of DOM order) so saved layouts survive structure changes.
+  function groupKey(g){
+    if(g.classList.contains('embed-grid')) return 'embeds';
+    if(g.classList.contains('grid')) return 'modules';
+    return 'sections';
+  }
+  // .wrap's section cards need a stable data-rkey; derive one from the header text.
+  function ensureKey(card){
+    if(card.getAttribute('data-rkey')) return;
+    var hh=card.querySelector(':scope > h2');
+    var label=hh?((hh.childNodes[0]&&hh.childNodes[0].nodeValue)||hh.textContent):'';
+    var base=slug(label)||'section', k=base, n=2;
+    while(document.querySelector('[data-rkey="'+k+'"]')) k=base+'-'+(n++);
+    card.setAttribute('data-rkey',k);
+  }
+  // Move `node` before `ref` within group `g`; ref===null means "after the last item" — which
+  // for .wrap is *not* the same as appendChild (that would land past the footer/embeds).
+  function place(g,ref,node){
+    if(ref===null){
+      var items=kids(g),last=items[items.length-1];
+      if(last&&last!==node) g.insertBefore(node,last.nextSibling);
+    } else if(ref!==node) g.insertBefore(node,ref);
+  }
+
+  function dragAfter(g,x,y){
+    var best=null,bestScore=Infinity,list=kids(g);
+    for(var i=0;i<list.length;i++){
+      var el=list[i]; if(el===dragged) continue;
+      var r=el.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,gap=r.height*0.5,before;
+      if(y<cy-gap) before=true; else if(y>cy+gap) before=false; else before=x<cx;
+      if(before){var s=(cy-y)*(cy-y)+(cx-x)*(cx-x); if(s<bestScore){bestScore=s;best=el;}}
+    }
+    return best;
+  }
+  function showReset(){var b=document.getElementById('reset-layout'); if(b) b.classList.add('show');}
+
+  grids.forEach(function(g){
+    var gk=groupKey(g);
+    // Embedded dashboards are heavy iframes — moving one in the DOM reloads it, so reorder
+    // them only once, on drop (not live during dragover), to avoid reload thrash.
+    var live=!g.classList.contains('embed-grid');
+    [].slice.call(g.children).forEach(function(c){
+      if(c.nodeType===1&&c.classList.contains('card')) ensureKey(c);
+    });
+    kids(g).forEach(function(card){
+      // The grip handle itself is the drag source (draggable=true) rather than toggling the
+      // card's draggable on mousedown — that toggle is unreliable in Chrome (draggability is
+      // decided before the mousedown handler runs), which is why grabbing a card did nothing.
+      var h=document.createElement('span');
+      h.className='reorder-handle'; h.title='Drag to reorder'; h.textContent='\\u2807';
+      h.setAttribute('draggable','true');
+      card.insertBefore(h,card.firstChild);
+      h.addEventListener('dragstart',function(e){
+        dragged=card; dragGroup=g; card.classList.add('reorder-drag');
+        e.dataTransfer.effectAllowed='move';
+        try{e.dataTransfer.setData('text/plain',card.getAttribute('data-rkey'));}catch(_){}
+        try{e.dataTransfer.setDragImage(card,20,20);}catch(_){}  // drag the whole card, not the grip
+      });
+      h.addEventListener('dragend',function(){
+        card.classList.remove('reorder-drag');
+        if(dragged===card){
+          if(!live){  // apply the pending drop position once (single iframe reload)
+            [].forEach.call(g.querySelectorAll('.reorder-over'),function(el){el.classList.remove('reorder-over');});
+            if(g.__drop!==undefined){ place(g,g.__drop,card); g.__drop=undefined; }
+          }
+          store[gk]=keys(g); persist(); showReset();
+        }
+        dragged=null; dragGroup=null;
+      });
+    });
+    srcOrder[gk]=keys(g);
+    g.addEventListener('dragover',function(e){
+      if(!dragged||dragGroup!==g) return;
+      e.preventDefault(); e.dataTransfer.dropEffect='move';
+      var after=dragAfter(g,e.clientX,e.clientY);
+      if(live){
+        place(g,after,dragged);
+      } else {  // defer the move; just show where it'll land
+        [].forEach.call(g.querySelectorAll('.reorder-over'),function(el){el.classList.remove('reorder-over');});
+        g.__drop=after;
+        if(after) after.classList.add('reorder-over');
+      }
+    });
+    applyOrder(g, store[gk]);
+  });
+
+  // Reorder a group's items to match `order`, inserting before a fixed anchor (the element after
+  // the last item) so items stay in their region — for .wrap that's *before* the footer/embeds.
+  function applyOrder(g, order){
+    if(!order||!order.length) return;
+    var byKey={}; kids(g).forEach(function(c){byKey[c.getAttribute('data-rkey')]=c;});
+    var cur=kids(g), anchor=cur.length?cur[cur.length-1].nextSibling:null;
+    order.forEach(function(k){if(byKey[k]) g.insertBefore(byKey[k],anchor);});
+    kids(g).forEach(function(c){if(order.indexOf(c.getAttribute('data-rkey'))<0) g.insertBefore(c,anchor);});
+  }
+
+  if(Object.keys(store).length) showReset();
+  var reset=document.getElementById('reset-layout');
+  if(reset) reset.addEventListener('click',function(){
+    grids.forEach(function(g){ applyOrder(g, srcOrder[groupKey(g)]); });
+    store={}; try{localStorage.removeItem(LS_KEY);}catch(e){}
+    reset.classList.remove('show');
+  });
+})();
+
+// Collapsible top-level sections. Click a section header to expand/collapse it; the state is
+// saved per-browser in localStorage. Defaults: System starts collapsed (diagnostics you don't
+// need open all the time); embed dashboards start collapsed EXCEPT the meic/earnings trading
+// modules, which start expanded when present; every other section starts expanded.
+(function(){
+  var LS='cherrypick-dash-sections-v1';
+  var store; try{store=JSON.parse(localStorage.getItem(LS))||{};}catch(e){store={};}
+  function persist(){try{localStorage.setItem(LS,JSON.stringify(store));}catch(e){}}
+  function slug(s){return (s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');}
+  var EMBED_EXPANDED={meic:1,earnings:1};  // embeds expanded by default (others collapsed)
+  var cards=[].slice.call(document.querySelectorAll('.wrap > .card, .embed-grid > .card'));
+  cards.forEach(function(card){
+    var h=card.querySelector(':scope > h2'); if(!h) return;
+    // Key off the header's own text (its first text node), ignoring any badge/button labels.
+    var label=(h.childNodes[0]&&h.childNodes[0].nodeValue)?h.childNodes[0].nodeValue:h.textContent;
+    var key=slug(label)||slug(h.textContent); if(!key) return;
+    card.classList.add('collapsible'); card.setAttribute('data-section',key);
+    var caret=document.createElement('span'); caret.className='sec-caret'; caret.textContent='\\u25BE';
+    h.insertBefore(caret,h.firstChild);
+    var def;
+    if(card.classList.contains('embed')){
+      def=EMBED_EXPANDED[card.getAttribute('data-rkey')]?'expanded':'collapsed';
+    } else def=(key==='system')?'collapsed':'expanded';
+    if((store[key]||def)==='collapsed') card.classList.add('collapsed');
+    h.addEventListener('click',function(e){
+      if(e.target.closest('button,a,input,select,label')) return;  // don't toggle on controls in the header
+      var collapsed=card.classList.toggle('collapsed');
+      store[key]=collapsed?'collapsed':'expanded'; persist();
+    });
+  });
+})();
 """
 
 # Serve-only: polls /api/system (doctor.run) for the live-checks subsection. Kept out of the always-on
@@ -798,8 +1018,10 @@ def _embed_cards_html(embed_views: list[dict[str, Any]]) -> str:
     cards = []
     for e in embed_views:
         url = html.escape(e["url"])
+        # Stable per-embed id so drag-reorder (persisted in localStorage) keys off the module.
+        rkey = re.sub(r"[^a-z0-9]+", "-", e["title"].lower()).strip("-") or "embed"
         cards.append(
-            '<section class="card embed">'
+            f'<section class="card embed" data-rkey="{html.escape(rkey)}">'
             f"<h2>{html.escape(e['title'])} {_pill('PAPER', 'INFO')}"
             f'<a class="embed-open" href="{url}" target="_blank" rel="noopener">open ↗</a></h2>'
             f'<iframe class="embed-frame" src="{url}" loading="lazy" '
@@ -807,7 +1029,7 @@ def _embed_cards_html(embed_views: list[dict[str, Any]]) -> str:
             f'{html.escape(e["title"])} dashboard"></iframe>'
             "</section>"
         )
-    return '<h2 class="embed-heading">embedded module dashboards</h2>' + "".join(cards)
+    return '<div class="embed-grid">' + "".join(cards) + "</div>"
 
 
 def _render_html(model: dict[str, Any], serve: bool = False) -> str:
@@ -840,12 +1062,14 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
         + "</div>"
     )
     system_card = _system_card_html(model, serve)
-    eod_card = _eod_card_html(model.get("eod"))
+    eod_card = _eod_card_html(model.get("eod"), serve)
     cards = "".join(_module_card(mv) for mv in model.get("modules", []))
     logs = '<section class="card"><h2>recent logs</h2>' + _log_html(model.get("logs", [])) + "</section>"
     footer = (
         '<div class="meta"><span class="muted">read-only · paper · generated '
-        f"{html.escape(str(model.get('generated_at')))}</span></div>"
+        f"{html.escape(str(model.get('generated_at')))}</span>"
+        '<button type="button" class="reset-layout" id="reset-layout" '
+        'title="Restore the original card order">&#8635; reset layout</button></div>'
     )
     # Live sections are serve-only: they poll /api/section/<id>, which exists only under
     # `dashboard --serve`. A static file render omits them (no server to answer the poll).
@@ -856,10 +1080,12 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     # Embedded module dashboards are serve-only too: each iframe points at /embed/<id>, a route the
     # live server owns (it launches/regenerates the module dashboard on demand). Omitted in the static
     # file render — there's no orchestrator server to answer /embed/<id>.
+    embeds_shown = model.get("embeds") if serve else None
     embed_cards = _embed_cards_html(model.get("embeds", [])) if serve else ""
-    # Reconcile is broker-touching, so its card is serve-only too (the /api/reconcile route only exists
-    # under `dashboard --serve`); the static file render omits it.
-    reconcile_card = _reconcile_card_html() if serve else ""
+    # The module summary cards duplicate the embedded module dashboards; when the embeds are shown
+    # (serve mode with embeds configured) omit the summary grid as redundant. The static file render
+    # has no embeds, so it keeps the grid as the only per-module P&L view.
+    module_grid = "" if embeds_shown else f'<div class="grid">{cards}</div>'
     extra_style = viz.SECTION_STYLE if live_sections else ""
     extra_script = (viz.SECTION_JS if live_sections else "") + (_DOCTOR_JS + _RECONCILE_JS if serve else "")
     return (
@@ -871,12 +1097,11 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
         + "</style></head><body><div class='wrap'>"
         + header
         + system_card
-        + eod_card
-        + reconcile_card
         + section_cards
-        + f'<div class="grid">{cards}</div>'
-        + logs
+        + module_grid
         + embed_cards
+        + eod_card
+        + logs
         + footer
         + "</div><script>"
         + _JS
