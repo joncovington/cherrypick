@@ -166,3 +166,29 @@ def run(cfg: dict | None = None, session: str | None = None) -> dict:
         "modules": modules_out,
         "suite": _summarize(all_records),
     }
+
+
+def latest_session(cfg: dict | None = None) -> str | None:
+    """Most recent settlement-session date (ISO) with any paper trade across enabled modules, or
+    None if there are none. Lets the EOD view fall back off an empty current day (e.g. overnight,
+    when the ET date has rolled to a session that hasn't traded yet) to the last real session."""
+    cfg = cfg or cfgmod.load_config()
+    latest: str | None = None
+    for name, mcfg in cfgmod.enabled_modules(cfg).items():
+        schema = mcfg.get("paper", {}).get("trade_schema", "meic_ic")
+        reader = _READERS.get(schema)
+        db_path = cfgmod.paper_db_path(mcfg, name)
+        if reader is None or not db_path.exists():
+            continue
+        conn = _connect_ro(db_path)
+        try:
+            records = reader(conn)
+        except sqlite3.Error:
+            continue
+        finally:
+            conn.close()
+        for r in records:
+            s = r.get("session")
+            if s and (latest is None or s > latest):
+                latest = s
+    return latest
