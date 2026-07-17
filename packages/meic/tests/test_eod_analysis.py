@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -90,3 +91,27 @@ def test_analysis_flat_session_renders(tmp_path, monkeypatch, capsys):
     md = Path(path).read_text(encoding="utf-8")
     assert "Flat session" in md
     assert "## 7. Notes / journal" in md  # every section still renders
+
+
+def test_analysis_surfaces_loop_gates_from_loop_log(tmp_path, monkeypatch, capsys):
+    """A flat/gated day explains *why* via the loop log — the gate line that lets the AI insight (and a
+    human) see it was the GEX/IV regime gates, not a broken run."""
+    _seed(tmp_path, monkeypatch)
+    con = sqlite3.connect(paper_loop._PAPER_DB)
+    reasoning = ("[11:34 ET] VIX 17.9  1D-ratio 0.65  delta 0.16   "
+                 "SPX(ivr 0.43): all regime_gex_negative   IWM(ivr 0.26): 5 skip")
+    con.execute(
+        "INSERT INTO loop_log (loop_time, loop_date, action, reasoning, created_at) VALUES (?, ?, ?, ?, ?)",
+        ("2026-07-10 11:34:00", "2026-07-10", "paper_iteration", reasoning, "2026-07-10 11:34:00"),
+    )
+    con.commit()
+    con.close()
+
+    md = Path(paper_loop._write_eod_analysis("2026-07-10")).read_text(encoding="utf-8")
+    capsys.readouterr()
+    # The per-symbol gate decision is surfaced (prefix stripped), so the flat day is explainable.
+    assert "regime_gex_negative" in md
+    assert "SPX(ivr 0.43): all regime_gex_negative" in md
+    assert "1 loop iteration" in md or "**1**" in md  # iteration count mentioned
+    # And it appears in the market-context section too (available on active days).
+    assert "Entry gates at the last" in md
