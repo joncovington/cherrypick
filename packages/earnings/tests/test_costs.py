@@ -52,7 +52,10 @@ def test_defaults_used_when_config_missing_tastytrade_costs_block():
     result = costs.apply_entry_costs(order, quotes, quantity=2, config={})
     assert result["commission"] == pytest.approx(2.0)
     assert result["pass_through_fees"] == pytest.approx(2 * (0.10 + 0.04))
-    assert result["slippage"] == pytest.approx(0.20 * 0.25 * 100 * 2)
+    # Assert against the shipped default fraction (source of truth) so a future recalibration
+    # of the slippage default doesn't silently rot this test — the spread here (0.20) is well
+    # under the mid cap, so the plain fraction applies.
+    assert result["slippage"] == pytest.approx(0.20 * costs.DEFAULT_COSTS["slippage_frac_of_spread"] * 100 * 2)
 
 
 def test_zero_width_quote_produces_zero_slippage():
