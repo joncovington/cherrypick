@@ -10,8 +10,8 @@ python src/db.py get_today_pnl
 Also query the last 5 loop log entries:
 ```bash
 python -c "
-import sqlite3, json
-conn = sqlite3.connect('data/meic_trades.db')
+import sqlite3, json, os
+conn = sqlite3.connect(os.path.expanduser('~/.cherrypick/data/meic/meic_trades.db'))  # or \$MEIC_DATA_DIR
 conn.row_factory = sqlite3.Row
 rows = conn.execute('SELECT loop_time, symbol, action, reasoning, iv_rank, underlying_price, session_quality FROM loop_log ORDER BY loop_time DESC LIMIT 5').fetchall()
 print(json.dumps([dict(r) for r in rows], default=str))

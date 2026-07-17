@@ -42,7 +42,7 @@ Then write the analysis to the MEIC logs home as `eod-<YYYY-MM-DD>.md` (`~/.cher
 
 ## Section B — Paper EOD report (when scope is `paper` or `both`)
 
-The paper report is **deterministic and code-generated** (no synthesis needed) — just run the generator, which reads `data/paper_trades.db` and writes the file:
+The paper report is **deterministic and code-generated** (no synthesis needed) — just run the generator, which reads `~/.cherrypick/data/meic/paper_trades.db` and writes the file:
 
 ```bash
 python src/paper_loop.py --eod-report [--date <YYYY-MM-DD>]
