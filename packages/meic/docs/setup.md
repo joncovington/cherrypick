@@ -73,7 +73,12 @@ Copy the example config and edit it with your settings:
 cp config.example.json config.json
 ```
 
-Key fields to update in `config.json`:
+> **Config location.** This in-repo `config.json` is the standalone-checkout path. Under the orchestrated
+> cherrypick suite the config resolves **home-first** to `~/.cherrypick/config/meic.json` (see
+> [`src/paths.py`](../src/paths.py)); `cherrypick migrate-home` moves an in-repo config up to the home. The
+> keys are identical either way — edit whichever `paths.config_path()` resolves to.
+
+Key fields to update in your config:
 
 | Field | Description |
 |---|---|
@@ -97,11 +102,12 @@ python src/db.py init_db
 ```
 
 This creates `meic_trades.db` (SQLite, WAL mode) in the **data home** — `~/.cherrypick/data/meic/` by
-default, shared with the umbrella orchestrator so both read the same files. Override the location with the
+default, shared with the orchestrator so both read the same files. Override the location with the
 `MEIC_DATA_DIR` environment variable (tests point it at a tmp path). The path is resolved centrally by
 [`src/paths.py`](../src/paths.py), which also resolves the **logs home** — `~/.cherrypick/logs/meic/` by
-default (override with `MEIC_LOGS_DIR`, or `CHERRYPICK_HOME` for the whole suite). Only `config.json` stays
-in the package. Safe to run multiple times.
+default (override with `MEIC_LOGS_DIR`, or `CHERRYPICK_HOME` for the whole suite) and the **config home**
+— `~/.cherrypick/config/meic.json` (home-first, else the in-repo `config.json`). Nothing runtime stays in
+the package. Safe to run multiple times.
 
 ### 6. Start the streamer daemon (recommended)
 
