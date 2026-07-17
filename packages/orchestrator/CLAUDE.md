@@ -5,12 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 cherrypick is the **orchestrator** for a trading-tool suite. It drives the sibling module
-repos (`../MEICAgent`, `../EarningsAgent`) **in place** — via subprocess, using paths from config — for
+packages (`../meic`, `../earnings`, `../gex`) **in place** — via subprocess, using paths from config — for
 unattended **paper**-trading data collection, with a watchdog + notifications so a walk-away user is
 told (or at least has it logged) whenever something stalls. It never edits a module's internals and
 **never places live trades** — the sole live-adjacent action is *onboarding config* (`connect`/`account`
 select a module's live-trading account; see the Invariants below), never order placement. `ROADMAP.md`
-tracks what has actually shipped; the full design lives in `~/.claude/plans/cherrypick-plan.md`.
+tracks what has actually shipped; the full design lives in `~/.claude/plans/cherrypick-plan.md`; and the
+suite-wide human documentation is the root [documentation index](../../docs/README.md) (architecture, CLI,
+reporting, configuration, guardrails).
 
 ## Commands
 
@@ -79,7 +81,7 @@ resolved **relative to the config file's directory** — never hardcode absolute
   `eod-analysis` stays the source of record, so the "no AI on the reliability path" invariant holds.
 
 **Per-schema dispatch.** Each module's paper DB has a different schema, selected by
-`paper.trade_schema` in config (`"meic_ic"` → MEICAgent `ic_trades`; `"earnings"` → EarningsAgent
+`paper.trade_schema` in config (`"meic_ic"` → MEIC's `ic_trades`; `"earnings"` → the Earnings module's
 `trades`). `report.py`, `calibrate.py`, and `trade_notifier.py` each carry a small reader/adapter
 registry keyed by that value; add a schema by extending those registries, not the callers.
 
@@ -142,10 +144,10 @@ is excluded from ruff and from the packaged wheel.
   shared dev conveniences (e.g. `/serve-dashboard`); the rest of `.claude/` (settings.local.json,
   session state, plans) stays local-only. Slash commands are never a runtime dependency either.
 
-## Suite-wide guardrails (inherited from MEICAgent & EarningsAgent)
+## Suite-wide guardrails (inherited from the MEIC & Earnings modules)
 
-cherrypick drives the module repos in place, so it operates under the same guardrails both modules
-declare in their own `CLAUDE.md` (MEIC also keeps a full entry-gate catalog in `../MEICAgent/GATES.md`).
+cherrypick drives the module packages in place, so it operates under the same guardrails both modules
+declare in their own `CLAUDE.md` (MEIC also keeps a full entry-gate catalog in `../meic/GATES.md`).
 Honor these here too; several are already stated as Invariants above and are cross-referenced, not
 repeated.
 
@@ -166,7 +168,7 @@ repeated.
 - **Paper ↔ live isolation.** Live-order tools in the modules are gated behind `enable_live_trading:
   true`, and paper mode never calls `execute_trade` (even a dry-run performs a real margin check).
   cherrypick only ever invokes paper engines / paper DBs; anything advisory stays advisory (see
-  Invariants). EarningsAgent is additionally **defined-risk only** — naked strategies were removed
+  Invariants). The Earnings module is additionally **defined-risk only** — naked strategies were removed
   because an unmonitored overnight naked short can blow out arbitrarily.
 - **No MCP / network / AI on any loop-decision or reliability path** (see Invariants). The modules'
   loops depend only on their local tools + this guidance; a 34-hour silent stall from an external

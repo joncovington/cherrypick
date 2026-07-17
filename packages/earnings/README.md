@@ -2,10 +2,12 @@
 
 > **The earnings module of the [cherrypick](../../README.md) suite.** cherrypick is a monorepo of trading
 > modules driven by a shared **orchestrator**. This package (`packages/earnings`) is the overnight
-> earnings-play engine; its siblings are [`packages/meic`](../meic) (0DTE iron condors) and
-> [`packages/orchestrator`](../orchestrator) (the orchestrator). It can run standalone from this folder for
-> live / interactive trading, or unattended for paper collection — where the orchestrator drives it by
-> subprocess (`cherrypick install`), never by import. See [How this fits the suite](#how-this-fits-the-suite) below.
+> earnings-play engine; its siblings are [`packages/meic`](../meic) (0DTE iron condors),
+> [`packages/gex`](../gex) (the gamma-exposure dashboard), and [`packages/orchestrator`](../orchestrator)
+> (the orchestrator). It can run standalone from this folder for live / interactive trading, or unattended
+> for paper collection — where the orchestrator drives it by subprocess (`cherrypick install`), never by
+> import. See [How this fits the suite](#how-this-fits-the-suite) below, this module's own
+> [docs/](docs/README.md), and the suite-wide [documentation index](../../docs/README.md).
 
 An autonomous options trading agent for overnight earnings plays. It scans the daily earnings
 calendar, evaluates seven defined-risk options strategies against live market data, ranks

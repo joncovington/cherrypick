@@ -1,4 +1,4 @@
-Launch the MEICAgent intraday dashboard.
+Launch the MEIC intraday dashboard.
 
 ## Step 1 — Check if already running
 

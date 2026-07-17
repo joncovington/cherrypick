@@ -1,5 +1,5 @@
 ---
-description: Start EarningsAgent's trading loop and keep it running through today's full market session, open to close.
+description: Start Earnings's trading loop and keep it running through today's full market session, open to close.
 ---
 
 Read `CLAUDE.md` in full, then begin executing its Loop Steps starting from Step 0, on repeat,

@@ -1,9 +1,10 @@
 # cherrypick — Roadmap & Stage 0 status
 
 cherrypick is the orchestrator for a trading-tool suite. It drives sibling modules
-(**MEICAgent**, **EarningsAgent**) in place for **unattended paper-trading data collection**, with a
-watchdog and notifications so a walk-away user is told — or at least has it logged — whenever anything
-stalls.
+(**MEIC**, **Earnings**, and the **GEX** dashboard) in place for **unattended paper-trading data
+collection**, with a watchdog and notifications so a walk-away user is told — or at least has it logged —
+whenever anything stalls. (Historical entries below may reference the pre-split repo names `MEICAgent` /
+`EarningsAgent`; those record the migration accurately and are left as-is.)
 
 ## Documentation & Commit Rule
 - Write all documentation and pull request descriptions from a human developer's perspective.

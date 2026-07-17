@@ -1,4 +1,4 @@
-Run one iteration of the MEICAgent parallel-shadow paper-trading loop.
+Run one iteration of the MEIC parallel-shadow paper-trading loop.
 
 As of the standalone runner, the paper loop is implemented in code (`src/paper_loop.py`), not agent orchestration — this keeps a single source of truth for the iteration logic. Prefer the unattended daemon (`/paper-start`) for a full session; use this skill for a **single manual iteration** (e.g. a one-off force-close pass, or a quick check).
 

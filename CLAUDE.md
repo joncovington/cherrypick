@@ -14,3 +14,5 @@ Suite-wide guardrails apply across every package (each package's CLAUDE.md state
 files hold no code; account numbers masked to `****1234`; portable paths only; human-voice docs/commits
 (no AI attribution); no MCP/network/AI on any loop-decision or reliability path; paper↔live isolation
 (the orchestrator only drives paper; its one live-config action is onboarding/account selection).
+
+Any developer initiated documentation review and update must also review and update package documentation.

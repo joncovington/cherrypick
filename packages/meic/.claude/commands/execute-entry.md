@@ -1,4 +1,4 @@
-Execute a new MEICAgent iron condor entry. Only invoke when the entry decision (Step 6) is yes.
+Execute a new MEIC iron condor entry. Only invoke when the entry decision (Step 6) is yes.
 
 Requires: strategy strikes, wing width, and quotes already evaluated this iteration.
 
