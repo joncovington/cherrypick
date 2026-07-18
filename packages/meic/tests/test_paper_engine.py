@@ -196,10 +196,10 @@ def test_evaluate_entry_rejects_max_concurrent_ics_reached():
     assert reason == "max_concurrent_ics_reached"
 
 
-def test_evaluate_entry_concurrency_cap_is_account_wide():
-    # No open ICs on THIS symbol, but the profile is already at its cap across other symbols.
-    # The account-wide count must still block the entry (matches the live loop's account-wide
-    # max_concurrent_ics), even though the same-symbol overlap list is empty.
+def test_evaluate_entry_concurrency_cap_uses_passed_count():
+    # The gate checks the caller-supplied open count, not the same-symbol overlap list: at the cap
+    # it blocks even when the overlap list is empty. process_symbol supplies the per-(profile ×
+    # symbol) count here, so each portfolio enforces its own max_concurrent_ics budget.
     snap = _base_snapshot(now_et="13:00")
     cap = CONSERVATIVE["max_concurrent_ics"]
     entered, reason, _ = paper.evaluate_entry(snap, _params(CONSERVATIVE), open_ics=[],
@@ -208,9 +208,9 @@ def test_evaluate_entry_concurrency_cap_is_account_wide():
     assert reason == "max_concurrent_ics_reached"
 
 
-def test_evaluate_entry_account_count_below_cap_still_evaluates():
-    # Below the account-wide cap → entry proceeds past the concurrency gate (reason is NOT
-    # the concurrency rejection), even if some ICs are open elsewhere.
+def test_evaluate_entry_count_below_cap_still_evaluates():
+    # Below the cap → entry proceeds past the concurrency gate (reason is NOT the concurrency
+    # rejection).
     snap = _base_snapshot(now_et="13:00")
     entered, reason, _ = paper.evaluate_entry(snap, _params(CONSERVATIVE), open_ics=[],
                                               account_open_count=CONSERVATIVE["max_concurrent_ics"] - 1)
@@ -330,6 +330,17 @@ def test_synthetic_entry_fill_prices_at_mid_minus_slippage():
     assert chosen["ic_natural_bid"] < row["net_credit"] < 0.78
     assert row["risk_profile"] == "conservative"
     assert row["execution_mode"] == "paper"
+
+
+def test_synthetic_entry_fill_records_both_iv_measures():
+    # Regression guard: iv_pct_at_entry sat NULL for 89 trades because the column existed but was
+    # never written. Rank and percentile diverge (rank is outlier-compressed), so both must persist
+    # or the IV gate can't be re-based on evidence later.
+    snap = _base_snapshot(now_et="13:00", iv_rank=0.32, iv_pct=0.91)
+    _, _, chosen = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])
+    row = paper.synthetic_entry_fill(snap, "conservative", chosen, _params(CONSERVATIVE), "paper")
+    assert row["iv_rank_at_entry"] == pytest.approx(0.32)
+    assert row["iv_pct_at_entry"] == pytest.approx(0.91)
     assert row["status"] == "open"
     assert row["fees"] == pytest.approx(paper.open_fees("XSP", 1), abs=0.001)
 
@@ -489,10 +500,11 @@ _FC_LEG_QUOTES = {
 
 
 def test_is_cash_settled_classification():
-    assert paper._is_cash_settled("SPX", BASE_CONFIG) is True
-    assert paper._is_cash_settled("XSP", BASE_CONFIG) is True
-    assert paper._is_cash_settled("QQQ", BASE_CONFIG) is False
-    assert paper._is_cash_settled("IWM", BASE_CONFIG) is False
+    # Cash-settled index products (left to expire) vs physically-settled ETFs (force-closed).
+    for cash in ("SPX", "XSP", "NDX", "RUT"):
+        assert paper._is_cash_settled(cash, BASE_CONFIG) is True
+    for physical in ("SPY", "QQQ", "IWM"):
+        assert paper._is_cash_settled(physical, BASE_CONFIG) is False
 
 
 def test_cash_settled_force_close_has_no_friction():
@@ -662,7 +674,11 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
     subprocess.run([sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"),
                      "--db", db_path, "init_db"], check=True, capture_output=True)
 
-    snapshot = _base_snapshot(now_et="13:00", date="2026-07-09")
+    # Use SPX — a symbol the conservative ladder actually trades (the default snapshot's XSP is no
+    # longer in the traded set). Single well-credited 5-wide candidate so the fill is unambiguous.
+    snapshot = _base_snapshot(now_et="13:00", date="2026-07-09", symbol="SPX",
+                              underlying_price=7500.0,
+                              candidates=[_candidate(5, 7450, 7550, sp_bid=0.80, sc_bid=0.75)])
     result = subprocess.run(
         [sys.executable, str(Path(__file__).parent.parent / "src" / "paper.py"),
          "--db", db_path, "process_symbol", "--snapshot", json.dumps(snapshot),
@@ -677,12 +693,61 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
 
     open_check = subprocess.run(
         [sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"),
-         "--db", db_path, "get_open_trades", "--symbol", "XSP", "--date", "2026-07-09"],
+         "--db", db_path, "get_open_trades", "--symbol", "SPX", "--date", "2026-07-09"],
         capture_output=True, text=True,
     )
     open_out = json.loads(open_check.stdout.strip())
     assert len(open_out["open_trades"]) == 1
     assert open_out["open_trades"][0]["risk_profile"] == "conservative"
+
+
+def test_process_symbol_concurrency_budget_is_per_symbol(paper_db_path):
+    # max_concurrent_ics is a per-(profile × symbol) budget: a profile maxed out on one symbol must
+    # still be able to enter another, so a busy symbol can't starve a quiet one of slots.
+    cap = CONSERVATIVE["max_concurrent_ics"]
+    for i in range(cap):
+        _insert_paper_trade(paper_db_path, ic_order_id=f"SPX-{i}", symbol="SPX",
+                            risk_profile="conservative", trade_date="2026-07-09", status="open")
+    # conservative is now full on SPX. A QQQ snapshot for the same profile must NOT be concurrency-blocked.
+    snapshot = _base_snapshot(now_et="13:00", date="2026-07-09", symbol="QQQ",
+                              underlying_price=700.0,
+                              candidates=[_candidate(5, 695, 705, sp_bid=0.80, sc_bid=0.75)])
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).parent.parent / "src" / "paper.py"),
+         "--db", paper_db_path, "process_symbol", "--snapshot", json.dumps(snapshot),
+         "--execution_mode", "paper", "--profiles", "conservative"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    out = json.loads(result.stdout.strip().splitlines()[-1])
+    actions = out["results"]["conservative"]
+    assert all(a.get("reason") != "max_concurrent_ics_reached" for a in actions), actions
+    assert any(a.get("entry") == "filled" for a in actions), actions
+
+
+def test_process_symbol_daily_target_is_per_symbol(paper_db_path):
+    # The daily-target count is per (profile × symbol): hitting the target on one symbol must not
+    # raise the bar (or block) on another — SPX's entries don't spend QQQ's budget.
+    target = _params(CONSERVATIVE)["daily_ic_trade_target"]
+    for i in range(target):
+        _insert_paper_trade(paper_db_path, ic_order_id=f"SPX-{i}", symbol="SPX",
+                            risk_profile="conservative", trade_date="2026-07-09", status="expired")
+    # conservative has hit its daily target on SPX. A QQQ snapshot must NOT be daily-capped.
+    snapshot = _base_snapshot(now_et="13:00", date="2026-07-09", symbol="QQQ",
+                              underlying_price=700.0,
+                              candidates=[_candidate(5, 695, 705, sp_bid=0.80, sc_bid=0.75)])
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).parent.parent / "src" / "paper.py"),
+         "--db", paper_db_path, "process_symbol", "--snapshot", json.dumps(snapshot),
+         "--execution_mode", "paper", "--profiles", "conservative"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    out = json.loads(result.stdout.strip().splitlines()[-1])
+    actions = out["results"]["conservative"]
+    assert all(a.get("reason") not in ("daily_target_reached", "over_target_credit_below_floor")
+               for a in actions), actions
+    assert any(a.get("entry") == "filled" for a in actions), actions
 
 
 # ── Stop persistence + stopped-vs-expired (regression for the P&L-accumulation bug) ──
@@ -839,13 +904,34 @@ def test_stagger_spacing_ok_after_interval():
     assert entered is True and reason == "entered"
 
 
-def test_ladder_profile_ignores_stagger_and_entry_window():
-    # conservative has no stagger_entries → a 15:00 snapshot is NOT window-blocked and a large
-    # entry count does NOT cap it (the window/cap/spacing gates are opt-in). iv_rank 0.50 also
-    # clears the late-entry bias, so the entry proceeds normally.
-    snap = _base_snapshot(now_et="15:00", iv_rank=0.50)
-    entered, reason, _ = paper.evaluate_entry(snap, _params(CONSERVATIVE), [], todays_entry_count=99)
-    assert reason not in ("outside_entry_window", "daily_target_reached", "entry_spacing_wait")
+def test_ladder_daily_target_is_soft_guidance_not_a_cap():
+    # conservative has no stagger_entries → the window/spacing gates stay opt-in (15:00 is not
+    # window-blocked; iv_rank 0.50 clears the late-entry bias). The daily target is GUIDANCE: past
+    # it the portfolio is never hard-blocked, but only a richer-credit setup qualifies.
+    snap = _base_snapshot(now_et="15:00", iv_rank=0.50,
+                          candidates=[_candidate(5, 583, 598, sp_bid=0.70, sp_ask=0.80,
+                                                 sc_bid=0.65, sc_ask=0.75)])
+    params = _params(CONSERVATIVE)
+    target = params["daily_ic_trade_target"]
+    # Under the target: this credit clears the normal floor → enters.
+    entered, reason, _ = paper.evaluate_entry(snap, params, [], todays_entry_count=0)
+    assert entered is True and reason == "entered"
+    # At the target: NOT hard-capped — declined only because the raised bar isn't met.
+    entered2, reason2, _ = paper.evaluate_entry(snap, params, [], todays_entry_count=target)
+    assert entered2 is False
+    assert reason2 == "over_target_credit_below_floor"
+
+
+def test_over_target_rich_credit_still_enters():
+    # Favorable conditions — credit well above the raised floor — let a portfolio exceed its daily
+    # target. This is the whole point of the target being guidance rather than a cap.
+    snap = _base_snapshot(now_et="13:00", iv_rank=0.50,
+                          candidates=[_candidate(5, 583, 598, sp_bid=1.20, sp_ask=1.30,
+                                                 sc_bid=1.15, sc_ask=1.25)])
+    params = _params(CONSERVATIVE)
+    entered, reason, _ = paper.evaluate_entry(snap, params, [],
+                                              todays_entry_count=params["daily_ic_trade_target"])
+    assert entered is True and reason == "entered"
 
 
 def test_process_symbol_skips_profile_not_trading_symbol(tmp_path):

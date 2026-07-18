@@ -1,7 +1,7 @@
 {
   "instrument_and_sizing_header": "===== Instrument & Sizing =====",
-  "symbols": ["XSP", "SPX"],
-  "_symbols_note": "List of underlyings to trade concurrently, e.g. [\"SPX\", \"XSP\"]. Each symbol gets its own live ATM subscription window and its own GEX channel (net_gex/gamma_flip/call_wall/put_wall computed from that symbol's own OI+greeks) — there is no longer a separate gex_symbol; GEX is 1:1 with every traded symbol. The single-symbol 'symbol' key is still accepted as a deprecated alias for [\"symbol\"] if 'symbols' is absent, but new configs should use 'symbols'. max_concurrent_ics and max_entries_per_day are account-wide totals shared across every symbol in this list, not per-symbol caps. Correlated symbols (e.g. SPX and XSP) are not currently exposure-limited against each other — avoid combinations that double up on the same directional risk until that guard exists.",
+  "symbols": ["SPX", "SPY", "QQQ", "NDX", "RUT"],
+  "_symbols_note": "List of underlyings to trade concurrently, e.g. [\"SPX\", \"XSP\"]. Each symbol gets its own live ATM subscription window and its own GEX channel (net_gex/gamma_flip/call_wall/put_wall computed from that symbol's own OI+greeks) — there is no longer a separate gex_symbol; GEX is 1:1 with every traded symbol. The single-symbol 'symbol' key is still accepted as a deprecated alias for [\"symbol\"] if 'symbols' is absent, but new configs should use 'symbols'. In the paper engine, max_concurrent_ics is a per-(profile Ã symbol) cap â each portfolio gets its own concurrency budget, so a busy symbol can't starve a quiet one of slots. daily_ic_trade_target is per-portfolio GUIDANCE (each profile-symbol pair has its own daily count); past it entries need a richer credit (see over_target_credit_multiple) rather than being blocked. (The live agent loop still treats these caps account-wide; see CLAUDE.md.) Correlated symbols (e.g. SPX and XSP) are not currently exposure-limited against each other — avoid combinations that double up on the same directional risk until that guard exists.",
   "delta_target": 0.18,
   "_delta_target_note": "Superseded by the VIX-banded scale below when the market-wide VIX (fetched once per iteration in Step 4a) falls in a defined band -- delta_target itself is the fallback only if VIX is unavailable. See delta_target_vix_low/elevated/high/crisis and vix_band_low_max/elevated_max/high_max.",
   "delta_target_vix_low": 0.16,
@@ -16,9 +16,10 @@
   "_max_wing_width_note": "Upper bound (points) on spread width; the agent chooses the actual wing width per entry (any reasonable value up to this max) based on credit, buying power, and session conditions rather than scanning a fixed list.",
   "wing_widths_by_symbol": {
     "SPX": [5, 10],
-    "XSP": [1, 2, 5],
+    "SPY": [1, 2, 5],
     "QQQ": [5, 10],
-    "IWM": [2, 5],
+    "NDX": [10],
+    "RUT": [5, 10],
     "DEFAULT": [2, 5, 10]
   },
   "_wing_widths_by_symbol_note": "Per-symbol IC wing-width candidate shortlist (points), scanned widest-first. Wing width is a dollar-denominated risk parameter, so it must be set per instrument rather than shared across price levels: 10 points is ~0.13% of SPX (~7500) but ~3.4% of IWM (~297). Values respect each symbol's strike increment and stay within max_wing_width. DEFAULT covers any symbol not listed.",
@@ -61,6 +62,8 @@
   "low_iv_credit_floor_iv_rank_max": 0.35,
   "low_iv_min_credit_pct_of_width": 0.10,
   "_low_iv_note": "When IV rank is >= min_iv_rank but <= low_iv_credit_floor_iv_rank_max, the credit floor relaxes to low_iv_min_credit_pct_of_width instead of min_credit_pct_of_width.",
+  "over_target_credit_multiple": 1.5,
+  "_over_target_credit_multiple_note": "daily_ic_trade_target is GUIDANCE, not a hard cap. Once a portfolio (profile + symbol pair) has reached its daily target on that symbol, further entries are still allowed but must clear a richer credit bar: the applicable credit floor (standard or low-IV) is multiplied by this value. So favorable conditions -- premium rich enough to clear the raised floor -- permit more entries, while marginal setups are declined with reason over_target_credit_below_floor. The hard stops (max_concurrent_ics, regime gates, delta/OTM floors) are unaffected. Profiles that opt into stagger_entries instead treat the daily target as a hard cap, since staggering exists to spread a fixed number of entries across the session.",
   "_min_net_credit_after_fees_note": "The fee-adjusted floor no longer uses a flat dollar constant (retired 2026-07-06). It now requires (ic_natural_bid * dollar_multiplier) - est_fee_per_contract to clear the same applicable pct-of-width floor above, converted to dollars. The old standalone min_credit absolute-dollar-per-symbol floor was also retired as redundant once this fee check became width/IV-aware.",
   "fee_estimate_lookback_trades": 20,
   "fee_estimate_min_sample_size": 5,
@@ -118,9 +121,10 @@
   "orb_breakout_threshold_pct": 0.005,
   "orb_wing_width_by_symbol": {
     "SPX": 20,
-    "XSP": 2,
+    "SPY": 2,
     "QQQ": 10,
-    "IWM": 5,
+    "NDX": 50,
+    "RUT": 20,
     "DEFAULT": 20
   },
   "_orb_wing_width_by_symbol_note": "Per-symbol ORB debit-spread wing width (points). Like wing_widths_by_symbol, must scale per instrument — 20 points is 0.27% of SPX but 6.7% of IWM. DEFAULT covers any symbol not listed.",
