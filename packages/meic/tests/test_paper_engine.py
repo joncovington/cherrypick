@@ -106,6 +106,11 @@ GEX_MAG = {"regime_gex_min_flip_distance_pct": 0.005}       # require spot >=0.5
 HOLD_TO_EXPIRY = {"per_side_stop_management": False}        # no per-side stop; hold to settlement
 FAR_OTM = {"short_delta_target": 0.10}                      # further-OTM shorts than the VIX band
 
+# SPY and XSP are configured narrowest-first (small-account bias), so tests that assert the
+# widest-first DEFAULT pin the ordering explicitly instead of inheriting the snapshot symbol's
+# configuration. Keeps those tests about the ordering rule, not about config contents.
+WIDEST_FIRST = {"wing_selection_by_symbol": {"DEFAULT": "widest", "XSP": "widest"}}
+
 
 def _params(profile):
     return paper._merged_params(BASE_CONFIG, profile)
@@ -115,7 +120,7 @@ def _params(profile):
 
 def test_evaluate_entry_enters_when_all_gates_clear():
     snap = _base_snapshot(now_et="13:00")  # after conservative's 12:00 late-entry-bias start
-    entered, reason, chosen = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])
+    entered, reason, chosen = paper.evaluate_entry(snap, _params({**CONSERVATIVE, **WIDEST_FIRST}), [])
     assert entered is True
     assert reason == "entered"
     assert chosen["wing_width"] == 5  # widest clearing candidate preferred
@@ -321,7 +326,7 @@ def test_evaluate_entry_low_iv_relief_lowers_credit_floor():
 
 def test_evaluate_entry_prefers_widest_clearing_candidate():
     snap = _base_snapshot(now_et="13:00", candidates=[_candidate(2, 583, 598), _candidate(5, 583, 598)])
-    entered, reason, chosen = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])
+    entered, reason, chosen = paper.evaluate_entry(snap, _params({**CONSERVATIVE, **WIDEST_FIRST}), [])
     assert entered is True
     assert chosen["wing_width"] == 5
 

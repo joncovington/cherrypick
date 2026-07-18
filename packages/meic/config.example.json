@@ -1,6 +1,6 @@
 {
   "instrument_and_sizing_header": "===== Instrument & Sizing =====",
-  "symbols": ["SPX", "SPY", "QQQ", "NDX", "RUT"],
+  "symbols": ["SPX", "SPY", "XSP", "QQQ", "NDX", "RUT"],
   "_symbols_note": "List of underlyings to trade concurrently, e.g. [\"SPX\", \"XSP\"]. Each symbol gets its own live ATM subscription window and its own GEX channel (net_gex/gamma_flip/call_wall/put_wall computed from that symbol's own OI+greeks) — there is no longer a separate gex_symbol; GEX is 1:1 with every traded symbol. The single-symbol 'symbol' key is still accepted as a deprecated alias for [\"symbol\"] if 'symbols' is absent, but new configs should use 'symbols'. In the paper engine, max_concurrent_ics is a per-(profile Ã symbol) cap â each portfolio gets its own concurrency budget, so a busy symbol can't starve a quiet one of slots. daily_ic_trade_target is per-portfolio GUIDANCE (each profile-symbol pair has its own daily count); past it entries need a richer credit (see over_target_credit_multiple) rather than being blocked. (The live agent loop still treats these caps account-wide; see CLAUDE.md.) Correlated symbols (e.g. SPX and XSP) are not currently exposure-limited against each other — avoid combinations that double up on the same directional risk until that guard exists.",
   "delta_target": 0.18,
   "_delta_target_note": "Superseded by the VIX-banded scale below when the market-wide VIX (fetched once per iteration in Step 4a) falls in a defined band -- delta_target itself is the fallback only if VIX is unavailable. See delta_target_vix_low/elevated/high/crisis and vix_band_low_max/elevated_max/high_max.",
@@ -17,6 +17,7 @@
   "wing_widths_by_symbol": {
     "SPX": [5, 10],
     "SPY": [1, 2, 3, 4, 5],
+    "XSP": [1, 2, 3, 4, 5],
     "QQQ": [5, 10],
     "NDX": [10],
     "RUT": [5, 10],
@@ -24,9 +25,10 @@
   },
   "wing_selection_by_symbol": {
     "SPY": "narrowest",
+    "XSP": "narrowest",
     "DEFAULT": "widest"
   },
-  "_wing_selection_by_symbol_note": "How each symbol's candidate widths are ordered: widest (default, the fee-drag bias -- a fixed per-contract fee is a far smaller share of a wide spread's credit) or narrowest. Per SYMBOL because the right bias is a property of the instrument, not the risk tier; the profile-wide wing_selection would flip every symbol that profile trades at once. SPY is narrowest so a small account takes the smallest position that still pays: the fee-adjusted credit floor still applies, so a narrow wing must clear a materially higher credit-to-width bar (SPY 1-wide needs ~19.5% vs ~15.9% at 5-wide), which means this picks the smallest ECONOMICALLY VIABLE width rather than blindly the smallest one. DEFAULT covers any symbol not listed.",
+  "_wing_selection_by_symbol_note": "How each symbol's candidate widths are ordered: widest (default, the fee-drag bias -- a fixed per-contract fee is a far smaller share of a wide spread's credit) or narrowest. Per SYMBOL because the right bias is a property of the instrument, not the risk tier; the profile-wide wing_selection would flip every symbol that profile trades at once. SPY and XSP are both narrowest so a small account takes the smallest position that still pays. They are also deliberately matched on every other axis -- same wing shortlist, same ordering, same $4.49 IC fee, same underlying (S&P 500) at nearly the same price (~$743 vs ~$746) -- so the pair isolates SETTLEMENT: SPY is physically settled (force-closed before the bell, pin/assignment risk, exit friction) while XSP is cash-settled (left to expire, no assignment). The one uncontrolled difference is liquidity: SPY's book is far deeper than XSP's, so XSP carries wider spreads and thus more modeled slippage. Read the comparison as settlement-plus-liquidity, not settlement alone. Narrowest is safe because the fee-adjusted credit floor still applies, so a narrow wing must clear a materially higher credit-to-width bar (SPY 1-wide needs ~19.5% vs ~15.9% at 5-wide), which means this picks the smallest ECONOMICALLY VIABLE width rather than blindly the smallest one. DEFAULT covers any symbol not listed.",
   "_wing_widths_by_symbol_note": "Per-symbol IC wing-width candidate shortlist (points), scanned widest-first. Wing width is a dollar-denominated risk parameter, so it must be set per instrument rather than shared across price levels: 10 points is ~0.13% of SPX (~7500) but ~3.4% of IWM (~297). Values respect each symbol's strike increment and stay within max_wing_width. DEFAULT covers any symbol not listed.",
   "quantity": 1,
   "cash_settled_symbols": ["SPX", "XSP", "NDX", "RUT"],
