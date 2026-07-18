@@ -182,6 +182,29 @@ def _profile_widths_for_symbol(params: dict, symbol: str) -> list | None:
     return list(lst) if lst else None
 
 
+def _wing_selection_for_symbol(params: dict, symbol: str) -> str:
+    """How to order this symbol's candidate widths: `widest` (default), `narrowest`, or `fixed`.
+
+    Resolved most-specific-first: `wing_selection_by_symbol[symbol]`, then the profile-wide
+    `wing_selection`, then `wing_selection_by_symbol["DEFAULT"]`, then `widest`. The generic
+    DEFAULT deliberately ranks BELOW a profile's explicit `wing_selection` — a profile asking for
+    an ordering is a deliberate statement and must not be silently overridden by a base-config
+    fallback. Per-symbol because the right bias is a
+    property of the instrument, not of the risk tier: widest-first is the fee-drag bias that suits
+    the big-notional index products, while a small-account instrument wants the *smallest*
+    economically viable position. Making it per-profile only would flip every symbol that profile
+    trades at once. Mirrors `wing_widths_by_symbol` / `orb_wing_width_by_symbol`.
+
+    Narrowest-first is safe against fee drag because the fee-adjusted credit floor still applies:
+    a narrow wing must clear `gross_credit - fee >= floor * width`, a materially higher
+    credit-to-width bar, so this picks the smallest width that is still economically viable rather
+    than blindly taking the smallest one."""
+    wsbs = params.get("wing_selection_by_symbol") or {}
+    return (wsbs.get(symbol) or wsbs.get(symbol.upper())
+            or params.get("wing_selection")
+            or wsbs.get("DEFAULT") or "widest")
+
+
 def union_widths_for_symbol(symbol: str, base_config: dict | None = None,
                             profiles: dict | None = None) -> list[int]:
     """The union of every evaluated profile's wing widths for `symbol` (plus the base config's),
@@ -239,9 +262,11 @@ def _time_to_minutes(hhmm: str) -> int:
 
 def _select_candidates(candidates: list, params: dict, symbol: str) -> list:
     """Restrict the scanned candidate menu to this profile's own wing shortlist for `symbol`
-    (if it declares one) and order it per `wing_selection`. Default — no per-profile widths and
-    no `wing_selection` — is the historical behavior: every candidate, widest-first (the fee-drag
-    bias). `narrowest` reverses it (small-account cells); `fixed` preserves the profile's own
+    (if it declares one) and order it per the selection resolved for THAT symbol (see
+    `_wing_selection_for_symbol`: per-symbol first, then the profile-wide `wing_selection`).
+    Default — no per-profile widths and no selection set — is the historical behavior: every
+    candidate, widest-first (the fee-drag bias). `narrowest` reverses it, so a small-account
+    instrument takes the smallest economically viable width; `fixed` preserves the profile's own
     width-list order (first listed = preferred)."""
     # Short-delta-band filter (multi-delta menus). A profile with short_delta_target sees only
     # candidates built at that band; a profile without it sees the loop's default (VIX-banded)
@@ -257,7 +282,7 @@ def _select_candidates(candidates: list, params: dict, symbol: str) -> list:
     allowed = _profile_widths_for_symbol(params, symbol)
     if allowed is not None:
         candidates = [c for c in candidates if c["wing_width"] in allowed]
-    sel = params.get("wing_selection", "widest")
+    sel = _wing_selection_for_symbol(params, symbol)
     if sel == "narrowest":
         return sorted(candidates, key=lambda c: c["wing_width"])
     if sel == "fixed" and allowed is not None:
