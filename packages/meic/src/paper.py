@@ -119,6 +119,10 @@ def expire_fees() -> float:
 # (0.125 of the spread from mid). These helpers price a vertical at MID plus/minus a
 # `slippage_frac_of_spread` haircut so both suite modules assume the same worked-limit
 # fill. Settlement (cash-settled intrinsic value) has no spread and is unaffected.
+#
+# Keep this in lockstep with cherrypick.core.fees.DEFAULT_COSTS["slippage_frac_of_spread"];
+# the 2026-07-17 slippage-literature review (see that module's comment) places 0.125 at the
+# optimistic edge of the 25-50%-of-the-way-to-the-touch practitioner band -- kept here for parity.
 # ---------------------------------------------------------------------------
 
 DEFAULT_SLIPPAGE_FRAC = 0.125
