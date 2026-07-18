@@ -838,6 +838,29 @@ def test_wing_selection_narrowest_picks_narrowest_clearing():
     assert chosen["wing_width"] == 2
 
 
+def test_wing_selection_is_resolved_per_symbol():
+    # The ordering bias is a property of the INSTRUMENT, not the risk tier: a small-account symbol
+    # wants the smallest viable width while the big-notional index products keep the fee-drag
+    # (widest-first) bias. A profile-wide wing_selection would flip every symbol at once.
+    params = _params({"wing_widths_by_symbol": {"SPY": [1, 2, 3], "SPX": [5, 10]},
+                      "wing_selection_by_symbol": {"SPY": "narrowest", "DEFAULT": "widest"}})
+    menu_spy = [{"wing_width": w} for w in (1, 2, 3)]
+    menu_spx = [{"wing_width": w} for w in (5, 10)]
+    assert [c["wing_width"] for c in paper._select_candidates(menu_spy, params, "SPY")] == [1, 2, 3]
+    assert [c["wing_width"] for c in paper._select_candidates(menu_spx, params, "SPX")] == [10, 5]
+    # Precedence, most specific first: exact symbol > profile-wide > DEFAULT > "widest".
+    assert paper._wing_selection_for_symbol(params, "QQQ") == "widest"          # DEFAULT
+    assert paper._wing_selection_for_symbol({"wing_selection": "narrowest"}, "QQQ") == "narrowest"
+    assert paper._wing_selection_for_symbol({}, "QQQ") == "widest"              # hardcoded default
+    # A profile's explicit wing_selection must NOT be silently overridden by a generic DEFAULT...
+    profile_wide = {"wing_selection": "narrowest",
+                    "wing_selection_by_symbol": {"DEFAULT": "widest"}}
+    assert paper._wing_selection_for_symbol(profile_wide, "QQQ") == "narrowest"
+    # ...but an exact per-symbol entry still wins over the profile-wide setting.
+    assert paper._wing_selection_for_symbol(
+        {**profile_wide, "wing_selection_by_symbol": {"QQQ": "widest"}}, "QQQ") == "widest"
+
+
 def test_wing_filter_excludes_widths_outside_profile_shortlist():
     # A [5,10] shortlist; a lone 2-wide candidate is filtered out entirely, so
     # no candidate clears — even though it would otherwise pass every gate.

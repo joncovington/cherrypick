@@ -16,12 +16,17 @@
   "_max_wing_width_note": "Upper bound (points) on spread width; the agent chooses the actual wing width per entry (any reasonable value up to this max) based on credit, buying power, and session conditions rather than scanning a fixed list.",
   "wing_widths_by_symbol": {
     "SPX": [5, 10],
-    "SPY": [1, 2, 5],
+    "SPY": [1, 2, 3, 4, 5],
     "QQQ": [5, 10],
     "NDX": [10],
     "RUT": [5, 10],
     "DEFAULT": [2, 5, 10]
   },
+  "wing_selection_by_symbol": {
+    "SPY": "narrowest",
+    "DEFAULT": "widest"
+  },
+  "_wing_selection_by_symbol_note": "How each symbol's candidate widths are ordered: widest (default, the fee-drag bias -- a fixed per-contract fee is a far smaller share of a wide spread's credit) or narrowest. Per SYMBOL because the right bias is a property of the instrument, not the risk tier; the profile-wide wing_selection would flip every symbol that profile trades at once. SPY is narrowest so a small account takes the smallest position that still pays: the fee-adjusted credit floor still applies, so a narrow wing must clear a materially higher credit-to-width bar (SPY 1-wide needs ~19.5% vs ~15.9% at 5-wide), which means this picks the smallest ECONOMICALLY VIABLE width rather than blindly the smallest one. DEFAULT covers any symbol not listed.",
   "_wing_widths_by_symbol_note": "Per-symbol IC wing-width candidate shortlist (points), scanned widest-first. Wing width is a dollar-denominated risk parameter, so it must be set per instrument rather than shared across price levels: 10 points is ~0.13% of SPX (~7500) but ~3.4% of IWM (~297). Values respect each symbol's strike increment and stay within max_wing_width. DEFAULT covers any symbol not listed.",
   "quantity": 1,
   "cash_settled_symbols": ["SPX", "XSP", "NDX", "RUT"],
