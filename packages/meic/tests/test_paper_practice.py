@@ -168,15 +168,12 @@ def test_stop_triggers_when_side_cost_reaches_ratio():
 
 # ── SPX-eligible profile selection ───────────────────────────────────────────
 
-def test_spx_eligible_profiles_is_ladder_only_while_experiments_disabled():
+def test_spx_eligible_profiles_is_exactly_the_ladder():
+    # config.risk.json now holds only the four-tier ladder (the symbol/wing experiment cells were
+    # removed), and every tier trades SPX, so the SPX-eligible roster is exactly the ladder.
     names = set(pp.spx_eligible_profiles())
-    # The four ladder tiers trade SPX and remain active.
-    assert {"conservative", "moderate", "aggressive", "very-aggressive"} <= names
-    # The experiment cells are disabled (enabled:false) pending the risk-profile rethink, so the
-    # roster (all_profile_names, which powers spx_eligible_profiles) excludes every one of them.
-    for disabled in ("large-spx", "explore-spx-tightcredit", "small-xsp", "small-iwm",
-                     "medium-qqq", "medium-xsp-wide", "explore-xsp-loosecredit"):
-        assert disabled not in names
+    assert names == {"conservative", "moderate", "aggressive", "very-aggressive"}
+    assert names == set(pp.paper.all_profile_names())
 
 
 # ── settlement / per-IC P&L accounting ───────────────────────────────────────

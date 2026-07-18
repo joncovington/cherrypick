@@ -1,12 +1,35 @@
 # Paper-trading experiment cells (account-size study)
 
+> ## ⚠️ RETIRED — 2026-07-18
+>
+> **The 15 experiment cells described below were removed from `config.risk.json`.** It now holds
+> only the four-tier ladder. This document is kept because the **per-profile mechanism is still
+> fully supported by the engine** — `symbols`, `wing_widths_by_symbol`, `wing_selection`,
+> `stagger_entries`, `short_delta_target`, `regime_gex_require_positive`, and
+> `per_side_stop_management` all still work exactly as described, so this is the reference for
+> rebuilding cells if the study resumes. The cells themselves are recoverable from git history.
+>
+> **Why they were retired.** Each cell pinned a *symbol* as part of its identity
+> (`large-spx`, `small-xsp`, …). That collided with the portfolio model the paper study now runs on,
+> where **the symbol is its own axis**: one portfolio is formed per **(profile × symbol)** pair, each
+> with its own `max_concurrent_ics` and daily-entry budget. Under that model a symbol-pinned cell is
+> a category error — it fuses the two axes into one name, so `large-spx` and a hypothetical
+> `large-qqq` could never be compared as "the same strategy on two instruments."
+>
+> **If the study resumes**, define cells as **symbol-agnostic branches** (one gate-config change,
+> no `symbols` pin) and let the portfolio grain supply the per-symbol split. See
+> [risk-profiles.md](risk-profiles.md) for the ladder's design rationale and the two-axis model.
+
+---
+
 The parallel-shadow paper engine (`src/paper.py`, driven unattended by `src/paper_loop.py`)
 evaluates **every** profile in `config.risk.json` against each iteration's market snapshot, per
 symbol, writing all books to `~/.cherrypick/data/meic/paper_trades.db`. Beyond the four-tier risk
-ladder (conservative → very-aggressive), the registry also holds **experiment cells** whose purpose
-is to collect enough variation in the placed iron condors to analyze optimal risk profiles for
-**small, medium, and large accounts** — by varying wings, symbols, and the minimum credit, and by
-staggering entries across the day. This is paper-only; nothing here touches the live account.
+ladder (conservative → very-aggressive), the registry *used to* hold **experiment cells** whose
+purpose was to collect enough variation in the placed iron condors to analyze optimal risk profiles
+for **small, medium, and large accounts** — by varying wings, symbols, and the minimum credit, and
+by staggering entries across the day. This was paper-only; nothing here ever touched the live
+account.
 
 ## What makes an experiment cell different from a ladder tier
 
