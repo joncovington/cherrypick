@@ -83,9 +83,9 @@ def test_moderate_profile_relaxes_gates_appropriately(sample_risk_profiles):
     assert moderate["stop_trigger_ratio"] < conservative["stop_trigger_ratio"]
     assert moderate["stop_trigger_ratio"] == 0.93
 
-    # Daily IC target should be higher
-    assert moderate["daily_ic_trade_target"] > conservative["daily_ic_trade_target"]
-    assert moderate["daily_ic_trade_target"] == 3
+    # Trade COUNT is deliberately not a ladder axis — the ladder's axis is riskier trades, not more
+    # of them — so the daily target is flat across rungs (and <= max_concurrent_ics everywhere).
+    assert moderate["daily_ic_trade_target"] == conservative["daily_ic_trade_target"] == 2
 
 
 def test_aggressive_profile_relaxes_additional_gates(sample_risk_profiles):
@@ -116,9 +116,8 @@ def test_aggressive_profile_relaxes_additional_gates(sample_risk_profiles):
     assert aggressive["stop_trigger_ratio"] < moderate["stop_trigger_ratio"]
     assert aggressive["stop_trigger_ratio"] == 0.90
 
-    # Daily IC target should be higher
-    assert aggressive["daily_ic_trade_target"] > moderate["daily_ic_trade_target"]
-    assert aggressive["daily_ic_trade_target"] == 4
+    # Count is not a ladder axis (see moderate test) — flat target, tightened by the position cap.
+    assert aggressive["daily_ic_trade_target"] == moderate["daily_ic_trade_target"] == 2
 
 
 def test_very_aggressive_profile_relaxes_regime_gates(sample_risk_profiles):
@@ -137,29 +136,36 @@ def test_very_aggressive_profile_relaxes_regime_gates(sample_risk_profiles):
     assert very_aggressive["regime_atr_pause_threshold_pct"] > aggressive["regime_atr_pause_threshold_pct"]
     assert very_aggressive["regime_atr_pause_threshold_pct"] == 0.020
 
+    # The VIX1D event-day gate relaxes at the top rung too, matching VIX/ATR (it used to be the one
+    # regime gate pinned flat across all four tiers).
+    assert very_aggressive["regime_vix1d_ratio_pause_threshold"] > aggressive["regime_vix1d_ratio_pause_threshold"]
+    assert very_aggressive["regime_vix1d_ratio_pause_threshold"] == 1.40
+
     # Offsets should be extreme
     assert very_aggressive["max_concurrent_ics"] == 2  # Smallest position cap
     assert very_aggressive["stop_trigger_ratio"] == 0.85  # Tightest stop
 
-    # Daily IC target should be highest
-    assert very_aggressive["daily_ic_trade_target"] == 5
+    # Count is not a ladder axis — flat target, held at/below the position cap.
+    assert very_aggressive["daily_ic_trade_target"] == 2
 
 
 def test_ladder_profiles_have_required_gate_keys(sample_risk_profiles):
     """The ladder profiles are complete presets — every required gate key present. (Experiment
     profiles are partial overlays merged onto config.json, validated separately below.)"""
+    # NB: the low-IV relief ceiling/floor and the late-entry-bias ceiling are deliberately NOT here.
+    # They are no longer per-tier absolutes; they derive from each tier's own min_iv_rank and credit
+    # floor via the relative keys in config.json (low_iv_credit_floor_iv_rank_offset,
+    # low_iv_credit_relief_multiple, late_entry_bias_iv_rank_offset), so they scale with the ladder
+    # instead of every tier repeating conservative's numbers.
     required_keys = {
         "min_iv_rank",
         "min_credit_pct_of_width",
-        "low_iv_min_credit_pct_of_width",
-        "low_iv_credit_floor_iv_rank_max",
         "max_call_delta_entry",
         "max_call_delta_entry_open_volatile",
         "max_call_delta_entry_late",
         "min_call_otm_pct",
         "min_put_otm_pct",
         "late_entry_bias_enabled",
-        "late_entry_bias_iv_rank_max",
         "late_entry_bias_start_time",
         "regime_vix_pause_threshold",
         "regime_atr_pause_threshold_pct",
@@ -174,6 +180,62 @@ def test_ladder_profiles_have_required_gate_keys(sample_risk_profiles):
         profile_gates = {k: v for k, v in profile.items() if not k.startswith("_")}
         for key in required_keys:
             assert key in profile_gates, f"Profile {profile_name} missing required key: {key}"
+
+
+def test_ladder_derived_thresholds_scale_with_each_tier():
+    """The low-IV relief ceiling/floor and late-entry-bias ceiling must DERIVE from each tier, not
+    repeat one absolute. Regression guard: they were flat (0.35 / 0.10 / 0.45) across all four
+    tiers, which silently flattened the ladder — whenever iv_rank sat under 0.35, every tier used
+    the same 0.10 credit floor (100% of SPX/XSP entries), so conservative traded them on identical
+    terms to very-aggressive."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+    import paper
+
+    base, profiles = paper.load_base_config(), paper.load_profiles()
+    prev = None
+    for tier in ["conservative", "moderate", "aggressive", "very-aggressive"]:
+        p = paper._merged_params(base, profiles[tier])
+        relief_max, relief_floor = paper._low_iv_relief_max(p), paper._low_iv_relief_floor(p)
+        # Relief must sit strictly below the tier's own credit floor, or it does nothing at all
+        # (which is exactly what happened to aggressive/very-aggressive at a flat 0.10).
+        assert relief_floor < p["min_credit_pct_of_width"], tier
+        # Ceilings track the tier's own IV floor rather than a shared absolute.
+        assert relief_max == pytest.approx(p["min_iv_rank"] + 0.05), tier
+        assert paper._late_entry_bias_max(p) == pytest.approx(p["min_iv_rank"] + 0.15), tier
+        # Count is not a ladder axis: flat target, never above the hard position cap.
+        assert p["daily_ic_trade_target"] <= p["max_concurrent_ics"], tier
+        if prev is not None:
+            assert relief_max < prev, "relief ceiling must loosen down the ladder"
+        prev = relief_max
+
+
+def test_ladder_credit_floor_is_monotonic_at_every_iv_level():
+    """The effective credit floor must never invert down the ladder — a stricter tier must never
+    accept thinner credit than a looser one. Regression guard for two failure modes: the relief
+    being a flat absolute (which collapsed all four tiers onto 0.10), and a relief multiple strong
+    enough that a tier inside its borderline band undercut the next tier's plain floor."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+    import paper
+
+    base, profiles = paper.load_base_config(), paper.load_profiles()
+    tiers = ["conservative", "moderate", "aggressive", "very-aggressive"]
+    merged = {t: paper._merged_params(base, profiles[t]) for t in tiers}
+    for iv_rank in (0.16, 0.21, 0.24, 0.28, 0.32, 0.40, 0.60):
+        floors = []
+        for t in tiers:
+            p = merged[t]
+            if iv_rank < p["min_iv_rank"]:
+                continue  # tier can't trade here at all
+            floors.append((t, paper._low_iv_relief_floor(p)
+                           if iv_rank <= paper._low_iv_relief_max(p)
+                           else p["min_credit_pct_of_width"]))
+        for (t_strict, f_strict), (t_loose, f_loose) in zip(floors, floors[1:]):
+            assert f_strict >= f_loose, (
+                f"iv_rank {iv_rank}: {t_strict} floor {f_strict:.3f} < {t_loose} {f_loose:.3f}")
 
 
 def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):

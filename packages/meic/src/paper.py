@@ -266,6 +266,48 @@ def _select_candidates(candidates: list, params: dict, symbol: str) -> list:
     return sorted(candidates, key=lambda c: -c["wing_width"])
 
 
+def _low_iv_relief_max(params: dict) -> float:
+    """The IV-rank ceiling below which the relaxed credit floor applies, expressed RELATIVE to this
+    profile's own `min_iv_rank` (`+ low_iv_credit_floor_iv_rank_offset`).
+
+    It used to be an absolute 0.35 shared by every tier — which was conservative's own 0.30 + 0.05,
+    never rescaled for the looser rungs. The effect was backwards: conservative got relief over a
+    0.05-wide band while very-aggressive (floor 0.15) got it across 0.15–0.35, i.e. most of its
+    range. Falls back to the absolute key so any profile still setting it keeps prior behavior."""
+    offset = params.get("low_iv_credit_floor_iv_rank_offset")
+    if offset is not None:
+        return params.get("min_iv_rank", 0.30) + offset
+    return params.get("low_iv_credit_floor_iv_rank_max", 0.35)
+
+
+def _low_iv_relief_floor(params: dict) -> float:
+    """The relaxed credit floor itself, as a MULTIPLE of this profile's own credit floor
+    (`min_credit_pct_of_width * low_iv_credit_relief_multiple`).
+
+    It used to be a flat 0.10 on every tier, which silently flattened the ladder: whenever IV rank
+    sat under the relief ceiling, all four tiers used the same 0.10 floor, so the 0.15/0.12/0.10/0.10
+    progression stopped existing. (Measured on the paper book: 100% of SPX and XSP entries were in
+    that zone, so conservative was trading them on identical credit terms to very-aggressive.) For
+    aggressive/very-aggressive the "relief" even equalled their normal floor, so it did nothing at
+    all. Expressing it as a multiple keeps it strictly below each tier's own floor and scales
+    automatically. Falls back to the absolute key for profiles that still set it."""
+    mult = params.get("low_iv_credit_relief_multiple")
+    if mult is not None:
+        return params["min_credit_pct_of_width"] * mult
+    return params.get("low_iv_min_credit_pct_of_width", 0.10)
+
+
+def _late_entry_bias_max(params: dict) -> float:
+    """IV-rank ceiling under which the late-entry bias applies, relative to this profile's own
+    `min_iv_rank` (`+ late_entry_bias_iv_rank_offset`). Same rescaling argument as
+    `_low_iv_relief_max`: a flat 0.45 put very-aggressive under the bias across nearly its whole
+    range while barely touching conservative."""
+    offset = params.get("late_entry_bias_iv_rank_offset")
+    if offset is not None:
+        return params.get("min_iv_rank", 0.30) + offset
+    return params.get("late_entry_bias_iv_rank_max", 0.45)
+
+
 def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
                    account_open_count: int | None = None,
                    todays_entry_count: int = 0, last_entry_min: int | None = None) -> tuple:
@@ -366,7 +408,7 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
             return False, "entry_spacing_wait", None
 
     # Late-entry bias
-    if params.get("late_entry_bias_enabled") and iv_rank <= params.get("late_entry_bias_iv_rank_max", 0.45):
+    if params.get("late_entry_bias_enabled") and iv_rank <= _late_entry_bias_max(params):
         if now_min < _time_to_minutes(params["late_entry_bias_start_time"]):
             return False, "late_entry_bias_wait", None
 
@@ -455,8 +497,8 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
         if net_credit <= 0:
             last_reason = "non_positive_credit"
             continue
-        low_iv_relief = iv_rank <= params.get("low_iv_credit_floor_iv_rank_max", 0.35)
-        pct_floor = params.get("low_iv_min_credit_pct_of_width", 0.10) if low_iv_relief \
+        low_iv_relief = iv_rank <= _low_iv_relief_max(params)
+        pct_floor = _low_iv_relief_floor(params) if low_iv_relief \
             else params["min_credit_pct_of_width"]
         # Past the daily target the bar rises: only a richer-than-usual credit earns an extra entry
         # (the daily target is guidance, so favorable conditions allow more — see `over_target`).

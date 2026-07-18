@@ -178,7 +178,10 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 - **Effect**: Reject entry
 - **Config**: `min_credit_pct_of_width` (0.15 or 10% in low-IV mode)
 - **Rationale**: Insufficient credit relative to risk width
-- **Low-IV Override**: If IV rank ≤ `low_iv_credit_floor_iv_rank_max` (0.35), apply `low_iv_min_credit_pct_of_width` (0.10)
+- **Low-IV Override**: relief for days where a fixed pct-of-width floor would lock the tier out entirely. Both halves are **relative to the active profile**, so they scale with the ladder:
+  - Ceiling — relief applies while IV rank ≤ `min_iv_rank + low_iv_credit_floor_iv_rank_offset` (0.05) → 0.35 / 0.27 / 0.25 / 0.20 down the ladder
+  - Floor — the relaxed floor is `min_credit_pct_of_width × low_iv_credit_relief_multiple` (0.85), so it always sits strictly below that tier's own floor
+  - Previously both were absolutes shared by every tier (0.35 / 0.10 — conservative's own values, never rescaled). That flattened the ladder: whenever IV rank sat under 0.35 all four tiers used the same 0.10 floor (measured: 100% of SPX and XSP entries), and for aggressive/very-aggressive the "relief" equalled their normal floor, so it did nothing at all. The absolute keys are still honored if a profile sets them.
 - **IC Impact**: Hard block
 - **ORB Impact**: Not applicable
 
@@ -209,12 +212,12 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 ### 21. Late-Entry Bias Gate (Soft, Time-Based)
 - **Trigger**: 
   - `late_entry_bias_enabled` is true
-  - IV rank ≤ `late_entry_bias_iv_rank_max` (0.45)
+  - IV rank ≤ `min_iv_rank + late_entry_bias_iv_rank_offset` (0.15) — i.e. 0.45 / 0.37 / 0.35 / 0.30 down the ladder
   - Current time < `late_entry_bias_start_time` (12:00 ET)
 - **Effect**: Skip IC entries until noon; ORB unaffected
-- **Config**: `late_entry_bias_enabled`, `late_entry_bias_iv_rank_max`, `late_entry_bias_start_time`
+- **Config**: `late_entry_bias_enabled`, `late_entry_bias_iv_rank_offset`, `late_entry_bias_start_time` (the absolute `late_entry_bias_iv_rank_max` is still honored if a profile sets it)
 - **Rationale**: Morning entries at borderline IV carry 3+ hours of directional exposure; afternoon entries capture theta acceleration (2–5× morning rate)
-- **High-IV Bypass**: If IV rank > `late_entry_bias_iv_rank_max` (0.45), do NOT skip; enter anytime
+- **High-IV Bypass**: If IV rank is above that ceiling, do NOT skip; enter anytime. The ceiling is profile-relative because a flat 0.45 put very-aggressive (floor 0.15) under the bias across nearly its whole range while barely touching conservative.
 - **IC Impact**: Soft block (skips until noon; not a hard rejection)
 - **ORB Impact**: Not blocked
 
@@ -335,10 +338,10 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 | OTM (call, put) | `min_call_otm_pct`, `min_put_otm_pct` | 0.35%, 0.30% | Hard stop |
 | OPEX OTM override | `quarterly_expiry_min_call_otm_pct`, `quarterly_expiry_skip_open_volatile` | 0.67%, true | Tighter on OPEX |
 | IV rank floor | `min_iv_rank` | 0.30 | Hard stop |
-| Credit floor (gross) | `min_credit_pct_of_width`, `low_iv_min_credit_pct_of_width`, `low_iv_credit_floor_iv_rank_max` | 0.15, 0.10, 0.35 | Hard stop |
+| Credit floor (gross) | `min_credit_pct_of_width`, `low_iv_credit_relief_multiple`, `low_iv_credit_floor_iv_rank_offset` | 0.15, 0.85, +0.05 (relief ceiling/floor are profile-relative) | Hard stop |
 | Fee floor | `fee_estimate_lookback_trades`, `fee_estimate_min_sample_size`, `fee_estimate_fallback_per_contract` | 20 trades, 5 min, symbol-specific | Hard stop |
 | Spread width (soft) | `mid_spread_gate` | 0.10 | Changes strategy |
-| Late-entry bias | `late_entry_bias_enabled`, `late_entry_bias_iv_rank_max`, `late_entry_bias_start_time` | true, 0.45, 12:00 ET | Soft block |
+| Late-entry bias | `late_entry_bias_enabled`, `late_entry_bias_iv_rank_offset`, `late_entry_bias_start_time` | true, +0.15 (profile-relative), 12:00 ET | Soft block |
 | ORB enabled | `orb_enabled` | true | Entire feature |
 | ORB window | `orb_entry_window_end` | 12:00 ET | Hard stop |
 | ORB range | `orb_range_minutes`, `orb_breakout_threshold_pct` | 5 min, 0.5% | Soft gate |

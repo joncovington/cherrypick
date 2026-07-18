@@ -37,10 +37,10 @@ Each profile bundles gate-threshold changes with offsetting position-sizing and 
 | Gate | Change | Rationale |
 |---|---|---|
 | `min_iv_rank` | 0.30 → **0.22** | Accept lower IV — only lose ~5–10% edge vs conservative, but unlock 30–40% more entry candidates on flat-vol days |
-| `min_credit_pct_of_width` | 0.15 → **0.12** | Accept thinner credit — 20% haircut, but gates that fell just short of conservative now qualify |
+| `min_credit_pct_of_width` | 0.15 → **0.12** | Accept thinner credit — 20% haircut, but gates that fell just short of conservative now qualify. The low-IV relief floor scales with it (`× low_iv_credit_relief_multiple`), so the ladder stays monotonic at every IV level |
 | `late_entry_bias_start_time` | 12:00 → **11:00** | Start entering at 11 AM instead of noon — capture an extra hour of morning premium (theta is still accelerating) |
 | `stop_trigger_ratio` | 0.95 → **0.93** | Tighten stop slightly — 0.93 = stop at 93% of credit (2% tighter) to offset lower entry bars |
-| `daily_ic_trade_target` | 2 → **3** | Target 3 ICs/day (expect 20–50% more entries vs conservative) |
+| `daily_ic_trade_target` | 2 (unchanged) | Trade **count is not a ladder axis** — the ladder's axis is riskier trades, not more of them. Flat at 2 on every rung, and always ≤ `max_concurrent_ics` |
 | Other gates | (unchanged) | VIX/ATR/delta/OTM thresholds stay the same |
 
 **Trade-off**: ~1–2 additional entries/week on normal weeks, slightly thinner per-trade credit margin but matched by tighter stop management. **Start here if conservative is leaving money on the table.**
@@ -61,7 +61,7 @@ Each profile bundles gate-threshold changes with offsetting position-sizing and 
 | `late_entry_bias_start_time` | 12:00 → **11:00** | Same as moderate |
 | `max_concurrent_ics` | 4 → **3** | **Offset #1**: cap at 3 simultaneous ICs instead of 4 (25% fewer positions) to limit total gamma exposure when each strike is closer to money |
 | `stop_trigger_ratio` | 0.95 → **0.90** | **Offset #2**: stop at 90% of credit (5% tighter than conservative) — increased stop cost paired with reduced position count keeps total risk budget similar |
-| `daily_ic_trade_target` | 2 → **4** | Target 4 ICs/day (expect 50–100% more entries vs conservative) |
+| `daily_ic_trade_target` | 2 (unchanged) | Count is not a ladder axis — see moderate. The position cap does the tightening |
 | Regime gates | (unchanged) | VIX/ATR pause thresholds unchanged — still skip in volatile regimes |
 
 **Trade-off**: ~2–3 additional entries/week on normal weeks; each one trades tighter strikes (higher per-trade risk), but fewer concurrent positions and tighter stops cap total exposure. Requires disciplined stop management and comfort with smaller win/loss swings. **Use when you want 2–3× more activity and accept tighter daily P&L ranges.**
@@ -81,10 +81,11 @@ Each profile bundles gate-threshold changes with offsetting position-sizing and 
 | `max_call_delta_entry` | 0.22 → **0.24** | Accept calls 20% closer to ATM than conservative |
 | `min_call_otm_pct` | 0.30% → **0.25%** | Calls only 0.25% OTM |
 | `min_put_otm_pct` | 0.25% → **0.20%** | Puts only 0.20% OTM |
+| `min_credit_pct_of_width` | 0.10 → **0.08** | Thinnest credit accepted. Previously identical to aggressive (0.10), which left the ladder's credit axis with only three distinct values and let a stricter tier's low-IV relief undercut this one |
 | `late_entry_bias_start_time` | 11:00 → **10:00** | Start entering at 10 AM (market open) — no bias gate; accept directional exposure in the first hour |
 | `max_concurrent_ics` | 3 → **2** | **Offset #1**: cap at 2 simultaneous ICs (50% fewer than conservative) — regime relaxation requires extreme position discipline |
 | `stop_trigger_ratio` | 0.90 → **0.85** | **Offset #2**: stop at 85% of credit (10% tighter than conservative) — each stop is deeper, accepted risk is extreme |
-| `daily_ic_trade_target` | 4 → **5** | Target 5 ICs/day (expect 150%+ more entries vs conservative on high-activity days) |
+| `daily_ic_trade_target` | 2 (unchanged) | Count is not a ladder axis. Previously 5 here, which was unreachable anyway: with `max_concurrent_ics` = 2 and 0DTE positions held to settlement, slots rarely free up |
 
 **Trade-off**: Maximum activity (~3–5 additional ICs/week vs conservative on normal weeks); each trade is **riskiest** (closest-to-money strikes, highest gamma, widest daily swings); offsetting with smallest position count and tightest stops. **Only for experienced traders who can emotionally handle stops 10% deeper per position, or who deliberately want to test unfamiliar regimes. Not recommended for first month of operation.**
 
