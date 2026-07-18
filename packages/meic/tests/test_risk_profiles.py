@@ -233,7 +233,7 @@ def test_ladder_credit_floor_is_monotonic_at_every_iv_level():
             floors.append((t, paper._low_iv_relief_floor(p)
                            if iv_rank <= paper._low_iv_relief_max(p)
                            else p["min_credit_pct_of_width"]))
-        for (t_strict, f_strict), (t_loose, f_loose) in zip(floors, floors[1:]):
+        for (t_strict, f_strict), (t_loose, f_loose) in zip(floors, floors[1:], strict=False):
             assert f_strict >= f_loose, (
                 f"iv_rank {iv_rank}: {t_strict} floor {f_strict:.3f} < {t_loose} {f_loose:.3f}")
 

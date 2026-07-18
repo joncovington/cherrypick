@@ -6,6 +6,133 @@ A **risk profile** is a named preset of entry-gate thresholds that you select ba
 
 Each profile bundles gate-threshold changes with offsetting position-sizing and stop-management adjustments, following a core principle: **every relaxed gate is paired with a compensating constraint** (fewer concurrent positions or tighter stops), so you're reallocating risk, not just adding it.
 
+---
+
+# Design rationale
+
+*Why the ladder is shaped the way it is. Rewritten 2026-07-18 after a review found the ladder was
+not, in fact, laddering. Every claim below is tied to something measured on the paper book rather
+than assumed — where a decision is still open, it says so and says what evidence would close it.*
+
+## 1. The ladder's axis is **riskier trades, not more trades**
+
+This is the single most important design decision, because everything else follows from it.
+
+Climbing a rung **loosens entry quality** — IV-rank floor, credit floor, short-call delta, OTM
+distance — and is **offset by fewer concurrent positions and a tighter stop**. Total dollar exposure
+therefore *falls* as you climb (conservative 4 × ~$1,000 = ~$4k; very-aggressive 2 × ~$1,000 = ~$2k).
+"Aggressive" means *each trade is a worse bet taken deliberately*, not *more bets*.
+
+**Trade count is therefore not a ladder dimension at all.** `daily_ic_trade_target` is flat at **2**
+on every rung.
+
+Previously it climbed 2 → 3 → 4 → 5 while `max_concurrent_ics` fell 4 → 4 → 3 → 2, which made the
+ladder move **three signals in three directions**: selectivity loosening, position count shrinking,
+and daily target growing. At best two of those can be coherent simultaneously. The climb was also
+*arithmetically unreachable* at the top: with `max_concurrent_ics` of 2 and 0DTE positions held to
+settlement, slots essentially never free up intraday, so very-aggressive could never open 5.
+
+**Invariant:** `daily_ic_trade_target ≤ max_concurrent_ics` at every rung (enforced by test).
+
+## 2. Two axes, not one: **risk appetite × instrument**
+
+Risk appetite (the ladder) and the instrument traded (the symbol) are **orthogonal**. They are
+deliberately kept separate, and the unit of measurement is their product:
+
+> **One portfolio per (profile × symbol) pair**, each with its own `max_concurrent_ics` and its own
+> daily-entry budget.
+
+Why this matters concretely: those budgets used to be **per-profile, shared across every symbol**,
+and symbols are processed in config order. So whichever symbol came last was structurally starved of
+slots by whichever symbols came first. That is not hypothetical — **IWM went 1,313 consecutive
+iterations without filling a single trade**, and `max_concurrent_ics_reached` was the explicit skip
+reason on 183+ of them. A symbol can now be evaluated on its own merits instead of on its position in
+a list.
+
+It is also why the old symbol-pinned experiment cells (`large-spx`, `small-xsp`, …) were retired: a
+cell that bakes the symbol into its identity fuses the two axes, so "the same strategy on a different
+instrument" becomes inexpressible. See [paper-experiments.md](paper-experiments.md).
+
+## 3. Thresholds are **profile-relative**, never shared absolutes
+
+Any gate expressed as an absolute IV-rank number is a latent bug, because **each tier has a different
+`min_iv_rank`**. An absolute threshold sits in a different place relative to each tier's own floor —
+and in practice it gives the *loosest* tier the *most* relief, which is backwards.
+
+This flattened the ladder outright. The low-IV credit relief applied while `iv_rank ≤ 0.35` (a flat
+absolute) and set the floor to `0.10` (another flat absolute). Consequences:
+
+- Whenever IV rank sat under 0.35, **all four tiers used the same 0.10 credit floor** — the
+  0.15/0.12/0.10/0.10 progression simply did not exist.
+- For aggressive and very-aggressive the "relief" **equalled their normal floor**, so it did nothing.
+- Measured on the paper book: **100% of SPX and XSP entries were inside that zone** (0% of QQQ; 39%
+  of all 89 trades). Conservative was trading SPX — the symbol responsible for the period's losses —
+  on **identical credit terms to very-aggressive**.
+
+Both halves are now derived from the profile itself:
+
+| Derived value | Formula | conservative → very-aggressive |
+|---|---|---|
+| Low-IV relief **ceiling** | `min_iv_rank + low_iv_credit_floor_iv_rank_offset` (0.05) | 0.35 / 0.27 / 0.25 / 0.20 |
+| Low-IV relief **floor** | `min_credit_pct_of_width × low_iv_credit_relief_multiple` (0.85) | 0.128 / 0.102 / 0.085 / 0.068 |
+| Late-entry-bias **ceiling** | `min_iv_rank + late_entry_bias_iv_rank_offset` (0.15) | 0.45 / 0.37 / 0.35 / 0.30 |
+
+Conservative reproduces its historical values exactly (0.35 / 0.45); the looser rungs now scale.
+The absolute keys are still honored if a profile sets them, so nothing external breaks.
+
+**Why the multiple is 0.85 and not a deeper cut.** A stronger relief (0.67 was tried) let a tier
+*inside* its borderline band undercut the next tier's plain floor — conservative would accept 0.101
+where moderate demanded 0.120. Relief must stay shallow enough to preserve ordering. For the same
+reason very-aggressive took its own **0.08** credit floor: it previously shared 0.10 with aggressive,
+leaving the credit axis with only three distinct values for four tiers.
+
+**Invariant:** the effective credit floor is **monotonic across the ladder at every IV level** — a
+stricter tier must never accept thinner credit than a looser one. Verified across IV 0.16–0.60 and
+enforced by test.
+
+## 4. The daily target is **guidance**, not a cap
+
+Hitting `daily_ic_trade_target` does **not** block further entries. Past the target, the credit floor
+is multiplied by `over_target_credit_multiple` (1.5), so an extra trade is available **only when
+conditions are genuinely favorable** — rich premium clears the raised bar, marginal setups are
+declined with the auditable reason `over_target_credit_below_floor`.
+
+This keeps the target doing what it was always documented to do (calibrate selectivity) rather than
+becoming a hard throttle, while ensuring the extra trades are the *good* ones. Profiles that opt into
+`stagger_entries` keep a hard cap, since spreading a fixed number of entries across the session is
+the entire point of staggering.
+
+## 5. What is deliberately **not** decided yet
+
+Two questions are consciously left open because the evidence to settle them does not exist yet.
+Guessing would encode an assumption as if it were a finding.
+
+- **IV rank vs. IV percentile as the entry gate.** Rank is `(current − 52wk low) / (52wk high − low)`,
+  so a *single* spike anywhere in the lookback permanently compresses it; percentile is the share of
+  days below current IV and is outlier-robust. They can disagree violently: **NDX reads rank 0.192
+  against percentile 0.953**, and sits ~4× off QQQ's rank despite tracking the same index. (SPX and
+  SPY agree to three decimals, so this is not a general metric failure — it is specific and
+  diagnosable.) Both measures are now captured per symbol per day so the question can be answered
+  from data. **If the gate moves to percentile, every tier's floor must be re-baselined** — the two
+  are not the same scale.
+- **Whether rank should modify trade construction rather than gate entry.** A low rank alongside a
+  high percentile means "premium is rich, but this product has proven it can go much higher" — which
+  is a tail-risk signal for a short-premium book, arguably better expressed by pushing strikes further
+  OTM and demanding more credit than by refusing the trade. Band edges for such a rule need a real
+  rank/percentile distribution, roughly 3–4 weeks of capture.
+
+## 6. Invariants any future change must preserve
+
+1. `daily_ic_trade_target ≤ max_concurrent_ics` on every rung.
+2. Effective credit floor **monotonic** across the ladder at every IV level.
+3. Every relaxed gate paired with a compensating constraint (fewer positions or tighter stops).
+4. No gate threshold expressed as an absolute IV-rank number — derive it from the profile's own
+   `min_iv_rank`.
+5. Trade count is not a ladder dimension.
+6. Risk appetite and instrument stay separate axes; the portfolio is their product.
+
+---
+
 ## Four Tiers: conservative → moderate → aggressive → very-aggressive
 
 ### Conservative (default)

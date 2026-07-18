@@ -90,9 +90,21 @@ def _base_snapshot(**overrides):
 
 CONSERVATIVE = paper.load_profiles()["conservative"]
 MODERATE = paper.load_profiles()["moderate"]
-SMALL_XSP = paper.load_profiles()["small-xsp"]
-MEDIUM_XSP_WIDE = paper.load_profiles()["medium-xsp-wide"]
 BASE_CONFIG = paper.load_base_config()
+
+# Synthetic profile overlays. config.risk.json now holds ONLY the four-tier ladder — the experiment
+# cells that used to exercise these knobs were removed — but the engine features themselves are very
+# much alive, so the gates are tested against purpose-built overlays instead of registry names. This
+# also keeps the tests independent of whatever the profile registry happens to contain.
+XSP_NARROW = {"symbols": ["XSP"], "wing_widths_by_symbol": {"XSP": [2, 3]}, "wing_selection": "narrowest",
+              "stagger_entries": True, "late_entry_bias_enabled": False,
+              "daily_ic_trade_target": 6, "min_minutes_between_entries": 45, "max_concurrent_ics": 4}
+XSP_WIDE = {"symbols": ["XSP"], "wing_widths_by_symbol": {"XSP": [5, 10]}, "wing_selection": "widest",
+            "late_entry_bias_enabled": False}
+GEX_STRICT = {"regime_gex_require_positive": True}          # require GEX confirmed positive
+GEX_MAG = {"regime_gex_min_flip_distance_pct": 0.005}       # require spot >=0.5% from the gamma flip
+HOLD_TO_EXPIRY = {"per_side_stop_management": False}        # no per-side stop; hold to settlement
+FAR_OTM = {"short_delta_target": 0.10}                      # further-OTM shorts than the VIX band
 
 
 def _params(profile):
@@ -146,9 +158,9 @@ def test_evaluate_entry_rejects_regime_gex_negative():
 
 
 def test_evaluate_entry_gexstrict_requires_positive_gex():
-    # The large-spx-gexstrict isolation cell sets regime_gex_require_positive: entries pause
+    # regime_gex_require_positive: entries pause
     # unless GEX is CONFIRMED positive (baseline only pauses on confirmed-negative).
-    strict = _params(paper.load_profiles()["large-spx-gexstrict"])
+    strict = _params(GEX_STRICT)
     spx = dict(symbol="SPX", now_et="13:00", underlying_price=7500.0, iv_rank=0.32,
                candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)])
     # GEX unknown/unavailable -> strict gate pauses (baseline would not).
@@ -160,8 +172,8 @@ def test_evaluate_entry_gexstrict_requires_positive_gex():
 
 
 def test_evaluate_entry_gexmag_requires_deep_positive_gamma():
-    # large-spx-gexmag: positive GEX is not enough -- spot must sit >= 0.5% from the gamma-flip strike.
-    mag = _params(paper.load_profiles()["large-spx-gexmag"])
+    # gexmag: positive GEX is not enough -- spot must sit >= 0.5% from the gamma-flip strike.
+    mag = _params(GEX_MAG)
     spx = dict(symbol="SPX", now_et="13:00", underlying_price=7500.0, iv_rank=0.32,
                candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)])
     # Spot 7500 only ~0.13% from the flip (7490) -> too close, paused.
@@ -440,7 +452,7 @@ def test_evaluate_open_trade_stops_call_side_when_cost_reaches_trigger():
 
 
 def test_per_side_stop_management_false_disables_stops():
-    # large-spx-holdtoexpiry sets per_side_stop_management: false -> a side whose cost blows past the
+    # per_side_stop_management: false -> a side whose cost blows past the
     # trigger is NOT stopped; the IC holds to force-close/settlement. Same quotes stop a normal profile.
     trade = {"put_symbol": "SP", "call_symbol": "SC", "long_put_symbol": "LP", "long_call_symbol": "LC",
              "net_credit": 0.58, "status": "open", "put_credit": 0.30, "call_credit": 0.28,
@@ -449,7 +461,7 @@ def test_per_side_stop_management_false_disables_stops():
         "SP": {"bid": 0.20, "ask": 0.26, "mid": 0.23}, "LP": {"bid": 0.05, "ask": 0.08, "mid": 0.065},
         "SC": {"bid": 0.60, "ask": 0.68, "mid": 0.64}, "LC": {"bid": 0.03, "ask": 0.06, "mid": 0.045},
     }
-    hold = _params(paper.load_profiles()["large-spx-holdtoexpiry"])
+    hold = _params(HOLD_TO_EXPIRY)
     assert paper.evaluate_open_trade(trade, leg_quotes, hold, force_close=False)["action"] == "hold"
     assert paper.evaluate_open_trade(trade, leg_quotes, _params(MODERATE),
                                      force_close=False)["action"] == "stop_call"
@@ -818,21 +830,21 @@ def test_stop_persists_then_settlement_stays_stopped_without_double_counting(tmp
 # ── Per-profile symbol + wing selection (experiment profiles) ────────────────
 
 def test_wing_selection_narrowest_picks_narrowest_clearing():
-    # small-xsp's shortlist is [2,3] with wing_selection "narrowest": prefer the 2-wide.
+    # A [2,3] shortlist with wing_selection "narrowest": prefer the 2-wide.
     snap = _base_snapshot(now_et="13:00",
                           candidates=[_candidate(2, 583, 598), _candidate(3, 583, 598)])
-    entered, reason, chosen = paper.evaluate_entry(snap, _params(SMALL_XSP), [])
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(XSP_NARROW), [])
     assert entered is True and reason == "entered"
     assert chosen["wing_width"] == 2
 
 
 def test_wing_filter_excludes_widths_outside_profile_shortlist():
-    # medium-xsp-wide only trades [5,10]; a lone 2-wide candidate is filtered out entirely, so
+    # A [5,10] shortlist; a lone 2-wide candidate is filtered out entirely, so
     # no candidate clears — even though it would otherwise pass every gate.
     snap = _base_snapshot(now_et="13:00", iv_rank=0.32,
                           candidates=[_candidate(2, 583, 598, sp_bid=1.2, sp_ask=1.3,
                                                  sc_bid=1.1, sc_ask=1.2)])
-    entered, reason, _ = paper.evaluate_entry(snap, _params(MEDIUM_XSP_WIDE), [])
+    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_WIDE), [])
     assert entered is False
     assert reason == "no_candidate_cleared_all_gates"
 
@@ -847,8 +859,8 @@ def test_select_candidates_delta_bands_route_to_the_right_profile():
     # A multi-delta menu: default band (0.15) + a far-OTM band (0.10), both 10-wide.
     menu = [_tagged(_candidate(10, 7380, 7560), 0.15, True),
             _tagged(_candidate(10, 7300, 7640), 0.10, False)]
-    ctrl = _params(paper.load_profiles()["large-spx"])
-    far = _params(paper.load_profiles()["large-spx-farotm"])
+    ctrl = _params(CONSERVATIVE)
+    far = _params(FAR_OTM)
     # Control (no short_delta_target) sees ONLY the default band -> unperturbed by the extra band.
     assert [c["short_delta"] for c in paper._select_candidates(menu, ctrl, "SPX")] == [0.15]
     # farotm (short_delta_target 0.10) sees ONLY its band.
@@ -863,35 +875,46 @@ def test_select_candidates_untagged_menu_unchanged():
 
 
 def test_union_short_deltas_collects_requested_bands():
-    spx = paper.union_short_deltas_for_symbol("SPX")
-    assert 0.10 in spx and 0.25 in spx           # farotm + closeotm cells
-    assert paper.union_short_deltas_for_symbol("XSP") == []   # no XSP cell requests a custom band
+    # The ladder declares no custom short_delta_target, so the live registry requests no extra band
+    # and every profile just uses the VIX-banded default candidate.
+    assert paper.union_short_deltas_for_symbol("SPX") == []
+    # The union mechanism still collects a band from any profile that declares one, scoped to the
+    # symbols that profile trades (passed explicitly so this doesn't depend on registry contents).
+    synthetic = {
+        "far": {"symbols": ["SPX"], "short_delta_target": 0.10},
+        "close": {"symbols": ["SPX"], "short_delta_target": 0.25},
+        "xsp-far": {"symbols": ["XSP"], "short_delta_target": 0.12},
+    }
+    spx = paper.union_short_deltas_for_symbol("SPX", profiles=synthetic)
+    assert 0.10 in spx and 0.25 in spx
+    assert 0.12 not in spx  # XSP-pinned band must not leak into SPX's menu
+    assert paper.union_short_deltas_for_symbol("XSP", profiles=synthetic) == [0.12]
 
 
 # ── Staggering: entry window, daily cap, spacing (opt-in via stagger_entries) ─
 
 def test_stagger_outside_entry_window_rejected():
     snap = _base_snapshot(now_et="15:00")  # past the 14:30 entry-window end
-    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [])
+    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_NARROW), [])
     assert entered is False and reason == "outside_entry_window"
 
 
 def test_stagger_before_entry_window_rejected():
     snap = _base_snapshot(now_et="09:45")  # before the 10:00 entry-window start
-    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [])
+    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_NARROW), [])
     assert entered is False and reason == "outside_entry_window"
 
 
 def test_stagger_daily_target_reached_rejected():
     snap = _base_snapshot(now_et="13:00")
-    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [], todays_entry_count=6)
+    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_NARROW), [], todays_entry_count=6)
     assert entered is False and reason == "daily_target_reached"
 
 
 def test_stagger_spacing_wait_rejected():
     # last entry 30 min ago < the 45-min min spacing → wait.
     snap = _base_snapshot(now_et="13:00")  # 780 min
-    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [],
+    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_NARROW), [],
                                               todays_entry_count=1, last_entry_min=780 - 30)
     assert entered is False and reason == "entry_spacing_wait"
 
@@ -899,7 +922,7 @@ def test_stagger_spacing_wait_rejected():
 def test_stagger_spacing_ok_after_interval():
     # last entry 50 min ago ≥ the 45-min min spacing → proceeds.
     snap = _base_snapshot(now_et="13:00")
-    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [],
+    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_NARROW), [],
                                               todays_entry_count=1, last_entry_min=780 - 50)
     assert entered is True and reason == "entered"
 
@@ -934,21 +957,19 @@ def test_over_target_rich_credit_still_enters():
     assert entered is True and reason == "entered"
 
 
-def test_process_symbol_skips_profile_not_trading_symbol(tmp_path):
-    # small-xsp is pinned to XSP; against an SPX snapshot it must be skipped entirely (absent from
-    # results), while large-spx (pinned to SPX) is evaluated.
+def test_process_symbol_skips_profile_not_trading_symbol(tmp_path, monkeypatch):
+    # A profile that declares a `symbols` subset must be skipped entirely (absent from results) for
+    # any symbol outside it. No profile in the registry pins symbols now — the ladder trades the full
+    # base set — so the registry is monkeypatched with a pinned pair to exercise the code path.
     db_path = str(tmp_path / "paper_pin.db")
     subprocess.run([sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"),
                     "--db", db_path, "init_db"], check=True, capture_output=True)
+    monkeypatch.setattr(paper, "load_profiles", lambda: {
+        "xsp-only": {"symbols": ["XSP"]},
+        "spx-only": {"symbols": ["SPX"]},
+    })
     snapshot = _base_snapshot(symbol="SPX", now_et="13:00", underlying_price=7500.0, iv_rank=0.32,
                               candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)])
-    result = subprocess.run(
-        [sys.executable, str(Path(__file__).parent.parent / "src" / "paper.py"),
-         "--db", db_path, "process_symbol", "--snapshot", json.dumps(snapshot),
-         "--profiles", "small-xsp,large-spx"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    out = json.loads(result.stdout.strip().splitlines()[-1])
-    assert "small-xsp" not in out["results"]   # pinned to XSP → skipped for SPX
-    assert "large-spx" in out["results"]        # pinned to SPX → evaluated
+    out = paper.process_symbol(snapshot, db_path, "paper")
+    assert "xsp-only" not in out["results"]   # pinned to XSP -> skipped for an SPX snapshot
+    assert "spx-only" in out["results"]        # pinned to SPX -> evaluated

@@ -363,13 +363,13 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
         return False, "regime_gex_negative", None
     # Strict variant (opt-in per profile): require GEX to be explicitly positive, so entries
     # also pause when GEX is unknown/unavailable -- not just when it is confirmed negative. Used
-    # by the large-spx-gexstrict experiment cell to isolate the effect of the GEX gate.
+    # opt-in per profile to isolate the effect of the GEX gate.
     if params.get("regime_gex_require_positive", False) and not (
             gex.get("ok") and gex.get("gex_positive") is True):
         return False, "regime_gex_not_positive", None
     # Magnitude variant (opt-in): require positive GEX AND spot at least this fraction from the
     # gamma-flip strike -- deep enough inside positive-gamma territory that pinning dominates, not
-    # hovering near the flip where the regime is fragile. Used by the large-spx-gexmag cell.
+    # hovering near the flip where the regime is fragile.
     min_flip_dist = params.get("regime_gex_min_flip_distance_pct")
     if min_flip_dist is not None:
         flip, spot = gex.get("gamma_flip"), gex.get("spot")
@@ -747,7 +747,7 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
     call_cost_mid = cq["mid"] - lcq["mid"]
     put_cost_mid = sq["mid"] - lpq["mid"]
 
-    # per_side_stop_management: false disables per-side stops entirely (the large-spx-holdtoexpiry
+    # per_side_stop_management: false disables per-side stops entirely (a hold-to-expiry
     # cell), so the IC is only ever closed by a force-close or settlement -- held to expiry.
     stops_on = params.get("per_side_stop_management", True)
     call_trigger = stops_on and call_open and call_cost_mid >= stop_trigger * net_credit

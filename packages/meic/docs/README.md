@@ -11,14 +11,14 @@ agent follows lives in [`../CLAUDE.md`](../CLAUDE.md); the full entry-gate catal
 |---|---|
 | [setup.md](setup.md) | Install, credentials (OS keyring), the managed `~/.cherrypick` home, and first connection. |
 | [strategy.md](strategy.md) | The MEIC strategy: structure, entry logic, the VIX-banded delta scale, regime gates (VIX/VIX1D/ATR/GEX), and the settlement-aware exit cascade (no profit target). |
-| [risk-profiles.md](risk-profiles.md) | The conservative → moderate → aggressive → very-aggressive **risk ladder**, the trade-offs at each tier, and progression guidance. |
+| [risk-profiles.md](risk-profiles.md) | The conservative → moderate → aggressive → very-aggressive **risk ladder**: the full **design rationale** (what the ladder's axis is, the profile × symbol portfolio model, why thresholds are profile-relative, and the invariants a change must preserve), the trade-offs at each tier, and progression guidance. |
 
 ## Paper trading & variance testing
 
 | Doc | What it covers |
 |---|---|
 | [paper-trading.md](paper-trading.md) | The parallel-shadow paper engine: how it marks/exits every profile against live quotes with zero capital, the deterministic EOD reports, and the self-healing daemon. |
-| [paper-experiments.md](paper-experiments.md) | The experiment-cell profiles (`large-spx`, `small-xsp`, `…-holdtoexpiry`, delta sweeps, GEX-gated, timing) that pin one `(symbol, wing, credit)` cell for account-size / single-lever comparison. |
+| [paper-experiments.md](paper-experiments.md) | **Retired 2026-07-18.** The symbol-pinned experiment cells were removed from `config.risk.json` (only the ladder remains); kept as the reference for the per-profile mechanism (`symbols`, `wing_widths_by_symbol`, `stagger_entries`, …) if the study resumes. |
 | [paper-practice-plan.md](paper-practice-plan.md) | A structured plan for building confidence in the paper workflow before any live consideration. |
 
 ## Reference

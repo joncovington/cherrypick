@@ -12,8 +12,8 @@ Compliance posture (enforced by construction):
     are ever stored. This is trading/research use, not systematically walking the archive to build
     a local copy or derivative dataset.
 
-Phase 2 scope: all SPX-eligible profiles (the four ladder tiers + large-spx + explore-spx-tightcredit)
-in one run, each its own practice session for position isolation, sharing ONE metered chain snapshot
+Phase 2 scope: all SPX-eligible profiles (the four ladder tiers — config.risk.json holds only the
+ladder now) in one run, each its own practice session for position isolation, sharing ONE metered chain snapshot
 per tick so credit cost is per-tick not per-profile. Per-IC results are written to a practice DB
 (ic_trades schema, execution_mode='practice_0dtespx') so get_range_summary / the dashboard / the EOD
 roll-up work unchanged. Hardened in Phase 1 (fill confirmation via position reconciliation,
@@ -26,7 +26,7 @@ residual is 0DTESPX's 0.05 slippage, baked into fills. We deliberately do NOT mu
 fee settings (PATCH /user would, but globally). SPX-only.
 
 CLI:
-  python src/paper_practice.py run --date 2026-07-09 [--profiles a,b | --profile large-spx]
+  python src/paper_practice.py run --date 2026-07-09 [--profiles a,b | --profile conservative]
                                    [--cadence 120] [--dry] [--db <path>]
   python src/paper_practice.py run --start 2026-07-01 --end 2026-07-10   # paced multi-day batch
   python src/paper_practice.py report --start 2026-07-01 --end 2026-07-10 # per-profile roll-up
@@ -266,9 +266,10 @@ def side_cost(ic, side, marks):
 
 
 def spx_eligible_profiles(base=None, profiles=None) -> list:
-    """The profiles this SPX-only backtester runs: every profile whose merged config trades SPX —
-    the four ladder tiers (they trade all base symbols, SPX included) plus the SPX-pinned experiment
-    cells (large-spx, explore-spx-tightcredit). XSP/QQQ/IWM-pinned cells are excluded."""
+    """The profiles this SPX-only backtester runs: every profile whose merged config trades SPX.
+    config.risk.json now holds only the four-tier ladder, and every tier trades all base symbols
+    (SPX included), so this is currently the whole registry — the filter still guards a future
+    symbol-restricted profile."""
     base = base or paper.load_base_config()
     profiles = profiles or paper.load_profiles()
     out = []
@@ -576,7 +577,7 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
     return result
 
 
-def run_day(date, profile_name="large-spx", cadence=120, dry=False, db_path=None,
+def run_day(date, profile_name="conservative", cadence=120, dry=False, db_path=None,
             iv_rank=None, client=None, log=print):
     """Single-profile convenience wrapper over run() (back-compat / focused runs)."""
     res = run(date, [profile_name], cadence=cadence, dry=dry, db_path=db_path,
