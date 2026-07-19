@@ -98,9 +98,17 @@ def _start_streamer(module_root: Path, start_argv: list[str]) -> bool:
 
 # --------------------------------------------------------------------------- checks
 def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Finding]:
+    """Health checks for a `self_healing` module (one that registers its own recurring task).
+
+    Alert text is built from the module NAME rather than hardcoded to MEIC. It was hardcoded, which
+    was harmless while MEIC was the only self_healing module and actively misleading once a second
+    one existed — a missing flies task raised a CRITICAL titled for MEIC, pointing the operator at
+    the wrong module entirely. Same fault as the SLA heartbeat naming, different function.
+    """
     findings: list[Finding] = []
     root = cfgmod.module_root(mcfg)
     paper = mcfg.get("paper", {})
+    label = name.upper() if len(name) <= 4 else name.capitalize()
 
     # (a) self-healing task registered
     task_name = paper.get("task_name")
@@ -109,12 +117,12 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
             Finding(
                 f"{name}.task",
                 CRITICAL,
-                "MEIC paper task missing",
+                f"{label} paper task missing",
                 f"Scheduled task '{task_name}' is not registered. Run: cherrypick install",
             )
         )
     else:
-        findings.append(Finding(f"{name}.task", OK, "MEIC paper task", "registered"))
+        findings.append(Finding(f"{name}.task", OK, f"{label} paper task", "registered"))
 
     # (b) freshness during the session
     if in_session:
@@ -132,7 +140,7 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
                 Finding(
                     f"{name}.fresh",
                     WARN,
-                    "MEIC paper has no output yet",
+                    f"{label} paper has no output yet",
                     "No paper DB or log file found during market hours.",
                 )
             )
@@ -141,14 +149,14 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
                 Finding(
                     f"{name}.fresh",
                     WARN,
-                    "MEIC paper data is stale",
+                    f"{label} paper data is stale",
                     f"No paper write in {min(ages):.0f} min (limit {fresh_limit}). Is the task running?",
                 )
             )
         else:
-            findings.append(Finding(f"{name}.fresh", OK, "MEIC paper fresh", f"{min(ages):.0f} min old"))
+            findings.append(Finding(f"{name}.fresh", OK, f"{label} paper fresh", f"{min(ages):.0f} min old"))
     else:
-        findings.append(Finding(f"{name}.fresh", OK, "MEIC paper", "off-hours (freshness not checked)"))
+        findings.append(Finding(f"{name}.fresh", OK, f"{label} paper", "off-hours (freshness not checked)"))
 
     # (c) streamer liveness (session only); benign auto-restart
     streamer = mcfg.get("streamer", {})
