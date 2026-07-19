@@ -1,0 +1,12 @@
+config.json
+data/
+logs/
+*.db
+*.pyc
+__pycache__/
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+.ruff_cache/
+.tmp/
