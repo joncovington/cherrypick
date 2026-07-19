@@ -40,8 +40,8 @@
       }
     },
     "flies": {
-      "_comment": "cherrypick-flies: 0DTE net-credit butterflies ('profit forest'), paper only. Reads MEIC's stream cache READ-ONLY and runs no streamer of its own, so it REQUIRES the meic module's streamer to be running and subscribed to the symbols in flies/config.json. Ships disabled: the code is tested but has never run a live session, so enable it deliberately and watch the first one.",
-      "enabled": false,
+      "_comment": "cherrypick-flies: 0DTE net-credit butterflies ('profit forest'), paper only, SPX only. Reads MEIC's stream cache READ-ONLY and runs no streamer of its own, so it REQUIRES the meic module's streamer to be running and subscribed to SPX. ENABLED, but it has still never completed a live session — watch the first one, in particular the quote_stats line in the log (which separates 'the streamer gave us nothing' from 'the strategy found nothing') and the arm_divergence figure (if the arms agree nearly always, the comparison cannot answer anything and max_center_distance_pct is the first thing to revisit).",
+      "enabled": true,
       "path": "../flies",
       "paper": {
         "kind": "cherrypick_scheduled",
@@ -132,7 +132,7 @@
         "_comment": "cherrypick-flies' payoff curve. The viz `bars` contract (signed values, tone_by_sign, a focus marker) was built for net-GEX-by-strike but maps exactly onto payoff-by-price, so this card draws the 'profit forest' itself — green across the band where the book profits, red outside it, focus at spot — with no flies-specific rendering code here.",
         "id": "flies",
         "title": "Flies",
-        "enabled": false,
+        "enabled": true,
         "path": "../flies",
         "fetch_argv": ["run.py", "section", "--json"],
         "refresh_seconds": 30
@@ -173,7 +173,7 @@
         "_comment": "cherrypick-flies' full dashboard: the live payoff curve, open positions with their post-fee floors, the decision journal (why each entry was made or refused), and P&L / win rate / completion rate over timeframes. Read-only over the paper DB, loopback-only, no broker and no network. Paper is the only mode this module has, so there is no --mode flag to force.",
         "id": "flies",
         "title": "Flies",
-        "enabled": false,
+        "enabled": true,
         "kind": "server",
         "path": "../flies",
         "serve_argv": ["src/dashboard.py", "--port", "{port}"],

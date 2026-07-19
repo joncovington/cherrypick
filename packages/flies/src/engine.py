@@ -106,13 +106,39 @@ def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
     if not gex.get("ok") or not per_strike:
         return atm_strike(spot, increment), "atm_gex_unavailable"
 
-    max_dist = params.get("max_center_distance_pct", 0.01) * spot
+    # Centre on TOTAL gamma (call + put), not net GEX.
+    #
+    # Pinning is caused by dealer gamma CONCENTRATION: a strike where dealers hold a large hedged
+    # position drags price toward it as they trade against every move, and that pull does not care
+    # which side the gamma sits on. Net GEX (call - put) measures directional positioning instead,
+    # and it nets a strike with huge call AND huge put gamma — the hardest-pinning kind — to roughly
+    # zero.
+    #
+    # Measured against a real SPX chain: net GEX was negative at EVERY strike within +/-40 points of
+    # spot, because put open interest dominates there. "Max positive net GEX near spot" therefore had
+    # no candidate to find near spot at all, and could only reach strikes ~67 points away where calls
+    # finally take over — far enough that the structure stops being a pin bet. Total gamma on the
+    # same chain peaked at -8, +12 and +32 points, exactly the range a 0DTE pin bet wants.
+
+    # Deliberately tight. This is a 0DTE PIN bet: a centre far from spot needs a large move in the
+    # remaining hours just to reach the peak, which is the opposite of the thesis. At 0.003 on a
+    # ~7500 index this is about +/-22 points, roughly four strikes on the 5-point grid.
+    #
+    # It was 0.01, which allowed +/-75 points at that index level and let the gex arm centre on a
+    # GEX wall 67 points away — GEX walls sit away from spot by nature, so the loose cap bit exactly
+    # where the arm was most active. Trade-off worth watching: too tight and the gex arm collapses
+    # onto ATM, making it indistinguishable from `control`. `analytics.arm_divergence` is the
+    # instrument for that — if agreement runs near 100%, this is the first number to revisit.
+    max_dist = params.get("max_center_distance_pct", 0.003) * spot
+    def total_gamma(entry):
+        return abs(entry.get("call_gex", 0.0)) + abs(entry.get("put_gex", 0.0))
+
     near = [s for s in per_strike
-            if s.get("net_gex", 0) > 0 and abs(s["strike"] - spot) <= max_dist]
+            if total_gamma(s) > 0 and abs(s["strike"] - spot) <= max_dist]
     if not near:
-        return atm_strike(spot, increment), "atm_no_positive_gex_near_spot"
-    best = max(near, key=lambda s: s["net_gex"])
-    return float(best["strike"]), "max_positive_gex"
+        return atm_strike(spot, increment), "atm_no_gamma_near_spot"
+    best = max(near, key=total_gamma)
+    return float(best["strike"]), "max_total_gamma"
 
 
 def choose_side(snapshot: dict, center: float) -> str:
@@ -165,6 +191,19 @@ def evaluate_credit_spread_entry(snapshot: dict, params: dict, open_positions: l
     min_credit = params.get("min_credit_pct_of_width", 0.20) * width
     if credit < min_credit:
         return False, "credit_below_floor", None
+
+    # Ceiling as well as floor. A defined-risk vertical cannot be worth more than its width, so a
+    # credit approaching that width means the short leg is deep in the money and the "premium" is
+    # mostly intrinsic. Selling one of those is a low-probability directional bet, not a pin bet.
+    #
+    # Found against real SPX data: the gex arm centred 67 points from spot and produced a short
+    # 7525/7520 put spread with spot at 7457 — 77% of width in credit, 67 points of intrinsic,
+    # profitable only on a 67-point rally. `min_credit_pct_of_width` cannot catch this, because a
+    # fatter intrinsic-heavy credit looks BETTER to a floor. Hence a separate ceiling, applied to
+    # every arm rather than just the one that exposed it.
+    max_credit = params.get("max_credit_pct_of_width", 0.60) * width
+    if credit > max_credit:
+        return False, "credit_above_ceiling_mostly_intrinsic", None
 
     # A credit spread whose credit can't clear the fee stack on BOTH legs of the leg-in can never
     # produce a risk-free fly, so there is no reason to open it inside this strategy.

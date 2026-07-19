@@ -6,7 +6,7 @@
     "stream_cache_db": "~/.cherrypick/data/meic/stream_cache.db"
   },
 
-  "_symbols_note": "SPX and XSP only, deliberately. Both are European cash-settled, so a short middle strike left open into expiration settles to cash and assignment is structurally impossible. A physically-settled symbol would need the assignment machinery MEIC carries, and this module has no reason to take that on.",
+  "_symbols_note": "SPX ONLY for now, by decision. The module supports XSP too (both are European cash-settled, so a short middle strike left open into expiration settles to cash and assignment is structurally impossible; a physically-settled symbol would need the assignment machinery MEIC carries, and this module has no reason to take that on). Before adding XSP, note that wing_width and strike_increment below are global: XSP trades near a tenth of SPX on a 1-point grid, so a 5-wide XSP fly is roughly a 50-wide SPX fly — about ten times the intended risk per structure. XSP needs its own width before it goes on.",
   "symbols": ["SPX"],
 
   "defaults": {
@@ -24,6 +24,9 @@
     "_min_credit_pct_of_width": "Opening credit floor as a fraction of wing width. Below this there is no room for the completing debit to come in cheaper AND clear two fee stacks.",
     "min_credit_pct_of_width": 0.20,
 
+    "_max_credit_pct_of_width": "Opening credit CEILING. A vertical cannot be worth more than its width, so a credit near that width means the short leg is deep ITM and the premium is mostly intrinsic — a low-probability directional bet rather than a pin bet. Observed against real SPX quotes: a centre 67 points from spot produced a 77%-of-width credit with 67 points of intrinsic. The floor above cannot catch that, because a fatter intrinsic-heavy credit looks better to a floor.",
+    "max_credit_pct_of_width": 0.60,
+
     "_fee_buffer": "Price points the completing debit must beat the original credit by. This is the gate that stops us 'completing' into a fly whose credit is real but smaller than the fees paid to build it.",
     "fee_buffer": 0.10,
 
@@ -36,8 +39,8 @@
     "_fund_from_open_credit": "Whether an OPEN credit spread's premium may fund an outright fly. True matches the observed behavior (a live iron condor funded three flies), but that premium is not yet earned — which is why the book roll-up reports `unbounded_below` rather than calling such a book risk-free.",
     "fund_from_open_credit": true,
 
-    "_max_center_distance_pct": "How far from spot the gex arm may centre a fly, as a fraction of spot.",
-    "max_center_distance_pct": 0.01,
+    "_max_center_distance_pct": "How far from spot the gex arm may centre a fly, as a fraction of spot. Tight on purpose: this is a 0DTE pin bet, and a centre far from spot needs a large move in the remaining hours just to reach the peak. 0.003 is about +/-22 points on a ~7500 index, roughly four strikes. Watch arm_divergence — if the gex arm agrees with control nearly always, this is the first value to revisit, because the arms can only be compared to the extent they disagree.",
+    "max_center_distance_pct": 0.003,
 
     "_slippage_frac": "Fraction of each leg's bid-ask conceded from mid, per fill. Matches cherrypick.core.fees and MEIC's paper engine — one fill model across the suite.",
     "slippage_frac": 0.125,

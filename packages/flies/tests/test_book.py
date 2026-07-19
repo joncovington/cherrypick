@@ -157,7 +157,7 @@ def test_book_roll_up_is_persisted_for_the_read_side(conn):
 def test_arms_differ_only_in_where_they_center(conn):
     """The comparison is only meaningful if the arms share every gate. Given the same snapshot, the
     gex arm should centre somewhere the ATM arms would not — and nothing else should change."""
-    gex = {"ok": True, "per_strike": [{"strike": 6005, "net_gex": 9_000}]}
+    gex = {"ok": True, "per_strike": [{"strike": 6005, "call_gex": 5_000, "put_gex": 4_000}]}
     snap = snapshot(underlying_price=5998.0, gex=gex)
     gex_center, _ = engine.select_center(snap, engine.merged_params(BASE_CONFIG, "gex"))
     atm_center, _ = engine.select_center(snap, engine.merged_params(BASE_CONFIG, "control"))

@@ -9,6 +9,7 @@ BASE_CONFIG = {
     "defaults": {
         "wing_width": 5, "strike_increment": 5, "quantity": 1, "max_positions": 4,
         "entry_modes": ["legged", "outright"], "min_credit_pct_of_width": 0.20,
+        "max_credit_pct_of_width": 0.60,
         "fee_buffer": 0.10, "min_floor_dollars": 0.0, "max_fly_debit": 0.50,
         "max_center_distance_pct": 0.01, "slippage_frac": 0.125, "entry_windows": [],
     },
@@ -45,21 +46,38 @@ def test_control_and_time_window_arms_center_atm():
         assert (center, reason) == (6000.0, "atm")
 
 
-def test_gex_arm_centers_on_max_positive_net_gex():
+def test_gex_arm_centers_on_max_total_gamma():
+    """Total gamma (call + put), not net GEX.
+
+    Pinning comes from dealer gamma CONCENTRATION, which does not care which side the gamma sits on.
+    The strike below with huge call and huge put gamma is the hardest-pinning one, and nets to
+    roughly zero — the old net-GEX rule would have passed straight over it.
+    """
     gex = {"ok": True, "per_strike": [
-        {"strike": 5990, "net_gex": 1_000},
-        {"strike": 6005, "net_gex": 9_000},
-        {"strike": 6010, "net_gex": 4_000},
+        {"strike": 5990, "call_gex": 1_000, "put_gex": 500, "net_gex": 500},
+        {"strike": 6005, "call_gex": 90_000, "put_gex": 88_000, "net_gex": 2_000},
+        {"strike": 6010, "call_gex": 9_000, "put_gex": 1_000, "net_gex": 8_000},
     ]}
     center, reason = engine.select_center(snapshot(gex=gex), params("gex"))
-    assert (center, reason) == (6005.0, "max_positive_gex")
+    assert (center, reason) == (6005.0, "max_total_gamma")
+
+
+def test_gex_arm_finds_a_strike_where_net_gex_is_negative_everywhere():
+    """The case measured on a real SPX chain: put open interest dominates every strike near spot, so
+    net GEX is negative across the whole neighbourhood and the old rule had nothing to select."""
+    gex = {"ok": True, "per_strike": [
+        {"strike": 5995, "call_gex": 10_000, "put_gex": 200_000, "net_gex": -190_000},
+        {"strike": 6005, "call_gex": 40_000, "put_gex": 800_000, "net_gex": -760_000},
+    ]}
+    center, reason = engine.select_center(snapshot(gex=gex), params("gex"))
+    assert (center, reason) == (6005.0, "max_total_gamma")
 
 
 def test_gex_arm_ignores_strikes_beyond_the_distance_cap():
     """A huge GEX pile 3% away is not a 0DTE pin candidate — the cap keeps the arm centred near spot."""
     gex = {"ok": True, "per_strike": [
-        {"strike": 6005, "net_gex": 1_000},
-        {"strike": 6200, "net_gex": 900_000},
+        {"strike": 6005, "call_gex": 1_000, "put_gex": 0, "net_gex": 1_000},
+        {"strike": 6200, "call_gex": 900_000, "put_gex": 0, "net_gex": 900_000},
     ]}
     center, _ = engine.select_center(snapshot(gex=gex), params("gex"))
     assert center == 6005.0
@@ -71,9 +89,9 @@ def test_gex_arm_degrades_to_atm_and_records_why():
     center, reason = engine.select_center(snapshot(gex={"ok": False}), params("gex"))
     assert center == 6000.0 and reason == "atm_gex_unavailable"
 
-    gex = {"ok": True, "per_strike": [{"strike": 6005, "net_gex": -5_000}]}
+    gex = {"ok": True, "per_strike": [{"strike": 6200, "call_gex": 5_000, "put_gex": 5_000}]}
     center, reason = engine.select_center(snapshot(gex=gex), params("gex"))
-    assert center == 6000.0 and reason == "atm_no_positive_gex_near_spot"
+    assert center == 6000.0 and reason == "atm_no_gamma_near_spot"
 
 
 def test_side_choice_follows_spot_relative_to_center():
@@ -136,6 +154,77 @@ def test_entry_rejects_a_credit_below_the_floor():
                     puts={5990: q(4.8, 5.2), 5995: q(4.9, 5.3), 6000: q(5.0, 5.4), 6005: q(8.6, 9.0)})
     enter, reason, _ = engine.evaluate_credit_spread_entry(thin, params(), [])
     assert not enter and reason == "credit_below_floor"
+
+
+def test_entry_rejects_an_intrinsic_heavy_credit():
+    """The fault that real SPX data exposed and synthetic quotes could not.
+
+    A vertical cannot be worth more than its width, so a credit near that width means the short leg
+    is deep in the money and the premium is almost entirely intrinsic. Selling one is a
+    low-probability directional bet — profitable only on a large move toward the strike — which is
+    the opposite of a pin bet.
+
+    Modelled on the real case: spot 7457.69, a centre 67 points away at 7525, and a short
+    7525/7520 put spread paying 3.85 on a 5-wide (77% of width) with 67 points of intrinsic.
+    """
+    deep_itm = snapshot(
+        underlying_price=7457.69,
+        gex={"ok": True, "per_strike": [{"strike": 7525, "call_gex": 900_000, "put_gex": 0}]},
+        puts={7525: q(70.0, 70.6), 7520: q(65.4, 66.0)})
+    # The OLD distance cap, so the gex arm reaches the wall exactly as it did against live quotes.
+    p = params("gex", strike_increment=5, wing_width=5, max_center_distance_pct=0.01)
+    assert engine.select_center(deep_itm, p)[0] == 7525, "fixture must reproduce the far centre"
+
+    enter, reason, _ = engine.evaluate_credit_spread_entry(deep_itm, p, [])
+    assert not enter and reason == "credit_above_ceiling_mostly_intrinsic"
+
+
+def test_the_ceiling_does_not_block_a_normal_atm_entry():
+    """The counterweight — a ceiling that blocked ordinary entries would be worse than no ceiling.
+    A real ATM SPX 5-wide priced at 41% of width, comfortably under the 60% cap."""
+    enter, reason, plan = engine.evaluate_credit_spread_entry(
+        snapshot(underlying_price=5998.0), params(), [])
+    assert enter, reason
+    assert plan["credit"] / plan["wing_width"] < 0.60
+
+
+def test_the_two_defenses_are_independent():
+    """The distance cap and the credit ceiling must each stop this on their own.
+
+    They guard the same fault from different sides, and a single defense would be one config edit
+    away from silently reopening it: tightening the cap alone would leave nothing to catch an
+    intrinsic-heavy spread if someone later loosened it for a legitimate reason.
+    """
+    deep_itm = snapshot(
+        underlying_price=7457.69,
+        gex={"ok": True, "per_strike": [{"strike": 7525, "call_gex": 900_000, "put_gex": 0}]},
+        puts={7460: q(5.0, 5.4), 7455: q(3.0, 3.4),
+              7525: q(70.0, 70.6), 7520: q(65.4, 66.0)})
+
+    # 1. Distance cap alone (ceiling disabled): the arm never reaches the far strike.
+    tight = params("gex", strike_increment=5, wing_width=5,
+                   max_center_distance_pct=0.003, max_credit_pct_of_width=99.0)
+    enter, _, plan = engine.evaluate_credit_spread_entry(deep_itm, tight, [])
+    assert enter and plan["center"] == 7460
+
+    # 2. Ceiling alone (cap loosened back to what shipped): it reaches the strike and is refused.
+    loose = params("gex", strike_increment=5, wing_width=5, max_center_distance_pct=0.01)
+    enter, reason, _ = engine.evaluate_credit_spread_entry(deep_itm, loose, [])
+    assert not enter and reason == "credit_above_ceiling_mostly_intrinsic"
+
+
+def test_gex_center_distance_cap_keeps_the_center_near_spot():
+    """At the old 0.01 this admitted a centre 67 points from spot on a 7457 index. A 0DTE pin bet
+    needs the centre reachable in the hours remaining."""
+    gex = {"ok": True, "per_strike": [
+        {"strike": 7460, "call_gex": 1_000, "put_gex": 0},
+        {"strike": 7525, "call_gex": 900_000, "put_gex": 0},   # the wall, 67 points away
+    ]}
+    snap = snapshot(underlying_price=7457.69, gex=gex)
+    p = params("gex", strike_increment=5, max_center_distance_pct=0.003)
+    center, reason = engine.select_center(snap, p)
+    assert center == 7460 and reason == "max_total_gamma"
+    assert abs(center - 7457.69) <= 0.003 * 7457.69
 
 
 def test_entry_rejects_a_credit_that_cannot_clear_two_fee_stacks():
