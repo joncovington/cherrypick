@@ -44,20 +44,19 @@
       "enabled": true,
       "path": "../flies",
       "paper": {
-        "kind": "cherrypick_scheduled",
-        "entry_task_name": "cherrypick-flies-paper-loop",
-        "exit_task_name": "cherrypick-flies-paper-settle",
-        "_timing_note": "0DTE: iterate through the session, settle after the close. entry_argv is safe to run repeatedly — the engine's own centre-occupied gate makes an iteration idempotent, and an out-of-RTH run is a clean no-op.",
-        "entry_time": "12:00",
-        "exit_time": "16:20",
-        "entry_argv": ["src/paper_loop.py", "--once"],
-        "exit_argv": ["src/paper_loop.py", "--settle"],
+        "_kind_note": "self_healing, NOT cherrypick_scheduled. This was cherrypick_scheduled, which registers one entry task at entry_time and one exit task at exit_time — a shape that fits Earnings (one entry, one exit per day) and is wrong for a legged 0DTE strategy. A single daily entry would open a credit spread at noon and never look at it again, so the completing spread could never be bought and the completion rate — the module's headline measurement — would read 0% every day for reasons that have nothing to do with the market. cherrypick_scheduled also hardcodes the earnings launcher verbs, so this module's own entry_argv would have been ignored entirely.",
+        "kind": "self_healing",
+        "task_name": "cherrypick-flies-paper-loop",
+        "_timing_note": "The module registers its own recurring task (every 2 min) and `--once` carries all the session logic: out of RTH it is a clean no-op, after the settle time it settles the day and writes the EOD reports exactly once. One task, so there is no second schedule to drift out of sync with the first.",
+        "install_argv": ["src/paper_loop.py", "--install-task"],
+        "uninstall_argv": ["src/paper_loop.py", "--uninstall-task"],
         "status_argv": ["src/paper_loop.py", "--status"],
         "once_argv": ["src/paper_loop.py", "--once", "--force"],
         "paper_db": "~/.cherrypick/data/flies/paper_trades.db",
         "notify_trades": true,
         "trade_schema": "fly_book",
-        "log": "flies_paper.log"
+        "log": "flies_paper.log",
+        "freshness_minutes": 20
       },
       "calibration": {
         "_comment": "The 'ladder' here is not a risk ladder — it is the three experiment arms, and there is nothing to promote between them. Listing them gives per-arm P&L readings without recommendations, which is exactly what this module wants: the comparison is the output.",

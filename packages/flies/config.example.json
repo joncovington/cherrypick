@@ -66,9 +66,9 @@
     },
     "control": {
       "enabled": true,
-      "_note": "One fixed midday ATM entry. The naive baseline.",
-      "entry_windows": [["12:00", "12:15"]],
-      "max_positions": 2
+      "_note": "ATM, same window and position cap as the gex arm. The shared baseline for BOTH comparisons: gex vs control isolates the CENTRING rule (identical windows), time_window vs control isolates the TIMING (identical centring). It must therefore match gex on everything except where it centres.",
+      "_history_note": "This was a single 12:00-12:15 window with max_positions 2, against gex's 09:45-14:30 and 4 — a 19x difference in entry opportunity. Per-trade metrics survive that, but net P&L per arm does not: the gex arm could have out-earned control purely by trading more often, and the headline comparison would have measured trade count rather than the GEX signal.",
+      "entry_windows": [["09:45", "14:30"]]
     }
   }
 }

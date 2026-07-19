@@ -26,9 +26,18 @@ import engine  # noqa: E402
 
 
 def load_config(path: str | None = None) -> dict:
+    """Explicit path, then FLIES_CONFIG, then the managed home, then the repo, then the example.
+
+    The managed-home entry (`~/.cherrypick/config/flies.json`) matters: it is where the suite keeps
+    per-module config and where `cherrypick doctor` looks. Without it, doctor reports the module as
+    unconfigured while the module happily runs off its in-repo copy — the two disagreeing about
+    where configuration lives is exactly how a machine ends up running settings nobody can find.
+    """
+    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
     candidates = [
         path,
         os.environ.get("FLIES_CONFIG"),
+        os.path.join(home, "config", "flies.json"),
         os.path.join(_HERE, "..", "config.json"),
         os.path.join(_HERE, "..", "config.example.json"),
     ]
