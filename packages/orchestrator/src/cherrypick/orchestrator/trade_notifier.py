@@ -10,9 +10,12 @@ Called both by the dedicated fast trade-notify task (low latency, ~2 min) and as
 watchdog tick; the per-schema id watermark keeps either path from re-sending the same event, and the
 state file is written atomically so overlapping runs can't corrupt it.
 
-Two paper-DB schemas are wired, dispatched by `paper.trade_schema`:
+Three paper-DB schemas are wired, dispatched by `paper.trade_schema`:
   - "meic_ic"  : MEICAgent's `ic_trades` table (integer id, exit_time watermark).
   - "earnings" : EarningsAgent's `trades` table (text order_id key, opened_at/closed_at timestamps).
+  - "fly_book" : cherrypick-flies' `fly_positions` (text position_id key). Three stages rather than
+                 two — entry, completion, settlement — because a credit spread turning into a
+                 net-credit butterfly is the event the whole module exists to catch.
 
 Trade lines go to the `notify.trade_channels` set (default log + discord) rather than every channel, so
 frequent paper fills don't spam desktop toasts.
@@ -248,10 +251,80 @@ def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     return {"entries_notified": len(entries), "exits_notified": len(exits), "reviews_notified": len(reviews)}
 
 
+# --------------------------------------------------------------------------- flies fly_positions schema
+# cherrypick-flies keys on a text `position_id`. A position has THREE notifiable moments, not two: it
+# opens as a credit spread, may later be completed into a butterfly, and finally settles. The middle
+# one is the whole point of the strategy — it is the moment the position's floor becomes a guarantee —
+# so it gets its own watermark rather than being folded into the entry or the exit.
+def _flies_seed(conn) -> dict:
+    rows = conn.execute("SELECT position_id, kind, status FROM fly_positions").fetchall()
+    return {
+        "notified_entry_ids": [r["position_id"] for r in rows],
+        "notified_completion_ids": [r["position_id"] for r in rows if r["kind"] == "fly"],
+        "notified_exit_ids": [r["position_id"] for r in rows if r["status"] == "settled"],
+    }
+
+
+def _fmt_flies_entry(r) -> str:
+    if r["entry_mode"] == "outright":
+        return (
+            f"\U0001f7e2 Flies paper ENTRY — {r['symbol']} fly {r['center']:.0f} w{r['wing_width']:.0f} "
+            f"bought for ${abs(r['net']):.2f} debit [{r['arm']}]"
+        )
+    return (
+        f"\U0001f7e2 Flies paper ENTRY — {r['symbol']} short {r['side']} spread {r['center']:.0f} "
+        f"w{r['wing_width']:.0f} credit ${r['net']:.2f} [{r['arm']}] — needs spot "
+        f"{r['completing_direction'] or '?'} to complete"
+    )
+
+
+def _fmt_flies_completion(r) -> str:
+    """The moment worth waking up for: a credit spread became a butterfly held for a net credit, so
+    its worst case at expiry is now a profit. The floor is stated after fees or it means nothing."""
+    return (
+        f"\U0001f98b Flies COMPLETED — {r['symbol']} {r['side']} fly {r['center']:.0f} "
+        f"w{r['wing_width']:.0f} for ${r['net']:.2f} net credit, floor "
+        f"${r['floor_dollars']:.2f} after fees [{r['arm']}]"
+    )
+
+
+def _fmt_flies_exit(r) -> str:
+    pnl = r["pnl"]
+    pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
+    what = "fly" if r["kind"] == "fly" else f"short {r['side']} spread"
+    pinned = " (pinned)" if r["pinned"] else ""
+    return (
+        f"\U0001f534 Flies paper SETTLED — {r['symbol']} {what} {r['center']:.0f}"
+        f"{pinned}, P&L {pnl_str} [{r['arm']}]"
+    )
+
+
+def _flies_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
+    counts = {}
+    stages = [
+        ("notified_entry_ids", "entry", "Paper entry", _fmt_flies_entry,
+         "SELECT * FROM fly_positions"),
+        ("notified_completion_ids", "completion", "Fly completed", _fmt_flies_completion,
+         "SELECT * FROM fly_positions WHERE kind = 'fly' AND completed_at IS NOT NULL"),
+        ("notified_exit_ids", "exit", "Paper settled", _fmt_flies_exit,
+         "SELECT * FROM fly_positions WHERE status = 'settled'"),
+    ]
+    for key, event, title, fmt, query in stages:
+        notified = set(st.get(key, []))
+        rows = [r for r in conn.execute(query).fetchall() if r["position_id"] not in notified]
+        for r in rows:
+            notifier.notify("INFO", f"trade.{name}.{event}.{r['position_id']}", title, fmt(r))
+            notified.add(r["position_id"])
+        st[key] = sorted(notified)[-_ID_CAP:]
+        counts[f"{event}s_notified"] = len(rows)
+    return counts
+
+
 # Registry: paper.trade_schema -> (seed_fn, process_fn). Schemas not listed here skip cleanly.
 _SCHEMAS = {
     "meic_ic": (_meic_seed, _meic_process),
     "earnings": (_earnings_seed, _earnings_process),
+    "fly_book": (_flies_seed, _flies_process),
 }
 
 

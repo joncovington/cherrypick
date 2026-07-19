@@ -39,6 +39,31 @@
         "rule": { "min_days": 14, "min_win_rate": 0.6, "min_sample": 20 }
       }
     },
+    "flies": {
+      "_comment": "cherrypick-flies: 0DTE net-credit butterflies ('profit forest'), paper only. Reads MEIC's stream cache READ-ONLY and runs no streamer of its own, so it REQUIRES the meic module's streamer to be running and subscribed to the symbols in flies/config.json. Ships disabled: the code is tested but has never run a live session, so enable it deliberately and watch the first one.",
+      "enabled": false,
+      "path": "../flies",
+      "paper": {
+        "kind": "cherrypick_scheduled",
+        "entry_task_name": "cherrypick-flies-paper-loop",
+        "exit_task_name": "cherrypick-flies-paper-settle",
+        "_timing_note": "0DTE: iterate through the session, settle after the close. entry_argv is safe to run repeatedly — the engine's own centre-occupied gate makes an iteration idempotent, and an out-of-RTH run is a clean no-op.",
+        "entry_time": "12:00",
+        "exit_time": "16:20",
+        "entry_argv": ["src/paper_loop.py", "--once"],
+        "exit_argv": ["src/paper_loop.py", "--settle"],
+        "status_argv": ["src/paper_loop.py", "--status"],
+        "once_argv": ["src/paper_loop.py", "--once", "--force"],
+        "paper_db": "~/.cherrypick/data/flies/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "fly_book",
+        "log": "flies_paper.log"
+      },
+      "calibration": {
+        "_comment": "The 'ladder' here is not a risk ladder — it is the three experiment arms, and there is nothing to promote between them. Listing them gives per-arm P&L readings without recommendations, which is exactly what this module wants: the comparison is the output.",
+        "ladder": ["control", "time_window", "gex"]
+      }
+    },
     "earnings": {
       "enabled": true,
       "repo": "https://github.com/joncovington/cherrypick-earnings.git",
@@ -102,6 +127,15 @@
         "fetch_argv": ["run.py", "section", "--symbol", "{symbol}", "--json"],
         "default_symbol": "SPX",
         "refresh_seconds": 15
+      },
+      {
+        "_comment": "cherrypick-flies' payoff curve. The viz `bars` contract (signed values, tone_by_sign, a focus marker) was built for net-GEX-by-strike but maps exactly onto payoff-by-price, so this card draws the 'profit forest' itself — green across the band where the book profits, red outside it, focus at spot — with no flies-specific rendering code here.",
+        "id": "flies",
+        "title": "Flies",
+        "enabled": false,
+        "path": "../flies",
+        "fetch_argv": ["run.py", "section", "--json"],
+        "refresh_seconds": 30
       }
     ],
     "embeds": [
@@ -134,6 +168,16 @@
         "path": "../gex",
         "serve_argv": ["run.py", "dashboard", "--serve", "--port", "{port}"],
         "port": 8802
+      },
+      {
+        "_comment": "cherrypick-flies' full dashboard: the live payoff curve, open positions with their post-fee floors, the decision journal (why each entry was made or refused), and P&L / win rate / completion rate over timeframes. Read-only over the paper DB, loopback-only, no broker and no network. Paper is the only mode this module has, so there is no --mode flag to force.",
+        "id": "flies",
+        "title": "Flies",
+        "enabled": false,
+        "kind": "server",
+        "path": "../flies",
+        "serve_argv": ["src/dashboard.py", "--port", "{port}"],
+        "port": 8803
       }
     ]
   },

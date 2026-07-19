@@ -5,11 +5,15 @@ unified P&L summary across MEICAgent (`ic_trades`) and EarningsAgent (`trades`),
 and, within each module, by risk profile. A read-mostly reporting surface for the walk-away user: the
 first slice of the reporting/alerting hub (later: the Part-14 status dashboard and drift/stall alerts).
 
-Two paper-DB schemas are wired, dispatched by `paper.trade_schema` (same registry idea as
+Three paper-DB schemas are wired, dispatched by `paper.trade_schema` (same registry idea as
 trade_notifier), each yielding a normalized closed-trade record `{profile, symbol, strategy, net_pnl}`:
   - "meic_ic"  : MEICAgent's `ic_trades`; closed = exit_time set; net = pnl - fees; tag = risk_profile.
   - "earnings" : EarningsAgent's `trades`; closed = closed_at set; net = pnl - entry_cost - exit_cost;
                  tag = profile.
+  - "fly_book" : cherrypick-flies' `fly_positions`; closed = status 'settled'; net = gross_pnl - fees;
+                 tag = arm. Note this reader is P&L only — the module's book-level floor and the price
+                 band it holds over live in `fly_books` and are NOT summarizable as a per-trade number,
+                 so `run.py status` remains the place to read them.
 
 The per-profile grouping uses cherrypick.core.profiles.compare_profiles (group closed trades by their
 attribution tag, summarize each group) via the src/_core submodule — bootstrapped onto sys.path in
@@ -29,6 +33,7 @@ from . import config as cfgmod
 # Untagged sentinels match each module's own schema convention (see cherrypick.core.profiles.attribution_tag).
 _MEIC_UNTAGGED = "unassigned"
 _EARNINGS_UNTAGGED = "default"
+_FLIES_UNTAGGED = "unassigned"
 
 
 def _connect_ro(db_path: Path) -> sqlite3.Connection:
@@ -86,7 +91,31 @@ def _earnings_closed(conn) -> list[dict]:
     ]
 
 
-_READERS = {"meic_ic": _meic_closed, "earnings": _earnings_closed}
+def _flies_closed(conn) -> list[dict]:
+    """cherrypick-flies' `fly_positions`; closed = settled. The attribution tag is the ARM (gex /
+    time_window / control), because comparing the arms is the entire point of the module — a
+    per-symbol view would hide the one contrast the experiment exists to draw."""
+    rows = conn.execute(
+        "SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date "
+        "FROM fly_positions WHERE status = 'settled'"
+    ).fetchall()
+    return [
+        {
+            "profile": r["arm"] or _FLIES_UNTAGGED,
+            "symbol": r["symbol"],
+            # legged vs outright: the two entry mechanisms perform differently enough that
+            # aggregating them would average away the finding.
+            "strategy": r["entry_mode"],
+            "gross_pnl": (r["gross_pnl"] or 0.0),
+            "cost": (r["fees"] or 0.0),
+            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "session": r["trade_date"] or "",
+        }
+        for r in rows
+    ]
+
+
+_READERS = {"meic_ic": _meic_closed, "earnings": _earnings_closed, "fly_book": _flies_closed}
 
 
 # --------------------------------------------------------------------------- summarization
