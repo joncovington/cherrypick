@@ -6,6 +6,10 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   (report / dashboard / reconcile / calibrate). Drives the modules **by subprocess**, never by import.
 - **packages/meic** — MEIC 0DTE multiple-entry iron-condor trading module.
 - **packages/earnings** — earnings-play trading module (defined-risk strategies).
+- **packages/gex** — live GEX (gamma exposure) dashboard; a self-hosted read-only surface.
+- **packages/flies** — 0DTE net-credit butterfly ("profit forest") paper module. Paper only, and
+  deliberately built to make a negative result usable: floors are measured after fees, and a
+  book-level floor always carries the price band over which it holds.
 
 The shared library `cherrypick.core` is the **`cherrypick-core`** submodule, vendored per package at
 `packages/<pkg>/src/_core` (one URL, pinned SHA). Fresh clone: `git submodule update --init --recursive`.
