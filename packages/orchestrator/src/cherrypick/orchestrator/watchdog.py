@@ -235,14 +235,21 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
         except Exception:
             grace_passed = False
         if grace_passed:
-            hb = _read_heartbeat(cfgmod.STATE_DIR / "earnings_entry.last.json")
+            # Heartbeat path and alert wording both derive from the module name. They were hardcoded
+            # to Earnings, which was invisible while Earnings was the only scheduled module and
+            # actively misleading once a second one existed: another module's missed run would raise
+            # a CRITICAL reading "Earnings paper entry did not run".
+            entry_state, _ = cfgmod.sla_state_files(name, mcfg)
+            hb = _read_heartbeat(entry_state)
             today = now_et.strftime("%Y-%m-%d")
+            label = f"{name.capitalize()} paper entry"
+            log_hint = paper.get("log") or f"{name}_paper.log"
             if hb.get("date") != today:
                 findings.append(
                     Finding(
                         f"{name}.entry_sla",
                         CRITICAL,
-                        "Earnings paper entry did not run",
+                        f"{label} did not run",
                         f"No successful entry heartbeat for {today} after {paper['entry_time']} ET.",
                     )
                 )
@@ -251,12 +258,12 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
                     Finding(
                         f"{name}.entry_sla",
                         WARN,
-                        "Earnings paper entry reported an error",
-                        f"Last entry: {hb.get('error') or 'see logs/earnings_paper.log'}",
+                        f"{label} reported an error",
+                        f"Last entry: {hb.get('error') or f'see logs/{log_hint}'}",
                     )
                 )
             else:
-                findings.append(Finding(f"{name}.entry_sla", OK, "Earnings paper entry", "ran today"))
+                findings.append(Finding(f"{name}.entry_sla", OK, label, "ran today"))
     return findings
 
 

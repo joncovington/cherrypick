@@ -267,10 +267,8 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         mfindings = [f for f in findings if str(f.get("key", "")).startswith(f"{name}.")]
         sla = {}
         if mcfg.get("paper", {}).get("kind") == "cherrypick_scheduled":
-            sla = {
-                "entry": _read_json(cfgmod.STATE_DIR / "earnings_entry.last.json"),
-                "exit": _read_json(cfgmod.STATE_DIR / "earnings_exit.last.json"),
-            }
+            entry_state, exit_state = cfgmod.sla_state_files(name, mcfg)
+            sla = {"entry": _read_json(entry_state), "exit": _read_json(exit_state)}
         module_views.append(
             {
                 "name": name,
