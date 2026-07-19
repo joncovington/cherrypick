@@ -78,3 +78,41 @@ def test_healthy_heartbeat_is_named_for_its_own_module(monkeypatch, tmp_path):
     sla = [f for f in findings if f.key == "flies.entry_sla"]
     assert sla and sla[0].status == watchdog.OK
     assert sla[0].title == "Flies paper entry"
+
+
+# --------------------------------------------------------------------------- self_healing alert names
+def test_self_healing_alerts_name_their_own_module(monkeypatch):
+    """A missing flies task must not raise a CRITICAL titled for MEIC.
+
+    Same fault as the SLA heartbeat naming, in a different function: `_check_meic` hardcoded "MEIC"
+    in every alert title, so once a second self_healing module existed the operator was pointed at
+    the wrong module by name.
+    """
+    monkeypatch.setattr(watchdog.tasks, "exists", lambda _n: False)
+    mcfg = {"paper": {"kind": "self_healing", "task_name": "cherrypick-flies-paper-loop"},
+            "path": "."}
+    findings = watchdog._check_meic("flies", mcfg, in_session=False)
+
+    task = next(f for f in findings if f.key == "flies.task")
+    assert task.status == watchdog.CRITICAL
+    assert "MEIC" not in task.title, "flies must not be reported under MEIC's name"
+    assert task.title.startswith("Flies")
+    assert "cherrypick-flies-paper-loop" in task.message
+
+
+def test_meic_keeps_its_own_name(monkeypatch):
+    """The existing module's alert text must be unchanged — this generalizes, it does not rename."""
+    monkeypatch.setattr(watchdog.tasks, "exists", lambda _n: False)
+    mcfg = {"paper": {"kind": "self_healing", "task_name": "cherrypick-meic-paper-loop"}, "path": "."}
+    task = next(f for f in watchdog._check_meic("meic", mcfg, in_session=False)
+                if f.key == "meic.task")
+    assert task.title == "MEIC paper task missing"
+
+
+def test_registered_task_reports_ok_under_its_own_name(monkeypatch):
+    monkeypatch.setattr(watchdog.tasks, "exists", lambda _n: True)
+    mcfg = {"paper": {"kind": "self_healing", "task_name": "cherrypick-flies-paper-loop"},
+            "path": "."}
+    task = next(f for f in watchdog._check_meic("flies", mcfg, in_session=False)
+                if f.key == "flies.task")
+    assert task.status == watchdog.OK and task.title == "Flies paper task"
