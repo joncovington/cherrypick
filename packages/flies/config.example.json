@@ -30,8 +30,8 @@
     "_fee_buffer": "Price points the completing debit must beat the original credit by. This is the gate that stops us 'completing' into a fly whose credit is real but smaller than the fees paid to build it.",
     "fee_buffer": 0.10,
 
-    "_min_floor_dollars": "Reject a completion whose post-fee floor lands below this. 0.0 means 'must not lose money'. Raise it to demand the guarantee actually be worth something.",
-    "min_floor_dollars": 0.0,
+    "_min_floor_dollars": "Reject a completion whose post-fee floor lands below this. 0.0 means only 'must not lose money', which a full-session simulation showed is far too permissive: completions landed with guaranteed profits of $5-27 after paying $6.89 in fees to build them. Technically risk-free, practically not worth the position slot or the defined risk carried while waiting. 50 demands the guarantee be worth roughly seven fee stacks. Raising it trades completion rate for floor quality — both are reported, so the trade-off is measurable rather than assumed.",
+    "min_floor_dollars": 50.0,
 
     "_max_fly_debit": "Outright flies are bought deliberately cheap ($10-50 observed in the reference books). Points, not dollars: 0.50 x 100 = $50.",
     "max_fly_debit": 0.50,
@@ -61,8 +61,9 @@
     },
     "time_window": {
       "enabled": true,
-      "_note": "ATM-centred, entering only inside these windows. The windows are NOT ranked — we have no intraday history to rank them with. Every trade is tagged with the window it entered in, and the ranking comes out of our own sessions later.",
-      "entry_windows": [["09:45", "10:15"], ["11:00", "11:30"], ["13:00", "13:30"], ["14:00", "14:30"]]
+      "_note": "ATM-centred, entering only inside these windows. Deliberately skips the opening hour, which is the specific timing hypothesis worth testing: 0DTE extrinsic is richest early, but so is realized vol, so an early entry buys more premium and more risk of being run over before the completing spread cheapens. Windows are still NOT ranked against each other — every trade is tagged with the window it entered in, and that ranking comes out of our own sessions.",
+      "_history_note": "These were [09:45-10:15, 11:00-11:30, 13:00-13:30, 14:00-14:30] — a strict subset of the control arm's all-day window. A simulated session showed both arms exhausting max_positions inside the shared 09:45-10:15 overlap, so they took near-identical books and the timing restriction was never actually exercised. Starting after the open makes the contrast real.",
+      "entry_windows": [["10:30", "11:00"], ["12:30", "13:00"], ["14:00", "14:30"]]
     },
     "control": {
       "enabled": true,
