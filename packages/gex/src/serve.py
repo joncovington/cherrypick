@@ -507,7 +507,8 @@ function openWs(){
       _setGexBadges('● live','#00c896'); }
     gexData=d; renderGex(d);
   };
-  ws.onclose=()=>{ wsLive=false; setTimeout(openWs,wsBackoff);
+  ws.onclose=()=>{ wsLive=false; _setGexBadges('reconnecting…','#6b7280');
+    setTimeout(openWs,wsBackoff);
     wsBackoff=Math.min(wsBackoff*2,30000); };
 }
 // symbol dropdown: tell the socket, and keep the fallback path warm
