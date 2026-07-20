@@ -577,6 +577,13 @@ def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
 
     threading.Thread(target=_record_loop, name="gex-spot-recorder", daemon=True).start()
 
+    from push import GexPushServer
+    from config import ws_port as _ws_port
+    push_srv = GexPushServer(cfg)
+    threading.Thread(target=push_srv.start, args=(host,),
+                     name="gex-push", daemon=True).start()
+    print(f"cherrypick-gex push serving at ws://{host}:{_ws_port(cfg)}/")
+
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
