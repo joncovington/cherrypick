@@ -1,4 +1,4 @@
-import asyncio
+import json
 
 import pytest
 
@@ -75,3 +75,20 @@ async def test_one_failed_client_does_not_block_another():
     await srv.tick()
     assert len(good.sent) == 1
     assert bad not in srv.clients["SPX"]  # dropped on send failure
+
+
+@pytest.mark.asyncio
+async def test_snapshot_rebuilds_for_newcomer_not_stale_cache():
+    state = {"net": 1.0}
+
+    def build(cfg, symbol):
+        return payload(net=state["net"])
+
+    srv = GexPushServer(CFG, build=build)
+    a = FakeWS()
+    await srv._snapshot(a, "SPX")          # caches net=1.0
+    assert broadcast_key(json.loads(a.sent[0])) == broadcast_key(payload(net=1.0))
+    state["net"] = 2.0                       # backing data moved while unwatched
+    b = FakeWS()
+    await srv._snapshot(b, "SPX")          # newcomer must see net=2.0, not cached 1.0
+    assert json.loads(b.sent[0])["series"][0]["net_gex"] == 2.0
