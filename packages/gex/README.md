@@ -60,5 +60,9 @@ ruff check . && ruff format .                   # lint/format (src/_core is excl
   by `run.py stream`). Repoint at a cherrypick-meic cache to piggyback instead.
 - `symbols` — default symbol list; the first is used when `--symbol` is omitted.
 - `streamer` — `{window_strike_count}` for `run.py stream` (strikes each side of the money to subscribe).
-- `serve` — `{host, port, refresh_seconds}` for the live view.
+- `serve` — `{host, port, refresh_seconds, ws_port, push_min_interval_seconds}` for the live view.
+  The dashboard receives **live pushes** over `ws://<host>:<ws_port>` (default `port + 1`, e.g. 5056),
+  sent at most once per `push_min_interval_seconds` (default 1.0) and only when the strike-window data
+  changes; it falls back to `refresh_seconds` polling of `/api/gex` whenever the socket is down and
+  reconnects with backoff. `ws_port` and `push_min_interval_seconds` are optional (defaults apply).
 - `history_db` — this module's own SQLite for the persisted spot trail.
