@@ -100,8 +100,9 @@ class GexPushServer:
             self.clients.get(symbol, set()).discard(ws)
 
     async def _snapshot(self, ws, symbol: str) -> None:
-        """Send the newcomer the latest payload immediately (build if needed)."""
-        msg = self._last_json.get(symbol) or self._build_for(symbol)
+        """Send the newcomer current state: rebuild first (refreshing the cache),
+        falling back to the last cached payload only if nothing changed."""
+        msg = self._build_for(symbol) or self._last_json.get(symbol)
         if msg is not None:
             await self._send(ws, msg)
 
