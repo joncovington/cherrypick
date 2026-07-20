@@ -7,7 +7,7 @@ name = "cherrypick-gex"
 version = "0.1.0"
 description = "Live GEX (gamma exposure) dashboard — a simple self-hosted gexbot/SpotGamma/MenthorQ"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["websockets>=13"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
