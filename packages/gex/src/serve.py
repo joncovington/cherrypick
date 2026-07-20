@@ -489,18 +489,41 @@ document.querySelectorAll('input[name="gex_view"]').forEach(el=>
 document.querySelectorAll('input[name="vol_view"]').forEach(el=>
   el.addEventListener('change',()=>{ if(gexData) renderGex(gexData); }));
 
-// auto-refresh
-fetchGex();
-setInterval(()=>{
+// Live push (primary) + polling (fallback while the socket is not live).
+let wsLive=false, wsBackoff=1000, ws=null;
+function _pollTick(){
+  if(wsLive) return;                 // socket owns updates while live
   cd--; document.getElementById('scountdown').textContent='Refresh in '+cd+'s';
   if(cd<=0){ cd=__REFRESH__; fetchGex(); }
-},1000);
-setInterval(fetchGex,__REFRESH__*1000);
+}
+function openWs(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  ws=new WebSocket(proto+'://'+location.hostname+':__WSPORT__/');
+  let gotMsg=false;
+  ws.onopen=()=>{ ws.send(JSON.stringify({symbol:gexSymbol()})); };
+  ws.onmessage=(e)=>{
+    let d; try{ d=JSON.parse(e.data); }catch(_){ return; }
+    if(!gotMsg){ gotMsg=true; wsLive=true; wsBackoff=1000;
+      _setGexBadges('● live','#00c896'); }
+    gexData=d; renderGex(d);
+  };
+  ws.onclose=()=>{ wsLive=false; setTimeout(openWs,wsBackoff);
+    wsBackoff=Math.min(wsBackoff*2,30000); };
+}
+// symbol dropdown: tell the socket, and keep the fallback path warm
+document.querySelectorAll('.gex-symbol-select').forEach(sel=>{
+  sel.addEventListener('change',()=>{
+    if(ws&&ws.readyState===1) ws.send(JSON.stringify({symbol:sel.value}));
+  });
+});
+fetchGex();               // instant first paint via HTTP
+setInterval(_pollTick,1000);
+openWs();
 </script>
 </body></html>"""
 
 
-def _render_page(symbol: str, refresh: int, symbols: list[str]) -> bytes:
+def _render_page(symbol: str, refresh: int, symbols: list[str], ws_port_num: int = 5056) -> bytes:
     opts = "".join(
         f'<option value="{escape(s)}"{" selected" if s == symbol else ""}>{escape(s)}</option>'
         for s in symbols
@@ -508,16 +531,20 @@ def _render_page(symbol: str, refresh: int, symbols: list[str]) -> bytes:
     html = (
         _PAGE.replace("__SYMBOL__", escape(symbol))
         .replace("__REFRESH__", str(refresh))
+        .replace("__WSPORT__", str(ws_port_num))
         .replace("__OPTIONS__", opts)
     )
     return html.encode("utf-8")
 
 
 def make_handler(cfg: dict, default_sym: str):
+    from config import ws_port
+
     refresh = int(cfg["serve"].get("refresh_seconds", 15))
     symbols = [str(s).upper() for s in (cfg.get("symbols") or [default_sym])]
     if default_sym not in symbols:
         symbols = [default_sym, *symbols]
+    ws_port_num = ws_port(cfg)
 
     class _Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):  # quiet — no request-log spam
@@ -533,7 +560,11 @@ def make_handler(cfg: dict, default_sym: str):
         def do_GET(self):  # noqa: N802
             parsed = urlparse(self.path)
             if parsed.path in ("/", "/index.html"):
-                self._send(200, _render_page(default_sym, refresh, symbols), "text/html; charset=utf-8")
+                self._send(
+                    200,
+                    _render_page(default_sym, refresh, symbols, ws_port_num),
+                    "text/html; charset=utf-8",
+                )
                 return
             if parsed.path == "/api/gex":
                 qs = parse_qs(parsed.query)
