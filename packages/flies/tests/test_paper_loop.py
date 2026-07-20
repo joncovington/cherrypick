@@ -1,5 +1,6 @@
 """Tests for the paper session driver — the layer that supplies snapshots and persists results."""
 
+import time
 from datetime import datetime
 
 import pytest
@@ -254,3 +255,64 @@ def test_market_holidays_are_skipped_too(cache_with_chain, conn, home):
     when = datetime(holiday.year, holiday.month, holiday.day, 16, 30, tzinfo=provider._ET)
     out = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=when)
     assert out["skipped"] == "not_a_trading_day"
+
+
+# --------------------------------------------------------------------------- stale settlement
+def test_settlement_refuses_a_stale_price(cache_with_chain, conn, home):
+    """Settlement is the most consequential price read in the module — it decides every position's
+    P&L at once and cannot be undone. Every other read is staleness-gated; this one was not, so a
+    stalled feed would have settled the whole session against an hours-old print without complaint.
+    """
+    import sqlite3
+    paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(12))
+    c = sqlite3.connect(cache_with_chain)
+    c.execute("UPDATE stream_trades SET updated_at = ?", (time.time() - 6000,))
+    c.commit()
+    c.close()
+
+    out = paper_loop.run_settle(config(), conn, cache_path=str(cache_with_chain), when=at(16, 30))
+    assert out["ok"] is False
+    assert out["results"][0]["reason"] == "no_settlement_price"
+    assert conn.execute(
+        "SELECT COUNT(*) FROM fly_positions WHERE status='settled'").fetchone()[0] == 0
+
+
+def test_a_refused_settlement_does_not_block_the_retry(cache_with_chain, conn, home):
+    """The paper-eod file is the done-marker. Writing it after a refusal would mark the day finished,
+    stop the loop retrying, and leave every position open under a report describing a session that
+    never closed."""
+    import sqlite3
+    paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(12))
+    c = sqlite3.connect(cache_with_chain)
+    c.execute("UPDATE stream_trades SET updated_at = ?", (time.time() - 6000,))
+    c.commit()
+    c.close()
+
+    paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(16, 30))
+    day = TRADING_DAY.date().isoformat()
+    assert not (home / f"paper-eod-{day}.md").exists(), "marker must not be written on refusal"
+    assert paper_loop.session_already_settled(day, home) is False
+
+    # Feed recovers; the very next tick settles the day with no operator action.
+    c = sqlite3.connect(cache_with_chain)
+    c.execute("UPDATE stream_trades SET updated_at = ?", (time.time(),))
+    c.commit()
+    c.close()
+    out = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(16, 32))
+    assert out.get("settled_session") is True
+    assert (home / f"paper-eod-{day}.md").exists()
+
+
+def test_an_explicit_price_bypasses_the_staleness_gate(cache_with_chain, conn, home):
+    """The documented recovery path: settle with the official print when the feed is unavailable."""
+    import sqlite3
+    paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(12))
+    c = sqlite3.connect(cache_with_chain)
+    c.execute("UPDATE stream_trades SET updated_at = ?", (time.time() - 6000,))
+    c.commit()
+    c.close()
+
+    out = paper_loop.run_settle(config(), conn, cache_path=str(cache_with_chain),
+                                when=at(16, 30), price=7455.72)
+    assert out["ok"] is True
+    assert out["results"][0]["settlement_source"] == "explicit"
