@@ -82,6 +82,16 @@ def default_symbol(cfg: dict) -> str:
     return str(syms[0]).upper()
 
 
+def ws_port(cfg: dict) -> int:
+    serve = cfg.get("serve", {})
+    port = int(serve.get("port", 5055))
+    return int(serve.get("ws_port", port + 1))
+
+
+def push_min_interval(cfg: dict) -> float:
+    return float(cfg.get("serve", {}).get("push_min_interval_seconds", 1.0))
+
+
 def logs_dir() -> Path:
     """This module's logs home: ``~/.cherrypick/logs/gex`` (relocated wholesale by ``CHERRYPICK_HOME``).
     A pure path — callers create it when they actually write."""

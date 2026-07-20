@@ -8,6 +8,8 @@
   "serve": {
     "host": "127.0.0.1",
     "port": 5055,
-    "refresh_seconds": 15
+    "ws_port": 5056,
+    "refresh_seconds": 15,
+    "push_min_interval_seconds": 1.0
   }
 }
