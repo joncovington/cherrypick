@@ -609,8 +609,8 @@ def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
 
     threading.Thread(target=_record_loop, name="gex-spot-recorder", daemon=True).start()
 
-    from push import GexPushServer
     from config import ws_port as _ws_port
+    from push import GexPushServer
     push_srv = GexPushServer(cfg)
     threading.Thread(target=push_srv.start, args=(host,),
                      name="gex-push", daemon=True).start()
