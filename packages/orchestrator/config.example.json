@@ -30,7 +30,11 @@
         "enabled": true,
         "status_argv": ["src/streamer.py", "--status"],
         "start_argv": ["src/streamer.py"],
-        "auto_restart": true
+        "_stop_argv_note": "Optional. Used to stop a STALLED streamer before relaunching it — the daemon is single-instance guarded, so relaunching without stopping is a silent no-op. Defaults to the status command with --stop.",
+        "stop_argv": ["src/streamer.py", "--stop"],
+        "auto_restart": true,
+        "_stale_restart_note": "Restart the streamer when it is CONNECTED but has received no market events for this many seconds during RTH. A process check cannot see this: observed 2026-07-20, the streamer reconnected then went silent for 8 minutes while still reporting running=true and its own stale_warning=false (that flag only trips at 600s), so nothing restarted it — MEIC degraded to REST and the flies module refused every iteration on stale quotes. 240s is well inside the 600s self-report and well outside a normal quiet tick. Restarts are skipped while a connection is younger than this, so a just-restarted streamer is not judged before it has resubscribed.",
+        "stale_restart_seconds": 240
       },
       "calibration": {
         "_comment": "Optional. `cherrypick calibrate` reads paper P&L per risk profile and advises promotion up this ladder (advisory only; never switches live risk). Omit 'ladder' to get readings without recommendations. 'deliberate_only' rungs are never auto-recommended; 'rule' overrides the default {min_days:14, min_win_rate:0.6, min_sample:20}.",

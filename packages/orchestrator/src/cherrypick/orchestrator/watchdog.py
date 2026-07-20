@@ -76,6 +76,60 @@ def _dolt_reachable(host: str, port: int) -> bool:
         return False
 
 
+def _streamer_stale_age(status: dict[str, Any]) -> float | None:
+    """Seconds since the streamer last received ANY market event, or None if it can't be read.
+
+    Prefers the numeric age the streamer computes itself; falls back to `last_event_at` so a module
+    reporting only a timestamp still works.
+    """
+    for key in ("oldest_event_age_s", "stale_age_s"):
+        value = status.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    last = status.get("last_event_at")
+    if isinstance(last, str):
+        try:
+            seen = datetime.fromisoformat(last)
+            now = datetime.now(seen.tzinfo) if seen.tzinfo else datetime.now()
+            return (now - seen).total_seconds()
+        except ValueError:
+            return None
+    return None
+
+
+def _streamer_connection_age(status: dict[str, Any]) -> float | None:
+    """Seconds since the current connection was established, so a just-restarted streamer isn't
+    judged stale before it has resubscribed."""
+    started = status.get("connected_since")
+    if not isinstance(started, str):
+        return None
+    try:
+        since = datetime.fromisoformat(started)
+    except ValueError:
+        return None
+    now = datetime.now(since.tzinfo) if since.tzinfo else datetime.now()
+    return (now - since).total_seconds()
+
+
+def _stop_streamer(module_root: Path, streamer: dict[str, Any]) -> bool:
+    """Ask a stalled streamer to exit before relaunching.
+
+    Without this the restart is a no-op: the daemon is single-instance guarded, so the new process
+    would see the old PID alive and refuse to start, leaving the stall in place.
+    """
+    stop_argv = streamer.get("stop_argv")
+    if not stop_argv:
+        status_argv = streamer.get("status_argv") or []
+        stop_argv = [*status_argv[:1], "--stop"] if status_argv else None
+    if not stop_argv:
+        return False
+    try:
+        _run_module(module_root, stop_argv, timeout=15)
+        return True
+    except Exception:
+        return False
+
+
 def _start_streamer(module_root: Path, start_argv: list[str]) -> bool:
     """Launch the streamer detached (benign, no-window). Safe: streamer refuses to double-start."""
     try:
@@ -162,12 +216,50 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
     streamer = mcfg.get("streamer", {})
     if streamer.get("enabled") and in_session:
         running = None
+        status: dict[str, Any] = {}
         try:
             r = _run_module(root, streamer["status_argv"], timeout=15)
-            running = bool(first_json(r.stdout).get("running")) if r.returncode == 0 else None
+            if r.returncode == 0:
+                status = first_json(r.stdout) or {}
+                running = bool(status.get("running"))
         except Exception:
             running = None
-        if running is False and streamer.get("auto_restart"):
+
+        # A live socket that has gone quiet is NOT the same as a dead process, and the process check
+        # above cannot see it. Observed 2026-07-20: the streamer reconnected, then received nothing
+        # for 8 minutes while still reporting running=true and its own stale_warning=false (that flag
+        # only trips at 600s). Nothing restarted it; MEIC degraded to REST and the flies module
+        # refused every iteration on stale quotes. Restart on SILENCE, not just on death.
+        stale_age = _streamer_stale_age(status)
+        limit = streamer.get("stale_restart_seconds", 240)
+        connection_age = _streamer_connection_age(status)
+        # Don't count a connection that has not had time to populate yet — a restart takes a few
+        # seconds to resubscribe ~2,000 symbols, and without this the next tick would see stale data
+        # and restart again, forever.
+        settling = connection_age is not None and connection_age < limit
+        if (running and stale_age is not None and stale_age > limit and not settling
+                and streamer.get("auto_restart")):
+            _stop_streamer(root, streamer)
+            started = _start_streamer(root, streamer["start_argv"])
+            findings.append(
+                Finding(
+                    f"{name}.streamer",
+                    WARN,
+                    "Streamer stalled — restarted" if started else "Streamer stalled — restart failed",
+                    f"Connected but no events for {stale_age:.0f}s (limit {limit}s). "
+                    + ("Restart issued." if started else "Could not relaunch; quotes stay stale."),
+                )
+            )
+        elif running and stale_age is not None and stale_age > limit:
+            findings.append(
+                Finding(
+                    f"{name}.streamer",
+                    WARN,
+                    "Streamer stalled",
+                    f"Connected but no events for {stale_age:.0f}s (auto_restart off).",
+                )
+            )
+        elif running is False and streamer.get("auto_restart"):
             started = _start_streamer(root, streamer["start_argv"])
             findings.append(
                 Finding(

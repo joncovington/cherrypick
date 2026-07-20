@@ -234,16 +234,30 @@ def _greeks_and_oi(conn, chain_symbols: list[str]) -> tuple[dict, dict]:
     return greeks, oi
 
 
-def read_spot(db_path, symbol: str) -> float | None:
-    """Latest spot for one symbol — used at settlement, where no chain is needed."""
+def read_spot(db_path, symbol: str, *, max_age_seconds: float | None = None) -> float | None:
+    """Latest spot for one symbol — used at settlement, where no chain is needed.
+
+    `max_age_seconds` rejects a stale print. This matters more here than anywhere else in the module:
+    settlement is the single most consequential price read, it decides every position's P&L at once,
+    and it is irreversible once written. Every other read has the staleness gate applied in
+    `build_snapshot`; this one did not, so a stalled streamer would have settled the whole session
+    against a price hours old without any complaint. Observed 2026-07-20, when the upstream streamer
+    stalled twice and was 99 minutes silent half an hour before the settle time.
+    """
     db_path = Path(db_path)
     if not db_path.exists():
         return None
     conn = _connect_ro(db_path)
     try:
         r = conn.execute(
-            "SELECT last FROM stream_trades WHERE symbol = ?", (symbol.strip().upper(),)
+            "SELECT last, updated_at FROM stream_trades WHERE symbol = ?", (symbol.strip().upper(),)
         ).fetchone()
-        return float(r["last"]) if r and r["last"] is not None else None
+        if not r or r["last"] is None:
+            return None
+        if max_age_seconds is not None:
+            updated = r["updated_at"]
+            if updated is None or (time.time() - float(updated)) > max_age_seconds:
+                return None
+        return float(r["last"])
     finally:
         conn.close()

@@ -188,9 +188,15 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None,
     trade_date = when.date().isoformat()
     out = []
     for symbol in config.get("symbols", ["SPX"]):
-        settlement = price if price is not None else provider.read_spot(cache_path, symbol)
+        # A stale settlement print is worse than a late one: it decides every position's P&L at
+        # once and cannot be undone. Refuse rather than settle the session against an old number —
+        # the operator can re-run with --price once the feed recovers, or with the official print.
+        settle_max_age = config.get("defaults", {}).get("settlement_max_age_seconds", 300)
+        settlement = (price if price is not None
+                      else provider.read_spot(cache_path, symbol, max_age_seconds=settle_max_age))
         if settlement is None:
-            _log(f"{symbol}: cannot settle — no price available")
+            _log(f"{symbol}: cannot settle — no price within {settle_max_age}s "
+                 f"(feed stale or down). Re-run with --price once it recovers.")
             out.append({"symbol": symbol, "ok": False, "reason": "no_settlement_price"})
             continue
         source = "explicit" if price is not None else "last_trade"
@@ -201,8 +207,18 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None,
             out.append({"symbol": symbol, "arm": arm, "ok": True,
                         "settlement_source": source, **result})
 
-    # Written here rather than on a separate schedule so the reports can never describe a session that
-    # hasn't settled yet. The orchestrator's digest and insight pick them up by filename alone.
+    # Only write the reports if something actually settled.
+    #
+    # The paper-eod file is what `session_already_settled` uses as its done-marker, so writing it
+    # after a refused settlement would permanently block the retry — the loop would mark the day
+    # finished, stop trying, and leave every position open with an EOD report describing a session
+    # that never closed. Refusing instead leaves the marker absent, so the next tick tries again and
+    # the day settles by itself as soon as the feed recovers.
+    settled_any = any(r.get("ok") for r in out)
+    if not settled_any:
+        _log("nothing settled — not writing EOD reports; will retry on the next tick")
+        return {"ok": False, "settled": 0, "results": out, "reason": "no_settlement_price"}
+
     reports = eodmod.write_reports(conn, trade_date)
     _log(f"wrote {reports['paper_eod']} and {reports['eod_analysis']}")
     return {"ok": True, "settled": len(out), "results": out, "reports": reports}
@@ -265,6 +281,20 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
         "SELECT * FROM fly_books WHERE trade_date = ?", (today,)).fetchall()]
     positions = conn.execute(
         "SELECT COUNT(*) FROM fly_positions WHERE trade_date = ?", (today,)).fetchone()[0]
+
+    # Can we actually SEE the market right now? This module has no streamer of its own, so when the
+    # upstream one stalls we go blind and can do nothing about it but say so.
+    #
+    # It has to be reported explicitly because every other health signal stays green through an
+    # outage: the task keeps firing, the loop keeps running, and the log keeps growing — with a
+    # `no_fresh_quotes` line every two minutes. A freshness check that watches file mtimes reads
+    # that as perfect health. Observed 2026-07-20: 53 such lines during an 8-minute streamer stall,
+    # with nothing anywhere reporting a problem.
+    probe = provider.build_snapshot(
+        cache_path, (config.get("symbols") or ["SPX"])[0], when=when,
+        max_quote_age_seconds=config.get("defaults", {}).get(
+            "max_quote_age_seconds", provider.DEFAULT_MAX_QUOTE_AGE_SECONDS))
+    data_ok = bool(probe.get("ok"))
     return {
         "ok": True,
         "date": today,
@@ -276,6 +306,11 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
         "session_settled": session_already_settled(today),
         "stream_cache": cache_path,
         "stream_cache_present": os.path.exists(cache_path),
+        # `data_ok` false during RTH means the module is running but blind — the orchestrator surfaces
+        # this rather than trusting log freshness.
+        "data_ok": data_ok,
+        "data_reason": None if data_ok else probe.get("reason"),
+        "quote_stats": probe.get("quote_stats"),
         "books": books,
         "positions_today": positions,
     }
