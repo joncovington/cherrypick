@@ -232,7 +232,7 @@ function _categoryPixelForValue(scale,labels,value){
 }
 
 function _hline(y,label,color,opts){
-  const solid=opts&&opts.solid;
+  const solid=opts&&opts.solid, onLeft=opts&&opts.left, fill=opts&&opts.fill;
   return { id:'hline_'+label, beforeDatasetsDraw(chart){
     const {ctx,scales}=chart; if(!scales.y) return;
     let yPx=_categoryPixelForValue(scales.y,chart.data.labels,y);
@@ -244,11 +244,11 @@ function _hline(y,label,color,opts){
     ctx.beginPath(); ctx.moveTo(left,yPx); ctx.lineTo(right,yPx); ctx.stroke(); ctx.setLineDash([]);
     ctx.font='bold 10px sans-serif';
     const textW=ctx.measureText(label).width, padX=6, tagH=15;
-    const tagX=right-textW-padX*2, tagY=yPx-tagH/2;
-    ctx.fillStyle='#0d1117'; ctx.beginPath();
+    const tagX=onLeft?left+2:right-textW-padX*2, tagY=yPx-tagH/2;
+    ctx.fillStyle=fill?color:'#0d1117'; ctx.beginPath();
     if(ctx.roundRect) ctx.roundRect(tagX,tagY,textW+padX*2,tagH,3); else ctx.rect(tagX,tagY,textW+padX*2,tagH);
     ctx.fill(); ctx.strokeStyle=color; ctx.lineWidth=1; ctx.stroke();
-    ctx.fillStyle=color; ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillStyle=fill?'#0d1117':color; ctx.textAlign='left'; ctx.textBaseline='middle';
     ctx.fillText(label,tagX+padX,yPx+1); ctx.restore();
   }};
 }
@@ -400,13 +400,13 @@ function renderGexMainChart(series,spot,zero,mode,callWall,putWall,spotHistory,m
   opts.scales.x.title={display:true,text:'Gamma Exposure ($)',color:'#6b7280'};
   opts.scales.x.ticks.callback=v=>fGex(v);
   opts.plugins.tooltip.callbacks={label:ctx=>(ctx.dataset.label||'')+': '+fGex(ctx.parsed.x)};
-  opts.datasets={bar:{barThickness:3,maxBarThickness:4}};  // thin sticks like gexbot
+  opts.datasets={bar:{barThickness:6,maxBarThickness:8}};  // dominant green/red bars
   _fitChartToViewport('gex-main-chart',24,220);
   const hlinePlugins=[];
   if(spot!=null) hlinePlugins.push(_hline(spot,'$'+spot.toFixed(2),'#00b4ff',{solid:true}));
   if(zero!=null) hlinePlugins.push(_hline(zero,'Zero Γ: $'+zero.toFixed(2),'#e8b923'));
-  if(callWall!=null) hlinePlugins.push(_hline(callWall,'Call Wall: $'+callWall.toFixed(2),'yellow'));
-  if(putWall!=null) hlinePlugins.push(_hline(putWall,'Put Wall: $'+putWall.toFixed(2),'orange'));
+  if(callWall!=null) hlinePlugins.push(_hline(callWall,callWall.toFixed(2),'#21ce3c',{left:true,fill:true}));
+  if(putWall!=null) hlinePlugins.push(_hline(putWall,putWall.toFixed(2),'#e8423a',{left:true,fill:true}));
   opts.plugins.customHlines={id:'customHlines',beforeDatasetsDraw(chart){ hlinePlugins.forEach(p=>p.beforeDatasetsDraw(chart)); }};
   if(gexMainChart){ gexMainChart.destroy(); gexMainChart=null; }
   gexMainChart=new Chart(document.getElementById('gex-main-chart'),
