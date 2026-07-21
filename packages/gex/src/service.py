@@ -239,24 +239,28 @@ def _flip_nearest_spot(series: list[dict], key: str, spot: float) -> float | Non
     return min(crossings, key=lambda z: abs(z - spot)) if crossings else None
 
 
+def _net_walls(series: list[dict], key: str) -> tuple[float | None, float | None]:
+    """(call_wall, put_wall) = strikes of max / min net GEX — gexbot's
+    "major positive / major negative", not the raw call/put gamma peak."""
+    call = max(series, key=lambda s: s[key], default=None)
+    put = min(series, key=lambda s: s[key], default=None)
+    return (call["strike"] if call else None, put["strike"] if put else None)
+
+
 def _volume_totals(series: list[dict]) -> dict:
-    """Volume-basis rollups (total call/put GEX, net, walls) mirroring
+    """Volume-basis rollups (total call/put GEX, net) mirroring
     compute_gex_profile's OI totals, over the per-strike *_vol fields.
 
-    Zero-gamma is NOT computed here — build_gex sets both display zero-gammas
-    via _flip_nearest_spot (gexbot's per-strike sign-flip-nearest-spot definition).
+    Zero-gamma and walls are NOT computed here — build_gex sets them
+    via _flip_nearest_spot and _net_walls (gexbot's definitions).
     """
     total_call = sum(s["call_gex_vol"] for s in series if s["call_gex_vol"] > 0)
     total_put = abs(sum(s["put_gex_vol"] for s in series if s["put_gex_vol"] < 0))
     net = sum(s["net_gex_vol"] for s in series)
-    call_wall = max(series, key=lambda s: s["call_gex_vol"], default=None)
-    put_wall = min(series, key=lambda s: s["put_gex_vol"], default=None)
     return {
         "total_call_gex_vol": round(total_call),
         "total_put_gex_vol": round(total_put),
         "net_gex_vol": round(net),
-        "call_wall_vol": call_wall["strike"] if call_wall else None,
-        "put_wall_vol": put_wall["strike"] if put_wall else None,
     }
 
 
@@ -296,6 +300,8 @@ def build_gex(cfg: dict, symbol: str | None = None) -> dict:
     totals = {**profile["totals"], **_volume_totals(series)}
     totals["zero_gamma"] = _flip_nearest_spot(series, "net_gex", spot_disp)
     totals["zero_gamma_vol"] = _flip_nearest_spot(series, "net_gex_vol", spot_disp)
+    totals["call_wall"], totals["put_wall"] = _net_walls(series, "net_gex")
+    totals["call_wall_vol"], totals["put_wall_vol"] = _net_walls(series, "net_gex_vol")
 
     return {
         "ok": True,
