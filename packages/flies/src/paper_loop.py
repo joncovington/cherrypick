@@ -36,6 +36,7 @@ import cli as climod  # noqa: E402
 import db as dbmod  # noqa: E402
 import eod as eodmod  # noqa: E402
 import provider  # noqa: E402
+import stream_request  # noqa: E402
 
 # Regular trading hours, ET, as minutes of day. The engine's own entry windows sit inside this; the
 # session gate exists so an out-of-hours run is a clean no-op rather than an iteration against a
@@ -59,13 +60,15 @@ _NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
 def stream_cache_path(config: dict) -> str:
-    """Where MEIC's streamer keeps its cache. Config first, then the managed home, and `~` expands —
-    portable paths only, no machine-specific absolutes anywhere in the suite."""
+    """The suite's canonical shared stream cache, which this module reads read-only. Config first, then
+    the managed home, and `~` expands — portable paths only, no machine-specific absolutes anywhere in
+    the suite. The default (`data/marketdata/stream_cache.db`) is producer-agnostic: whichever streamer
+    is the active producer (MEIC's, or the standalone `packages/streamer` daemon) writes that one file."""
     configured = (config.get("source") or {}).get("stream_cache_db")
     if configured:
         return os.path.expanduser(os.path.expandvars(configured))
     home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
-    return os.path.join(home, "data", "meic", "stream_cache.db")
+    return os.path.join(home, "data", "marketdata", "stream_cache.db")
 
 
 _logger = logging.getLogger("flies_paper_loop")
@@ -396,6 +399,8 @@ def main(argv=None) -> int:
         return 0
 
     config = climod.load_config(args.config)
+    # Tell the streamer which underlyings we need kept fresh in the shared cache (best-effort).
+    stream_request.register(config)
     cache_path = args.stream_cache or stream_cache_path(config)
     conn = dbmod.connect(args.db)
 

@@ -100,11 +100,13 @@ line per arm rather than a blended book.
 
 ## Data source
 
-This module **runs no streamer**. `provider.py` reads MEIC's `stream_cache.db` read-only — the same
-piggyback path `cherrypick-gex` uses — so the suite runs one streamer rather than three, and flies can
-never disturb the loop that is actually trading. MEIC's streamer must be running and subscribed to the
-symbols in `config.json`; open interest, and therefore GEX, exists only because it subscribes DXLink
-Summary for its ATM window.
+This module **runs no streamer**. `provider.py` reads the suite's canonical shared stream cache
+(`~/.cherrypick/data/marketdata/stream_cache.db`) read-only — the same piggyback path `cherrypick-gex`
+uses — so the suite runs one streamer rather than three, and flies can never disturb the loop that is
+actually trading. Some producer must be streaming that cache — MEIC's streamer when MEIC is installed,
+otherwise the standalone `packages/streamer` daemon — subscribed to the symbols in `config.json`; open
+interest, and therefore GEX, exists only because the producer subscribes DXLink Summary for its ATM
+window.
 
 The provider refuses rather than guesses. Stale quotes (older than `max_quote_age_seconds`), crossed
 quotes, a missing spot, an empty chain — each returns `{"ok": False, "reason": ...}`, which the loop
