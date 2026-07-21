@@ -380,7 +380,7 @@ function renderGexMainChart(series,spot,zero,mode,callWall,putWall,spotHistory,m
   let ds,titleText;
   if(mode==='oivol'){
     ds=[
-      {label:'Net GEX (OI)',data:series.map(s=>s.net_gex),backgroundColor:series.map(s=>s.net_gex>=0?'green':'red')},
+      {label:'Net GEX (OI)',data:series.map(s=>s.net_gex),backgroundColor:series.map(s=>s.net_gex>=0?'#21ce3c':'#e8423a')},
       {label:'Net GEX (Volume)',data:series.map(s=>s.net_gex_vol),backgroundColor:series.map(s=>s.net_gex_vol>=0?'lightgreen':'lightcoral')},
     ];
     titleText='GEX by Strike — Net GEX (OI vs Volume)';
@@ -388,7 +388,7 @@ function renderGexMainChart(series,spot,zero,mode,callWall,putWall,spotHistory,m
     ds=[{label:'|Net GEX|',data:series.map(s=>s.abs_gex),backgroundColor:'blue'}];
     titleText='GEX by Strike — Absolute GEX';
   } else {
-    ds=[{label:'Net GEX',data:series.map(s=>s.net_gex),backgroundColor:series.map(s=>s.net_gex>=0?'green':'red')}];
+    ds=[{label:'Net GEX',data:series.map(s=>s.net_gex),backgroundColor:series.map(s=>s.net_gex>=0?'#21ce3c':'#e8423a')}];
     titleText='GEX by Strike — Net GEX (Green=Call Heavy, Red=Put Heavy)';
   }
   document.getElementById('gex-chart-title').textContent=titleText;
@@ -400,7 +400,7 @@ function renderGexMainChart(series,spot,zero,mode,callWall,putWall,spotHistory,m
   opts.scales.x.title={display:true,text:'Gamma Exposure ($)',color:'#6b7280'};
   opts.scales.x.ticks.callback=v=>fGex(v);
   opts.plugins.tooltip.callbacks={label:ctx=>(ctx.dataset.label||'')+': '+fGex(ctx.parsed.x)};
-  opts.datasets={bar:{barThickness:6,maxBarThickness:8}};  // dominant green/red bars
+  opts.datasets={bar:{barThickness:3,maxBarThickness:4}};  // thin sticks like gexbot
   _fitChartToViewport('gex-main-chart',24,220);
   const hlinePlugins=[];
   if(spot!=null) hlinePlugins.push(_hline(spot,'$'+spot.toFixed(2),'#00b4ff',{solid:true}));
