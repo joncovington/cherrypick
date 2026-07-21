@@ -376,6 +376,7 @@ function _spotHistoryPlugin(history,labels,openTs,closeTs){
 
 function renderGexMainChart(series,spot,zero,mode,callWall,putWall,spotHistory,marketOpenTs,marketCloseTs){
   series=_trimToData(series,['call_gex','put_gex','net_gex','abs_gex','net_gex_vol'],3);
+  if(spot!=null) series=series.filter(s=>Math.abs(s.strike-spot)<=40);  // zoom to near-money (gexbot perspective)
   const labels=series.map(s=>s.strike);
   let ds,titleText;
   if(mode==='oivol'){
