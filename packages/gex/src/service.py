@@ -240,11 +240,11 @@ def _flip_nearest_spot(series: list[dict], key: str, spot: float) -> float | Non
 
 
 def _volume_totals(series: list[dict]) -> dict:
-    """Volume-basis rollups mirroring compute_gex_profile's OI totals.
+    """Volume-basis rollups (total call/put GEX, net, walls) mirroring
+    compute_gex_profile's OI totals, over the per-strike *_vol fields.
 
-    The per-strike *_vol fields already exist in the series; this aggregates
-    them and reuses the core zero-gamma interpolation on the volume net, so the
-    OI and volume zero-gammas are computed identically.
+    Zero-gamma is NOT computed here — build_gex sets both display zero-gammas
+    via _flip_nearest_spot (gexbot's per-strike sign-flip-nearest-spot definition).
     """
     total_call = sum(s["call_gex_vol"] for s in series if s["call_gex_vol"] > 0)
     total_put = abs(sum(s["put_gex_vol"] for s in series if s["put_gex_vol"] < 0))

@@ -80,7 +80,8 @@ def test_provider_opens_read_only(tmp_path):
 
 
 def test_flip_nearest_spot_picks_crossing_closest_to_spot():
-    # Sign flips between 90/91 (decoy, far) and 100/101 (near spot 100.5).
+    # Series [-10, 5, -20, 20] sign-flips 3x (90.67, ~92.8, 100.5); the helper
+    # returns the crossing nearest the given spot.
     series = [
         {"strike": 90.0, "net": -10}, {"strike": 91.0, "net": 5},
         {"strike": 100.0, "net": -20}, {"strike": 101.0, "net": 20},
