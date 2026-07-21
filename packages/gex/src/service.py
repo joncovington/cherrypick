@@ -24,7 +24,7 @@ if _CORE.is_dir() and str(_CORE) not in _sys.path:
 
 import sqlite3  # noqa: E402
 
-from cherrypick.core.gex import compute_gex_profile, interpolate_zero_gamma  # noqa: E402
+from cherrypick.core.gex import compute_gex_profile  # noqa: E402
 
 import provider as _provider  # noqa: E402
 
@@ -222,6 +222,23 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     return 0
 
 
+def _flip_nearest_spot(series: list[dict], key: str, spot: float) -> float | None:
+    """Interpolated strike where per-strike `key` changes sign, nearest to spot.
+
+    This is gexbot's zero-gamma definition (confirmed empirically) — distinct
+    from the cumulative-sum crossing in cherrypick.core.gex.interpolate_zero_gamma,
+    which stays as MEIC's trading gate uses it. Series is sorted ascending.
+    """
+    crossings = []
+    for a, b in zip(series, series[1:], strict=False):
+        va, vb = a[key], b[key]
+        if (va < 0 <= vb) or (va >= 0 > vb):
+            den = vb - va
+            t = (-va / den) if den else 0.5
+            crossings.append(round(a["strike"] + t * (b["strike"] - a["strike"]), 2))
+    return min(crossings, key=lambda z: abs(z - spot)) if crossings else None
+
+
 def _volume_totals(series: list[dict]) -> dict:
     """Volume-basis rollups mirroring compute_gex_profile's OI totals.
 
@@ -232,16 +249,12 @@ def _volume_totals(series: list[dict]) -> dict:
     total_call = sum(s["call_gex_vol"] for s in series if s["call_gex_vol"] > 0)
     total_put = abs(sum(s["put_gex_vol"] for s in series if s["put_gex_vol"] < 0))
     net = sum(s["net_gex_vol"] for s in series)
-    zero_vol = interpolate_zero_gamma(
-        [{"strike": s["strike"], "net_gex": s["net_gex_vol"]} for s in series]
-    )
     call_wall = max(series, key=lambda s: s["call_gex_vol"], default=None)
     put_wall = min(series, key=lambda s: s["put_gex_vol"], default=None)
     return {
         "total_call_gex_vol": round(total_call),
         "total_put_gex_vol": round(total_put),
         "net_gex_vol": round(net),
-        "zero_gamma_vol": zero_vol,
         "call_wall_vol": call_wall["strike"] if call_wall else None,
         "put_wall_vol": put_wall["strike"] if put_wall else None,
     }
@@ -278,15 +291,21 @@ def build_gex(cfg: dict, symbol: str | None = None) -> dict:
     spot_history = _fetch_spot_history(Path(cfg["history_db_path"]), symbol)
     market_open_ts, market_close_ts = _market_open_close_ts()
 
+    series = profile["series"]
+    spot_disp = (snap.spot or 0) * snap.strike_scale
+    totals = {**profile["totals"], **_volume_totals(series)}
+    totals["zero_gamma"] = _flip_nearest_spot(series, "net_gex", spot_disp)
+    totals["zero_gamma_vol"] = _flip_nearest_spot(series, "net_gex_vol", spot_disp)
+
     return {
         "ok": True,
         "symbol": symbol,
         "expiration": snap.expiration,
         "underlying_price": snap.spot,
         "source": snap.source,
-        "series": profile["series"],
+        "series": series,
         "spot_history": spot_history,
         "market_open_ts": market_open_ts,
         "market_close_ts": market_close_ts,
-        "totals": {**profile["totals"], **_volume_totals(profile["series"])},
+        "totals": totals,
     }
