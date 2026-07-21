@@ -24,7 +24,7 @@ if _CORE.is_dir() and str(_CORE) not in _sys.path:
 
 import sqlite3  # noqa: E402
 
-from cherrypick.core.gex import compute_gex_profile  # noqa: E402
+from cherrypick.core.gex import compute_gex_profile, interpolate_zero_gamma  # noqa: E402
 
 import provider as _provider  # noqa: E402
 
@@ -222,6 +222,31 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     return 0
 
 
+def _volume_totals(series: list[dict]) -> dict:
+    """Volume-basis rollups mirroring compute_gex_profile's OI totals.
+
+    The per-strike *_vol fields already exist in the series; this aggregates
+    them and reuses the core zero-gamma interpolation on the volume net, so the
+    OI and volume zero-gammas are computed identically.
+    """
+    total_call = sum(s["call_gex_vol"] for s in series if s["call_gex_vol"] > 0)
+    total_put = abs(sum(s["put_gex_vol"] for s in series if s["put_gex_vol"] < 0))
+    net = sum(s["net_gex_vol"] for s in series)
+    zero_vol = interpolate_zero_gamma(
+        [{"strike": s["strike"], "net_gex": s["net_gex_vol"]} for s in series]
+    )
+    call_wall = max(series, key=lambda s: s["call_gex_vol"], default=None)
+    put_wall = min(series, key=lambda s: s["put_gex_vol"], default=None)
+    return {
+        "total_call_gex_vol": round(total_call),
+        "total_put_gex_vol": round(total_put),
+        "net_gex_vol": round(net),
+        "zero_gamma_vol": zero_vol,
+        "call_wall_vol": call_wall["strike"] if call_wall else None,
+        "put_wall_vol": put_wall["strike"] if put_wall else None,
+    }
+
+
 def build_gex(cfg: dict, symbol: str | None = None) -> dict:
     """Read a snapshot from the configured stream cache, aggregate it, and return the chart payload.
 
@@ -263,5 +288,5 @@ def build_gex(cfg: dict, symbol: str | None = None) -> dict:
         "spot_history": spot_history,
         "market_open_ts": market_open_ts,
         "market_close_ts": market_close_ts,
-        "totals": profile["totals"],
+        "totals": {**profile["totals"], **_volume_totals(profile["series"])},
     }
