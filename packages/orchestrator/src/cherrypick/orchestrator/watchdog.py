@@ -151,6 +151,110 @@ def _start_streamer(module_root: Path, start_argv: list[str]) -> bool:
 
 
 # --------------------------------------------------------------------------- checks
+def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list[Finding]:
+    """Liveness + silence-based restart for a market-data streamer.
+
+    The caller session-gates (a streamer is only expected to have fresh events during market hours) and
+    supplies the finding `label`; the contract is identical whether the producer is MEIC's own streamer
+    (`modules.meic.streamer`) or the standalone producer (top-level `streamer`). Restart on SILENCE, not
+    just death — a live socket that has gone quiet still reports running=true. The 2026-07-20 stall: the
+    streamer reconnected, then received nothing for 8 minutes while reporting running=true and its own
+    stale_warning=false (that flag only trips at 600s). Nothing restarted it; MEIC degraded to REST and
+    the flies module refused every iteration on stale quotes. This is the load-bearing bit of the
+    walk-away guarantee, so it lives in one place both producers share (a copy would drift).
+    """
+    findings: list[Finding] = []
+    running = None
+    status: dict[str, Any] = {}
+    try:
+        r = _run_module(root, spec["status_argv"], timeout=15)
+        if r.returncode == 0:
+            status = first_json(r.stdout) or {}
+            running = bool(status.get("running"))
+    except Exception:
+        running = None
+
+    stale_age = _streamer_stale_age(status)
+    limit = spec.get("stale_restart_seconds", 240)
+    connection_age = _streamer_connection_age(status)
+    # Don't count a connection that has not had time to populate yet — a restart takes a few seconds to
+    # resubscribe, and without this the next tick would see stale data and restart again, forever.
+    settling = connection_age is not None and connection_age < limit
+    if (running and stale_age is not None and stale_age > limit and not settling
+            and spec.get("auto_restart")):
+        _stop_streamer(root, spec)
+        started = _start_streamer(root, spec["start_argv"])
+        findings.append(
+            Finding(
+                label,
+                WARN,
+                "Streamer stalled — restarted" if started else "Streamer stalled — restart failed",
+                f"Connected but no events for {stale_age:.0f}s (limit {limit}s). "
+                + ("Restart issued." if started else "Could not relaunch; quotes stay stale."),
+            )
+        )
+    elif running and stale_age is not None and stale_age > limit:
+        findings.append(
+            Finding(
+                label,
+                WARN,
+                "Streamer stalled",
+                f"Connected but no events for {stale_age:.0f}s (auto_restart off).",
+            )
+        )
+    elif running is False and spec.get("auto_restart"):
+        started = _start_streamer(root, spec["start_argv"])
+        findings.append(
+            Finding(
+                label,
+                WARN,
+                "Streamer was down — restarted" if started else "Streamer down — restart failed",
+                "Auto-restart issued."
+                if started
+                else "Could not launch streamer; paper GEX/quotes degrade to REST.",
+            )
+        )
+    elif running is False:
+        findings.append(
+            Finding(
+                label,
+                WARN,
+                "Streamer down",
+                "Streamer not running during market hours (auto_restart off).",
+            )
+        )
+    elif running is None:
+        findings.append(
+            Finding(
+                label,
+                WARN,
+                "Streamer status unknown",
+                "Could not read streamer --status; check manually.",
+            )
+        )
+    else:
+        findings.append(Finding(label, OK, "Streamer", "running"))
+    return findings
+
+
+def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
+    """Watchdog the standalone market-data streamer (the suite's sole producer) when it is configured as
+    a top-level `streamer` block.
+
+    Dormant unless that block exists and is enabled — until the cutover, MEIC still owns the streamer
+    under `modules.meic.streamer` and this returns nothing. Exactly one producer is ever enabled at a
+    time (enabling this + `modules.meic.streamer.enabled=false` is the flip). Session-gated + silence
+    restart, the same contract MEIC's streamer has via `_check_streamer_health`.
+    """
+    spec = cfg.get("streamer") or {}
+    if not spec.get("enabled") or not in_session:
+        return []
+    root = cfgmod.module_root(spec, "streamer")
+    if not root.exists():
+        return [Finding("streamer", WARN, "streamer checkout missing", f"not found at {root}")]
+    return _check_streamer_health("streamer", root, spec)
+
+
 def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Finding]:
     """Health checks for a `self_healing` module (one that registers its own recurring task).
 
@@ -215,82 +319,7 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
     # (c) streamer liveness (session only); benign auto-restart
     streamer = mcfg.get("streamer", {})
     if streamer.get("enabled") and in_session:
-        running = None
-        status: dict[str, Any] = {}
-        try:
-            r = _run_module(root, streamer["status_argv"], timeout=15)
-            if r.returncode == 0:
-                status = first_json(r.stdout) or {}
-                running = bool(status.get("running"))
-        except Exception:
-            running = None
-
-        # A live socket that has gone quiet is NOT the same as a dead process, and the process check
-        # above cannot see it. Observed 2026-07-20: the streamer reconnected, then received nothing
-        # for 8 minutes while still reporting running=true and its own stale_warning=false (that flag
-        # only trips at 600s). Nothing restarted it; MEIC degraded to REST and the flies module
-        # refused every iteration on stale quotes. Restart on SILENCE, not just on death.
-        stale_age = _streamer_stale_age(status)
-        limit = streamer.get("stale_restart_seconds", 240)
-        connection_age = _streamer_connection_age(status)
-        # Don't count a connection that has not had time to populate yet — a restart takes a few
-        # seconds to resubscribe ~2,000 symbols, and without this the next tick would see stale data
-        # and restart again, forever.
-        settling = connection_age is not None and connection_age < limit
-        if (running and stale_age is not None and stale_age > limit and not settling
-                and streamer.get("auto_restart")):
-            _stop_streamer(root, streamer)
-            started = _start_streamer(root, streamer["start_argv"])
-            findings.append(
-                Finding(
-                    f"{name}.streamer",
-                    WARN,
-                    "Streamer stalled — restarted" if started else "Streamer stalled — restart failed",
-                    f"Connected but no events for {stale_age:.0f}s (limit {limit}s). "
-                    + ("Restart issued." if started else "Could not relaunch; quotes stay stale."),
-                )
-            )
-        elif running and stale_age is not None and stale_age > limit:
-            findings.append(
-                Finding(
-                    f"{name}.streamer",
-                    WARN,
-                    "Streamer stalled",
-                    f"Connected but no events for {stale_age:.0f}s (auto_restart off).",
-                )
-            )
-        elif running is False and streamer.get("auto_restart"):
-            started = _start_streamer(root, streamer["start_argv"])
-            findings.append(
-                Finding(
-                    f"{name}.streamer",
-                    WARN,
-                    "Streamer was down — restarted" if started else "Streamer down — restart failed",
-                    "Auto-restart issued."
-                    if started
-                    else "Could not launch streamer; paper GEX/quotes degrade to REST.",
-                )
-            )
-        elif running is False:
-            findings.append(
-                Finding(
-                    f"{name}.streamer",
-                    WARN,
-                    "Streamer down",
-                    "Streamer not running during market hours (auto_restart off).",
-                )
-            )
-        elif running is None:
-            findings.append(
-                Finding(
-                    f"{name}.streamer",
-                    WARN,
-                    "Streamer status unknown",
-                    "Could not read streamer --status; check manually.",
-                )
-            )
-        else:
-            findings.append(Finding(f"{name}.streamer", OK, "Streamer", "running"))
+        findings += _check_streamer_health(f"{name}.streamer", root, streamer)
     return findings
 
 
@@ -552,6 +581,10 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 
     # Keep generic background services (e.g. the gex spot-trail recorder) alive.
     findings += _check_services(cfg)
+
+    # Watchdog the standalone market-data producer (dormant until the cutover enables the top-level
+    # `streamer` block; today MEIC still owns the streamer under modules.meic.streamer).
+    findings += _check_producer(cfg, in_session)
 
     overall = OK
     for f in findings:

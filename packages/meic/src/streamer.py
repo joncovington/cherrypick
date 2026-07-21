@@ -61,7 +61,7 @@ from session import get_session  # noqa: E402
 # ---------------------------------------------------------------------------
 
 _ROOT = Path(__file__).parent.parent
-_CACHE_DB  = _paths.stream_cache_path()      # ~/.cherrypick/data/meic/ (or MEIC_DATA_DIR)
+_CACHE_DB  = _paths.stream_cache_path()      # canonical shared cache ~/.cherrypick/data/marketdata/
 _PID_FILE  = _paths.data_path("streamer.pid")
 _TRADES_DB = _paths.live_db_path()
 _LOG_FILE  = _paths.log_path("streamer.log")

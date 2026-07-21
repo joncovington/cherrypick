@@ -196,6 +196,16 @@
       "auto_restart": true
     }
   ],
+  "streamer": {
+    "_comment": "The suite's standalone market-data producer (packages/streamer) — the single streamer that writes the shared cache ~/.cherrypick/data/marketdata/stream_cache.db, which every module reads. DISABLED until the cutover: today MEIC owns the streamer under modules.meic.streamer, and exactly ONE producer runs at a time. At the flip, set enabled=true here AND modules.meic.streamer.enabled=false (MEIC becomes a sidecar that keeps only its REST poller + 7699 API). Session-gated and silence-restarted by the watchdog, the same contract MEIC's streamer has. Located by 'path' (relative to this file). Modules declare which symbols they need via ~/.cherrypick/state/stream_requests/<module>.json; the streamer streams the union.",
+    "enabled": false,
+    "path": "../streamer",
+    "status_argv": ["run.py", "--status"],
+    "start_argv": ["run.py"],
+    "stop_argv": ["run.py", "--stop"],
+    "auto_restart": true,
+    "stale_restart_seconds": 240
+  },
   "trade_notify": {
     "_comment": "Dedicated low-latency task that pushes new paper entries/exits to trade_channels. Runs far more often than the watchdog so fills reach you within ~interval_minutes instead of a full watchdog cycle.",
     "task_name": "cherrypick-trade-notify",
