@@ -66,12 +66,33 @@ def test_iteration_opens_a_position_and_records_it(cache_with_chain, conn):
     assert rows[0]["arm"] == "control" and rows[0]["symbol"] == "SPX"
 
 
+def test_a_built_snapshot_records_feed_telemetry(cache_with_chain, conn):
+    """Every tick that built a snapshot leaves a feed row saying so, with the quote counts — so a
+    day's results can be read against how good its data actually was."""
+    paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(12))
+    feed = conn.execute("SELECT * FROM fly_snapshots").fetchall()
+    assert len(feed) == 1
+    assert feed[0]["status"] == "ok" and feed[0]["symbol"] == "SPX"
+    assert feed[0]["quotes_fresh"] > 0 and feed[0]["underlying_price"] is not None
+
+
 def test_missing_snapshot_is_logged_not_fatal(tmp_path, conn):
     """A streamer still warming up is an ordinary condition, not an outage. The loop has to survive
     it every morning."""
     result = paper_loop.run_once(config(), conn, cache_path=str(tmp_path / "absent.db"), when=at(12))
     assert result["ok"] is True
     assert result["results"][0]["reason"] == "stream_cache_missing"
+
+
+def test_a_refused_snapshot_still_records_a_feed_row(tmp_path, conn):
+    """The whole point of persisting this. A refusal never reaches the arm loop, so without a feed
+    row the tick vanishes and a feed outage looks exactly like a quiet market. The refusal has to
+    leave a trace saying WHY, on the same footing as a healthy tick."""
+    paper_loop.run_once(config(), conn, cache_path=str(tmp_path / "absent.db"), when=at(12))
+    feed = conn.execute("SELECT * FROM fly_snapshots").fetchall()
+    assert len(feed) == 1
+    assert feed[0]["status"] == "stream_cache_missing"
+    assert feed[0]["quotes_fresh"] is None       # failed before any quote could be scanned
 
 
 # --------------------------------------------------------------------------- settlement
@@ -165,10 +186,24 @@ def test_fixture_sanity(cache_with_chain):
 
 # --------------------------------------------------------------------------- settlement self-trigger
 @pytest.fixture()
-def home(tmp_path, monkeypatch):
-    """Redirect the cherrypick home so EOD reports land in tmp, never the real logs directory."""
-    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
-    return tmp_path / "logs" / "flies"
+def home(managed_home):
+    """Where EOD reports land. The redirect itself is the autouse `managed_home` fixture in
+    conftest.py — this only names the directory, so a test that forgets to ask for it is still
+    isolated."""
+    return managed_home / "logs" / "flies"
+
+
+def test_the_managed_home_is_never_the_real_one(tmp_path):
+    """The guard on the guard.
+
+    Every other test in this file could pass while quietly writing into `~/.cherrypick`, which is
+    precisely what happened on 2026-07-20 and cost a live session its settlement. Assert the
+    redirect rather than trusting it.
+    """
+    import eod as eodmod
+
+    assert tmp_path in eodmod.logs_dir().parents
+    assert tmp_path in paper_loop.log_file().parents
 
 
 def test_settle_time_defaults_and_config_override():
@@ -291,7 +326,7 @@ def test_a_refused_settlement_does_not_block_the_retry(cache_with_chain, conn, h
     paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(16, 30))
     day = TRADING_DAY.date().isoformat()
     assert not (home / f"paper-eod-{day}.md").exists(), "marker must not be written on refusal"
-    assert paper_loop.session_already_settled(day, home) is False
+    assert paper_loop.session_already_settled(conn, day) is False
 
     # Feed recovers; the very next tick settles the day with no operator action.
     c = sqlite3.connect(cache_with_chain)
@@ -301,6 +336,49 @@ def test_a_refused_settlement_does_not_block_the_retry(cache_with_chain, conn, h
     out = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(16, 32))
     assert out.get("settled_session") is True
     assert (home / f"paper-eod-{day}.md").exists()
+
+
+def test_a_stray_report_file_does_not_block_settlement(cache_with_chain, conn, home):
+    """The 2026-07-20 regression, in one test.
+
+    A `paper-eod-<today>.md` appearing from anywhere other than settlement — a test run against the
+    real home, a half-finished manual `--eod-reports`, a restored backup — used to convince the loop
+    the day was finished. It settled nothing, said nothing, and left every position open.
+    """
+    day = TRADING_DAY.date().isoformat()
+    paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(12))
+    home.mkdir(parents=True, exist_ok=True)
+    (home / f"paper-eod-{day}.md").write_text("not written by settlement", encoding="utf-8")
+
+    assert paper_loop.session_already_settled(conn, day) is False, "a file is not a settlement"
+    out = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(16, 30))
+    assert out.get("settled_session") is True
+    assert conn.execute(
+        "SELECT COUNT(*) FROM fly_positions WHERE status='settled'").fetchone()[0] == 1
+
+
+def test_a_no_trade_day_still_settles_once(cache_with_chain, conn, home):
+    """A session that never opened a position has no books, and 'no books' must read as unsettled or
+    the day would never get its roll-up — but it must also settle exactly once, not every tick."""
+    first = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(16, 30))
+    assert first.get("settled_session") is True
+    second = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(16, 40))
+    assert second.get("settled_session") is None
+    assert second["session_settled"] is True
+
+
+def test_the_settled_evening_leaves_a_rate_limited_heartbeat(cache_with_chain, conn, home, caplog):
+    """A settled day no-ops for the rest of the evening, and a silent log is what a dead loop looks
+    like — 2026-07-20 read as "the loop stopped at 13:58" for exactly that reason. But the task fires
+    every two minutes, so the heartbeat is once an hour, not once a tick."""
+    paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(16, 30))
+    with caplog.at_level("INFO", logger="flies_paper_loop"):
+        paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(18, 0))
+        assert any("idle until the next session" in r.message for r in caplog.records)
+
+        caplog.clear()
+        paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(18, 30))
+        assert not caplog.records, "a line every tick would bury the session it surrounds"
 
 
 def test_an_explicit_price_bypasses_the_staleness_gate(cache_with_chain, conn, home):

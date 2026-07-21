@@ -68,8 +68,19 @@ def stream_cache_path(config: dict) -> str:
     return os.path.join(home, "data", "meic", "stream_cache.db")
 
 
-_LOG_FILE = eodmod.logs_dir() / "flies_paper.log"
 _logger = logging.getLogger("flies_paper_loop")
+
+
+def log_file():
+    """Resolved on every call, never at import.
+
+    A module-level constant here read `CHERRYPICK_HOME` once, when the interpreter first imported
+    this file — which is before any test can redirect it. So every test in the suite appended to the
+    real `~/.cherrypick/logs/flies/flies_paper.log` no matter how carefully it isolated everything
+    else, and a fixture session's fills sat interleaved with a live one's in the file an operator
+    reads to reconstruct the day.
+    """
+    return eodmod.logs_dir() / "flies_paper.log"
 
 
 def _setup_logging() -> None:
@@ -79,18 +90,30 @@ def _setup_logging() -> None:
     discarded. Without a file the first live session would leave no trace of why it did or didn't
     trade — and the orchestrator's freshness check watches this exact file to tell "the loop is
     running quietly" from "the loop is dead", so its absence would also read as an outage.
+
+    The file handler is rebuilt if the resolved path has moved since it was attached, so a redirected
+    home takes effect even though the logger itself is process-global state.
     """
-    if _logger.handlers:
-        return
-    _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    target = log_file()
+    attached = next((h for h in _logger.handlers if isinstance(h, RotatingFileHandler)), None)
+    if attached is not None:
+        if os.path.abspath(attached.baseFilename) == os.path.abspath(str(target)):
+            return
+        _logger.removeHandler(attached)
+        attached.close()
+
+    target.parent.mkdir(parents=True, exist_ok=True)
     fmt = logging.Formatter("[%(asctime)s] %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
-    handler = RotatingFileHandler(_LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5,
+    handler = RotatingFileHandler(target, maxBytes=5 * 1024 * 1024, backupCount=5,
                                   encoding="utf-8")
     handler.setFormatter(fmt)
     _logger.addHandler(handler)
-    stream = logging.StreamHandler()
-    stream.setFormatter(fmt)
-    _logger.addHandler(stream)
+    # RotatingFileHandler subclasses StreamHandler, so the check has to exclude it explicitly or the
+    # console handler is never added.
+    if not any(type(h) is logging.StreamHandler for h in _logger.handlers):
+        stream = logging.StreamHandler()
+        stream.setFormatter(fmt)
+        _logger.addHandler(stream)
     _logger.setLevel(logging.INFO)
 
 
@@ -111,11 +134,23 @@ def settle_time_min(config: dict) -> int:
     return int(hours) * 60 + int(minutes)
 
 
-def session_already_settled(day: str, directory=None) -> bool:
-    """Has this session's EOD already been written? The report file is the marker, so a task firing
-    every two minutes after the close settles once and then no-ops."""
-    directory = directory or eodmod.logs_dir()
-    return (directory / f"paper-eod-{day}.md").exists()
+def session_already_settled(conn, day: str) -> bool:
+    """Have this day's books been closed out? The marker is book state, so a task firing every two
+    minutes after the close settles once and then no-ops.
+
+    This was the existence of `paper-eod-<day>.md`, which made the marker something any process able
+    to create a file could set. On 2026-07-20 the test suite did exactly that against the real
+    managed home while the session was live: the loop read its own day as finished at the settle
+    time, skipped settlement in silence, and left eleven positions open under a report describing a
+    fixture. A marker for "settlement happened" must be writable only by settlement.
+
+    A day with no books at all is NOT settled — that is the no-trade session, which still has to run
+    settlement once so the day gets its roll-up and its report.
+    """
+    total, settled = conn.execute(
+        "SELECT COUNT(*), COALESCE(SUM(status = 'settled'), 0) FROM fly_books WHERE trade_date = ?",
+        (day,)).fetchone()
+    return total > 0 and total == settled
 
 
 def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = False) -> dict:
@@ -139,13 +174,22 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
 
     # Settlement next, and deliberately BEFORE the RTH gate — the settle time is after the close, so
     # an RTH-gated check would never reach it.
-    if now_min >= settle_time_min(config) and not session_already_settled(day):
+    past_settle = now_min >= settle_time_min(config)
+    settled = session_already_settled(conn, day)
+    if past_settle and not settled:
         _log(f"past settle time ({now_min // 60:02d}:{now_min % 60:02d}) — settling {day}")
         return {"ok": True, "settled_session": True,
                 **run_settle(config, conn, cache_path=cache_path, when=when)}
 
     if not force and not in_session(now_min):
-        return {"ok": True, "skipped": "outside_rth", "now_min": now_min}
+        # A settled day is silent for the rest of the evening, and silence is what a dead loop looks
+        # like too — the whole reason 2026-07-20 read as "the loop stopped at 13:58" is that the
+        # skip logged nothing. So leave a heartbeat, rate-limited to the first tick of each hour:
+        # the task fires ~700 times a day and a line per tick would bury the session it surrounds.
+        if past_settle and settled and now_min % 60 < _TASK_INTERVAL_MIN:
+            _log(f"{day} settled — idle until the next session")
+        return {"ok": True, "skipped": "outside_rth", "now_min": now_min,
+                "session_settled": settled}
 
     arms = climod.enabled_arms(config)
     results = []
@@ -157,14 +201,21 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
         )
         if not snapshot.get("ok"):
             # Not an error. A streamer still warming up, or a symbol with no fresh quotes, is an
-            # ordinary condition — log it so a barren session is explicable afterwards.
+            # ordinary condition — log it so a barren session is explicable afterwards. Record the
+            # refusal to fly_snapshots too: the arm loop below never runs on a refusal, so without
+            # this the tick leaves no trace and a feed outage looks identical to a quiet market.
             _log(f"{symbol}: no snapshot ({snapshot['reason']})")
+            dbmod.record_snapshot(conn, trade_date=day, symbol=symbol, status=snapshot["reason"],
+                                  quotes_rejected=snapshot.get("rejected"))
             results.append({"symbol": symbol, "ok": False, "reason": snapshot["reason"]})
             continue
 
         stats = snapshot["quote_stats"]
         _log(f"{symbol}: spot {snapshot['underlying_price']:.2f} dte {snapshot['dte']} "
              f"quotes {stats['fresh']} fresh / {stats['rejected']} rejected")
+        dbmod.record_snapshot(conn, trade_date=day, symbol=symbol, status="ok",
+                              quotes_fresh=stats["fresh"], quotes_rejected=stats["rejected"],
+                              underlying_price=snapshot["underlying_price"])
         for arm in arms:
             outcome = bookmod.process_snapshot(snapshot, config, conn, arm)
             for action in outcome["actions"]:
@@ -209,11 +260,9 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None,
 
     # Only write the reports if something actually settled.
     #
-    # The paper-eod file is what `session_already_settled` uses as its done-marker, so writing it
-    # after a refused settlement would permanently block the retry — the loop would mark the day
-    # finished, stop trying, and leave every position open with an EOD report describing a session
-    # that never closed. Refusing instead leaves the marker absent, so the next tick tries again and
-    # the day settles by itself as soon as the feed recovers.
+    # A report describing a session that never closed is worse than no report: it is indistinguishable
+    # from a real one. Refusing leaves the books open, which is now exactly what `session_already_settled`
+    # reads, so the next tick tries again and the day settles by itself as soon as the feed recovers.
     settled_any = any(r.get("ok") for r in out)
     if not settled_any:
         _log("nothing settled — not writing EOD reports; will retry on the next tick")
@@ -303,7 +352,7 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
         # "nothing is scheduled at all" — which look identical in an empty paper DB.
         "scheduled_task": task_installed(),
         "task_name": _TASK_NAME,
-        "session_settled": session_already_settled(today),
+        "session_settled": session_already_settled(conn, today),
         "stream_cache": cache_path,
         "stream_cache_present": os.path.exists(cache_path),
         # `data_ok` false during RTH means the module is running but blind — the orchestrator surfaces

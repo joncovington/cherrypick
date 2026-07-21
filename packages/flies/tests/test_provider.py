@@ -118,6 +118,14 @@ def test_stale_quotes_are_rejected_not_traded(cache):
     assert snap["ok"] is False and snap["reason"] == "no_fresh_quotes"
 
 
+def test_no_fresh_quotes_carries_the_rejected_count(cache):
+    """The refusal has to carry HOW MANY quotes were stale, not just that some were. That count is
+    what separates a barren session from a broken feed once the day is over."""
+    seed(cache, quote_age=1200)
+    snap = provider.build_snapshot(cache, "SPX", max_quote_age_seconds=120)
+    assert snap["reason"] == "no_fresh_quotes" and snap["rejected"] > 0
+
+
 def test_fresh_quotes_survive_the_same_gate(cache):
     seed(cache, quote_age=30)
     snap = provider.build_snapshot(cache, "SPX", max_quote_age_seconds=120)
