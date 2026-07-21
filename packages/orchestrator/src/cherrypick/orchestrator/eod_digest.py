@@ -48,7 +48,15 @@ def _snapshot(suite: dict, modules: dict) -> list[str]:
     """A short conversational read on the suite session, templated from the same `report` numbers the
     tables below cite (so it can never disagree with them). No synthesis, no live data."""
     trades = suite.get("trades", 0)
+    sopen = suite.get("open") or {}
     if not trades:
+        if sopen.get("positions"):
+            # The blind spot the two-section earnings EOD was built to close, at suite level: a day
+            # that closed nothing but opened positions is not flat — it put real overnight risk on.
+            risk = _money(sopen["capital_at_risk"])
+            return [f"_No module *closed* a trade today, but **{sopen['positions']}** position(s) were "
+                    f"opened and are carried overnight (**{risk}** of defined max loss at risk). "
+                    "Realized P&L lands when they settle; see 'Opened this session' below._"]
         return ["_Flat suite session - no module closed a trade today. Each module's own report says which "
                 "gates held its book out; a quiet day is a decision, not a gap._"]
     net = suite.get("net_pnl")
@@ -91,6 +99,9 @@ def _snapshot(suite: dict, modules: dict) -> list[str]:
             tail = (f"No module finished green — {cname} least-bad ({_money(cnet)}), "
                     f"{worst_name} worst ({_money(worst_m.get('net_pnl'))}).")
         out.append(tail)
+    if sopen.get("positions"):
+        out.append(f"Separately, {sopen['positions']} position(s) were opened and carried overnight "
+                   f"({_money(sopen['capital_at_risk'])} at risk) — no realized P&L yet.")
     return out
 
 
@@ -141,6 +152,28 @@ def build_markdown(cfg: dict, day: str, rep: dict | None = None) -> str:
             f"{_money(m.get('cost'))} | {_money(m.get('net_pnl'))} |"
         )
     L.append("")
+
+    # Overnight-carry section: only rendered when something is actually carried, so it stays absent
+    # on a pure-0DTE day (MEIC + flies settle by the bell) and appears when a multi-day module
+    # (earnings) opens positions. This is what the closed-trade Per-module table structurally cannot
+    # show — capital at risk, not realized P&L.
+    sopen = suite.get("open") or {}
+    if sopen.get("positions"):
+        L.append("## Opened this session (carried overnight)")
+        L.append("_Positions entered today and held past the close — capital at risk (defined max loss), "
+                 "not realized P&L. These settle at the next open and land in that day's closed totals "
+                 "above. Multi-day strategies only; the 0DTE modules are flat by the bell._")
+        L.append("| Module | Positions | Capital at risk | Names |")
+        L.append("|---|---|---|---|")
+        for name in enabled:
+            o = modules.get(name, {}).get("open") or {}
+            if not o.get("positions"):
+                continue
+            names = ", ".join(f"{s} x{n}" for s, n in (o.get("by_symbol") or {}).items())
+            L.append(f"| {name} | {o['positions']} | {_money(o['capital_at_risk'])} | {names} |")
+        L.append(f"- Suite total carried overnight: **{sopen['positions']}** position(s), "
+                 f"**{_money(sopen['capital_at_risk'])}** of defined max loss at risk.")
+        L.append("")
 
     L.append("## Module reports")
     L.append("_Each module writes a terse metrics file (paper-eod) and a conversational 7-section read "

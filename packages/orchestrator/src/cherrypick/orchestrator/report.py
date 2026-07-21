@@ -18,6 +18,11 @@ trade_notifier), each yielding a normalized closed-trade record `{profile, symbo
 The per-profile grouping uses cherrypick.core.profiles.compare_profiles (group closed trades by their
 attribution tag, summarize each group) via the src/_core submodule — bootstrapped onto sys.path in
 this package's __init__.
+
+Alongside the closed-trade P&L, each module also reports its **open** positions carried past the close
+(`_OPEN_READERS`): capital at risk, no realized P&L. Only the multi-day earnings module carries
+overnight; the 0DTE modules settle within the session and report an empty overnight view. This is a
+separate registry feeding only report/digest — not the four closed-trade adapter registries.
 """
 
 from __future__ import annotations
@@ -118,6 +123,62 @@ def _flies_closed(conn) -> list[dict]:
 _READERS = {"meic_ic": _meic_closed, "earnings": _earnings_closed, "fly_book": _flies_closed}
 
 
+# --------------------------------------------------------------------------- per-schema open readers
+# The closed readers above answer "what settled" (realized P&L). These answer "what is still on the
+# book, carried past the close" (capital at risk, no P&L yet). Only a multi-day strategy carries
+# overnight; the two 0DTE modules open and settle inside one session, so their overnight view is
+# structurally empty — see _no_overnight. Kept as a SEPARATE registry from _READERS on purpose: it
+# feeds only the report/digest, not calibrate/reconcile/notifier, so it is not one of the "four
+# registries extended together" the module CLAUDE.md warns about.
+def _no_overnight(conn) -> list[dict]:
+    """MEIC and flies are 0DTE: every position opens and cash-settles within the same session, so
+    nothing is deliberately carried overnight. A position still open at digest time is a settlement
+    lag for the watchdog to flag, not overnight risk for this roll-up — so the carried-overnight
+    view is empty here by construction rather than by a query that could accidentally surface an
+    unsettled 0DTE position as though it were an earnings hold."""
+    return []
+
+
+def _earnings_open(conn) -> list[dict]:
+    """EarningsAgent's `trades` still open (closed_at NULL): defined-risk earnings structures entered
+    one afternoon and carried over the earnings event to the next morning. `capital_at_risk` is the
+    known max loss set at entry — the honest overnight-exposure number, since these have no realized
+    P&L until they settle. `session` is the OPEN session (opened_at), so the digest for a day shows
+    what that day put on, matching the earnings module's own 'Opened this session' EOD section."""
+    rows = conn.execute(
+        "SELECT symbol, profile, strategy, capital_at_risk, opened_at "
+        "FROM trades WHERE closed_at IS NULL"
+    ).fetchall()
+    return [
+        {
+            "profile": r["profile"] or _EARNINGS_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": r["strategy"],
+            "capital_at_risk": (r["capital_at_risk"] or 0.0),
+            "session": _session_from_epoch(r["opened_at"]),
+        }
+        for r in rows
+    ]
+
+
+_OPEN_READERS = {"meic_ic": _no_overnight, "earnings": _earnings_open, "fly_book": _no_overnight}
+
+
+def _summarize_open(records: list[dict]) -> dict:
+    """Overnight-exposure stats over normalized open-position records: how many positions are carried
+    and the summed defined max loss, plus a per-symbol count for the digest's Names column. No P&L —
+    an open position has none yet, which is the whole reason it needs a separate surface from the
+    closed-trade P&L summary."""
+    by_symbol: dict[str, int] = {}
+    for r in records:
+        by_symbol[r["symbol"]] = by_symbol.get(r["symbol"], 0) + 1
+    return {
+        "positions": len(records),
+        "capital_at_risk": round(sum(r.get("capital_at_risk") or 0.0 for r in records), 2),
+        "by_symbol": dict(sorted(by_symbol.items())),
+    }
+
+
 # --------------------------------------------------------------------------- summarization
 def _summarize(records: list[dict]) -> dict:
     """P&L stats over normalized closed-trade records. net_pnl is cost-adjusted; gross_pnl is
@@ -154,6 +215,7 @@ def run(cfg: dict | None = None, session: str | None = None) -> dict:
     cfg = cfg or cfgmod.load_config()
     modules_out: dict[str, dict] = {}
     all_records: list[dict] = []
+    all_open: list[dict] = []
 
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         paper = mcfg.get("paper", {})
@@ -173,27 +235,43 @@ def run(cfg: dict | None = None, session: str | None = None) -> dict:
             records = reader(conn)
         except sqlite3.Error as exc:  # empty/uninitialized DB, missing table, etc. — never crash the report
             modules_out[name] = {"ok": False, "reason": f"read failed: {exc}"}
+            conn.close()
             continue
+        # Open positions are a secondary, best-effort read: an older DB missing the open-position
+        # columns must degrade to "no overnight view" without failing the module's realized P&L.
+        try:
+            open_reader = _OPEN_READERS.get(schema)
+            open_records = open_reader(conn) if open_reader else []
+        except sqlite3.Error:
+            open_records = []
         finally:
             conn.close()
 
         if session is not None:
             records = [r for r in records if r.get("session") == session]
+            open_records = [r for r in open_records if r.get("session") == session]
 
         all_records.extend(records)
+        all_open.extend(open_records)
         modules_out[name] = {
             "ok": True,
             "schema": schema,
             **_summarize(records),
             "by_profile": compare_profiles(records, tag_key="profile", summarize=_summarize),
+            # Positions opened this session and carried past the close (empty for the 0DTE modules).
+            "open": _summarize_open(open_records),
         }
 
+    suite = _summarize(all_records)
+    # Nested inside suite (not a sibling) so the digest's suite.get("open") finds it next to the
+    # suite P&L it belongs with.
+    suite["open"] = _summarize_open(all_open)
     return {
         "ok": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "session": session,
         "modules": modules_out,
-        "suite": _summarize(all_records),
+        "suite": suite,
     }
 
 

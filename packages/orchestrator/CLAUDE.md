@@ -86,7 +86,11 @@ resolved **relative to the config file's directory** — never hardcode absolute
 profile). `report.py`, `calibrate.py`, `reconcile.py`, and `trade_notifier.py` each carry a small
 reader/adapter registry keyed by that value; add a schema by extending those registries, not the
 callers. All four must be extended together — a schema registered in three of them vanishes silently
-from the fourth surface, with no error to notice.
+from the fourth surface, with no error to notice. `report.py` additionally carries a **separate**
+`_OPEN_READERS` registry for positions carried past the close (overnight capital-at-risk, no realized
+P&L) that feeds only the report/digest — it is *not* one of the four, so it does not need matching
+entries in calibrate/reconcile/notifier. Only the multi-day earnings module carries overnight; the
+0DTE modules (MEIC, flies) settle within the session and return an empty overnight view by design.
 
 **SLA heartbeat paths derive from the module name** (`config.sla_state_files`), not from a literal
 filename. They were hardcoded to `earnings_*.last.json`, which was harmless while Earnings was the only
