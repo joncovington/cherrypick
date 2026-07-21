@@ -79,6 +79,22 @@ def test_provider_opens_read_only(tmp_path):
         conn.close()
 
 
+def test_volume_totals_rolls_up_vol_fields_and_zero_gamma():
+    # Cumulative net_gex_vol crosses zero between 100 and 101 -> zero gamma interpolated.
+    series = [
+        {"strike": 100.0, "call_gex_vol": 30, "put_gex_vol": -50, "net_gex_vol": -20},
+        {"strike": 101.0, "call_gex_vol": 90, "put_gex_vol": -10, "net_gex_vol": 80},
+    ]
+    vt = service._volume_totals(series)
+    assert vt["total_call_gex_vol"] == 120      # 30 + 90 (only positives)
+    assert vt["total_put_gex_vol"] == 60        # abs(-50 + -10)
+    assert vt["net_gex_vol"] == 60              # -20 + 80
+    assert vt["call_wall_vol"] == 101.0         # max call_gex_vol
+    assert vt["put_wall_vol"] == 100.0          # min put_gex_vol (most negative)
+    # cumulative: -20 then +60; crosses zero at 100 + (20/80) = 100.25
+    assert vt["zero_gamma_vol"] == 100.25
+
+
 def test_build_gex_payload_shape_and_oi_vs_volume(tmp_path):
     cfg = _cfg(tmp_path)
     out = service.build_gex(cfg, "SPX")
@@ -91,6 +107,10 @@ def test_build_gex_payload_shape_and_oi_vs_volume(tmp_path):
     t = out["totals"]
     assert t["call_wall"] == 610 and t["put_wall"] == 600
     assert t["zero_gamma"] is not None
+    # Volume rollups sit alongside the OI keys.
+    for k in ("total_call_gex_vol", "total_put_gex_vol", "net_gex_vol",
+              "zero_gamma_vol", "call_wall_vol", "put_wall_vol"):
+        assert k in t
     # build_gex reads the spot trail read-only (the dashboard's recorder writes it) — a list, empty
     # until record_spots has run.
     assert isinstance(out["spot_history"], list)
