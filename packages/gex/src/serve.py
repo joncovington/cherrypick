@@ -206,7 +206,7 @@ function _vline(x,label,color){
     const {ctx,scales}=chart; if(!scales.x) return;
     const xPx=scales.x.getPixelForValue(x); if(xPx==null||isNaN(xPx)) return;
     const {top,bottom}=chart.chartArea;
-    ctx.save(); ctx.setLineDash([4,4]); ctx.strokeStyle=color; ctx.lineWidth=1.5;
+    ctx.save(); ctx.setLineDash([4,4]); ctx.strokeStyle=color; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(xPx,top); ctx.lineTo(xPx,bottom); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle=color; ctx.font='9px sans-serif'; ctx.textAlign='center';
     ctx.fillText(label,xPx,bottom+12); ctx.restore();
@@ -240,7 +240,7 @@ function _hline(y,label,color,opts){
     const {left,right,top,bottom}=chart.chartArea;
     yPx=Math.max(top,Math.min(bottom,yPx));
     ctx.save(); if(!solid) ctx.setLineDash([4,4]);
-    ctx.strokeStyle=color; ctx.lineWidth=solid?2:1.5;
+    ctx.strokeStyle=color; ctx.lineWidth=solid?1.25:1;
     ctx.beginPath(); ctx.moveTo(left,yPx); ctx.lineTo(right,yPx); ctx.stroke(); ctx.setLineDash([]);
     ctx.font='bold 10px sans-serif';
     const textW=ctx.measureText(label).width, padX=6, tagH=15;
