@@ -439,8 +439,8 @@ function renderGex(d){
   const series=d.series||[];
   const spot=d.underlying_price;
   const zero=d.totals&&d.totals.zero_gamma_vol;
-  const callWall=d.totals&&d.totals.call_wall;
-  const putWall=d.totals&&d.totals.put_wall;
+  const callWall=d.totals&&d.totals.call_wall_vol;
+  const putWall=d.totals&&d.totals.put_wall_vol;
   const spotHistory=d.spot_history||[];
   const sym=d.symbol||'', exp=d.expiration||'';
   document.getElementById('gex-iv-sub').textContent=sym+' Implied Volatility Skew — Exp: '+exp;
