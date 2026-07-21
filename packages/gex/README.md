@@ -5,7 +5,8 @@ SpotGamma, and MenthorQ sell. Three tabs off one live option chain:
 
 - **GEX** — **net GEX by strike** with **open interest ("positioning") and traded volume ("flow") side
   by side**, the **gamma-flip / zero-gamma** level, the **call/put walls**, and a live spot marker with
-  an intraday spot trail.
+  an intraday spot trail. The stats panel shows two blocks — **Open Interest (positioning)** and
+  **Volume (flow)** — each with total call/put GEX, net GEX, zero gamma, and call/put walls.
 - **IV Skew** — call vs put implied-volatility curve and open interest by strike.
 - **Volume** — call/put/total traded volume by strike.
 
