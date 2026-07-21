@@ -44,12 +44,15 @@ def _make_db() -> sqlite3.Connection:
 def _handler(db_path: str) -> _streamer._ApiHandler:
     """Return a handler instance whose _db() opens the given file DB."""
     h = object.__new__(_streamer._ApiHandler)
-    # Patch _db() to use our temp file
+    # The handler splits market-data reads (_market_db, the shared cache) from REST-cache reads
+    # (_rest_db, MEIC's own cache). Point both at the test's temp file DB so these tests exercise the
+    # readers against known data.
     def _db_override():
         c = sqlite3.connect(db_path, check_same_thread=False)
         c.row_factory = sqlite3.Row
         return c
-    h._db = _db_override
+    h._market_db = _db_override
+    h._rest_db = _db_override
     return h
 
 
@@ -71,6 +74,30 @@ def _make_file_db() -> tuple[sqlite3.Connection, str]:
 # ---------------------------------------------------------------------------
 # REST cache helpers
 # ---------------------------------------------------------------------------
+
+class TestSidecarDbSeparation:
+    """The cutover invariant: the sidecar's REST poller must write MEIC's OWN cache, never the shared
+    market-data cache (which the standalone streamer is the sole writer of). A regression here would put
+    two writers on ~/.cherrypick/data/marketdata/stream_cache.db."""
+
+    def test_rest_cache_is_a_distinct_db_from_the_shared_cache(self):
+        assert _streamer._REST_DB != _streamer._CACHE_DB
+        assert _streamer._REST_DB.name == "rest_cache.db"
+        assert _streamer._CACHE_DB.name == "stream_cache.db"
+
+    def test_sidecar_pid_is_distinct_from_streamer_pid(self):
+        assert _streamer._SIDECAR_PID != _streamer._PID_FILE
+
+    def test_sidecar_status_reports_not_running_by_default(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_streamer, "_SIDECAR_PID", tmp_path / "sidecar.pid")
+        import io
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _streamer._cmd_sidecar_status()
+        out = json.loads(buf.getvalue())
+        assert out == {"running": False, "pid": None, "role": "meic-sidecar"}
+
 
 class TestRestCache:
     def test_write_and_read(self):
