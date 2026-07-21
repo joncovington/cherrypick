@@ -79,7 +79,22 @@ def test_provider_opens_read_only(tmp_path):
         conn.close()
 
 
-def test_volume_totals_rolls_up_vol_fields_and_zero_gamma():
+def test_flip_nearest_spot_picks_crossing_closest_to_spot():
+    # Sign flips between 90/91 (decoy, far) and 100/101 (near spot 100.5).
+    series = [
+        {"strike": 90.0, "net": -10}, {"strike": 91.0, "net": 5},
+        {"strike": 100.0, "net": -20}, {"strike": 101.0, "net": 20},
+    ]
+    assert service._flip_nearest_spot(series, "net", 100.5) == 100.5
+    assert service._flip_nearest_spot(series, "net", 90.0) == 90.67
+
+
+def test_flip_nearest_spot_none_when_no_sign_change():
+    series = [{"strike": 100.0, "net": 5}, {"strike": 101.0, "net": 10}]
+    assert service._flip_nearest_spot(series, "net", 100.0) is None
+
+
+def test_volume_totals_rolls_up_vol_fields():
     # Cumulative net_gex_vol crosses zero between 100 and 101 -> zero gamma interpolated.
     series = [
         {"strike": 100.0, "call_gex_vol": 30, "put_gex_vol": -50, "net_gex_vol": -20},
@@ -91,8 +106,6 @@ def test_volume_totals_rolls_up_vol_fields_and_zero_gamma():
     assert vt["net_gex_vol"] == 60              # -20 + 80
     assert vt["call_wall_vol"] == 101.0         # max call_gex_vol
     assert vt["put_wall_vol"] == 100.0          # min put_gex_vol (most negative)
-    # cumulative: -20 then +60; crosses zero at 100 + (20/80) = 100.25
-    assert vt["zero_gamma_vol"] == 100.25
 
 
 def test_build_gex_payload_shape_and_oi_vs_volume(tmp_path):
