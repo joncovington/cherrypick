@@ -194,6 +194,16 @@
       "start_argv": ["run.py", "record"],
       "stop_argv": ["run.py", "record", "--stop"],
       "auto_restart": true
+    },
+    {
+      "_comment": "MEIC's post-cutover sidecar: the REST account poller + the 127.0.0.1:7699 HTTP API ONLY, no DXLink streaming (the standalone `streamer` above is the market-data producer). It serves the shared cache read-only and caches account/positions/market-overview into MEIC's own rest_cache.db, so MEIC's interactive loop keeps its REST/quote fast-path without a second writer on the shared cache. Optional and OFF by default — MEIC works without it (quotes read the cache directly; account calls just go live). Enable it if you run MEIC's live/interactive loop and want the cached fast-path back.",
+      "id": "meic-sidecar",
+      "enabled": false,
+      "path": "../meic",
+      "status_argv": ["src/streamer.py", "--sidecar", "--status"],
+      "start_argv": ["src/streamer.py", "--sidecar"],
+      "stop_argv": ["src/streamer.py", "--sidecar", "--stop"],
+      "auto_restart": true
     }
   ],
   "streamer": {

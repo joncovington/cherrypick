@@ -7,14 +7,26 @@ own subscription window (near-the-money option strikes) on the same connection �
 that window doubles as both the entry-strike-selection data and that symbol's
 own GEX profile, so GEX is computed per-symbol automatically.
 
+As of the 2026-07-21 cutover the suite's market-data producer is the standalone streamer
+(packages/streamer), which writes the shared cache. This module now runs in one of two modes:
+
+  * full streamer (default) — the original behavior, kept for rollback: streams to the shared cache and
+    also runs the REST poller + 7699 API. Only run this if the standalone streamer is NOT the producer.
+  * --sidecar — REST poller + 7699 HTTP API ONLY, no DXLink streaming. This is how MEIC keeps its
+    interactive REST/quote fast-path after the cutover: it serves the shared cache read-only and caches
+    account/positions/market-overview into MEIC's own rest_cache.db, never writing the shared cache.
+
 Usage:
-  python src/streamer.py                       # start daemon (foreground), symbols from config.json
+  python src/streamer.py                       # full streamer (rollback only — the standalone streamer is the producer)
+  python src/streamer.py --sidecar             # sidecar: REST poller + 7699 API only (no streaming)
+  python src/streamer.py --sidecar --status    # sidecar status
+  python src/streamer.py --sidecar --stop      # stop the sidecar
   python src/streamer.py --symbol XSP --symbol SPX  # override traded symbols for this run
-  python src/streamer.py --stop                # send SIGTERM to running daemon
+  python src/streamer.py --stop                # send SIGTERM to a running full streamer
   python src/streamer.py --status               # print cache status and exit
 
-The main loop in tt.py reads from the cache (age < 10s) before falling
-back to a fresh DXLink connection. The dashboard reads it for live P&L.
+The main loop in tt.py reads from the shared cache (age < 10s), then the 7699 sidecar, then falls
+back to a fresh DXLink connection. The dashboard reads the cache for live P&L.
 """
 
 from __future__ import annotations
@@ -61,8 +73,10 @@ from session import get_session  # noqa: E402
 # ---------------------------------------------------------------------------
 
 _ROOT = Path(__file__).parent.parent
-_CACHE_DB  = _paths.stream_cache_path()      # canonical shared cache ~/.cherrypick/data/marketdata/
+_CACHE_DB  = _paths.stream_cache_path()      # canonical shared cache ~/.cherrypick/data/marketdata/ (READ-ONLY here now — the standalone streamer owns it)
 _PID_FILE  = _paths.data_path("streamer.pid")
+_REST_DB   = _paths.data_path("rest_cache.db")   # MEIC-owned REST cache (account/positions/overview). The sidecar writes THIS, never the shared market-data cache.
+_SIDECAR_PID = _paths.data_path("sidecar.pid")   # PID for the REST-poller + 7699 API sidecar (distinct from the streamer PID)
 _TRADES_DB = _paths.live_db_path()
 _LOG_FILE  = _paths.log_path("streamer.log")
 
@@ -294,7 +308,10 @@ async def _rest_poller(symbols: list[str]) -> None:
     A dedicated connection removes this cross-thread contention entirely.
     """
     import tt
-    conn = streamcache.connect(_CACHE_DB)
+    # Write the REST cache to MEIC's OWN db — never the shared market-data cache, which the standalone
+    # streamer is the sole writer of. streamcache.connect creates the full schema; only stream_rest_cache
+    # is used here.
+    conn = streamcache.connect(_REST_DB)
     fn_map = {
         "get_account_info":    tt.cmd_get_account_info,
         "get_positions":       tt.cmd_get_positions,
@@ -393,7 +410,7 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
         }
         cache_key = _REST_CACHE_KEY.get(command)
         if cache_key is not None:
-            conn = self._db()
+            conn = self._rest_db()
             try:
                 cached = _read_rest_cache(conn, cache_key)
             finally:
@@ -456,15 +473,25 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
     # Sync cache readers — bypass asyncio, read SQLite in handler thread
     # ------------------------------------------------------------------
 
-    def _db(self) -> sqlite3.Connection:
+    def _market_db(self) -> sqlite3.Connection:
+        # Market data (quotes / chain / greeks) is the shared cache the standalone streamer writes.
+        # Open a normal connection (NOT ?mode=ro): a read-only connection can miss un-checkpointed WAL
+        # writes and serve a stale snapshot. The single-writer invariant is upheld by never issuing a
+        # write here (this sidecar only ever SELECTs the shared cache) — same as MEIC's original reader.
         conn = sqlite3.connect(str(_CACHE_DB), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _rest_db(self) -> sqlite3.Connection:
+        # Account / positions REST cache is MEIC-owned (the REST poller writes it) — never the shared cache.
+        conn = sqlite3.connect(str(_REST_DB), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         return conn
 
     def _sync_get_quote(self, args: dict) -> dict:
         sym = args.get("symbol", "").strip().upper()
         now = time.time()
-        conn = self._db()
+        conn = self._market_db()
         try:
             row = conn.execute(
                 "SELECT last, updated_at FROM stream_trades WHERE symbol = ?", (sym,)
@@ -486,7 +513,7 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
         strike_count = args.get("strike_count", 15)
         around_price = args.get("around_price")
         now = time.time()
-        conn = self._db()
+        conn = self._market_db()
         try:
             # Resolve expiration from cache when not supplied
             if not expiration:
@@ -572,7 +599,7 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
         wing_width = int(args.get("wing_width", 5))
         short_delta = float(args.get("short_delta", 0.15))
         now = time.time()
-        conn = self._db()
+        conn = self._market_db()
         try:
             # Nearest expiration from cache
             row = conn.execute(
@@ -779,13 +806,13 @@ async def _main_loop(symbols: list[str]) -> None:
 # CLI: start / stop / status
 # ---------------------------------------------------------------------------
 
-def _running_pid() -> int | None:
-    if not _PID_FILE.exists():
+def _running_pid(pid_file: Path = _PID_FILE) -> int | None:
+    if not pid_file.exists():
         return None
     try:
-        pid = int(_PID_FILE.read_text().strip())
+        pid = int(pid_file.read_text().strip())
     except ValueError:
-        _PID_FILE.unlink(missing_ok=True)
+        pid_file.unlink(missing_ok=True)
         return None
 
     # os.kill(pid, 0) is unreliable on Windows (raises SystemError for some
@@ -813,7 +840,7 @@ def _running_pid() -> int | None:
 
     if alive:
         return pid
-    _PID_FILE.unlink(missing_ok=True)
+    pid_file.unlink(missing_ok=True)
     return None
 
 
@@ -858,16 +885,53 @@ def _cmd_status() -> None:
         conn.close()
 
 
-def _cmd_stop() -> None:
-    pid = _running_pid()
+def _cmd_stop(pid_file: Path = _PID_FILE) -> None:
+    pid = _running_pid(pid_file)
     if pid is None:
-        print(json.dumps({"ok": False, "error": "Streamer not running"}))
+        print(json.dumps({"ok": False, "error": "Not running"}))
         return
     try:
         os.kill(pid, signal.SIGTERM)
         print(json.dumps({"ok": True, "signal": "SIGTERM", "pid": pid}))
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
+
+
+async def _sidecar_loop(symbols: list[str]) -> None:
+    """MEIC sidecar: the REST account poller + the 127.0.0.1:7699 HTTP API, WITHOUT the DXLink streamer.
+
+    The standalone streamer (packages/streamer) is the market-data producer now, so MEIC no longer runs
+    ChainStreamer or ORB here. This keeps MEIC's interactive REST fast-path alive: the poller caches
+    account / positions / working-orders / market-overview into MEIC's own rest_cache.db, and the 7699
+    API serves those plus quote/chain reads of the shared cache (read-only). It never streams and never
+    writes the shared cache.
+    """
+    stop_event = asyncio.Event()
+
+    def _handle_signal(sig, frame):
+        logger.info("Signal %s received — stopping sidecar", sig)
+        stop_event.set()
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
+    _start_rest_loop(symbols)
+    _start_http_server()
+
+    _SIDECAR_PID.parent.mkdir(exist_ok=True)
+    _SIDECAR_PID.write_text(str(os.getpid()))
+    logger.info("MEIC sidecar PID %d written to %s (REST poller + 7699 API; no streaming)",
+                os.getpid(), _SIDECAR_PID)
+    try:
+        await stop_event.wait()
+    finally:
+        _SIDECAR_PID.unlink(missing_ok=True)
+        logger.info("MEIC sidecar stopped.")
+
+
+def _cmd_sidecar_status() -> None:
+    pid = _running_pid(_SIDECAR_PID)
+    print(json.dumps({"running": pid is not None, "pid": pid, "role": "meic-sidecar"}))
 
 
 def _configured_symbols(cfg: dict, cli_override: list[str] | None = None) -> list[str]:
@@ -890,7 +954,34 @@ def main() -> None:
     parser.add_argument("--symbol", action="append", default=None,
                         help="Override a traded symbol (repeatable, e.g. --symbol XSP --symbol SPX). "
                              "Default: 'symbols' (or deprecated 'symbol') from config.json.")
+    parser.add_argument("--sidecar", action="store_true",
+                        help="Run ONLY the REST poller + 7699 HTTP API (no DXLink streaming). Use when "
+                             "the standalone streamer (packages/streamer) is the producer; keeps MEIC's "
+                             "REST/quote fast-path alive without a second market-data writer.")
     args = parser.parse_args()
+
+    # Sidecar mode: REST poller + 7699 API only, with its own PID (distinct from the streamer).
+    if args.sidecar:
+        if args.status:
+            _cmd_sidecar_status()
+            return
+        if args.stop:
+            _cmd_stop(_SIDECAR_PID)
+            return
+        existing = _running_pid(_SIDECAR_PID)
+        if existing is not None:
+            print(json.dumps({
+                "ok": False,
+                "error": f"Sidecar already running (pid {existing}). "
+                         f"Run 'python src/streamer.py --sidecar --stop' first.",
+            }))
+            raise SystemExit(1)
+        cfg = _load_config()
+        symbols = _configured_symbols(cfg, cli_override=args.symbol)
+        _setup_logging()
+        logger.info("Starting MEIC sidecar (REST poller + 7699 API) — symbols: %s", symbols)
+        asyncio.run(_sidecar_loop(symbols))
+        return
 
     if args.status:
         _cmd_status()

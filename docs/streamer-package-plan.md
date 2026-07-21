@@ -325,12 +325,22 @@ MEIC stops being a producer and becomes a consumer + a thin sidecar:
    `_OrbTracker`) wired as the engine's `trade_hook`; writes the shared cache's existing `orb_ranges`
    table (already in `core.streamcache` DDL — no core change), which MEIC's `get_orb_range` reads
    unchanged. 25 streamer tests, ruff clean. Fully additive, zero MEIC risk.
-8b. **MEIC sidecar refactor (the destructive flip — GATED on steps 9-10)** — MEIC's `streamer.py` stops
-   running `ChainStreamer`; keeps the REST poller + 7699 API as a sidecar reading the shared cache; drops
-   `_OrbTracker` (now in the streamer) and `_open_trade_streamer_symbols` (the `leg_sources` query
-   replaces it); adds MEIC's registry writer (`symbols` + `leg_sources` → `meic_trades.db` `ic_trades`
-   query, incl. a `managed_home` test guard). Do NOT land until the orchestrator watchdogs the standalone
-   streamer, or MEIC has no producer in between.
+8b. **MEIC sidecar** ✓ — added a `--sidecar` mode to MEIC's `streamer.py`: REST poller + 7699 API only,
+   no `ChainStreamer`. The REST poller now writes MEIC's own `rest_cache.db` (not the shared cache — the
+   double-writer fix); the 7699 handler splits `_market_db` (shared cache, plain connect so WAL reads are
+   fresh) from `_rest_db` (MEIC's rest cache); separate sidecar PID. Opt-in `meic-sidecar` service
+   (disabled by default). 293 MEIC tests. NOT auto-started — post-cutover `tt.py` reads the cache directly
+   so the quote fast-path was already intact; the sidecar's real value is caching account/market-overview
+   REST calls, so it's opt-in for the live/interactive loop. (`_OrbTracker` and
+   `_open_trade_streamer_symbols` are still present in the full-streamer path, kept for rollback; ORB is
+   already generalized in the standalone streamer, and MEIC's `meic.json` `leg_sources` supersedes the
+   open-leg reader.)
+
+**⚡ THE CUTOVER WAS EXECUTED LIVE (2026-07-21, pre-open):** stopped MEIC's streamer, validated the
+standalone streamer live (1982 symbols, all 7 underlyings, fresh), flipped the real config (top-level
+`streamer` enabled, `modules.meic.streamer` disabled), repointed flies, and committed (`e1da682`). The
+standalone streamer is the sole producer. See the memory note `streamer-package-extraction` for the exact
+actions + rollback.
 9. **Watchdog stale-restart (generalized)** ✓ — extracted the streamer silence-restart from `_check_meic`
    into a shared `_check_streamer_health(label, root, spec)` (behavior-preserving); added
    `_check_producer(cfg, in_session)` watchdogging a top-level `streamer` block, wired into `run()` but
