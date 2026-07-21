@@ -404,7 +404,7 @@ function renderGexMainChart(series,spot,zero,mode,callWall,putWall,spotHistory,m
   _fitChartToViewport('gex-main-chart',24,220);
   const hlinePlugins=[];
   if(spot!=null) hlinePlugins.push(_hline(spot,'$'+spot.toFixed(2),'#00b4ff',{solid:true}));
-  if(zero!=null) hlinePlugins.push(_hline(zero,'Zero Γ: $'+zero.toFixed(2),'purple'));
+  if(zero!=null) hlinePlugins.push(_hline(zero,'Zero Γ: $'+zero.toFixed(2),'#e8b923'));
   if(callWall!=null) hlinePlugins.push(_hline(callWall,'Call Wall: $'+callWall.toFixed(2),'yellow'));
   if(putWall!=null) hlinePlugins.push(_hline(putWall,'Put Wall: $'+putWall.toFixed(2),'orange'));
   opts.plugins.customHlines={id:'customHlines',beforeDatasetsDraw(chart){ hlinePlugins.forEach(p=>p.beforeDatasetsDraw(chart)); }};
@@ -438,7 +438,7 @@ function renderGex(d){
   if(!d.ok){ document.getElementById('gex-iv-sub').textContent=d.error||'No data'; return; }
   const series=d.series||[];
   const spot=d.underlying_price;
-  const zero=d.totals&&d.totals.zero_gamma;
+  const zero=d.totals&&d.totals.zero_gamma_vol;
   const callWall=d.totals&&d.totals.call_wall;
   const putWall=d.totals&&d.totals.put_wall;
   const spotHistory=d.spot_history||[];
