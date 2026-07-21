@@ -110,18 +110,29 @@ h1{font-size:18px;margin:0;font-weight:650}
               </div>
             </div>
             <div class="metrics-panel">
-              <div class="metrics-panel-title">&#128202; Total GEX</div>
+              <div class="metrics-panel-title">&#128202; OPEN INTEREST (POSITIONING)</div>
               <div class="metric-row"><div class="metric-lbl">Total Call GEX</div><div class="metric-val pos" id="m-call-gex">&mdash;</div></div>
               <div class="metric-row"><div class="metric-lbl">Total Put GEX</div><div class="metric-val neg" id="m-put-gex">&mdash;</div></div>
               <div class="metric-divider"></div>
               <div class="metric-row"><div class="metric-lbl">Net GEX</div><div class="metric-val" id="m-net-gex">&mdash;</div></div>
-              <div class="metric-divider"></div>
               <div class="metric-row"><div class="metric-lbl">Max GEX Strike</div><div class="metric-val" id="m-max-strike">&mdash;</div></div>
               <div class="metric-divider"></div>
               <div class="metric-row"><div class="metric-lbl">Call Wall <span title="Strike with the largest call-side gamma concentration — dealer resistance above spot" style="cursor:help;color:#3d4451">&#9432;</span></div><div class="metric-val pos" id="m-call-wall">&mdash;</div></div>
               <div class="metric-row"><div class="metric-lbl">Put Wall <span title="Strike with the largest put-side gamma concentration — dealer support below spot" style="cursor:help;color:#3d4451">&#9432;</span></div><div class="metric-val neg" id="m-put-wall">&mdash;</div></div>
               <div class="metric-divider"></div>
               <div class="metric-row" style="margin-bottom:0"><div class="metric-lbl">Zero Gamma (Flip) <span title="Strike where dealer GEX transitions from negative to positive" style="cursor:help;color:#3d4451">&#9432;</span></div><div class="metric-val" id="m-zero-gamma">&mdash;</div></div>
+            </div>
+            <div class="metrics-panel">
+              <div class="metrics-panel-title">&#128200; VOLUME (FLOW)</div>
+              <div class="metric-row"><div class="metric-lbl">Total Call GEX</div><div class="metric-val pos" id="m-call-gex-vol">&mdash;</div></div>
+              <div class="metric-row"><div class="metric-lbl">Total Put GEX</div><div class="metric-val neg" id="m-put-gex-vol">&mdash;</div></div>
+              <div class="metric-divider"></div>
+              <div class="metric-row"><div class="metric-lbl">Net GEX</div><div class="metric-val" id="m-net-gex-vol">&mdash;</div></div>
+              <div class="metric-divider"></div>
+              <div class="metric-row"><div class="metric-lbl">Call Wall <span title="Strike with the largest call-side volume-gamma concentration" style="cursor:help;color:#3d4451">&#9432;</span></div><div class="metric-val pos" id="m-call-wall-vol">&mdash;</div></div>
+              <div class="metric-row"><div class="metric-lbl">Put Wall <span title="Strike with the largest put-side volume-gamma concentration" style="cursor:help;color:#3d4451">&#9432;</span></div><div class="metric-val neg" id="m-put-wall-vol">&mdash;</div></div>
+              <div class="metric-divider"></div>
+              <div class="metric-row" style="margin-bottom:0"><div class="metric-lbl">Zero Gamma (Flip) <span title="Volume-basis strike where dealer GEX transitions from negative to positive" style="cursor:help;color:#3d4451">&#9432;</span></div><div class="metric-val" id="m-zero-gamma-vol">&mdash;</div></div>
             </div>
           </div>
         </div>
@@ -412,6 +423,13 @@ function renderGexMetrics(totals){
   document.getElementById('m-call-wall').textContent=t.call_wall!=null?'$'+t.call_wall:'—';
   document.getElementById('m-put-wall').textContent=t.put_wall!=null?'$'+t.put_wall:'—';
   document.getElementById('m-zero-gamma').textContent=t.zero_gamma!=null?'$'+t.zero_gamma.toFixed(2):'—';
+  document.getElementById('m-call-gex-vol').textContent=fGex(t.total_call_gex_vol);
+  document.getElementById('m-put-gex-vol').textContent=t.total_put_gex_vol!=null?fGex(-t.total_put_gex_vol):'—';
+  const netVolEl=document.getElementById('m-net-gex-vol');
+  netVolEl.textContent=fGex(t.net_gex_vol); netVolEl.className='metric-val '+(t.net_gex_vol>=0?'pos':'neg');
+  document.getElementById('m-call-wall-vol').textContent=t.call_wall_vol!=null?'$'+t.call_wall_vol:'—';
+  document.getElementById('m-put-wall-vol').textContent=t.put_wall_vol!=null?'$'+t.put_wall_vol:'—';
+  document.getElementById('m-zero-gamma-vol').textContent=t.zero_gamma_vol!=null?'$'+t.zero_gamma_vol.toFixed(2):'—';
 }
 
 function renderGex(d){
