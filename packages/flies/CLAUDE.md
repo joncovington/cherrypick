@@ -54,6 +54,18 @@ collapsing consecutive identical reasons into one counted run (a gate that block
 row with `occurrences: 18`). `fly_iterations` records what each arm *wanted* on each iteration, before
 any gate could veto it — collapsing would destroy exactly what arm divergence needs.
 
+**And a feed ledger, `fly_snapshots`.** One row per (tick × symbol) recording what the feed gave us —
+`status` "ok" with the quote counts, or the provider's refusal reason. It is separate from
+`fly_iterations` on purpose: that table is per-arm and only written when a snapshot *succeeds*, so a
+refused tick never reaches the arm loop and, without this, leaves no trace at all. That is the gap this
+closes — a stretch of the day with refused rows is a feed problem (`no_fresh_quotes`, `no_spot_price`);
+a stretch with *no rows at all* is the loop not running. Before `fly_snapshots` those two silences were
+identical on every read surface, and `quote_stats` reached only the module log. The timeline now labels
+each of its gaps accordingly ("no data · 100m · loop silent" vs "· no_fresh_quotes ×20"), which is how
+2026-07-20's outage is legible as an ops failure rather than a quiet market. Recording lives in
+`paper_loop.run_once` on both the built and the refused path; it is pure telemetry and touches no
+decision.
+
 **Four measurements this strategy needs and generic P&L reporting cannot give:**
 
 - **Completion rate** — how often a leg-in actually became a fly. If this is near zero the strategy is
@@ -65,8 +77,26 @@ any gate could veto it — collapsing would destroy exactly what arm divergence 
 - **Arm divergence** — how often the arms picked different centres. High agreement means the experiment
   cannot separate them, which is a finding to surface in week one, not month three.
 
+**The last three of those live on a time axis, so the dashboard has one.** `analytics.session_timeline`
+assembles the day from rows already written — spot and every arm's wanted centre on each iteration,
+entries and completions, and each leg-in as a span running to its completion, so latency is a length
+beside the drift that bought it. `settle_now` replays the book at each tick: what it would have been
+worth had the session ended at that moment and that price. That is an expiry payoff evaluated at a
+live spot and **not a mark** — nothing here is quoted intraday, and the label says so on the page.
+
+Replaying requires rewinding. A legged position is a short vertical until it completes and a fly
+afterwards, but the stored row only ever holds its latest state; drawing straight from it would show
+the morning as though every fly existed from the moment its credit spread was sold, which asserts the
+per-position floor rule 3 exists to withhold. The rewind is exact, not approximate — the completing
+purchase is a 2-leg vertical, so the pre-completion fee is `vertical_open_fee` and the pre-completion
+net is the recorded `credit`.
+
 The dashboard binds to **127.0.0.1 only** and draws its charts with plain canvas — no CDN, so it works
 offline and adds no third-party dependency to a surface whose only job is reading a local SQLite file.
+Both charts refuse to smooth over what they do not know: the timeline **breaks its lines across a gap**
+in the record rather than interpolating a shape through it (the 2026-07-20 session has a 100-minute
+silence, and a straight segment across it would read as a calm market), and the payoff curve draws one
+line per arm rather than a blended book.
 
 ## Data source
 
@@ -132,13 +162,26 @@ These are the constraints the module exists to enforce. Breaking one makes the n
 ## Status
 
 **Complete and tested:** decision engine, floor accounting, paper DB, snapshot provider, session
-driver, CLI, and the orchestrator `fly_book` wiring across all four schema registries. 99 tests,
+driver, CLI, and the orchestrator `fly_book` wiring across all four schema registries. 185 tests,
 including a provider suite built against the real `cherrypick.core.streamcache` DDL so an upstream
-schema change fails here rather than silently producing empty snapshots.
+schema change fails here rather than silently producing empty snapshots. The package runs in CI (its
+own cell in the `.github/workflows/ci.yml` matrix, `ruff` + `pytest` on every push and PR).
 
-**Never run against a live session.** Every test uses a seeded cache. The orchestrator entry ships
-`enabled: false` on purpose — turn it on deliberately and watch the first session, in particular the
-`quote_stats` line in the log, which is the fastest way to tell a thin-data day from a no-signal day.
+**First live paper session: 2026-07-20.** Eleven structures, 80% completion rate, +$14.89 net —
+which is the floor and nothing more, since no fly finished inside its wings. Fees were 82% of gross.
+Two things to keep watching, both visible in that one session: completions arrived only after 10–21
+points of drift away from the centre (the mechanism that makes completion cheap is the one that
+walks spot out of the wings), and `control` vs `time_window` wanted the identical centre on 141 of
+141 shared iterations, so only the disjoint windows separate them. `gex` vs `control` disagreed 84%
+of the time and is the comparison with real power.
+
+**Settlement is marked in the database, not on disk.** `session_already_settled` asks whether every
+`fly_books` row for the day is `settled`. It used to ask whether `paper-eod-<day>.md` existed, which
+made the marker settable by anything that could write a file — on 2026-07-20 a test run against the
+real managed home created that file mid-session, the loop read its own day as finished, and eleven
+positions went unsettled under a report describing a fixture. A marker for "settlement happened"
+must be writable only by settlement. Tests are isolated by an autouse fixture in `tests/conftest.py`
+rather than one each test opts into, for the same reason.
 
 **Settlement is approximate.** `--settle` defaults to the last streamed trade, which is close to but
 not the official settlement print. The difference is systematic rather than random, and a position

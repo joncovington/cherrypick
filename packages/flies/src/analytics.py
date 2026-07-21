@@ -380,6 +380,161 @@ def payoff_curve(conn, day: str, arm: str, step: float = 1.0, points: int = 120)
     }
 
 
+# --------------------------------------------------------------------------- the session timeline
+def _state_at(row: dict, when: str) -> dict | None:
+    """This position as it stood at `when`, or None if it was not on the book yet.
+
+    A legged entry is a SHORT VERTICAL until it completes and a butterfly afterwards, and the stored
+    row only ever holds the latest state. Replaying an intraday book straight from those rows would
+    draw the morning as though every fly existed from the moment its credit spread was sold — which
+    asserts exactly the per-position floor the module refuses to claim loosely (honesty rule 3).
+
+    The rewind is exact rather than approximate. The completing purchase is a 2-leg vertical, so the
+    pre-completion fee is `vertical_open_fee` for the same symbol and size, and the pre-completion net
+    is the recorded `credit` — both of which `book.py` wrote and neither of which is inferred.
+    """
+    entry = row.get("entry_time")
+    if not entry or when < entry:
+        return None
+    state = {
+        "kind": row["kind"], "side": row["side"], "center": row["center"],
+        "wing_width": row["wing_width"], "net": row["net"],
+        "quantity": row["quantity"] or 1, "fees": row["fees"] or 0.0,
+    }
+    completed = row.get("completed_at")
+    if (row.get("entry_mode") == "legged" and completed and when < completed
+            and row.get("credit") is not None):
+        state["kind"] = "short_vertical"
+        state["net"] = row["credit"]
+        state["fees"] = fly.vertical_open_fee(row["symbol"], state["quantity"])
+    return state
+
+
+def session_timeline(conn, day: str | None = None) -> dict:
+    """The session along a TIME axis — the one axis every other view here lacks.
+
+    `payoff_curve` plots price at expiry, so nothing in it moves during a session. But the module
+    already records an intraday history and then spends it on scalars: `fly_iterations` holds spot and
+    each arm's wanted centre on every iteration, and it exists only to produce one agreement
+    percentage. This assembles that record instead:
+
+      ticks     spot and each arm's wanted centre, every iteration
+      events    entries and completions, placed on the same axis
+      spans     leg-in to completion, so completion latency is a LENGTH beside the spot drift that
+                bought it — the 2026-07-20 finding (completions arrived only after 10-21 points of
+                drift) is a shape over time and has had no axis to appear on
+
+    `settle_now` is the book replayed at each tick: what it would have been worth had the session
+    ended at that moment and that price. It is an expiry payoff evaluated at a live spot, NOT a mark
+    — the positions are not quoted intraday and nothing here pretends otherwise. Read-only, and
+    computed from rows already written, so nothing on the decision path changes to produce it.
+    """
+    day = day or today()
+    rows = positions_for_day(conn, day)
+    iterations = conn.execute(
+        "SELECT iteration_ts, arm, center, center_reason, underlying_price FROM fly_iterations "
+        "WHERE trade_date = ? ORDER BY iteration_ts", (day,)).fetchall()
+    feed, feed_summary = data_quality(conn, day)
+
+    arms = sorted({r["arm"] for r in rows if r["arm"]} | {r["arm"] for r in iterations if r["arm"]})
+    by_arm: dict[str, list] = {a: [] for a in arms}
+    for r in rows:
+        by_arm.setdefault(r["arm"], []).append(r)
+
+    grouped: dict[str, list] = {}
+    for r in iterations:
+        grouped.setdefault(r["iteration_ts"], []).append(r)
+
+    ticks = []
+    for ts in sorted(grouped):
+        entries = grouped[ts]
+        spots = [e["underlying_price"] for e in entries if e["underlying_price"] is not None]
+        spot = spots[0] if spots else None
+        settle_now = {}
+        if spot is not None:
+            for arm in arms:
+                states = [s for s in (_state_at(dict(p), ts) for p in by_arm.get(arm, [])) if s]
+                if states:
+                    settle_now[arm] = _round(fly.book_pnl(states, spot))
+        ticks.append({
+            "ts": ts,
+            "spot": _round(spot),
+            "centers": {e["arm"]: e["center"] for e in entries if e["center"] is not None},
+            "reasons": {e["arm"]: e["center_reason"] for e in entries if e["center_reason"]},
+            "settle_now": settle_now,
+        })
+
+    events, spans = [], []
+    for r in rows:
+        if r.get("entry_time"):
+            events.append({
+                "kind": "entry", "ts": r["entry_time"], "arm": r["arm"],
+                "entry_mode": r["entry_mode"], "position_id": r["position_id"],
+                "center": r["center"], "spot": r["underlying_at_entry"],
+                "structure": "fly" if r["entry_mode"] == "outright" else f"short {r['side']}",
+            })
+        if r.get("completed_at"):
+            events.append({
+                "kind": "completion", "ts": r["completed_at"], "arm": r["arm"],
+                "entry_mode": r["entry_mode"], "position_id": r["position_id"],
+                "center": r["center"], "spot": r["spot_at_completion"], "structure": "fly",
+            })
+            drift = (None if r["spot_at_completion"] is None or r["underlying_at_entry"] is None
+                     else abs(r["spot_at_completion"] - r["underlying_at_entry"]))
+            spans.append({
+                "position_id": r["position_id"], "arm": r["arm"], "center": r["center"],
+                "from": r["entry_time"], "to": r["completed_at"],
+                "latency_min": r["completion_latency_min"], "drift": _round(drift, 1),
+            })
+    events.sort(key=lambda e: e["ts"])
+
+    # Credit spreads still waiting: the branch that carries full defined risk until it completes, and
+    # the one a time axis makes visible while it is still happening rather than at settlement.
+    waiting = [{"position_id": r["position_id"], "arm": r["arm"], "center": r["center"],
+                "from": r["entry_time"], "best_debit": r["best_completing_debit"],
+                "credit": r["credit"]}
+               for r in rows
+               if r["entry_mode"] == "legged" and not r.get("completed_at")]
+
+    return {"date": day, "arms": arms, "ticks": ticks, "events": events, "spans": spans,
+            "waiting": waiting, "feed": feed, "feed_summary": feed_summary}
+
+
+def data_quality(conn, day: str | None = None) -> tuple[list[dict], dict]:
+    """What the feed gave us this session — the record that separates 'the data was thin' from 'the
+    strategy found nothing', which is a distinction this module is built to keep.
+
+    Returns the per-tick series (every snapshot attempt, whether it built or was refused) and a
+    summary counting refusals by reason. A stretch of the day with refused rows is a feed problem; a
+    stretch with NO rows at all is the loop not running — two different findings, and only separable
+    because the refused tick is now recorded rather than logged and forgotten.
+    """
+    day = day or today()
+    rows = conn.execute(
+        "SELECT iteration_ts, symbol, status, quotes_fresh, quotes_rejected, underlying_price "
+        "FROM fly_snapshots WHERE trade_date = ? ORDER BY iteration_ts", (day,)).fetchall()
+
+    feed = [{"ts": r["iteration_ts"], "symbol": r["symbol"], "status": r["status"],
+             "fresh": r["quotes_fresh"], "rejected": r["quotes_rejected"],
+             "spot": _round(r["underlying_price"])} for r in rows]
+
+    by_reason: dict[str, int] = {}
+    ok = 0
+    for r in rows:
+        if r["status"] == "ok":
+            ok += 1
+        else:
+            by_reason[r["status"]] = by_reason.get(r["status"], 0) + 1
+    summary = {
+        "ticks": len(rows),
+        "ok": ok,
+        "refused": len(rows) - ok,
+        "by_reason": by_reason,
+        "ok_rate": _rate(ok, len(rows)),
+    }
+    return feed, summary
+
+
 # --------------------------------------------------------------------------- rollup
 def today() -> str:
     return datetime.now().date().isoformat()

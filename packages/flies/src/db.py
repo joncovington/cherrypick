@@ -132,6 +132,27 @@ CREATE TABLE IF NOT EXISTS fly_iterations (
     UNIQUE (iteration_ts, symbol, arm)
 );
 CREATE INDEX IF NOT EXISTS idx_fly_iterations_date ON fly_iterations(trade_date);
+
+-- One row per (iteration x symbol): what the FEED gave us this tick, recorded whether or not a
+-- snapshot could be built.
+--
+-- Separate from fly_iterations on purpose. That table is per-arm and only written when a snapshot
+-- succeeds; a refused snapshot never reaches the arm loop, so a feed outage writes nothing there and
+-- a silent stretch is indistinguishable from a healthy loop that chose not to trade. This records the
+-- refusal too, so a gap on the timeline can say WHY -- feed stale vs streamer down vs loop not running
+-- (the last being simply the absence of rows). status is "ok" or the provider's refusal reason.
+CREATE TABLE IF NOT EXISTS fly_snapshots (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    iteration_ts      TEXT,
+    trade_date        TEXT,
+    symbol            TEXT,
+    status            TEXT,     -- "ok" | the refusal reason (no_fresh_quotes, no_spot_price, ...)
+    quotes_fresh      INTEGER,  -- NULL on refusals that failed before the quote scan
+    quotes_rejected   INTEGER,
+    underlying_price  REAL,
+    UNIQUE (iteration_ts, symbol)
+);
+CREATE INDEX IF NOT EXISTS idx_fly_snapshots_date ON fly_snapshots(trade_date);
 """
 
 
@@ -247,6 +268,23 @@ def record_iteration(conn, *, iteration_ts: str, trade_date: str, symbol: str, a
         "INSERT OR REPLACE INTO fly_iterations (iteration_ts, trade_date, symbol, arm, center, "
         "center_reason, underlying_price) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (iteration_ts, trade_date, symbol, arm, center, center_reason, underlying_price),
+    )
+    conn.commit()
+
+
+def record_snapshot(conn, *, trade_date: str, symbol: str, status: str,
+                    quotes_fresh: int | None = None, quotes_rejected: int | None = None,
+                    underlying_price: float | None = None, iteration_ts: str | None = None) -> None:
+    """Record what the feed gave us this tick — on both the snapshot-built and the refused path.
+
+    Idempotent on (iteration_ts, symbol) so a re-run of the same tick doesn't double-count. This is
+    pure telemetry: it records what the data looked like, never what was decided from it.
+    """
+    conn.execute(
+        "INSERT OR REPLACE INTO fly_snapshots (iteration_ts, trade_date, symbol, status, "
+        "quotes_fresh, quotes_rejected, underlying_price) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (iteration_ts or _now(), trade_date, symbol, status, quotes_fresh, quotes_rejected,
+         underlying_price),
     )
     conn.commit()
 

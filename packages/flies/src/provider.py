@@ -62,8 +62,10 @@ def _connect_ro(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
-def _fail(symbol: str, reason: str) -> dict:
-    return {"ok": False, "symbol": symbol, "reason": reason}
+def _fail(symbol: str, reason: str, **extra) -> dict:
+    """A refusal, not an error. `extra` carries any telemetry the caller can use to explain the
+    refusal afterwards — e.g. how many quotes were rejected as stale on a `no_fresh_quotes`."""
+    return {"ok": False, "symbol": symbol, "reason": reason, **extra}
 
 
 def _usable_quote(row, now_ts: float, max_age: float) -> dict | None:
@@ -180,7 +182,9 @@ def build_snapshot(db_path, symbol: str, *, when: datetime | None = None,
             target[entry["strike_price"]] = quote
 
         if not puts and not calls:
-            return _fail(symbol, "no_fresh_quotes")
+            # Carry the rejected count out: this is the "the data was thin" refusal, and the number
+            # of stale quotes behind it is exactly what tells a barren session from a broken feed.
+            return _fail(symbol, "no_fresh_quotes", rejected=stale)
 
         # GEX is computed over the FULL chain, not the near-spot window: walls and the gamma flip are
         # properties of the whole surface, and truncating it would move them.

@@ -4,6 +4,7 @@ import pytest
 
 import analytics
 import db as dbmod
+import fly
 
 
 @pytest.fixture()
@@ -213,3 +214,134 @@ def test_session_overview_bundles_the_today_view(conn):
     assert overview["date"] == "2026-07-20"
     assert overview["open_count"] == 1 and overview["risk_free_count"] == 1
     assert "completion" in overview and "divergence" in overview and "journal" in overview
+
+
+# --------------------------------------------------------------------------- session timeline
+def _legged(conn, position_id, *, day="2026-07-20", arm="gex", center=6000.0, credit=2.55,
+            debit=1.50, entry="T12:00:00", completed=None, latency=None, spot_at_completion=None,
+            underlying=6000.0):
+    """A legged position, optionally completed — the case the timeline has to rewind correctly."""
+    open_fee = fly.vertical_open_fee("SPX", 1)
+    dbmod.save_position(conn, {
+        "position_id": position_id, "book_id": f"{day}:{arm}:SPX", "trade_date": day, "arm": arm,
+        "entry_mode": "legged", "symbol": "SPX", "kind": "fly" if completed else "short_vertical",
+        "side": "put", "center": center, "wing_width": 5.0, "quantity": 1,
+        "net": credit - debit if completed else credit, "credit": credit,
+        "debit": debit if completed else None,
+        "fees": open_fee * 2 if completed else open_fee,
+        "entry_time": f"{day}{entry}", "completed_at": f"{day}{completed}" if completed else None,
+        "completion_latency_min": latency, "spot_at_completion": spot_at_completion,
+        "underlying_at_entry": underlying, "status": "open",
+    })
+
+
+def _tick(conn, ts, *, day="2026-07-20", arm="gex", center=6000.0, spot=6000.0):
+    dbmod.record_iteration(conn, iteration_ts=f"{day}{ts}", trade_date=day, symbol="SPX", arm=arm,
+                           center=center, center_reason="atm", underlying_price=spot)
+
+
+def test_timeline_rewinds_a_completed_fly_to_the_vertical_it_used_to_be(conn):
+    """The one thing the replay must not get wrong.
+
+    Before completion the position was a short vertical carrying full defined risk; only afterwards
+    is it a fly. Replaying from the stored row without rewinding would draw the morning as though
+    every fly existed from the moment its credit spread was sold — asserting exactly the
+    per-position floor honesty rule 3 refuses to claim loosely.
+    """
+    _legged(conn, "P1", entry="T12:00:00", completed="T12:30:00", latency=30.0,
+            spot_at_completion=6012.0)
+    _tick(conn, "T12:15:00")
+    _tick(conn, "T12:45:00")
+    open_fee = fly.vertical_open_fee("SPX", 1)
+
+    ticks = analytics.session_timeline(conn, "2026-07-20")["ticks"]
+    before, after = ticks[0]["settle_now"]["gex"], ticks[1]["settle_now"]["gex"]
+    # short put spread at its short strike: no payoff, one fee stack, the credit still at risk
+    assert before == pytest.approx(2.55 * 100 - open_fee, abs=0.01)
+    # a fly at its centre: full wing, and now two fee stacks
+    assert after == pytest.approx(1.05 * 100 + 500 - 2 * open_fee, abs=0.01)
+
+
+def test_timeline_excludes_a_position_that_had_not_been_opened_yet(conn):
+    _legged(conn, "P1", entry="T13:00:00")
+    _tick(conn, "T12:00:00")
+    _tick(conn, "T14:00:00")
+    ticks = analytics.session_timeline(conn, "2026-07-20")["ticks"]
+    assert ticks[0]["settle_now"] == {}
+    assert "gex" in ticks[1]["settle_now"]
+
+
+def test_timeline_spans_carry_latency_and_the_drift_that_bought_it(conn):
+    """The 2026-07-20 finding — completions arrived only after 10-21 points of drift — is a shape
+    over time, and this is the pairing that lets it be seen rather than inferred."""
+    _legged(conn, "P1", entry="T10:00:00", completed="T10:21:00", latency=21.0,
+            underlying=6000.0, spot_at_completion=6014.0)
+    _tick(conn, "T10:30:00")
+    timeline = analytics.session_timeline(conn, "2026-07-20")
+    span = timeline["spans"][0]
+    assert span["latency_min"] == 21.0 and span["drift"] == 14.0
+    assert [e["kind"] for e in timeline["events"]] == ["entry", "completion"]
+    assert timeline["waiting"] == []
+
+
+def test_timeline_lists_spreads_still_waiting_to_complete(conn):
+    """The branch that carries full defined risk. On a time axis it is visible while it is still
+    happening, rather than only once settlement resolves it."""
+    _legged(conn, "P1", entry="T10:00:00")
+    _tick(conn, "T10:30:00")
+    waiting = analytics.session_timeline(conn, "2026-07-20")["waiting"]
+    assert [w["position_id"] for w in waiting] == ["P1"]
+
+
+def test_timeline_of_a_day_with_no_iterations_is_empty_not_an_error(conn):
+    timeline = analytics.session_timeline(conn, "2026-07-20")
+    assert timeline["ticks"] == [] and timeline["arms"] == []
+
+
+def test_timeline_keeps_each_arm_separate(conn):
+    _tick(conn, "T12:00:00", arm="gex", center=6005.0)
+    _tick(conn, "T12:00:00", arm="control", center=6000.0)
+    tick = analytics.session_timeline(conn, "2026-07-20")["ticks"][0]
+    assert tick["centers"] == {"gex": 6005.0, "control": 6000.0}
+
+
+# --------------------------------------------------------------------------- feed / data quality
+def _snap(conn, ts, *, day="2026-07-20", symbol="SPX", status="ok", fresh=40, rejected=0, spot=6000.0):
+    dbmod.record_snapshot(conn, iteration_ts=f"{day}{ts}", trade_date=day, symbol=symbol,
+                          status=status, quotes_fresh=fresh, quotes_rejected=rejected,
+                          underlying_price=spot)
+
+
+def test_data_quality_counts_refusals_by_reason(conn):
+    """The barren-session forensic: was a quiet day the strategy finding nothing, or the feed giving
+    us nothing? The split by reason is what answers it."""
+    _snap(conn, "T12:00:00", status="ok", fresh=40)
+    _snap(conn, "T12:02:00", status="no_fresh_quotes", fresh=None, rejected=12)
+    _snap(conn, "T12:04:00", status="no_fresh_quotes", fresh=None, rejected=9)
+    _snap(conn, "T12:06:00", status="no_spot_price", fresh=None, rejected=None)
+    feed, summary = analytics.data_quality(conn, "2026-07-20")
+    assert summary["ticks"] == 4 and summary["ok"] == 1 and summary["refused"] == 3
+    assert summary["by_reason"] == {"no_fresh_quotes": 2, "no_spot_price": 1}
+    assert summary["ok_rate"] == 0.25
+    assert [f["status"] for f in feed] == ["ok", "no_fresh_quotes", "no_fresh_quotes", "no_spot_price"]
+
+
+def test_data_quality_is_idempotent_on_a_retick(conn):
+    """A re-run of the same tick must not inflate the denominator — UNIQUE(iteration_ts, symbol)."""
+    _snap(conn, "T12:00:00", status="ok")
+    _snap(conn, "T12:00:00", status="ok")
+    _, summary = analytics.data_quality(conn, "2026-07-20")
+    assert summary["ticks"] == 1
+
+
+def test_timeline_carries_the_feed(conn):
+    _snap(conn, "T12:00:00", status="ok", fresh=40)
+    _snap(conn, "T12:02:00", status="no_fresh_quotes", fresh=None, rejected=7)
+    tl = analytics.session_timeline(conn, "2026-07-20")
+    assert tl["feed_summary"]["refused"] == 1
+    assert [f["status"] for f in tl["feed"]] == ["ok", "no_fresh_quotes"]
+
+
+def test_data_quality_on_an_empty_day_is_not_an_error(conn):
+    feed, summary = analytics.data_quality(conn, "2026-07-20")
+    assert feed == [] and summary["ticks"] == 0 and summary["ok_rate"] is None
