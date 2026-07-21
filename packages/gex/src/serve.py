@@ -400,6 +400,7 @@ function renderGexMainChart(series,spot,zero,mode,callWall,putWall,spotHistory,m
   opts.scales.x.title={display:true,text:'Gamma Exposure ($)',color:'#6b7280'};
   opts.scales.x.ticks.callback=v=>fGex(v);
   opts.plugins.tooltip.callbacks={label:ctx=>(ctx.dataset.label||'')+': '+fGex(ctx.parsed.x)};
+  opts.datasets={bar:{barThickness:3,maxBarThickness:4}};  // thin sticks like gexbot
   _fitChartToViewport('gex-main-chart',24,220);
   const hlinePlugins=[];
   if(spot!=null) hlinePlugins.push(_hline(spot,'$'+spot.toFixed(2),'#00b4ff',{solid:true}));
