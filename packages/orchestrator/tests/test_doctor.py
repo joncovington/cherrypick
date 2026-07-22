@@ -27,6 +27,22 @@ def _fake_status(stdout):
     return lambda *a, **k: SimpleNamespace(returncode=0, stdout=stdout)
 
 
+def test_module_path_check_is_portable(tmp_path):
+    """The `<module>.path` check must not leak the absolute checkout path (drive/username) when the
+    module exists — portable paths only, same guardrail as the dashboard modules table."""
+    module = tmp_path / "meic"
+    module.mkdir()
+    cfg = {
+        "timezone": "America/New_York",
+        "modules": {"meic": {"enabled": True, "path": str(module),
+                             "paper": {"paper_db": "data/paper.db"}}},
+        "notify": {"channels": ["log"]},
+    }
+    c = _check(doctor.run(cfg, fast=True), "meic.path")
+    assert c is not None and c.status == OK
+    assert str(tmp_path) not in c.detail
+
+
 def test_streamer_producer_running_shows_freshness(tmp_path, monkeypatch):
     (tmp_path / "streamer").mkdir()
     monkeypatch.setattr(doctor, "_run", _fake_status('{"running": true, "oldest_event_age_s": 3}'))
