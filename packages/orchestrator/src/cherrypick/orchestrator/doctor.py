@@ -170,7 +170,7 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
             Check(
                 f"{name}.path",
                 OK if root.exists() else FAIL,
-                str(root) if root.exists() else missing_detail,
+                cfgmod.portable_path(root) if root.exists() else missing_detail,
             )
         )
         if not root.exists():
