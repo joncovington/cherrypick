@@ -1,7 +1,8 @@
 """Notify paper-trade entries and exits (e.g. to Discord) as they happen.
 
-Reads each module's paper DB — files only, no broker — finds trades that opened or closed since the last
-check, and pushes one concise line per event through the notifier. Distinct from the watchdog's health
+Reads each module's paper DB — files only, no broker — finds trades that opened, had a wing stopped, or
+closed since the last check, and pushes one concise line per event through the notifier. Distinct from
+the watchdog's health
 alerts: each trade is a one-shot event tracked by an id watermark (not deduped or re-notified). On first
 activation the watermark is seeded to the current DB state, so pre-existing paper trades aren't
 backfilled as a burst.
@@ -11,7 +12,10 @@ watchdog tick; the per-schema id watermark keeps either path from re-sending the
 state file is written atomically so overlapping runs can't corrupt it.
 
 Three paper-DB schemas are wired, dispatched by `paper.trade_schema`:
-  - "meic_ic"  : MEICAgent's `ic_trades` table (integer id, exit_time watermark).
+  - "meic_ic"  : MEICAgent's `ic_trades` table (integer id; entry, per-wing stop, and exit watermarks).
+                 A single wing hitting its stop sets status='partial' with a non-null put/call_stop_cost
+                 but leaves exit_time NULL, so it is watermarked per (id, wing) — independent of the
+                 later whole-IC exit — and fires once the moment that wing's stop cost is recorded.
   - "earnings" : EarningsAgent's `trades` table (text order_id key, opened_at/closed_at timestamps).
   - "fly_book" : cherrypick-flies' `fly_positions` (text position_id key). Three stages rather than
                  two — entry, completion, settlement — because a credit spread turning into a
@@ -60,10 +64,30 @@ def _connect_ro(db_path: Path) -> sqlite3.Connection:
 
 
 # --------------------------------------------------------------------------- MEIC ic_trades schema
+def _meic_stopped_wing_keys(conn) -> list:
+    """ "{id}:put"/"{id}:call" for every wing that already has a stop cost recorded — the per-wing
+    watermark. A wing is stopped exactly when its put/call_stop_cost is non-null (MEIC writes the
+    stop's exit price there)."""
+    keys = []
+    for r in conn.execute(
+        "SELECT id, put_stop_cost, call_stop_cost FROM ic_trades "
+        "WHERE put_stop_cost IS NOT NULL OR call_stop_cost IS NOT NULL"
+    ):
+        if r["put_stop_cost"] is not None:
+            keys.append(f"{r['id']}:put")
+        if r["call_stop_cost"] is not None:
+            keys.append(f"{r['id']}:call")
+    return keys
+
+
 def _meic_seed(conn) -> dict:
     max_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM ic_trades").fetchone()[0]
     exited = [r[0] for r in conn.execute("SELECT id FROM ic_trades WHERE exit_time IS NOT NULL")]
-    return {"last_entry_id": max_id, "notified_exit_ids": exited}
+    return {
+        "last_entry_id": max_id,
+        "notified_exit_ids": exited,
+        "notified_stop_keys": _meic_stopped_wing_keys(conn),
+    }
 
 
 def _meic_new_entries(conn, last_entry_id: int) -> list:
@@ -80,6 +104,27 @@ def _meic_new_exits(conn, notified_ids: set) -> list:
         "SELECT id, symbol, risk_profile, exit_reason, pnl FROM ic_trades WHERE exit_time IS NOT NULL"
     ).fetchall()
     return [r for r in rows if r["id"] not in notified_ids]
+
+
+def _meic_new_stops(conn) -> list:
+    return conn.execute(
+        "SELECT id, symbol, risk_profile, put_strike, call_strike, put_stop_cost, call_stop_cost "
+        "FROM ic_trades WHERE put_stop_cost IS NOT NULL OR call_stop_cost IS NOT NULL ORDER BY id"
+    ).fetchall()
+
+
+def _fmt_meic_stop(r, wing: str) -> str:
+    if wing == "put":
+        strike, cost, label = r["put_strike"], r["put_stop_cost"], "PUT"
+        strike_str = f"{strike:.0f}P" if strike is not None else "put"
+    else:
+        strike, cost, label = r["call_strike"], r["call_stop_cost"], "CALL"
+        strike_str = f"{strike:.0f}C" if strike is not None else "call"
+    cost_str = f"${cost:.2f}" if cost is not None else "n/a"
+    return (
+        f"\U0001f6d1 MEIC paper STOP — {r['symbol']} {label} wing {strike_str} "
+        f"stopped @ {cost_str} [{r['risk_profile']}]"
+    )
 
 
 def _fmt_meic_entry(r) -> str:
@@ -105,6 +150,27 @@ def _meic_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
         notifier.notify("INFO", f"trade.{name}.entry.{r['id']}", "Paper entry", _fmt_meic_entry(r))
         st["last_entry_id"] = max(st["last_entry_id"], r["id"])
 
+    # Per-wing stops: a wing hitting its stop sets put/call_stop_cost but not exit_time, so it is a
+    # distinct event from the whole-IC exit and gets its own per-(id, wing) watermark. State that
+    # predates this feature carries no stop watermark — seed it to the current stops (like first
+    # activation, don't backfill) so pre-existing partials aren't blasted out in one burst.
+    stops_notified = 0
+    if "notified_stop_keys" not in st:
+        st["notified_stop_keys"] = _meic_stopped_wing_keys(conn)
+    else:
+        stopped = set(st["notified_stop_keys"])
+        for r in _meic_new_stops(conn):
+            for wing, cost in (("put", r["put_stop_cost"]), ("call", r["call_stop_cost"])):
+                if cost is None:
+                    continue
+                key = f"{r['id']}:{wing}"
+                if key in stopped:
+                    continue
+                notifier.notify("INFO", f"trade.{name}.stop.{key}", "Paper stop", _fmt_meic_stop(r, wing))
+                stopped.add(key)
+                stops_notified += 1
+        st["notified_stop_keys"] = list(stopped)[-_ID_CAP:]
+
     notified = set(st.get("notified_exit_ids", []))
     exits = _meic_new_exits(conn, notified)
     for r in exits:
@@ -112,7 +178,7 @@ def _meic_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
         notified.add(r["id"])
     st["notified_exit_ids"] = sorted(notified)[-_ID_CAP:]
 
-    return {"entries_notified": len(entries), "exits_notified": len(exits)}
+    return {"entries_notified": len(entries), "stops_notified": stops_notified, "exits_notified": len(exits)}
 
 
 # --------------------------------------------------------------------------- Earnings trades schema
@@ -302,12 +368,21 @@ def _fmt_flies_exit(r) -> str:
 def _flies_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     counts = {}
     stages = [
-        ("notified_entry_ids", "entry", "Paper entry", _fmt_flies_entry,
-         "SELECT * FROM fly_positions"),
-        ("notified_completion_ids", "completion", "Fly completed", _fmt_flies_completion,
-         "SELECT * FROM fly_positions WHERE kind = 'fly' AND completed_at IS NOT NULL"),
-        ("notified_exit_ids", "exit", "Paper settled", _fmt_flies_exit,
-         "SELECT * FROM fly_positions WHERE status = 'settled'"),
+        ("notified_entry_ids", "entry", "Paper entry", _fmt_flies_entry, "SELECT * FROM fly_positions"),
+        (
+            "notified_completion_ids",
+            "completion",
+            "Fly completed",
+            _fmt_flies_completion,
+            "SELECT * FROM fly_positions WHERE kind = 'fly' AND completed_at IS NOT NULL",
+        ),
+        (
+            "notified_exit_ids",
+            "exit",
+            "Paper settled",
+            _fmt_flies_exit,
+            "SELECT * FROM fly_positions WHERE status = 'settled'",
+        ),
     ]
     for key, event, title, fmt, query in stages:
         notified = set(st.get(key, []))
