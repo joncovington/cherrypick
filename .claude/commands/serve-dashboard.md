@@ -72,7 +72,8 @@ once they're all up. Start each server **tab-less** (so none pop their own tab);
 opened at the end.
 
 1. **For each registry row, if the module is installed, run the Start-a-single-dashboard procedure** with
-   its default port, **tab-less** — pass `--no-browser` to each. Use meic's **live** row (5050). Skip any
+   its default port, **tab-less** — pass `--no-browser` to each. Use meic's **paper** row (`--mode paper`,
+   port 5051) — `all` is a paper-collection view, so default meic to paper, not the live account. Skip any
    module that isn't installed and say so. Keep each start's don't-double-start check and ~2s HTTP-200
    confirmation. Ignore any bare port number in `$ARGUMENTS` for `all` (the targets have different ports —
    one port can't apply to all).
