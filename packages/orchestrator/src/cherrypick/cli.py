@@ -233,6 +233,18 @@ def cmd_install(cfg) -> None:
     # Remove any stale fixed-time task from a prior install.
     results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
 
+    # Start the standalone market-data producer (top-level `streamer`) if enabled — the same
+    # start-detached-if-down contract as a service. The watchdog keeps it alive in-session thereafter;
+    # its single-instance guard prevents a duplicate start (e.g. if it's already running).
+    streamer_spec = cfg.get("streamer") or {}
+    if streamer_spec.get("enabled"):
+        sroot = cfgmod.module_root(streamer_spec, "streamer")
+        results["streamer"] = (
+            _ensure_daemon(sroot, streamer_spec)
+            if sroot.exists()
+            else {"ok": False, "detail": f"checkout not found at {sroot}"}
+        )
+
     # generic background services (e.g. the gex spot-trail recorder): start each detached if it's down.
     # The watchdog keeps them alive thereafter; single-instance guards prevent duplicate starts.
     for svc in cfgmod.enabled_services(cfg):
