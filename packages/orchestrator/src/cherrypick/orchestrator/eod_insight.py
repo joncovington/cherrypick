@@ -28,6 +28,7 @@ from pathlib import Path
 
 from . import config as cfgmod
 from . import timeutil
+from .util import CREATE_NO_WINDOW
 
 # The agent never gets execution, file-write, or arbitrary-URL tools — everything that could run a
 # command, mutate the tree, or fetch a page is denied. **WebSearch is the one exception**, and only when
@@ -191,8 +192,12 @@ def _run_claude(prompt: str, stdin_text: str, model: str | None, timeout: int,
     try:
         # Force UTF-8 on the pipe: the reports contain non-cp1252 characters (e.g. the Δ in MEIC's
         # greeks), and text=True would otherwise encode stdin with the Windows locale and blow up.
+        # CREATE_NO_WINDOW: when the watchdog launches this detached (no console), spawning the `claude`
+        # CLI would otherwise pop a visible console window on Windows. stdin/stdout are piped, so claude
+        # needs no console. (0 on POSIX.)
         r = subprocess.run(cmd, input=stdin_text, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=timeout)
+                           encoding="utf-8", errors="replace", timeout=timeout,
+                           creationflags=CREATE_NO_WINDOW)
     except (subprocess.TimeoutExpired, OSError) as exc:
         return {"ok": False, "error": f"claude invocation failed: {exc}"}
     if r.returncode != 0:
