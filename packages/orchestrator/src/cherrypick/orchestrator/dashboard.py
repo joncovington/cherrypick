@@ -128,18 +128,34 @@ def _task_views(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def _portable_path(p: Any) -> str:
+    """Render a filesystem path for display without leaking a drive letter, username, or absolute
+    home prefix — the suite guardrail forbids absolute paths on any surface. Collapse the user home
+    to ``~``; else show it relative to the cherrypick source root; else just the final component."""
+    path = Path(p)
+    try:
+        return "~/" + path.relative_to(Path.home()).as_posix()
+    except ValueError:
+        pass
+    try:
+        return Path(os.path.relpath(path, cfgmod.ROOT)).as_posix()
+    except (ValueError, OSError):
+        return path.name
+
+
 def _modules_installed_views(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     """What's configured/installed per module: location, source, paper kind, streamer, ladder.
     Filesystem + local `git` only — never the broker."""
     out = []
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         root = cfgmod.module_root(mcfg, name)
-        source = f"in-place: {mcfg['path']}" if mcfg.get("path") else (mcfg.get("repo") or "—")
+        # Show a portable location, never a raw absolute path (drive/username leak on the dashboard).
+        source = f"in-place: {_portable_path(root)}" if mcfg.get("path") else (mcfg.get("repo") or "—")
         paper = mcfg.get("paper", {})
         out.append(
             {
                 "name": name,
-                "root": str(root),
+                "root": _portable_path(root),
                 "source": source,
                 "git_ref": _git_ref(root) if root.exists() else None,
                 "paper_kind": paper.get("kind", "—"),
