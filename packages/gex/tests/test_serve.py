@@ -8,6 +8,7 @@ import http.client
 import threading
 from http.server import ThreadingHTTPServer
 
+import config
 import serve
 
 
@@ -44,6 +45,12 @@ def test_handler_serves_page_and_api(tmp_path):
         r = conn.getresponse()
         body = r.read().decode()
         assert r.status == 200 and "Cherrypick GEX" in body and 'data-gex-tab="volume"' in body
+        assert str(config.ws_port(cfg)) in body  # ws port must be rendered into the page
+        # Two GEX stats blocks: positioning (OI) and flow (volume).
+        assert "OPEN INTEREST" in body
+        assert "VOLUME" in body
+        assert 'id="m-net-gex-vol"' in body
+        assert 'id="m-zero-gamma-vol"' in body
 
         conn.request("GET", "/api/gex?symbol=SPX")
         r = conn.getresponse()
