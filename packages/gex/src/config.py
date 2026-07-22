@@ -33,7 +33,7 @@ _DEFAULTS = {
 
 def _resolve(base: Path, value: str) -> Path:
     # Expand ~ and $ENV first, so a config can point at the shared cherrypick data home
-    # (e.g. "~/.cherrypick/data/meic/stream_cache.db") the same way the sibling modules do,
+    # (e.g. "~/.cherrypick/data/marketdata/stream_cache.db") the same way the sibling modules do,
     # rather than only a path relative to this module. Anything still relative resolves
     # against the config file's own directory (an explicit package-local opt-in).
     value = os.path.expandvars(os.path.expanduser(value))
@@ -66,8 +66,14 @@ def load() -> dict:
     src = cfg.get("source", {}) or {}
     cfg["source"] = src
     gex_data = _home.data_dir("gex")  # ~/.cherrypick/data/gex (or relocated by CHERRYPICK_HOME)
+    # The stream cache defaults to the suite's CANONICAL shared cache (data/marketdata), produced by
+    # whichever streamer is active — MEIC's, the standalone packages/streamer daemon, or this module's
+    # own streamer when it is the producer. source.stream_cache_db overrides it. The spot-trail history_db
+    # below stays gex-owned (data/gex) — that one is this module's, not shared.
+    marketdata = _home.data_dir("marketdata")
     cfg["stream_cache_db"] = (
-        _resolve(base, src["stream_cache_db"]) if src.get("stream_cache_db") else gex_data / "stream_cache.db"
+        _resolve(base, src["stream_cache_db"]) if src.get("stream_cache_db")
+        else marketdata / "stream_cache.db"
     )
     cfg["history_db_path"] = (
         _resolve(base, cfg["history_db"]) if cfg.get("history_db") else gex_data / "gex_history.db"

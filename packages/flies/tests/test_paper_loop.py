@@ -140,10 +140,10 @@ def test_stream_cache_path_prefers_config_and_expands_tildes():
     assert "~" not in path and path.endswith("cache.db")
 
 
-def test_stream_cache_path_defaults_to_meics_managed_home(monkeypatch, tmp_path):
+def test_stream_cache_path_defaults_to_canonical_shared_cache(monkeypatch, tmp_path):
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
     path = paper_loop.stream_cache_path({})
-    assert path == str(tmp_path / "data" / "meic" / "stream_cache.db")
+    assert path == str(tmp_path / "data" / "marketdata" / "stream_cache.db")
 
 
 # --------------------------------------------------------------------------- fixtures

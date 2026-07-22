@@ -1,0 +1,8 @@
+{
+  "_comment": "The standalone streamer writes the CANONICAL shared cache ~/.cherrypick/data/marketdata/stream_cache.db (relocatable via $CHERRYPICK_HOME). Every consumer module (flies, gex, and MEIC's readers) should point source.stream_cache_db at that same path. Run this daemon ONLY when MEIC's own streamer is not the producer — exactly one streamer writes the cache at a time. Omit the path keys to accept the canonical defaults; copy this file to config.json (git-ignored) to override.",
+  "_symbols_note": "Operator BASE symbols — a seed the streamer always includes. The full stream set is the UNION of this and every installed module's request file (~/.cherrypick/state/stream_requests/<module>.json), which modules write themselves. You normally leave this empty and let modules register what they need; list a symbol here only to force it streamed regardless of any module. New underlyings (here or from a module) are picked up at daemon start — a restart adds a chain window; open-position legs are dynamic and need no restart.",
+  "symbols": [],
+  "streamer": {
+    "window_strike_count": 20
+  }
+}

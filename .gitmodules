@@ -13,3 +13,6 @@
 [submodule "packages/flies/src/_core"]
 	path = packages/flies/src/_core
 	url = https://github.com/joncovington/cherrypick-core.git
+[submodule "packages/streamer/src/_core"]
+	path = packages/streamer/src/_core
+	url = https://github.com/joncovington/cherrypick-core.git

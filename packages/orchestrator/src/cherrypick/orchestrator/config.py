@@ -174,15 +174,18 @@ def enabled_services(cfg: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def eod_digest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Resolved suite end-of-day-digest scheduling. ON by default (opt out with
-    `"eod_digest": {"enabled": false}`), with a default task name and daily time — so a config
-    predating the feature still gets the digest scheduled at `install`. The time is the box's local
-    clock (assumed ET, like the modules' entry_time/exit_time)."""
+    """Resolved suite end-of-day-digest config. ON by default (opt out with
+    `"eod_digest": {"enabled": false}`). No longer run at a fixed clock time — the watchdog fires it once
+    every installed module has written its `paper-eod-<day>.md`, or at the `deadline` backstop (ET) if a
+    module is late or never writes (a flat flies day writes none), so it never skips. `task_name` is kept
+    only so `install`/`uninstall` can remove a stale fixed-time task from a prior install."""
     ed = cfg.get("eod_digest", {}) or {}
     return {
         "enabled": ed.get("enabled", True),
         "task_name": ed.get("task_name", "cherrypick-eod-digest"),
-        "at": ed.get("at", "16:15"),
+        # Backstop time (ET, box-local clock like the modules' entry/exit times): fire even if some
+        # module's paper-eod is still missing by now, so a straggler or a flat session can't skip the day.
+        "deadline": ed.get("deadline", "16:45"),
     }
 
 
@@ -200,15 +203,15 @@ def archive_settings(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def insight_settings(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Resolved AI EOD-insight scheduling. **OFF by default** — it needs Claude Code (`claude`) on PATH,
+    """Resolved AI EOD-insight config. **OFF by default** — it needs Claude Code (`claude`) on PATH,
     an authenticated session, and a paid call, so it's opt-in (`"eod_insight": {"enabled": true}`). When
-    on, a daily task synthesizes a cross-module narrative over the deterministic reports into
-    `eod-insight-<day>.md`. `model` None → Claude's configured default. Off the reliability path."""
+    on, it synthesizes a cross-module narrative over the deterministic reports into `eod-insight-<day>.md`.
+    Fired (detached) by the watchdog on the same completion event as the digest — no fixed clock time.
+    `model` None → Claude's configured default. Off the reliability path."""
     ei = cfg.get("eod_insight", {}) or {}
     return {
         "enabled": ei.get("enabled", False),
         "task_name": ei.get("task_name", "cherrypick-eod-insight"),
-        "at": ei.get("at", "16:20"),
         "model": ei.get("model"),
         "timeout_seconds": int(ei.get("timeout_seconds", 120)),
         # When on (default), the insight may use WebSearch to research upcoming macro/earnings events for
