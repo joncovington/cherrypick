@@ -2,8 +2,77 @@
 are declared. Guards the 2026-07-11 regression where a Dolt server rooted at the wrong data dir
 answered on the port while serving none of the earnings databases, and a port-only check stayed green."""
 
+import os
+from types import SimpleNamespace
+
 from cherrypick.orchestrator import doctor
 from cherrypick.orchestrator.doctor import FAIL, OK, WARN
+
+
+def _producer_cfg(streamer_dir):
+    return {
+        "timezone": "America/New_York",
+        "modules": {},
+        "notify": {"channels": ["log"]},
+        "streamer": {"enabled": True, "path": str(streamer_dir), "status_argv": ["run.py", "--status"],
+                     "stale_restart_seconds": 240},
+    }
+
+
+def _check(checks, name):
+    return next((c for c in checks if c.name == name), None)
+
+
+def _fake_status(stdout):
+    """A doctor._run replacement returning a fixed streamer --status payload."""
+    return lambda *a, **k: SimpleNamespace(returncode=0, stdout=stdout)
+
+
+def test_module_path_check_is_portable(tmp_path, monkeypatch):
+    """The `<module>.path` check must not leak the absolute checkout path (drive/username) when the
+    module exists — portable paths only, same guardrail as the dashboard modules table."""
+    monkeypatch.setattr(doctor.cfgmod, "ROOT", tmp_path)  # so a portable path resolves cleanly here
+    module = tmp_path / "meic"
+    module.mkdir()
+    cfg = {
+        "timezone": "America/New_York",
+        "modules": {"meic": {"enabled": True, "path": str(module),
+                             "paper": {"paper_db": "data/paper.db"}}},
+        "notify": {"channels": ["log"]},
+    }
+    c = _check(doctor.run(cfg, fast=True), "meic.path")
+    assert c is not None and c.status == OK
+    assert not os.path.isabs(c.detail) and str(tmp_path) not in c.detail
+
+
+def test_streamer_producer_running_shows_freshness(tmp_path, monkeypatch):
+    (tmp_path / "streamer").mkdir()
+    monkeypatch.setattr(doctor, "_run", _fake_status('{"running": true, "oldest_event_age_s": 3}'))
+    c = _check(doctor.run(_producer_cfg(tmp_path / "streamer")), "streamer")
+    assert c is not None and c.status == OK and "last event 3s ago" in c.detail
+
+
+def test_streamer_producer_not_running_warns(tmp_path, monkeypatch):
+    (tmp_path / "streamer").mkdir()
+    monkeypatch.setattr(doctor, "_run", _fake_status('{"running": false}'))
+    c = _check(doctor.run(_producer_cfg(tmp_path / "streamer")), "streamer")
+    assert c is not None and c.status == WARN and "not running" in c.detail
+
+
+def test_streamer_producer_silent_in_market_hours_warns(tmp_path, monkeypatch):
+    (tmp_path / "streamer").mkdir()
+    monkeypatch.setattr(doctor, "_run", _fake_status('{"running": true, "oldest_event_age_s": 900}'))
+    monkeypatch.setattr(doctor.timeutil, "is_market_hours", lambda *a, **k: True)
+    c = _check(doctor.run(_producer_cfg(tmp_path / "streamer")), "streamer")
+    assert c is not None and c.status == WARN and "silent" in c.detail
+
+
+def test_streamer_producer_silent_off_hours_stays_ok(tmp_path, monkeypatch):
+    (tmp_path / "streamer").mkdir()
+    monkeypatch.setattr(doctor, "_run", _fake_status('{"running": true, "oldest_event_age_s": 900}'))
+    monkeypatch.setattr(doctor.timeutil, "is_market_hours", lambda *a, **k: False)
+    c = _check(doctor.run(_producer_cfg(tmp_path / "streamer")), "streamer")
+    assert c is not None and c.status == OK and "quiet off-hours" in c.detail
 
 
 def test_find_stray_artifacts_empty_tree(tmp_path):
