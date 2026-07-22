@@ -55,7 +55,7 @@ def fetch(section_cfg: dict[str, Any], params: dict[str, str] | None = None, tim
         params["symbol"] = str(section_cfg["default_symbol"]).upper()
     root = cfgmod.module_root(section_cfg, section_cfg.get("id"))
     if not root.exists():
-        return {"ok": False, "error": f"section module checkout not found at {root}"}
+        return {"ok": False, "error": f"section module checkout not found at {cfgmod.portable_path(root)}"}
     argv = _argv(section_cfg, params)
     if not argv:
         return {"ok": False, "error": "section has no fetch_argv"}
