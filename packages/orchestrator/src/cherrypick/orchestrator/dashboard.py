@@ -134,12 +134,13 @@ def _modules_installed_views(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     out = []
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         root = cfgmod.module_root(mcfg, name)
-        source = f"in-place: {mcfg['path']}" if mcfg.get("path") else (mcfg.get("repo") or "—")
+        # Show a portable location, never a raw absolute path (drive/username leak on the dashboard).
+        source = f"in-place: {cfgmod.portable_path(root)}" if mcfg.get("path") else (mcfg.get("repo") or "—")
         paper = mcfg.get("paper", {})
         out.append(
             {
                 "name": name,
-                "root": str(root),
+                "root": cfgmod.portable_path(root),
                 "source": source,
                 "git_ref": _git_ref(root) if root.exists() else None,
                 "paper_kind": paper.get("kind", "—"),

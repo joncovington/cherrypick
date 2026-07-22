@@ -222,7 +222,7 @@ def test_render_html_escapes_untrusted_text(env):
     assert "&lt;script&gt;alert(1)" in out
 
 
-def test_build_model_includes_system_panel(env, monkeypatch):
+def test_build_model_includes_system_panel(env, monkeypatch, tmp_path):
     from cherrypick.notify import secrets as notify_secrets
     from cherrypick.orchestrator import tasks
 
@@ -243,6 +243,9 @@ def test_build_model_includes_system_panel(env, monkeypatch):
 
     modules = {mv["name"]: mv for mv in m["modules_installed"]}
     assert modules["meic"]["source"].startswith("in-place:")
+    # Portable paths only — the raw absolute checkout path must never surface on the dashboard.
+    assert str(tmp_path) not in modules["meic"]["source"]
+    assert str(tmp_path) not in modules["meic"]["root"]
     assert modules["meic"]["paper_kind"] == "self_healing"
     assert modules["meic"]["streamer_enabled"] is True
     assert modules["earnings"]["streamer_enabled"] is False
