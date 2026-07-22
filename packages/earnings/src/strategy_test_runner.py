@@ -51,6 +51,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 from datetime import date as _date
 from datetime import datetime
@@ -718,6 +719,39 @@ def _capture_market_context(day: str) -> None:
         pass
 
 
+class _OpTimeout(Exception):
+    """A bounded scan step (a Dolt-heavy operation) exceeded its wall-clock budget."""
+
+
+def _run_bounded(fn, timeout_s, *args, **kwargs):
+    """Run ``fn(*args, **kwargs)`` with a wall-clock ceiling; return its result or raise _OpTimeout.
+
+    The entry scan's Dolt queries have no client-side read timeout (mysql-connector offers none) and
+    Dolt does not honor the server-side ``max_execution_time`` SELECT cap (verified against the live
+    server), so a Dolt that is cold-starting or compacting makes ``cur.execute()`` block forever --
+    which got the scheduled entry run killed at its 30-minute external timeout (2026-07-14 and
+    2026-07-22). Running the step in a daemon thread lets the scan abandon a hung symbol and move on;
+    the orphaned thread cannot be killed but dies with this short-lived process. Same bounded-and-
+    returns-failure intent as ``scanner.call_tt``, without a subprocess (the Dolt calls are in-process).
+    """
+    box: dict = {}
+
+    def _target():
+        try:
+            box["value"] = fn(*args, **kwargs)
+        except BaseException as exc:  # noqa: BLE001 -- surfaced to the caller's except below
+            box["error"] = exc
+
+    worker = threading.Thread(target=_target, daemon=True)
+    worker.start()
+    worker.join(timeout_s)
+    if worker.is_alive():
+        raise _OpTimeout(f"exceeded {timeout_s}s")
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
 def cmd_run_entries(args) -> dict:
     if not rank_strategies._ensure_dolt_running():
         return {"ok": False, "error": "dolt sql-server not available"}
@@ -729,17 +763,39 @@ def cmd_run_entries(args) -> dict:
     tier_floor = config.get("tier_floor", "Tier 2")
     allowed_tiers = ("Tier 1",) if tier_floor == "Tier 1" else ("Tier 1", "Tier 2")
 
-    calendar = scanner.fetch_entry_window_calendar(config)
+    calendar_timeout = config.get("dolt_calendar_timeout_seconds", 30)
+    try:
+        calendar = _run_bounded(scanner.fetch_entry_window_calendar, calendar_timeout, config)
+    except _OpTimeout:
+        # Dolt could not return the entry calendar in time -- fail fast with a clear cause rather than
+        # letting the scheduled task hang to its 30-minute kill (which logs only an opaque timeout).
+        return {"ok": False, "error": f"dolt calendar fetch exceeded {calendar_timeout}s"}
     scan_date = str(_date.today())
     _capture_market_context(scan_date)  # entry-evening VIX for the next close session's analysis
 
     opened: list[dict] = []
     skipped: list[dict] = []
 
+    scan_deadline = time.monotonic() + config.get("entry_scan_budget_seconds", 1500)
+    symbol_timeout = config.get("dolt_symbol_timeout_seconds", 90)
+
     for entry in calendar:
+        if time.monotonic() > scan_deadline:
+            # Overall wall-clock backstop: even bounded-but-slow Dolt across many names must not push
+            # the run into its external kill. Stop scanning, keep what opened, write partial results.
+            skipped.append({"symbol": None, "strategy": None, "reason": "entry_scan_budget_exceeded"})
+            break
         symbol, earnings_date, timing = entry["symbol"], entry["date"], entry["timing"]
         try:
-            results = rank_strategies.evaluate_symbol(symbol, earnings_date, timing, config)
+            results = _run_bounded(
+                rank_strategies.evaluate_symbol, symbol_timeout, symbol, earnings_date, timing, config
+            )
+        except _OpTimeout:
+            # This symbol's Dolt evaluation stalled -- skip it (the run continues) instead of letting
+            # one hung query stall the whole scan to the external kill.
+            skipped.append({"symbol": symbol, "strategy": None, "reason": f"evaluate_symbol_timeout_{symbol_timeout}s"})
+            _save_entry_review(scan_date, symbol, timing, [], [], [f"evaluate_symbol_timeout_{symbol_timeout}s"])
+            continue
         except Exception as exc:
             skipped.append({"symbol": symbol, "strategy": None, "reason": f"evaluate_symbol_error: {exc}"})
             _save_entry_review(scan_date, symbol, timing, [], [], [f"evaluate_symbol_error: {exc}"])

@@ -93,14 +93,7 @@ def fetch_dolthub_calendar(date: str, config: dict) -> list[dict]:
     e.g. `('EPAC', '2026-07-07', 'After market close')`. `when` is a MySQL
     reserved word and must stay backtick-quoted in the query.
     """
-    import mysql.connector
-
-    conn = mysql.connector.connect(
-        host=config.get("dolthub_host", "127.0.0.1"),
-        port=config.get("dolthub_port", 3306),
-        user=config.get("dolthub_user", "root"),
-        database=config.get("dolthub_database", "earnings"),
-    )
+    conn = _dolt_connect(config, config.get("dolthub_database", "earnings"))
     try:
         cur = conn.cursor(dictionary=True)
         cur.execute(
@@ -153,14 +146,7 @@ def fetch_iv_rv_ratio(symbol: str, config: dict) -> dict:
     recent non-null iv/hv pair within the last 5 rows rather than failing
     or silently treating the ratio as unavailable.
     """
-    import mysql.connector
-
-    conn = mysql.connector.connect(
-        host=config.get("dolthub_host", "127.0.0.1"),
-        port=config.get("dolthub_port", 3306),
-        user=config.get("dolthub_user", "root"),
-        database=config.get("dolthub_options_database", "options"),
-    )
+    conn = _dolt_connect(config, config.get("dolthub_options_database", "options"))
     try:
         cur = conn.cursor(dictionary=True)
         cur.execute(
@@ -194,6 +180,15 @@ def cmd_get_iv_rv(args) -> dict:
     return fetch_iv_rv_ratio(args.symbol.strip().upper(), config)
 
 
+# Bound the Dolt/MySQL connect phase. mysql-connector's connection_timeout caps only the connect, and
+# Dolt does NOT honor the server-side max_execution_time SELECT cap (verified against the live server
+# 2026-07-22 -- a SELECT SLEEP(4) ran in full under an 800ms cap), so the query phase is bounded by the
+# caller instead (strategy_test_runner._run_bounded). Without a connect bound, a Dolt that is starting
+# up or compacting would block indefinitely -- part of what got the scheduled entry run killed at its
+# 30-minute external timeout.
+_DOLT_CONNECT_TIMEOUT = 10  # seconds
+
+
 def _dolt_connect(config: dict, database: str):
     import mysql.connector
 
@@ -202,6 +197,7 @@ def _dolt_connect(config: dict, database: str):
         port=config.get("dolthub_port", 3306),
         user=config.get("dolthub_user", "root"),
         database=database,
+        connection_timeout=config.get("dolthub_connect_timeout", _DOLT_CONNECT_TIMEOUT),
     )
 
 
