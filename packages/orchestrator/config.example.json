@@ -125,7 +125,7 @@
         "id": "gex",
         "title": "GEX",
         "enabled": false,
-        "path": "../cherrypick-gex",
+        "path": "../gex",
         "repo": "https://github.com/joncovington/cherrypick-gex.git",
         "fetch_argv": ["run.py", "section", "--symbol", "{symbol}", "--json"],
         "default_symbol": "SPX",
