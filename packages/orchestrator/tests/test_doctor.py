@@ -2,6 +2,7 @@
 are declared. Guards the 2026-07-11 regression where a Dolt server rooted at the wrong data dir
 answered on the port while serving none of the earnings databases, and a port-only check stayed green."""
 
+import os
 from types import SimpleNamespace
 
 from cherrypick.orchestrator import doctor
@@ -27,9 +28,10 @@ def _fake_status(stdout):
     return lambda *a, **k: SimpleNamespace(returncode=0, stdout=stdout)
 
 
-def test_module_path_check_is_portable(tmp_path):
+def test_module_path_check_is_portable(tmp_path, monkeypatch):
     """The `<module>.path` check must not leak the absolute checkout path (drive/username) when the
     module exists — portable paths only, same guardrail as the dashboard modules table."""
+    monkeypatch.setattr(doctor.cfgmod, "ROOT", tmp_path)  # so a portable path resolves cleanly here
     module = tmp_path / "meic"
     module.mkdir()
     cfg = {
@@ -40,7 +42,7 @@ def test_module_path_check_is_portable(tmp_path):
     }
     c = _check(doctor.run(cfg, fast=True), "meic.path")
     assert c is not None and c.status == OK
-    assert str(tmp_path) not in c.detail
+    assert not os.path.isabs(c.detail) and str(tmp_path) not in c.detail
 
 
 def test_streamer_producer_running_shows_freshness(tmp_path, monkeypatch):
