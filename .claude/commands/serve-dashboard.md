@@ -1,12 +1,13 @@
 ---
-description: Start/stop cherrypick dashboards (suite/gex/meic/flies/all); --<module> targets, --stop [module|all]
-argument-hint: [port] | all | --gex|--meic|--flies [port] | --meic --paper | --stop [module|all] [port]
+description: Start/stop/restart cherrypick dashboards (suite/gex/meic/flies/all); --stop / --restart [module|all]
+argument-hint: [port] | all | --gex|--meic|--flies [port] | --meic --paper | --stop [module|all] | --restart [module|all]
 ---
 
-Start — or, with `--stop`, stop — a cherrypick live dashboard server. The default target is the **suite**
-dashboard; `--gex` / `--meic` / `--flies` target a module's own dashboard, and `all` covers every
-installed dashboard at once. Stops take an optional target: `--stop` (suite), `--stop <module>`, or
-`--stop all`. All views are read-only and loopback-only (bound to `127.0.0.1`).
+Start — or, with `--stop`, stop, or with `--restart`, restart (stop then start) — a cherrypick live
+dashboard server. The default target is the **suite** dashboard; `--gex` / `--meic` / `--flies` target a
+module's own dashboard, and `all` covers every installed dashboard at once. `--stop` and `--restart` take
+an optional target: bare (suite), `<module>`, or `all`. All views are read-only and loopback-only (bound
+to `127.0.0.1`).
 
 ## Module registry
 
@@ -25,9 +26,13 @@ All four modules share one browser convention: a dashboard opens a tab on start 
 
 ## Route on `$ARGUMENTS`
 
-Check `--stop` before the start flags:
+Check `--restart` and `--stop` before the start flags:
 
-- If it contains **`--stop`**, pick the stop target by the word that follows it:
+- If it contains **`--restart`**, pick the target by the word that follows it:
+  - `--restart gex` / `--restart meic` / `--restart flies` → **Restart a single dashboard** for that module.
+  - `--restart all` → **Restart all dashboards**.
+  - `--restart` with no target (or `--restart suite`) → **Restart a single dashboard** for the suite.
+- Else if it contains **`--stop`**, pick the stop target by the word that follows it:
   - `--stop gex` / `--stop meic` / `--stop flies` → **Stop a single dashboard** for that module.
   - `--stop all` → **Stop all dashboards**.
   - `--stop` with no target (or `--stop suite`) → **Stop a single dashboard** for the suite.
@@ -134,3 +139,41 @@ dashboard server processes; it touches nothing else in the suite (use `/uninstal
    as simply not-running (note it and move on — don't abort the whole run).
 
 3. **Report** a short summary of what was stopped and what wasn't running (or wasn't installed).
+
+---
+
+## Restart a single dashboard
+
+Stop the target dashboard, then start it fresh (useful to pick up a code change, or recover a wedged
+server). Compose the sections above — no new mechanics:
+
+1. **Confirm the module is installed** (the row's "Installed if" check). If it isn't, tell the user that
+   module isn't installed (nothing to restart) and **STOP**. (The suite is always installed.)
+
+2. **Run the Stop-a-single-dashboard procedure** for the target — but treat "nothing listening" as fine
+   (a restart of a stopped dashboard is just a start; note it wasn't running and continue, don't abort).
+   For `--restart meic` this stops **both** meic ports (5050 live and 5051 paper).
+
+3. **Then run the Start-a-single-dashboard procedure** for the same target. It opens the browser by
+   default (don't pass `--no-browser` unless I asked otherwise). `--restart meic` starts **live** (5050);
+   `--restart meic --paper` starts paper (5051). Any bare number in `$ARGUMENTS` is the port.
+
+4. **Report** that the dashboard was restarted, with its URL `http://127.0.0.1:<port>/` (read-only +
+   loopback-only), noting if it wasn't previously running (started fresh).
+
+---
+
+## Restart all dashboards
+
+Stop every running dashboard, then start every installed one — a full-suite bounce (e.g. to pick up a
+code change across all servers). Compose the two "all" sections:
+
+1. **Run the Stop-all-dashboards procedure** (stops suite, gex, meic 5050+5051, flies; "nothing listening"
+   is fine and non-fatal).
+
+2. **Then run the Start-all-dashboards procedure** (starts every installed dashboard **tab-less** — meic
+   in **paper** (5051) per the `all` default — waits for each to confirm HTTP 200, then opens a **single**
+   browser tab to the suite). Ignore any bare port number in `$ARGUMENTS` for `all`.
+
+3. **Report** a short summary of what was restarted (and anything skipped because the module isn't
+   installed), that they're read-only + loopback-only, and that the suite tab was opened.
