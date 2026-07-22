@@ -49,7 +49,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 
 All tastytrade operations are called via `python src/tt.py <command>`. Commands output JSON to stdout. Credentials are read from the OS keyring (set via `python src/tt.py secrets_set`; check status with `python src/tt.py secrets_status`). Live-order tools require `enable_live_trading: true` in `config.json`.
 
-`get_quote`, `get_option_chain`, and `get_strategies` check `~/.cherrypick/data/meic/stream_cache.db` first (data age < 10s) before opening a live DXLink connection. Start the streamer daemon for near-zero latency on these calls during active trading.
+`get_quote`, `get_option_chain`, and `get_strategies` check the canonical shared stream cache `~/.cherrypick/data/marketdata/stream_cache.db` first (data age < 10s) before opening a live DXLink connection. Start the streamer daemon for near-zero latency on these calls during active trading. (The cache moved out of `data/meic` to `data/marketdata` so it is owned by infrastructure and readable by any module even when MEIC isn't the producer — see `docs/streamer-package-plan.md`.)
 
 | Command | Purpose | Requires live trading? |
 |---|---|---|
@@ -76,7 +76,7 @@ All tastytrade operations are called via `python src/tt.py <command>`. Commands 
 
 ## DXLink Streamer Daemon
 
-`src/streamer.py` maintains a persistent WebSocket to the DXLink feed and writes Quote, Greeks, and Trade events to `~/.cherrypick/data/meic/stream_cache.db`. Start it alongside the dashboard at session open.
+`src/streamer.py` maintains a persistent WebSocket to the DXLink feed and writes Quote, Greeks, and Trade events to the canonical shared cache `~/.cherrypick/data/marketdata/stream_cache.db` (resolved by `src/paths.py::stream_cache_path()`). Start it alongside the dashboard at session open.
 
 ```bash
 # Start (foreground — run in a separate terminal or as a background process)

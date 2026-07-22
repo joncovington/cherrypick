@@ -53,8 +53,15 @@ def paper_db_path() -> Path:
 
 
 def stream_cache_path() -> Path:
-    """The DXLink streamer cache (``stream_cache.db``)."""
-    return data_path("stream_cache.db")
+    """The DXLink stream cache (``stream_cache.db``).
+
+    This is the suite's **canonical shared cache**, owned by infrastructure (the standalone streamer),
+    not by MEIC — so it resolves under the neutral ``marketdata`` scope, not MEIC's own ``data/meic``
+    dir. MEIC's streamer (when it is the active producer) writes here and every MEIC reader reads here,
+    and flies/gex read the same file. It follows ``CHERRYPICK_HOME`` (the whole-home relocation) but,
+    unlike MEIC's data DBs, **not** ``MEIC_DATA_DIR`` — the cache is not a MEIC-scoped artifact. See
+    ``docs/streamer-package-plan.md``."""
+    return _home.ensure(_home.data_dir("marketdata")) / "stream_cache.db"
 
 
 def config_path() -> Path:

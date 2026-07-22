@@ -16,6 +16,7 @@ import config as _config
 import section as _section
 import serve as _serve
 import service as _service
+import stream_request as _stream_request
 import streamer as _streamer
 
 
@@ -97,6 +98,8 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     cfg = _config.load()
+    # Tell the streamer which underlyings we need kept fresh in the shared cache (best-effort).
+    _stream_request.register(cfg)
     if args.command == "gex":
         return _cmd_gex(cfg, args)
     if args.command == "section":

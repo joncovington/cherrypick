@@ -78,12 +78,13 @@ def test_runtime_paths_resolve_under_home_not_repo():
 
 
 def test_eod_digest_settings_default_on():
-    # A config with no eod_digest section still schedules the digest (on by default) at defaults.
+    # A config with no eod_digest section still enables the digest (on by default) with the deadline
+    # backstop the watchdog uses when a module's paper-eod is late/absent.
     s = c.eod_digest_settings({"modules": {}})
-    assert s == {"enabled": True, "task_name": "cherrypick-eod-digest", "at": "16:15"}
+    assert s == {"enabled": True, "task_name": "cherrypick-eod-digest", "deadline": "16:45"}
 
 
 def test_eod_digest_settings_opt_out_and_overrides():
     assert c.eod_digest_settings({"eod_digest": {"enabled": False}})["enabled"] is False
-    s = c.eod_digest_settings({"eod_digest": {"task_name": "my-eod", "at": "17:00"}})
-    assert s["enabled"] is True and s["task_name"] == "my-eod" and s["at"] == "17:00"
+    s = c.eod_digest_settings({"eod_digest": {"task_name": "my-eod", "deadline": "17:00"}})
+    assert s["enabled"] is True and s["task_name"] == "my-eod" and s["deadline"] == "17:00"

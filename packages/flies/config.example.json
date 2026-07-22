@@ -1,9 +1,9 @@
 {
   "_comment": "cherrypick-flies: 0DTE net-credit butterflies. Paper-only. Copy to config.json and edit. The paper DB lives under the shared cherrypick home (~/.cherrypick/data/flies/paper_trades.db); override with FLIES_DB_PATH.",
 
-  "_source_note": "Where MEIC's streamer keeps its stream cache. This module reads that cache READ-ONLY and runs no streamer of its own — the suite runs one streamer, not three. Omit to accept ~/.cherrypick/data/meic/stream_cache.db. Precondition: MEIC's streamer must be running and subscribed to the symbols below, since open interest (and therefore GEX) exists only because it subscribes DXLink Summary.",
+  "_source_note": "The suite's canonical shared stream cache. This module reads it READ-ONLY and runs no streamer of its own — the suite runs one streamer, not three. Omit to accept ~/.cherrypick/data/marketdata/stream_cache.db. Precondition: some producer must be streaming it — MEIC's streamer when MEIC is installed, otherwise the standalone packages/streamer daemon — subscribed to the symbols below, since open interest (and therefore GEX) exists only because the producer subscribes DXLink Summary.",
   "source": {
-    "stream_cache_db": "~/.cherrypick/data/meic/stream_cache.db"
+    "stream_cache_db": "~/.cherrypick/data/marketdata/stream_cache.db"
   },
 
   "_symbols_note": "SPX ONLY for now, by decision. The module supports XSP too (both are European cash-settled, so a short middle strike left open into expiration settles to cash and assignment is structurally impossible; a physically-settled symbol would need the assignment machinery MEIC carries, and this module has no reason to take that on). Before adding XSP, note that wing_width and strike_increment below are global: XSP trades near a tenth of SPX on a 1-point grid, so a 5-wide XSP fly is roughly a 50-wide SPX fly — about ten times the intended risk per structure. XSP needs its own width before it goes on.",
