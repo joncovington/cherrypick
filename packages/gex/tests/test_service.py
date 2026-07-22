@@ -79,6 +79,44 @@ def test_provider_opens_read_only(tmp_path):
         conn.close()
 
 
+def test_flip_nearest_spot_picks_crossing_closest_to_spot():
+    # Series [-10, 5, -20, 20] sign-flips 3x (90.67, ~92.8, 100.5); the helper
+    # returns the crossing nearest the given spot.
+    series = [
+        {"strike": 90.0, "net": -10}, {"strike": 91.0, "net": 5},
+        {"strike": 100.0, "net": -20}, {"strike": 101.0, "net": 20},
+    ]
+    assert service._flip_nearest_spot(series, "net", 100.5) == 100.5
+    assert service._flip_nearest_spot(series, "net", 90.0) == 90.67
+
+
+def test_flip_nearest_spot_none_when_no_sign_change():
+    series = [{"strike": 100.0, "net": 5}, {"strike": 101.0, "net": 10}]
+    assert service._flip_nearest_spot(series, "net", 100.0) is None
+
+
+def test_net_walls_are_net_gex_extremes():
+    series = [
+        {"strike": 100.0, "net": -30},
+        {"strike": 101.0, "net": 50},
+        {"strike": 102.0, "net": 10},
+    ]
+    assert service._net_walls(series, "net") == (101.0, 100.0)  # max-net, min-net
+    assert service._net_walls([], "net") == (None, None)
+
+
+def test_volume_totals_rolls_up_vol_fields():
+    # Cumulative net_gex_vol crosses zero between 100 and 101 -> zero gamma interpolated.
+    series = [
+        {"strike": 100.0, "call_gex_vol": 30, "put_gex_vol": -50, "net_gex_vol": -20},
+        {"strike": 101.0, "call_gex_vol": 90, "put_gex_vol": -10, "net_gex_vol": 80},
+    ]
+    vt = service._volume_totals(series)
+    assert vt["total_call_gex_vol"] == 120      # 30 + 90 (only positives)
+    assert vt["total_put_gex_vol"] == 60        # abs(-50 + -10)
+    assert vt["net_gex_vol"] == 60              # -20 + 80
+
+
 def test_build_gex_payload_shape_and_oi_vs_volume(tmp_path):
     cfg = _cfg(tmp_path)
     out = service.build_gex(cfg, "SPX")
@@ -91,6 +129,10 @@ def test_build_gex_payload_shape_and_oi_vs_volume(tmp_path):
     t = out["totals"]
     assert t["call_wall"] == 610 and t["put_wall"] == 600
     assert t["zero_gamma"] is not None
+    # Volume rollups sit alongside the OI keys.
+    for k in ("total_call_gex_vol", "total_put_gex_vol", "net_gex_vol",
+              "zero_gamma_vol", "call_wall_vol", "put_wall_vol"):
+        assert k in t
     # build_gex reads the spot trail read-only (the dashboard's recorder writes it) — a list, empty
     # until record_spots has run.
     assert isinstance(out["spot_history"], list)

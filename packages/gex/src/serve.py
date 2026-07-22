@@ -110,18 +110,29 @@ h1{font-size:18px;margin:0;font-weight:650}
               </div>
             </div>
             <div class="metrics-panel">
-              <div class="metrics-panel-title">&#128202; Total GEX</div>
+              <div class="metrics-panel-title">&#128202; OPEN INTEREST (POSITIONING)</div>
               <div class="metric-row"><div class="metric-lbl">Total Call GEX</div><div class="metric-val pos" id="m-call-gex">&mdash;</div></div>
               <div class="metric-row"><div class="metric-lbl">Total Put GEX</div><div class="metric-val neg" id="m-put-gex">&mdash;</div></div>
               <div class="metric-divider"></div>
               <div class="metric-row"><div class="metric-lbl">Net GEX</div><div class="metric-val" id="m-net-gex">&mdash;</div></div>
-              <div class="metric-divider"></div>
               <div class="metric-row"><div class="metric-lbl">Max GEX Strike</div><div class="metric-val" id="m-max-strike">&mdash;</div></div>
               <div class="metric-divider"></div>
               <div class="metric-row"><div class="metric-lbl">Call Wall <span title="Strike with the largest call-side gamma concentration — dealer resistance above spot" style="cursor:help;color:#3d4451">&#9432;</span></div><div class="metric-val pos" id="m-call-wall">&mdash;</div></div>
               <div class="metric-row"><div class="metric-lbl">Put Wall <span title="Strike with the largest put-side gamma concentration — dealer support below spot" style="cursor:help;color:#3d4451">&#9432;</span></div><div class="metric-val neg" id="m-put-wall">&mdash;</div></div>
               <div class="metric-divider"></div>
               <div class="metric-row" style="margin-bottom:0"><div class="metric-lbl">Zero Gamma (Flip) <span title="Strike where dealer GEX transitions from negative to positive" style="cursor:help;color:#3d4451">&#9432;</span></div><div class="metric-val" id="m-zero-gamma">&mdash;</div></div>
+            </div>
+            <div class="metrics-panel">
+              <div class="metrics-panel-title">&#128200; VOLUME (FLOW)</div>
+              <div class="metric-row"><div class="metric-lbl">Total Call GEX</div><div class="metric-val pos" id="m-call-gex-vol">&mdash;</div></div>
+              <div class="metric-row"><div class="metric-lbl">Total Put GEX</div><div class="metric-val neg" id="m-put-gex-vol">&mdash;</div></div>
+              <div class="metric-divider"></div>
+              <div class="metric-row"><div class="metric-lbl">Net GEX</div><div class="metric-val" id="m-net-gex-vol">&mdash;</div></div>
+              <div class="metric-divider"></div>
+              <div class="metric-row"><div class="metric-lbl">Call Wall <span title="Strike with the largest call-side volume-gamma concentration" style="cursor:help;color:#3d4451">&#9432;</span></div><div class="metric-val pos" id="m-call-wall-vol">&mdash;</div></div>
+              <div class="metric-row"><div class="metric-lbl">Put Wall <span title="Strike with the largest put-side volume-gamma concentration" style="cursor:help;color:#3d4451">&#9432;</span></div><div class="metric-val neg" id="m-put-wall-vol">&mdash;</div></div>
+              <div class="metric-divider"></div>
+              <div class="metric-row" style="margin-bottom:0"><div class="metric-lbl">Zero Gamma (Flip) <span title="Volume-basis strike where dealer GEX transitions from negative to positive" style="cursor:help;color:#3d4451">&#9432;</span></div><div class="metric-val" id="m-zero-gamma-vol">&mdash;</div></div>
             </div>
           </div>
         </div>
@@ -195,7 +206,7 @@ function _vline(x,label,color){
     const {ctx,scales}=chart; if(!scales.x) return;
     const xPx=scales.x.getPixelForValue(x); if(xPx==null||isNaN(xPx)) return;
     const {top,bottom}=chart.chartArea;
-    ctx.save(); ctx.setLineDash([4,4]); ctx.strokeStyle=color; ctx.lineWidth=1.5;
+    ctx.save(); ctx.setLineDash([4,4]); ctx.strokeStyle=color; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(xPx,top); ctx.lineTo(xPx,bottom); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle=color; ctx.font='9px sans-serif'; ctx.textAlign='center';
     ctx.fillText(label,xPx,bottom+12); ctx.restore();
@@ -221,7 +232,7 @@ function _categoryPixelForValue(scale,labels,value){
 }
 
 function _hline(y,label,color,opts){
-  const solid=opts&&opts.solid;
+  const solid=opts&&opts.solid, onLeft=opts&&opts.left, fill=opts&&opts.fill;
   return { id:'hline_'+label, beforeDatasetsDraw(chart){
     const {ctx,scales}=chart; if(!scales.y) return;
     let yPx=_categoryPixelForValue(scales.y,chart.data.labels,y);
@@ -229,15 +240,15 @@ function _hline(y,label,color,opts){
     const {left,right,top,bottom}=chart.chartArea;
     yPx=Math.max(top,Math.min(bottom,yPx));
     ctx.save(); if(!solid) ctx.setLineDash([4,4]);
-    ctx.strokeStyle=color; ctx.lineWidth=solid?2:1.5;
+    ctx.strokeStyle=color; ctx.lineWidth=solid?1.25:1;
     ctx.beginPath(); ctx.moveTo(left,yPx); ctx.lineTo(right,yPx); ctx.stroke(); ctx.setLineDash([]);
     ctx.font='bold 10px sans-serif';
     const textW=ctx.measureText(label).width, padX=6, tagH=15;
-    const tagX=right-textW-padX*2, tagY=yPx-tagH/2;
-    ctx.fillStyle='#0d1117'; ctx.beginPath();
+    const tagX=onLeft?left+2:right-textW-padX*2, tagY=yPx-tagH/2;
+    ctx.fillStyle=fill?color:'#0d1117'; ctx.beginPath();
     if(ctx.roundRect) ctx.roundRect(tagX,tagY,textW+padX*2,tagH,3); else ctx.rect(tagX,tagY,textW+padX*2,tagH);
     ctx.fill(); ctx.strokeStyle=color; ctx.lineWidth=1; ctx.stroke();
-    ctx.fillStyle=color; ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillStyle=fill?'#0d1117':color; ctx.textAlign='left'; ctx.textBaseline='middle';
     ctx.fillText(label,tagX+padX,yPx+1); ctx.restore();
   }};
 }
@@ -365,11 +376,12 @@ function _spotHistoryPlugin(history,labels,openTs,closeTs){
 
 function renderGexMainChart(series,spot,zero,mode,callWall,putWall,spotHistory,marketOpenTs,marketCloseTs){
   series=_trimToData(series,['call_gex','put_gex','net_gex','abs_gex','net_gex_vol'],3);
+  if(spot!=null) series=series.filter(s=>Math.abs(s.strike-spot)<=40);  // zoom to near-money (gexbot perspective)
   const labels=series.map(s=>s.strike);
   let ds,titleText;
   if(mode==='oivol'){
     ds=[
-      {label:'Net GEX (OI)',data:series.map(s=>s.net_gex),backgroundColor:series.map(s=>s.net_gex>=0?'green':'red')},
+      {label:'Net GEX (OI)',data:series.map(s=>s.net_gex),backgroundColor:series.map(s=>s.net_gex>=0?'#21ce3c':'#e8423a')},
       {label:'Net GEX (Volume)',data:series.map(s=>s.net_gex_vol),backgroundColor:series.map(s=>s.net_gex_vol>=0?'lightgreen':'lightcoral')},
     ];
     titleText='GEX by Strike — Net GEX (OI vs Volume)';
@@ -377,7 +389,7 @@ function renderGexMainChart(series,spot,zero,mode,callWall,putWall,spotHistory,m
     ds=[{label:'|Net GEX|',data:series.map(s=>s.abs_gex),backgroundColor:'blue'}];
     titleText='GEX by Strike — Absolute GEX';
   } else {
-    ds=[{label:'Net GEX',data:series.map(s=>s.net_gex),backgroundColor:series.map(s=>s.net_gex>=0?'green':'red')}];
+    ds=[{label:'Net GEX',data:series.map(s=>s.net_gex),backgroundColor:series.map(s=>s.net_gex>=0?'#21ce3c':'#e8423a')}];
     titleText='GEX by Strike — Net GEX (Green=Call Heavy, Red=Put Heavy)';
   }
   document.getElementById('gex-chart-title').textContent=titleText;
@@ -389,12 +401,13 @@ function renderGexMainChart(series,spot,zero,mode,callWall,putWall,spotHistory,m
   opts.scales.x.title={display:true,text:'Gamma Exposure ($)',color:'#6b7280'};
   opts.scales.x.ticks.callback=v=>fGex(v);
   opts.plugins.tooltip.callbacks={label:ctx=>(ctx.dataset.label||'')+': '+fGex(ctx.parsed.x)};
+  opts.datasets={bar:{barThickness:3,maxBarThickness:4}};  // thin sticks like gexbot
   _fitChartToViewport('gex-main-chart',24,220);
   const hlinePlugins=[];
   if(spot!=null) hlinePlugins.push(_hline(spot,'$'+spot.toFixed(2),'#00b4ff',{solid:true}));
-  if(zero!=null) hlinePlugins.push(_hline(zero,'Zero Γ: $'+zero.toFixed(2),'purple'));
-  if(callWall!=null) hlinePlugins.push(_hline(callWall,'Call Wall: $'+callWall.toFixed(2),'yellow'));
-  if(putWall!=null) hlinePlugins.push(_hline(putWall,'Put Wall: $'+putWall.toFixed(2),'orange'));
+  if(zero!=null) hlinePlugins.push(_hline(zero,'Zero Γ: $'+zero.toFixed(2),'#e8b923'));
+  if(callWall!=null) hlinePlugins.push(_hline(callWall,callWall.toFixed(2),'#21ce3c',{left:true,fill:true}));
+  if(putWall!=null) hlinePlugins.push(_hline(putWall,putWall.toFixed(2),'#e8423a',{left:true,fill:true}));
   opts.plugins.customHlines={id:'customHlines',beforeDatasetsDraw(chart){ hlinePlugins.forEach(p=>p.beforeDatasetsDraw(chart)); }};
   if(gexMainChart){ gexMainChart.destroy(); gexMainChart=null; }
   gexMainChart=new Chart(document.getElementById('gex-main-chart'),
@@ -412,6 +425,13 @@ function renderGexMetrics(totals){
   document.getElementById('m-call-wall').textContent=t.call_wall!=null?'$'+t.call_wall:'—';
   document.getElementById('m-put-wall').textContent=t.put_wall!=null?'$'+t.put_wall:'—';
   document.getElementById('m-zero-gamma').textContent=t.zero_gamma!=null?'$'+t.zero_gamma.toFixed(2):'—';
+  document.getElementById('m-call-gex-vol').textContent=fGex(t.total_call_gex_vol);
+  document.getElementById('m-put-gex-vol').textContent=t.total_put_gex_vol!=null?fGex(-t.total_put_gex_vol):'—';
+  const netVolEl=document.getElementById('m-net-gex-vol');
+  netVolEl.textContent=fGex(t.net_gex_vol); netVolEl.className='metric-val '+(t.net_gex_vol>=0?'pos':'neg');
+  document.getElementById('m-call-wall-vol').textContent=t.call_wall_vol!=null?'$'+t.call_wall_vol:'—';
+  document.getElementById('m-put-wall-vol').textContent=t.put_wall_vol!=null?'$'+t.put_wall_vol:'—';
+  document.getElementById('m-zero-gamma-vol').textContent=t.zero_gamma_vol!=null?'$'+t.zero_gamma_vol.toFixed(2):'—';
 }
 
 function renderGex(d){
@@ -419,9 +439,9 @@ function renderGex(d){
   if(!d.ok){ document.getElementById('gex-iv-sub').textContent=d.error||'No data'; return; }
   const series=d.series||[];
   const spot=d.underlying_price;
-  const zero=d.totals&&d.totals.zero_gamma;
-  const callWall=d.totals&&d.totals.call_wall;
-  const putWall=d.totals&&d.totals.put_wall;
+  const zero=d.totals&&d.totals.zero_gamma_vol;
+  const callWall=d.totals&&d.totals.call_wall_vol;
+  const putWall=d.totals&&d.totals.put_wall_vol;
   const spotHistory=d.spot_history||[];
   const sym=d.symbol||'', exp=d.expiration||'';
   document.getElementById('gex-iv-sub').textContent=sym+' Implied Volatility Skew — Exp: '+exp;
@@ -489,18 +509,42 @@ document.querySelectorAll('input[name="gex_view"]').forEach(el=>
 document.querySelectorAll('input[name="vol_view"]').forEach(el=>
   el.addEventListener('change',()=>{ if(gexData) renderGex(gexData); }));
 
-// auto-refresh
-fetchGex();
-setInterval(()=>{
+// Live push (primary) + polling (fallback while the socket is not live).
+let wsLive=false, wsBackoff=1000, ws=null;
+function _pollTick(){
+  if(wsLive) return;                 // socket owns updates while live
   cd--; document.getElementById('scountdown').textContent='Refresh in '+cd+'s';
   if(cd<=0){ cd=__REFRESH__; fetchGex(); }
-},1000);
-setInterval(fetchGex,__REFRESH__*1000);
+}
+function openWs(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  ws=new WebSocket(proto+'://'+location.hostname+':__WSPORT__/');
+  let gotMsg=false;
+  ws.onopen=()=>{ ws.send(JSON.stringify({symbol:gexSymbol()})); };
+  ws.onmessage=(e)=>{
+    let d; try{ d=JSON.parse(e.data); }catch(_){ return; }
+    if(!gotMsg){ gotMsg=true; wsLive=true; wsBackoff=1000;
+      _setGexBadges('● live','#00c896'); }
+    gexData=d; renderGex(d);
+  };
+  ws.onclose=()=>{ wsLive=false; _setGexBadges('reconnecting…','#6b7280');
+    setTimeout(openWs,wsBackoff);
+    wsBackoff=Math.min(wsBackoff*2,30000); };
+}
+// symbol dropdown: tell the socket, and keep the fallback path warm
+document.querySelectorAll('.gex-symbol-select').forEach(sel=>{
+  sel.addEventListener('change',()=>{
+    if(ws&&ws.readyState===1) ws.send(JSON.stringify({symbol:sel.value}));
+  });
+});
+fetchGex();               // instant first paint via HTTP
+setInterval(_pollTick,1000);
+openWs();
 </script>
 </body></html>"""
 
 
-def _render_page(symbol: str, refresh: int, symbols: list[str]) -> bytes:
+def _render_page(symbol: str, refresh: int, symbols: list[str], ws_port_num: int = 5056) -> bytes:
     opts = "".join(
         f'<option value="{escape(s)}"{" selected" if s == symbol else ""}>{escape(s)}</option>'
         for s in symbols
@@ -508,16 +552,20 @@ def _render_page(symbol: str, refresh: int, symbols: list[str]) -> bytes:
     html = (
         _PAGE.replace("__SYMBOL__", escape(symbol))
         .replace("__REFRESH__", str(refresh))
+        .replace("__WSPORT__", str(ws_port_num))
         .replace("__OPTIONS__", opts)
     )
     return html.encode("utf-8")
 
 
 def make_handler(cfg: dict, default_sym: str):
+    from config import ws_port
+
     refresh = int(cfg["serve"].get("refresh_seconds", 15))
     symbols = [str(s).upper() for s in (cfg.get("symbols") or [default_sym])]
     if default_sym not in symbols:
         symbols = [default_sym, *symbols]
+    ws_port_num = ws_port(cfg)
 
     class _Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):  # quiet — no request-log spam
@@ -533,7 +581,11 @@ def make_handler(cfg: dict, default_sym: str):
         def do_GET(self):  # noqa: N802
             parsed = urlparse(self.path)
             if parsed.path in ("/", "/index.html"):
-                self._send(200, _render_page(default_sym, refresh, symbols), "text/html; charset=utf-8")
+                self._send(
+                    200,
+                    _render_page(default_sym, refresh, symbols, ws_port_num),
+                    "text/html; charset=utf-8",
+                )
                 return
             if parsed.path == "/api/gex":
                 qs = parse_qs(parsed.query)
@@ -576,6 +628,13 @@ def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
             stop.wait(refresh)
 
     threading.Thread(target=_record_loop, name="gex-spot-recorder", daemon=True).start()
+
+    from config import ws_port as _ws_port
+    from push import GexPushServer
+    push_srv = GexPushServer(cfg)
+    threading.Thread(target=push_srv.start, args=(host,),
+                     name="gex-push", daemon=True).start()
+    print(f"cherrypick-gex push serving at ws://{host}:{_ws_port(cfg)}/")
 
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
