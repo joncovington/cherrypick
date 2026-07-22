@@ -1116,7 +1116,7 @@ def _handler_for(db_path: str | None):
     return _Handler
 
 
-def serve(port: int, db_path: str | None = None, open_browser: bool = False) -> int:
+def serve(port: int, db_path: str | None = None, open_browser: bool = True) -> int:
     if port_in_use(port):
         print(f"already serving on http://{HOST}:{port}")
         if open_browser:
@@ -1139,7 +1139,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="cherrypick-flies read-only dashboard")
     ap.add_argument("--port", type=int)
     ap.add_argument("--db")
-    ap.add_argument("--open", action="store_true", help="open a browser tab")
+    ap.add_argument("--no-browser", action="store_true",
+                    help="don't open a browser tab on start (for headless/background launches)")
     ap.add_argument("--json", action="store_true", help="print one API payload and exit")
     args = ap.parse_args(argv)
 
@@ -1150,7 +1151,7 @@ def main(argv=None) -> int:
         finally:
             conn.close()
         return 0
-    return serve(resolve_port(args.port), args.db, args.open)
+    return serve(resolve_port(args.port), args.db, open_browser=not args.no_browser)
 
 
 if __name__ == "__main__":

@@ -93,7 +93,7 @@ def cmd_status(args) -> int:
 
 def cmd_dashboard(args) -> int:
     import dashboard
-    return dashboard.serve(dashboard.resolve_port(args.port), args.db, args.open)
+    return dashboard.serve(dashboard.resolve_port(args.port), args.db, open_browser=not args.no_browser)
 
 
 def cmd_section(args) -> int:
@@ -124,7 +124,8 @@ def main(argv=None) -> int:
 
     p_dash = sub.add_parser("dashboard", help="serve the read-only dashboard (loopback)")
     p_dash.add_argument("--port", type=int)
-    p_dash.add_argument("--open", action="store_true")
+    p_dash.add_argument("--no-browser", action="store_true",
+                        help="don't open a browser tab on start (for headless/background launches)")
     p_dash.set_defaults(func=cmd_dashboard)
 
     p_section = sub.add_parser("section", help="emit a cherrypick.core.viz card payload")

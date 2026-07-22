@@ -2515,6 +2515,9 @@ def main():
                          help="Overrides the mode-based default (5050 live / 5051 paper).")
     parser.add_argument("--db", default=None,
                          help="Overrides the mode-based default DB path.")
+    parser.add_argument("--no-browser", action="store_true",
+                         help="Don't open a browser tab on start (for headless/background launches, "
+                              "e.g. the suite's `/serve-dashboard all`).")
     args = parser.parse_args()
 
     _MODE = args.mode
@@ -2526,8 +2529,11 @@ def main():
     already = probe.connect_ex(("127.0.0.1", port)) == 0
     probe.close()
     if already:
-        print(f"Dashboard already running at http://localhost:{port} — opening browser.")
-        webbrowser.open(f"http://localhost:{port}")
+        if args.no_browser:
+            print(f"Dashboard already running at http://localhost:{port}.")
+        else:
+            print(f"Dashboard already running at http://localhost:{port} — opening browser.")
+            webbrowser.open(f"http://localhost:{port}")
         sys.exit(0)
 
     try:
@@ -2543,7 +2549,8 @@ def main():
     url = f"http://localhost:{port}"
     print(f"MEICAgent Dashboard  ->  {url}")
     print("Press Ctrl+C to stop.")
-    threading.Timer(0.5, webbrowser.open, args=[url]).start()
+    if not args.no_browser:
+        threading.Timer(0.5, webbrowser.open, args=[url]).start()
 
     try:
         server.serve_forever()
