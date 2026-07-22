@@ -18,7 +18,7 @@ import socket
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +31,12 @@ from .util import first_json
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
 _STATE_FILE = cfgmod.STATE_DIR / "watchdog_state.json"
 _HEARTBEAT = cfgmod.STATE_DIR / "watchdog.last.json"
+
+# The in-place launcher (pythonw run.py <verb>) for detached EOD subprocesses. watchdog.py lives at
+# src/cherrypick/orchestrator/watchdog.py, so the repo-root run.py is three parents up from its dir.
+_RUN_PY = Path(__file__).resolve().parents[3] / "run.py"
+# Reserved (non-finding) state key marking the day the EOD digest/insight were fired, so they fire once.
+_EOD_FIRED_KEY = "_eod_fired_day"
 
 OK, WARN, CRITICAL = "OK", "WARN", "CRITICAL"
 _RANK = {OK: 0, WARN: 1, CRITICAL: 2}
@@ -463,6 +469,60 @@ def _save_state(state: dict[str, Any]) -> None:
     _STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
+def _parse_hhmm(value: str, default: time) -> time:
+    try:
+        h, m = (int(x) for x in str(value).split(":", 1))
+        return time(h, m)
+    except (ValueError, TypeError):
+        return default
+
+
+def _eod_launch(verb: str) -> bool:
+    """Launch `pythonw run.py <verb>` DETACHED from the orchestrator root, so the digest's webhook push
+    and the insight's `claude` call run OUTSIDE the watchdog process — the reliability path stays
+    stdlib + OS-shell only. Reuses the same detached-Popen helper the streamer restart uses."""
+    return _start_streamer(_RUN_PY.parent, [str(_RUN_PY), verb])
+
+
+def _check_eod(cfg: dict[str, Any], now: datetime, is_trading: bool) -> None:
+    """Fire the EOD digest + insight ONCE per trading day, event-driven instead of at a fixed clock time.
+
+    After the close, on each watchdog tick, fire as soon as every installed module has written its
+    `paper-eod-<day>.md` — or at the `eod_digest.deadline` backstop (ET) if a module is late or never
+    writes (a flat flies session writes none), so it can never skip. Both are launched detached (AI +
+    webhook I/O out of this process). Best-effort and off the reliability path.
+    """
+    if not is_trading or now.time() <= timeutil.MARKET_CLOSE:
+        return
+    ed = cfgmod.eod_digest_settings(cfg)
+    ei = cfgmod.insight_settings(cfg)
+    if not ed["enabled"] and not ei["enabled"]:
+        return
+
+    day = now.date().isoformat()
+    state = _load_state()
+    if state.get(_EOD_FIRED_KEY) == day:
+        return  # already fired today
+
+    missing = [
+        name
+        for name in cfgmod.enabled_modules(cfg)
+        if not (cfgmod.module_logs_dir(name) / f"paper-eod-{day}.md").exists()
+    ]
+    past_deadline = now.time() >= _parse_hhmm(ed["deadline"], time(16, 45))
+    if missing and not past_deadline:
+        return  # wait for the stragglers until the backstop
+
+    if ed["enabled"]:
+        _eod_launch("notify-eod")
+    if ei["enabled"]:
+        _eod_launch("eod-insight")
+    # Mark fired regardless of launch outcome so a transient Popen failure can't loop every tick; a
+    # failed launch is rare and the digest can always be run by hand.
+    state[_EOD_FIRED_KEY] = day
+    _save_state(state)
+
+
 def _log_findings(findings: list[Finding], overall: str) -> None:
     cfgmod.ensure_dirs()
     with _WATCHDOG_LOG.open("a", encoding="utf-8") as fh:
@@ -602,6 +662,13 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         from . import trade_notifier
 
         trade_notifier.run(cfg)
+    except Exception:
+        pass
+
+    # Fire the EOD digest + insight once all installed modules have settled (or at the deadline backstop)
+    # — launched detached, so no AI/webhook I/O runs here. Best-effort.
+    try:
+        _check_eod(cfg, now, is_trading)
     except Exception:
         pass
 

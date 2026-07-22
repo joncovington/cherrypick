@@ -213,15 +213,11 @@ def cmd_install(cfg) -> None:
             tn["task_name"], tn_tr, tn.get("interval_minutes", 2)
         )
 
-    # suite end-of-day digest: writes the roll-up + pushes a summary once per afternoon. ON by
-    # default (opt out with "eod_digest": {"enabled": false}); the default name/time mean a config
-    # predating the feature still gets it scheduled here.
-    ed = cfgmod.eod_digest_settings(cfg)
-    if ed["enabled"]:
-        ed_tr = tasks.build_tr(pyw, str(_LAUNCHER), "notify-eod")
-        results["eod_digest_task"] = tasks.create_daily_task(
-            ed["task_name"], ed_tr, timeutil.to_local_hhmm(ed["at"], tz)
-        )
+    # The suite end-of-day digest + AI insight are no longer fixed-time tasks — the watchdog fires them
+    # once every installed module has written its paper-eod file (or at the deadline backstop), so the
+    # digest can't race a module that settles a few minutes late. Remove any stale fixed-time task a
+    # prior install registered so it doesn't double-fire alongside the watchdog trigger.
+    results["eod_digest_task"] = tasks.delete(cfgmod.eod_digest_settings(cfg)["task_name"])
 
     # end-of-month log/report rotation: zip each finished month's reports + rotated logs into
     # logs/archive/. ON by default (opt out with "log_archive": {"enabled": false}); the archive is
@@ -233,14 +229,9 @@ def cmd_install(cfg) -> None:
             la["task_name"], la_tr, la["day"], timeutil.to_local_hhmm(la["at"], tz)
         )
 
-    # AI EOD insight: a daily task synthesizes the deterministic reports via Claude Code. OFF by default
-    # (opt in with "eod_insight": {"enabled": true} and Claude on PATH); registered only when enabled.
-    ei = cfgmod.insight_settings(cfg)
-    if ei["enabled"]:
-        ei_tr = tasks.build_tr(pyw, str(_LAUNCHER), "eod-insight")
-        results["eod_insight_task"] = tasks.create_daily_task(
-            ei["task_name"], ei_tr, timeutil.to_local_hhmm(ei["at"], tz)
-        )
+    # AI EOD insight is likewise watchdog-fired now (detached, only when enabled + claude on PATH).
+    # Remove any stale fixed-time task from a prior install.
+    results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
 
     # generic background services (e.g. the gex spot-trail recorder): start each detached if it's down.
     # The watchdog keeps them alive thereafter; single-instance guards prevent duplicate starts.
