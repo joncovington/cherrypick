@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 cherrypick is the **orchestrator** for a trading-tool suite. It drives the sibling module
-packages (`../meic`, `../earnings`, `../gex`) **in place** — via subprocess, using paths from config — for
+packages (`../meic`, `../earnings`, `../gex`, `../flies`) **in place** — via subprocess, using paths from config — for
 unattended **paper**-trading data collection, with a watchdog + notifications so a walk-away user is
 told (or at least has it logged) whenever something stalls. It never edits a module's internals and
 **never places live trades** — the sole live-adjacent action is *onboarding config* (`connect`/`account`
@@ -82,8 +82,21 @@ resolved **relative to the config file's directory** — never hardcode absolute
 
 **Per-schema dispatch.** Each module's paper DB has a different schema, selected by
 `paper.trade_schema` in config (`"meic_ic"` → MEIC's `ic_trades`; `"earnings"` → the Earnings module's
-`trades`). `report.py`, `calibrate.py`, and `trade_notifier.py` each carry a small reader/adapter
-registry keyed by that value; add a schema by extending those registries, not the callers.
+`trades`; `"fly_book"` → the Flies module's `fly_positions`, tagged by experiment *arm* rather than risk
+profile). `report.py`, `calibrate.py`, `reconcile.py`, and `trade_notifier.py` each carry a small
+reader/adapter registry keyed by that value; add a schema by extending those registries, not the
+callers. All four must be extended together — a schema registered in three of them vanishes silently
+from the fourth surface, with no error to notice. `report.py` additionally carries a **separate**
+`_OPEN_READERS` registry for positions carried past the close (overnight capital-at-risk, no realized
+P&L) that feeds only the report/digest — it is *not* one of the four, so it does not need matching
+entries in calibrate/reconcile/notifier. Only the multi-day earnings module carries overnight; the
+0DTE modules (MEIC, flies) settle within the session and return an empty overnight view by design.
+
+**SLA heartbeat paths derive from the module name** (`config.sla_state_files`), not from a literal
+filename. They were hardcoded to `earnings_*.last.json`, which was harmless while Earnings was the only
+`cherrypick_scheduled` module and wrong as soon as a second one existed — the dashboard showed one
+module's SLA under another's name and the watchdog raised a CRITICAL titled for the wrong module. Use
+`paper.sla_state_prefix` to override for a module whose heartbeat files are named differently.
 
 **cherrypick-core is a submodule.** Shared logic (`cherrypick.core.profiles`, `.fees`, etc.) lives in
 `src/_core` and is put on `sys.path` by a bootstrap in `orchestrator/__init__.py` — so `import

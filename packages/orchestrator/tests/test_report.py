@@ -28,18 +28,27 @@ def _meic_db(path, rows):
     conn.close()
 
 
-def _earnings_db(path, rows):
-    """rows: (symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at)."""
+def _earnings_db(path, rows, open_rows=None):
+    """rows: (symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at) — closed trades.
+    open_rows: (symbol, profile, strategy, capital_at_risk, opened_at) — still-open positions
+    (closed_at stays NULL). The table carries capital_at_risk/opened_at to match the real schema so
+    the open-position reader can be exercised."""
     conn = sqlite3.connect(path)
     conn.execute(
         "CREATE TABLE trades (order_id INTEGER PRIMARY KEY, symbol TEXT, profile TEXT, strategy TEXT, "
-        "pnl REAL, entry_cost REAL, exit_cost REAL, closed_at REAL)"
+        "pnl REAL, entry_cost REAL, exit_cost REAL, closed_at REAL, capital_at_risk REAL, opened_at REAL)"
     )
     conn.executemany(
         "INSERT INTO trades (symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         rows,
     )
+    if open_rows:
+        conn.executemany(
+            "INSERT INTO trades (symbol, profile, strategy, capital_at_risk, opened_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            open_rows,
+        )
     conn.commit()
     conn.close()
 
@@ -174,6 +183,93 @@ def test_report_session_filter_restricts_to_one_day(tmp_path):
     eday = report.run(cfg, session=earnings_session)
     assert eday["modules"]["earnings"]["trades"] == 1
     assert eday["modules"]["meic"]["trades"] == 0
+
+
+def test_report_surfaces_open_positions_carried_overnight(tmp_path):
+    """Earnings opens are reported as capital-at-risk, scoped by OPEN session, separate from P&L."""
+    cfg = _cfg(tmp_path)
+    _meic_db(tmp_path / "meic" / "paper.db", [])
+    open_ep = 1_700_000_000.0
+    open_session = report._session_from_epoch(open_ep)
+    # One closed trade (settled elsewhere) plus two still-open positions opened this session.
+    _earnings_db(
+        tmp_path / "earn" / "paper.db",
+        rows=[("AAPL", "strat_test", "iron_fly", 40.0, 3.0, 3.0, 1_699_000_000.0)],
+        open_rows=[
+            ("DHI", "strat_test", "iron_fly", 1480.0, open_ep),
+            ("DHI", "strat_test", "iron_condor", 565.0, open_ep),
+        ],
+    )
+
+    day = report.run(cfg, session=open_session)
+    eopen = day["modules"]["earnings"]["open"]
+    assert eopen["positions"] == 2
+    assert eopen["capital_at_risk"] == 2045.0
+    assert eopen["by_symbol"] == {"DHI": 2}
+    # The closed trade settled on a different session, so this day shows P&L zero but risk carried.
+    assert day["modules"]["earnings"]["trades"] == 0
+    assert day["suite"]["open"]["positions"] == 2
+    # 0DTE modules never carry overnight, even with an (anomalous) unsettled row — empty by design.
+    assert day["modules"]["meic"]["open"]["positions"] == 0
+
+
+def test_report_open_positions_degrade_on_legacy_schema(tmp_path):
+    """A pre-migration earnings DB without capital_at_risk/opened_at must still report P&L; the
+    overnight view just comes back empty rather than failing the module."""
+    cfg = _cfg(tmp_path)
+    _meic_db(tmp_path / "meic" / "paper.db", [])
+    conn = sqlite3.connect(tmp_path / "earn" / "paper.db")
+    conn.execute("CREATE TABLE trades (order_id INTEGER PRIMARY KEY, symbol TEXT, profile TEXT, "
+                 "strategy TEXT, pnl REAL, entry_cost REAL, exit_cost REAL, closed_at REAL)")
+    conn.execute("INSERT INTO trades (symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at) "
+                 "VALUES ('AAPL','strat_test','iron_fly',40.0,3.0,3.0,1699000000.0)")
+    conn.commit()
+    conn.close()
+
+    out = report.run(cfg)
+    assert out["modules"]["earnings"]["ok"] is True
+    assert out["modules"]["earnings"]["trades"] == 1  # P&L still read
+    assert out["modules"]["earnings"]["open"]["positions"] == 0  # overnight view degraded to empty
+
+
+def test_eod_digest_surfaces_opened_positions_on_a_pure_entry_day(tmp_path, monkeypatch):
+    """The user-facing fix: a day that closed nothing but opened positions is not shown as flat."""
+    from cherrypick.orchestrator import config as cfgmod
+    from cherrypick.orchestrator import eod_digest
+
+    monkeypatch.setattr(cfgmod, "LOGS_DIR", tmp_path / "logs")
+    cfg = _cfg(tmp_path)
+    open_ep = 1_700_000_000.0
+    open_session = report._session_from_epoch(open_ep)
+    _meic_db(tmp_path / "meic" / "paper.db", [])  # 0DTE, flat by the bell
+    _earnings_db(
+        tmp_path / "earn" / "paper.db", rows=[],
+        open_rows=[("DHI", "strat_test", "iron_fly", 1480.0, open_ep),
+                   ("SCHW", "strat_test", "iron_fly", 748.0, open_ep)],
+    )
+
+    md = eod_digest.build_markdown(cfg, open_session, rep=report.run(cfg, session=open_session))
+    # Not called flat: the snapshot names the overnight carry.
+    assert "Flat suite session" not in md
+    assert "carried overnight" in md
+    # The dedicated section renders with the per-module row and the summed risk.
+    assert "## Opened this session (carried overnight)" in md
+    assert "$2,228.00" in md  # 1480 + 748
+    assert "DHI x1" in md and "SCHW x1" in md
+
+
+def test_eod_digest_omits_overnight_section_on_pure_0dte_day(tmp_path, monkeypatch):
+    """MEIC closes a trade, nothing is carried -> no overnight section, no false 'at risk' line."""
+    from cherrypick.orchestrator import config as cfgmod
+    from cherrypick.orchestrator import eod_digest
+
+    monkeypatch.setattr(cfgmod, "LOGS_DIR", tmp_path / "logs")
+    cfg = _cfg(tmp_path)
+    _meic_db(tmp_path / "meic" / "paper.db", [("SPX", "conservative", 100.0, 0.0, "2026-07-10T15:45")])
+    _earnings_db(tmp_path / "earn" / "paper.db", [])
+
+    md = eod_digest.build_markdown(cfg, "2026-07-10", rep=report.run(cfg, session="2026-07-10"))
+    assert "Opened this session (carried overnight)" not in md
 
 
 def test_eod_digest_markdown_cites_report_numbers(tmp_path, monkeypatch):

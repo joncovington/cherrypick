@@ -410,9 +410,15 @@ def _range_stats_for_rows(rows: list[dict]) -> dict:
 def cmd_get_range_summary(args):
     """Multi-day / multi-week P&L, win-rate, and drawdown rollup — the aggregation that
     get_eod_summary/get_today_pnl don't provide (both are hardcoded to today). Used by the
-    paper-trading weekly report and, optionally, live multi-day review. Groups results by
-    risk_profile so the four parallel-shadow profiles (or "unassigned" for rows with no
-    profile set, e.g. live trades) can be compared side by side from one call.
+    paper-trading weekly report and, optionally, live multi-day review.
+
+    Returns three views over the same rows, so nothing is double-counted:
+      - `portfolios`: the atomic unit — one entry per (profile × symbol) pair, which is how the
+        paper study is actually run (each pair is its own book with its own max_concurrent_ics and
+        daily-target budget). Nothing nets across profiles OR symbols here.
+      - `profiles`: a profile rolled up across its symbols (the historical view).
+      - `by_symbol`: a symbol rolled up across profiles — "which instrument paid".
+    "unassigned" collects rows with no profile tag (e.g. live trades).
     """
     if not args.start or not args.end:
         _out({"ok": False, "error": "Both --start and --end are required (YYYY-MM-DD)"})
@@ -431,12 +437,28 @@ def cmd_get_range_summary(args):
 
     profiles = _profiles.compare_profiles(rows, tag_key="risk_profile", summarize=_range_stats_for_rows)
 
+    # Atomic (profile × symbol) portfolios, plus the by-symbol lens.
+    buckets: dict[tuple, list] = {}
+    by_symbol_rows: dict[str, list] = {}
+    for r in rows:
+        prof = _profiles.attribution_tag(r.get("risk_profile"))
+        sym = (r.get("symbol") or "?").upper()
+        buckets.setdefault((prof, sym), []).append(r)
+        by_symbol_rows.setdefault(sym, []).append(r)
+    portfolios = {
+        f"{prof}:{sym}": {**_range_stats_for_rows(rs), "profile": prof, "symbol": sym}
+        for (prof, sym), rs in buckets.items()
+    }
+    by_symbol = {s: _range_stats_for_rows(rs) for s, rs in by_symbol_rows.items()}
+
     _out({
         "ok": True,
         "start": args.start,
         "end": args.end,
         "symbol": args.symbol.upper() if args.symbol else None,
+        "portfolios": portfolios,
         "profiles": profiles,
+        "by_symbol": by_symbol,
     })
 
 

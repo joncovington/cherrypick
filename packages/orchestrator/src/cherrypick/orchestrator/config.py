@@ -136,6 +136,19 @@ def paper_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path:
     return (module_root(module_cfg, name) / p).resolve()
 
 
+def sla_state_files(name: str, mcfg: dict) -> tuple[Path, Path]:
+    """The (entry, exit) SLA heartbeat paths for a `cherrypick_scheduled` module.
+
+    Derived from the module NAME, not hardcoded. These used to be spelled `earnings_entry.last.json`
+    literally at both read sites, which was invisible while Earnings was the only scheduled module and
+    silently wrong the moment a second one appeared — the dashboard showed Earnings' SLA as the other
+    module's, and the watchdog raised a CRITICAL named after Earnings for it. `paper.sla_state_prefix`
+    overrides the derivation for a module whose heartbeat files are named something else.
+    """
+    prefix = mcfg.get("paper", {}).get("sla_state_prefix", name)
+    return (STATE_DIR / f"{prefix}_entry.last.json", STATE_DIR / f"{prefix}_exit.last.json")
+
+
 def module_logs_dir(name: str) -> Path:
     """A module's logs home: `LOGS_DIR/<name>` (e.g. ~/.cherrypick/logs/meic) — the location the module's
     own `paths.logs_dir()` writes to by the shared convention. Used to find each module's log tails and

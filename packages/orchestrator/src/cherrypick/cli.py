@@ -51,7 +51,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from cherrypick.notify import Notifier
@@ -565,11 +565,43 @@ def cmd_eod_digest(cfg, args) -> None:
     _emit(eod_digest.run(cfg, day=day))
 
 
+def _non_trading_day_skip(day: str, force: bool) -> dict | None:
+    """Skip envelope if `day` is a weekend/holiday and not forced, else None.
+
+    The suite EOD tasks (`cherrypick-eod-digest`, `cherrypick-eod-insight`) are plain DAILY schtasks
+    tasks, so they fire every calendar day. Without this guard a Saturday tick writes a flat
+    `eod-digest-<weekend>.md`, pushes a "0 trades" notification, and — for insight — burns a paid
+    Claude call synthesizing a session that never happened. The trading modules already guard
+    `is_trading_day` for exactly this reason (see the flies paper loop, whose own docs warn the suite
+    digest "would ingest weekends and holidays as real sessions"); these suite surfaces must too.
+
+    `--force` (or an explicit `--date` on a day that *is* a trading day) still runs, so a manual
+    weekend backfill of a real prior session works. An unparseable day is not blocked — the command
+    itself reports that."""
+    # Imported lazily, not at module top: `cherrypick.core` is only on sys.path once the
+    # `cherrypick.orchestrator` package import (below) has run its bootstrap, which is after this
+    # module's own top-level imports. By call time that has happened. (Same ordering trap the flies
+    # test conftest documents.)
+    from cherrypick.core import calendar as _cal
+
+    try:
+        d = date.fromisoformat(day)
+    except ValueError:
+        return None
+    if force or _cal.is_trading_day(d):
+        return None
+    return {"ok": True, "skipped": "not_a_trading_day", "session": day}
+
+
 def cmd_notify_eod(cfg, args) -> None:
     """Write the suite EOD digest, then push a one-line summary through the notify channels. This is
     what the scheduled `cherrypick-eod-digest` task runs. The digest write and the push are both
     best-effort: a notify hiccup never fails the file write."""
     day = args.date or (timeutil.now_et().strftime("%Y-%m-%d"))
+    skip = _non_trading_day_skip(day, args.force)
+    if skip is not None:
+        _emit(skip)
+        return
     res = eod_digest.run(cfg, day=day)
     suite = res.get("suite", {})
     net = suite.get("net_pnl")
@@ -599,6 +631,10 @@ def cmd_eod_insight(cfg, args) -> None:
     dangerous tools, off the reliability path. Best-effort: prints a `skipped`/`error` envelope rather
     than failing when Claude is absent, disabled, or the reports aren't written yet."""
     day = args.date or (timeutil.now_et().strftime("%Y-%m-%d"))
+    skip = _non_trading_day_skip(day, args.force)
+    if skip is not None:
+        _emit(skip)
+        return
     _emit(eod_insight.run(cfg, day=day))
 
 
@@ -716,7 +752,12 @@ def main() -> None:
     parser.add_argument(
         "--url", default=None, help="Webhook URL for secrets-set (omit to be prompted without echo)"
     )
-    parser.add_argument("--force", action="store_true", help="For init: overwrite an existing config.json")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="For init: overwrite an existing config.json. For notify-eod/eod-insight: run even on a "
+        "non-trading day (weekend/holiday), which they otherwise skip.",
+    )
     parser.add_argument(
         "--date", default=None, help="For report/eod-digest: a session day 'YYYY-MM-DD' (default today)"
     )

@@ -76,6 +76,60 @@ def _dolt_reachable(host: str, port: int) -> bool:
         return False
 
 
+def _streamer_stale_age(status: dict[str, Any]) -> float | None:
+    """Seconds since the streamer last received ANY market event, or None if it can't be read.
+
+    Prefers the numeric age the streamer computes itself; falls back to `last_event_at` so a module
+    reporting only a timestamp still works.
+    """
+    for key in ("oldest_event_age_s", "stale_age_s"):
+        value = status.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    last = status.get("last_event_at")
+    if isinstance(last, str):
+        try:
+            seen = datetime.fromisoformat(last)
+            now = datetime.now(seen.tzinfo) if seen.tzinfo else datetime.now()
+            return (now - seen).total_seconds()
+        except ValueError:
+            return None
+    return None
+
+
+def _streamer_connection_age(status: dict[str, Any]) -> float | None:
+    """Seconds since the current connection was established, so a just-restarted streamer isn't
+    judged stale before it has resubscribed."""
+    started = status.get("connected_since")
+    if not isinstance(started, str):
+        return None
+    try:
+        since = datetime.fromisoformat(started)
+    except ValueError:
+        return None
+    now = datetime.now(since.tzinfo) if since.tzinfo else datetime.now()
+    return (now - since).total_seconds()
+
+
+def _stop_streamer(module_root: Path, streamer: dict[str, Any]) -> bool:
+    """Ask a stalled streamer to exit before relaunching.
+
+    Without this the restart is a no-op: the daemon is single-instance guarded, so the new process
+    would see the old PID alive and refuse to start, leaving the stall in place.
+    """
+    stop_argv = streamer.get("stop_argv")
+    if not stop_argv:
+        status_argv = streamer.get("status_argv") or []
+        stop_argv = [*status_argv[:1], "--stop"] if status_argv else None
+    if not stop_argv:
+        return False
+    try:
+        _run_module(module_root, stop_argv, timeout=15)
+        return True
+    except Exception:
+        return False
+
+
 def _start_streamer(module_root: Path, start_argv: list[str]) -> bool:
     """Launch the streamer detached (benign, no-window). Safe: streamer refuses to double-start."""
     try:
@@ -98,9 +152,17 @@ def _start_streamer(module_root: Path, start_argv: list[str]) -> bool:
 
 # --------------------------------------------------------------------------- checks
 def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Finding]:
+    """Health checks for a `self_healing` module (one that registers its own recurring task).
+
+    Alert text is built from the module NAME rather than hardcoded to MEIC. It was hardcoded, which
+    was harmless while MEIC was the only self_healing module and actively misleading once a second
+    one existed — a missing flies task raised a CRITICAL titled for MEIC, pointing the operator at
+    the wrong module entirely. Same fault as the SLA heartbeat naming, different function.
+    """
     findings: list[Finding] = []
     root = cfgmod.module_root(mcfg)
     paper = mcfg.get("paper", {})
+    label = name.upper() if len(name) <= 4 else name.capitalize()
 
     # (a) self-healing task registered
     task_name = paper.get("task_name")
@@ -109,12 +171,12 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
             Finding(
                 f"{name}.task",
                 CRITICAL,
-                "MEIC paper task missing",
+                f"{label} paper task missing",
                 f"Scheduled task '{task_name}' is not registered. Run: cherrypick install",
             )
         )
     else:
-        findings.append(Finding(f"{name}.task", OK, "MEIC paper task", "registered"))
+        findings.append(Finding(f"{name}.task", OK, f"{label} paper task", "registered"))
 
     # (b) freshness during the session
     if in_session:
@@ -132,7 +194,7 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
                 Finding(
                     f"{name}.fresh",
                     WARN,
-                    "MEIC paper has no output yet",
+                    f"{label} paper has no output yet",
                     "No paper DB or log file found during market hours.",
                 )
             )
@@ -141,25 +203,63 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
                 Finding(
                     f"{name}.fresh",
                     WARN,
-                    "MEIC paper data is stale",
+                    f"{label} paper data is stale",
                     f"No paper write in {min(ages):.0f} min (limit {fresh_limit}). Is the task running?",
                 )
             )
         else:
-            findings.append(Finding(f"{name}.fresh", OK, "MEIC paper fresh", f"{min(ages):.0f} min old"))
+            findings.append(Finding(f"{name}.fresh", OK, f"{label} paper fresh", f"{min(ages):.0f} min old"))
     else:
-        findings.append(Finding(f"{name}.fresh", OK, "MEIC paper", "off-hours (freshness not checked)"))
+        findings.append(Finding(f"{name}.fresh", OK, f"{label} paper", "off-hours (freshness not checked)"))
 
     # (c) streamer liveness (session only); benign auto-restart
     streamer = mcfg.get("streamer", {})
     if streamer.get("enabled") and in_session:
         running = None
+        status: dict[str, Any] = {}
         try:
             r = _run_module(root, streamer["status_argv"], timeout=15)
-            running = bool(first_json(r.stdout).get("running")) if r.returncode == 0 else None
+            if r.returncode == 0:
+                status = first_json(r.stdout) or {}
+                running = bool(status.get("running"))
         except Exception:
             running = None
-        if running is False and streamer.get("auto_restart"):
+
+        # A live socket that has gone quiet is NOT the same as a dead process, and the process check
+        # above cannot see it. Observed 2026-07-20: the streamer reconnected, then received nothing
+        # for 8 minutes while still reporting running=true and its own stale_warning=false (that flag
+        # only trips at 600s). Nothing restarted it; MEIC degraded to REST and the flies module
+        # refused every iteration on stale quotes. Restart on SILENCE, not just on death.
+        stale_age = _streamer_stale_age(status)
+        limit = streamer.get("stale_restart_seconds", 240)
+        connection_age = _streamer_connection_age(status)
+        # Don't count a connection that has not had time to populate yet — a restart takes a few
+        # seconds to resubscribe ~2,000 symbols, and without this the next tick would see stale data
+        # and restart again, forever.
+        settling = connection_age is not None and connection_age < limit
+        if (running and stale_age is not None and stale_age > limit and not settling
+                and streamer.get("auto_restart")):
+            _stop_streamer(root, streamer)
+            started = _start_streamer(root, streamer["start_argv"])
+            findings.append(
+                Finding(
+                    f"{name}.streamer",
+                    WARN,
+                    "Streamer stalled — restarted" if started else "Streamer stalled — restart failed",
+                    f"Connected but no events for {stale_age:.0f}s (limit {limit}s). "
+                    + ("Restart issued." if started else "Could not relaunch; quotes stay stale."),
+                )
+            )
+        elif running and stale_age is not None and stale_age > limit:
+            findings.append(
+                Finding(
+                    f"{name}.streamer",
+                    WARN,
+                    "Streamer stalled",
+                    f"Connected but no events for {stale_age:.0f}s (auto_restart off).",
+                )
+            )
+        elif running is False and streamer.get("auto_restart"):
             started = _start_streamer(root, streamer["start_argv"])
             findings.append(
                 Finding(
@@ -235,14 +335,21 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
         except Exception:
             grace_passed = False
         if grace_passed:
-            hb = _read_heartbeat(cfgmod.STATE_DIR / "earnings_entry.last.json")
+            # Heartbeat path and alert wording both derive from the module name. They were hardcoded
+            # to Earnings, which was invisible while Earnings was the only scheduled module and
+            # actively misleading once a second one existed: another module's missed run would raise
+            # a CRITICAL reading "Earnings paper entry did not run".
+            entry_state, _ = cfgmod.sla_state_files(name, mcfg)
+            hb = _read_heartbeat(entry_state)
             today = now_et.strftime("%Y-%m-%d")
+            label = f"{name.capitalize()} paper entry"
+            log_hint = paper.get("log") or f"{name}_paper.log"
             if hb.get("date") != today:
                 findings.append(
                     Finding(
                         f"{name}.entry_sla",
                         CRITICAL,
-                        "Earnings paper entry did not run",
+                        f"{label} did not run",
                         f"No successful entry heartbeat for {today} after {paper['entry_time']} ET.",
                     )
                 )
@@ -251,12 +358,12 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
                     Finding(
                         f"{name}.entry_sla",
                         WARN,
-                        "Earnings paper entry reported an error",
-                        f"Last entry: {hb.get('error') or 'see logs/earnings_paper.log'}",
+                        f"{label} reported an error",
+                        f"Last entry: {hb.get('error') or f'see logs/{log_hint}'}",
                     )
                 )
             else:
-                findings.append(Finding(f"{name}.entry_sla", OK, "Earnings paper entry", "ran today"))
+                findings.append(Finding(f"{name}.entry_sla", OK, label, "ran today"))
     return findings
 
 

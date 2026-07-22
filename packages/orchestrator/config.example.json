@@ -30,13 +30,41 @@
         "enabled": true,
         "status_argv": ["src/streamer.py", "--status"],
         "start_argv": ["src/streamer.py"],
-        "auto_restart": true
+        "_stop_argv_note": "Optional. Used to stop a STALLED streamer before relaunching it — the daemon is single-instance guarded, so relaunching without stopping is a silent no-op. Defaults to the status command with --stop.",
+        "stop_argv": ["src/streamer.py", "--stop"],
+        "auto_restart": true,
+        "_stale_restart_note": "Restart the streamer when it is CONNECTED but has received no market events for this many seconds during RTH. A process check cannot see this: observed 2026-07-20, the streamer reconnected then went silent for 8 minutes while still reporting running=true and its own stale_warning=false (that flag only trips at 600s), so nothing restarted it — MEIC degraded to REST and the flies module refused every iteration on stale quotes. 240s is well inside the 600s self-report and well outside a normal quiet tick. Restarts are skipped while a connection is younger than this, so a just-restarted streamer is not judged before it has resubscribed.",
+        "stale_restart_seconds": 240
       },
       "calibration": {
         "_comment": "Optional. `cherrypick calibrate` reads paper P&L per risk profile and advises promotion up this ladder (advisory only; never switches live risk). Omit 'ladder' to get readings without recommendations. 'deliberate_only' rungs are never auto-recommended; 'rule' overrides the default {min_days:14, min_win_rate:0.6, min_sample:20}.",
         "ladder": ["conservative", "moderate", "aggressive", "very-aggressive"],
         "deliberate_only": ["very-aggressive"],
         "rule": { "min_days": 14, "min_win_rate": 0.6, "min_sample": 20 }
+      }
+    },
+    "flies": {
+      "_comment": "cherrypick-flies: 0DTE net-credit butterflies ('profit forest'), paper only, SPX only. Reads MEIC's stream cache READ-ONLY and runs no streamer of its own, so it REQUIRES the meic module's streamer to be running and subscribed to SPX. ENABLED, but it has still never completed a live session — watch the first one, in particular the quote_stats line in the log (which separates 'the streamer gave us nothing' from 'the strategy found nothing') and the arm_divergence figure (if the arms agree nearly always, the comparison cannot answer anything and max_center_distance_pct is the first thing to revisit).",
+      "enabled": true,
+      "path": "../flies",
+      "paper": {
+        "_kind_note": "self_healing, NOT cherrypick_scheduled. This was cherrypick_scheduled, which registers one entry task at entry_time and one exit task at exit_time — a shape that fits Earnings (one entry, one exit per day) and is wrong for a legged 0DTE strategy. A single daily entry would open a credit spread at noon and never look at it again, so the completing spread could never be bought and the completion rate — the module's headline measurement — would read 0% every day for reasons that have nothing to do with the market. cherrypick_scheduled also hardcodes the earnings launcher verbs, so this module's own entry_argv would have been ignored entirely.",
+        "kind": "self_healing",
+        "task_name": "cherrypick-flies-paper-loop",
+        "_timing_note": "The module registers its own recurring task (every 2 min) and `--once` carries all the session logic: out of RTH it is a clean no-op, after the settle time it settles the day and writes the EOD reports exactly once. One task, so there is no second schedule to drift out of sync with the first.",
+        "install_argv": ["src/paper_loop.py", "--install-task"],
+        "uninstall_argv": ["src/paper_loop.py", "--uninstall-task"],
+        "status_argv": ["src/paper_loop.py", "--status"],
+        "once_argv": ["src/paper_loop.py", "--once", "--force"],
+        "paper_db": "~/.cherrypick/data/flies/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "fly_book",
+        "log": "flies_paper.log",
+        "freshness_minutes": 20
+      },
+      "calibration": {
+        "_comment": "The 'ladder' here is not a risk ladder — it is the three experiment arms, and there is nothing to promote between them. Listing them gives per-arm P&L readings without recommendations, which is exactly what this module wants: the comparison is the output.",
+        "ladder": ["control", "time_window", "gex"]
       }
     },
     "earnings": {
@@ -102,6 +130,15 @@
         "fetch_argv": ["run.py", "section", "--symbol", "{symbol}", "--json"],
         "default_symbol": "SPX",
         "refresh_seconds": 15
+      },
+      {
+        "_comment": "cherrypick-flies' payoff curve. The viz `bars` contract (signed values, tone_by_sign, a focus marker) was built for net-GEX-by-strike but maps exactly onto payoff-by-price, so this card draws the 'profit forest' itself — green across the band where the book profits, red outside it, focus at spot — with no flies-specific rendering code here.",
+        "id": "flies",
+        "title": "Flies",
+        "enabled": true,
+        "path": "../flies",
+        "fetch_argv": ["run.py", "section", "--json"],
+        "refresh_seconds": 30
       }
     ],
     "embeds": [
@@ -134,6 +171,16 @@
         "path": "../gex",
         "serve_argv": ["run.py", "dashboard", "--serve", "--port", "{port}"],
         "port": 8802
+      },
+      {
+        "_comment": "cherrypick-flies' full dashboard: the live payoff curve, open positions with their post-fee floors, the decision journal (why each entry was made or refused), and P&L / win rate / completion rate over timeframes. Read-only over the paper DB, loopback-only, no broker and no network. Paper is the only mode this module has, so there is no --mode flag to force.",
+        "id": "flies",
+        "title": "Flies",
+        "enabled": true,
+        "kind": "server",
+        "path": "../flies",
+        "serve_argv": ["src/dashboard.py", "--port", "{port}"],
+        "port": 8803
       }
     ]
   },

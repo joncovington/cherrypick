@@ -1,0 +1,75 @@
+{
+  "_comment": "cherrypick-flies: 0DTE net-credit butterflies. Paper-only. Copy to config.json and edit. The paper DB lives under the shared cherrypick home (~/.cherrypick/data/flies/paper_trades.db); override with FLIES_DB_PATH.",
+
+  "_source_note": "Where MEIC's streamer keeps its stream cache. This module reads that cache READ-ONLY and runs no streamer of its own — the suite runs one streamer, not three. Omit to accept ~/.cherrypick/data/meic/stream_cache.db. Precondition: MEIC's streamer must be running and subscribed to the symbols below, since open interest (and therefore GEX) exists only because it subscribes DXLink Summary.",
+  "source": {
+    "stream_cache_db": "~/.cherrypick/data/meic/stream_cache.db"
+  },
+
+  "_symbols_note": "SPX ONLY for now, by decision. The module supports XSP too (both are European cash-settled, so a short middle strike left open into expiration settles to cash and assignment is structurally impossible; a physically-settled symbol would need the assignment machinery MEIC carries, and this module has no reason to take that on). Before adding XSP, note that wing_width and strike_increment below are global: XSP trades near a tenth of SPX on a 1-point grid, so a 5-wide XSP fly is roughly a 50-wide SPX fly — about ten times the intended risk per structure. XSP needs its own width before it goes on.",
+  "symbols": ["SPX"],
+
+  "defaults": {
+    "_wing_width": "Points per wing. SPX trades a 5-point grid; the reference books all used 5-wide flies (e.g. 6855/6860/6865).",
+    "wing_width": 5,
+    "strike_increment": 5,
+    "quantity": 1,
+
+    "_max_positions": "Structures per (arm x symbol) book per session. The 'forest' is several separate profit zones, not one big bet — but each one pays its own fee stack, so this is a cost cap as much as a risk cap.",
+    "max_positions": 4,
+
+    "_entry_modes": "legged = sell a credit spread, then buy the completing spread cheaper to end up holding a fly for a net credit. outright = buy a cheap fly with premium already taken in. Both were observed running side by side in the same real session.",
+    "entry_modes": ["legged", "outright"],
+
+    "_min_credit_pct_of_width": "Opening credit floor as a fraction of wing width. Below this there is no room for the completing debit to come in cheaper AND clear two fee stacks.",
+    "min_credit_pct_of_width": 0.20,
+
+    "_max_credit_pct_of_width": "Opening credit CEILING. A vertical cannot be worth more than its width, so a credit near that width means the short leg is deep ITM and the premium is mostly intrinsic — a low-probability directional bet rather than a pin bet. Observed against real SPX quotes: a centre 67 points from spot produced a 77%-of-width credit with 67 points of intrinsic. The floor above cannot catch that, because a fatter intrinsic-heavy credit looks better to a floor.",
+    "max_credit_pct_of_width": 0.60,
+
+    "_fee_buffer": "Price points the completing debit must beat the original credit by. This is the gate that stops us 'completing' into a fly whose credit is real but smaller than the fees paid to build it.",
+    "fee_buffer": 0.10,
+
+    "_min_floor_dollars": "Reject a completion whose post-fee floor lands below this. 0.0 means only 'must not lose money', which a full-session simulation showed is far too permissive: completions landed with guaranteed profits of $5-27 after paying $6.89 in fees to build them. Technically risk-free, practically not worth the position slot or the defined risk carried while waiting. 50 demands the guarantee be worth roughly seven fee stacks. Raising it trades completion rate for floor quality — both are reported, so the trade-off is measurable rather than assumed.",
+    "min_floor_dollars": 50.0,
+
+    "_max_fly_debit": "Outright flies are bought deliberately cheap ($10-50 observed in the reference books). Points, not dollars: 0.50 x 100 = $50.",
+    "max_fly_debit": 0.50,
+
+    "_fund_from_open_credit": "Whether an OPEN credit spread's premium may fund an outright fly. True matches the observed behavior (a live iron condor funded three flies), but that premium is not yet earned — which is why the book roll-up reports `unbounded_below` rather than calling such a book risk-free.",
+    "fund_from_open_credit": true,
+
+    "_max_center_distance_pct": "How far from spot the gex arm may centre a fly, as a fraction of spot. Tight on purpose: this is a 0DTE pin bet, and a centre far from spot needs a large move in the remaining hours just to reach the peak. 0.003 is about +/-22 points on a ~7500 index, roughly four strikes. Watch arm_divergence — if the gex arm agrees with control nearly always, this is the first value to revisit, because the arms can only be compared to the extent they disagree.",
+    "max_center_distance_pct": 0.003,
+
+    "_slippage_frac": "Fraction of each leg's bid-ask conceded from mid, per fill. Matches cherrypick.core.fees and MEIC's paper engine — one fill model across the suite.",
+    "slippage_frac": 0.125,
+
+    "_max_quote_age_seconds": "Legs quoted longer ago than this are dropped as stale, and a structure missing a leg is simply not offered. On 0DTE a few minutes is a different market, and pricing a fill off an old quote produces a paper result that looks real and isn't.",
+    "max_quote_age_seconds": 120,
+
+    "book_scan_step": 1.0,
+    "entry_windows": []
+  },
+
+  "_arms_note": "Three arms, differing ONLY in where and when they centre a structure, each with its own book. The control arm is what makes the other two falsifiable: without a naive baseline, a profitable gex arm proves nothing about GEX.",
+  "arms": {
+    "gex": {
+      "enabled": true,
+      "_note": "Centre on the strongest positive per-strike net GEX within max_center_distance_pct of spot — the best available pin candidate. Degrades to ATM (and says so in center_reason) when the streamer has no open-interest cache yet.",
+      "entry_windows": [["09:45", "14:30"]]
+    },
+    "time_window": {
+      "enabled": true,
+      "_note": "ATM-centred, entering only inside these windows. Deliberately skips the opening hour, which is the specific timing hypothesis worth testing: 0DTE extrinsic is richest early, but so is realized vol, so an early entry buys more premium and more risk of being run over before the completing spread cheapens. Windows are still NOT ranked against each other — every trade is tagged with the window it entered in, and that ranking comes out of our own sessions.",
+      "_history_note": "These were [09:45-10:15, 11:00-11:30, 13:00-13:30, 14:00-14:30] — a strict subset of the control arm's all-day window. A simulated session showed both arms exhausting max_positions inside the shared 09:45-10:15 overlap, so they took near-identical books and the timing restriction was never actually exercised. Starting after the open makes the contrast real.",
+      "entry_windows": [["10:30", "11:00"], ["12:30", "13:00"], ["14:00", "14:30"]]
+    },
+    "control": {
+      "enabled": true,
+      "_note": "ATM, same window and position cap as the gex arm. The shared baseline for BOTH comparisons: gex vs control isolates the CENTRING rule (identical windows), time_window vs control isolates the TIMING (identical centring). It must therefore match gex on everything except where it centres.",
+      "_history_note": "This was a single 12:00-12:15 window with max_positions 2, against gex's 09:45-14:30 and 4 — a 19x difference in entry opportunity. Per-trade metrics survive that, but net P&L per arm does not: the gex arm could have out-earned control purely by trading more often, and the headline comparison would have measured trade count rather than the GEX signal.",
+      "entry_windows": [["09:45", "14:30"]]
+    }
+  }
+}

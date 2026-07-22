@@ -255,6 +255,19 @@ def _close_session(trade: dict) -> str:
         return ""
 
 
+def _open_session(trade: dict) -> str:
+    """Trading-session date (ISO) an earnings trade was *entered* on = its opened_at date. The
+    counterpart to _close_session: a position opened this afternoon is carried overnight and does
+    not settle until the next morning, so its open session and close session are different days.
+    The EOD report shows both — what settled this morning (closed) and what was put on this
+    afternoon (opened) — because the close pass and the entry pass run six hours apart and each
+    only ever sees one of the two."""
+    try:
+        return _date.fromtimestamp(float(trade["opened_at"])).isoformat()
+    except (TypeError, ValueError, OSError, OverflowError, KeyError):
+        return ""
+
+
 def _group_stats(trades: list[dict]) -> dict:
     """Win/loss/net/expectancy/profit-factor over a trade list, all net of costs
     (metrics.net_pnl subtracts entry+exit cost) -- the same numbers strategy_report.py reports."""
@@ -286,6 +299,7 @@ def _write_eod_report(day: str) -> Path:
     close session (see _close_session) is `day`. Reads the shared paper_trades.db through
     strategy_metrics, so it can never disagree with strategy_report.py on the same data."""
     trades = [t for t in metrics.load_closed_trades() if _close_session(t) == day]
+    opened = [t for t in metrics.load_open_trades() if _open_session(t) == day]
 
     overall = _group_stats(trades)
     by_symbol: dict[str, float] = {}
@@ -296,8 +310,12 @@ def _write_eod_report(day: str) -> Path:
 
     L = [f"# Earnings Paper Trading - EOD Report {day}", ""]
     L.append("_Deterministic forced-sampling paper book (strat_test). Defined-risk strategies only; "
-             "each position opens once before a close and closes once after the next open. Scoped to "
-             "trades that settled (closed) this session; P&L is net of entry+exit costs._")
+             "each position opens one afternoon and closes the next morning. Two sections, because the "
+             "two happen on different days: **Closed this session** is what settled this morning (realized "
+             "P&L, net of entry+exit costs); **Opened this session** is what was entered this afternoon and "
+             "is carried overnight (no P&L yet — capital at risk is the known max loss)._")
+    L.append("")
+    L.append("## Closed this session (realized P&L)")
     L.append("")
     L.append("## Account-wide (all profiles)")
     L.append(f"- Trades closed: **{overall['trades']}**")
@@ -330,6 +348,35 @@ def _write_eod_report(day: str) -> Path:
     if not trades:
         L.append("_No trades closed this session - flat day._")
         L.append("")
+
+    # Opened this session ------------------------------------------------------
+    # The entry pass runs ~6 hours after the close pass that first wrote this file, so this section
+    # is empty in the morning and fills in when the afternoon entry pass regenerates the report.
+    # These are the positions actually carrying overnight risk tonight -- distinct from the closed
+    # block above, which is this morning's settlements.
+    L.append("## Opened this session (carried overnight)")
+    if opened:
+        open_risk = sum(t.get("capital_at_risk") or 0.0 for t in opened)
+        open_cost = sum(t.get("entry_cost") or 0.0 for t in opened)
+        by_sym_open: dict[str, int] = {}
+        for t in opened:
+            by_sym_open[t["symbol"]] = by_sym_open.get(t["symbol"], 0) + 1
+        L.append(f"- Positions opened: **{len(opened)}** across {len(by_sym_open)} name(s) "
+                 f"({', '.join(f'{s} x{n}' for s, n in sorted(by_sym_open.items()))}).")
+        L.append(f"- Capital at risk overnight (defined max loss, summed): **{_money(round(open_risk, 2))}**.")
+        L.append(f"- Entry costs paid: {_money(round(open_cost, 2))}.")
+        L.append("")
+        L.append("| Symbol | Strategy | Qty | Expiry | Entry credit | Capital at risk | Entry cost |")
+        L.append("|---|---|---|---|---|---|---|")
+        for t in sorted(opened, key=lambda x: (x["symbol"], x.get("strategy") or "")):
+            L.append(f"| {t['symbol']} | {t.get('strategy', '-')} | {t.get('quantity', '-')} | "
+                     f"{t.get('expiration', '-')} | {_money(t.get('entry_credit'))} | "
+                     f"{_money(t.get('capital_at_risk'))} | {_money(t.get('entry_cost'))} |")
+    else:
+        L.append("_Nothing opened this session - no overnight risk carried (or the afternoon entry "
+                 "pass has not run yet; this section fills in after it does)._")
+    L.append("")
+
     L.append(f"_Generated {datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')} "
              "· paper DB only; live account untouched._")
 
@@ -364,6 +411,7 @@ def _write_eod_analysis(day: str) -> Path:
     strategy_metrics, so its numbers reconcile with strategy_report.py and the suite digest. Scoped
     to trades whose close session (see _close_session) is `day`."""
     trades = [t for t in metrics.load_closed_trades() if _close_session(t) == day]
+    opened = [t for t in metrics.load_open_trades() if _open_session(t) == day]
     try:
         config = scanner._load_config(TEST_PROFILE)
     except Exception:
@@ -396,9 +444,25 @@ def _write_eod_analysis(day: str) -> Path:
     L = [f"# Earnings Paper - EOD Analysis {day}", ""]
     L.append("_Plain-English read on the forced-sampling paper book (strat_test). Auto-generated from the "
              "paper DB (no agent) - conversational, but rule-based, not a hand-written synthesis. Defined-risk "
-             "strategies only; each position opens one afternoon and closes the next morning. Scoped to trades "
-             "that settled (closed) this session; P&L is net of entry+exit costs._")
+             "strategies only; each position opens one afternoon and closes the next morning. Two sides, on "
+             "different days: what **settled** this morning (closed, realized P&L net of costs) and what was "
+             "**opened** this afternoon and is carried overnight (capital at risk, no P&L yet)._")
     L.append("")
+
+    # Opened-this-session summary reused in the snapshot and in section 4.
+    open_risk = sum(t.get("capital_at_risk") or 0.0 for t in opened)
+    by_sym_open: dict[str, int] = {}
+    for t in opened:
+        by_sym_open[t["symbol"]] = by_sym_open.get(t["symbol"], 0) + 1
+
+    def _opened_line() -> str:
+        if not opened:
+            return ("No new positions were opened this afternoon, so nothing is carried into tonight — "
+                    "or the entry pass has not run yet (this analysis is regenerated after it does).")
+        names = ", ".join(f"{s} x{n}" for s, n in sorted(by_sym_open.items()))
+        return (f"**{len(opened)}** position{'s' if len(opened) != 1 else ''} opened this afternoon "
+                f"({names}), carrying **{_money(round(open_risk, 2))}** of defined max loss overnight. "
+                "These have no P&L yet — they settle at the next open and land in that day's closed section.")
 
     # 1. Executive snapshot ----------------------------------------------------
     L.append("## 1. Executive snapshot")
@@ -406,6 +470,7 @@ def _write_eod_analysis(day: str) -> Path:
         L.append("Flat session - nothing settled this morning. Either no names qualified into the book last "
                  "afternoon, or none were held into this close. A quiet book is a decision, not a gap - the "
                  "scan_log shows which names were evaluated and why they were passed.")
+        L.append(_opened_line())
     else:
         best = max(by_symbol.items(), key=lambda kv: kv[1])
         worst = min(by_symbol.items(), key=lambda kv: kv[1])
@@ -419,6 +484,7 @@ def _write_eod_analysis(day: str) -> Path:
         if best[0] != worst[0]:
             line += f" {best[0]} was the standout ({_money(round(best[1], 2))}); {worst[0]} the drag ({_money(round(worst[1], 2))})."
         L.append(line)
+        L.append(_opened_line())
     L.append("")
 
     # 2. Position-level detail -------------------------------------------------
@@ -466,17 +532,21 @@ def _write_eod_analysis(day: str) -> Path:
     L.append("")
 
     # 4. Risk metrics ----------------------------------------------------------
+    # Overnight risk is what is carried into TONIGHT -- the positions opened this afternoon, not the
+    # ones that closed this morning (their risk is already resolved). The old version keyed this off
+    # the closed trades and so reported "no overnight risk was carried" on a day that had just opened
+    # five positions, because the report was written by the morning close pass before the afternoon
+    # entry pass ran. Keying it off `opened` fixes that once the entry pass regenerates the file.
     L.append("## 4. Risk metrics")
-    if trades:
-        total_risk = sum(t.get("capital_at_risk") or 0.0 for t in trades)
-        L.append(f"- Total capital that was at risk overnight (defined max loss, summed): "
-                 f"**{_money(round(total_risk, 2))}** across {len(trades)} position(s).")
-        conc = ", ".join(f"{s} {len([t for t in trades if t['symbol'] == s])} pos, {_money(round(v, 2))}"
-                         for s, v in sorted(by_symbol.items()))
+    if opened:
+        L.append(f"- Capital at risk overnight tonight (defined max loss, summed): "
+                 f"**{_money(round(open_risk, 2))}** across {len(opened)} position(s) just opened.")
+        conc = ", ".join(f"{s} {n} pos" for s, n in sorted(by_sym_open.items()))
         L.append(f"- Concentration by name: {conc}.")
-        # Correlation groups from the block list (names that share overnight-gap risk).
-        groups = {}
-        for t in trades:
+        # Correlation groups from the block list (names that share overnight-gap risk) -- computed
+        # over tonight's opens, since that is the exposure actually being carried.
+        groups: dict[int, set] = {}
+        for t in opened:
             for i, grp in enumerate(block_list):
                 if t["symbol"] in grp:
                     groups.setdefault(i, set()).add(t["symbol"])
@@ -485,11 +555,15 @@ def _write_eod_analysis(day: str) -> Path:
             for names in collisions.values():
                 L.append(f"  - Correlation flag: {', '.join(sorted(names))} sit in the same block-list group - "
                          "the forced-sampling book intentionally ignores the correlation cap, so their overnight "
-                         "gap risk was effectively correlated (the live loop would not hold these together).")
+                         "gap risk is effectively correlated (the live loop would not hold these together).")
         else:
-            L.append("  - No two names shared a correlation block-list group - overnight risk was idiosyncratic per name.")
+            L.append("  - No two names share a correlation block-list group - tonight's overnight risk is idiosyncratic per name.")
     else:
-        L.append("- No positions - no overnight risk was carried.")
+        L.append("- No positions were opened this session - no new overnight risk is carried into tonight.")
+    if trades:
+        settled_risk = sum(t.get("capital_at_risk") or 0.0 for t in trades)
+        L.append(f"- For reference, the {len(trades)} position(s) that settled this morning had carried "
+                 f"{_money(round(settled_risk, 2))} of defined max loss overnight; that risk is now resolved.")
     L.append("")
 
     # 5. Market context --------------------------------------------------------
@@ -538,8 +612,14 @@ def _write_eod_analysis(day: str) -> Path:
     # 7. Notes / journal -------------------------------------------------------
     L.append("## 7. Notes / journal")
     if not trades:
-        L.append("- Nothing settled. Worth confirming the entry pass actually ran last afternoon (a scan that "
-                 "found no candidates and a scan that silently failed look identical here).")
+        if opened:
+            L.append(f"- Nothing settled this morning (nothing was held in from the prior afternoon), but the "
+                     f"book is not idle: {len(opened)} position(s) went on this afternoon and are carried into "
+                     "tonight. They settle at the next open and show up in that day's closed section.")
+        else:
+            L.append("- Nothing settled and nothing opened. Worth confirming the entry pass actually ran this "
+                     "afternoon (a scan that found no candidates and a scan that silently failed look identical "
+                     "here) - the scan_log and the entry-review table below show which names were evaluated.")
     else:
         by_strategy = {}
         for t in trades:
@@ -752,6 +832,20 @@ def cmd_run_entries(args) -> dict:
             [o["strategy"] for o in opened[op0:]],
             [s.get("reason", "") for s in skipped[sk0:]],
         )
+
+    # Regenerate today's EOD report to fold in the positions just opened. The morning close pass
+    # wrote this file ~6 hours ago with the "Opened this session" section empty (entries had not
+    # happened yet); this rewrite fills it in and corrects the overnight-risk metric, which would
+    # otherwise read "no risk carried" on a day that just opened positions. Unconditional overwrite,
+    # not the close pass's file-exists guard -- the whole point is to update the existing file. The
+    # closed-trades sections are recomputed from the same DB rows, so they come out identical.
+    # Best-effort: a report failure must never fail the entry result the scheduled task depends on.
+    today = _date.today().isoformat()
+    try:
+        _write_eod_report(today)
+        _write_eod_analysis(today)
+    except Exception:
+        pass
 
     return {"ok": True, "date": scan_date, "profile": profile, "opened": opened, "skipped": skipped}
 
