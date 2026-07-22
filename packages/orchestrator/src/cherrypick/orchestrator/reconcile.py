@@ -41,8 +41,13 @@ def _earnings_open(conn) -> list[dict]:
     return [{"symbol": r["symbol"], "profile": r["profile"]} for r in rows]
 
 
+def _flies_open(conn) -> list[dict]:
+    rows = conn.execute("SELECT symbol, arm FROM fly_positions WHERE status = 'open'").fetchall()
+    return [{"symbol": r["symbol"], "profile": r["arm"]} for r in rows]
+
+
 # Same registry shape as report._READERS, but for OPEN (not-yet-closed) rows, keyed by paper.trade_schema.
-_OPEN_READERS = {"meic_ic": _meic_open, "earnings": _earnings_open}
+_OPEN_READERS = {"meic_ic": _meic_open, "earnings": _earnings_open, "fly_book": _flies_open}
 
 
 def _paper_open_positions(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:

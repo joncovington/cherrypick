@@ -195,11 +195,28 @@ def _fetch_vix():
     return None
 
 
+def _as_float(mapping, key):
+    """float(mapping[key]), or None when absent/blank/non-numeric — the market-metrics API returns
+    these as strings and occasionally omits them."""
+    v = mapping.get(key)
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _fetch_overview(symbol):
-    """Return (underlying_price, iv_rank) or (None, None)."""
+    """Return (underlying_price, iv_rank, iv_percentile) or (None, None, None).
+
+    Both vol measures are captured because they answer different questions and can diverge sharply:
+    IV *rank* is (current - 52wk low) / (52wk high - low), so a single spike in the lookback
+    permanently compresses it; IV *percentile* is the share of days below current IV, which is
+    outlier-robust. Observed 2026-07-18: NDX rank 0.192 vs percentile 0.953 on the same reading
+    (and NDX rank sat 4x off QQQ's despite tracking the same index). Recording the pair lets the
+    entry gate be re-based on evidence rather than on whichever number the vendor happens to serve."""
     d = _run_json(_TT + ["get_market_overview", "--symbols", symbol])
     if not d.get("ok"):
-        return None, None
+        return None, None, None
     for m in d.get("metrics", []):
         if str(m.get("symbol", "")).upper() != symbol:
             continue
@@ -211,10 +228,11 @@ def _fetch_overview(symbol):
                     break
                 except (TypeError, ValueError):
                     pass
-        ivr = m.get("implied_volatility_index_rank")
-        ivr = float(ivr) if ivr is not None else None
-        return price, ivr
-    return None, None
+
+        return (price,
+                _as_float(m, "implied_volatility_index_rank"),
+                _as_float(m, "implied_volatility_percentile"))
+    return None, None, None
 
 
 def _build_candidates(symbol, last, widths, delta_targets, default_delta, today):
@@ -387,10 +405,29 @@ def _write_eod_report(day):
         L.append("- By symbol: " + ", ".join(f"{s} {_money(round(v, 2))}" for s, v in sorted(by_symbol.items())))
     L.append("")
 
+    # Per-(profile × symbol) portfolios — the atomic unit the paper study runs on. Each pair is its
+    # own book with its own max_concurrent_ics and daily-target budget, so nothing nets across
+    # profiles OR symbols here; the sections below are roll-up lenses over these same trades.
+    portfolios = summ.get("portfolios", {}) if summ.get("ok") else {}
+    L.append("## Per portfolio (profile × symbol)")
+    L.append("_Each pair is a standalone book — these never net against one another. The per-profile "
+             "and by-symbol views below are lenses over the same trades, not separate accounting._")
+    L.append("| Profile | Symbol | Trades | Wins | Losses | Win % | Net P&L | Expectancy/IC | Profit Factor | Max DD |")
+    L.append("|---|---|---|---|---|---|---|---|---|---|")
+    for _, s in sorted(portfolios.items(), key=lambda kv: -(kv[1].get("net_pnl") or 0)):
+        wr = f"{s['win_rate_pct']:.0f}%" if s.get("win_rate_pct") is not None else "-"
+        pf = f"{s['profit_factor']:.2f}" if s.get("profit_factor") is not None else "-"
+        exp = _money(s.get("expectancy_per_trade")) if s.get("expectancy_per_trade") is not None else "-"
+        L.append(f"| {s.get('profile', '-')} | {s.get('symbol', '-')} | {s.get('total_trades', 0)} | "
+                 f"{s.get('win_count', 0)} | {s.get('loss_count', 0)} | {wr} | {_money(s.get('net_pnl'))} | "
+                 f"{exp} | {pf} | {_money(s.get('max_drawdown'))} |")
+    if not portfolios:
+        L.append("| _(none)_ | - | 0 | - | - | - | $0.00 | - | - | - |")
+    L.append("")
+
     # Roster order: the canonical ladder first, then experiment/exploratory profiles, then any
-    # tag present in the data but not the registry (e.g. 'unassigned'). Each experiment profile
-    # pins one (symbol, wing, credit) cell, so the Symbol column + per-profile metrics read
-    # directly as an account-size / cell comparison. Empty profiles are noted, not tabled.
+    # tag present in the data but not the registry (e.g. 'unassigned'). Empty profiles are noted,
+    # not tabled.
     try:
         ordered = paper.all_profile_names()
     except Exception:
@@ -399,7 +436,7 @@ def _write_eod_report(day):
         if tag not in ordered:
             ordered.append(tag)
 
-    L.append("## Per profile")
+    L.append("## Per profile (roll-up across symbols)")
     L.append("| Profile | Symbol | Trades | Wins | Losses | Win % | Net P&L | Expectancy/IC | Profit Factor | Max DD |")
     L.append("|---|---|---|---|---|---|---|---|---|---|")
     active_names = [n for n in ordered if profiles.get(n)]
@@ -773,13 +810,19 @@ def run_iteration(cfg, force=False):
     session = _session_quality(now)
 
     summary = {}
-    mkt_symbols = {}  # per-symbol price + IV rank snapshot for the EOD market-context capture
+    mkt_symbols = {}  # per-symbol price + IV rank/percentile snapshot for the market-context capture
     for symbol in _symbols(cfg):
-        price, ivr = _fetch_overview(symbol)
+        price, ivr, ivp = _fetch_overview(symbol)
+        # Store BOTH vol measures per symbol per day: this is the series the IV-gate re-basing and
+        # the rank-vs-percentile band fitting are done from (see _fetch_overview). Captured BEFORE
+        # the price check on purpose — a symbol that can't trade for want of a spot price still
+        # contributes to that series. RUT currently returns IV metrics but no price, and would
+        # otherwise record nothing at all.
+        if ivr is not None or ivp is not None:
+            mkt_symbols[symbol] = {"price": price, "iv_rank": ivr, "iv_pct": ivp}
         if price is None:
             summary[symbol] = {"error": "no price"}
             continue
-        mkt_symbols[symbol] = {"price": price, "iv_rank": ivr}
         widths = paper.union_widths_for_symbol(symbol, cfg, profiles)
         extra_deltas = paper.union_short_deltas_for_symbol(symbol, cfg, profiles)
         delta_targets = [delta_target] + [d for d in extra_deltas if abs(d - delta_target) > 1e-9]
@@ -788,7 +831,7 @@ def run_iteration(cfg, force=False):
         gex = _run_json(_TT + ["get_gex", "--symbol", symbol])
         snapshot = {
             "symbol": symbol, "date": today, "now_et": now_et, "expiration": today, "dte": 0,
-            "underlying_price": price, "iv_rank": ivr, "iv_rank_source": "native",
+            "underlying_price": price, "iv_rank": ivr, "iv_pct": ivp, "iv_rank_source": "native",
             "vix": vix, "vix1d_ratio": vix1d_ratio,
             "atr_5day": None,  # no historical-OHLC source wired in; ATR pct gate stays inactive
             "session_quality": session,

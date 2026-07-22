@@ -5,3 +5,7 @@
 # Use .claude/* (not .claude/) so the negation can re-include a subdirectory.
 .claude/*
 !.claude/commands/
+
+# Ignore vs code workspace files, which are local-only.
+.vscode/
+*.code-workspace

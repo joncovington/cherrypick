@@ -76,8 +76,11 @@ def all_profile_names(profiles: dict | None = None) -> list[str]:
     (besides the EOD report) that pinned the roster to exactly the ladder."""
     profiles = load_profiles() if profiles is None else profiles
     # Skip underscore-prefixed registry keys (documentation notes, e.g. "_experiment_note"), which
-    # are not profiles — mirrors merge_profile's own `_`-comment convention.
-    names = [n for n in profiles if not n.startswith("_")]
+    # are not profiles — mirrors merge_profile's own `_`-comment convention. Also skip any profile
+    # explicitly turned off with `enabled: false` (the paper-experiment disable switch); a missing
+    # `enabled` defaults to on, so the ladder and any active cell are unaffected.
+    names = [n for n in profiles
+             if not n.startswith("_") and profiles[n].get("enabled", True) is not False]
     ordered = [n for n in ALL_PROFILE_NAMES if n in names]
     ordered += [n for n in names if n not in ALL_PROFILE_NAMES]
     return ordered
@@ -179,6 +182,29 @@ def _profile_widths_for_symbol(params: dict, symbol: str) -> list | None:
     return list(lst) if lst else None
 
 
+def _wing_selection_for_symbol(params: dict, symbol: str) -> str:
+    """How to order this symbol's candidate widths: `widest` (default), `narrowest`, or `fixed`.
+
+    Resolved most-specific-first: `wing_selection_by_symbol[symbol]`, then the profile-wide
+    `wing_selection`, then `wing_selection_by_symbol["DEFAULT"]`, then `widest`. The generic
+    DEFAULT deliberately ranks BELOW a profile's explicit `wing_selection` — a profile asking for
+    an ordering is a deliberate statement and must not be silently overridden by a base-config
+    fallback. Per-symbol because the right bias is a
+    property of the instrument, not of the risk tier: widest-first is the fee-drag bias that suits
+    the big-notional index products, while a small-account instrument wants the *smallest*
+    economically viable position. Making it per-profile only would flip every symbol that profile
+    trades at once. Mirrors `wing_widths_by_symbol` / `orb_wing_width_by_symbol`.
+
+    Narrowest-first is safe against fee drag because the fee-adjusted credit floor still applies:
+    a narrow wing must clear `gross_credit - fee >= floor * width`, a materially higher
+    credit-to-width bar, so this picks the smallest width that is still economically viable rather
+    than blindly taking the smallest one."""
+    wsbs = params.get("wing_selection_by_symbol") or {}
+    return (wsbs.get(symbol) or wsbs.get(symbol.upper())
+            or params.get("wing_selection")
+            or wsbs.get("DEFAULT") or "widest")
+
+
 def union_widths_for_symbol(symbol: str, base_config: dict | None = None,
                             profiles: dict | None = None) -> list[int]:
     """The union of every evaluated profile's wing widths for `symbol` (plus the base config's),
@@ -236,9 +262,11 @@ def _time_to_minutes(hhmm: str) -> int:
 
 def _select_candidates(candidates: list, params: dict, symbol: str) -> list:
     """Restrict the scanned candidate menu to this profile's own wing shortlist for `symbol`
-    (if it declares one) and order it per `wing_selection`. Default — no per-profile widths and
-    no `wing_selection` — is the historical behavior: every candidate, widest-first (the fee-drag
-    bias). `narrowest` reverses it (small-account cells); `fixed` preserves the profile's own
+    (if it declares one) and order it per the selection resolved for THAT symbol (see
+    `_wing_selection_for_symbol`: per-symbol first, then the profile-wide `wing_selection`).
+    Default — no per-profile widths and no selection set — is the historical behavior: every
+    candidate, widest-first (the fee-drag bias). `narrowest` reverses it, so a small-account
+    instrument takes the smallest economically viable width; `fixed` preserves the profile's own
     width-list order (first listed = preferred)."""
     # Short-delta-band filter (multi-delta menus). A profile with short_delta_target sees only
     # candidates built at that band; a profile without it sees the loop's default (VIX-banded)
@@ -254,13 +282,55 @@ def _select_candidates(candidates: list, params: dict, symbol: str) -> list:
     allowed = _profile_widths_for_symbol(params, symbol)
     if allowed is not None:
         candidates = [c for c in candidates if c["wing_width"] in allowed]
-    sel = params.get("wing_selection", "widest")
+    sel = _wing_selection_for_symbol(params, symbol)
     if sel == "narrowest":
         return sorted(candidates, key=lambda c: c["wing_width"])
     if sel == "fixed" and allowed is not None:
         order = {w: i for i, w in enumerate(allowed)}
         return sorted(candidates, key=lambda c: order.get(c["wing_width"], 1 << 30))
     return sorted(candidates, key=lambda c: -c["wing_width"])
+
+
+def _low_iv_relief_max(params: dict) -> float:
+    """The IV-rank ceiling below which the relaxed credit floor applies, expressed RELATIVE to this
+    profile's own `min_iv_rank` (`+ low_iv_credit_floor_iv_rank_offset`).
+
+    It used to be an absolute 0.35 shared by every tier — which was conservative's own 0.30 + 0.05,
+    never rescaled for the looser rungs. The effect was backwards: conservative got relief over a
+    0.05-wide band while very-aggressive (floor 0.15) got it across 0.15–0.35, i.e. most of its
+    range. Falls back to the absolute key so any profile still setting it keeps prior behavior."""
+    offset = params.get("low_iv_credit_floor_iv_rank_offset")
+    if offset is not None:
+        return params.get("min_iv_rank", 0.30) + offset
+    return params.get("low_iv_credit_floor_iv_rank_max", 0.35)
+
+
+def _low_iv_relief_floor(params: dict) -> float:
+    """The relaxed credit floor itself, as a MULTIPLE of this profile's own credit floor
+    (`min_credit_pct_of_width * low_iv_credit_relief_multiple`).
+
+    It used to be a flat 0.10 on every tier, which silently flattened the ladder: whenever IV rank
+    sat under the relief ceiling, all four tiers used the same 0.10 floor, so the 0.15/0.12/0.10/0.10
+    progression stopped existing. (Measured on the paper book: 100% of SPX and XSP entries were in
+    that zone, so conservative was trading them on identical credit terms to very-aggressive.) For
+    aggressive/very-aggressive the "relief" even equalled their normal floor, so it did nothing at
+    all. Expressing it as a multiple keeps it strictly below each tier's own floor and scales
+    automatically. Falls back to the absolute key for profiles that still set it."""
+    mult = params.get("low_iv_credit_relief_multiple")
+    if mult is not None:
+        return params["min_credit_pct_of_width"] * mult
+    return params.get("low_iv_min_credit_pct_of_width", 0.10)
+
+
+def _late_entry_bias_max(params: dict) -> float:
+    """IV-rank ceiling under which the late-entry bias applies, relative to this profile's own
+    `min_iv_rank` (`+ late_entry_bias_iv_rank_offset`). Same rescaling argument as
+    `_low_iv_relief_max`: a flat 0.45 put very-aggressive under the bias across nearly its whole
+    range while barely touching conservative."""
+    offset = params.get("late_entry_bias_iv_rank_offset")
+    if offset is not None:
+        return params.get("min_iv_rank", 0.30) + offset
+    return params.get("late_entry_bias_iv_rank_max", 0.45)
 
 
 def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
@@ -273,14 +343,16 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
     params: this profile's merged config (base config.json + config.risk.json overrides).
     open_ics: this profile's currently-open paper ICs **on this symbol** — used for the
         strike-overlap hard stop (strikes are only ever compared within the same symbol).
-    account_open_count: this profile's total open ICs **across every symbol**, for the
-        max_concurrent_ics cap — which CLAUDE.md defines as account-wide ("open ICs across
-        every symbol combined"), each profile being its own virtual account. Defaults to
-        len(open_ics) when omitted (single-symbol callers / tests).
-    todays_entry_count / last_entry_min: this profile's entries *so far today* and the
-        minute-of-day of its most recent one — only consulted when the profile opts into
-        `stagger_entries` (the daily-cap + spacing controls below). process_symbol supplies
-        them from the paper DB; they default to a fresh day for pure callers / tests.
+    account_open_count: the open-IC count the max_concurrent_ics cap is checked against. In the
+        paper engine each (profile × symbol) portfolio has its own concurrency budget, so
+        process_symbol passes this profile's open ICs **on this symbol** — a busy symbol can't
+        starve a quiet one of slots. Defaults to len(open_ics) when omitted (which is already
+        this-symbol-scoped for single-symbol callers / tests).
+    todays_entry_count / last_entry_min: this profile's entries *so far today on this symbol* and
+        the minute-of-day of its most recent one. `todays_entry_count` drives the
+        daily_ic_trade_target cap (applied to every profile); `last_entry_min` feeds the spacing
+        gate only when the profile opts into `stagger_entries`. process_symbol supplies them
+        per-symbol from the paper DB; they default to a fresh day for pure callers / tests.
 
     Returns (enter: bool, reason: str, chosen_candidate: dict | None).
     """
@@ -316,13 +388,13 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
         return False, "regime_gex_negative", None
     # Strict variant (opt-in per profile): require GEX to be explicitly positive, so entries
     # also pause when GEX is unknown/unavailable -- not just when it is confirmed negative. Used
-    # by the large-spx-gexstrict experiment cell to isolate the effect of the GEX gate.
+    # opt-in per profile to isolate the effect of the GEX gate.
     if params.get("regime_gex_require_positive", False) and not (
             gex.get("ok") and gex.get("gex_positive") is True):
         return False, "regime_gex_not_positive", None
     # Magnitude variant (opt-in): require positive GEX AND spot at least this fraction from the
     # gamma-flip strike -- deep enough inside positive-gamma territory that pinning dominates, not
-    # hovering near the flip where the regime is fragile. Used by the large-spx-gexmag cell.
+    # hovering near the flip where the regime is fragile.
     min_flip_dist = params.get("regime_gex_min_flip_distance_pct")
     if min_flip_dist is not None:
         flip, spot = gex.get("gamma_flip"), gex.get("spot")
@@ -333,26 +405,35 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
 
     now_min = _time_to_minutes(snapshot["now_et"])
 
-    # Staggered-entry controls (opt-in per profile via `stagger_entries`) — spread a profile's
-    # daily_ic_trade_target across the session instead of filling every slot in the first passing
-    # iterations, giving time-of-day coverage of when a condor is opened. This block also enforces
-    # the entry window, which the live loop applies (10:00–14:30) but the paper gate historically
-    # did not — paper could open a fresh 0DTE IC as late as the force-close. Ladder profiles omit
-    # `stagger_entries`, so they keep the exact prior behavior (no window/cap/spacing gate here).
+    # Daily target is GUIDANCE, not a hard cap (matching CLAUDE.md): once a portfolio has reached
+    # its daily_ic_trade_target on this symbol it may still trade, but only a higher-conviction
+    # setup qualifies — the credit floor is scaled by `over_target_credit_multiple` in the candidate
+    # loop below. Favorable conditions (richer premium) therefore allow more entries, while marginal
+    # ones don't. Counted per (profile × symbol), so a busy symbol never spends a quiet one's budget.
+    # The hard stops (max_concurrent_ics, regime gates, delta/OTM floors) still bind normally.
+    target = params.get("daily_ic_trade_target", 0)
+    over_target = bool(target) and todays_entry_count >= target
+
+    # Staggered-entry controls (opt-in per profile via `stagger_entries`) — spread the daily target
+    # across the session instead of filling every slot in the first passing iterations, giving
+    # time-of-day coverage of when a condor is opened. This block also enforces the entry window,
+    # which the live loop applies (10:00–14:30) but the paper gate historically did not — paper could
+    # open a fresh 0DTE IC as late as the force-close. Here the daily target IS a hard cap: staggering
+    # exists to spread a fixed number of entries, so opting in means opting into the throttle. Ladder
+    # profiles omit `stagger_entries` and keep the soft-guidance behavior above.
     if params.get("stagger_entries"):
         ews = _time_to_minutes(params.get("entry_window_start", "10:00"))
         ewe = _time_to_minutes(params.get("entry_window_end", "14:30"))
         if now_min < ews or now_min >= ewe:
             return False, "outside_entry_window", None
-        target = params.get("daily_ic_trade_target", 0)
-        if target and todays_entry_count >= target:
+        if over_target:
             return False, "daily_target_reached", None
         spacing = params.get("min_minutes_between_entries", 0)
         if spacing and last_entry_min is not None and (now_min - last_entry_min) < spacing:
             return False, "entry_spacing_wait", None
 
     # Late-entry bias
-    if params.get("late_entry_bias_enabled") and iv_rank <= params.get("late_entry_bias_iv_rank_max", 0.45):
+    if params.get("late_entry_bias_enabled") and iv_rank <= _late_entry_bias_max(params):
         if now_min < _time_to_minutes(params["late_entry_bias_start_time"]):
             return False, "late_entry_bias_wait", None
 
@@ -441,18 +522,23 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
         if net_credit <= 0:
             last_reason = "non_positive_credit"
             continue
-        low_iv_relief = iv_rank <= params.get("low_iv_credit_floor_iv_rank_max", 0.35)
-        pct_floor = params.get("low_iv_min_credit_pct_of_width", 0.10) if low_iv_relief \
+        low_iv_relief = iv_rank <= _low_iv_relief_max(params)
+        pct_floor = _low_iv_relief_floor(params) if low_iv_relief \
             else params["min_credit_pct_of_width"]
+        # Past the daily target the bar rises: only a richer-than-usual credit earns an extra entry
+        # (the daily target is guidance, so favorable conditions allow more — see `over_target`).
+        if over_target:
+            pct_floor *= params.get("over_target_credit_multiple", 1.5)
         if net_credit < pct_floor * wing_width:
-            last_reason = "credit_below_floor"
+            last_reason = "over_target_credit_below_floor" if over_target else "credit_below_floor"
             continue
 
         multiplier = 100
         gross_credit_dollars = net_credit * multiplier
         fee = open_fees(symbol, quantity=1)
         if gross_credit_dollars - fee < pct_floor * wing_width * multiplier:
-            last_reason = "credit_below_fee_adjusted_floor"
+            last_reason = ("over_target_credit_below_floor" if over_target
+                           else "credit_below_fee_adjusted_floor")
             continue
 
         chosen = dict(cand)
@@ -500,6 +586,9 @@ def synthetic_entry_fill(snapshot: dict, profile_name: str, chosen: dict, params
         "long_call_delta_at_entry": lc.get("delta"),
         "underlying_price_entry": snapshot["underlying_price"],
         "iv_rank_at_entry": snapshot.get("iv_rank"),
+        # Captured alongside rank because the two diverge (rank is outlier-compressed, percentile is
+        # not) and the entry gate may be re-based on percentile — see paper_loop._fetch_overview.
+        "iv_pct_at_entry": snapshot.get("iv_pct"),
         "session_quality": snapshot.get("session_quality"),
         "iv_skew_signal": snapshot.get("iv_skew_signal"),
         "price_action_signal": snapshot.get("price_action_signal"),
@@ -683,7 +772,7 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
     call_cost_mid = cq["mid"] - lcq["mid"]
     put_cost_mid = sq["mid"] - lpq["mid"]
 
-    # per_side_stop_management: false disables per-side stops entirely (the large-spx-holdtoexpiry
+    # per_side_stop_management: false disables per-side stops entirely (a hold-to-expiry
     # cell), so the IC is only ever closed by a force-close or settlement -- held to expiry.
     stops_on = params.get("per_side_stop_management", True)
     call_trigger = stops_on and call_open and call_cost_mid >= stop_trigger * net_credit
@@ -739,14 +828,6 @@ def _get_open_trades(symbol: str, profile: str, trade_date: str, db_path: str) -
     return [t for t in trades if t.get("risk_profile") == profile]
 
 
-def _get_profile_open_count(profile: str, trade_date: str, db_path: str) -> int:
-    """This profile's total open ICs across every symbol — the account-wide count the
-    max_concurrent_ics cap is checked against (not the per-symbol count)."""
-    result = _db(["get_open_trades", "--date", trade_date], db_path)
-    trades = result.get("open_trades", []) if result.get("ok") else []
-    return sum(1 for t in trades if t.get("risk_profile") == profile)
-
-
 def _minutes_of_day(iso_str) -> int | None:
     """Minute-of-day (0–1439) from a recorded entry_time. entry_time is `str(_now_et())`, an
     ISO datetime; fall back to splitting a bare 'HH:MM:SS'. Returns None if unparseable."""
@@ -761,17 +842,21 @@ def _minutes_of_day(iso_str) -> int | None:
             return None
 
 
-def _profile_day_stats(profile: str, trade_date: str, db_path: str) -> tuple:
-    """(entry_count, last_entry_min) for this profile's non-cancelled entries on `trade_date`,
-    across every symbol — the inputs to the staggering daily-cap + spacing gates. Read-only
-    direct query (staggering is opt-in and cheap; avoids adding subprocess spawns per profile
-    per iteration once the roster is large)."""
+def _profile_day_stats(profile: str, trade_date: str, db_path: str, symbol: str | None = None) -> tuple:
+    """(entry_count, last_entry_min) for this profile's non-cancelled entries on `trade_date`.
+    When `symbol` is given the count is scoped to that symbol — the per-(profile × symbol) daily-cap
+    + spacing inputs, so each portfolio's daily_ic_trade_target is its own budget. Read-only direct
+    query (cheap; avoids adding subprocess spawns per profile per iteration once the roster is large)."""
     try:
         con = sqlite3.connect(db_path)
         con.row_factory = sqlite3.Row
-        rows = con.execute(
-            "SELECT entry_time FROM ic_trades WHERE trade_date=? AND risk_profile=? "
-            "AND status NOT IN ('cancelled')", (trade_date, profile)).fetchall()
+        q = ("SELECT entry_time FROM ic_trades WHERE trade_date=? AND risk_profile=? "
+             "AND status NOT IN ('cancelled')")
+        params = [trade_date, profile]
+        if symbol:
+            q += " AND symbol=?"
+            params.append(symbol.upper())
+        rows = con.execute(q, params).fetchall()
         con.close()
     except sqlite3.Error:
         return 0, None
@@ -818,15 +903,17 @@ def process_symbol(snapshot: dict, db_path: str, execution_mode: str, profiles_f
             _apply_exit_decision(trade, decision, symbol, db_path)
 
         still_open = _get_open_trades(symbol, name, snapshot["date"], db_path)
-        account_open = _get_profile_open_count(name, snapshot["date"], db_path)
-        if account_open < params["max_concurrent_ics"]:
-            # Staggering inputs are only queried when the profile opts in (avoids a per-profile
-            # DB read for the ladder, which ignores them).
-            todays_entries, last_entry_min = (0, None)
-            if params.get("stagger_entries"):
-                todays_entries, last_entry_min = _profile_day_stats(name, snapshot["date"], db_path)
+        # max_concurrent_ics is a per-(profile × symbol) cap: each portfolio (this profile on this
+        # symbol) gets its own concurrency budget, so a busy symbol can't starve a quiet one of
+        # slots. `still_open` is already scoped to this symbol + profile, so its length is the count.
+        symbol_open = len(still_open)
+        if symbol_open < params["max_concurrent_ics"]:
+            # Per-(profile × symbol) day stats: entry_count feeds the daily_ic_trade_target cap that
+            # applies to every profile; last_entry_min additionally feeds the opt-in staggering
+            # spacing gate. Scoped to this symbol so each portfolio has its own daily budget.
+            todays_entries, last_entry_min = _profile_day_stats(name, snapshot["date"], db_path, symbol=symbol)
             entered, reason, chosen = evaluate_entry(snapshot, params, still_open,
-                                                     account_open_count=account_open,
+                                                     account_open_count=symbol_open,
                                                      todays_entry_count=todays_entries,
                                                      last_entry_min=last_entry_min)
             if entered:

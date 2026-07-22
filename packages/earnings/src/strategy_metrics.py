@@ -106,6 +106,39 @@ def load_closed_trades(profile: str | None = None, strategy: str | None = None, 
     return trades
 
 
+def load_open_trades(profile: str | None = None, strategy: str | None = None) -> list[dict]:
+    """Still-open positions (closed_at IS NULL), dicts with entry_context parsed, ordered by
+    opened_at. The mirror of load_closed_trades for the entry side: closed trades carry realized
+    P&L, open trades carry overnight risk that has not resolved yet. Same read-only direct-SQLite
+    access, same optional profile/strategy filters. No `since` — an open position has no close
+    date to bound on, and 'opened after X' is the caller's job (see _open_session)."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        query = "SELECT * FROM trades WHERE closed_at IS NULL"
+        params: list = []
+        if profile:
+            query += " AND profile = ?"
+            params.append(profile)
+        if strategy:
+            query += " AND strategy = ?"
+            params.append(strategy)
+        rows = conn.execute(query + " ORDER BY opened_at", params).fetchall()
+    finally:
+        conn.close()
+
+    trades = []
+    for row in rows:
+        t = dict(row)
+        if t.get("entry_context"):
+            try:
+                t["entry_context"] = json.loads(t["entry_context"])
+            except (TypeError, ValueError):
+                t["entry_context"] = None
+        trades.append(t)
+    return trades
+
+
 def net_pnl(trade: dict) -> float:
     gross = trade.get("pnl") or 0.0
     return gross - (trade.get("entry_cost") or 0.0) - (trade.get("exit_cost") or 0.0)

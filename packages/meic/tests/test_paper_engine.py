@@ -90,9 +90,26 @@ def _base_snapshot(**overrides):
 
 CONSERVATIVE = paper.load_profiles()["conservative"]
 MODERATE = paper.load_profiles()["moderate"]
-SMALL_XSP = paper.load_profiles()["small-xsp"]
-MEDIUM_XSP_WIDE = paper.load_profiles()["medium-xsp-wide"]
 BASE_CONFIG = paper.load_base_config()
+
+# Synthetic profile overlays. config.risk.json now holds ONLY the four-tier ladder — the experiment
+# cells that used to exercise these knobs were removed — but the engine features themselves are very
+# much alive, so the gates are tested against purpose-built overlays instead of registry names. This
+# also keeps the tests independent of whatever the profile registry happens to contain.
+XSP_NARROW = {"symbols": ["XSP"], "wing_widths_by_symbol": {"XSP": [2, 3]}, "wing_selection": "narrowest",
+              "stagger_entries": True, "late_entry_bias_enabled": False,
+              "daily_ic_trade_target": 6, "min_minutes_between_entries": 45, "max_concurrent_ics": 4}
+XSP_WIDE = {"symbols": ["XSP"], "wing_widths_by_symbol": {"XSP": [5, 10]}, "wing_selection": "widest",
+            "late_entry_bias_enabled": False}
+GEX_STRICT = {"regime_gex_require_positive": True}          # require GEX confirmed positive
+GEX_MAG = {"regime_gex_min_flip_distance_pct": 0.005}       # require spot >=0.5% from the gamma flip
+HOLD_TO_EXPIRY = {"per_side_stop_management": False}        # no per-side stop; hold to settlement
+FAR_OTM = {"short_delta_target": 0.10}                      # further-OTM shorts than the VIX band
+
+# SPY and XSP are configured narrowest-first (small-account bias), so tests that assert the
+# widest-first DEFAULT pin the ordering explicitly instead of inheriting the snapshot symbol's
+# configuration. Keeps those tests about the ordering rule, not about config contents.
+WIDEST_FIRST = {"wing_selection_by_symbol": {"DEFAULT": "widest", "XSP": "widest"}}
 
 
 def _params(profile):
@@ -103,7 +120,7 @@ def _params(profile):
 
 def test_evaluate_entry_enters_when_all_gates_clear():
     snap = _base_snapshot(now_et="13:00")  # after conservative's 12:00 late-entry-bias start
-    entered, reason, chosen = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])
+    entered, reason, chosen = paper.evaluate_entry(snap, _params({**CONSERVATIVE, **WIDEST_FIRST}), [])
     assert entered is True
     assert reason == "entered"
     assert chosen["wing_width"] == 5  # widest clearing candidate preferred
@@ -146,9 +163,9 @@ def test_evaluate_entry_rejects_regime_gex_negative():
 
 
 def test_evaluate_entry_gexstrict_requires_positive_gex():
-    # The large-spx-gexstrict isolation cell sets regime_gex_require_positive: entries pause
+    # regime_gex_require_positive: entries pause
     # unless GEX is CONFIRMED positive (baseline only pauses on confirmed-negative).
-    strict = _params(paper.load_profiles()["large-spx-gexstrict"])
+    strict = _params(GEX_STRICT)
     spx = dict(symbol="SPX", now_et="13:00", underlying_price=7500.0, iv_rank=0.32,
                candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)])
     # GEX unknown/unavailable -> strict gate pauses (baseline would not).
@@ -160,8 +177,8 @@ def test_evaluate_entry_gexstrict_requires_positive_gex():
 
 
 def test_evaluate_entry_gexmag_requires_deep_positive_gamma():
-    # large-spx-gexmag: positive GEX is not enough -- spot must sit >= 0.5% from the gamma-flip strike.
-    mag = _params(paper.load_profiles()["large-spx-gexmag"])
+    # gexmag: positive GEX is not enough -- spot must sit >= 0.5% from the gamma-flip strike.
+    mag = _params(GEX_MAG)
     spx = dict(symbol="SPX", now_et="13:00", underlying_price=7500.0, iv_rank=0.32,
                candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)])
     # Spot 7500 only ~0.13% from the flip (7490) -> too close, paused.
@@ -196,10 +213,10 @@ def test_evaluate_entry_rejects_max_concurrent_ics_reached():
     assert reason == "max_concurrent_ics_reached"
 
 
-def test_evaluate_entry_concurrency_cap_is_account_wide():
-    # No open ICs on THIS symbol, but the profile is already at its cap across other symbols.
-    # The account-wide count must still block the entry (matches the live loop's account-wide
-    # max_concurrent_ics), even though the same-symbol overlap list is empty.
+def test_evaluate_entry_concurrency_cap_uses_passed_count():
+    # The gate checks the caller-supplied open count, not the same-symbol overlap list: at the cap
+    # it blocks even when the overlap list is empty. process_symbol supplies the per-(profile ×
+    # symbol) count here, so each portfolio enforces its own max_concurrent_ics budget.
     snap = _base_snapshot(now_et="13:00")
     cap = CONSERVATIVE["max_concurrent_ics"]
     entered, reason, _ = paper.evaluate_entry(snap, _params(CONSERVATIVE), open_ics=[],
@@ -208,9 +225,9 @@ def test_evaluate_entry_concurrency_cap_is_account_wide():
     assert reason == "max_concurrent_ics_reached"
 
 
-def test_evaluate_entry_account_count_below_cap_still_evaluates():
-    # Below the account-wide cap → entry proceeds past the concurrency gate (reason is NOT
-    # the concurrency rejection), even if some ICs are open elsewhere.
+def test_evaluate_entry_count_below_cap_still_evaluates():
+    # Below the cap → entry proceeds past the concurrency gate (reason is NOT the concurrency
+    # rejection).
     snap = _base_snapshot(now_et="13:00")
     entered, reason, _ = paper.evaluate_entry(snap, _params(CONSERVATIVE), open_ics=[],
                                               account_open_count=CONSERVATIVE["max_concurrent_ics"] - 1)
@@ -309,7 +326,7 @@ def test_evaluate_entry_low_iv_relief_lowers_credit_floor():
 
 def test_evaluate_entry_prefers_widest_clearing_candidate():
     snap = _base_snapshot(now_et="13:00", candidates=[_candidate(2, 583, 598), _candidate(5, 583, 598)])
-    entered, reason, chosen = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])
+    entered, reason, chosen = paper.evaluate_entry(snap, _params({**CONSERVATIVE, **WIDEST_FIRST}), [])
     assert entered is True
     assert chosen["wing_width"] == 5
 
@@ -330,6 +347,17 @@ def test_synthetic_entry_fill_prices_at_mid_minus_slippage():
     assert chosen["ic_natural_bid"] < row["net_credit"] < 0.78
     assert row["risk_profile"] == "conservative"
     assert row["execution_mode"] == "paper"
+
+
+def test_synthetic_entry_fill_records_both_iv_measures():
+    # Regression guard: iv_pct_at_entry sat NULL for 89 trades because the column existed but was
+    # never written. Rank and percentile diverge (rank is outlier-compressed), so both must persist
+    # or the IV gate can't be re-based on evidence later.
+    snap = _base_snapshot(now_et="13:00", iv_rank=0.32, iv_pct=0.91)
+    _, _, chosen = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])
+    row = paper.synthetic_entry_fill(snap, "conservative", chosen, _params(CONSERVATIVE), "paper")
+    assert row["iv_rank_at_entry"] == pytest.approx(0.32)
+    assert row["iv_pct_at_entry"] == pytest.approx(0.91)
     assert row["status"] == "open"
     assert row["fees"] == pytest.approx(paper.open_fees("XSP", 1), abs=0.001)
 
@@ -429,7 +457,7 @@ def test_evaluate_open_trade_stops_call_side_when_cost_reaches_trigger():
 
 
 def test_per_side_stop_management_false_disables_stops():
-    # large-spx-holdtoexpiry sets per_side_stop_management: false -> a side whose cost blows past the
+    # per_side_stop_management: false -> a side whose cost blows past the
     # trigger is NOT stopped; the IC holds to force-close/settlement. Same quotes stop a normal profile.
     trade = {"put_symbol": "SP", "call_symbol": "SC", "long_put_symbol": "LP", "long_call_symbol": "LC",
              "net_credit": 0.58, "status": "open", "put_credit": 0.30, "call_credit": 0.28,
@@ -438,7 +466,7 @@ def test_per_side_stop_management_false_disables_stops():
         "SP": {"bid": 0.20, "ask": 0.26, "mid": 0.23}, "LP": {"bid": 0.05, "ask": 0.08, "mid": 0.065},
         "SC": {"bid": 0.60, "ask": 0.68, "mid": 0.64}, "LC": {"bid": 0.03, "ask": 0.06, "mid": 0.045},
     }
-    hold = _params(paper.load_profiles()["large-spx-holdtoexpiry"])
+    hold = _params(HOLD_TO_EXPIRY)
     assert paper.evaluate_open_trade(trade, leg_quotes, hold, force_close=False)["action"] == "hold"
     assert paper.evaluate_open_trade(trade, leg_quotes, _params(MODERATE),
                                      force_close=False)["action"] == "stop_call"
@@ -489,10 +517,11 @@ _FC_LEG_QUOTES = {
 
 
 def test_is_cash_settled_classification():
-    assert paper._is_cash_settled("SPX", BASE_CONFIG) is True
-    assert paper._is_cash_settled("XSP", BASE_CONFIG) is True
-    assert paper._is_cash_settled("QQQ", BASE_CONFIG) is False
-    assert paper._is_cash_settled("IWM", BASE_CONFIG) is False
+    # Cash-settled index products (left to expire) vs physically-settled ETFs (force-closed).
+    for cash in ("SPX", "XSP", "NDX", "RUT"):
+        assert paper._is_cash_settled(cash, BASE_CONFIG) is True
+    for physical in ("SPY", "QQQ", "IWM"):
+        assert paper._is_cash_settled(physical, BASE_CONFIG) is False
 
 
 def test_cash_settled_force_close_has_no_friction():
@@ -662,7 +691,11 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
     subprocess.run([sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"),
                      "--db", db_path, "init_db"], check=True, capture_output=True)
 
-    snapshot = _base_snapshot(now_et="13:00", date="2026-07-09")
+    # Use SPX — a symbol the conservative ladder actually trades (the default snapshot's XSP is no
+    # longer in the traded set). Single well-credited 5-wide candidate so the fill is unambiguous.
+    snapshot = _base_snapshot(now_et="13:00", date="2026-07-09", symbol="SPX",
+                              underlying_price=7500.0,
+                              candidates=[_candidate(5, 7450, 7550, sp_bid=0.80, sc_bid=0.75)])
     result = subprocess.run(
         [sys.executable, str(Path(__file__).parent.parent / "src" / "paper.py"),
          "--db", db_path, "process_symbol", "--snapshot", json.dumps(snapshot),
@@ -677,12 +710,61 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
 
     open_check = subprocess.run(
         [sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"),
-         "--db", db_path, "get_open_trades", "--symbol", "XSP", "--date", "2026-07-09"],
+         "--db", db_path, "get_open_trades", "--symbol", "SPX", "--date", "2026-07-09"],
         capture_output=True, text=True,
     )
     open_out = json.loads(open_check.stdout.strip())
     assert len(open_out["open_trades"]) == 1
     assert open_out["open_trades"][0]["risk_profile"] == "conservative"
+
+
+def test_process_symbol_concurrency_budget_is_per_symbol(paper_db_path):
+    # max_concurrent_ics is a per-(profile × symbol) budget: a profile maxed out on one symbol must
+    # still be able to enter another, so a busy symbol can't starve a quiet one of slots.
+    cap = CONSERVATIVE["max_concurrent_ics"]
+    for i in range(cap):
+        _insert_paper_trade(paper_db_path, ic_order_id=f"SPX-{i}", symbol="SPX",
+                            risk_profile="conservative", trade_date="2026-07-09", status="open")
+    # conservative is now full on SPX. A QQQ snapshot for the same profile must NOT be concurrency-blocked.
+    snapshot = _base_snapshot(now_et="13:00", date="2026-07-09", symbol="QQQ",
+                              underlying_price=700.0,
+                              candidates=[_candidate(5, 695, 705, sp_bid=0.80, sc_bid=0.75)])
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).parent.parent / "src" / "paper.py"),
+         "--db", paper_db_path, "process_symbol", "--snapshot", json.dumps(snapshot),
+         "--execution_mode", "paper", "--profiles", "conservative"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    out = json.loads(result.stdout.strip().splitlines()[-1])
+    actions = out["results"]["conservative"]
+    assert all(a.get("reason") != "max_concurrent_ics_reached" for a in actions), actions
+    assert any(a.get("entry") == "filled" for a in actions), actions
+
+
+def test_process_symbol_daily_target_is_per_symbol(paper_db_path):
+    # The daily-target count is per (profile × symbol): hitting the target on one symbol must not
+    # raise the bar (or block) on another — SPX's entries don't spend QQQ's budget.
+    target = _params(CONSERVATIVE)["daily_ic_trade_target"]
+    for i in range(target):
+        _insert_paper_trade(paper_db_path, ic_order_id=f"SPX-{i}", symbol="SPX",
+                            risk_profile="conservative", trade_date="2026-07-09", status="expired")
+    # conservative has hit its daily target on SPX. A QQQ snapshot must NOT be daily-capped.
+    snapshot = _base_snapshot(now_et="13:00", date="2026-07-09", symbol="QQQ",
+                              underlying_price=700.0,
+                              candidates=[_candidate(5, 695, 705, sp_bid=0.80, sc_bid=0.75)])
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).parent.parent / "src" / "paper.py"),
+         "--db", paper_db_path, "process_symbol", "--snapshot", json.dumps(snapshot),
+         "--execution_mode", "paper", "--profiles", "conservative"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    out = json.loads(result.stdout.strip().splitlines()[-1])
+    actions = out["results"]["conservative"]
+    assert all(a.get("reason") not in ("daily_target_reached", "over_target_credit_below_floor")
+               for a in actions), actions
+    assert any(a.get("entry") == "filled" for a in actions), actions
 
 
 # ── Stop persistence + stopped-vs-expired (regression for the P&L-accumulation bug) ──
@@ -753,21 +835,44 @@ def test_stop_persists_then_settlement_stays_stopped_without_double_counting(tmp
 # ── Per-profile symbol + wing selection (experiment profiles) ────────────────
 
 def test_wing_selection_narrowest_picks_narrowest_clearing():
-    # small-xsp's shortlist is [2,3] with wing_selection "narrowest": prefer the 2-wide.
+    # A [2,3] shortlist with wing_selection "narrowest": prefer the 2-wide.
     snap = _base_snapshot(now_et="13:00",
                           candidates=[_candidate(2, 583, 598), _candidate(3, 583, 598)])
-    entered, reason, chosen = paper.evaluate_entry(snap, _params(SMALL_XSP), [])
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(XSP_NARROW), [])
     assert entered is True and reason == "entered"
     assert chosen["wing_width"] == 2
 
 
+def test_wing_selection_is_resolved_per_symbol():
+    # The ordering bias is a property of the INSTRUMENT, not the risk tier: a small-account symbol
+    # wants the smallest viable width while the big-notional index products keep the fee-drag
+    # (widest-first) bias. A profile-wide wing_selection would flip every symbol at once.
+    params = _params({"wing_widths_by_symbol": {"SPY": [1, 2, 3], "SPX": [5, 10]},
+                      "wing_selection_by_symbol": {"SPY": "narrowest", "DEFAULT": "widest"}})
+    menu_spy = [{"wing_width": w} for w in (1, 2, 3)]
+    menu_spx = [{"wing_width": w} for w in (5, 10)]
+    assert [c["wing_width"] for c in paper._select_candidates(menu_spy, params, "SPY")] == [1, 2, 3]
+    assert [c["wing_width"] for c in paper._select_candidates(menu_spx, params, "SPX")] == [10, 5]
+    # Precedence, most specific first: exact symbol > profile-wide > DEFAULT > "widest".
+    assert paper._wing_selection_for_symbol(params, "QQQ") == "widest"          # DEFAULT
+    assert paper._wing_selection_for_symbol({"wing_selection": "narrowest"}, "QQQ") == "narrowest"
+    assert paper._wing_selection_for_symbol({}, "QQQ") == "widest"              # hardcoded default
+    # A profile's explicit wing_selection must NOT be silently overridden by a generic DEFAULT...
+    profile_wide = {"wing_selection": "narrowest",
+                    "wing_selection_by_symbol": {"DEFAULT": "widest"}}
+    assert paper._wing_selection_for_symbol(profile_wide, "QQQ") == "narrowest"
+    # ...but an exact per-symbol entry still wins over the profile-wide setting.
+    assert paper._wing_selection_for_symbol(
+        {**profile_wide, "wing_selection_by_symbol": {"QQQ": "widest"}}, "QQQ") == "widest"
+
+
 def test_wing_filter_excludes_widths_outside_profile_shortlist():
-    # medium-xsp-wide only trades [5,10]; a lone 2-wide candidate is filtered out entirely, so
+    # A [5,10] shortlist; a lone 2-wide candidate is filtered out entirely, so
     # no candidate clears — even though it would otherwise pass every gate.
     snap = _base_snapshot(now_et="13:00", iv_rank=0.32,
                           candidates=[_candidate(2, 583, 598, sp_bid=1.2, sp_ask=1.3,
                                                  sc_bid=1.1, sc_ask=1.2)])
-    entered, reason, _ = paper.evaluate_entry(snap, _params(MEDIUM_XSP_WIDE), [])
+    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_WIDE), [])
     assert entered is False
     assert reason == "no_candidate_cleared_all_gates"
 
@@ -782,8 +887,8 @@ def test_select_candidates_delta_bands_route_to_the_right_profile():
     # A multi-delta menu: default band (0.15) + a far-OTM band (0.10), both 10-wide.
     menu = [_tagged(_candidate(10, 7380, 7560), 0.15, True),
             _tagged(_candidate(10, 7300, 7640), 0.10, False)]
-    ctrl = _params(paper.load_profiles()["large-spx"])
-    far = _params(paper.load_profiles()["large-spx-farotm"])
+    ctrl = _params(CONSERVATIVE)
+    far = _params(FAR_OTM)
     # Control (no short_delta_target) sees ONLY the default band -> unperturbed by the extra band.
     assert [c["short_delta"] for c in paper._select_candidates(menu, ctrl, "SPX")] == [0.15]
     # farotm (short_delta_target 0.10) sees ONLY its band.
@@ -798,35 +903,46 @@ def test_select_candidates_untagged_menu_unchanged():
 
 
 def test_union_short_deltas_collects_requested_bands():
-    spx = paper.union_short_deltas_for_symbol("SPX")
-    assert 0.10 in spx and 0.25 in spx           # farotm + closeotm cells
-    assert paper.union_short_deltas_for_symbol("XSP") == []   # no XSP cell requests a custom band
+    # The ladder declares no custom short_delta_target, so the live registry requests no extra band
+    # and every profile just uses the VIX-banded default candidate.
+    assert paper.union_short_deltas_for_symbol("SPX") == []
+    # The union mechanism still collects a band from any profile that declares one, scoped to the
+    # symbols that profile trades (passed explicitly so this doesn't depend on registry contents).
+    synthetic = {
+        "far": {"symbols": ["SPX"], "short_delta_target": 0.10},
+        "close": {"symbols": ["SPX"], "short_delta_target": 0.25},
+        "xsp-far": {"symbols": ["XSP"], "short_delta_target": 0.12},
+    }
+    spx = paper.union_short_deltas_for_symbol("SPX", profiles=synthetic)
+    assert 0.10 in spx and 0.25 in spx
+    assert 0.12 not in spx  # XSP-pinned band must not leak into SPX's menu
+    assert paper.union_short_deltas_for_symbol("XSP", profiles=synthetic) == [0.12]
 
 
 # ── Staggering: entry window, daily cap, spacing (opt-in via stagger_entries) ─
 
 def test_stagger_outside_entry_window_rejected():
     snap = _base_snapshot(now_et="15:00")  # past the 14:30 entry-window end
-    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [])
+    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_NARROW), [])
     assert entered is False and reason == "outside_entry_window"
 
 
 def test_stagger_before_entry_window_rejected():
     snap = _base_snapshot(now_et="09:45")  # before the 10:00 entry-window start
-    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [])
+    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_NARROW), [])
     assert entered is False and reason == "outside_entry_window"
 
 
 def test_stagger_daily_target_reached_rejected():
     snap = _base_snapshot(now_et="13:00")
-    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [], todays_entry_count=6)
+    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_NARROW), [], todays_entry_count=6)
     assert entered is False and reason == "daily_target_reached"
 
 
 def test_stagger_spacing_wait_rejected():
     # last entry 30 min ago < the 45-min min spacing → wait.
     snap = _base_snapshot(now_et="13:00")  # 780 min
-    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [],
+    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_NARROW), [],
                                               todays_entry_count=1, last_entry_min=780 - 30)
     assert entered is False and reason == "entry_spacing_wait"
 
@@ -834,35 +950,54 @@ def test_stagger_spacing_wait_rejected():
 def test_stagger_spacing_ok_after_interval():
     # last entry 50 min ago ≥ the 45-min min spacing → proceeds.
     snap = _base_snapshot(now_et="13:00")
-    entered, reason, _ = paper.evaluate_entry(snap, _params(SMALL_XSP), [],
+    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_NARROW), [],
                                               todays_entry_count=1, last_entry_min=780 - 50)
     assert entered is True and reason == "entered"
 
 
-def test_ladder_profile_ignores_stagger_and_entry_window():
-    # conservative has no stagger_entries → a 15:00 snapshot is NOT window-blocked and a large
-    # entry count does NOT cap it (the window/cap/spacing gates are opt-in). iv_rank 0.50 also
-    # clears the late-entry bias, so the entry proceeds normally.
-    snap = _base_snapshot(now_et="15:00", iv_rank=0.50)
-    entered, reason, _ = paper.evaluate_entry(snap, _params(CONSERVATIVE), [], todays_entry_count=99)
-    assert reason not in ("outside_entry_window", "daily_target_reached", "entry_spacing_wait")
+def test_ladder_daily_target_is_soft_guidance_not_a_cap():
+    # conservative has no stagger_entries → the window/spacing gates stay opt-in (15:00 is not
+    # window-blocked; iv_rank 0.50 clears the late-entry bias). The daily target is GUIDANCE: past
+    # it the portfolio is never hard-blocked, but only a richer-credit setup qualifies.
+    snap = _base_snapshot(now_et="15:00", iv_rank=0.50,
+                          candidates=[_candidate(5, 583, 598, sp_bid=0.70, sp_ask=0.80,
+                                                 sc_bid=0.65, sc_ask=0.75)])
+    params = _params(CONSERVATIVE)
+    target = params["daily_ic_trade_target"]
+    # Under the target: this credit clears the normal floor → enters.
+    entered, reason, _ = paper.evaluate_entry(snap, params, [], todays_entry_count=0)
+    assert entered is True and reason == "entered"
+    # At the target: NOT hard-capped — declined only because the raised bar isn't met.
+    entered2, reason2, _ = paper.evaluate_entry(snap, params, [], todays_entry_count=target)
+    assert entered2 is False
+    assert reason2 == "over_target_credit_below_floor"
 
 
-def test_process_symbol_skips_profile_not_trading_symbol(tmp_path):
-    # small-xsp is pinned to XSP; against an SPX snapshot it must be skipped entirely (absent from
-    # results), while large-spx (pinned to SPX) is evaluated.
+def test_over_target_rich_credit_still_enters():
+    # Favorable conditions — credit well above the raised floor — let a portfolio exceed its daily
+    # target. This is the whole point of the target being guidance rather than a cap.
+    snap = _base_snapshot(now_et="13:00", iv_rank=0.50,
+                          candidates=[_candidate(5, 583, 598, sp_bid=1.20, sp_ask=1.30,
+                                                 sc_bid=1.15, sc_ask=1.25)])
+    params = _params(CONSERVATIVE)
+    entered, reason, _ = paper.evaluate_entry(snap, params, [],
+                                              todays_entry_count=params["daily_ic_trade_target"])
+    assert entered is True and reason == "entered"
+
+
+def test_process_symbol_skips_profile_not_trading_symbol(tmp_path, monkeypatch):
+    # A profile that declares a `symbols` subset must be skipped entirely (absent from results) for
+    # any symbol outside it. No profile in the registry pins symbols now — the ladder trades the full
+    # base set — so the registry is monkeypatched with a pinned pair to exercise the code path.
     db_path = str(tmp_path / "paper_pin.db")
     subprocess.run([sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"),
                     "--db", db_path, "init_db"], check=True, capture_output=True)
+    monkeypatch.setattr(paper, "load_profiles", lambda: {
+        "xsp-only": {"symbols": ["XSP"]},
+        "spx-only": {"symbols": ["SPX"]},
+    })
     snapshot = _base_snapshot(symbol="SPX", now_et="13:00", underlying_price=7500.0, iv_rank=0.32,
                               candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)])
-    result = subprocess.run(
-        [sys.executable, str(Path(__file__).parent.parent / "src" / "paper.py"),
-         "--db", db_path, "process_symbol", "--snapshot", json.dumps(snapshot),
-         "--profiles", "small-xsp,large-spx"],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    out = json.loads(result.stdout.strip().splitlines()[-1])
-    assert "small-xsp" not in out["results"]   # pinned to XSP → skipped for SPX
-    assert "large-spx" in out["results"]        # pinned to SPX → evaluated
+    out = paper.process_symbol(snapshot, db_path, "paper")
+    assert "xsp-only" not in out["results"]   # pinned to XSP -> skipped for an SPX snapshot
+    assert "spx-only" in out["results"]        # pinned to SPX -> evaluated
