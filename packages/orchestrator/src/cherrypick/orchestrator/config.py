@@ -119,6 +119,22 @@ def module_root(module_cfg: dict[str, Any], name: str | None = None) -> Path:
     return (MODULES_HOME / module_dirname(module_cfg, name)).resolve()
 
 
+def portable_path(p: Any) -> str:
+    """Render a filesystem path for display without leaking a drive letter, username, or absolute home
+    prefix — the suite guardrail forbids absolute paths on any surface (dashboard, doctor, section cards).
+    Collapse the user home to ``~``; else show it relative to the cherrypick source root (ROOT); else
+    just the final path component."""
+    path = Path(p)
+    try:
+        return "~/" + path.relative_to(Path.home()).as_posix()
+    except ValueError:
+        pass
+    try:
+        return Path(os.path.relpath(path, ROOT)).as_posix()
+    except (ValueError, OSError):
+        return path.name
+
+
 def paper_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path:
     """Resolve a module's paper-trades DB file. `paper.paper_db` may be:
       - absolute (used as-is);

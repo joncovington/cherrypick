@@ -162,9 +162,9 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         root = cfgmod.module_root(mcfg, name)
         in_place = bool(mcfg.get("path"))
         missing_detail = (
-            f"in-place path missing: {root}"
+            f"in-place path missing: {cfgmod.portable_path(root)}"
             if in_place
-            else f"not installed: {root} (run: cherrypick install)"
+            else f"not installed: {cfgmod.portable_path(root)} (run: cherrypick install)"
         )
         checks.append(
             Check(
@@ -202,7 +202,7 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
             Check(
                 f"{name}.paper_db",
                 OK if _writable(db_dir) else FAIL,
-                f"{db_dir} {'writable' if _writable(db_dir) else 'NOT writable'}",
+                f"{cfgmod.portable_path(db_dir)} {'writable' if _writable(db_dir) else 'NOT writable'}",
             )
         )
 
@@ -323,7 +323,8 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         sid = svc["id"]
         root = cfgmod.module_root(svc, sid)
         if not root.exists():
-            checks.append(Check(f"service.{sid}", WARN, f"checkout not found at {root}"))
+            where = cfgmod.portable_path(root)
+            checks.append(Check(f"service.{sid}", WARN, f"checkout not found at {where}"))
             continue
         try:
             r = _run(root, svc["status_argv"], timeout=15)
