@@ -318,6 +318,42 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         )
     )
 
+    # standalone market-data producer (top-level `streamer`): the suite's single stream-cache writer.
+    # Module-owned streamers are checked in the modules loop above; this covers the standalone producer
+    # (the case where modules.<m>.streamer is disabled), so its health shows on `cherrypick doctor` and
+    # the served dashboard's system card. Reads the streamer's own --status (its cache/state), never the
+    # broker — the same cheap local subprocess the module-streamer check uses.
+    producer = cfg.get("streamer") or {}
+    if producer.get("enabled"):
+        root = cfgmod.module_root(producer, "streamer")
+        if not root.exists():
+            checks.append(Check("streamer", FAIL, f"checkout not found at {cfgmod.portable_path(root)}"))
+        else:
+            try:
+                r = _run(root, producer["status_argv"], timeout=15)
+                status = first_json(r.stdout) if r.returncode == 0 else {}
+                running = bool(status.get("running"))
+                age = next(
+                    (status[k] for k in ("oldest_event_age_s", "stale_age_s")
+                     if isinstance(status.get(k), (int, float))),
+                    None,
+                )
+                if not running:
+                    checks.append(Check("streamer", WARN, "not running (start with: cherrypick install)"))
+                else:
+                    fresh = f"last event {age:.0f}s ago" if age is not None else "running"
+                    limit = producer.get("stale_restart_seconds", 240)
+                    # A connected-but-silent streamer is the 34-hour-stall failure — flag it, but only
+                    # during market hours (off-hours a quiet feed is expected, not a fault).
+                    if age is not None and age > limit and timeutil.is_market_hours():
+                        checks.append(Check("streamer", WARN,
+                                            f"running but silent — {fresh} (watchdog restarts at {limit}s)"))
+                    else:
+                        quiet = "  (quiet off-hours)" if age is not None and age > limit else ""
+                        checks.append(Check("streamer", OK, f"running, {fresh}{quiet}"))
+            except Exception as exc:
+                checks.append(Check("streamer", WARN, f"status error: {exc}"))
+
     # background services (e.g. the gex spot-trail recorder): report each enabled daemon's status
     for svc in cfgmod.enabled_services(cfg):
         sid = svc["id"]
