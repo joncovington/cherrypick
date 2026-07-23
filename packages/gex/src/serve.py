@@ -355,8 +355,16 @@ function _spotHistoryPlugin(history,labels,openTs,closeTs){
     const {ctx,scales,chartArea}=chart;
     if(!scales.y||!history||!history.length) return;
     if(openTs==null||closeTs==null||closeTs<=openTs) return;
+    // Downsample to ~1 point/minute. The recorder samples spot every ~5s (thousands of points a
+    // session), and drawing them all packed the early-session trail into a solid blob. Keeping one
+    // per minute (plus the final point, so the marker sits on the live spot) makes it a readable line.
+    const STEP_S=60, kept=[];
+    for(let i=0;i<history.length;i++){
+      const pt=history[i];
+      if(!kept.length || i===history.length-1 || pt.ts-kept[kept.length-1].ts>=STEP_S) kept.push(pt);
+    }
     const pts=[];
-    for(const pt of history){
+    for(const pt of kept){
       const frac=(pt.ts-openTs)/(closeTs-openTs);
       if(frac<0||frac>1) continue;
       let yPx=_categoryPixelForValue(scales.y,labels,pt.spot);
@@ -366,10 +374,12 @@ function _spotHistoryPlugin(history,labels,openTs,closeTs){
       pts.push([xPx,yPx]);
     }
     if(!pts.length) return;
-    ctx.save(); ctx.strokeStyle='#7ec8f2'; ctx.lineWidth=1.5; ctx.beginPath();
+    // Line only (a single marker at the latest point) -- a filled dot per point overlapped into a fill.
+    ctx.save(); ctx.strokeStyle='#7ec8f2'; ctx.lineWidth=1.5; ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath();
     pts.forEach(([x,y],i)=>{ i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }); ctx.stroke();
-    ctx.fillStyle='#7ec8f2';
-    pts.forEach(([x,y])=>{ ctx.beginPath(); ctx.arc(x,y,1.5,0,Math.PI*2); ctx.fill(); });
+    const [lx,ly]=pts[pts.length-1];
+    ctx.fillStyle='#7ec8f2'; ctx.beginPath(); ctx.arc(lx,ly,2.5,0,Math.PI*2); ctx.fill();
     ctx.restore();
   }};
 }
