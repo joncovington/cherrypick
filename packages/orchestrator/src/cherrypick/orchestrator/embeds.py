@@ -191,6 +191,50 @@ def prewarm(cfg: dict[str, Any]) -> None:
                 _spawn_rebuild(emb, emb["id"], root, _output_path(emb, root))
 
 
+def _recycle_port(host: str, port: int) -> bool:
+    """Best-effort terminate whatever is listening on `port` — a stale embed child left over from a PRIOR
+    `dashboard --serve` session. ensure_server reuses any process already on the port, so without this a
+    days-old orphan (old code, a retired cache pointer) keeps being served into the iframe across suite
+    restarts. Platform-dispatched, no third-party deps; never raises."""
+    try:
+        if os.name == "nt":
+            ps = (
+                f"$c=Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue;"
+                "if($c){$c|Select-Object -Expand OwningProcess -Unique|"
+                "ForEach-Object{Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue}}"
+            )
+            subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                capture_output=True, timeout=15,
+            )
+        else:
+            r = subprocess.run(["lsof", "-ti", f"tcp:{port}"], capture_output=True, text=True, timeout=10)
+            for pid in r.stdout.split():
+                subprocess.run(["kill", "-TERM", pid], capture_output=True, timeout=5)
+        return True
+    except Exception:
+        return False
+
+
+def recycle_servers(cfg: dict[str, Any]) -> list[str]:
+    """At `dashboard --serve` startup, terminate any lingering "server"-kind embed from a PRIOR session so
+    the next iframe load spawns a fresh child on the current code + config. Returns the ids recycled.
+
+    ensure_server treats a reachable port as "already up" and reuses it — which meant a stale orphan (the
+    07-21 gex embed still pointing at the retired meic cache) survived every suite restart and kept being
+    framed. Recycling at startup, before this session spawns anything of its own, is safe: it can only hit
+    a prior session's process."""
+    recycled = []
+    for emb in enabled_embeds(cfg):
+        if emb.get("kind") != "server":
+            continue
+        host = emb.get("host", "127.0.0.1")
+        port = int(emb.get("port", 0))
+        if port and _port_reachable(host, port) and _recycle_port(host, port):
+            recycled.append(emb["id"])
+    return recycled
+
+
 def read_static(embed_cfg: dict[str, Any]) -> bytes | None:
     root = cfgmod.module_root(embed_cfg, embed_cfg.get("id"))
     out_path = _output_path(embed_cfg, root)
