@@ -11,6 +11,7 @@ every refresh just re-reads MEIC's stream cache (this module never writes to it 
 from __future__ import annotations
 
 import json
+import socket
 import threading
 import webbrowser
 from html import escape
@@ -604,6 +605,14 @@ def make_handler(cfg: dict, default_sym: str):
     return _Handler
 
 
+def _port_in_use(host: str, port: int) -> bool:
+    """Probe before binding so a second launch reuses the running dashboard instead of dying on
+    EADDRINUSE — the port is the dashboard's singleton (mirrors flies.dashboard.port_in_use)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.4)
+        return s.connect_ex((host, port)) == 0
+
+
 def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
           port: int | None = None, open_browser: bool = True) -> None:
     """Run the live GEX dashboard until interrupted (localhost-only)."""
@@ -612,8 +621,15 @@ def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
     sym = (symbol or default_symbol(cfg)).strip().upper()
     host = host or cfg["serve"].get("host", "127.0.0.1")
     port = int(port or cfg["serve"].get("port", 5055))
-    httpd = ThreadingHTTPServer((host, port), make_handler(cfg, sym))
     url = f"http://{host}:{port}/"
+    # Single-instance: don't crash on EADDRINUSE (the old behaviour was an uncaught OSError). If a
+    # dashboard is already serving this port, reuse it — the port is the singleton. Mirrors flies.
+    if _port_in_use(host, port):
+        print(f"cherrypick-gex dashboard already serving at {url}")
+        if open_browser:
+            webbrowser.open(url)
+        return
+    httpd = ThreadingHTTPServer((host, port), make_handler(cfg, sym))
     print(f"cherrypick-gex dashboard serving {sym} at {url}  (Ctrl-C to stop)")
 
     # Background spot-trail recorder: sample EVERY offered symbol's spot on the refresh cadence (not just
@@ -623,12 +639,18 @@ def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
     stop = threading.Event()
 
     def _record_loop():
-        while not stop.is_set():
-            try:
-                _service.record_spots(cfg)
-            except Exception:  # a data hiccup must never kill the recorder
-                pass
-            stop.wait(refresh)
+        # Share the recorder single-writer lock, so this loop only writes the trail when no standalone
+        # `run.py record` daemon (or another dashboard) already holds it — never a second writer.
+        try:
+            while not stop.is_set():
+                try:
+                    if _service.acquire_recorder_lock(cfg):
+                        _service.record_spots(cfg)
+                except Exception:  # a data hiccup must never kill the recorder
+                    pass
+                stop.wait(refresh)
+        finally:
+            _service.release_recorder_lock(cfg)
 
     threading.Thread(target=_record_loop, name="gex-spot-recorder", daemon=True).start()
 

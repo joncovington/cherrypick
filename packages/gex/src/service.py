@@ -151,17 +151,74 @@ def recorder_status(cfg: dict) -> dict:
     return {"ok": True, "running": pid is not None, "pid": pid}
 
 
+def acquire_recorder_lock(cfg: dict) -> bool:
+    """Claim the single-writer recorder lock for THIS process. True if we hold it and should record;
+    False if another live process already does. The pid file is the lock, shared by the standalone
+    `run.py record` daemon AND the dashboard's own record loop — so exactly one of them ever writes the
+    trail, whichever grabs it first. The 2026-07-23 double-write (a stale daemon + the dashboard both
+    recording) is exactly what this closes. Claim is via O_EXCL create so two racers can't both win."""
+    pf = _recorder_pid_file(cfg)
+    existing = _running_recorder_pid(cfg)  # clears a stale (dead-pid) file as a side effect
+    if existing is not None:
+        return existing == os.getpid()  # already ours (re-entrant), else someone else holds it
+    pf.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(pf, "x", encoding="utf-8") as fh:  # exclusive create: loses cleanly to a racer
+            fh.write(str(os.getpid()))
+        return True
+    except FileExistsError:
+        return False
+
+
+def release_recorder_lock(cfg: dict) -> None:
+    """Drop the lock iff we hold it (never delete another process's pid file)."""
+    pf = _recorder_pid_file(cfg)
+    try:
+        if pf.exists() and int(pf.read_text().strip()) == os.getpid():
+            pf.unlink(missing_ok=True)
+    except (ValueError, OSError):
+        pass
+
+
+def _force_kill(pid: int) -> None:
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            PROCESS_TERMINATE = 0x0001
+            h = ctypes.windll.kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
+            if h:
+                ctypes.windll.kernel32.TerminateProcess(h, 1)
+                ctypes.windll.kernel32.CloseHandle(h)
+        else:
+            os.kill(pid, signal.SIGKILL)
+    except OSError:
+        pass
+
+
 def stop_recorder(cfg: dict) -> dict:
-    """SIGTERM a running recorder daemon (idempotent — 'not running' is a fine result)."""
+    """Stop a running recorder daemon, confirming it is actually dead before clearing the pid file.
+
+    The old version SIGTERM'd then immediately unlinked the pid file — so a slow or wedged process left
+    the file gone while it lived, and the next start saw "nothing running" and spawned a DUPLICATE beside
+    the orphan (the 2026-07-23 stale-recorder incident). Now: signal, wait for exit, escalate to a
+    force-kill if it ignores SIGTERM, and only then clear the file."""
     pid = _running_recorder_pid(cfg)
     if pid is None:
         return {"ok": True, "running": False, "detail": "not running"}
     try:
         os.kill(pid, signal.SIGTERM)
-        _recorder_pid_file(cfg).unlink(missing_ok=True)
-        return {"ok": True, "signal": "SIGTERM", "pid": pid}
     except OSError as exc:
         return {"ok": False, "pid": pid, "error": str(exc)}
+    for _ in range(50):  # up to ~5s for a graceful exit
+        if not _pid_alive(pid):
+            _recorder_pid_file(cfg).unlink(missing_ok=True)
+            return {"ok": True, "signal": "SIGTERM", "pid": pid}
+        time.sleep(0.1)
+    _force_kill(pid)  # ignored SIGTERM (common on Windows) — don't leave a lingering writer
+    time.sleep(0.2)
+    _recorder_pid_file(cfg).unlink(missing_ok=True)
+    return {"ok": True, "signal": "SIGKILL", "pid": pid, "detail": "force-killed after SIGTERM timeout"}
 
 
 def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) -> int:
@@ -182,16 +239,11 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
         print(f"recorded spot for {n}/{len(syms)} symbols")
         return 0
 
-    existing = _running_recorder_pid(cfg)
-    if existing is not None:
-        print(f"recorder already running (pid {existing})")
+    if not acquire_recorder_lock(cfg):
+        print(f"recorder already running (pid {_running_recorder_pid(cfg)})")
         return 0
 
     import config as _config  # local — config bootstraps nothing
-
-    pid_file = _recorder_pid_file(cfg)
-    pid_file.parent.mkdir(parents=True, exist_ok=True)
-    pid_file.write_text(str(os.getpid()))
 
     def _on_term(*_):  # POSIX: SIGTERM -> graceful stop (Windows kills forcefully; pid cleaned lazily)
         raise KeyboardInterrupt
@@ -223,7 +275,7 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     except KeyboardInterrupt:
         log.info("spot recorder stopped (%d ticks)", ticks)
     finally:
-        pid_file.unlink(missing_ok=True)
+        release_recorder_lock(cfg)
     return 0
 
 
