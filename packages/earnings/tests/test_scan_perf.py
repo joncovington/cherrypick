@@ -71,10 +71,11 @@ _NAMES = [e["name"] for e in rs.STRATEGY_REGISTRY]
 
 
 def _cfg(volume_floor=1_000_000, ivrv_floor=1.0, winrate_floor=0.4):
+    # Default symbol_screen level is "pass", so the pre-gate uses the min_* thresholds.
     sub = {
-        "near_miss_min_avg_volume": volume_floor,
-        "near_miss_min_iv_rv_ratio": ivrv_floor,
-        "near_miss_min_winrate": winrate_floor,
+        "min_avg_volume": volume_floor,
+        "min_iv_rv_ratio": ivrv_floor,
+        "min_winrate": winrate_floor,
     }
     return {"strategies": {name: dict(sub) for name in _NAMES}, "winrate_lookback_quarters": 8}
 
@@ -86,11 +87,11 @@ def _stub_dolt(monkeypatch, avg, ivrv, winrate):
 
 
 def test_dolt_only_hard_fails_flags_only_present_below_floor():
-    sc = {"near_miss_min_avg_volume": 1_000_000, "near_miss_min_iv_rv_ratio": 1.0, "near_miss_min_winrate": 0.4}
-    assert rs._dolt_only_hard_fails(sc, 10_000, 2.0, 0.9) == ["avg_volume_below_near_miss"]
-    assert rs._dolt_only_hard_fails(sc, None, 2.0, 0.9) == [], "a missing signal is a near-miss, not a hard fail"
-    assert rs._dolt_only_hard_fails(sc, 5_000_000, 0.5, 0.9) == ["iv_rv_ratio_below_near_miss"]
-    assert rs._dolt_only_hard_fails(sc, 5_000_000, 2.0, 0.2) == ["winrate_below_near_miss"]
+    sc = {"min_avg_volume": 1_000_000, "min_iv_rv_ratio": 1.0, "min_winrate": 0.4}
+    assert rs._dolt_only_hard_fails(sc, 10_000, 2.0, 0.9) == ["avg_volume_below_minimum"]
+    assert rs._dolt_only_hard_fails(sc, None, 2.0, 0.9) == [], "a missing signal cannot be decided from Dolt alone"
+    assert rs._dolt_only_hard_fails(sc, 5_000_000, 0.5, 0.9) == ["iv_rv_ratio_below_minimum"]
+    assert rs._dolt_only_hard_fails(sc, 5_000_000, 2.0, 0.2) == ["winrate_below_minimum"]
     assert rs._dolt_only_hard_fails(sc, 5_000_000, 2.0, 0.9) == []
 
 
@@ -103,8 +104,8 @@ def test_pre_gate_skips_all_broker_calls_when_every_strategy_dolt_hard_fails(mon
 
     assert called["broker"] is False, "must short-circuit before any broker cache/fetch"
     assert len(res) == len(rs.STRATEGY_REGISTRY)
-    assert all(x["tier"] == "Reject" for x in res)
-    assert all("avg_volume_below_near_miss" in x["hard_fail_reasons"] for x in res)
+    assert all(x["accepted"] is False for x in res)
+    assert all("avg_volume_below_minimum" in x["reject_reasons"] for x in res)
 
 
 def test_pre_gate_does_not_skip_on_a_missing_signal(monkeypatch):

@@ -87,11 +87,11 @@ def test_analysis_includes_symbols_reviewed_for_entry(seeded):
     db_paper.cmd_save_entry_review(_ns(data=json.dumps({
         "scan_date": "2026-07-15", "symbol": "ISRG", "timing": "AMC", "price": 402.05,
         "volume": 2702779, "winrate": 0.75, "winrate_sample": 12, "iv_rv_ratio": 1.47,
-        "term_structure": -0.019, "market_cap": 142391166303, "best_tier": "Tier 1",
+        "term_structure": -0.019, "market_cap": 142391166303, "best_tier": "accepted",
         "selected": True, "reason": "opened iron_fly, iron_condor", "profile": "strat_test"})))
     db_paper.cmd_save_entry_review(_ns(data=json.dumps({
         "scan_date": "2026-07-15", "symbol": "NFLX", "winrate": 0.60, "selected": False,
-        "reason": "tier_excluded (7 strategies evaluated)", "profile": "strat_test"})))
+        "reason": "screen_rejected (7 strategies evaluated)", "profile": "strat_test"})))
 
     md = runner._write_eod_analysis("2026-07-16").read_text(encoding="utf-8")  # close session
     assert "## Symbols reviewed for entry" in md

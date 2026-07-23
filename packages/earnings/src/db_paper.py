@@ -31,7 +31,7 @@ stays NULL until every one of its legs is closed via save_leg_close and save_clo
 for the position as a whole.
 
 `profile` (defaults to 'default') tags which named risk profile / test book opened a trade
-or produced a scan_log row (see docs/paper-trading-profiles.md) -- lets many isolated books
+or produced a scan_log row (see docs/strat-test-portfolios.md) -- lets many isolated books
 share this one file without ever mixing their P&L or candidate history. `quantity` and
 `capital_at_risk` come from sizing.compute_position_size; `entry_cost`/`exit_cost` come from
 costs.py's tastytrade fee+slippage model (kept separate from entry_credit/exit_debit/pnl so

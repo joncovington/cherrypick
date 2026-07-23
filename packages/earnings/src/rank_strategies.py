@@ -230,9 +230,8 @@ def _no_options_result(name: str) -> dict:
     unchanged (one `no_listed_options` scan_log row per strategy)."""
     return {
         "name": name,
-        "tier": "Reject",
-        "hard_fail_reasons": ["no_listed_options"],
-        "near_miss_reasons": [],
+        "accepted": False,
+        "reject_reasons": ["no_listed_options"],
         "criteria": {},
         "composite_score": 0.0,
         "broker_data_error": None,
@@ -240,30 +239,31 @@ def _no_options_result(name: str) -> dict:
 
 
 def _dolt_only_hard_fails(strategy_config: dict, avg_volume, iv_rv_ratio, winrate) -> list[str]:
-    """Dolt-signal hard fails for one strategy: a signal present and below its near-miss floor,
-    the exact condition scanner._band turns into a `<name>_below_near_miss` hard fail. Only a
-    definite below-floor value counts -- a missing (None) signal is a near-miss there, not a
-    reject, so it must NOT gate out the broker fetch."""
+    """The Dolt-computed soft criteria (avg_volume, iv_rv_ratio, winrate) that a strategy would
+    reject on, each evaluated at its configured symbol_screen level -- the exact condition
+    scanner._soft_gate turns into a `<name>_below_minimum` reject. Only a definite below-threshold
+    value counts: a missing (None) or "off" criterion cannot be decided from the Dolt signals
+    alone, so it must NOT gate out the broker fetch here."""
+    levels = scanner._screen_levels(strategy_config)
     fails = []
-    for value, floor_key, name in (
-        (avg_volume, "near_miss_min_avg_volume", "avg_volume"),
-        (iv_rv_ratio, "near_miss_min_iv_rv_ratio", "iv_rv_ratio"),
-        (winrate, "near_miss_min_winrate", "winrate"),
-    ):
-        floor = strategy_config.get(floor_key)
-        if value is not None and floor is not None and value < floor:
-            fails.append(f"{name}_below_near_miss")
+    for value, name in ((avg_volume, "avg_volume"), (iv_rv_ratio, "iv_rv_ratio"), (winrate, "winrate")):
+        level = levels[name]
+        if level == "off" or value is None:
+            continue
+        key = f"near_miss_min_{name}" if level == "near_miss" else f"min_{name}"
+        threshold = strategy_config.get(key)
+        if threshold is not None and value < threshold:
+            fails.append(f"{name}_below_minimum")
     return fails
 
 
-def _dolt_reject_result(name: str, hard_fails: list[str], criteria: dict) -> dict:
-    """A Reject result carrying the Dolt hard-fail reasons, shaped like a normal evaluate_symbol
+def _dolt_reject_result(name: str, reject_reasons: list[str], criteria: dict) -> dict:
+    """A rejected result carrying the Dolt reject reasons, shaped like a normal evaluate_symbol
     entry so downstream logging/ranking is unchanged (mirrors _no_options_result)."""
     return {
         "name": name,
-        "tier": "Reject",
-        "hard_fail_reasons": hard_fails,
-        "near_miss_reasons": [],
+        "accepted": False,
+        "reject_reasons": reject_reasons,
         "criteria": criteria,
         "composite_score": 0.0,
         "broker_data_error": None,
@@ -274,8 +274,8 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
     """Evaluate every registered strategy for one symbol. Common signals
     (avg_volume, iv_rv_ratio, winrate) are fetched once here, not once per
     strategy, since none of them depend on strategy specifics. Returns one
-    result per strategy: {"name", "tier", "hard_fail_reasons",
-    "near_miss_reasons", "criteria", "composite_score", "broker_data_error"}.
+    result per strategy: {"name", "accepted", "reject_reasons", "criteria",
+    "composite_score", "broker_data_error"}.
     """
     avg_volume = scanner.fetch_avg_volume(symbol, config)
     ivrv = scanner.fetch_iv_rv_ratio(symbol, config)
@@ -342,9 +342,8 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
 
             results.append({
                 "name": entry["name"],
-                "tier": tiering["tier"],
-                "hard_fail_reasons": tiering["hard_fail_reasons"],
-                "near_miss_reasons": tiering["near_miss_reasons"],
+                "accepted": tiering["accepted"],
+                "reject_reasons": tiering["reject_reasons"],
                 "criteria": criteria,
                 "composite_score": score,
                 "broker_data_error": broker_error,
@@ -360,14 +359,14 @@ _REGISTRY_BY_NAME = {entry["name"]: entry for entry in STRATEGY_REGISTRY}
 def reverify_symbol(symbol: str, strategy_name: str, earnings_date, earnings_timing: str, config: dict) -> dict:
     """Re-runs a single strategy's own fetch/tiering (fully fresh -- avg_volume/
     iv_rv_ratio/winrate are re-fetched here too, not reused from an earlier
-    scan) and confirms it still tiers Tier 1/2. Used by the loop's entry-time
+    scan) and confirms it is still accepted. Used by the loop's entry-time
     re-verification step (CLAUDE.md Step 4b) instead of hand-rolled per-
     criterion prose -- the strategy's own apply_tiering already knows its own
     thresholds, so re-verification is just "run the same check again, right
     now," not a second, separately-maintained description of what to check.
 
-    Returns {"ok": True} if still Tier 1/2, or {"ok": False, "reason":
-    "reverify_failed_<top hard-fail reason>"} otherwise (including if
+    Returns {"ok": True} if still accepted, or {"ok": False, "reason":
+    "reverify_failed_<top reject reason>"} otherwise (including if
     `strategy_name` isn't a registered strategy at all, or its fetch
     step itself failed).
     """
@@ -396,10 +395,10 @@ def reverify_symbol(symbol: str, strategy_name: str, earnings_date, earnings_tim
         extra_fn(symbol, config, lookback, criteria)
 
     tiering = entry["apply_tiering_fn"](criteria, strategy_config)
-    if tiering["tier"] not in ("Tier 1", "Tier 2"):
-        top_reason = (tiering["hard_fail_reasons"] or tiering["near_miss_reasons"] or ["tier_dropped"])[0]
+    if not tiering["accepted"]:
+        top_reason = (tiering["reject_reasons"] or ["screen_failed"])[0]
         return {"ok": False, "reason": f"reverify_failed_{top_reason}"}
-    return {"ok": True, "tier": tiering["tier"], "criteria": criteria}
+    return {"ok": True, "criteria": criteria}
 
 
 def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) -> None:
@@ -411,14 +410,15 @@ def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) 
     """
     symbol = symbol_result["symbol"]
     for r in symbol_result["strategies"]:
-        reasons = r["hard_fail_reasons"] or r["near_miss_reasons"]
+        reasons = r["reject_reasons"]
+        decision = "accepted" if r["accepted"] else "rejected"
         _call_db([
             "log_scan", "--data", json.dumps({
                 "scan_date": scan_date,
                 "strategy": r["name"],
                 "symbol": symbol,
-                "tier": r["tier"],
-                "outcome": r["tier"],
+                "tier": decision,
+                "outcome": decision,
                 "reason": "; ".join(reasons) if reasons else None,
                 "logged_at": time.time(),
             }),
@@ -441,7 +441,7 @@ def _evaluate_and_rank_symbol(symbol: str, entry_date, earnings_timing: str, con
     """Evaluate a symbol's strategies and return ranking result."""
     strategy_results = evaluate_symbol(symbol, entry_date, earnings_timing, config)
     viable = sorted(
-        (r for r in strategy_results if r["tier"] in ("Tier 1", "Tier 2") and r["composite_score"] is not None),
+        (r for r in strategy_results if r["accepted"] and r["composite_score"] is not None),
         key=lambda r: r["composite_score"], reverse=True,
     )
     return {
@@ -529,10 +529,10 @@ def cmd_get_ranked_symbols(args) -> dict:
         if s["best_strategy"] is None:
             top_reasons = []
             for r in s["strategies"]:
-                if r["hard_fail_reasons"]:
-                    top_reasons.append(f"{r['name']}: {r['hard_fail_reasons'][0]}")
+                if r["reject_reasons"]:
+                    top_reasons.append(f"{r['name']}: {r['reject_reasons'][0]}")
             s["outcome"] = "rejected_no_viable_strategy"
-            s["reason"] = "; ".join(top_reasons) if top_reasons else "no strategy produced hard-fail reasons"
+            s["reason"] = "; ".join(top_reasons) if top_reasons else "no strategy produced a reject reason"
 
     scan_date = str(scanner._date.today())
     for s in per_symbol:

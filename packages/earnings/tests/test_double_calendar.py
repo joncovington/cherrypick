@@ -5,20 +5,20 @@ import pytest
 from strategies import double_calendar
 
 
-def test_apply_tiering_tier1_when_all_pass(base_strategy_config, good_criteria):
+def test_apply_tiering_accepts_when_all_pass(base_strategy_config, good_criteria):
     result = double_calendar.apply_tiering(good_criteria, base_strategy_config)
-    assert result["tier"] == "Tier 1"
+    assert result["accepted"] is True
 
 
 def test_apply_tiering_rejects_high_dispersion(base_strategy_config, good_criteria):
     criteria = {**good_criteria, "realized_move_dispersion_pct": 0.30}
     result = double_calendar.apply_tiering(criteria, base_strategy_config)
-    assert "realized_move_too_inconsistent" in result["hard_fail_reasons"]
+    assert "realized_move_too_inconsistent" in result["reject_reasons"]
 
 
 def test_apply_tiering_ignores_dispersion_when_absent(base_strategy_config, good_criteria):
     result = double_calendar.apply_tiering(good_criteria, base_strategy_config)
-    assert "realized_move_too_inconsistent" not in result["hard_fail_reasons"]
+    assert "realized_move_too_inconsistent" not in result["reject_reasons"]
 
 
 def test_realized_move_dispersion_insufficient_sample(monkeypatch):

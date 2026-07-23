@@ -155,23 +155,10 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
     elif criteria["skew_abs"] < config["min_skew_abs"]:
         hard_fail.append("insufficient_skew_signal")
 
-    near_miss: list[str] = []
+    scanner.apply_liquidity_gates(criteria, config, hard_fail)
+    scanner.apply_soft_criteria(criteria, config, hard_fail)
 
-    scanner.apply_liquidity_gates(criteria, config, hard_fail, near_miss)
-    scanner._band(criteria.get("avg_volume"), config["min_avg_volume"], config["near_miss_min_avg_volume"], "avg_volume", near_miss, hard_fail)
-    scanner._band(criteria.get("iv_rv_ratio"), config["min_iv_rv_ratio"], config["near_miss_min_iv_rv_ratio"], "iv_rv_ratio", near_miss, hard_fail)
-    scanner._band(criteria.get("winrate"), config["min_winrate"], config["near_miss_min_winrate"], "winrate", near_miss, hard_fail)
-
-    if hard_fail:
-        tier = "Reject"
-    elif not near_miss:
-        tier = "Tier 1"
-    elif len(near_miss) == 1:
-        tier = "Tier 2"
-    else:
-        tier = "Near Miss"
-
-    return {"tier": tier, "hard_fail_reasons": hard_fail, "near_miss_reasons": near_miss}
+    return {"accepted": not hard_fail, "reject_reasons": hard_fail}
 
 
 def _wing_width_multiple(iv_rv_ratio: float | None, config: dict) -> float:

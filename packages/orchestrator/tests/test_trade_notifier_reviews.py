@@ -38,10 +38,10 @@ def _conn_with_reviews(rows):
 
 
 _ISRG = _row(symbol="ISRG", timing="AMC", price=402.05, volume=2702779, winrate=0.75, winrate_sample=12,
-             iv_rv_ratio=1.47, term_structure=-0.019, market_cap=142391166303, best_tier="Tier 1",
+             iv_rv_ratio=1.47, term_structure=-0.019, market_cap=142391166303, best_tier="accepted",
              selected=1, reason="opened iron_fly, iron_condor")
-_NFLX = _row(symbol="NFLX", winrate=0.60, winrate_sample=8, best_tier="Tier 3", selected=0,
-             reason="tier_excluded (7 strategies evaluated)")
+_NFLX = _row(symbol="NFLX", winrate=0.60, winrate_sample=8, best_tier="rejected", selected=0,
+             reason="screen_rejected (7 strategies evaluated)")
 
 
 def test_new_reviews_respects_id_watermark():
@@ -66,7 +66,7 @@ def test_fmt_review_matches_requested_bullet_layout():
 def test_rejected_review_reads_as_rejected_and_omits_missing_fields():
     conn = _conn_with_reviews([_NFLX])
     msg = tn._fmt_earnings_review(tn._earnings_new_reviews(conn, set())[0])
-    assert "NFLX" in msg and "rejected" in msg and "tier_excluded" in msg
+    assert "NFLX" in msg and "rejected" in msg and "screen_rejected" in msg
     assert "Price" not in msg  # None fields are omitted, not shown as n/a
 
 

@@ -342,8 +342,8 @@ def _open_positions_section(profile: str) -> str:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT strategy, symbol, quantity, entry_credit, capital_at_risk, entry_cost, expiration "
-            "FROM trades WHERE profile = ? AND closed_at IS NULL ORDER BY symbol, strategy",
-            (profile,),
+            "FROM trades WHERE (profile = ? OR profile LIKE ?) AND closed_at IS NULL ORDER BY symbol, strategy",
+            (profile, profile + ":%"),
         ).fetchall()
         conn.close()
     except Exception:
@@ -455,7 +455,8 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
         import sqlite3
         conn = sqlite3.connect(sm.DB_PATH)
         rows = conn.execute(
-            "SELECT reason FROM scan_log WHERE profile = ? AND reason IS NOT NULL", (profile,)
+            "SELECT reason FROM scan_log WHERE (profile = ? OR profile LIKE ?) AND reason IS NOT NULL",
+            (profile, profile + ":%"),
         ).fetchall()
         conn.close()
         for (reason,) in rows:

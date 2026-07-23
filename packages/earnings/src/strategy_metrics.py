@@ -78,8 +78,10 @@ def load_closed_trades(profile: str | None = None, strategy: str | None = None, 
         query = "SELECT * FROM trades WHERE closed_at IS NOT NULL"
         params: list = []
         if profile:
-            query += " AND profile = ?"
-            params.append(profile)
+            # A book tag matches itself and its per-strategy sub-books: 'strat_test' covers both the
+            # combined 'strat_test' book and every 'strat_test:<strategy>' book (strat_test_portfolio).
+            query += " AND (profile = ? OR profile LIKE ?)"
+            params.extend([profile, profile + ":%"])
         if strategy:
             query += " AND strategy = ?"
             params.append(strategy)
@@ -118,8 +120,9 @@ def load_open_trades(profile: str | None = None, strategy: str | None = None) ->
         query = "SELECT * FROM trades WHERE closed_at IS NULL"
         params: list = []
         if profile:
-            query += " AND profile = ?"
-            params.append(profile)
+            # See load_closed_trades: a book tag also matches its per-strategy sub-books.
+            query += " AND (profile = ? OR profile LIKE ?)"
+            params.extend([profile, profile + ":%"])
         if strategy:
             query += " AND strategy = ?"
             params.append(strategy)

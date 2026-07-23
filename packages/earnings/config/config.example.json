@@ -21,30 +21,17 @@
 
   "max_concurrent_earnings_positions": 3,
 
-  "_profiles_note": "Named risk profiles for paper-mode testing (see docs/paper-trading-profiles.md). Each layers over base config: strategy_defaults -> per-strategy -> profile overrides. risk_pct_multiplier scales every strategy's max_risk_per_trade_pct; tier_floor is 'Tier 1' (only) or 'Tier 2' (Tier 1+2). Selected via --profile; omitting it uses base config unchanged (profile 'default').",
-  "profiles": {
-    "conservative": {
-      "description": "Tightest sizing, Tier 1 only.",
-      "available_capital_paper_mode": 100000,
-      "risk_pct_multiplier": 0.6,
-      "max_concurrent_earnings_positions": 2,
-      "tier_floor": "Tier 1"
-    },
-    "balanced": {
-      "description": "Base-tuned sizing, Tier 1+2.",
-      "available_capital_paper_mode": 100000,
-      "risk_pct_multiplier": 1.0,
-      "max_concurrent_earnings_positions": 3,
-      "tier_floor": "Tier 2"
-    },
-    "aggressive": {
-      "description": "Larger sizing and more concurrent positions, Tier 1+2.",
-      "available_capital_paper_mode": 100000,
-      "risk_pct_multiplier": 1.6,
-      "max_concurrent_earnings_positions": 5,
-      "tier_floor": "Tier 2"
-    }
+  "_symbol_screen_note": "Single accept/reject bar for a symbol's soft criteria (replaces the old Tier 1/2/Near-Miss ladder). Hard filters -- price, front-expiration window, open interest, term structure, ATM delta, expected move, weekly cadence, bid/ask spread -- always apply. Each soft criterion below is required at the chosen level: 'pass' uses the strict min_* threshold in strategies.<name>, 'near_miss' uses the looser near_miss_min_* threshold, 'off' drops the criterion entirely. Default is every criterion at 'pass' (the strict bar). See docs/screening-criteria.md.",
+  "symbol_screen": {
+    "avg_volume": "pass",
+    "winrate": "pass",
+    "iv_rv_ratio": "pass",
+    "market_cap": "pass",
+    "combined_option_volume": "pass"
   },
+
+  "_strat_test_portfolio_note": "How the forced-sampling strat_test paper book is split. 'per_strategy' (default) gives each strategy its own book (profile tag strat_test:<strategy>) so each has its own P&L/equity curve and a newly added strategy automatically gets its own stream; 'combined' keeps a single strat_test book. See docs/paper-trading.md and strategy_test_runner._book_tag.",
+  "strat_test_portfolio": "per_strategy",
 
   "earnings_calendar_source": "dolthub",
   "dolthub_host": "127.0.0.1",

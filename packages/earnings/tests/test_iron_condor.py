@@ -3,24 +3,24 @@ import json
 from strategies import iron_condor
 
 
-def test_apply_tiering_tier1_when_all_pass(base_strategy_config, good_criteria):
+def test_apply_tiering_accepts_when_all_pass(base_strategy_config, good_criteria):
     result = iron_condor.apply_tiering(good_criteria, base_strategy_config)
-    assert result["tier"] == "Tier 1"
+    assert result["accepted"] is True
 
 
 def test_apply_tiering_rejects_expected_move_pct_below_minimum(base_strategy_config, good_criteria):
     criteria = {**good_criteria, "expected_move_pct": 0.001}
     result = iron_condor.apply_tiering(criteria, base_strategy_config)
-    assert "expected_move_pct_below_minimum" in result["hard_fail_reasons"]
+    assert "expected_move_pct_below_minimum" in result["reject_reasons"]
 
 
 def test_apply_tiering_has_no_atm_delta_check(base_strategy_config, good_criteria):
-    # iron_condor doesn't check atm_delta_abs at all -- a missing value must not hard-fail.
+    # iron_condor doesn't check atm_delta_abs at all -- a missing value must not reject.
     criteria = {**good_criteria}
     criteria.pop("atm_delta_abs", None)
     result = iron_condor.apply_tiering(criteria, base_strategy_config)
-    assert "atm_delta_abs_unverified" not in result["hard_fail_reasons"]
-    assert result["tier"] == "Tier 1"
+    assert "atm_delta_abs_unverified" not in result["reject_reasons"]
+    assert result["accepted"] is True
 
 
 def _legs_json():
