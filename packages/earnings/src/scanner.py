@@ -28,56 +28,38 @@ from datetime import date as _date
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Make the cherrypick-core submodule (src/_core) importable before the cherrypick.core import below,
+# Make the cherrypick-core submodule (src/_core) importable for any cherrypick.core import,
 # mirroring credentials.py's bootstrap so this module works even when imported before credentials.
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
-
-from cherrypick.core import profiles as _profiles
 
 import paths as _paths
 
 
 def _load_config(profile: str | None = None) -> dict:
-    """Load config.json, merge strategy_defaults into each strategy, and
-    optionally layer a named risk profile on top.
+    """Load config.json, merge strategy_defaults + the symbol_screen levels
+    into each strategy's sub-config, and return it.
 
-    Layering order (later wins): strategy_defaults -> per-strategy config ->
-    profile overrides. A profile (config["profiles"][profile]) may override
-    any top-level key directly, plus three profile-specific keys consumed by
-    sizing/selection: `risk_pct_multiplier` (scales every strategy's
-    max_risk_per_trade_pct), `tier_floor` ("Tier 1" or "Tier 2"), and
-    `strategy_overrides` (deep-merged per strategy). `description` is ignored.
+    Layering for a strategy's sub-config (later wins): strategy_defaults ->
+    per-strategy config. The top-level `symbol_screen` block -- the per-soft-
+    criterion accept level (see apply_soft_criteria) -- rides along on each
+    strategy's sub-config as `_symbol_screen`, so the pure apply_tiering
+    functions can read it without a second argument.
 
-    `profile=None` (or "default") returns the base config unchanged, so every
-    existing caller keeps its current behavior. The active profile name is
-    recorded at config["_active_profile"] for downstream attribution.
+    `profile` is accepted but ignored: the named risk-profile ladder
+    (conservative/balanced/aggressive) was removed in favor of a single
+    configurable accept bar. The parameter is retained only so existing call
+    sites keep working.
     """
     with open(_paths.config_path()) as f:
         config = json.load(f)
 
-    # Merge strategy_defaults into each strategy's config
     defaults = config.get("strategy_defaults", {})
-    if defaults:
-        for strategy_name, strategy_config in config.get("strategies", {}).items():
-            # Create merged config: defaults + strategy-specific overrides
-            merged = {**defaults, **strategy_config}
-            config["strategies"][strategy_name] = merged
-
-    config["_active_profile"] = profile or "default"
-    config.setdefault("risk_pct_multiplier", 1.0)
-    config.setdefault("tier_floor", "Tier 2")
-
-    if profile and profile != "default":
-        # cherrypick.core.profiles (src/_core): flat top-level override + per-strategy strategy_overrides
-        # deep-merge; _active_profile (set above) is carried through by the merge.
-        registry = _profiles.load_profiles(config)
-        profile_def = _profiles.select_profile(registry, profile)  # raises ValueError on unknown name
-        config = _profiles.merge_profile(
-            config, profile_def,
-            reserved_keys=("description",),
-            nested_namespaces={"strategy_overrides": "strategies"},
-        )
+    screen = config.get("symbol_screen", {})
+    for strategy_name, strategy_config in config.get("strategies", {}).items():
+        merged = {**defaults, **strategy_config}
+        merged["_symbol_screen"] = screen
+        config["strategies"][strategy_name] = merged
 
     return config
 
@@ -644,29 +626,66 @@ def fetch_liquidity_criteria(symbol: str, front_expiration, expirations: list, f
     }
 
 
-def _band(value, min_pass, min_near_miss, name: str, near_miss: list, hard_fail: list) -> None:
-    """Shared near-miss banding: value >= min_pass passes silently, value in
-    [min_near_miss, min_pass) is a near-miss (Tier 2 candidate), below
-    min_near_miss is a hard fail, missing entirely is also a near-miss
-    (unverified, not an automatic pass). Mutates `near_miss`/`hard_fail` in
-    place, matching the list-building style already used throughout every
-    strategy's apply_tiering.
+# The five configurable soft criteria (docs/screening-criteria.md). Each is screened at the level
+# chosen in the top-level `symbol_screen` block: "pass" (the strict min_* threshold), "near_miss"
+# (the looser near_miss_min_* threshold), or "off" (not screened). Everything else is a hard filter.
+_SOFT_CRITERIA = ("avg_volume", "winrate", "iv_rv_ratio", "market_cap", "combined_option_volume")
+
+
+def _screen_levels(config: dict) -> dict:
+    """Per-soft-criterion accept level, read from the top-level symbol_screen
+    block that `_load_config` injects into each strategy's sub-config as
+    `_symbol_screen`. Defaults every criterion to "pass" (the strict bar).
     """
+    levels = {c: "pass" for c in _SOFT_CRITERIA}
+    levels.update(config.get("_symbol_screen") or {})
+    return levels
+
+
+def _soft_gate(value, min_pass, min_near_miss, level: str, name: str, hard_fail: list) -> None:
+    """A soft screening criterion reduced to a single accept/reject gate.
+    `level` selects the bar this run requires: "pass" (min_pass), "near_miss"
+    (the looser min_near_miss), or "off" (skip entirely). A missing value is
+    an unverified rejection unless the criterion is off -- keeping the
+    winrate/IV-RV precedent of never defaulting an unknown to a pass. Mutates
+    `hard_fail` in place.
+    """
+    if level == "off":
+        return
+    threshold = min_near_miss if level == "near_miss" else min_pass
     if value is None:
-        near_miss.append(f"{name}_unknown")
+        hard_fail.append(f"{name}_unverified")
         return
-    if value >= min_pass:
-        return
-    if value >= min_near_miss:
-        near_miss.append(name)
-        return
-    hard_fail.append(f"{name}_below_near_miss")
+    if value < threshold:
+        hard_fail.append(f"{name}_below_minimum")
 
 
-def apply_liquidity_gates(criteria: dict, config: dict, hard_fail: list, near_miss: list) -> None:
-    """Shared liquidity hard-filters/near-miss bands, applied identically by
-    every earnings strategy's apply_tiering. `config` is the calling
-    strategy's own sub-config. Mutates `hard_fail`/`near_miss` in place.
+def apply_soft_criteria(criteria: dict, config: dict, hard_fail: list) -> None:
+    """The five configurable soft criteria, each screened at its symbol_screen
+    level. `config` is the calling strategy's own sub-config (its own min_* /
+    near_miss_min_* thresholds); the screen levels ride along on
+    config["_symbol_screen"]. Mutates `hard_fail` in place.
+    """
+    levels = _screen_levels(config)
+    _soft_gate(criteria.get("avg_volume"), config["min_avg_volume"], config["near_miss_min_avg_volume"],
+               levels["avg_volume"], "avg_volume", hard_fail)
+    _soft_gate(criteria.get("winrate"), config["min_winrate"], config["near_miss_min_winrate"],
+               levels["winrate"], "winrate", hard_fail)
+    _soft_gate(criteria.get("iv_rv_ratio"), config["min_iv_rv_ratio"], config["near_miss_min_iv_rv_ratio"],
+               levels["iv_rv_ratio"], "iv_rv_ratio", hard_fail)
+    _soft_gate(criteria.get("market_cap"), config["min_market_cap"], config["near_miss_min_market_cap"],
+               levels["market_cap"], "market_cap", hard_fail)
+    _soft_gate(criteria.get("combined_option_volume"), config["min_combined_option_volume"],
+               config["near_miss_min_combined_option_volume"], levels["combined_option_volume"],
+               "combined_option_volume", hard_fail)
+
+
+def apply_liquidity_gates(criteria: dict, config: dict, hard_fail: list) -> None:
+    """Shared liquidity HARD filters (open interest, bid/ask spread, weekly
+    cadence), applied identically by every earnings strategy's apply_tiering.
+    Market cap and option volume are configurable soft criteria -- see
+    apply_soft_criteria. `config` is the calling strategy's own sub-config.
+    Mutates `hard_fail` in place.
     """
     if criteria.get("combined_open_interest") is None:
         hard_fail.append("combined_open_interest_unverified")
@@ -683,9 +702,6 @@ def apply_liquidity_gates(criteria: dict, config: dict, hard_fail: list, near_mi
             hard_fail.append("has_weekly_options_unverified")
         elif not criteria["has_weekly_options"]:
             hard_fail.append("no_weekly_options")
-
-    _band(criteria.get("market_cap"), config["min_market_cap"], config["near_miss_min_market_cap"], "market_cap", near_miss, hard_fail)
-    _band(criteria.get("combined_option_volume"), config["min_combined_option_volume"], config["near_miss_min_combined_option_volume"], "combined_option_volume", near_miss, hard_fail)
 
 
 def is_monthly_expiration(d) -> bool:
@@ -756,7 +772,7 @@ def _shrunk_winrate(winrate: float | None, sample_size: int, target_sample: int 
 
 
 def compute_composite_score(criteria: dict, winrate_sample_size: int = 0) -> float | None:
-    """Composite ranking score for a Tier 1/2 candidate, built from signals
+    """Composite ranking score for an accepted candidate, built from signals
     common to any earnings-vol-selling strategy: term structure (or, absent
     that, skew_abs -- expected_move_butterfly has no back-month/term-
     structure signal at all, only a call/put skew reading, and needs a
@@ -928,14 +944,14 @@ def select_side(symbol: str, front_expiration, price: float, config: dict) -> di
 
 
 def rank_candidates(candidates: list[dict], config: dict) -> list[dict]:
-    """Rank Tier 1/2 candidates from a strategy's get_candidates output by
-    compute_composite_score, descending. Reject and Near Miss candidates
-    are excluded entirely -- ranking within tiers they didn't clear would
-    imply they're viable with enough of a score, which they aren't.
+    """Rank accepted candidates from a strategy's get_candidates output by
+    compute_composite_score, descending. Rejected candidates are excluded
+    entirely -- ranking a name that failed the screen would imply it's
+    viable with enough of a score, which it isn't.
     """
     scored = []
     for c in candidates:
-        if c.get("tier") not in ("Tier 1", "Tier 2"):
+        if not c.get("accepted"):
             continue
         score = compute_composite_score(c["criteria"], c.get("winrate_sample_size", 0))
         if score is None:
@@ -1025,15 +1041,14 @@ def run_candidate_scan(args_date: str, config: dict, fetch_criteria_fn, apply_ti
         candidates.append({
             "symbol": symbol,
             "earnings_timing": entry["timing"],
-            "tier": tiering["tier"],
-            "hard_fail_reasons": tiering["hard_fail_reasons"],
-            "near_miss_reasons": tiering["near_miss_reasons"],
+            "accepted": tiering["accepted"],
+            "reject_reasons": tiering["reject_reasons"],
             "criteria": criteria,
             "winrate_sample_size": winrate_sample_size,
             "broker_data_error": broker_error,
         })
 
-    candidates.sort(key=lambda c: {"Tier 1": 0, "Tier 2": 1, "Near Miss": 2, "Reject": 3}[c["tier"]])
+    candidates.sort(key=lambda c: 0 if c["accepted"] else 1)
 
     ranked = rank_candidates(candidates, config)
     selection = select_positions(ranked, config)

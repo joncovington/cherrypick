@@ -3,36 +3,49 @@ import json
 from strategies import iron_fly
 
 
-def test_apply_tiering_tier1_when_all_pass(base_strategy_config, good_criteria):
+def test_apply_tiering_accepts_when_all_pass(base_strategy_config, good_criteria):
     result = iron_fly.apply_tiering(good_criteria, base_strategy_config)
-    assert result["tier"] == "Tier 1"
-    assert result["hard_fail_reasons"] == []
+    assert result["accepted"] is True
+    assert result["reject_reasons"] == []
 
 
 def test_apply_tiering_rejects_missing_price(base_strategy_config, good_criteria):
     criteria = {**good_criteria, "price": None}
     result = iron_fly.apply_tiering(criteria, base_strategy_config)
-    assert result["tier"] == "Reject"
-    assert "price_unverified" in result["hard_fail_reasons"]
+    assert result["accepted"] is False
+    assert "price_unverified" in result["reject_reasons"]
 
 
 def test_apply_tiering_rejects_atm_delta_above_max(base_strategy_config, good_criteria):
     criteria = {**good_criteria, "atm_delta_abs": 0.90}
     result = iron_fly.apply_tiering(criteria, base_strategy_config)
-    assert "atm_delta_abs_above_maximum" in result["hard_fail_reasons"]
+    assert "atm_delta_abs_above_maximum" in result["reject_reasons"]
 
 
-def test_apply_tiering_near_miss_on_single_band(base_strategy_config, good_criteria):
-    criteria = {**good_criteria, "avg_volume": 1200000}  # between near_miss and pass
+def test_apply_tiering_rejects_soft_below_pass_band(base_strategy_config, good_criteria):
+    # At the default "pass" level, a value between the near-miss and pass thresholds is a reject
+    # (there is no Tier 2 middle band any more).
+    criteria = {**good_criteria, "avg_volume": 1200000}
     result = iron_fly.apply_tiering(criteria, base_strategy_config)
-    assert result["tier"] == "Tier 2"
-    assert "avg_volume" in result["near_miss_reasons"]
+    assert result["accepted"] is False
+    assert "avg_volume_below_minimum" in result["reject_reasons"]
 
 
-def test_apply_tiering_multiple_near_misses_is_near_miss_tier(base_strategy_config, good_criteria):
-    criteria = {**good_criteria, "avg_volume": 1200000, "iv_rv_ratio": 1.1}
-    result = iron_fly.apply_tiering(criteria, base_strategy_config)
-    assert result["tier"] == "Near Miss"
+def test_soft_criterion_at_near_miss_level_accepts_between_bands(base_strategy_config, good_criteria):
+    # With avg_volume screened at "near_miss", a value above the near-miss floor (1.0M) but below
+    # the pass threshold (1.5M) is accepted -- the configurable-level replacement for the Tier 2 band.
+    config = {**base_strategy_config, "_symbol_screen": {"avg_volume": "near_miss"}}
+    criteria = {**good_criteria, "avg_volume": 1200000}
+    result = iron_fly.apply_tiering(criteria, config)
+    assert result["accepted"] is True
+
+
+def test_soft_criterion_off_ignores_below_floor_value(base_strategy_config, good_criteria):
+    # "off" drops the criterion entirely: even a far-below-floor value does not reject.
+    config = {**base_strategy_config, "_symbol_screen": {"avg_volume": "off"}}
+    criteria = {**good_criteria, "avg_volume": 100}
+    result = iron_fly.apply_tiering(criteria, config)
+    assert result["accepted"] is True
 
 
 def test_wing_width_multiple_bands():

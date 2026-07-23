@@ -81,8 +81,8 @@
         "exit_task_name": "cherrypick-earnings-paper-exit",
         "entry_time": "15:45",
         "exit_time": "09:45",
-        "entry_argv": ["src/strategy_test_runner.py", "run_entries", "--date", "{today}", "--profile", "balanced"],
-        "exit_argv": ["src/strategy_test_runner.py", "run_closes", "--profile", "balanced"],
+        "entry_argv": ["src/strategy_test_runner.py", "run_entries", "--date", "{today}"],
+        "exit_argv": ["src/strategy_test_runner.py", "run_closes"],
         "log": "earnings_paper.log",
         "paper_db": "~/.cherrypick/data/earnings/paper_trades.db",
         "notify_trades": true,
@@ -100,8 +100,9 @@
           "interval_minutes": 5
         }
       },
+      "_calibration_note": "Earnings retired its conservative/balanced/aggressive risk-profile ladder; the strat_test paper book is now split per strategy (profile tag strat_test:<strategy>). With an empty ladder, calibrate reports per-book readings only (no promotion recommendation) -- strategies don't graduate rungs the way a risk ladder does.",
       "calibration": {
-        "ladder": ["conservative", "balanced", "aggressive"],
+        "ladder": [],
         "deliberate_only": []
       }
     }

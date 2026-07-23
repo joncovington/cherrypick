@@ -3,10 +3,16 @@ strategy (see docs/strategy-testing-plan.md). `rank_strategies.py` opens
 only the single best strategy per symbol per night -- fine for the live
 loop, but candidates are scarce enough that most strategies would starve
 under natural selection and never reach a statistically meaningful sample
-in weeks. This module instead opens a **separate paper book**
-(`profile='strat_test'` in the shared data/paper_trades.db) with a trade
-for *every* strategy that tiers Tier 1/2 on *every* viable symbol each
-night -- up to one per (symbol, strategy) pair.
+in weeks. This module instead opens a **separate strat_test paper book**
+(the `profile` column in the shared data/paper_trades.db) with a trade for
+*every* strategy that clears the screen on *every* viable symbol each night
+-- up to one per (symbol, strategy) pair.
+
+The book is split by `strat_test_portfolio` config: "per_strategy" (the
+default) tags each trade `strat_test:<strategy>` so every strategy is its
+own portfolio with its own P&L/equity curve (and a newly added strategy
+automatically gets its own stream); "combined" keeps a single `strat_test`
+book (see docs/paper-trading.md and _book_tag).
 
 This is entirely separate from the live/paper trading loop (CLAUDE.md's
 Loop Steps, rank_strategies.py's own get_ranked_symbols) -- it never
@@ -15,12 +21,9 @@ positions or the correlation block list (the test book intentionally holds
 many overlapping positions at once), and never calls tt.py execute_trade.
 Always paper-only, regardless of config's enable_live_trading.
 
-Sizing basis is fixed to one profile (see config.json's "profiles" and
-docs/paper-trading-profiles.md) via --profile (default "balanced") so
-per-strategy comparison isn't confounded by which profile's capital/gates
-were active on a given night -- risk-profile comparison is a separate,
-later program. Fills are cost-adjusted via costs.py's tastytrade fee
-model, not mid-price.
+Sizing basis is config's available_capital_paper_mode (each per-strategy
+book draws on the full basis, as independent paper accounts). Fills are
+cost-adjusted via costs.py's tastytrade fee model, not mid-price.
 
 Position sizing/P&L convention: `entry_credit`/`exit_debit`/`pnl` in
 `trades` are stored **already multiplied by quantity** (not per-contract),
@@ -43,8 +46,8 @@ _avg_sold_iv). `iv_crush = entry_iv - exit_iv` is computed downstream in
 strategy_metrics.py, same pattern as cost-adjusted expectancy.
 
 Commands:
-  run_entries --date MM/DD/YYYY [--profile balanced]
-  run_closes [--profile balanced]
+  run_entries --date MM/DD/YYYY
+  run_closes
 """
 
 import argparse
@@ -171,12 +174,30 @@ def _entry_context(criteria: dict, composite_score) -> dict:
 
 
 # --- Per-symbol entry review (the data reviewed for a symbol + the chosen/rejected decision) ---------
-_TIER_RANK = {"Tier 1": 1, "Tier 2": 2, "Tier 3": 3, "Near-Miss": 4, "Reject": 5}
+def _symbol_decision(results: list[dict]) -> str | None:
+    """The per-symbol screen outcome (what the Tier 1/2/Reject ladder used to
+    convey): "accepted" if any strategy cleared the screen, else "rejected"."""
+    if not results:
+        return None
+    return "accepted" if any(r.get("accepted") for r in results) else "rejected"
 
 
-def _best_tier(results: list[dict]) -> str | None:
-    tiers = [r.get("tier") for r in results if r.get("tier")]
-    return min(tiers, key=lambda t: _TIER_RANK.get(t, 9)) if tiers else None
+def _book_tag(config: dict, strategy_name: str) -> str:
+    """The paper-book (profile) tag a strat_test trade is written under. In
+    "per_strategy" mode (the default) each strategy gets its own book,
+    strat_test:<name>, so its P&L and equity curve stand alone and a newly
+    added strategy automatically gets its own stream; "combined" keeps the
+    single strat_test book."""
+    mode = config.get("strat_test_portfolio", "per_strategy")
+    if mode == "per_strategy":
+        return f"{TEST_PROFILE}:{strategy_name}"
+    return TEST_PROFILE
+
+
+def _is_strat_test_book(profile: str | None) -> bool:
+    """True for any strat_test book tag -- the single combined tag or a
+    per-strategy strat_test:<name> tag -- so run_closes sweeps them all."""
+    return bool(profile) and (profile == TEST_PROFILE or profile.startswith(TEST_PROFILE + ":"))
 
 
 def _richest_criteria(results: list[dict]) -> dict:
@@ -217,7 +238,7 @@ def _save_entry_review(scan_date, symbol, timing, results, opened_strategies, sk
             "iv_rv_ratio": crit.get("iv_rv_ratio"), "term_structure": crit.get("term_structure"),
             "market_cap": crit.get("market_cap"),
             "expected_move": crit.get("expected_move_dollars") or crit.get("expected_move"),
-            "best_tier": _best_tier(results), "selected": selected, "reason": reason,
+            "best_tier": _symbol_decision(results), "selected": selected, "reason": reason,
             "criteria": crit, "profile": TEST_PROFILE,
         })))
     except Exception:
@@ -415,7 +436,7 @@ def _write_eod_analysis(day: str) -> Path:
     trades = [t for t in metrics.load_closed_trades() if _close_session(t) == day]
     opened = [t for t in metrics.load_open_trades() if _open_session(t) == day]
     try:
-        config = scanner._load_config(TEST_PROFILE)
+        config = scanner._load_config()
     except Exception:
         config = {}
     block_list = config.get("correlation_block_list", []) or []
@@ -799,10 +820,7 @@ def cmd_run_entries(args) -> dict:
     if not rank_strategies._verify_tastytrade_connection():
         return {"ok": False, "error": "tastytrade connection failed"}
 
-    profile = args.profile
-    config = scanner._load_config(profile)
-    tier_floor = config.get("tier_floor", "Tier 2")
-    allowed_tiers = ("Tier 1",) if tier_floor == "Tier 1" else ("Tier 1", "Tier 2")
+    config = scanner._load_config()
 
     calendar_timeout = config.get("dolt_calendar_timeout_seconds", 30)
     try:
@@ -836,20 +854,22 @@ def cmd_run_entries(args) -> dict:
         op0, sk0 = len(opened), len(skipped)  # this symbol's slice of the run-wide result lists
         for r in results:
             strategy_name = r["name"]
-            reasons = r["hard_fail_reasons"] or r["near_miss_reasons"]
+            reasons = r["reject_reasons"]
+            decision = "accepted" if r["accepted"] else "rejected"
+            book = _book_tag(config, strategy_name)
             db_paper.cmd_log_scan(argparse.Namespace(data=json.dumps({
                 "scan_date": scan_date,
                 "strategy": strategy_name,
                 "symbol": symbol,
-                "tier": r["tier"],
-                "outcome": r["tier"],
+                "tier": decision,
+                "outcome": decision,
                 "reason": "; ".join(reasons) if reasons else None,
                 "logged_at": time.time(),
-                "profile": TEST_PROFILE,
+                "profile": book,
             })))
 
-            if r["tier"] not in allowed_tiers:
-                skipped.append({"symbol": symbol, "strategy": strategy_name, "reason": f"tier_excluded_{r['tier']}"})
+            if not r["accepted"]:
+                skipped.append({"symbol": symbol, "strategy": strategy_name, "reason": "screen_rejected"})
                 continue
 
             try:
@@ -890,7 +910,7 @@ def cmd_run_entries(args) -> dict:
                     "expiration": order.get("expiration") or order.get("front_expiration"),
                     "legs_json": json.dumps(scaled_legs),
                     "entry_credit": entry_credit,
-                    "profile": TEST_PROFILE,
+                    "profile": book,
                     "quantity": quantity,
                     "capital_at_risk": size["capital_at_risk"],
                     "entry_cost": entry_costs["total_cost"],
@@ -935,17 +955,18 @@ def cmd_run_entries(args) -> dict:
     except Exception:
         pass
 
-    return {"ok": True, "date": scan_date, "profile": profile, "opened": opened, "skipped": skipped}
+    portfolio_mode = config.get("strat_test_portfolio", "per_strategy")
+    return {"ok": True, "date": scan_date, "portfolio_mode": portfolio_mode, "opened": opened, "skipped": skipped}
 
 
 def cmd_run_closes(args) -> dict:
     if not rank_strategies._verify_tastytrade_connection():
         return {"ok": False, "error": "tastytrade connection failed"}
 
-    config = scanner._load_config(args.profile)
+    config = scanner._load_config()
     _capture_market_context(_date.today().isoformat())  # close-session morning VIX for the analysis
     positions = db_paper.cmd_get_open_positions(argparse.Namespace())["positions"]
-    positions = [p for p in positions if p.get("profile") == TEST_PROFILE]
+    positions = [p for p in positions if _is_strat_test_book(p.get("profile"))]
 
     closed: list[dict] = []
     skipped: list[dict] = []
@@ -1024,10 +1045,8 @@ def main() -> None:
 
     p_entries = sub.add_parser("run_entries")
     p_entries.add_argument("--date", required=True)
-    p_entries.add_argument("--profile", default="balanced")
 
-    p_closes = sub.add_parser("run_closes")
-    p_closes.add_argument("--profile", default="balanced")
+    sub.add_parser("run_closes")
 
     p_eod = sub.add_parser("eod_report")
     p_eod.add_argument("--date", default=None, help="Close-session day (YYYY-MM-DD); default today")

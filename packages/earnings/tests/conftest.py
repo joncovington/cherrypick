@@ -41,8 +41,9 @@ def base_strategy_config():
 
 @pytest.fixture
 def good_criteria():
-    """Criteria dict that clears every hard filter/near-miss band in
-    base_strategy_config -- a Tier 1 baseline every test can mutate.
+    """Criteria dict that clears every hard filter and soft-criterion pass
+    threshold in base_strategy_config -- an accepted baseline every test can
+    mutate.
     """
     return {
         "price": 150.0,

@@ -28,7 +28,7 @@ for the position as a whole.
 
 `profile`/`quantity`/`capital_at_risk`/`entry_cost`/`exit_cost`/`entry_context`/`entry_iv`/
 `exit_iv` exist for schema parity with db_paper.py's paper-mode profile testing (see
-docs/paper-trading-profiles.md) -- live trading doesn't select a profile today, so these
+docs/strat-test-portfolios.md) -- live trading doesn't select a profile today, so these
 default to 'default'/NULL, but the two databases' `trades`/`scan_log` tables never drift
 apart as a result.
 """

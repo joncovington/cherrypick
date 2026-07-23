@@ -286,7 +286,7 @@ def _fmt_earnings_review(r) -> str:
     if r["expected_move"] is not None:
         lines.append(f"• Expected Move: ${r['expected_move']:,.2f}")
     if r["best_tier"]:
-        lines.append(f"• Best tier: {r['best_tier']}")
+        lines.append(f"• Screen: {r['best_tier']}")
     return "\n".join(lines)
 
 
