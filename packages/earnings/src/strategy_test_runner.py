@@ -48,6 +48,7 @@ Commands:
 """
 
 import argparse
+import concurrent.futures as _cf
 import json
 import os
 import sys
@@ -752,6 +753,46 @@ def _run_bounded(fn, timeout_s, *args, **kwargs):
     return box.get("value")
 
 
+def _parallel_scan(calendar, config, workers, symbol_timeout, budget_seconds):
+    """Evaluate every calendar symbol's strategies concurrently, bounded two ways: each symbol by
+    ``symbol_timeout`` (via _run_bounded) and the whole phase by ``budget_seconds``. Returns a list
+    aligned to ``calendar`` of ``(entry, results, reason)`` -- ``reason`` is None on success, else a
+    skip reason (timeout / error / entry_scan_budget_exceeded).
+
+    Broker reads only, no DB writes: evaluate_symbol calls are independent and broker-read heavy, and
+    the tt cache is thread-local, so running symbols concurrently is safe and collapses the scan's
+    wall clock by roughly the worker count. Order building and every SQLite write stay in the caller's
+    sequential phase so the paper DB keeps a single writer.
+    """
+    out: list = [None] * len(calendar)
+    pool = _cf.ThreadPoolExecutor(max_workers=max(1, workers))
+    try:
+        fut_to_idx = {
+            pool.submit(
+                _run_bounded, rank_strategies.evaluate_symbol, symbol_timeout,
+                e["symbol"], e["date"], e["timing"], config,
+            ): i
+            for i, e in enumerate(calendar)
+        }
+        try:
+            for fut in _cf.as_completed(fut_to_idx, timeout=budget_seconds):
+                i = fut_to_idx[fut]
+                try:
+                    out[i] = (calendar[i], fut.result(), None)
+                except _OpTimeout:
+                    out[i] = (calendar[i], None, f"evaluate_symbol_timeout_{symbol_timeout}s")
+                except Exception as exc:
+                    out[i] = (calendar[i], None, f"evaluate_symbol_error: {exc}")
+        except _cf.TimeoutError:
+            pass  # overall budget hit -- unfinished symbols fall through to budget_exceeded below
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    for i, slot in enumerate(out):
+        if slot is None:
+            out[i] = (calendar[i], None, "entry_scan_budget_exceeded")
+    return out
+
+
 def cmd_run_entries(args) -> dict:
     if not rank_strategies._ensure_dolt_running():
         return {"ok": False, "error": "dolt sql-server not available"}
@@ -776,29 +817,20 @@ def cmd_run_entries(args) -> dict:
     opened: list[dict] = []
     skipped: list[dict] = []
 
-    scan_deadline = time.monotonic() + config.get("entry_scan_budget_seconds", 1500)
+    workers = config.get("entry_scan_workers", 4)
     symbol_timeout = config.get("dolt_symbol_timeout_seconds", 90)
+    budget = config.get("entry_scan_budget_seconds", 1500)
 
-    for entry in calendar:
-        if time.monotonic() > scan_deadline:
-            # Overall wall-clock backstop: even bounded-but-slow Dolt across many names must not push
-            # the run into its external kill. Stop scanning, keep what opened, write partial results.
-            skipped.append({"symbol": None, "strategy": None, "reason": "entry_scan_budget_exceeded"})
-            break
+    # Scan phase (parallel, broker reads only): evaluate every symbol's strategies concurrently.
+    # Write phase (sequential, below): order building + every paper-DB write, so SQLite has one writer.
+    scanned = _parallel_scan(calendar, config, workers, symbol_timeout, budget)
+
+    for entry, results, scan_reason in scanned:
         symbol, earnings_date, timing = entry["symbol"], entry["date"], entry["timing"]
-        try:
-            results = _run_bounded(
-                rank_strategies.evaluate_symbol, symbol_timeout, symbol, earnings_date, timing, config
-            )
-        except _OpTimeout:
-            # This symbol's Dolt evaluation stalled -- skip it (the run continues) instead of letting
-            # one hung query stall the whole scan to the external kill.
-            skipped.append({"symbol": symbol, "strategy": None, "reason": f"evaluate_symbol_timeout_{symbol_timeout}s"})
-            _save_entry_review(scan_date, symbol, timing, [], [], [f"evaluate_symbol_timeout_{symbol_timeout}s"])
-            continue
-        except Exception as exc:
-            skipped.append({"symbol": symbol, "strategy": None, "reason": f"evaluate_symbol_error: {exc}"})
-            _save_entry_review(scan_date, symbol, timing, [], [], [f"evaluate_symbol_error: {exc}"])
+        if scan_reason is not None:
+            # Timed out, errored, or past the overall budget -- skip cleanly, keep everything else.
+            skipped.append({"symbol": symbol, "strategy": None, "reason": scan_reason})
+            _save_entry_review(scan_date, symbol, timing, [], [], [scan_reason])
             continue
 
         op0, sk0 = len(opened), len(skipped)  # this symbol's slice of the run-wide result lists
