@@ -239,6 +239,37 @@ def _no_options_result(name: str) -> dict:
     }
 
 
+def _dolt_only_hard_fails(strategy_config: dict, avg_volume, iv_rv_ratio, winrate) -> list[str]:
+    """Dolt-signal hard fails for one strategy: a signal present and below its near-miss floor,
+    the exact condition scanner._band turns into a `<name>_below_near_miss` hard fail. Only a
+    definite below-floor value counts -- a missing (None) signal is a near-miss there, not a
+    reject, so it must NOT gate out the broker fetch."""
+    fails = []
+    for value, floor_key, name in (
+        (avg_volume, "near_miss_min_avg_volume", "avg_volume"),
+        (iv_rv_ratio, "near_miss_min_iv_rv_ratio", "iv_rv_ratio"),
+        (winrate, "near_miss_min_winrate", "winrate"),
+    ):
+        floor = strategy_config.get(floor_key)
+        if value is not None and floor is not None and value < floor:
+            fails.append(f"{name}_below_near_miss")
+    return fails
+
+
+def _dolt_reject_result(name: str, hard_fails: list[str], criteria: dict) -> dict:
+    """A Reject result carrying the Dolt hard-fail reasons, shaped like a normal evaluate_symbol
+    entry so downstream logging/ranking is unchanged (mirrors _no_options_result)."""
+    return {
+        "name": name,
+        "tier": "Reject",
+        "hard_fail_reasons": hard_fails,
+        "near_miss_reasons": [],
+        "criteria": criteria,
+        "composite_score": 0.0,
+        "broker_data_error": None,
+    }
+
+
 def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: dict) -> list[dict]:
     """Evaluate every registered strategy for one symbol. Common signals
     (avg_volume, iv_rv_ratio, winrate) are fetched once here, not once per
@@ -253,6 +284,28 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
     winrate_result = scanner.compute_winrate(symbol, config, lookback)
     winrate = winrate_result["winrate"]
     winrate_sample_size = winrate_result["sample_size"]
+
+    # Cheap pre-gate: skip the ~30s of live broker chain fetches when EVERY strategy would Reject
+    # on a Dolt-only signal (avg_volume / iv_rv_ratio / winrate below its near-miss floor). No live
+    # chain data can rescue a symbol already hard-failing a Dolt band, and the three Dolt signals
+    # are already in hand -- so this turns a full broker scan into nothing for names that cannot
+    # trade tonight regardless. A missing (None) signal is a near-miss, not a hard fail, so it never
+    # triggers the skip: this can only reject symbols the full path would have rejected too.
+    dolt_criteria = {
+        "avg_volume": avg_volume,
+        "iv_rv_ratio": iv_rv_ratio,
+        "winrate": winrate,
+        "winrate_sample_size": winrate_sample_size,
+    }
+    per_strategy_dolt_fails = {
+        entry["name"]: _dolt_only_hard_fails(entry["strategy_config_fn"](config), avg_volume, iv_rv_ratio, winrate)
+        for entry in STRATEGY_REGISTRY
+    }
+    if all(per_strategy_dolt_fails[entry["name"]] for entry in STRATEGY_REGISTRY):
+        return [
+            _dolt_reject_result(entry["name"], per_strategy_dolt_fails[entry["name"]], dict(dolt_criteria))
+            for entry in STRATEGY_REGISTRY
+        ]
 
     # Every strategy's fetch re-requests the same option chain for this symbol; a
     # per-symbol cache collapses those ~9 identical broker round-trips to one each.
