@@ -547,12 +547,17 @@ def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trad
     `--status` (session_settled / positions_today / data_reason); the watchdog just was not reading it.
 
     Opt-in via `paper.settlement_check` so it only shells to `--status` for a module that exposes the
-    signal (never MEIC's status path). Gated to after the close, so it does not poll all session.
+    signal (never MEIC's status path). Gated to the module's settle time + a retry buffer (not merely
+    the 16:00 close): a module settles a bit after the close (flies at 16:20) and retries for a few
+    minutes, so open positions in that window are NOT yet overdue — firing at the close alone
+    false-alarmed every day between 16:00 and 16:20.
     """
     paper = mcfg.get("paper", {})
     if not (is_trading and paper.get("settlement_check") and paper.get("status_argv")):
         return []
-    if now_et.time() <= timeutil.MARKET_CLOSE:
+    grace = int(paper.get("settlement_grace_minutes", 30))  # past settle time (~16:20) + retries
+    close_min = timeutil.MARKET_CLOSE.hour * 60 + timeutil.MARKET_CLOSE.minute
+    if now_et.hour * 60 + now_et.minute < close_min + grace:
         return []
     label = name.upper() if len(name) <= 4 else name.capitalize()
     try:
