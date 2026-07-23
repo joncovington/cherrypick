@@ -25,18 +25,18 @@ python src/rank_strategies.py get_ranked_symbols --date 07/08/2026
 directional structure:
 
 ```
-iron_fly:    Tier 2 (near_miss: iv_rv_ratio_near_miss), score 0.0183
-iron_condor: Tier 1, score 0.0201
-... other strategies: Reject or lower score
+iron_fly:    accepted, score 0.0183
+iron_condor: accepted, score 0.0201
+... other strategies: rejected or lower score
 → best_strategy: iron_condor, best_score: 0.0201
 ```
 
 **BNKX** — tight term structure, clean winrate sample, textbook iron_fly setup:
 
 ```
-iron_fly:      Tier 1, score 0.0254
-directional_credit_spread: Tier 2, score 0.0198
-... others: Reject
+iron_fly:      accepted, score 0.0254
+directional_credit_spread: accepted, score 0.0198
+... others: rejected
 → best_strategy: iron_fly, best_score: 0.0254
 ```
 
@@ -101,7 +101,7 @@ persisted, not just the console output.
 
 ### Setup
 
-Five symbols tier Tier 1/2 across various strategies on the same night, but
+Five symbols are accepted across various strategies on the same night, but
 `max_concurrent_earnings_positions` is 3.
 
 ```
@@ -166,17 +166,18 @@ On the same night, `/paper-start`'s forced-sampling program and the production
 difference is intentional:
 
 ```bash
-python src/strategy_test_runner.py run_entries --date 07/08/2026 --profile balanced
+python src/strategy_test_runner.py run_entries --date 07/08/2026
 ```
 
-If `NVEX` tiers Tier 1/2 under both `iron_condor` and `directional_credit_spread`,
-`strategy_test_runner.py` opens **both** into the `profile='strat_test'` book — every strategy
-that qualifies gets its own sample, not just the single best. Meanwhile that same night's
-`rank_strategies.py get_ranked_symbols` run would have picked only `iron_condor` (the
-higher-scoring one) for the actual production paper/live book. Both write to entirely separate
-`profile` values in the same database, so running both the same night doesn't conflict — it's
-how the forced-sampling program accumulates a usable sample for every strategy instead of
-starving whichever one rarely wins the head-to-head comparison.
+If `NVEX` is accepted under both `iron_condor` and `directional_credit_spread`,
+`strategy_test_runner.py` opens **both** — each into its own per-strategy strat_test book
+(`strat_test:iron_condor` and `strat_test:directional_credit_spread`) — so every strategy that
+qualifies gets its own sample and its own equity curve, not just the single best. Meanwhile that
+same night's `rank_strategies.py get_ranked_symbols` run would have picked only `iron_condor`
+(the higher-scoring one) for the actual production paper/live book (`profile='default'`). Every
+book is a separate `profile` value in the same database, so running both the same night doesn't
+conflict — it's how the forced-sampling program accumulates a usable sample for every strategy
+instead of starving whichever one rarely wins the head-to-head comparison.
 
 ---
 

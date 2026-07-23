@@ -17,7 +17,7 @@ what you're trying to accomplish:
 
 | Command | What it does |
 |---|---|
-| `/paper-start` | Forced-sampling strategy test — opens every Tier 1/2 candidate for every strategy (not just each symbol's best) into an isolated `profile='strat_test'` paper book, then closes them the next morning. Use this daily while you're still building a track record for each strategy. |
+| `/paper-start` | Forced-sampling strategy test — opens a paper trade for every strategy that clears the screen on every viable symbol (not just each symbol's best) into per-strategy strat_test books, then closes them the next morning. Use this daily while you're still building a track record for each strategy. |
 | `/paper-trading-start` | One-shot production-ranking analysis — runs `rank_strategies.py get_ranked_symbols` and shows what the real loop would pick tonight, without opening anything. Good for a quick look at tonight's candidates without committing to a full cycle. |
 | `/earnings-start` | The actual continuous trading loop (paper or live, depending on `enable_live_trading`) — runs through a full entry window and the next morning's close window, following `CLAUDE.md`'s Loop Steps. |
 
@@ -60,7 +60,7 @@ calendar and picks each symbol's single best-ranked strategy — see
 Inside the entry window, for each selected symbol the loop:
 
 1. Skips it if a position was already opened today.
-2. Re-verifies it's still Tier 1/2 with fresh live data (`rank_strategies.reverify_symbol()`) —
+2. Re-verifies it's still accepted with fresh live data (`rank_strategies.reverify_symbol()`) —
    prices and IV can move between the afternoon scan and the actual entry.
 3. Checks the risk cap (`max_risk_per_trade_pct` of NLV) and the correlation block list.
 4. Builds a concrete order via that strategy's own `get_order`:
@@ -160,18 +160,18 @@ $ python src/scanner.py get_calendar --date 07/15/2026
 → AAPL (after close), JPM (before open next day), 6 others
 
 $ python src/rank_strategies.py get_ranked_symbols --date 07/15/2026
-→ AAPL: selected iron_fly (Tier 1)
-→ JPM: selected directional_credit_spread (Tier 2)
+→ AAPL: selected iron_fly (accepted)
+→ JPM: selected directional_credit_spread (accepted)
 → 6 others: rejected_no_viable_strategy
 ```
 
 **Entry window (15:30–15:55 ET):**
 ```
-Re-verify AAPL → still Tier 1, risk cap OK, no correlation conflict
+Re-verify AAPL → still accepted, risk cap OK, no correlation conflict
 Build iron_fly order for AAPL → credit $5.10, 3 contracts, max loss $840
 Paper mode: save_trade, done. (Live mode: execute_trade --live, then save_trade.)
 
-Re-verify JPM → still Tier 2, risk cap OK
+Re-verify JPM → still accepted, risk cap OK
 Build directional_credit_spread order for JPM → credit $1.20, 5 contracts
 save_trade
 ```

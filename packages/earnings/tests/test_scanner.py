@@ -127,54 +127,89 @@ def test_compute_expected_move_and_term_structure_positive_when_back_richer():
     assert result["term_structure"] > 0
 
 
-# --- _band -------------------------------------------------------------------
+# --- _soft_gate --------------------------------------------------------------
 
-def test_band_pass_silent():
-    near_miss, hard_fail = [], []
-    scanner._band(10, 5, 2, "x", near_miss, hard_fail)
-    assert near_miss == [] and hard_fail == []
-
-
-def test_band_near_miss():
-    near_miss, hard_fail = [], []
-    scanner._band(3, 5, 2, "x", near_miss, hard_fail)
-    assert near_miss == ["x"] and hard_fail == []
-
-
-def test_band_hard_fail_below_near_miss():
-    near_miss, hard_fail = [], []
-    scanner._band(1, 5, 2, "x", near_miss, hard_fail)
-    assert hard_fail == ["x_below_near_miss"]
-
-
-def test_band_missing_value_is_near_miss_not_pass():
-    near_miss, hard_fail = [], []
-    scanner._band(None, 5, 2, "x", near_miss, hard_fail)
-    assert near_miss == ["x_unknown"]
+def test_soft_gate_pass_level_accepts_at_or_above_pass():
+    hard_fail = []
+    scanner._soft_gate(10, 5, 2, "pass", "x", hard_fail)
     assert hard_fail == []
 
 
-# --- apply_liquidity_gates ------------------------------------------------------
+def test_soft_gate_pass_level_rejects_below_pass():
+    hard_fail = []
+    scanner._soft_gate(3, 5, 2, "pass", "x", hard_fail)
+    assert hard_fail == ["x_below_minimum"]
+
+
+def test_soft_gate_near_miss_level_accepts_between_bands():
+    hard_fail = []
+    scanner._soft_gate(3, 5, 2, "near_miss", "x", hard_fail)
+    assert hard_fail == []
+
+
+def test_soft_gate_near_miss_level_rejects_below_near_miss():
+    hard_fail = []
+    scanner._soft_gate(1, 5, 2, "near_miss", "x", hard_fail)
+    assert hard_fail == ["x_below_minimum"]
+
+
+def test_soft_gate_off_never_rejects():
+    hard_fail = []
+    scanner._soft_gate(0, 5, 2, "off", "x", hard_fail)
+    scanner._soft_gate(None, 5, 2, "off", "x", hard_fail)
+    assert hard_fail == []
+
+
+def test_soft_gate_missing_value_is_unverified_reject_unless_off():
+    hard_fail = []
+    scanner._soft_gate(None, 5, 2, "pass", "x", hard_fail)
+    assert hard_fail == ["x_unverified"]
+
+
+# --- apply_liquidity_gates (hard filters only) ----------------------------------
 
 def test_apply_liquidity_gates_all_pass(base_strategy_config, good_criteria):
-    hard_fail, near_miss = [], []
-    scanner.apply_liquidity_gates(good_criteria, base_strategy_config, hard_fail, near_miss)
+    hard_fail = []
+    scanner.apply_liquidity_gates(good_criteria, base_strategy_config, hard_fail)
     assert hard_fail == []
-    assert near_miss == []
 
 
 def test_apply_liquidity_gates_missing_open_interest_hard_fails(base_strategy_config, good_criteria):
     criteria = {**good_criteria, "combined_open_interest": None}
-    hard_fail, near_miss = [], []
-    scanner.apply_liquidity_gates(criteria, base_strategy_config, hard_fail, near_miss)
+    hard_fail = []
+    scanner.apply_liquidity_gates(criteria, base_strategy_config, hard_fail)
     assert "combined_open_interest_unverified" in hard_fail
 
 
 def test_apply_liquidity_gates_requires_weekly_options(base_strategy_config, good_criteria):
     criteria = {**good_criteria, "has_weekly_options": False}
-    hard_fail, near_miss = [], []
-    scanner.apply_liquidity_gates(criteria, base_strategy_config, hard_fail, near_miss)
+    hard_fail = []
+    scanner.apply_liquidity_gates(criteria, base_strategy_config, hard_fail)
     assert "no_weekly_options" in hard_fail
+
+
+# --- apply_soft_criteria --------------------------------------------------------
+
+def test_apply_soft_criteria_all_pass(base_strategy_config, good_criteria):
+    hard_fail = []
+    scanner.apply_soft_criteria(good_criteria, base_strategy_config, hard_fail)
+    assert hard_fail == []
+
+
+def test_apply_soft_criteria_rejects_market_cap_below_pass(base_strategy_config, good_criteria):
+    # Between the near-miss floor (1B) and the pass threshold (2B): rejected at the default "pass".
+    criteria = {**good_criteria, "market_cap": 1500000000}
+    hard_fail = []
+    scanner.apply_soft_criteria(criteria, base_strategy_config, hard_fail)
+    assert "market_cap_below_minimum" in hard_fail
+
+
+def test_apply_soft_criteria_honors_near_miss_level(base_strategy_config, good_criteria):
+    config = {**base_strategy_config, "_symbol_screen": {"market_cap": "near_miss"}}
+    criteria = {**good_criteria, "market_cap": 1500000000}
+    hard_fail = []
+    scanner.apply_soft_criteria(criteria, config, hard_fail)
+    assert hard_fail == []
 
 
 # --- _shrunk_winrate / compute_composite_score ----------------------------------
@@ -298,16 +333,16 @@ def test_evaluate_debit_spread_exit_hold():
 
 # --- rank_candidates / select_positions -----------------------------------------
 
-def test_rank_candidates_excludes_reject_and_near_miss():
+def test_rank_candidates_excludes_rejected():
     candidates = [
-        {"tier": "Reject", "criteria": {"term_structure": -0.1, "iv_rv_ratio": 1.0, "winrate": 0.5}},
-        {"tier": "Near Miss", "criteria": {"term_structure": -0.1, "iv_rv_ratio": 1.0, "winrate": 0.5}},
-        {"tier": "Tier 1", "criteria": {"term_structure": -0.2, "iv_rv_ratio": 1.0, "winrate": 0.5}},
-        {"tier": "Tier 2", "criteria": {"term_structure": -0.1, "iv_rv_ratio": 1.0, "winrate": 0.5}},
+        {"accepted": False, "criteria": {"term_structure": -0.1, "iv_rv_ratio": 1.0, "winrate": 0.5}},
+        {"accepted": False, "criteria": {"term_structure": -0.3, "iv_rv_ratio": 1.0, "winrate": 0.5}},
+        {"accepted": True, "symbol": "A", "criteria": {"term_structure": -0.2, "iv_rv_ratio": 1.0, "winrate": 0.5}},
+        {"accepted": True, "symbol": "B", "criteria": {"term_structure": -0.1, "iv_rv_ratio": 1.0, "winrate": 0.5}},
     ]
     ranked = scanner.rank_candidates(candidates, config={})
     assert len(ranked) == 2
-    assert ranked[0]["tier"] == "Tier 1"  # higher |term_structure| scores higher
+    assert ranked[0]["symbol"] == "A"  # higher |term_structure| scores higher
 
 
 def test_select_positions_respects_max_concurrent():

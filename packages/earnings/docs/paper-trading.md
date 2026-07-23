@@ -13,7 +13,7 @@ current calibration, not a separate toy implementation.
 
 Two distinct paper-testing *programs* build on this same paper/live split, and can run
 concurrently since they write to isolated books — see [Strategy Testing Plan](./strategy-testing-plan.md)
-for `/paper-start`'s forced-sampling program (`src/strategy_test_runner.py`, `profile='strat_test'`)
+for `/paper-start`'s forced-sampling program (`src/strategy_test_runner.py`, per-strategy `strat_test` books)
 versus `/paper-trading-start`'s one-shot production-ranking analysis (`rank_strategies.py`, no
 persistence at all). What follows describes the underlying mechanism both rely on.
 
@@ -31,8 +31,9 @@ filter.
 Both databases' `trades` table is strategy-agnostic — a `strategy` column identifies which of
 the six opened it — so every strategy's paper results land in the same database,
 distinguishable via `get_pnl_summary --strategy <name>` or its `by_strategy` breakdown, without a
-schema change. A `profile` column does the same for named risk profiles / test books (default
-`'default'`, `'strat_test'` for the forced-sampling program).
+schema change. A `profile` column does the same for the forced-sampling test books (default
+`'default'` for the production loop; `'strat_test:<strategy>'` per-strategy, or `'strat_test'`
+combined, for the forced-sampling program — see [Strat-Test Portfolios](./strat-test-portfolios.md)).
 
 ## What Gets Simulated, and How
 
@@ -42,7 +43,7 @@ See `CLAUDE.md`'s Loop Steps for the authoritative, single copy of this logic �
 1. `rank_strategies.py get_ranked_symbols` evaluates all six strategies against the merged
    today-AMC/tomorrow-BMO calendar and picks each symbol's single best-ranked strategy.
 2. Re-verify each selected symbol fresh (`rank_strategies.reverify_symbol()`) — confirm it's
-   still Tier 1/2 right before building an order, since the scan and the entry window aren't the
+   still accepted right before building an order, since the scan and the entry window aren't the
    same moment.
 3. For each symbol not already opened today: call that strategy's own `get_order` to build the
    concrete order (strikes, legs, credit/debit), then `db_paper.py save_trade` using the order's
@@ -88,9 +89,10 @@ For the production paper/live loop: only each symbol's single best-ranked strate
 `scanner.select_positions()`'s `max_concurrent_earnings_positions`/`correlation_block_list`
 filtering — the same portfolio-construction logic live trading would use, not a simplified
 single-trade-a-day version. The separate forced-sampling program
-(`strategy_test_runner.py`/`/paper-start`) intentionally trades *every* Tier 1/2 candidate under
-*every* qualifying strategy instead, specifically to avoid starving strategies that rarely win
-the single-best-per-symbol comparison — see [Strategy Testing Plan](./strategy-testing-plan.md).
+(`strategy_test_runner.py`/`/paper-start`) intentionally trades *every* candidate that clears the
+screen under *every* qualifying strategy instead, specifically to avoid starving strategies that
+rarely win the single-best-per-symbol comparison — see
+[Strategy Testing Plan](./strategy-testing-plan.md).
 
 ## Running It
 

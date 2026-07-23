@@ -180,7 +180,8 @@ free either — `costs.py`'s slippage haircut scales with spread width, so admit
 names also directly worsens cost-adjusted expectancy on those trades, partially offsetting any
 gain from more samples.
 
-**Review checkpoint: ~2026-07-23 (two weeks out).** Query `scan_log` (`profile='strat_test'`)
+**Review checkpoint: ~2026-07-23 (two weeks out).** Query `scan_log` (the strat_test books —
+`profile LIKE 'strat_test%'`)
 for how often `bid_ask_spread_too_wide` appears as a rejection reason, how close the misses
 run (median/max overage), and whether it disproportionately hits otherwise-qualifying liquid
 names (high market cap / high volume) rather than genuinely illiquid ones. If it's a frequent,

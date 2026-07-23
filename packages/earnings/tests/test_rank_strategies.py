@@ -3,20 +3,20 @@ from datetime import date
 import rank_strategies
 
 
-def _make_entry(name, tier="Tier 1", score_criteria=None):
+def _make_entry(name, accepted=True, score_criteria=None):
     score_criteria = score_criteria or {"term_structure": -0.1}
     return {
         "name": name,
         "fetch_criteria_fn": lambda symbol, ed, et, cfg: {"ok": True, "criteria": dict(score_criteria)},
-        "apply_tiering_fn": lambda criteria, cfg: {"tier": tier, "hard_fail_reasons": [] if tier != "Reject" else ["x"], "near_miss_reasons": []},
+        "apply_tiering_fn": lambda criteria, cfg: {"accepted": accepted, "reject_reasons": [] if accepted else ["x"]},
         "strategy_config_fn": lambda cfg: {},
     }
 
 
 def test_evaluate_symbol_returns_one_result_per_strategy(monkeypatch):
     monkeypatch.setattr(rank_strategies, "STRATEGY_REGISTRY", [
-        _make_entry("strat_a", tier="Tier 1"),
-        _make_entry("strat_b", tier="Reject"),
+        _make_entry("strat_a", accepted=True),
+        _make_entry("strat_b", accepted=False),
     ])
     monkeypatch.setattr(rank_strategies.scanner, "fetch_avg_volume", lambda *a, **k: 2000000)
     monkeypatch.setattr(rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": True, "iv_rv_ratio": 1.5})
@@ -24,8 +24,8 @@ def test_evaluate_symbol_returns_one_result_per_strategy(monkeypatch):
 
     results = rank_strategies.evaluate_symbol("AAPL", date(2026, 7, 7), "After market close", {})
     assert [r["name"] for r in results] == ["strat_a", "strat_b"]
-    assert results[0]["tier"] == "Tier 1"
-    assert results[1]["tier"] == "Reject"
+    assert results[0]["accepted"] is True
+    assert results[1]["accepted"] is False
     assert results[0]["composite_score"] is not None
 
 
@@ -57,8 +57,8 @@ def test_reverify_symbol_fetch_failure(monkeypatch):
     assert result["reason"] == "reverify_failed_no chain"
 
 
-def test_reverify_symbol_succeeds_when_still_tier1(monkeypatch):
-    entry = _make_entry("strat_a", tier="Tier 1")
+def test_reverify_symbol_succeeds_when_still_accepted(monkeypatch):
+    entry = _make_entry("strat_a", accepted=True)
     monkeypatch.setattr(rank_strategies, "_REGISTRY_BY_NAME", {"strat_a": entry})
     monkeypatch.setattr(rank_strategies.scanner, "fetch_avg_volume", lambda *a, **k: 2000000)
     monkeypatch.setattr(rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": True, "iv_rv_ratio": 1.5})
@@ -66,11 +66,11 @@ def test_reverify_symbol_succeeds_when_still_tier1(monkeypatch):
 
     result = rank_strategies.reverify_symbol("AAPL", "strat_a", date(2026, 7, 7), "After market close", {})
     assert result["ok"] is True
-    assert result["tier"] == "Tier 1"
+    assert "criteria" in result
 
 
-def test_reverify_symbol_fails_when_tier_dropped(monkeypatch):
-    entry = _make_entry("strat_a", tier="Reject")
+def test_reverify_symbol_fails_when_rejected(monkeypatch):
+    entry = _make_entry("strat_a", accepted=False)
     monkeypatch.setattr(rank_strategies, "_REGISTRY_BY_NAME", {"strat_a": entry})
     monkeypatch.setattr(rank_strategies.scanner, "fetch_avg_volume", lambda *a, **k: 2000000)
     monkeypatch.setattr(rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": True, "iv_rv_ratio": 1.5})
