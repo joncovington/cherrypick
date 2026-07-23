@@ -57,29 +57,68 @@ from strategies import (
 )
 
 
-def _ensure_dolt_running():
-    """Ensure dolt SQL server is running before analysis."""
+def _dolt_port_open(host="127.0.0.1", port=3306):
     try:
         import socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex(('127.0.0.1', 3306))
+        sock.settimeout(2)
+        result = sock.connect_ex((host, port))
         sock.close()
-        if result == 0:
-            return True
+        return result == 0
     except Exception:
-        pass
-
-    print("Starting dolt SQL server...", file=sys.stderr)
-    try:
-        # CREATE_NO_WINDOW (0 off-Windows): don't flash a console window when launched from a
-        # windowless parent (e.g. the scheduled paper runs). dolt is a console app.
-        subprocess.Popen(["dolt", "sql-server"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        time.sleep(2)
-        return True
-    except Exception as e:
-        print(f"Failed to start dolt: {e}", file=sys.stderr)
         return False
+
+
+def _dolt_query_ready(databases=("earnings", "options", "stocks"), overall_timeout=30):
+    """Poll ``SELECT 1`` against each needed Dolt database until it answers or the budget runs out.
+
+    The TCP port binds before Dolt can serve its larger databases (the ``options`` chain table is
+    big), so a plain port check can pass while the first real query still blocks. Gating on an actual
+    query -- not just an open socket -- is what stops the entry scan from firing hundreds of heavy
+    queries at a server that has not finished starting: the cold-start path behind the 30-minute
+    hangs on 2026-07-14 and 2026-07-22.
+    """
+    import mysql.connector
+
+    deadline = time.monotonic() + overall_timeout
+    for db in databases:
+        while True:
+            try:
+                conn = mysql.connector.connect(
+                    host="127.0.0.1", port=3306, user="root", database=db, connection_timeout=5,
+                )
+                cur = conn.cursor()
+                cur.execute("SELECT 1")
+                cur.fetchall()
+                conn.close()
+                break
+            except Exception:
+                if time.monotonic() >= deadline:
+                    return False
+                time.sleep(1)
+    return True
+
+
+def _ensure_dolt_running():
+    """Ensure the dolt SQL server is up AND actually serving queries before analysis."""
+    if not _dolt_port_open():
+        print("Starting dolt SQL server...", file=sys.stderr)
+        try:
+            # CREATE_NO_WINDOW (0 off-Windows): don't flash a console window when launched from a
+            # windowless parent (e.g. the scheduled paper runs). dolt is a console app.
+            subprocess.Popen(["dolt", "sql-server"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except Exception as e:
+            print(f"Failed to start dolt: {e}", file=sys.stderr)
+            return False
+
+    # A bound socket is not proof Dolt can serve queries -- poll real queries with a deadline instead
+    # of the old flat sleep(2), which returned before a cold server could answer and let the scan fire
+    # heavy queries into a server that then blocked them.
+    if not _dolt_query_ready():
+        print("dolt sql-server did not become query-ready in time", file=sys.stderr)
+        return False
+    return True
 
 
 def _verify_tastytrade_connection():
