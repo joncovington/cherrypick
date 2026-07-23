@@ -54,6 +54,12 @@
   "dolthub_options_database": "options",
   "dolthub_stocks_database": "stocks",
 
+  "_dolt_timeout_note": "Bounds on the Dolt path so a cold-starting or compacting server cannot hang the entry scan to its 30-minute external kill. Dolt does not honor MySQL's server-side max_execution_time, so the query phase is bounded client-side. dolthub_connect_timeout caps each connection attempt (seconds). dolt_calendar_timeout_seconds caps the initial entry-calendar fetch (the run fails fast if exceeded). dolt_symbol_timeout_seconds caps a single symbol's Dolt-heavy evaluation, run in a daemon thread and skipped on expiry. entry_scan_budget_seconds is the overall wall-clock backstop after which the scan stops and writes partial results -- keep it well under the scheduled task's kill timeout.",
+  "dolthub_connect_timeout": 10,
+  "dolt_calendar_timeout_seconds": 30,
+  "dolt_symbol_timeout_seconds": 90,
+  "entry_scan_budget_seconds": 1500,
+
   "winrate_lookback_quarters": 8,
 
   "finnhub_api_key_env_var": "FINNHUB_API_KEY",
