@@ -111,6 +111,12 @@
     "renotify_minutes": 60,
     "_drawdown_note": "Optional paper-P&L drift alert (net-of-cost). Add a 'drawdown' block to enable: {\"suite_floor\": -1000, \"module_floors\": {\"meic\": -750, \"earnings\": -750}, \"critical_multiplier\": 2}. net<=floor -> WARN; net<=floor*critical_multiplier -> CRITICAL. Paper only; never trades. Omit to disable."
   },
+  "_eval_activity_note": "Eval-activity health for the continuous-loop modules (meic/flies): during RTH the watchdog + doctor read the module's eval log (MEIC loop_log, flies fly_snapshots) and confirm it is actually EVALUATING candidates and deciding sensibly, not just writing a file (freshness). Rejecting every candidate is HEALTHY (a legit gate, e.g. regime_gex_negative), so it WARNs only when: no evaluation for stale_minutes (stopped mid-session), iterating but evaluating nothing, >= error_fraction of evaluations erroring (e.g. a symbol with no price), or 0 entries for a reason that isn't a known gate. window_minutes is the lookback. Read-only; earnings is event-driven and covered by its entry-SLA check instead.",
+  "eval_activity": {
+    "window_minutes": 30,
+    "stale_minutes": 10,
+    "error_fraction": 0.5
+  },
   "dashboard": {
     "_comment": "Read-only status dashboard: static self-contained HTML regenerated on each watchdog tick and by `cherrypick dashboard`. Surfaces suite health + P&L + logs, plus a System panel (scheduled tasks, installed modules, and a redacted config summary — webhook state only, never URLs). Under --serve it adds a live checks card that polls doctor.run() (the only broker-touching part, kept off the static path). 'output' is relative to this file's directory.",
     "output": "dashboard.html",
