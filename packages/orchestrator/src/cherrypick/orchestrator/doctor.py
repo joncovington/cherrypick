@@ -19,7 +19,7 @@ from typing import Any
 from cherrypick.core import home as _home
 
 from . import config as cfgmod
-from . import tasks, timeutil
+from . import eval_activity, tasks, timeutil
 from .util import first_json
 
 OK, WARN, FAIL = "ok", "warn", "fail"
@@ -205,6 +205,21 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
                 f"{cfgmod.portable_path(db_dir)} {'writable' if _writable(db_dir) else 'NOT writable'}",
             )
         )
+
+        # eval activity — during RTH, is the loop actually evaluating candidates and deciding sensibly
+        # (not just writing a file)? Session-gated: off-hours a stopped loop is expected, not a fault.
+        if timeutil.is_session_window(now, holidays):
+            act = eval_activity.for_module(mcfg, name, now.date().isoformat(),
+                                           cfg.get("eval_activity", {}).get("window_minutes", 30))
+            if act is not None:
+                ea_cfg = cfg.get("eval_activity", {})
+                status, detail = eval_activity.assess(
+                    act, window_min=ea_cfg.get("window_minutes", 30),
+                    eval_stale_min=ea_cfg.get("stale_minutes", 10),
+                    error_frac_warn=ea_cfg.get("error_fraction", 0.5),
+                )
+                mark = OK if status == eval_activity.OK else WARN
+                checks.append(Check(f"{name}.eval_activity", mark, detail))
 
         # scheduled task(s)
         for tkey in ("task_name", "entry_task_name", "exit_task_name"):
