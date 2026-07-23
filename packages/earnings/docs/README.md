@@ -59,14 +59,14 @@ The Earnings Agent is a rules-based options trading system that:
 - [Entry Conditions Framework](./04-entry-conditions.md) — Decision matrix, routing logic
 - [Strategy Guide](./05-strategies.md) — Deep dive on each strategy
 - [Earnings Scan Analysis](./06-scan-analysis.md) — How to analyze daily candidates
-- [Screening Criteria](./screening-criteria.md) — Hard filters and tiering (source of truth)
+- [Screening Criteria](./screening-criteria.md) — Hard filters and the accept/reject screen (source of truth)
 
 ### Operations
 - [Trading Workflow](./08-trading-workflow.md) — Day-to-day execution
 - [Exit Strategy Guide](./10-exits.md) — Profit targets, backstops, repairs
 - [Examples & Case Studies](./11-examples.md) — Real-world scenarios
 - [Paper Trading](./paper-trading.md) — How paper mode works, data separation from live
-- [Paper Trading Profiles](./paper-trading-profiles.md) — Conservative/balanced/aggressive sizing
+- [Strat-Test Portfolios](./strat-test-portfolios.md) — Per-strategy paper books for the forced-sampling test
 - [Strategy Testing Plan](./strategy-testing-plan.md) — Forced-sampling validation program
 
 ### Reference

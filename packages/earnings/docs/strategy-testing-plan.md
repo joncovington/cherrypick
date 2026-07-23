@@ -15,7 +15,7 @@ sample.
 
 In normal suite operation this program runs **unattended under the [orchestrator](../../orchestrator)**:
 it registers and watchdogs the daily entry (15:45 ET) and exit (09:45 ET) OS tasks that invoke
-`strategy_test_runner.py` (`run_entries` / `run_closes`) into the `strat_test` book, then reads the
+`strategy_test_runner.py` (`run_entries` / `run_closes`) into the strat_test books, then reads the
 resulting `paper_trades.db` (in the shared data home, `~/.cherrypick/data/earnings`) for cross-module
 reporting. This module has no scheduler of its own. Run `/paper-start` here for a single manual day; see
 the [package README](../README.md#how-this-fits-the-suite) for how the standalone and orchestrator-driven
@@ -27,17 +27,17 @@ roles fit together.
 night. Candidates are scarce (a typical night: 5-6 symbols, often 0-1 selected). Under
 natural single-best-per-symbol selection, most strategies would starve and never reach a
 statistically meaningful sample in weeks. `strategy_test_runner.py` instead force-samples:
-it opens a paper trade for **every** strategy that tiers Tier 1/2 on **every** viable symbol
-each night, into its own isolated book (`profile='strat_test'` in the shared
-`paper_trades.db` — in the cherrypick data home, `~/.cherrypick/data/earnings`; see
-`docs/paper-trading-profiles.md`'s "profile = book" design).
+it opens a paper trade for **every** strategy that clears the screen on **every** viable symbol
+each night, tagged into a per-strategy book in the shared `paper_trades.db` (in the cherrypick
+data home, `~/.cherrypick/data/earnings`; see `docs/strat-test-portfolios.md`'s "book = strategy"
+design).
 
 ## Fixed testing basis
 
-Every night runs on one sizing profile (`balanced`: 100k capital, `risk_pct_multiplier`
-1.0) so per-strategy comparison isn't confounded by which profile's gates/capital were
-active. Risk-profile comparison (conservative/balanced/aggressive) is a separate, later
-program that reuses this same instrumentation once individual strategies are validated.
+Every night runs on one sizing basis — `available_capital_paper_mode` (the simulated NLV in
+config) — so per-strategy comparison isn't confounded by differing capital or risk settings.
+With `strat_test_portfolio: "per_strategy"` (the default), each strategy accumulates in its own
+book (`profile='strat_test:<strategy>'`), so the comparison isolates the strategy itself.
 
 ## Cost model
 
@@ -58,17 +58,17 @@ baked into `pnl` itself.
 
 **Entry window** (before close):
 ```
-python src/strategy_test_runner.py run_entries --date MM/DD/YYYY --profile balanced
+python src/strategy_test_runner.py run_entries --date MM/DD/YYYY
 ```
 Runs the shared live scan once (`rank_strategies.evaluate_symbol` per calendar entry),
-opens every Tier 1/2 (strategy, symbol) pair that builds and sizes successfully, logs every
-candidate (selected or not) to `scan_log` tagged `profile='strat_test'`.
+opens every (strategy, symbol) pair that clears the screen and builds/sizes successfully, logs
+every candidate (selected or not) to `scan_log` tagged with its per-strategy book.
 
 **Close window** (next morning):
 ```
-python src/strategy_test_runner.py run_closes --profile balanced
+python src/strategy_test_runner.py run_closes
 ```
-Closes every open `strat_test` position via the same generic exit-debit mechanism the real
+Closes every open strat_test position via the same generic exit-debit mechanism the real
 loop uses (`scanner.compute_generic_exit_debit`), cost-adjusted.
 
 ## Weekly review
@@ -92,7 +92,9 @@ enabled and you want the same views over real fills. In live mode the report hea
 `MODE: LIVE`, the dashboard carries a red "LIVE — Real Money" badge (vs amber "PAPER —
 Simulated") and writes a separate `reports/strategy_dashboard_live.html` so it never clobbers
 the paper view, and `--profile` defaults to `default` (live trades aren't tagged
-`strat_test`). `--db PATH` overrides the DB path directly if needed.
+`strat_test`). In paper mode `--profile` defaults to the whole strat_test family — the combined
+`strat_test` book plus every `strat_test:<strategy>` sub-book. `--db PATH` overrides the DB path
+directly if needed.
 
 **IV crush**: `entry_iv`/`exit_iv` are the average live IV (from tastytrade's option-chain
 greeks) across each trade's Sell-to-Open leg(s) — the side that's actually sold and later
@@ -143,8 +145,7 @@ Per strategy, decide **enable live / keep paper / retire** based on:
   (see `strategy_metrics.winrate_backtest_agreement`)
 
 Promotion copies the validated strategy's exact parameters into the live config path;
-`enable_live_trading` flips only after separate review. Then start the risk-profile testing
-program (`docs/paper-trading-profiles.md`) on the survivors.
+`enable_live_trading` flips only after separate review.
 
 ## Caveats (always read alongside the numbers)
 
@@ -160,7 +161,7 @@ program (`docs/paper-trading-profiles.md`) on the survivors.
 
 ## See also
 
-- `docs/paper-trading-profiles.md` — the risk-profile testing program this reuses
+- `docs/strat-test-portfolios.md` — the per-strategy paper-book model this test writes into
 - `src/sizing.py` — code-enforced risk-cap sizing
 - `src/costs.py` — the tastytrade fee model
 - `src/strategy_metrics.py` — the single source of truth for every number in the report/dashboard

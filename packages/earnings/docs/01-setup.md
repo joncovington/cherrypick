@@ -148,8 +148,9 @@ Then run a full one-shot candidate scan for a single strategy (no orders submitt
 python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
 ```
 
-This prints Tier 1/2/3 candidates with pass/skip reasons per `docs/screening-criteria.md`'s hard
-filters. A quiet night with zero Tier 1/2 candidates is normal and not a bug.
+This prints accepted vs rejected candidates with pass/skip reasons per
+`docs/screening-criteria.md`'s hard filters. A quiet night with zero accepted candidates is
+normal and not a bug.
 
 ---
 
@@ -157,7 +158,7 @@ filters. A quiet night with zero Tier 1/2 candidates is normal and not a bug.
 
 Before running the live/paper trading loop, use `/paper-start` (see
 `docs/strategy-testing-plan.md`) to force-sample all 6 strategies nightly into an isolated
-`profile='strat_test'` paper book — this validates the whole pipeline end-to-end (scan, tier,
+per-strategy strat_test paper books — this validates the whole pipeline end-to-end (scan, screen,
 size, cost-adjust, persist, close) and starts building the sample size needed to evaluate each
 strategy, without affecting the real paper/live trading book:
 
@@ -168,8 +169,8 @@ strategy, without affecting the real paper/live trading book:
 Or run its underlying commands directly:
 
 ```bash
-python src/strategy_test_runner.py run_entries --date MM/DD/YYYY --profile balanced
-python src/strategy_test_runner.py run_closes --profile balanced
+python src/strategy_test_runner.py run_entries --date MM/DD/YYYY
+python src/strategy_test_runner.py run_closes
 ```
 
 Check progress at any time with:
@@ -213,7 +214,7 @@ to `dolthub_host`/`dolthub_port` from `config/config.json` (defaults `127.0.0.1:
 Re-run `python src/tt.py secrets_set` to refresh credentials, then `secrets_status` to confirm
 they're stored, then `get_connection_status` again.
 
-**Everything comes back Tier 3 / rejected**
+**Everything comes back rejected**
 Normal on a quiet night — check the specific `reason` fields in the output rather than assuming
 something's broken. See `docs/screening-criteria.md` for what each hard filter checks.
 

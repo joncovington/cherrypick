@@ -13,16 +13,14 @@ This is a **one-shot analysis**, not the trading loop — it does not check toda
 ```
 /paper-trading-start
 /paper-trading-start --count 2
-/paper-trading-start --config conservative
 ```
 
 ## Options
 
 - `--count N` — Max number of candidates to build orders for (default: 3)
-- `--config [conservative|moderate|aggressive]` — Risk profile (default: moderate)
-  - `conservative`: Tier 1 only
-  - `moderate` / `aggressive`: Tier 1-2 (rank_strategies.py's `viable` list only ever contains Tier 1/2 — there is no Tier 3 tier to relax into; `aggressive` currently behaves the same as `moderate`)
 - `--date MM/DD/YYYY` — Passed through for the report label only. **Does not change which calendar day is scanned** — `rank_strategies.py`'s calendar fetch always pulls today's AMC + tomorrow's BMO. For a different historical date, use `scanner.py get_calendar --date` directly.
+
+Symbol screening is a single accept/reject bar (no risk-profile flag) — `rank_strategies.py`'s `viable` list only ever contains accepted candidates. Tune screening strictness via the `symbol_screen` config block, not a command flag.
 
 ## Output
 
@@ -49,7 +47,7 @@ A quiet night with zero selections is expected and normal — small/mid-cap name
 
 If any are selected, each shows:
 - Symbol, earnings date/timing
-- Composite score and tier (Tier 1 or Tier 2)
+- Composite score (accepted candidate)
 - Winning strategy
 - Concrete order (credit/debit, strikes, legs) or the specific error if order-building failed
 
@@ -59,7 +57,7 @@ If any are selected, each shows:
 
 ## Workflow
 
-1. Run command → see selected candidates (if any) with score, tier, and strategy
+1. Run command → see selected candidates (if any) with score and strategy
 2. Review the built order for each (credit, strikes, legs)
 3. Execute manually in your broker during the entry window, or let `/earnings-start`'s loop handle Step 4b automatically
 
@@ -84,10 +82,10 @@ the forced-sampling close pass (`strategy_test_runner.py eod_report` → `logs/p
 - Normal on a quiet night. Check the printed `reason` per symbol — usually a specific, real liquidity/signal hard-fail (see `docs/screening-criteria.md`), not a system error
 
 **"Order build FAILED"**
-- The candidate tiered Tier 1/2 at scan time but a live chain/quote call failed when building the concrete order (e.g. no quote data for a strike). Check the printed `order_error`.
+- The candidate was accepted at scan time but a live chain/quote call failed when building the concrete order (e.g. no quote data for a strike). Check the printed `order_error`.
 
 ## See Also
 
-- `docs/04-entry-conditions.md` — How scoring/tiering works
+- `docs/04-entry-conditions.md` — How scoring/screening works
 - `docs/05-strategies.md` — Each strategy explained
-- `docs/screening-criteria.md` — Hard-filter/tiering source of truth
+- `docs/screening-criteria.md` — Hard-filter/screening source of truth
