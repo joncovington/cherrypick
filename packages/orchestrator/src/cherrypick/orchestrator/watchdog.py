@@ -25,7 +25,7 @@ from typing import Any
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
-from . import tasks, timeutil
+from . import eval_activity, tasks, timeutil
 from .util import first_json
 
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
@@ -514,6 +514,29 @@ def _eod_launch(verb: str) -> bool:
     return _start_streamer(_RUN_PY.parent, [str(_RUN_PY), verb])
 
 
+def _check_eval_activity(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool,
+                         settings: dict[str, Any]) -> list[Finding]:
+    """Is the loop actually EVALUATING candidates (not just writing a file), and is it deciding sensibly?
+
+    Freshness only proves the loop ran; this proves it did meaningful work. Rejecting every candidate is
+    HEALTHY (a legit gate — e.g. MEIC on regime_gex_negative), so this WARNs only on: stopped evaluating
+    mid-session, iterating-but-evaluating-nothing, evals dominated by errors, or 0 entries for a reason
+    that isn't a known gate. Session-gated and schema-keyed — returns nothing for a module with no reader
+    (earnings, event-driven). Reads the paper DB read-only; off the notify path's stdlib-only floor."""
+    if not in_session:
+        return []
+    act = eval_activity.for_module(mcfg, name, now_et.date().isoformat(), settings["window_minutes"])
+    if act is None:
+        return []
+    label = name.upper() if len(name) <= 4 else name.capitalize()
+    status, detail = eval_activity.assess(
+        act, window_min=settings["window_minutes"], eval_stale_min=settings["stale_minutes"],
+        error_frac_warn=settings["error_fraction"],
+    )
+    finding = WARN if status == eval_activity.WARN else OK
+    return [Finding(f"{name}.eval_activity", finding, f"{label} eval activity", detail)]
+
+
 def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trading: bool) -> list[Finding]:
     """Warn when a module is past the close on a trading day with open positions it has not settled.
 
@@ -688,6 +711,13 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     in_session = timeutil.is_session_window(now, holidays)
     is_trading = timeutil.is_trading_day(now, holidays)
 
+    ea_cfg = cfg.get("eval_activity", {})
+    ea_settings = {
+        "window_minutes": ea_cfg.get("window_minutes", 30),
+        "stale_minutes": ea_cfg.get("stale_minutes", 10),
+        "error_fraction": ea_cfg.get("error_fraction", 0.5),
+    }
+
     findings: list[Finding] = []
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         kind = mcfg.get("paper", {}).get("kind")
@@ -695,6 +725,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
             if kind == "self_healing":
                 findings += _check_meic(name, mcfg, in_session)
                 findings += _check_settlement(name, mcfg, now, is_trading)
+                findings += _check_eval_activity(name, mcfg, now, in_session, ea_settings)
             elif kind == "cherrypick_scheduled":
                 findings += _check_earnings(name, mcfg, now, is_trading)
         except Exception as exc:
