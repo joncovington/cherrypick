@@ -1087,7 +1087,9 @@ def _handler_for(db_path: str | None):
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-cache")
+            # no-store, not no-cache: the page is baked into this process, so after a restart a cached
+            # copy shows a stale layout until a hard refresh; no-store makes the browser always refetch.
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 

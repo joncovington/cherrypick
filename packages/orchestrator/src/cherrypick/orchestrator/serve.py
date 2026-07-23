@@ -190,6 +190,9 @@ def _make_handler(cfg: dict[str, Any]):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            # Never cache: the page is a self-contained template baked into this process, so a browser
+            # holding a cached copy shows a stale layout/data after a restart until a hard refresh.
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
@@ -341,6 +344,12 @@ def serve(
         + (f" · sections: {', '.join(active)}" if active else " · no live sections")
         + (f" · embeds: {', '.join(active_embeds)}" if active_embeds else "")
     )
+    # Recycle any "server" embed left over from a prior serve session, so the iframes spawn fresh children
+    # on THIS session's code + config. Without it, ensure_server reuses whatever is already on the embed
+    # port — which let a days-old orphan (old code, a retired cache pointer) keep being framed forever.
+    recycled = embeds.recycle_servers(cfg)
+    if recycled:
+        print(f"recycled stale embed servers: {', '.join(recycled)}")
     # Pre-warm static embeds in the background so their (matplotlib) HTML already exists by the time the
     # user opens the page — the first iframe load then serves instantly instead of triggering a build.
     embeds.prewarm(cfg)
