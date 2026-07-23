@@ -355,7 +355,12 @@ function _spotHistoryPlugin(history,labels,openTs,closeTs){
     const {ctx,scales,chartArea}=chart;
     if(!scales.y||!history||!history.length) return;
     if(openTs==null||closeTs==null||closeTs<=openTs) return;
-    const pts=[];
+    // Thin to at most one point per horizontal PIXEL. The trail's x is session-time, so early in the
+    // day every ~5s sample lands in the same pixel column (~3 points/px) and the stroke zig-zags
+    // top-to-bottom within each column, filling its own range -- that is the "fill". Drawing ≤1 point
+    // per pixel is the max the screen can show as a line and is visually lossless; the recorder keeps
+    // every 5s sample, and as the trail widens through the day more of them become visible.
+    const pts=[]; let lastCol=null;
     for(const pt of history){
       const frac=(pt.ts-openTs)/(closeTs-openTs);
       if(frac<0||frac>1) continue;
@@ -363,12 +368,12 @@ function _spotHistoryPlugin(history,labels,openTs,closeTs){
       if(yPx==null||isNaN(yPx)) continue;
       yPx=Math.max(chartArea.top,Math.min(chartArea.bottom,yPx));
       const xPx=chartArea.left+frac*(chartArea.right-chartArea.left);
-      pts.push([xPx,yPx]);
+      const col=Math.round(xPx);
+      if(col===lastCol){ pts[pts.length-1]=[xPx,yPx]; }  // same pixel column -> keep the latest
+      else { pts.push([xPx,yPx]); lastCol=col; }
     }
     if(!pts.length) return;
-    // Line only, with a single marker at the latest point. Every point is still drawn (full 5s
-    // resolution) -- the "fill" was a filled dot per point overlapping when the points bunched up
-    // early in the session; the connecting line alone reads as a trail.
+    // Line only, with a single marker at the latest point (a filled dot per point overlapped into a fill).
     ctx.save(); ctx.strokeStyle='#7ec8f2'; ctx.lineWidth=1.5; ctx.lineJoin='round'; ctx.lineCap='round';
     ctx.beginPath();
     pts.forEach(([x,y],i)=>{ i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }); ctx.stroke();
