@@ -59,6 +59,8 @@
   "dolt_calendar_timeout_seconds": 30,
   "dolt_symbol_timeout_seconds": 90,
   "entry_scan_budget_seconds": 1500,
+  "_entry_scan_workers_note": "How many symbols the entry scan evaluates concurrently. Each symbol's evaluation is broker-read heavy and independent, and the tt read-through cache is thread-local, so this collapses the scan's wall clock by roughly this factor. Raising it trades against tastytrade API rate limits and one OAuth handshake per concurrent tt.py subprocess. Order building and every paper-DB write stay sequential regardless.",
+  "entry_scan_workers": 4,
 
   "winrate_lookback_quarters": 8,
 

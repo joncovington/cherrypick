@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 from datetime import date as _date
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -400,19 +401,23 @@ _TT_CALL_TIMEOUT = 45
 # to one broker round-trip each. Off by default and scoped explicitly by the caller
 # (rank_strategies.evaluate_symbol) because chain data is live -- never a process-wide
 # cache. Keyed on the full arg list, so different symbols/expirations never collide.
-_tt_cache: dict[tuple, dict] | None = None
+#
+# THREAD-LOCAL, not a module global: symbols are scanned concurrently (the live
+# get_ranked_symbols path and the paper harness both run a symbol thread pool), and a
+# shared global cache raced -- one thread's begin_tt_cache() wiped another's entries and
+# its end_tt_cache() disabled caching mid-evaluation, silently defeating the cache and
+# paying every fetch once per strategy. Each thread now scopes its own per-symbol cache.
+_tt_cache_tls = threading.local()
 
 
 def begin_tt_cache() -> None:
-    """Start memoizing call_tt reads for the current symbol. Resets any prior cache."""
-    global _tt_cache
-    _tt_cache = {}
+    """Start memoizing call_tt reads for the current symbol on THIS thread. Resets any prior cache."""
+    _tt_cache_tls.cache = {}
 
 
 def end_tt_cache() -> None:
-    """Stop memoizing and drop the cached reads (call in a finally)."""
-    global _tt_cache
-    _tt_cache = None
+    """Stop memoizing and drop this thread's cached reads (call in a finally)."""
+    _tt_cache_tls.cache = None
 
 
 def call_tt(args_list: list[str]) -> dict:
@@ -431,9 +436,10 @@ def call_tt(args_list: list[str]) -> dict:
     """
     import subprocess
 
-    key = tuple(args_list) if _tt_cache is not None else None
-    if key is not None and key in _tt_cache:
-        return _tt_cache[key]
+    cache = getattr(_tt_cache_tls, "cache", None)
+    key = tuple(args_list) if cache is not None else None
+    if key is not None and key in cache:
+        return cache[key]
 
     tt_path = Path(__file__).resolve().parent / "tt.py"
     try:
@@ -446,13 +452,13 @@ def call_tt(args_list: list[str]) -> dict:
     except subprocess.TimeoutExpired:
         data = {"ok": False, "error": "tt_timeout"}
         if key is not None:
-            _tt_cache[key] = data
+            cache[key] = data
         return data
     if result.returncode != 0:
         raise RuntimeError(f"tt.py {' '.join(args_list)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}")
     data = json.loads(result.stdout)
     if key is not None:
-        _tt_cache[key] = data
+        cache[key] = data
     return data
 
 
