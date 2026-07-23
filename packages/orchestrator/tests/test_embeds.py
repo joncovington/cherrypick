@@ -33,16 +33,46 @@ def test_subst_fills_port_token():
     assert argv == ["src/dashboard.py", "--port", "8801"]
 
 
-def test_ensure_server_already_up_does_not_launch(monkeypatch):
+def test_ensure_server_reuses_a_port_it_launched(monkeypatch):
+    """A reachable port THIS session launched is reused (not relaunched)."""
     monkeypatch.setattr(embeds, "_port_reachable", lambda h, p: True)
+    monkeypatch.setattr(embeds, "_spawned_ports", {8801})
 
     def fail(*a, **k):
-        raise AssertionError("must not launch when the port is already up")
+        raise AssertionError("must not relaunch a port we already own")
 
     monkeypatch.setattr(embeds, "_launch_detached", fail)
     res = embeds.ensure_server({"id": "meic", "port": 8801})
     assert res["ok"] is True and res["running"] is True
     assert res["url"] == "http://127.0.0.1:8801/"
+
+
+def test_ensure_server_recycles_a_reachable_port_it_did_not_launch(tmp_path, monkeypatch):
+    """A reachable port NOT launched by this session is a stale orphan (old code/config) — recycle it
+    and relaunch current code rather than framing the stale child."""
+    module = tmp_path / "gex"
+    module.mkdir()
+    monkeypatch.setattr(embeds, "_spawned_ports", set())
+    monkeypatch.setattr(embeds, "_port_reachable", lambda h, p: True)
+    calls = {"recycled": None, "launched": None}
+
+    def _rec(h, p):
+        calls["recycled"] = p
+        return True
+
+    def _launch(root, argv):
+        calls["launched"] = argv
+        return True
+
+    monkeypatch.setattr(embeds, "_recycle_port", _rec)
+    monkeypatch.setattr(embeds, "_launch_detached", _launch)
+    emb = {"id": "gex", "path": str(module), "port": 8802,
+           "serve_argv": ["run.py", "dashboard", "--serve", "--port", "{port}"]}
+    res = embeds.ensure_server(emb, wait_seconds=1)
+    assert calls["recycled"] == 8802
+    assert calls["launched"] == ["run.py", "dashboard", "--serve", "--port", "8802"]
+    assert 8802 in embeds._spawned_ports
+    assert res["ok"] is True
 
 
 def test_recycle_servers_targets_only_reachable_server_embeds(monkeypatch):

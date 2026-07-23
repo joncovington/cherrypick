@@ -36,6 +36,7 @@ from .watchdog import _start_streamer as _launch_detached
 _last_build: dict[str, float] = {}  # embed id -> monotonic ts of last static regen (throttle)
 _build_lock = threading.Lock()
 _building: set[str] = set()  # embed ids with a background regen in flight (single-flight guard)
+_spawned_ports: set[int] = set()  # embed ports THIS serve session launched (identity for ensure_server)
 
 
 def _output_path(embed_cfg: dict[str, Any], root: Path) -> Path | None:
@@ -80,7 +81,11 @@ def ensure_server(embed_cfg: dict[str, Any], wait_seconds: float = 6.0) -> dict[
     port = int(embed_cfg.get("port", 0))
     url = server_url(embed_cfg)
     if _port_reachable(host, port):
-        return {"ok": True, "running": True, "url": url, "detail": "already up"}
+        if port in _spawned_ports:
+            return {"ok": True, "running": True, "url": url, "detail": "already up"}
+        # Reachable but NOT launched by this serve session -> a stale orphan (a prior session's child,
+        # old code/config). Reusing it is the bug we hit; recycle it and relaunch current code below.
+        _recycle_port(host, port)
     root = cfgmod.module_root(embed_cfg, embed_cfg.get("id"))
     if not root.exists():
         return {"ok": False, "running": False, "url": url, "detail": f"module checkout not found at {root}"}
@@ -89,6 +94,7 @@ def ensure_server(embed_cfg: dict[str, Any], wait_seconds: float = 6.0) -> dict[
         return {"ok": False, "running": False, "url": url, "detail": "embed has no serve_argv"}
     if not _launch_detached(root, argv):
         return {"ok": False, "running": False, "url": url, "detail": "launch failed"}
+    _spawned_ports.add(port)  # remember it's ours, so a later ensure_server reuses it (not recycles it)
     deadline = time.monotonic() + max(0.0, wait_seconds)
     while time.monotonic() < deadline:
         if _port_reachable(host, port):
