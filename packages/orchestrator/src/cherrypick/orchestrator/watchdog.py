@@ -103,6 +103,30 @@ def _streamer_stale_age(status: dict[str, Any]) -> float | None:
     return None
 
 
+def _streamer_underlying_stale_age(status: dict[str, Any]) -> float | None:
+    """Seconds since the freshest SUBSCRIBED UNDERLYING last updated its spot, or None if unreported.
+
+    Distinct from `_streamer_stale_age` (freshest of ANY event): option quotes tick constantly and
+    mask a dead underlying-spot feed, so a streamer can look healthy on the global age while every
+    underlying's spot has been frozen for hours (the 2026-07-22 stall — spot froze at 10:05 ET, option
+    quotes ran to 20:00, nothing restarted). A producer that doesn't report this field degrades cleanly
+    to the global-age check.
+    """
+    value = status.get("underlyings_stale_age_s")
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _streamer_stale_detail(global_age: float | None, underlying_age: float | None, limit: int) -> str:
+    """Name whichever feed(s) are stale, so the alert distinguishes a whole-stream silence from an
+    underlying-spot-only stall (the two have different causes)."""
+    parts = []
+    if global_age is not None and global_age > limit:
+        parts.append(f"no events for {global_age:.0f}s")
+    if underlying_age is not None and underlying_age > limit:
+        parts.append(f"underlying spot frozen for {underlying_age:.0f}s")
+    return " and ".join(parts) or f"stale (limit {limit}s)"
+
+
 def _streamer_connection_age(status: dict[str, Any]) -> float | None:
     """Seconds since the current connection was established, so a just-restarted streamer isn't
     judged stale before it has resubscribed."""
@@ -181,12 +205,18 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
         running = None
 
     stale_age = _streamer_stale_age(status)
+    underlying_age = _streamer_underlying_stale_age(status)
     limit = spec.get("stale_restart_seconds", 240)
+    # A stall is EITHER the whole stream going quiet OR the underlying-spot feed dying while option
+    # quotes keep the global age fresh (2026-07-22). Judge on whichever available signal is most stale.
+    stale_candidates = [a for a in (stale_age, underlying_age) if a is not None]
+    worst_stale = max(stale_candidates) if stale_candidates else None
+    detail = _streamer_stale_detail(stale_age, underlying_age, limit)
     connection_age = _streamer_connection_age(status)
     # Don't count a connection that has not had time to populate yet — a restart takes a few seconds to
     # resubscribe, and without this the next tick would see stale data and restart again, forever.
     settling = connection_age is not None and connection_age < limit
-    if (running and stale_age is not None and stale_age > limit and not settling
+    if (running and worst_stale is not None and worst_stale > limit and not settling
             and spec.get("auto_restart")):
         _stop_streamer(root, spec)
         started = _start_streamer(root, spec["start_argv"])
@@ -195,17 +225,17 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
                 label,
                 WARN,
                 "Streamer stalled — restarted" if started else "Streamer stalled — restart failed",
-                f"Connected but no events for {stale_age:.0f}s (limit {limit}s). "
+                f"Connected but {detail} (limit {limit}s). "
                 + ("Restart issued." if started else "Could not relaunch; quotes stay stale."),
             )
         )
-    elif running and stale_age is not None and stale_age > limit:
+    elif running and worst_stale is not None and worst_stale > limit:
         findings.append(
             Finding(
                 label,
                 WARN,
                 "Streamer stalled",
-                f"Connected but no events for {stale_age:.0f}s (auto_restart off).",
+                f"Connected but {detail} (auto_restart off).",
             )
         )
     elif running is False and spec.get("auto_restart"):
@@ -484,6 +514,46 @@ def _eod_launch(verb: str) -> bool:
     return _start_streamer(_RUN_PY.parent, [str(_RUN_PY), verb])
 
 
+def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trading: bool) -> list[Finding]:
+    """Warn when a module is past the close on a trading day with open positions it has not settled.
+
+    The freshness check misses this: the loop itself is running fine (writing its DB/log every tick),
+    it just cannot settle. The flies 2026-07-22 incident — 5 open 0DTE positions left unsettled for
+    9 hours because the market-data feed went stale and settlement refuses a stale price — logged
+    "cannot settle" every 2 minutes with zero alert. The module already reports this through its
+    `--status` (session_settled / positions_today / data_reason); the watchdog just was not reading it.
+
+    Opt-in via `paper.settlement_check` so it only shells to `--status` for a module that exposes the
+    signal (never MEIC's status path). Gated to after the close, so it does not poll all session.
+    """
+    paper = mcfg.get("paper", {})
+    if not (is_trading and paper.get("settlement_check") and paper.get("status_argv")):
+        return []
+    if now_et.time() <= timeutil.MARKET_CLOSE:
+        return []
+    label = name.upper() if len(name) <= 4 else name.capitalize()
+    try:
+        r = _run_module(cfgmod.module_root(mcfg), paper["status_argv"], timeout=15)
+        status = first_json(r.stdout) if r.returncode == 0 else None
+    except Exception:
+        status = None
+    # Can't read the signal — say nothing (don't fire, don't clear a prior alert).
+    if not status or "session_settled" not in status or "positions_today" not in status:
+        return []
+    open_count = status.get("positions_today") or 0
+    if status.get("session_settled") is False and open_count > 0:
+        reason = status.get("data_reason") or "settlement price unavailable"
+        return [
+            Finding(
+                f"{name}.settle_overdue",
+                WARN,
+                f"{label} settlement overdue",
+                f"{open_count} open position(s) past the close still unsettled ({reason}).",
+            )
+        ]
+    return [Finding(f"{name}.settle_overdue", OK, f"{label} settlement", "settled or no open positions")]
+
+
 def _check_eod(cfg: dict[str, Any], now: datetime, is_trading: bool) -> None:
     """Fire the EOD digest + insight ONCE per trading day, event-driven instead of at a fixed clock time.
 
@@ -624,6 +694,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         try:
             if kind == "self_healing":
                 findings += _check_meic(name, mcfg, in_session)
+                findings += _check_settlement(name, mcfg, now, is_trading)
             elif kind == "cherrypick_scheduled":
                 findings += _check_earnings(name, mcfg, now, is_trading)
         except Exception as exc:

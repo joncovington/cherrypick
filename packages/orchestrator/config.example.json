@@ -60,7 +60,9 @@
         "notify_trades": true,
         "trade_schema": "fly_book",
         "log": "flies_paper.log",
-        "freshness_minutes": 20
+        "freshness_minutes": 20,
+        "_settlement_check_note": "Opt in the watchdog's settlement-overdue alert: after the close on a trading day it reads this module's --status and WARNs if session_settled is false with positions_today > 0 (a settle stuck on a stale feed, which the freshness check misses because the loop is still running). Only set for a module whose --status reports session_settled/positions_today (flies does).",
+        "settlement_check": true
       },
       "calibration": {
         "_comment": "The 'ladder' here is not a risk ladder — it is the three experiment arms, and there is nothing to promote between them. Listing them gives per-arm P&L readings without recommendations, which is exactly what this module wants: the comparison is the output.",
