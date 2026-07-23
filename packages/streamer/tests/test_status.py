@@ -68,6 +68,31 @@ def test_status_empty_cache_reports_not_running(home):
     assert all(not isinstance(v, dict) for v in st.values())
 
 
+def test_status_tracks_underlying_spot_freshness_separately(home):
+    """The 2026-07-22 stall: underlying spot froze while option quotes streamed on, so the global
+    'freshest anything' age stayed fresh and masked the dead spot feed. status() must report the
+    subscribed underlyings' spot age separately so the watchdog can catch it."""
+    import time as _time
+
+    from cherrypick.core import streamcache
+
+    cache = _config.cache_path({})
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    conn = streamcache.connect(cache)
+    now = _time.time()
+    # SPX (a default-seeded underlying) frozen an hour ago; an option quote 5s ago keeps global fresh.
+    conn.execute("INSERT INTO stream_trades(symbol, last, change, volume, updated_at) VALUES (?,?,?,?,?)",
+                 ("SPX", 7517.0, 0.0, 0.0, now - 3600))
+    conn.execute("INSERT INTO stream_quotes(symbol, bid, ask, mid, bid_size, ask_size, updated_at) "
+                 "VALUES (?,?,?,?,?,?,?)", (".SPXW260722C7500", 1.0, 1.2, 1.1, 1, 1, now - 5))
+    conn.commit()
+    conn.close()
+
+    st = _daemon.status({})
+    assert st["oldest_event_age_s"] < 60, "global age is kept fresh by the option quote"
+    assert st["underlyings_stale_age_s"] >= 3500, "underlying spot age reflects the frozen SPX feed"
+
+
 def test_stop_when_not_running(home):
     result = _daemon.stop({})
     assert result == {"ok": False, "error": "Streamer not running"}
