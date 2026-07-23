@@ -132,12 +132,13 @@ multi-day calendar hold, closed out by this mechanism if nothing else has closed
 Defined-risk: maximum loss is known at entry (every strategy in this system). Undefined risk:
 maximum loss is theoretically unbounded (naked strategies — deliberately not implemented here).
 
-**Tier 1 / Tier 2 / Near Miss / Reject**
-Per-strategy classification from that strategy's own `apply_tiering()`. Tier 1 clears every hard
-filter and every additional criterion at the "pass" band; Tier 2 clears every hard filter with
-exactly one criterion in its near-miss band; Near Miss clears hard filters but has multiple
-near-miss criteria; Reject fails a hard filter outright. Only Tier 1/2 are eligible for entry.
-See [Screening Criteria](./screening-criteria.md).
+**Accepted / Rejected**
+The single binary screening decision from a strategy's own `apply_tiering()`, which returns
+`{"accepted": bool, "reject_reasons": [...]}`. A candidate is **accepted** when it clears every
+hard filter and each soft criterion at whatever level `symbol_screen` sets for it; otherwise it's
+**rejected**, with one entry in `reject_reasons` per bar it failed. Only accepted candidates are
+eligible for entry. (There is no longer a Tier 1/Tier 2/Near-Miss ladder — screening is a plain
+accept/reject bar.) See [Screening Criteria](./screening-criteria.md).
 
 **Position Sizing**
 Number of contracts per leg, computed by `src/sizing.py`'s `compute_position_size` to keep max
@@ -157,11 +158,12 @@ the calendar and picking each symbol's single best-ranked strategy by composite 
 [Entry Conditions Framework](./04-entry-conditions.md).
 
 **Forced-Sampling Paper Test**
-`strategy_test_runner.py`'s testing program (`/paper-start`) — opens every Tier 1/2 candidate
-under every qualifying strategy (not just each symbol's single best), so every strategy
-accumulates a usable sample size instead of only the ones that happen to win the head-to-head
-comparison. Writes to an isolated `profile='strat_test'` book. See
-`docs/strategy-testing-plan.md`.
+`strategy_test_runner.py`'s testing program (`/paper-start`) — opens a paper trade for every
+strategy that clears the screen on every viable symbol (not just each symbol's single best), so
+every strategy accumulates a usable sample size instead of only the ones that happen to win the
+head-to-head comparison. Writes to per-strategy strat_test books by default (`profile
+='strat_test:<strategy>'`, controlled by `strat_test_portfolio`). See
+`docs/strat-test-portfolios.md` and `docs/strategy-testing-plan.md`.
 
 **Cost-Adjusted Expectancy**
 Expected P&L per trade after subtracting tastytrade's real commission/fee schedule (modeled in
@@ -188,8 +190,10 @@ A few worth calling out by name since they show up throughout the other docs:
   quality gates every strategy applies with its own threshold.
 - **`max_bid_ask_spread_pct`** / **`min_market_cap`** / **`min_combined_open_interest`** /
   **`min_combined_option_volume`** — shared liquidity gates.
-- **`profiles`** — named risk profiles (`conservative`/`balanced`/`aggressive`) for paper-mode
-  testing via `--profile`.
+- **`symbol_screen`** — per-criterion strictness (`pass`/`near_miss`/`off`) for the five soft
+  screening criteria.
+- **`strat_test_portfolio`** — how the forced-sampling test books its trades: `per_strategy`
+  (default, one book per strategy) or `combined`.
 
 ---
 
@@ -199,7 +203,7 @@ A few worth calling out by name since they show up throughout the other docs:
 Fetch tickers with earnings on a given date.
 
 **`python src/strategies/<name>.py get_candidates --date MM/DD/YYYY`**
-Full tiered scan for one strategy: Tier 1/2/3, pass/skip reasons, ranked candidates, selected.
+Full accept/reject scan for one strategy: accepted vs rejected, pass/skip reasons, ranked candidates, selected.
 
 **`python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY`**
 Cross-strategy ranking — evaluates all six strategies against every symbol, picks each
