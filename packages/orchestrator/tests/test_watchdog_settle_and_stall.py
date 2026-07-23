@@ -46,6 +46,14 @@ def test_settlement_overdue_warns_with_count_and_reason(monkeypatch):
     assert "5 open position" in f.message and "no price within 300s" in f.message
 
 
+def test_no_alert_in_the_settle_window_before_grace(monkeypatch):
+    """Between the 16:00 close and settle time + retry buffer, open positions are not overdue yet —
+    firing here false-alarmed every day (flies doesn't settle until 16:20)."""
+    in_window = datetime(2026, 7, 22, 16, 7)  # past close, before the 16:30 grace
+    out = _run_settle(monkeypatch, {"session_settled": False, "positions_today": 11}, now_et=in_window)
+    assert out == []
+
+
 def test_settled_reports_ok_so_a_prior_alert_recovers(monkeypatch):
     out = _run_settle(monkeypatch, {"session_settled": True, "positions_today": 5})
     assert out and out[0].status == OK
