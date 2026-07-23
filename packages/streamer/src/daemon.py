@@ -168,6 +168,7 @@ def status(cfg: dict) -> dict:
     info: dict = {}
     cache = _config.cache_path(cfg)
     age: float | None = None
+    u_age: float | None = None
     if cache.exists():
         conn = sqlite3.connect(f"file:{cache}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
@@ -181,9 +182,26 @@ def status(cfg: dict) -> dict:
                 r = conn.execute(f"SELECT MAX(updated_at) AS last FROM {table}").fetchone()
                 if r and r["last"] is not None:
                     newest = r["last"] if newest is None else max(newest, r["last"])
+            # Per-underlying spot freshness, tracked SEPARATELY from the global `newest` above. Option
+            # quotes tick constantly and dominate the global age, masking a dead underlying-spot feed:
+            # on 2026-07-22 every underlying's stream_trades froze at 10:05 ET while option quotes kept
+            # streaming until 20:00, so the global age never went stale and nothing restarted -- flies
+            # and MEIC ran on frozen spot all day. Use the FRESHEST subscribed underlying (so one
+            # naturally-quiet name can't false-trip; during RTH at least one liquid underlying always
+            # ticks, so this only ages out when the whole spot feed dies).
+            underlyings = _registry.union_symbols(_config.symbols(cfg))
+            u_newest: float | None = None
+            if underlyings:
+                placeholders = ",".join("?" * len(underlyings))
+                r = conn.execute(
+                    f"SELECT MAX(updated_at) AS last FROM stream_trades WHERE symbol IN ({placeholders})",
+                    underlyings,
+                ).fetchone()
+                u_newest = r["last"] if r and r["last"] is not None else None
         finally:
             conn.close()
         age = round(now - newest, 1) if newest else None
+        u_age = round(now - u_newest, 1) if u_newest else None
 
     # The PID file — not the cache's stored pid — is authoritative for liveness, so set it last.
     pid = running_pid(cfg)
@@ -191,6 +209,7 @@ def status(cfg: dict) -> dict:
     info["pid"] = pid
     info["oldest_event_age_s"] = age
     info["stale_age_s"] = age
+    info["underlyings_stale_age_s"] = u_age
     info["stale_warning"] = pid is not None and (age is None or age > _STALE_WARN_S)
     return info
 
