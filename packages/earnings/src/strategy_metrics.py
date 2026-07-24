@@ -65,6 +65,18 @@ BENCHMARKS = {
 }
 
 
+def book_family_filter(profile: str, column: str = "profile"):
+    """A (SQL fragment, params) pair matching a book tag and its per-strategy
+    sub-books: 'strat_test' covers both the combined 'strat_test' book and
+    every 'strat_test:<strategy>' book (strat_test_portfolio). Uses an exact
+    prefix comparison rather than `LIKE '<profile>:%'`, since '_' in a tag
+    like 'strat_test' is a LIKE single-char wildcard that would over-match
+    (e.g. 'stratXtest:...').
+    """
+    prefix = profile + ":"
+    return f"({column} = ? OR substr({column}, 1, ?) = ?)", [profile, len(prefix), prefix]
+
+
 def load_closed_trades(profile: str | None = None, strategy: str | None = None, since: str | None = None) -> list[dict]:
     """Closed trades (dicts, parsed entry_context) ordered by closed_at,
     optionally filtered by profile/strategy/since (a scan_date-style
@@ -78,10 +90,9 @@ def load_closed_trades(profile: str | None = None, strategy: str | None = None, 
         query = "SELECT * FROM trades WHERE closed_at IS NOT NULL"
         params: list = []
         if profile:
-            # A book tag matches itself and its per-strategy sub-books: 'strat_test' covers both the
-            # combined 'strat_test' book and every 'strat_test:<strategy>' book (strat_test_portfolio).
-            query += " AND (profile = ? OR profile LIKE ?)"
-            params.extend([profile, profile + ":%"])
+            frag, fparams = book_family_filter(profile)
+            query += f" AND {frag}"
+            params.extend(fparams)
         if strategy:
             query += " AND strategy = ?"
             params.append(strategy)
@@ -120,9 +131,9 @@ def load_open_trades(profile: str | None = None, strategy: str | None = None) ->
         query = "SELECT * FROM trades WHERE closed_at IS NULL"
         params: list = []
         if profile:
-            # See load_closed_trades: a book tag also matches its per-strategy sub-books.
-            query += " AND (profile = ? OR profile LIKE ?)"
-            params.extend([profile, profile + ":%"])
+            frag, fparams = book_family_filter(profile)  # see load_closed_trades
+            query += f" AND {frag}"
+            params.extend(fparams)
         if strategy:
             query += " AND strategy = ?"
             params.append(strategy)
