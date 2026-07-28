@@ -36,6 +36,7 @@ from typing import Any
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
+from . import util
 
 _STATE = cfgmod.STATE_DIR / "trade_notify.json"
 _ID_CAP = 4000  # bound the remembered-id lists (per schema, per direction)
@@ -75,10 +76,7 @@ def _release_lock() -> None:
 
 
 def _load_state() -> dict:
-    try:
-        return json.loads(_STATE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return util.read_json(_STATE)
 
 
 def _save_state(state: dict) -> None:

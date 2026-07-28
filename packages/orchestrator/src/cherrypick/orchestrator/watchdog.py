@@ -25,7 +25,7 @@ from typing import Any
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
-from . import eval_activity, tasks, timeutil
+from . import eval_activity, tasks, timeutil, util
 from .util import first_json
 
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
@@ -444,11 +444,7 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
     return findings
 
 
-def _read_heartbeat(path: Path) -> dict[str, Any]:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+_read_heartbeat = util.read_json  # one implementation of the best-effort JSON read
 
 
 # --------------------------------------------------------------------------- drawdown (drift) alert
@@ -647,6 +643,9 @@ def _check_eod(cfg: dict[str, Any], now: datetime, is_trading: bool) -> None:
 
 def _log_findings(findings: list[Finding], overall: str) -> None:
     cfgmod.ensure_dirs()
+    # Own-log rotation: logrotate refuses active .log files by design, so without this the
+    # watchdog's log grew forever (and was re-read on every dashboard render).
+    util.rotate_if_large(_WATCHDOG_LOG)
     with _WATCHDOG_LOG.open("a", encoding="utf-8") as fh:
         fh.write(
             json.dumps({"ts": _utcnow(), "overall": overall, "findings": [asdict(f) for f in findings]})

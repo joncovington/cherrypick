@@ -44,6 +44,10 @@ def test_eval_activity_accounts_for_every_schema():
     assert not (wired & declared_na)
 
 
+def test_latest_session_sql_covers_every_schema():
+    assert set(report._LATEST_SQL) == _ALL
+
+
 def test_calibrate_shares_reports_readers():
     """calibrate must never grow its own reader registry — it reads through report's, so
     the two can't drift (the audit found an alias here; pin that it stays one)."""
