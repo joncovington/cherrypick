@@ -44,6 +44,7 @@ def _group_readings(records: list[dict]) -> dict:
 def run(cfg: dict | None = None) -> dict:
     """Per-module, per-profile calibration readings + advisory promotion recommendations. Read-only."""
     cfg = cfg or cfgmod.load_config()
+    epoch = cfgmod.data_epoch(cfg)
     modules_out: dict[str, dict] = {}
 
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
@@ -72,6 +73,13 @@ def run(cfg: dict | None = None) -> dict:
         finally:
             conn.close()
 
+        # The epoch is ENFORCED here: a promotion reading must never blend sessions produced
+        # by retired code (pre-fix leg ratios, fee undercounts, status-based wins) into its
+        # sample/days/win-rate. Records without a session date are treated as pre-epoch —
+        # if we can't date it, it can't support a promotion.
+        if epoch is not None:
+            records = [r for r in records if r.get("session") and r["session"] >= epoch["date"]]
+
         readings = _group_readings(records)
         profiles_out: dict[str, dict] = {}
         for tag, reading in readings.items():
@@ -90,4 +98,5 @@ def run(cfg: dict | None = None) -> dict:
             "profiles": profiles_out,
         }
 
-    return {"ok": True, "generated_at": datetime.now(timezone.utc).isoformat(), "modules": modules_out}
+    return {"ok": True, "generated_at": datetime.now(timezone.utc).isoformat(),
+            "data_epoch": epoch, "modules": modules_out}

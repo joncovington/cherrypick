@@ -215,6 +215,7 @@ def run(cfg: dict | None = None, session: str | None = None) -> dict:
     the same normalized records the all-time view uses. `session=None` keeps the cumulative behavior.
     """
     cfg = cfg or cfgmod.load_config()
+    epoch = cfgmod.data_epoch(cfg)
     modules_out: dict[str, dict] = {}
     all_records: list[dict] = []
     all_open: list[dict] = []
@@ -263,6 +264,12 @@ def run(cfg: dict | None = None, session: str | None = None) -> dict:
             # Positions opened this session and carried past the close (empty for the 0DTE modules).
             "open": _summarize_open(open_records),
         }
+        # Descriptive only: the report never rewrites history, but when an epoch is declared it
+        # says how much of this module's history predates it (rows a promotion reading excludes).
+        if epoch is not None:
+            modules_out[name]["pre_epoch_trades"] = sum(
+                1 for r in records if not r.get("session") or r["session"] < epoch["date"]
+            )
 
     suite = _summarize(all_records)
     # Nested inside suite (not a sibling) so the digest's suite.get("open") finds it next to the
@@ -272,6 +279,7 @@ def run(cfg: dict | None = None, session: str | None = None) -> dict:
         "ok": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "session": session,
+        "data_epoch": epoch,
         "modules": modules_out,
         "suite": suite,
     }
