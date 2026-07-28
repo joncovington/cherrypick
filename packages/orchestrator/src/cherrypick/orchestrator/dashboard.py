@@ -257,6 +257,91 @@ def _eod_view(cfg: dict[str, Any], modules_cfg: dict[str, Any], tz: str) -> dict
     }
 
 
+def _vix_by_session(cfg: dict[str, Any]) -> dict[str, float]:
+    """VIX per session date from the first paper DB carrying a market_context table (MEIC
+    writes one row per day). The audit's finding: this series was captured daily and only
+    ever surfaced as prose — never plotted. Best-effort; {} when nothing carries it."""
+    for name, mcfg in cfgmod.enabled_modules(cfg).items():
+        db_path = cfgmod.paper_db_path(mcfg, name)
+        if not db_path.exists():
+            continue
+        try:
+            conn = report._connect_ro(db_path)
+        except Exception:
+            continue
+        try:
+            rows = conn.execute(
+                "SELECT context_date, vix FROM market_context WHERE vix IS NOT NULL"
+            ).fetchall()
+            if rows:
+                return {r["context_date"]: float(r["vix"]) for r in rows}
+        except Exception:
+            pass
+        finally:
+            conn.close()
+    return {}
+
+
+def _equity_card_payload(cfg: dict[str, Any], pnl: dict[str, Any]) -> dict[str, Any]:
+    """The suite equity curve — the first chart the suite's front door has ever had.
+    Cumulative net P&L per session (suite + up to three module lines) off report.run's
+    daily series, VIX overlaid on the right axis, the data_epoch marked. Everything is
+    a viz `timeseries` payload; the page inlines it so the static render works offline."""
+    daily = pnl.get("daily") or []
+    labels = [d["session"] for d in daily if d.get("session")]
+    if not labels:
+        return {"ok": False, "error": "no closed paper sessions yet"}
+    rows = [d for d in daily if d.get("session")]
+
+    module_totals: dict[str, float] = {}
+    for d in rows:
+        for m, v in (d.get("by_module") or {}).items():
+            module_totals[m] = module_totals.get(m, 0.0) + v
+    top_modules = [m for m, _ in sorted(module_totals.items(), key=lambda kv: -abs(kv[1]))[:3]]
+
+    series = []
+    running = 0.0
+    suite_vals = []
+    for d in rows:
+        running += d["net_pnl"]
+        suite_vals.append(round(running, 2))
+    series.append({"name": "suite", "values": suite_vals, "tone": "accent"})
+    tones = ["pos", "vol", "neg"]
+    for i, m in enumerate(top_modules):
+        acc, vals = 0.0, []
+        for d in rows:
+            acc += (d.get("by_module") or {}).get(m, 0.0)
+            vals.append(round(acc, 2))
+        series.append({"name": m, "values": vals, "tone": tones[i % len(tones)]})
+
+    vix = _vix_by_session(cfg)
+    overlay = [vix.get(s) for s in labels]
+    ts: dict[str, Any] = {"labels": labels, "series": series}
+    if any(v is not None for v in overlay):
+        ts["overlay"] = {"name": "VIX", "values": overlay}
+    epoch = pnl.get("data_epoch")
+    if epoch and epoch.get("date") in labels:
+        ts["markers"] = [{"label": "epoch", "at": epoch["date"]}]
+
+    suite = pnl.get("suite", {})
+    best = max(rows, key=lambda d: d["net_pnl"])
+    worst = min(rows, key=lambda d: d["net_pnl"])
+    return {
+        "ok": True,
+        "subtitle": f"{len(labels)} sessions · cumulative net P&L (paper, net of modeled costs)",
+        "metrics": [
+            {"label": "Net", "value": viz.fmt_money(suite.get("net_pnl")),
+             "tone": "pos" if (suite.get("net_pnl") or 0) >= 0 else "neg"},
+            {"label": "At 2x slippage", "value": viz.fmt_money(suite.get("net_pnl_2x_slippage")),
+             "tone": "pos" if (suite.get("net_pnl_2x_slippage") or 0) >= 0 else "neg"},
+            {"label": "Best day", "value": viz.fmt_money(best["net_pnl"]), "tone": "pos"},
+            {"label": "Worst day", "value": viz.fmt_money(worst["net_pnl"]), "tone": "neg"},
+        ],
+        "timeseries": ts,
+        "note": "dashed = VIX (right axis)" if "overlay" in ts else "",
+    }
+
+
 def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     """Assemble the dashboard render model from on-disk state only (no broker/network)."""
     cfg = cfg or cfgmod.load_config()
@@ -273,7 +358,9 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         except Exception:
             et_clock = None
 
-    pnl = report.run(cfg)
+    # session_range=(None, None) is the same all-time read plus the daily series the
+    # suite equity card draws — one pass, not two.
+    pnl = report.run(cfg, session_range=(None, None))
     # Per-profile promotion recommendations (advisory, file-only). Best-effort: a calibration hiccup
     # must never break the dashboard render.
     try:
@@ -330,6 +417,7 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         "notify_channels": cfg.get("notify", {}).get("channels", ["log"]),
         "active_findings": [f for f in findings if str(f.get("status", "")).upper() in ("WARN", "CRITICAL")],
         "suite": pnl.get("suite", {}),
+        "equity_card": _equity_card_payload(cfg, pnl),
         "eod": _eod_view(cfg, modules_cfg, tz),
         "modules": module_views,
         "logs": log_entries,
@@ -1082,6 +1170,84 @@ def _embed_cards_html(embed_views: list[dict[str, Any]]) -> str:
     return '<div class="embed-grid">' + "".join(cards) + "</div>"
 
 
+_CAL_CSS = (
+    ".cpg-mod{margin:8px 0}.cpg-mod h3{margin:4px 0;font-size:13px;text-transform:uppercase;"
+    "letter-spacing:.04em;opacity:.8}"
+    ".cpg-row{margin:6px 0 10px}.cpg-head{font-size:13px;font-weight:650;margin-bottom:3px}"
+    ".cpg{display:grid;grid-template-columns:130px 1fr 110px;gap:8px;align-items:center;"
+    "font-size:11px;margin:2px 0}"
+    ".cpg-bar{position:relative;height:6px;background:rgba(128,128,128,.2);border-radius:3px;"
+    "overflow:hidden}"
+    ".cpg-fill{position:absolute;left:0;top:0;bottom:0;background:var(--warn,#9a6700);"
+    "border-radius:3px}"
+    ".cpg-fill.ok{background:var(--pos,#1a7f37)}"
+    ".cpg-v{opacity:.75;text-align:right}"
+    ".cpg-chip{display:inline-block;padding:0 6px;border-radius:8px;font-size:10px;font-weight:650}"
+    ".cpg-chip.ok{color:var(--pos,#1a7f37)}.cpg-chip.no{color:var(--neg,#cf222e)}"
+)
+
+
+def _fmt_check_val(v: Any) -> str:
+    if v is None:
+        return "—"
+    if isinstance(v, float) and not v.is_integer():
+        return f"{v:.2f}"
+    return str(int(v)) if isinstance(v, (int, float)) else str(v)
+
+
+def _calibration_progress_html(module_views: list[dict[str, Any]]) -> str:
+    """Each ladder rung's march toward its promotion thresholds, as progress bars — the
+    calibrate output made visible (the audit: readings were point-in-time list items,
+    never a progression). Renders every check recommend_promotion evaluated, so the
+    hardened checks (return-on-capital, slippage survival) appear automatically the day
+    a module's rule enables them. Empty string when no module has a ladder."""
+    blocks = []
+    for mv in module_views:
+        cal = mv.get("calibration") or {}
+        if not cal.get("ok") or not cal.get("ladder"):
+            continue
+        profiles = cal.get("profiles", {})
+        rows = []
+        for tag in cal["ladder"]:
+            entry = profiles.get(tag)
+            rec = (entry or {}).get("recommendation") or {}
+            checks = rec.get("checks") or {}
+            if not checks:
+                continue
+            bars = []
+            for cname, c in checks.items():
+                value, threshold = c.get("value"), c.get("threshold")
+                passed = bool(c.get("pass"))
+                if isinstance(threshold, (int, float)) and threshold > 0:
+                    frac = 0.0 if value is None else max(0.0, min(1.0, float(value) / float(threshold)))
+                    bars.append(
+                        f'<div class="cpg"><span>{html.escape(cname)}</span>'
+                        f'<span class="cpg-bar"><span class="cpg-fill{" ok" if passed else ""}" '
+                        f'style="width:{frac * 100:.0f}%"></span></span>'
+                        f'<span class="cpg-v">{html.escape(_fmt_check_val(value))} / '
+                        f'{html.escape(_fmt_check_val(threshold))}</span></div>'
+                    )
+                else:  # non-numeric bar (e.g. slippage survival): a pass/fail chip
+                    bars.append(
+                        f'<div class="cpg"><span>{html.escape(cname)}</span>'
+                        f'<span class="cpg-chip {"ok" if passed else "no"}">'
+                        f'{"PASS" if passed else "FAIL"}</span>'
+                        f'<span class="cpg-v">{html.escape(_fmt_check_val(value))}</span></div>'
+                    )
+            verdict = rec.get("recommendation") or "—"
+            tone = "OK" if rec.get("eligible") else "UNKNOWN"
+            rows.append(
+                f'<div class="cpg-row"><div class="cpg-head">{html.escape(tag)} '
+                f"{_pill(verdict, tone)}</div>{''.join(bars)}</div>"
+            )
+        if rows:
+            blocks.append(f'<div class="cpg-mod"><h3>{html.escape(mv["name"])}</h3>{"".join(rows)}</div>')
+    if not blocks:
+        return ""
+    return ('<section class="card"><h2>calibration — progress toward promotion</h2>'
+            + "".join(blocks) + "</section>")
+
+
 def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     overall = model.get("overall", "UNKNOWN")
     age = model.get("heartbeat_age_min")
@@ -1136,8 +1302,16 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     # (serve mode with embeds configured) omit the summary grid as redundant. The static file render
     # has no embeds, so it keeps the grid as the only per-module P&L view.
     module_grid = "" if embeds_shown else f'<div class="grid">{cards}</div>'
-    extra_style = viz.SECTION_STYLE if live_sections else ""
-    extra_script = (viz.SECTION_JS if live_sections else "") + (_DOCTOR_JS + _RECONCILE_JS if serve else "")
+    # The suite equity curve and calibration progression render in BOTH modes: the equity
+    # card's payload is baked inline (viz.card_inline_html), so the static file — the page
+    # that exists when nobody is watching — finally has a chart without needing a server.
+    equity_card = ""
+    if model.get("equity_card"):
+        equity_card = viz.card_inline_html("suite-equity", "suite equity — paper",
+                                           model["equity_card"])
+    calibration_card = _calibration_progress_html(model.get("modules", []))
+    extra_style = viz.SECTION_STYLE + _CAL_CSS
+    extra_script = viz.SECTION_JS + (_DOCTOR_JS + _RECONCILE_JS if serve else "")
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -1146,6 +1320,8 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
         + extra_style
         + "</style></head><body><div class='wrap'>"
         + header
+        + equity_card
+        + calibration_card
         + system_card
         + section_cards
         + module_grid

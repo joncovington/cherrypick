@@ -111,16 +111,19 @@ def test_argv_substitutes_params():
 
 
 # --- render gating ------------------------------------------------------------------------------
-def test_section_card_only_rendered_in_serve_mode():
+# POLLING section cards (data-endpoint) are serve-only: only the live server answers
+# /api/section/<id>. Inline cards (payload baked in) render in both modes, so the viz
+# style/script now ships on every page — the gate is on data-endpoint, not on the CSS.
+def test_polling_section_card_only_rendered_in_serve_mode():
     served = dashboard._render_html(_MODEL, serve=True)
     assert 'data-cp-section="gex"' in served and 'data-endpoint="/api/section/gex"' in served
     static = dashboard._render_html(_MODEL, serve=False)
-    assert "cpsection" not in static and "data-cp-section" not in static
+    assert 'data-endpoint="/api/section/' not in static
 
 
-def test_no_sections_no_card():
+def test_no_sections_no_polling_card():
     model = dict(_MODEL, sections=[])
-    assert "cpsection" not in dashboard._render_html(model, serve=True)
+    assert 'data-endpoint="/api/section/' not in dashboard._render_html(model, serve=True)
 
 
 # --- end-to-end handler -------------------------------------------------------------------------
