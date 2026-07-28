@@ -333,6 +333,28 @@ def _late_entry_bias_max(params: dict) -> float:
     return params.get("late_entry_bias_iv_rank_max", 0.45)
 
 
+def _gex_at_entry(gex: dict | None) -> dict:
+    """The four GEX-regime fields persisted on an accepted entry, or all-None when GEX was unavailable.
+
+    All-None is a meaningful reading, not a gap: it means the entry was taken with no GEX data, which
+    is precisely the case `regime_gex_require_positive` would have refused. Distinguishing "GEX was
+    positive" from "GEX was unknown" is the whole point of recording this, so the two must not collapse
+    into the same stored value. `gex_positive` is stored as 0/1 rather than a bool because SQLite has
+    no boolean type and the orchestrator's readers expect the column to compare numerically.
+    """
+    gex = gex or {}
+    if not gex.get("ok"):
+        return {"gex_net_at_entry": None, "gex_positive_at_entry": None,
+                "gamma_flip_at_entry": None, "gex_spot_at_entry": None}
+    positive = gex.get("gex_positive")
+    return {
+        "gex_net_at_entry": gex.get("net_gex"),
+        "gex_positive_at_entry": None if positive is None else int(bool(positive)),
+        "gamma_flip_at_entry": gex.get("gamma_flip"),
+        "gex_spot_at_entry": gex.get("spot"),
+    }
+
+
 def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
                    account_open_count: int | None = None,
                    todays_entry_count: int = 0, last_entry_min: int | None = None) -> tuple:
@@ -414,18 +436,31 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
     target = params.get("daily_ic_trade_target", 0)
     over_target = bool(target) and todays_entry_count >= target
 
+    # Entry window — applies to EVERY profile, not just staggered ones.
+    #
+    # This check used to live inside the `stagger_entries` block below, and the ladder profiles omit
+    # that key, so in practice the paper engine enforced no entry window at all: it could open a fresh
+    # 0DTE IC from the opening bell to the force-close while `config.json` said 10:00–14:30 and the
+    # live loop honoured it. Measured on 2026-07-27, the earliest paper entry in the book was 09:30 ET
+    # and 112 of 199 in-session entries landed before 10:00 — so paper and live had silently diverged
+    # on entry timing for the whole dataset, and every conclusion drawn from this book inherits that.
+    # A gate that config claims to apply must actually apply; making it opt-in per profile was the bug.
+    #
+    # `paper_entry_window_start` overrides the start for the paper engine ONLY (see config.json for why
+    # it currently sits at 09:30). The end is shared: no entry has ever been taken at/after 14:30 ET, so
+    # enforcing it changes nothing historically and just stops the window drifting open again.
+    ews = _time_to_minutes(params.get("paper_entry_window_start")
+                           or params.get("entry_window_start", "10:00"))
+    ewe = _time_to_minutes(params.get("entry_window_end", "14:30"))
+    if now_min < ews or now_min >= ewe:
+        return False, "outside_entry_window", None
+
     # Staggered-entry controls (opt-in per profile via `stagger_entries`) — spread the daily target
     # across the session instead of filling every slot in the first passing iterations, giving
-    # time-of-day coverage of when a condor is opened. This block also enforces the entry window,
-    # which the live loop applies (10:00–14:30) but the paper gate historically did not — paper could
-    # open a fresh 0DTE IC as late as the force-close. Here the daily target IS a hard cap: staggering
+    # time-of-day coverage of when a condor is opened. Here the daily target IS a hard cap: staggering
     # exists to spread a fixed number of entries, so opting in means opting into the throttle. Ladder
     # profiles omit `stagger_entries` and keep the soft-guidance behavior above.
     if params.get("stagger_entries"):
-        ews = _time_to_minutes(params.get("entry_window_start", "10:00"))
-        ewe = _time_to_minutes(params.get("entry_window_end", "14:30"))
-        if now_min < ews or now_min >= ewe:
-            return False, "outside_entry_window", None
         if over_target:
             return False, "daily_target_reached", None
         spacing = params.get("min_minutes_between_entries", 0)
@@ -592,6 +627,14 @@ def synthetic_entry_fill(snapshot: dict, profile_name: str, chosen: dict, params
         "session_quality": snapshot.get("session_quality"),
         "iv_skew_signal": snapshot.get("iv_skew_signal"),
         "price_action_signal": snapshot.get("price_action_signal"),
+        # GEX regime at the moment this entry was accepted. `gex_positive` is what the live gate above
+        # keys on, and the two opt-in variants (regime_gex_require_positive, and the flip-distance
+        # variant that reads gamma_flip vs spot) are otherwise impossible to evaluate after the fact —
+        # nothing here recorded what GEX was when a fill happened, so their effect could only ever be
+        # argued, never measured. `spot` is the price tt.py's get_gex computed the profile against, so
+        # the flip DISTANCE is reconstructable; it can differ slightly from underlying_price_entry
+        # because the two come from separate calls, which is exactly why it is stored separately.
+        **_gex_at_entry(snapshot.get("gex")),
         "ai_entry_reasoning": f"paper/{execution_mode}/{profile_name}: deterministic entry, "
                                f"widest clearing candidate ({chosen['wing_width']}-wide)",
         "stop_trigger_original": params["stop_trigger_ratio"],
@@ -717,14 +760,28 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
     # so a missing quote at the close can't strand an expiring position. force_close (events /
     # non-cash) takes precedence since it fires earlier in the day.
     if settle and not force_close:
+        # `*_exit_price` stays gated on the side still being open — it drives P&L, and a side that
+        # already stopped was paid for at its stop.
+        #
+        # `*_settle_value` is computed for BOTH sides regardless, and is recorded, not charged. It is
+        # what the side WOULD have been worth had it been held to settlement, which is the only way to
+        # answer the question the whole stop debate turns on: did stopping cost more than holding?
+        # For a stopped side, `settle_value < stop_cost` means the stop paid more than the position
+        # ultimately owed. Nothing recorded this before, so "would these have recovered?" could only
+        # ever be argued. Cash-settled only — this branch is the 'left to expire' path.
+        put_settle = _settlement_value(trade.get("put_strike"), underlying_price,
+                                       trade.get("wing_width"), "put")
+        call_settle = _settlement_value(trade.get("call_strike"), underlying_price,
+                                        trade.get("wing_width"), "call")
         return {
             "action": "expire",
             "put_open": put_open,
             "call_open": call_open,
-            "put_exit_price": _settlement_value(trade.get("put_strike"), underlying_price,
-                                                trade.get("wing_width"), "put") if put_open else None,
-            "call_exit_price": _settlement_value(trade.get("call_strike"), underlying_price,
-                                                 trade.get("wing_width"), "call") if call_open else None,
+            "put_exit_price": put_settle if put_open else None,
+            "call_exit_price": call_settle if call_open else None,
+            "put_settle_value": put_settle,
+            "call_settle_value": call_settle,
+            "settle_underlying": underlying_price,
         }
 
     sq = leg_quotes.get(trade["put_symbol"])
@@ -769,29 +826,48 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
         }
 
     stop_trigger = trade.get("stop_trigger_current") or params["stop_trigger_ratio"]
-    call_cost_mid = cq["mid"] - lcq["mid"]
-    put_cost_mid = sq["mid"] - lpq["mid"]
+
+    # Trigger and fill are priced on the SAME basis: the cost to actually close the vertical
+    # (mid + slippage haircut), not the raw mid.
+    #
+    # These used to differ — the trigger compared `mid` against the threshold while the fill was
+    # charged `_close_cost` = mid + slippage_frac * (short_spread + long_spread), off the SAME quotes
+    # in the SAME iteration. So a stop could never fill at its own trigger level: it was short by the
+    # haircut every time, by construction, and the threshold the config states was never the amount
+    # actually risked. It is a small bias (~1.4% of the trigger on a typical SPX IC at
+    # slippage_frac 0.125) next to the ~9% total overshoot measured over 07-10..07-27 — but it is a
+    # CONSTANT bias, and leaving it in means the recorded overshoot mixes a model artifact with the
+    # real quantity of interest, which is how far the mid jumps between 2-minute evaluations. With
+    # the bases matched, overshoot measures loop cadence alone.
+    call_cost = _close_cost(cq, lcq, slippage_frac)
+    put_cost = _close_cost(sq, lpq, slippage_frac)
 
     # per_side_stop_management: false disables per-side stops entirely (a hold-to-expiry
     # cell), so the IC is only ever closed by a force-close or settlement -- held to expiry.
     stops_on = params.get("per_side_stop_management", True)
-    call_trigger = stops_on and call_open and call_cost_mid >= stop_trigger * net_credit
-    put_trigger = stops_on and put_open and put_cost_mid >= stop_trigger * net_credit
+    call_trigger = stops_on and call_open and call_cost >= stop_trigger * net_credit
+    put_trigger = stops_on and put_open and put_cost >= stop_trigger * net_credit
 
-    # Closing fills priced at mid + slippage haircut (see _close_cost); the former
-    # (short_ask - long_bid) * stop_limit worst-case model is superseded by the parity model.
+    # Every return carries the per-side cost-to-close observed this iteration, including "hold", so
+    # the caller can keep a running maximum. Without it nothing records how far a side ran, and no
+    # alternative stop threshold can ever be evaluated after the fact — the same instrumentation gap
+    # that made the GEX gates unmeasurable.
+    marks = {"put_cost_now": round(put_cost, 4) if put_open else None,
+             "call_cost_now": round(call_cost, 4) if call_open else None}
+
     if call_trigger and put_trigger:
         return {
             "action": "stop_both",
-            "put_exit_price": round(_close_cost(sq, lpq, slippage_frac), 4),
-            "call_exit_price": round(_close_cost(cq, lcq, slippage_frac), 4),
+            "put_exit_price": round(put_cost, 4),
+            "call_exit_price": round(call_cost, 4),
+            **marks,
         }
     if call_trigger:
-        return {"action": "stop_call", "call_exit_price": round(_close_cost(cq, lcq, slippage_frac), 4)}
+        return {"action": "stop_call", "call_exit_price": round(call_cost, 4), **marks}
     if put_trigger:
-        return {"action": "stop_put", "put_exit_price": round(_close_cost(sq, lpq, slippage_frac), 4)}
+        return {"action": "stop_put", "put_exit_price": round(put_cost, 4), **marks}
 
-    return {"action": "hold"}
+    return {"action": "hold", **marks}
 
 
 # ---------------------------------------------------------------------------
@@ -814,8 +890,14 @@ def _save_trade(row: dict, db_path: str) -> dict:
 
 
 def _update_trade(ic_order_id: str, fields: dict, db_path: str) -> dict:
+    """Fields are passed to db.py as CLI flags, so a None must be DROPPED, not stringified — db.py
+    skips arguments that are None, but `str(None)` is the literal text "None", which would land in a
+    REAL column and read back as a string. Nothing passed None before the settlement counterfactual
+    made it possible for a field to be legitimately absent."""
     args_list = ["update_trade", "--ic_order_id", ic_order_id]
     for k, v in fields.items():
+        if v is None:
+            continue
         args_list += [f"--{k}", str(v)]
     return _db(args_list, db_path)
 
@@ -931,13 +1013,38 @@ def process_symbol(snapshot: dict, db_path: str, execution_mode: str, profiles_f
     return {"ok": True, "symbol": symbol, "results": results}
 
 
+def _max_cost_updates(trade: dict, decision: dict) -> dict:
+    """Running maximum cost-to-close per side, as {column: value} — empty when nothing set a new high.
+
+    Written only on a NEW high on purpose: every `_update_trade` is a db.py subprocess, and `hold` was
+    previously a no-op DB-wise, so writing each iteration would add a spawn per open IC per tick. The
+    maximum is monotone, so writes taper off once a side peaks.
+
+    This is what makes an alternative stop threshold answerable later: it records how far each side
+    actually ran, which no stored field captured before.
+    """
+    out = {}
+    for side in ("put", "call"):
+        cost_now = decision.get(f"{side}_cost_now")
+        if cost_now is None:
+            continue
+        prior = trade.get(f"{side}_max_cost")
+        if prior is None or cost_now > prior:
+            out[f"{side}_max_cost"] = cost_now
+    return out
+
+
 def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str) -> None:
     action = decision["action"]
     now = str(_now_et())
     ic_order_id = trade["ic_order_id"]
     mult = 100
 
+    max_updates = _max_cost_updates(trade, decision)
+
     if action == "hold":
+        if max_updates:
+            _update_trade(ic_order_id, max_updates, db_path)
         return
 
     if action == "expire":
@@ -964,12 +1071,24 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
             "status": "stopped" if was_stopped else "expired", "exit_time": now,
             "exit_reason": "stopped+expired_settlement" if was_stopped else "expired_settlement",
             "pnl": existing_pnl + delta_pnl,
+            # Recorded for BOTH sides, including any already stopped — this is the counterfactual.
+            # For a stopped side, settle_value < its stop cost means the stop paid more than holding
+            # would have, which is the question the stop-rule debate actually turns on.
+            # `.get` because callers may hand-build an exit decision (tests, and any future caller
+            # that isn't evaluate_open_trade); a decision without these records NULL rather than
+            # failing the settlement that carries the actual P&L.
+            "put_settle_value": decision.get("put_settle_value"),
+            "call_settle_value": decision.get("call_settle_value"),
+            "settle_underlying": decision.get("settle_underlying"),
+            **max_updates,
         }, db_path)
         return
 
     if action in ("stop_call", "stop_put", "stop_both"):
         fee = close_fees_one_side(symbol) if action != "stop_both" else close_fees_full_ic(symbol)
-        updates = {"fees": (trade.get("fees") or 0) + fee}
+        # `max_updates` folded in here so the peak isn't lost on the iteration that exits — the stop
+        # cost IS the running max at that moment, and it's the datum the counterfactual compares against.
+        updates = {"fees": (trade.get("fees") or 0) + fee, **max_updates}
         if action in ("stop_call", "stop_both"):
             call_pnl = round((trade["call_credit"] - decision["call_exit_price"]) * mult, 2)
             updates["call_stop_cost"] = decision["call_exit_price"]
@@ -1019,6 +1138,7 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
             "status": "stopped" if was_stopped else "force_closed", "exit_time": now,
             "exit_reason": (reason + "+prior_stop") if was_stopped else reason,
             "pnl": existing_pnl + delta_pnl, "fees": (trade.get("fees") or 0) + fee,
+            **max_updates,
         }, db_path)
         return
 

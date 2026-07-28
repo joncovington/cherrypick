@@ -168,12 +168,25 @@ def test_stop_triggers_when_side_cost_reaches_ratio():
 
 # ── SPX-eligible profile selection ───────────────────────────────────────────
 
-def test_spx_eligible_profiles_is_exactly_the_ladder():
-    # config.risk.json now holds only the four-tier ladder (the symbol/wing experiment cells were
-    # removed), and every tier trades SPX, so the SPX-eligible roster is exactly the ladder.
+def test_spx_eligible_profiles_is_exactly_the_enabled_ladder():
+    # config.risk.json holds only the four-tier ladder (the symbol/wing experiment cells were removed)
+    # and every tier trades SPX, so the SPX-eligible roster is exactly the ENABLED ladder. Derived from
+    # the registry rather than hardcoded: a tier can be switched off with `enabled: false` (as
+    # very-aggressive was on 2026-07-27) without that being a change in which profiles trade SPX, and
+    # this assertion should track the switch rather than have to be re-pinned each time.
     names = set(pp.spx_eligible_profiles())
-    assert names == {"conservative", "moderate", "aggressive", "very-aggressive"}
     assert names == set(pp.paper.all_profile_names())
+    profiles = pp.paper.load_profiles()
+    expected = {n for n in ("conservative", "moderate", "aggressive", "very-aggressive")
+                if profiles.get(n, {}).get("enabled", True) is not False}
+    assert names == expected
+    # A disabled tier must be absent from the roster while remaining in the registry, so it stays
+    # re-enableable for a deliberate experiment.
+    for name, spec in profiles.items():
+        if name.startswith("_"):
+            continue
+        if spec.get("enabled", True) is False:
+            assert name not in names
 
 
 # ── settlement / per-IC P&L accounting ───────────────────────────────────────

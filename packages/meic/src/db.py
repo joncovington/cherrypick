@@ -78,6 +78,29 @@ CREATE TABLE IF NOT EXISTS ic_trades (
     iv_rank_at_entry          REAL,
     iv_pct_at_entry           REAL,
     session_quality           TEXT,
+    -- GEX regime as it stood when this entry was accepted. Recorded because the GEX gates are the
+    -- one regime input whose effect could not be evaluated after the fact: `gex_positive` decides
+    -- entries today, and the two opt-in variants (regime_gex_require_positive,
+    -- regime_gex_min_flip_distance_pct) cannot be back-tested at all without knowing what GEX was
+    -- at the moment of each fill. gamma_flip + spot are stored as a pair so flip DISTANCE is
+    -- reconstructable, which is what the magnitude variant actually gates on.
+    gex_net_at_entry          REAL,
+    gex_positive_at_entry     INTEGER,
+    gamma_flip_at_entry       REAL,
+    gex_spot_at_entry         REAL,
+    -- Stop-rule instrumentation. The per-side stop is the single largest loss mechanism in the paper
+    -- book, and none of it was measurable after the fact: no per-leg intraday marks are stored, so an
+    -- alternative threshold cannot be replayed from history.
+    --   *_max_cost      the highest cost-to-close observed on that side while it was open, so "would
+    --                   a wider/tighter trigger have fired?" is answerable without the full path.
+    --   *_settle_value  what the side would have been worth held to settlement, recorded for stopped
+    --                   sides too. `settle_value < stop_cost` == the stop paid more than holding.
+    --   settle_underlying  the price those settle values were computed against.
+    put_max_cost              REAL,
+    call_max_cost             REAL,
+    put_settle_value          REAL,
+    call_settle_value         REAL,
+    settle_underlying         REAL,
     iv_skew_signal            TEXT,
     price_action_signal       TEXT,
     ai_entry_reasoning        TEXT,
@@ -199,6 +222,19 @@ def cmd_init_db(_args):
         ("risk_profile",           "TEXT"),
         ("execution_mode",         "TEXT"),
         ("iv_rank_source",         "TEXT"),
+        # GEX regime at entry (see the CREATE above for why). Additive only — the orchestrator reads
+        # this table through its `meic_ic` adapter, so columns may be appended but never renamed.
+        ("gex_net_at_entry",       "REAL"),
+        ("gex_positive_at_entry",  "INTEGER"),
+        ("gamma_flip_at_entry",    "REAL"),
+        ("gex_spot_at_entry",      "REAL"),
+        # Stop-rule instrumentation (see the CREATE above). Additive only — the orchestrator reads
+        # this table through its `meic_ic` adapter, so columns may be appended but never renamed.
+        ("put_max_cost",           "REAL"),
+        ("call_max_cost",          "REAL"),
+        ("put_settle_value",       "REAL"),
+        ("call_settle_value",      "REAL"),
+        ("settle_underlying",      "REAL"),
     ]:
         if col not in existing:
             conn.execute(f"ALTER TABLE ic_trades ADD COLUMN {col} {col_type}")
@@ -594,15 +630,26 @@ def cmd_save_trade(args):
     _out({"ok": True, "id": rowid})
 
 
+# Whitelist of columns `update_trade` may write. Defined once and consumed by BOTH the handler and the
+# argparse setup below: the two lists were duplicated verbatim, so adding a field to one and not the
+# other would have accepted the flag and silently dropped the value (or vice versa).
+_UPDATABLE_TRADE_FIELDS = (
+    "status", "exit_price", "exit_time", "exit_reason", "exit_analysis",
+    "put_stop_order_id", "call_stop_order_id",
+    "put_stop_cost", "call_stop_cost",
+    "put_spread_entry_order_id", "call_spread_entry_order_id",
+    "stop_trigger_current", "stop_limit_current",
+    "pnl", "fees", "fill_confirmed_at",
+    # Stop-rule instrumentation — written on mark-to-market and at settlement, not at entry.
+    "put_max_cost", "call_max_cost",
+    "put_settle_value", "call_settle_value", "settle_underlying",
+)
+
+
 def cmd_update_trade(args):
     now = str(_now_et())
     fields = {}
-    for attr in ("status", "exit_price", "exit_time", "exit_reason", "exit_analysis",
-                 "put_stop_order_id", "call_stop_order_id",
-                 "put_stop_cost", "call_stop_cost",
-                 "put_spread_entry_order_id", "call_spread_entry_order_id",
-                 "stop_trigger_current", "stop_limit_current",
-                 "pnl", "fees", "fill_confirmed_at"):
+    for attr in _UPDATABLE_TRADE_FIELDS:
         val = getattr(args, attr, None)
         if val is not None:
             fields[attr] = val
@@ -891,12 +938,7 @@ def main():
 
     p_upd = sub.add_parser("update_trade")
     p_upd.add_argument("--ic_order_id", required=True)
-    for f in ("status", "exit_price", "exit_time", "exit_reason", "exit_analysis",
-              "put_stop_order_id", "call_stop_order_id",
-              "put_stop_cost", "call_stop_cost",
-              "put_spread_entry_order_id", "call_spread_entry_order_id",
-              "stop_trigger_current", "stop_limit_current",
-              "pnl", "fees", "fill_confirmed_at"):
+    for f in _UPDATABLE_TRADE_FIELDS:
         p_upd.add_argument(f"--{f}", default=None)
 
     p_adj = sub.add_parser("record_stop_adjustment")

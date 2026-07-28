@@ -118,6 +118,53 @@ def _params(profile):
 
 # ── Gate evaluator: hard stops ───────────────────────────────────────────────
 
+def _window_params(profile, **over):
+    """Params with the entry-window keys stated explicitly.
+
+    `_params` merges the machine's real config.json, so a gate whose threshold lives there cannot be
+    asserted against a hardcoded clock time without the test silently tracking local configuration —
+    `paper_entry_window_start` being added to config.json is exactly what broke these once.
+    """
+    p = _params(profile)
+    p.pop("paper_entry_window_start", None)
+    p["entry_window_start"] = "10:00"
+    p["entry_window_end"] = "14:30"
+    p.update(over)
+    return p
+
+
+def test_entry_window_binds_for_ladder_profiles_without_stagger_entries():
+    """Regression: this check used to sit inside the opt-in `stagger_entries` block, which the ladder
+    profiles omit — so the paper engine enforced no entry window at all and traded from 09:30 while
+    config.json and the live loop both said 10:00. A gate config claims to apply must actually apply."""
+    params = _window_params(CONSERVATIVE)
+    assert "stagger_entries" not in params  # the ladder rungs don't opt in
+    entered, reason, _ = paper.evaluate_entry(_base_snapshot(now_et="09:45"), params, [])
+    assert entered is False
+    # Must be the window, not the late-entry bias — the window is checked first on purpose, so the
+    # journal names the gate that actually bound.
+    assert reason == "outside_entry_window"
+
+
+def test_entry_window_end_binds_too():
+    entered, reason, _ = paper.evaluate_entry(
+        _base_snapshot(now_et="14:45"), _window_params(CONSERVATIVE), [])
+    assert entered is False and reason == "outside_entry_window"
+
+
+def test_paper_entry_window_start_overrides_the_shared_start_for_paper_only():
+    """The paper engine may sit at a different threshold from the live loop while the first-30-minutes
+    question is open, but only via an explicit key — never by the gate quietly not applying."""
+    # iv_rank above the late-entry-bias ceiling so the WINDOW is the only gate in play at 09:45.
+    snap = _base_snapshot(now_et="09:45", iv_rank=0.60)
+    relaxed = _window_params(CONSERVATIVE, paper_entry_window_start="09:30")
+    entered, reason, _ = paper.evaluate_entry(snap, relaxed, [])
+    assert entered is True, reason
+    # Absent the override it falls back to the shared entry_window_start (10:00).
+    entered, reason, _ = paper.evaluate_entry(snap, _window_params(CONSERVATIVE), [])
+    assert entered is False and reason == "outside_entry_window"
+
+
 def test_evaluate_entry_enters_when_all_gates_clear():
     snap = _base_snapshot(now_et="13:00")  # after conservative's 12:00 late-entry-bias start
     entered, reason, chosen = paper.evaluate_entry(snap, _params({**CONSERVATIVE, **WIDEST_FIRST}), [])
@@ -362,6 +409,43 @@ def test_synthetic_entry_fill_records_both_iv_measures():
     assert row["fees"] == pytest.approx(paper.open_fees("XSP", 1), abs=0.001)
 
 
+def test_synthetic_entry_fill_records_the_gex_regime_at_entry():
+    """The GEX gates were the one regime input whose effect couldn't be measured after the fact —
+    nothing recorded what GEX was when a fill happened. gamma_flip and spot are stored as a pair so
+    the flip DISTANCE the magnitude variant gates on is reconstructable."""
+    snap = _base_snapshot(now_et="13:00")
+    snap["gex"] = {"ok": True, "net_gex": 1.25e9, "gex_positive": True,
+                   "gamma_flip": 580.5, "spot": 590.25}
+    _, _, chosen = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])
+    row = paper.synthetic_entry_fill(snap, "conservative", chosen, _params(CONSERVATIVE), "paper")
+    assert row["gex_net_at_entry"] == pytest.approx(1.25e9)
+    assert row["gex_positive_at_entry"] == 1          # 0/1, not a bool — SQLite has no boolean
+    assert row["gamma_flip_at_entry"] == pytest.approx(580.5)
+    assert row["gex_spot_at_entry"] == pytest.approx(590.25)
+
+
+def test_gex_at_entry_keeps_unknown_distinct_from_negative():
+    """`regime_gex_require_positive` exists precisely to refuse entries where GEX is UNKNOWN rather
+    than confirmed negative. If unknown were stored as 0 it would be indistinguishable from a
+    confirmed-negative reading and that gate could never be evaluated from history."""
+    assert paper._gex_at_entry({"ok": False})["gex_positive_at_entry"] is None
+    assert paper._gex_at_entry(None)["gex_positive_at_entry"] is None
+    assert paper._gex_at_entry({})["gex_positive_at_entry"] is None
+    negative = paper._gex_at_entry({"ok": True, "net_gex": -4.0e8, "gex_positive": False,
+                                    "gamma_flip": 601.0, "spot": 590.0})
+    assert negative["gex_positive_at_entry"] == 0
+    assert negative["gex_net_at_entry"] == pytest.approx(-4.0e8)
+
+
+def test_gex_at_entry_is_all_none_when_unavailable():
+    """An entry taken with no GEX data must still write every column, so the absence is a recorded
+    fact rather than a hole that looks like a schema bug later."""
+    fields = paper._gex_at_entry({"ok": False, "error": "no OI cached"})
+    assert set(fields) == {"gex_net_at_entry", "gex_positive_at_entry",
+                           "gamma_flip_at_entry", "gex_spot_at_entry"}
+    assert all(v is None for v in fields.values())
+
+
 def test_evaluate_open_trade_no_profit_target_holds_a_cheap_ic():
     # MEIC has no profit target: even a deeply-profitable IC (cost far below 50% of credit) is
     # NOT closed early — it holds until a stop, force-close, or expiration.
@@ -374,6 +458,90 @@ def test_evaluate_open_trade_no_profit_target_holds_a_cheap_ic():
     }
     decision = paper.evaluate_open_trade(trade, leg_quotes, _params(MODERATE), force_close=False)
     assert decision["action"] == "hold"
+
+
+# ── Stop-rule instrumentation ────────────────────────────────────────────────
+
+def _markable_trade(**over):
+    t = {"put_symbol": "SP", "call_symbol": "SC", "long_put_symbol": "LP", "long_call_symbol": "LC",
+         "net_credit": 0.58, "status": "open", "put_credit": 0.30, "call_credit": 0.28,
+         "put_strike": 7480.0, "call_strike": 7520.0, "wing_width": 10.0,
+         "put_stop_cost": None, "call_stop_cost": None,
+         "stop_trigger_current": 0.95, "stop_limit_current": 1.02}
+    t.update(over)
+    return t
+
+
+_CHEAP_QUOTES = {
+    "SP": {"bid": 0.10, "ask": 0.15, "mid": 0.125}, "LP": {"bid": 0.02, "ask": 0.05, "mid": 0.035},
+    "SC": {"bid": 0.08, "ask": 0.12, "mid": 0.10}, "LC": {"bid": 0.02, "ask": 0.04, "mid": 0.03},
+}
+
+
+def test_hold_still_reports_each_side_cost_so_a_running_max_can_be_kept():
+    """Nothing recorded how far a side ran before it stopped, which is why no alternative stop
+    threshold could be evaluated after the fact. `hold` has to carry the marks or the record has a
+    hole exactly where the position was moving."""
+    d = paper.evaluate_open_trade(_markable_trade(), _CHEAP_QUOTES, _params(MODERATE),
+                                  force_close=False)
+    assert d["action"] == "hold"
+    assert d["put_cost_now"] is not None and d["call_cost_now"] is not None
+
+
+def test_trigger_and_fill_are_priced_on_the_same_basis():
+    """The trigger compared raw mid while the fill was charged mid + slippage off the SAME quotes, so
+    a stop could never fill at its own trigger level — it was short by the haircut every time.
+
+    These quotes sit exactly in the gap the mismatch opened: the put's raw mid is 0.09, below the
+    0.095 trigger, so the OLD mid-based check held — and then charged 0.10 to exit on some later
+    iteration anyway. Priced consistently, it stops now, at the amount the threshold actually
+    authorises.
+    """
+    trade = _markable_trade(net_credit=0.10)          # trigger = 0.95 * 0.10 = 0.095
+    put_mid = _CHEAP_QUOTES["SP"]["mid"] - _CHEAP_QUOTES["LP"]["mid"]
+    assert put_mid == pytest.approx(0.09)
+    assert put_mid < 0.95 * trade["net_credit"]       # the old basis would have held here
+
+    d = paper.evaluate_open_trade(trade, _CHEAP_QUOTES, _params(MODERATE), force_close=False)
+    assert d["action"] == "stop_put"
+    # The recorded fill IS the cost the trigger was evaluated against — no hidden haircut.
+    assert d["put_exit_price"] == pytest.approx(d["put_cost_now"])
+    assert d["put_exit_price"] >= 0.95 * trade["net_credit"]
+    # The call side is nowhere near its trigger, so this stays a single-side stop.
+    assert d["call_cost_now"] < 0.95 * trade["net_credit"]
+
+
+def test_max_cost_only_writes_on_a_new_high():
+    """Every update is a db.py subprocess and `hold` was previously a no-op DB-wise, so this must
+    write on new highs only — otherwise it adds a spawn per open IC per tick."""
+    trade = _markable_trade(put_max_cost=0.50, call_max_cost=0.50)
+    assert paper._max_cost_updates(trade, {"put_cost_now": 0.40, "call_cost_now": 0.10}) == {}
+    assert paper._max_cost_updates(trade, {"put_cost_now": 0.61, "call_cost_now": 0.10}) == {
+        "put_max_cost": 0.61}
+
+
+def test_max_cost_seeds_from_nothing_and_ignores_closed_sides():
+    fresh = _markable_trade()
+    assert paper._max_cost_updates(fresh, {"put_cost_now": 0.12, "call_cost_now": None}) == {
+        "put_max_cost": 0.12}
+
+
+def test_settlement_records_what_a_STOPPED_side_would_have_been_worth():
+    """The whole stop question is 'did stopping cost more than holding?'. A stopped side is closed,
+    so its settlement value is never observed — unless it is computed and recorded anyway."""
+    trade = _markable_trade(put_stop_cost=0.90, status="partial")   # put already stopped
+    d = paper.evaluate_open_trade(trade, _CHEAP_QUOTES, _params(MODERATE), force_close=False,
+                                  underlying_price=7525.0, settle=True)
+    assert d["action"] == "expire"
+    assert d["put_open"] is False                       # not charged again
+    assert d["put_exit_price"] is None
+    # ...but recorded: spot 7525 is above the 7480 put strike, so the put would have expired worthless.
+    assert d["put_settle_value"] == 0.0
+    # The stop paid 0.90 for something that settled at 0 — that comparison is the finding.
+    assert d["put_settle_value"] < trade["put_stop_cost"]
+    # The call side is ITM by 5 against a 10-wide, and it is still open so it is also charged.
+    assert d["call_settle_value"] == pytest.approx(5.0)
+    assert d["settle_underlying"] == 7525.0
 
 
 def _expiring_trade():
@@ -929,7 +1097,7 @@ def test_stagger_outside_entry_window_rejected():
 
 def test_stagger_before_entry_window_rejected():
     snap = _base_snapshot(now_et="09:45")  # before the 10:00 entry-window start
-    entered, reason, _ = paper.evaluate_entry(snap, _params(XSP_NARROW), [])
+    entered, reason, _ = paper.evaluate_entry(snap, _window_params(XSP_NARROW), [])
     assert entered is False and reason == "outside_entry_window"
 
 
@@ -956,10 +1124,12 @@ def test_stagger_spacing_ok_after_interval():
 
 
 def test_ladder_daily_target_is_soft_guidance_not_a_cap():
-    # conservative has no stagger_entries → the window/spacing gates stay opt-in (15:00 is not
-    # window-blocked; iv_rank 0.50 clears the late-entry bias). The daily target is GUIDANCE: past
-    # it the portfolio is never hard-blocked, but only a richer-credit setup qualifies.
-    snap = _base_snapshot(now_et="15:00", iv_rank=0.50,
+    # conservative has no stagger_entries → the SPACING gate stays opt-in. The entry window is not
+    # opt-in any more (it applies to every profile as of 2026-07-27), so this sits at 13:00, inside
+    # it — the previous 15:00 only worked because the window wasn't being enforced at all.
+    # iv_rank 0.50 clears the late-entry bias. The daily target is GUIDANCE: past it the portfolio is
+    # never hard-blocked, but only a richer-credit setup qualifies.
+    snap = _base_snapshot(now_et="13:00", iv_rank=0.50,
                           candidates=[_candidate(5, 583, 598, sp_bid=0.70, sp_ask=0.80,
                                                  sc_bid=0.65, sc_ask=0.75)])
     params = _params(CONSERVATIVE)
