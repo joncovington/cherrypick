@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 """Self-contained, offline dashboard for the strategy-testing program (see
 docs/strategy-testing-plan.md). Renders reports/strategy_dashboard.html --
-a single file with matplotlib charts embedded as base64 PNGs, no server, no
-CDN/network dependency, so it opens anywhere (respects the project's
-cross-machine/no-absolute-paths guardrail). Every number comes from
-strategy_metrics.py, the same module strategy_report.py reads, so the two
-can never disagree.
+a single static file with no server and no CDN/network dependency, so it
+opens anywhere (respects the project's cross-machine/no-absolute-paths
+guardrail). Every number comes from strategy_metrics.py, the same module
+strategy_report.py reads, so the two can never disagree.
+
+Charts are `cherrypick.core.viz` cards with their payloads baked inline
+(`viz.card_inline_html`) and drawn client-side on a plain canvas -- the
+suite's shared chart contract, replacing the old matplotlib-PNG pipeline.
+That swap put the equity curves on a real date axis (the PNGs indexed by
+trade #), and dropped both the matplotlib dependency and the disk chart
+cache that existed only because PNG rendering was expensive. Surfaces the
+viz contract doesn't cover (regime heatmap, rejection histogram, weekly
+P&L) render as plain HTML/CSS -- still zero dependencies.
 
 Design (see the dashboard-design research in the strategy-testing plan):
 dark, dense "Bloomberg" layout for an operator doing multi-strategy
@@ -15,8 +23,7 @@ throughout (each earnings play is a round-trip, not a return-series
 period); pass/fail status shown with color AND a glyph, never color alone;
 one justified interaction -- a timeframe toggle (Cumulative / Rolling
 4-week / Rolling 1-week / Per-week) on the portfolio headline equity
-curve, implemented as pre-rendered image sets swapped by inline JS (no
-external JS framework, no network).
+curve, implemented as pre-baked panels swapped by inline JS.
 
 Usage:
     python strategy_dashboard.py
@@ -24,26 +31,22 @@ Usage:
 """
 
 import argparse
-import base64
-import hashlib
-import io
-import json
+import sqlite3
 import sys
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+_SRC = Path(__file__).resolve().parent
+for _p in (str(_SRC), str(_SRC / "_core")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-import matplotlib
+from cherrypick.core import viz  # noqa: E402
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
-import paths as _paths
-import scanner
-import strategy_metrics as sm
-from strategy_report import STRATEGY_NAMES
+import paths as _paths  # noqa: E402
+import scanner  # noqa: E402
+import strategy_metrics as sm  # noqa: E402
+from strategy_report import STRATEGY_NAMES  # noqa: E402
 
 try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
     from zoneinfo import ZoneInfo
@@ -56,9 +59,9 @@ except Exception:  # pragma: no cover - only where zoneinfo has no tz database
 # resolved by paths.py — never in the checkout. Pure path; main() mkdirs before writing.
 REPORTS_DIR = _paths.reports_dir()
 
-# Dark palette -- background/text tuned for a dark page, categorical hues
-# chosen for contrast against that background and against each other
-# (not relying on hue alone: line styles/markers differ too where it matters).
+# Dark palette -- background/text tuned for a dark page. The four tone colors double as the
+# CSS variables the viz canvas renderer reads (--pos/--neg/--accent/--warn), so the inline
+# cards and the hand-rolled HTML surfaces stay on one color system.
 BG = "#0d1117"
 PANEL_BG = "#161b22"
 FG = "#e6edf3"
@@ -68,185 +71,6 @@ GOOD = "#3fb950"
 WARN = "#d29922"
 BAD = "#f85149"
 ACCENT = "#58a6ff"
-CATEGORICAL = ["#58a6ff", "#f0883e", "#a371f7", "#3fb950", "#f85149", "#79c0ff", "#e3b341", "#db61a2", "#56d4dd", "#8b949e"]
-
-
-def _mpl_dark_style():
-    plt.rcParams.update({
-        "figure.facecolor": BG,
-        "axes.facecolor": PANEL_BG,
-        "axes.edgecolor": GRID,
-        "axes.labelcolor": FG,
-        "text.color": FG,
-        "xtick.color": MUTED,
-        "ytick.color": MUTED,
-        "grid.color": GRID,
-        "font.family": "monospace",
-        "font.size": 9,
-    })
-
-
-def _fig_to_base64(fig) -> str:
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight", facecolor=fig.get_facecolor())
-    plt.close(fig)
-    return base64.b64encode(buf.getvalue()).decode("ascii")
-
-
-def _img_tag(b64: str, alt: str = "") -> str:
-    return f'<img alt="{alt}" src="data:image/png;base64,{b64}" style="max-width:100%;">'
-
-
-# --- Chart cache -------------------------------------------------------------
-# Each dashboard build is a cold subprocess, so matplotlib re-renders every chart from scratch even
-# when nothing changed — paper trades only move once a day at the close pass. Cache each chart's
-# base64 PNG to disk keyed by a hash of its actual input data: an unchanged dataset hits the cache and
-# skips rendering entirely, cutting a rebuild to roughly the (unavoidable) matplotlib import + data load.
-_CACHE_DISABLED = False  # set by build_dashboard if the cache dir isn't writable
-
-
-def _chart_cache_dir() -> Path:
-    d = _paths.reports_dir() / ".chart_cache"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _sig(trades: list[dict]) -> list:
-    """A compact, order-stable signature of a trade list for cache keys (identity + the fields every
-    chart derives from). Cheaper to hash than the full rows."""
-    return [
-        [t.get("order_id"), t.get("closed_at"), t.get("pnl"), t.get("entry_cost"),
-         t.get("exit_cost"), t.get("entry_iv"), t.get("exit_iv")]
-        for t in trades
-    ]
-
-
-def _cached_chart(chart_id: str, key_data, render) -> str:
-    """Return `render()`'s base64, memoized on disk under (chart_id, key_data). `render` is only called
-    on a cache miss. Any cache I/O failure falls back to rendering directly — the cache is an
-    optimization, never a correctness dependency."""
-    if _CACHE_DISABLED:
-        return render()
-    try:
-        blob = json.dumps([chart_id, key_data], default=str, sort_keys=True)
-    except (TypeError, ValueError):
-        return render()
-    key = hashlib.sha256(blob.encode()).hexdigest()
-    path = _chart_cache_dir() / f"{key}.b64"
-    try:
-        if path.exists():
-            return path.read_text(encoding="ascii")
-    except OSError:
-        pass
-    b64 = render()
-    try:
-        path.write_text(b64, encoding="ascii")
-    except OSError:
-        pass
-    return b64
-
-
-def _prune_chart_cache(max_age_days: float = 14.0) -> None:
-    """Drop cache entries whose fingerprint stopped being produced (old dataset states), so the dir
-    stays bounded. Best-effort."""
-    try:
-        cutoff = time.time() - max_age_days * 86400
-        for p in _chart_cache_dir().glob("*.b64"):
-            try:
-                if p.stat().st_mtime < cutoff:
-                    p.unlink()
-            except OSError:
-                pass
-    except OSError:
-        pass
-
-
-def plot_equity_curve(curve: list[tuple[float, float]], title: str) -> str:
-    _mpl_dark_style()
-    fig, ax = plt.subplots(figsize=(6.5, 2.6))
-    if curve:
-        xs = list(range(1, len(curve) + 1))
-        ys = [c for _, c in curve]
-        ax.plot(xs, ys, color=ACCENT, linewidth=1.5)
-        ax.axhline(0, color=MUTED, linewidth=0.6, linestyle="--")
-        ax.fill_between(xs, ys, 0, where=[y >= 0 for y in ys], color=GOOD, alpha=0.12)
-        ax.fill_between(xs, ys, 0, where=[y < 0 for y in ys], color=BAD, alpha=0.12)
-    else:
-        ax.text(0.5, 0.5, "no closed trades", ha="center", va="center", color=MUTED, transform=ax.transAxes)
-    ax.set_title(title, color=FG, fontsize=10, loc="left")
-    ax.set_xlabel("trade #")
-    ax.set_ylabel("cum. net P&L ($)")
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    return _fig_to_base64(fig)
-
-
-def plot_underwater(curve: list[tuple[float, float]], title: str) -> str:
-    _mpl_dark_style()
-    fig, ax = plt.subplots(figsize=(6.5, 1.6))
-    if curve:
-        xs = list(range(1, len(curve) + 1))
-        ys = [c for _, c in curve]
-        peak = 0.0
-        underwater = []
-        for y in ys:
-            peak = max(peak, y)
-            underwater.append(y - peak)
-        ax.fill_between(xs, underwater, 0, color=BAD, alpha=0.35)
-        ax.plot(xs, underwater, color=BAD, linewidth=1.0)
-    else:
-        ax.text(0.5, 0.5, "no closed trades", ha="center", va="center", color=MUTED, transform=ax.transAxes)
-    ax.set_title(title, color=FG, fontsize=9, loc="left")
-    ax.set_ylabel("drawdown ($)")
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    return _fig_to_base64(fig)
-
-
-def plot_regime_heatmap(all_buckets: dict[str, dict[str, int]]) -> str:
-    """all_buckets: {strategy_name: {bucket_label: count}}"""
-    _mpl_dark_style()
-    labels = sorted({label for buckets in all_buckets.values() for label in buckets})
-    strategies = list(all_buckets.keys())
-    if not labels or not strategies:
-        fig, ax = plt.subplots(figsize=(8, 2))
-        ax.text(0.5, 0.5, "no regime data yet", ha="center", va="center", color=MUTED, transform=ax.transAxes)
-        ax.axis("off")
-        return _fig_to_base64(fig)
-
-    data = [[all_buckets[s].get(label, 0) for label in labels] for s in strategies]
-    fig, ax = plt.subplots(figsize=(max(6, len(labels) * 1.1), max(3, len(strategies) * 0.4)))
-    im = ax.imshow(data, cmap="viridis", aspect="auto")
-    ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels(labels, rotation=35, ha="right", fontsize=7)
-    ax.set_yticks(range(len(strategies)))
-    ax.set_yticklabels(strategies, fontsize=8)
-    for i in range(len(strategies)):
-        for j in range(len(labels)):
-            v = data[i][j]
-            if v:
-                ax.text(j, i, str(v), ha="center", va="center", color=BG, fontsize=7, fontweight="bold")
-    fig.colorbar(im, ax=ax, shrink=0.7, label="trades")
-    ax.set_title("Regime coverage (IV/RV x dispersion)", color=FG, fontsize=10, loc="left")
-    fig.tight_layout()
-    return _fig_to_base64(fig)
-
-
-def plot_rejection_histogram(reason_counts: dict[str, int], top_n: int = 15) -> str:
-    _mpl_dark_style()
-    items = sorted(reason_counts.items(), key=lambda x: -x[1])[:top_n]
-    fig, ax = plt.subplots(figsize=(7, max(2.5, len(items) * 0.3)))
-    if items:
-        labels = [k for k, _ in items][::-1]
-        values = [v for _, v in items][::-1]
-        ax.barh(labels, values, color=CATEGORICAL[0])
-        ax.tick_params(labelsize=7)
-    else:
-        ax.text(0.5, 0.5, "no rejections logged", ha="center", va="center", color=MUTED, transform=ax.transAxes)
-    ax.set_title("Top rejection reasons (scan_log)", color=FG, fontsize=10, loc="left")
-    ax.grid(True, axis="x", alpha=0.3)
-    fig.tight_layout()
-    return _fig_to_base64(fig)
 
 
 def _status_span(passed) -> str:
@@ -276,9 +100,10 @@ def _metrics_table_html(core_five: dict, iv_crush: dict | None = None) -> str:
     rows = [
         ("Win rate", f"{wr*100:.1f}%" if wr is not None else "n/a", ""),
         ("Profit factor", f"{pf['value']:.2f}" if pf["value"] not in (None,) else "n/a", _status_span(pf["pass"])),
-        ("Expectancy (net)", f"${exp['value']:,.2f}" if exp["value"] is not None else "n/a", _status_span(exp["pass"])),
+        ("Expectancy (net)", viz.fmt_money(exp["value"], none="n/a"), _status_span(exp["pass"])),
         ("Sharpe (trade)", f"{sh['value']:.2f}" if sh["value"] is not None else "n/a", _status_span(sh["pass"])),
-        ("Max drawdown", f"${mdd['absolute']:,.2f} ({mdd['pct']*100:.1f}%)", _status_span(core_five["max_drawdown"]["pass"])),
+        ("Max drawdown", f"{viz.fmt_money(mdd['absolute'])} ({mdd['pct']*100:.1f}%)",
+         _status_span(core_five["max_drawdown"]["pass"])),
     ]
     if iv_crush is not None:
         if iv_crush["avg_crush"] is not None:
@@ -296,39 +121,136 @@ def _metrics_table_html(core_five: dict, iv_crush: dict | None = None) -> str:
     return f'<table style="font-size:12px;">{body}</table>'
 
 
-def _portfolio_curve_for_window(trades: list[dict], days: int | None) -> list[tuple[float, float]]:
-    if days is None:
-        return sm.equity_curve(trades)
-    cutoff = (datetime.now() - timedelta(days=days)).timestamp()
-    windowed = [t for t in trades if (t.get("closed_at") or 0) >= cutoff]
-    return sm.equity_curve(windowed)
+def _portfolio_ts_payload(trades: list[dict], days: int | None) -> dict:
+    """viz section payload for the portfolio equity curve, optionally windowed to the last
+    `days` days of closes. Cumulative net P&L on a date axis, one point per close session."""
+    if days is not None:
+        cutoff = (datetime.now() - timedelta(days=days)).timestamp()
+        trades = [t for t in trades if (t.get("closed_at") or 0) >= cutoff]
+    labels, values = sm.daily_equity_series(trades)
+    if not labels:
+        return {"ok": True, "subtitle": "no closed trades in this window"}
+    return {
+        "ok": True,
+        "subtitle": f"{len(trades)} closed trade(s)",
+        "timeseries": {
+            "labels": labels,
+            "series": [{"name": "cum net P&L", "values": values, "tone": "accent"}],
+        },
+    }
 
 
-def _weekly_pnl_chart(trades: list[dict]) -> str:
-    _mpl_dark_style()
+def _strategy_ts_payload(trades: list[dict]) -> dict:
+    """Per-strategy card payload: the equity curve plus its drawdown-from-peak as a second
+    series -- the old separate underwater PNG folded into one date-axis chart."""
+    labels, values = sm.daily_equity_series(trades)
+    if not labels:
+        return {"ok": True, "subtitle": "no closed trades"}
+    peak = 0.0
+    drawdown = []
+    for v in values:
+        peak = max(peak, v)
+        drawdown.append(round(v - peak, 2))
+    return {
+        "ok": True,
+        "timeseries": {
+            "labels": labels,
+            "series": [
+                {"name": "equity", "values": values, "tone": "accent"},
+                {"name": "drawdown", "values": drawdown, "tone": "neg"},
+            ],
+        },
+    }
+
+
+def _weekly_pnl_html(trades: list[dict]) -> str:
+    """Per-week net P&L as signed, zero-centred CSS bars (ISO week buckets). Categorical
+    bars aren't in the viz contract, and plain divs need no dependency either."""
     weekly: dict[str, float] = {}
     for t in trades:
         if not t.get("closed_at"):
             continue
         d = datetime.fromtimestamp(t["closed_at"]).date()
         iso_year, iso_week, _ = d.isocalendar()
-        key = f"{iso_year}-W{iso_week:02d}"
-        weekly[key] = weekly.get(key, 0.0) + sm.net_pnl(t)
+        weekly[f"{iso_year}-W{iso_week:02d}"] = weekly.get(f"{iso_year}-W{iso_week:02d}", 0.0) + sm.net_pnl(t)
+    if not weekly:
+        return f'<div style="color:{MUTED};font-size:12px;">no closed trades</div>'
+    mx = max(abs(v) for v in weekly.values()) or 1.0
+    rows = []
+    for key in sorted(weekly):
+        v = weekly[key]
+        width = abs(v) / mx * 50
+        left = 50.0 if v >= 0 else 50.0 - width
+        color = GOOD if v >= 0 else BAD
+        rows.append(
+            f'<div style="display:grid;grid-template-columns:84px 1fr 110px;gap:8px;align-items:center;'
+            f'font-size:12px;margin:2px 0;">'
+            f'<div style="color:{MUTED};">{key}</div>'
+            f'<div style="position:relative;height:12px;background:{BG};border-radius:2px;">'
+            f'<div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:{GRID};"></div>'
+            f'<div style="position:absolute;left:{left:.2f}%;width:{width:.2f}%;top:2px;bottom:2px;'
+            f'background:{color};border-radius:2px;"></div></div>'
+            f'<div style="text-align:right;color:{color};">{viz.fmt_money(v)}</div></div>'
+        )
+    return "".join(rows)
 
-    fig, ax = plt.subplots(figsize=(6.5, 2.6))
-    if weekly:
-        keys = sorted(weekly)
-        values = [weekly[k] for k in keys]
-        colors = [GOOD if v >= 0 else BAD for v in values]
-        ax.bar(keys, values, color=colors)
-        ax.tick_params(axis="x", rotation=45, labelsize=7)
-        ax.axhline(0, color=MUTED, linewidth=0.6)
-    else:
-        ax.text(0.5, 0.5, "no closed trades", ha="center", va="center", color=MUTED, transform=ax.transAxes)
-    ax.set_title("Per-week net P&L (portfolio)", color=FG, fontsize=10, loc="left")
-    ax.grid(True, axis="y", alpha=0.3)
-    fig.tight_layout()
-    return _fig_to_base64(fig)
+
+def _regime_table_html(all_buckets: dict[str, dict[str, int]]) -> str:
+    """Regime coverage (IV/RV x dispersion) as an HTML heat table: cell background intensity
+    scales with trade count. all_buckets: {strategy_name: {bucket_label: count}}."""
+    labels = sorted({label for buckets in all_buckets.values() for label in buckets})
+    strategies = list(all_buckets.keys())
+    if not labels or not strategies:
+        return f'<div style="color:{MUTED};font-size:12px;">no regime data yet</div>'
+    mx = max((c for b in all_buckets.values() for c in b.values()), default=1) or 1
+    head = "".join(
+        f'<th style="text-align:center;padding:3px 6px;font-weight:400;color:{MUTED};'
+        f'font-size:10px;">{label}</th>'
+        for label in labels
+    )
+    body_rows = []
+    for s in strategies:
+        cells = []
+        for label in labels:
+            v = all_buckets[s].get(label, 0)
+            if v:
+                alpha = 0.15 + 0.55 * (v / mx)
+                cells.append(
+                    f'<td style="text-align:center;padding:3px 6px;'
+                    f'background:rgba(88,166,255,{alpha:.2f});">{v}</td>'
+                )
+            else:
+                cells.append('<td style="text-align:center;padding:3px 6px;"></td>')
+        body_rows.append(
+            f'<tr><td style="padding:3px 8px;color:{FG};white-space:nowrap;">{s}</td>{"".join(cells)}</tr>'
+        )
+    return (
+        f'<table style="border-collapse:collapse;font-size:12px;">'
+        f'<thead><tr><th style="text-align:left;padding:3px 8px;font-weight:400;color:{MUTED};">'
+        f'trades</th>{head}</tr></thead><tbody>{"".join(body_rows)}</tbody></table>'
+    )
+
+
+def _rejection_bars_html(reason_counts: dict[str, int], top_n: int = 15) -> str:
+    """Top scan_log rejection reasons as horizontal CSS bars."""
+    items = sorted(reason_counts.items(), key=lambda x: -x[1])[:top_n]
+    if not items:
+        return f'<div style="color:{MUTED};font-size:12px;">no rejections logged</div>'
+    mx = items[0][1] or 1
+    rows = []
+    for reason, count in items:
+        width = count / mx * 100
+        rows.append(
+            f'<div style="display:grid;grid-template-columns:minmax(160px,45%) 1fr 50px;gap:8px;'
+            f'align-items:center;font-size:11px;margin:2px 0;">'
+            f'<div style="color:{MUTED};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" '
+            f'title="{reason}">{reason}</div>'
+            f'<div style="position:relative;height:10px;background:{BG};border-radius:2px;">'
+            f'<div style="position:absolute;left:0;width:{width:.2f}%;top:1px;bottom:1px;'
+            f'background:{ACCENT};border-radius:2px;"></div></div>'
+            f'<div style="text-align:right;color:{FG};">{count}</div></div>'
+        )
+    return "".join(rows)
 
 
 def _open_positions_section(profile: str) -> str:
@@ -337,7 +259,6 @@ def _open_positions_section(profile: str) -> str:
     `pnl = (entry_credit - exit_debit) * 100` convention), so it is x100 here for dollars;
     `capital_at_risk` and `entry_cost` are already dollar-denominated."""
     try:
-        import sqlite3
         conn = sqlite3.connect(sm.DB_PATH)
         conn.row_factory = sqlite3.Row
         frag, fparams = sm.book_family_filter(profile)
@@ -417,13 +338,8 @@ def _open_positions_section(profile: str) -> str:
 
 
 def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str:
-    global _CACHE_DISABLED
     config = scanner._load_config()
     capital_basis = config.get("available_capital_paper_mode")
-    try:
-        _prune_chart_cache()
-    except Exception:
-        _CACHE_DISABLED = True
 
     all_trades = sm.load_closed_trades(profile=profile, since=since)
     per_strategy = {name: sm.load_closed_trades(profile=profile, strategy=name, since=since) for name in STRATEGY_NAMES}
@@ -434,26 +350,26 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
     total_trades = len(all_trades)
     exp = portfolio_summary["core_five"]["expectancy"]["value"]
 
-    # --- Timeframe panels (portfolio headline equity curve) ---
-    timeframes = {
-        "cumulative": (None, "Cumulative"),
-        "rolling4w": (28, "Rolling 4-week"),
-        "rolling1w": (7, "Rolling 1-week"),
+    # --- Timeframe panels (portfolio headline equity curve, one inline viz card each) ---
+    tf_panels = {
+        "cumulative": viz.card_inline_html(
+            "tf-cumulative", "Portfolio net P&L — cumulative", _portfolio_ts_payload(all_trades, None)),
+        "rolling4w": viz.card_inline_html(
+            "tf-rolling4w", "Portfolio net P&L — rolling 4-week", _portfolio_ts_payload(all_trades, 28)),
+        "rolling1w": viz.card_inline_html(
+            "tf-rolling1w", "Portfolio net P&L — rolling 1-week", _portfolio_ts_payload(all_trades, 7)),
+        "perweek": (
+            '<section class="card"><h2>Portfolio net P&L — per-week</h2>'
+            + _weekly_pnl_html(all_trades) + "</section>"
+        ),
     }
-    tf_images = {}
-    for key, (days, label) in timeframes.items():
-        curve = _portfolio_curve_for_window(all_trades, days)
-        tf_images[key] = _cached_chart(
-            f"tf:{key}", curve, lambda c=curve, lbl=label: plot_equity_curve(c, f"Portfolio net P&L -- {lbl}"))
-    tf_images["perweek"] = _cached_chart("tf:perweek", _sig(all_trades), lambda: _weekly_pnl_chart(all_trades))
 
-    # --- Regime heatmap + rejection histogram ---
+    # --- Regime heat table + rejection histogram ---
     all_buckets = {name: sm.regime_buckets(trades) for name, trades in per_strategy.items() if trades}
-    regime_img = _cached_chart("regime", all_buckets, lambda: plot_regime_heatmap(all_buckets))
+    regime_html = _regime_table_html(all_buckets)
 
     reason_counts: dict[str, int] = {}
     try:
-        import sqlite3
         conn = sqlite3.connect(sm.DB_PATH)
         frag, fparams = sm.book_family_filter(profile)
         rows = conn.execute(
@@ -467,7 +383,7 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
                     reason_counts[part] = reason_counts.get(part, 0) + 1
     except Exception:
         pass
-    rejection_img = _cached_chart("rejection", reason_counts, lambda: plot_rejection_histogram(reason_counts))
+    rejection_html = _rejection_bars_html(reason_counts)
 
     # --- Per-strategy cards ---
     strategy_cards = []
@@ -475,19 +391,17 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
     for name in STRATEGY_NAMES:
         trades = per_strategy[name]
         summary = sm.strategy_summary(trades, capital_basis)
-        ec = summary["equity_curve"]
-        curve_img = _cached_chart(f"equity:{name}", ec, lambda ec=ec, name=name: plot_equity_curve(ec, f"{name} -- equity curve"))
-        underwater_img = _cached_chart(f"underwater:{name}", ec, lambda ec=ec, name=name: plot_underwater(ec, f"{name} -- underwater"))
+        chart_card = viz.card_inline_html(f"strategy-{name}", name, _strategy_ts_payload(trades))
         metrics_html = _metrics_table_html(summary["core_five"], summary["iv_crush"])
         sample_html = _sample_bar(summary["sample"])
 
         strategy_cards.append(f"""
-        <div style="background:{PANEL_BG};border:1px solid {GRID};border-radius:6px;padding:14px;margin-bottom:14px;">
-          <h3 style="margin:0 0 6px 0;color:{FG};">{name}</h3>
-          <div style="margin-bottom:8px;">{sample_html}</div>
-          <div style="display:flex;flex-wrap:wrap;gap:16px;">
-            <div>{_img_tag(curve_img, name)}{_img_tag(underwater_img, name)}</div>
-            <div>{metrics_html}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:stretch;margin-bottom:14px;">
+          <div style="flex:1 1 420px;min-width:320px;">{chart_card}</div>
+          <div style="background:{PANEL_BG};border:1px solid {GRID};border-radius:6px;padding:14px;">
+            <h3 style="margin:0 0 6px 0;color:{FG};font-size:13px;">{name}</h3>
+            <div style="margin-bottom:8px;">{sample_html}</div>
+            {metrics_html}
           </div>
         </div>
         """)
@@ -501,7 +415,7 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
             f'<td style="padding:3px 10px;text-align:right;">{summary["total_trades"]}</td>'
             f'<td style="padding:3px 10px;text-align:right;">{f"{wr*100:.1f}%" if wr is not None else "n/a"}</td>'
             f'<td style="padding:3px 10px;text-align:right;">{f"{pf:.2f}" if pf not in (None,) else "n/a"}</td>'
-            f'<td style="padding:3px 10px;text-align:right;">{f"${exp_v:,.2f}" if exp_v is not None else "n/a"}</td>'
+            f'<td style="padding:3px 10px;text-align:right;">{viz.fmt_money(exp_v, none="n/a")}</td>'
             f'<td style="padding:3px 10px;">{_sample_bar(summary["sample"])}</td></tr>'
         )
 
@@ -536,8 +450,16 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
     )
 
     return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Strategy Test Dashboard — {title_suffix}</title></head>
-<body style="background:{BG};color:{FG};font-family:monospace;padding:20px;">
+<html><head><meta charset="utf-8"><title>Strategy Test Dashboard — {title_suffix}</title>
+<style>
+:root{{--pos:{GOOD};--neg:{BAD};--accent:{ACCENT};--warn:{WARN};--muted:{MUTED}}}
+body{{background:{BG};color:{FG};font-family:monospace;padding:20px;margin:0}}
+.card{{background:{PANEL_BG};border:1px solid {GRID};border-radius:6px;padding:14px;margin-bottom:14px}}
+.card h2{{margin:0 0 8px 0;font-size:13px;color:{FG}}}
+.muted{{color:{MUTED}}}
+{viz.SECTION_STYLE}
+</style></head>
+<body>
 
 <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid {GRID};padding-bottom:10px;margin-bottom:16px;">
   <div style="display:flex;align-items:center;gap:12px;">
@@ -550,11 +472,11 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
 <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;">
   <div style="background:{PANEL_BG};border:1px solid {ACCENT};border-radius:6px;padding:12px;">
     <div style="color:{MUTED};font-size:11px;">NET EXPECTANCY / TRADE</div>
-    <div style="font-size:22px;color:{GOOD if (exp or 0) >= 0 else BAD};">{f"${exp:,.2f}" if exp is not None else "n/a"}</div>
+    <div style="font-size:22px;color:{GOOD if (exp or 0) >= 0 else BAD};">{viz.fmt_money(exp, none="n/a")}</div>
   </div>
   <div style="background:{PANEL_BG};border:1px solid {GRID};border-radius:6px;padding:12px;">
     <div style="color:{MUTED};font-size:11px;">TOTAL NET P&amp;L</div>
-    <div style="font-size:22px;color:{GOOD if net_total >= 0 else BAD};">${net_total:,.2f}</div>
+    <div style="font-size:22px;color:{GOOD if net_total >= 0 else BAD};">{viz.fmt_money(net_total)}</div>
   </div>
   <div style="background:{PANEL_BG};border:1px solid {GRID};border-radius:6px;padding:12px;">
     <div style="color:{MUTED};font-size:11px;">CLOSED TRADES</div>
@@ -562,7 +484,7 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
   </div>
   <div style="background:{PANEL_BG};border:1px solid {GRID};border-radius:6px;padding:12px;">
     <div style="color:{MUTED};font-size:11px;">STRATEGIES ACTIVE</div>
-    <div style="font-size:22px;">{sum(1 for t in per_strategy.values() if t)}/10</div>
+    <div style="font-size:22px;">{sum(1 for t in per_strategy.values() if t)}/{len(STRATEGY_NAMES)}</div>
   </div>
   <div style="background:{PANEL_BG};border:1px solid {GRID};border-radius:6px;padding:12px;">
     <div style="color:{MUTED};font-size:11px;">CAPITAL BASIS</div>
@@ -570,17 +492,17 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
   </div>
 </div>
 
-<div style="background:{PANEL_BG};border:1px solid {GRID};border-radius:6px;padding:14px;margin-bottom:20px;">
+<div style="margin-bottom:20px;">
   <div style="margin-bottom:8px;">
     <button onclick="showTF('cumulative')" style="background:{ACCENT};color:{BG};border:none;padding:4px 10px;margin-right:4px;cursor:pointer;">Cumulative</button>
     <button onclick="showTF('rolling4w')" style="background:{PANEL_BG};color:{FG};border:1px solid {GRID};padding:4px 10px;margin-right:4px;cursor:pointer;">Rolling 4-week</button>
     <button onclick="showTF('rolling1w')" style="background:{PANEL_BG};color:{FG};border:1px solid {GRID};padding:4px 10px;margin-right:4px;cursor:pointer;">Rolling 1-week</button>
     <button onclick="showTF('perweek')" style="background:{PANEL_BG};color:{FG};border:1px solid {GRID};padding:4px 10px;cursor:pointer;">Per-week</button>
   </div>
-  <div id="tf-cumulative" class="tf-panel">{_img_tag(tf_images['cumulative'])}</div>
-  <div id="tf-rolling4w" class="tf-panel" style="display:none;">{_img_tag(tf_images['rolling4w'])}</div>
-  <div id="tf-rolling1w" class="tf-panel" style="display:none;">{_img_tag(tf_images['rolling1w'])}</div>
-  <div id="tf-perweek" class="tf-panel" style="display:none;">{_img_tag(tf_images['perweek'])}</div>
+  <div id="tf-cumulative" class="tf-panel">{tf_panels['cumulative']}</div>
+  <div id="tf-rolling4w" class="tf-panel" style="display:none;">{tf_panels['rolling4w']}</div>
+  <div id="tf-rolling1w" class="tf-panel" style="display:none;">{tf_panels['rolling1w']}</div>
+  <div id="tf-perweek" class="tf-panel" style="display:none;">{tf_panels['perweek']}</div>
 </div>
 
 <h2 style="font-size:15px;border-bottom:1px solid {GRID};padding-bottom:6px;">Open positions</h2>
@@ -590,9 +512,9 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
 {comparison_table}
 
 <h2 style="font-size:15px;border-bottom:1px solid {GRID};padding-bottom:6px;margin-top:20px;">Regime coverage &amp; rejections</h2>
-<div style="display:flex;flex-wrap:wrap;gap:16px;">
-  <div>{_img_tag(regime_img)}</div>
-  <div>{_img_tag(rejection_img)}</div>
+<div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start;">
+  <div><div style="color:{MUTED};font-size:11px;margin-bottom:6px;">Regime coverage (IV/RV x dispersion)</div>{regime_html}</div>
+  <div style="flex:1;min-width:320px;"><div style="color:{MUTED};font-size:11px;margin-bottom:6px;">Top rejection reasons (scan_log)</div>{rejection_html}</div>
 </div>
 
 <h2 style="font-size:15px;border-bottom:1px solid {GRID};padding-bottom:6px;margin-top:20px;">Per-strategy detail</h2>
@@ -612,6 +534,7 @@ function showTF(id) {{
   document.getElementById('tf-' + id).style.display = 'block';
 }}
 </script>
+<script>{viz.SECTION_JS}</script>
 
 </body></html>
 """

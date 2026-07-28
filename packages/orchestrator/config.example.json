@@ -149,6 +149,16 @@
         "path": "../flies",
         "fetch_argv": ["run.py", "section", "--json"],
         "refresh_seconds": 30
+      },
+      {
+        "_comment": "cherrypick-earnings' strategy-test card: KPI tiles (net P&L, expectancy, sample progress) + the portfolio equity curve as a date-axis timeseries. Paper mode is forced in the argv, same rule as the embeds. The book only moves at the daily entry/exit passes, so a slow refresh is plenty.",
+        "id": "earnings",
+        "title": "Earnings",
+        "enabled": false,
+        "path": "../earnings",
+        "repo": "https://github.com/joncovington/cherrypick-earnings.git",
+        "fetch_argv": ["src/strategy_section.py", "--mode", "paper", "--json"],
+        "refresh_seconds": 60
       }
     ],
     "embeds": [

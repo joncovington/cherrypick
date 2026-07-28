@@ -244,6 +244,21 @@ def equity_curve(trades: list[dict]) -> list[tuple[float, float]]:
     return curve
 
 
+def daily_equity_series(trades: list[dict]) -> tuple[list[str], list[float]]:
+    """equity_curve() on a date axis: (ISO close-date labels, end-of-day cumulative net P&L),
+    one point per session that closed a trade, for the suite's viz timeseries cards. A day with
+    no closes simply isn't a point — no interpolation across quiet sessions."""
+    from datetime import datetime
+
+    by_day: dict[str, float] = {}
+    running = 0.0
+    for t in sorted(trades, key=lambda x: x.get("closed_at") or 0):
+        running += net_pnl(t)
+        by_day[datetime.fromtimestamp(t.get("closed_at") or 0).date().isoformat()] = running
+    labels = list(by_day)
+    return labels, [by_day[d] for d in labels]
+
+
 def max_drawdown(trades: list[dict], capital_basis: float | None = None) -> dict:
     """Largest peak-to-trough decline in the cumulative net-P&L equity
     curve. Returns {"absolute": $, "pct": fraction} -- pct is relative to
