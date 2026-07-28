@@ -218,6 +218,20 @@ def archive_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def data_epoch(cfg: dict[str, Any]) -> dict[str, Any] | None:
+    """The active data-epoch marker, or None when unset. An epoch is declared when a
+    correctness fix RESTATES what recorded paper history means (e.g. the phase-0
+    leg-ratio and win-definition fixes): `{"data_epoch": {"date": "YYYY-MM-DD",
+    "note": "..."}}`. `report` surfaces it descriptively (history is never rewritten);
+    `calibrate` enforces it — promotion readings use only sessions ON or AFTER the
+    epoch date, so a rung can never graduate on numbers produced by retired code."""
+    de = cfg.get("data_epoch") or {}
+    date = de.get("date")
+    if not date:
+        return None
+    return {"date": str(date), "note": de.get("note")}
+
+
 def insight_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved AI EOD-insight config. **OFF by default** — it needs Claude Code (`claude`) on PATH,
     an authenticated session, and a paid call, so it's opt-in (`"eod_insight": {"enabled": true}`). When
