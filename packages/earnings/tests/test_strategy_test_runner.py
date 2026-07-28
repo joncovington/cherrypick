@@ -1,6 +1,58 @@
 import pytest
 
+import scanner
 import strategy_test_runner as runner
+
+# --- the R1 seam: leg scaling must preserve structure ratios ---------------------
+
+BWB_TEMPLATE = [
+    {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
+    {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
+    {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
+]
+
+
+def test_scaled_legs_preserves_structure_ratio():
+    assert [leg["quantity"] for leg in runner._scaled_legs(BWB_TEMPLATE, 1)] == [1, 2, 1]
+    assert [leg["quantity"] for leg in runner._scaled_legs(BWB_TEMPLATE, 3)] == [3, 6, 3]
+
+
+def test_scaled_legs_defaults_missing_ratio_to_one():
+    flat = [{"symbol": "A", "action": "Sell to Open"}, {"symbol": "B", "action": "Buy to Open"}]
+    assert [leg["quantity"] for leg in runner._scaled_legs(flat, 2)] == [2, 2]
+
+
+def test_bwb_round_trip_pnl_is_flat_when_quotes_do_not_move():
+    """Entry credit is priced off the order's net_debit (which counts the x2 body
+    twice); the close prices legs_json through compute_generic_exit_debit. If
+    scaling flattens the ratio, closing on unchanged quotes buys the body back
+    once and shows a phantom profit of one body price x100 per contract. With
+    ratio-preserving scaling the round trip is exactly flat."""
+    near, body, far = 2.00, 3.00, 1.20
+    # bid == ask so the exit's conservative side-of-spread pricing is unambiguous.
+    quotes = {
+        "NEAR": {"bid": near, "ask": near},
+        "BODY": {"bid": body, "ask": body},
+        "FAR": {"bid": far, "ask": far},
+    }
+    order = {"strategy": "broken_wing_butterfly", "net_debit": near + far - 2 * body}
+    entry_credit = runner._per_contract_credit(order) * 1  # quantity 1
+    legs = runner._scaled_legs(BWB_TEMPLATE, 1)
+    exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
+    assert (entry_credit - exit_debit) * 100 == pytest.approx(0.0)
+
+
+def test_bwb_round_trip_scales_linearly_with_quantity():
+    quotes = {
+        "NEAR": {"bid": 2.00, "ask": 2.10},
+        "BODY": {"bid": 2.90, "ask": 3.00},
+        "FAR": {"bid": 1.20, "ask": 1.30},
+    }
+    legs_q1 = runner._scaled_legs(BWB_TEMPLATE, 1)
+    legs_q3 = runner._scaled_legs(BWB_TEMPLATE, 3)
+    d1 = scanner.compute_generic_exit_debit(legs_q1, quotes)
+    d3 = scanner.compute_generic_exit_debit(legs_q3, quotes)
+    assert d3 == pytest.approx(d1 * 3)
 
 
 def test_occ_expiration_parses_real_symbols():

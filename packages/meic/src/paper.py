@@ -123,12 +123,12 @@ def expire_fees() -> float:
 # `slippage_frac_of_spread` haircut so both suite modules assume the same worked-limit
 # fill. Settlement (cash-settled intrinsic value) has no spread and is unaffected.
 #
-# Keep this in lockstep with cherrypick.core.fees.DEFAULT_COSTS["slippage_frac_of_spread"];
-# the 2026-07-17 slippage-literature review (see that module's comment) places 0.125 at the
-# optimistic edge of the 25-50%-of-the-way-to-the-touch practitioner band -- kept here for parity.
+# The fraction IS core's `slippage_frac_of_spread`, structurally -- not a literal kept in
+# lockstep by comment. The 2026-07-17 slippage-literature review (see that module's comment)
+# places 0.125 at the optimistic edge of the 25-50%-of-the-way-to-the-touch practitioner band.
 # ---------------------------------------------------------------------------
 
-DEFAULT_SLIPPAGE_FRAC = 0.125
+DEFAULT_SLIPPAGE_FRAC = _fees.DEFAULT_COSTS["slippage_frac_of_spread"]
 
 
 def _leg_mid(q: dict) -> float:
