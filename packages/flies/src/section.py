@@ -17,6 +17,11 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
+_CORE = os.path.join(_HERE, "_core")
+if os.path.isdir(_CORE) and _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+from cherrypick.core import viz  # noqa: E402
 
 import analytics  # noqa: E402
 import db as dbmod  # noqa: E402
@@ -26,7 +31,9 @@ _NOTE = ("payoff at expiry across price · green = book profits · a legged fly'
 
 
 def _money(v) -> str:
-    return "–" if v is None else f"${v:,.0f}"
+    # The suite's one formatter — cents included, which rule 1 (results net of fees) is glad of;
+    # this card once rounded to whole dollars, hiding exactly the fee-sized differences that matter.
+    return viz.fmt_money(v, none="–")
 
 
 def _pct(v) -> str:

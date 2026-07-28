@@ -14,14 +14,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from cherrypick.core import viz
+
 from . import config as cfgmod
 from . import report, timeutil
 
 
 def _money(x: float | None) -> str:
-    if x is None:
-        return "-"
-    return f"-${abs(x):,.2f}" if x < 0 else f"${x:,.2f}"
+    # The suite's one formatter, keeping this surface's "-" placeholder for missing values.
+    return viz.fmt_money(x, none="-")
 
 
 def _pct(x: float | None) -> str:

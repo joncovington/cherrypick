@@ -227,6 +227,7 @@ def test_every_report_number_comes_from_analytics(conn):
     seeded(conn)
     stats = analytics.stats_for_period(conn, DAY, DAY)
     text = eodmod.build_paper_eod(conn, DAY)
-    assert f"${stats['net_pnl']:,.2f}" in text
+    from cherrypick.core import viz
+    assert viz.fmt_money(stats["net_pnl"]) in text
     payload = dashboard.build_api_data(conn, DAY)
     assert payload["today"]["stats"]["net_pnl"] == stats["net_pnl"]

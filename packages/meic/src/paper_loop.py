@@ -58,6 +58,7 @@ _CORE = str(_ROOT / "src" / "_core")
 if os.path.isdir(_CORE) and _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 from cherrypick.core import calendar as _cal  # noqa: E402  (shared NYSE trading-day calendar)
+from cherrypick.core import viz as _viz  # noqa: E402  (the suite's one money formatter)
 
 import paths as _paths  # noqa: E402  (data-home resolution: ~/.cherrypick/data/meic or MEIC_DATA_DIR)
 
@@ -369,7 +370,8 @@ def _eod_report_path(day):
 
 
 def _money(x):
-    return f"-${abs(x):,.2f}" if x is not None and x < 0 else f"${x:,.2f}" if x is not None else "-"
+    # The suite's one formatter (cherrypick.core.viz), keeping this report's "-" placeholder.
+    return _viz.fmt_money(x, none="-")
 
 
 def _write_eod_report(day):

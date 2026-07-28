@@ -450,13 +450,6 @@ def _color(status: str) -> str:
     return _STATUS_COLORS.get(str(status).upper(), _STATUS_COLORS["UNKNOWN"])
 
 
-def _money(v: Any) -> str:
-    try:
-        return f"${float(v):+,.2f}"
-    except (TypeError, ValueError):
-        return "—"
-
-
 def _pill(text: str, status: str) -> str:
     return f'<span class="pill" style="background:{_color(status)}">{html.escape(str(text))}</span>'
 
@@ -469,10 +462,10 @@ def _summary_stats(s: dict[str, Any]) -> str:
     return (
         '<div class="stats">'
         f'<span>net <b style="color:{_color("OK") if (s.get("net_pnl") or 0) >= 0 else _color("CRITICAL")}">'
-        f"{html.escape(_money(s.get('net_pnl')))}</b></span>"
+        f"{html.escape(viz.fmt_money(s.get('net_pnl')))}</b></span>"
         f"<span>trades {int(s.get('trades', 0))}</span>"
         f"<span>win {html.escape(wr_str)} ({int(s.get('wins', 0))}/{int(s.get('losses', 0))})</span>"
-        f"<span>avg {html.escape(_money(s.get('avg_pnl')))}</span>"
+        f"<span>avg {html.escape(viz.fmt_money(s.get('avg_pnl')))}</span>"
         "</div>"
     )
 
@@ -487,7 +480,7 @@ def _by_profile_table(by_profile: dict[str, Any]) -> str:
             "<tr>"
             f"<td>{html.escape(str(tag))}</td>"
             f'<td style="color:{_color("OK") if net >= 0 else _color("CRITICAL")}">'
-            f"{html.escape(_money(s.get('net_pnl')))}</td>"
+            f"{html.escape(viz.fmt_money(s.get('net_pnl')))}</td>"
             f"<td>{int(s.get('trades', 0))}</td>"
             f"<td>{int(s.get('wins', 0))}/{int(s.get('losses', 0))}</td>"
             "</tr>"
@@ -517,7 +510,7 @@ def _eod_card_html(eod: dict[str, Any] | None, serve: bool = False) -> str:
             "<tr>"
             f"<td>{html.escape(str(name))}</td>"
             f'<td style="color:{_color("OK") if net >= 0 else _color("CRITICAL")}">'
-            f"{html.escape(_money(m.get('net_pnl')))}</td>"
+            f"{html.escape(viz.fmt_money(m.get('net_pnl')))}</td>"
             f"<td>{int(m.get('trades', 0))}</td>"
             f"<td>{int(m.get('wins', 0))}/{int(m.get('losses', 0))}</td>"
             "</tr>"
