@@ -101,6 +101,12 @@ CREATE TABLE IF NOT EXISTS ic_trades (
     put_settle_value          REAL,
     call_settle_value         REAL,
     settle_underlying         REAL,
+    --   unmarked_iterations  loop iterations this trade could not be marked (missing or crossed
+    --                        leg quotes). last_unmarked_at is when that last happened. A stalled
+    --                        streamer and a quiet market must not look identical in this table.
+    --                        NOTE this DDL is split on semicolons - none may appear in comments.
+    unmarked_iterations       INTEGER DEFAULT 0,
+    last_unmarked_at          TEXT,
     iv_skew_signal            TEXT,
     price_action_signal       TEXT,
     ai_entry_reasoning        TEXT,
@@ -235,6 +241,11 @@ def cmd_init_db(_args):
         ("put_settle_value",       "REAL"),
         ("call_settle_value",      "REAL"),
         ("settle_underlying",      "REAL"),
+        # Feed-quality instrumentation: how many loop iterations this trade could not be
+        # marked (missing/crossed leg quotes) and when that last happened. Distinguishes
+        # a stalled streamer from a quiet market — the flies fly_snapshots lesson.
+        ("unmarked_iterations",    "INTEGER DEFAULT 0"),
+        ("last_unmarked_at",       "TEXT"),
     ]:
         if col not in existing:
             conn.execute(f"ALTER TABLE ic_trades ADD COLUMN {col} {col_type}")
@@ -648,6 +659,8 @@ _UPDATABLE_TRADE_FIELDS = (
     # Stop-rule instrumentation — written on mark-to-market and at settlement, not at entry.
     "put_max_cost", "call_max_cost",
     "put_settle_value", "call_settle_value", "settle_underlying",
+    # Feed-quality instrumentation — written when an iteration cannot mark the trade.
+    "unmarked_iterations", "last_unmarked_at",
 )
 
 

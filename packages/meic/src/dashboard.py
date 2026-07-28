@@ -428,7 +428,10 @@ _HIST_TRADE_COLS = (
     "ic_order_id, trade_date, symbol, risk_profile, entry_time, exit_time, "
     "put_strike, call_strike, wing_width, net_credit, quantity, "
     "put_credit, call_credit, status, session_quality, "
-    "iv_rank_at_entry, iv_skew_signal, price_action_signal, "
+    # iv_skew_signal / price_action_signal deliberately not selected: the paper engine
+    # leaves both NULL (they were the retired agent loop's fields), so shipping them in
+    # every payload invites analysis over columns that are all NULL by construction.
+    "iv_rank_at_entry, "
     "put_delta_at_entry, call_delta_at_entry, "
     "exit_reason, pnl, fees, ai_entry_reasoning"
 )
@@ -653,7 +656,7 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         SELECT ic_order_id, symbol, risk_profile, entry_time, fill_confirmed_at,
                put_strike, call_strike, wing_width, net_credit, quantity,
                put_credit, call_credit, status, session_quality,
-               iv_rank_at_entry, iv_skew_signal, price_action_signal,
+               iv_rank_at_entry,
                stop_trigger_current, stop_limit_current, stop_adjustment_count,
                exit_time, exit_price, exit_reason, pnl, fees,
                ai_entry_reasoning

@@ -543,6 +543,48 @@ _CHEAP_QUOTES = {
 }
 
 
+# ── Feed quality: unusable quotes hold, and the unmarked iterations are counted ──
+
+def test_crossed_leg_quote_holds_as_quotes_unavailable():
+    """A crossed quote (bid > ask) is a feed artifact — averaging it would price the stop
+    trigger off a fiction. It must count as unavailable, exactly like a missing quote."""
+    crossed = {**_CHEAP_QUOTES, "SP": {"bid": 0.20, "ask": 0.10}}
+    d = paper.evaluate_open_trade(_markable_trade(), crossed, _params(MODERATE),
+                                  force_close=False, underlying_price=7500.0, settle=False)
+    assert d == {"action": "hold", "reason": "quotes_unavailable"}
+
+
+def test_one_sided_leg_quote_holds_as_quotes_unavailable():
+    one_sided = {**_CHEAP_QUOTES, "LC": {"bid": 0.02, "ask": None}}
+    d = paper.evaluate_open_trade(_markable_trade(), one_sided, _params(MODERATE),
+                                  force_close=False, underlying_price=7500.0, settle=False)
+    assert d == {"action": "hold", "reason": "quotes_unavailable"}
+
+
+def test_unmarked_iterations_are_counted_on_the_trade(monkeypatch):
+    """A stalled streamer and a quiet market must not look identical in ic_trades: every
+    iteration that cannot mark the trade bumps unmarked_iterations on the row."""
+    written = {}
+    monkeypatch.setattr(paper, "_update_trade",
+                        lambda oid, fields, db: written.update({oid: fields}) or {"ok": True})
+    trade = _markable_trade(ic_order_id="IC-UM", unmarked_iterations=3)
+    paper._apply_exit_decision(trade, {"action": "hold", "reason": "quotes_unavailable"},
+                               "SPX", "unused.db")
+    assert written["IC-UM"]["unmarked_iterations"] == 4
+    assert written["IC-UM"]["last_unmarked_at"]
+
+
+def test_a_marked_hold_does_not_touch_the_unmarked_counter(monkeypatch):
+    written = {}
+    monkeypatch.setattr(paper, "_update_trade",
+                        lambda oid, fields, db: written.update({oid: fields}) or {"ok": True})
+    trade = _markable_trade(ic_order_id="IC-OK", unmarked_iterations=3,
+                            put_max_cost=0.50, call_max_cost=0.50)
+    paper._apply_exit_decision(trade, {"action": "hold", "put_cost_now": 0.61,
+                                       "call_cost_now": 0.10}, "SPX", "unused.db")
+    assert "unmarked_iterations" not in written.get("IC-OK", {})
+
+
 def test_hold_still_reports_each_side_cost_so_a_running_max_can_be_kept():
     """Nothing recorded how far a side ran before it stopped, which is why no alternative stop
     threshold could be evaluated after the fact. `hold` has to carry the marks or the record has a
