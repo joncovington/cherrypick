@@ -48,50 +48,56 @@ def _costs_config(config: dict) -> dict:
     return {**DEFAULT_COSTS, **config.get("tastytrade_costs", {})}
 
 
-def _leg_count(order: dict) -> int:
+def _leg_quantities(order: dict, quantity: int) -> list[int]:
+    """Total contracts traded per price level: the leg's own structure ratio (e.g. a broken-wing
+    butterfly's x2 body) times the position quantity. A leg without a quantity field is ratio 1,
+    so flat 1-1-1-1 structures are unchanged. Commissions, pass-throughs, and slippage are all
+    per CONTRACT, not per price level -- a 1-2-1 fly at quantity 1 trades 4 contracts, not 3."""
     legs = order.get("order", {}).get("legs", [])
-    return len(legs)
+    return [int(leg.get("quantity", 1) or 1) * quantity for leg in legs]
 
 
-def _commission(num_legs: int, quantity: int, per_contract: float, cap_per_leg: float) -> float:
-    """Open-only model: min(quantity * per_contract, cap) per leg, summed. Passing
+def _commission(leg_quantities: list[int], per_contract: float, cap_per_leg: float) -> float:
+    """Open-only model: min(leg's contracts * per_contract, cap) per leg, summed. Passing
     commission_close_per_contract (0.00 by default) yields $0 to close with no special-casing."""
-    return num_legs * min(quantity * per_contract, cap_per_leg)
+    return sum(min(leg_qty * per_contract, cap_per_leg) for leg_qty in leg_quantities)
 
 
-def _pass_through(num_legs: int, quantity: int, clearing: float, regulatory: float) -> float:
-    return num_legs * quantity * (clearing + regulatory)
+def _pass_through(leg_quantities: list[int], clearing: float, regulatory: float) -> float:
+    return sum(leg_quantities) * (clearing + regulatory)
 
 
-def _slippage(leg_quotes: list[dict], quantity: int, frac_of_spread: float,
+def _slippage(leg_quotes: list[dict], leg_quantities: list[int], frac_of_spread: float,
               cap_frac_of_mid: float | None = None) -> float:
     """Per-leg slippage = frac_of_spread of that leg's bid-ask width, optionally capped at
-    cap_frac_of_mid of the leg's mid; summed across legs, x100 x quantity.
+    cap_frac_of_mid of the leg's mid; x100 x that leg's total contracts, summed across legs.
 
     Summing per-leg spreads is deliberate and correct: a multi-leg combo's net bid-ask exactly equals
     the sum of its legs' spreads (the mids net out, the spreads add), so this is identical to
-    fractioning the net combo spread -- there is nothing to de-duplicate. The cap is a realism
-    guardrail for deep-OTM wings whose spread is large relative to their value."""
+    fractioning the net combo spread -- there is nothing to de-duplicate. A ratioed leg is quoted at
+    one price level but crosses its spread once per contract, so its haircut scales with its own
+    contract count. The cap is a realism guardrail for deep-OTM wings whose spread is large relative
+    to their value."""
     total = 0.0
-    for q in leg_quotes:
+    for q, leg_qty in zip(leg_quotes, leg_quantities, strict=True):
         bid = q.get("bid", 0.0)
         ask = q.get("ask", 0.0)
         slip = max(ask - bid, 0.0) * frac_of_spread
         if cap_frac_of_mid is not None:
             slip = min(slip, cap_frac_of_mid * max((bid + ask) / 2.0, 0.0))
-        total += slip
-    return total * 100 * quantity
+        total += slip * leg_qty
+    return total * 100
 
 
 def _apply_costs(order: dict, leg_quotes: list[dict], quantity: int, config: dict,
                  commission_key: str) -> dict:
     costs_cfg = _costs_config(config)
-    num_legs = _leg_count(order)
-    commission = _commission(num_legs, quantity, costs_cfg[commission_key],
+    leg_qtys = _leg_quantities(order, quantity)
+    commission = _commission(leg_qtys, costs_cfg[commission_key],
                              costs_cfg["commission_cap_per_leg"])
-    pass_through = _pass_through(num_legs, quantity, costs_cfg["clearing_fee_per_contract"],
+    pass_through = _pass_through(leg_qtys, costs_cfg["clearing_fee_per_contract"],
                                  costs_cfg["regulatory_fee_per_contract"])
-    slippage = _slippage(leg_quotes, quantity, costs_cfg["slippage_frac_of_spread"],
+    slippage = _slippage(leg_quotes, leg_qtys, costs_cfg["slippage_frac_of_spread"],
                          costs_cfg.get("slippage_cap_frac_of_mid"))
     total = commission + pass_through + slippage
     return {

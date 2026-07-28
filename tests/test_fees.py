@@ -52,6 +52,48 @@ def test_slippage_cap_bounds_junk_wing():
     assert out["slippage"] == 3.15  # 0.0315 * 100 * 1, not the uncapped 4.75
 
 
+# --- Ratioed legs: costs are per contract, not per price level ----------------------------------
+# A 1-2-1 broken-wing-butterfly shape: the x2 body is one price level but two contracts.
+ORDER_BWB = {"order": {"legs": [{"quantity": 1}, {"quantity": 2}, {"quantity": 1}]}}
+BWB_QUOTES = [{"bid": 1.00, "ask": 1.10}, {"bid": 2.00, "ask": 2.10}, {"bid": 0.50, "ask": 0.56}]
+
+
+def test_ratioed_leg_charges_commission_per_contract():
+    out = fees.apply_entry_costs(ORDER_BWB, BWB_QUOTES, quantity=1, config={})
+    # 4 contracts (1+2+1) * $1, not 3 price levels * $1.
+    assert out["commission"] == 4.00
+    # pass-through: 4 * (0.10+0.04) = 0.56, not 3 * 0.14 = 0.42.
+    assert out["pass_through_fees"] == 0.56
+
+
+def test_ratioed_leg_pays_slippage_per_contract():
+    out = fees.apply_entry_costs(ORDER_BWB, BWB_QUOTES, quantity=1, config={})
+    # spreads 0.10 / 0.10 / 0.06; the body's haircut counts twice:
+    # (0.10*1 + 0.10*2 + 0.06*1) * 0.125 * 100 = 4.50 (cap not binding on these legs).
+    assert out["slippage"] == 4.50
+
+
+def test_ratioed_leg_scales_with_position_quantity():
+    q1 = fees.apply_entry_costs(ORDER_BWB, BWB_QUOTES, quantity=1, config={})
+    q3 = fees.apply_entry_costs(ORDER_BWB, BWB_QUOTES, quantity=3, config={})
+    # Everything below the per-leg commission cap is linear in quantity.
+    assert q3["pass_through_fees"] == pytest.approx(q1["pass_through_fees"] * 3, abs=0.01)
+    assert q3["slippage"] == pytest.approx(q1["slippage"] * 3, abs=0.01)
+    assert q3["commission"] == pytest.approx(q1["commission"] * 3, abs=0.01)
+
+
+def test_commission_cap_applies_per_price_level_with_ratioed_body():
+    # 8 position contracts: wings 8 each ($8 < cap), body 16 -> capped at $10/leg.
+    out = fees.apply_entry_costs(ORDER_BWB, [{"bid": 0, "ask": 0}] * 3, quantity=8, config={})
+    assert out["commission"] == 8.00 + 10.00 + 8.00
+
+
+def test_flat_legs_unchanged_by_quantity_awareness():
+    # Legs without a quantity field behave exactly as before the ratio fix.
+    out = fees.apply_entry_costs(ORDER_2LEG, LEG_QUOTES, quantity=3, config={})
+    assert out == {"commission": 6.00, "pass_through_fees": 0.84, "slippage": 6.00, "total_cost": 12.84}
+
+
 # --- Part 2: IC open-fee schedule reproduces MEIC's constants -----------------------------------
 @pytest.mark.parametrize("symbol,expected", [
     ("SPX", 6.89), ("XSP", 4.49), ("NDX", 5.49), ("RUT", 5.21), ("AAPL", 4.49),  # AAPL -> DEFAULT
