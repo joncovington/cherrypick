@@ -230,3 +230,23 @@ def test_get_eod_summary_spans_all_symbols(db_path, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["total_entries"] == 2
     assert abs(out["net_pnl"] - 3.6) < 0.01
+
+
+def test_get_eod_summary_counts_wins_by_net_pnl(db_path, capsys):
+    """One win definition module-wide: an expired IC that lost money (ITM short) is a
+    LOSS, a profitable force-close is a WIN, and fees can flip a small gross winner.
+    Status is a lifecycle fact, not a verdict — matches _range_stats_for_rows and the
+    orchestrator's calibrate reading."""
+    # Expired but net-negative (short went ITM): pnl -2.0 — must count as a loss.
+    _insert_trade(db_path, ic_order_id="IC-EXP-LOSS", status="expired", pnl=-2.0, fees=0.2)
+    # Force-closed at a profit: must count as a win.
+    _insert_trade(db_path, ic_order_id="IC-FC-WIN", status="force_closed", pnl=1.5, fees=0.2)
+    # Fees flip a small gross winner negative: net 0.1 - 0.2 <= 0 — a loss.
+    _insert_trade(db_path, ic_order_id="IC-FEE-FLIP", status="expired", pnl=0.1, fees=0.2)
+    # Still open (no pnl yet): excluded from the win-rate denominator entirely.
+    _insert_trade(db_path, ic_order_id="IC-OPEN", status="open", pnl=None, fees=None)
+    db.cmd_get_eod_summary(None)
+    out = json.loads(capsys.readouterr().out)
+    assert out["win_count"] == 1
+    # 3 resolved trades (open excluded): 1 win / 3 = 33.3%
+    assert out["win_rate_pct"] == 33.3

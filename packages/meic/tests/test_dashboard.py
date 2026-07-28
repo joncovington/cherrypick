@@ -265,10 +265,11 @@ def test_stats_for_period_with_trades(db_path):
     result = dashboard._stats_for_period(conn, start=_TODAY, end=_TODAY)
     conn.close()
     assert result["total_trades"] == 2       # cancelled excluded
-    # No ic_spread_legs rows for either trade, so each side of the IC is scored
-    # from the whole-trade status: expired -> both sides win, stopped -> both lose.
-    assert result["wins"] == 2
-    assert result["losses"] == 2
+    # One win definition module-wide: per TRADE, net of fees (pnl - fees > 0).
+    # 1.20 - 0.10 wins; -0.80 - 0.10 loses. The per-side spread lens is a
+    # per-row display in the trade log, never these headline counts.
+    assert result["wins"] == 1
+    assert result["losses"] == 1
     assert result["wl_ratio"] == 50.0
     assert abs(result["net_pnl"] - 0.40) < 0.01
 
@@ -286,17 +287,19 @@ def test_stats_for_period_excludes_out_of_range(db_path):
     conn.close()
     assert result["total_trades"] == 0
 
-def test_stats_for_period_uses_leg_rows_when_present(db_path):
-    """A per-side stop should count as a win on one side and a loss on the other,
-    not a whole-trade win/loss guess, once ic_spread_legs rows exist."""
+def test_stats_for_period_scores_the_trade_not_its_legs(db_path):
+    """A partially-stopped IC is ONE trade with one net outcome — leg rows must not
+    inflate the headline counts (that was the per-leg win-rate definition R3 retired;
+    per-side outcomes remain visible per row in the trade log)."""
     conn = dashboard._connect()
-    _insert_trade(conn, ic_order_id="IC-001", status="partial", pnl=0.30)
+    _insert_trade(conn, ic_order_id="IC-001", status="partial", pnl=0.30, fees=0.10)
     _insert_leg(conn, ic_order_id="IC-001", side="put", status="stopped", pnl=-0.50)
     _insert_leg(conn, ic_order_id="IC-001", side="call", status="expired", pnl=0.80)
     result = dashboard._stats_for_period(conn, start=_TODAY, end=_TODAY)
     conn.close()
+    # net = 0.30 - 0.10 > 0: one winning trade, zero losses.
     assert result["wins"] == 1
-    assert result["losses"] == 1
+    assert result["losses"] == 0
 
 
 # ── _build_api_data ───────────────────────────────────────────────────────────
