@@ -921,126 +921,9 @@ function flt(btn,lvl){btn.classList.toggle('off');btn.classList.toggle('on');
 var show=btn.classList.contains('on');
 document.querySelectorAll('.logline[data-level="'+lvl+'"]').forEach(function(r){r.style.display=show?'':'none'});}
 
-// Drag-to-reorder the module cards (self-contained, no libraries). Each .grid card can be
-// dragged by its grip handle; the order is saved per-browser in localStorage and re-applied
-// on load, so it survives every dashboard regeneration. Column count still auto-fits to width.
-(function(){
-  var LS_KEY='cherrypick-dash-layout-v1';
-  var store; try{store=JSON.parse(localStorage.getItem(LS_KEY))||{};}catch(e){store={};}
-  function persist(){try{localStorage.setItem(LS_KEY,JSON.stringify(store));}catch(e){}}
-  // Three reorder groups: the module summary .grid, the .embed-grid of dashboards, and .wrap
-  // itself (the stacked top-level sections — system, eod, logs, live sections).
-  var grids=[].slice.call(document.querySelectorAll('.grid, .embed-grid, .wrap'));
-  var srcOrder={};
-  var dragged=null,dragGroup=null;
-
-  function kids(g){return [].slice.call(g.children).filter(function(c){return c.hasAttribute('data-rkey');});}
-  function keys(g){return kids(g).map(function(c){return c.getAttribute('data-rkey');});}
-  function slug(s){return (s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');}
-  // Stable group id (independent of DOM order) so saved layouts survive structure changes.
-  function groupKey(g){
-    if(g.classList.contains('embed-grid')) return 'embeds';
-    if(g.classList.contains('grid')) return 'modules';
-    return 'sections';
-  }
-  // .wrap's section cards need a stable data-rkey; derive one from the header text.
-  function ensureKey(card){
-    if(card.getAttribute('data-rkey')) return;
-    var hh=card.querySelector(':scope > h2');
-    var label=hh?((hh.childNodes[0]&&hh.childNodes[0].nodeValue)||hh.textContent):'';
-    var base=slug(label)||'section', k=base, n=2;
-    while(document.querySelector('[data-rkey="'+k+'"]')) k=base+'-'+(n++);
-    card.setAttribute('data-rkey',k);
-  }
-  // Move `node` before `ref` within group `g`; ref===null means "after the last item" — which
-  // for .wrap is *not* the same as appendChild (that would land past the footer/embeds).
-  function place(g,ref,node){
-    if(ref===null){
-      var items=kids(g),last=items[items.length-1];
-      if(last&&last!==node) g.insertBefore(node,last.nextSibling);
-    } else if(ref!==node) g.insertBefore(node,ref);
-  }
-
-  function dragAfter(g,x,y){
-    var best=null,bestScore=Infinity,list=kids(g);
-    for(var i=0;i<list.length;i++){
-      var el=list[i]; if(el===dragged) continue;
-      var r=el.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,gap=r.height*0.5,before;
-      if(y<cy-gap) before=true; else if(y>cy+gap) before=false; else before=x<cx;
-      if(before){var s=(cy-y)*(cy-y)+(cx-x)*(cx-x); if(s<bestScore){bestScore=s;best=el;}}
-    }
-    return best;
-  }
-  function showReset(){var b=document.getElementById('reset-layout'); if(b) b.classList.add('show');}
-
-  grids.forEach(function(g){
-    var gk=groupKey(g);
-    // Embedded dashboards are heavy iframes — moving one in the DOM reloads it, so reorder
-    // them only once, on drop (not live during dragover), to avoid reload thrash.
-    var live=!g.classList.contains('embed-grid');
-    [].slice.call(g.children).forEach(function(c){
-      if(c.nodeType===1&&c.classList.contains('card')) ensureKey(c);
-    });
-    kids(g).forEach(function(card){
-      // The grip handle itself is the drag source (draggable=true) rather than toggling the
-      // card's draggable on mousedown — that toggle is unreliable in Chrome (draggability is
-      // decided before the mousedown handler runs), which is why grabbing a card did nothing.
-      var h=document.createElement('span');
-      h.className='reorder-handle'; h.title='Drag to reorder'; h.textContent='\\u2807';
-      h.setAttribute('draggable','true');
-      card.insertBefore(h,card.firstChild);
-      h.addEventListener('dragstart',function(e){
-        dragged=card; dragGroup=g; card.classList.add('reorder-drag');
-        e.dataTransfer.effectAllowed='move';
-        try{e.dataTransfer.setData('text/plain',card.getAttribute('data-rkey'));}catch(_){}
-        try{e.dataTransfer.setDragImage(card,20,20);}catch(_){}  // drag the whole card, not the grip
-      });
-      h.addEventListener('dragend',function(){
-        card.classList.remove('reorder-drag');
-        if(dragged===card){
-          if(!live){  // apply the pending drop position once (single iframe reload)
-            [].forEach.call(g.querySelectorAll('.reorder-over'),function(el){el.classList.remove('reorder-over');});
-            if(g.__drop!==undefined){ place(g,g.__drop,card); g.__drop=undefined; }
-          }
-          store[gk]=keys(g); persist(); showReset();
-        }
-        dragged=null; dragGroup=null;
-      });
-    });
-    srcOrder[gk]=keys(g);
-    g.addEventListener('dragover',function(e){
-      if(!dragged||dragGroup!==g) return;
-      e.preventDefault(); e.dataTransfer.dropEffect='move';
-      var after=dragAfter(g,e.clientX,e.clientY);
-      if(live){
-        place(g,after,dragged);
-      } else {  // defer the move; just show where it'll land
-        [].forEach.call(g.querySelectorAll('.reorder-over'),function(el){el.classList.remove('reorder-over');});
-        g.__drop=after;
-        if(after) after.classList.add('reorder-over');
-      }
-    });
-    applyOrder(g, store[gk]);
-  });
-
-  // Reorder a group's items to match `order`, inserting before a fixed anchor (the element after
-  // the last item) so items stay in their region — for .wrap that's *before* the footer/embeds.
-  function applyOrder(g, order){
-    if(!order||!order.length) return;
-    var byKey={}; kids(g).forEach(function(c){byKey[c.getAttribute('data-rkey')]=c;});
-    var cur=kids(g), anchor=cur.length?cur[cur.length-1].nextSibling:null;
-    order.forEach(function(k){if(byKey[k]) g.insertBefore(byKey[k],anchor);});
-    kids(g).forEach(function(c){if(order.indexOf(c.getAttribute('data-rkey'))<0) g.insertBefore(c,anchor);});
-  }
-
-  if(Object.keys(store).length) showReset();
-  var reset=document.getElementById('reset-layout');
-  if(reset) reset.addEventListener('click',function(){
-    grids.forEach(function(g){ applyOrder(g, srcOrder[groupKey(g)]); });
-    store={}; try{localStorage.removeItem(LS_KEY);}catch(e){}
-    reset.classList.remove('show');
-  });
-})();
+// Drag-to-reorder lives in cherrypick.core.viz.REORDER_JS now (the suite's one copy,
+// this page's 3-group version was the donor); groups are declared with data-cp-reorder
+// attributes in the render below, and the saved-layout store key is unchanged.
 
 // Collapsible top-level sections. Click a section header to expand/collapse it; the state is
 // saved per-browser in localStorage. Defaults: System starts collapsed (diagnostics you don't
@@ -1211,7 +1094,10 @@ def _embed_cards_html(embed_views: list[dict[str, Any]]) -> str:
             f'{html.escape(e["title"])} dashboard"></iframe>'
             "</section>"
         )
-    return '<div class="embed-grid">' + "".join(cards) + "</div>"
+    # data-cp-reorder-defer: iframes are heavy — moving one mid-drag reloads it, so the shared
+    # reorder JS applies the move once, on drop.
+    return ('<div class="embed-grid" data-cp-reorder="embeds" data-cp-reorder-items=".card" '
+            'data-cp-reorder-defer>' + "".join(cards) + "</div>")
 
 
 _CAL_CSS = (
@@ -1348,7 +1234,10 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     # The module summary cards duplicate the embedded module dashboards; when the embeds are shown
     # (serve mode with embeds configured) omit the summary grid as redundant. The static file render
     # has no embeds, so it keeps the grid as the only per-module P&L view.
-    module_grid = "" if embeds_shown else f'<div class="grid">{cards}</div>'
+    module_grid = (
+        "" if embeds_shown
+        else f'<div class="grid" data-cp-reorder="modules" data-cp-reorder-items=".card">{cards}</div>'
+    )
     # The suite equity curve and calibration progression render in BOTH modes: the equity
     # card's payload is baked inline (viz.card_inline_html), so the static file — the page
     # that exists when nobody is watching — finally has a chart without needing a server.
@@ -1358,14 +1247,18 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
                                            model["equity_card"])
     calibration_card = _calibration_progress_html(model.get("modules", []))
     extra_style = viz.SECTION_STYLE + _CAL_CSS
-    extra_script = viz.SECTION_JS + (_DOCTOR_JS + _LIVEOPS_JS + _RECONCILE_JS if serve else "")
+    extra_script = viz.SECTION_JS + viz.REORDER_JS + (
+        _DOCTOR_JS + _LIVEOPS_JS + _RECONCILE_JS if serve else ""
+    )
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>cherrypick status</title><style>"
         + _CSS
         + extra_style
-        + "</style></head><body><div class='wrap'>"
+        + "</style></head><body>"
+        "<div class='wrap' data-cp-reorder='sections' data-cp-reorder-items='.card' "
+        "data-cp-reorder-store='cherrypick-dash-layout-v1'>"
         + header
         + equity_card
         + calibration_card

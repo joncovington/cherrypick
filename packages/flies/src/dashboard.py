@@ -172,7 +172,6 @@ tr.filter-row .on{border-color:var(--accent)}
 .f-clear{background:none;border:1px solid var(--line);color:var(--dim);border-radius:4px;
 padding:3px 8px;font-size:11px;cursor:pointer}
 .f-clear:hover{color:var(--fg);border-color:var(--accent)}
-.reorder-handle{cursor:grab;color:var(--dim);float:right;user-select:none;font-size:15px;line-height:1}
 canvas{width:100%!important}
 .cal{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;align-items:flex-start}
 .cal-side{display:grid;grid-template-rows:14px repeat(5,16px);row-gap:3px;font-size:10px;
@@ -209,10 +208,10 @@ _BODY = """
     <button data-view="performance">Performance</button>
   </nav>
 </header>
-<main>
+<main data-cp-reorder-store='flies-dash-layout-v1'>
   <section class="view active" id="view-today">
     <div class="tiles" id="today-tiles"></div>
-    <div class="grid">
+    <div class="grid" data-cp-reorder="view-today" data-cp-reorder-items=".card">
       <div class="card" style="grid-column:1/-1"><h2>Payoff at expiry — the profit forest</h2>
         <canvas id="payoff" height="260"></canvas>
         <div class="legend" id="payoff-legend"></div>
@@ -243,7 +242,7 @@ _BODY = """
   </section>
 
   <section class="view" id="view-history">
-    <div class="grid">
+    <div class="grid" data-cp-reorder="view-history" data-cp-reorder-items=".card">
       <div class="card"><h2>By arm</h2><div class="scroll"><table id="arm-tbl"></table></div></div>
       <div class="card"><h2>By entry mode</h2><div class="scroll"><table id="mode-tbl"></table></div></div>
       <div class="card"><h2>By entry window</h2><div class="scroll"><table id="win-tbl"></table></div>
@@ -271,7 +270,7 @@ _BODY = """
 
   <section class="view" id="view-performance">
     <div class="tiles" id="perf-tiles"></div>
-    <div class="grid">
+    <div class="grid" data-cp-reorder="view-performance" data-cp-reorder-items=".card">
       <div class="card" style="grid-column:1/-1"><h2>P&amp;L over time</h2>
         <div class="filters">
           <select id="perf-gran"><option>daily</option><option>weekly</option><option>monthly</option>
@@ -1162,66 +1161,15 @@ window.addEventListener('resize', () => { if (DATA) renderAll(DATA); });
 refresh();
 setInterval(refresh, 15000);
 
-/* ---------- drag-to-reorder (same behaviour as the MEIC and orchestrator dashboards) ---------- */
-(function(){
-  const LS_KEY = 'flies-dash-layout-v1';
-  const groups = () => document.querySelectorAll('.grid');
-  const store = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }
-                        catch(e){ return {}; } };
-  const gkey = g => (g.closest('.view')||{}).id || 'root';
-  const ckey = (c,i) => (c.querySelector('h2')||{}).textContent
-      ? (c.querySelector('h2').textContent.toLowerCase().replace(/[^a-z0-9]+/g,'-')) : 'card-'+i;
-  const srcOrder = new Map();
-
-  groups().forEach(g => {
-    srcOrder.set(gkey(g), [...g.children]);
-    [...g.children].forEach((c,i) => {
-      c.dataset.rkey = ckey(c,i);
-      const handle = document.createElement('span');
-      handle.className = 'reorder-handle'; handle.textContent = '⠿'; handle.draggable = true;
-      // The HANDLE is the drag source, not the card: toggling a card's draggable on mousedown is
-      // unreliable in Chrome, which is the same reason MEIC's dashboard does it this way.
-      handle.addEventListener('dragstart', e => {
-        c.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', c.dataset.rkey);
-      });
-      handle.addEventListener('dragend', () => { c.classList.remove('dragging'); save(g); });
-      (c.querySelector('h2') || c).appendChild(handle);
-    });
-    g.addEventListener('dragover', e => {
-      e.preventDefault();
-      const dragging = g.querySelector('.dragging'); if (!dragging) return;
-      const after = [...g.querySelectorAll('.card:not(.dragging)')].find(el => {
-        const b = el.getBoundingClientRect();
-        return e.clientY < b.top + b.height/2 || (e.clientY < b.bottom && e.clientX < b.left + b.width/2);
-      });
-      after ? g.insertBefore(dragging, after) : g.appendChild(dragging);
-    });
-  });
-
-  function save(g) {
-    const s = store(); s[gkey(g)] = [...g.children].map(c => c.dataset.rkey);
-    localStorage.setItem(LS_KEY, JSON.stringify(s));
-  }
-  const saved = store();
-  groups().forEach(g => {
-    const order = saved[gkey(g)]; if (!order) return;
-    const byKey = new Map([...g.children].map(c => [c.dataset.rkey, c]));
-    // Unknown keys are cards shipped after the layout was saved — append them rather than drop them,
-    // so a new panel never disappears for someone with a stored layout.
-    order.forEach(k => byKey.has(k) && g.appendChild(byKey.get(k)));
-  });
-  $('#reset-layout').onclick = () => {
-    localStorage.removeItem(LS_KEY);
-    groups().forEach(g => (srcOrder.get(gkey(g))||[]).forEach(c => g.appendChild(c)));
-  };
-})();
+/* drag-to-reorder lives in cherrypick.core.viz.REORDER_JS (the suite's one copy);
+   groups are declared with data-cp-reorder attributes in the markup. */
 """
 
 HTML = (
     "<!doctype html><meta charset='utf-8'><title>Flies — paper</title>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    f"<style>{_STYLE}</style>{_BODY}<script>{_JS}</script>"
+    f"<style>{_STYLE}{viz.REORDER_STYLE}</style>{_BODY}"
+    f"<script>{_JS}</script><script>{viz.REORDER_JS}</script>"
 )
 
 

@@ -287,7 +287,9 @@ def test_embeds_are_serve_only_iframe_cards(env, monkeypatch):
     assert m["embeds"][0]["url"] == "/embed/meic"
     served = dashboard._render_html(m, serve=True)
     static = dashboard._render_html(m, serve=False)
-    assert 'src="/embed/meic"' in served and '<div class="embed-grid">' in served
+    assert 'src="/embed/meic"' in served and 'class="embed-grid"' in served
+    # The embed grid is a shared-reorder group in deferred mode (iframes reload when moved).
+    assert 'data-cp-reorder="embeds"' in served and "data-cp-reorder-defer" in served
     assert "/embed/meic" not in static  # no iframe in the static file render
 
 

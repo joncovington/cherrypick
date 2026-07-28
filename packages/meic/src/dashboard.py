@@ -1053,7 +1053,7 @@ nav{flex:1;padding:10px 0}
 
 </style>
 </head>
-<body>
+<body data-cp-reorder-store='meic-dash-layout-v1'>
 <div class="app">
 
 <aside class="sidebar">
@@ -1197,7 +1197,7 @@ nav{flex:1;padding:10px 0}
         <div class="empty" id="cal-heat-empty" style="display:none;padding:8px 0">No closed sessions yet.</div>
       </div>
 
-      <div class="ana-grid flow" style="margin-top:10px">
+      <div class="ana-grid flow" data-cp-reorder="history-ana" data-cp-reorder-items=".apanel" data-cp-reorder-label=".ptitle" style="margin-top:10px">
         <div class="apanel">
           <div class="ptitle">Win Rate by Session</div>
           <table class="atable" id="sess-tbl">
@@ -1221,7 +1221,7 @@ nav{flex:1;padding:10px 0}
         </div>
         <div class="apanel">
           <div class="ptitle">Fee Drag (All-Time)</div>
-          <div class="fee-grid">
+          <div class="fee-grid" data-cp-reorder="fee-drag" data-cp-reorder-items=".fee-card" data-cp-reorder-label=".fee-lbl">
             <div class="fee-card"><div class="fee-lbl">Gross Credit</div><div class="fee-val" id="f-gross">&mdash;</div></div>
             <div class="fee-card"><div class="fee-lbl">Total Fees</div><div class="fee-val neg" id="f-fees">&mdash;</div></div>
             <div class="fee-card"><div class="fee-lbl">Net P&amp;L</div><div class="fee-val" id="f-net">&mdash;</div></div>
@@ -1231,7 +1231,7 @@ nav{flex:1;padding:10px 0}
       </div>
 
       <!-- Signal-outcome breakdowns (avg NET P&L per pre-trade attribute) -->
-      <div class="ana-grid flow" style="margin-top:10px">
+      <div class="ana-grid flow" data-cp-reorder="signals-ana" data-cp-reorder-items=".apanel" data-cp-reorder-label=".ptitle" style="margin-top:10px">
         <div class="apanel">
           <div class="ptitle">Net P&amp;L by Short-Call Delta</div>
           <table class="atable" id="sig-delta-tbl">
@@ -1350,7 +1350,7 @@ nav{flex:1;padding:10px 0}
     <div class="frame" style="flex:0 0 auto">
       <div class="frame-hdr"><span class="frame-title">Risk-Adjusted Metrics</span>
         <span class="frame-sub" id="perf-overfit-note"></span></div>
-      <div class="fee-grid" style="padding:14px 18px 18px">
+      <div class="fee-grid" data-cp-reorder="fee-risk" data-cp-reorder-items=".fee-card" data-cp-reorder-label=".fee-lbl" style="padding:14px 18px 18px">
         <div class="fee-card"><div class="fee-lbl">Sharpe</div><div class="fee-val" id="rm-sharpe">&mdash;</div></div>
         <div class="fee-card"><div class="fee-lbl">Sortino</div><div class="fee-val" id="rm-sortino">&mdash;</div></div>
         <div class="fee-card"><div class="fee-lbl">Calmar</div><div class="fee-val" id="rm-calmar">&mdash;</div></div>
@@ -1374,7 +1374,7 @@ nav{flex:1;padding:10px 0}
     </div>
 
     <div class="frame" style="flex:1;min-height:0;overflow:hidden">
-      <div class="ana-grid">
+      <div class="ana-grid" data-cp-reorder="perf-ana" data-cp-reorder-items=".apanel" data-cp-reorder-label=".ptitle">
         <div class="apanel">
           <div class="ptitle">Per-Period Net P&amp;L</div>
           <div class="chart-wrap" style="padding:6px 0"><canvas id="perf-pnlbar-canvas"></canvas>
@@ -2298,162 +2298,16 @@ setInterval(() => {
   if (cd <= 0) { cd = 30; fetchData(); }
 }, 1000);
 
-// ── drag-to-reorder cards/panels ──────────────────────────────────────────────
-// Self-contained (no libraries). Every .ana-grid / .fee-grid becomes a reorderable
-// group: its direct children can be dragged by a grip handle to reorder, and the
-// order is saved per-browser in localStorage. Column reflow (CSS auto-fit and the
-// 820px breakpoint) keeps working on top of whatever order the user sets.
-(function () {
-  const LS_KEY = 'meic-dash-layout-v1';
-  const GROUP_SEL = '.ana-grid, .fee-grid';
-
-  const slug = s => (s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-
-  function loadSaved() {
-    try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }
-    catch (e) { return {}; }
-  }
-  function persist(store) {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {}
-  }
-
-  // Stable id for a group: which view it lives in + its class + its index among
-  // same-class groups in that view. Independent of card order, so it survives reorders.
-  function groupKey(group) {
-    const view = group.closest('.view');
-    const viewId = view ? view.id : 'root';
-    const cls = group.classList.contains('ana-grid') ? 'ana' : 'fee';
-    const peers = [...(view || document).querySelectorAll('.' + (cls === 'ana' ? 'ana-grid' : 'fee-grid'))];
-    return viewId + ':' + cls + ':' + peers.indexOf(group);
-  }
-  // Stable id for a child: slug of its label (ptitle / fee-lbl), else its source index.
-  function childKey(child, idx) {
-    const lbl = child.querySelector('.ptitle, .fee-lbl');
-    const s = lbl ? slug(lbl.textContent) : '';
-    return s || ('idx-' + idx);
-  }
-
-  const store = loadSaved();
-  const srcOrder = new Map(); // groupKey -> original child-key order (for Reset)
-  let dragged = null, dragGroup = null;
-
-  function childrenOf(group) {
-    return [...group.children].filter(c => c.hasAttribute('data-rkey'));
-  }
-
-  function applyOrder(group, gk) {
-    const order = store[gk];
-    if (!order || !order.length) return;
-    const byKey = new Map(childrenOf(group).map(c => [c.getAttribute('data-rkey'), c]));
-    order.forEach(k => { const el = byKey.get(k); if (el) group.appendChild(el); });
-    // Any child not present in the saved order (e.g. a newly added card) keeps its
-    // relative position by being appended after the known ones.
-    byKey.forEach((el, k) => { if (!order.includes(k)) group.appendChild(el); });
-  }
-
-  function saveOrder(group, gk) {
-    store[gk] = childrenOf(group).map(c => c.getAttribute('data-rkey'));
-    persist(store);
-  }
-
-  // Row-major "insert before" target for the current pointer position.
-  function dragAfter(group, x, y) {
-    let best = null, bestScore = Infinity;
-    for (const el of childrenOf(group)) {
-      if (el === dragged) continue;
-      const r = el.getBoundingClientRect();
-      const cx = r.left + r.width / 2, cy = r.top + r.height / 2, gap = r.height * 0.5;
-      let before;
-      if (y < cy - gap) before = true;        // pointer is in an earlier row
-      else if (y > cy + gap) before = false;  // later row
-      else before = x < cx;                   // same row → compare x
-      if (before) {
-        const score = (cy - y) * (cy - y) + (cx - x) * (cx - x);
-        if (score < bestScore) { bestScore = score; best = el; }
-      }
-    }
-    return best;
-  }
-
-  function initGroup(group) {
-    const gk = groupKey(group);
-    const kids = [...group.children];
-    kids.forEach((child, idx) => {
-      // Only treat real cards/panels as reorderable (skip stray text nodes/wrappers).
-      if (!(child.classList.contains('apanel') || child.classList.contains('fee-card'))) return;
-      let key = childKey(child, idx);
-      // Guard against duplicate keys within a group.
-      let uniq = key, n = 2;
-      while (childrenOf(group).some(c => c.getAttribute('data-rkey') === uniq)) uniq = key + '-' + (n++);
-      child.setAttribute('data-rkey', uniq);
-
-      // The grip handle itself is the drag source (draggable=true) rather than toggling the
-      // card's draggable on mousedown — that toggle is unreliable in Chrome (draggability is
-      // decided before the mousedown handler runs), so grabbing a card did nothing.
-      const handle = document.createElement('span');
-      handle.className = 'reorder-handle';
-      handle.title = 'Drag to reorder';
-      handle.textContent = '⠇'; // ⠇ braille grip
-      handle.setAttribute('draggable', 'true');
-      child.insertBefore(handle, child.firstChild);
-
-      handle.addEventListener('dragstart', e => {
-        dragged = child; dragGroup = group;
-        child.classList.add('reorder-drag');
-        e.dataTransfer.effectAllowed = 'move';
-        try { e.dataTransfer.setData('text/plain', uniq); } catch (_) {}
-        try { e.dataTransfer.setDragImage(child, 20, 20); } catch (_) {}  // drag the whole card
-      });
-      handle.addEventListener('dragend', () => {
-        child.classList.remove('reorder-drag');
-        group.querySelectorAll('.reorder-over').forEach(el => el.classList.remove('reorder-over'));
-        if (dragged === child) { saveOrder(group, gk); showReset(); }
-        dragged = null; dragGroup = null;
-      });
-    });
-
-    srcOrder.set(gk, childrenOf(group).map(c => c.getAttribute('data-rkey')));
-
-    group.addEventListener('dragover', e => {
-      if (!dragged || dragGroup !== group) return;    // ignore drags from other groups
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      const after = dragAfter(group, e.clientX, e.clientY);
-      if (after == null) group.appendChild(dragged);
-      else if (after !== dragged) group.insertBefore(dragged, after);
-    });
-
-    applyOrder(group, gk);
-  }
-
-  function showReset() {
-    const btn = document.getElementById('reset-layout');
-    if (btn) btn.classList.add('show');
-  }
-
-  document.querySelectorAll(GROUP_SEL).forEach(initGroup);
-
-  // Show Reset if any saved layout already exists on load.
-  if (Object.keys(store).length) showReset();
-
-  const resetBtn = document.getElementById('reset-layout');
-  if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
-      document.querySelectorAll(GROUP_SEL).forEach(group => {
-        const gk = groupKey(group), order = srcOrder.get(gk);
-        if (!order) return;
-        const byKey = new Map(childrenOf(group).map(c => [c.getAttribute('data-rkey'), c]));
-        order.forEach(k => { const el = byKey.get(k); if (el) group.appendChild(el); });
-      });
-      for (const k in store) delete store[k];
-      localStorage.removeItem(LS_KEY);
-      resetBtn.classList.remove('show');
-    });
-  }
-})();
+// drag-to-reorder lives in cherrypick.core.viz.REORDER_JS now (the suite's one copy);
+// groups are declared with data-cp-reorder attributes on the grids above.
+%%CP_REORDER_JS%%
 </script>
 </body>
 </html>"""
+
+# The shared drag-to-reorder implementation is baked in at import time (the template stays one
+# literal; the token keeps the JS out of an f-string's brace-escaping).
+HTML = HTML.replace("%%CP_REORDER_JS%%", viz.REORDER_JS)
 
 
 # ── HTTP handler ──────────────────────────────────────────────────────────────
