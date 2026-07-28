@@ -31,7 +31,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import socket
 import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -41,6 +40,11 @@ from urllib.parse import parse_qs, urlparse
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
+_CORE = os.path.join(_HERE, "_core")
+if os.path.isdir(_CORE) and _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+from cherrypick.core import viz  # noqa: E402
 
 import analytics  # noqa: E402
 import db as dbmod  # noqa: E402
@@ -64,10 +68,9 @@ def resolve_port(port_arg: int | None) -> int:
 
 def port_in_use(port: int, host: str = HOST) -> bool:
     """Probe before binding, so a second launch focuses the existing tab instead of dying on EADDRINUSE.
-    The orchestrator's embed `ensure_server` relaunches freely, and this is what makes that safe."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.4)
-        return s.connect_ex((host, port)) == 0
+    The orchestrator's embed `ensure_server` relaunches freely, and this is what makes that safe.
+    The probe itself is the suite's one copy in cherrypick.core.viz."""
+    return viz.port_in_use(port, host)
 
 
 def build_api_data(conn, day: str | None = None, arm: str | None = None) -> dict:

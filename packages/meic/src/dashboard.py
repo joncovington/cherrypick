@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import socket
 import sqlite3
 import sys
 import threading
@@ -13,9 +12,16 @@ import urllib.parse
 import webbrowser
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from socketserver import ThreadingMixIn
 
-import paths as _paths
+_CORE = str(Path(__file__).resolve().parent / "_core")
+if os.path.isdir(_CORE) and _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+from cherrypick.core import viz  # noqa: E402
+
+import paths as _paths  # noqa: E402
 
 # ── Timezone helpers ─────────────────────────────────────────────────────────
 
@@ -2540,11 +2546,8 @@ def main():
     _DB_PATH, port = _resolve_mode_defaults(args.mode, args.db, args.port)
     # `python dashboard.py` with no args resolves to (today's default meic_trades.db path, 5050)
     # — byte-identical to pre-paper-mode behavior.
-    # Check if already running
-    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    already = probe.connect_ex(("127.0.0.1", port)) == 0
-    probe.close()
-    if already:
+    # Check if already running (the suite's one bind-probe, cherrypick.core.viz)
+    if viz.port_in_use(port):
         if args.no_browser:
             print(f"Dashboard already running at http://localhost:{port}.")
         else:
