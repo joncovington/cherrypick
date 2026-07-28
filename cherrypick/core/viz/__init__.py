@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import html
 import json as _json
+import socket as _socket
 
 SECTION_STYLE = (
     ".cpsection h2 .muted{font-weight:400;font-size:13px}"
@@ -236,6 +237,17 @@ def card_inline_html(section_id: str, title: str, payload: dict) -> str:
         '<div class="cpmetrics"></div><div class="cpchart"></div><div class="cpts"></div>'
         '<div class="meta"><span class="cpnote muted"></span></div></section>'
     )
+
+
+def port_in_use(port: int, host: str = "127.0.0.1", timeout: float = 0.4) -> bool:
+    """Probe before binding, so a second dashboard launch reuses the running server instead of
+    dying on EADDRINUSE — the port is a dashboard's singleton. The audit counted three copies of
+    this probe across the module dashboards (gex, flies, meic); this is the one. The watchdog's
+    reachability check deliberately stays its own: it lives on the reliability path (stdlib-only
+    rule) and probes remote liveness with a 3s timeout, not local bind-ownership."""
+    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+        s.settimeout(timeout)
+        return s.connect_ex((host, int(port))) == 0
 
 
 def fmt_money(value, none: str = "—") -> str:

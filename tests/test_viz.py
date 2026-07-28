@@ -42,7 +42,7 @@ def test_card_inline_html_escapes_script_closers():
     evil = {"ok": True, "note": "</script><script>alert(1)</script>"}
     out = viz.card_inline_html("x", "t", evil)
     assert "</script><script>alert(1)" not in out
-    assert "<\/script>" in out
+    assert r"<\/script>" in out
 
 
 def test_card_skeleton_has_a_timeseries_host():
@@ -60,3 +60,15 @@ def test_fmt_money_sign_outside_dollar():
     assert viz.fmt_money(0) == "$0.00"
     assert viz.fmt_money(None) == "—"
     assert viz.fmt_money("junk", none="n/a") == "n/a"
+
+
+def test_port_in_use_detects_a_listener_and_a_free_port():
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+        assert viz.port_in_use(port) is True
+    # The listener is closed now — the same port reads free again.
+    assert viz.port_in_use(port) is False
