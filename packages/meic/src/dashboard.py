@@ -166,20 +166,23 @@ def _stats_for_period(conn: sqlite3.Connection, start: str | None = None, end: s
         where.append("risk_profile = ?")
         params.append(profile)
     rows = _rows(conn,
-        f"SELECT ic_order_id, pnl, status FROM ic_trades WHERE {' AND '.join(where)}",
+        f"SELECT ic_order_id, pnl, fees, status FROM ic_trades WHERE {' AND '.join(where)}",
         params)
-    legs = _fetch_spread_legs(conn, [r["ic_order_id"] for r in rows])
     net_pnl = 0.0
     total_trades = 0
     wins = 0
     losses = 0
+    # One win definition module-wide (matches db._range_stats_for_rows and the orchestrator's
+    # calibrate reading): a resolved trade whose net P&L (pnl - fees) is positive. The per-side
+    # spread lens (_spread_wins_losses) is a per-row display, never a headline win rate.
     for r in rows:
         net_pnl += float(r.get("pnl") or 0)
         total_trades += 1
-        trade_legs = legs.get(r["ic_order_id"], {})
-        w, loss = _spread_wins_losses(r.get("status"), r.get("pnl"), trade_legs.get("put"), trade_legs.get("call"))
-        wins += w
-        losses += loss
+        if r.get("pnl") is not None:
+            if float(r.get("pnl") or 0) - float(r.get("fees") or 0) > 0:
+                wins += 1
+            else:
+                losses += 1
     result = {
         "net_pnl":      round(net_pnl, 2),
         "total_trades": total_trades,
@@ -238,7 +241,6 @@ def _pnl_series(conn: sqlite3.Connection, granularity: str, symbol: str | None =
     rows = _rows(conn,
         f"SELECT ic_order_id, trade_date, pnl, fees, net_credit, status FROM ic_trades "
         f"WHERE {' AND '.join(where)} ORDER BY trade_date", params)
-    legs = _fetch_spread_legs(conn, [r["ic_order_id"] for r in rows])
 
     buckets: dict[str, dict] = {}
     for r in rows:
@@ -254,10 +256,11 @@ def _pnl_series(conn: sqlite3.Connection, granularity: str, symbol: str | None =
         b["trades"] += 1
         if r.get("pnl") is not None:
             b["trade_pnls"].append(pnl)
-        trade_legs = legs.get(r["ic_order_id"], {})
-        w, loss = _spread_wins_losses(r.get("status"), r.get("pnl"), trade_legs.get("put"), trade_legs.get("call"))
-        b["wins"] += w
-        b["losses"] += loss
+            # Same net-P&L win definition as _stats_for_period / db._range_stats_for_rows.
+            if pnl - float(r.get("fees") or 0) > 0:
+                b["wins"] += 1
+            else:
+                b["losses"] += 1
 
     series = sorted(buckets.values(), key=lambda b: b["period"])
     running = 0.0
@@ -483,7 +486,13 @@ def _by_profile_compare(conn, sym_filter):
         gross = sum(float(r.get("pnl") or 0) for r in rs)
         fees = sum(float(r.get("fees") or 0) for r in rs)
         net = gross - fees
-        wins = sum(1 for x in nets if x > 0)
+        # Win rate over RESOLVED trades only (pnl recorded), same denominator as
+        # db._range_stats_for_rows -- an open trade is not a loss yet.
+        resolved_nets = [
+            float(r.get("pnl") or 0) - float(r.get("fees") or 0)
+            for r in rs if r.get("pnl") is not None
+        ]
+        wins = sum(1 for x in resolved_nets if x > 0)
         gw = sum(x for x in nets if x > 0)
         gl = abs(sum(x for x in nets if x <= 0))
         running = peak = maxdd = 0.0
@@ -497,7 +506,7 @@ def _by_profile_compare(conn, sym_filter):
             "gross_pnl":     round(gross, 2),
             "fees":          round(fees, 2),
             "net_pnl":       round(net, 2),
-            "win_rate_pct":  round(wins / trades * 100, 1) if trades else None,
+            "win_rate_pct":  round(wins / len(resolved_nets) * 100, 1) if resolved_nets else None,
             "expectancy":    round(net / trades, 2) if trades else None,
             "profit_factor": round(gw / gl, 2) if gl > 0 else None,
             "max_drawdown":  round(maxdd, 2),
@@ -697,7 +706,8 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     by_session = _rows(conn, f"""
         SELECT session_quality,
                COUNT(*) AS total,
-               SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS wins,
+               SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0
+                        THEN 1 ELSE 0 END) AS wins,
                ROUND(AVG(pnl), 2) AS avg_pnl
         FROM ic_trades
         WHERE status NOT IN ('cancelled','pending','partial_entry')
@@ -724,7 +734,7 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
             END AS iv_bucket,
             COUNT(*) AS trades,
             ROUND(AVG(pnl), 2) AS avg_pnl,
-            SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS wins
+            SUM(CASE WHEN pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins
         FROM ic_trades
         WHERE pnl IS NOT NULL AND iv_rank_at_entry IS NOT NULL
           AND status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
