@@ -66,6 +66,93 @@ def test_tt_cache_is_thread_local(monkeypatch):
     assert counter["n"] == 2, "2 symbols x 1 spawn each; the repeated calls stayed cached per-thread"
 
 
+# --------------------------------------------------------------------------- winrate memo
+def _counting_winrate(counter):
+    def compute(symbol, config, lookback_quarters=8):
+        counter["n"] += 1
+        return {"ok": True, "symbol": symbol, "sample_size": lookback_quarters,
+                "winrate": 0.5, "quarters": [], "skipped": []}
+    return compute
+
+
+def test_winrate_is_computed_once_per_symbol(monkeypatch):
+    """compute_winrate runs up to 3x per symbol with identical args — once in evaluate_symbol and
+    again inside each calendar strategy's dispersion gate — and each run re-walks the lookback
+    against Dolt. Two of the three were duplicate work, and the waste grew with the lookback."""
+    counter = {"n": 0}
+    monkeypatch.setattr(scanner, "_compute_winrate_uncached", _counting_winrate(counter))
+    scanner.begin_tt_cache()
+    try:
+        a = scanner.compute_winrate("AAPL", {}, 12)
+        b = scanner.compute_winrate("AAPL", {}, 12)
+        c = scanner.compute_winrate("AAPL", {}, 12)
+    finally:
+        scanner.end_tt_cache()
+    assert a is b is c
+    assert counter["n"] == 1
+
+
+def test_winrate_memo_separates_symbol_lookback_and_as_of(monkeypatch):
+    counter = {"n": 0}
+    monkeypatch.setattr(scanner, "_compute_winrate_uncached", _counting_winrate(counter))
+    scanner.begin_tt_cache()
+    try:
+        scanner.compute_winrate("AAPL", {}, 12)
+        scanner.compute_winrate("MSFT", {}, 12)          # different symbol
+        scanner.compute_winrate("AAPL", {}, 8)           # different lookback
+        scanner.compute_winrate("AAPL", {"_as_of_date": "2026-01-01"}, 12)  # test hook
+    finally:
+        scanner.end_tt_cache()
+    assert counter["n"] == 4, "these must not collide in the memo"
+
+
+def test_winrate_is_not_cached_process_wide(monkeypatch):
+    """Never a process-wide cache: the underlying Dolt history rolls forward, so outside an active
+    per-symbol scope every call must recompute."""
+    counter = {"n": 0}
+    monkeypatch.setattr(scanner, "_compute_winrate_uncached", _counting_winrate(counter))
+    scanner.end_tt_cache()  # ensure no scope is open
+    scanner.compute_winrate("AAPL", {}, 12)
+    scanner.compute_winrate("AAPL", {}, 12)
+    assert counter["n"] == 2
+
+
+def test_winrate_memo_is_dropped_between_symbols(monkeypatch):
+    counter = {"n": 0}
+    monkeypatch.setattr(scanner, "_compute_winrate_uncached", _counting_winrate(counter))
+    for _ in range(2):
+        scanner.begin_tt_cache()
+        try:
+            scanner.compute_winrate("AAPL", {}, 12)
+        finally:
+            scanner.end_tt_cache()
+    assert counter["n"] == 2, "a new symbol's scope must not serve the previous symbol's entries"
+
+
+def test_winrate_memo_is_thread_local(monkeypatch):
+    """Same rationale as the tt cache: symbols are scanned concurrently, so a shared global memo
+    would let one thread's scope teardown disable another's mid-evaluation."""
+    counter = {"n": 0}
+    monkeypatch.setattr(scanner, "_compute_winrate_uncached", _counting_winrate(counter))
+    barrier = threading.Barrier(2)
+
+    def worker(sym):
+        scanner.begin_tt_cache()
+        try:
+            scanner.compute_winrate(sym, {}, 12)
+            barrier.wait()
+            scanner.compute_winrate(sym, {}, 12)
+        finally:
+            scanner.end_tt_cache()
+
+    threads = [threading.Thread(target=worker, args=(s,)) for s in ("AAA", "BBB")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert counter["n"] == 2
+
+
 # --------------------------------------------------------------------------- Dolt-cheap pre-gate
 _NAMES = [e["name"] for e in rs.STRATEGY_REGISTRY]
 
