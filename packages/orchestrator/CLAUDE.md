@@ -27,7 +27,7 @@ python run.py doctor         # green/red readiness (read-only)
 python run.py install        # register OS scheduled tasks + start the standalone streamer producer (Windows-only)
 python run.py status         # task registration + last heartbeats
 python run.py watchdog       # one watchdog pass (what the scheduled task runs)
-python run.py report         # unified cross-module paper P&L (read-only); --eod / --date YYYY-MM-DD scopes to one session
+python run.py report         # unified cross-module paper P&L (read-only); --eod / --date YYYY-MM-DD scopes to one session; --live reads the live-tagged ledgers (modules' live_db) instead — a separate view that never feeds calibrate/promotion
 python run.py eod-digest     # write logs/eod-digest-<day>.md: one session's cross-module P&L + module paper-eod links
 python run.py notify-eod     # write the digest + push a one-line summary (the watchdog fires this, detached, once every module has settled)
 python run.py archive        # end-of-month rotation: zip each finished month's reports + rotated logs to logs/archive/ (--dry-run / --month YYYY-MM); scheduled monthly as cherrypick-log-archive
@@ -143,13 +143,19 @@ is excluded from ruff and from the packaged wheel.
   and never invokes a live/broker view.
 - **Paper ↔ live isolation.** cherrypick only invokes paper engines / paper DBs. Anything advisory
   (e.g. `calibrate`'s promotion recommendations, the drawdown alert) is advisory only — it never mutates
-  a module's config or switches live risk. The one place cherrypick reads the *real* broker account is
+  a module's config or switches live risk. Live P&L is visible only through the explicitly live-tagged
+  reader (`report.live_run`, `cherrypick report --live`) over a module's separate `live_db` config key —
+  a **separate function by design**, so `calibrate` (which reads `report.run`, paper only) can never see
+  a live ledger even by accident; a test asserts calibrate references neither `live_run` nor `live_db`.
+  The one place cherrypick reads the *real* broker account is
   `reconcile` (`orchestrator/reconcile.py`, `cherrypick reconcile` + the serve-only `/api/reconcile`
   card): a paper↔live isolation guard that enumerates **every** account on the login (`list_accounts` —
   tastytrade returns multiple per user) and flags any open positions/BP a paper-only suite shouldn't
   have. Like `doctor` it is a broker-touching, on-demand diagnostic — **off the watchdog reliability
   path**, read-only broker calls only (`list_accounts`/`get_positions`/`get_account_info`, never an
-  order), account numbers masked, advisory. It never trades or mutates config.
+  order), account numbers masked, advisory. It never trades or mutates config. For live operation
+  (phase 5), `reconcile.schedule.enabled` promotes it to a daily scheduled task (`reconcile
+  --scheduled`, its own task off the watchdog tick) that notifies on any non-FLAT verdict.
 - **The onboarding surface (`connect`/`account`) is the one narrow live-config exception.**
   `cherrypick connect --module <m>` and `cherrypick account --module <m>` (`orchestrator/connect.py`,
   `orchestrator/accounts.py`) let a user set up a module for eventual **live** trading: they run the

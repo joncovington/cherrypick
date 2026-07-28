@@ -152,6 +152,21 @@ def paper_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path:
     return (module_root(module_cfg, name) / p).resolve()
 
 
+def live_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path | None:
+    """Resolve a module's LIVE-trades DB from its top-level `live_db` key, or None when the module
+    declares none (flies never will -- it is paper by design). Same resolution rules as
+    `paper_db_path` (absolute / ~-and-env expanded / module-root relative). Deliberately a separate
+    key and a separate resolver: the paper path feeds `report.run` and everything promotion reads;
+    this one feeds only the explicitly live-tagged surfaces (`report.live_run`)."""
+    rel = module_cfg.get("live_db")
+    if not rel:
+        return None
+    p = Path(os.path.expandvars(os.path.expanduser(str(rel))))
+    if p.is_absolute():
+        return p.resolve()
+    return (module_root(module_cfg, name) / p).resolve()
+
+
 def sla_state_files(name: str, mcfg: dict) -> tuple[Path, Path]:
     """The (entry, exit) SLA heartbeat paths for a `cherrypick_scheduled` module.
 
@@ -244,6 +259,20 @@ def advise_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "model": a.get("model"),
         "timeout_seconds": int(a.get("timeout_seconds", 180)),
         "modules": a.get("modules", {}) or {},
+    }
+
+
+def reconcile_schedule_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved scheduled-reconcile config (phase 5: reconcile promoted to a daily task during
+    live operation). OFF by default -- the on-demand `cherrypick reconcile` and the serve-only
+    dashboard card remain the manual surfaces. When enabled, `install` registers a daily task
+    running `reconcile --scheduled`, which notifies on a non-FLAT verdict; its own task, off the
+    watchdog tick, so the broker call never rides the reliability path."""
+    sch = (cfg.get("reconcile", {}) or {}).get("schedule", {}) or {}
+    return {
+        "enabled": sch.get("enabled", False),
+        "task_name": sch.get("task_name", "cherrypick-reconcile"),
+        "at": sch.get("at", "16:30"),
     }
 
 

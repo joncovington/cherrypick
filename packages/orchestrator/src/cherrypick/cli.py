@@ -16,6 +16,8 @@ Subcommands:
   watchdog             Run one watchdog pass (this is what the scheduled task invokes).
   report               Unified cross-module paper P&L (read-only): totals + per-profile breakdown.
                        --eod (today ET) or --date YYYY-MM-DD restricts to one session; default all-time.
+                       --live reads the live-tagged ledgers (modules' live_db) instead — a separate
+                       view that never feeds calibrate/promotion (those read paper only).
   eod-digest           Write the suite end-of-day digest (logs/eod-digest-<day>.md): one session's
                        cross-module P&L + links to each module's paper-eod file. --date; default today.
   notify-eod           Write the digest and push a one-line summary through the notify channels (the
@@ -238,6 +240,17 @@ def cmd_install(cfg) -> None:
     # Remove any stale fixed-time task from a prior install.
     results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
 
+    # Scheduled reconcile (phase 5): a daily paper<->live isolation check during live operation.
+    # Its own task, off the watchdog tick -- the broker call never rides the reliability path.
+    rs = cfgmod.reconcile_schedule_settings(cfg)
+    if rs["enabled"]:
+        rs_tr = tasks.build_tr(pyw, str(_LAUNCHER), "reconcile", "--scheduled")
+        results["reconcile_task"] = tasks.create_daily_task(
+            rs["task_name"], rs_tr, timeutil.to_local_hhmm(rs["at"], tz)
+        )
+    else:
+        results["reconcile_task"] = tasks.delete(rs["task_name"])
+
     # Start the standalone market-data producer (top-level `streamer`) if enabled — the same
     # start-detached-if-down contract as a service. The watchdog keeps it alive in-session thereafter;
     # its single-instance guard prevents a duplicate start (e.g. if it's already running).
@@ -311,6 +324,7 @@ def cmd_uninstall(cfg) -> None:
     results["eod_digest_task"] = tasks.delete(cfgmod.eod_digest_settings(cfg)["task_name"])
     results["log_archive_task"] = tasks.delete(cfgmod.archive_settings(cfg)["task_name"])
     results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
+    results["reconcile_task"] = tasks.delete(cfgmod.reconcile_schedule_settings(cfg)["task_name"])
     # Stop generic background services (e.g. the gex recorder) — unlike the streamer, these are the
     # orchestrator's own daemons, so a full uninstall stops them.
     for svc in cfgmod.enabled_services(cfg):
@@ -556,12 +570,26 @@ def cmd_connect(cfg, args) -> None:
     _emit(connect.run(cfg, module))
 
 
-def cmd_reconcile(cfg) -> None:
+def cmd_reconcile(cfg, scheduled: bool = False) -> None:
     result = reconcile.run(cfg)
     report_text, _worst = reconcile.format_report(result)
     print(report_text)
+    verdict = result.get("verdict")
+    if scheduled and verdict != reconcile.FLAT:
+        # The scheduled run (phase 5: daily during live operation) is only useful if someone
+        # hears about a bad verdict -- a FLAT day stays quiet, anything else pushes.
+        from cherrypick.notify import Notifier
+
+        level = "CRITICAL" if verdict == reconcile.DRIFT else "WARNING"
+        title = ("Reconcile: DRIFT - undesignated account holds positions"
+                 if verdict == reconcile.DRIFT else "Reconcile: could not verify accounts")
+        try:
+            Notifier(cfg.get("notify")).notify(level, "reconcile.scheduled", title,
+                                               report_text[:1500])
+        except Exception:
+            pass  # the report is already printed/logged; notification is best-effort
     # exit by verdict: FLAT -> 0, DRIFT (real account not flat) -> 1, UNKNOWN (couldn't check) -> 2
-    sys.exit({reconcile.FLAT: 0, reconcile.DRIFT: 1, reconcile.UNKNOWN: 2}.get(result.get("verdict"), 2))
+    sys.exit({reconcile.FLAT: 0, reconcile.DRIFT: 1, reconcile.UNKNOWN: 2}.get(verdict, 2))
 
 
 def cmd_notify_trades(cfg) -> None:
@@ -579,6 +607,11 @@ def _resolve_session(args) -> str | None:
 
 
 def cmd_report(cfg, args) -> None:
+    if args.live:
+        # The live-tagged view (phase 5): the same schema readers over each module's live_db.
+        # A separate function by design -- calibrate reads report.run and must only see paper.
+        _emit(report.live_run(cfg, session=_resolve_session(args)))
+        return
     _emit(report.run(cfg, session=_resolve_session(args)))
 
 
@@ -802,6 +835,11 @@ def main() -> None:
         "--eod", action="store_true", help="For report: restrict to today's (ET) session instead of all-time"
     )
     parser.add_argument(
+        "--live", action="store_true",
+        help="For report: the live-tagged ledgers (modules' live_db) instead of paper. Never feeds "
+             "calibrate/promotion -- those read paper only"
+    )
+    parser.add_argument(
         "--fast",
         action="store_true",
         help="For doctor: skip the authenticated broker check (local/offline checks only)",
@@ -814,6 +852,8 @@ def main() -> None:
         help="For account: designate this account (a last-4 or 1-based index)",
     )
     parser.add_argument("--clear", action="store_true", help="For account: unset the designated account")
+    parser.add_argument("--scheduled", action="store_true",
+                        help="For reconcile: notify on a non-FLAT verdict (what the scheduled task passes)")
     parser.add_argument("--yes", action="store_true", help="For account --set: skip the confirmation prompt")
     parser.add_argument(
         "--serve",
@@ -856,7 +896,7 @@ def main() -> None:
         "archive": lambda: cmd_archive(cfg, args),
         "eod-insight": lambda: cmd_eod_insight(cfg, args),
         "advise": lambda: cmd_advise(cfg, args),
-        "reconcile": lambda: cmd_reconcile(cfg),
+        "reconcile": lambda: cmd_reconcile(cfg, scheduled=args.scheduled),
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),
         "dashboard": lambda: cmd_dashboard(cfg, args),
