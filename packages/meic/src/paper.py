@@ -992,11 +992,18 @@ def _profile_day_stats(profile: str, trade_date: str, db_path: str, symbol: str 
     return len(rows), last
 
 
-def process_symbol(snapshot: dict, db_path: str, execution_mode: str, profiles_filter=None) -> dict:
+def process_symbol(snapshot: dict, db_path: str, execution_mode: str, profiles_filter=None,
+                   extra_profiles=None) -> dict:
     """Run all four profiles' mark-to-market/exit + entry evaluation for one symbol against
-    one already-fetched snapshot. Returns a per-profile action summary for logging."""
+    one already-fetched snapshot. Returns a per-profile action summary for logging.
+
+    `extra_profiles` are synthetic, caller-built profile defs evaluated alongside the registry
+    -- the advised shadow book (paper_loop._advice_profiles) rides this seam. Merged after the
+    registry so a synthetic name is never silently shadowed by a registry entry."""
     base_config = load_base_config()
     all_profiles = load_profiles()
+    if extra_profiles:
+        all_profiles = {**all_profiles, **extra_profiles}
     names = profiles_filter or all_profile_names(all_profiles)
     symbol = snapshot["symbol"]
     is_cash = _is_cash_settled(symbol, base_config)

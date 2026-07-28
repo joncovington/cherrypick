@@ -39,6 +39,16 @@
   "trading_window_and_caps_header": "===== Trading Window & Daily Caps =====",
   "enable_live_trading": false,
   "_enable_live_trading_note": "Set to true to allow execute_trade/adjust_order/close_position to submit real orders. Requires tastytrade OAuth credentials in the OS keyring (via `python src/tt.py secrets_set`). Left false in this example so a fresh setup starts in dry-run.",
+  "advice": {
+    "_comment": "PAPER-only advised shadow book (the orchestrator's `cherrypick advise` pipeline). When enabled, the paper loop looks for the orchestrator-written artifact state/advice/meic-<session>.json ONCE at session start, re-validates it against `bounds` below with cherrypick.core.advice (the same code the orchestrator ran -- absent/stale/invalid means baseline), and runs a synthetic `advised:<base_profile>` book beside the un-advised base profile (the control). One out-of-bounds proposal rejects the whole set. This block is the loop-side manifest: nothing the advisor proposes can leave these closed ranges. Off by default; never touches the live loop.",
+    "enabled": false,
+    "base_profile": "conservative",
+    "bounds": {
+      "stop_trigger_ratio": { "min": 0.85, "max": 0.95 },
+      "daily_ic_trade_target": { "min": 0, "max": 3 },
+      "entry_price_strategy": { "choices": ["mid", "natural_bid", "ioc_step", "day_improve", "auto"] }
+    }
+  },
   "account_deploy_limit_pct": 0,
   "_account_deploy_limit_pct_note": "Account-level deploy cap (via cherrypit.risk). 0 = OFF (default). A positive value (e.g. 50) blocks a LIVE execute_trade whose buying power would push total deployed BP above that percent of account capacity (used + available derivative buying power). Fail-closed: if account state can't be read, the live order is blocked. Enforced only on live submits; a dry-run reports the governor verdict without blocking. Does not affect paper trading.",
   "loop_interval_minutes": 5,

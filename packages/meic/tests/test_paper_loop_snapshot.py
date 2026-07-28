@@ -40,8 +40,9 @@ def loop_env(monkeypatch, tmp_path):
                         lambda *a, **k: ([{"wing_width": 5}], {}, None))
     monkeypatch.setattr(paper_loop, "_eod_report_path", lambda day: tmp_path / "eod.md")
 
-    def capture(snapshot, db_path, mode):
+    def capture(snapshot, db_path, mode, extra_profiles=None):
         captured["snapshot"] = snapshot
+        captured["extra_profiles"] = extra_profiles
         return {"ok": True, "symbol": snapshot["symbol"], "results": {}}
 
     monkeypatch.setattr(paper_loop.paper, "process_symbol", capture)
