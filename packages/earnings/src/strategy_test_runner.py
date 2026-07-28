@@ -145,6 +145,20 @@ def _avg_sold_iv(legs: list[dict], quotes: dict) -> float | None:
     return sum(ivs) / len(ivs)
 
 
+def _scaled_legs(template_legs: list[dict], quantity: int) -> list[dict]:
+    """Scale a get_order leg template to the sized position for legs_json. Each leg's
+    stored quantity is its own structure ratio (e.g. broken_wing_butterfly's x2 body;
+    1 when the field is absent) times the position quantity. Overwriting with the
+    position quantity instead would flatten a 1-2-1 fly to 1-1-1, and the close --
+    which prices legs_json via scanner.compute_generic_exit_debit -- would buy the
+    body back once while entry_credit had sold it twice: a phantom profit of one
+    body price per contract on every ratioed structure."""
+    return [
+        {**leg, "quantity": int(leg.get("quantity", 1) or 1) * quantity}
+        for leg in template_legs
+    ]
+
+
 def _per_contract_credit(order: dict) -> float:
     """Per-contract entry credit (positive) or debit (returned negative, so
     the stored sign convention -- positive costs money to close, negative
@@ -898,7 +912,7 @@ def cmd_run_entries(args) -> dict:
                 )
                 entry_iv = _avg_sold_iv(template_legs, leg_quotes)
 
-                scaled_legs = [{**leg, "quantity": quantity} for leg in template_legs]
+                scaled_legs = _scaled_legs(template_legs, quantity)
                 per_contract = _per_contract_credit(order)
                 entry_credit = per_contract * quantity
 

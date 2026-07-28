@@ -20,6 +20,15 @@ import paper
 
 # ── Fee model ────────────────────────────────────────────────────────────────
 
+def test_slippage_frac_is_cores_single_source_of_truth():
+    """One fill model across the suite: the engine's slippage fraction is core's
+    `slippage_frac_of_spread` by import, and the suite-calibrated value is 0.125
+    (a deliberate change to the fill model must update core and this pin together)."""
+    from cherrypick.core import fees as _fees
+    assert paper.DEFAULT_SLIPPAGE_FRAC is _fees.DEFAULT_COSTS["slippage_frac_of_spread"]
+    assert paper.DEFAULT_SLIPPAGE_FRAC == 0.125
+
+
 def test_open_fees_spx_matches_documented_fallback():
     # CLAUDE.md's fee_estimate_fallback_per_contract documents SPX at $6.89
     assert paper.open_fees("SPX", quantity=1) == pytest.approx(6.89, abs=0.01)

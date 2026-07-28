@@ -5,6 +5,15 @@ import pytest
 import fly
 
 
+def test_slippage_frac_is_cores_single_source_of_truth():
+    """One fill model across the suite: fly.py's slippage fraction is core's
+    `slippage_frac_of_spread` by import, and the suite-calibrated value is 0.125
+    (a deliberate change to the fill model must update core and this pin together)."""
+    from cherrypick.core import fees as _fees
+    assert fly.DEFAULT_SLIPPAGE_FRAC is _fees.DEFAULT_COSTS["slippage_frac_of_spread"]
+    assert fly.DEFAULT_SLIPPAGE_FRAC == 0.125
+
+
 # --------------------------------------------------------------------------- payoffs
 @pytest.mark.parametrize("offset", [-100, -10, -5, -2.5, 0, 2.5, 5, 10, 100])
 def test_fly_payoff_is_bounded_zero_to_width(offset):

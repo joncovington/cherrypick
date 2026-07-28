@@ -32,9 +32,10 @@ from cherrypick.core import fees as _fees  # noqa: E402
 
 CONTRACT_MULTIPLIER = 100
 
-# Keep in lockstep with cherrypick.core.fees.DEFAULT_COSTS["slippage_frac_of_spread"] and MEIC's
-# paper.DEFAULT_SLIPPAGE_FRAC — one fill model across the suite, not three.
-DEFAULT_SLIPPAGE_FRAC = 0.125
+# One fill model across the suite, not three: the fraction IS core's, structurally --
+# not a literal kept in lockstep by comment. MEIC's paper.DEFAULT_SLIPPAGE_FRAC reads
+# the same key.
+DEFAULT_SLIPPAGE_FRAC = _fees.DEFAULT_COSTS["slippage_frac_of_spread"]
 
 PUT, CALL = "put", "call"
 
