@@ -50,6 +50,11 @@ CREATE TABLE IF NOT EXISTS orb_ranges (
     symbol TEXT NOT NULL, trade_date TEXT NOT NULL, orb_high REAL, orb_low REAL,
     captured_at REAL, PRIMARY KEY (symbol, trade_date)
 );
+CREATE TABLE IF NOT EXISTS stream_summary (
+    symbol TEXT NOT NULL, trade_date TEXT NOT NULL, day_open REAL, day_high REAL,
+    day_low REAL, day_close REAL, prev_day_close REAL, updated_at REAL NOT NULL,
+    PRIMARY KEY (symbol, trade_date)
+);
 """
 
 
@@ -590,3 +595,69 @@ def test_cmd_stream_status_stale_when_running_but_old_data(cache_db, monkeypatch
     _insert(cache_db, "stream_trades", symbol="XSP", last=600.0, change=0, volume=10, updated_at=time.time() - 3000)
     result = tt.cmd_stream_status(None)
     assert result["stale_warning"] is True
+
+
+# --- get_atr / get_intraday_range (stream_summary readers) --------------------
+
+class _Args:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+def _summary_row(db_path, symbol, trade_date, high, low, prev, close=None, opn=None):
+    _insert(db_path, "stream_summary", symbol=symbol, trade_date=trade_date,
+            day_open=opn, day_high=high, day_low=low, day_close=close,
+            prev_day_close=prev, updated_at=time.time())
+
+
+def test_true_ranges_uses_gap_versus_prev_close():
+    rows = [
+        {"day_high": 105.0, "day_low": 100.0, "prev_day_close": 95.0},   # gap up: |105-95|=10 > 5
+        {"day_high": 105.0, "day_low": 100.0, "prev_day_close": 103.0},  # inside: 5
+        {"day_high": 105.0, "day_low": 100.0, "prev_day_close": None},   # no prev: degrade to 5
+        {"day_high": None, "day_low": 100.0, "prev_day_close": 99.0},    # unusable: skipped
+    ]
+    assert tt._true_ranges(rows) == [10.0, 5.0, 5.0]
+
+
+def test_get_atr_averages_completed_days_and_excludes_today(cache_db):
+    today = tt._et_today()
+    # 5 completed sessions, each with true range 5.0 except one 10.0 gap day.
+    days = ["2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24"]
+    for i, d in enumerate(days):
+        prev = 95.0 if i == 0 else 103.0
+        _summary_row(cache_db, "SPX", d, 105.0, 100.0, prev)
+    # Today's partial row is huge — it must not contaminate the average.
+    _summary_row(cache_db, "SPX", today, 200.0, 100.0, 103.0)
+    out = tt.cmd_get_atr(_Args(symbol="SPX", days=5))
+    assert out["ok"] is True
+    assert out["atr"] == (10.0 + 5.0 * 4) / 5
+
+
+def test_get_atr_refuses_thin_history(cache_db):
+    _summary_row(cache_db, "SPX", "2026-07-23", 105.0, 100.0, 103.0)
+    _summary_row(cache_db, "SPX", "2026-07-24", 105.0, 100.0, 103.0)
+    out = tt.cmd_get_atr(_Args(symbol="SPX", days=5))
+    assert out["ok"] is False
+    assert out["days_available"] == 2
+
+
+def test_get_atr_without_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(tt, "_CACHE_DB", tmp_path / "missing.db")
+    assert tt.cmd_get_atr(_Args(symbol="SPX", days=5))["ok"] is False
+
+
+def test_get_intraday_range_reads_todays_row(cache_db):
+    today = tt._et_today()
+    _summary_row(cache_db, "SPX", today, 6050.0, 5990.0, 5995.0)
+    _insert(cache_db, "stream_trades", symbol="SPX", last=6000.0, change=5.0,
+            volume=1000.0, updated_at=time.time())
+    out = tt.cmd_get_intraday_range(_Args(symbol="SPX"))
+    assert out["ok"] is True
+    assert out["range_points"] == 60.0
+    assert out["range_pct"] == round(60.0 / 6000.0, 6)
+
+
+def test_get_intraday_range_without_summary_row(cache_db):
+    out = tt.cmd_get_intraday_range(_Args(symbol="SPX"))
+    assert out["ok"] is False

@@ -235,6 +235,22 @@ def _fetch_overview(symbol):
     return None, None, None
 
 
+def _fetch_atr(symbol, lookback_days):
+    """N-day true-range ATR in points from the streamer's accumulated session-OHLC rows
+    (tt.py get_atr), or None while the cache is still warming up / the streamer is down.
+    None keeps the ATR gate inactive — the fail-open convention the gate documents."""
+    d = _run_json(_TT + ["get_atr", "--symbol", symbol, "--days", str(lookback_days)])
+    return d.get("atr") if d.get("ok") else None
+
+
+def _fetch_intraday_range_pct(symbol):
+    """Today's session range as a fraction of price (tt.py get_intraday_range), or None
+    when no Summary row exists yet. Feeds the quarterly-expiry and FOMC post-blackout
+    range gates; None leaves them inactive rather than fabricating a zero range."""
+    d = _run_json(_TT + ["get_intraday_range", "--symbol", symbol])
+    return d.get("range_pct") if d.get("ok") else None
+
+
 def _build_candidates(symbol, last, widths, delta_targets, default_delta, today):
     """Fetch the 0DTE chain and build wing-width candidates + leg_quotes. Mirrors the
     strike-selection the live loop/paper-loop.md describe: nearest-delta short strikes,
@@ -829,11 +845,15 @@ def run_iteration(cfg, force=False):
         candidates, leg_quotes, cand_err = _build_candidates(symbol, price, widths, delta_targets,
                                                              delta_target, today)
         gex = _run_json(_TT + ["get_gex", "--symbol", symbol])
+        atr_lookback = int(cfg.get("regime_atr_lookback_days", 5))
         snapshot = {
             "symbol": symbol, "date": today, "now_et": now_et, "expiration": today, "dte": 0,
             "underlying_price": price, "iv_rank": ivr, "iv_pct": ivp, "iv_rank_source": "native",
             "vix": vix, "vix1d_ratio": vix1d_ratio,
-            "atr_5day": None,  # no historical-OHLC source wired in; ATR pct gate stays inactive
+            # Both feeds come off the streamer's stream_summary day-rows (exchange-official
+            # session OHLC). None while warming up / streamer down -> the gates stay inactive.
+            "atr_5day": _fetch_atr(symbol, atr_lookback),
+            "intraday_range_pct": _fetch_intraday_range_pct(symbol),
             "session_quality": session,
             "gex": gex if gex.get("ok") else {"ok": False},
             "candidates": candidates, "leg_quotes": leg_quotes,

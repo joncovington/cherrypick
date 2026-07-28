@@ -189,6 +189,62 @@ def test_evaluate_entry_rejects_non_0dte():
     assert reason == "no_0dte_expiration"
 
 
+# ── R4: the intraday-range clauses are live (fed by stream_summary via the loop) ──
+
+_QUARTERLY = "2026-03-31"  # first 2026 quarterly expiry (cherrypick.core.calendar)
+_FOMC = "2026-01-28"       # first 2026 FOMC day
+
+
+def test_quarterly_range_gate_blocks_when_session_range_blown():
+    """CLAUDE.md clause (c) of the quarterly hard stops, previously documented + configured
+    but with no implementation at all: once the session range exceeds
+    quarterly_expiry_max_intraday_range_pct, no new entries for the day."""
+    snap = _base_snapshot(date=_QUARTERLY, expiration=_QUARTERLY, intraday_range_pct=0.006)
+    entered, reason, _ = paper.evaluate_entry(snap, _window_params(CONSERVATIVE), [])
+    assert entered is False and reason == "quarterly_intraday_range_exceeded"
+
+
+def test_quarterly_range_gate_passes_calm_session():
+    snap = _base_snapshot(date=_QUARTERLY, expiration=_QUARTERLY, intraday_range_pct=0.003)
+    _, reason, _ = paper.evaluate_entry(snap, _window_params(CONSERVATIVE), [])
+    assert reason != "quarterly_intraday_range_exceeded"
+
+
+def test_quarterly_range_gate_inactive_without_feed():
+    """No intraday_range_pct in the snapshot (streamer down / warming up) leaves the clause
+    inactive — the same fail-open convention as the ATR gate, never a fabricated 0."""
+    snap = _base_snapshot(date=_QUARTERLY, expiration=_QUARTERLY)
+    _, reason, _ = paper.evaluate_entry(snap, _window_params(CONSERVATIVE), [])
+    assert reason != "quarterly_intraday_range_exceeded"
+
+
+def test_fomc_post_blackout_blocks_on_blown_range():
+    """The old range clause compared against a hardcoded 3.5 POINTS that nothing populated —
+    inert, and symbol-agnostic besides. Now percentage-based and live."""
+    snap = _base_snapshot(date=_FOMC, now_et="14:45", iv_rank=0.60, intraday_range_pct=0.006)
+    params = _window_params(CONSERVATIVE, entry_window_end="15:30")
+    entered, reason, _ = paper.evaluate_entry(snap, params, [])
+    assert entered is False and reason == "fomc_post_blackout_insufficient_premium"
+
+
+def test_fomc_post_blackout_allows_calm_session():
+    snap = _base_snapshot(date=_FOMC, now_et="14:45", iv_rank=0.60, intraday_range_pct=0.003)
+    _, reason, _ = paper.evaluate_entry(
+        snap, _window_params(CONSERVATIVE, entry_window_end="15:30"), [])
+    assert reason != "fomc_post_blackout_insufficient_premium"
+
+
+def test_fomc_post_blackout_min_iv_rank_is_configurable():
+    snap = _base_snapshot(date=_FOMC, now_et="14:45", iv_rank=0.35, intraday_range_pct=0.003)
+    entered, reason, _ = paper.evaluate_entry(
+        snap, _window_params(CONSERVATIVE, entry_window_end="15:30"), [])
+    assert entered is False and reason == "fomc_post_blackout_insufficient_premium"
+    _, reason2, _ = paper.evaluate_entry(
+        snap, _window_params(CONSERVATIVE, entry_window_end="15:30",
+                             fomc_post_blackout_min_iv_rank=0.30), [])
+    assert reason2 != "fomc_post_blackout_insufficient_premium"
+
+
 def test_evaluate_entry_rejects_below_iv_rank_floor():
     snap = _base_snapshot(iv_rank=0.10)  # conservative floor is 0.30
     entered, reason, _ = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])

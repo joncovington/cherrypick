@@ -56,10 +56,11 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 - **ORB Impact**: NOT blocked
 
 ### 6. ATR Regime Gate (Symbol-Specific)
-- **Trigger**: 5-day ATR > `regime_atr_pause_threshold` (30.0 pts)
+- **Trigger**: 5-day true-range ATR as a fraction of spot > `regime_atr_pause_threshold_pct` (0.015)
 - **Effect**: Pause IC entries for THIS symbol only
-- **Config**: `regime_atr_pause_threshold` (30.0 pts), `regime_atr_lookback_days` (5)
-- **Rationale**: Elevated realized volatility = trending environment, unfavorable for static IC width
+- **Config**: `regime_atr_pause_threshold_pct` (0.015), `regime_atr_lookback_days` (5)
+- **Data**: `atr_5day` comes from the streamer's per-day `stream_summary` session-OHLC rows (`tt.py get_atr`); until the cache holds a full lookback of completed sessions the value is absent and the gate stays inactive (fail-open, never a fabricated reading)
+- **Rationale**: Elevated realized volatility = trending environment, unfavorable for static IC width. Percentage-based so one threshold means the same thing from IWM to SPX — the old fixed-points form silently over-blocked SPX and never fired for QQQ/IWM
 - **IC Impact**: Blocks this symbol's IC entries (other symbols unaffected)
 - **ORB Impact**: NOT blocked
 
@@ -93,10 +94,10 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 - **ORB Impact**: Blocks entry
 
 ### 10. Quarterly Expiry Gate
-- **Trigger**: On OPEX (quarterly expiration) day AND `quarterly_expiry_skip_open_volatile` is true AND session is volatile (e.g., open_volatile flag set)
-- **Effect**: Skip IC entries this symbol; apply tighter `quarterly_expiry_min_call_otm_pct` (0.67%) for allowed entries
-- **Config**: `quarterly_expiry_skip_open_volatile`, `quarterly_expiry_min_call_otm_pct` (0.67%), `quarterly_expiry_dates_2026`
-- **Rationale**: OPEX = extreme gamma concentration, pinning risk, wide spreads, low liquidity
+- **Trigger**: On OPEX (quarterly expiration) day: (a) session is `open_volatile`; or (b) the session's intraday range (high − low) as a fraction of price exceeds `quarterly_expiry_max_intraday_range_pct` (0.005) — entries halt for the rest of the session (`quarterly_intraday_range_exceeded`); allowed entries apply the tighter `quarterly_expiry_min_call_otm_pct` (0.67%)
+- **Config**: `quarterly_expiry_skip_open_volatile`, `quarterly_expiry_min_call_otm_pct` (0.67%), `quarterly_expiry_max_intraday_range_pct` (0.005)
+- **Data**: the range clause reads `intraday_range_pct` off the streamer's `stream_summary` day row (`tt.py get_intraday_range`); while the feed is absent the clause stays inactive (fail-open). The FOMC post-blackout check uses the same feed with its own keys (`fomc_post_blackout_min_iv_rank` 0.40, `fomc_post_blackout_max_intraday_range_pct` 0.005)
+- **Rationale**: OPEX = extreme gamma concentration, pinning risk, wide spreads, low liquidity; quarterly dates come from `cherrypick.core.calendar` rules, not a per-year config list
 - **IC Impact**: Blocks or restricts entries on OPEX
 - **ORB Impact**: Not explicitly blocked, but liquidity may be poor
 
@@ -331,7 +332,9 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 | Entry window (IC) | `entry_window_start`, `entry_window_end` | 10:00–14:30 ET | — |
 | VIX pause | `regime_vix_pause_threshold` | 25 | Account-wide |
 | VIX1D ratio | `regime_vix1d_ratio_pause_threshold` | 1.30 | Account-wide |
-| ATR pause | `regime_atr_pause_threshold`, `regime_atr_lookback_days` | 30.0 pts, 5 days | Symbol-specific |
+| ATR pause | `regime_atr_pause_threshold_pct`, `regime_atr_lookback_days` | 0.015 (1.5% of spot), 5 days | Symbol-specific |
+| OPEX range halt | `quarterly_expiry_max_intraday_range_pct` | 0.005 (0.5% of price) | Symbol-specific, OPEX only |
+| FOMC post-blackout | `fomc_post_blackout_min_iv_rank`, `fomc_post_blackout_max_intraday_range_pct` | 0.40, 0.005 | Account-wide, FOMC only |
 | Max concurrent ICs | `max_concurrent_ics` | 4 | Hard stop |
 | Daily IC target | `daily_ic_trade_target` | 2 | Soft guidance |
 | Delta (call) | `max_call_delta_entry`, `_open_volatile`, `_late` | 0.20, 0.19, 0.19 | Hard stop |

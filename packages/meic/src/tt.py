@@ -1182,6 +1182,93 @@ def cmd_get_orb_range(args) -> dict:
     }
 
 
+def _et_today() -> str:
+    try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
+        from zoneinfo import ZoneInfo
+        _et = ZoneInfo("America/New_York")
+    except Exception:  # pragma: no cover - only where zoneinfo has no tz database
+        import pytz
+        _et = pytz.timezone("America/New_York")
+    return datetime.now(_et).strftime("%Y-%m-%d")
+
+
+def _true_ranges(rows) -> list[float]:
+    """True range per completed stream_summary day-row: max(high-low, |high-prev_close|,
+    |low-prev_close|). Rows missing high/low are skipped; a missing prev_close degrades
+    to the plain high-low range (a gap day is then understated, not fabricated)."""
+    out = []
+    for r in rows:
+        high, low, prev = r["day_high"], r["day_low"], r["prev_day_close"]
+        if high is None or low is None:
+            continue
+        tr = high - low
+        if prev is not None:
+            tr = max(tr, abs(high - prev), abs(low - prev))
+        out.append(tr)
+    return out
+
+
+def cmd_get_atr(args) -> dict:
+    """N-day true-range ATR from the streamer's accumulated per-day stream_summary rows
+    (exchange-official session OHLC off the underlying's Summary event). Excludes today's
+    partial row. Returns ok=False until the cache holds N COMPLETED sessions — during that
+    warmup the ATR gate stays inactive (same behavior as the years this feed didn't exist),
+    rather than feeding the gate a thin average."""
+    symbol = args.symbol.strip().upper()
+    days = int(args.days)
+    conn = _cache_conn()
+    if conn is None:
+        return {"ok": False, "error": "stream cache not found — is the streamer running?"}
+    try:
+        rows = conn.execute(
+            "SELECT day_high, day_low, prev_day_close FROM stream_summary "
+            "WHERE symbol = ? AND trade_date < ? ORDER BY trade_date DESC LIMIT ?",
+            (symbol, _et_today(), days),
+        ).fetchall()
+    finally:
+        conn.close()
+    trs = _true_ranges(rows)
+    if len(trs) < days:
+        return {"ok": False,
+                "error": f"insufficient history: {len(trs)}/{days} completed sessions in cache",
+                "days_available": len(trs)}
+    return {"ok": True, "symbol": symbol, "atr": round(sum(trs) / len(trs), 4), "days": days}
+
+
+def cmd_get_intraday_range(args) -> dict:
+    """Today's session range so far (exchange-official day high/low from the underlying's
+    Summary events), in points and as a fraction of the current price — the input the FOMC
+    post-blackout and quarterly-expiry range gates consume."""
+    symbol = args.symbol.strip().upper()
+    conn = _cache_conn()
+    if conn is None:
+        return {"ok": False, "error": "stream cache not found — is the streamer running?"}
+    try:
+        row = conn.execute(
+            "SELECT day_high, day_low, day_close FROM stream_summary "
+            "WHERE symbol = ? AND trade_date = ?",
+            (symbol, _et_today()),
+        ).fetchone()
+        last = None
+        trade = conn.execute("SELECT last FROM stream_trades WHERE symbol = ?", (symbol,)).fetchone()
+        if trade is not None and trade["last"] is not None:
+            last = float(trade["last"])
+    finally:
+        conn.close()
+    if row is None or row["day_high"] is None or row["day_low"] is None:
+        return {"ok": False, "error": "no summary row for today — streamer not running, or no Summary event yet"}
+    rng = float(row["day_high"]) - float(row["day_low"])
+    basis = last or (float(row["day_close"]) if row["day_close"] is not None else None)
+    return {
+        "ok": True,
+        "symbol": symbol,
+        "day_high": row["day_high"],
+        "day_low": row["day_low"],
+        "range_points": round(rng, 4),
+        "range_pct": round(rng / basis, 6) if basis else None,
+    }
+
+
 def cmd_stream_status(_args) -> dict:
     # os.kill(pid, 0) is unreliable on Windows (raises SystemError for some
     # process states) — reuse streamer.py's cross-platform _running_pid(),
@@ -1393,6 +1480,13 @@ def main():
     p_orb = sub.add_parser("get_orb_range")
     p_orb.add_argument("--symbol", required=True, help="Trading symbol (e.g. XSP)")
 
+    p_atr = sub.add_parser("get_atr")
+    p_atr.add_argument("--symbol", required=True, help="Trading symbol (e.g. SPX)")
+    p_atr.add_argument("--days", type=int, default=5, help="Completed sessions in the true-range average")
+
+    p_ir = sub.add_parser("get_intraday_range")
+    p_ir.add_argument("--symbol", required=True, help="Trading symbol (e.g. SPX)")
+
     p_ss = sub.add_parser("stream_subscribe")
     p_ss.add_argument("--symbols", nargs="+", required=True, help="Streamer symbols to warm up in cache")
     p_ss.add_argument("--timeout", type=float, default=6.0)
@@ -1405,6 +1499,8 @@ def main():
         "secrets_set":    cmd_secrets_set,
         "stream_status":  cmd_stream_status,
         "get_orb_range":  cmd_get_orb_range,
+        "get_atr":        cmd_get_atr,
+        "get_intraday_range": cmd_get_intraday_range,
         "get_calendar":   cmd_get_calendar,
     }
     if args.command in sync_dispatch:
