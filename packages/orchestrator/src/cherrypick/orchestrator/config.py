@@ -232,6 +232,21 @@ def data_epoch(cfg: dict[str, Any]) -> dict[str, Any] | None:
     return {"date": str(date), "note": de.get("note")}
 
 
+def advise_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved advise-pipeline config. **OFF by default, twice**: `advise.enabled` gates the
+    command, and each module under `advise.modules` must also set `enabled: true` and declare an
+    `advice_bounds` manifest (closed legal ranges) before any advice is generated for it. Needs
+    Claude Code on PATH, like eod_insight. Off the reliability path — the watchdog never waits
+    on or alerts about advice."""
+    a = cfg.get("advise", {}) or {}
+    return {
+        "enabled": a.get("enabled", False),
+        "model": a.get("model"),
+        "timeout_seconds": int(a.get("timeout_seconds", 180)),
+        "modules": a.get("modules", {}) or {},
+    }
+
+
 def insight_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved AI EOD-insight config. **OFF by default** — it needs Claude Code (`claude`) on PATH,
     an authenticated session, and a paid call, so it's opt-in (`"eod_insight": {"enabled": true}`). When

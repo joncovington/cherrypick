@@ -25,6 +25,10 @@ Subcommands:
                        scheduled cherrypick-log-archive task runs this). --month YYYY-MM; --dry-run.
   eod-insight          AI synthesis over the day's deterministic reports → logs/eod-insight-<day>.md
                        (opt-in; needs Claude Code on PATH + eod_insight.enabled). --date; default today.
+  advise               Bounded next-session parameter proposals per module → state/advice/
+                       <module>-<session>.json, validated against each module's advice_bounds
+                       (opt-in twice: advise.enabled + advise.modules.<m>.enabled; needs Claude
+                       Code on PATH). Loops re-validate and fall back to baseline. --date.
   reconcile            Paper↔live isolation guard: query the real broker account (read-only) and flag
                        any open positions/BP a paper-only suite shouldn't have. On-demand; never trades.
   connect              Guided per-module onboarding (--module): set OAuth creds (via the module's own
@@ -58,6 +62,7 @@ from cherrypick.notify import Notifier
 from cherrypick.notify import secrets as notify_secrets
 from cherrypick.orchestrator import (
     accounts,
+    advise,
     calibrate,
     connect,
     dashboard,
@@ -656,6 +661,19 @@ def cmd_eod_insight(cfg, args) -> None:
     _emit(eod_insight.run(cfg, day=day))
 
 
+def cmd_advise(cfg, args) -> None:
+    """Bounded parameter advice for the NEXT session, per advise-enabled module. Opt-in twice +
+    feature-detected (Claude Code on PATH); deterministic inputs only, all tools denied; the
+    orchestrator validates against advice_bounds and writes the artifact. Best-effort envelope,
+    off the reliability path -- loops re-validate and treat absent/invalid advice as baseline."""
+    day = args.date or (timeutil.now_et().strftime("%Y-%m-%d"))
+    skip = _non_trading_day_skip(day, args.force)
+    if skip is not None:
+        _emit(skip)
+        return
+    _emit(advise.run(cfg, day=day))
+
+
 def cmd_dashboard(cfg, args) -> None:
     """One-shot static render (default), or a localhost live server with --serve.
 
@@ -746,6 +764,7 @@ def main() -> None:
             "notify-eod",
             "archive",
             "eod-insight",
+            "advise",
             "reconcile",
             "connect",
             "account",
@@ -836,6 +855,7 @@ def main() -> None:
         "notify-eod": lambda: cmd_notify_eod(cfg, args),
         "archive": lambda: cmd_archive(cfg, args),
         "eod-insight": lambda: cmd_eod_insight(cfg, args),
+        "advise": lambda: cmd_advise(cfg, args),
         "reconcile": lambda: cmd_reconcile(cfg),
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),
