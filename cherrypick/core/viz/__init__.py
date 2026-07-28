@@ -411,6 +411,139 @@ window.cpCalHeat = function(el, days, fmtMoney){
 """
 
 
+# Filterable table — the suite's one copy (the audit counted two trade logs: MEIC's and
+# flies'). The flies component is the donor because it is already generic: a column spec
+# ({h, f(row)->display, v(row)->raw, num, tone, filter: select|text|range|daterange}), a
+# caller-owned filter-state object (every render replaces innerHTML, so DOM-held state dies
+# on the next refresh), selects populated from the UNFILTERED row set so options never
+# collapse to what a filter already left standing, and text inputs that commit on a short
+# idle so a re-render never steals focus mid-word.
+#   window.cpTable(el, cols, rows, empty, {state, onChange, allRows})
+#   window.cpTableMatches(cols, row, state) / window.cpFilterActive(state)
+TABLE_STYLE = (
+    "thead tr.filter-row th{padding:3px 6px 6px;position:sticky;top:22px;"
+    "background:var(--panel,#161b22);z-index:2}"
+    "thead tr.hdr-row th{position:sticky;top:0;background:var(--panel,#161b22);z-index:3}"
+    "tr.filter-row input,tr.filter-row select{width:100%;box-sizing:border-box;font:inherit;"
+    "font-size:11px;padding:2px 4px;background:var(--bg,#0d1117);color:var(--text,#e6edf3);"
+    "border:1px solid var(--border,#30363d);border-radius:4px}"
+    "tr.filter-row input:focus,tr.filter-row select:focus{outline:1px solid var(--accent,#0969da);"
+    "border-color:var(--accent,#0969da)}"
+    "tr.filter-row .rng{display:flex;gap:3px}"
+    "tr.filter-row .on{border-color:var(--accent,#0969da)}"
+)
+
+TABLE_JS = r"""
+var FILTER_ALL = '— all —';
+
+function colValue(c, r) { return (c.v ? c.v(r) : c.f(r)); }
+
+function distinctValues(c, rows) {
+  const seen = new Set();
+  rows.forEach(r => { const v = colValue(c, r); if (v !== null && v !== undefined && v !== '') seen.add(String(v)); });
+  return [...seen].sort();
+}
+
+function matchesFilters(cols, r, state) {
+  return cols.every((c, i) => {
+    const f = state[i];
+    if (!c.filter || !f) return true;
+    const raw = colValue(c, r);
+    if (c.filter === 'select') return !f.eq || String(raw) === f.eq;
+    if (c.filter === 'text') return !f.q || String(raw ?? '').toLowerCase().includes(f.q.toLowerCase());
+    if (c.filter === 'range') {
+      const n = Number(raw);
+      if (f.min !== '' && f.min !== undefined && !(n >= Number(f.min))) return false;
+      if (f.max !== '' && f.max !== undefined && !(n <= Number(f.max))) return false;
+      return true;
+    }
+    if (c.filter === 'daterange') {
+      const s = String(raw ?? '');
+      if (f.min && s < f.min) return false;
+      if (f.max && s > f.max) return false;
+      return true;
+    }
+    return true;
+  });
+}
+
+function filterActive(state) {
+  return Object.values(state || {}).some(f => f &&
+    ((f.eq || '') !== '' || (f.q || '') !== '' || (f.min || '') !== '' || (f.max || '') !== ''));
+}
+
+function filterCellHtml(c, i, state, allRows) {
+  if (!c.filter) return '';
+  const f = state[i] || {};
+  const on = v => (v ? ' on' : '');
+  if (c.filter === 'select') {
+    const opts = distinctValues(c, allRows).map(v =>
+      `<option${String(f.eq) === v ? ' selected' : ''}>${v}</option>`).join('');
+    return `<select class="f-in${on(f.eq)}" data-fi="${i}" data-fk="eq">` +
+           `<option value="">${FILTER_ALL}</option>${opts}</select>`;
+  }
+  if (c.filter === 'text') {
+    return `<input class="f-in${on(f.q)}" data-fi="${i}" data-fk="q" value="${f.q || ''}" placeholder="…">`;
+  }
+  const t = c.filter === 'daterange' ? 'date' : 'number';
+  return `<div class="rng">` +
+    `<input type="${t}" class="f-in${on(f.min)}" data-fi="${i}" data-fk="min" value="${f.min || ''}" placeholder="min">` +
+    `<input type="${t}" class="f-in${on(f.max)}" data-fi="${i}" data-fk="max" value="${f.max || ''}" placeholder="max">` +
+    `</div>`;
+}
+
+/* `opts` (all optional): {state, onChange, allRows} turns on the per-column filter row. `allRows` is
+   the UNFILTERED set, so a select keeps offering every value rather than collapsing to whatever the
+   current filter already left standing. */
+window.cpTable = function(el, cols, rows, empty, opts) {
+  const o = opts || {};
+  const filterable = o.state && cols.some(c => c.filter);
+  const hdr = '<tr class="hdr-row">' +
+    cols.map(c => `<th class="${c.num?'num':''}">${c.h}</th>`).join('') + '</tr>';
+  const frow = filterable
+    ? '<tr class="filter-row">' +
+      cols.map((c, i) => `<th>${filterCellHtml(c, i, o.state, o.allRows || rows)}</th>`).join('') +
+      '</tr>'
+    : '';
+  if (!rows || !rows.length) {
+    el.innerHTML = filterable
+      ? `<thead>${hdr}${frow}</thead><tbody><tr><td class="empty" colspan="${cols.length}">${empty || 'Nothing yet.'}</td></tr></tbody>`
+      : `<tbody><tr><td class="empty">${empty || 'Nothing yet.'}</td></tr></tbody>`;
+    if (filterable) wireFilters(el, o);
+    return;
+  }
+  const body = '<tbody>' + rows.map(r => '<tr>' + cols.map(c => {
+    const v = c.f(r);
+    return `<td class="${c.num?'num':''} ${c.tone?c.tone(r):''}">${v === null || v === undefined ? '–' : v}</td>`;
+  }).join('') + '</tr>').join('') + '</tbody>';
+  el.innerHTML = `<thead>${hdr}${frow}</thead>` + body;
+  if (filterable) wireFilters(el, o);
+};
+
+function wireFilters(el, o) {
+  el.querySelectorAll('.f-in').forEach(inp => {
+    const commit = () => {
+      const i = inp.dataset.fi, k = inp.dataset.fk;
+      o.state[i] = Object.assign({}, o.state[i], {[k]: inp.value});
+      o.onChange && o.onChange();
+    };
+    // `change` for selects/dates, `input` for typing — but re-render on every keystroke would steal
+    // focus mid-word, so text inputs commit on a short idle instead.
+    if (inp.type === 'number' || inp.tagName === 'INPUT' && !inp.type.startsWith('date')) {
+      let t; inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(commit, 350); });
+      inp.addEventListener('change', commit);
+    } else {
+      inp.addEventListener('change', commit);
+    }
+  });
+}
+
+window.cpTableMatches = matchesFilters;
+window.cpFilterActive = filterActive;
+window.cpFilterAll = FILTER_ALL;
+"""
+
+
 def card_skeleton_html(section_id: str, title: str, endpoint: str, refresh: int = 15) -> str:
     """The static card skeleton the umbrella injects per enabled section; `SECTION_JS` fills it live.
 

@@ -91,3 +91,11 @@ def test_cal_heat_is_the_honest_week_column_form():
     assert "no settled session" in viz.CAL_HEAT_JS
     assert "getUTCDay" in viz.CAL_HEAT_JS  # UTC stepping: local tz must not shift sessions
     assert ".cpcal-week" in viz.CAL_HEAT_STYLE
+
+
+def test_table_component_contract():
+    # Column spec + caller-owned filter state; selects populate from the UNFILTERED rows.
+    for marker in ("window.cpTable", "cpTableMatches", "cpFilterActive",
+                   "select", "daterange", "allRows"):
+        assert marker in viz.TABLE_JS
+    assert "filter-row" in viz.TABLE_STYLE
