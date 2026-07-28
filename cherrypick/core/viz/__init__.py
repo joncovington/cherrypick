@@ -365,7 +365,8 @@ window.cpCalHeat = function(el, days, fmtMoney){
   if(!el) return false;
   if(!days || !days.length){ el.innerHTML=''; return false; }
   var fmt = fmtMoney || function(v){ v=v||0;
-    return (v<0?'-$':'$')+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    return (v<0?'-$':'$')+Math.abs(v).toLocaleString(undefined,
+      {minimumFractionDigits:2,maximumFractionDigits:2}); };
   var byDate={}, max=1;
   days.forEach(function(d){ byDate[d.date]=d; max=Math.max(max,Math.abs(d.net_pnl||0)); });
   var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -399,7 +400,8 @@ window.cpCalHeat = function(el, days, fmtMoney){
   }).join('');
   el.innerHTML=
     '<div><div class="cpcal">'
-    +'<div class="cpcal-side"><div></div><div>Mon</div><div></div><div>Wed</div><div></div><div>Fri</div></div>'
+    +'<div class="cpcal-side"><div></div><div>Mon</div><div></div>'
+    +'<div>Wed</div><div></div><div>Fri</div></div>'
     +'<div class="cpcal-main"><div class="cpcal-months">'+months+'</div>'
     +'<div class="cpcal-weeks">'+grid+'</div></div></div>'
     +'<div class="cpcal-legend"><span>loss</span>'
@@ -440,7 +442,8 @@ function colValue(c, r) { return (c.v ? c.v(r) : c.f(r)); }
 
 function distinctValues(c, rows) {
   const seen = new Set();
-  rows.forEach(r => { const v = colValue(c, r); if (v !== null && v !== undefined && v !== '') seen.add(String(v)); });
+  rows.forEach(r => { const v = colValue(c, r);
+    if (v !== null && v !== undefined && v !== '') seen.add(String(v)); });
   return [...seen].sort();
 }
 
@@ -487,8 +490,10 @@ function filterCellHtml(c, i, state, allRows) {
   }
   const t = c.filter === 'daterange' ? 'date' : 'number';
   return `<div class="rng">` +
-    `<input type="${t}" class="f-in${on(f.min)}" data-fi="${i}" data-fk="min" value="${f.min || ''}" placeholder="min">` +
-    `<input type="${t}" class="f-in${on(f.max)}" data-fi="${i}" data-fk="max" value="${f.max || ''}" placeholder="max">` +
+    `<input type="${t}" class="f-in${on(f.min)}" data-fi="${i}" data-fk="min"` +
+    ` value="${f.min || ''}" placeholder="min">` +
+    `<input type="${t}" class="f-in${on(f.max)}" data-fi="${i}" data-fk="max"` +
+    ` value="${f.max || ''}" placeholder="max">` +
     `</div>`;
 }
 
@@ -507,14 +512,16 @@ window.cpTable = function(el, cols, rows, empty, opts) {
     : '';
   if (!rows || !rows.length) {
     el.innerHTML = filterable
-      ? `<thead>${hdr}${frow}</thead><tbody><tr><td class="empty" colspan="${cols.length}">${empty || 'Nothing yet.'}</td></tr></tbody>`
+      ? `<thead>${hdr}${frow}</thead><tbody><tr><td class="empty" colspan="${cols.length}">` +
+        `${empty || 'Nothing yet.'}</td></tr></tbody>`
       : `<tbody><tr><td class="empty">${empty || 'Nothing yet.'}</td></tr></tbody>`;
     if (filterable) wireFilters(el, o);
     return;
   }
   const body = '<tbody>' + rows.map(r => '<tr>' + cols.map(c => {
     const v = c.f(r);
-    return `<td class="${c.num?'num':''} ${c.tone?c.tone(r):''}">${v === null || v === undefined ? '–' : v}</td>`;
+    const cls = `${c.num?'num':''} ${c.tone?c.tone(r):''}`;
+    return `<td class="${cls}">${v === null || v === undefined ? '–' : v}</td>`;
   }).join('') + '</tr>').join('') + '</tbody>';
   el.innerHTML = `<thead>${hdr}${frow}</thead>` + body;
   if (filterable) wireFilters(el, o);
