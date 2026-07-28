@@ -646,6 +646,7 @@ def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
                 try:
                     if _service.acquire_recorder_lock(cfg):
                         _service.record_spots(cfg)
+                        _service.record_regimes(cfg)  # internally throttled to ~5-min rows
                 except Exception:  # a data hiccup must never kill the recorder
                     pass
                 stop.wait(refresh)

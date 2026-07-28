@@ -158,6 +158,37 @@ def test_build_gex_reports_not_ready_when_symbol_absent(tmp_path):
     assert out["ok"] is False and "no cached chain" in out["error"]
 
 
+def test_record_regimes_persists_a_compact_summary_row(tmp_path):
+    """The historical dimension the audit found missing entirely: the profile was
+    recomputed live and discarded, so regime-vs-outcome analysis was impossible."""
+    import sqlite3
+
+    cfg = _cfg(tmp_path)
+    assert service.record_regimes(cfg) == 1  # only SPX has a cached chain here
+    conn = sqlite3.connect(cfg["history_db_path"])
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM gex_regime_history").fetchone()
+    conn.close()
+    assert row["symbol"] == "SPX"
+    assert row["net_gex"] is not None and row["net_gex_vol"] is not None
+    assert row["call_wall"] == 610 and row["put_wall"] == 600
+    assert row["spot"] is not None and row["expiration"]
+
+
+def test_record_regimes_throttles_to_one_row_per_interval(tmp_path):
+    cfg = _cfg(tmp_path)
+    assert service.record_regimes(cfg) == 1
+    # An immediate second call is inside the 5-minute throttle: no second row.
+    assert service.record_regimes(cfg) == 0
+    # But an explicit zero interval writes again (the cadence knob is the caller's).
+    assert service.record_regimes(cfg, min_interval_s=0) == 1
+
+
+def test_record_regimes_skips_symbols_without_chains(tmp_path):
+    cfg = _cfg(tmp_path)
+    assert service.record_regimes(cfg, symbols=["QQQ"]) == 0
+
+
 def test_build_gex_reports_missing_cache(tmp_path):
     cfg = {"stream_cache_db": tmp_path / "nope.db", "history_db_path": tmp_path / "h.db",
            "symbols": ["SPX"], "serve": {}}

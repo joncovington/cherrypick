@@ -54,6 +54,17 @@ def _ensure_history_table(conn: sqlite3.Connection) -> None:
         "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, spot REAL NOT NULL)"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_gsh_sym_date ON gex_spot_history(symbol, trade_date)")
+    # Regime history: the per-strike profile was recomputed live and thrown away, so
+    # "what did GEX look like when that trade was accepted?" was unanswerable — even
+    # though MEIC gates entries on GEX and flies runs a dedicated gex arm. One compact
+    # row per (symbol, ~5 min): the regime summary, not the full profile.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS gex_regime_history ("
+        "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, spot REAL, "
+        "net_gex REAL, net_gex_vol REAL, zero_gamma REAL, call_wall REAL, put_wall REAL, "
+        "expiration TEXT)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_grh_sym_date ON gex_regime_history(symbol, trade_date)")
 
 
 def _fetch_spot_history(db_path: Path, symbol: str) -> list[dict]:
@@ -236,7 +247,8 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
 
     if once:
         n = record_spots(cfg)
-        print(f"recorded spot for {n}/{len(syms)} symbols")
+        r = record_regimes(cfg)
+        print(f"recorded spot for {n}/{len(syms)} symbols, {r} regime row(s)")
         return 0
 
     if not acquire_recorder_lock(cfg):
@@ -266,6 +278,7 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
         while True:
             try:
                 n = record_spots(cfg)
+                record_regimes(cfg)  # internally throttled to ~5-minute rows
                 ticks += 1
                 if ticks % heartbeat_every == 0:
                     log.info("recorded %d/%d symbols (tick %d)", n, len(syms), ticks)
@@ -277,6 +290,67 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     finally:
         release_recorder_lock(cfg)
     return 0
+
+
+def record_regimes(cfg: dict, symbols: list[str] | None = None,
+                   min_interval_s: int = 300) -> int:
+    """Persist a compact GEX regime row per symbol (net GEX by OI and by volume, zero
+    gamma, walls, spot) into gex_regime_history — the historical dimension the audit
+    found entirely missing: regime-vs-outcome analysis needs to know what GEX WAS, and
+    the live profile was recomputed and discarded on every request.
+
+    Throttled internally (one row per symbol per `min_interval_s`), so callers can invoke
+    it on whatever cadence they already run; computing a profile is heavier than reading
+    a spot, and a 5-minute regime series is plenty for session-level analysis.
+    Best-effort per symbol. Returns rows written."""
+    syms = [str(s).strip().upper() for s in (symbols if symbols is not None else cfg.get("symbols") or [])]
+    if not syms:
+        return 0
+    db_path = Path(cfg["history_db_path"])
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    try:
+        _ensure_history_table(conn)
+        today = _today()
+        now = time.time()
+        written = 0
+        for sym in syms:
+            row = conn.execute(
+                "SELECT MAX(ts) FROM gex_regime_history WHERE symbol = ? AND trade_date = ?",
+                (sym, today),
+            ).fetchone()
+            if row and row[0] is not None and (now - row[0]) < min_interval_s:
+                continue
+            try:
+                snap = _provider.snapshot_from_stream_cache(cfg["stream_cache_db"], sym)
+                if snap.source == "missing" or snap.expiration is None:
+                    continue
+                profile = compute_gex_profile(
+                    snap.chain_entries, snap.greeks, snap.oi, snap.volume,
+                    snap.spot or 0, strike_scale=snap.strike_scale,
+                )
+                if not profile.get("ok"):
+                    continue
+                series = profile["series"]
+                spot_disp = (snap.spot or 0) * snap.strike_scale
+                totals = {**profile["totals"], **volume_totals(series)}
+                call_wall, put_wall = net_walls(series, "net_gex")
+                conn.execute(
+                    "INSERT INTO gex_regime_history (symbol, trade_date, ts, spot, net_gex, "
+                    "net_gex_vol, zero_gamma, call_wall, put_wall, expiration) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (sym, today, now, spot_disp,
+                     totals.get("net_gex"), totals.get("net_gex_vol"),
+                     nearest_zero_gamma(series, spot_disp, "net_gex"),
+                     call_wall, put_wall, str(snap.expiration)),
+                )
+                written += 1
+            except Exception:
+                continue  # one symbol's hiccup must not lose the others
+        conn.commit()
+        return written
+    finally:
+        conn.close()
 
 
 def build_gex(cfg: dict, symbol: str | None = None) -> dict:
