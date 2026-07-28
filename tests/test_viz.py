@@ -72,3 +72,14 @@ def test_port_in_use_detects_a_listener_and_a_free_port():
         assert viz.port_in_use(port) is True
     # The listener is closed now — the same port reads free again.
     assert viz.port_in_use(port) is False
+
+
+def test_reorder_contract_is_attribute_driven():
+    # The one drag-to-reorder copy: groups and behavior are declared with data attributes,
+    # so no page ships page-specific reorder code.
+    for marker in ("data-cp-reorder", "data-cp-reorder-items", "data-cp-reorder-label",
+                   "data-cp-reorder-defer", "data-cp-reorder-store", "reset-layout"):
+        assert marker in viz.REORDER_JS
+    # Unknown-keys-append: a card shipped after a layout was saved must never disappear.
+    assert "indexOf" in viz.REORDER_JS
+    assert ".cp-reorder-item" in viz.REORDER_STYLE

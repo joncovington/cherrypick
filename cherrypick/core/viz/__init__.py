@@ -206,6 +206,137 @@ SECTION_JS = r"""
 """
 
 
+# Drag-to-reorder for dashboard cards — the suite's one copy (the audit counted three).
+# Donor semantics are the orchestrator's 3-group version: grip-handle drag source (toggling a
+# card's draggable on mousedown is unreliable in Chrome), geometric drop targeting, per-browser
+# persistence, unknown-keys-append (a card shipped after a layout was saved must not vanish),
+# and a deferred-drop mode for heavy children like iframes (moving one mid-drag reloads it).
+#
+# DOM contract (all attributes, no page-specific code):
+#   [data-cp-reorder="<group-key>"]        a reorderable group; the value is its stable store key
+#   data-cp-reorder-items="<selector>"     optional: which children are reorderable (default: all)
+#   data-cp-reorder-label="<selector>"     optional: where a child's label lives (default: h2,h3)
+#   data-cp-reorder-defer                  optional: apply the move once on drop, not live
+#   [data-cp-reorder-store="<ls-key>"]     on any element: the page's localStorage key
+#   #reset-layout                          optional button; shown (.show) once a layout is saved
+REORDER_STYLE = (
+    ".cp-reorder-item{position:relative}"
+    ".reorder-handle{position:absolute;top:6px;right:6px;z-index:3;cursor:grab;"
+    "color:var(--muted,#888);opacity:0;font-size:14px;line-height:1;padding:2px 5px;"
+    "border:1px solid transparent;border-radius:4px;user-select:none;transition:opacity .15s}"
+    ".cp-reorder-item:hover>.reorder-handle{opacity:.9}"
+    ".reorder-handle:hover{opacity:1;border-color:var(--accent,#0969da)}"
+    ".reorder-handle:active{cursor:grabbing}"
+    ".reorder-drag{opacity:.35}"
+    ".reorder-over{outline:1px dashed var(--accent,#0969da);outline-offset:-2px}"
+    ".reset-layout{display:none}.reset-layout.show{display:inline-block}"
+)
+
+REORDER_JS = r"""
+(function(){
+  var groups=[].slice.call(document.querySelectorAll('[data-cp-reorder]'));
+  if(!groups.length) return;
+  var ksEl=document.querySelector('[data-cp-reorder-store]');
+  var LS_KEY=(ksEl&&ksEl.getAttribute('data-cp-reorder-store'))||'cp-layout-v1';
+  var store; try{store=JSON.parse(localStorage.getItem(LS_KEY))||{};}catch(e){store={};}
+  function persist(){try{localStorage.setItem(LS_KEY,JSON.stringify(store));}catch(e){}}
+  function slug(s){return (s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');}
+  var srcOrder={},dragged=null,dragGroup=null;
+  function managed(g){var sel=g.getAttribute('data-cp-reorder-items');
+    return [].slice.call(g.children).filter(function(c){
+      return c.nodeType===1&&(!sel||c.matches(sel));});}
+  function kids(g){return managed(g).filter(function(c){return c.hasAttribute('data-rkey');});}
+  function keys(g){return kids(g).map(function(c){return c.getAttribute('data-rkey');});}
+  function ensureKey(g,card,idx){
+    if(card.getAttribute('data-rkey')) return;
+    var lsel=g.getAttribute('data-cp-reorder-label')||'h2,h3';
+    var lbl=card.querySelector(lsel);
+    var label=lbl?((lbl.childNodes[0]&&lbl.childNodes[0].nodeValue)||lbl.textContent):'';
+    var base=slug(label)||('idx-'+idx),k=base,n=2;
+    while(document.querySelector('[data-rkey="'+k+'"]')) k=base+'-'+(n++);
+    card.setAttribute('data-rkey',k);
+  }
+  // Move `node` before `ref` within group `g`; ref===null means "after the last managed item" —
+  // NOT appendChild, which would land past unmanaged trailing children (e.g. a footer).
+  function place(g,ref,node){
+    if(ref===null){var items=kids(g),last=items[items.length-1];
+      if(last&&last!==node) g.insertBefore(node,last.nextSibling);}
+    else if(ref!==node) g.insertBefore(node,ref);
+  }
+  function dragAfter(g,x,y){
+    var best=null,bestScore=Infinity,list=kids(g);
+    for(var i=0;i<list.length;i++){
+      var el=list[i]; if(el===dragged) continue;
+      var r=el.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,gap=r.height*0.5,before;
+      if(y<cy-gap) before=true; else if(y>cy+gap) before=false; else before=x<cx;
+      if(before){var s=(cy-y)*(cy-y)+(cx-x)*(cx-x); if(s<bestScore){bestScore=s;best=el;}}
+    }
+    return best;
+  }
+  function showReset(){var b=document.getElementById('reset-layout'); if(b) b.classList.add('show');}
+  // Reorder to match `order`, inserting before a fixed anchor (the element after the last managed
+  // item) so items stay in their region. Unknown keys append rather than drop — a card shipped
+  // after the layout was saved must never disappear for someone with a stored layout.
+  function applyOrder(g,order){
+    if(!order||!order.length) return;
+    var byKey={}; kids(g).forEach(function(c){byKey[c.getAttribute('data-rkey')]=c;});
+    var cur=kids(g),anchor=cur.length?cur[cur.length-1].nextSibling:null;
+    order.forEach(function(k){if(byKey[k]) g.insertBefore(byKey[k],anchor);});
+    kids(g).forEach(function(c){if(order.indexOf(c.getAttribute('data-rkey'))<0) g.insertBefore(c,anchor);});
+  }
+  groups.forEach(function(g){
+    var gk=g.getAttribute('data-cp-reorder')||'group';
+    var live=!g.hasAttribute('data-cp-reorder-defer');
+    managed(g).forEach(function(c,i){ensureKey(g,c,i);});
+    kids(g).forEach(function(card){
+      card.classList.add('cp-reorder-item');
+      var h=document.createElement('span');
+      h.className='reorder-handle'; h.title='Drag to reorder'; h.textContent='⠇';
+      h.setAttribute('draggable','true');
+      card.insertBefore(h,card.firstChild);
+      h.addEventListener('dragstart',function(e){
+        dragged=card; dragGroup=g; card.classList.add('reorder-drag');
+        e.dataTransfer.effectAllowed='move';
+        try{e.dataTransfer.setData('text/plain',card.getAttribute('data-rkey'));}catch(_){}
+        try{e.dataTransfer.setDragImage(card,20,20);}catch(_){}
+      });
+      h.addEventListener('dragend',function(){
+        card.classList.remove('reorder-drag');
+        if(dragged===card){
+          if(!live){
+            [].forEach.call(g.querySelectorAll('.reorder-over'),function(el){el.classList.remove('reorder-over');});
+            if(g.__drop!==undefined){ place(g,g.__drop,card); g.__drop=undefined; }
+          }
+          store[gk]=keys(g); persist(); showReset();
+        }
+        dragged=null; dragGroup=null;
+      });
+    });
+    srcOrder[gk]=keys(g);
+    g.addEventListener('dragover',function(e){
+      if(!dragged||dragGroup!==g) return;
+      e.preventDefault(); e.dataTransfer.dropEffect='move';
+      var after=dragAfter(g,e.clientX,e.clientY);
+      if(live){ place(g,after,dragged); }
+      else {
+        [].forEach.call(g.querySelectorAll('.reorder-over'),function(el){el.classList.remove('reorder-over');});
+        g.__drop=after;
+        if(after) after.classList.add('reorder-over');
+      }
+    });
+    applyOrder(g,store[gk]);
+  });
+  if(Object.keys(store).length) showReset();
+  var reset=document.getElementById('reset-layout');
+  if(reset) reset.addEventListener('click',function(){
+    groups.forEach(function(g){ applyOrder(g,srcOrder[g.getAttribute('data-cp-reorder')||'group']); });
+    store={}; try{localStorage.removeItem(LS_KEY);}catch(e){}
+    reset.classList.remove('show');
+  });
+})();
+"""
+
+
 def card_skeleton_html(section_id: str, title: str, endpoint: str, refresh: int = 15) -> str:
     """The static card skeleton the umbrella injects per enabled section; `SECTION_JS` fills it live.
 
