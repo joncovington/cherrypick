@@ -11,14 +11,23 @@ every refresh just re-reads MEIC's stream cache (this module never writes to it 
 from __future__ import annotations
 
 import json
-import socket
+import os
+import sys
 import threading
 import webbrowser
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-import service as _service
+# Bootstrap the cherrypick-core submodule (src/_core) before its import below — idempotent,
+# mirrors service.py; needed here so the viz import survives standalone imports of this module.
+_CORE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_core")
+if os.path.isdir(_CORE) and _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+from cherrypick.core import viz  # noqa: E402
+
+import service as _service  # noqa: E402
 
 _PAGE = r"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -607,10 +616,9 @@ def make_handler(cfg: dict, default_sym: str):
 
 def _port_in_use(host: str, port: int) -> bool:
     """Probe before binding so a second launch reuses the running dashboard instead of dying on
-    EADDRINUSE — the port is the dashboard's singleton (mirrors flies.dashboard.port_in_use)."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.4)
-        return s.connect_ex((host, port)) == 0
+    EADDRINUSE — the port is the dashboard's singleton. The probe itself is the suite's one copy
+    in cherrypick.core.viz."""
+    return viz.port_in_use(port, host)
 
 
 def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
