@@ -17,7 +17,6 @@ import html
 import json
 import os
 import re
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -27,9 +26,8 @@ from cherrypick.core import viz
 
 from cherrypick.notify import secrets as notify_secrets
 
-from . import calibrate, embeds, report, sections, tasks, timeutil
+from . import calibrate, embeds, report, sections, tasks, timeutil, util
 from . import config as cfgmod
-from .util import CREATE_NO_WINDOW
 
 _STATUS_COLORS = {
     "OK": "var(--pos)",
@@ -42,11 +40,7 @@ _LEVELS = ("CRITICAL", "WARN", "INFO", "NOTIFY", "OK")
 
 
 # --------------------------------------------------------------------------- file helpers
-def _read_json(path: Path) -> dict[str, Any]:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+_read_json = util.read_json  # one implementation of the best-effort JSON read
 
 
 def _age_minutes(iso_ts: str | None) -> float | None:
@@ -61,11 +55,26 @@ def _age_minutes(iso_ts: str | None) -> float | None:
         return None
 
 
+# Read at most this much from the END of a log for a tail. 50 display lines at the
+# observed ~830 bytes/line is ~42 KB; 256 KB leaves a wide margin while keeping the
+# render cost CONSTANT — the old whole-file read grew linearly with uptime (multiple
+# MB re-read and JSON-parsed per watchdog tick across five log sources).
+_TAIL_READ_BYTES = 256 * 1024
+
+
 def _tail(path: Path, n: int) -> list[str]:
-    """Last n non-empty lines of a text file; never raises."""
+    """Last n non-empty lines of a text file, reading only the file's tail; never raises."""
     try:
-        with path.open("r", encoding="utf-8", errors="replace") as fh:
-            lines = [ln.rstrip("\n") for ln in fh if ln.strip()]
+        with path.open("rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            fh.seek(max(0, size - _TAIL_READ_BYTES))
+            chunk = fh.read().decode("utf-8", errors="replace")
+        lines = [ln.rstrip("\r") for ln in chunk.split("\n") if ln.strip()]
+        # A mid-line start is possible when the seek landed inside a line; the partial
+        # first line only matters if it would be within the last n — drop it then.
+        if size > _TAIL_READ_BYTES and len(lines) <= n:
+            lines = lines[1:]
         return lines[-n:]
     except OSError:
         return []
@@ -94,18 +103,29 @@ def _parse_log_line(source: str, raw: str) -> dict[str, Any]:
 
 
 def _git_ref(root: Path) -> str | None:
-    """Short commit hash of a module checkout, best-effort. Local `git` only — no network, never
-    blocks the render (returns None on any failure, e.g. not a git checkout or git missing)."""
+    """Short commit hash of a module checkout, best-effort — by READING .git directly
+    (HEAD -> ref file / packed-refs), no subprocess. The old `git rev-parse` spawn ran
+    once per module on every render for a value that changes only when someone pulls.
+    Returns None on any failure (not a git checkout, detached oddity, etc.)."""
     try:
-        r = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            creationflags=CREATE_NO_WINDOW,
-        )
-        return r.stdout.strip() or None if r.returncode == 0 else None
-    except OSError:
+        git_dir = root / ".git"
+        if git_dir.is_file():  # worktree/submodule: "gitdir: <path>" indirection
+            target = git_dir.read_text(encoding="utf-8").split(":", 1)[1].strip()
+            git_dir = (root / target).resolve() if not Path(target).is_absolute() else Path(target)
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref:"):
+            return head[:7] or None  # detached HEAD stores the sha itself
+        ref = head.split(None, 1)[1]
+        ref_file = git_dir / ref
+        if ref_file.exists():
+            return ref_file.read_text(encoding="utf-8").strip()[:7] or None
+        packed = git_dir / "packed-refs"
+        if packed.exists():
+            for line in packed.read_text(encoding="utf-8").splitlines():
+                if line.endswith(ref) and not line.startswith("#"):
+                    return line.split()[0][:7] or None
+        return None
+    except (OSError, IndexError, UnicodeDecodeError):
         return None
 
 

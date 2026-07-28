@@ -394,6 +394,17 @@ def run(cfg: dict | None = None, session: str | None = None,
     return out
 
 
+# One MAX() per schema — latest_session used to re-run every full reader over every DB
+# just to compute a max date (a whole extra DB pass per overnight dashboard render).
+# Earnings' MAX is over the raw epoch, converted via the same tz-correct helper the
+# reader uses, so the two can't disagree on a session boundary.
+_LATEST_SQL = {
+    "meic_ic": "SELECT MAX(substr(exit_time, 1, 10)) FROM ic_trades WHERE exit_time IS NOT NULL",
+    "earnings": "SELECT MAX(closed_at) FROM trades WHERE closed_at IS NOT NULL",
+    "fly_book": "SELECT MAX(trade_date) FROM fly_positions WHERE status = 'settled'",
+}
+
+
 def latest_session(cfg: dict | None = None) -> str | None:
     """Most recent settlement-session date (ISO) with any paper trade across enabled modules, or
     None if there are none. Lets the EOD view fall back off an empty current day (e.g. overnight,
@@ -402,19 +413,20 @@ def latest_session(cfg: dict | None = None) -> str | None:
     latest: str | None = None
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         schema = mcfg.get("paper", {}).get("trade_schema", "meic_ic")
-        reader = _READERS.get(schema)
+        sql = _LATEST_SQL.get(schema)
         db_path = cfgmod.paper_db_path(mcfg, name)
-        if reader is None or not db_path.exists():
+        if sql is None or not db_path.exists():
             continue
         conn = _connect_ro(db_path)
         try:
-            records = reader(conn)
+            value = conn.execute(sql).fetchone()[0]
         except sqlite3.Error:
             continue
         finally:
             conn.close()
-        for r in records:
-            s = r.get("session")
-            if s and (latest is None or s > latest):
-                latest = s
+        if value is None:
+            continue
+        s = _session_from_epoch(value) if schema == "earnings" else str(value)
+        if s and (latest is None or s > latest):
+            latest = s
     return latest

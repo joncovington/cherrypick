@@ -134,12 +134,16 @@ def exists(name: str) -> bool:
 
 
 def query_verbose(name: str) -> dict[str, Any]:
-    """Return parsed key fields for a task."""
-    if not exists(name):
-        return {"exists": False}
+    """Return parsed key fields for a task.
+
+    ONE schtasks spawn, not two: existence is read off /Query /V's own return code
+    (non-zero = no such task) instead of a separate exists() pre-check — the pre-check
+    doubled the per-task spawn count on every dashboard render (~7 tasks per tick)."""
     if not _IS_WINDOWS:
         marker = _cron_marker(name)
         line = next((ln for ln in _crontab_read().splitlines() if ln.rstrip().endswith(marker)), "")
+        if not line:
+            return {"exists": False}
         return {"exists": True, "backend": "cron", "schedule": " ".join(line.split()[:5])}
     r = subprocess.run(
         ["schtasks", "/Query", "/TN", name, "/V", "/FO", "LIST"],
@@ -147,6 +151,8 @@ def query_verbose(name: str) -> dict[str, Any]:
         text=True,
         creationflags=CREATE_NO_WINDOW,
     )
+    if r.returncode != 0:
+        return {"exists": False}
     fields: dict[str, Any] = {"exists": True}
     for line in (r.stdout or "").splitlines():
         if ":" not in line:
