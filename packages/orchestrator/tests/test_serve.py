@@ -409,3 +409,30 @@ def test_api_reconcile_degrades_on_error(monkeypatch):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+# --- archived reports stay reachable ------------------------------------------------------------
+def test_archived_report_text_reads_from_the_monthly_zip(tmp_path):
+    """logrotate zips finished months away, which used to 404 every archived session
+    from /eod-report — history became unreachable the day the month closed."""
+    import zipfile
+
+    month_dir = tmp_path / "archive" / "2026-06"
+    month_dir.mkdir(parents=True)
+    with zipfile.ZipFile(month_dir / "meic.zip", "w") as zf:
+        zf.writestr("paper-eod-2026-06-15.md", "# archived report body")
+    text = serve._archived_report_text(tmp_path, "meic", "paper-eod-2026-06-15.md", "2026-06-15")
+    assert text == "# archived report body"
+
+
+def test_archived_report_text_misses_cleanly(tmp_path):
+    assert serve._archived_report_text(tmp_path, "meic", "paper-eod-2026-06-15.md",
+                                       "2026-06-15") is None
+    import zipfile
+
+    month_dir = tmp_path / "archive" / "2026-06"
+    month_dir.mkdir(parents=True)
+    with zipfile.ZipFile(month_dir / "meic.zip", "w") as zf:
+        zf.writestr("other-file.md", "x")
+    assert serve._archived_report_text(tmp_path, "meic", "paper-eod-2026-06-15.md",
+                                       "2026-06-15") is None
