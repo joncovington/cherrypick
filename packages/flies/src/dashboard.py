@@ -173,15 +173,6 @@ tr.filter-row .on{border-color:var(--accent)}
 padding:3px 8px;font-size:11px;cursor:pointer}
 .f-clear:hover{color:var(--fg);border-color:var(--accent)}
 canvas{width:100%!important}
-.cal{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;align-items:flex-start}
-.cal-side{display:grid;grid-template-rows:14px repeat(5,16px);row-gap:3px;font-size:10px;
-color:var(--dim);text-align:right;padding-right:2px;flex:none}
-.cal-main{display:flex;flex-direction:column}
-.cal-months{display:flex;gap:3px;height:14px;margin-bottom:3px;font-size:10px;color:var(--dim)}
-.cal-mon{width:16px;white-space:nowrap;overflow:visible;flex:none}
-.cal-weeks{display:flex;gap:3px}
-.cal-week{display:grid;grid-template-rows:repeat(5,16px);row-gap:3px}
-.hcell{width:16px;height:16px;border-radius:3px;background:#21262d}
 .note{color:var(--dim);font-size:11.5px;margin-top:10px;line-height:1.5}
 .pill{font-size:10.5px;padding:1px 7px;border-radius:9px;border:1px solid var(--line);color:var(--dim)}
 .pill.ok{color:var(--pos);border-color:#1f6f33}
@@ -250,7 +241,7 @@ _BODY = """
       <div class="card"><h2>Fee drag</h2><div class="scroll"><table id="fee-tbl"></table></div>
         <div class="note">A legged fly pays two fee stacks against a credit that may be $35–105.
         Costs are not a rounding error for this strategy.</div></div>
-      <div class="card" style="grid-column:1/-1"><h2>Daily P&amp;L</h2><div class="cal" id="heat"></div>
+      <div class="card" style="grid-column:1/-1"><h2>Daily P&amp;L</h2><div id="heat"></div>
         <div class="note">A settled trading day per cell, Monday at the top of each week column. An
         empty cell is a session that never settled, not a flat one — the two are different findings.</div></div>
       <div class="card" style="grid-column:1/-1"><h2>Trade log</h2>
@@ -877,45 +868,11 @@ function drawJournalGantt(cv, journal) {
    rows and weekends are simply absent. An empty weekday cell is a session that never settled — a
    different thing from a flat day, and the strategy's whole point is not to blur those. */
 function renderCalendar(days) {
-  const el = $('#heat');
-  if (!days || !days.length) { el.innerHTML = '<span class="empty">No settled days yet.</span>'; return; }
-  const byDate = new Map(days.map(d => [d.date, d]));
-  const max = Math.max(1, ...days.map(x => Math.abs(x.net_pnl || 0)));
-  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  // Parse and step dates in UTC so a local timezone never shifts a session onto the wrong day.
-  const parse = s => new Date(s + 'T00:00:00Z');
-  const weekday = dt => (dt.getUTCDay() + 6) % 7;   // Monday = 0
-  const iso = dt => dt.toISOString().slice(0, 10);
-  const addDays = (dt, n) => { const c = new Date(dt); c.setUTCDate(c.getUTCDate() + n); return c; };
-
-  const first = addDays(parse(days[0].date), -weekday(parse(days[0].date)));  // that week's Monday
-  const last = parse(days[days.length - 1].date);
-  const weeks = [];
-  for (let wk = new Date(first); wk <= last; wk = addDays(wk, 7)) weeks.push(new Date(wk));
-
-  const months = weeks.map((wk, i) => {
-    const m = wk.getUTCMonth();
-    const label = (i === 0 || m !== weeks[i-1].getUTCMonth()) ? MON[m] : '';
-    return `<span class="cal-mon">${label}</span>`;
-  }).join('');
-
-  const grid = weeks.map(wk => {
-    let cells = '';
-    for (let r = 0; r < 5; r++) {                     // Mon..Fri
-      const dt = addDays(wk, r), key = iso(dt);
-      if (dt < first || dt > last) { cells += '<div class="hcell" style="visibility:hidden"></div>'; continue; }
-      const d = byDate.get(key);
-      if (!d) { cells += `<div class="hcell" title="${key}: no settled session"></div>`; continue; }
-      const v = d.net_pnl || 0, a = Math.min(1, Math.abs(v)/max)*0.85 + 0.15;
-      const col = v > 0 ? `rgba(63,185,80,${a})` : v < 0 ? `rgba(248,81,73,${a})` : '#30363d';
-      cells += `<div class="hcell" style="background:${col}" title="${key}: ${fmtMoney(v)} (${d.trades} trades)"></div>`;
-    }
-    return `<div class="cal-week">${cells}</div>`;
-  }).join('');
-
-  el.innerHTML =
-    '<div class="cal-side"><div></div><div>Mon</div><div></div><div>Wed</div><div></div><div>Fri</div></div>' +
-    `<div class="cal-main"><div class="cal-months">${months}</div><div class="cal-weeks">${grid}</div></div>`;
+  // The shared week-column calendar (cherrypick.core.viz) — this page's layout was the donor,
+  // so nothing changes visually; an empty weekday still means 'no settled session', not flat.
+  if (!window.cpCalHeat($('#heat'), days, fmtMoney)) {
+    $('#heat').innerHTML = '<span class="empty">No settled days yet.</span>';
+  }
 }
 
 /* ---------- renderers ---------- */
@@ -1168,8 +1125,8 @@ setInterval(refresh, 15000);
 HTML = (
     "<!doctype html><meta charset='utf-8'><title>Flies — paper</title>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    f"<style>{_STYLE}{viz.REORDER_STYLE}</style>{_BODY}"
-    f"<script>{_JS}</script><script>{viz.REORDER_JS}</script>"
+    f"<style>{_STYLE}{viz.REORDER_STYLE}{viz.CAL_HEAT_STYLE}</style>{_BODY}"
+    f"<script>{viz.CAL_HEAT_JS}</script><script>{_JS}</script><script>{viz.REORDER_JS}</script>"
 )
 
 

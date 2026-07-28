@@ -1042,14 +1042,8 @@ nav{flex:1;padding:10px 0}
   background:none;border:none;cursor:pointer;padding:2px 0}
 .lf-clear:hover{color:#8b949e;text-decoration:underline}
 
-/* Daily Net P&L calendar heatmap */
-.cal-heat{display:flex;flex-wrap:wrap;gap:16px;margin-top:8px}
-.cal-month .cm-name{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
-.cal-grid{display:grid;grid-template-columns:repeat(7,15px);grid-auto-rows:15px;gap:2px}
-.cal-cell{width:15px;height:15px;border-radius:2px;background:#111519}
-.cal-cell.has{cursor:default}
-.cal-legend{display:flex;align-items:center;gap:4px;font-size:9px;color:#6b7280;margin-top:8px}
-.cal-legend .cal-cell{width:11px;height:11px}
+/* Daily Net P&L calendar heatmap: shared renderer (cherrypick.core.viz) */
+%%CP_CAL_HEAT_STYLE%%
 
 </style>
 </head>
@@ -1679,63 +1673,15 @@ function renderSignalTable(tblId, rows) {
 }
 
 // ── calendar heatmap ──────────────────────────────────────────────────────────
-// Month grids of daily net P&L; cell colour scales green(+)/red(−) by magnitude
-// relative to the window's largest absolute day. Weeks run Mon→Sun (top→bottom rows).
+// The shared week-column calendar (cherrypick.core.viz.cpCalHeat): Monday-anchored week
+// columns, Mon–Fri only, and an empty weekday cell means 'no settled session' — a different
+// thing from a flat day. Replaces this page's month-grid version (the audit counted two).
 function renderCalHeat(days) {
   const host  = document.getElementById('cal-heat');
   const empty = document.getElementById('cal-heat-empty');
   if (!host) return;
-  if (!days.length) { host.innerHTML = ''; empty.style.display = 'block'; return; }
-  empty.style.display = 'none';
-
-  const byDate = {};
-  let maxAbs = 0;
-  days.forEach(d => { byDate[d.date] = d; maxAbs = Math.max(maxAbs, Math.abs(d.net_pnl || 0)); });
-  if (maxAbs <= 0) maxAbs = 1;
-
-  const dates = days.map(d => d.date).sort();
-  const first = new Date(dates[0] + 'T00:00:00');
-  const last  = new Date(dates[dates.length - 1] + 'T00:00:00');
-
-  // group months present in the range
-  const months = [];
-  let cur = new Date(first.getFullYear(), first.getMonth(), 1);
-  const end = new Date(last.getFullYear(), last.getMonth(), 1);
-  while (cur <= end) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1); }
-
-  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const cellColor = net => {
-    if (net == null) return '#111519';
-    const t = Math.min(1, Math.abs(net) / maxAbs);
-    const a = 0.18 + 0.72 * t;                       // opacity ramp
-    return net >= 0 ? 'rgba(22,199,132,' + a.toFixed(2) + ')'
-                    : 'rgba(232,66,58,'  + a.toFixed(2) + ')';
-  };
-
-  host.innerHTML = months.map(m => {
-    const y = m.getFullYear(), mo = m.getMonth();
-    const dim = new Date(y, mo + 1, 0).getDate();
-    // Monday-based weekday of the 1st (0=Mon..6=Sun)
-    let lead = (new Date(y, mo, 1).getDay() + 6) % 7;
-    let cells = '';
-    for (let i = 0; i < lead; i++) cells += '<div class="cal-cell"></div>';
-    for (let dnum = 1; dnum <= dim; dnum++) {
-      const iso = y + '-' + String(mo + 1).padStart(2, '0') + '-' + String(dnum).padStart(2, '0');
-      const rec = byDate[iso];
-      if (rec) {
-        const tip = iso + ' · ' + fMoney(rec.net_pnl) + ' net · ' + rec.trades + ' trade' + (rec.trades !== 1 ? 's' : '');
-        cells += '<div class="cal-cell has" title="' + tip + '" style="background:' + cellColor(rec.net_pnl) + '"></div>';
-      } else {
-        cells += '<div class="cal-cell"></div>';
-      }
-    }
-    return '<div class="cal-month"><div class="cm-name">' + MN[mo] + ' ' + y + '</div>' +
-           '<div class="cal-grid">' + cells + '</div></div>';
-  }).join('') +
-  '<div class="cal-legend"><span>loss</span>' +
-  '<div class="cal-cell" style="background:rgba(232,66,58,.8)"></div>' +
-  '<div class="cal-cell" style="background:#111519"></div>' +
-  '<div class="cal-cell" style="background:rgba(22,199,132,.8)"></div><span>gain</span></div>';
+  const drew = window.cpCalHeat(host, days, fMoney);
+  if (empty) empty.style.display = drew ? 'none' : 'block';
 }
 
 // ── filterable trade log ──────────────────────────────────────────────────────
@@ -2308,6 +2254,8 @@ setInterval(() => {
 # The shared drag-to-reorder implementation is baked in at import time (the template stays one
 # literal; the token keeps the JS out of an f-string's brace-escaping).
 HTML = HTML.replace("%%CP_REORDER_JS%%", viz.REORDER_JS)
+HTML = HTML.replace("%%CP_CAL_HEAT_STYLE%%", viz.CAL_HEAT_STYLE)
+HTML = HTML.replace("</script>\n</body>", viz.CAL_HEAT_JS + "</script>\n</body>", 1)
 
 
 # ── HTTP handler ──────────────────────────────────────────────────────────────
