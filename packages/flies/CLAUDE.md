@@ -251,3 +251,9 @@ and neither is a detail:
   the completion rate measured here is an **upper bound** on the live rate, not an estimate of it.
 - **`fund_from_open_credit` needs a real buying-power check.** Funding an outright fly from a still-open
   credit spread spends premium that has not been earned.
+
+The full plan — the quantitative Gate 0 the paper experiment must pass first, how both blockers
+resolve (a 1-lot measurement pilot with an abort rule for the first; legged-only live v1 mooting the
+second), the live-loop architecture, kill switches, the fee-math symbol decision, and the rung-by-rung
+rollout — is [docs/live-trading-plan.md](docs/live-trading-plan.md). Until Gate 0 passes, the only
+work it calls for is running the paper experiment honestly.
