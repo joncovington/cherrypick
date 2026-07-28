@@ -117,6 +117,12 @@ For paper trading, run the same dashboard against the paper database on a separa
 
 Or directly: `python src/dashboard.py --mode paper` (drives both the `paper_trades.db` path in the data home and the 5051 port). In paper mode the Performance view can be filtered by risk profile as well as by symbol.
 
+The suite dashboard renders a compact MEIC card without this server: `python src/section.py --json`
+emits a `cherrypick.core.viz` section payload (net-of-fees P&L tiles + the cumulative daily P&L
+curve; `--symbol`/`--profile` filters, paper book by default) that the orchestrator subprocesses
+and renders generically — the same pattern as the gex, flies, and earnings cards. It reads through
+`dashboard.py`'s own query helpers, so the card and this dashboard can never disagree.
+
 ---
 
 ## Verifying chain and strike selection
