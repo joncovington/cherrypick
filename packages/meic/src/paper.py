@@ -131,6 +131,18 @@ def expire_fees() -> float:
 DEFAULT_SLIPPAGE_FRAC = _fees.DEFAULT_COSTS["slippage_frac_of_spread"]
 
 
+def _quote_usable(q: dict | None) -> bool:
+    """A leg quote the exit math can actually price: both sides present and not crossed.
+    A crossed quote (bid > ask) is a feed artifact — averaging it would price a stop
+    trigger off a fiction, so it counts as unavailable, exactly like a missing quote."""
+    if not q:
+        return False
+    bid, ask = q.get("bid"), q.get("ask")
+    if bid is None or ask is None:
+        return False
+    return bid <= ask
+
+
 def _leg_mid(q: dict) -> float:
     """Mid of a leg quote, falling back to (bid+ask)/2 when no explicit mid is present."""
     m = q.get("mid")
@@ -800,7 +812,7 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
     cq = leg_quotes.get(trade["call_symbol"])
     lpq = leg_quotes.get(trade["long_put_symbol"])
     lcq = leg_quotes.get(trade["long_call_symbol"])
-    if not all([sq, cq, lpq, lcq]):
+    if not all(_quote_usable(q) for q in (sq, cq, lpq, lcq)):
         return {"action": "hold", "reason": "quotes_unavailable"}
 
     net_credit = trade["net_credit"]
@@ -1055,8 +1067,15 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
     max_updates = _max_cost_updates(trade, decision)
 
     if action == "hold":
-        if max_updates:
-            _update_trade(ic_order_id, max_updates, db_path)
+        updates = dict(max_updates)
+        if decision.get("reason") == "quotes_unavailable":
+            # Feed-quality accounting: count the iterations this trade went unmarked so a
+            # stalled streamer is distinguishable from a quiet market in ic_trades itself
+            # (the flies fly_snapshots lesson, applied to the open-trade path).
+            updates["unmarked_iterations"] = int(trade.get("unmarked_iterations") or 0) + 1
+            updates["last_unmarked_at"] = now
+        if updates:
+            _update_trade(ic_order_id, updates, db_path)
         return
 
     if action == "expire":
