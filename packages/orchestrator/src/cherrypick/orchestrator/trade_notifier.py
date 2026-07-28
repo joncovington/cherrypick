@@ -31,7 +31,6 @@ import json
 import os
 import sqlite3
 import time
-from pathlib import Path
 from typing import Any
 
 from cherrypick.notify import Notifier
@@ -91,10 +90,7 @@ def _save_state(state: dict) -> None:
     os.replace(tmp, _STATE)
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
+from cherrypick.core.db import connect_ro as _connect_ro  # noqa: E402 — shared read-only opener
 
 
 # --------------------------------------------------------------------------- MEIC ic_trades schema

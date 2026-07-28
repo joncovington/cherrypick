@@ -15,30 +15,19 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from cherrypick.core.metrics import calibration_reading
 from cherrypick.core.profiles import PROMOTION_RULE, compare_profiles, recommend_promotion
 
 from . import config as cfgmod
 from . import report
 
-
 # --------------------------------------------------------------------------- readings
-def _reading(records: list[dict]) -> dict:
-    """Calibration metrics over one profile's closed paper trades (net_pnl already cost-adjusted)."""
-    n = len(records)
-    wins = sum(1 for r in records if r["net_pnl"] > 0)
-    sessions = {r.get("session") for r in records if r.get("session")}
-    # Cost-sensitivity view: net restated at a doubled slippage fraction (linear, so it
-    # costs the recorded slippage again). Coverage counts the rows carrying the datum —
-    # a reading whose stressed net only covers part of the sample says so.
-    known_slips = [r["slippage"] for r in records if r.get("slippage") is not None]
-    return {
-        "sample": n,
-        "win_rate": round(wins / n, 4) if n else None,
-        "days": len(sessions),
-        "net_pnl": round(sum(r["net_pnl"] for r in records), 2),
-        "net_pnl_2x_slippage": round(sum(r["net_pnl"] for r in records) - sum(known_slips), 2),
-        "slippage_coverage": len(known_slips),
-    }
+# The reading IS the shared bundle (cherrypick.core.metrics.calibration_reading): sample /
+# win_rate / days / net_pnl plus return_on_capital, per-trade sharpe, session-ordered max
+# drawdown, sample_progress, and the 2x-slippage restatement with coverage counts — one
+# metric vocabulary for every rung on every module's ladder, and the shape the hardened
+# promotion checks (min_return_on_capital, require_slippage_survival) consume.
+_reading = calibration_reading
 
 
 def _group_readings(records: list[dict]) -> dict:
