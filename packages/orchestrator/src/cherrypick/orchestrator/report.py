@@ -394,6 +394,73 @@ def run(cfg: dict | None = None, session: str | None = None,
     return out
 
 
+def live_run(cfg: dict | None = None, session: str | None = None) -> dict:
+    """LIVE P&L across modules that declare a `live_db` -- the phase-5 isolation seam.
+
+    Deliberately a separate function from `run()`, not a flag on it: `run()` is the promotion
+    feed (calibrate reads through it and must only ever see paper), so live stays out of it by
+    construction rather than by an argument someone could pass. Same schema readers, same
+    net-of-cost summaries, pointed at the live ledgers; every envelope is tagged `live: true`
+    and carries no data_epoch (that is a paper-measurement concept). A module without a
+    `live_db`, or whose file doesn't exist yet, reports "no live ledger" -- expected, not an
+    error, for a suite that hasn't gone live. Read-only, files only, never the broker (the
+    broker-truth live view is `reconcile`).
+    """
+    lo = hi = session
+    cfg = cfg or cfgmod.load_config()
+    modules_out: dict[str, dict] = {}
+    all_records: list[dict] = []
+    all_open: list[dict] = []
+    for name, mcfg in cfgmod.enabled_modules(cfg).items():
+        db_path = cfgmod.live_db_path(mcfg, name)
+        if db_path is None:
+            modules_out[name] = {"ok": False, "live": True, "reason": "no live_db configured"}
+            continue
+        schema = (mcfg.get("paper", {}) or {}).get("trade_schema", "meic_ic")
+        reader = _READERS.get(schema)
+        if reader is None:
+            modules_out[name] = {"ok": False, "live": True, "reason": f"unknown schema {schema!r}"}
+            continue
+        if not db_path.exists():
+            modules_out[name] = {"ok": False, "live": True, "reason": "no live ledger yet"}
+            continue
+        conn = _connect_ro(db_path)
+        try:
+            records = reader(conn, start=lo, end=hi)
+        except sqlite3.Error as exc:
+            modules_out[name] = {"ok": False, "live": True, "reason": f"read failed: {exc}"}
+            conn.close()
+            continue
+        try:
+            open_reader = _OPEN_READERS.get(schema)
+            open_records = open_reader(conn) if open_reader else []
+        except sqlite3.Error:
+            open_records = []
+        finally:
+            conn.close()
+        if lo is not None:
+            records = [r for r in records if (r.get("session") or "") == lo]
+        all_records.extend(records)
+        all_open.extend(open_records)
+        modules_out[name] = {
+            "ok": True,
+            "live": True,
+            "schema": schema,
+            **_summarize(records),
+            "open": _summarize_open(open_records),
+        }
+    suite = _summarize(all_records)
+    suite["open"] = _summarize_open(all_open)
+    return {
+        "ok": True,
+        "live": True,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "session": session,
+        "modules": modules_out,
+        "suite": suite,
+    }
+
+
 # One MAX() per schema — latest_session used to re-run every full reader over every DB
 # just to compute a max date (a whole extra DB pass per overnight dashboard render).
 # Earnings' MAX is over the raw epoch, converted via the same tz-correct helper the
