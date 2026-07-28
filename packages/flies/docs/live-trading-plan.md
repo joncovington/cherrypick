@@ -132,13 +132,29 @@ live. No SPX+XSP concurrently. No agent anywhere near the live decision path —
 pipeline may only ever touch the paper book, and nothing in phase 6's risk-reducing menu
 applies to flies until this plan's rungs are complete.
 
-## Work breakdown (when Gate 0 passes)
+## Work breakdown and scaffold status
 
-1. `broker_cli.py` + keyring onboarding + orchestrator `connect` wiring — **S/M**
-2. Rung-0 smoke harness (clone the MEIC pattern for spread + completion orders) — **S**
-3. Live ledger schema (+ order-id columns) and `live_db` declaration — **S**
-4. `live_loop.py`: engine decisions → broker applier, kill switches, completion
-   working-order management, settlement recording — **L**
+**Scaffolded (2026-07-28, inert by default, gex arm pinned):** `credentials.py` (keyring
+service `fliesagent`, orchestrator `connect`-compatible), `broker_cli.py` (connection /
+accounts / order preflight through `core.broker` + governor; `--live` double-gated on
+`live.enabled` + a `gate0_confirmed` human attestation), `live_orders.py` (pure spec
+builders — the completion working order can never price past the engine's own gate),
+`live_loop.py` (readiness gates checked per tick: enabled + attestation + one configured
+arm + designated account + halt flag absent; daily-loss breaker on the live ledger;
+completion-order cutoff cancel; `--once --dry-run` — the default — preflights against the
+real account and places nothing, which **is** the rung-0 smoke), the live ledger
+(`live_trades.db`, same schema + order-id columns, a separate file from paper), and the
+provider now carries OCC symbols on every leg quote. All pure parts tested.
+
+**Remaining before rung 1 can start (after Gate 0):**
+
+1. Orchestrator wiring: `keyring_service: "fliesagent"` + `live_db` in the suite config;
+   run `connect`/`account` for flies — **S**
+2. Fill handling: poll the entry/completion working orders, record ACTUAL fill prices
+   (not the model's) on the ledger row, mark completions into flies — **M/L**
+3. Working-order repricing within the gate bound + real order cancellation via the SDK
+   (the scaffold's cancel refuses loudly rather than pretending) — **M**
+4. Official-print settlement recording for the live book — **S/M**
 5. Watchdog live SLA + trade notifications from the live ledger — **M**
 6. Live-vs-paper comparison lines in the flies report/analytics — **M**
 

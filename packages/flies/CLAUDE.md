@@ -40,6 +40,10 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `src/section.py` | the compact `cherrypick.core.viz` card for the suite dashboard. |
 | `src/eod.py` | `paper-eod-<day>.md` and `eod-analysis-<day>.md`. |
 | `src/cli.py` | `once` / `settle` / `status` / `dashboard` / `section`. |
+| `src/live_loop.py` | LIVE scaffold, inert by default — gated on Gate 0 of the live plan. `--once --dry-run` is the rung-0 smoke. |
+| `src/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. |
+| `src/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). |
+| `src/credentials.py` | `fliesagent` keyring store + hidden-input CLI (orchestrator `connect` delegates here). |
 | `tests/fixtures/books.json` | three real tastytrade order chains, transcribed. |
 
 ## The read side
