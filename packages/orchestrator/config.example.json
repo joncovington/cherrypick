@@ -277,6 +277,22 @@
     "timeout_seconds": 120,
     "research_events": true
   },
+  "advise": {
+    "_comment": "Per-session parameter advice (`cherrypick advise`) - Tier 1 of the agentic layer: agent advises, loop decides. Runs Claude headless over the day's DETERMINISTIC artifacts only (module EOD reports, suite digest, report/calibrate JSON, the shared market calendar; ALL tools denied, unlike eod_insight's research mode) and asks for parameter proposals for the NEXT session, restricted to each module's 'advice_bounds' manifest of closed legal ranges. The orchestrator validates with cherrypick.core.advice and writes state/advice/<module>-<session>.json; the module's paper loop re-validates with the SAME core code at session start and treats absent/stale/invalid advice as baseline - one bad proposal rejects the whole set (the rejections are still written, for audit). OFF by default TWICE: 'enabled' here AND per-module 'modules.<name>.enabled' must both be true. Kill switch: flip either flag, or delete the advice file. Paper loops only; advice can never widen behavior beyond the declared bounds.",
+    "enabled": false,
+    "model": null,
+    "timeout_seconds": 180,
+    "modules": {
+      "meic": {
+        "enabled": false,
+        "advice_bounds": {
+          "stop_trigger_ratio": { "min": 0.85, "max": 0.95 },
+          "daily_ic_trade_target": { "min": 0, "max": 3 },
+          "entry_price_strategy": { "choices": ["mid", "natural_bid", "ioc_step", "day_improve", "auto"] }
+        }
+      }
+    }
+  },
   "reconcile": {
     "_comment": "`cherrypick reconcile` (and the serve-only /api/reconcile dashboard card): a paper<->live isolation guard. It enumerates EVERY account on the login (list_accounts - tastytrade returns multiple per user) and checks each (read-only get_positions/get_account_info), flagging any open positions/BP a paper-only suite shouldn't have. On-demand and off the watchdog reliability path; never trades; account numbers masked. Optional 'broker_module' forces which module's tt.py to query; omit to auto-discover the first positions-capable one.",
     "broker_module": null
