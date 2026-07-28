@@ -107,3 +107,10 @@ def test_table_sorting_is_opt_in_and_nulls_last():
     # Nulls sort last regardless of direction — an unpriced row must never lead the table.
     assert "if (av == null) return 1;" in viz.TABLE_JS
     assert "th.sortable" in viz.TABLE_STYLE
+
+
+def test_table_row_title_is_escaped():
+    # opts.rowTitle(r) puts a tooltip on the row; it must escape — the MEIC log feeds it
+    # free-text AI reasoning, which must never break out of the attribute.
+    assert "rowTitle" in viz.TABLE_JS and "escAttr" in viz.TABLE_JS
+    assert "&quot;" in viz.TABLE_JS

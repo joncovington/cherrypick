@@ -528,7 +528,8 @@ window.cpTable = function(el, cols, rows, empty, opts) {
     if (sortable && filterable) wireSort(el, o);
     return;
   }
-  const body = '<tbody>' + rows.map(r => '<tr>' + cols.map(c => {
+  const body = '<tbody>' + rows.map(r =>
+    '<tr' + (o.rowTitle ? ' title="' + escAttr(o.rowTitle(r)) + '"' : '') + '>' + cols.map(c => {
     const v = c.f(r);
     const cls = `${c.num?'num':''} ${c.tone?c.tone(r):''}`;
     return `<td class="${cls}">${v === null || v === undefined ? '–' : v}</td>`;
@@ -537,6 +538,11 @@ window.cpTable = function(el, cols, rows, empty, opts) {
   if (filterable) wireFilters(el, o);
   if (sortable) wireSort(el, o);
 };
+
+function escAttr(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
 function wireSort(el, o) {
   el.querySelectorAll('th.sortable').forEach(th =>
