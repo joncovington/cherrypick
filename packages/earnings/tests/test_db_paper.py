@@ -226,3 +226,30 @@ def test_migration_adds_iv_columns_to_legacy_schema(tmp_path, monkeypatch):
     assert len(positions) == 1
     assert positions[0]["entry_iv"] is None
     assert positions[0]["exit_iv"] is None
+
+
+# --- record_close_failure: stranded positions accumulate visible attempts -------
+
+def test_record_close_failure_increments_attempts():
+    _save("S1", "HALT", "iron_fly", 2.0)
+    r1 = db_paper.cmd_record_close_failure(_ns(data=json.dumps(
+        {"order_id": "S1", "reason": "leg_quotes_unavailable"})))
+    r2 = db_paper.cmd_record_close_failure(_ns(data=json.dumps(
+        {"order_id": "S1", "reason": "leg_quotes_unavailable"})))
+    assert r1 == {"ok": True, "order_id": "S1", "close_attempts": 1}
+    assert r2["close_attempts"] == 2
+    pos = db_paper.cmd_get_open_positions(_ns())["positions"][0]
+    assert pos["close_attempts"] == 2
+    assert pos["last_close_error"] == "leg_quotes_unavailable"
+    assert pos["last_close_attempt_at"] is not None
+
+
+def test_record_close_failure_ignores_closed_and_unknown_positions():
+    _save("C1", "AAPL", "iron_fly", 2.0)
+    _close("C1", 1.0, 100.0)
+    closed = db_paper.cmd_record_close_failure(_ns(data=json.dumps(
+        {"order_id": "C1", "reason": "x"})))
+    unknown = db_paper.cmd_record_close_failure(_ns(data=json.dumps(
+        {"order_id": "NOPE", "reason": "x"})))
+    assert closed["ok"] is False
+    assert unknown["ok"] is False

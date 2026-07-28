@@ -1,3 +1,6 @@
+import argparse
+import json
+
 import pytest
 
 import scanner
@@ -53,6 +56,50 @@ def test_bwb_round_trip_scales_linearly_with_quantity():
     d1 = scanner.compute_generic_exit_debit(legs_q1, quotes)
     d3 = scanner.compute_generic_exit_debit(legs_q3, quotes)
     assert d3 == pytest.approx(d1 * 3)
+
+
+# --- the R9 seam: a position that can't be priced at close must never vanish -----
+
+def test_run_closes_records_attempts_and_reports_stranded(tmp_path, monkeypatch):
+    """First failed sweep: the skip carries close_attempts=1 and nothing is stranded
+    yet. Second failed sweep: attempts=2 and the position surfaces in `stranded`, which
+    the orchestrator's exit heartbeat turns into a WARNING. The position itself stays
+    open — closing it blind would be worse — but it can no longer disappear silently."""
+    import db_paper
+
+    monkeypatch.setattr(db_paper, "DB_PATH", tmp_path / "paper_trades.db")
+    db_paper.cmd_init_db(argparse.Namespace())
+    db_paper.cmd_save_trade(argparse.Namespace(data=json.dumps({
+        "order_id": "STUCK-1", "strategy": "iron_fly", "symbol": "HALT",
+        "expiration": "2026-08-21", "entry_credit": 2.0,
+        "legs_json": json.dumps([{"symbol": "H1", "action": "Sell to Open", "quantity": 1}]),
+        "profile": "strat_test:iron_fly",
+    })))
+
+    monkeypatch.setattr(runner.rank_strategies, "_verify_tastytrade_connection", lambda: True)
+    monkeypatch.setattr(runner.scanner, "_load_config",
+                        lambda *a, **k: {"close_quote_retries": 0})
+    monkeypatch.setattr(runner, "_capture_market_context", lambda day: None)
+    monkeypatch.setattr(runner.scanner, "fetch_quote_and_expirations",
+                        lambda symbol: {"ok": False})
+    monkeypatch.setattr(runner, "_leg_quotes_for_symbols", lambda *a, **k: None)
+    # Pretend today's EOD report already exists so the sweep skips report generation.
+    report = tmp_path / "eod.md"
+    report.write_text("stub", encoding="utf-8")
+    monkeypatch.setattr(runner, "_eod_report_path", lambda day: report)
+
+    first = runner.cmd_run_closes(argparse.Namespace())
+    assert first["ok"] is True
+    assert first["closed"] == []
+    assert first["skipped"][0]["reason"] == "leg_quotes_unavailable"
+    assert first["skipped"][0]["close_attempts"] == 1
+    assert first["stranded"] == []
+
+    second = runner.cmd_run_closes(argparse.Namespace())
+    assert second["skipped"][0]["close_attempts"] == 2
+    assert [s["order_id"] for s in second["stranded"]] == ["STUCK-1"]
+    # Still open: never close a position on quotes we don't have.
+    assert len(db_paper.cmd_get_open_positions(argparse.Namespace())["positions"]) == 1
 
 
 def test_occ_expiration_parses_real_symbols():

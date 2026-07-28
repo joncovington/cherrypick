@@ -386,6 +386,20 @@ def _write_eod_report(day: str) -> Path:
         L.append("_No trades closed this session - flat day._")
         L.append("")
 
+    # Stranded at close --------------------------------------------------------
+    # Positions the close sweep tried and failed to price. They are still open, still
+    # carrying risk, and excluded from every closed-trade metric above -- which is exactly
+    # why they get their own section instead of silently disappearing from the report.
+    stranded_open = [t for t in metrics.load_open_trades() if (t.get("close_attempts") or 0) > 0]
+    if stranded_open:
+        L.append("## Stranded at close (failed close attempts)")
+        L.append("| Symbol | Strategy | Opened | Attempts | Last error |")
+        L.append("|---|---|---|---|---|")
+        for t in sorted(stranded_open, key=lambda x: -(x.get("close_attempts") or 0)):
+            L.append(f"| {t['symbol']} | {t.get('strategy', '-')} | {_open_session(t) or '-'} | "
+                     f"{t.get('close_attempts')} | {t.get('last_close_error') or '-'} |")
+        L.append("")
+
     # Opened this session ------------------------------------------------------
     # The entry pass runs ~6 hours after the close pass that first wrote this file, so this section
     # is empty in the morning and fills in when the afternoon entry pass regenerates the report.
@@ -984,6 +998,26 @@ def cmd_run_closes(args) -> dict:
 
     closed: list[dict] = []
     skipped: list[dict] = []
+    stranded: list[dict] = []
+    # A skipped close must never be silent: bump the position's close_attempts, carry
+    # the count on the skip record, and surface any position that has now missed more
+    # than one daily sweep as "stranded" so the orchestrator's exit heartbeat can warn.
+    retries = int(config.get("close_quote_retries", 1))
+    retry_pause = float(config.get("close_quote_retry_seconds", 30))
+
+    def _skip(trade: dict, reason: str) -> None:
+        entry = {"order_id": trade["order_id"], "symbol": trade["symbol"], "reason": reason}
+        try:
+            rec = db_paper.cmd_record_close_failure(argparse.Namespace(data=json.dumps({
+                "order_id": trade["order_id"], "reason": reason,
+            })))
+            attempts = rec.get("close_attempts") if rec.get("ok") else None
+        except Exception:
+            attempts = None
+        entry["close_attempts"] = attempts
+        skipped.append(entry)
+        if attempts is not None and attempts >= 2:
+            stranded.append(entry)
 
     for trade in positions:
         order_id = trade["order_id"]
@@ -996,15 +1030,22 @@ def cmd_run_closes(args) -> dict:
             quote = scanner.fetch_quote_and_expirations(symbol)
             price = quote.get("price", 0.0) if quote.get("ok") else 0.0
 
+            # Missing quotes get a short in-run retry window before the position is
+            # skipped for the day -- a slow open is recoverable, a halt is not.
             leg_quotes = _leg_quotes_for_symbols(symbol, leg_symbols, price)
+            for _ in range(retries):
+                if leg_quotes is not None:
+                    break
+                time.sleep(retry_pause)
+                leg_quotes = _leg_quotes_for_symbols(symbol, leg_symbols, price)
             if leg_quotes is None:
-                skipped.append({"order_id": order_id, "reason": "leg_quotes_unavailable"})
+                _skip(trade, "leg_quotes_unavailable")
                 continue
 
             full_quotes = {s: leg_quotes[s] for s in leg_symbols}
             exit_debit = scanner.compute_generic_exit_debit(legs, full_quotes)
             if exit_debit is None:
-                skipped.append({"order_id": order_id, "reason": "exit_debit_unavailable"})
+                _skip(trade, "exit_debit_unavailable")
                 continue
 
             exit_costs = costs.apply_exit_costs(
@@ -1025,14 +1066,14 @@ def cmd_run_closes(args) -> dict:
                 "exit_iv": exit_iv,
             })))
             if not close_result.get("ok"):
-                skipped.append({"order_id": order_id, "reason": f"save_close_failed: {close_result.get('error')}"})
+                _skip(trade, f"save_close_failed: {close_result.get('error')}")
                 continue
 
             closed.append({"order_id": order_id, "symbol": symbol, "pnl": round(pnl, 2), "exit_cost": exit_costs["total_cost"]})
         except Exception as exc:
             # Same discipline as cmd_run_entries: one position's unexpected failure
             # must not lose every other open position's already-accumulated closes.
-            skipped.append({"order_id": order_id, "reason": f"unexpected_error: {exc}"})
+            _skip(trade, f"unexpected_error: {exc}")
 
     # Once-per-day EOD report, written on the settlement (close) pass -- mirrors the MEIC paper
     # loop. Best-effort with a file-exists guard: a report failure must never fail the close
@@ -1050,7 +1091,7 @@ def cmd_run_closes(args) -> dict:
         except Exception:
             pass
 
-    return {"ok": True, "closed": closed, "skipped": skipped}
+    return {"ok": True, "closed": closed, "skipped": skipped, "stranded": stranded}
 
 
 def main() -> None:
