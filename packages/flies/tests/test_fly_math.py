@@ -192,6 +192,27 @@ def test_book_negative_everywhere_has_no_band_and_no_zones():
     assert result["bands"] == []
 
 
+@pytest.mark.parametrize("centers", [
+    (6000, 6010), (6000, 6040), (6000, 6100), (6000, 6200),
+    (6000, 6015, 6120), (5950, 6000, 6050),
+])
+@pytest.mark.parametrize("net", [-1.00, -0.40, 0.20])
+def test_band_endpoints_and_midpoint_are_never_negative(centers, net):
+    """Property sweep over book shapes: whatever the zone structure, every reported band
+    must be genuinely non-negative at its endpoints and midpoint — the exact claim the
+    old min/max band violated whenever the forest had a trough."""
+    positions = [
+        {"kind": "fly", "side": "call", "center": c, "wing_width": 5,
+         "net": net, "quantity": 1, "fees": 0.0}
+        for c in centers
+    ]
+    result = fly.book_floor(positions)
+    for low, high in result["bands"]:
+        for x in (low, high, (low + high) / 2):
+            assert fly.book_pnl(positions, x) >= -1e-6, (
+                f"band ({low}, {high}) claims non-negative at {x}")
+
+
 def test_book_cash_splits_credits_debits_and_fees():
     positions = [legged_fly(1.05, fees=5.0), {**legged_fly(-0.20, fees=7.0), "center": 6015}]
     cash = fly.book_cash(positions)

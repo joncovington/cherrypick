@@ -58,6 +58,79 @@ def test_bwb_round_trip_scales_linearly_with_quantity():
     assert d3 == pytest.approx(d1 * 3)
 
 
+# --- end-to-end: entry -> close through the real save/price/close pipeline -------
+
+def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monkeypatch):
+    """The audit's headline gap: no test ever drove cmd_run_entries -> cmd_run_closes on
+    one DB. This one opens a broken-wing butterfly (the 1-2-1 shape R1 flattened) through
+    the real order->size->cost->save pipeline and closes it on UNCHANGED zero-spread
+    quotes: the round-trip P&L must be exactly zero (the body bought back twice), entry
+    costs must charge 4 contracts, and the slippage columns must be recorded."""
+    import db_paper
+
+    monkeypatch.setattr(db_paper, "DB_PATH", tmp_path / "paper_trades.db")
+    db_paper.cmd_init_db(argparse.Namespace())
+
+    config = {"close_quote_retries": 0, "strategies": {"broken_wing_butterfly": {}}}
+    monkeypatch.setattr(runner.rank_strategies, "_ensure_dolt_running", lambda: True)
+    monkeypatch.setattr(runner.rank_strategies, "_verify_tastytrade_connection", lambda: True)
+    monkeypatch.setattr(runner.scanner, "_load_config", lambda *a, **k: config)
+    monkeypatch.setattr(runner, "_run_bounded", lambda fn, timeout, *a, **k: [])
+    monkeypatch.setattr(runner, "_capture_market_context", lambda day: None)
+    monkeypatch.setattr(runner, "_save_entry_review", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_write_eod_report", lambda day: None)
+    monkeypatch.setattr(runner, "_write_eod_analysis", lambda day: None)
+
+    near, body, far = 2.00, 3.00, 1.20
+    order = {
+        "ok": True, "strategy": "broken_wing_butterfly",
+        "net_debit": near + far - 2 * body,       # -2.80: a 2.80 net CREDIT
+        "underlying_price": 100.0, "expiration": "2026-08-21",
+        "order": {"legs": [
+            {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
+            {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
+            {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
+        ]},
+    }
+    monkeypatch.setitem(runner._ORDER_FNS, "broken_wing_butterfly", lambda *a: order)
+    monkeypatch.setattr(runner.sizing, "compute_position_size",
+                        lambda *a: {"ok": True, "quantity": 1, "capital_at_risk": 220.0})
+    # bid == ask: zero spread -> zero slippage, and the exit's side-of-spread pricing
+    # equals the entry mids, so any non-zero P&L is an accounting bug.
+    quotes = {"NEAR": {"bid": near, "ask": near, "iv": 0.5},
+              "BODY": {"bid": body, "ask": body, "iv": 0.6},
+              "FAR": {"bid": far, "ask": far, "iv": 0.4}}
+    monkeypatch.setattr(runner, "_leg_quotes_for_symbols",
+                        lambda u, syms, p: {s: quotes[s] for s in syms})
+    monkeypatch.setattr(
+        runner, "_parallel_scan",
+        lambda *a, **k: [(
+            {"symbol": "XYZ", "date": "2026-07-28", "timing": "AMC"},
+            [{"name": "broken_wing_butterfly", "accepted": True, "reject_reasons": [],
+              "criteria": {}, "composite_score": 1.0}],
+            None,
+        )])
+
+    entered = runner.cmd_run_entries(argparse.Namespace(date="2026-07-28"))
+    assert entered["ok"] is True and len(entered["opened"]) == 1
+    # 4 contracts (1+2+1) x $1 commission + 4 x $0.14 pass-through, zero slippage.
+    assert entered["opened"][0]["entry_cost"] == pytest.approx(4.56)
+
+    row = db_paper.cmd_get_open_positions(argparse.Namespace())["positions"][0]
+    assert [leg["quantity"] for leg in json.loads(row["legs_json"])] == [1, 2, 1]
+    assert row["entry_credit"] == pytest.approx(2.80)
+    assert row["entry_slippage"] == pytest.approx(0.0)
+
+    monkeypatch.setattr(runner.scanner, "fetch_quote_and_expirations",
+                        lambda s: {"ok": True, "price": 100.0})
+    closed = runner.cmd_run_closes(argparse.Namespace())
+    assert closed["closed"][0]["pnl"] == pytest.approx(0.0)
+    assert closed["closed"][0]["exit_cost"] == pytest.approx(0.56)  # $0 close commission
+
+    done = db_paper.cmd_get_open_positions(argparse.Namespace())["positions"]
+    assert done == []
+
+
 # --- the R8 seam: multi-day strategies are managed, not force-closed -------------
 
 def _close_sweep_env(tmp_path, monkeypatch, quotes_by_symbol, config=None):
