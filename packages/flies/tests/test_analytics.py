@@ -242,6 +242,22 @@ def test_completion_stats_on_an_empty_book(conn):
     assert stats["legged_entries"] == 0 and stats["completion_rate"] is None
 
 
+def test_completion_trend_is_per_session(conn):
+    """Rule 4's number on a date axis: one row per session, outrights excluded (they never leg in)."""
+    position(conn, "P1", day="2026-07-20", kind="fly")
+    position(conn, "P2", day="2026-07-20", kind="short_vertical")
+    position(conn, "P3", day="2026-07-21", kind="fly")
+    position(conn, "P4", day="2026-07-21", kind="fly", entry_mode="outright")  # not a leg-in
+    trend = analytics.completion_trend(conn)
+    assert [t["day"] for t in trend] == ["2026-07-20", "2026-07-21"]
+    assert trend[0] == {"day": "2026-07-20", "legged_entries": 2, "completed": 1, "completion_rate": 0.5}
+    assert trend[1]["legged_entries"] == 1 and trend[1]["completion_rate"] == 1.0
+
+
+def test_completion_trend_empty_book(conn):
+    assert analytics.completion_trend(conn) == []
+
+
 # --------------------------------------------------------------------------- arm divergence
 def _iteration(conn, ts, centers, day="2026-07-20"):
     for arm, center in centers.items():

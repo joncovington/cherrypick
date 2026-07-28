@@ -319,6 +319,30 @@ def completion_stats(conn, start=None, end=None) -> dict:
     }
 
 
+def completion_trend(conn, start=None, end=None) -> list[dict]:
+    """completion_stats' headline number on a date axis: one row per session with legged entries —
+    how many, how many became flies, and the rate. Rule 4 says completion rate is the number that
+    decides whether this strategy is real; a single blended rate can drift slowly while looking
+    stable, so the trend is what makes a deterioration (or a config change's effect) visible."""
+    clause, params = ["entry_mode = 'legged'"], []
+    if start:
+        clause.append("trade_date >= ?")
+        params.append(start)
+    if end:
+        clause.append("trade_date <= ?")
+        params.append(end)
+    rows = conn.execute(
+        f"SELECT trade_date, COUNT(*) AS legged, "
+        f"SUM(CASE WHEN kind = 'fly' THEN 1 ELSE 0 END) AS completed "
+        f"FROM fly_positions WHERE {' AND '.join(clause)} "
+        f"GROUP BY trade_date ORDER BY trade_date", params).fetchall()
+    return [
+        {"day": r["trade_date"], "legged_entries": r["legged"], "completed": r["completed"],
+         "completion_rate": _rate(r["completed"], r["legged"])}
+        for r in rows
+    ]
+
+
 def _median(values):
     if not values:
         return None

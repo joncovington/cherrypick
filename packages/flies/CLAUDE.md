@@ -69,7 +69,10 @@ decision.
 **Four measurements this strategy needs and generic P&L reporting cannot give:**
 
 - **Completion rate** — how often a leg-in actually became a fly. If this is near zero the strategy is
-  short verticals wearing a costume, and no P&L on the completed ones changes that.
+  short verticals wearing a costume, and no P&L on the completed ones changes that. Besides the
+  blended rate, `analytics.completion_trend` gives it per session, and the suite-dashboard card
+  (`section.py`) draws that trend as a timeseries — a blended rate can drift slowly while looking
+  stable; the trend is what makes a deterioration (or a config change's effect) visible.
 - **The counterfactual** (`best_completing_debit`) — for misses, whether *the market never offered it*
   or *one of our own gates refused it*. Identical in the P&L, opposite remedies. Completion is gated
   by `D < C - fee_buffer` **and** `floor >= min_floor_dollars`, so "our gate" is reported as two

@@ -137,6 +137,23 @@ def test_section_on_an_empty_day_is_ok_not_an_error(conn):
     payload = section.build_section(None, DAY)
     assert payload["ok"] is True
     assert "no positions" in payload["title"].lower()
+    assert "timeseries" not in payload  # nothing recorded yet, so no trend either
+
+
+def test_section_carries_the_completion_trend(conn):
+    """The card draws rule 4's deciding number across sessions, not just today's blended rate."""
+    seeded(conn)
+    position(conn, "T1", day="2026-07-21", kind="fly")
+    position(conn, "T2", day="2026-07-21", kind="short_vertical")
+    payload = section.build_section(None, DAY, "gex")
+    ts = payload["timeseries"]
+    assert "2026-07-21" in ts["labels"]
+    assert ts["series"][0]["name"] == "completion %"
+    assert ts["series"][0]["values"][ts["labels"].index("2026-07-21")] == 50.0
+
+    # A morning with no positions yet still shows the history.
+    empty_day = section.build_section(None, "2026-07-25")
+    assert "timeseries" in empty_day and empty_day["timeseries"]["labels"] == ts["labels"]
 
 
 # --------------------------------------------------------------------------- EOD files
