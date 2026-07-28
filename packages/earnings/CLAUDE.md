@@ -78,7 +78,7 @@ See `config.example.json` for authoritative list. Top-level options are project-
 | `entry_window_start` / `entry_window_end` | Entry window, e.g. `15:30` / `15:55` ET, before close |
 | `close_window_start` | Close window start, e.g. `09:45` ET next morning, after open stabilizes |
 | `correlation_block_list` | Sector/date groupings not to open simultaneously |
-| `winrate_lookback_quarters` | Sample size for `scanner.compute_winrate()` |
+| `winrate_lookback_quarters` | Quarters of earnings history for `scanner.compute_winrate()` **and** the realized-move dispersion gate in `atm_calendar` / `double_calendar` — widening it moves those strategies' gates too, so it is not a winrate-only knob. 12 as of 2026-07-28. Names whose historical option chains don't reach that far return a smaller `sample_size` rather than an error; the sample size travels with every winrate so a thin name stays visibly thin. |
 | `min_combined_open_interest` | Front-month chain-wide OI floor |
 | `max_bid_ask_spread_pct` | Max spread width at ATM (shared liquidity gate) |
 | `require_weekly_options` | Hard-reject names without genuine weekly expiration cadence |

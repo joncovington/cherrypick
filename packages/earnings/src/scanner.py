@@ -294,6 +294,34 @@ def fetch_atm_straddle_price(symbol: str, as_of_date, reaction_date, underlying_
 
 
 def compute_winrate(symbol: str, config: dict, lookback_quarters: int = 8) -> dict:
+    """Cache-aware wrapper — see `_compute_winrate_uncached` for what is actually computed.
+
+    This runs up to three times per symbol with identical arguments: once in
+    `rank_strategies.evaluate_symbol`, then again inside each calendar strategy's
+    `realized_move_dispersion`, which derives its spread from the very same quarters. Each run is a
+    fresh walk of `lookback_quarters` earnings dates against Dolt, so two of the three were pure
+    duplicate work — and the cost grew with the lookback (~+0.4s per call at 12 quarters vs 8).
+
+    Served from the per-symbol cache when one is active, so it is computed once per symbol per scan.
+    The cache is the SAME thread-local scope `begin_tt_cache()` opens — a symbol's evaluation is
+    handled start to finish on one worker thread, so this needs no lock, and reusing that lifecycle
+    means there is no second thing to remember to tear down. With no cache active it computes every
+    time: this is never a process-wide cache, because the underlying Dolt history rolls forward.
+
+    Keyed on `_as_of_date` as well as symbol/lookback so the test hook can't collide with production
+    entries. The cached dict is shared between callers — treat it as read-only.
+    """
+    memo = getattr(_tt_cache_tls, "winrate", None)
+    key = (symbol, lookback_quarters, config.get("_as_of_date"))
+    if memo is not None and key in memo:
+        return memo[key]
+    result = _compute_winrate_uncached(symbol, config, lookback_quarters)
+    if memo is not None:
+        memo[key] = result
+    return result
+
+
+def _compute_winrate_uncached(symbol: str, config: dict, lookback_quarters: int = 8) -> dict:
     """Historical: over the last `lookback_quarters` earnings dates, what
     fraction had the option-implied move (ATM straddle price) exceed the
     actual realized move? A high winrate means this name's options have
@@ -393,13 +421,21 @@ _tt_cache_tls = threading.local()
 
 
 def begin_tt_cache() -> None:
-    """Start memoizing call_tt reads for the current symbol on THIS thread. Resets any prior cache."""
+    """Open the per-symbol cache for the current symbol on THIS thread. Resets any prior cache.
+
+    Scope is one symbol's evaluation, not tt calls specifically: it memoizes `call_tt` reads AND
+    `compute_winrate` (which every calendar strategy recomputes identically for its dispersion gate).
+    Both are per-symbol and both are torn down together, so there is one lifecycle to reason about
+    rather than two that could fall out of step.
+    """
     _tt_cache_tls.cache = {}
+    _tt_cache_tls.winrate = {}
 
 
 def end_tt_cache() -> None:
-    """Stop memoizing and drop this thread's cached reads (call in a finally)."""
+    """Close the per-symbol cache and drop this thread's cached reads (call in a finally)."""
     _tt_cache_tls.cache = None
+    _tt_cache_tls.winrate = None
 
 
 def call_tt(args_list: list[str]) -> dict:
