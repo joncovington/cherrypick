@@ -955,6 +955,7 @@ nav{flex:1;padding:10px 0}
 .ttbl td{padding:9px 11px;border-bottom:1px solid #111519;vertical-align:middle}
 .ttbl tr:hover td{background:#0f1318}
 .tr{text-align:right}
+td.num,th.num{text-align:right}
 .tcredit{font-weight:600;color:#00c896}
 .tppos{font-weight:700;color:#00c896;text-align:right}
 .tpneg{font-weight:700;color:#e8423a;text-align:right}
@@ -1276,24 +1277,7 @@ nav{flex:1;padding:10px 0}
           <button type="button" class="lf-clear" id="lf-clear">clear</button>
         </div>
         <div style="overflow-x:auto">
-          <table class="atable" id="log-tbl" style="width:100%;min-width:1080px">
-            <thead><tr>
-              <th class="sortable" data-k="trade_date">Date<span class="ar"></span></th>
-              <th class="sortable" data-k="entry_time">Time<span class="ar"></span></th>
-              <th class="sortable" data-k="symbol">Symbol<span class="ar"></span></th>
-              <th class="sortable" data-k="risk_profile">Profile<span class="ar"></span></th>
-              <th class="sortable" data-k="wing_width">Width<span class="ar"></span></th>
-              <th class="sortable" data-k="put_strike">Put K<span class="ar"></span></th>
-              <th class="sortable" data-k="call_strike">Call K<span class="ar"></span></th>
-              <th>Put $</th><th>Call $</th>
-              <th class="sortable" data-k="net_credit">Net Cr<span class="ar"></span></th>
-              <th>Put</th><th>Call</th>
-              <th class="sortable" data-k="gross_pnl">Gross<span class="ar"></span></th>
-              <th class="sortable" data-k="net_pnl">Net<span class="ar"></span></th>
-              <th class="sortable" data-k="exit_reason">Exit<span class="ar"></span></th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
+          <table class="atable" id="log-tbl" style="width:100%;min-width:1080px"><tbody></tbody></table>
         </div>
       </div>
     </div>
@@ -1686,7 +1670,7 @@ function renderCalHeat(days) {
 
 // ── filterable trade log ──────────────────────────────────────────────────────
 let logRows = [];
-let logSort = { k: 'trade_date', dir: -1 };   // default: newest first (date desc, then time)
+let logSort = { i: 0, dir: -1 };   // default: newest first (Date desc; per-column defaults below)
 
 function populateLogFilters(rows) {
   const fill = (id, values, label) => {
@@ -1732,53 +1716,53 @@ function logFiltered() {
     return true;
   });
 
-  const k = logSort.k, dir = logSort.dir;
-  rows.sort((a, b) => {
-    let av, bv;
-    if (k === 'gross_pnl') { av = a.pnl; bv = b.pnl; }
-    else if (k === 'net_pnl') { av = logNet(a); bv = logNet(b); }
-    else { av = a[k]; bv = b[k]; }
-    if (av == null && bv == null) return 0;
-    if (av == null) return 1;
-    if (bv == null) return -1;
-    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
-    return String(av).localeCompare(String(bv)) * dir;
-  });
-  return rows;
+  return window.cpTableSort(rows, LOG_COLS, logSort);
 }
 
+// The trade log is the shared filterable table (cherrypick.core.viz.cpTable) with the sorting
+// this page always had: opt-in per column, caller-owned {i, dir} state, cpTableSort's nulls-last
+// ordering. Display markup stays here (badges, muted spans); raw sort values ride each column's
+// `s` accessor. The pre-table filter bar above is unchanged -- logFiltered() feeds the table.
+const LOG_COLS = [
+  {h:'Date', f:t => (t.trade_date || '—').substring(5), s:t => t.trade_date, defDir:-1},
+  {h:'Time', f:t => fTime(t.entry_time), s:t => t.entry_time, defDir:-1},
+  {h:'Symbol', f:t => '<span style="color:#6b7280;font-size:10px">' + (t.symbol || '—') + '</span>',
+   s:t => t.symbol},
+  {h:'Profile', f:t => '<span style="color:#8b5cf6;font-size:10px">' + (t.risk_profile || '—') + '</span>',
+   s:t => t.risk_profile},
+  {h:'Width', num:true, f:t => t.wing_width != null ? t.wing_width : '—', s:t => t.wing_width},
+  {h:'Put K', num:true, f:t => t.put_strike != null ? t.put_strike : '—', s:t => t.put_strike},
+  {h:'Call K', num:true, f:t => t.call_strike != null ? t.call_strike : '—', s:t => t.call_strike},
+  {h:'Put $', num:true, sortable:false,
+   f:t => '<span style="color:#6b7280">$' + Number(t.put_credit || 0).toFixed(2) + '</span>'},
+  {h:'Call $', num:true, sortable:false,
+   f:t => '<span style="color:#6b7280">$' + Number(t.call_credit || 0).toFixed(2) + '</span>'},
+  {h:'Net Cr', num:true, tone:() => 'tcredit',
+   f:t => '$' + Number(t.net_credit || 0).toFixed(2), s:t => t.net_credit},
+  {h:'Put', sortable:false, f:t => bdg(t.put_status)},
+  {h:'Call', sortable:false, f:t => bdg(t.call_status)},
+  {h:'Gross', num:true, f:t => t.pnl != null ? fMoney(t.pnl) : '—', s:t => t.pnl,
+   tone:t => t.pnl != null ? (t.pnl >= 0 ? 'pos' : 'neg') : ''},
+  {h:'Net', num:true, f:t => { const n = logNet(t); return n != null ? fMoney(n) : '—'; },
+   s:t => logNet(t), tone:t => { const n = logNet(t); return n != null ? (n >= 0 ? 'pos' : 'neg') : ''; }},
+  {h:'Exit', f:t => '<span style="color:#6b7280;font-size:10px">'
+   + (t.exit_reason || '—').replace(/_/g, ' ') + '</span>', s:t => t.exit_reason},
+];
+
 function renderTradeLog() {
-  const tb  = document.querySelector('#log-tbl tbody');
+  const tbl = document.getElementById('log-tbl');
   const cnt = document.getElementById('log-count');
-  if (!tb) return;
+  if (!tbl) return;
   const rows = logFiltered();
   cnt.textContent = rows.length + ' of ' + logRows.length + ' trade' + (logRows.length !== 1 ? 's' : '');
-  tb.innerHTML = !rows.length ? '<tr><td colspan="15" class="empty">No trades match the filters</td></tr>'
-    : rows.map(t => {
-        const net = logNet(t);
-        const gc  = t.pnl != null ? (t.pnl >= 0 ? 'pos' : 'neg') : '';
-        const nc  = net   != null ? (net   >= 0 ? 'pos' : 'neg') : '';
-        const tip = (t.ai_entry_reasoning || '')
-          .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        return '<tr title="' + tip + '">' +
-          '<td>' + (t.trade_date || '—').substring(5) + '</td>' +
-          '<td>' + fTime(t.entry_time) + '</td>' +
-          '<td style="color:#6b7280;font-size:10px">' + (t.symbol || '—') + '</td>' +
-          '<td style="color:#8b5cf6;font-size:10px">' + (t.risk_profile || '—') + '</td>' +
-          '<td class="tr">' + (t.wing_width != null ? t.wing_width : '—') + '</td>' +
-          '<td class="tr">' + (t.put_strike  != null ? t.put_strike  : '—') + '</td>' +
-          '<td class="tr">' + (t.call_strike != null ? t.call_strike : '—') + '</td>' +
-          '<td class="tr" style="color:#6b7280">$' + Number(t.put_credit  || 0).toFixed(2) + '</td>' +
-          '<td class="tr" style="color:#6b7280">$' + Number(t.call_credit || 0).toFixed(2) + '</td>' +
-          '<td class="tr tcredit">$' + Number(t.net_credit || 0).toFixed(2) + '</td>' +
-          '<td>' + bdg(t.put_status)  + '</td>' +
-          '<td>' + bdg(t.call_status) + '</td>' +
-          '<td class="tr ' + gc + '">' + (t.pnl != null ? fMoney(t.pnl) : '—') + '</td>' +
-          '<td class="tr ' + nc + '">' + (net != null ? fMoney(net) : '—') + '</td>' +
-          '<td style="color:#6b7280;font-size:10px">' + (t.exit_reason || '—').replace(/_/g, ' ') + '</td>' +
-          '</tr>';
-      }).join('');
-  syncSortIndicators('log-tbl', logSort);
+  window.cpTable(tbl, LOG_COLS, rows, 'No trades match the filters', {
+    sort: logSort,
+    onSort: i => {
+      logSort = { i, dir: logSort.i === i ? -logSort.dir : (LOG_COLS[i].defDir || 1) };
+      renderTradeLog();
+    },
+    rowTitle: t => t.ai_entry_reasoning || '',
+  });
 }
 
 // Reflect the active sort key/direction in a table's header arrows.
@@ -2164,11 +2148,6 @@ if (lfClear) lfClear.addEventListener('click', () => {
   ['lf-outcome','lf-exit','lf-session'].forEach(id => { const e = document.getElementById(id); if (e) e.value = 'ALL'; });
   renderTradeLog();
 });
-document.querySelectorAll('#log-tbl th.sortable').forEach(th => th.addEventListener('click', () => {
-  const k = th.dataset.k;
-  logSort = { k, dir: logSort.k === k ? -logSort.dir : (k === 'trade_date' || k === 'entry_time' ? -1 : 1) };
-  renderTradeLog();
-}));
 document.querySelectorAll('#prof-cmp-tbl th.sortable').forEach(th => th.addEventListener('click', () => {
   const k = th.dataset.k;
   profCmpSort = { k, dir: profCmpSort.k === k ? -profCmpSort.dir : (k === 'profile' ? 1 : -1) };
@@ -2254,8 +2233,8 @@ setInterval(() => {
 # The shared drag-to-reorder implementation is baked in at import time (the template stays one
 # literal; the token keeps the JS out of an f-string's brace-escaping).
 HTML = HTML.replace("%%CP_REORDER_JS%%", viz.REORDER_JS)
-HTML = HTML.replace("%%CP_CAL_HEAT_STYLE%%", viz.CAL_HEAT_STYLE)
-HTML = HTML.replace("</script>\n</body>", viz.CAL_HEAT_JS + "</script>\n</body>", 1)
+HTML = HTML.replace("%%CP_CAL_HEAT_STYLE%%", viz.CAL_HEAT_STYLE + viz.TABLE_STYLE)
+HTML = HTML.replace("</script>\n</body>", viz.CAL_HEAT_JS + viz.TABLE_JS + "</script>\n</body>", 1)
 
 
 # ── HTTP handler ──────────────────────────────────────────────────────────────
