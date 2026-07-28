@@ -90,6 +90,18 @@ _ORDER_FNS = {
     "broken_wing_butterfly": broken_wing_butterfly.fetch_broken_wing_butterfly_order,
 }
 
+# Multi-day strategies are MANAGED, not force-closed: the 09:45 sweep consults the
+# strategy's own evaluate_position (CLAUDE.md Steps 3b/3d) and closes only on its
+# verdict -- profit target, stop, leg stop, or its own time_exit backstop ahead of
+# front expiration. Force-closing them the morning after entry (the old behavior)
+# measured a one-night structure nobody intends to trade. The five overnight
+# strategies keep the unconditional sweep: that IS their Step 3 close-window design
+# ("IV crush already happened overnight; no more edge from holding").
+_MULTI_DAY = {
+    "atm_calendar": atm_calendar,
+    "double_calendar": double_calendar,
+}
+
 
 def _occ_expiration(symbol: str) -> str:
     """Parse YYYY-MM-DD out of a standard OCC option symbol. The date+C/P+
@@ -123,7 +135,9 @@ def _leg_quotes_for_symbols(underlying: str, leg_symbols: list[str], price: floa
         q = quotes.get(s)
         if q is None or q.get("bid") is None or q.get("ask") is None:
             return None
-        result[s] = {"bid": q["bid"], "ask": q["ask"], "iv": q.get("iv")}
+        # delta rides along for double_calendar's per-leg stop (evaluate_position treats
+        # a missing delta as "skip that check", same optionality as iv).
+        result[s] = {"bid": q["bid"], "ask": q["ask"], "iv": q.get("iv"), "delta": q.get("delta")}
     return result
 
 
@@ -931,7 +945,7 @@ def cmd_run_entries(args) -> dict:
                 entry_credit = per_contract * quantity
 
                 order_id = f"{TEST_PROFILE}-{strategy_name}-{symbol}-{scan_date}-{int(time.time() * 1000)}"
-                save_result = db_paper.cmd_save_trade(argparse.Namespace(data=json.dumps({
+                save_spec = {
                     "order_id": order_id,
                     "strategy": strategy_name,
                     "symbol": symbol,
@@ -944,7 +958,16 @@ def cmd_run_entries(args) -> dict:
                     "entry_cost": entry_costs["total_cost"],
                     "entry_iv": entry_iv,
                     "entry_context": _entry_context(r["criteria"], r["composite_score"]),
-                })))
+                }
+                # Strategies with role-labeled legs (double_calendar today) get trade_legs
+                # rows, so the close sweep's evaluate_position can run its per-leg checks.
+                label_fn = getattr(_MULTI_DAY.get(strategy_name), "label_order_legs", None)
+                if label_fn is not None:
+                    save_spec["legs"] = [
+                        {**leg, "quantity": int(leg.get("quantity", 1) or 1) * quantity}
+                        for leg in label_fn(order)
+                    ]
+                save_result = db_paper.cmd_save_trade(argparse.Namespace(data=json.dumps(save_spec)))
                 if not save_result.get("ok"):
                     skipped.append({"symbol": symbol, "strategy": strategy_name, "reason": f"save_trade_failed: {save_result.get('error')}"})
                     continue
@@ -987,6 +1010,26 @@ def cmd_run_entries(args) -> dict:
     return {"ok": True, "date": scan_date, "portfolio_mode": portfolio_mode, "opened": opened, "skipped": skipped}
 
 
+def _log_close_decision(trade: dict, outcome: str, reason: str | None) -> None:
+    """Journal the close sweep's per-position verdict (hold / closed + reason) to
+    scan_log -- the same audit trail the entry scan writes, so "why is this calendar
+    still open" and "what closed this" are answerable from the DB. Best-effort: a
+    journal failure must never affect the close itself."""
+    try:
+        db_paper.cmd_log_scan(argparse.Namespace(data=json.dumps({
+            "scan_date": _date.today().isoformat(),
+            "strategy": trade.get("strategy"),
+            "symbol": trade.get("symbol"),
+            "tier": "close_sweep",
+            "outcome": outcome,
+            "reason": reason,
+            "logged_at": time.time(),
+            "profile": trade.get("profile"),
+        })))
+    except Exception:
+        pass
+
+
 def cmd_run_closes(args) -> dict:
     if not rank_strategies._verify_tastytrade_connection():
         return {"ok": False, "error": "tastytrade connection failed"}
@@ -999,6 +1042,7 @@ def cmd_run_closes(args) -> dict:
     closed: list[dict] = []
     skipped: list[dict] = []
     stranded: list[dict] = []
+    held: list[dict] = []
     # A skipped close must never be silent: bump the position's close_attempts, carry
     # the count on the skip record, and surface any position that has now missed more
     # than one daily sweep as "stranded" so the orchestrator's exit heartbeat can warn.
@@ -1043,6 +1087,34 @@ def cmd_run_closes(args) -> dict:
                 continue
 
             full_quotes = {s: leg_quotes[s] for s in leg_symbols}
+
+            # Multi-day strategies: the strategy's own management logic decides. hold is a
+            # DECISION (the position keeps working), not a close failure. close_side (a
+            # double-calendar leg stop) closes the whole position here: the paper book is
+            # single-row/single-close accounting, and a front short past its delta stop
+            # means the structure is broken -- the harness exits rather than trims. The
+            # reason keeps the _close_all suffix so the two are distinguishable in the log.
+            strategy_name = trade.get("strategy") or ""
+            exit_reason = "close_window"
+            manager = _MULTI_DAY.get(strategy_name)
+            if manager is not None:
+                if strategy_name == "double_calendar":
+                    open_legs = db_paper.cmd_get_open_legs(
+                        argparse.Namespace(order_id=order_id)).get("legs", [])
+                    decision = manager.evaluate_position(
+                        dict(trade), open_legs, full_quotes, config, is_first_check_of_day=True)
+                else:
+                    decision = manager.evaluate_position(
+                        dict(trade), full_quotes, config, is_first_check_of_day=True)
+                action = decision.get("action")
+                if action == "hold":
+                    held.append({"order_id": order_id, "symbol": symbol, "strategy": strategy_name})
+                    _log_close_decision(trade, "hold", None)
+                    continue
+                exit_reason = decision.get("reason") or action
+                if action == "close_side":
+                    exit_reason = f"{exit_reason}_close_all"
+
             exit_debit = scanner.compute_generic_exit_debit(legs, full_quotes)
             if exit_debit is None:
                 _skip(trade, "exit_debit_unavailable")
@@ -1069,7 +1141,9 @@ def cmd_run_closes(args) -> dict:
                 _skip(trade, f"save_close_failed: {close_result.get('error')}")
                 continue
 
-            closed.append({"order_id": order_id, "symbol": symbol, "pnl": round(pnl, 2), "exit_cost": exit_costs["total_cost"]})
+            _log_close_decision(trade, "closed", exit_reason)
+            closed.append({"order_id": order_id, "symbol": symbol, "pnl": round(pnl, 2),
+                           "exit_cost": exit_costs["total_cost"], "reason": exit_reason})
         except Exception as exc:
             # Same discipline as cmd_run_entries: one position's unexpected failure
             # must not lose every other open position's already-accumulated closes.
@@ -1091,7 +1165,7 @@ def cmd_run_closes(args) -> dict:
         except Exception:
             pass
 
-    return {"ok": True, "closed": closed, "skipped": skipped, "stranded": stranded}
+    return {"ok": True, "closed": closed, "skipped": skipped, "stranded": stranded, "held": held}
 
 
 def main() -> None:

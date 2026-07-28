@@ -58,6 +58,126 @@ def test_bwb_round_trip_scales_linearly_with_quantity():
     assert d3 == pytest.approx(d1 * 3)
 
 
+# --- the R8 seam: multi-day strategies are managed, not force-closed -------------
+
+def _close_sweep_env(tmp_path, monkeypatch, quotes_by_symbol, config=None):
+    """Common harness for cmd_run_closes tests: isolated DB, no network, canned quotes."""
+    import db_paper
+
+    monkeypatch.setattr(db_paper, "DB_PATH", tmp_path / "paper_trades.db")
+    db_paper.cmd_init_db(argparse.Namespace())
+    monkeypatch.setattr(runner.rank_strategies, "_verify_tastytrade_connection", lambda: True)
+    monkeypatch.setattr(runner.scanner, "_load_config",
+                        lambda *a, **k: config or {"close_quote_retries": 0, "strategies": {}})
+    monkeypatch.setattr(runner, "_capture_market_context", lambda day: None)
+    monkeypatch.setattr(runner.scanner, "fetch_quote_and_expirations",
+                        lambda symbol: {"ok": True, "price": 100.0})
+    monkeypatch.setattr(runner, "_leg_quotes_for_symbols",
+                        lambda underlying, leg_symbols, price: {
+                            s: quotes_by_symbol[s] for s in leg_symbols})
+    report = tmp_path / "eod.md"
+    report.write_text("stub", encoding="utf-8")
+    monkeypatch.setattr(runner, "_eod_report_path", lambda day: report)
+    return db_paper
+
+
+def _far_expiration(days=30):
+    from datetime import date, timedelta
+    return (date.today() + timedelta(days=days)).isoformat()
+
+
+def _save_calendar(db_paper, strategy, entry_credit, legs, trade_legs=None):
+    spec = {
+        "order_id": f"{strategy}-1", "strategy": strategy, "symbol": "CAL",
+        "expiration": _far_expiration(), "entry_credit": entry_credit,
+        "legs_json": json.dumps(legs), "profile": f"strat_test:{strategy}",
+    }
+    if trade_legs:
+        spec["legs"] = trade_legs
+    db_paper.cmd_save_trade(argparse.Namespace(data=json.dumps(spec)))
+
+
+def test_atm_calendar_is_held_when_its_strategy_says_hold(tmp_path, monkeypatch):
+    """The old sweep force-closed every position the morning after entry — a one-night
+    structure nobody intends to trade. A calendar at neither profit target nor stop,
+    far from expiry, must be HELD, and a hold is a decision, not a close failure."""
+    legs = [{"symbol": "FRONT", "action": "Sell to Open", "quantity": 1},
+            {"symbol": "BACK", "action": "Buy to Open", "quantity": 1}]
+    # exit_debit = +1.0 (buy front back) - 4.0 (sell back) = -3.0 -> nets exactly the
+    # 3.00 debit paid: zero profit, zero loss.
+    quotes = {"FRONT": {"bid": 1.0, "ask": 1.0}, "BACK": {"bid": 4.0, "ask": 4.0}}
+    db_paper = _close_sweep_env(tmp_path, monkeypatch, quotes)
+    _save_calendar(db_paper, "atm_calendar", -3.00, legs)
+
+    result = runner.cmd_run_closes(argparse.Namespace())
+    assert result["closed"] == []
+    assert result["skipped"] == []
+    assert [h["order_id"] for h in result["held"]] == ["atm_calendar-1"]
+    assert len(db_paper.cmd_get_open_positions(argparse.Namespace())["positions"]) == 1
+
+
+def test_atm_calendar_closes_on_its_own_profit_target(tmp_path, monkeypatch):
+    legs = [{"symbol": "FRONT", "action": "Sell to Open", "quantity": 1},
+            {"symbol": "BACK", "action": "Buy to Open", "quantity": 1}]
+    # Nets 4.00 against a 3.00 debit: profit 1.00 >= 3.00 * 0.25 -> profit_target.
+    quotes = {"FRONT": {"bid": 1.0, "ask": 1.0}, "BACK": {"bid": 5.0, "ask": 5.0}}
+    db_paper = _close_sweep_env(tmp_path, monkeypatch, quotes)
+    _save_calendar(db_paper, "atm_calendar", -3.00, legs)
+
+    result = runner.cmd_run_closes(argparse.Namespace())
+    assert result["held"] == []
+    assert result["closed"][0]["reason"] == "profit_target"
+    assert db_paper.cmd_get_open_positions(argparse.Namespace())["positions"] == []
+
+
+def test_overnight_strategy_still_closes_unconditionally(tmp_path, monkeypatch):
+    """The five overnight strategies keep the Step 3 close-window backstop: whatever is
+    open at 09:45 closes regardless of P&L — that IS their design."""
+    legs = [{"symbol": "SC", "action": "Sell to Open", "quantity": 1},
+            {"symbol": "LC", "action": "Buy to Open", "quantity": 1}]
+    quotes = {"SC": {"bid": 2.0, "ask": 2.1}, "LC": {"bid": 0.5, "ask": 0.6}}
+    db_paper = _close_sweep_env(tmp_path, monkeypatch, quotes)
+    _save_calendar(db_paper, "iron_fly", 2.00, legs)
+
+    result = runner.cmd_run_closes(argparse.Namespace())
+    assert result["held"] == []
+    assert result["closed"][0]["reason"] == "close_window"
+
+
+def test_double_calendar_leg_stop_closes_whole_position_in_harness(tmp_path, monkeypatch):
+    """A front short past its delta stop: the strategy says close_side; the harness's
+    single-close paper accounting exits the whole position, with the reason suffixed so
+    the simplification stays visible in the journal. trade_legs sweep closes with it."""
+    legs = [{"symbol": "FC", "action": "Sell to Open", "quantity": 1},
+            {"symbol": "FP", "action": "Sell to Open", "quantity": 1},
+            {"symbol": "BC", "action": "Buy to Open", "quantity": 1},
+            {"symbol": "BP", "action": "Buy to Open", "quantity": 1}]
+    trade_legs = [
+        {"leg_role": "front_call", "symbol": "FC", "action": "Sell to Open", "quantity": 1},
+        {"leg_role": "front_put", "symbol": "FP", "action": "Sell to Open", "quantity": 1},
+        {"leg_role": "back_call", "symbol": "BC", "action": "Buy to Open", "quantity": 1},
+        {"leg_role": "back_put", "symbol": "BP", "action": "Buy to Open", "quantity": 1},
+    ]
+    # cost_to_close = 1+1-2-2 = -2 -> nets 2.00 on a 2.00 debit: neither profit target
+    # (needs 2.50) nor stop (needs <= -2.00 net). Front call delta 0.50 >= 0.45 default.
+    quotes = {
+        "FC": {"bid": 0.9, "ask": 1.0, "delta": 0.50},
+        "FP": {"bid": 0.9, "ask": 1.0, "delta": -0.20},
+        "BC": {"bid": 2.0, "ask": 2.1, "delta": 0.40},
+        "BP": {"bid": 2.0, "ask": 2.1, "delta": -0.30},
+    }
+    db_paper = _close_sweep_env(tmp_path, monkeypatch, quotes)
+    _save_calendar(db_paper, "double_calendar", -2.00, legs, trade_legs=trade_legs)
+
+    result = runner.cmd_run_closes(argparse.Namespace())
+    assert result["held"] == []
+    assert result["closed"][0]["reason"] == "leg_stop_overnight_gap_close_all"
+    assert db_paper.cmd_get_open_positions(argparse.Namespace())["positions"] == []
+    legs_left = db_paper.cmd_get_open_legs(
+        argparse.Namespace(order_id="double_calendar-1"))["legs"]
+    assert legs_left == []
+
+
 # --- the R9 seam: a position that can't be priced at close must never vanish -----
 
 def test_run_closes_records_attempts_and_reports_stranded(tmp_path, monkeypatch):

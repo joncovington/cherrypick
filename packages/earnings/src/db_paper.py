@@ -308,6 +308,15 @@ def cmd_save_close(args) -> dict:
                 order_id,
             ),
         )
+        # A full-position close closes every leg by definition: sweep any trade_legs rows
+        # still open so get_open_legs never reports legs of a closed position. Legs closed
+        # individually beforehand (the agent path's close_side) keep their own close_price;
+        # swept legs record none -- the position-level exit_debit is the priced exit.
+        conn.execute(
+            "UPDATE trade_legs SET status = 'closed', closed_at = ? "
+            "WHERE order_id = ? AND status = 'open'",
+            (spec.get("closed_at", time.time()), order_id),
+        )
         conn.commit()
         if cur.rowcount == 0:
             return {"ok": False, "error": f"no open trade found for order_id {order_id}"}
