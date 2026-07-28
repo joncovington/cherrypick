@@ -63,7 +63,21 @@ def _table_cols(conn, table: str) -> set:
         return set()
 
 
-def _meic_closed(conn) -> list[dict]:
+def _session_where(column_expr: str, start: str | None, end: str | None) -> tuple[str, list]:
+    """SQL fragment + params bounding a session-date expression to [start, end] (inclusive,
+    either side optional). Pushed into the readers so an all-time table scan isn't the only
+    way to ask about one day or one range."""
+    clauses, params = "", []
+    if start:
+        clauses += f" AND {column_expr} >= ?"
+        params.append(start)
+    if end:
+        clauses += f" AND {column_expr} <= ?"
+        params.append(end)
+    return clauses, params
+
+
+def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
     # slippage_dollars (cumulative modeled slippage on the trade's fills) rides along when
     # the column exists; older DBs degrade to slippage=None rather than failing the reader.
     # Slippage is linear in the modeled fraction, so net at a stressed 2x fraction is
@@ -74,9 +88,10 @@ def _meic_closed(conn) -> list[dict]:
     has_capital = {"wing_width", "net_credit", "quantity"} <= cols
     cap_cols = ", wing_width, net_credit, quantity" if has_capital else ""
     mult_col = ", dollar_multiplier" if "dollar_multiplier" in cols else ""
+    where, params = _session_where("substr(exit_time, 1, 10)", start, end)
     rows = conn.execute(
         f"SELECT symbol, risk_profile, pnl, fees, exit_time{slip_col}{cap_cols}{mult_col} "
-        "FROM ic_trades WHERE exit_time IS NOT NULL"
+        f"FROM ic_trades WHERE exit_time IS NOT NULL{where}", params
     ).fetchall()
 
     def _capital(r):
@@ -107,12 +122,16 @@ def _meic_closed(conn) -> list[dict]:
     ]
 
 
-def _earnings_closed(conn) -> list[dict]:
+def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
     cols = _table_cols(conn, "trades")
     has_slip = "entry_slippage" in cols and "exit_slippage" in cols
     slip_cols = ", entry_slippage, exit_slippage" if has_slip else ""
     has_capital = "capital_at_risk" in cols
     cap_col = ", capital_at_risk" if has_capital else ""
+    # No SQL pushdown here on purpose: closed_at is epoch seconds and the session date is
+    # the LOCAL calendar day (_session_from_epoch); SQLite's date(...,'unixepoch') is UTC,
+    # so a SQL bound would shift evening closes across the session boundary. The table is
+    # small (one row per position); run() applies the tz-correct Python filter.
     rows = conn.execute(
         f"SELECT symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at{slip_cols}{cap_col} "
         "FROM trades WHERE closed_at IS NOT NULL"
@@ -141,15 +160,16 @@ def _earnings_closed(conn) -> list[dict]:
     ]
 
 
-def _flies_closed(conn) -> list[dict]:
+def _flies_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
     """cherrypick-flies' `fly_positions`; closed = settled. The attribution tag is the ARM, because
     comparing the arms is the entire point of the module — a per-symbol view would hide the one
     contrast the experiment exists to draw. Read straight off the row rather than against a known list,
     so an arm added on the module side (wide_wing joined gex / time_window / control on 2026-07-27)
     appears here without a change on this side."""
+    where, params = _session_where("trade_date", start, end)
     rows = conn.execute(
         "SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date "
-        "FROM fly_positions WHERE status = 'settled'"
+        f"FROM fly_positions WHERE status = 'settled'{where}", params
     ).fetchall()
     return [
         {
@@ -266,18 +286,27 @@ def _summarize(records: list[dict]) -> dict:
 
 
 # --------------------------------------------------------------------------- entrypoint
-def run(cfg: dict | None = None, session: str | None = None) -> dict:
+def run(cfg: dict | None = None, session: str | None = None,
+        session_range: tuple[str | None, str | None] | None = None) -> dict:
     """Unified paper P&L across all enabled modules. Read-only; never writes or trades.
 
-    With `session` (an ISO 'YYYY-MM-DD'), restrict to trades whose settlement session matches — the
-    per-schema readers already emit a `session` per record, so a daily/EOD view is just a filter over
-    the same normalized records the all-time view uses. `session=None` keeps the cumulative behavior.
+    With `session` (an ISO 'YYYY-MM-DD'), restrict to trades whose settlement session matches.
+    With `session_range` ((start, end), inclusive, either side None for unbounded), restrict to
+    the range AND include a `daily` series — per-session net P&L with a per-module split — the
+    feed for a suite equity curve. Bounds are pushed into the per-schema readers' SQL where the
+    session date is exact in SQL (MEIC, flies); the tz-sensitive earnings reader stays
+    Python-filtered. `session=None, session_range=None` keeps the cumulative behavior.
     """
+    if session is not None and session_range is not None:
+        raise ValueError("pass session OR session_range, not both")
+    lo, hi = (session, session) if session is not None else (session_range or (None, None))
+
     cfg = cfg or cfgmod.load_config()
     epoch = cfgmod.data_epoch(cfg)
     modules_out: dict[str, dict] = {}
     all_records: list[dict] = []
     all_open: list[dict] = []
+    daily: dict[str, dict] = {}
 
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         paper = mcfg.get("paper", {})
@@ -294,7 +323,7 @@ def run(cfg: dict | None = None, session: str | None = None) -> dict:
 
         conn = _connect_ro(db_path)
         try:
-            records = reader(conn)
+            records = reader(conn, start=lo, end=hi)
         except sqlite3.Error as exc:  # empty/uninitialized DB, missing table, etc. — never crash the report
             modules_out[name] = {"ok": False, "reason": f"read failed: {exc}"}
             conn.close()
@@ -309,9 +338,22 @@ def run(cfg: dict | None = None, session: str | None = None) -> dict:
         finally:
             conn.close()
 
-        if session is not None:
-            records = [r for r in records if r.get("session") == session]
-            open_records = [r for r in open_records if r.get("session") == session]
+        # Python-side bound: the belt for the reader whose session date can't be bounded in
+        # SQL (earnings), and for open records. Exact same semantics as the SQL pushdown.
+        if lo is not None or hi is not None:
+            def _in_bounds(r):
+                s = r.get("session") or ""
+                return (lo is None or s >= lo) and (hi is None or s <= hi)
+            records = [r for r in records if _in_bounds(r)]
+            open_records = [r for r in open_records if _in_bounds(r)]
+
+        if session_range is not None:
+            for r in records:
+                day = daily.setdefault(r.get("session") or "", {"net_pnl": 0.0, "trades": 0,
+                                                                "by_module": {}})
+                day["net_pnl"] += r["net_pnl"]
+                day["trades"] += 1
+                day["by_module"][name] = round(day["by_module"].get(name, 0.0) + r["net_pnl"], 2)
 
         all_records.extend(records)
         all_open.extend(open_records)
@@ -334,7 +376,7 @@ def run(cfg: dict | None = None, session: str | None = None) -> dict:
     # Nested inside suite (not a sibling) so the digest's suite.get("open") finds it next to the
     # suite P&L it belongs with.
     suite["open"] = _summarize_open(all_open)
-    return {
+    out = {
         "ok": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "session": session,
@@ -342,6 +384,14 @@ def run(cfg: dict | None = None, session: str | None = None) -> dict:
         "modules": modules_out,
         "suite": suite,
     }
+    if session_range is not None:
+        out["session_range"] = list(session_range)
+        out["daily"] = [
+            {"session": s, "net_pnl": round(d["net_pnl"], 2), "trades": d["trades"],
+             "by_module": d["by_module"]}
+            for s, d in sorted(daily.items())
+        ]
+    return out
 
 
 def latest_session(cfg: dict | None = None) -> str | None:
