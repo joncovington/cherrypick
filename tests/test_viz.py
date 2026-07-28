@@ -83,3 +83,11 @@ def test_reorder_contract_is_attribute_driven():
     # Unknown-keys-append: a card shipped after a layout was saved must never disappear.
     assert "indexOf" in viz.REORDER_JS
     assert ".cp-reorder-item" in viz.REORDER_STYLE
+
+
+def test_cal_heat_is_the_honest_week_column_form():
+    # Week columns, Mon-Fri only; an empty weekday reads 'no settled session', never a flat day.
+    assert "cpCalHeat" in viz.CAL_HEAT_JS
+    assert "no settled session" in viz.CAL_HEAT_JS
+    assert "getUTCDay" in viz.CAL_HEAT_JS  # UTC stepping: local tz must not shift sessions
+    assert ".cpcal-week" in viz.CAL_HEAT_STYLE

@@ -337,6 +337,80 @@ REORDER_JS = r"""
 """
 
 
+# Calendar heatmap of daily net P&L — the suite's one copy (the audit counted two: MEIC's
+# month-grid and flies' week-column calendar). The flies form is the donor because it is the
+# honest one: Monday-anchored week COLUMNS, Mon–Fri only (weekends are absent, not blank), and
+# an empty weekday cell means "no settled session" — a different thing from a flat day, which
+# gets a neutral filled cell. Dates are parsed and stepped in UTC so a local timezone never
+# shifts a session onto the wrong day.
+CAL_HEAT_STYLE = (
+    ".cpcal{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;align-items:flex-start}"
+    ".cpcal-side{display:grid;grid-template-rows:14px repeat(5,16px);row-gap:3px;font-size:10px;"
+    "color:var(--muted,#888);text-align:right}"
+    ".cpcal-main{display:flex;flex-direction:column}"
+    ".cpcal-months{display:flex;gap:3px;height:14px;margin-bottom:3px;font-size:10px;color:var(--muted,#888)}"
+    ".cpcal-mon{width:16px;white-space:nowrap;overflow:visible;flex:none}"
+    ".cpcal-weeks{display:flex;gap:3px}"
+    ".cpcal-week{display:grid;grid-template-rows:repeat(5,16px);row-gap:3px}"
+    ".cpcal-cell{width:16px;height:16px;border-radius:3px;background:rgba(128,128,128,.15)}"
+    ".cpcal-legend{display:flex;gap:4px;align-items:center;font-size:10px;color:var(--muted,#888);"
+    "margin-top:6px}.cpcal-legend .cpcal-cell{width:11px;height:11px}"
+)
+
+# window.cpCalHeat(hostEl, days, fmtMoney?) — days: [{date: 'YYYY-MM-DD', net_pnl, trades}].
+# Returns false (host cleared) when there is nothing to draw, so the page can show its own
+# empty-state message. fmtMoney is optional; tooltips fall back to a plain $ rendering.
+CAL_HEAT_JS = r"""
+window.cpCalHeat = function(el, days, fmtMoney){
+  if(!el) return false;
+  if(!days || !days.length){ el.innerHTML=''; return false; }
+  var fmt = fmtMoney || function(v){ v=v||0;
+    return (v<0?'-$':'$')+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var byDate={}, max=1;
+  days.forEach(function(d){ byDate[d.date]=d; max=Math.max(max,Math.abs(d.net_pnl||0)); });
+  var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function parse(s){ return new Date(s+'T00:00:00Z'); }
+  function weekday(dt){ return (dt.getUTCDay()+6)%7; }
+  function iso(dt){ return dt.toISOString().slice(0,10); }
+  function addDays(dt,n){ var c=new Date(dt); c.setUTCDate(c.getUTCDate()+n); return c; }
+  var sorted=days.map(function(d){return d.date;}).sort();
+  var first=addDays(parse(sorted[0]), -weekday(parse(sorted[0])));
+  var last=parse(sorted[sorted.length-1]);
+  var weeks=[];
+  for(var wk=new Date(first); wk<=last; wk=addDays(wk,7)) weeks.push(new Date(wk));
+  var months=weeks.map(function(wk,i){
+    var m=wk.getUTCMonth();
+    var label=(i===0||m!==weeks[i-1].getUTCMonth())?MON[m]:'';
+    return '<span class="cpcal-mon">'+label+'</span>';
+  }).join('');
+  var grid=weeks.map(function(wk){
+    var cells='';
+    for(var r=0;r<5;r++){
+      var dt=addDays(wk,r), key=iso(dt);
+      if(dt<first||dt>last){ cells+='<div class="cpcal-cell" style="visibility:hidden"></div>'; continue; }
+      var d=byDate[key];
+      if(!d){ cells+='<div class="cpcal-cell" title="'+key+': no settled session"></div>'; continue; }
+      var v=d.net_pnl||0, a=Math.min(1,Math.abs(v)/max)*0.85+0.15;
+      var col=v>0?'rgba(63,185,80,'+a.toFixed(2)+')':v<0?'rgba(248,81,73,'+a.toFixed(2)+')':'#30363d';
+      var n=d.trades!=null?(' ('+d.trades+' trade'+(d.trades!==1?'s':'')+')'):'';
+      cells+='<div class="cpcal-cell" style="background:'+col+'" title="'+key+': '+fmt(v)+n+'"></div>';
+    }
+    return '<div class="cpcal-week">'+cells+'</div>';
+  }).join('');
+  el.innerHTML=
+    '<div><div class="cpcal">'
+    +'<div class="cpcal-side"><div></div><div>Mon</div><div></div><div>Wed</div><div></div><div>Fri</div></div>'
+    +'<div class="cpcal-main"><div class="cpcal-months">'+months+'</div>'
+    +'<div class="cpcal-weeks">'+grid+'</div></div></div>'
+    +'<div class="cpcal-legend"><span>loss</span>'
+    +'<div class="cpcal-cell" style="background:rgba(248,81,73,.8)"></div>'
+    +'<div class="cpcal-cell"></div>'
+    +'<div class="cpcal-cell" style="background:rgba(63,185,80,.8)"></div><span>gain</span></div></div>';
+  return true;
+};
+"""
+
+
 def card_skeleton_html(section_id: str, title: str, endpoint: str, refresh: int = 15) -> str:
     """The static card skeleton the umbrella injects per enabled section; `SECTION_JS` fills it live.
 
