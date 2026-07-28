@@ -55,3 +55,17 @@ def apply_additive_migrations(conn: sqlite3.Connection,
             added.append(f"{table}.{column}")
     conn.commit()
     return added
+
+
+def connect_ro(path: Any, *, row_factory: Any = sqlite3.Row) -> sqlite3.Connection:
+    """Open a database READ-ONLY via a file: URI (mode=ro). The suite's read surfaces
+    (report, calibrate, reconcile, trade_notifier, eval_activity, dashboards) all use
+    this so a reader can never create, lock-for-write, or migrate a paper DB. The path
+    is percent-escaped for the URI form, so directories containing '?', '#', or '%'
+    cannot silently change the URI's meaning."""
+    from urllib.request import pathname2url
+
+    conn = sqlite3.connect(f"file:{pathname2url(str(path))}?mode=ro", uri=True)
+    if row_factory is not None:
+        conn.row_factory = row_factory
+    return conn

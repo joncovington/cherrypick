@@ -142,6 +142,25 @@ def recommend_promotion(reading: Mapping, current: str, ladder, *, rule: Mapping
         "win_rate": _check(reading.get("win_rate"), thresholds["min_win_rate"]),
         "days": _check(reading.get("days"), thresholds["min_days"]),
     }
+    # Hardened checks, opt-in via rule keys (absent keys change nothing for existing callers):
+    #
+    # min_return_on_capital — net P&L as a fraction of capital at risk must clear the bar.
+    # A reading whose records carry no capital reads None and FAILS the check: unknown
+    # capital cannot certify a capital-efficiency threshold.
+    if "min_return_on_capital" in thresholds:
+        checks["return_on_capital"] = _check(reading.get("return_on_capital"),
+                                             thresholds["min_return_on_capital"])
+    # require_slippage_survival — the reading must stay profitable with the modeled
+    # slippage fraction DOUBLED (net_pnl_2x_slippage > 0), and the recorded slippage must
+    # cover the whole sample: a stress test over part of the evidence certifies nothing.
+    if thresholds.get("require_slippage_survival"):
+        stressed = reading.get("net_pnl_2x_slippage")
+        full_coverage = (reading.get("slippage_coverage") or 0) >= (reading.get("sample") or 0) > 0
+        checks["slippage_survival"] = {
+            "value": stressed,
+            "threshold": "net > 0 at 2x slippage over the full sample",
+            "pass": bool(full_coverage and stressed is not None and stressed > 0),
+        }
 
     def _verdict(eligible, recommendation, reason):
         return {"current": current, "next": nxt, "eligible": eligible,
