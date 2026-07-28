@@ -27,3 +27,36 @@ def test_card_skeleton_escapes_untrusted_title_and_id():
 def test_style_and_script_constants_present():
     assert viz.SECTION_STYLE and ".cpmetrics" in viz.SECTION_STYLE and ".cpbar" in viz.SECTION_STYLE
     assert viz.SECTION_JS and "data-cp-section" in viz.SECTION_JS and "data-endpoint" in viz.SECTION_JS
+
+
+# --- timeseries cards + inline wiring + the shared money formatter ---------------
+
+def test_card_inline_html_bakes_the_payload():
+    out = viz.card_inline_html("equity", "Suite equity", {"ok": True, "metrics": []})
+    assert 'class="cpdata"' in out
+    assert '"ok":true' in out
+    assert "data-endpoint" not in out  # inline cards never poll
+
+
+def test_card_inline_html_escapes_script_closers():
+    evil = {"ok": True, "note": "</script><script>alert(1)</script>"}
+    out = viz.card_inline_html("x", "t", evil)
+    assert "</script><script>alert(1)" not in out
+    assert "<\/script>" in out
+
+
+def test_card_skeleton_has_a_timeseries_host():
+    assert 'class="cpts"' in viz.card_skeleton_html("s", "t", "/api/section/s")
+
+
+def test_section_js_renders_timeseries_and_inline_mode():
+    assert "renderTimeseries" in viz.SECTION_JS
+    assert "script.cpdata" in viz.SECTION_JS
+
+
+def test_fmt_money_sign_outside_dollar():
+    assert viz.fmt_money(1234.5) == "$1,234.50"
+    assert viz.fmt_money(-1234.5) == "-$1,234.50"
+    assert viz.fmt_money(0) == "$0.00"
+    assert viz.fmt_money(None) == "—"
+    assert viz.fmt_money("junk", none="n/a") == "n/a"
