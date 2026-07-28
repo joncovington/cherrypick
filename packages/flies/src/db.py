@@ -167,6 +167,14 @@ def default_db_path() -> str:
     return os.path.join(home, "data", "flies", "paper_trades.db")
 
 
+def live_db_path() -> str:
+    """The LIVE ledger -- a separate file, same schema, never read by paper surfaces. The
+    orchestrator's `live_db` config key should point here so it appears in `report --live`
+    (and nowhere else)."""
+    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
+    return os.path.join(home, "data", "flies", "live_trades.db")
+
+
 # Columns added to fly_positions after the first release. CREATE TABLE IF NOT EXISTS silently does
 # nothing on an existing database, so a plain schema edit would leave older paper DBs missing these
 # and every write against them would fail at runtime rather than at startup.
@@ -175,6 +183,10 @@ _ADDED_POSITION_COLUMNS = {
     "best_debit_at": "TEXT",
     "completion_latency_min": "REAL",
     "spot_at_completion": "REAL",
+    # Live scaffold (docs/live-trading-plan.md): broker order ids on the position row. Paper rows
+    # simply leave them NULL -- the live ledger is a separate FILE (live_db_path), same schema.
+    "entry_order_id": "TEXT",
+    "completion_order_id": "TEXT",
 }
 
 

@@ -104,6 +104,10 @@ def _chain_for_expiration(conn, symbol: str, expiration: str) -> list[dict]:
         entries.append({
             "strike_price": float(strike),
             "streamer_symbol": sym,
+            # The broker-side (OCC) symbol and instrument type ride along for the live scaffold's
+            # order builders; paper never reads them, and old cache rows just leave them None.
+            "occ_symbol": opt.get("symbol"),
+            "instrument_type": opt.get("instrument_type"),
             "option_type": opt.get("option_type", ""),
             "shares_per_contract": opt.get("shares_per_contract") or 100,
         })
@@ -178,6 +182,8 @@ def build_snapshot(db_path, symbol: str, *, when: datetime | None = None,
                 continue
             entry = by_symbol[row["symbol"]]
             quote["streamer_symbol"] = row["symbol"]
+            quote["occ_symbol"] = entry.get("occ_symbol")
+            quote["instrument_type"] = entry.get("instrument_type")
             target = calls if "C" in entry["option_type"].upper() else puts
             target[entry["strike_price"]] = quote
 

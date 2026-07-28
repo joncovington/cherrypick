@@ -6,6 +6,16 @@
     "stream_cache_db": "~/.cherrypick/data/marketdata/stream_cache.db"
   },
 
+  "_live_note": "LIVE SCAFFOLD -- inert by default (docs/live-trading-plan.md). Nothing here runs until Gate 0 of the plan passes: 'enabled' must be true AND 'gate0_confirmed' must carry a human attestation (who/when the paper verdict was judged to pass); the loop additionally requires a designated account (cherrypick account --module flies), refuses while the suite halt flag (state/halt-live.flag) exists, and halts new entries when the day's settled LIVE net reaches -daily_loss_halt_dollars. Exactly ONE arm goes live (the Gate-0 winner; default gex). `python src/live_loop.py --once --dry-run` preflights the orders it would place against the real designated account WITHOUT placing anything -- that run is the flies rung-0 smoke. account_deploy_limit_pct feeds core.broker's deploy governor on every submission.",
+  "live": {
+    "enabled": false,
+    "gate0_confirmed": "",
+    "arm": "gex",
+    "symbol": "SPX",
+    "daily_loss_halt_dollars": 200,
+    "account_deploy_limit_pct": 50
+  },
+
   "_symbols_note": "SPX ONLY for now, by decision. The module supports XSP too (both are European cash-settled, so a short middle strike left open into expiration settles to cash and assignment is structurally impossible; a physically-settled symbol would need the assignment machinery MEIC carries, and this module has no reason to take that on). Before adding XSP, note that wing_width and strike_increment below are global: XSP trades near a tenth of SPX on a 1-point grid, so a 5-wide XSP fly is roughly a 50-wide SPX fly — about ten times the intended risk per structure. XSP needs its own width before it goes on.",
   "symbols": ["SPX"],
 
