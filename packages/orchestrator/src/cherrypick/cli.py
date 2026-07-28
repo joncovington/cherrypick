@@ -439,6 +439,7 @@ def _run_earnings(cfg, phase: str) -> None:
         "error": error,
         "opened": (result or {}).get("opened"),
         "closed": (result or {}).get("closed"),
+        "stranded": (result or {}).get("stranded"),
     }
     hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
     _append_log(log_path, {**rec, "result": result})
@@ -449,6 +450,20 @@ def _run_earnings(cfg, phase: str) -> None:
             f"earnings.{phase}",
             f"Earnings paper {phase} failed",
             f"{error or 'see logs/earnings_paper.log'}",
+        )
+    elif rec["stranded"]:
+        # The run itself succeeded but left positions it could not close for a second
+        # (or later) consecutive sweep. Silent stranding is how a position vanishes from
+        # every closed-trade metric -- say so, once per daily run, while it persists.
+        names = ", ".join(
+            f"{s.get('symbol', '?')} ({s.get('reason', 'unknown')} x{s.get('close_attempts', '?')})"
+            for s in rec["stranded"][:5]
+        )
+        Notifier(cfg.get("notify")).notify(
+            "WARNING",
+            "earnings.stranded",
+            f"Earnings paper: {len(rec['stranded'])} position(s) stranded at close",
+            names,
         )
 
     # Push any fills this run produced right away instead of waiting for the next trade-notify tick.
