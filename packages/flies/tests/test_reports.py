@@ -169,7 +169,10 @@ def test_paper_eod_leads_with_completion_not_pnl(conn):
     text = eodmod.build_paper_eod(conn, DAY)
     assert text.index("Completion rate") < text.index("Session P&L")
     assert "market never offered it" in text
-    assert "buffer too tight" in text.lower()
+    # The two gates are reported separately: completion needs D < C - fee_buffer AND a post-fee floor
+    # over min_floor_dollars, and lumping them together points at the wrong knob.
+    assert "blocked by fee_buffer" in text.lower()
+    assert "blocked by min_floor_dollars" in text.lower()
 
 
 def test_analysis_explains_the_counterfactual_split(conn):

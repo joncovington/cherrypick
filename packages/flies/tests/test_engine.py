@@ -135,6 +135,95 @@ def test_entry_requires_0dte():
     assert not enter and reason == "no_0dte_expiration"
 
 
+# --------------------------------------------------------------------------- per-window cap
+WINDOWS = [["11:00", "12:30"], ["12:30", "13:00"]]
+
+
+def _held(window, n):
+    """n open positions already taken in `window`, parked off-centre so only the cap can refuse."""
+    return [{"center": 5000.0 + i, "entry_window": window, "status": "open"} for i in range(n)]
+
+
+def test_per_window_cap_blocks_a_window_that_spent_its_share():
+    p = params(entry_windows=WINDOWS, max_positions_per_window=2)
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(), p, _held("11:00-12:30", 2))
+    assert not enter and reason == "max_positions_this_window_reached"
+
+
+def test_per_window_cap_leaves_a_later_window_free():
+    """The whole point: a full first window must not consume the later windows' budget, which is how
+    15 of 16 entries ended up in one window and the timing hypothesis went untested."""
+    p = params(entry_windows=WINDOWS, max_positions_per_window=2)
+    # now_min sits inside the SECOND window while the first has already taken its two.
+    enter, reason, _ = engine.evaluate_credit_spread_entry(
+        snapshot(now_min=12 * 60 + 45), p, _held("11:00-12:30", 2))
+    assert enter, reason
+
+
+def test_global_max_positions_still_binds_across_windows():
+    p = params(entry_windows=WINDOWS, max_positions_per_window=4, max_positions=4)
+    held = _held("11:00-12:30", 2) + _held("12:30-13:00", 2)
+    enter, reason, _ = engine.evaluate_credit_spread_entry(
+        snapshot(now_min=12 * 60 + 45), p, held)
+    assert not enter and reason == "max_positions_reached"
+
+
+def test_per_window_cap_is_off_unless_configured():
+    """Existing single-window arms and books entered before the cap existed must be unaffected."""
+    p = params(entry_windows=WINDOWS)
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(), p, _held("11:00-12:30", 3))
+    assert enter, reason
+
+
+def test_positions_without_a_window_are_not_counted_against_one():
+    p = params(entry_windows=WINDOWS, max_positions_per_window=1)
+    legacy = [{"center": 5000.0, "entry_window": None, "status": "open"}]
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(), p, legacy)
+    assert enter, reason
+
+
+# --------------------------------------------------------------------------- post-open blackout
+def test_no_entry_before_blocks_the_first_thirty_minutes():
+    p = params(no_entry_before="10:00")
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(now_min=9 * 60 + 45), p, [])
+    assert not enter and reason == "before_open_gate"
+
+
+def test_no_entry_before_outranks_an_arm_asking_for_an_earlier_window():
+    """The whole point of a floor over per-arm windows: four window lists are four chances to reopen
+    the hole. An arm whose window opens at 09:35 must still be refused."""
+    p = params(no_entry_before="10:00", entry_windows=[["09:35", "10:30"]])
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(now_min=9 * 60 + 40), p, [])
+    assert not enter and reason == "before_open_gate"
+    # ...and allowed once past the floor, inside the same window.
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(now_min=10 * 60 + 5), p, [])
+    assert enter, reason
+
+
+def test_no_entry_before_also_gates_outright_entries():
+    p = params(no_entry_before="10:00")
+    enter, reason, _ = engine.evaluate_outright_entry(snapshot(now_min=9 * 60 + 45), p, [], 5000.0)
+    assert not enter and reason == "before_open_gate"
+
+
+def test_no_entry_before_is_off_when_unset():
+    p = params(entry_windows=[["09:35", "10:30"]])
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(now_min=9 * 60 + 40), p, [])
+    assert enter, reason
+
+
+# --------------------------------------------------------------------------- the wide_wing arm
+def test_wide_wing_arm_centers_atm_like_control_but_uses_its_own_width():
+    """It is control's twin so the pair isolates wing width — same centring, same window, wider wings."""
+    cfg = dict(BASE_CONFIG)
+    cfg["arms"] = dict(BASE_CONFIG["arms"], wide_wing={"wing_width": 20})
+    p = engine.merged_params(cfg, "wide_wing")
+    center, reason = engine.select_center(snapshot(underlying_price=6002.0), p)
+    assert (center, reason) == (6000.0, "atm")
+    assert p["wing_width"] == 20
+    assert "wide_wing" in engine.ARMS
+
+
 def test_entry_respects_the_position_cap():
     open_positions = [{"center": 5000 + i, "kind": "fly"} for i in range(4)]
     enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(), params(), open_positions)

@@ -18,8 +18,14 @@
     "_max_positions": "Structures per (arm x symbol) book per session. The 'forest' is several separate profit zones, not one big bet — but each one pays its own fee stack, so this is a cost cap as much as a risk cap.",
     "max_positions": 4,
 
-    "_entry_modes": "legged = sell a credit spread, then buy the completing spread cheaper to end up holding a fly for a net credit. outright = buy a cheap fly with premium already taken in. Both were observed running side by side in the same real session.",
-    "entry_modes": ["legged", "outright"],
+    "_no_entry_before": "Hard post-open blackout (ET). No arm may enter before this, regardless of its own entry_windows — the gate is checked before the window logic, so an arm asking for an earlier window is refused rather than obeyed. Set to 10:00 on 2026-07-27: on the first five sessions every dollar of loss sat in the first 30 minutes (23 positions entered 09:30-10:00 ET for -$1,948.32, against +$913.79 across the 32 entered later), concentrated in control and gex, both of which opened at 09:45. Expressed as a floor rather than by editing each arm's first window because four separate window lists are four chances to silently reopen the hole when an arm is added — MEIC is the worked example of that failure mode. The arm windows below were raised to match anyway, so the two agree; the floor is the backstop, not the primary statement.",
+    "no_entry_before": "10:00",
+
+    "_max_positions_per_window": "Structures any ONE entry window may take, on top of max_positions. null disables it (single-window arms need nothing here). A global cap alone does not make a multi-window arm test its windows: over 07-20..07-24 the time_window arm put 15 of its 16 legged entries in 10:30-11:00, 1 in 12:30-13:00 and 0 in 14:00-14:30 — the book was full before the later windows opened, so the timing hypothesis was never exercised and the per-window ranking the arm exists to produce had nothing to rank. Set it on the ARM, not here, and keep cap x windows >= max_positions or the book can never fill.",
+    "max_positions_per_window": null,
+
+    "_entry_modes": "legged = sell a credit spread, then buy the completing spread cheaper to end up holding a fly for a net credit. outright = buy a cheap fly with premium already taken in. Both were observed running side by side in the same real session, but outright is OFF as of 07-27 for two independent reasons. (1) It lost on every one of its four settled positions (-$171.31, avg -$42.83): it manufactures no floor, it spends one, so it only pays when the fly finishes in its wings, and 19 of 23 completed flies did not. (2) It was confounding the experiment — the gex arm was the only arm taking outright entries (5 of its 15), so gex vs control was no longer isolating the centring rule the way the arms are supposed to differ. Re-enable only as its own arm, never inside an existing one.",
+    "entry_modes": ["legged"],
 
     "_min_credit_pct_of_width": "Opening credit floor as a fraction of wing width. Below this there is no room for the completing debit to come in cheaper AND clear two fee stacks.",
     "min_credit_pct_of_width": 0.20,
@@ -30,8 +36,8 @@
     "_fee_buffer": "Price points the completing debit must beat the original credit by. This is the gate that stops us 'completing' into a fly whose credit is real but smaller than the fees paid to build it.",
     "fee_buffer": 0.10,
 
-    "_min_floor_dollars": "Reject a completion whose post-fee floor lands below this. 0.0 means only 'must not lose money', which a full-session simulation showed is far too permissive: completions landed with guaranteed profits of $5-27 after paying $6.89 in fees to build them. Technically risk-free, practically not worth the position slot or the defined risk carried while waiting. 50 demands the guarantee be worth roughly seven fee stacks. Raising it trades completion rate for floor quality — both are reported, so the trade-off is measurable rather than assumed.",
-    "min_floor_dollars": 50.0,
+    "_min_floor_dollars": "Reject a completion whose post-fee floor lands below this. Was 50.0 on the reasoning that a $5-27 guaranteed profit was 'not worth the position slot or the defined risk carried while waiting'. The first five sessions falsified the premise: refusing does NOT free the slot, it leaves the position as an uncompleted short vertical, and that branch realised an average of -$208.51 per position (17 of them, -$3,544 total) against +$110.47 for a completed fly. Turning down a guaranteed +$9.36 to keep a lottery ticket averaging -$208 is the losing side of that trade. Measured over 07-20..07-24, five completions were blocked by this gate alone at floors of $9.36-$39.36; converting them moves completion rate 57.5% -> 70%, past the ~65% break-even implied by those two averages. 10.0 still rejects the sub-fee-stack cases. Revisit if the uncompleted branch ever stops being the dominant loss.",
+    "min_floor_dollars": 10.0,
 
     "_max_fly_debit": "Outright flies are bought deliberately cheap ($10-50 observed in the reference books). Points, not dollars: 0.50 x 100 = $50.",
     "max_fly_debit": 0.50,
@@ -57,19 +63,29 @@
     "gex": {
       "enabled": true,
       "_note": "Centre on the strongest positive per-strike net GEX within max_center_distance_pct of spot — the best available pin candidate. Degrades to ATM (and says so in center_reason) when the streamer has no open-interest cache yet.",
-      "entry_windows": [["09:45", "14:30"]]
+      "entry_windows": [["10:00", "14:30"]]
     },
     "time_window": {
       "enabled": true,
       "_note": "ATM-centred, entering only inside these windows. Deliberately skips the opening hour, which is the specific timing hypothesis worth testing: 0DTE extrinsic is richest early, but so is realized vol, so an early entry buys more premium and more risk of being run over before the completing spread cheapens. Windows are still NOT ranked against each other — every trade is tagged with the window it entered in, and that ranking comes out of our own sessions.",
       "_history_note": "These were [09:45-10:15, 11:00-11:30, 13:00-13:30, 14:00-14:30] — a strict subset of the control arm's all-day window. A simulated session showed both arms exhausting max_positions inside the shared 09:45-10:15 overlap, so they took near-identical books and the timing restriction was never actually exercised. Starting after the open makes the contrast real.",
-      "entry_windows": [["10:30", "11:00"], ["12:30", "13:00"], ["14:00", "14:30"]]
+      "_windows_note": "Rewritten 2026-07-27 to STRADDLE control's window instead of nesting inside it. The old set (10:30-11:00, 12:30-13:00, 14:00-14:30) sat entirely within control's window, and both arms centre ATM — so the two could only ever want the same strike, and they did: 100% centre agreement across 184 iterations. That is not a measurement, it is an identity; any two ATM arms agree on centre by construction. The contrast this arm exists to draw is TIMING, so its windows must include time control does not trade. 14:30-15:00 runs after control has stopped and is the disjoint contrast; 10:00-10:30 and 12:30-13:00 are deliberate controlled overlaps. Read this arm against control on entry timing and completion, NOT on centre divergence. (A pre-open 09:35-10:00 window was briefly set here the same day and removed within the hour when the post-open blackout went in — it sat entirely inside no_entry_before and would have been dead config.)",
+      "entry_windows": [["10:00", "10:30"], ["12:30", "13:00"], ["14:30", "15:00"]],
+      "_late_window_risk": "The 14:30-15:00 window is the one to watch. Median completion latency has run 46-67 minutes, so an entry at 15:00 has under an hour to the 16:00 close and may not complete — leaving an uncompleted short vertical, which is the module's losing branch. That is the hypothesis being tested rather than an oversight: if late entries systematically fail to complete, the per-window completion table will say so and the window should come back off.",
+      "_max_positions_per_window_note": "2 x 3 windows = 6 against a global max_positions of 4, so the global cap still binds overall but no single window can take more than half the book. Added 07-27 because 15 of 16 legged entries had been landing in the first window, leaving the other two untested.",
+      "max_positions_per_window": 2
     },
     "control": {
       "enabled": true,
       "_note": "ATM, same window and position cap as the gex arm. The shared baseline for BOTH comparisons: gex vs control isolates the CENTRING rule (identical windows), time_window vs control isolates the TIMING (identical centring). It must therefore match gex on everything except where it centres.",
       "_history_note": "This was a single 12:00-12:15 window with max_positions 2, against gex's 09:45-14:30 and 4 — a 19x difference in entry opportunity. Per-trade metrics survive that, but net P&L per arm does not: the gex arm could have out-earned control purely by trading more often, and the headline comparison would have measured trade count rather than the GEX signal.",
-      "entry_windows": [["09:45", "14:30"]]
+      "entry_windows": [["10:00", "14:30"]]
+    },
+    "wide_wing": {
+      "enabled": true,
+      "_note": "Control's twin: ATM, identical window and position cap, differing ONLY in wing_width. That is what makes it a test of width rather than a bundle — wide_wing vs control isolates the wings exactly as gex vs control isolates the centring. Added 07-27 on the strongest signal in the first five sessions: completions arrive only after spot has walked away from the centre (median drift 15.3-17.3 points against a 5-point wing), so 19 of 23 completed flies settled outside their wings and the book earned its floor and nothing more. A 20-point wing brackets the observed drift. This is a hypothesis, not a fix: wider wings cost more to build and put more capital at risk per structure, and if the floor still comes out negative after fees then the answer is that the mechanism is fundamental, which is a result worth having.",
+      "wing_width": 20,
+      "entry_windows": [["10:00", "14:30"]]
     }
   }
 }

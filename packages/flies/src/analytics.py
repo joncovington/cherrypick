@@ -17,12 +17,13 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+import clock  # noqa: E402
 import fly  # noqa: E402
 
 GRANULARITIES = ("daily", "weekly", "monthly")
@@ -131,10 +132,29 @@ def pnl_series(conn, granularity: str = "daily", arm=None, symbol=None) -> list[
 
 
 # --------------------------------------------------------------------------- breakdowns
-def by_arm(conn, start=None, end=None) -> list[dict]:
+# The arms differ by CENTRING, TIMING and WIDTH — never by entry mode. So an arm that also took
+# outright flies is not being compared like for like: `gex` was the only arm ever to take one (5 of
+# them, every one a loser, -$199.45 total), which charged its column with a cost no other arm could
+# incur and made "gex vs control" partly a legged-vs-outright comparison instead of a centring one.
+# The arm comparison therefore reads legged only. This is a READ-LAYER filter on purpose — the rows
+# stay in the ledger, `by_entry_mode` still reports both, and the book totals in `stats_for_period` /
+# `pnl_series` remain whole, because the book really did pay for those flies and rule 6 says a
+# negative result is the finding rather than something to remove.
+COMPARISON_ENTRY_MODES = ("legged",)
+
+
+def by_arm(conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES) -> list[dict]:
     """Per-arm comparison — the module's headline output. The arms exist to be compared; a blended
-    total would hide the only contrast the experiment is designed to draw."""
+    total would hide the only contrast the experiment is designed to draw.
+
+    Scoped to `entry_modes` (legged only by default — see COMPARISON_ENTRY_MODES) so a mode only one
+    arm ever traded cannot distort the ranking. Pass `entry_modes=None` for the unfiltered view; the
+    amount held back is reported by `arm_comparison_exclusions`, so it is never silently dropped.
+    """
     where, params = _period_clause(start, end)
+    if entry_modes:
+        where += f" AND entry_mode IN ({','.join('?' * len(entry_modes))})"
+        params = [*params, *entry_modes]
     rows = conn.execute(
         f"SELECT arm, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params).fetchall()
     grouped: dict[str, list] = {}
@@ -142,6 +162,34 @@ def by_arm(conn, start=None, end=None) -> list[dict]:
         grouped.setdefault(r["arm"] or "unassigned", []).append(r)
     out = [{"arm": arm, **_summarize(rs)} for arm, rs in grouped.items()]
     return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
+
+
+def arm_comparison_exclusions(conn, start=None, end=None,
+                              entry_modes=COMPARISON_ENTRY_MODES) -> dict:
+    """What `by_arm` held back, so the exclusion is stated rather than inferred from a gap.
+
+    Without this the arm table would sum to less than the book's own P&L with nothing on the page to
+    explain the difference — which is the failure mode the filter is supposed to avoid, not create.
+    """
+    where, params = _period_clause(start, end)
+    if not entry_modes:
+        return {"excluded_modes": [], "trades": 0, "net_pnl": 0.0, "by_mode": [], "by_arm": []}
+    clause = f"{where} AND entry_mode NOT IN ({','.join('?' * len(entry_modes))})"
+    rows = conn.execute(
+        f"SELECT arm, entry_mode, gross_pnl, fees, pnl FROM fly_positions WHERE {clause}",
+        [*params, *entry_modes]).fetchall()
+    by_mode: dict[str, list] = {}
+    by_arm_: dict[str, list] = {}
+    for r in rows:
+        by_mode.setdefault(r["entry_mode"] or "unknown", []).append(r)
+        by_arm_.setdefault(r["arm"] or "unassigned", []).append(r)
+    return {
+        "excluded_modes": sorted(by_mode),
+        "trades": len(rows),
+        "net_pnl": _round(sum((r["pnl"] or 0.0) for r in rows)),
+        "by_mode": [{"entry_mode": m, **_summarize(rs)} for m, rs in sorted(by_mode.items())],
+        "by_arm": [{"arm": a, **_summarize(rs)} for a, rs in sorted(by_arm_.items())],
+    }
 
 
 def by_entry_mode(conn, start=None, end=None) -> list[dict]:
@@ -198,7 +246,19 @@ def completion_stats(conn, start=None, end=None) -> dict:
     market's fault or our gate's:
 
       never_offered   the best debit ever seen was still above the credit — no buffer would have helped
-      buffer_too_tight  the best debit beat the credit but not the buffer — our threshold cost us the fly
+      buffer_blocked  the debit beat the credit but not `fee_buffer` — our threshold cost us the fly
+      floor_blocked   it cleared the buffer but the post-fee floor missed `min_floor_dollars`
+
+    The last two used to be reported together as `buffer_too_tight`, which was actively misleading:
+    completion is gated by `D < C - fee_buffer` AND `floor >= min_floor_dollars`, so a miss lumped under
+    that name usually had nothing to do with the buffer. On the first five sessions the split was 1
+    buffer vs 5 floor — and the single buffer case had a post-fee floor of -$1.89, i.e. the buffer
+    correctly refused a money-losing fly. Reading that as "loosen the buffer" is the exact mistake this
+    counterfactual exists to prevent, and the two have opposite remedies.
+
+    Which gate bound is read from the `fly_decisions` journal rather than recomputed here: the engine
+    already recorded its reason against the config in force at the time, so this cannot drift from the
+    gate as configured, and this layer needs no access to config.
     """
     clause, params = [], []
     if start:
@@ -209,22 +269,35 @@ def completion_stats(conn, start=None, end=None) -> dict:
         params.append(end)
     where = (" WHERE " + " AND ".join(clause)) if clause else ""
     rows = conn.execute(
-        f"SELECT kind, entry_mode, credit, best_completing_debit, completion_latency_min, "
-        f"underlying_at_entry, spot_at_completion FROM fly_positions{where}", params).fetchall()
+        f"SELECT position_id, kind, entry_mode, credit, best_completing_debit, "
+        f"completion_latency_min, underlying_at_entry, spot_at_completion "
+        f"FROM fly_positions{where}", params).fetchall()
 
     legged = [r for r in rows if r["entry_mode"] == "legged"]
     completed = [r for r in legged if r["kind"] == "fly"]
     missed = [r for r in legged if r["kind"] != "fly"]
 
-    never_offered, buffer_too_tight, unknown = 0, 0, 0
+    # Positions the floor gate ever turned down. Reaching that gate at all means the debit had already
+    # cleared `fee_buffer`, so a position appearing here was blocked by the floor, not the buffer —
+    # even though it will also carry `completing_debit_too_high` rows from other moments in the session.
+    floor_gated = {
+        r["position_id"] for r in conn.execute(
+            "SELECT DISTINCT position_id FROM fly_decisions "
+            "WHERE mode = 'completion' AND reason = 'floor_below_minimum_after_fees'")
+        if r["position_id"] is not None
+    }
+
+    never_offered, buffer_blocked, floor_blocked, unknown = 0, 0, 0, 0
     for r in missed:
         best, credit = r["best_completing_debit"], r["credit"]
         if best is None or credit is None:
             unknown += 1
         elif best >= credit:
             never_offered += 1
+        elif r["position_id"] in floor_gated:
+            floor_blocked += 1
         else:
-            buffer_too_tight += 1
+            buffer_blocked += 1
 
     latencies = [r["completion_latency_min"] for r in completed
                  if r["completion_latency_min"] is not None]
@@ -236,7 +309,8 @@ def completion_stats(conn, start=None, end=None) -> dict:
         "completed": len(completed),
         "completion_rate": _rate(len(completed), len(legged)),
         "never_offered": never_offered,
-        "buffer_too_tight": buffer_too_tight,
+        "buffer_blocked": buffer_blocked,
+        "floor_blocked": floor_blocked,
         "counterfactual_unknown": unknown,
         "median_latency_min": _round(_median(latencies), 1),
         "min_latency_min": _round(min(latencies), 1) if latencies else None,
@@ -537,7 +611,10 @@ def data_quality(conn, day: str | None = None) -> tuple[list[dict], dict]:
 
 # --------------------------------------------------------------------------- rollup
 def today() -> str:
-    return datetime.now().date().isoformat()
+    """The ET session date, not the machine's local date. West of Eastern the local calendar day is
+    still yesterday well after the ET date has rolled, so a local date would ask for the wrong
+    session's rows on any evening read."""
+    return clock.today_iso()
 
 
 def session_overview(conn, day: str | None = None) -> dict:
