@@ -602,7 +602,9 @@ def _check_eod(cfg: dict[str, Any], now: datetime, is_trading: bool) -> None:
         return
     ed = cfgmod.eod_digest_settings(cfg)
     ei = cfgmod.insight_settings(cfg)
-    if not ed["enabled"] and not ei["enabled"]:
+    adv = cfgmod.advise_settings(cfg)
+    adv_on = adv["enabled"] and any(m.get("enabled") for m in adv["modules"].values())
+    if not ed["enabled"] and not ei["enabled"] and not adv_on:
         return
 
     day = now.date().isoformat()
@@ -624,6 +626,11 @@ def _check_eod(cfg: dict[str, Any], now: datetime, is_trading: bool) -> None:
         launched_ok = _eod_launch("notify-eod") and launched_ok
     if ei["enabled"]:
         launched_ok = _eod_launch("eod-insight") and launched_ok
+    if adv_on:
+        # Same completion event, same detachment: next-session advice is generated from the day's
+        # freshly-written reports, and the claude call never runs in the watchdog process. The
+        # watchdog fires it and forgets — it never waits on or alerts about advice generation.
+        launched_ok = _eod_launch("advise") and launched_ok
     # Mark fired regardless of launch outcome so a transient Popen failure can't loop every tick —
     # but a failed launch must not be SILENT: the digest exists for the walk-away guarantee, so a
     # lost day gets a notification pointing at the manual re-run instead of vanishing.

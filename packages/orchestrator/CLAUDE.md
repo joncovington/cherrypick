@@ -32,6 +32,7 @@ python run.py eod-digest     # write logs/eod-digest-<day>.md: one session's cro
 python run.py notify-eod     # write the digest + push a one-line summary (the watchdog fires this, detached, once every module has settled)
 python run.py archive        # end-of-month rotation: zip each finished month's reports + rotated logs to logs/archive/ (--dry-run / --month YYYY-MM); scheduled monthly as cherrypick-log-archive
 python run.py eod-insight    # opt-in AI synthesis over the day's deterministic reports -> logs/eod-insight-<day>.md (needs Claude Code on PATH + eod_insight.enabled); watchdog-fired (detached) on the same completion event as the digest
+python run.py advise         # opt-in bounded next-session parameter proposals per module -> state/advice/<module>-<session>.json, validated by cherrypick.core.advice against each module's advice_bounds (needs Claude Code on PATH + advise.enabled + per-module enabled); watchdog-fired (detached) on the same completion event; loops re-validate and treat absent/stale/invalid as baseline
 python run.py dashboard      # regenerate the static status dashboard -> dashboard.html
 python run.py calibrate      # per-profile calibration readings + promotion recommendations
 python run.py migrate-home   # dry-run: move config files into ~/.cherrypick + sweep leftovers (--apply to perform)
@@ -75,14 +76,20 @@ resolved **relative to the config file's directory** — never hardcode absolute
   counterpart: a monthly `cherrypick-log-archive` task zips each finished month's reports + rotated logs
   into `logs/archive/<YYYY-MM>/<scope>.zip` and removes the originals (idempotent, never touches the
   current month or an active `.log`) — also files-only and off the reliability path. `eod_insight.py`
-  (`cherrypick eod-insight`) is the one place AI is invoked, and it is deliberately fenced: **opt-in and
-  feature-detected** (`eod_insight.enabled` + Claude Code on PATH — off by default), it pipes the day's
-  deterministic reports to `claude -p` in headless mode with **no execution/edit/network tools** and
-  writes `eod-insight-<day>.md` (surfaced on the dashboard EOD card). The watchdog **launches it detached**
-  on the same completion event as the digest — never in the watchdog process, so the `claude` call stays
-  off the reliability path. It is an enrichment surface **off the watchdog reliability path**, best-effort,
-  paper-reports-only — the deterministic `eod-analysis` stays the source of record, so the "no AI on the
-  reliability path" invariant holds.
+  (`cherrypick eod-insight`) and `advise.py` (`cherrypick advise`) are the two places AI is invoked, and
+  both are deliberately fenced: **opt-in and feature-detected** (their `enabled` flags + Claude Code on
+  PATH — off by default), piping the day's deterministic reports to `claude -p` in headless mode with
+  **no execution/edit/network tools**, and the orchestrator — never the agent — writes the output. The
+  watchdog **launches both detached** on the same completion event as the digest — never in the watchdog
+  process, so the `claude` calls stay off the reliability path. `eod-insight` writes prose
+  (`eod-insight-<day>.md`, surfaced on the dashboard EOD card). `advise` writes **bounded parameter
+  proposals** for the NEXT session (`state/advice/<module>-<session>.json`): every proposal must pass
+  `cherrypick.core.advice` against the module's `advice_bounds` manifest of closed legal ranges (one
+  violation rejects the whole set, the rejections written anyway for audit), the artifact is
+  single-session and expiring, and the module's paper loop re-validates with the **same core code** at
+  session start — absent/stale/invalid advice means baseline behavior, and advice can only ever narrow
+  into declared ranges. Both are enrichment surfaces, best-effort, paper-only — the deterministic
+  reports stay the source of record, so the "no AI on the reliability path" invariant holds.
 
 **Per-schema dispatch.** Each module's paper DB has a different schema, selected by
 `paper.trade_schema` in config (`"meic_ic"` → MEIC's `ic_trades`; `"earnings"` → the Earnings module's
