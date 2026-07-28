@@ -61,7 +61,9 @@ def run(cfg: dict | None = None) -> dict:
 
         conn = report._connect_ro(db_path)
         try:
-            records = reader(conn)
+            # Epoch pushdown: readers that can bound the session in SQL skip pre-epoch rows
+            # at the query; the Python filter below stays as the belt (earnings, undated rows).
+            records = reader(conn, start=(epoch["date"] if epoch else None))
         except Exception as exc:  # empty/uninitialized DB, missing table — never crash calibration
             modules_out[name] = {"ok": False, "reason": f"read failed: {exc}"}
             continue
