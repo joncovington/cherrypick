@@ -477,8 +477,12 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
     if account_open_count >= params["max_concurrent_ics"]:
         return False, "max_concurrent_ics_reached", None
 
-    # Quarterly / triple-witching hard stops
+    # Quarterly / triple-witching hard stops. intraday_range_pct is the session's
+    # (high - low) / price so far, exchange-official via the streamer's Summary rows;
+    # None (feed not yet warm / streamer down) leaves the range clauses inactive, the
+    # same fail-open convention as the ATR gate above.
     today = snapshot.get("date")
+    intraday_range_pct = snapshot.get("intraday_range_pct")
     is_quarterly = _is_event_day(today, _cal.is_quarterly_expiry)
     is_witching = _is_event_day(today, _cal.is_triple_witching)
     if is_quarterly or is_witching:
@@ -486,15 +490,23 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
             return False, "quarterly_open_volatile_skip", None
         if is_witching and now_min > _time_to_minutes("12:30"):
             return False, "triple_witching_no_new_entries", None
+        if (is_quarterly and intraday_range_pct is not None
+                and intraday_range_pct > params.get("quarterly_expiry_max_intraday_range_pct", 0.005)):
+            return False, "quarterly_intraday_range_exceeded", None
 
-    # FOMC blackout
+    # FOMC blackout. Post-blackout entries need normalized volatility: IV rank still
+    # holding, and the session range not already blown out. The range clause is
+    # percentage-based (the old literal was 3.5 POINTS — symbol-agnostic in exactly the
+    # way the ATR gate was already fixed for, and inert besides: nothing populated it).
     if _is_event_day(today, _cal.is_fomc_day):
         blackout_start = _time_to_minutes(params.get("fomc_blackout_start", "13:30"))
         blackout_end = _time_to_minutes(params.get("fomc_blackout_end", "14:30"))
         if now_min >= blackout_start and now_min < blackout_end:
             return False, "fomc_blackout", None
         if now_min >= blackout_end:
-            if iv_rank < 0.40 or snapshot.get("intraday_range", 0) > 3.5:
+            range_blown = (intraday_range_pct is not None
+                           and intraday_range_pct > params.get("fomc_post_blackout_max_intraday_range_pct", 0.005))
+            if iv_rank < params.get("fomc_post_blackout_min_iv_rank", 0.40) or range_blown:
                 return False, "fomc_post_blackout_insufficient_premium", None
 
     open_strikes = set()

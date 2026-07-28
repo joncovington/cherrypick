@@ -522,7 +522,7 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
             for b in elig:
                 view = {"symbol": "SPX", "date": date, "now_et": now_et, "dte": 0,
                         "underlying_price": spot, "iv_rank": rank, "vix": vix,
-                        "vix1d_ratio": None, "atr_5day": None,
+                        "vix1d_ratio": None, "atr_5day": None, "intraday_range_pct": None,
                         "session_quality": session_quality(now_min), "gex": {"ok": False},
                         "candidates": cands, "leg_quotes": {}}
                 overlap = [{"put_strike": ic["legs"]["sp_k"], "call_strike": ic["legs"]["sc_k"]}

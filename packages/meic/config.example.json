@@ -153,5 +153,8 @@
 
   "fomc_header": "===== FOMC Calendar & Blackout =====",
   "fomc_blackout_start": "13:30",
-  "fomc_blackout_end": "14:30"
+  "fomc_blackout_end": "14:30",
+  "fomc_post_blackout_min_iv_rank": 0.40,
+  "fomc_post_blackout_max_intraday_range_pct": 0.005,
+  "_fomc_post_blackout_note": "Post-blackout entries on FOMC days require normalized volatility: IV rank still >= fomc_post_blackout_min_iv_rank AND the session's intraday range (high-low) as a fraction of price <= fomc_post_blackout_max_intraday_range_pct (0.005 = 0.5%). Percentage-based so one threshold means the same thing across symbols; replaces the old hardcoded 3.5-point literal, which was symbol-agnostic and inert (nothing populated the range). The range feed is the streamer's stream_summary day rows (tt.py get_intraday_range); while the streamer is down or the feed is warming up the range clause stays inactive."
 }
