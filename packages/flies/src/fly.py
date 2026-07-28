@@ -235,20 +235,40 @@ def book_floor(positions: list[dict], step: float = 1.0) -> dict:
         worst           minimum P&L found on the scan grid
         worst_at        the price where that minimum occurs
         floor_holds     True when the book is non-negative EVERYWHERE (unconditionally risk-free)
-        band            (low, high) contiguous range around spot-of-max where P&L >= 0, or None
+        band            (low, high) of the CONTIGUOUS non-negative zone containing the payoff
+                        maximum, or None when the book is negative everywhere
+        bands           every contiguous non-negative zone, low-to-high (the forest's zones)
         unbounded_below True when a short vertical leaves the book losing beyond its wings
     """
     if not positions:
         return {"worst": 0.0, "worst_at": None, "floor_holds": True, "band": None,
-                "unbounded_below": False}
+                "bands": [], "unbounded_below": False}
 
     prices = _scan_prices(positions, step)
     pnls = [book_pnl(positions, x) for x in prices]
     worst = min(pnls)
     worst_at = prices[pnls.index(worst)]
 
-    positive = [x for x, v in zip(prices, pnls, strict=False) if v >= 0]
-    band = (min(positive), max(positive)) if positive else None
+    # Contiguous non-negative zones (runs on the grid). The strategy's own premise is a
+    # FOREST -- several profit zones with troughs between them -- so a min/max over all
+    # non-negative points would span a losing trough and claim the floor holds where it
+    # doesn't. `band` is the zone containing the payoff maximum: a single honest range
+    # that can understate coverage, never overstate it. The full set is in `bands`.
+    zones: list[tuple[float, float]] = []
+    run_start = run_end = None
+    for x, v in zip(prices, pnls, strict=True):
+        if v >= 0:
+            if run_start is None:
+                run_start = x
+            run_end = x
+        elif run_start is not None:
+            zones.append((run_start, run_end))
+            run_start = run_end = None
+    if run_start is not None:
+        zones.append((run_start, run_end))
+
+    best_at = prices[pnls.index(max(pnls))]
+    band = next((z for z in zones if z[0] <= best_at <= z[1]), None)
 
     # Beyond every strike the payoff is flat, so the endpoints of the grid are the true tails.
     unbounded = pnls[0] < 0 or pnls[-1] < 0
@@ -257,5 +277,6 @@ def book_floor(positions: list[dict], step: float = 1.0) -> dict:
         "worst_at": worst_at,
         "floor_holds": worst >= 0,
         "band": band,
+        "bands": zones,
         "unbounded_below": unbounded,
     }
