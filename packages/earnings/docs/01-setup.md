@@ -47,8 +47,9 @@ pip install -r requirements-dev.txt
 ```
 
 `requirements.txt` pulls in `tastytrade` (broker SDK), `keyring` (OS-native credential storage
-for OAuth secrets), `mysql-connector-python` (talks to `dolt sql-server`, which speaks the MySQL
-wire protocol), and `matplotlib` (for `strategy_dashboard.py`'s charts).
+for OAuth secrets), and `mysql-connector-python` (talks to `dolt sql-server`, which speaks the
+MySQL wire protocol). `strategy_dashboard.py`'s charts are `cherrypick.core.viz` cards drawn
+client-side on a plain canvas, so the dashboard needs no charting dependency.
 
 ---
 

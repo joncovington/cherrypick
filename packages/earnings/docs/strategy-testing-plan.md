@@ -80,10 +80,12 @@ python src/strategy_dashboard.py --since YYYY-MM-DD
 `strategy_report.py` prints a per-strategy table (sample count vs targets, win rate, profit
 factor, expectancy, Sharpe, max drawdown, average IV crush, regime coverage) to stdout.
 `strategy_dashboard.py` writes a self-contained, offline `reports/strategy_dashboard.html`
-(matplotlib charts as base64 PNGs — no server, no network) with equity curves,
-drawdown/underwater plots, a regime-coverage heatmap, a rejection-reason histogram, and a
-cross-strategy comparison grid with a Cumulative / Rolling-4-week / Rolling-1-week /
-Per-week timeframe toggle. Both read `strategy_metrics.py`, so they can never disagree.
+(`cherrypick.core.viz` cards with payloads baked inline, drawn on a plain canvas — no server,
+no network, no CDN) with date-axis equity curves (drawdown folded in as a second series), a
+regime-coverage heat table, a rejection-reason histogram, and a cross-strategy comparison grid
+with a Cumulative / Rolling-4-week / Rolling-1-week / Per-week timeframe toggle. Both read
+`strategy_metrics.py`, so they can never disagree. The compact suite-dashboard card
+(`strategy_section.py --json`) reads the same module, so it can't disagree either.
 
 **Live vs paper (`--mode`)**: both tools default to `--mode paper` (this whole program is a
 paper test, and `enable_live_trading` is off). `--mode live` points them at
