@@ -23,7 +23,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from . import config as cfgmod
-from . import dashboard, doctor, embeds, reconcile, sections
+from . import dashboard, doctor, embeds, liveops, reconcile, sections
 
 _SESSION_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -326,6 +326,15 @@ def _make_handler(cfg: dict[str, Any]):
                         ],
                     }
                 except Exception as exc:  # a doctor hiccup shows inline, never crashes the server
+                    payload = {"ok": False, "error": str(exc)}
+                self._send(200, json.dumps(payload).encode("utf-8"), "application/json")
+                return
+            if parsed.path == "/api/liveops":
+                try:
+                    # Files + keyring only (kill switches, designated accounts, halt flag) — fast,
+                    # no broker. The broker-truth half of the Live Ops card is /api/reconcile.
+                    payload = liveops.run(cfg)
+                except Exception as exc:  # a liveops hiccup shows inline, never crashes the server
                     payload = {"ok": False, "error": str(exc)}
                 self._send(200, json.dumps(payload).encode("utf-8"), "application/json")
                 return

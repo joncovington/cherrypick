@@ -122,7 +122,14 @@ is excluded from ruff and from the packaged wheel.
   offline. The one exception is deliberate and gated: `dashboard --serve` exposes a `/api/system` route
   that runs `doctor.run()` for a live-checks card, polled client-side. That broker-touching call lives
   only on the served path (never the static regen), mirroring how the live section cards work — so the
-  file written on every watchdog tick still never touches the broker. `dashboard --serve` also embeds
+  file written on every watchdog tick still never touches the broker. The serve-only **Live Ops card**
+  (`orchestrator/liveops.py`, `/api/liveops`) is the phase-5 gate surface: each module's
+  `enable_live_trading` kill switch (home config first, then in-repo), its designated live account
+  (masked, via the module keyring), and the suite **halt flag** — `state/halt-live.flag` in the
+  cherrypick home, whose *presence* is the signal (`liveops.halt_flag_path()` defines the path;
+  future live loops poll the same file). liveops is files + keyring only and never writes; the
+  broker-truth half of that card is the existing `/api/reconcile` panel, which composes into it
+  (a designated account's position listing is the live book). `dashboard --serve` also embeds
   each module's own dashboard in an iframe (`orchestrator/embeds.py`, `/embed/<id>` route): it launches
   a module's dashboard server or regenerates its static HTML on demand, driven by config-declared argv
   with **PAPER mode forced** in that argv. This too is serve-only (the static file omits the iframes)
