@@ -159,16 +159,6 @@ tbody tr:hover{background:#1c222b}
 .scroll{overflow-x:auto;max-height:420px;overflow-y:auto}
 .empty{color:var(--dim);font-style:italic;padding:14px 4px}
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
-/* Per-column filter row, sitting directly under the header so each control is in its own column.
-   Sticky with the header because the log scrolls and a filter you have to scroll back up to change
-   is a filter you stop using. */
-thead tr.filter-row th{padding:3px 6px 6px;position:sticky;top:22px;background:var(--panel);z-index:2}
-thead tr.hdr-row th{position:sticky;top:0;background:var(--panel);z-index:3}
-tr.filter-row input,tr.filter-row select{width:100%;box-sizing:border-box;font:inherit;font-size:11px;
-padding:2px 4px;background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:4px}
-tr.filter-row input:focus,tr.filter-row select:focus{outline:1px solid var(--accent);border-color:var(--accent)}
-tr.filter-row .rng{display:flex;gap:3px}
-tr.filter-row .on{border-color:var(--accent)}
 .f-clear{background:none;border:1px solid var(--line);color:var(--dim);border-radius:4px;
 padding:3px 8px;font-size:11px;cursor:pointer}
 .f-clear:hover{color:var(--fg);border-color:var(--accent)}
@@ -311,109 +301,11 @@ let DATA = null, ARM = 'ALL';
 
    State lives in a caller-owned object rather than in the DOM: every render replaces innerHTML, so
    anything read back off the inputs is gone the moment the 30s refresh fires mid-typing. */
-const FILTER_ALL = '— all —';
-
-function colValue(c, r) { return (c.v ? c.v(r) : c.f(r)); }
-
-function distinctValues(c, rows) {
-  const seen = new Set();
-  rows.forEach(r => { const v = colValue(c, r); if (v !== null && v !== undefined && v !== '') seen.add(String(v)); });
-  return [...seen].sort();
-}
-
-function matchesFilters(cols, r, state) {
-  return cols.every((c, i) => {
-    const f = state[i];
-    if (!c.filter || !f) return true;
-    const raw = colValue(c, r);
-    if (c.filter === 'select') return !f.eq || String(raw) === f.eq;
-    if (c.filter === 'text') return !f.q || String(raw ?? '').toLowerCase().includes(f.q.toLowerCase());
-    if (c.filter === 'range') {
-      const n = Number(raw);
-      if (f.min !== '' && f.min !== undefined && !(n >= Number(f.min))) return false;
-      if (f.max !== '' && f.max !== undefined && !(n <= Number(f.max))) return false;
-      return true;
-    }
-    if (c.filter === 'daterange') {
-      const s = String(raw ?? '');
-      if (f.min && s < f.min) return false;
-      if (f.max && s > f.max) return false;
-      return true;
-    }
-    return true;
-  });
-}
-
-function filterActive(state) {
-  return Object.values(state || {}).some(f => f &&
-    ((f.eq || '') !== '' || (f.q || '') !== '' || (f.min || '') !== '' || (f.max || '') !== ''));
-}
-
-function filterCellHtml(c, i, state, allRows) {
-  if (!c.filter) return '';
-  const f = state[i] || {};
-  const on = v => (v ? ' on' : '');
-  if (c.filter === 'select') {
-    const opts = distinctValues(c, allRows).map(v =>
-      `<option${String(f.eq) === v ? ' selected' : ''}>${v}</option>`).join('');
-    return `<select class="f-in${on(f.eq)}" data-fi="${i}" data-fk="eq">` +
-           `<option value="">${FILTER_ALL}</option>${opts}</select>`;
-  }
-  if (c.filter === 'text') {
-    return `<input class="f-in${on(f.q)}" data-fi="${i}" data-fk="q" value="${f.q || ''}" placeholder="…">`;
-  }
-  const t = c.filter === 'daterange' ? 'date' : 'number';
-  return `<div class="rng">` +
-    `<input type="${t}" class="f-in${on(f.min)}" data-fi="${i}" data-fk="min" value="${f.min || ''}" placeholder="min">` +
-    `<input type="${t}" class="f-in${on(f.max)}" data-fi="${i}" data-fk="max" value="${f.max || ''}" placeholder="max">` +
-    `</div>`;
-}
-
-/* `opts` (all optional): {state, onChange, allRows} turns on the per-column filter row. `allRows` is
-   the UNFILTERED set, so a select keeps offering every value rather than collapsing to whatever the
-   current filter already left standing. */
-function table(el, cols, rows, empty, opts) {
-  const o = opts || {};
-  const filterable = o.state && cols.some(c => c.filter);
-  const hdr = '<tr class="hdr-row">' +
-    cols.map(c => `<th class="${c.num?'num':''}">${c.h}</th>`).join('') + '</tr>';
-  const frow = filterable
-    ? '<tr class="filter-row">' +
-      cols.map((c, i) => `<th>${filterCellHtml(c, i, o.state, o.allRows || rows)}</th>`).join('') +
-      '</tr>'
-    : '';
-  if (!rows || !rows.length) {
-    el.innerHTML = filterable
-      ? `<thead>${hdr}${frow}</thead><tbody><tr><td class="empty" colspan="${cols.length}">${empty || 'Nothing yet.'}</td></tr></tbody>`
-      : `<tbody><tr><td class="empty">${empty || 'Nothing yet.'}</td></tr></tbody>`;
-    if (filterable) wireFilters(el, o);
-    return;
-  }
-  const body = '<tbody>' + rows.map(r => '<tr>' + cols.map(c => {
-    const v = c.f(r);
-    return `<td class="${c.num?'num':''} ${c.tone?c.tone(r):''}">${v === null || v === undefined ? '–' : v}</td>`;
-  }).join('') + '</tr>').join('') + '</tbody>';
-  el.innerHTML = `<thead>${hdr}${frow}</thead>` + body;
-  if (filterable) wireFilters(el, o);
-}
-
-function wireFilters(el, o) {
-  el.querySelectorAll('.f-in').forEach(inp => {
-    const commit = () => {
-      const i = inp.dataset.fi, k = inp.dataset.fk;
-      o.state[i] = Object.assign({}, o.state[i], {[k]: inp.value});
-      o.onChange && o.onChange();
-    };
-    // `change` for selects/dates, `input` for typing — but re-render on every keystroke would steal
-    // focus mid-word, so text inputs commit on a short idle instead.
-    if (inp.type === 'number' || inp.tagName === 'INPUT' && !inp.type.startsWith('date')) {
-      let t; inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(commit, 350); });
-      inp.addEventListener('change', commit);
-    } else {
-      inp.addEventListener('change', commit);
-    }
-  });
-}
+/* The filterable-table component lives in cherrypick.core.viz (this page's version was the
+   donor). Local aliases keep the eleven call sites reading naturally. */
+const table = window.cpTable;
+const matchesFilters = window.cpTableMatches;
+const filterActive = window.cpFilterActive;
 
 function tiles(el, items) {
   el.innerHTML = items.map(i =>
@@ -1125,8 +1017,9 @@ setInterval(refresh, 15000);
 HTML = (
     "<!doctype html><meta charset='utf-8'><title>Flies — paper</title>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    f"<style>{_STYLE}{viz.REORDER_STYLE}{viz.CAL_HEAT_STYLE}</style>{_BODY}"
-    f"<script>{viz.CAL_HEAT_JS}</script><script>{_JS}</script><script>{viz.REORDER_JS}</script>"
+    f"<style>{_STYLE}{viz.REORDER_STYLE}{viz.CAL_HEAT_STYLE}{viz.TABLE_STYLE}</style>{_BODY}"
+    f"<script>{viz.CAL_HEAT_JS}</script><script>{viz.TABLE_JS}</script>"
+    f"<script>{_JS}</script><script>{viz.REORDER_JS}</script>"
 )
 
 
