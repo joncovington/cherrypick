@@ -18,7 +18,7 @@ import socket
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -318,13 +318,19 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
     else:
         findings.append(Finding(f"{name}.task", OK, f"{label} paper task", "registered"))
 
-    # (b) freshness during the session
+    # (b) freshness during the session. The log lives in the shared logs home
+    # (~/.cherrypick/logs/<name>/), NOT the module checkout -- config declares it
+    # checkout-relative for historical reasons, so resolve the basename against
+    # module_logs_dir exactly like the dashboard does. Resolving against `root`
+    # silently misses (the old bug: _file_age_minutes returns None for a missing
+    # file, so half the freshness signal was dead with no error).
     if in_session:
+        log_rel = paper.get("log")
         ages = [
             a
             for a in (
                 _file_age_minutes(cfgmod.paper_db_path(mcfg, name)) if paper.get("paper_db") else None,
-                _file_age_minutes(root / paper["log"]) if paper.get("log") else None,
+                _file_age_minutes(cfgmod.module_logs_dir(name) / Path(log_rel).name) if log_rel else None,
             )
             if a is not None
         ]
@@ -392,11 +398,17 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
                 )
             )
 
-    # (c) entry SLA — after entry_time+grace on a trading day, the run must have happened
+    # (c) entry SLA — after entry_time+grace on a trading day, the run must have happened.
+    # The grace matters: the entry task fires AT entry_time, its subprocess may run up to
+    # 30 minutes (cli timeout 1800s), and the heartbeat is only written after it returns —
+    # so a comparison against entry_time alone raised CRITICAL for a run that was simply
+    # still in progress (the same false-alarm class _check_settlement's grace fixed).
     if is_trading and paper.get("entry_time"):
         try:
             eh, em = [int(x) for x in paper["entry_time"].split(":")]
-            grace_passed = now_et.time() >= datetime(now_et.year, now_et.month, now_et.day, eh, em).time()
+            grace = int(paper.get("entry_sla_grace_minutes", 35))
+            deadline = now_et.replace(hour=eh, minute=em, second=0, microsecond=0) + timedelta(minutes=grace)
+            grace_passed = now_et >= deadline
         except Exception:
             grace_passed = False
         if grace_passed:
@@ -611,14 +623,26 @@ def _check_eod(cfg: dict[str, Any], now: datetime, is_trading: bool) -> None:
     if missing and not past_deadline:
         return  # wait for the stragglers until the backstop
 
+    launched_ok = True
     if ed["enabled"]:
-        _eod_launch("notify-eod")
+        launched_ok = _eod_launch("notify-eod") and launched_ok
     if ei["enabled"]:
-        _eod_launch("eod-insight")
-    # Mark fired regardless of launch outcome so a transient Popen failure can't loop every tick; a
-    # failed launch is rare and the digest can always be run by hand.
+        launched_ok = _eod_launch("eod-insight") and launched_ok
+    # Mark fired regardless of launch outcome so a transient Popen failure can't loop every tick —
+    # but a failed launch must not be SILENT: the digest exists for the walk-away guarantee, so a
+    # lost day gets a notification pointing at the manual re-run instead of vanishing.
     state[_EOD_FIRED_KEY] = day
     _save_state(state)
+    if not launched_ok:
+        try:
+            Notifier(cfg.get("notify")).notify(
+                "WARNING",
+                "eod.launch",
+                "EOD digest/insight launch failed",
+                f"Detached launch failed for {day}. Run `cherrypick notify-eod` (and `eod-insight`) by hand.",
+            )
+        except Exception:
+            pass
 
 
 def _log_findings(findings: list[Finding], overall: str) -> None:
