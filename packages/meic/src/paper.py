@@ -638,6 +638,11 @@ def synthetic_entry_fill(snapshot: dict, profile_name: str, chosen: dict, params
         "put_credit": chosen["put_credit"],
         "call_credit": chosen["call_credit"],
         "net_credit": chosen["net_credit"],
+        # Modeled slippage dollars conceded opening the four legs (frac x spread sum x100).
+        # Exits accumulate onto this; net at a stressed 2x slippage = net - slippage_dollars.
+        "slippage_dollars": round(
+            params.get("slippage_frac_of_spread", DEFAULT_SLIPPAGE_FRAC)
+            * (_leg_spread(sp) + _leg_spread(lp) + _leg_spread(sc) + _leg_spread(lc)) * 100, 4),
         "quantity": 1,
         "put_delta_at_entry": sp.get("delta"),
         "call_delta_at_entry": sc.get("delta"),
@@ -819,6 +824,13 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
     slippage_frac = params.get("slippage_frac_of_spread", DEFAULT_SLIPPAGE_FRAC)
     # MEIC has no profit target: an iron condor is only ever closed by a per-side stop, a
     # (non-cash-settled) time-based force-close, or an event force-close. See docs/strategy.md.
+    # Modeled slippage DOLLARS per side-close (frac x that side's two leg spreads x100),
+    # carried on every priced exit so the row accumulates its total slippage cost.
+    # Because slippage is linear in the fraction, net P&L at a stressed 2x fraction is
+    # exactly net - slippage_dollars: the cost-sensitivity column reads straight off it.
+    put_slip = round(slippage_frac * (_leg_spread(sq) + _leg_spread(lpq)) * 100, 4)
+    call_slip = round(slippage_frac * (_leg_spread(cq) + _leg_spread(lcq)) * 100, 4)
+
     if force_close:
         put_exit = max(_close_cost(sq, lpq, slippage_frac), 0) if put_open else None
         call_exit = max(_close_cost(cq, lcq, slippage_frac), 0) if call_open else None
@@ -845,6 +857,8 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
             "call_open": call_open,
             "put_exit_price": put_exit,
             "call_exit_price": call_exit,
+            "put_exit_slippage": put_slip if put_open else None,
+            "call_exit_slippage": call_slip if call_open else None,
             "reason": force_close_reason,
             "physical_friction_applied": friction_applied,
         }
@@ -884,12 +898,16 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
             "action": "stop_both",
             "put_exit_price": round(put_cost, 4),
             "call_exit_price": round(call_cost, 4),
+            "put_exit_slippage": put_slip,
+            "call_exit_slippage": call_slip,
             **marks,
         }
     if call_trigger:
-        return {"action": "stop_call", "call_exit_price": round(call_cost, 4), **marks}
+        return {"action": "stop_call", "call_exit_price": round(call_cost, 4),
+                "call_exit_slippage": call_slip, **marks}
     if put_trigger:
-        return {"action": "stop_put", "put_exit_price": round(put_cost, 4), **marks}
+        return {"action": "stop_put", "put_exit_price": round(put_cost, 4),
+                "put_exit_slippage": put_slip, **marks}
 
     return {"action": "hold", **marks}
 
@@ -1058,6 +1076,15 @@ def _max_cost_updates(trade: dict, decision: dict) -> dict:
     return out
 
 
+def _exit_slippage_update(trade: dict, decision: dict) -> dict:
+    """Accumulate this exit's modeled slippage dollars onto the row's running total.
+    Empty when the decision priced nothing (hold/expire — settlement crosses no spread)."""
+    add = (decision.get("put_exit_slippage") or 0) + (decision.get("call_exit_slippage") or 0)
+    if add <= 0:
+        return {}
+    return {"slippage_dollars": round(float(trade.get("slippage_dollars") or 0) + add, 4)}
+
+
 def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str) -> None:
     action = decision["action"]
     now = str(_now_et())
@@ -1119,7 +1146,8 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
         fee = close_fees_one_side(symbol) if action != "stop_both" else close_fees_full_ic(symbol)
         # `max_updates` folded in here so the peak isn't lost on the iteration that exits — the stop
         # cost IS the running max at that moment, and it's the datum the counterfactual compares against.
-        updates = {"fees": (trade.get("fees") or 0) + fee, **max_updates}
+        updates = {"fees": (trade.get("fees") or 0) + fee, **max_updates,
+                   **_exit_slippage_update(trade, decision)}
         if action in ("stop_call", "stop_both"):
             call_pnl = round((trade["call_credit"] - decision["call_exit_price"]) * mult, 2)
             updates["call_stop_cost"] = decision["call_exit_price"]
@@ -1170,6 +1198,7 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
             "exit_reason": (reason + "+prior_stop") if was_stopped else reason,
             "pnl": existing_pnl + delta_pnl, "fees": (trade.get("fees") or 0) + fee,
             **max_updates,
+            **_exit_slippage_update(trade, decision),
         }, db_path)
         return
 

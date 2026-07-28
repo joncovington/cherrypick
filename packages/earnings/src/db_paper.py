@@ -165,6 +165,11 @@ _MIGRATIONS = [
     ("trades", "close_attempts", "ALTER TABLE trades ADD COLUMN close_attempts INTEGER NOT NULL DEFAULT 0"),
     ("trades", "last_close_error", "ALTER TABLE trades ADD COLUMN last_close_error TEXT"),
     ("trades", "last_close_attempt_at", "ALTER TABLE trades ADD COLUMN last_close_attempt_at REAL"),
+    # Cost-sensitivity: the slippage component of entry_cost/exit_cost, stored separately.
+    # Slippage is linear in slippage_frac_of_spread, so net P&L at a stressed 2x fraction
+    # = net - (entry_slippage + exit_slippage) exactly.
+    ("trades", "entry_slippage", "ALTER TABLE trades ADD COLUMN entry_slippage REAL"),
+    ("trades", "exit_slippage", "ALTER TABLE trades ADD COLUMN exit_slippage REAL"),
     ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
 ]
 
@@ -213,8 +218,8 @@ def cmd_save_trade(args) -> dict:
             "INSERT INTO trades "
             "(order_id, strategy, symbol, expiration, short_strike, long_call_strike, "
             " long_put_strike, legs_json, entry_credit, opened_at, profile, quantity, "
-            " capital_at_risk, entry_cost, entry_context, entry_iv) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " capital_at_risk, entry_cost, entry_slippage, entry_context, entry_iv) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["order_id"],
                 spec.get("strategy", "iron_fly"),
@@ -230,6 +235,7 @@ def cmd_save_trade(args) -> dict:
                 spec.get("quantity"),
                 spec.get("capital_at_risk"),
                 spec.get("entry_cost"),
+                spec.get("entry_slippage"),
                 json.dumps(entry_context) if entry_context is not None else None,
                 spec.get("entry_iv"),
             ),
@@ -297,13 +303,14 @@ def cmd_save_close(args) -> dict:
     conn = _conn()
     try:
         cur = conn.execute(
-            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, exit_iv = ? "
-            "WHERE order_id = ?",
+            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, "
+            "exit_slippage = ?, exit_iv = ? WHERE order_id = ?",
             (
                 spec.get("exit_debit"),
                 spec.get("pnl"),
                 spec.get("closed_at", time.time()),
                 spec.get("exit_cost"),
+                spec.get("exit_slippage"),
                 spec.get("exit_iv"),
                 order_id,
             ),

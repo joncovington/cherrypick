@@ -543,6 +543,44 @@ _CHEAP_QUOTES = {
 }
 
 
+# ── Cost sensitivity: every fill records its modeled slippage dollars ──────────
+
+def test_stop_decision_carries_the_sides_slippage_dollars():
+    """spread(SP)=0.05, spread(LP)=0.03 -> put side slip = 0.125 * 0.08 * 100 = $1.00."""
+    trade = _markable_trade(stop_trigger_current=0.10)  # trigger low enough to fire
+    d = paper.evaluate_open_trade(trade, _CHEAP_QUOTES, _params(MODERATE),
+                                  force_close=False, underlying_price=7500.0, settle=False)
+    assert d["action"] == "stop_both"
+    assert d["put_exit_slippage"] == pytest.approx(0.125 * (0.05 + 0.03) * 100)
+    assert d["call_exit_slippage"] == pytest.approx(0.125 * (0.04 + 0.02) * 100)
+
+
+def test_exit_slippage_accumulates_on_the_row(monkeypatch):
+    written = {}
+    monkeypatch.setattr(paper, "_update_trade",
+                        lambda oid, fields, db: written.setdefault(oid, {}).update(fields) or {"ok": True})
+    monkeypatch.setattr(paper, "_db", lambda a, d: {"ok": True})
+    trade = _markable_trade(ic_order_id="IC-SLIP", slippage_dollars=2.50)
+    paper._apply_exit_decision(trade, {"action": "stop_put", "put_exit_price": 1.0,
+                                       "put_exit_slippage": 1.00}, "SPX", "unused.db")
+    assert written["IC-SLIP"]["slippage_dollars"] == pytest.approx(3.50)
+
+
+def test_entry_fill_records_its_slippage_dollars():
+    chosen = {
+        "wing_width": 5, "net_credit": 1.0, "put_credit": 0.5, "call_credit": 0.5,
+        "open_fee": 6.89,
+        "short_put": {"strike": 5995, "bid": 1.00, "ask": 1.10},
+        "long_put": {"strike": 5990, "bid": 0.50, "ask": 0.56},
+        "short_call": {"strike": 6005, "bid": 1.00, "ask": 1.08},
+        "long_call": {"strike": 6010, "bid": 0.50, "ask": 0.54},
+    }
+    snap = _base_snapshot()
+    row = paper.synthetic_entry_fill(snap, "conservative", chosen, _params(CONSERVATIVE), "paper")
+    # spreads 0.10+0.06+0.08+0.04 = 0.28 -> 0.125 * 0.28 * 100 = $3.50
+    assert row["slippage_dollars"] == pytest.approx(3.50)
+
+
 # ── Feed quality: unusable quotes hold, and the unmarked iterations are counted ──
 
 def test_crossed_leg_quote_holds_as_quotes_unavailable():

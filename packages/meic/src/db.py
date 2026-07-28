@@ -107,6 +107,10 @@ CREATE TABLE IF NOT EXISTS ic_trades (
     --                        NOTE this DDL is split on semicolons - none may appear in comments.
     unmarked_iterations       INTEGER DEFAULT 0,
     last_unmarked_at          TEXT,
+    --   slippage_dollars  cumulative modeled slippage conceded on this trade's fills (entry +
+    --                     each priced exit). Slippage is linear in slippage_frac_of_spread, so
+    --                     net P&L at a stressed 2x fraction = net - slippage_dollars exactly.
+    slippage_dollars          REAL DEFAULT 0,
     iv_skew_signal            TEXT,
     price_action_signal       TEXT,
     ai_entry_reasoning        TEXT,
@@ -246,6 +250,9 @@ def cmd_init_db(_args):
         # a stalled streamer from a quiet market — the flies fly_snapshots lesson.
         ("unmarked_iterations",    "INTEGER DEFAULT 0"),
         ("last_unmarked_at",       "TEXT"),
+        # Cost-sensitivity instrumentation: cumulative modeled slippage dollars (entry +
+        # priced exits). Linear in the slippage fraction, so stressed-2x net reads off it.
+        ("slippage_dollars",       "REAL DEFAULT 0"),
     ]:
         if col not in existing:
             conn.execute(f"ALTER TABLE ic_trades ADD COLUMN {col} {col_type}")
@@ -661,6 +668,8 @@ _UPDATABLE_TRADE_FIELDS = (
     "put_settle_value", "call_settle_value", "settle_underlying",
     # Feed-quality instrumentation — written when an iteration cannot mark the trade.
     "unmarked_iterations", "last_unmarked_at",
+    # Cost-sensitivity instrumentation — accumulated on every priced exit.
+    "slippage_dollars",
 )
 
 

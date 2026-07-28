@@ -56,9 +56,23 @@ def _session_from_epoch(closed_at) -> str:
         return ""
 
 
+def _table_cols(conn, table: str) -> set:
+    try:
+        return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+    except sqlite3.Error:
+        return set()
+
+
 def _meic_closed(conn) -> list[dict]:
+    # slippage_dollars (cumulative modeled slippage on the trade's fills) rides along when
+    # the column exists; older DBs degrade to slippage=None rather than failing the reader.
+    # Slippage is linear in the modeled fraction, so net at a stressed 2x fraction is
+    # exactly net - slippage — the cost-sensitivity column every reading carries.
+    has_slip = "slippage_dollars" in _table_cols(conn, "ic_trades")
+    slip_col = ", slippage_dollars" if has_slip else ""
     rows = conn.execute(
-        "SELECT symbol, risk_profile, pnl, fees, exit_time FROM ic_trades WHERE exit_time IS NOT NULL"
+        f"SELECT symbol, risk_profile, pnl, fees, exit_time{slip_col} "
+        "FROM ic_trades WHERE exit_time IS NOT NULL"
     ).fetchall()
     return [
         {
@@ -69,6 +83,7 @@ def _meic_closed(conn) -> list[dict]:
             "gross_pnl": (r["pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["pnl"] or 0.0) - (r["fees"] or 0.0),
+            "slippage": (r["slippage_dollars"] if has_slip else None),
             # Session date for calibration (distinct-days count); ISO date prefix of exit_time.
             "session": (r["exit_time"] or "")[:10],
         }
@@ -77,10 +92,19 @@ def _meic_closed(conn) -> list[dict]:
 
 
 def _earnings_closed(conn) -> list[dict]:
+    cols = _table_cols(conn, "trades")
+    has_slip = "entry_slippage" in cols and "exit_slippage" in cols
+    slip_cols = ", entry_slippage, exit_slippage" if has_slip else ""
     rows = conn.execute(
-        "SELECT symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at "
+        f"SELECT symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at{slip_cols} "
         "FROM trades WHERE closed_at IS NOT NULL"
     ).fetchall()
+
+    def _slip(r):
+        if not has_slip or (r["entry_slippage"] is None and r["exit_slippage"] is None):
+            return None  # pre-instrumentation row — unknown, not zero
+        return (r["entry_slippage"] or 0.0) + (r["exit_slippage"] or 0.0)
+
     return [
         {
             "profile": r["profile"] or _EARNINGS_UNTAGGED,
@@ -90,6 +114,7 @@ def _earnings_closed(conn) -> list[dict]:
             "gross_pnl": (r["pnl"] or 0.0),
             "cost": (r["entry_cost"] or 0.0) + (r["exit_cost"] or 0.0),
             "net_pnl": (r["pnl"] or 0.0) - (r["entry_cost"] or 0.0) - (r["exit_cost"] or 0.0),
+            "slippage": _slip(r),
             "session": _session_from_epoch(r["closed_at"]),
         }
         for r in rows
@@ -116,6 +141,9 @@ def _flies_closed(conn) -> list[dict]:
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            # Slippage capture deferred for flies: its decisive metrics are floor/completion
+            # based, and its fills already price the haircut into gross_pnl. Unknown != zero.
+            "slippage": None,
             "session": r["trade_date"] or "",
         }
         for r in rows
@@ -193,6 +221,12 @@ def _summarize(records: list[dict]) -> dict:
     n = len(net)
     wins = [p for p in net if p > 0]
     gross_wins = [p for p in gross if p > 0]
+    # Cost sensitivity: slippage is linear in the modeled fraction, so doubling it costs
+    # exactly the recorded slippage again. Only rows carrying the datum contribute —
+    # slippage_coverage says how much of the sample that is (pre-instrumentation rows
+    # are unknown, not zero, and must not silently pass the stress unscathed).
+    slips = [r.get("slippage") for r in records]
+    known_slips = [s for s in slips if s is not None]
     return {
         "trades": n,
         "gross_pnl": round(sum(gross), 2),
@@ -203,6 +237,9 @@ def _summarize(records: list[dict]) -> dict:
         "win_rate": round(len(wins) / n, 4) if n else None,
         "gross_win_rate": round(len(gross_wins) / n, 4) if n else None,
         "avg_pnl": round(sum(net) / n, 2) if n else None,
+        "slippage": round(sum(known_slips), 2),
+        "slippage_coverage": len(known_slips),
+        "net_pnl_2x_slippage": round(sum(net) - sum(known_slips), 2),
     }
 
 
