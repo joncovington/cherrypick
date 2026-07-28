@@ -70,3 +70,57 @@ def test_negative_spread_treated_as_zero():
     quotes = [{"bid": 1.10, "ask": 1.00}]  # crossed/bad quote
     result = costs.apply_entry_costs(order, quotes, quantity=1, config=CONFIG)
     assert result["slippage"] == pytest.approx(0.0)
+
+
+# --- property-style sweeps (parametrized, no extra dependency) -------------------
+# These pin the algebraic facts downstream code RELIES on, across a grid of shapes,
+# rather than single worked examples.
+
+_SHAPES = [
+    [{"symbol": "A"}],                                                     # single
+    [{"symbol": "A"}, {"symbol": "B"}],                                    # vertical
+    [{"symbol": "A"}, {"symbol": "B"}, {"symbol": "C"}, {"symbol": "D"}],  # condor
+    [{"symbol": "A", "quantity": 1}, {"symbol": "B", "quantity": 2},
+     {"symbol": "C", "quantity": 1}],                                      # 1-2-1 fly
+]
+_QUOTES = {
+    "A": {"bid": 3.00, "ask": 3.30}, "B": {"bid": 1.00, "ask": 1.10},
+    "C": {"bid": 0.50, "ask": 0.58}, "D": {"bid": 0.10, "ask": 0.16},
+}
+
+
+def _cfg(frac):
+    return {"tastytrade_costs": {**CONFIG["tastytrade_costs"], "slippage_frac_of_spread": frac}}
+
+
+@pytest.mark.parametrize("legs", _SHAPES)
+@pytest.mark.parametrize("qty", [1, 2, 7])
+def test_doubling_the_slippage_fraction_costs_exactly_the_slippage_again(legs, qty):
+    """The identity the suite's cost-sensitivity column depends on: slippage is linear
+    in the fraction, so total@2f == total@f + slippage@f, for every shape and size."""
+    order = {"order": {"legs": legs}}
+    quotes = [_QUOTES[leg["symbol"]] for leg in legs]
+    at_f = costs.apply_entry_costs(order, quotes, qty, _cfg(0.125))
+    at_2f = costs.apply_entry_costs(order, quotes, qty, _cfg(0.25))
+    assert at_2f["total_cost"] == pytest.approx(at_f["total_cost"] + at_f["slippage"], abs=0.02)
+    assert at_2f["slippage"] == pytest.approx(2 * at_f["slippage"], abs=0.02)
+
+
+@pytest.mark.parametrize("legs", _SHAPES)
+def test_costs_scale_linearly_in_quantity_below_the_commission_cap(legs):
+    order = {"order": {"legs": legs}}
+    quotes = [_QUOTES[leg["symbol"]] for leg in legs]
+    q1 = costs.apply_entry_costs(order, quotes, 1, CONFIG)
+    q3 = costs.apply_entry_costs(order, quotes, 3, CONFIG)
+    assert q3["total_cost"] == pytest.approx(q1["total_cost"] * 3, abs=0.03)
+
+
+@pytest.mark.parametrize("legs", _SHAPES)
+@pytest.mark.parametrize("widen", [0.0, 0.05, 0.20, 1.0])
+def test_slippage_never_decreases_as_spreads_widen(legs, widen):
+    order = {"order": {"legs": legs}}
+    base = [_QUOTES[leg["symbol"]] for leg in legs]
+    wider = [{"bid": q["bid"], "ask": q["ask"] + widen} for q in base]
+    s0 = costs.apply_entry_costs(order, base, 1, CONFIG)["slippage"]
+    s1 = costs.apply_entry_costs(order, wider, 1, CONFIG)["slippage"]
+    assert s1 >= s0 - 0.01
