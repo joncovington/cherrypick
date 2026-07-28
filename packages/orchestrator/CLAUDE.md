@@ -87,12 +87,15 @@ resolved **relative to the config file's directory** — never hardcode absolute
 **Per-schema dispatch.** Each module's paper DB has a different schema, selected by
 `paper.trade_schema` in config (`"meic_ic"` → MEIC's `ic_trades`; `"earnings"` → the Earnings module's
 `trades`; `"fly_book"` → the Flies module's `fly_positions`, tagged by experiment *arm* rather than risk
-profile). `report.py`, `calibrate.py`, `reconcile.py`, and `trade_notifier.py` each carry a small
-reader/adapter registry keyed by that value; add a schema by extending those registries, not the
-callers. All four must be extended together — a schema registered in three of them vanishes silently
-from the fourth surface, with no error to notice. `report.py` additionally carries a **separate**
-`_OPEN_READERS` registry for positions carried past the close (overnight capital-at-risk, no realized
-P&L) that feeds only the report/digest — it is *not* one of the four, so it does not need matching
+profile). The canonical schema set lives in `schemas.py` (`SCHEMAS`), and the coverage invariant is
+enforced by `tests/test_schema_registry.py`, not prose: every surface registry (`report.py` readers and
+`_OPEN_READERS`, `reconcile.py`, `trade_notifier.py`, `eval_activity.py`) must account for every schema —
+with a reader, or an explicit not-applicable declaration (`eval_activity.NOT_APPLICABLE`, e.g. earnings,
+whose "did it run" is the entry-SLA check). `calibrate.py` reads through `report.py`'s registry and must
+never grow its own. Add a schema by adding it to `schemas.SCHEMAS` and extending each surface; a schema
+wired into some surfaces but not others now fails CI instead of vanishing silently. `report.py`'s
+`_OPEN_READERS` covers positions carried past the close (overnight capital-at-risk, no realized
+P&L) that feeds only the report/digest — it needs no matching
 entries in calibrate/reconcile/notifier. Only the multi-day earnings module carries overnight; the
 0DTE modules (MEIC, flies) settle within the session and return an empty overnight view by design.
 

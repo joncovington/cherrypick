@@ -17,7 +17,6 @@ from __future__ import annotations
 import re
 import sqlite3
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from . import config as cfgmod
@@ -31,10 +30,7 @@ _BENIGN_REASON = (
 )
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
+from cherrypick.core.db import connect_ro as _connect_ro  # noqa: E402 — shared read-only opener
 
 
 def _age_min(ts_iso: str | None) -> float | None:
@@ -109,6 +105,12 @@ def _flies_activity(conn, day: str, window_min: int) -> dict[str, Any]:
 
 
 _READERS = {"meic_ic": _meic_activity, "fly_book": _flies_activity}
+
+# Schemas with NO eval-activity reader BY DESIGN, stated executably rather than only in
+# the module docstring: earnings is an event-driven daily scan whose "did it run" is the
+# entry-SLA check. The registry coverage test requires every schema to appear in _READERS
+# or here — a new schema wired nowhere fails CI instead of silently reading as healthy.
+NOT_APPLICABLE = frozenset({"earnings"})
 
 
 def assess(act: dict[str, Any], *, window_min: int, eval_stale_min: float,

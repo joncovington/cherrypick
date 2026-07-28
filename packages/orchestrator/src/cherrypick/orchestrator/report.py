@@ -29,8 +29,8 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date, datetime, timezone
-from pathlib import Path
 
+from cherrypick.core import db as core_db
 from cherrypick.core.profiles import compare_profiles
 
 from . import config as cfgmod
@@ -41,10 +41,10 @@ _EARNINGS_UNTAGGED = "default"
 _FLIES_UNTAGGED = "unassigned"
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
+# Read-only connection, shared suite-wide (calibrate/reconcile import it from here).
+# core.db.connect_ro percent-escapes the path, so '?'/'#'/'%' in a directory name can't
+# silently change the URI's meaning — the old f"file:{path}?mode=ro" copy could.
+_connect_ro = core_db.connect_ro
 
 
 # --------------------------------------------------------------------------- per-schema readers
@@ -68,12 +68,27 @@ def _meic_closed(conn) -> list[dict]:
     # the column exists; older DBs degrade to slippage=None rather than failing the reader.
     # Slippage is linear in the modeled fraction, so net at a stressed 2x fraction is
     # exactly net - slippage — the cost-sensitivity column every reading carries.
-    has_slip = "slippage_dollars" in _table_cols(conn, "ic_trades")
+    cols = _table_cols(conn, "ic_trades")
+    has_slip = "slippage_dollars" in cols
     slip_col = ", slippage_dollars" if has_slip else ""
+    has_capital = {"wing_width", "net_credit", "quantity"} <= cols
+    cap_cols = ", wing_width, net_credit, quantity" if has_capital else ""
+    mult_col = ", dollar_multiplier" if "dollar_multiplier" in cols else ""
     rows = conn.execute(
-        f"SELECT symbol, risk_profile, pnl, fees, exit_time{slip_col} "
+        f"SELECT symbol, risk_profile, pnl, fees, exit_time{slip_col}{cap_cols}{mult_col} "
         "FROM ic_trades WHERE exit_time IS NOT NULL"
     ).fetchall()
+
+    def _capital(r):
+        # An IC's capital at risk = (wing width - credit received) x multiplier x quantity.
+        # This is what makes return-on-capital comparable: a 2-wide and a 10-wide IC stop
+        # weighing equally. None (not zero) when the row can't support the computation.
+        if not has_capital or r["wing_width"] is None:
+            return None
+        mult = (r["dollar_multiplier"] if mult_col and r["dollar_multiplier"] else 100.0)
+        cap = (float(r["wing_width"]) - float(r["net_credit"] or 0.0)) * mult * (r["quantity"] or 1)
+        return round(cap, 2) if cap > 0 else None
+
     return [
         {
             "profile": r["risk_profile"] or _MEIC_UNTAGGED,
@@ -84,6 +99,7 @@ def _meic_closed(conn) -> list[dict]:
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["pnl"] or 0.0) - (r["fees"] or 0.0),
             "slippage": (r["slippage_dollars"] if has_slip else None),
+            "capital": _capital(r),
             # Session date for calibration (distinct-days count); ISO date prefix of exit_time.
             "session": (r["exit_time"] or "")[:10],
         }
@@ -95,8 +111,10 @@ def _earnings_closed(conn) -> list[dict]:
     cols = _table_cols(conn, "trades")
     has_slip = "entry_slippage" in cols and "exit_slippage" in cols
     slip_cols = ", entry_slippage, exit_slippage" if has_slip else ""
+    has_capital = "capital_at_risk" in cols
+    cap_col = ", capital_at_risk" if has_capital else ""
     rows = conn.execute(
-        f"SELECT symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at{slip_cols} "
+        f"SELECT symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at{slip_cols}{cap_col} "
         "FROM trades WHERE closed_at IS NOT NULL"
     ).fetchall()
 
@@ -115,6 +133,8 @@ def _earnings_closed(conn) -> list[dict]:
             "cost": (r["entry_cost"] or 0.0) + (r["exit_cost"] or 0.0),
             "net_pnl": (r["pnl"] or 0.0) - (r["entry_cost"] or 0.0) - (r["exit_cost"] or 0.0),
             "slippage": _slip(r),
+            # sizing.compute_position_size's defined max loss, stored at entry.
+            "capital": (r["capital_at_risk"] if has_capital else None),
             "session": _session_from_epoch(r["closed_at"]),
         }
         for r in rows
@@ -142,8 +162,10 @@ def _flies_closed(conn) -> list[dict]:
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
             # Slippage capture deferred for flies: its decisive metrics are floor/completion
-            # based, and its fills already price the haircut into gross_pnl. Unknown != zero.
+            # based, and its fills already price the haircut into gross_pnl. Unknown != zero,
+            # and likewise capital: a legged book's risk depends on completion state.
             "slippage": None,
+            "capital": None,
             "session": r["trade_date"] or "",
         }
         for r in rows
