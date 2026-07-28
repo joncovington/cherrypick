@@ -51,6 +51,20 @@ def _pick_arm(books: list[dict], requested: str | None) -> str | None:
                )["arm"]
 
 
+def _completion_ts(conn) -> dict | None:
+    """The completion-rate trend as a viz timeseries — rule 4's deciding number on a date axis,
+    across every recorded session (not just today's)."""
+    trend = analytics.completion_trend(conn)
+    if not trend:
+        return None
+    return {
+        "labels": [t["day"] for t in trend],
+        "series": [{"name": "completion %",
+                    "values": [round((t["completion_rate"] or 0) * 100, 1) for t in trend],
+                    "tone": "accent"}],
+    }
+
+
 def build_section(db_path: str | None = None, day: str | None = None,
                   arm: str | None = None) -> dict:
     """Return a cherrypick.core.viz section payload, or {ok: False, error}."""
@@ -62,13 +76,17 @@ def build_section(db_path: str | None = None, day: str | None = None,
         if chosen is None:
             # Not an error. Before the first entry of the day there is genuinely nothing to draw, and
             # a card that shouted "error" every morning would train the operator to ignore it.
-            return {
+            payload = {
                 "ok": True,
                 "title": "Flies — no positions yet",
                 "subtitle": f"{day} · 0DTE net-credit butterflies",
                 "metrics": [{"label": "Positions", "value": "0"}],
                 "note": _NOTE,
             }
+            ts = _completion_ts(conn)
+            if ts:
+                payload["timeseries"] = ts  # history exists even before today's first entry
+            return payload
 
         curve = analytics.payoff_curve(conn, day, chosen)
         stats = overview["stats"]
@@ -95,7 +113,7 @@ def build_section(db_path: str | None = None, day: str | None = None,
         if floor.get("unbounded_below"):
             subtitle += " · loses outside the band"
 
-        return {
+        payload = {
             "ok": True,
             "title": f"Flies — {chosen}",
             "subtitle": subtitle,
@@ -109,6 +127,10 @@ def build_section(db_path: str | None = None, day: str | None = None,
             },
             "note": _NOTE,
         }
+        ts = _completion_ts(conn)
+        if ts:
+            payload["timeseries"] = ts
+        return payload
     finally:
         conn.close()
 
