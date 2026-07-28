@@ -767,8 +767,24 @@ def _system_card_html(model: dict[str, Any], serve: bool) -> str:
     )
     if serve:
         body += _doctor_live_html()
-        body += _reconcile_subsection_html()  # paper↔live isolation now lives inside System
     return f'<section class="card"><h2>system</h2>{body}</section>'
+
+
+def _liveops_card_html() -> str:
+    """Serve-only Live Ops card — the phase-5 gate surface, in one place: each module's
+    enable_live_trading kill switch + designated live account and the suite halt flag (via
+    /api/liveops — files + keyring, cheap enough to poll), composed with the paper↔live
+    isolation check whose designated-account listing IS the live book, broker-truth
+    (via /api/reconcile — broker-touching, so on load / button only, never an interval)."""
+    return (
+        '<section class="card" data-rkey="live-ops"><h2>live ops '
+        + _pill("GATES PHASE 5", "INFO")
+        + "</h2>"
+        '<div class="liveops-body" data-cp-liveops data-endpoint="/api/liveops">'
+        '<span class="muted">reading kill switches…</span></div>'
+        + _reconcile_subsection_html()
+        + "</section>"
+    )
 
 
 def _module_card(mv: dict[str, Any]) -> str:
@@ -1079,6 +1095,41 @@ _DOCTOR_JS = """
 })();
 """
 
+# Serve-only: polls /api/liveops (files + keyring — kill switches, designated accounts, halt flag)
+# for the Live Ops card. Cheap, so a 60s interval is fine; the broker-touching half of that card is
+# _RECONCILE_JS below. Kept out of the always-on _JS like the other serve-only scripts.
+_LIVEOPS_JS = """
+(function(){
+  var el=document.querySelector('[data-cp-liveops]'); if(!el) return;
+  var url=el.getAttribute('data-endpoint');
+  function esc(s){var d=document.createElement('div');d.textContent=s==null?'':(''+s);return d.innerHTML;}
+  function tick(){ fetch(url).then(function(r){return r.json();}).then(function(d){
+    if(!d||!d.ok){ el.className='liveops-body muted'; el.textContent=(d&&d.error)||'unavailable'; return; }
+    var h=d.halt_flag||{}; var out='';
+    if(h.present){
+      out+='<div class="drow"><span class="pill" style="background:var(--neg)">HALTED</span> '
+        +'halt flag present at <span class="muted">'+esc(h.path)+'</span> — live loops must not enter</div>';
+    } else {
+      out+='<div class="drow"><span class="pill" style="background:var(--pos)">CLEAR</span> '
+        +'no halt flag <span class="muted">('+esc(h.path)+' — create it to halt live entries)</span></div>';
+    }
+    (d.modules||[]).forEach(function(m){
+      var pill, color;
+      if(m.live_enabled===true){ pill='LIVE ENABLED'; color='var(--neg)'; }
+      else if(m.live_enabled===false){ pill='PAPER ONLY'; color='var(--pos)'; }
+      else { pill='UNKNOWN'; color='var(--warn)'; }
+      var acct=m.designated? 'live account <b>'+esc(m.designated)+'</b>'
+        : '<span class="muted">no live account designated</span>';
+      out+='<div class="drow"><span class="pill" style="background:'+color+'">'+pill+'</span> '
+        +'<b>'+esc(m.module)+'</b> · '+acct
+        +(m.config_source? ' <span class="muted">('+esc(m.config_source)+')</span>':'')+'</div>';
+    });
+    el.className='liveops-body'; el.innerHTML=out;
+  }).catch(function(){}); }
+  tick(); setInterval(tick, 60000);
+})();
+"""
+
 # Serve-only: fetches /api/reconcile (broker-touching) on page load and on the Run button. NOT an
 # interval — each run authenticates to the broker. Kept out of the always-on _JS so its selector never
 # appears in the static render.
@@ -1271,6 +1322,9 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
         + "</div>"
     )
     system_card = _system_card_html(model, serve)
+    # Live Ops is serve-only: both its endpoints (/api/liveops, /api/reconcile) exist only under
+    # --serve, and the static file must stay free of live-trading affordances anyway.
+    liveops_card = _liveops_card_html() if serve else ""
     eod_card = _eod_card_html(model.get("eod"), serve)
     cards = "".join(_module_card(mv) for mv in model.get("modules", []))
     logs = '<section class="card"><h2>recent logs</h2>' + _log_html(model.get("logs", [])) + "</section>"
@@ -1304,7 +1358,7 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
                                            model["equity_card"])
     calibration_card = _calibration_progress_html(model.get("modules", []))
     extra_style = viz.SECTION_STYLE + _CAL_CSS
-    extra_script = viz.SECTION_JS + (_DOCTOR_JS + _RECONCILE_JS if serve else "")
+    extra_script = viz.SECTION_JS + (_DOCTOR_JS + _LIVEOPS_JS + _RECONCILE_JS if serve else "")
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -1316,6 +1370,7 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
         + equity_card
         + calibration_card
         + system_card
+        + liveops_card
         + section_cards
         + module_grid
         + embed_cards
