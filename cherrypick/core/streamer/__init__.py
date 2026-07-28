@@ -28,6 +28,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from cherrypick.core import streamcache
 
@@ -35,6 +36,13 @@ _RECONNECT_BASE = 2.0
 _RECONNECT_MAX = 60.0
 _COMMIT_BATCH_INTERVAL_S = 0.5
 _COMMIT_BATCH_MAX_PENDING = 25
+
+_ET = ZoneInfo("America/New_York")
+
+
+def _et_date(ts: float) -> str:
+    """The ET trading date a wall-clock timestamp belongs to (stream_summary's day key)."""
+    return datetime.fromtimestamp(ts, tz=_ET).date().isoformat()
 
 
 class _State:
@@ -252,19 +260,47 @@ class ChainStreamer:
         async for event in streamer.listen(Summary):
             if state.stop_event.is_set():
                 break
-            oi = event.open_interest
-            if oi is None:
-                continue
             ts = time.time()
+            wrote = False
             try:
-                conn.execute(
-                    "INSERT INTO stream_oi (symbol, open_interest, updated_at) "
-                    "VALUES (?, ?, ?) ON CONFLICT(symbol) DO UPDATE SET "
-                    "open_interest=excluded.open_interest, updated_at=excluded.updated_at",
-                    (event.event_symbol, int(oi), ts),
-                )
-                self._maybe_commit(state)
-                self._touch(state, ts)
+                oi = event.open_interest
+                if oi is not None:
+                    conn.execute(
+                        "INSERT INTO stream_oi (symbol, open_interest, updated_at) "
+                        "VALUES (?, ?, ?) ON CONFLICT(symbol) DO UPDATE SET "
+                        "open_interest=excluded.open_interest, updated_at=excluded.updated_at",
+                        (event.event_symbol, int(oi), ts),
+                    )
+                    wrote = True
+                # The UNDERLYING's Summary carries the session's exchange-official OHLC and
+                # prior close. Cash indices have no OI, so the old oi-only branch dropped
+                # these events on the floor even though they were already on the wire.
+                # Persisted per (symbol, trade_date): today's row feeds the intraday-range
+                # gates; the accumulated rows feed a true-range ATR once a lookback's worth
+                # of sessions exists.
+                if event.event_symbol in self.symbols:
+                    high = streamcache.to_float(getattr(event, "day_high_price", None))
+                    low = streamcache.to_float(getattr(event, "day_low_price", None))
+                    if high is not None or low is not None:
+                        conn.execute(
+                            "INSERT INTO stream_summary (symbol, trade_date, day_open, day_high, "
+                            "day_low, day_close, prev_day_close, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                            "ON CONFLICT(symbol, trade_date) DO UPDATE SET "
+                            "day_open=excluded.day_open, day_high=excluded.day_high, "
+                            "day_low=excluded.day_low, day_close=excluded.day_close, "
+                            "prev_day_close=excluded.prev_day_close, updated_at=excluded.updated_at",
+                            (event.event_symbol, _et_date(ts),
+                             streamcache.to_float(getattr(event, "day_open_price", None)),
+                             high, low,
+                             streamcache.to_float(getattr(event, "day_close_price", None)),
+                             streamcache.to_float(getattr(event, "prev_day_close_price", None)),
+                             ts),
+                        )
+                        wrote = True
+                if wrote:
+                    self._maybe_commit(state)
+                    self._touch(state, ts)
             except Exception as exc:
                 self.log.warning("Summary write error: %s", exc)
 

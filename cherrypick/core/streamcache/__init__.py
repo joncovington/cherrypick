@@ -1,8 +1,11 @@
 """cherrypick.core.streamcache — the shared stream-cache schema + SQLite helpers.
 
 The persistent option-chain cache a streamer daemon writes and readers (GEX, dashboards, a trading
-loop) read: latest Quote / Greeks / Trade(volume) / Summary(open-interest) per option symbol, plus the
-option-chain structure and a small daemon-status row. Extracted from MEIC's streamer so any consumer —
+loop) read: latest Quote / Greeks / Trade(volume) / Summary(open-interest) per option symbol, the
+option-chain structure, a small daemon-status row, and per-(underlying, day) session OHLC rows
+(stream_summary) — the exchange-official day open/high/low/close + prior close off the underlying's
+Summary event, which accumulate into a daily series (intraday-range gates read today's row; a
+true-range ATR reads the last N completed days). Extracted from MEIC's streamer so any consumer —
 MEIC's own daemon, the standalone GEX module — writes and reads one identical schema instead of each
 carrying a private copy (plan Phase A of the streamer extraction).
 
@@ -79,6 +82,17 @@ CREATE TABLE IF NOT EXISTS orb_ranges (
     orb_high    REAL,
     orb_low     REAL,
     captured_at REAL,
+    PRIMARY KEY (symbol, trade_date)
+);
+CREATE TABLE IF NOT EXISTS stream_summary (
+    symbol          TEXT NOT NULL,
+    trade_date      TEXT NOT NULL,
+    day_open        REAL,
+    day_high        REAL,
+    day_low         REAL,
+    day_close       REAL,
+    prev_day_close  REAL,
+    updated_at      REAL NOT NULL,
     PRIMARY KEY (symbol, trade_date)
 );
 """
