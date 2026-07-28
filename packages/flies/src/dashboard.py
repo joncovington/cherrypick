@@ -8,7 +8,7 @@ decisions — so nothing here can touch the loop-decision guardrail.
 no authentication. The orchestrator reaches it by iframe on the same host.
 
 Three views:
-  Today        the session timeline, the payoff curve (the profit forest itself), open positions with
+  Today        the payoff curve (the profit forest itself), the session timeline, open positions with
                their floors, the decision journal (as a Gantt strip over its table), and data quality.
   History      filterable trade log, per-arm comparison, a Monday-anchored daily calendar, entry
                windows, fee drag.
@@ -82,7 +82,7 @@ def build_api_data(conn, day: str | None = None, arm: str | None = None) -> dict
 
     return {
         "ok": True,
-        "generated_at": analytics.datetime.now().isoformat(timespec="seconds"),
+        "generated_at": analytics.clock.now_iso(),
         "date": day,
         "arms": arms,
         "selected_arm": arm or "ALL",
@@ -102,6 +102,9 @@ def build_api_data(conn, day: str | None = None, arm: str | None = None) -> dict
         "history": {
             "trades": analytics.trade_log(conn, arm=arm_filter),
             "by_arm": analytics.by_arm(conn),
+            # What by_arm held back, so the arm table summing below the book total is explained on
+            # the page rather than left as an unexplained gap.
+            "arm_exclusions": analytics.arm_comparison_exclusions(conn),
             "by_entry_mode": analytics.by_entry_mode(conn),
             "by_window": analytics.by_entry_window(conn),
             "fee_drag": analytics.fee_drag(conn),
@@ -153,6 +156,19 @@ tbody tr:hover{background:#1c222b}
 .scroll{overflow-x:auto;max-height:420px;overflow-y:auto}
 .empty{color:var(--dim);font-style:italic;padding:14px 4px}
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+/* Per-column filter row, sitting directly under the header so each control is in its own column.
+   Sticky with the header because the log scrolls and a filter you have to scroll back up to change
+   is a filter you stop using. */
+thead tr.filter-row th{padding:3px 6px 6px;position:sticky;top:22px;background:var(--panel);z-index:2}
+thead tr.hdr-row th{position:sticky;top:0;background:var(--panel);z-index:3}
+tr.filter-row input,tr.filter-row select{width:100%;box-sizing:border-box;font:inherit;font-size:11px;
+padding:2px 4px;background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:4px}
+tr.filter-row input:focus,tr.filter-row select:focus{outline:1px solid var(--accent);border-color:var(--accent)}
+tr.filter-row .rng{display:flex;gap:3px}
+tr.filter-row .on{border-color:var(--accent)}
+.f-clear{background:none;border:1px solid var(--line);color:var(--dim);border-radius:4px;
+padding:3px 8px;font-size:11px;cursor:pointer}
+.f-clear:hover{color:var(--fg);border-color:var(--accent)}
 .reorder-handle{cursor:grab;color:var(--dim);float:right;user-select:none;font-size:15px;line-height:1}
 canvas{width:100%!important}
 .cal{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;align-items:flex-start}
@@ -194,6 +210,10 @@ _BODY = """
   <section class="view active" id="view-today">
     <div class="tiles" id="today-tiles"></div>
     <div class="grid">
+      <div class="card" style="grid-column:1/-1"><h2>Payoff at expiry — the profit forest</h2>
+        <canvas id="payoff" height="260"></canvas>
+        <div class="legend" id="payoff-legend"></div>
+        <div class="note" id="payoff-note"></div></div>
       <div class="card" style="grid-column:1/-1"><h2>Session timeline — how the day actually went</h2>
         <canvas id="timeline" height="360"></canvas>
         <div class="legend" id="timeline-legend"></div>
@@ -204,10 +224,6 @@ _BODY = """
         that price. That is an expiry payoff evaluated at a live spot, <em>not</em> a mark — these
         positions are not quoted intraday.</div>
         <div class="note" id="timeline-feed"></div></div>
-      <div class="card" style="grid-column:1/-1"><h2>Payoff at expiry — the profit forest</h2>
-        <canvas id="payoff" height="260"></canvas>
-        <div class="legend" id="payoff-legend"></div>
-        <div class="note" id="payoff-note"></div></div>
       <div class="card"><h2>Positions</h2><div class="scroll"><table id="pos-tbl"></table></div></div>
       <div class="card"><h2>Book floors</h2><div class="scroll"><table id="book-tbl"></table></div></div>
       <div class="card" style="grid-column:1/-1"><h2>Decision journal — why we did or didn't trade</h2>
@@ -237,15 +253,16 @@ _BODY = """
         empty cell is a session that never settled, not a flat one — the two are different findings.</div></div>
       <div class="card" style="grid-column:1/-1"><h2>Trade log</h2>
         <div class="filters">
-          <input type="date" id="f-from"><input type="date" id="f-to">
-          <select id="f-mode"><option value="">all modes</option><option>legged</option>
-            <option>outright</option></select>
           <select id="f-outcome"><option value="">all outcomes</option><option>win</option>
             <option>loss</option><option>pinned</option><option>risk-free</option></select>
-          <input id="f-search" placeholder="search…">
+          <input id="f-search" placeholder="search all columns…">
+          <button class="f-clear" id="f-clear">clear filters</button>
           <span class="dim" id="f-count"></span>
         </div>
-        <div class="scroll"><table id="log-tbl"></table></div></div>
+        <div class="scroll"><table id="log-tbl"></table></div>
+        <div class="note">Every column filters in its own header cell — text columns match on
+        substring, numeric and date columns take a min/max. They combine, so the count is what
+        survived all of them. Outcome and the search box above span every column.</div></div>
     </div>
   </section>
 
@@ -288,16 +305,121 @@ const fmtNum = (v,d=2) => v === null || v === undefined ? '–' : Number(v).toFi
 const tone = v => v === null || v === undefined ? '' : (v >= 0 ? 'pos' : 'neg');
 let DATA = null, ARM = 'ALL';
 
-function table(el, cols, rows, empty) {
-  if (!rows || !rows.length) { el.innerHTML = ''; el.insertAdjacentHTML('afterend', '');
-    el.innerHTML = `<tbody><tr><td class="empty">${empty || 'Nothing yet.'}</td></tr></tbody>`; return; }
-  const head = '<thead><tr>' + cols.map(c => `<th class="${c.num?'num':''}">${c.h}</th>`).join('') +
-    '</tr></thead>';
+/* ---------- per-column filters ----------
+
+   A column opts in by declaring `filter`:
+     'select'    distinct values, gathered from the data so a new arm/window/mode appears by itself
+     'text'      case-insensitive substring
+     'range'     numeric min/max
+     'daterange' ISO date min/max
+
+   `c.v(row)` supplies the RAW value to filter on, because `c.f(row)` returns display markup (money
+   strings, pills) that would never compare correctly. Falls back to c.f when a column has no v.
+
+   State lives in a caller-owned object rather than in the DOM: every render replaces innerHTML, so
+   anything read back off the inputs is gone the moment the 30s refresh fires mid-typing. */
+const FILTER_ALL = '— all —';
+
+function colValue(c, r) { return (c.v ? c.v(r) : c.f(r)); }
+
+function distinctValues(c, rows) {
+  const seen = new Set();
+  rows.forEach(r => { const v = colValue(c, r); if (v !== null && v !== undefined && v !== '') seen.add(String(v)); });
+  return [...seen].sort();
+}
+
+function matchesFilters(cols, r, state) {
+  return cols.every((c, i) => {
+    const f = state[i];
+    if (!c.filter || !f) return true;
+    const raw = colValue(c, r);
+    if (c.filter === 'select') return !f.eq || String(raw) === f.eq;
+    if (c.filter === 'text') return !f.q || String(raw ?? '').toLowerCase().includes(f.q.toLowerCase());
+    if (c.filter === 'range') {
+      const n = Number(raw);
+      if (f.min !== '' && f.min !== undefined && !(n >= Number(f.min))) return false;
+      if (f.max !== '' && f.max !== undefined && !(n <= Number(f.max))) return false;
+      return true;
+    }
+    if (c.filter === 'daterange') {
+      const s = String(raw ?? '');
+      if (f.min && s < f.min) return false;
+      if (f.max && s > f.max) return false;
+      return true;
+    }
+    return true;
+  });
+}
+
+function filterActive(state) {
+  return Object.values(state || {}).some(f => f &&
+    ((f.eq || '') !== '' || (f.q || '') !== '' || (f.min || '') !== '' || (f.max || '') !== ''));
+}
+
+function filterCellHtml(c, i, state, allRows) {
+  if (!c.filter) return '';
+  const f = state[i] || {};
+  const on = v => (v ? ' on' : '');
+  if (c.filter === 'select') {
+    const opts = distinctValues(c, allRows).map(v =>
+      `<option${String(f.eq) === v ? ' selected' : ''}>${v}</option>`).join('');
+    return `<select class="f-in${on(f.eq)}" data-fi="${i}" data-fk="eq">` +
+           `<option value="">${FILTER_ALL}</option>${opts}</select>`;
+  }
+  if (c.filter === 'text') {
+    return `<input class="f-in${on(f.q)}" data-fi="${i}" data-fk="q" value="${f.q || ''}" placeholder="…">`;
+  }
+  const t = c.filter === 'daterange' ? 'date' : 'number';
+  return `<div class="rng">` +
+    `<input type="${t}" class="f-in${on(f.min)}" data-fi="${i}" data-fk="min" value="${f.min || ''}" placeholder="min">` +
+    `<input type="${t}" class="f-in${on(f.max)}" data-fi="${i}" data-fk="max" value="${f.max || ''}" placeholder="max">` +
+    `</div>`;
+}
+
+/* `opts` (all optional): {state, onChange, allRows} turns on the per-column filter row. `allRows` is
+   the UNFILTERED set, so a select keeps offering every value rather than collapsing to whatever the
+   current filter already left standing. */
+function table(el, cols, rows, empty, opts) {
+  const o = opts || {};
+  const filterable = o.state && cols.some(c => c.filter);
+  const hdr = '<tr class="hdr-row">' +
+    cols.map(c => `<th class="${c.num?'num':''}">${c.h}</th>`).join('') + '</tr>';
+  const frow = filterable
+    ? '<tr class="filter-row">' +
+      cols.map((c, i) => `<th>${filterCellHtml(c, i, o.state, o.allRows || rows)}</th>`).join('') +
+      '</tr>'
+    : '';
+  if (!rows || !rows.length) {
+    el.innerHTML = filterable
+      ? `<thead>${hdr}${frow}</thead><tbody><tr><td class="empty" colspan="${cols.length}">${empty || 'Nothing yet.'}</td></tr></tbody>`
+      : `<tbody><tr><td class="empty">${empty || 'Nothing yet.'}</td></tr></tbody>`;
+    if (filterable) wireFilters(el, o);
+    return;
+  }
   const body = '<tbody>' + rows.map(r => '<tr>' + cols.map(c => {
     const v = c.f(r);
     return `<td class="${c.num?'num':''} ${c.tone?c.tone(r):''}">${v === null || v === undefined ? '–' : v}</td>`;
   }).join('') + '</tr>').join('') + '</tbody>';
-  el.innerHTML = head + body;
+  el.innerHTML = `<thead>${hdr}${frow}</thead>` + body;
+  if (filterable) wireFilters(el, o);
+}
+
+function wireFilters(el, o) {
+  el.querySelectorAll('.f-in').forEach(inp => {
+    const commit = () => {
+      const i = inp.dataset.fi, k = inp.dataset.fk;
+      o.state[i] = Object.assign({}, o.state[i], {[k]: inp.value});
+      o.onChange && o.onChange();
+    };
+    // `change` for selects/dates, `input` for typing — but re-render on every keystroke would steal
+    // focus mid-word, so text inputs commit on a short idle instead.
+    if (inp.type === 'number' || inp.tagName === 'INPUT' && !inp.type.startsWith('date')) {
+      let t; inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(commit, 350); });
+      inp.addEventListener('change', commit);
+    } else {
+      inp.addEventListener('change', commit);
+    }
+  });
 }
 
 function tiles(el, items) {
@@ -911,13 +1033,34 @@ function renderHistory(d) {
   renderLog();
 }
 
+/* Per-column filter state for the trade log, kept outside the DOM so the 30s auto-refresh can't wipe
+   a half-typed filter. Keyed by column index. */
+const LOG_FILTERS = {};
+
+function logColumns() {
+  return [
+    {h:'Date', f:r=>r.trade_date, v:r=>r.trade_date, filter:'daterange'},
+    {h:'Arm', f:r=>r.arm, v:r=>r.arm, filter:'select'},
+    {h:'Mode', f:r=>r.entry_mode, v:r=>r.entry_mode, filter:'select'},
+    {h:'Kind', f:r=>r.kind === 'fly' ? 'fly' : `short ${r.side}`,
+     v:r=>r.kind === 'fly' ? 'fly' : `short ${r.side}`, filter:'select'},
+    {h:'Centre', f:r=>fmtNum(r.center,0), v:r=>r.center, num:1, filter:'range'},
+    {h:'Window', f:r=>r.entry_window || '–', v:r=>r.entry_window || '', filter:'select'},
+    {h:'Net', f:r=>fmtNum(r.net), v:r=>r.net, num:1, filter:'range'},
+    {h:'Fees', f:r=>fmtMoney(r.fees), v:r=>r.fees, num:1, filter:'range'},
+    {h:'P&L', f:r=>fmtMoney(r.pnl), v:r=>r.pnl, num:1, tone:r=>tone(r.pnl), filter:'range'},
+    {h:'Latency', f:r=>r.completion_latency_min === null ? '–' : r.completion_latency_min+'m',
+     v:r=>r.completion_latency_min, num:1, filter:'range'},
+    {h:'', f:r=>r.pinned ? '<span class="pill ok">pinned</span>' : ''},
+  ];
+}
+
 function renderLog() {
-  const rows = (DATA.history.trades || []).filter(t => {
-    const from = $('#f-from').value, to = $('#f-to').value;
-    if (from && t.trade_date < from) return false;
-    if (to && t.trade_date > to) return false;
-    const mode = $('#f-mode').value;
-    if (mode && t.entry_mode !== mode) return false;
+  const cols = logColumns();
+  const all = DATA.history.trades || [];
+  const rows = all.filter(t => {
+    // Outcome and search deliberately stay outside the column row: they span columns rather than
+    // belonging to one (pinned/risk-free aren't displayed columns at all).
     const oc = $('#f-outcome').value;
     if (oc === 'win' && !(t.pnl > 0)) return false;
     if (oc === 'loss' && !(t.pnl < 0)) return false;
@@ -925,20 +1068,16 @@ function renderLog() {
     if (oc === 'risk-free' && !t.risk_free) return false;
     const q = $('#f-search').value.trim().toLowerCase();
     if (q && !JSON.stringify(t).toLowerCase().includes(q)) return false;
-    return true;
+    return matchesFilters(cols, t, LOG_FILTERS);
   });
-  $('#f-count').textContent = `${rows.length} trade${rows.length===1?'':'s'}`;
-  table($('#log-tbl'), [
-    {h:'Date', f:r=>r.trade_date},{h:'Arm', f:r=>r.arm},{h:'Mode', f:r=>r.entry_mode},
-    {h:'Kind', f:r=>r.kind === 'fly' ? 'fly' : `short ${r.side}`},
-    {h:'Centre', f:r=>fmtNum(r.center,0), num:1},
-    {h:'Window', f:r=>r.entry_window || '–'},
-    {h:'Net', f:r=>fmtNum(r.net), num:1},
-    {h:'Fees', f:r=>fmtMoney(r.fees), num:1},
-    {h:'P&L', f:r=>fmtMoney(r.pnl), num:1, tone:r=>tone(r.pnl)},
-    {h:'Latency', f:r=>r.completion_latency_min === null ? '–' : r.completion_latency_min+'m', num:1},
-    {h:'', f:r=>r.pinned ? '<span class="pill ok">pinned</span>' : ''},
-  ], rows, 'No trades match these filters.');
+  const filtered = rows.length !== all.length;
+  $('#f-count').textContent = `${rows.length} trade${rows.length===1?'':'s'}` +
+    (filtered ? ` of ${all.length}` : '');
+  $('#f-clear').style.display =
+    (filterActive(LOG_FILTERS) || $('#f-outcome').value || $('#f-search').value) ? '' : 'none';
+  // allRows is the unfiltered set so each select keeps listing every value, not just the survivors.
+  table($('#log-tbl'), cols, rows, 'No trades match these filters.',
+        {state: LOG_FILTERS, onChange: renderLog, allRows: all});
 }
 
 function renderPerformance(d) {
@@ -970,7 +1109,8 @@ function renderPerformance(d) {
   ]);
   table($('#cf-tbl'), [{h:'Verdict', f:r=>r.k},{h:'Count', f:r=>r.v, num:1}], [
     {k:'Market never offered it', v:c.never_offered},
-    {k:'Buffer too tight', v:c.buffer_too_tight},
+    {k:'Blocked by fee_buffer', v:c.buffer_blocked},
+    {k:'Blocked by min_floor_dollars', v:c.floor_blocked},
     {k:'Never priced', v:c.counterfactual_unknown},
   ]);
 }
@@ -1003,9 +1143,15 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   if (DATA) renderAll(DATA);   // canvases size wrongly while hidden
 });
 $('#arm-select').onchange = e => { ARM = e.target.value; refresh(); };
-['#f-from','#f-to','#f-mode','#f-outcome','#f-search'].forEach(s => {
+// Date and mode moved into their own column cells; these two span columns and stay in the bar.
+['#f-outcome','#f-search'].forEach(s => {
   $(s).oninput = renderLog; $(s).onchange = renderLog;
 });
+$('#f-clear').onclick = () => {
+  Object.keys(LOG_FILTERS).forEach(k => delete LOG_FILTERS[k]);
+  $('#f-outcome').value = ''; $('#f-search').value = '';
+  renderLog();
+};
 $('#perf-gran').onchange = () => renderPerformance(DATA);
 $('#perf-cum').onchange = () => renderPerformance(DATA);
 window.addEventListener('resize', () => { if (DATA) renderAll(DATA); });

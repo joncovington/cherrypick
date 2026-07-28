@@ -54,6 +54,7 @@ def build_paper_eod(conn, day: str) -> str:
     completion = analytics.completion_stats(conn, day, day)
     books = analytics.books_for_day(conn, day)
     arms = analytics.by_arm(conn, day, day)
+    excluded = analytics.arm_comparison_exclusions(conn, day, day)
     divergence = analytics.arm_divergence(conn, day)
     windows = analytics.by_entry_window(conn, day, day)
 
@@ -67,7 +68,8 @@ def build_paper_eod(conn, day: str) -> str:
         f"- Completion rate: {_pct(completion['completion_rate'])} "
         f"({completion['completed']} of {completion['legged_entries']} legged entries)",
         f"- Misses, market never offered it: {completion['never_offered']}",
-        f"- Misses, buffer too tight: {completion['buffer_too_tight']}",
+        f"- Misses, blocked by fee_buffer: {completion['buffer_blocked']}",
+        f"- Misses, blocked by min_floor_dollars: {completion['floor_blocked']}",
         f"- Misses, never priced: {completion['counterfactual_unknown']}",
         f"- Median completion latency: {_num(completion['median_latency_min'], 1)} min",
         f"- Median spot move to completion: {_num(completion['median_spot_move'], 2)}",
@@ -105,6 +107,14 @@ def build_paper_eod(conn, day: str) -> str:
                      f"{_pct(a['win_rate'])} | {_drag(a['fee_drag_pct'])} |")
     else:
         L.append("_Nothing settled today._")
+    if excluded["trades"]:
+        # Stated, not implied: without this the table simply sums to less than Session P&L above.
+        L.append("")
+        L.append(f"_Compares {'/'.join(analytics.COMPARISON_ENTRY_MODES)} entries only. "
+                 f"Excludes {excluded['trades']} "
+                 f"{'/'.join(excluded['excluded_modes'])} position(s) worth "
+                 f"{_money(excluded['net_pnl'])}, which only some arms ever traded — they are in "
+                 f"Session P&L above and in the entry-mode breakdown, just not in this ranking._")
     L.append("")
 
     if windows:
@@ -156,21 +166,34 @@ def _completion_paragraph(completion: dict) -> str:
             "and on days like this it simply didn't."
         )
 
-    never, tight = completion["never_offered"], completion["buffer_too_tight"]
-    if never or tight:
+    never = completion["never_offered"]
+    buffer_blocked, floor_blocked = completion["buffer_blocked"], completion["floor_blocked"]
+    ours = buffer_blocked + floor_blocked
+    if never or ours:
         parts.append(
             f"Of the misses, {never} never saw a completing debit below the credit at all, and "
-            f"{tight} got below the credit but not past the fee buffer. Those two look identical in "
-            "the P&L and call for opposite responses: the first is the market simply not offering "
-            "the trade, which no threshold change would fix; the second is our own gate turning down "
-            "flies that were available."
+            f"{ours} got below the credit but were turned down by our own gates. Those two look "
+            "identical in the P&L and call for opposite responses: the first is the market simply not "
+            "offering the trade, which no threshold change would fix; the second is our own gate "
+            "turning down flies that were available."
         )
-        if tight > never and tight:
-            parts.append(
-                "With more misses landing on the wrong side of our own buffer than on the market's, "
-                "the buffer is the first thing worth re-examining — bearing in mind it exists to stop "
-                "us building flies whose floor is negative after fees, so loosening it is not free."
-            )
+    if ours:
+        parts.append(
+            f"Of those {ours}, {buffer_blocked} missed the fee buffer and {floor_blocked} cleared the "
+            f"buffer but landed under min_floor_dollars. That split decides which knob is even "
+            "relevant, and they are not interchangeable."
+        )
+    if floor_blocked > buffer_blocked and floor_blocked:
+        parts.append(
+            "The floor minimum, not the buffer, is what is costing completions here. Worth weighing "
+            "against what refusing actually buys: it does not free the slot, it leaves an uncompleted "
+            "short vertical carrying full defined risk, which is the losing branch."
+        )
+    elif buffer_blocked:
+        parts.append(
+            "The buffer is the binding gate — bearing in mind it exists to stop us building flies "
+            "whose floor is negative after fees, so loosening it is not free."
+        )
     return " ".join(parts)
 
 

@@ -13,7 +13,13 @@ import argparse
 import json
 import os
 import sqlite3
-from datetime import datetime
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+import clock  # noqa: E402
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS fly_positions (
@@ -196,7 +202,9 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    """ET, with offset — see clock.py. Every timestamp this module persists is ET; it was naive
+    machine-local until 2026-07-27."""
+    return clock.now_iso()
 
 
 def _upsert(conn, table: str, key: str, row: dict) -> None:

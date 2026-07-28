@@ -71,11 +71,22 @@ decision.
 - **Completion rate** — how often a leg-in actually became a fly. If this is near zero the strategy is
   short verticals wearing a costume, and no P&L on the completed ones changes that.
 - **The counterfactual** (`best_completing_debit`) — for misses, whether *the market never offered it*
-  or *our fee buffer refused it*. Identical in the P&L, opposite remedies.
+  or *one of our own gates refused it*. Identical in the P&L, opposite remedies. Completion is gated
+  by `D < C - fee_buffer` **and** `floor >= min_floor_dollars`, so "our gate" is reported as two
+  separate verdicts — `buffer_blocked` and `floor_blocked`. They were once lumped together as
+  `buffer_too_tight`, which pointed at the wrong knob: the first five sessions split 1 buffer vs 5
+  floor, and the single buffer case had a post-fee floor of **−$1.89**, i.e. the buffer correctly
+  refused a money-losing fly. Which gate bound is read from the `fly_decisions` journal, not
+  recomputed, so it cannot drift from the gate as configured.
 - **Completion latency** — a fly that took 40 minutes and 8 points of drift is far likelier to fill live
   than one that appeared for seconds. This is the paper-vs-live gap, measured.
 - **Arm divergence** — how often the arms picked different centres. High agreement means the experiment
-  cannot separate them, which is a finding to surface in week one, not month three.
+  cannot separate them, which is a finding to surface in week one, not month three. **Centre divergence
+  is only meaningful against an arm that centres differently** — i.e. `gex`. `control`, `time_window`
+  and `wide_wing` are all ATM, so they agree on centre *by construction* (measured: 100% across 184
+  iterations on 2026-07-27) and that number says nothing about whether those arms are redundant. Read
+  `time_window` vs `control` on entry **timing** and completion, and `wide_wing` vs `control` on wing
+  width. Reading a structural identity as a finding is how the redundancy went unnoticed.
 
 **The last three of those live on a time axis, so the dashboard has one.** `analytics.session_timeline`
 assembles the day from rows already written — spot and every arm's wanted centre on each iteration,
@@ -118,17 +129,36 @@ mistaken for "the strategy found nothing".
 `cherrypick.core.fees` supplies the fee schedule and `cherrypick.core.gex.compute_gex` the per-strike
 GEX profile — neither is reimplemented here.
 
-## The three arms
+## The four arms
 
-Separate books, differing **only** in where and when they centre a structure. Every gate is shared, so
-the comparison measures the signal rather than a bundle of confounded changes.
+Separate books, each differing from `control` in **exactly one** thing. Every gate is shared, so each
+comparison measures one variable rather than a bundle of confounded changes.
 
 - `gex` — centre on the strongest positive per-strike net GEX near spot. Degrades to ATM when the
   streamer has no OI cached yet, and records `center_reason` so those samples can be excluded later.
 - `time_window` — ATM, entering only inside configured windows. The windows are **not** ranked; we
   have no intraday history to rank them with. Each trade is tagged with its window and the ranking
-  comes out of our own sessions.
-- `control` — one fixed midday ATM entry. Without this, a profitable `gex` arm would prove nothing.
+  comes out of our own sessions. Its `max_positions_per_window` is what makes that ranking possible
+  at all — see below. Its windows **straddle** control's rather than nesting inside them (one before
+  control opens, one overlapping, one after control closes); nested windows made the two arms
+  identical in everything but opportunity count.
+- `control` — ATM, all day. The shared baseline: `gex` vs `control` isolates the **centring**,
+  `time_window` vs `control` the **timing**, `wide_wing` vs `control` the **width**. Without a naive
+  baseline a profitable arm would prove nothing.
+- `wide_wing` — control's twin (ATM, same window and cap) differing only in `wing_width`. Added
+  2026-07-27 against the strongest signal in the first five sessions: completions arrive only after
+  spot has walked away from the centre (median drift 15.3–17.3 points against a 5-point wing), so 19
+  of 23 completed flies settled outside their wings and the book collected its floor and nothing more.
+  A 20-point wing brackets the observed drift. It is a hypothesis, not a fix — wider wings cost more
+  to build and risk more per structure, and if the floor still comes out negative after fees then the
+  drift is fundamental to the mechanism, which is itself a result (rule 6).
+
+**A global position cap does not make a multi-window arm test its windows.** `max_positions` alone let
+the book fill in the first window: over 07-20…07-24 `time_window` put 15 of its 16 legged entries in
+`10:30-11:00`, 1 in `12:30-13:00` and 0 in `14:00-14:30`, so the timing hypothesis was never exercised
+and the per-window ranking had nothing to rank. `max_positions_per_window` (off unless set; live on
+`time_window` at 2) caps what any one window may spend. This is the same failure the arm's config
+`_history_note` already records once — a shared cap being exhausted before the contrast can happen.
 
 ## The honesty rules
 
@@ -176,6 +206,23 @@ points of drift away from the centre (the mechanism that makes completion cheap 
 walks spot out of the wings), and `control` vs `time_window` wanted the identical centre on 141 of
 141 shared iterations, so only the disjoint windows separate them. `gex` vs `control` disagreed 84%
 of the time and is the comparison with real power.
+
+**Five sessions in (07-20…07-24), the uncompleted branch is the whole result.** Rule 4 said completion
+rate would be the number that decides this, and it now has a threshold to clear. Settled: 40 legged
+entries, 23 completed. Every completed fly made money (avg **+$110.47**, min +$51.86 — the floor doing
+what it promises). The book still lost **−$1,175**, because the 17 misses averaged **−$208.51** each,
+and 4 outright flies lost on all four. A miss costs ~1.9× what a completion earns, so break-even
+completion rate is **≈65%** against **57.5%** observed. 07-24 settled on the official print (7411.98,
+confirmed), so its four inside-wings flies stand — but they carry ~half the positive P&L, and one
+session driving the result is a concentration caveat, not a validation.
+
+Three changes came out of that, all 2026-07-27: `min_floor_dollars` 50 → **10** (the old value assumed
+refusing a completion frees the position slot; it does not — it leaves the losing short vertical, so
+turning down a guaranteed +$9.36 to keep a lottery averaging −$208 was backwards; 5 completions were
+blocked by that gate alone at floors of $9.36–$39.36), `entry_modes` → **legged only** (outright lost
+4 of 4 and only `gex` was taking them, quietly confounding gex vs control), and the `wide_wing` arm.
+None of this separates the arms — 40 entries over 5 sessions, and the 50%/62%/62% spread is 2 trades
+wide. These are mechanism and accounting changes, not signal findings.
 
 **Settlement is marked in the database, not on disk.** `session_already_settled` asks whether every
 `fly_books` row for the day is `settled`. It used to ask whether `paper-eod-<day>.md` existed, which

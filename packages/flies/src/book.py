@@ -15,6 +15,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+import clock  # noqa: E402
 import db as dbmod  # noqa: E402
 import engine  # noqa: E402
 import fly  # noqa: E402
@@ -25,7 +26,9 @@ def book_id_for(trade_date: str, arm: str, symbol: str) -> str:
 
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    """ET, with offset — see clock.py. Was machine-local until 2026-07-27, which put every stored
+    entry_time two hours out from the entry_window recorded beside it."""
+    return clock.now_iso()
 
 
 def _minutes_since(started: str | None, ended: str) -> float | None:
@@ -77,6 +80,9 @@ def _to_position(row: dict) -> dict:
         # both are cumulative over a session, not per-iteration.
         "best_completing_debit": row["best_completing_debit"],
         "entry_time": row["entry_time"],
+        # Carried so `max_positions_per_window` can count what this window has already spent. Without
+        # it the cap would read every position as window-less and never bind.
+        "entry_window": row["entry_window"],
     }
 
 
@@ -150,12 +156,16 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
     if "legged" in params.get("entry_modes", ["legged"]):
         enter, reason, plan = engine.evaluate_credit_spread_entry(snapshot, params, open_positions)
         if enter:
-            position_id = f"FLY-{arm}-{symbol}-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+            position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}"
             pos = {
                 "kind": "short_vertical", "side": plan["side"], "center": plan["center"],
                 "wing_width": plan["wing_width"], "net": plan["credit"],
                 "quantity": plan["quantity"], "fees": plan["open_fee"],
                 "entry_mode": "legged", "status": "open", "position_id": position_id,
+                # Same reason as in `_to_position`: this dict is appended to the live list the entry
+                # gates read, so it has to carry the window or the per-window cap misses it until the
+                # next iteration re-reads from the DB.
+                "entry_window": plan["entry_window"],
             }
             positions.append(pos)
             open_positions.append(pos)
@@ -192,12 +202,13 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             sum(fly.position_pnl(p, p["center"]) for p in positions if p["status"] != "open"), 0.0)
         enter, reason, plan = engine.evaluate_outright_entry(snapshot, params, open_positions, realized)
         if enter:
-            position_id = f"FLY-{arm}-{symbol}-{datetime.now().strftime('%Y%m%d%H%M%S%f')}-O"
+            position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-O"
             pos = {
                 "kind": "fly", "side": plan["side"], "center": plan["center"],
                 "wing_width": plan["wing_width"], "net": -plan["debit"],
                 "quantity": plan["quantity"], "fees": plan["open_fee"],
                 "entry_mode": "outright", "status": "open", "position_id": position_id,
+                "entry_window": plan["entry_window"],
             }
             positions.append(pos)
             dbmod.save_position(conn, {

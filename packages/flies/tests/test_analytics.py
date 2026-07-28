@@ -101,6 +101,65 @@ def test_by_arm_ranks_by_net(conn):
     assert [r["arm"] for r in analytics.by_arm(conn)] == ["gex", "time_window", "control"]
 
 
+# --------------------------------------------------------------------------- arm comparison scope
+def test_arm_comparison_excludes_entry_modes_only_one_arm_traded(conn):
+    """The arms differ by centring/timing/width, never by entry mode. gex was the only arm ever to
+    take an outright fly, so counting those made 'gex vs control' partly a legged-vs-outright
+    comparison and charged gex with a cost no other arm could incur."""
+    position(conn, "L1", arm="gex", entry_mode="legged", pnl=100.0)
+    position(conn, "L2", arm="control", entry_mode="legged", pnl=60.0)
+    position(conn, "O1", arm="gex", entry_mode="outright", pnl=-90.0)
+
+    by_arm = {r["arm"]: r for r in analytics.by_arm(conn)}
+    assert by_arm["gex"]["net_pnl"] == 100.0, "the outright loss must not be charged to gex"
+    assert by_arm["gex"]["trades"] == 1
+    assert by_arm["control"]["net_pnl"] == 60.0
+
+
+def test_book_totals_stay_whole_when_the_comparison_is_filtered(conn):
+    """Rule 6: a negative result is the finding, not something to remove. The book really did pay for
+    those flies, so the headline P&L must still include them even though the ranking does not."""
+    position(conn, "L1", arm="gex", entry_mode="legged", pnl=100.0)
+    position(conn, "O1", arm="gex", entry_mode="outright", pnl=-90.0)
+
+    assert analytics.stats_for_period(conn)["net_pnl"] == 10.0     # whole book
+    assert sum(r["net_pnl"] for r in analytics.by_arm(conn)) == 100.0  # comparison only
+    modes = {r["entry_mode"]: r for r in analytics.by_entry_mode(conn)}
+    assert set(modes) == {"legged", "outright"}, "entry-mode breakdown still reports both"
+
+
+def test_exclusions_are_reported_not_silently_dropped(conn):
+    """A ranking that sums below the book total with nothing explaining the gap is the failure this
+    filter is meant to avoid, not to introduce."""
+    position(conn, "L1", arm="gex", entry_mode="legged", pnl=100.0)
+    position(conn, "O1", arm="gex", entry_mode="outright", pnl=-90.0)
+    position(conn, "O2", arm="gex", entry_mode="outright", pnl=-10.0)
+
+    ex = analytics.arm_comparison_exclusions(conn)
+    assert ex["trades"] == 2
+    assert ex["net_pnl"] == -100.0
+    assert ex["excluded_modes"] == ["outright"]
+    assert [r["arm"] for r in ex["by_arm"]] == ["gex"]
+
+
+def test_unfiltered_arm_view_is_still_reachable(conn):
+    position(conn, "L1", arm="gex", entry_mode="legged", pnl=100.0)
+    position(conn, "O1", arm="gex", entry_mode="outright", pnl=-90.0)
+
+    unfiltered = {r["arm"]: r for r in analytics.by_arm(conn, entry_modes=None)}
+    assert unfiltered["gex"]["net_pnl"] == 10.0 and unfiltered["gex"]["trades"] == 2
+    assert analytics.arm_comparison_exclusions(conn, entry_modes=None)["trades"] == 0
+
+
+def test_fee_drag_inherits_the_comparison_scope(conn):
+    """fee_drag is per-arm too, so it must compare like for like or it re-imports the same skew."""
+    position(conn, "L1", arm="gex", entry_mode="legged", gross=110.0, fees=10.0, pnl=100.0)
+    position(conn, "O1", arm="gex", entry_mode="outright", gross=-83.0, fees=7.0, pnl=-90.0)
+
+    gex = {r["arm"]: r for r in analytics.fee_drag(conn)}["gex"]
+    assert gex["trades"] == 1 and gex["fees"] == 10.0
+
+
 def test_by_entry_window_groups_untagged_separately(conn):
     position(conn, "P1", window="09:45-10:15", pnl=40.0)
     position(conn, "P2", window=None, pnl=10.0)
@@ -110,26 +169,63 @@ def test_by_entry_window_groups_untagged_separately(conn):
 
 
 # --------------------------------------------------------------------------- completion counterfactual
-def test_counterfactual_separates_never_offered_from_buffer_too_tight(conn):
-    """The distinction the whole counterfactual exists for. These two look identical in the P&L and
-    call for opposite fixes: one says the market never got there, the other says our gate cost us
-    the fly."""
+def _completion_refusal(conn, position_id, reason, *, day="2026-07-20", arm="gex", symbol="SPX"):
+    dbmod.record_decision(conn, trade_date=day, arm=arm, symbol=symbol, mode="completion",
+                          reason=reason, accepted=False, position_id=position_id,
+                          when=f"{day}T12:05:00")
+
+
+def test_counterfactual_separates_never_offered_from_our_own_gates(conn):
+    """The distinction the whole counterfactual exists for. These look identical in the P&L and
+    call for opposite fixes: one says the market never got there, the others say our gate cost us
+    the fly — and the two gates are not interchangeable either."""
     # completed
     position(conn, "P1", kind="fly", credit=2.55, best_debit=1.50, latency=23.0)
     # the market never offered a debit below the credit at all
     position(conn, "P2", kind="short_vertical", credit=2.55, best_debit=2.60)
-    # the debit did beat the credit — just not by enough to clear the buffer
+    # the debit did beat the credit — just not by enough to clear the fee buffer
     position(conn, "P3", kind="short_vertical", credit=2.10, best_debit=2.02)
+    _completion_refusal(conn, "P3", "completing_debit_too_high")
     # never priced (e.g. missing quotes all session)
     position(conn, "P4", kind="short_vertical", credit=2.00, best_debit=None)
+    # cleared the buffer, but the post-fee floor missed min_floor_dollars
+    position(conn, "P5", kind="short_vertical", credit=2.10, best_debit=1.60)
+    _completion_refusal(conn, "P5", "floor_below_minimum_after_fees")
 
     stats = analytics.completion_stats(conn)
-    assert stats["legged_entries"] == 4
+    assert stats["legged_entries"] == 5
     assert stats["completed"] == 1
-    assert stats["completion_rate"] == 0.25
+    assert stats["completion_rate"] == 0.2
     assert stats["never_offered"] == 1
-    assert stats["buffer_too_tight"] == 1
+    assert stats["buffer_blocked"] == 1
+    assert stats["floor_blocked"] == 1
     assert stats["counterfactual_unknown"] == 1
+
+
+def test_floor_blocked_wins_when_a_position_saw_both_refusals(conn):
+    """A position is refused many times as quotes move, so it typically carries buffer refusals from
+    earlier in the session AND a floor refusal from its best moment. Reaching the floor gate at all
+    means the buffer was already cleared, so the floor is the honest verdict — the opposite reading
+    would blame the buffer for a miss the buffer did not cause."""
+    position(conn, "P1", kind="short_vertical", credit=2.10, best_debit=1.60)
+    _completion_refusal(conn, "P1", "completing_debit_too_high")
+    _completion_refusal(conn, "P1", "floor_below_minimum_after_fees")
+    _completion_refusal(conn, "P1", "completing_debit_too_high")
+
+    stats = analytics.completion_stats(conn)
+    assert stats["floor_blocked"] == 1
+    assert stats["buffer_blocked"] == 0
+
+
+def test_a_miss_the_market_never_offered_is_never_blamed_on_our_gates(conn):
+    """best_debit >= credit means no threshold of ours could have helped. Even with a buffer refusal
+    journaled, it must stay in never_offered rather than becoming an actionable-looking gate miss."""
+    position(conn, "P1", kind="short_vertical", credit=2.55, best_debit=2.60)
+    _completion_refusal(conn, "P1", "completing_debit_too_high")
+
+    stats = analytics.completion_stats(conn)
+    assert stats["never_offered"] == 1
+    assert stats["buffer_blocked"] == 0 and stats["floor_blocked"] == 0
 
 
 def test_completion_latency_is_summarized(conn):
