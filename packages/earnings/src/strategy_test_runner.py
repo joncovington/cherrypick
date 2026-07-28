@@ -956,6 +956,7 @@ def cmd_run_entries(args) -> dict:
                     "quantity": quantity,
                     "capital_at_risk": size["capital_at_risk"],
                     "entry_cost": entry_costs["total_cost"],
+                    "entry_slippage": entry_costs["slippage"],
                     "entry_iv": entry_iv,
                     "entry_context": _entry_context(r["criteria"], r["composite_score"]),
                 }
@@ -1135,6 +1136,7 @@ def cmd_run_closes(args) -> dict:
                 "exit_debit": exit_debit,
                 "pnl": pnl,
                 "exit_cost": exit_costs["total_cost"],
+                "exit_slippage": exit_costs["slippage"],
                 "exit_iv": exit_iv,
             })))
             if not close_result.get("ok"):

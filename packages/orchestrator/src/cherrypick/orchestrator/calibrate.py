@@ -27,11 +27,17 @@ def _reading(records: list[dict]) -> dict:
     n = len(records)
     wins = sum(1 for r in records if r["net_pnl"] > 0)
     sessions = {r.get("session") for r in records if r.get("session")}
+    # Cost-sensitivity view: net restated at a doubled slippage fraction (linear, so it
+    # costs the recorded slippage again). Coverage counts the rows carrying the datum —
+    # a reading whose stressed net only covers part of the sample says so.
+    known_slips = [r["slippage"] for r in records if r.get("slippage") is not None]
     return {
         "sample": n,
         "win_rate": round(wins / n, 4) if n else None,
         "days": len(sessions),
         "net_pnl": round(sum(r["net_pnl"] for r in records), 2),
+        "net_pnl_2x_slippage": round(sum(r["net_pnl"] for r in records) - sum(known_slips), 2),
+        "slippage_coverage": len(known_slips),
     }
 
 
