@@ -433,6 +433,7 @@ TABLE_STYLE = (
     "border-color:var(--accent,#0969da)}"
     "tr.filter-row .rng{display:flex;gap:3px}"
     "tr.filter-row .on{border-color:var(--accent,#0969da)}"
+    "thead tr.hdr-row th.sortable{cursor:pointer;user-select:none}"
 )
 
 TABLE_JS = r"""
@@ -503,8 +504,16 @@ function filterCellHtml(c, i, state, allRows) {
 window.cpTable = function(el, cols, rows, empty, opts) {
   const o = opts || {};
   const filterable = o.state && cols.some(c => c.filter);
+  // Opt-in sorting: pass {sort: {i, dir}, onSort} (both caller-owned, like filter state).
+  // cpTable renders the indicator and wires header clicks; the CALLER re-renders with rows
+  // it sorted (cpTableSort below) -- same division of labour as the filters.
+  const sortable = o.sort && o.onSort;
   const hdr = '<tr class="hdr-row">' +
-    cols.map(c => `<th class="${c.num?'num':''}">${c.h}</th>`).join('') + '</tr>';
+    cols.map((c, i) => {
+      const s = sortable && c.sortable !== false;
+      const arr = (s && o.sort.i === i) ? (o.sort.dir > 0 ? ' ▴' : ' ▾') : '';
+      return `<th class="${c.num?'num':''}${s?' sortable':''}"${s?` data-si="${i}"`:''}>${c.h}${arr}</th>`;
+    }).join('') + '</tr>';
   const frow = filterable
     ? '<tr class="filter-row">' +
       cols.map((c, i) => `<th>${filterCellHtml(c, i, o.state, o.allRows || rows)}</th>`).join('') +
@@ -516,6 +525,7 @@ window.cpTable = function(el, cols, rows, empty, opts) {
         `${empty || 'Nothing yet.'}</td></tr></tbody>`
       : `<tbody><tr><td class="empty">${empty || 'Nothing yet.'}</td></tr></tbody>`;
     if (filterable) wireFilters(el, o);
+    if (sortable && filterable) wireSort(el, o);
     return;
   }
   const body = '<tbody>' + rows.map(r => '<tr>' + cols.map(c => {
@@ -525,6 +535,28 @@ window.cpTable = function(el, cols, rows, empty, opts) {
   }).join('') + '</tr>').join('') + '</tbody>';
   el.innerHTML = `<thead>${hdr}${frow}</thead>` + body;
   if (filterable) wireFilters(el, o);
+  if (sortable) wireSort(el, o);
+};
+
+function wireSort(el, o) {
+  el.querySelectorAll('th.sortable').forEach(th =>
+    th.addEventListener('click', () => o.onSort(Number(th.dataset.si))));
+}
+
+// Sort helper for cpTable callers: raw accessor c.s || c.v || c.f, nulls last regardless of
+// direction (an unpriced row must never lead the table), numeric when both sides are numbers.
+window.cpTableSort = function(rows, cols, sort) {
+  if (!sort || sort.i == null) return rows;
+  const c = cols[sort.i]; if (!c) return rows;
+  const get = c.s || c.v || c.f;
+  return rows.slice().sort((a, b) => {
+    const av = get(a), bv = get(b);
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * sort.dir;
+    return String(av).localeCompare(String(bv)) * sort.dir;
+  });
 };
 
 function wireFilters(el, o) {

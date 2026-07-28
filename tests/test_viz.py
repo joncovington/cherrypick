@@ -99,3 +99,11 @@ def test_table_component_contract():
                    "select", "daterange", "allRows"):
         assert marker in viz.TABLE_JS
     assert "filter-row" in viz.TABLE_STYLE
+
+
+def test_table_sorting_is_opt_in_and_nulls_last():
+    assert "cpTableSort" in viz.TABLE_JS
+    assert "onSort" in viz.TABLE_JS
+    # Nulls sort last regardless of direction — an unpriced row must never lead the table.
+    assert "if (av == null) return 1;" in viz.TABLE_JS
+    assert "th.sortable" in viz.TABLE_STYLE
