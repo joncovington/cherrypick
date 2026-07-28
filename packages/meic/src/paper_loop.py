@@ -57,7 +57,9 @@ sys.path.insert(0, str(_ROOT / "src"))
 _CORE = str(_ROOT / "src" / "_core")
 if os.path.isdir(_CORE) and _CORE not in sys.path:
     sys.path.insert(0, _CORE)
+from cherrypick.core import advice as _core_advice  # noqa: E402  (bounded-advice validator)
 from cherrypick.core import calendar as _cal  # noqa: E402  (shared NYSE trading-day calendar)
+from cherrypick.core import home as _core_home  # noqa: E402  (the shared state dir)
 from cherrypick.core import viz as _viz  # noqa: E402  (the suite's one money formatter)
 
 import paths as _paths  # noqa: E402  (data-home resolution: ~/.cherrypick/data/meic or MEIC_DATA_DIR)
@@ -811,6 +813,86 @@ def _write_eod_analysis(day):
     return path
 
 
+def _open_advised_tags():
+    """DISTINCT advised:* profile tags with open/partial rows -- positions that must keep being
+    managed (exits, force-close, settlement) even when today's advice is absent or disabled."""
+    import sqlite3
+    try:
+        conn = sqlite3.connect(_PAPER_DB)
+        rows = conn.execute(
+            "SELECT DISTINCT risk_profile FROM ic_trades "
+            "WHERE risk_profile LIKE 'advised:%' AND status IN ('open', 'partial')").fetchall()
+        conn.close()
+        return [r[0] for r in rows]
+    except sqlite3.Error:
+        return []
+
+
+def _advice_profiles(cfg, today):
+    """The advised shadow book's synthetic profile(s) for `today`: (profiles dict, reason).
+
+    Tier 1 of the agentic layer, loop side. The orchestrator's `advise` command wrote (or didn't
+    write) `state/advice/meic-<today>.json`; this re-validates it with the SAME core code
+    (cherrypick.core.advice) against this module's own config `advice.bounds` manifest --
+    absent, stale, or invalid means baseline, i.e. no synthetic profile at all.
+
+    Read-once-per-session across --once processes: the first iteration of the day records its
+    decision in advice_active.json in the data home, and every later iteration replays that
+    decision -- so advice can never start, stop, or change mid-session, however late an
+    artifact lands or however the config is flipped intraday.
+
+    The advised book is a synthetic profile `advised:<base>`: the base profile's registry def
+    with the admitted params overlaid, evaluated by process_symbol beside the un-advised base
+    (the control) -- the flies-arms pattern, and compare_profiles reads the tag for free.
+    Open advised positions always keep a profile to run their exits: if advice is off today, a
+    management-only twin (entries capped to zero) stands in.
+    """
+    acfg = cfg.get("advice") or {}
+    base = acfg.get("base_profile", "conservative")
+    state_file = _paths.data_path("advice_active.json")
+    decision = None
+    if state_file.exists():
+        try:
+            decision = json.loads(state_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            decision = None
+        if decision is not None and decision.get("day") != today:
+            decision = None  # yesterday's decision; today re-derives its own
+    if decision is None:
+        if acfg.get("enabled") and acfg.get("bounds"):
+            res = _core_advice.load(_core_home.state_dir(), "meic", today, acfg.get("bounds") or {})
+            params = {p["param"]: p["value"] for p in res["proposals"]} if res["proposals"] else None
+            decision = {"day": today, "base_profile": base, "params": params,
+                        "reason": res["reason"], "proposals": res["proposals"],
+                        "rejected": res.get("rejected") or []}
+            for prop in res["proposals"]:
+                logger.info("advice applied: %s=%r -- %s", prop["param"], prop["value"],
+                            prop.get("rationale", ""))
+            if not res["proposals"]:
+                logger.info("advice: baseline (%s)", res["reason"] or "no proposals")
+        else:
+            decision = {"day": today, "base_profile": base, "params": None,
+                        "reason": "advice_disabled"}
+        try:
+            state_file.write_text(json.dumps(decision, indent=2), encoding="utf-8")
+        except OSError:
+            pass  # the decision still applies this process; the next --once re-derives it
+
+    registry = paper.load_profiles()
+    out = {}
+    dbase = decision.get("base_profile") or base
+    base_def = registry.get(dbase)
+    if decision.get("params") and isinstance(base_def, dict):
+        out[f"advised:{dbase}"] = {**base_def, **decision["params"]}
+    for tag in _open_advised_tags():
+        if tag in out:
+            continue
+        tag_base = registry.get(tag.split(":", 1)[1]) if ":" in tag else None
+        if isinstance(tag_base, dict):
+            out[tag] = {**tag_base, "max_concurrent_ics": 0}
+    return out, decision.get("reason")
+
+
 def run_iteration(cfg, force=False):
     now = _now_et()
     if not force and not _is_trading_time(now, cfg):
@@ -825,6 +907,7 @@ def run_iteration(cfg, force=False):
     # Load the profile registry once per iteration so each symbol's candidate menu is the UNION
     # of every profile's wing widths (each profile then picks its own allowed subset in paper.py).
     profiles = paper.load_profiles()
+    advice_profiles, _advice_reason = _advice_profiles(cfg, today)
     session = _session_quality(now)
 
     summary = {}
@@ -860,7 +943,8 @@ def run_iteration(cfg, force=False):
             "gex": gex if gex.get("ok") else {"ok": False},
             "candidates": candidates, "leg_quotes": leg_quotes,
         }
-        result = paper.process_symbol(snapshot, _PAPER_DB, "paper")
+        result = paper.process_symbol(snapshot, _PAPER_DB, "paper",
+                                      extra_profiles=advice_profiles)
         # Per-profile outcome for the log - fills and exits made to stand out from skips.
         outcomes = {}
         for prof, actions in result.get("results", {}).items():
