@@ -62,6 +62,9 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
+
+from cherrypick.core import viz
 
 import costs
 import db_paper
@@ -290,9 +293,8 @@ def _eod_report_path(day: str) -> Path:
 
 
 def _money(x) -> str:
-    if x is None:
-        return "-"
-    return f"-${abs(x):,.2f}" if x < 0 else f"${x:,.2f}"
+    # The suite's one formatter (cherrypick.core.viz), keeping this report's "-" placeholder.
+    return viz.fmt_money(x, none="-")
 
 
 def _close_session(trade: dict) -> str:
