@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,39 @@ from . import config as cfgmod
 
 _STATE = cfgmod.STATE_DIR / "trade_notify.json"
 _ID_CAP = 4000  # bound the remembered-id lists (per schema, per direction)
+
+# The 2-minute trade-notify task and the 10-minute watchdog tick both call run(). The atomic
+# _save_state protects against a CORRUPT file, but not against the read-modify-write race: an
+# overlap loses one side's watermark update and replays already-notified fills as duplicate
+# pushes. A single-writer lockfile closes it — the loser skips, and the next 2-minute tick
+# covers anything it would have sent.
+_LOCK = cfgmod.STATE_DIR / "trade_notify.lock"
+_LOCK_STALE_SECONDS = 600  # a crashed holder must not wedge trade notification forever
+
+
+def _acquire_lock() -> bool:
+    cfgmod.ensure_dirs()
+    try:
+        if _LOCK.exists() and time.time() - _LOCK.stat().st_mtime > _LOCK_STALE_SECONDS:
+            _LOCK.unlink()
+    except OSError:
+        pass
+    try:
+        fd = os.open(_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return False
+    except OSError:
+        return False
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(str(os.getpid()))
+    return True
+
+
+def _release_lock() -> None:
+    try:
+        _LOCK.unlink()
+    except OSError:
+        pass
 
 
 def _load_state() -> dict:
@@ -405,36 +439,43 @@ _SCHEMAS = {
 
 # --------------------------------------------------------------------------- entrypoint
 def run(cfg: dict | None = None) -> dict:
-    cfg = cfg or cfgmod.load_config()
-    notify_cfg = cfg.get("notify", {})
-    channels = notify_cfg.get("trade_channels", ["log", "discord"])
-    notifier = Notifier({**notify_cfg, "channels": channels})
+    if not _acquire_lock():
+        # Another invocation (the 2-min task vs the watchdog tick) is mid-run; racing it
+        # would replay its already-notified ids. Skip — the next tick covers us.
+        return {"ok": True, "skipped": "another trade-notify run holds the lock"}
+    try:
+        cfg = cfg or cfgmod.load_config()
+        notify_cfg = cfg.get("notify", {})
+        channels = notify_cfg.get("trade_channels", ["log", "discord"])
+        notifier = Notifier({**notify_cfg, "channels": channels})
 
-    state = _load_state()
-    summary: dict[str, Any] = {}
+        state = _load_state()
+        summary: dict[str, Any] = {}
 
-    for name, mcfg in cfgmod.enabled_modules(cfg).items():
-        paper = mcfg.get("paper", {})
-        if not paper.get("notify_trades"):
-            continue
-        db_path = cfgmod.paper_db_path(mcfg, name)
-        if not db_path.exists():
-            continue
-        adapter = _SCHEMAS.get(paper.get("trade_schema", "meic_ic"))
-        if adapter is None:  # unknown schema — skip cleanly
-            continue
-        seed_fn, process_fn = adapter
-
-        conn = _connect_ro(db_path)
-        try:
-            st = state.get(name)
-            if st is None:  # first activation — seed, don't backfill
-                state[name] = seed_fn(conn)
-                summary[name] = {"seeded": True}
+        for name, mcfg in cfgmod.enabled_modules(cfg).items():
+            paper = mcfg.get("paper", {})
+            if not paper.get("notify_trades"):
                 continue
-            summary[name] = process_fn(conn, st, notifier, name)
-        finally:
-            conn.close()
+            db_path = cfgmod.paper_db_path(mcfg, name)
+            if not db_path.exists():
+                continue
+            adapter = _SCHEMAS.get(paper.get("trade_schema", "meic_ic"))
+            if adapter is None:  # unknown schema — skip cleanly
+                continue
+            seed_fn, process_fn = adapter
 
-    _save_state(state)
-    return {"ok": True, "modules": summary}
+            conn = _connect_ro(db_path)
+            try:
+                st = state.get(name)
+                if st is None:  # first activation — seed, don't backfill
+                    state[name] = seed_fn(conn)
+                    summary[name] = {"seeded": True}
+                    continue
+                summary[name] = process_fn(conn, st, notifier, name)
+            finally:
+                conn.close()
+
+        _save_state(state)
+        return {"ok": True, "modules": summary}
+    finally:
+        _release_lock()
