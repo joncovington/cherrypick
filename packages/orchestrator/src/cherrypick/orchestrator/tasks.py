@@ -311,9 +311,19 @@ def registry_snapshot(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def delete(name: str) -> dict[str, Any]:
+    """Remove a task. Deleting a task that isn't registered is a **successful no-op**, not a failure.
+
+    `install` calls this unconditionally to clear stale fixed-time tasks (the EOD digest and insight are
+    watchdog-fired now), and `schtasks /Delete` exits non-zero on an absent task — so reporting the raw
+    return code made every clean install report `ok: false` for those two, which in turn made install's
+    top-level `ok` permanently false and unable to signal a real failure. Test existence first rather
+    than matching the error text, which is localized.
+    """
     if not _IS_WINDOWS:
         ok, detail = _crontab_write(_cron_remove(_crontab_read(), name))
         return {"ok": ok, "detail": detail or f"cron: removed {name}"}
+    if not exists(name):
+        return {"ok": True, "detail": f"not registered: {name}"}
     subprocess.run(
         ["schtasks", "/End", "/TN", name], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
     )

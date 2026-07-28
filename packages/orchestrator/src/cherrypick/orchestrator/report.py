@@ -97,9 +97,11 @@ def _earnings_closed(conn) -> list[dict]:
 
 
 def _flies_closed(conn) -> list[dict]:
-    """cherrypick-flies' `fly_positions`; closed = settled. The attribution tag is the ARM (gex /
-    time_window / control), because comparing the arms is the entire point of the module — a
-    per-symbol view would hide the one contrast the experiment exists to draw."""
+    """cherrypick-flies' `fly_positions`; closed = settled. The attribution tag is the ARM, because
+    comparing the arms is the entire point of the module — a per-symbol view would hide the one
+    contrast the experiment exists to draw. Read straight off the row rather than against a known list,
+    so an arm added on the module side (wide_wing joined gex / time_window / control on 2026-07-27)
+    appears here without a change on this side."""
     rows = conn.execute(
         "SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date "
         "FROM fly_positions WHERE status = 'settled'"
