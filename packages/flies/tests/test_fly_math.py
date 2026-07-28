@@ -139,6 +139,59 @@ def test_book_funded_by_a_short_vertical_is_only_green_in_a_band():
     assert low <= 6000 <= high
 
 
+def test_book_with_two_profit_zones_reports_a_band_that_never_spans_the_trough():
+    """The strategy's own premise is a FOREST — several profit zones with losing troughs
+    between them. The band must be one CONTIGUOUS non-negative zone (the one holding the
+    payoff maximum), not a min/max over every green grid point, which would claim the
+    floor holds across a trough where the book loses money."""
+    positions = [
+        # Two debit flies far enough apart that the region between them is negative.
+        {"kind": "fly", "side": "call", "center": 6000, "wing_width": 5,
+         "net": -1.00, "quantity": 1, "fees": 0.0},   # peak +400 at 6000, -100 away
+        {"kind": "fly", "side": "call", "center": 6100, "wing_width": 10,
+         "net": -0.50, "quantity": 1, "fees": 0.0},   # peak +950 at 6100, -50 away
+    ]
+    result = fly.book_floor(positions)
+    assert result["floor_holds"] is False
+    # The trough between the flies is genuinely negative...
+    assert fly.book_pnl(positions, 6050) < 0
+    # ...and there are exactly two zones, neither containing the trough.
+    assert len(result["bands"]) == 2
+    for low, high in result["bands"]:
+        assert not (low <= 6050 <= high)
+    # The headline band is the zone around the payoff maximum (6100), and it must not
+    # reach back across the trough toward the other fly's zone.
+    low, high = result["band"]
+    assert low <= 6100 <= high
+    assert low > 6050
+    # The two zones are the flies' own profitable neighborhoods.
+    (a_low, a_high), (b_low, b_high) = sorted(result["bands"])
+    assert a_low <= 6000 <= a_high
+    assert b_low <= 6100 <= b_high
+
+
+def test_single_zone_band_equals_its_only_zone():
+    positions = [
+        {"kind": "short_vertical", "side": "put", "center": 6000, "wing_width": 5,
+         "net": 1.45, "quantity": 1, "fees": 0.0},
+        {**legged_fly(-0.50), "center": 6020},
+    ]
+    result = fly.book_floor(positions)
+    assert len(result["bands"]) == 1
+    assert result["band"] == result["bands"][0]
+
+
+def test_book_negative_everywhere_has_no_band_and_no_zones():
+    # A short vertical whose credit can't cover its own fees anywhere: net 0.01 credit,
+    # huge fees — every grid point is negative.
+    positions = [{"kind": "short_vertical", "side": "put", "center": 6000, "wing_width": 5,
+                  "net": 0.01, "quantity": 1, "fees": 500.0}]
+    result = fly.book_floor(positions)
+    assert result["floor_holds"] is False
+    assert result["band"] is None
+    assert result["bands"] == []
+
+
 def test_book_cash_splits_credits_debits_and_fees():
     positions = [legged_fly(1.05, fees=5.0), {**legged_fly(-0.20, fees=7.0), "center": 6015}]
     cash = fly.book_cash(positions)
