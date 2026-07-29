@@ -46,7 +46,7 @@
       }
     },
     "flies": {
-      "_comment": "cherrypick-flies: 0DTE net-credit butterflies ('profit forest'), paper only, SPX only. Reads MEIC's stream cache READ-ONLY and runs no streamer of its own, so it REQUIRES the meic module's streamer to be running and subscribed to SPX. ENABLED, but it has still never completed a live session — watch the first one, in particular the quote_stats line in the log (which separates 'the streamer gave us nothing' from 'the strategy found nothing') and the arm_divergence figure (if the arms agree nearly always, the comparison cannot answer anything and max_center_distance_pct is the first thing to revisit).",
+      "_comment": "cherrypick-flies: 0DTE net-credit butterflies ('profit forest'), paper only, XSP (SPX through 2026-07-28). Reads the shared stream cache READ-ONLY and runs no streamer of its own, so it REQUIRES the suite's streamer to be running and subscribed to its symbol. ENABLED, but it has still never completed a live session — watch the first one, in particular the quote_stats line in the log (which separates 'the streamer gave us nothing' from 'the strategy found nothing') and the arm_divergence figure (if the arms agree nearly always, the comparison cannot answer anything and max_center_distance_pct is the first thing to revisit).",
       "enabled": true,
       "path": "../flies",
       "_broker_note": "Live-scaffold onboarding (docs/live-trading-plan.md in the module): flies has no tt.py, so its config-declared broker/credential CLI is broker_cli.py; `cherrypick connect/account --module flies` drive it exactly like MEIC's tt.py. keyring service fliesagent; live_db is the SEPARATE live ledger read only by `report --live` (never by calibrate/promotion).",
@@ -72,8 +72,8 @@
         "settlement_grace_minutes": 30
       },
       "calibration": {
-        "_comment": "The 'ladder' here is not a risk ladder — it is the three experiment arms, and there is nothing to promote between them. Listing them gives per-arm P&L readings without recommendations, which is exactly what this module wants: the comparison is the output.",
-        "ladder": ["control", "time_window", "gex"]
+        "_comment": "The 'ladder' here is not a risk ladder — it is the experiment arms, and there is nothing to promote between them. Listing them gives per-arm P&L readings without recommendations, which is exactly what this module wants: the comparison is the output. width-2..width-5 are the wing-width sweep (control at the default width is its 1-increment rung); wide_wing is the retired SPX-era single-point width arm, listed so its historical books stay readable.",
+        "ladder": ["control", "time_window", "gex", "width-2", "width-3", "width-4", "width-5", "wide_wing"]
       }
     },
     "earnings": {
