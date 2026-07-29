@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config as cfgmod
+from .util import CREATE_NO_WINDOW
 
 # Reuse the reliability-side primitives: a stdlib socket reachability probe and the benign detached
 # (no-window) launcher the watchdog already uses for the streamer. An embedded module server is the
@@ -116,6 +117,7 @@ def _run_build(embed_cfg: dict[str, Any], root: Path, out_path: Path | None) -> 
             capture_output=True,
             text=True,
             timeout=int(embed_cfg.get("build_timeout", 120)),
+            creationflags=CREATE_NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
         return {"ok": False, "detail": "static build timed out"}
@@ -211,12 +213,17 @@ def _recycle_port(host: str, port: int) -> bool:
             )
             subprocess.run(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-                capture_output=True, timeout=15,
+                capture_output=True, timeout=15, creationflags=CREATE_NO_WINDOW,
             )
         else:
-            r = subprocess.run(["lsof", "-ti", f"tcp:{port}"], capture_output=True, text=True, timeout=10)
+            r = subprocess.run(
+                ["lsof", "-ti", f"tcp:{port}"], capture_output=True, text=True, timeout=10,
+                creationflags=CREATE_NO_WINDOW,
+            )
             for pid in r.stdout.split():
-                subprocess.run(["kill", "-TERM", pid], capture_output=True, timeout=5)
+                subprocess.run(
+                    ["kill", "-TERM", pid], capture_output=True, timeout=5, creationflags=CREATE_NO_WINDOW
+                )
         return True
     except Exception:
         return False

@@ -20,7 +20,7 @@ from cherrypick.core import home as _home
 
 from . import config as cfgmod
 from . import eval_activity, tasks, timeutil
-from .util import first_json
+from .util import CREATE_NO_WINDOW, first_json
 
 OK, WARN, FAIL = "ok", "warn", "fail"
 _MARK = {OK: "[ OK ]", WARN: "[WARN]", FAIL: "[FAIL]"}
@@ -71,6 +71,7 @@ def _run(module_root: Path, argv: list[str], timeout: int = 30) -> subprocess.Co
         capture_output=True,
         text=True,
         timeout=timeout,
+        creationflags=CREATE_NO_WINDOW,
     )
 
 

@@ -175,6 +175,15 @@ is excluded from ruff and from the packaged wheel.
   spot-trail recorder that `install` starts, the watchdog keeps alive via `status_argv`/`start_argv`,
   and `uninstall` stops; single-instance guarded, located by `path`/`repo` like modules but with no
   paper DB or schedule of their own). It never places, cancels, or closes an order.
+- **Every spawned process is headless.** The scheduled tasks run under `pythonw.exe` (no console), so
+  any console-subsystem child launched without `CREATE_NO_WINDOW` pops a visible terminal window on the
+  user's screen — on every watchdog tick, daemon restart, and desktop toast. Daemons and `services`
+  start via the detached no-window launcher (`watchdog._start_streamer`: `pythonw` +
+  `DETACHED|NO_WINDOW|NEW_GROUP`), and every other `subprocess.run`/`Popen` site passes
+  `creationflags=CREATE_NO_WINDOW` (`orchestrator/util.py`; 0 off-Windows, so call sites stay
+  cross-platform). `-WindowStyle Hidden` alone is not enough — the console flashes before PowerShell
+  hides it. Enforced by `tests/test_headless.py` (a source scan), whose one exemption is `connect.py`:
+  its delegated credential entry is interactive by design and must share the user's console.
 - **Account numbers are masked** to the last 4 digits (`****1234`) anywhere they surface in logs or
   output — never emit a full account number (suite-wide rule from `ROADMAP.md`).
 - **Best-effort side calls never break the reliability path.** The watchdog tick fires

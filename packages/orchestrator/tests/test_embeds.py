@@ -141,7 +141,7 @@ def test_build_static_runs_generator_and_throttles(tmp_path, monkeypatch):
     out = module / "reports" / "strategy_dashboard.html"
     runs = {"n": 0}
 
-    def fake_run(argv, cwd, capture_output, text, timeout):
+    def fake_run(argv, cwd, capture_output, text, timeout, **kwargs):
         runs["n"] += 1
         out.write_text("<html>earnings</html>", encoding="utf-8")
 
@@ -174,7 +174,7 @@ def test_build_static_reports_generator_failure(tmp_path, monkeypatch):
     module = tmp_path / "earn"
     module.mkdir()
 
-    def fake_run(argv, cwd, capture_output, text, timeout):
+    def fake_run(argv, cwd, capture_output, text, timeout, **kwargs):
         class R:
             returncode = 1
             stdout = ""
