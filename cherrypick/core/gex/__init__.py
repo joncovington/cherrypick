@@ -196,8 +196,10 @@ def compute_gex_profile(chain_entries: list[dict], greeks: dict, oi: dict, volum
             gex_vol = -gex_vol
 
         d = strikes.setdefault(strike, {
-            "call_gamma": 0.0, "call_iv": 0.0, "call_oi": 0, "call_vol": 0, "call_gex": 0.0, "call_gex_vol": 0.0,
-            "put_gamma": 0.0, "put_iv": 0.0, "put_oi": 0, "put_vol": 0, "put_gex": 0.0, "put_gex_vol": 0.0,
+            "call_gamma": 0.0, "call_iv": 0.0, "call_oi": 0, "call_vol": 0,
+            "call_gex": 0.0, "call_gex_vol": 0.0,
+            "put_gamma": 0.0, "put_iv": 0.0, "put_oi": 0, "put_vol": 0,
+            "put_gex": 0.0, "put_gex_vol": 0.0,
         })
         if "C" in otype:
             d["call_gamma"], d["call_iv"], d["call_oi"], d["call_vol"] = gamma, round(iv, 2), oi_val, vol_val
@@ -207,7 +209,8 @@ def compute_gex_profile(chain_entries: list[dict], greeks: dict, oi: dict, volum
             d["put_gex"], d["put_gex_vol"] = gex, gex_vol
 
     if not strikes:
-        return {"ok": False, "error": "insufficient GEX data — OI/volume not yet cached (streamer must run first)"}
+        return {"ok": False,
+                "error": "insufficient GEX data — OI/volume not yet cached (streamer must run first)"}
 
     series = []
     for strike in sorted(strikes):

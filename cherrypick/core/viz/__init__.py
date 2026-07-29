@@ -145,7 +145,8 @@ SECTION_JS = r"""
     for(var t=0;t<=4;t++){ var gv=lo+(hi-lo)*t/4, yy=y(gv);
       g.globalAlpha=0.15; g.beginPath(); g.moveTo(padL,yy); g.lineTo(W-padR,yy); g.stroke();
       g.globalAlpha=0.8; g.fillText(fmt(gv), 4, yy+3); }
-    if(lo<0&&hi>0){ g.globalAlpha=0.4; g.beginPath(); g.moveTo(padL,y(0)); g.lineTo(W-padR,y(0)); g.stroke(); }
+    if(lo<0&&hi>0){ g.globalAlpha=0.4; g.beginPath();
+      g.moveTo(padL,y(0)); g.lineTo(W-padR,y(0)); g.stroke(); }
     g.globalAlpha=1;
     [0, labels.length>>1, labels.length-1].forEach(function(i){
       if(i<labels.length) g.fillText(String(labels[i]).slice(5), x(i)-13, H-6); });
