@@ -553,3 +553,57 @@ def test_build_api_data_profile_filter_scopes_trades_stats_and_performance(db_pa
     assert unfiltered["stats"]["all_time"]["net_pnl"] == pytest.approx(150.0)
     assert filtered["performance"]["selected_profile"] == "conservative"
     assert unfiltered["performance"]["selected_profile"] == "ALL"
+
+
+# ── Width study (wing-width forced-sampling arms) ───────────────────────────────
+
+def test_width_study_has_every_configured_symbol_even_with_no_trades(db_path):
+    result = dashboard._build_api_data()
+    ws = result["width_study"]
+    assert ws["arms"] == dashboard.WIDTH_STUDY_ARMS
+    assert set(ws["symbols"]) == set(dashboard._load_symbols())
+    for sym in ws["symbols"]:
+        assert set(ws["symbols"][sym]) == set(dashboard.WIDTH_STUDY_ARMS)
+        for arm in dashboard.WIDTH_STUDY_ARMS:
+            assert ws["symbols"][sym][arm] == []
+
+
+def test_width_study_cell_matches_pnl_series_for_that_profile_and_symbol(db_path):
+    conn = dashboard._connect()
+    _insert_trade(conn, ic_order_id="IC-1", symbol="XSP", status="expired",
+                  pnl=12.0, fees=1.0, risk_profile="width-2")
+    _insert_trade(conn, ic_order_id="IC-2", symbol="XSP", status="expired",
+                  pnl=-4.0, fees=1.0, risk_profile="width-5")
+    _insert_trade(conn, ic_order_id="IC-3", symbol="QQQ", status="expired",
+                  pnl=7.0, fees=1.0, risk_profile="width-adaptive")
+    # A ladder trade must never leak into a width-study cell.
+    _insert_trade(conn, ic_order_id="IC-4", symbol="XSP", status="expired",
+                  pnl=99.0, fees=1.0, risk_profile="conservative")
+    conn.close()
+
+    result = dashboard._build_api_data()
+    ws = result["width_study"]["symbols"]
+
+    conn = dashboard._connect()
+    for sym, arm in (("XSP", "width-2"), ("XSP", "width-5"), ("QQQ", "width-adaptive")):
+        expected = dashboard._pnl_series(conn, "daily", symbol=sym, profile=arm)
+        assert ws[sym][arm] == expected
+    assert ws["XSP"]["width-10"] == []
+    assert ws["QQQ"]["width-2"] == []
+    conn.close()
+
+    xsp_w2_pnl = sum(b["net_pnl"] for b in ws["XSP"]["width-2"])
+    assert xsp_w2_pnl == pytest.approx(12.0)
+
+
+def test_width_study_ignores_the_page_symbol_and_profile_filters(db_path):
+    """Like by_profile above, the width-study cells always show every configured symbol's arms —
+    the page's symbol/profile selectors must not narrow this comparison view."""
+    conn = dashboard._connect()
+    _insert_trade(conn, ic_order_id="IC-1", symbol="XSP", status="expired",
+                  pnl=5.0, fees=0.0, risk_profile="width-2")
+    conn.close()
+
+    filtered = dashboard._build_api_data("QQQ", "conservative")
+    assert filtered["width_study"]["symbols"]["XSP"]["width-2"]
+    assert sum(b["net_pnl"] for b in filtered["width_study"]["symbols"]["XSP"]["width-2"]) == pytest.approx(5.0)
