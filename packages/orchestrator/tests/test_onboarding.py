@@ -6,6 +6,8 @@ No real keyring, no broker, no subprocess: stores are faked, children are stubbe
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from cherrypick.core.auth import ACCOUNT_NUMBER, CLIENT_SECRET, REFRESH_TOKEN
 
@@ -132,3 +134,19 @@ def test_wizard_migration_runs_per_service_on_yes(monkeypatch):
     assert any("--from-service meicagent" in f for f in flat)
     assert any("--from-service fliesagent" in f for f in flat)
     assert all("migrate" in f for f in flat)
+
+
+def test_core_env_pythonpath_actually_imports_the_core_package():
+    """The regression the wizard shipped with: the child's PYTHONPATH must point at the _core
+    ROOT (three levels above auth/__init__.py), not at the cherrypick dir inside it — the
+    stubbed-out wizard tests never exercised the real path computation."""
+    import os
+    import subprocess
+    import sys
+
+    env = connect._core_env()
+    root = env["PYTHONPATH"].split(os.pathsep)[0]
+    assert (Path(root) / "cherrypick" / "core" / "auth" / "__init__.py").exists()
+    r = subprocess.run([sys.executable, "-m", "cherrypick.core.auth", "status"],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode == 0 and '"service": "cherrypick-broker"' in r.stdout
