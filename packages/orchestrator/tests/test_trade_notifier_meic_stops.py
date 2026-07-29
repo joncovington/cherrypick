@@ -17,7 +17,8 @@ from cherrypick.orchestrator import trade_notifier as tn
 pytestmark = pytest.mark.unit
 
 _COLS = ("id", "symbol", "risk_profile", "put_strike", "call_strike", "wing_width", "net_credit",
-         "quantity", "status", "exit_time", "exit_reason", "pnl", "put_stop_cost", "call_stop_cost")
+         "quantity", "status", "exit_time", "exit_reason", "pnl", "fees", "put_stop_cost",
+         "call_stop_cost")
 
 
 class _Recorder:
@@ -48,7 +49,7 @@ def _conn(rows):
     conn.execute(
         "CREATE TABLE ic_trades (id INTEGER PRIMARY KEY, symbol TEXT, risk_profile TEXT, "
         "put_strike REAL, call_strike REAL, wing_width REAL, net_credit REAL, quantity INTEGER, "
-        "status TEXT, exit_time TEXT, exit_reason TEXT, pnl REAL, put_stop_cost REAL, "
+        "status TEXT, exit_time TEXT, exit_reason TEXT, pnl REAL, fees REAL, put_stop_cost REAL, "
         "call_stop_cost REAL)"
     )
     conn.executemany(
