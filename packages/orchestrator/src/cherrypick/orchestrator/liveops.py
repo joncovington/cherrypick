@@ -67,6 +67,18 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
             "config_source": source,
             "designated": mask_account(designated) if designated else None,
         })
+    # Credential source per module (own/shared/missing) — the onboarding panel's column,
+    # merged in so the Live Ops card shows setup state next to the kill switches.
+    try:
+        ob = accounts.onboarding_status(cfg)
+        if ob.get("ok"):
+            by_name = {m["module"]: m for m in ob["modules"]}
+            for m in modules:
+                row = by_name.get(m["module"]) or {}
+                m["credentials"] = row.get("credentials")
+                m["account_source"] = row.get("account_source")
+    except Exception:
+        pass
     halt = halt_flag_path()
     return {
         "ok": True,

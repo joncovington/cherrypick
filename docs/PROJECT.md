@@ -74,16 +74,21 @@ python run.py init      # writes ~/.cherrypick/config.json from the template
 `~/.cherrypick/config.json` is where you say **which strategies to run, on what schedule, and how you
 want to be alerted**. It lives under your user home (not the repo) and is kept only on your machine.
 
-**2. Link your tastytrade account.** cherrypick stores your credentials in your operating system's
-secure keyring (never in a file), and lets you pick which account it uses. Connect each engine you'll run:
+**2. Link your tastytrade account — one command.** cherrypick stores your credentials in your
+operating system's secure keyring (never in a file). Run the wizard once and every engine is
+connected:
 
 ```bash
-python run.py connect --module meic
-python run.py connect --module earnings    # only if you'll run the earnings engine
+python run.py connect
 ```
 
-The **GEX** dashboard and streamer reuse these same keyring credentials — there is no separate connect step
-for GEX.
+It walks you through: your tastytrade login (entered once, input hidden, shared by every
+engine), a connection check, picking which account the suite would use if you ever enable
+live trading (you confirm; per-engine overrides are possible with `connect --module <name>`),
+optional Slack/Discord notifications (Enter skips), and a status panel showing each engine's
+setup. If you previously set credentials per engine, the wizard offers to consolidate them
+into the shared login so there's one place to rotate. The **GEX** dashboard and streamer
+reuse the same keyring credentials — no separate step.
 
 **3. Choose your strategy details.** The fine-grained trading rules — which symbols, target deltas,
 credit floors, entry windows, risk profiles — live in each engine's own config:

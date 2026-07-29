@@ -30,7 +30,7 @@ def keyring_store(cfg: dict[str, Any], module: str) -> CredentialStore | None:
     """Build the shared `CredentialStore` for a module from its config-declared `keyring_service`
     (and optional read-only `keyring_legacy_services`). None when the module declares no service."""
     mcfg = cfg.get("modules", {}).get(module) or {}
-    service = mcfg.get("keyring_service")
+    service = cfgmod.module_keyring_service(mcfg, module)
     if not service:
         return None
     legacy = tuple(mcfg.get("keyring_legacy_services") or ())
@@ -164,12 +164,52 @@ def clear_shared_account() -> dict[str, Any]:
     return {"ok": True, "scope": "shared", "designated": None}
 
 
+def onboarding_status(cfg: dict[str, Any], store_factory=CredentialStore) -> dict[str, Any]:
+    """Per-module onboarding panel data — keyring ONLY (presence and source, never values, no
+    broker). The `source` distinction (own/shared/missing) is what keeps the shared-credential
+    model legible: an "own" entry overrides; "shared" means the module inherits the suite login.
+    `store_factory` is injectable so tests never touch a real keyring."""
+    from cherrypick.core.auth import REQUIRED_SECRETS, SHARED_SERVICE
+    try:
+        shared = store_factory(SHARED_SERVICE)
+        shared_creds = all(shared.get_secret(k) for k in REQUIRED_SECRETS)
+        shared_acct = shared.get_secret(ACCOUNT_NUMBER)
+    except CredentialError as exc:
+        return {"ok": False, "error": str(exc)}
+    modules = []
+    for name, mcfg in cfgmod.enabled_modules(cfg).items():
+        service = cfgmod.module_keyring_service(mcfg, name)
+        if not service:
+            modules.append({"module": name, "credentials": "n/a", "account": None,
+                            "account_source": None})
+            continue
+        try:
+            own = store_factory(service)  # plain store: measures the OWN layer, no fallback
+            own_creds = all(own.get_secret(k) for k in REQUIRED_SECRETS)
+            own_acct = own.get_secret(ACCOUNT_NUMBER)
+        except CredentialError as exc:
+            modules.append({"module": name, "credentials": f"error: {exc}", "account": None,
+                            "account_source": None})
+            continue
+        acct = own_acct or shared_acct
+        modules.append({
+            "module": name,
+            "credentials": "own" if own_creds else ("shared" if shared_creds else "missing"),
+            "account": mask_account(acct) if acct else None,
+            "account_source": "own" if own_acct else ("shared" if shared_acct else None),
+        })
+    return {"ok": True,
+            "shared": {"credentials": shared_creds,
+                       "account": mask_account(shared_acct) if shared_acct else None},
+            "modules": modules}
+
+
 def list_accounts(cfg: dict[str, Any], module: str) -> dict[str, Any]:
     """List the login's accounts (masked) with which one this module has designated for live trading."""
     _mcfg, root, store, err = _context(cfg, module)
     if err:
         return err
-    accounts, aerr = _broker_accounts(root, cfgmod.broker_tool(_mcfg or {}))
+    accounts, aerr = _broker_accounts(root, cfgmod.broker_tool(_mcfg or {}, module))
     if aerr:
         return {"ok": False, "error": aerr}
     designated_full = _designated_number(store)
@@ -197,7 +237,7 @@ def set_account(cfg: dict[str, Any], module: str, selector: str) -> dict[str, An
     _mcfg, root, store, err = _context(cfg, module)
     if err:
         return err
-    accounts, aerr = _broker_accounts(root, cfgmod.broker_tool(_mcfg or {}))
+    accounts, aerr = _broker_accounts(root, cfgmod.broker_tool(_mcfg or {}, module))
     if aerr:
         return {"ok": False, "error": aerr}
     full = _resolve(accounts, selector)

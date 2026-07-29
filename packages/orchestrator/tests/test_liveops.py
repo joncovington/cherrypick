@@ -24,6 +24,11 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))  # home config dir = tmp_path/config
     for name in ("meic", "earn"):
         (tmp_path / name).mkdir()
+    # Known-module defaults now resolve a keyring service for "meic" — stub the keyring
+    # surfaces so unit tests never touch the real credential store.
+    monkeypatch.setattr(liveops.accounts, "keyring_store", lambda cfg, name: None)
+    monkeypatch.setattr(liveops.accounts, "onboarding_status",
+                        lambda cfg: {"ok": True, "shared": {}, "modules": []})
     cfg = {
         "modules": {
             "meic": {"enabled": True, "path": str(tmp_path / "meic")},

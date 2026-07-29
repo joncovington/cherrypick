@@ -140,6 +140,25 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     # interpreter
     checks.append(Check("python", OK, f"{sys.version.split()[0]} @ {sys.executable}"))
 
+    # onboarding: broker credentials per module, keyring-only (presence + source, never values).
+    # WARN (yellow), never FAIL: a paper-only suite runs fine without broker credentials
+    # everywhere except earnings' scanner — the confirmed onboarding-redesign decision.
+    try:
+        from . import accounts as _accounts
+        ob = _accounts.onboarding_status(cfg)
+        if ob.get("ok"):
+            missing = [m["module"] for m in ob["modules"] if m["credentials"] == "missing"]
+            parts = [f"{m['module']}: creds {m['credentials']}"
+                     + (f", account {m['account']} ({m['account_source']})" if m["account"] else "")
+                     for m in ob["modules"] if m["credentials"] != "n/a"]
+            detail = "; ".join(parts) or "no modules with a keyring service"
+            checks.append(Check("onboarding", WARN if missing else OK,
+                                detail + (" — run `cherrypick connect`" if missing else "")))
+        else:
+            checks.append(Check("onboarding", WARN, ob.get("error", "keyring unavailable")))
+    except Exception as exc:  # the panel is informational; it must never break doctor
+        checks.append(Check("onboarding", WARN, f"status unavailable: {exc}"))
+
     # clock / timezone
     tz = cfg.get("timezone", "America/New_York")
     holidays = timeutil.load_holidays(cfg, cfgmod.module_root)
