@@ -50,12 +50,16 @@ RTH_CLOSE_MIN = 16 * 60
 DEFAULT_SETTLE_MIN = 16 * 60 + 20
 
 _TASK_NAME = "cherrypick-flies-paper-loop"
-# Every 2 minutes, matching MEIC. This cadence is load-bearing for THIS strategy in a way it is not
-# for MEIC: the completing spread of a legged fly can cheapen transiently, so a slower poll measures
-# a lower completion rate — the module's headline number — for reasons that have nothing to do with
-# the market. Note that any discrete poll underestimates what a resting limit order would catch live,
-# so the completion rate measured here is a floor on that count and a ceiling on live fill quality.
-_TASK_INTERVAL_MIN = 2
+# Every minute — the OS scheduler's floor. This cadence is load-bearing for THIS strategy in a way
+# it is not for MEIC (which stays at 2): the completing spread of a legged fly can cheapen
+# transiently, so a slower poll measures a lower completion rate — the module's headline number —
+# for reasons that have nothing to do with the market. Tightened 2 -> 1 on 2026-07-29 with the XSP
+# move: XSP premiums run ~1/10 of SPX against the same absolute fee stack, so the completion gate
+# clears by smaller margins and inter-tick dips matter proportionally more. Note that any discrete
+# poll underestimates what a resting limit order would catch live, so the completion rate measured
+# here is a floor on that count and a ceiling on live fill quality. Going below 1 minute would mean
+# a resident process instead of the self-healing scheduled task — a different reliability model.
+_TASK_INTERVAL_MIN = 1
 _NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
@@ -138,8 +142,8 @@ def settle_time_min(config: dict) -> int:
 
 
 def session_already_settled(conn, day: str) -> bool:
-    """Have this day's books been closed out? The marker is book state, so a task firing every two
-    minutes after the close settles once and then no-ops.
+    """Have this day's books been closed out? The marker is book state, so a task firing every
+    minute after the close settles once and then no-ops.
 
     This was the existence of `paper-eod-<day>.md`, which made the marker something any process able
     to create a file could set. On 2026-07-20 the test suite did exactly that against the real
@@ -278,7 +282,7 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None,
 
 # --------------------------------------------------------------------------- scheduled task
 def _pythonw() -> str:
-    """pythonw.exe where available, so the every-2-minute run is genuinely headless — a console
+    """pythonw.exe where available, so the every-minute run is genuinely headless — a console
     window flashing up 200 times a session would make the machine unusable."""
     candidate = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
     return candidate if os.path.exists(candidate) else sys.executable

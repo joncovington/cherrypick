@@ -7,7 +7,7 @@ streamer's ATM window, so it never needs a symbol kept subscribed beyond it.
 
 Best-effort by design: a failed write must never break the paper loop. An unregistered symbol is a
 data-availability problem the provider already surfaces (it refuses on stale/missing rather than
-guessing), not a reason to crash a 2-minute scheduled run.
+guessing), not a reason to crash a scheduled run.
 
 Thin standalone equivalent of ``packages/streamer/src/registry.py``'s writer — a consumer cannot import
 that package, so the tiny write is duplicated (candidate to consolidate into
