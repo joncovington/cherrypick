@@ -49,6 +49,10 @@
       "_comment": "cherrypick-flies: 0DTE net-credit butterflies ('profit forest'), paper only, SPX only. Reads MEIC's stream cache READ-ONLY and runs no streamer of its own, so it REQUIRES the meic module's streamer to be running and subscribed to SPX. ENABLED, but it has still never completed a live session — watch the first one, in particular the quote_stats line in the log (which separates 'the streamer gave us nothing' from 'the strategy found nothing') and the arm_divergence figure (if the arms agree nearly always, the comparison cannot answer anything and max_center_distance_pct is the first thing to revisit).",
       "enabled": true,
       "path": "../flies",
+      "_broker_note": "Live-scaffold onboarding (docs/live-trading-plan.md in the module): flies has no tt.py, so its config-declared broker/credential CLI is broker_cli.py; `cherrypick connect/account --module flies` drive it exactly like MEIC's tt.py. keyring service fliesagent; live_db is the SEPARATE live ledger read only by `report --live` (never by calibrate/promotion).",
+      "keyring_service": "fliesagent",
+      "broker_tool": ["src/broker_cli.py"],
+      "live_db": "~/.cherrypick/data/flies/live_trades.db",
       "paper": {
         "_kind_note": "self_healing, NOT cherrypick_scheduled. This was cherrypick_scheduled, which registers one entry task at entry_time and one exit task at exit_time — a shape that fits Earnings (one entry, one exit per day) and is wrong for a legged 0DTE strategy. A single daily entry would open a credit spread at noon and never look at it again, so the completing spread could never be bought and the completion rate — the module's headline measurement — would read 0% every day for reasons that have nothing to do with the market. cherrypick_scheduled also hardcodes the earnings launcher verbs, so this module's own entry_argv would have been ignored entirely.",
         "kind": "self_healing",

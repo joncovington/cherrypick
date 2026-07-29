@@ -99,3 +99,8 @@ def test_reconcile_schedule_settings_overrides():
     s = c.reconcile_schedule_settings(
         {"reconcile": {"schedule": {"enabled": True, "at": "16:35", "task_name": "x"}}})
     assert s == {"enabled": True, "task_name": "x", "at": "16:35"}
+
+
+def test_broker_tool_defaults_to_tt_and_is_overridable():
+    assert c.broker_tool({}) == ["src/tt.py"]
+    assert c.broker_tool({"broker_tool": ["src/broker_cli.py"]}) == ["src/broker_cli.py"]

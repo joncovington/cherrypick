@@ -49,9 +49,10 @@ def _live_enabled(root: Path) -> bool | None:
     return None
 
 
-def _broker_accounts(root: Path) -> tuple[list[dict], str | None]:
-    """The login's accounts via the module's read-only `tt.py list_accounts` — (accounts, error)."""
-    payload = _tt(root, "list_accounts")
+def _broker_accounts(root: Path, tool: list[str] | None = None) -> tuple[list[dict], str | None]:
+    """The login's accounts via the module's read-only broker tool (`list_accounts`) —
+    (accounts, error). `tool` is the module's config-declared argv (cfgmod.broker_tool)."""
+    payload = _tt(root, "list_accounts", tool=tool)
     if not payload.get("ok"):
         return [], (payload.get("error") or "list_accounts not ok")[:200]
     return payload.get("accounts") or [], None
@@ -108,7 +109,7 @@ def list_accounts(cfg: dict[str, Any], module: str) -> dict[str, Any]:
     _mcfg, root, store, err = _context(cfg, module)
     if err:
         return err
-    accounts, aerr = _broker_accounts(root)
+    accounts, aerr = _broker_accounts(root, cfgmod.broker_tool(_mcfg or {}))
     if aerr:
         return {"ok": False, "error": aerr}
     designated_full = _designated_number(store)
@@ -136,7 +137,7 @@ def set_account(cfg: dict[str, Any], module: str, selector: str) -> dict[str, An
     _mcfg, root, store, err = _context(cfg, module)
     if err:
         return err
-    accounts, aerr = _broker_accounts(root)
+    accounts, aerr = _broker_accounts(root, cfgmod.broker_tool(_mcfg or {}))
     if aerr:
         return {"ok": False, "error": aerr}
     full = _resolve(accounts, selector)

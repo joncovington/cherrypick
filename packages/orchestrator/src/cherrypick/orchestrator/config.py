@@ -152,6 +152,14 @@ def paper_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path:
     return (module_root(module_cfg, name) / p).resolve()
 
 
+def broker_tool(module_cfg: dict[str, Any]) -> list[str]:
+    """The module's broker/credential CLI as an argv prefix, relative to its root. Defaults to
+    the historical `src/tt.py` (MEIC, earnings); a module without a tt.py declares its own --
+    flies: `["src/broker_cli.py"]`. Used by connect/account/reconcile so onboarding and the
+    isolation guard drive every module through config-declared argv, like everything else."""
+    return list(module_cfg.get("broker_tool") or ["src/tt.py"])
+
+
 def live_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path | None:
     """Resolve a module's LIVE-trades DB from its top-level `live_db` key, or None when the module
     declares none (flies never will -- it is paper by design). Same resolution rules as
