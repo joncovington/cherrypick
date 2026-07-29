@@ -16,6 +16,7 @@ understand *how* a part of the suite works or *why* it's built the way it is.
 | [configuration-and-storage.md](configuration-and-storage.md) | The config model (orchestrator + per-module), the managed-home layout, environment overrides, and the databases / logs / report files each module reads and writes. |
 | [guardrails-and-modes.md](guardrails-and-modes.md) | Paper vs. live isolation, the load-bearing invariants (no AI/network on the reliability path, masked accounts, defined-risk, correlation), credentials, and the one narrow live-config boundary. |
 | [glossary.md](glossary.md) | Suite-wide terms (0DTE, IC, GEX, IV rank, MEIC, defined-risk, 1256, …). |
+| [onboarding-redesign.md](onboarding-redesign.md) | **Proposed**: collapsing the secrets + account workflow to one shared login and one `connect` wizard — the shared-credential model, per-module overrides, unified status, and the implementation plan. |
 
 ## Module docs (kept inside each module — the source of truth for that engine)
 
