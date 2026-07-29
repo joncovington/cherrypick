@@ -1008,11 +1008,11 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
     subprocess.run([sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"),
                      "--db", db_path, "init_db"], check=True, capture_output=True)
 
-    # Use SPX — a symbol the conservative ladder actually trades (the default snapshot's XSP is no
-    # longer in the traded set). Single well-credited 5-wide candidate so the fill is unambiguous.
-    snapshot = _base_snapshot(now_et="13:00", date="2026-07-09", symbol="SPX",
-                              underlying_price=7500.0,
-                              candidates=[_candidate(5, 7450, 7550, sp_bid=0.80, sc_bid=0.75)])
+    # XSP — the head of the configured symbol set since the 2026-07-28 width-study reduction (this
+    # test has chased the traded set before: it moved OFF XSP when the 07-18 set dropped it). A
+    # single well-credited 5-wide candidate so the fill is unambiguous.
+    snapshot = _base_snapshot(now_et="13:00", date="2026-07-09",
+                              candidates=[_candidate(5, 583, 598, sp_bid=0.80, sc_bid=0.75)])
     result = subprocess.run(
         [sys.executable, str(Path(__file__).parent.parent / "src" / "paper.py"),
          "--db", db_path, "process_symbol", "--snapshot", json.dumps(snapshot),
@@ -1027,7 +1027,7 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
 
     open_check = subprocess.run(
         [sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"),
-         "--db", db_path, "get_open_trades", "--symbol", "SPX", "--date", "2026-07-09"],
+         "--db", db_path, "get_open_trades", "--symbol", "XSP", "--date", "2026-07-09"],
         capture_output=True, text=True,
     )
     open_out = json.loads(open_check.stdout.strip())

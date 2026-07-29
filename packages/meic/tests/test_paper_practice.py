@@ -168,29 +168,32 @@ def test_stop_triggers_when_side_cost_reaches_ratio():
 
 # ── SPX-eligible profile selection ───────────────────────────────────────────
 
-def test_spx_eligible_profiles_is_exactly_the_enabled_ladder():
-    # config.risk.json holds the four-tier ladder plus the symbol-agnostic width-study arms
-    # (the old symbol/wing experiment cells, which pinned a `symbols` subset, were removed) —
-    # every tier and every width-* arm trades SPX (no `symbols` key restricts them), so the
-    # SPX-eligible roster is exactly the ENABLED registry. Derived from the registry rather
-    # than hardcoded: a profile can be switched off with `enabled: false` (as very-aggressive
-    # was on 2026-07-27) without that being a change in which profiles trade SPX, and this
-    # assertion should track the switch rather than have to be re-pinned each time.
-    names = set(pp.spx_eligible_profiles())
-    assert names == set(pp.paper.all_profile_names())
+def test_spx_eligible_profiles_follows_the_base_symbol_set():
+    # The filter's contract: a profile is SPX-eligible iff its MERGED config trades SPX. Tested
+    # with explicit base configs rather than whatever config.json holds on this machine — the
+    # traded set is a live experiment knob (7 symbols → XSP/QQQ on 2026-07-28), and this test used
+    # to assert "eligible == everything", which was really an assertion about the config of the
+    # day, not about the filter. The registry (config.risk.json) is symbol-agnostic, so the base
+    # `symbols` decides for every profile at once.
     profiles = pp.paper.load_profiles()
-    ladder = ("conservative", "moderate", "aggressive", "very-aggressive")
-    width_arms = ("width-2", "width-5", "width-10", "width-adaptive")
-    expected = {n for n in ladder + width_arms
-                if profiles.get(n, {}).get("enabled", True) is not False}
-    assert names == expected
+    all_names = set(pp.paper.all_profile_names(profiles))
+    assert all_names, "registry unexpectedly empty"
+
+    trades_spx = {"symbols": ["SPX", "QQQ"]}
+    assert set(pp.spx_eligible_profiles(base=trades_spx, profiles=profiles)) == all_names
+
+    # The current width-study set has no SPX, so the SPX-only backtester has nothing to run — the
+    # empty roster is the filter doing its job, not a defect.
+    no_spx = {"symbols": ["XSP", "QQQ"]}
+    assert pp.spx_eligible_profiles(base=no_spx, profiles=profiles) == []
+
     # A disabled tier must be absent from the roster while remaining in the registry, so it stays
-    # re-enableable for a deliberate experiment.
+    # re-enableable for a deliberate experiment (very-aggressive, 2026-07-27).
+    eligible = set(pp.spx_eligible_profiles(base=trades_spx, profiles=profiles))
     for name, spec in profiles.items():
-        if name.startswith("_"):
-            continue
-        if spec.get("enabled", True) is False:
-            assert name not in names
+        if not name.startswith("_") and spec.get("enabled", True) is False:
+            assert name not in eligible
+            assert name in profiles
 
 
 # ── settlement / per-IC P&L accounting ───────────────────────────────────────

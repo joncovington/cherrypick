@@ -432,6 +432,11 @@ def test_cmd_execute_trade_live_submits_order(monkeypatch):
     monkeypatch.setattr(tt, "_get_account", _fake_get_account)
     monkeypatch.setattr(tt, "get_session", lambda: object())
     monkeypatch.setattr(tt, "_live_trading_enabled", lambda: True)
+    # Pin the governor OFF: this test exercises the submit path. With the machine config now setting
+    # account_deploy_limit_pct (the live-smoke prep), an unpinned read would run the fail-closed
+    # governor against a fake account that reports no balances. The governor's own behavior is the
+    # next test's job.
+    monkeypatch.setattr(tt, "_load_config", lambda: {})
 
     args = type("Args", (), {"dry_run": False, "order": json.dumps(order_spec), "account_number": None})()
     result = asyncio.run(tt.cmd_execute_trade(args))
