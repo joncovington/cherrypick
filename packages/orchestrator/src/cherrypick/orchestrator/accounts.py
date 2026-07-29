@@ -104,6 +104,66 @@ def _context(cfg: dict[str, Any], module: str):
     return mcfg, root, store, None
 
 
+def _shared_store() -> CredentialStore:
+    from cherrypick.core.auth import SHARED_SERVICE
+    return CredentialStore(SHARED_SERVICE)
+
+
+def _first_broker_module(cfg: dict[str, Any]):
+    """(name, mcfg, root, tool) for the first enabled module whose checkout exists — the probe
+    the suite-wide account listing uses (any module's broker tool can enumerate the login)."""
+    for name, mcfg in cfgmod.enabled_modules(cfg).items():
+        root = cfgmod.module_root(mcfg, name)
+        if root.exists():
+            return name, mcfg, root, cfgmod.broker_tool(mcfg)
+    return None, None, None, None
+
+
+def list_shared(cfg: dict[str, Any]) -> dict[str, Any]:
+    """The suite-wide view: the login's accounts with the SHARED designation (the default every
+    module without its own designation inherits, via the store fallback chain)."""
+    name, _mcfg, root, tool = _first_broker_module(cfg)
+    if root is None:
+        return {"ok": False, "error": "no enabled module checkout found to query the broker"}
+    accounts_list, aerr = _broker_accounts(root, tool)
+    if aerr:
+        return {"ok": False, "error": aerr}
+    designated_full = _designated_number(_shared_store())
+    rows = [
+        {
+            "account": mask_account(a.get("account_number")),
+            "nickname": a.get("nickname"),
+            "type": a.get("account_type"),
+            "designated": bool(designated_full and a.get("account_number") == designated_full),
+        }
+        for a in accounts_list
+    ]
+    return {"ok": True, "scope": "shared", "via_module": name, "accounts": rows,
+            "designated": mask_account(designated_full) if designated_full else None}
+
+
+def set_shared_account(cfg: dict[str, Any], selector: str) -> dict[str, Any]:
+    """Designate the SUITE-WIDE default live-trading account (the shared service's
+    account_number). Every module without its own designation inherits it; a per-module
+    `account --module X --set` still overrides. Caller is responsible for human confirmation."""
+    name, _mcfg, root, tool = _first_broker_module(cfg)
+    if root is None:
+        return {"ok": False, "error": "no enabled module checkout found to query the broker"}
+    accounts_list, aerr = _broker_accounts(root, tool)
+    if aerr:
+        return {"ok": False, "error": aerr}
+    full = _resolve(accounts_list, selector)
+    if not full:
+        return {"ok": False, "error": f"selector {selector!r} did not resolve to exactly one account"}
+    _shared_store().set_secret(ACCOUNT_NUMBER, full)
+    return {"ok": True, "scope": "shared", "designated": mask_account(full)}
+
+
+def clear_shared_account() -> dict[str, Any]:
+    _shared_store().delete_secret(ACCOUNT_NUMBER)
+    return {"ok": True, "scope": "shared", "designated": None}
+
+
 def list_accounts(cfg: dict[str, Any], module: str) -> dict[str, Any]:
     """List the login's accounts (masked) with which one this module has designated for live trading."""
     _mcfg, root, store, err = _context(cfg, module)

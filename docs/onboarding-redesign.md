@@ -1,5 +1,15 @@
 # Onboarding redesign — one login, one command
 
+**Status: decided 2026-07-28; steps 1, 2, and 4 implemented** (shared service + CLI in
+core.auth, all three module stores read through it, suite-wide designation via `account`
+without `--module`). The wizard (3), status panel (5), and config defaults (6) remain.
+
+**Decisions on the open questions:** (1) the wizard **migrates** existing module-service
+secrets into the shared service — copies deleted so one rotation point remains; the migrate
+command still refuses to silently clobber a *different* shared value (reported as a
+conflict, `--overwrite` is deliberate). (2) Webhooks are **opt-in** (Enter skips).
+(3) `doctor` goes **yellow, not red**, on missing credentials in a paper-only setup.
+
 **Status: proposed.** A plan for collapsing the suite's secrets-and-account workflow into
 something an average user can complete in one sitting without knowing the package layout.
 
