@@ -75,6 +75,7 @@ _TT = [sys.executable, str(_ROOT / "src" / "tt.py")]
 _DB = [sys.executable, str(_ROOT / "src" / "db.py"), "--db", _PAPER_DB]
 
 import paper  # noqa: E402  (also bootstraps src/_core onto sys.path for cherrypick.core)
+import stream_request  # noqa: E402  (declares symbols + open paper legs to the standalone streamer)
 
 logger = logging.getLogger("paper_loop")
 _stop = False
@@ -898,6 +899,10 @@ def run_iteration(cfg, force=False):
     if not force and not _is_trading_time(now, cfg):
         logger.info("outside trading window (%s ET) - skipping.", now.strftime("%H:%M"))
         return {"skipped": "outside_trading_window"}
+    # Refresh the streamer request file every tick (best-effort, never raises): a config symbols
+    # change propagates without manual steps, and the paper ledger's open legs stay subscribed.
+    # Underlyings still bind at streamer start, so a NEW underlying needs one streamer restart.
+    stream_request.register(cfg)
     today = now.strftime("%Y-%m-%d")
     now_et = now.strftime("%H:%M")
     vix = _fetch_vix()
