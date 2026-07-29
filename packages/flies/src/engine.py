@@ -36,7 +36,14 @@ PUT, CALL = fly.PUT, fly.CALL
 # against a 5-point wing over 07-20..07-24, so 19 of 23 completed flies settled outside their wings.
 # The mechanism that makes a completion cheap is the one that puts the peak out of reach, and a wing
 # that brackets the observed drift is the obvious test of whether that is fixable or fundamental.
-ARMS = ("gex", "time_window", "control", "wide_wing")
+#
+# The `width-N` arms (2026-07-29, with the XSP move) generalize that single hypothesis into a sweep:
+# each is another control twin pinning `wing_width` to N strike increments, so the wing question is
+# answered as a curve rather than one point. There is no `width-1` arm — `control` at the default
+# width IS the 1-increment rung, and a duplicate ATM book under a second name would double-count it.
+# `wide_wing` stays for the SPX-era books' attribution but is disabled in config on XSP, where its
+# 20-point wing is off-scale (the scaled equivalent of the drift it brackets is covered by width-2).
+ARMS = ("gex", "time_window", "control", "wide_wing", "width-2", "width-3", "width-4", "width-5")
 
 
 # --------------------------------------------------------------------------- config

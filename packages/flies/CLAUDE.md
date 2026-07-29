@@ -1,8 +1,8 @@
 # cherrypick-flies
 
-0DTE net-credit butterflies on SPX — the "profit forest". A **paper module**: it measures whether the
-strategy makes money net of costs, and it is built so that a negative answer is a usable result rather
-than something to tune away.
+0DTE net-credit butterflies on XSP (SPX through 2026-07-28; both books remain in the ledger) — the
+"profit forest". A **paper module**: it measures whether the strategy makes money net of costs, and it
+is built so that a negative answer is a usable result rather than something to tune away.
 
 ## What the strategy actually is
 
@@ -89,11 +89,12 @@ decision.
   than one that appeared for seconds. This is the paper-vs-live gap, measured.
 - **Arm divergence** — how often the arms picked different centres. High agreement means the experiment
   cannot separate them, which is a finding to surface in week one, not month three. **Centre divergence
-  is only meaningful against an arm that centres differently** — i.e. `gex`. `control`, `time_window`
-  and `wide_wing` are all ATM, so they agree on centre *by construction* (measured: 100% across 184
-  iterations on 2026-07-27) and that number says nothing about whether those arms are redundant. Read
-  `time_window` vs `control` on entry **timing** and completion, and `wide_wing` vs `control` on wing
-  width. Reading a structural identity as a finding is how the redundancy went unnoticed.
+  is only meaningful against an arm that centres differently** — i.e. `gex`. `control`, `time_window`,
+  `wide_wing` and the `width-N` arms are all ATM, so they agree on centre *by construction* (measured:
+  100% across 184 iterations on 2026-07-27) and that number says nothing about whether those arms are
+  redundant. Read `time_window` vs `control` on entry **timing** and completion, and the `width-N`
+  arms vs `control` on wing width. Reading a structural identity as a finding is how the redundancy
+  went unnoticed.
 
 **The last three of those live on a time axis, so the dashboard has one.** `analytics.session_timeline`
 assembles the day from rows already written — spot and every arm's wanted centre on each iteration,
@@ -136,7 +137,7 @@ mistaken for "the strategy found nothing".
 `cherrypick.core.fees` supplies the fee schedule and `cherrypick.core.gex.compute_gex` the per-strike
 GEX profile — neither is reimplemented here.
 
-## The four arms
+## The arms
 
 Separate books, each differing from `control` in **exactly one** thing. Every gate is shared, so each
 comparison measures one variable rather than a bundle of confounded changes.
@@ -152,13 +153,18 @@ comparison measures one variable rather than a bundle of confounded changes.
 - `control` — ATM, all day. The shared baseline: `gex` vs `control` isolates the **centring**,
   `time_window` vs `control` the **timing**, `wide_wing` vs `control` the **width**. Without a naive
   baseline a profitable arm would prove nothing.
-- `wide_wing` — control's twin (ATM, same window and cap) differing only in `wing_width`. Added
-  2026-07-27 against the strongest signal in the first five sessions: completions arrive only after
-  spot has walked away from the centre (median drift 15.3–17.3 points against a 5-point wing), so 19
-  of 23 completed flies settled outside their wings and the book collected its floor and nothing more.
-  A 20-point wing brackets the observed drift. It is a hypothesis, not a fix — wider wings cost more
-  to build and risk more per structure, and if the floor still comes out negative after fees then the
-  drift is fundamental to the mechanism, which is itself a result (rule 6).
+- `width-2` … `width-5` — control's twins (ATM, same window and cap) pinning `wing_width` to 2–5
+  strike increments; `control` at the default width is the sweep's 1-increment rung, so there is no
+  `width-1` arm (it would duplicate control's book under a second name). Added 2026-07-29 with the
+  XSP move, generalizing `wide_wing`'s single-point hypothesis into a curve. The signal behind it
+  (2026-07-27, first five SPX sessions): completions arrive only after spot has walked away from the
+  centre (median drift 15.3–17.3 SPX points against a 5-point wing), so 19 of 23 completed flies
+  settled outside their wings and the book collected its floor and nothing more. It is a hypothesis,
+  not a fix — wider wings cost more to build and risk more per structure, and if no width produces a
+  fee-positive floor then the drift is fundamental to the mechanism, which is itself a result (rule 6).
+- `wide_wing` — the SPX-era single-point version of the width question (a 20-point wing bracketing
+  the observed drift). **Disabled** since the sweep; kept in `ARMS` so its books' attribution stays
+  readable. On XSP its scaled equivalent (~2 points) is exactly `width-2`.
 
 **A global position cap does not make a multi-window arm test its windows.** `max_positions` alone let
 the book fill in the first window: over 07-20…07-24 `time_window` put 15 of its 16 legged entries in

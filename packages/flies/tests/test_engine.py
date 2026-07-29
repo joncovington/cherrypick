@@ -224,6 +224,21 @@ def test_wide_wing_arm_centers_atm_like_control_but_uses_its_own_width():
     assert "wide_wing" in engine.ARMS
 
 
+def test_width_arms_are_control_twins_sweeping_wing_width():
+    """width-2..width-5 pin wing_width to N strike increments; control at the default width is the
+    1-increment rung, so no width-1 arm exists (it would duplicate control's book under a new name)."""
+    assert "width-1" not in engine.ARMS
+    for n in (2, 3, 4, 5):
+        arm = f"width-{n}"
+        assert arm in engine.ARMS
+        cfg = dict(BASE_CONFIG)
+        cfg["arms"] = dict(BASE_CONFIG["arms"], **{arm: {"wing_width": n}})
+        p = engine.merged_params(cfg, arm)
+        center, reason = engine.select_center(snapshot(underlying_price=6002.0), p)
+        assert (center, reason) == (6000.0, "atm")
+        assert p["wing_width"] == n
+
+
 def test_entry_respects_the_position_cap():
     open_positions = [{"center": 5000 + i, "kind": "fly"} for i in range(4)]
     enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(), params(), open_positions)
