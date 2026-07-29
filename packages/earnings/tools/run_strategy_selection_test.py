@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-10-Day Earnings Entry Condition Framework Test
-Demonstrates strategy selection across market days
+10-Day Earnings Entry Condition Framework Demo
+Demonstrates strategy selection across market days. A runnable demo script, NOT a pytest
+suite -- it lived in tests/ where pytest collected zero tests from it. Run it directly.
 """
 
 import json

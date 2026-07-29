@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-10-Day Earnings Scan Test Harness
+10-Day Earnings Scan Demo Harness
+
+A runnable demo script, NOT a pytest suite -- it lived in tests/ as test_earnings_sweep.py,
+where pytest collected zero tests from it, so its green-ness was illusory. Run it directly.
 
 Tests the entry condition framework by:
 1. Iterating through next 10 market days
