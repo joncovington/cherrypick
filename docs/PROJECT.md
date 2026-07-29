@@ -17,15 +17,19 @@ Its distinguishing feature is **variance testing**: you can run many parameter v
 parallel and compare which entry rules actually add edge — see
 [Risk-profile variance testing](#risk-profile-variance-testing) below.
 
-It comes with two strategy engines:
+It comes with four modules:
 
-- **MEIC** — 0DTE **multiple-entry iron condors** on cash/ETF index products (SPX, XSP, QQQ, IWM, and
-  similar). It scales strike selection to volatility (VIX bands), respects credit floors and OTM
+- **MEIC** — 0DTE **multiple-entry iron condors** on cash/ETF index products (currently XSP + QQQ).
+  It scales strike selection to volatility (VIX bands), respects credit floors and OTM
   buffers, applies regime gates (VIX, VIX1D, ATR, and dealer gamma / GEX), manages per-side stops, and
   force-closes or lets positions settle as appropriate.
 - **Earnings** — **defined-risk earnings plays** (iron fly, double calendar, iron condor, ATM calendar,
   directional credit spread, broken-wing butterfly). It opens once before the close and
   closes once after the next open, sized to a simulated capital base.
+- **Flies** — 0DTE **net-credit butterflies** ("profit forest"), paper-only by design: it measures
+  whether the strategy makes money net of costs, arm-by-arm, and is built so a negative answer is a
+  usable result.
+- **GEX** — a self-hosted read-only **gamma-exposure dashboard** over the shared market-data stream.
 
 By default everything runs in **paper mode** — the automation never places, cancels, or closes a real
 order. You can also connect a real tastytrade account for live market data and a read-only reconciliation
@@ -57,9 +61,11 @@ cd packages/orchestrator
 pip install -e ".[dev]"
 ```
 
-The two strategy engines live under `packages/meic` and `packages/earnings`. You can install each the
-same way if you plan to run both (`pip install -e ".[dev]"` in `packages/meic`; the earnings engine uses
-`pip install -r requirements.txt`).
+The modules live under `packages/meic`, `packages/earnings`, `packages/flies`, and `packages/gex`
+(plus the standalone market-data streamer in `packages/streamer`). The trading engines are installed the
+same way if you plan to run them (`pip install -e ".[dev]"` in `packages/meic`; the earnings engine uses
+`pip install -r requirements.txt`; flies, gex, and the streamer need no install — the orchestrator runs
+them in place).
 
 ---
 
@@ -123,7 +129,8 @@ python run.py install
 ```
 
 That registers cherrypick to run on a schedule and starts the data feed. From now on it works on its
-own:
+own — the full inventory of what got installed, what runs when, and what "healthy" looks like each
+morning is the [operations runbook](operations.md):
 
 - **MEIC** evaluates entries every couple of minutes during the session.
 - **Earnings** opens plays before the close and closes them after the next open, on daily timers.
