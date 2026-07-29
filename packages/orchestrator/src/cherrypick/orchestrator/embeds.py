@@ -213,11 +213,16 @@ def _recycle_port(host: str, port: int) -> bool:
             )
             subprocess.run(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-                capture_output=True, timeout=15, creationflags=CREATE_NO_WINDOW,
+                capture_output=True,
+                timeout=15,
+                creationflags=CREATE_NO_WINDOW,
             )
         else:
             r = subprocess.run(
-                ["lsof", "-ti", f"tcp:{port}"], capture_output=True, text=True, timeout=10,
+                ["lsof", "-ti", f"tcp:{port}"],
+                capture_output=True,
+                text=True,
+                timeout=10,
                 creationflags=CREATE_NO_WINDOW,
             )
             for pid in r.stdout.split():

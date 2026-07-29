@@ -19,9 +19,11 @@ from datetime import datetime
 
 try:
     from zoneinfo import ZoneInfo
+
     ET = ZoneInfo("America/New_York")
 except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
+
     ET = pytz.timezone("America/New_York")
 
 

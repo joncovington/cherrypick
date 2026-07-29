@@ -60,6 +60,7 @@ from strategies import (
 def _dolt_port_open(host="127.0.0.1", port=3306):
     try:
         import socket
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(2)
         result = sock.connect_ex((host, port))
@@ -85,7 +86,11 @@ def _dolt_query_ready(databases=("earnings", "options", "stocks"), overall_timeo
         while True:
             try:
                 conn = mysql.connector.connect(
-                    host="127.0.0.1", port=3306, user="root", database=db, connection_timeout=5,
+                    host="127.0.0.1",
+                    port=3306,
+                    user="root",
+                    database=db,
+                    connection_timeout=5,
                 )
                 cur = conn.cursor()
                 cur.execute("SELECT 1")
@@ -106,8 +111,12 @@ def _ensure_dolt_running():
         try:
             # CREATE_NO_WINDOW (0 off-Windows): don't flash a console window when launched from a
             # windowless parent (e.g. the scheduled paper runs). dolt is a console app.
-            subprocess.Popen(["dolt", "sql-server"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            subprocess.Popen(
+                ["dolt", "sql-server"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
         except Exception as e:
             print(f"Failed to start dolt: {e}", file=sys.stderr)
             return False
@@ -125,10 +134,7 @@ def _verify_tastytrade_connection():
     """Verify tastytrade connection is active."""
     try:
         result = subprocess.run(
-            [sys.executable, "src/tt.py", "get_connection_status"],
-            capture_output=True,
-            text=True,
-            timeout=10
+            [sys.executable, "src/tt.py", "get_connection_status"], capture_output=True, text=True, timeout=10
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
@@ -194,7 +200,9 @@ def _call_db(args_list: list[str], paper_mode: bool) -> dict:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"{db_script} {' '.join(args_list)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}")
+        raise RuntimeError(
+            f"{db_script} {' '.join(args_list)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}"
+        )
     return json.loads(result.stdout)
 
 
@@ -298,7 +306,9 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
         "winrate_sample_size": winrate_sample_size,
     }
     per_strategy_dolt_fails = {
-        entry["name"]: _dolt_only_hard_fails(entry["strategy_config_fn"](config), avg_volume, iv_rv_ratio, winrate)
+        entry["name"]: _dolt_only_hard_fails(
+            entry["strategy_config_fn"](config), avg_volume, iv_rv_ratio, winrate
+        )
         for entry in STRATEGY_REGISTRY
     }
     if all(per_strategy_dolt_fails[entry["name"]] for entry in STRATEGY_REGISTRY):
@@ -340,14 +350,16 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
             tiering = entry["apply_tiering_fn"](criteria, strategy_config)
             score = scanner.compute_composite_score(criteria, winrate_sample_size)
 
-            results.append({
-                "name": entry["name"],
-                "accepted": tiering["accepted"],
-                "reject_reasons": tiering["reject_reasons"],
-                "criteria": criteria,
-                "composite_score": score,
-                "broker_data_error": broker_error,
-            })
+            results.append(
+                {
+                    "name": entry["name"],
+                    "accepted": tiering["accepted"],
+                    "reject_reasons": tiering["reject_reasons"],
+                    "criteria": criteria,
+                    "composite_score": score,
+                    "broker_data_error": broker_error,
+                }
+            )
     finally:
         scanner.end_tt_cache()
     return results
@@ -356,7 +368,9 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
 _REGISTRY_BY_NAME = {entry["name"]: entry for entry in STRATEGY_REGISTRY}
 
 
-def reverify_symbol(symbol: str, strategy_name: str, earnings_date, earnings_timing: str, config: dict) -> dict:
+def reverify_symbol(
+    symbol: str, strategy_name: str, earnings_date, earnings_timing: str, config: dict
+) -> dict:
     """Re-runs a single strategy's own fetch/tiering (fully fresh -- avg_volume/
     iv_rv_ratio/winrate are re-fetched here too, not reused from an earlier
     scan) and confirms it is still accepted. Used by the loop's entry-time
@@ -412,29 +426,43 @@ def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) 
     for r in symbol_result["strategies"]:
         reasons = r["reject_reasons"]
         decision = "accepted" if r["accepted"] else "rejected"
-        _call_db([
-            "log_scan", "--data", json.dumps({
-                "scan_date": scan_date,
-                "strategy": r["name"],
-                "symbol": symbol,
-                "tier": decision,
-                "outcome": decision,
-                "reason": "; ".join(reasons) if reasons else None,
-                "logged_at": time.time(),
-            }),
-        ], paper_mode)
+        _call_db(
+            [
+                "log_scan",
+                "--data",
+                json.dumps(
+                    {
+                        "scan_date": scan_date,
+                        "strategy": r["name"],
+                        "symbol": symbol,
+                        "tier": decision,
+                        "outcome": decision,
+                        "reason": "; ".join(reasons) if reasons else None,
+                        "logged_at": time.time(),
+                    }
+                ),
+            ],
+            paper_mode,
+        )
 
-    _call_db([
-        "log_scan", "--data", json.dumps({
-            "scan_date": scan_date,
-            "strategy": "_ranked",
-            "symbol": symbol,
-            "tier": None,
-            "outcome": symbol_result["outcome"],
-            "reason": symbol_result["reason"],
-            "logged_at": time.time(),
-        }),
-    ], paper_mode)
+    _call_db(
+        [
+            "log_scan",
+            "--data",
+            json.dumps(
+                {
+                    "scan_date": scan_date,
+                    "strategy": "_ranked",
+                    "symbol": symbol,
+                    "tier": None,
+                    "outcome": symbol_result["outcome"],
+                    "reason": symbol_result["reason"],
+                    "logged_at": time.time(),
+                }
+            ),
+        ],
+        paper_mode,
+    )
 
 
 def _evaluate_and_rank_symbol(symbol: str, entry_date, earnings_timing: str, config: dict) -> dict:
@@ -442,7 +470,8 @@ def _evaluate_and_rank_symbol(symbol: str, entry_date, earnings_timing: str, con
     strategy_results = evaluate_symbol(symbol, entry_date, earnings_timing, config)
     viable = sorted(
         (r for r in strategy_results if r["accepted"] and r["composite_score"] is not None),
-        key=lambda r: r["composite_score"], reverse=True,
+        key=lambda r: r["composite_score"],
+        reverse=True,
     )
     return {
         "symbol": symbol,
@@ -469,7 +498,9 @@ def cmd_get_ranked_symbols(args) -> dict:
     if max_workers > 1 and len(calendar) > 1:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(_evaluate_and_rank_symbol, entry["symbol"], entry["date"], entry["timing"], config): entry
+                executor.submit(
+                    _evaluate_and_rank_symbol, entry["symbol"], entry["date"], entry["timing"], config
+                ): entry
                 for entry in calendar
             }
             for future in as_completed(futures):
@@ -479,15 +510,17 @@ def cmd_get_ranked_symbols(args) -> dict:
                 except Exception as e:
                     entry = futures[future]
                     print(f"Error evaluating {entry['symbol']}: {e}", file=sys.stderr)
-                    per_symbol.append({
-                        "symbol": entry["symbol"],
-                        "earnings_date": str(entry["date"]),
-                        "earnings_timing": entry["timing"],
-                        "strategies": [],
-                        "viable": [],
-                        "best_strategy": None,
-                        "best_score": None,
-                    })
+                    per_symbol.append(
+                        {
+                            "symbol": entry["symbol"],
+                            "earnings_date": str(entry["date"]),
+                            "earnings_timing": entry["timing"],
+                            "strategies": [],
+                            "viable": [],
+                            "best_strategy": None,
+                            "best_score": None,
+                        }
+                    )
     else:
         for entry in calendar:
             result = _evaluate_and_rank_symbol(entry["symbol"], entry["date"], entry["timing"], config)
@@ -561,6 +594,7 @@ def cmd_get_ranked_symbols(args) -> dict:
 
 def main() -> None:
     import argparse
+
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
 

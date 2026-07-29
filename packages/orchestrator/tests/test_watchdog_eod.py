@@ -34,8 +34,11 @@ def _write_eod(logs, name, day="2026-07-21"):
 
 
 def _cfg(digest=True, insight=False, deadline="16:45"):
-    return {"eod_digest": {"enabled": digest, "deadline": deadline},
-            "eod_insight": {"enabled": insight}, "modules": {}}
+    return {
+        "eod_digest": {"enabled": digest, "deadline": deadline},
+        "eod_insight": {"enabled": insight},
+        "modules": {},
+    }
 
 
 def _now(h, m, day=21):

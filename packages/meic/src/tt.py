@@ -60,6 +60,7 @@ if not logger.handlers:
     logger.setLevel(logging.WARNING)
     # Rotate so the log can't grow without bound (10 MB x 5 backups).
     from logging.handlers import RotatingFileHandler
+
     _fh = RotatingFileHandler(_LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")
     _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logger.addHandler(_fh)
@@ -69,8 +70,9 @@ if not logger.handlers:
 # Config
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> dict:
-    path = _paths.config_path()   # home-first (~/.cherrypick/config/meic.json), in-repo fallback
+    path = _paths.config_path()  # home-first (~/.cherrypick/config/meic.json), in-repo fallback
     if path.exists():
         with open(path) as f:
             return json.load(f)
@@ -95,6 +97,7 @@ def _try_streamer_http(command: str, args_dict: dict) -> dict | None:
     global _last_streamer_http_error
     import urllib.error
     import urllib.request
+
     body = json.dumps({"command": command, "args": args_dict}).encode()
     try:
         req = urllib.request.Request(
@@ -344,9 +347,13 @@ def _cache_get_greeks(symbols: list[str]) -> dict[str, dict]:
         for row in rows:
             if (now - row["updated_at"]) < _GREEKS_CACHE_MAX_AGE:
                 out[row["symbol"]] = {
-                    "delta": row["delta"], "gamma": row["gamma"],
-                    "theta": row["theta"], "vega": row["vega"],
-                    "rho": row["rho"], "iv": row["iv"], "price": row["price"],
+                    "delta": row["delta"],
+                    "gamma": row["gamma"],
+                    "theta": row["theta"],
+                    "vega": row["vega"],
+                    "rho": row["rho"],
+                    "iv": row["iv"],
+                    "price": row["price"],
                 }
     except Exception:
         pass
@@ -358,6 +365,7 @@ def _cache_get_greeks(symbols: list[str]) -> dict[str, dict]:
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def _out(data: Any) -> None:
     print(json.dumps(data, default=str))
@@ -398,7 +406,8 @@ async def _get_account(account_number: str | None = None):
     # Delegates to cherrypick.core.broker (src/_core). The stored account number is passed in as the
     # default so the core stays decoupled from this module's credentials shim.
     return await _broker.resolve_account(
-        get_session(), account_number,
+        get_session(),
+        account_number,
         default_number=_creds.get_secret(_creds.ACCOUNT_NUMBER),
     )
 
@@ -441,6 +450,7 @@ async def _fetch_chain(symbol: str, expiration: str | None = None) -> dict:
     session = get_session()
     if symbol.startswith("/"):
         from tastytrade.instruments import get_future_option_chain
+
         return await get_future_option_chain(session, symbol)
     return await get_option_chain(session, symbol)
 
@@ -454,8 +464,9 @@ _atm_window = _broker.atm_window
 # On-demand DXLink collectors — thin shims over cherrypick.core.dxfeed (src/_core). The broker session is
 # passed in explicitly, so a missing-credentials CredentialError surfaces to the caller here instead of
 # being swallowed inside the collector's broad except (the shared implementation never fetches it).
-async def _collect_events(event_cls, symbols: list[str], timeout: float,
-                          extract=None, label: str = "events") -> dict:
+async def _collect_events(
+    event_cls, symbols: list[str], timeout: float, extract=None, label: str = "events"
+) -> dict:
     return await _dx.collect_events(get_session(), event_cls, symbols, timeout, extract=extract)
 
 
@@ -474,6 +485,7 @@ async def _collect_quotes(symbols: list[str], timeout: float) -> dict:
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
+
 
 async def cmd_get_connection_status(_args) -> dict:
     status: dict = {
@@ -535,11 +547,15 @@ async def cmd_list_accounts(_args) -> dict:
 async def cmd_get_market_overview(args) -> dict:
     try:
         from tastytrade.metrics import get_market_metrics
+
         session = get_session()
         upper = [s.upper() for s in args.symbols]
         futures = [s for s in upper if s.startswith("/")]
         if futures:
-            return {"ok": False, "error": f"get_market_overview does not support futures: {', '.join(futures)}"}
+            return {
+                "ok": False,
+                "error": f"get_market_overview does not support futures: {', '.join(futures)}",
+            }
         timeout = getattr(args, "quotes_timeout", 4.0)
         metrics, trades = await asyncio.gather(
             get_market_metrics(session, upper),
@@ -602,6 +618,7 @@ async def cmd_get_quote(args) -> dict:
 
         if sym.startswith("/"):
             from tastytrade.instruments import Future, get_future_option_chain
+
             chain = await get_future_option_chain(session, sym)
             if not chain:
                 return {"ok": False, "error": f"No futures option chain for {sym}."}
@@ -657,14 +674,10 @@ async def cmd_get_option_chain(args) -> dict:
         options_by_exp = {exp: list(chain[exp]) for exp in selected}
         if strike_count is not None:
             options_by_exp = {
-                exp: _atm_window(opts, strike_count, around_price)
-                for exp, opts in options_by_exp.items()
+                exp: _atm_window(opts, strike_count, around_price) for exp, opts in options_by_exp.items()
             }
 
-        serialized = {
-            str(exp): [_serialize(o) for o in opts]
-            for exp, opts in options_by_exp.items()
-        }
+        serialized = {str(exp): [_serialize(o) for o in opts] for exp, opts in options_by_exp.items()}
 
         result: dict = {"ok": True, "symbol": args.symbol.upper(), "chain": serialized}
 
@@ -708,12 +721,12 @@ async def cmd_get_option_chain(args) -> dict:
                             entry["delta"] = _num(g.get("delta"))
                             entry["gamma"] = _num(g.get("gamma"))
                             entry["theta"] = _num(g.get("theta"))
-                            entry["iv"]    = _num(g.get("iv"))
+                            entry["iv"] = _num(g.get("iv"))
                         else:
                             entry["delta"] = _num(g.delta)
                             entry["gamma"] = _num(g.gamma)
                             entry["theta"] = _num(g.theta)
-                            entry["iv"]    = _num(g.volatility)
+                            entry["iv"] = _num(g.volatility)
                         received += 1
             result["greeks_included"] = True
             result["greeks_complete"] = received == len(streamer_symbols)
@@ -734,7 +747,9 @@ async def cmd_get_option_chain(args) -> dict:
                             ask = _num(q.ask_price)
                         entry["bid"] = bid
                         entry["ask"] = ask
-                        entry["mid"] = round((bid + ask) / 2, 4) if bid is not None and ask is not None else None
+                        entry["mid"] = (
+                            round((bid + ask) / 2, 4) if bid is not None and ask is not None else None
+                        )
                         received += 1
             result["quotes_included"] = True
             result["quotes_complete"] = received == len(streamer_symbols)
@@ -778,9 +793,18 @@ async def cmd_get_strategies(args) -> dict:
         missing_g = [s for s in window_symbols if s not in cached_g]
         live_g = await _collect_greeks(missing_g, greeks_timeout) if missing_g else {}
         # Normalize live Greeks events to dicts matching cache format
-        greeks = {**{s: {"delta": _num(v.delta), "gamma": _num(v.gamma),
-                         "theta": _num(v.theta), "iv": _num(v.volatility)}
-                     for s, v in live_g.items()}, **cached_g}
+        greeks = {
+            **{
+                s: {
+                    "delta": _num(v.delta),
+                    "gamma": _num(v.gamma),
+                    "theta": _num(v.theta),
+                    "iv": _num(v.volatility),
+                }
+                for s, v in live_g.items()
+            },
+            **cached_g,
+        }
 
         short_call, long_call = _select_call_spread(calls, wing_width, short_delta, greeks)
         short_put, long_put = _select_put_spread(puts, wing_width, short_delta, greeks)
@@ -796,10 +820,19 @@ async def cmd_get_strategies(args) -> dict:
         missing_q = [s for s in streamer_symbols if s and s not in cached_q]
         live_q = await _collect_quotes(missing_q, quotes_timeout) if missing_q else {}
         # Normalize live Quote events to dicts
-        quotes = {**{s: {"bid": _num(v.bid_price), "ask": _num(v.ask_price),
-                         "mid": round((_num(v.bid_price) + _num(v.ask_price)) / 2, 4)
-                               if _num(v.bid_price) is not None and _num(v.ask_price) is not None else None}
-                     for s, v in live_q.items()}, **cached_q}
+        quotes = {
+            **{
+                s: {
+                    "bid": _num(v.bid_price),
+                    "ask": _num(v.ask_price),
+                    "mid": round((_num(v.bid_price) + _num(v.ask_price)) / 2, 4)
+                    if _num(v.bid_price) is not None and _num(v.ask_price) is not None
+                    else None,
+                }
+                for s, v in live_q.items()
+            },
+            **cached_q,
+        }
 
         def _mid(leg):
             sym = getattr(leg, "streamer_symbol", None)
@@ -824,30 +857,36 @@ async def cmd_get_strategies(args) -> dict:
         # requirement below since real fill/premium accuracy matters there.
         long_wing_fallback_used = False
         if long_put_mid is None or long_call_mid is None:
-            stale_syms = [s for leg, mid in ((long_put, long_put_mid), (long_call, long_call_mid))
-                          if mid is None and (s := getattr(leg, "streamer_symbol", None))]
+            stale_syms = [
+                s
+                for leg, mid in ((long_put, long_put_mid), (long_call, long_call_mid))
+                if mid is None and (s := getattr(leg, "streamer_symbol", None))
+            ]
             stale_q = _cache_get_quotes_any_age(stale_syms) if stale_syms else {}
             if long_put_mid is None:
                 sym = getattr(long_put, "streamer_symbol", None)
                 q = stale_q.get(sym) if sym else None
                 bid, ask = (_num(q.get("bid")), _num(q.get("ask"))) if q else (None, None)
-                long_put_mid = round((bid + ask) / 2, 4) if bid is not None and ask is not None else _NOMINAL_WING_PRICE
+                long_put_mid = (
+                    round((bid + ask) / 2, 4) if bid is not None and ask is not None else _NOMINAL_WING_PRICE
+                )
                 long_wing_fallback_used = True
             if long_call_mid is None:
                 sym = getattr(long_call, "streamer_symbol", None)
                 q = stale_q.get(sym) if sym else None
                 bid, ask = (_num(q.get("bid")), _num(q.get("ask"))) if q else (None, None)
-                long_call_mid = round((bid + ask) / 2, 4) if bid is not None and ask is not None else _NOMINAL_WING_PRICE
+                long_call_mid = (
+                    round((bid + ask) / 2, 4) if bid is not None and ask is not None else _NOMINAL_WING_PRICE
+                )
                 long_wing_fallback_used = True
 
         mids = [short_put_mid, long_put_mid, short_call_mid, long_call_mid]
         net_credit = None
-        multiplier = float(getattr(short_put, "shares_per_contract", None) or
-                           getattr(short_put, "multiplier", None) or 100)
+        multiplier = float(
+            getattr(short_put, "shares_per_contract", None) or getattr(short_put, "multiplier", None) or 100
+        )
         if all(m is not None for m in mids):
-            net_credit = round(
-                (short_put_mid + short_call_mid) - (long_put_mid + long_call_mid), 4
-            )
+            net_credit = round((short_put_mid + short_call_mid) - (long_put_mid + long_call_mid), 4)
 
         def _leg(option, mid):
             data = _serialize(option)
@@ -972,6 +1011,7 @@ async def cmd_get_working_orders(args) -> dict:
 # Order tools (gated behind live trading)
 # ---------------------------------------------------------------------------
 
+
 def _build_order(spec: dict):
     # Delegates to cherrypick.core.broker (src/_core): pure order construction (dict spec -> NewOrder),
     # no submission. Handles the optional stop_trigger. cmd_execute_trade below still owns the
@@ -981,7 +1021,10 @@ def _build_order(spec: dict):
 
 async def cmd_execute_trade(args) -> dict:
     if not _live_trading_enabled() and not getattr(args, "dry_run", True):
-        return {"ok": False, "error": "Live trading is disabled. Set enable_live_trading=true in config.json."}
+        return {
+            "ok": False,
+            "error": "Live trading is disabled. Set enable_live_trading=true in config.json.",
+        }
     try:
         spec = json.loads(args.order)
         account = await _get_account(getattr(args, "account_number", None))
@@ -992,15 +1035,23 @@ async def cmd_execute_trade(args) -> dict:
         # configured) the account deploy-limit governor allows it. account_deploy_limit_pct defaults
         # to 0/off; a positive value caps deployed buying power at that % of account capacity.
         return await _broker.place_order(
-            account, get_session(), order, live=not dry_run, serialize=_serialize,
-            deploy_limit_pct=_load_config().get("account_deploy_limit_pct") or None)
+            account,
+            get_session(),
+            order,
+            live=not dry_run,
+            serialize=_serialize,
+            deploy_limit_pct=_load_config().get("account_deploy_limit_pct") or None,
+        )
     except Exception as exc:
         return _error(exc)
 
 
 async def cmd_adjust_order(args) -> dict:
     if not _live_trading_enabled():
-        return {"ok": False, "error": "Live trading is disabled. Set enable_live_trading=true in config.json."}
+        return {
+            "ok": False,
+            "error": "Live trading is disabled. Set enable_live_trading=true in config.json.",
+        }
     try:
         spec = json.loads(args.order)
         account = await _get_account(getattr(args, "account_number", None))
@@ -1024,7 +1075,10 @@ async def cmd_adjust_order(args) -> dict:
 
 async def cmd_close_position(args) -> dict:
     if not _live_trading_enabled():
-        return {"ok": False, "error": "Live trading is disabled. Set enable_live_trading=true in config.json."}
+        return {
+            "ok": False,
+            "error": "Live trading is disabled. Set enable_live_trading=true in config.json.",
+        }
     try:
         account = await _get_account(getattr(args, "account_number", None))
         session = get_session()
@@ -1038,12 +1092,14 @@ async def cmd_close_position(args) -> dict:
 # Stream commands (sync — no async needed)
 # ---------------------------------------------------------------------------
 
+
 def cmd_get_calendar(args) -> dict:
     """Shared market calendar for a year (single source of truth from cherrypick.core.calendar):
     NYSE holidays, FOMC days, quarterly + triple-witching expiries. Pure computation, no broker."""
     import datetime as _dt
 
     from cherrypick.core import calendar as _cal
+
     year = args.year or _dt.date.today().year
 
     def iso(ds):
@@ -1062,6 +1118,7 @@ def cmd_get_calendar(args) -> dict:
 
 def cmd_secrets_status(_args) -> dict:
     from credentials import secrets_status
+
     status = secrets_status()
     return {
         "ok": True,
@@ -1077,8 +1134,8 @@ def cmd_secrets_set(args) -> dict:
     from credentials import ALL_SECRETS, REQUIRED_SECRETS, get_secret, set_secret
 
     label = {
-        "client_secret":  "Client Secret",
-        "refresh_token":  "Refresh Token",
+        "client_secret": "Client Secret",
+        "refresh_token": "Refresh Token",
         "account_number": "Account Number (optional — press Enter to skip)",
     }
     updated = []
@@ -1140,23 +1197,29 @@ async def cmd_get_gex(args) -> dict:
         options = list(chain[expiration])
         options = _atm_window(options, strike_count, center)
 
-        streamer_symbols = [
-            o.streamer_symbol for o in options if getattr(o, "streamer_symbol", None)
-        ]
+        streamer_symbols = [o.streamer_symbol for o in options if getattr(o, "streamer_symbol", None)]
         if not streamer_symbols:
             return {"ok": False, "error": "No streamer symbols in chain window"}
 
         # Load greeks and OI from cache
         greeks = _cache_get_greeks(streamer_symbols)
-        oi     = _cache_get_oi(streamer_symbols)
+        oi = _cache_get_oi(streamer_symbols)
 
         # Fall back to live DXLink for missing greeks (OI only comes from Summary — no live fallback)
         missing_g = [s for s in streamer_symbols if s not in greeks]
         if missing_g:
             live_g = await _collect_greeks(missing_g, 6.0)
-            greeks.update({s: {"delta": _num(v.delta), "gamma": _num(v.gamma),
-                               "theta": _num(v.theta), "iv": _num(v.volatility)}
-                           for s, v in live_g.items()})
+            greeks.update(
+                {
+                    s: {
+                        "delta": _num(v.delta),
+                        "gamma": _num(v.gamma),
+                        "theta": _num(v.theta),
+                        "iv": _num(v.volatility),
+                    }
+                    for s, v in live_g.items()
+                }
+            )
 
         chain_entries = [_serialize(o) for o in options]
         result = _compute_gex(chain_entries, greeks, oi, spot)
@@ -1185,9 +1248,11 @@ def cmd_get_orb_range(args) -> dict:
     by the AI loop's own iterations, which aren't guaranteed to land inside that window."""
     try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
         from zoneinfo import ZoneInfo
+
         _et = ZoneInfo("America/New_York")
     except Exception:  # pragma: no cover - only where zoneinfo has no tz database
         import pytz
+
         _et = pytz.timezone("America/New_York")
     symbol = args.symbol.strip().upper()
     et_today = datetime.now(_et).strftime("%Y-%m-%d")
@@ -1202,7 +1267,10 @@ def cmd_get_orb_range(args) -> dict:
     finally:
         conn.close()
     if row is None:
-        return {"ok": False, "error": "not yet captured — before 9:35 ET, or the streamer wasn't running through the 9:30-9:35 window today"}
+        return {
+            "ok": False,
+            "error": "not yet captured — before 9:35 ET, or the streamer wasn't running through the 9:30-9:35 window today",
+        }
     return {
         "ok": True,
         "symbol": symbol,
@@ -1215,9 +1283,11 @@ def cmd_get_orb_range(args) -> dict:
 def _et_today() -> str:
     try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
         from zoneinfo import ZoneInfo
+
         _et = ZoneInfo("America/New_York")
     except Exception:  # pragma: no cover - only where zoneinfo has no tz database
         import pytz
+
         _et = pytz.timezone("America/New_York")
     return datetime.now(_et).strftime("%Y-%m-%d")
 
@@ -1259,9 +1329,11 @@ def cmd_get_atr(args) -> dict:
         conn.close()
     trs = _true_ranges(rows)
     if len(trs) < days:
-        return {"ok": False,
-                "error": f"insufficient history: {len(trs)}/{days} completed sessions in cache",
-                "days_available": len(trs)}
+        return {
+            "ok": False,
+            "error": f"insufficient history: {len(trs)}/{days} completed sessions in cache",
+            "days_available": len(trs),
+        }
     return {"ok": True, "symbol": symbol, "atr": round(sum(trs) / len(trs), 4), "days": days}
 
 
@@ -1275,8 +1347,7 @@ def cmd_get_intraday_range(args) -> dict:
         return {"ok": False, "error": "stream cache not found — is the streamer running?"}
     try:
         row = conn.execute(
-            "SELECT day_high, day_low, day_close FROM stream_summary "
-            "WHERE symbol = ? AND trade_date = ?",
+            "SELECT day_high, day_low, day_close FROM stream_summary WHERE symbol = ? AND trade_date = ?",
             (symbol, _et_today()),
         ).fetchone()
         last = None
@@ -1286,7 +1357,10 @@ def cmd_get_intraday_range(args) -> dict:
     finally:
         conn.close()
     if row is None or row["day_high"] is None or row["day_low"] is None:
-        return {"ok": False, "error": "no summary row for today — streamer not running, or no Summary event yet"}
+        return {
+            "ok": False,
+            "error": "no summary row for today — streamer not running, or no Summary event yet",
+        }
     rng = float(row["day_high"]) - float(row["day_low"])
     basis = last or (float(row["day_close"]) if row["day_close"] is not None else None)
     return {
@@ -1305,6 +1379,7 @@ def cmd_stream_status(_args) -> dict:
     # which already handles this via psutil/OpenProcess. streamer.py's
     # top-level imports are all stdlib, so this import is cheap.
     import streamer as _streamer
+
     pid = _streamer._running_pid()
     running = pid is not None
 
@@ -1326,7 +1401,11 @@ def cmd_stream_status(_args) -> dict:
             result["pid"] = pid
 
         ages = []
-        for table, label in (("stream_trades", "trades"), ("stream_quotes", "quotes"), ("stream_greeks", "greeks")):
+        for table, label in (
+            ("stream_trades", "trades"),
+            ("stream_quotes", "quotes"),
+            ("stream_greeks", "greeks"),
+        ):
             try:
                 row = conn.execute(f"SELECT COUNT(*) AS n, MAX(updated_at) AS last FROM {table}").fetchone()
                 age = round(now - row["last"], 1) if row["last"] else None
@@ -1356,8 +1435,8 @@ def cmd_stream_status(_args) -> dict:
         if stale:
             result["stale_reason"] = (
                 "No stream event written in over 10 minutes despite streamer reporting running"
-                if stale_age_s is not None else
-                "Streamer reports running but has never recorded a stream event"
+                if stale_age_s is not None
+                else "Streamer reports running but has never recorded a stream event"
             )
     except Exception as exc:
         result["cache_error"] = str(exc)
@@ -1408,8 +1487,17 @@ async def cmd_stream_subscribe(args) -> dict:
                 "delta=excluded.delta, gamma=excluded.gamma, theta=excluded.theta, "
                 "vega=excluded.vega, rho=excluded.rho, iv=excluded.iv, price=excluded.price, "
                 "updated_at=excluded.updated_at",
-                (sym, _num(g.delta), _num(g.gamma), _num(g.theta), _num(g.vega),
-                 _num(g.rho), _num(g.volatility), _num(g.price), now),
+                (
+                    sym,
+                    _num(g.delta),
+                    _num(g.gamma),
+                    _num(g.theta),
+                    _num(g.vega),
+                    _num(g.rho),
+                    _num(g.volatility),
+                    _num(g.price),
+                    now,
+                ),
             )
             written_g += 1
         conn.commit()
@@ -1423,6 +1511,7 @@ async def cmd_stream_subscribe(args) -> dict:
 # ---------------------------------------------------------------------------
 # CLI dispatch
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="MEICAgent tastytrade CLI")
@@ -1470,8 +1559,7 @@ def main():
     p_et = sub.add_parser("execute_trade")
     p_et.add_argument("--order", required=True, help="JSON order spec")
     p_et.add_argument("--account_number", default=None)
-    p_et.add_argument("--live", dest="dry_run", action="store_false",
-                      help="Submit live (default is dry run)")
+    p_et.add_argument("--live", dest="dry_run", action="store_false", help="Submit live (default is dry run)")
 
     p_ao = sub.add_parser("adjust_order")
     p_ao.add_argument("--order_id", required=True, type=int)
@@ -1490,17 +1578,24 @@ def main():
 
     p_sec = sub.add_parser("secrets_set")
     p_sec.add_argument(
-        "--keys", nargs="+", default=None,
+        "--keys",
+        nargs="+",
+        default=None,
         metavar="KEY",
         help="Specific keys to set (default: all). Choices: client_secret refresh_token account_number",
     )
 
     p_gex = sub.add_parser("get_gex")
     p_gex.add_argument("--symbol", required=True, help="Trading symbol (e.g. XSP)")
-    p_gex.add_argument("--strike_count", type=int, default=20,
-                       help="Strikes each side of ATM to include in GEX window")
-    p_gex.add_argument("--around_price", type=float, default=None,
-                       help="Center the window around this price (default: current spot)")
+    p_gex.add_argument(
+        "--strike_count", type=int, default=20, help="Strikes each side of ATM to include in GEX window"
+    )
+    p_gex.add_argument(
+        "--around_price",
+        type=float,
+        default=None,
+        help="Center the window around this price (default: current spot)",
+    )
 
     sub.add_parser("stream_status")
 
@@ -1526,12 +1621,12 @@ def main():
     # Sync commands (no asyncio needed)
     sync_dispatch = {
         "secrets_status": cmd_secrets_status,
-        "secrets_set":    cmd_secrets_set,
-        "stream_status":  cmd_stream_status,
-        "get_orb_range":  cmd_get_orb_range,
-        "get_atr":        cmd_get_atr,
+        "secrets_set": cmd_secrets_set,
+        "stream_status": cmd_stream_status,
+        "get_orb_range": cmd_get_orb_range,
+        "get_atr": cmd_get_atr,
         "get_intraday_range": cmd_get_intraday_range,
-        "get_calendar":   cmd_get_calendar,
+        "get_calendar": cmd_get_calendar,
     }
     if args.command in sync_dispatch:
         _out(sync_dispatch[args.command](args))

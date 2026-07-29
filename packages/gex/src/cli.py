@@ -30,8 +30,10 @@ def _cmd_gex(cfg: dict, args: argparse.Namespace) -> int:
         return 1
     t = payload["totals"]
     print(f"{payload['symbol']}  exp {payload['expiration']}  spot {payload['underlying_price']}")
-    print(f"  net GEX {t['net_gex']:>14,}   flip {t['zero_gamma']}   "
-          f"call wall {t['call_wall']}   put wall {t['put_wall']}   ({len(payload['series'])} strikes)")
+    print(
+        f"  net GEX {t['net_gex']:>14,}   flip {t['zero_gamma']}   "
+        f"call wall {t['call_wall']}   put wall {t['put_wall']}   ({len(payload['series'])} strikes)"
+    )
     return 0
 
 
@@ -61,8 +63,7 @@ def _cmd_dashboard(cfg: dict, args: argparse.Namespace) -> int:
     if not args.serve:
         print("cherrypick-gex dashboard is serve-only; pass --serve.", file=sys.stderr)
         return 2
-    _serve.serve(cfg, symbol=args.symbol, host=args.host, port=args.port,
-                 open_browser=not args.no_browser)
+    _serve.serve(cfg, symbol=args.symbol, host=args.host, port=args.port, open_browser=not args.no_browser)
     return 0
 
 
@@ -79,13 +80,18 @@ def main(argv: list[str] | None = None) -> int:
     se.add_argument("--json", action="store_true", help="(payload is always JSON; accepted for symmetry)")
 
     st = sub.add_parser("stream", help="run the streamer to populate this module's own cache")
-    st.add_argument("--symbol", action="append", default=None,
-                    help="underlying to stream (repeatable; default: config.symbols)")
+    st.add_argument(
+        "--symbol",
+        action="append",
+        default=None,
+        help="underlying to stream (repeatable; default: config.symbols)",
+    )
 
     rec = sub.add_parser("record", help="always-on spot-trail recorder (run alongside the streamer)")
     rec.add_argument("--once", action="store_true", help="sample one tick and exit")
-    rec.add_argument("--interval", type=int, default=None,
-                     help="seconds between samples (default: serve.refresh_seconds)")
+    rec.add_argument(
+        "--interval", type=int, default=None, help="seconds between samples (default: serve.refresh_seconds)"
+    )
     rec.add_argument("--status", action="store_true", help="print {running,pid} JSON and exit")
     rec.add_argument("--stop", action="store_true", help="stop a running recorder daemon")
 

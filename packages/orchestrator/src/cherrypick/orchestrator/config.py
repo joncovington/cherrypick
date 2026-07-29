@@ -171,8 +171,7 @@ def broker_tool(module_cfg: dict[str, Any], name: str | None = None) -> list[str
     explicit config -> known-module default (by name) -> the historical `src/tt.py`. Used by
     connect/account/reconcile so onboarding and the isolation guard drive every module through
     config-declared argv, like everything else."""
-    return list(module_cfg.get("broker_tool") or _module_default(name, "broker_tool")
-                or ["src/tt.py"])
+    return list(module_cfg.get("broker_tool") or _module_default(name, "broker_tool") or ["src/tt.py"])
 
 
 def module_keyring_service(module_cfg: dict[str, Any], name: str | None = None) -> str | None:

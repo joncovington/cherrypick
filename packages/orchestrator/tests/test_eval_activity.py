@@ -16,8 +16,14 @@ pytestmark = pytest.mark.unit
 
 
 def _assess(**over):
-    act = {"iterations": 10, "evaluated": 50, "errors": 2, "entries": 1,
-           "last_age_min": 3.0, "top_reason": "regime_gex_negative"}
+    act = {
+        "iterations": 10,
+        "evaluated": 50,
+        "errors": 2,
+        "entries": 1,
+        "last_age_min": 3.0,
+        "top_reason": "regime_gex_negative",
+    }
     act.update(over)
     return ea.assess(act, window_min=30, eval_stale_min=10, error_frac_warn=0.5)
 
@@ -25,7 +31,7 @@ def _assess(**over):
 # --------------------------------------------------------------------------- assess() triggers
 def test_gate_rejection_is_healthy():
     assert _assess(entries=0, top_reason="regime_gex_negative")[0] == ea.OK  # rejecting all on a gate
-    assert _assess(entries=2)[0] == ea.OK                                    # actually entering
+    assert _assess(entries=2)[0] == ea.OK  # actually entering
 
 
 def test_no_iterations_defers_to_freshness():
@@ -60,17 +66,22 @@ def _now():
 def test_meic_reader_counts_evals_errors_and_reason(tmp_path):
     con = sqlite3.connect(tmp_path / "p.db")
     con.row_factory = sqlite3.Row
-    con.execute("CREATE TABLE loop_log(id INTEGER PRIMARY KEY, loop_time TEXT, loop_date TEXT, "
-                "reasoning TEXT, mcp_errors TEXT)")
+    con.execute(
+        "CREATE TABLE loop_log(id INTEGER PRIMARY KEY, loop_time TEXT, loop_date TEXT, "
+        "reasoning TEXT, mcp_errors TEXT)"
+    )
     con.execute("CREATE TABLE ic_trades(id INTEGER PRIMARY KEY, trade_date TEXT, entry_time TEXT)")
-    reasoning = ("SPX(ivr 0.5): all regime_gex_negative  RUT: ERROR no price  "
-                 "SPY(ivr 0.5): all regime_gex_negative")
-    con.execute("INSERT INTO loop_log(loop_time, loop_date, reasoning, mcp_errors) VALUES (?,?,?,?)",
-                (_now(), "2026-07-23", reasoning, "[]"))
+    reasoning = (
+        "SPX(ivr 0.5): all regime_gex_negative  RUT: ERROR no price  SPY(ivr 0.5): all regime_gex_negative"
+    )
+    con.execute(
+        "INSERT INTO loop_log(loop_time, loop_date, reasoning, mcp_errors) VALUES (?,?,?,?)",
+        (_now(), "2026-07-23", reasoning, "[]"),
+    )
     con.commit()
     act = ea._meic_activity(con, "2026-07-23", 30)
-    assert act["evaluated"] == 2                    # SPX + SPY each print "(ivr"
-    assert act["errors"] == 1                       # RUT ERROR (mcp_errors "[]" is not an error)
+    assert act["evaluated"] == 2  # SPX + SPY each print "(ivr"
+    assert act["errors"] == 1  # RUT ERROR (mcp_errors "[]" is not an error)
     assert act["entries"] == 0
     assert act["top_reason"] == "regime_gex_negative"
     con.close()
@@ -79,12 +90,15 @@ def test_meic_reader_counts_evals_errors_and_reason(tmp_path):
 def test_flies_reader_counts_ok_vs_refused(tmp_path):
     con = sqlite3.connect(tmp_path / "f.db")
     con.row_factory = sqlite3.Row
-    con.execute("CREATE TABLE fly_snapshots(id INTEGER PRIMARY KEY, iteration_ts TEXT, trade_date TEXT, "
-                "status TEXT)")
+    con.execute(
+        "CREATE TABLE fly_snapshots(id INTEGER PRIMARY KEY, iteration_ts TEXT, trade_date TEXT, status TEXT)"
+    )
     con.execute("CREATE TABLE fly_positions(id INTEGER PRIMARY KEY, trade_date TEXT, entry_time TEXT)")
     for st in ("ok", "ok", "no_fresh_quotes"):
-        con.execute("INSERT INTO fly_snapshots(iteration_ts, trade_date, status) VALUES (?,?,?)",
-                    (_now(), "2026-07-23", st))
+        con.execute(
+            "INSERT INTO fly_snapshots(iteration_ts, trade_date, status) VALUES (?,?,?)",
+            (_now(), "2026-07-23", st),
+        )
     con.commit()
     act = ea._flies_activity(con, "2026-07-23", 30)
     assert act["evaluated"] == 2 and act["errors"] == 1 and act["top_reason"] == "no_fresh_quotes"

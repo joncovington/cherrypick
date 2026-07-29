@@ -16,11 +16,26 @@ from cherrypick.orchestrator import trade_notifier as tn
 def _et_epoch(y, mo, d, h, mi):
     return datetime(y, mo, d, h, mi, tzinfo=ZoneInfo("America/New_York")).timestamp()
 
+
 pytestmark = pytest.mark.unit
 
-_COLS = ("id", "symbol", "risk_profile", "put_strike", "call_strike", "wing_width", "net_credit",
-         "quantity", "status", "exit_time", "exit_reason", "pnl", "fees", "put_stop_cost",
-         "call_stop_cost")
+_COLS = (
+    "id",
+    "symbol",
+    "risk_profile",
+    "put_strike",
+    "call_strike",
+    "wing_width",
+    "net_credit",
+    "quantity",
+    "status",
+    "exit_time",
+    "exit_reason",
+    "pnl",
+    "fees",
+    "put_stop_cost",
+    "call_stop_cost",
+)
 
 
 class _Recorder:
@@ -52,9 +67,7 @@ def _conn(rows):
         "status TEXT, exit_time TEXT, exit_reason TEXT, pnl REAL, fees REAL, put_stop_cost REAL, "
         "call_stop_cost REAL)"
     )
-    conn.executemany(
-        f"INSERT INTO ic_trades ({','.join(_COLS)}) VALUES ({','.join('?' * len(_COLS))})", rows
-    )
+    conn.executemany(f"INSERT INTO ic_trades ({','.join(_COLS)}) VALUES ({','.join('?' * len(_COLS))})", rows)
     conn.commit()
     return conn
 
@@ -89,40 +102,55 @@ def test_no_flush_before_interval_elapses():
     conn = _conn([_row(id=1, status="open")])
     state = tn._meic_seed(_conn([]))
     n = _Recorder()
-    tn._meic_process(conn, state, n, "meic", summary_prefixes=_PREFIXES,
-                      summary_interval_minutes=15, now=1000.0)
+    tn._meic_process(
+        conn, state, n, "meic", summary_prefixes=_PREFIXES, summary_interval_minutes=15, now=1000.0
+    )
     assert n.sent == []
 
     # Ten minutes later — still under the 15-minute interval, still no push.
     n2 = _Recorder()
-    tn._meic_process(conn, state, n2, "meic", summary_prefixes=_PREFIXES,
-                      summary_interval_minutes=15, now=1000.0 + 10 * 60)
+    tn._meic_process(
+        conn, state, n2, "meic", summary_prefixes=_PREFIXES, summary_interval_minutes=15, now=1000.0 + 10 * 60
+    )
     assert n2.sent == []
     assert state["pending_summary"]["XSP"]["entries"] == ["width-2"]
 
 
 def test_flush_after_interval_emits_one_digest_and_clears_bucket():
-    conn = _conn([
-        _row(id=1, symbol="XSP", risk_profile="width-2", status="open"),
-        _row(id=2, symbol="XSP", risk_profile="width-5", status="open"),
-        _row(id=3, symbol="QQQ", risk_profile="width-adaptive", status="open"),
-    ])
+    conn = _conn(
+        [
+            _row(id=1, symbol="XSP", risk_profile="width-2", status="open"),
+            _row(id=2, symbol="XSP", risk_profile="width-5", status="open"),
+            _row(id=3, symbol="QQQ", risk_profile="width-adaptive", status="open"),
+        ]
+    )
     state = tn._meic_seed(_conn([]))
     n = _Recorder()
     start = _et_epoch(2026, 7, 28, 13, 1)
     tn._meic_process(conn, state, n, "meic", summary_prefixes=_PREFIXES, now=start)
     assert n.sent == []
 
-    closed = _conn([
-        _row(id=1, symbol="XSP", risk_profile="width-2", status="closed",
-             exit_time="2026-07-28T13:00", exit_reason="expired", pnl=25.0, fees=1.5),
-        _row(id=2, symbol="XSP", risk_profile="width-5", status="open"),
-        _row(id=3, symbol="QQQ", risk_profile="width-adaptive", status="open"),
-    ])
+    closed = _conn(
+        [
+            _row(
+                id=1,
+                symbol="XSP",
+                risk_profile="width-2",
+                status="closed",
+                exit_time="2026-07-28T13:00",
+                exit_reason="expired",
+                pnl=25.0,
+                fees=1.5,
+            ),
+            _row(id=2, symbol="XSP", risk_profile="width-5", status="open"),
+            _row(id=3, symbol="QQQ", risk_profile="width-adaptive", status="open"),
+        ]
+    )
     n2 = _Recorder()
     later = start + 15 * 60
-    counts = tn._meic_process(closed, state, n2, "meic", summary_prefixes=_PREFIXES,
-                               summary_interval_minutes=15, now=later)
+    counts = tn._meic_process(
+        closed, state, n2, "meic", summary_prefixes=_PREFIXES, summary_interval_minutes=15, now=later
+    )
 
     assert counts["summary_pushed"] is True
     assert len(n2.sent) == 1
@@ -143,8 +171,9 @@ def test_empty_window_flushes_nothing():
     n = _Recorder()
     tn._meic_process(conn, state, n, "meic", summary_prefixes=_PREFIXES, now=1000.0)
     n2 = _Recorder()
-    counts = tn._meic_process(conn, state, n2, "meic", summary_prefixes=_PREFIXES,
-                               summary_interval_minutes=15, now=1000.0 + 15 * 60)
+    counts = tn._meic_process(
+        conn, state, n2, "meic", summary_prefixes=_PREFIXES, summary_interval_minutes=15, now=1000.0 + 15 * 60
+    )
     assert n2.sent == []
     assert counts["summary_pushed"] is False
 
@@ -152,12 +181,28 @@ def test_empty_window_flushes_nothing():
 def test_watermark_advances_once_per_row_across_both_paths():
     """A study exit and a ladder exit in the same tick must each advance notified_exit_ids exactly
     once — no double-count between the digest path and the per-trade path."""
-    conn = _conn([
-        _row(id=1, symbol="XSP", risk_profile="width-2", status="closed",
-             exit_time="2026-07-28T13:00", pnl=10.0, fees=1.0),
-        _row(id=2, symbol="XSP", risk_profile="conservative", status="closed",
-             exit_time="2026-07-28T13:05", pnl=-5.0, fees=1.0),
-    ])
+    conn = _conn(
+        [
+            _row(
+                id=1,
+                symbol="XSP",
+                risk_profile="width-2",
+                status="closed",
+                exit_time="2026-07-28T13:00",
+                pnl=10.0,
+                fees=1.0,
+            ),
+            _row(
+                id=2,
+                symbol="XSP",
+                risk_profile="conservative",
+                status="closed",
+                exit_time="2026-07-28T13:05",
+                pnl=-5.0,
+                fees=1.0,
+            ),
+        ]
+    )
     state = {"last_entry_id": 2, "notified_exit_ids": []}
     n = _Recorder()
     counts = tn._meic_process(conn, state, n, "meic", summary_prefixes=_PREFIXES, now=1000.0)

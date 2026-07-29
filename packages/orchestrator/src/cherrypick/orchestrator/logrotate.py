@@ -71,8 +71,13 @@ def _scopes(logs_root: Path) -> dict[str, Path]:
     return out
 
 
-def run(cfg: dict | None = None, logs_root: str | Path | None = None,
-        now: datetime | None = None, month: str | None = None, dry_run: bool = False) -> dict:
+def run(
+    cfg: dict | None = None,
+    logs_root: str | Path | None = None,
+    now: datetime | None = None,
+    month: str | None = None,
+    dry_run: bool = False,
+) -> dict:
     """Archive every complete prior month's logs/reports into ``logs/archive/<YYYY-MM>/<scope>.zip``.
 
     `month` (``'YYYY-MM'``) restricts to one month; `dry_run` reports what would move without writing or
@@ -83,8 +88,13 @@ def run(cfg: dict | None = None, logs_root: str | Path | None = None,
     archive_root = logs_root / _ARCHIVE_DIRNAME
 
     summary: dict = {
-        "ok": True, "dry_run": dry_run, "logs_root": str(logs_root),
-        "archive_root": str(archive_root), "archived": [], "months": {}, "files": 0,
+        "ok": True,
+        "dry_run": dry_run,
+        "logs_root": str(logs_root),
+        "archive_root": str(archive_root),
+        "archived": [],
+        "months": {},
+        "files": 0,
     }
 
     for scope, d in _scopes(logs_root).items():

@@ -50,8 +50,11 @@ def test_soft_criterion_off_ignores_below_floor_value(base_strategy_config, good
 
 def test_wing_width_multiple_bands():
     config = {
-        "wing_width_multiple_low": 2.5, "wing_width_multiple_mid": 3.0, "wing_width_multiple_high": 3.5,
-        "wing_width_band_low_max": 1.25, "wing_width_band_mid_max": 1.75,
+        "wing_width_multiple_low": 2.5,
+        "wing_width_multiple_mid": 3.0,
+        "wing_width_multiple_high": 3.5,
+        "wing_width_band_low_max": 1.25,
+        "wing_width_band_mid_max": 1.75,
     }
     assert iron_fly._wing_width_multiple(1.0, config) == 2.5
     assert iron_fly._wing_width_multiple(1.5, config) == 3.0
@@ -64,12 +67,14 @@ def test_wing_width_multiple_falls_back_when_ratio_unknown():
 
 
 def _legs_json():
-    return json.dumps([
-        {"symbol": "SC", "action": "Sell to Open", "quantity": 1},
-        {"symbol": "SP", "action": "Sell to Open", "quantity": 1},
-        {"symbol": "LC", "action": "Buy to Open", "quantity": 1},
-        {"symbol": "LP", "action": "Buy to Open", "quantity": 1},
-    ])
+    return json.dumps(
+        [
+            {"symbol": "SC", "action": "Sell to Open", "quantity": 1},
+            {"symbol": "SP", "action": "Sell to Open", "quantity": 1},
+            {"symbol": "LC", "action": "Buy to Open", "quantity": 1},
+            {"symbol": "LP", "action": "Buy to Open", "quantity": 1},
+        ]
+    )
 
 
 def test_evaluate_position_holds_on_incomplete_quotes():
@@ -81,8 +86,10 @@ def test_evaluate_position_holds_on_incomplete_quotes():
 def test_evaluate_position_profit_target():
     position = {"legs_json": _legs_json(), "entry_credit": 4.0}
     quotes = {
-        "SC": {"bid": 0.2, "ask": 0.3}, "SP": {"bid": 0.2, "ask": 0.3},
-        "LC": {"bid": 0.05, "ask": 0.1}, "LP": {"bid": 0.05, "ask": 0.1},
+        "SC": {"bid": 0.2, "ask": 0.3},
+        "SP": {"bid": 0.2, "ask": 0.3},
+        "LC": {"bid": 0.05, "ask": 0.1},
+        "LP": {"bid": 0.05, "ask": 0.1},
     }
     result = iron_fly.evaluate_position(position, quotes, config={"profit_target_pct": 0.50})
     assert result["action"] == "close_all"
@@ -92,8 +99,10 @@ def test_evaluate_position_profit_target():
 def test_evaluate_position_stop_loss():
     position = {"legs_json": _legs_json(), "entry_credit": 1.0}
     quotes = {
-        "SC": {"bid": 1.0, "ask": 1.2}, "SP": {"bid": 1.0, "ask": 1.2},
-        "LC": {"bid": 0.05, "ask": 0.1}, "LP": {"bid": 0.05, "ask": 0.1},
+        "SC": {"bid": 1.0, "ask": 1.2},
+        "SP": {"bid": 1.0, "ask": 1.2},
+        "LC": {"bid": 0.05, "ask": 0.1},
+        "LP": {"bid": 0.05, "ask": 0.1},
     }
     result = iron_fly.evaluate_position(position, quotes, config={"stop_loss_credit_multiple": 1.5})
     assert result["action"] == "close_all"

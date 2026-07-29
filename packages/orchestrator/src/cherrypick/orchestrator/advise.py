@@ -75,6 +75,7 @@ def _next_session(cfg: dict[str, Any], day: str) -> str:
     post-close applies to tomorrow's loop, which reads it at session start)."""
     try:
         from cherrypick.core import calendar as _cal
+
         d = date.fromisoformat(day)
         for _ in range(10):
             d = d + timedelta(days=1)
@@ -99,14 +100,19 @@ def _context_blocks(cfg: dict[str, Any], day: str) -> str:
     parts = [build_input(_gather_inputs(cfg, day))]
     try:
         rep = report_mod.run(cfg, session=day)
-        parts.append("===== cross-module report JSON (session " + day + ") =====\n"
-                     + json.dumps(rep, indent=2, default=str)[:20000])
+        parts.append(
+            "===== cross-module report JSON (session "
+            + day
+            + ") =====\n"
+            + json.dumps(rep, indent=2, default=str)[:20000]
+        )
     except Exception:
         pass
     try:
         cal = calibrate_mod.run(cfg)
-        parts.append("===== calibration readings JSON =====\n"
-                     + json.dumps(cal, indent=2, default=str)[:20000])
+        parts.append(
+            "===== calibration readings JSON =====\n" + json.dumps(cal, indent=2, default=str)[:20000]
+        )
     except Exception:
         pass
     upcoming = _upcoming_calendar(day)
@@ -130,22 +136,37 @@ def _prompt(module: str, session: str, bounds: dict[str, Any]) -> str:
         "13:30 blackout; VIX1D ratio elevated').\n"
         "- Never propose loosening into the aggressive end of a range without explicit supporting "
         "evidence from the reports.\n\n"
-        'Output ONLY this JSON object (no prose, no code fences):\n'
+        "Output ONLY this JSON object (no prose, no code fences):\n"
         '{"proposals": [{"param": "<name>", "value": <number-or-choice>, "rationale": "<short>"}]}'
     )
 
 
 def _run_claude(prompt: str, stdin_text: str, model: str | None, timeout: int) -> dict:
     """Headless Claude call, all tools denied. Injectable seam so tests never call the real CLI."""
-    cmd = ["claude", "-p", prompt, "--output-format", "text",
-           "--disallowed-tools", *_DISALLOWED_TOOLS,
-           "--append-system-prompt", _SYSTEM]
+    cmd = [
+        "claude",
+        "-p",
+        prompt,
+        "--output-format",
+        "text",
+        "--disallowed-tools",
+        *_DISALLOWED_TOOLS,
+        "--append-system-prompt",
+        _SYSTEM,
+    ]
     if model:
         cmd += ["--model", model]
     try:
-        r = subprocess.run(cmd, input=stdin_text, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=timeout,
-                           creationflags=CREATE_NO_WINDOW)
+        r = subprocess.run(
+            cmd,
+            input=stdin_text,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            creationflags=CREATE_NO_WINDOW,
+        )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return {"ok": False, "error": f"claude invocation failed: {exc}"}
     if r.returncode != 0:
@@ -166,7 +187,7 @@ def _parse_proposals(text: str) -> list | None:
     if start < 0 or end <= start:
         return None
     try:
-        obj = json.loads(s[start:end + 1])
+        obj = json.loads(s[start : end + 1])
     except ValueError:
         return None
     proposals = obj.get("proposals") if isinstance(obj, dict) else None
@@ -198,8 +219,7 @@ def run(cfg: dict[str, Any] | None = None, day: str | None = None) -> dict[str, 
         if not bounds:
             results[name] = {"ok": False, "skipped": "no_advice_bounds"}
             continue
-        res = _run_claude(_prompt(name, session, bounds), context, st.get("model"),
-                          st["timeout_seconds"])
+        res = _run_claude(_prompt(name, session, bounds), context, st.get("model"), st["timeout_seconds"])
         if not res.get("ok"):
             results[name] = {"ok": False, "error": res.get("error")}
             continue
@@ -212,8 +232,15 @@ def run(cfg: dict[str, Any] | None = None, day: str | None = None) -> dict[str, 
         # The artifact is written either way — admitted proposals when the set passed, empty
         # proposals plus the recorded rejections when it didn't (reject-all, but auditable).
         path = core_advice.advice_path(cfgmod.STATE_DIR, name, session)
-        core_advice.write(path, name, session, verdict["proposals"], ADVISOR,
-                          _expires_at(session), rejected=verdict["rejected"])
+        core_advice.write(
+            path,
+            name,
+            session,
+            verdict["proposals"],
+            ADVISOR,
+            _expires_at(session),
+            rejected=verdict["rejected"],
+        )
         results[name] = {
             "ok": verdict["ok"],
             "session": session,
@@ -222,5 +249,9 @@ def run(cfg: dict[str, Any] | None = None, day: str | None = None) -> dict[str, 
             "rejected": len(verdict["rejected"]),
             "reason": verdict["reason"],
         }
-    return {"ok": any(r.get("ok") for r in results.values()), "day": day, "session": session,
-            "modules": results}
+    return {
+        "ok": any(r.get("ok") for r in results.values()),
+        "day": day,
+        "session": session,
+        "modules": results,
+    }

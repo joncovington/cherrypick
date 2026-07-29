@@ -27,12 +27,15 @@ from cherrypick.core import viz  # noqa: E402
 
 import strategy_metrics as sm  # noqa: E402
 
-_NOTE = ("net of modeled tastytrade fees + slippage haircut · forced-sampling paper book · "
-         "<100 trades isn't significant, <30 isn't directional")
+_NOTE = (
+    "net of modeled tastytrade fees + slippage haircut · forced-sampling paper book · "
+    "<100 trades isn't significant, <30 isn't directional"
+)
 
 
-def build_section(mode: str = "paper", profile: str | None = None, since: str | None = None,
-                  db_override: str | None = None) -> dict:
+def build_section(
+    mode: str = "paper", profile: str | None = None, since: str | None = None, db_override: str | None = None
+) -> dict:
     """Return a cherrypick.core.viz section payload, or {ok: False, error}."""
     try:
         db_path = sm.db_path_for_mode(mode, db_override)
@@ -72,14 +75,19 @@ def build_section(mode: str = "paper", profile: str | None = None, since: str | 
     labels, values = sm.daily_equity_series(closed)
 
     metrics = [
-        {"label": "Net P&L", "value": viz.fmt_money(net_total),
-         "tone": "pos" if net_total >= 0 else "neg"},
-        {"label": "Expectancy / trade", "value": viz.fmt_money(exp),
-         "tone": None if exp is None else ("pos" if exp >= 0 else "neg")},
+        {"label": "Net P&L", "value": viz.fmt_money(net_total), "tone": "pos" if net_total >= 0 else "neg"},
+        {
+            "label": "Expectancy / trade",
+            "value": viz.fmt_money(exp),
+            "tone": None if exp is None else ("pos" if exp >= 0 else "neg"),
+        },
         {"label": "Closed trades", "value": str(len(closed))},
         {"label": "Open overnight", "value": str(len(open_trades)), "tone": "accent"},
-        {"label": "Sample", "value": f"{sample['count']}/{sample['significant_target']}",
-         "tone": "pos" if sample["significant_met"] else ("accent" if sample["directional_met"] else None)},
+        {
+            "label": "Sample",
+            "value": f"{sample['count']}/{sample['significant_target']}",
+            "tone": "pos" if sample["significant_met"] else ("accent" if sample["directional_met"] else None),
+        },
     ]
 
     payload: dict = {
@@ -101,11 +109,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=["live", "paper"], default="paper")
     parser.add_argument("--db", default=None, help="Overrides the mode-based default DB path.")
-    parser.add_argument("--profile", default=None,
-                        help="Book to report on. Defaults to 'strat_test' (paper) / 'default' (live).")
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="Book to report on. Defaults to 'strat_test' (paper) / 'default' (live).",
+    )
     parser.add_argument("--since", default=None)
-    parser.add_argument("--json", action="store_true",
-                        help="Emit JSON (the only output format; the flag matches the suite's section argv shape).")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit JSON (the only output format; the flag matches the suite's section argv shape).",
+    )
     args = parser.parse_args()
     print(json.dumps(build_section(args.mode, args.profile, args.since, args.db)))
 

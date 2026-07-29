@@ -120,11 +120,13 @@ def _pid_alive(pid: int) -> bool:
     # psutil, then the Win32 OpenProcess probe, then os.kill as a last resort.
     try:
         import psutil  # type: ignore
+
         return bool(psutil.pid_exists(pid))
     except ImportError:
         pass
     try:
         import ctypes
+
         synchronize = 0x00100000
         handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, pid)
         if handle:
@@ -240,8 +242,12 @@ def run_daemon(cfg: dict, symbols: list[str] | None = None) -> int:
     pid_file.parent.mkdir(parents=True, exist_ok=True)
     pid_file.write_text(str(os.getpid()))
     logger.info("cherrypick-streamer PID %d written to %s", os.getpid(), pid_file)
-    logger.info("Streaming %s (registry union) -> %s (±%d strikes each)", streamer.symbols,
-                _config.cache_path(cfg), streamer.window_strike_count)
+    logger.info(
+        "Streaming %s (registry union) -> %s (±%d strikes each)",
+        streamer.symbols,
+        _config.cache_path(cfg),
+        streamer.window_strike_count,
+    )
 
     try:
         streamer.run()  # blocks with reconnect/backoff until SIGTERM/SIGINT

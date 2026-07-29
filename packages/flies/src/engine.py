@@ -143,11 +143,11 @@ def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
     # onto ATM, making it indistinguishable from `control`. `analytics.arm_divergence` is the
     # instrument for that — if agreement runs near 100%, this is the first number to revisit.
     max_dist = params.get("max_center_distance_pct", 0.003) * spot
+
     def total_gamma(entry):
         return abs(entry.get("call_gex", 0.0)) + abs(entry.get("put_gex", 0.0))
 
-    near = [s for s in per_strike
-            if total_gamma(s) > 0 and abs(s["strike"] - spot) <= max_dist]
+    near = [s for s in per_strike if total_gamma(s) > 0 and abs(s["strike"] - spot) <= max_dist]
     if not near:
         return atm_strike(spot, increment), "atm_no_gamma_near_spot"
     best = max(near, key=total_gamma)
@@ -273,18 +273,22 @@ def evaluate_credit_spread_entry(snapshot: dict, params: dict, open_positions: l
         return False, "credit_cannot_clear_fees", None
 
     completing_strike = center + width if side == PUT else center - width
-    return True, "ok", {
-        "side": side,
-        "center": center,
-        "center_reason": center_reason,
-        "wing_width": width,
-        "credit": round(credit, 4),
-        "quantity": qty,
-        "open_fee": fly.vertical_open_fee(symbol, qty),
-        "completing_strike": completing_strike,
-        "completing_direction": fly.completing_side_direction(side),
-        "entry_window": window,
-    }
+    return (
+        True,
+        "ok",
+        {
+            "side": side,
+            "center": center,
+            "center_reason": center_reason,
+            "wing_width": width,
+            "credit": round(credit, 4),
+            "quantity": qty,
+            "open_fee": fly.vertical_open_fee(symbol, qty),
+            "completing_strike": completing_strike,
+            "completing_direction": fly.completing_side_direction(side),
+            "entry_window": window,
+        },
+    )
 
 
 # --------------------------------------------------------------------------- legged entry (step 2)
@@ -340,8 +344,9 @@ def evaluate_completion(snapshot: dict, position: dict, params: dict) -> tuple:
 
 
 # --------------------------------------------------------------------------- outright entry
-def evaluate_outright_entry(snapshot: dict, params: dict, open_positions: list,
-                            realized_cash: float) -> tuple:
+def evaluate_outright_entry(
+    snapshot: dict, params: dict, open_positions: list, realized_cash: float
+) -> tuple:
     """Should the book buy a cheap fly outright, funded by premium it has already realized?
 
     `realized_cash` is the book's credit-minus-debits-minus-fees so far. Requiring the debit to fit
@@ -380,8 +385,9 @@ def evaluate_outright_entry(snapshot: dict, params: dict, open_positions: list,
         return False, "missing_leg_quotes", None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
-    debit = fly.fly_debit(quote(snapshot, side, lower), quote(snapshot, side, center),
-                          quote(snapshot, side, upper), slip)
+    debit = fly.fly_debit(
+        quote(snapshot, side, lower), quote(snapshot, side, center), quote(snapshot, side, upper), slip
+    )
     if debit <= 0:
         # A non-positive modeled debit means a stale or crossed quote, not free money: a long fly's
         # value is bounded below by zero, so nobody sells one for a credit.
@@ -399,17 +405,21 @@ def evaluate_outright_entry(snapshot: dict, params: dict, open_positions: list,
     if cost > realized_cash:
         return False, "not_funded_by_realized_credit", None
 
-    return True, "ok", {
-        "side": side,
-        "center": center,
-        "center_reason": center_reason,
-        "wing_width": width,
-        "debit": round(debit, 4),
-        "quantity": qty,
-        "open_fee": open_fee,
-        "cost": round(cost, 2),
-        "entry_window": window,
-    }
+    return (
+        True,
+        "ok",
+        {
+            "side": side,
+            "center": center,
+            "center_reason": center_reason,
+            "wing_width": width,
+            "debit": round(debit, 4),
+            "quantity": qty,
+            "open_fee": open_fee,
+            "cost": round(cost, 2),
+            "entry_window": window,
+        },
+    )
 
 
 # --------------------------------------------------------------------------- settlement
@@ -424,17 +434,21 @@ def settle(positions: list[dict], settlement_price: float) -> list[dict]:
     out = []
     for p in positions:
         pnl = fly.position_pnl(p, settlement_price)
-        out.append({
-            **p,
-            "settlement_price": settlement_price,
-            "expiry_payoff": round(
-                fly.fly_payoff(p["center"], p["wing_width"], settlement_price) if p["kind"] == "fly"
-                else fly.short_vertical_payoff(p["side"], p["center"], p["wing_width"], settlement_price),
-                4),
-            "pnl": round(pnl, 2),
-            "pinned": p["kind"] == "fly" and abs(settlement_price - p["center"]) < p["wing_width"],
-            "status": "settled",
-        })
+        out.append(
+            {
+                **p,
+                "settlement_price": settlement_price,
+                "expiry_payoff": round(
+                    fly.fly_payoff(p["center"], p["wing_width"], settlement_price)
+                    if p["kind"] == "fly"
+                    else fly.short_vertical_payoff(p["side"], p["center"], p["wing_width"], settlement_price),
+                    4,
+                ),
+                "pnl": round(pnl, 2),
+                "pinned": p["kind"] == "fly" and abs(settlement_price - p["center"]) < p["wing_width"],
+                "status": "settled",
+            }
+        )
     return out
 
 

@@ -149,9 +149,7 @@ def cmd_init_db(args) -> dict:
 def cmd_get_open_positions(args) -> dict:
     conn = _conn()
     try:
-        rows = conn.execute(
-            "SELECT * FROM trades WHERE closed_at IS NULL ORDER BY opened_at"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM trades WHERE closed_at IS NULL ORDER BY opened_at").fetchall()
     finally:
         conn.close()
     return {"ok": True, "positions": [dict(r) for r in rows]}
@@ -240,7 +238,10 @@ def cmd_save_leg_close(args) -> dict:
         )
         conn.commit()
         if cur.rowcount == 0:
-            return {"ok": False, "error": f"no open leg found for order_id={spec['order_id']} leg_role={spec['leg_role']}"}
+            return {
+                "ok": False,
+                "error": f"no open leg found for order_id={spec['order_id']} leg_role={spec['leg_role']}",
+            }
     finally:
         conn.close()
     return {"ok": True, "order_id": spec["order_id"], "leg_role": spec["leg_role"]}

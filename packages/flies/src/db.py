@@ -244,10 +244,20 @@ def save_book(conn, row: dict) -> None:
     _upsert(conn, "fly_books", "book_id", row)
 
 
-def record_decision(conn, *, trade_date: str, arm: str, symbol: str, mode: str, reason: str,
-                    accepted: bool = False, center: float | None = None,
-                    position_id: str | None = None, detail: str | None = None,
-                    when: str | None = None) -> None:
+def record_decision(
+    conn,
+    *,
+    trade_date: str,
+    arm: str,
+    symbol: str,
+    mode: str,
+    reason: str,
+    accepted: bool = False,
+    center: float | None = None,
+    position_id: str | None = None,
+    detail: str | None = None,
+    when: str | None = None,
+) -> None:
     """Append to the decision journal, extending the current run when the reason is unchanged.
 
     "Current run" means the most recent row for this (trade_date, arm, symbol, mode) — so an unchanged
@@ -273,15 +283,35 @@ def record_decision(conn, *, trade_date: str, arm: str, symbol: str, mode: str, 
             "INSERT INTO fly_decisions (trade_date, arm, symbol, mode, reason, accepted, first_seen, "
             "last_seen, occurrences, center_first, center_last, position_id, detail) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
-            (trade_date, arm, symbol, mode, reason, int(accepted), now, now, center, center,
-             position_id, detail),
+            (
+                trade_date,
+                arm,
+                symbol,
+                mode,
+                reason,
+                int(accepted),
+                now,
+                now,
+                center,
+                center,
+                position_id,
+                detail,
+            ),
         )
     conn.commit()
 
 
-def record_iteration(conn, *, iteration_ts: str, trade_date: str, symbol: str, arm: str,
-                     center: float | None, center_reason: str | None,
-                     underlying_price: float | None) -> None:
+def record_iteration(
+    conn,
+    *,
+    iteration_ts: str,
+    trade_date: str,
+    symbol: str,
+    arm: str,
+    center: float | None,
+    center_reason: str | None,
+    underlying_price: float | None,
+) -> None:
     """Record what one arm wanted on one iteration. Idempotent on (iteration_ts, symbol, arm) so a
     re-run of the same snapshot doesn't inflate the divergence denominator."""
     conn.execute(
@@ -292,9 +322,17 @@ def record_iteration(conn, *, iteration_ts: str, trade_date: str, symbol: str, a
     conn.commit()
 
 
-def record_snapshot(conn, *, trade_date: str, symbol: str, status: str,
-                    quotes_fresh: int | None = None, quotes_rejected: int | None = None,
-                    underlying_price: float | None = None, iteration_ts: str | None = None) -> None:
+def record_snapshot(
+    conn,
+    *,
+    trade_date: str,
+    symbol: str,
+    status: str,
+    quotes_fresh: int | None = None,
+    quotes_rejected: int | None = None,
+    underlying_price: float | None = None,
+    iteration_ts: str | None = None,
+) -> None:
     """Record what the feed gave us this tick — on both the snapshot-built and the refused path.
 
     Idempotent on (iteration_ts, symbol) so a re-run of the same tick doesn't double-count. This is
@@ -303,8 +341,7 @@ def record_snapshot(conn, *, trade_date: str, symbol: str, status: str,
     conn.execute(
         "INSERT OR REPLACE INTO fly_snapshots (iteration_ts, trade_date, symbol, status, "
         "quotes_fresh, quotes_rejected, underlying_price) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (iteration_ts or _now(), trade_date, symbol, status, quotes_fresh, quotes_rejected,
-         underlying_price),
+        (iteration_ts or _now(), trade_date, symbol, status, quotes_fresh, quotes_rejected, underlying_price),
     )
     conn.commit()
 

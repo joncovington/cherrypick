@@ -129,8 +129,7 @@ def _meic_new_entries(conn, last_entry_id: int) -> list:
 
 def _meic_new_exits(conn, notified_ids: set) -> list:
     rows = conn.execute(
-        "SELECT id, symbol, risk_profile, exit_reason, pnl, fees "
-        "FROM ic_trades WHERE exit_time IS NOT NULL"
+        "SELECT id, symbol, risk_profile, exit_reason, pnl, fees FROM ic_trades WHERE exit_time IS NOT NULL"
     ).fetchall()
     return [r for r in rows if r["id"] not in notified_ids]
 
@@ -225,9 +224,15 @@ def _fmt_meic_summary(conn, pending: dict, day: str, hhmm: str, prefixes: tuple[
     return f"MEIC width study {hhmm} ET — " + " | ".join(segments)
 
 
-def _meic_process(conn, st: dict, notifier: Notifier, name: str,
-                   summary_prefixes: tuple[str, ...] = (), summary_interval_minutes: float = 15,
-                   now: float | None = None) -> dict:
+def _meic_process(
+    conn,
+    st: dict,
+    notifier: Notifier,
+    name: str,
+    summary_prefixes: tuple[str, ...] = (),
+    summary_interval_minutes: float = 15,
+    now: float | None = None,
+) -> dict:
     now = time.time() if now is None else now
     pending = st.setdefault("pending_summary", {})  # symbol -> {"entries": [profile,...], "exits": [net,...]}
 
@@ -280,15 +285,20 @@ def _meic_process(conn, st: dict, notifier: Notifier, name: str,
         st["last_summary_flush"] = now  # first activation of the digest path — flush from here on
     elif pending and (now - last_flush) >= summary_interval_minutes * 60:
         et = timeutil.et_from_epoch(now)
-        text = _fmt_meic_summary(conn, pending, et.strftime("%Y-%m-%d"), et.strftime("%H:%M"),
-                                  summary_prefixes)
+        text = _fmt_meic_summary(
+            conn, pending, et.strftime("%Y-%m-%d"), et.strftime("%H:%M"), summary_prefixes
+        )
         notifier.notify("INFO", f"trade.{name}.summary.{int(now)}", "Width study digest", text)
         st["pending_summary"] = {}
         st["last_summary_flush"] = now
         summary_pushed = True
 
-    return {"entries_notified": len(entries), "stops_notified": stops_notified,
-            "exits_notified": len(exits), "summary_pushed": summary_pushed}
+    return {
+        "entries_notified": len(entries),
+        "stops_notified": stops_notified,
+        "exits_notified": len(exits),
+        "summary_pushed": summary_pushed,
+    }
 
 
 # --------------------------------------------------------------------------- Earnings trades schema
@@ -552,9 +562,14 @@ def run(cfg: dict | None = None) -> dict:
                     summary[name] = {"seeded": True}
                     continue
                 if schema == "meic_ic":
-                    summary[name] = process_fn(conn, st, notifier, name,
-                                                summary_prefixes=summary_prefixes,
-                                                summary_interval_minutes=summary_interval_minutes)
+                    summary[name] = process_fn(
+                        conn,
+                        st,
+                        notifier,
+                        name,
+                        summary_prefixes=summary_prefixes,
+                        summary_interval_minutes=summary_interval_minutes,
+                    )
                 else:
                     summary[name] = process_fn(conn, st, notifier, name)
             finally:

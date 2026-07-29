@@ -29,11 +29,13 @@ class FakeStore:
         return FakeStore.data.get((self.service, key))
 
 
-CFG = {"modules": {
-    "meic": {"enabled": True},                      # keyring_service via known defaults
-    "flies": {"enabled": True},
-    "gex": {"enabled": True},                       # no service, not even a default -> n/a
-}}
+CFG = {
+    "modules": {
+        "meic": {"enabled": True},  # keyring_service via known defaults
+        "flies": {"enabled": True},
+        "gex": {"enabled": True},  # no service, not even a default -> n/a
+    }
+}
 
 
 @pytest.fixture(autouse=True)
@@ -72,7 +74,7 @@ def test_status_distinguishes_own_shared_missing():
     rows = {m["module"]: m for m in ob["modules"]}
     assert rows["meic"]["credentials"] == "own"
     assert rows["meic"]["account_source"] == "own"
-    assert rows["flies"]["credentials"] == "shared"      # inherits the suite login
+    assert rows["flies"]["credentials"] == "shared"  # inherits the suite login
     assert rows["flies"]["account"] == "****2375" and rows["flies"]["account_source"] == "shared"
     assert rows["gex"]["credentials"] == "n/a"
     assert ob["shared"]["account"] == "****2375"
@@ -89,10 +91,18 @@ def test_status_missing_when_neither_layer_has_credentials():
 # --------------------------------------------------------------------------- doctor: yellow
 def test_doctor_onboarding_is_warn_never_fail(monkeypatch):
     from cherrypick.orchestrator import doctor
-    monkeypatch.setattr(accounts, "onboarding_status", lambda cfg: {
-        "ok": True, "shared": {"credentials": False, "account": None},
-        "modules": [{"module": "meic", "credentials": "missing", "account": None,
-                     "account_source": None}]})
+
+    monkeypatch.setattr(
+        accounts,
+        "onboarding_status",
+        lambda cfg: {
+            "ok": True,
+            "shared": {"credentials": False, "account": None},
+            "modules": [
+                {"module": "meic", "credentials": "missing", "account": None, "account_source": None}
+            ],
+        },
+    )
     checks = {c.name: c for c in doctor.run({"modules": {}}, fast=True)}
     ob = checks["onboarding"]
     # The confirmed decision: yellow, not red — paper collection runs fine without credentials.
@@ -105,6 +115,7 @@ def test_wizard_migration_offer_respects_no(monkeypatch):
     FakeStore.data[("meicagent", CLIENT_SECRET)] = "c"
     monkeypatch.setattr(connect, "subprocess", None)  # any child launch would explode
     import cherrypick.core.auth as _auth
+
     monkeypatch.setattr(_auth, "CredentialStore", FakeStore)
     out = connect._offer_migration(CFG, prompt_fn=lambda _: "n")
     assert out == []  # declined -> nothing launched, nothing migrated
@@ -114,6 +125,7 @@ def test_wizard_migration_runs_per_service_on_yes(monkeypatch):
     FakeStore.data[("meicagent", CLIENT_SECRET)] = "c"
     FakeStore.data[("fliesagent", REFRESH_TOKEN)] = "r"
     import cherrypick.core.auth as _auth
+
     monkeypatch.setattr(_auth, "CredentialStore", FakeStore)
     launched = []
 
@@ -147,6 +159,7 @@ def test_core_env_pythonpath_actually_imports_the_core_package():
     env = connect._core_env()
     root = env["PYTHONPATH"].split(os.pathsep)[0]
     assert (Path(root) / "cherrypick" / "core" / "auth" / "__init__.py").exists()
-    r = subprocess.run([sys.executable, "-m", "cherrypick.core.auth", "status"],
-                       capture_output=True, text=True, env=env)
+    r = subprocess.run(
+        [sys.executable, "-m", "cherrypick.core.auth", "status"], capture_output=True, text=True, env=env
+    )
     assert r.returncode == 0 and '"service": "cherrypick-broker"' in r.stdout

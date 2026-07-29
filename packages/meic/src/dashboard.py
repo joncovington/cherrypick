@@ -27,9 +27,11 @@ import paths as _paths  # noqa: E402
 
 try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
     from zoneinfo import ZoneInfo
+
     _ET = ZoneInfo("America/New_York")
 except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
+
     _ET = pytz.timezone("America/New_York")
 
 
@@ -53,11 +55,12 @@ def _month_start() -> str:
 def _year_start() -> str:
     return datetime.now(_ET).strftime("%Y-01-01")
 
+
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
-_DB_PATH        = str(_paths.live_db_path())
-_PAPER_DB_PATH  = str(_paths.paper_db_path())
-_CACHE_DB_PATH  = str(_paths.stream_cache_path())
+_DB_PATH = str(_paths.live_db_path())
+_PAPER_DB_PATH = str(_paths.paper_db_path())
+_CACHE_DB_PATH = str(_paths.stream_cache_path())
 # "live" (default, meic_trades.db) or "paper" (paper_trades.db) in the data home — set from --mode
 # in main(). Drives the PAPER MODE banner; _DB_PATH itself is the only thing that changes
 # which data actually gets served. _CACHE_DB_PATH (the streamer cache) is never mode-dependent
@@ -83,6 +86,7 @@ def _one(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> dict | None:
 
 # ── Stats helpers ─────────────────────────────────────────────────────────────
 
+
 def _wl_ratio(wins: int, losses: int) -> float | None:
     total = (wins or 0) + (losses or 0)
     return round((wins or 0) / total * 100, 1) if total > 0 else None
@@ -94,9 +98,7 @@ def _fetch_spread_legs(conn: sqlite3.Connection, ic_order_ids: list[str]) -> dic
     if not ic_order_ids:
         return {}
     placeholders = ", ".join(["?"] * len(ic_order_ids))
-    rows = _rows(conn,
-        f"SELECT * FROM ic_spread_legs WHERE ic_order_id IN ({placeholders})",
-        ic_order_ids)
+    rows = _rows(conn, f"SELECT * FROM ic_spread_legs WHERE ic_order_id IN ({placeholders})", ic_order_ids)
     legs: dict[str, dict[str, dict]] = {}
     for r in rows:
         legs.setdefault(r["ic_order_id"], {})[r["side"]] = r
@@ -115,7 +117,9 @@ def _leg_outcome(leg_status: str | None, leg_pnl: float | None) -> tuple[int, in
     return (0, 0)
 
 
-def _spread_wins_losses(trade_status: str, trade_pnl: float | None, put_leg: dict | None, call_leg: dict | None) -> tuple[int, int]:
+def _spread_wins_losses(
+    trade_status: str, trade_pnl: float | None, put_leg: dict | None, call_leg: dict | None
+) -> tuple[int, int]:
     """Return (spread_wins, spread_losses) for one IC, counting each leg separately.
     Prefers real per-leg records. A side with no leg row is either (a) part of a
     legacy trade recorded before per-leg tracking existed — both sides then share
@@ -148,8 +152,13 @@ def _spread_wins_losses(trade_status: str, trade_pnl: float | None, put_leg: dic
     return (pw + cw, pl_ + cl_)
 
 
-def _stats_for_period(conn: sqlite3.Connection, start: str | None = None, end: str | None = None,
-                       symbol: str | None = None, profile: str | None = None) -> dict:
+def _stats_for_period(
+    conn: sqlite3.Connection,
+    start: str | None = None,
+    end: str | None = None,
+    symbol: str | None = None,
+    profile: str | None = None,
+) -> dict:
     """Compute stats for a date range, querying ic_trades directly for accuracy.
     start/end are inclusive YYYY-MM-DD strings; omit to mean unbounded. symbol filters to
     one traded symbol; omit (or "ALL") for the account-wide total across every symbol —
@@ -171,9 +180,9 @@ def _stats_for_period(conn: sqlite3.Connection, start: str | None = None, end: s
     if profile and profile.upper() != "ALL" and _has_column(conn, "ic_trades", "risk_profile"):
         where.append("risk_profile = ?")
         params.append(profile)
-    rows = _rows(conn,
-        f"SELECT ic_order_id, pnl, fees, status FROM ic_trades WHERE {' AND '.join(where)}",
-        params)
+    rows = _rows(
+        conn, f"SELECT ic_order_id, pnl, fees, status FROM ic_trades WHERE {' AND '.join(where)}", params
+    )
     net_pnl = 0.0
     total_trades = 0
     wins = 0
@@ -190,10 +199,10 @@ def _stats_for_period(conn: sqlite3.Connection, start: str | None = None, end: s
             else:
                 losses += 1
     result = {
-        "net_pnl":      round(net_pnl, 2),
+        "net_pnl": round(net_pnl, 2),
         "total_trades": total_trades,
-        "wins":         wins,
-        "losses":       losses,
+        "wins": wins,
+        "losses": losses,
     }
     result["wl_ratio"] = _wl_ratio(wins, losses)
     return result
@@ -229,8 +238,9 @@ def _period_bucket_key(granularity: str, trade_date: str) -> str:
     return trade_date
 
 
-def _pnl_series(conn: sqlite3.Connection, granularity: str, symbol: str | None = None,
-                 profile: str | None = None) -> list[dict]:
+def _pnl_series(
+    conn: sqlite3.Connection, granularity: str, symbol: str | None = None, profile: str | None = None
+) -> list[dict]:
     """Time-bucketed net P&L / win-rate / profit-factor series for the Performance view.
 
     Reuses _stats_for_period's exact WHERE clause and net_pnl convention (sum of the `pnl`
@@ -250,17 +260,29 @@ def _pnl_series(conn: sqlite3.Connection, granularity: str, symbol: str | None =
     if profile and _has_column(conn, "ic_trades", "risk_profile"):
         where.append("risk_profile = ?")
         params.append(profile)
-    rows = _rows(conn,
+    rows = _rows(
+        conn,
         f"SELECT ic_order_id, trade_date, pnl, fees, net_credit, status FROM ic_trades "
-        f"WHERE {' AND '.join(where)} ORDER BY trade_date", params)
+        f"WHERE {' AND '.join(where)} ORDER BY trade_date",
+        params,
+    )
 
     buckets: dict[str, dict] = {}
     for r in rows:
         key = _period_bucket_key(granularity, r["trade_date"])
-        b = buckets.setdefault(key, {
-            "period": key, "net_pnl": 0.0, "gross_credit": 0.0, "fees": 0.0,
-            "trades": 0, "wins": 0, "losses": 0, "trade_pnls": [],
-        })
+        b = buckets.setdefault(
+            key,
+            {
+                "period": key,
+                "net_pnl": 0.0,
+                "gross_credit": 0.0,
+                "fees": 0.0,
+                "trades": 0,
+                "wins": 0,
+                "losses": 0,
+                "trade_pnls": [],
+            },
+        )
         pnl = float(r.get("pnl") or 0)
         b["net_pnl"] += pnl
         b["gross_credit"] += float(r.get("net_credit") or 0)
@@ -319,14 +341,14 @@ def _risk_metrics(daily_series: list[dict], bankroll: float = _BANKROLL_BASE) ->
             return None
         m = sum(values) / len(values)
         var = sum((v - m) ** 2 for v in values) / (len(values) - 1)
-        return var ** 0.5
+        return var**0.5
 
     sd = _stdev(returns)
-    sharpe = round(mean_r / sd * (252 ** 0.5), 3) if sd else None
+    sharpe = round(mean_r / sd * (252**0.5), 3) if sd else None
 
     downside = [r for r in returns if r < 0]
     dd_sd = _stdev(downside) if len(downside) >= 2 else None
-    sortino = round(mean_r / dd_sd * (252 ** 0.5), 3) if dd_sd else None
+    sortino = round(mean_r / dd_sd * (252**0.5), 3) if dd_sd else None
 
     total_return = sum(returns)
     max_dd = max((b["drawdown"] for b in daily_series), default=0.0)
@@ -338,8 +360,11 @@ def _risk_metrics(daily_series: list[dict], bankroll: float = _BANKROLL_BASE) ->
     recovery_factor = round(net_pnl_total / max_dd, 3) if max_dd > 0 else None
 
     return {
-        "sharpe": sharpe, "sortino": sortino, "calmar": calmar,
-        "recovery_factor": recovery_factor, "sample_size": n,
+        "sharpe": sharpe,
+        "sortino": sortino,
+        "calmar": calmar,
+        "recovery_factor": recovery_factor,
+        "sample_size": n,
         # Overfit flags per docs/paper-trading.md's graduation-gate notes — Sharpe > 3 or
         # profit_factor > 4.0 is a curve-fit warning, not a stronger pass.
         "sharpe_overfit_flag": sharpe is not None and sharpe > 3,
@@ -347,6 +372,7 @@ def _risk_metrics(daily_series: list[dict], bankroll: float = _BANKROLL_BASE) ->
 
 
 # ── Per-spread status ─────────────────────────────────────────────────────────
+
 
 def _badge(label: str, btype: str) -> dict:
     return {"label": label, "type": btype}
@@ -373,7 +399,9 @@ def _leg_badge(leg: dict | None) -> dict | None:
     return _badge(status or "unknown", "unknown")
 
 
-def _spread_statuses(trade: dict, put_leg: dict | None = None, call_leg: dict | None = None) -> tuple[dict, dict]:
+def _spread_statuses(
+    trade: dict, put_leg: dict | None = None, call_leg: dict | None = None
+) -> tuple[dict, dict]:
     """Per-spread status badges. Uses real ic_spread_legs rows when available. A side
     with no leg row is either (a) part of a legacy trade recorded before per-leg
     tracking existed — both sides then show the same whole-trade-derived badge — or
@@ -388,11 +416,11 @@ def _spread_statuses(trade: dict, put_leg: dict | None = None, call_leg: dict | 
         time_str = s[11:16] if len(s) >= 16 else ""
 
     monitoring = _badge("monitoring", "monitoring")
-    expired    = _badge("expired",    "expired")
-    pending    = _badge("pending",    "pending")
-    cancelled  = _badge("cancelled",  "cancelled")
-    force      = _badge("force closed", "force_closed")
-    stopped    = _badge(f"STOPPED {time_str}".strip(), "stopped")
+    expired = _badge("expired", "expired")
+    pending = _badge("pending", "pending")
+    cancelled = _badge("cancelled", "cancelled")
+    force = _badge("force closed", "force_closed")
+    stopped = _badge(f"STOPPED {time_str}".strip(), "stopped")
 
     if put_leg is None and call_leg is None:
         if status in ("pending", "partial_entry"):
@@ -453,8 +481,10 @@ def _history_trades(conn, sym_filter, prof_filter, limit=1000):
     """Full Today's-Trades-shape rows across every date (newest first), for the filterable
     trade log. Client filters/sorts within this window; the server just scopes by the two
     global selectors (symbol, profile) and caps the set."""
-    sql = (f"SELECT {_HIST_TRADE_COLS} FROM ic_trades "
-           "WHERE status NOT IN ('cancelled','pending','partial_entry')")
+    sql = (
+        f"SELECT {_HIST_TRADE_COLS} FROM ic_trades "
+        "WHERE status NOT IN ('cancelled','pending','partial_entry')"
+    )
     params: list = []
     if sym_filter:
         sql += " AND symbol = ?"
@@ -488,9 +518,12 @@ def _by_profile_compare(conn, sym_filter):
     if sym_filter:
         where.append("symbol = ?")
         params.append(sym_filter)
-    rows = _rows(conn,
+    rows = _rows(
+        conn,
         f"SELECT risk_profile, trade_date, entry_time, pnl, fees FROM ic_trades "
-        f"WHERE {' AND '.join(where)} ORDER BY risk_profile, trade_date, entry_time", params)
+        f"WHERE {' AND '.join(where)} ORDER BY risk_profile, trade_date, entry_time",
+        params,
+    )
     groups: dict[str, list] = {}
     for r in rows:
         groups.setdefault(r["risk_profile"], []).append(r)
@@ -504,8 +537,7 @@ def _by_profile_compare(conn, sym_filter):
         # Win rate over RESOLVED trades only (pnl recorded), same denominator as
         # db._range_stats_for_rows -- an open trade is not a loss yet.
         resolved_nets = [
-            float(r.get("pnl") or 0) - float(r.get("fees") or 0)
-            for r in rs if r.get("pnl") is not None
+            float(r.get("pnl") or 0) - float(r.get("fees") or 0) for r in rs if r.get("pnl") is not None
         ]
         wins = sum(1 for x in resolved_nets if x > 0)
         gw = sum(x for x in nets if x > 0)
@@ -515,17 +547,19 @@ def _by_profile_compare(conn, sym_filter):
             running += x
             peak = max(peak, running)
             maxdd = max(maxdd, peak - running)
-        out.append({
-            "profile":       prof,
-            "trades":        trades,
-            "gross_pnl":     round(gross, 2),
-            "fees":          round(fees, 2),
-            "net_pnl":       round(net, 2),
-            "win_rate_pct":  round(wins / len(resolved_nets) * 100, 1) if resolved_nets else None,
-            "expectancy":    round(net / trades, 2) if trades else None,
-            "profit_factor": round(gw / gl, 2) if gl > 0 else None,
-            "max_drawdown":  round(maxdd, 2),
-        })
+        out.append(
+            {
+                "profile": prof,
+                "trades": trades,
+                "gross_pnl": round(gross, 2),
+                "fees": round(fees, 2),
+                "net_pnl": round(net, 2),
+                "win_rate_pct": round(wins / len(resolved_nets) * 100, 1) if resolved_nets else None,
+                "expectancy": round(net / trades, 2) if trades else None,
+                "profit_factor": round(gw / gl, 2) if gl > 0 else None,
+                "max_drawdown": round(maxdd, 2),
+            }
+        )
     out.sort(key=lambda d: d["net_pnl"], reverse=True)
     return out
 
@@ -553,12 +587,16 @@ def _by_signal(conn, sym_clause, sym_params):
     price-action signals are captured columns but the paper engine leaves them NULL, and stored
     entry_time mixes timezones, so neither is surfaced.) Honours both global filters via
     sym_clause."""
-    rows = _rows(conn, f"""
+    rows = _rows(
+        conn,
+        f"""
         SELECT trade_date, symbol, call_delta_at_entry, wing_width, pnl, fees
         FROM ic_trades
         WHERE pnl IS NOT NULL
           AND status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
-    """, sym_params)
+    """,
+        sym_params,
+    )
 
     def agg(keyfn, order=None):
         buckets: dict[str, dict] = {}
@@ -574,12 +612,14 @@ def _by_signal(conn, sym_clause, sym_params):
                 b["wins"] += 1
         result = []
         for k, b in buckets.items():
-            result.append({
-                "bucket":       k,
-                "trades":       b["trades"],
-                "avg_pnl":      round(b["net_sum"] / b["trades"], 2) if b["trades"] else None,
-                "win_rate_pct": round(b["wins"] / b["trades"] * 100, 1) if b["trades"] else None,
-            })
+            result.append(
+                {
+                    "bucket": k,
+                    "trades": b["trades"],
+                    "avg_pnl": round(b["net_sum"] / b["trades"], 2) if b["trades"] else None,
+                    "win_rate_pct": round(b["wins"] / b["trades"] * 100, 1) if b["trades"] else None,
+                }
+            )
         if order:
             idx = {v: i for i, v in enumerate(order)}
             result.sort(key=lambda d: idx.get(d["bucket"], len(order)))
@@ -600,16 +640,18 @@ def _by_signal(conn, sym_clause, sym_params):
         return (str(int(w)) if float(w).is_integer() else str(w)) + "-wide"
 
     return {
-        "by_delta":  agg(lambda r: _delta_band(r.get("call_delta_at_entry")), _DELTA_BANDS),
-        "by_wing":   agg(_wing),
+        "by_delta": agg(lambda r: _delta_band(r.get("call_delta_at_entry")), _DELTA_BANDS),
+        "by_wing": agg(_wing),
         "by_symbol": agg(lambda r: r.get("symbol")),
-        "by_dow":    agg(_dow, _DOW_ORDER),
+        "by_dow": agg(_dow, _DOW_ORDER),
     }
 
 
 def _daily_pnl(conn, sym_clause, sym_params):
     """Per-date gross/fees/net + trade count for the calendar heatmap. Honours both filters."""
-    rows = _rows(conn, f"""
+    rows = _rows(
+        conn,
+        f"""
         SELECT trade_date,
                COALESCE(SUM(pnl), 0)  AS gross,
                COALESCE(SUM(fees), 0) AS fees,
@@ -618,22 +660,27 @@ def _daily_pnl(conn, sym_clause, sym_params):
         WHERE status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
         GROUP BY trade_date
         ORDER BY trade_date ASC
-    """, sym_params)
+    """,
+        sym_params,
+    )
     out = []
     for r in rows:
         gross = float(r.get("gross") or 0)
         fees = float(r.get("fees") or 0)
-        out.append({
-            "date":      r["trade_date"],
-            "trades":    r["trades"],
-            "gross_pnl": round(gross, 2),
-            "fees":      round(fees, 2),
-            "net_pnl":   round(gross - fees, 2),
-        })
+        out.append(
+            {
+                "date": r["trade_date"],
+                "trades": r["trades"],
+                "gross_pnl": round(gross, 2),
+                "fees": round(fees, 2),
+                "net_pnl": round(gross - fees, 2),
+            }
+        )
     return out
 
 
 # ── API data builder ──────────────────────────────────────────────────────────
+
 
 def _build_api_data(symbol: str | None = None, profile: str | None = None) -> dict:
     """symbol filters trades/stats/analytics to one traded symbol; omit (or "ALL") for the
@@ -653,14 +700,23 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     conn = _connect()
     today = _today()
 
-    prof_filter = profile if (profile and profile.upper() != "ALL"
-                              and _has_column(conn, "ic_trades", "risk_profile")) else None
+    prof_filter = (
+        profile
+        if (profile and profile.upper() != "ALL" and _has_column(conn, "ic_trades", "risk_profile"))
+        else None
+    )
 
     stats = {
-        "today":    _stats_for_period(conn, start=today, end=today, symbol=sym_filter, profile=prof_filter),
-        "week":     _stats_for_period(conn, start=_week_start(),  end=today, symbol=sym_filter, profile=prof_filter),
-        "month":    _stats_for_period(conn, start=_month_start(), end=today, symbol=sym_filter, profile=prof_filter),
-        "year":     _stats_for_period(conn, start=_year_start(),  end=today, symbol=sym_filter, profile=prof_filter),
+        "today": _stats_for_period(conn, start=today, end=today, symbol=sym_filter, profile=prof_filter),
+        "week": _stats_for_period(
+            conn, start=_week_start(), end=today, symbol=sym_filter, profile=prof_filter
+        ),
+        "month": _stats_for_period(
+            conn, start=_month_start(), end=today, symbol=sym_filter, profile=prof_filter
+        ),
+        "year": _stats_for_period(
+            conn, start=_year_start(), end=today, symbol=sym_filter, profile=prof_filter
+        ),
         "all_time": _stats_for_period(conn, end=today, symbol=sym_filter, profile=prof_filter),
     }
 
@@ -691,24 +747,31 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         trade_legs = today_legs.get(t["ic_order_id"], {})
         put_s, call_s = _spread_statuses(t, trade_legs.get("put"), trade_legs.get("call"))
         row = dict(t)
-        row["put_status"]  = put_s
+        row["put_status"] = put_s
         row["call_status"] = call_s
         trades.append(row)
 
-    last_loop = _one(conn, """
+    last_loop = _one(
+        conn,
+        """
         SELECT loop_time, action, open_trades_n, today_pnl,
                iv_rank, underlying_price, session_quality
         FROM loop_log
         WHERE loop_date = ?
         ORDER BY loop_time DESC LIMIT 1
-    """, (today,))
+    """,
+        (today,),
+    )
 
-    nlv_series = _rows(conn, """
+    nlv_series = _rows(
+        conn,
+        """
         SELECT summary_date AS date, closing_nlv, net_pnl
         FROM daily_summary
         WHERE closing_nlv IS NOT NULL
         ORDER BY summary_date ASC
-    """)
+    """,
+    )
 
     # Combined symbol+profile predicate reused by every analytics/history query below, so both
     # filters scope them identically (the name stays `sym_*` to leave those f-strings untouched).
@@ -718,7 +781,9 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         sym_clause += " AND risk_profile = ?"
         sym_params.append(prof_filter)
 
-    by_session = _rows(conn, f"""
+    by_session = _rows(
+        conn,
+        f"""
         SELECT session_quality,
                COUNT(*) AS total,
                SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0
@@ -729,17 +794,25 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
           AND session_quality IS NOT NULL{sym_clause}
         GROUP BY session_quality
         ORDER BY total DESC
-    """, sym_params)
+    """,
+        sym_params,
+    )
 
-    by_exit = _rows(conn, f"""
+    by_exit = _rows(
+        conn,
+        f"""
         SELECT COALESCE(exit_reason, 'open') AS exit_reason, COUNT(*) AS count
         FROM ic_trades
         WHERE status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
         GROUP BY exit_reason
         ORDER BY count DESC
-    """, sym_params)
+    """,
+        sym_params,
+    )
 
-    by_iv = _rows(conn, f"""
+    by_iv = _rows(
+        conn,
+        f"""
         SELECT
             CASE
                 WHEN iv_rank_at_entry < 0.25 THEN '<25%'
@@ -755,26 +828,37 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
           AND status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
         GROUP BY iv_bucket
         ORDER BY MIN(iv_rank_at_entry)
-    """, sym_params)
+    """,
+        sym_params,
+    )
 
-    fee_row = _one(conn, f"""
+    fee_row = (
+        _one(
+            conn,
+            f"""
         SELECT COALESCE(SUM(net_credit * quantity), 0) AS gross_credit,
                COALESCE(SUM(fees), 0)                  AS total_fees,
                COALESCE(SUM(pnl), 0)                   AS net_pnl
         FROM ic_trades
         WHERE status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
-    """, sym_params) or {}
+    """,
+            sym_params,
+        )
+        or {}
+    )
     gross = float(fee_row.get("gross_credit") or 0)
-    fees  = float(fee_row.get("total_fees") or 0)
-    net   = float(fee_row.get("net_pnl") or 0)
+    fees = float(fee_row.get("total_fees") or 0)
+    net = float(fee_row.get("net_pnl") or 0)
     fee_summary = {
-        "gross_credit":  round(gross, 2),
-        "total_fees":    round(fees, 2),
-        "net_pnl":       round(net, 2),
-        "fee_drag_pct":  round(fees / gross * 100, 1) if gross > 0 else None,
+        "gross_credit": round(gross, 2),
+        "total_fees": round(fees, 2),
+        "net_pnl": round(net, 2),
+        "fee_drag_pct": round(fees / gross * 100, 1) if gross > 0 else None,
     }
 
-    raw_recent = _rows(conn, f"""
+    raw_recent = _rows(
+        conn,
+        f"""
         SELECT trade_date, ic_order_id, symbol, entry_time, exit_time,
                put_strike, call_strike, wing_width,
                net_credit, put_credit, call_credit,
@@ -783,39 +867,47 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         WHERE status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
         ORDER BY trade_date DESC, entry_time DESC
         LIMIT 60
-    """, sym_params)
+    """,
+        sym_params,
+    )
 
     recent_legs = _fetch_spread_legs(conn, [t["ic_order_id"] for t in raw_recent])
     recent_trades = []
     for t in raw_recent:
         trade_legs = recent_legs.get(t["ic_order_id"], {})
         put_s, call_s = _spread_statuses(t, trade_legs.get("put"), trade_legs.get("call"))
-        w, loss = _spread_wins_losses(t.get("status"), t.get("pnl"), trade_legs.get("put"), trade_legs.get("call"))
-        recent_trades.append({
-            "trade_date":    t.get("trade_date"),
-            "ic_order_id":   t.get("ic_order_id"),
-            "symbol":        t.get("symbol"),
-            "entry_time":    t.get("entry_time"),
-            "exit_time":     t.get("exit_time"),
-            "put_strike":    t.get("put_strike"),
-            "call_strike":   t.get("call_strike"),
-            "wing_width":    t.get("wing_width"),
-            "net_credit":    t.get("net_credit"),
-            "put_credit":    t.get("put_credit"),
-            "call_credit":   t.get("call_credit"),
-            "status":        t.get("status"),
-            "exit_reason":   t.get("exit_reason"),
-            "pnl":           t.get("pnl"),
-            "fees":          t.get("fees"),
-            "session_quality": t.get("session_quality"),
-            "put_status":    put_s,
-            "call_status":   call_s,
-            "spread_wins":   w,
-            "spread_losses": loss,
-        })
+        w, loss = _spread_wins_losses(
+            t.get("status"), t.get("pnl"), trade_legs.get("put"), trade_legs.get("call")
+        )
+        recent_trades.append(
+            {
+                "trade_date": t.get("trade_date"),
+                "ic_order_id": t.get("ic_order_id"),
+                "symbol": t.get("symbol"),
+                "entry_time": t.get("entry_time"),
+                "exit_time": t.get("exit_time"),
+                "put_strike": t.get("put_strike"),
+                "call_strike": t.get("call_strike"),
+                "wing_width": t.get("wing_width"),
+                "net_credit": t.get("net_credit"),
+                "put_credit": t.get("put_credit"),
+                "call_credit": t.get("call_credit"),
+                "status": t.get("status"),
+                "exit_reason": t.get("exit_reason"),
+                "pnl": t.get("pnl"),
+                "fees": t.get("fees"),
+                "session_quality": t.get("session_quality"),
+                "put_status": put_s,
+                "call_status": call_s,
+                "spread_wins": w,
+                "spread_losses": loss,
+            }
+        )
 
-    profile_rows = _rows(conn,
-        "SELECT DISTINCT risk_profile FROM ic_trades WHERE risk_profile IS NOT NULL ORDER BY risk_profile")
+    profile_rows = _rows(
+        conn,
+        "SELECT DISTINCT risk_profile FROM ic_trades WHERE risk_profile IS NOT NULL ORDER BY risk_profile",
+    )
     # A DB with no profile-tagged trades (today's live DB, or a fresh paper DB) falls back to
     # a single "live" entry — the profile selector then stays inert, exactly like before this
     # feature existed. A paper DB with real trades naturally returns the four risk profiles as
@@ -824,15 +916,15 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
 
     daily_series = _pnl_series(conn, "daily", symbol=sym_filter, profile=profile)
     performance = {
-        "daily":         daily_series,
-        "weekly":        _pnl_series(conn, "weekly", symbol=sym_filter, profile=profile),
-        "monthly":       _pnl_series(conn, "monthly", symbol=sym_filter, profile=profile),
+        "daily": daily_series,
+        "weekly": _pnl_series(conn, "weekly", symbol=sym_filter, profile=profile),
+        "monthly": _pnl_series(conn, "monthly", symbol=sym_filter, profile=profile),
         "bankroll_base": _BANKROLL_BASE,
-        "risk_metrics":  _risk_metrics(daily_series),
-        "profiles":      profiles,
+        "risk_metrics": _risk_metrics(daily_series),
+        "profiles": profiles,
         "selected_profile": profile or "ALL",
         # Ranked all-profiles scorecard — ignores the profile selector by design (symbol only).
-        "by_profile":    _by_profile_compare(conn, sym_filter),
+        "by_profile": _by_profile_compare(conn, sym_filter),
     }
 
     history_trades = _history_trades(conn, sym_filter, prof_filter)
@@ -855,31 +947,32 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     conn.close()
 
     return {
-        "ok":         True,
-        "as_of":      _now_iso(),
-        "today":      today,
-        "symbols":         _load_symbols(),   # every configured symbol, for the selector
+        "ok": True,
+        "as_of": _now_iso(),
+        "today": today,
+        "symbols": _load_symbols(),  # every configured symbol, for the selector
         "selected_symbol": sym_filter or "ALL",
-        "stats":      stats,
-        "trades":     trades,
-        "last_loop":  last_loop,
+        "stats": stats,
+        "trades": trades,
+        "last_loop": last_loop,
         "nlv_series": nlv_series,
         "performance": performance,
         "width_study": width_study,
         "analytics": {
-            "by_session":    by_session,
-            "by_exit":       by_exit,
-            "by_iv":         by_iv,
-            "fee_summary":   fee_summary,
+            "by_session": by_session,
+            "by_exit": by_exit,
+            "by_iv": by_iv,
+            "fee_summary": fee_summary,
             "recent_trades": recent_trades,
-            "history":       history_trades,
-            "signals":       signals,
-            "daily_pnl":     daily_pnl,
+            "history": history_trades,
+            "signals": signals,
+            "daily_pnl": daily_pnl,
         },
     }
 
 
 # ── symbols ────────────────────────────────────────────────────────────────
+
 
 def _load_symbols() -> list[str]:
     """Every traded symbol, in config order. Falls back to the deprecated
@@ -2322,12 +2415,15 @@ HTML = HTML.replace("</script>\n</body>", viz.CAL_HEAT_JS + viz.TABLE_JS + "</sc
 
 # ── HTTP handler ──────────────────────────────────────────────────────────────
 
+
 class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             page = HTML
             if _MODE == "paper":
-                page = page.replace("<!--MODE_BADGE-->", '<span class="mode-badge">Paper Mode — Simulated</span>')
+                page = page.replace(
+                    "<!--MODE_BADGE-->", '<span class="mode-badge">Paper Mode — Simulated</span>'
+                )
                 page = page.replace("<title>MEICAgent</title>", "<title>MEICAgent — Paper</title>")
             else:
                 page = page.replace("<!--MODE_BADGE-->", "")
@@ -2371,8 +2467,10 @@ class _ThreadingServer(ThreadingMixIn, HTTPServer):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-def _resolve_mode_defaults(mode: str, db_arg: str | None, port_arg: int | None,
-                            default_db_path: str = _DB_PATH) -> tuple[str, int]:
+
+def _resolve_mode_defaults(
+    mode: str, db_arg: str | None, port_arg: int | None, default_db_path: str = _DB_PATH
+) -> tuple[str, int]:
     """Pure resolution of (db_path, port) from --mode/--db/--port. Extracted out of main()
     so the default-resolution logic (the only part of --mode/--db/--port with real branching)
     is unit-testable without spinning up a real HTTP server or parsing sys.argv.
@@ -2393,17 +2491,24 @@ def _resolve_mode_defaults(mode: str, db_arg: str | None, port_arg: int | None,
 def main():
     global _DB_PATH, _MODE
     parser = argparse.ArgumentParser(description="MEICAgent Dashboard")
-    parser.add_argument("--mode", choices=["live", "paper"], default="live",
-                         help="'paper' points the dashboard at the data home's paper_trades.db "
-                              "and defaults the port to 5051, so it can run alongside the live "
-                              "dashboard (port 5050) without conflict.")
-    parser.add_argument("--port", type=int, default=None,
-                         help="Overrides the mode-based default (5050 live / 5051 paper).")
-    parser.add_argument("--db", default=None,
-                         help="Overrides the mode-based default DB path.")
-    parser.add_argument("--no-browser", action="store_true",
-                         help="Don't open a browser tab on start (for headless/background launches, "
-                              "e.g. the suite's `/serve-dashboard all`).")
+    parser.add_argument(
+        "--mode",
+        choices=["live", "paper"],
+        default="live",
+        help="'paper' points the dashboard at the data home's paper_trades.db "
+        "and defaults the port to 5051, so it can run alongside the live "
+        "dashboard (port 5050) without conflict.",
+    )
+    parser.add_argument(
+        "--port", type=int, default=None, help="Overrides the mode-based default (5050 live / 5051 paper)."
+    )
+    parser.add_argument("--db", default=None, help="Overrides the mode-based default DB path.")
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Don't open a browser tab on start (for headless/background launches, "
+        "e.g. the suite's `/serve-dashboard all`).",
+    )
     args = parser.parse_args()
 
     _MODE = args.mode

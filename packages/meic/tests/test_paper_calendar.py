@@ -3,6 +3,7 @@
 Locks in the fix for the old hardcoded-config drift where triple_witching_dates_2026 listed
 2026-06-18 (a Thursday) instead of the real 3rd Friday 2026-06-19.
 """
+
 import sys
 from pathlib import Path
 
@@ -17,7 +18,7 @@ def test_event_day_helper_handles_none_and_bad_input():
 
 
 def test_triple_witching_uses_the_correct_june_friday():
-    assert paper._is_event_day("2026-06-19", paper._cal.is_triple_witching) is True   # correct 3rd Friday
+    assert paper._is_event_day("2026-06-19", paper._cal.is_triple_witching) is True  # correct 3rd Friday
     assert paper._is_event_day("2026-06-18", paper._cal.is_triple_witching) is False  # the old config bug
 
 

@@ -217,8 +217,13 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     # Don't count a connection that has not had time to populate yet — a restart takes a few seconds to
     # resubscribe, and without this the next tick would see stale data and restart again, forever.
     settling = connection_age is not None and connection_age < limit
-    if (running and worst_stale is not None and worst_stale > limit and not settling
-            and spec.get("auto_restart")):
+    if (
+        running
+        and worst_stale is not None
+        and worst_stale > limit
+        and not settling
+        and spec.get("auto_restart")
+    ):
         _stop_streamer(root, spec)
         started = _start_streamer(root, spec["start_argv"])
         findings.append(
@@ -523,8 +528,9 @@ def _eod_launch(verb: str) -> bool:
     return _start_streamer(_RUN_PY.parent, [str(_RUN_PY), verb])
 
 
-def _check_eval_activity(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool,
-                         settings: dict[str, Any]) -> list[Finding]:
+def _check_eval_activity(
+    name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool, settings: dict[str, Any]
+) -> list[Finding]:
     """Is the loop actually EVALUATING candidates (not just writing a file), and is it deciding sensibly?
 
     Freshness only proves the loop ran; this proves it did meaningful work. Rejecting every candidate is
@@ -539,7 +545,9 @@ def _check_eval_activity(name: str, mcfg: dict[str, Any], now_et: datetime, in_s
         return []
     label = name.upper() if len(name) <= 4 else name.capitalize()
     status, detail = eval_activity.assess(
-        act, window_min=settings["window_minutes"], eval_stale_min=settings["stale_minutes"],
+        act,
+        window_min=settings["window_minutes"],
+        eval_stale_min=settings["stale_minutes"],
         error_frac_warn=settings["error_fraction"],
     )
     finding = WARN if status == eval_activity.WARN else OK

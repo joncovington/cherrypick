@@ -102,10 +102,18 @@ def test_strategy_ts_payload_includes_drawdown():
 
 def test_weekly_pnl_html_buckets_by_iso_week():
     trades = [
-        {"pnl": 100.0, "entry_cost": 0.0, "exit_cost": 0.0,
-         "closed_at": datetime(2026, 7, 20, 10, 0).timestamp()},  # ISO week 30
-        {"pnl": -40.0, "entry_cost": 0.0, "exit_cost": 0.0,
-         "closed_at": datetime(2026, 7, 27, 10, 0).timestamp()},  # ISO week 31
+        {
+            "pnl": 100.0,
+            "entry_cost": 0.0,
+            "exit_cost": 0.0,
+            "closed_at": datetime(2026, 7, 20, 10, 0).timestamp(),
+        },  # ISO week 30
+        {
+            "pnl": -40.0,
+            "entry_cost": 0.0,
+            "exit_cost": 0.0,
+            "closed_at": datetime(2026, 7, 27, 10, 0).timestamp(),
+        },  # ISO week 31
     ]
     html = sd._weekly_pnl_html(trades)
     assert "2026-W30" in html and "2026-W31" in html

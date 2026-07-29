@@ -17,16 +17,34 @@ def _ns(**kwargs):
 
 
 def _save(order_id, symbol, strategy, entry_credit):
-    db_paper.cmd_save_trade(_ns(data=json.dumps({
-        "order_id": order_id, "symbol": symbol, "strategy": strategy,
-        "expiration": "2026-08-21", "entry_credit": entry_credit, "legs_json": "[]",
-    })))
+    db_paper.cmd_save_trade(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": order_id,
+                    "symbol": symbol,
+                    "strategy": strategy,
+                    "expiration": "2026-08-21",
+                    "entry_credit": entry_credit,
+                    "legs_json": "[]",
+                }
+            )
+        )
+    )
 
 
 def _close(order_id, exit_debit, pnl):
-    db_paper.cmd_save_close(_ns(data=json.dumps({
-        "order_id": order_id, "exit_debit": exit_debit, "pnl": pnl,
-    })))
+    db_paper.cmd_save_close(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": order_id,
+                    "exit_debit": exit_debit,
+                    "pnl": pnl,
+                }
+            )
+        )
+    )
 
 
 def test_save_and_get_open_positions_roundtrip():
@@ -38,9 +56,20 @@ def test_save_and_get_open_positions_roundtrip():
 def test_pnl_summary_empty():
     result = db_paper.cmd_get_pnl_summary(_ns(strategy=None, profile=None))
     assert result == {
-        "ok": True, "strategy_filter": None, "profile_filter": None, "total_trades": 0,
-        "total_pnl": 0.0, "avg_pnl": None, "win_count": 0, "loss_count": 0, "win_rate": None,
-        "avg_win": None, "avg_loss": None, "by_strategy": {}, "by_profile": {}, "trades": [],
+        "ok": True,
+        "strategy_filter": None,
+        "profile_filter": None,
+        "total_trades": 0,
+        "total_pnl": 0.0,
+        "avg_pnl": None,
+        "win_count": 0,
+        "loss_count": 0,
+        "win_rate": None,
+        "avg_win": None,
+        "avg_loss": None,
+        "by_strategy": {},
+        "by_profile": {},
+        "trades": [],
     }
 
 
@@ -120,12 +149,25 @@ def test_migration_adds_new_columns_without_dropping_rows(tmp_path, monkeypatch)
 
 
 def test_save_trade_persists_profile_quantity_and_costs():
-    db_paper.cmd_save_trade(_ns(data=json.dumps({
-        "order_id": "PT1", "symbol": "AAPL", "strategy": "atm_calendar",
-        "expiration": "2026-08-21", "legs_json": "[]", "entry_credit": -15.60,
-        "profile": "strat_test", "quantity": 5, "capital_at_risk": 1560.0,
-        "entry_cost": 12.30, "entry_context": {"iv_rv_ratio": 1.1, "dispersion": 0.12},
-    })))
+    db_paper.cmd_save_trade(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": "PT1",
+                    "symbol": "AAPL",
+                    "strategy": "atm_calendar",
+                    "expiration": "2026-08-21",
+                    "legs_json": "[]",
+                    "entry_credit": -15.60,
+                    "profile": "strat_test",
+                    "quantity": 5,
+                    "capital_at_risk": 1560.0,
+                    "entry_cost": 12.30,
+                    "entry_context": {"iv_rv_ratio": 1.1, "dispersion": 0.12},
+                }
+            )
+        )
+    )
     positions = db_paper.cmd_get_open_positions(_ns())["positions"]
     row = positions[0]
     assert row["profile"] == "strat_test"
@@ -137,19 +179,39 @@ def test_save_trade_persists_profile_quantity_and_costs():
 
 def test_save_close_persists_exit_cost():
     _save("PC1", "AAPL", "iron_fly", 2.0)
-    db_paper.cmd_save_close(_ns(data=json.dumps({
-        "order_id": "PC1", "exit_debit": 1.0, "pnl": 100.0, "exit_cost": 3.40,
-    })))
+    db_paper.cmd_save_close(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": "PC1",
+                    "exit_debit": 1.0,
+                    "pnl": 100.0,
+                    "exit_cost": 3.40,
+                }
+            )
+        )
+    )
     result = db_paper.cmd_get_pnl_summary(_ns(strategy=None, profile=None))
     assert result["trades"][0]["exit_cost"] == pytest.approx(3.40)
 
 
 def test_log_scan_persists_profile():
-    db_paper.cmd_log_scan(_ns(data=json.dumps({
-        "scan_date": "2026-07-08", "symbol": "AAPL", "strategy": "iron_fly",
-        "tier": "Tier 1", "outcome": "Tier 1", "profile": "strat_test",
-    })))
+    db_paper.cmd_log_scan(
+        _ns(
+            data=json.dumps(
+                {
+                    "scan_date": "2026-07-08",
+                    "symbol": "AAPL",
+                    "strategy": "iron_fly",
+                    "tier": "Tier 1",
+                    "outcome": "Tier 1",
+                    "profile": "strat_test",
+                }
+            )
+        )
+    )
     import sqlite3
+
     conn = sqlite3.connect(db_paper.DB_PATH)
     row = conn.execute("SELECT profile FROM scan_log WHERE symbol = 'AAPL'").fetchone()
     conn.close()
@@ -157,18 +219,38 @@ def test_log_scan_persists_profile():
 
 
 def test_pnl_summary_filters_by_profile():
-    db_paper.cmd_save_trade(_ns(data=json.dumps({
-        "order_id": "PB1", "symbol": "AAPL", "strategy": "iron_fly",
-        "expiration": "2026-08-21", "legs_json": "[]", "entry_credit": 2.0,
-        "profile": "conservative",
-    })))
+    db_paper.cmd_save_trade(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": "PB1",
+                    "symbol": "AAPL",
+                    "strategy": "iron_fly",
+                    "expiration": "2026-08-21",
+                    "legs_json": "[]",
+                    "entry_credit": 2.0,
+                    "profile": "conservative",
+                }
+            )
+        )
+    )
     db_paper.cmd_save_close(_ns(data=json.dumps({"order_id": "PB1", "exit_debit": 1.0, "pnl": 100.0})))
 
-    db_paper.cmd_save_trade(_ns(data=json.dumps({
-        "order_id": "PB2", "symbol": "MSFT", "strategy": "iron_fly",
-        "expiration": "2026-08-21", "legs_json": "[]", "entry_credit": 2.0,
-        "profile": "aggressive",
-    })))
+    db_paper.cmd_save_trade(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": "PB2",
+                    "symbol": "MSFT",
+                    "strategy": "iron_fly",
+                    "expiration": "2026-08-21",
+                    "legs_json": "[]",
+                    "entry_credit": 2.0,
+                    "profile": "aggressive",
+                }
+            )
+        )
+    )
     db_paper.cmd_save_close(_ns(data=json.dumps({"order_id": "PB2", "exit_debit": 1.0, "pnl": 50.0})))
 
     result = db_paper.cmd_get_pnl_summary(_ns(strategy=None, profile="conservative"))
@@ -178,20 +260,39 @@ def test_pnl_summary_filters_by_profile():
 
 
 def test_save_trade_persists_entry_iv():
-    db_paper.cmd_save_trade(_ns(data=json.dumps({
-        "order_id": "IV1", "symbol": "AAPL", "strategy": "iron_fly",
-        "expiration": "2026-08-21", "legs_json": "[]", "entry_credit": 2.0,
-        "entry_iv": 0.45,
-    })))
+    db_paper.cmd_save_trade(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": "IV1",
+                    "symbol": "AAPL",
+                    "strategy": "iron_fly",
+                    "expiration": "2026-08-21",
+                    "legs_json": "[]",
+                    "entry_credit": 2.0,
+                    "entry_iv": 0.45,
+                }
+            )
+        )
+    )
     positions = db_paper.cmd_get_open_positions(_ns())["positions"]
     assert positions[0]["entry_iv"] == pytest.approx(0.45)
 
 
 def test_save_close_persists_exit_iv():
     _save("IV2", "AAPL", "iron_fly", 2.0)
-    db_paper.cmd_save_close(_ns(data=json.dumps({
-        "order_id": "IV2", "exit_debit": 1.0, "pnl": 100.0, "exit_iv": 0.20,
-    })))
+    db_paper.cmd_save_close(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": "IV2",
+                    "exit_debit": 1.0,
+                    "pnl": 100.0,
+                    "exit_iv": 0.20,
+                }
+            )
+        )
+    )
     result = db_paper.cmd_get_pnl_summary(_ns(strategy=None, profile=None))
     assert result["trades"][0]["exit_iv"] == pytest.approx(0.20)
 
@@ -230,12 +331,15 @@ def test_migration_adds_iv_columns_to_legacy_schema(tmp_path, monkeypatch):
 
 # --- record_close_failure: stranded positions accumulate visible attempts -------
 
+
 def test_record_close_failure_increments_attempts():
     _save("S1", "HALT", "iron_fly", 2.0)
-    r1 = db_paper.cmd_record_close_failure(_ns(data=json.dumps(
-        {"order_id": "S1", "reason": "leg_quotes_unavailable"})))
-    r2 = db_paper.cmd_record_close_failure(_ns(data=json.dumps(
-        {"order_id": "S1", "reason": "leg_quotes_unavailable"})))
+    r1 = db_paper.cmd_record_close_failure(
+        _ns(data=json.dumps({"order_id": "S1", "reason": "leg_quotes_unavailable"}))
+    )
+    r2 = db_paper.cmd_record_close_failure(
+        _ns(data=json.dumps({"order_id": "S1", "reason": "leg_quotes_unavailable"}))
+    )
     assert r1 == {"ok": True, "order_id": "S1", "close_attempts": 1}
     assert r2["close_attempts"] == 2
     pos = db_paper.cmd_get_open_positions(_ns())["positions"][0]
@@ -247,9 +351,7 @@ def test_record_close_failure_increments_attempts():
 def test_record_close_failure_ignores_closed_and_unknown_positions():
     _save("C1", "AAPL", "iron_fly", 2.0)
     _close("C1", 1.0, 100.0)
-    closed = db_paper.cmd_record_close_failure(_ns(data=json.dumps(
-        {"order_id": "C1", "reason": "x"})))
-    unknown = db_paper.cmd_record_close_failure(_ns(data=json.dumps(
-        {"order_id": "NOPE", "reason": "x"})))
+    closed = db_paper.cmd_record_close_failure(_ns(data=json.dumps({"order_id": "C1", "reason": "x"})))
+    unknown = db_paper.cmd_record_close_failure(_ns(data=json.dumps({"order_id": "NOPE", "reason": "x"})))
     assert closed["ok"] is False
     assert unknown["ok"] is False

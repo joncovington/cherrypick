@@ -31,6 +31,7 @@ def tick_floor(price: float, tick: float = TICK) -> float:
 
 def _leg_quote(snapshot: dict, side: str, strike: float) -> dict:
     from engine import quote
+
     q = quote(snapshot, side, strike)
     if q is None:
         raise ValueError(f"no quote for {side} {strike}")

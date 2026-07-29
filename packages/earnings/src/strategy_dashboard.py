@@ -50,9 +50,11 @@ from strategy_report import STRATEGY_NAMES  # noqa: E402
 
 try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
     from zoneinfo import ZoneInfo
+
     _ET = ZoneInfo("America/New_York")
 except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
+
     _ET = pytz.timezone("America/New_York")
 
 # Generated dashboards live under the shared cherrypick home (~/.cherrypick/data/earnings/reports),
@@ -98,17 +100,28 @@ def _metrics_table_html(core_five: dict, iv_crush: dict | None = None) -> str:
     sh = core_five["sharpe"]
     mdd = core_five["max_drawdown"]["value"]
     rows = [
-        ("Win rate", f"{wr*100:.1f}%" if wr is not None else "n/a", ""),
-        ("Profit factor", f"{pf['value']:.2f}" if pf["value"] not in (None,) else "n/a", _status_span(pf["pass"])),
+        ("Win rate", f"{wr * 100:.1f}%" if wr is not None else "n/a", ""),
+        (
+            "Profit factor",
+            f"{pf['value']:.2f}" if pf["value"] not in (None,) else "n/a",
+            _status_span(pf["pass"]),
+        ),
         ("Expectancy (net)", viz.fmt_money(exp["value"], none="n/a"), _status_span(exp["pass"])),
-        ("Sharpe (trade)", f"{sh['value']:.2f}" if sh["value"] is not None else "n/a", _status_span(sh["pass"])),
-        ("Max drawdown", f"{viz.fmt_money(mdd['absolute'])} ({mdd['pct']*100:.1f}%)",
-         _status_span(core_five["max_drawdown"]["pass"])),
+        (
+            "Sharpe (trade)",
+            f"{sh['value']:.2f}" if sh["value"] is not None else "n/a",
+            _status_span(sh["pass"]),
+        ),
+        (
+            "Max drawdown",
+            f"{viz.fmt_money(mdd['absolute'])} ({mdd['pct'] * 100:.1f}%)",
+            _status_span(core_five["max_drawdown"]["pass"]),
+        ),
     ]
     if iv_crush is not None:
         if iv_crush["avg_crush"] is not None:
             label = "Avg IV crush" if iv_crush["avg_crush"] >= 0 else "Avg IV expansion"
-            value = f"{abs(iv_crush['avg_crush'])*100:.1f} vol pts (n={iv_crush['sample_count']})"
+            value = f"{abs(iv_crush['avg_crush']) * 100:.1f} vol pts (n={iv_crush['sample_count']})"
         else:
             value = "n/a"
             label = "Avg IV crush"
@@ -227,7 +240,7 @@ def _regime_table_html(all_buckets: dict[str, dict[str, int]]) -> str:
     return (
         f'<table style="border-collapse:collapse;font-size:12px;">'
         f'<thead><tr><th style="text-align:left;padding:3px 8px;font-weight:400;color:{MUTED};">'
-        f'trades</th>{head}</tr></thead><tbody>{"".join(body_rows)}</tbody></table>'
+        f"trades</th>{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>"
     )
 
 
@@ -300,7 +313,7 @@ def _open_positions_section(profile: str) -> str:
         net_str = f"${net:,.0f}" if net >= 0 else f"(${abs(net):,.0f})"
         net_color = GOOD if net >= 0 else BAD
         trs.append(
-            f'<tr>'
+            f"<tr>"
             f'<td style="padding:3px 10px;">{r["strategy"]}</td>'
             f'<td style="padding:3px 10px;">{r["symbol"]}</td>'
             f'<td style="padding:3px 10px;text-align:right;">{r["quantity"]}</td>'
@@ -309,14 +322,14 @@ def _open_positions_section(profile: str) -> str:
             f'<td style="padding:3px 10px;text-align:right;">${risk:,.0f}</td>'
             f'<td style="padding:3px 10px;text-align:right;">${cost:,.0f}</td>'
             f'<td style="padding:3px 10px;">{r["expiration"] or ""}</td>'
-            f'</tr>'
+            f"</tr>"
         )
     total_row = (
         f'<tr style="border-top:1px solid {GRID};color:{MUTED};">'
         f'<td style="padding:3px 10px;" colspan="5">Total ({len(rows)} open)</td>'
         f'<td style="padding:3px 10px;text-align:right;">${tot_risk:,.0f}</td>'
         f'<td style="padding:3px 10px;text-align:right;">${tot_cost:,.0f}</td>'
-        f'<td></td></tr>'
+        f"<td></td></tr>"
     )
     table = f"""
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -342,7 +355,9 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
     capital_basis = config.get("available_capital_paper_mode")
 
     all_trades = sm.load_closed_trades(profile=profile, since=since)
-    per_strategy = {name: sm.load_closed_trades(profile=profile, strategy=name, since=since) for name in STRATEGY_NAMES}
+    per_strategy = {
+        name: sm.load_closed_trades(profile=profile, strategy=name, since=since) for name in STRATEGY_NAMES
+    }
 
     # --- Header KPIs (5, decision metric top-left) ---
     portfolio_summary = sm.strategy_summary(all_trades, capital_basis)
@@ -353,14 +368,18 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
     # --- Timeframe panels (portfolio headline equity curve, one inline viz card each) ---
     tf_panels = {
         "cumulative": viz.card_inline_html(
-            "tf-cumulative", "Portfolio net P&L — cumulative", _portfolio_ts_payload(all_trades, None)),
+            "tf-cumulative", "Portfolio net P&L — cumulative", _portfolio_ts_payload(all_trades, None)
+        ),
         "rolling4w": viz.card_inline_html(
-            "tf-rolling4w", "Portfolio net P&L — rolling 4-week", _portfolio_ts_payload(all_trades, 28)),
+            "tf-rolling4w", "Portfolio net P&L — rolling 4-week", _portfolio_ts_payload(all_trades, 28)
+        ),
         "rolling1w": viz.card_inline_html(
-            "tf-rolling1w", "Portfolio net P&L — rolling 1-week", _portfolio_ts_payload(all_trades, 7)),
+            "tf-rolling1w", "Portfolio net P&L — rolling 1-week", _portfolio_ts_payload(all_trades, 7)
+        ),
         "perweek": (
             '<section class="card"><h2>Portfolio net P&L — per-week</h2>'
-            + _weekly_pnl_html(all_trades) + "</section>"
+            + _weekly_pnl_html(all_trades)
+            + "</section>"
         ),
     }
 
@@ -413,7 +432,7 @@ def build_dashboard(profile: str, since: str | None, mode: str = "paper") -> str
         comparison_rows.append(
             f'<tr><td style="padding:3px 10px;">{name}</td>'
             f'<td style="padding:3px 10px;text-align:right;">{summary["total_trades"]}</td>'
-            f'<td style="padding:3px 10px;text-align:right;">{f"{wr*100:.1f}%" if wr is not None else "n/a"}</td>'
+            f'<td style="padding:3px 10px;text-align:right;">{f"{wr * 100:.1f}%" if wr is not None else "n/a"}</td>'
             f'<td style="padding:3px 10px;text-align:right;">{f"{pf:.2f}" if pf not in (None,) else "n/a"}</td>'
             f'<td style="padding:3px 10px;text-align:right;">{viz.fmt_money(exp_v, none="n/a")}</td>'
             f'<td style="padding:3px 10px;">{_sample_bar(summary["sample"])}</td></tr>'
@@ -499,10 +518,10 @@ body{{background:{BG};color:{FG};font-family:monospace;padding:20px;margin:0}}
     <button onclick="showTF('rolling1w')" style="background:{PANEL_BG};color:{FG};border:1px solid {GRID};padding:4px 10px;margin-right:4px;cursor:pointer;">Rolling 1-week</button>
     <button onclick="showTF('perweek')" style="background:{PANEL_BG};color:{FG};border:1px solid {GRID};padding:4px 10px;cursor:pointer;">Per-week</button>
   </div>
-  <div id="tf-cumulative" class="tf-panel">{tf_panels['cumulative']}</div>
-  <div id="tf-rolling4w" class="tf-panel" style="display:none;">{tf_panels['rolling4w']}</div>
-  <div id="tf-rolling1w" class="tf-panel" style="display:none;">{tf_panels['rolling1w']}</div>
-  <div id="tf-perweek" class="tf-panel" style="display:none;">{tf_panels['perweek']}</div>
+  <div id="tf-cumulative" class="tf-panel">{tf_panels["cumulative"]}</div>
+  <div id="tf-rolling4w" class="tf-panel" style="display:none;">{tf_panels["rolling4w"]}</div>
+  <div id="tf-rolling1w" class="tf-panel" style="display:none;">{tf_panels["rolling1w"]}</div>
+  <div id="tf-perweek" class="tf-panel" style="display:none;">{tf_panels["perweek"]}</div>
 </div>
 
 <h2 style="font-size:15px;border-bottom:1px solid {GRID};padding-bottom:6px;">Open positions</h2>
@@ -542,17 +561,23 @@ function showTF(id) {{
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["live", "paper"], default="paper",
-                        help="'live' reads earnings_trades.db and writes "
-                             "strategy_dashboard_live.html; 'paper' (default) reads "
-                             "paper_trades.db and writes strategy_dashboard.html. Both the DBs and the "
-                             "generated reports live under the cherrypick data home "
-                             "(~/.cherrypick/data/earnings by default or $EARNINGS_DATA_DIR); the reports "
-                             "subdir is created on write.")
+    parser.add_argument(
+        "--mode",
+        choices=["live", "paper"],
+        default="paper",
+        help="'live' reads earnings_trades.db and writes "
+        "strategy_dashboard_live.html; 'paper' (default) reads "
+        "paper_trades.db and writes strategy_dashboard.html. Both the DBs and the "
+        "generated reports live under the cherrypick data home "
+        "(~/.cherrypick/data/earnings by default or $EARNINGS_DATA_DIR); the reports "
+        "subdir is created on write.",
+    )
     parser.add_argument("--db", default=None, help="Overrides the mode-based default DB path.")
-    parser.add_argument("--profile", default=None,
-                        help="Book to report on. Defaults to 'strat_test' in paper mode, "
-                             "'default' in live mode.")
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="Book to report on. Defaults to 'strat_test' in paper mode, 'default' in live mode.",
+    )
     parser.add_argument("--since", default=None)
     args = parser.parse_args()
 

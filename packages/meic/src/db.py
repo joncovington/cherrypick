@@ -19,9 +19,11 @@ import paths as _paths
 
 try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
     from zoneinfo import ZoneInfo
+
     _ET = ZoneInfo("America/New_York")
 except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
+
     _ET = pytz.timezone("America/New_York")
 
 
@@ -31,6 +33,7 @@ def _now_et():
 
 def _today_et():
     return _now_et().strftime("%Y-%m-%d")
+
 
 _DEFAULT_DB_PATH = str(_paths.live_db_path())  # ~/.cherrypick/data/meic/meic_trades.db (or MEIC_DATA_DIR)
 # MEIC_DB_PATH lets the paper-trading engine (src/paper.py) and its skills point every
@@ -224,45 +227,44 @@ def cmd_init_db(_args):
     # Migrations: add columns that may be absent in databases created before this version
     existing = {row[1] for row in conn.execute("PRAGMA table_info(ic_trades)")}
     for col, col_type in [
-        ("long_put_delta_at_entry",  "REAL"),
+        ("long_put_delta_at_entry", "REAL"),
         ("long_call_delta_at_entry", "REAL"),
-        ("iv_skew_signal",              "TEXT"),
-        ("price_action_signal",        "TEXT"),
-        ("put_spread_entry_order_id",  "TEXT"),
+        ("iv_skew_signal", "TEXT"),
+        ("price_action_signal", "TEXT"),
+        ("put_spread_entry_order_id", "TEXT"),
         ("call_spread_entry_order_id", "TEXT"),
-        ("dollar_multiplier",       "REAL DEFAULT 100"),
-        ("risk_profile",           "TEXT"),
-        ("execution_mode",         "TEXT"),
-        ("iv_rank_source",         "TEXT"),
+        ("dollar_multiplier", "REAL DEFAULT 100"),
+        ("risk_profile", "TEXT"),
+        ("execution_mode", "TEXT"),
+        ("iv_rank_source", "TEXT"),
         # GEX regime at entry (see the CREATE above for why). Additive only — the orchestrator reads
         # this table through its `meic_ic` adapter, so columns may be appended but never renamed.
-        ("gex_net_at_entry",       "REAL"),
-        ("gex_positive_at_entry",  "INTEGER"),
-        ("gamma_flip_at_entry",    "REAL"),
-        ("gex_spot_at_entry",      "REAL"),
-        ("gex_net_vol_at_entry",   "REAL"),
-        ("pin_risk_applied",       "INTEGER"),
+        ("gex_net_at_entry", "REAL"),
+        ("gex_positive_at_entry", "INTEGER"),
+        ("gamma_flip_at_entry", "REAL"),
+        ("gex_spot_at_entry", "REAL"),
+        ("gex_net_vol_at_entry", "REAL"),
+        ("pin_risk_applied", "INTEGER"),
         # Stop-rule instrumentation (see the CREATE above). Additive only — the orchestrator reads
         # this table through its `meic_ic` adapter, so columns may be appended but never renamed.
-        ("put_max_cost",           "REAL"),
-        ("call_max_cost",          "REAL"),
-        ("put_settle_value",       "REAL"),
-        ("call_settle_value",      "REAL"),
-        ("settle_underlying",      "REAL"),
+        ("put_max_cost", "REAL"),
+        ("call_max_cost", "REAL"),
+        ("put_settle_value", "REAL"),
+        ("call_settle_value", "REAL"),
+        ("settle_underlying", "REAL"),
         # Feed-quality instrumentation: how many loop iterations this trade could not be
         # marked (missing/crossed leg quotes) and when that last happened. Distinguishes
         # a stalled streamer from a quiet market — the flies fly_snapshots lesson.
-        ("unmarked_iterations",    "INTEGER DEFAULT 0"),
-        ("last_unmarked_at",       "TEXT"),
+        ("unmarked_iterations", "INTEGER DEFAULT 0"),
+        ("last_unmarked_at", "TEXT"),
         # Cost-sensitivity instrumentation: cumulative modeled slippage dollars (entry +
         # priced exits). Linear in the slippage fraction, so stressed-2x net reads off it.
-        ("slippage_dollars",       "REAL DEFAULT 0"),
+        ("slippage_dollars", "REAL DEFAULT 0"),
     ]:
         if col not in existing:
             conn.execute(f"ALTER TABLE ic_trades ADD COLUMN {col} {col_type}")
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_ic_trades_profile_date "
-        "ON ic_trades(risk_profile, trade_date, status)"
+        "CREATE INDEX IF NOT EXISTS idx_ic_trades_profile_date ON ic_trades(risk_profile, trade_date, status)"
     )
     # Drop columns removed from the schema
     if "trend_signal" in existing:
@@ -283,6 +285,7 @@ def cmd_init_db(_args):
 # ---------------------------------------------------------------------------
 # Read commands
 # ---------------------------------------------------------------------------
+
 
 def cmd_get_open_trades(args):
     # --date lets callers iterating a non-"real-today" trade_date (chiefly the paper-trading
@@ -332,9 +335,7 @@ def cmd_get_today_pnl(args):
 def cmd_get_eod_summary(_args):
     today = _today_et()
     conn = _connect()
-    trades = conn.execute(
-        "SELECT * FROM ic_trades WHERE trade_date = ?", (today,)
-    ).fetchall()
+    trades = conn.execute("SELECT * FROM ic_trades WHERE trade_date = ?", (today,)).fetchall()
     trades = [dict(r) for r in trades]
 
     total = len(trades)
@@ -358,35 +359,38 @@ def cmd_get_eod_summary(_args):
     sessions = list({t["session_quality"] for t in trades if t["session_quality"]})
 
     loop_rows = conn.execute(
-        "SELECT * FROM loop_log WHERE loop_date = ? ORDER BY loop_time DESC LIMIT 20",
-        (today,)
+        "SELECT * FROM loop_log WHERE loop_date = ? ORDER BY loop_time DESC LIMIT 20", (today,)
     ).fetchall()
     summary_row = conn.execute(
         "SELECT ai_day_summary, closing_nlv FROM daily_summary WHERE summary_date = ?", (today,)
     ).fetchone()
     conn.close()
 
-    _out({
-        "ok": True,
-        "date": today,
-        "total_entries": total,
-        "entries_filled": filled,
-        "entries_stopped": stopped,
-        "entries_expired": expired,
-        "entries_cancelled": cancelled,
-        "gross_credit": round(gross_credit, 2),
-        "gross_pnl": round(gross_pnl, 2),
-        "fees": round(fees, 2),
-        "net_pnl": round(net_pnl, 2),
-        "win_count": wins,
-        "win_rate_pct": win_rate,
-        "avg_iv_rank": avg_iv,
-        "sessions_entered": sessions,
-        "ai_day_summary": summary_row["ai_day_summary"] if summary_row else None,
-        "closing_nlv": float(summary_row["closing_nlv"]) if summary_row and summary_row["closing_nlv"] else None,
-        "trades": trades,
-        "loop_log": [dict(r) for r in loop_rows],
-    })
+    _out(
+        {
+            "ok": True,
+            "date": today,
+            "total_entries": total,
+            "entries_filled": filled,
+            "entries_stopped": stopped,
+            "entries_expired": expired,
+            "entries_cancelled": cancelled,
+            "gross_credit": round(gross_credit, 2),
+            "gross_pnl": round(gross_pnl, 2),
+            "fees": round(fees, 2),
+            "net_pnl": round(net_pnl, 2),
+            "win_count": wins,
+            "win_rate_pct": win_rate,
+            "avg_iv_rank": avg_iv,
+            "sessions_entered": sessions,
+            "ai_day_summary": summary_row["ai_day_summary"] if summary_row else None,
+            "closing_nlv": float(summary_row["closing_nlv"])
+            if summary_row and summary_row["closing_nlv"]
+            else None,
+            "trades": trades,
+            "loop_log": [dict(r) for r in loop_rows],
+        }
+    )
 
 
 def _range_stats_for_rows(rows: list[dict]) -> dict:
@@ -514,15 +518,17 @@ def cmd_get_range_summary(args):
     }
     by_symbol = {s: _range_stats_for_rows(rs) for s, rs in by_symbol_rows.items()}
 
-    _out({
-        "ok": True,
-        "start": args.start,
-        "end": args.end,
-        "symbol": args.symbol.upper() if args.symbol else None,
-        "portfolios": portfolios,
-        "profiles": profiles,
-        "by_symbol": by_symbol,
-    })
+    _out(
+        {
+            "ok": True,
+            "start": args.start,
+            "end": args.end,
+            "symbol": args.symbol.upper() if args.symbol else None,
+            "portfolios": portfolios,
+            "profiles": profiles,
+            "by_symbol": by_symbol,
+        }
+    )
 
 
 def _rows_dicts(conn: sqlite3.Connection, where: list[str], params: list) -> list[dict]:
@@ -574,15 +580,17 @@ def cmd_get_fee_estimate(args):
     total_contracts = sum((r["quantity"] or 0) for r in rows)
     avg_fee_per_contract = round(total_fees / total_contracts, 2) if total_contracts else None
 
-    _out({
-        "ok": True,
-        "symbol": symbol,
-        "sample_size": sample_size,
-        "avg_fee_per_contract": avg_fee_per_contract,
-        "fallback_per_contract": _ic_open_fee_fallback(symbol),
-        "total_fees": round(total_fees, 2),
-        "total_contracts": total_contracts,
-    })
+    _out(
+        {
+            "ok": True,
+            "symbol": symbol,
+            "sample_size": sample_size,
+            "avg_fee_per_contract": avg_fee_per_contract,
+            "fallback_per_contract": _ic_open_fee_fallback(symbol),
+            "total_fees": round(total_fees, 2),
+            "total_contracts": total_contracts,
+        }
+    )
 
 
 def cmd_get_step_timing(args):
@@ -605,8 +613,7 @@ def cmd_get_step_timing(args):
         where.append("loop_date >= date('now', ?)")
         params.append(f"-{args.lookback_days} days")
     rows = conn.execute(
-        f"SELECT action, symbol, duration_ms FROM loop_log WHERE {' AND '.join(where)} "
-        "ORDER BY id DESC",
+        f"SELECT action, symbol, duration_ms FROM loop_log WHERE {' AND '.join(where)} ORDER BY id DESC",
         params,
     ).fetchall()
     conn.close()
@@ -631,6 +638,7 @@ def cmd_get_step_timing(args):
 # Write commands
 # ---------------------------------------------------------------------------
 
+
 def cmd_save_trade(args):
     data = json.loads(args.data)
     now = str(_now_et())
@@ -650,9 +658,9 @@ def cmd_save_trade(args):
     conn = _connect()
     conn.execute(sql, [data[c] for c in cols])
     conn.commit()
-    rowid = conn.execute(
-        "SELECT id FROM ic_trades WHERE ic_order_id = ?", (data["ic_order_id"],)
-    ).fetchone()["id"]
+    rowid = conn.execute("SELECT id FROM ic_trades WHERE ic_order_id = ?", (data["ic_order_id"],)).fetchone()[
+        "id"
+    ]
     conn.close()
     _out({"ok": True, "id": rowid})
 
@@ -661,17 +669,31 @@ def cmd_save_trade(args):
 # argparse setup below: the two lists were duplicated verbatim, so adding a field to one and not the
 # other would have accepted the flag and silently dropped the value (or vice versa).
 _UPDATABLE_TRADE_FIELDS = (
-    "status", "exit_price", "exit_time", "exit_reason", "exit_analysis",
-    "put_stop_order_id", "call_stop_order_id",
-    "put_stop_cost", "call_stop_cost",
-    "put_spread_entry_order_id", "call_spread_entry_order_id",
-    "stop_trigger_current", "stop_limit_current",
-    "pnl", "fees", "fill_confirmed_at",
+    "status",
+    "exit_price",
+    "exit_time",
+    "exit_reason",
+    "exit_analysis",
+    "put_stop_order_id",
+    "call_stop_order_id",
+    "put_stop_cost",
+    "call_stop_cost",
+    "put_spread_entry_order_id",
+    "call_spread_entry_order_id",
+    "stop_trigger_current",
+    "stop_limit_current",
+    "pnl",
+    "fees",
+    "fill_confirmed_at",
     # Stop-rule instrumentation — written on mark-to-market and at settlement, not at entry.
-    "put_max_cost", "call_max_cost",
-    "put_settle_value", "call_settle_value", "settle_underlying",
+    "put_max_cost",
+    "call_max_cost",
+    "put_settle_value",
+    "call_settle_value",
+    "settle_underlying",
     # Feed-quality instrumentation — written when an iteration cannot mark the trade.
-    "unmarked_iterations", "last_unmarked_at",
+    "unmarked_iterations",
+    "last_unmarked_at",
     # Cost-sensitivity instrumentation — accumulated on every priced exit.
     "slippage_dollars",
 )
@@ -711,19 +733,21 @@ def cmd_record_stop_adjustment(args):
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             "SELECT stop_adjustment_history, stop_adjustment_count FROM ic_trades WHERE ic_order_id = ?",
-            (args.ic_order_id,)
+            (args.ic_order_id,),
         ).fetchone()
         if not row:
             conn.execute("ROLLBACK")
             _out({"ok": False, "error": f"Trade {args.ic_order_id} not found"})
             return
         history = json.loads(row["stop_adjustment_history"] or "[]")
-        history.append({
-            "time": now,
-            "new_trigger": args.new_trigger,
-            "new_limit": args.new_limit,
-            "reason": args.reason,
-        })
+        history.append(
+            {
+                "time": now,
+                "new_trigger": args.new_trigger,
+                "new_limit": args.new_limit,
+                "reason": args.reason,
+            }
+        )
         new_count = (row["stop_adjustment_count"] or 0) + 1
         conn.execute(
             """UPDATE ic_trades
@@ -733,7 +757,7 @@ def cmd_record_stop_adjustment(args):
                    stop_adjustment_history = ?,
                    updated_at = ?
                WHERE ic_order_id = ?""",
-            (args.new_trigger, args.new_limit, new_count, json.dumps(history), now, args.ic_order_id)
+            (args.new_trigger, args.new_limit, new_count, json.dumps(history), now, args.ic_order_id),
         )
         conn.commit()
     finally:
@@ -744,9 +768,7 @@ def cmd_record_stop_adjustment(args):
 def cmd_record_leg_exit(args):
     now = str(_now_et())
     conn = _connect()
-    row = conn.execute(
-        "SELECT id FROM ic_trades WHERE ic_order_id = ?", (args.ic_order_id,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM ic_trades WHERE ic_order_id = ?", (args.ic_order_id,)).fetchone()
     if not row:
         conn.close()
         _out({"ok": False, "error": f"Trade {args.ic_order_id} not found"})
@@ -762,8 +784,17 @@ def cmd_record_leg_exit(args):
                exit_price = excluded.exit_price,
                pnl = excluded.pnl,
                updated_at = excluded.updated_at""",
-        (args.ic_order_id, args.side, args.status, args.exit_time,
-         args.exit_reason, args.exit_price, args.pnl, now, now)
+        (
+            args.ic_order_id,
+            args.side,
+            args.status,
+            args.exit_time,
+            args.exit_reason,
+            args.exit_price,
+            args.pnl,
+            now,
+            now,
+        ),
     )
     conn.commit()
     conn.close()
@@ -772,9 +803,7 @@ def cmd_record_leg_exit(args):
 
 def cmd_get_spread_legs(args):
     conn = _connect()
-    rows = conn.execute(
-        "SELECT * FROM ic_spread_legs WHERE ic_order_id = ?", (args.ic_order_id,)
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM ic_spread_legs WHERE ic_order_id = ?", (args.ic_order_id,)).fetchall()
     conn.close()
     _out({"ok": True, "legs": [dict(r) for r in rows]})
 
@@ -813,8 +842,11 @@ def cmd_log_loop_action(args):
             mcp_errors, duration_ms, created_at)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
-            now_str, today, args.symbol,
-            args.action, args.reasoning,
+            now_str,
+            today,
+            args.symbol,
+            args.action,
+            args.reasoning,
             ctx.get("open_trades", 0),
             ctx.get("today_count", 0),
             ctx.get("today_pnl", 0),
@@ -824,7 +856,7 @@ def cmd_log_loop_action(args):
             json.dumps(ctx.get("mcp_errors", [])),
             ctx.get("duration_ms"),
             now_str,
-        )
+        ),
     )
     conn.commit()
     conn.close()
@@ -852,7 +884,7 @@ def cmd_set_session_init(_args):
            ON CONFLICT(summary_date) DO UPDATE SET
              session_init_at = excluded.session_init_at,
              updated_at = excluded.updated_at""",
-        (today, now, now, now)
+        (today, now, now, now),
     )
     conn.commit()
     conn.close()
@@ -873,7 +905,7 @@ def cmd_save_daily_summary(args):
              ai_day_summary = COALESCE(excluded.ai_day_summary, ai_day_summary),
              closing_nlv = COALESCE(excluded.closing_nlv, closing_nlv),
              updated_at = excluded.updated_at""",
-        (date, args.summary, args.closing_nlv, now, now)
+        (date, args.summary, args.closing_nlv, now, now),
     )
     conn.commit()
     conn.close()
@@ -924,21 +956,28 @@ def cmd_save_market_context(args):
 # CLI dispatch
 # ---------------------------------------------------------------------------
 
+
 def main():
     global _DB_PATH
     parser = argparse.ArgumentParser(description="MEICAgent DB helper")
-    parser.add_argument("--db", default=None,
-                         help="Override the database path (defaults to MEIC_DB_PATH env var, "
-                              "then the data home's meic_trades.db). Used by the paper-trading "
-                              "engine to point at paper_trades.db.")
+    parser.add_argument(
+        "--db",
+        default=None,
+        help="Override the database path (defaults to MEIC_DB_PATH env var, "
+        "then the data home's meic_trades.db). Used by the paper-trading "
+        "engine to point at paper_trades.db.",
+    )
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("init_db")
     p_open = sub.add_parser("get_open_trades")
     p_open.add_argument("--symbol", default=None, help="Filter to one symbol; omit for all symbols")
-    p_open.add_argument("--date", default=None,
-                         help="Override trade_date to query (YYYY-MM-DD); defaults to the real "
-                              "system today. Used by paper-trading replay to query a historical day.")
+    p_open.add_argument(
+        "--date",
+        default=None,
+        help="Override trade_date to query (YYYY-MM-DD); defaults to the real "
+        "system today. Used by paper-trading replay to query a historical day.",
+    )
     p_cnt = sub.add_parser("get_today_count")
     p_cnt.add_argument("--symbol", default=None, help="Filter to one symbol; omit for all symbols")
     p_pnl = sub.add_parser("get_today_pnl")
@@ -950,8 +989,9 @@ def main():
     p_range = sub.add_parser("get_range_summary")
     p_range.add_argument("--start", required=True, help="Inclusive start date, YYYY-MM-DD")
     p_range.add_argument("--end", required=True, help="Inclusive end date, YYYY-MM-DD")
-    p_range.add_argument("--profile", default=None,
-                          help="Filter to one risk_profile; omit to group by every profile present")
+    p_range.add_argument(
+        "--profile", default=None, help="Filter to one risk_profile; omit to group by every profile present"
+    )
     p_range.add_argument("--symbol", default=None, help="Filter to one symbol; omit for all symbols")
 
     p_fee = sub.add_parser("get_fee_estimate")
@@ -959,8 +999,11 @@ def main():
     p_fee.add_argument("--lookback", default=20, type=int)
 
     p_timing = sub.add_parser("get_step_timing")
-    p_timing.add_argument("--action", default=None,
-                           help="Filter to one action, e.g. timing_stop_management or timing_entry_evaluation")
+    p_timing.add_argument(
+        "--action",
+        default=None,
+        help="Filter to one action, e.g. timing_stop_management or timing_entry_evaluation",
+    )
     p_timing.add_argument("--symbol", default=None)
     p_timing.add_argument("--lookback_days", default=None, type=int)
 
@@ -1000,12 +1043,16 @@ def main():
     p_mctx.add_argument("--vix", default=None, type=float)
     p_mctx.add_argument("--vix1d", default=None, type=float)
     p_mctx.add_argument("--vix1d_ratio", default=None, type=float)
-    p_mctx.add_argument("--symbols", default="{}",
-                         help="JSON: {SYM: {price, iv_rank}} snapshot for the EOD analysis report")
+    p_mctx.add_argument(
+        "--symbols", default="{}", help="JSON: {SYM: {price, iv_rank}} snapshot for the EOD analysis report"
+    )
 
     p_log = sub.add_parser("log_loop_action")
-    p_log.add_argument("--symbol", default=None,
-                        help="Symbol this log row is for; omit for an iteration-level summary row spanning all symbols")
+    p_log.add_argument(
+        "--symbol",
+        default=None,
+        help="Symbol this log row is for; omit for an iteration-level summary row spanning all symbols",
+    )
     p_log.add_argument("--action", required=True)
     p_log.add_argument("--reasoning", default="")
     p_log.add_argument("--market_context", default="{}")
@@ -1015,8 +1062,12 @@ def main():
     p_log.add_argument("--open_trades", default=None, type=int)
     p_log.add_argument("--today_count", default=None, type=int)
     p_log.add_argument("--today_pnl", default=None, type=float)
-    p_log.add_argument("--duration_ms", default=None, type=int,
-                        help="Elapsed wall-clock milliseconds for the step this row represents (e.g. stop management or one symbol's entry evaluation)")
+    p_log.add_argument(
+        "--duration_ms",
+        default=None,
+        type=int,
+        help="Elapsed wall-clock milliseconds for the step this row represents (e.g. stop management or one symbol's entry evaluation)",
+    )
 
     args = parser.parse_args()
 

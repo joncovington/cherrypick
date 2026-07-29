@@ -68,43 +68,51 @@ def _make_ic_trades_db(path: Path) -> None:
     conn.close()
 
 
-_IC_QUERY = ("SELECT put_symbol, call_symbol, long_put_symbol, long_call_symbol FROM ic_trades "
-             "WHERE status IN ('pending','open','partial','partial_entry')")
+_IC_QUERY = (
+    "SELECT put_symbol, call_symbol, long_put_symbol, long_call_symbol FROM ic_trades "
+    "WHERE status IN ('pending','open','partial','partial_entry')"
+)
 
 
 def test_leg_sources_pulls_open_legs_from_db(home, tmp_path):
     db = tmp_path / "meic_trades.db"
     _make_ic_trades_db(db)
-    _registry.write_request("meic", ["SPX", "XSP"],
-                            leg_sources=[{"db": str(db), "query": _IC_QUERY}])
+    _registry.write_request("meic", ["SPX", "XSP"], leg_sources=[{"db": str(db), "query": _IC_QUERY}])
     legs = _registry.union_legs()
     # Every non-null cell of the open/pending rows; the 'closed' row is filtered out by the query.
-    assert legs == sorted([
-        ".SPX250620P6800", ".SPX250620C6900", ".SPX250620P6790", ".SPX250620C6910",
-        ".XSP250620P680", ".XSP250620C690",
-    ])
+    assert legs == sorted(
+        [
+            ".SPX250620P6800",
+            ".SPX250620C6900",
+            ".SPX250620P6790",
+            ".SPX250620C6910",
+            ".XSP250620P680",
+            ".XSP250620C690",
+        ]
+    )
 
 
 def test_leg_sources_union_with_explicit_legs(home, tmp_path):
     db = tmp_path / "meic_trades.db"
     _make_ic_trades_db(db)
-    _registry.write_request("meic", ["SPX"], legs=[".SPX250620C9999"],
-                            leg_sources=[{"db": str(db), "query": _IC_QUERY}])
+    _registry.write_request(
+        "meic", ["SPX"], legs=[".SPX250620C9999"], leg_sources=[{"db": str(db), "query": _IC_QUERY}]
+    )
     legs = _registry.union_legs()
     assert ".SPX250620C9999" in legs and ".SPX250620C6900" in legs
 
 
 def test_leg_sources_missing_db_is_not_fatal(home, tmp_path):
-    _registry.write_request("meic", ["SPX"],
-                            leg_sources=[{"db": str(tmp_path / "nope.db"), "query": _IC_QUERY}])
+    _registry.write_request(
+        "meic", ["SPX"], leg_sources=[{"db": str(tmp_path / "nope.db"), "query": _IC_QUERY}]
+    )
     assert _registry.union_legs() == []  # missing DB contributes nothing, no crash
 
 
 def test_leg_sources_rejects_non_select(home, tmp_path):
     db = tmp_path / "meic_trades.db"
     _make_ic_trades_db(db)
-    _registry.write_request("meic", ["SPX"],
-                            leg_sources=[{"db": str(db), "query": "DELETE FROM ic_trades"}])
+    _registry.write_request("meic", ["SPX"], leg_sources=[{"db": str(db), "query": "DELETE FROM ic_trades"}])
     assert _registry.union_legs() == []  # non-SELECT ignored (belt-and-suspenders; DB is opened ?mode=ro)
 
 
@@ -112,8 +120,9 @@ def test_leg_sources_opens_readonly(home, tmp_path):
     """The declared DB is opened read-only — a would-be write in the query can never mutate it."""
     db = tmp_path / "meic_trades.db"
     _make_ic_trades_db(db)
-    _registry.write_request("meic", ["SPX"],
-                            leg_sources=[{"db": str(db), "query": "SELECT put_symbol FROM ic_trades"}])
+    _registry.write_request(
+        "meic", ["SPX"], leg_sources=[{"db": str(db), "query": "SELECT put_symbol FROM ic_trades"}]
+    )
     _registry.union_legs()
     # DB still intact and unchanged.
     conn = sqlite3.connect(str(db))
@@ -126,8 +135,7 @@ def test_build_streamer_uses_registry_union(home, tmp_path):
     # make_session_factory is lazy (no keyring hit at construction), so build_streamer is broker-free.
     db = tmp_path / "meic_trades.db"
     _make_ic_trades_db(db)
-    _registry.write_request("meic", ["SPX", "XSP"],
-                            leg_sources=[{"db": str(db), "query": _IC_QUERY}])
+    _registry.write_request("meic", ["SPX", "XSP"], leg_sources=[{"db": str(db), "query": _IC_QUERY}])
     _registry.write_request("flies", ["SPX"])
     streamer = _daemon.build_streamer({"symbols": ["QQQ"]})  # config seed adds QQQ
     assert streamer.symbols == ["QQQ", "SPX", "XSP"]
@@ -150,5 +158,7 @@ def test_write_request_schema_is_flat_json(home):
     path = _registry.write_request("gex", ["SPX"])
     assert not path.with_name(path.name + ".tmp").exists()
     assert json.loads(path.read_text(encoding="utf-8")) == {
-        "symbols": ["SPX"], "legs": [], "leg_sources": [],
+        "symbols": ["SPX"],
+        "legs": [],
+        "leg_sources": [],
     }

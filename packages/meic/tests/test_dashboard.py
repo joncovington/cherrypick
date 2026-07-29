@@ -4,6 +4,7 @@ Tests for dashboard.py data layer.
 No HTTP server, no browser, no MCP required — all tests operate on an
 in-memory or temp SQLite database and call dashboard functions directly.
 """
+
 from __future__ import annotations
 
 import json
@@ -94,48 +95,68 @@ def _make_db(path: str) -> sqlite3.Connection:
 
 def _insert_trade(conn, **kwargs):
     defaults = dict(
-        trade_date=_TODAY, entry_time=_NOW, symbol="SPX",
-        put_strike=5400, call_strike=5600, wing_width=5,
-        put_credit=0.55, call_credit=0.65, net_credit=1.20, quantity=1,
-        iv_rank_at_entry=0.40, session_quality="prime",
-        ic_order_id="IC-001", status="expired", pnl=1.20, fees=0.10,
-        exit_time="2026-06-20 16:00:00", exit_reason="expired_eod",
-        created_at=_NOW, updated_at=_NOW,
+        trade_date=_TODAY,
+        entry_time=_NOW,
+        symbol="SPX",
+        put_strike=5400,
+        call_strike=5600,
+        wing_width=5,
+        put_credit=0.55,
+        call_credit=0.65,
+        net_credit=1.20,
+        quantity=1,
+        iv_rank_at_entry=0.40,
+        session_quality="prime",
+        ic_order_id="IC-001",
+        status="expired",
+        pnl=1.20,
+        fees=0.10,
+        exit_time="2026-06-20 16:00:00",
+        exit_reason="expired_eod",
+        created_at=_NOW,
+        updated_at=_NOW,
     )
     defaults.update(kwargs)
     cols = ", ".join(defaults)
     placeholders = ", ".join("?" * len(defaults))
-    conn.execute(f"INSERT INTO ic_trades ({cols}) VALUES ({placeholders})",
-                 list(defaults.values()))
+    conn.execute(f"INSERT INTO ic_trades ({cols}) VALUES ({placeholders})", list(defaults.values()))
     conn.commit()
 
 
 def _insert_leg(conn, **kwargs):
     defaults = dict(
-        ic_order_id="IC-001", side="put", status="open",
-        exit_time=None, exit_reason=None, exit_price=None, pnl=None,
-        created_at=_NOW, updated_at=_NOW,
+        ic_order_id="IC-001",
+        side="put",
+        status="open",
+        exit_time=None,
+        exit_reason=None,
+        exit_price=None,
+        pnl=None,
+        created_at=_NOW,
+        updated_at=_NOW,
     )
     defaults.update(kwargs)
     cols = ", ".join(defaults)
     placeholders = ", ".join("?" * len(defaults))
-    conn.execute(f"INSERT INTO ic_spread_legs ({cols}) VALUES ({placeholders})",
-                 list(defaults.values()))
+    conn.execute(f"INSERT INTO ic_spread_legs ({cols}) VALUES ({placeholders})", list(defaults.values()))
     conn.commit()
 
 
 def _insert_summary(conn, **kwargs):
     defaults = dict(
-        summary_date=_YESTERDAY, symbol="SPX",
-        entries_filled=3, win_count=2, net_pnl=2.50,
+        summary_date=_YESTERDAY,
+        symbol="SPX",
+        entries_filled=3,
+        win_count=2,
+        net_pnl=2.50,
         closing_nlv=100500.0,
-        created_at=_NOW, updated_at=_NOW,
+        created_at=_NOW,
+        updated_at=_NOW,
     )
     defaults.update(kwargs)
     cols = ", ".join(defaults)
     placeholders = ", ".join("?" * len(defaults))
-    conn.execute(f"INSERT INTO daily_summary ({cols}) VALUES ({placeholders})",
-                 list(defaults.values()))
+    conn.execute(f"INSERT INTO daily_summary ({cols}) VALUES ({placeholders})", list(defaults.values()))
     conn.commit()
 
 
@@ -157,23 +178,29 @@ def db_path(monkeypatch, tmp_path):
 
 # ── _wl_ratio ─────────────────────────────────────────────────────────────────
 
+
 def test_wl_ratio_normal():
     assert dashboard._wl_ratio(3, 1) == 75.0
+
 
 def test_wl_ratio_all_wins():
     assert dashboard._wl_ratio(5, 0) == 100.0
 
+
 def test_wl_ratio_all_losses():
     assert dashboard._wl_ratio(0, 4) == 0.0
 
+
 def test_wl_ratio_no_trades():
     assert dashboard._wl_ratio(0, 0) is None
+
 
 def test_wl_ratio_none_inputs():
     assert dashboard._wl_ratio(None, None) is None
 
 
 # ── _spread_statuses ──────────────────────────────────────────────────────────
+
 
 def _trade(**kwargs):
     base = {"status": "open", "exit_time": None, "exit_analysis": None}
@@ -186,55 +213,58 @@ def test_status_open():
     assert put_s["type"] == "monitoring"
     assert call_s["type"] == "monitoring"
 
+
 def test_status_expired():
     put_s, call_s = dashboard._spread_statuses(_trade(status="expired"))
     assert put_s["type"] == "expired"
     assert call_s["type"] == "expired"
+
 
 def test_status_pending():
     put_s, call_s = dashboard._spread_statuses(_trade(status="pending"))
     assert put_s["type"] == "pending"
     assert call_s["type"] == "pending"
 
+
 def test_status_partial_entry():
     put_s, call_s = dashboard._spread_statuses(_trade(status="partial_entry"))
     assert put_s["type"] == "pending"
     assert call_s["type"] == "pending"
+
 
 def test_status_cancelled():
     put_s, call_s = dashboard._spread_statuses(_trade(status="cancelled"))
     assert put_s["type"] == "cancelled"
     assert call_s["type"] == "cancelled"
 
+
 def test_status_force_closed():
     put_s, call_s = dashboard._spread_statuses(_trade(status="force_closed"))
     assert put_s["type"] == "force_closed"
     assert call_s["type"] == "force_closed"
 
+
 def test_status_stopped_no_exit_analysis():
-    put_s, call_s = dashboard._spread_statuses(
-        _trade(status="stopped", exit_time="2026-06-20T11:21:00")
-    )
+    put_s, call_s = dashboard._spread_statuses(_trade(status="stopped", exit_time="2026-06-20T11:21:00"))
     assert put_s["type"] == "stopped"
     assert call_s["type"] == "stopped"
+
 
 def test_status_stopped_put_side():
     put_leg = {"status": "stopped", "exit_time": "2026-06-20T11:21:00", "pnl": -0.5}
     call_leg = {"status": "open", "exit_time": None, "pnl": None}
-    put_s, call_s = dashboard._spread_statuses(
-        _trade(status="partial"), put_leg, call_leg
-    )
+    put_s, call_s = dashboard._spread_statuses(_trade(status="partial"), put_leg, call_leg)
     assert put_s["type"] == "stopped"
     assert call_s["type"] == "monitoring"
+
 
 def test_status_stopped_call_side():
     put_leg = {"status": "open", "exit_time": None, "pnl": None}
     call_leg = {"status": "stopped", "exit_time": "2026-06-20T14:05:00", "pnl": -0.5}
-    put_s, call_s = dashboard._spread_statuses(
-        _trade(status="partial"), put_leg, call_leg
-    )
+    put_s, call_s = dashboard._spread_statuses(_trade(status="partial"), put_leg, call_leg)
     assert put_s["type"] == "monitoring"
     assert call_s["type"] == "stopped"
+
 
 def test_status_stopped_time_in_label():
     put_leg = {"status": "stopped", "exit_time": "2026-06-20T11:21:00", "pnl": -0.5}
@@ -249,6 +279,7 @@ def test_status_stopped_time_in_label():
 # ic_trades + ic_spread_legs in one function, rather than pre-aggregating into
 # daily_summary and merging today's live numbers on top.
 
+
 def test_stats_for_period_empty(db_path):
     conn = dashboard._connect()
     result = dashboard._stats_for_period(conn, start=_TODAY, end=_TODAY)
@@ -257,14 +288,15 @@ def test_stats_for_period_empty(db_path):
     assert result["total_trades"] == 0
     assert result["wl_ratio"] is None
 
+
 def test_stats_for_period_with_trades(db_path):
     conn = dashboard._connect()
     _insert_trade(conn, ic_order_id="IC-001", pnl=1.20, status="expired")
     _insert_trade(conn, ic_order_id="IC-002", pnl=-0.80, status="stopped")
-    _insert_trade(conn, ic_order_id="IC-003", pnl=None,  status="cancelled")
+    _insert_trade(conn, ic_order_id="IC-003", pnl=None, status="cancelled")
     result = dashboard._stats_for_period(conn, start=_TODAY, end=_TODAY)
     conn.close()
-    assert result["total_trades"] == 2       # cancelled excluded
+    assert result["total_trades"] == 2  # cancelled excluded
     # One win definition module-wide: per TRADE, net of fees (pnl - fees > 0).
     # 1.20 - 0.10 wins; -0.80 - 0.10 loses. The per-side spread lens is a
     # per-row display in the trade log, never these headline counts.
@@ -273,6 +305,7 @@ def test_stats_for_period_with_trades(db_path):
     assert result["wl_ratio"] == 50.0
     assert abs(result["net_pnl"] - 0.40) < 0.01
 
+
 def test_stats_for_period_excludes_pending(db_path):
     conn = dashboard._connect()
     _insert_trade(conn, ic_order_id="IC-001", pnl=None, status="pending")
@@ -280,12 +313,14 @@ def test_stats_for_period_excludes_pending(db_path):
     conn.close()
     assert result["total_trades"] == 0
 
+
 def test_stats_for_period_excludes_out_of_range(db_path):
     conn = dashboard._connect()
     _insert_trade(conn, ic_order_id="IC-001", trade_date=_YESTERDAY, pnl=5.00, status="expired")
     result = dashboard._stats_for_period(conn, start=_TODAY, end=_TODAY)
     conn.close()
     assert result["total_trades"] == 0
+
 
 def test_stats_for_period_scores_the_trade_not_its_legs(db_path):
     """A partially-stopped IC is ONE trade with one net outcome — leg rows must not
@@ -304,11 +339,13 @@ def test_stats_for_period_scores_the_trade_not_its_legs(db_path):
 
 # ── _build_api_data ───────────────────────────────────────────────────────────
 
+
 def test_build_api_data_no_db(monkeypatch, tmp_path):
     monkeypatch.setattr(dashboard, "_DB_PATH", str(tmp_path / "nonexistent.db"))
     result = dashboard._build_api_data()
     assert result["ok"] is False
     assert "error" in result
+
 
 def test_build_api_data_empty_db(db_path):
     result = dashboard._build_api_data()
@@ -320,6 +357,7 @@ def test_build_api_data_empty_db(db_path):
     assert result["trades"] == []
     assert result["nlv_series"] == []
 
+
 def test_build_api_data_stats_keys(db_path):
     result = dashboard._build_api_data()
     for period in ("today", "week", "month", "year", "all_time"):
@@ -330,6 +368,7 @@ def test_build_api_data_stats_keys(db_path):
         assert "wins" in s
         assert "losses" in s
         assert "wl_ratio" in s
+
 
 def test_build_api_data_with_trade(db_path):
     conn = dashboard._connect()
@@ -343,15 +382,23 @@ def test_build_api_data_with_trade(db_path):
     assert "put_status" in t
     assert "call_status" in t
 
+
 def test_build_api_data_trade_has_no_exit_analysis_key(db_path):
     """exit_analysis should be consumed internally, not exposed in trades list."""
     conn = dashboard._connect()
     ea = json.dumps({"stopped_spread": "put"})
-    _insert_trade(conn, ic_order_id="IC-001", status="partial",
-                  exit_analysis=ea, exit_time="2026-06-20T11:21:00", pnl=None)
+    _insert_trade(
+        conn,
+        ic_order_id="IC-001",
+        status="partial",
+        exit_analysis=ea,
+        exit_time="2026-06-20T11:21:00",
+        pnl=None,
+    )
     conn.close()
     result = dashboard._build_api_data()
     assert "exit_analysis" not in result["trades"][0]
+
 
 def test_build_api_data_nlv_series(db_path):
     conn = dashboard._connect()
@@ -362,6 +409,7 @@ def test_build_api_data_nlv_series(db_path):
     assert len(result["nlv_series"]) == 2
     assert result["nlv_series"][0]["closing_nlv"] == 100200.0
     assert result["nlv_series"][1]["date"] == "2026-06-19"
+
 
 def test_build_api_data_analytics_keys(db_path):
     result = dashboard._build_api_data()
@@ -376,9 +424,11 @@ def test_build_api_data_analytics_keys(db_path):
     assert "net_pnl" in fs
     assert "fee_drag_pct" in fs
 
+
 def test_build_api_data_fee_drag_none_when_no_trades(db_path):
     result = dashboard._build_api_data()
     assert result["analytics"]["fee_summary"]["fee_drag_pct"] is None
+
 
 def test_build_api_data_today_merges_into_week(db_path):
     """Stats are computed directly from ic_trades over the period's date range, so a
@@ -394,9 +444,8 @@ def test_build_api_data_today_merges_into_week(db_path):
     assert result["stats"]["today"]["total_trades"] == 1
 
 
-
-
 # ── _load_symbols / _load_symbol ─────────────────────────────────────────────
+
 
 def _write_config(monkeypatch, tmp_path, cfg):
     path = str(tmp_path / "config.json")
@@ -409,13 +458,16 @@ def test_load_symbols_list(monkeypatch, tmp_path):
     _write_config(monkeypatch, tmp_path, {"symbols": ["xsp", "spx"]})
     assert dashboard._load_symbols() == ["XSP", "SPX"]
 
+
 def test_load_symbols_deprecated_singular_alias(monkeypatch, tmp_path):
     _write_config(monkeypatch, tmp_path, {"symbol": "xsp"})
     assert dashboard._load_symbols() == ["XSP"]
 
+
 def test_load_symbols_default_when_missing(monkeypatch, tmp_path):
     _write_config(monkeypatch, tmp_path, {})
     assert dashboard._load_symbols() == ["XSP"]
+
 
 def test_load_symbols_missing_config_file(monkeypatch, tmp_path):
     monkeypatch.setattr(dashboard._paths, "config_path", lambda: str(tmp_path / "nonexistent.json"))
@@ -424,11 +476,13 @@ def test_load_symbols_missing_config_file(monkeypatch, tmp_path):
 
 # ── _build_api_data symbol filtering ─────────────────────────────────────────
 
+
 def test_build_api_data_reports_configured_symbols(db_path, monkeypatch, tmp_path):
     _write_config(monkeypatch, tmp_path, {"symbols": ["XSP", "SPX"]})
     result = dashboard._build_api_data()
     assert result["symbols"] == ["XSP", "SPX"]
     assert result["selected_symbol"] == "ALL"
+
 
 def test_build_api_data_no_filter_includes_all_symbols(db_path):
     conn = dashboard._connect()
@@ -438,6 +492,7 @@ def test_build_api_data_no_filter_includes_all_symbols(db_path):
     result = dashboard._build_api_data()
     assert len(result["trades"]) == 2
     assert abs(result["stats"]["today"]["net_pnl"] - 4.00) < 0.01
+
 
 def test_build_api_data_filtered_by_symbol(db_path):
     conn = dashboard._connect()
@@ -450,12 +505,14 @@ def test_build_api_data_filtered_by_symbol(db_path):
     assert result["trades"][0]["symbol"] == "XSP"
     assert abs(result["stats"]["today"]["net_pnl"] - 1.00) < 0.01
 
+
 def test_build_api_data_symbol_filter_case_insensitive(db_path):
     conn = dashboard._connect()
     _insert_trade(conn, ic_order_id="IC-X", symbol="XSP", pnl=1.00, status="expired")
     conn.close()
     result = dashboard._build_api_data("xsp")
     assert len(result["trades"]) == 1
+
 
 def test_build_api_data_all_keyword_is_unfiltered(db_path):
     conn = dashboard._connect()
@@ -464,6 +521,7 @@ def test_build_api_data_all_keyword_is_unfiltered(db_path):
     conn.close()
     result = dashboard._build_api_data("ALL")
     assert len(result["trades"]) == 2
+
 
 def test_build_api_data_symbol_filter_applies_to_recent_trades(db_path):
     conn = dashboard._connect()
@@ -475,10 +533,15 @@ def test_build_api_data_symbol_filter_applies_to_recent_trades(db_path):
     assert len(recent) == 1
     assert recent[0]["symbol"] == "SPX"
 
+
 def test_build_api_data_symbol_filter_applies_to_fee_summary(db_path):
     conn = dashboard._connect()
-    _insert_trade(conn, ic_order_id="IC-X", symbol="XSP", net_credit=0.50, fees=0.10, pnl=1.00, status="expired")
-    _insert_trade(conn, ic_order_id="IC-S", symbol="SPX", net_credit=1.50, fees=0.30, pnl=3.00, status="expired")
+    _insert_trade(
+        conn, ic_order_id="IC-X", symbol="XSP", net_credit=0.50, fees=0.10, pnl=1.00, status="expired"
+    )
+    _insert_trade(
+        conn, ic_order_id="IC-S", symbol="SPX", net_credit=1.50, fees=0.30, pnl=3.00, status="expired"
+    )
     conn.close()
     xsp_result = dashboard._build_api_data("XSP")
     spx_result = dashboard._build_api_data("SPX")
@@ -487,6 +550,7 @@ def test_build_api_data_symbol_filter_applies_to_fee_summary(db_path):
 
 
 # ── --mode/--db/--port default resolution (paper-trading dashboard) ────────────
+
 
 def test_resolve_mode_defaults_live_no_overrides():
     db, port = dashboard._resolve_mode_defaults("live", None, None, default_db_path="/x/meic_trades.db")
@@ -501,7 +565,9 @@ def test_resolve_mode_defaults_paper_no_overrides():
 
 
 def test_resolve_mode_defaults_explicit_db_overrides_mode():
-    db, port = dashboard._resolve_mode_defaults("paper", "/custom/path.db", None, default_db_path="/x/meic_trades.db")
+    db, port = dashboard._resolve_mode_defaults(
+        "paper", "/custom/path.db", None, default_db_path="/x/meic_trades.db"
+    )
     assert db == "/custom/path.db"
     assert port == 5051  # --db overrides the DB path only; port default still follows mode
 
@@ -513,6 +579,7 @@ def test_resolve_mode_defaults_explicit_port_overrides_mode_default():
 
 
 # ── Profile derivation and filtering (paper-trading dashboard) ─────────────────
+
 
 def test_build_api_data_profiles_empty_falls_back_to_live(db_path):
     conn = dashboard._connect()
@@ -534,7 +601,9 @@ def test_build_api_data_profiles_derived_from_distinct_values(db_path):
 
 def test_build_api_data_profile_filter_scopes_trades_stats_and_performance(db_path):
     conn = dashboard._connect()
-    _insert_trade(conn, ic_order_id="IC-1", status="expired", pnl=100.0, fees=1.0, risk_profile="conservative")
+    _insert_trade(
+        conn, ic_order_id="IC-1", status="expired", pnl=100.0, fees=1.0, risk_profile="conservative"
+    )
     _insert_trade(conn, ic_order_id="IC-2", status="expired", pnl=50.0, fees=1.0, risk_profile="moderate")
     conn.close()
 
@@ -557,6 +626,7 @@ def test_build_api_data_profile_filter_scopes_trades_stats_and_performance(db_pa
 
 # ── Width study (wing-width forced-sampling arms) ───────────────────────────────
 
+
 def test_width_study_has_every_configured_symbol_even_with_no_trades(db_path):
     result = dashboard._build_api_data()
     ws = result["width_study"]
@@ -570,15 +640,31 @@ def test_width_study_has_every_configured_symbol_even_with_no_trades(db_path):
 
 def test_width_study_cell_matches_pnl_series_for_that_profile_and_symbol(db_path):
     conn = dashboard._connect()
-    _insert_trade(conn, ic_order_id="IC-1", symbol="XSP", status="expired",
-                  pnl=12.0, fees=1.0, risk_profile="width-2")
-    _insert_trade(conn, ic_order_id="IC-2", symbol="XSP", status="expired",
-                  pnl=-4.0, fees=1.0, risk_profile="width-5")
-    _insert_trade(conn, ic_order_id="IC-3", symbol="QQQ", status="expired",
-                  pnl=7.0, fees=1.0, risk_profile="width-adaptive")
+    _insert_trade(
+        conn, ic_order_id="IC-1", symbol="XSP", status="expired", pnl=12.0, fees=1.0, risk_profile="width-2"
+    )
+    _insert_trade(
+        conn, ic_order_id="IC-2", symbol="XSP", status="expired", pnl=-4.0, fees=1.0, risk_profile="width-5"
+    )
+    _insert_trade(
+        conn,
+        ic_order_id="IC-3",
+        symbol="QQQ",
+        status="expired",
+        pnl=7.0,
+        fees=1.0,
+        risk_profile="width-adaptive",
+    )
     # A ladder trade must never leak into a width-study cell.
-    _insert_trade(conn, ic_order_id="IC-4", symbol="XSP", status="expired",
-                  pnl=99.0, fees=1.0, risk_profile="conservative")
+    _insert_trade(
+        conn,
+        ic_order_id="IC-4",
+        symbol="XSP",
+        status="expired",
+        pnl=99.0,
+        fees=1.0,
+        risk_profile="conservative",
+    )
     conn.close()
 
     result = dashboard._build_api_data()
@@ -600,10 +686,13 @@ def test_width_study_ignores_the_page_symbol_and_profile_filters(db_path):
     """Like by_profile above, the width-study cells always show every configured symbol's arms —
     the page's symbol/profile selectors must not narrow this comparison view."""
     conn = dashboard._connect()
-    _insert_trade(conn, ic_order_id="IC-1", symbol="XSP", status="expired",
-                  pnl=5.0, fees=0.0, risk_profile="width-2")
+    _insert_trade(
+        conn, ic_order_id="IC-1", symbol="XSP", status="expired", pnl=5.0, fees=0.0, risk_profile="width-2"
+    )
     conn.close()
 
     filtered = dashboard._build_api_data("QQQ", "conservative")
     assert filtered["width_study"]["symbols"]["XSP"]["width-2"]
-    assert sum(b["net_pnl"] for b in filtered["width_study"]["symbols"]["XSP"]["width-2"]) == pytest.approx(5.0)
+    assert sum(b["net_pnl"] for b in filtered["width_study"]["symbols"]["XSP"]["width-2"]) == pytest.approx(
+        5.0
+    )

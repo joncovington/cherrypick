@@ -45,10 +45,16 @@ def _seed_cache(path) -> None:
         )
         sym = opt["streamer_symbol"]
         gamma, iv = _GREEKS[sym]
-        conn.execute("INSERT INTO stream_greeks (symbol, gamma, iv, updated_at) VALUES (?,?,?,0)", (sym, gamma, iv))
-        conn.execute("INSERT INTO stream_oi (symbol, open_interest, updated_at) VALUES (?,?,0)", (sym, _OI[sym]))
-        conn.execute("INSERT INTO stream_trades (symbol, last, volume, updated_at) VALUES (?,?,?,0)",
-                     (sym, 0, _VOL[sym]))
+        conn.execute(
+            "INSERT INTO stream_greeks (symbol, gamma, iv, updated_at) VALUES (?,?,?,0)", (sym, gamma, iv)
+        )
+        conn.execute(
+            "INSERT INTO stream_oi (symbol, open_interest, updated_at) VALUES (?,?,0)", (sym, _OI[sym])
+        )
+        conn.execute(
+            "INSERT INTO stream_trades (symbol, last, volume, updated_at) VALUES (?,?,?,0)",
+            (sym, 0, _VOL[sym]),
+        )
     conn.commit()
     conn.close()
 
@@ -56,8 +62,12 @@ def _seed_cache(path) -> None:
 def _cfg(tmp_path):
     db = tmp_path / "stream_cache.db"
     _seed_cache(db)
-    return {"stream_cache_db": db, "history_db_path": tmp_path / "gex_history.db", "symbols": ["SPX"],
-            "serve": {"host": "127.0.0.1", "port": 5055, "refresh_seconds": 15}}
+    return {
+        "stream_cache_db": db,
+        "history_db_path": tmp_path / "gex_history.db",
+        "symbols": ["SPX"],
+        "serve": {"host": "127.0.0.1", "port": 5055, "refresh_seconds": 15},
+    }
 
 
 def test_provider_reads_chain_greeks_oi_volume(tmp_path):
@@ -75,6 +85,7 @@ def test_provider_opens_read_only(tmp_path):
     conn = provider._connect_ro(cfg["stream_cache_db"])
     try:
         import pytest
+
         with pytest.raises(sqlite3.OperationalError):
             conn.execute("INSERT INTO stream_oi (symbol, open_interest, updated_at) VALUES ('x',1,0)")
     finally:
@@ -86,8 +97,10 @@ def test_provider_opens_read_only(tmp_path):
 def test_nearest_zero_gamma_picks_crossing_closest_to_spot():
     # Series [-10, 5, -20, 20] sign-flips 3x (90.67, ~92.8, 100.5); returns the crossing nearest spot.
     series = [
-        {"strike": 90.0, "net": -10}, {"strike": 91.0, "net": 5},
-        {"strike": 100.0, "net": -20}, {"strike": 101.0, "net": 20},
+        {"strike": 90.0, "net": -10},
+        {"strike": 91.0, "net": 5},
+        {"strike": 100.0, "net": -20},
+        {"strike": 101.0, "net": 20},
     ]
     assert gex.nearest_zero_gamma(series, 100.5, "net") == 100.5
     assert gex.nearest_zero_gamma(series, 90.0, "net") == 90.67
@@ -114,9 +127,9 @@ def test_volume_totals_rolls_up_vol_fields():
         {"strike": 101.0, "call_gex_vol": 90, "put_gex_vol": -10, "net_gex_vol": 80},
     ]
     vt = gex.volume_totals(series)
-    assert vt["total_call_gex_vol"] == 120      # 30 + 90 (only positives)
-    assert vt["total_put_gex_vol"] == 60        # abs(-50 + -10)
-    assert vt["net_gex_vol"] == 60              # -20 + 80
+    assert vt["total_call_gex_vol"] == 120  # 30 + 90 (only positives)
+    assert vt["total_put_gex_vol"] == 60  # abs(-50 + -10)
+    assert vt["net_gex_vol"] == 60  # -20 + 80
 
 
 def test_build_gex_payload_shape_and_oi_vs_volume(tmp_path):
@@ -132,8 +145,14 @@ def test_build_gex_payload_shape_and_oi_vs_volume(tmp_path):
     assert t["call_wall"] == 610 and t["put_wall"] == 600
     assert t["zero_gamma"] is not None
     # Volume rollups sit alongside the OI keys.
-    for k in ("total_call_gex_vol", "total_put_gex_vol", "net_gex_vol",
-              "zero_gamma_vol", "call_wall_vol", "put_wall_vol"):
+    for k in (
+        "total_call_gex_vol",
+        "total_put_gex_vol",
+        "net_gex_vol",
+        "zero_gamma_vol",
+        "call_wall_vol",
+        "put_wall_vol",
+    ):
         assert k in t
     # build_gex reads the spot trail read-only (the dashboard's recorder writes it) — a list, empty
     # until record_spots has run.
@@ -190,7 +209,11 @@ def test_record_regimes_skips_symbols_without_chains(tmp_path):
 
 
 def test_build_gex_reports_missing_cache(tmp_path):
-    cfg = {"stream_cache_db": tmp_path / "nope.db", "history_db_path": tmp_path / "h.db",
-           "symbols": ["SPX"], "serve": {}}
+    cfg = {
+        "stream_cache_db": tmp_path / "nope.db",
+        "history_db_path": tmp_path / "h.db",
+        "symbols": ["SPX"],
+        "serve": {},
+    }
     out = service.build_gex(cfg, "SPX")
     assert out["ok"] is False and "not found" in out["error"]

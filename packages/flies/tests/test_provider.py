@@ -38,22 +38,36 @@ def intrinsic_quotes(spot, extrinsic=2.0, width=0.4):
     A constant quote across every strike looks harmless and is not — every vertical then prices at
     zero credit, so entry gates reject everything and a test can pass by never trading at all.
     """
+
     def build(strike, opt_type):
         intrinsic = max(0.0, (strike - spot) if opt_type == "P" else (spot - strike))
         mid = intrinsic + extrinsic
         return round(mid - width / 2, 2), round(mid + width / 2, 2)
+
     return build
 
 
-def seed(cache_path, *, spot=6000.0, strikes=_DEFAULT_STRIKES, expiration=None,
-         quote_age=0.0, symbol="SPX", oi=1000, gamma=0.001, bid_ask=(1.0, 1.2),
-         quote_for=None):
+def seed(
+    cache_path,
+    *,
+    spot=6000.0,
+    strikes=_DEFAULT_STRIKES,
+    expiration=None,
+    quote_age=0.0,
+    symbol="SPX",
+    oi=1000,
+    gamma=0.001,
+    bid_ask=(1.0, 1.2),
+    quote_for=None,
+):
     expiration = expiration or TODAY
     conn = sqlite3.connect(cache_path)
     now = time.time()
     if spot is not None:
-        conn.execute("INSERT OR REPLACE INTO stream_trades (symbol, last, volume, updated_at) "
-                     "VALUES (?, ?, ?, ?)", (symbol, spot, 0, now))
+        conn.execute(
+            "INSERT OR REPLACE INTO stream_trades (symbol, last, volume, updated_at) VALUES (?, ?, ?, ?)",
+            (symbol, spot, 0, now),
+        )
     for strike in strikes:
         for opt_type, tag in (("C", "C"), ("P", "P")):
             streamer_symbol = f".{symbol}{expiration.replace('-', '')}{tag}{strike}"
@@ -61,18 +75,35 @@ def seed(cache_path, *, spot=6000.0, strikes=_DEFAULT_STRIKES, expiration=None,
                 "INSERT OR REPLACE INTO stream_chain "
                 "(streamer_symbol, expiration, underlying_symbol, data_json, updated_at) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (streamer_symbol, expiration, symbol, json.dumps({
-                    "streamer_symbol": streamer_symbol, "strike_price": strike,
-                    "option_type": opt_type, "shares_per_contract": 100}), now))
+                (
+                    streamer_symbol,
+                    expiration,
+                    symbol,
+                    json.dumps(
+                        {
+                            "streamer_symbol": streamer_symbol,
+                            "strike_price": strike,
+                            "option_type": opt_type,
+                            "shares_per_contract": 100,
+                        }
+                    ),
+                    now,
+                ),
+            )
             bid, ask = quote_for(strike, tag) if quote_for else bid_ask
             conn.execute(
                 "INSERT OR REPLACE INTO stream_quotes (symbol, bid, ask, mid, updated_at) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (streamer_symbol, bid, ask, (bid + ask) / 2, now - quote_age))
-            conn.execute("INSERT OR REPLACE INTO stream_greeks (symbol, gamma, updated_at) "
-                         "VALUES (?, ?, ?)", (streamer_symbol, gamma, now))
-            conn.execute("INSERT OR REPLACE INTO stream_oi (symbol, open_interest, updated_at) "
-                         "VALUES (?, ?, ?)", (streamer_symbol, oi, now))
+                (streamer_symbol, bid, ask, (bid + ask) / 2, now - quote_age),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO stream_greeks (symbol, gamma, updated_at) VALUES (?, ?, ?)",
+                (streamer_symbol, gamma, now),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO stream_oi (symbol, open_interest, updated_at) VALUES (?, ?, ?)",
+                (streamer_symbol, oi, now),
+            )
     conn.commit()
     conn.close()
 
@@ -94,6 +125,7 @@ def test_snapshot_feeds_the_engine_without_translation(cache):
     """The contract that matters: what the provider emits is what the engine consumes. A mismatch
     here would show up as an arm that silently never trades."""
     import engine
+
     seed(cache, bid_ask=(2.0, 2.4))
     snap = provider.build_snapshot(cache, "SPX")
     assert engine.quote(snap, "put", 6000.0) is not None
@@ -170,8 +202,7 @@ def test_partial_staleness_keeps_the_fresh_legs(cache):
     """One stale leg should cost that structure, not the whole session."""
     seed(cache, strikes=[5995, 6000, 6005])
     conn = sqlite3.connect(cache)
-    conn.execute("UPDATE stream_quotes SET updated_at = ? WHERE symbol LIKE '%P6005'",
-                 (time.time() - 9999,))
+    conn.execute("UPDATE stream_quotes SET updated_at = ? WHERE symbol LIKE '%P6005'", (time.time() - 9999,))
     conn.commit()
     conn.close()
 
@@ -210,6 +241,7 @@ def test_non_zero_dte_is_labelled_so_the_engine_can_refuse(cache):
     """The provider does not gate on 0DTE — it reports the DTE and lets the engine's own hard stop
     reject it, so there is exactly one place that decision lives."""
     import engine
+
     seed(cache, expiration="2099-01-15")
     snap = provider.build_snapshot(cache, "SPX")
     assert snap["dte"] > 0

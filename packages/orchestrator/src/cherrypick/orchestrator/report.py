@@ -91,7 +91,8 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
     where, params = _session_where("substr(exit_time, 1, 10)", start, end)
     rows = conn.execute(
         f"SELECT symbol, risk_profile, pnl, fees, exit_time{slip_col}{cap_cols}{mult_col} "
-        f"FROM ic_trades WHERE exit_time IS NOT NULL{where}", params
+        f"FROM ic_trades WHERE exit_time IS NOT NULL{where}",
+        params,
     ).fetchall()
 
     def _capital(r):
@@ -100,7 +101,7 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
         # weighing equally. None (not zero) when the row can't support the computation.
         if not has_capital or r["wing_width"] is None:
             return None
-        mult = (r["dollar_multiplier"] if mult_col and r["dollar_multiplier"] else 100.0)
+        mult = r["dollar_multiplier"] if mult_col and r["dollar_multiplier"] else 100.0
         cap = (float(r["wing_width"]) - float(r["net_credit"] or 0.0)) * mult * (r["quantity"] or 1)
         return round(cap, 2) if cap > 0 else None
 
@@ -169,7 +170,8 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
     where, params = _session_where("trade_date", start, end)
     rows = conn.execute(
         "SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date "
-        f"FROM fly_positions WHERE status = 'settled'{where}", params
+        f"FROM fly_positions WHERE status = 'settled'{where}",
+        params,
     ).fetchall()
     return [
         {
@@ -218,8 +220,7 @@ def _earnings_open(conn) -> list[dict]:
     P&L until they settle. `session` is the OPEN session (opened_at), so the digest for a day shows
     what that day put on, matching the earnings module's own 'Opened this session' EOD section."""
     rows = conn.execute(
-        "SELECT symbol, profile, strategy, capital_at_risk, opened_at "
-        "FROM trades WHERE closed_at IS NULL"
+        "SELECT symbol, profile, strategy, capital_at_risk, opened_at FROM trades WHERE closed_at IS NULL"
     ).fetchall()
     return [
         {
@@ -286,8 +287,11 @@ def _summarize(records: list[dict]) -> dict:
 
 
 # --------------------------------------------------------------------------- entrypoint
-def run(cfg: dict | None = None, session: str | None = None,
-        session_range: tuple[str | None, str | None] | None = None) -> dict:
+def run(
+    cfg: dict | None = None,
+    session: str | None = None,
+    session_range: tuple[str | None, str | None] | None = None,
+) -> dict:
     """Unified paper P&L across all enabled modules. Read-only; never writes or trades.
 
     With `session` (an ISO 'YYYY-MM-DD'), restrict to trades whose settlement session matches.
@@ -341,16 +345,17 @@ def run(cfg: dict | None = None, session: str | None = None,
         # Python-side bound: the belt for the reader whose session date can't be bounded in
         # SQL (earnings), and for open records. Exact same semantics as the SQL pushdown.
         if lo is not None or hi is not None:
+
             def _in_bounds(r):
                 s = r.get("session") or ""
                 return (lo is None or s >= lo) and (hi is None or s <= hi)
+
             records = [r for r in records if _in_bounds(r)]
             open_records = [r for r in open_records if _in_bounds(r)]
 
         if session_range is not None:
             for r in records:
-                day = daily.setdefault(r.get("session") or "", {"net_pnl": 0.0, "trades": 0,
-                                                                "by_module": {}})
+                day = daily.setdefault(r.get("session") or "", {"net_pnl": 0.0, "trades": 0, "by_module": {}})
                 day["net_pnl"] += r["net_pnl"]
                 day["trades"] += 1
                 day["by_module"][name] = round(day["by_module"].get(name, 0.0) + r["net_pnl"], 2)
@@ -387,8 +392,12 @@ def run(cfg: dict | None = None, session: str | None = None,
     if session_range is not None:
         out["session_range"] = list(session_range)
         out["daily"] = [
-            {"session": s, "net_pnl": round(d["net_pnl"], 2), "trades": d["trades"],
-             "by_module": d["by_module"]}
+            {
+                "session": s,
+                "net_pnl": round(d["net_pnl"], 2),
+                "trades": d["trades"],
+                "by_module": d["by_module"],
+            }
             for s, d in sorted(daily.items())
         ]
     return out

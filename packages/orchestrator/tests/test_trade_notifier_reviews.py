@@ -3,6 +3,7 @@
 Unit lane: an in-memory earnings paper DB with an `entry_reviews` table; asserts the id-watermark reader,
 the bullet-format message the account owner asked for, and that a DB predating the feature is guarded.
 """
+
 import sqlite3
 
 import pytest
@@ -11,8 +12,22 @@ from cherrypick.orchestrator import trade_notifier as tn
 
 pytestmark = pytest.mark.unit
 
-_COLS = ("scan_date", "symbol", "timing", "price", "volume", "winrate", "winrate_sample",
-         "iv_rv_ratio", "term_structure", "market_cap", "best_tier", "selected", "reason", "profile")
+_COLS = (
+    "scan_date",
+    "symbol",
+    "timing",
+    "price",
+    "volume",
+    "winrate",
+    "winrate_sample",
+    "iv_rv_ratio",
+    "term_structure",
+    "market_cap",
+    "best_tier",
+    "selected",
+    "reason",
+    "profile",
+)
 
 
 def _row(**kw):
@@ -37,11 +52,28 @@ def _conn_with_reviews(rows):
     return conn
 
 
-_ISRG = _row(symbol="ISRG", timing="AMC", price=402.05, volume=2702779, winrate=0.75, winrate_sample=12,
-             iv_rv_ratio=1.47, term_structure=-0.019, market_cap=142391166303, best_tier="accepted",
-             selected=1, reason="opened iron_fly, iron_condor")
-_NFLX = _row(symbol="NFLX", winrate=0.60, winrate_sample=8, best_tier="rejected", selected=0,
-             reason="screen_rejected (7 strategies evaluated)")
+_ISRG = _row(
+    symbol="ISRG",
+    timing="AMC",
+    price=402.05,
+    volume=2702779,
+    winrate=0.75,
+    winrate_sample=12,
+    iv_rv_ratio=1.47,
+    term_structure=-0.019,
+    market_cap=142391166303,
+    best_tier="accepted",
+    selected=1,
+    reason="opened iron_fly, iron_condor",
+)
+_NFLX = _row(
+    symbol="NFLX",
+    winrate=0.60,
+    winrate_sample=8,
+    best_tier="rejected",
+    selected=0,
+    reason="screen_rejected (7 strategies evaluated)",
+)
 
 
 def test_new_reviews_respects_id_watermark():

@@ -196,9 +196,7 @@ def cmd_init_db(args) -> dict:
 def cmd_get_open_positions(args) -> dict:
     conn = _conn()
     try:
-        rows = conn.execute(
-            "SELECT * FROM trades WHERE closed_at IS NULL ORDER BY opened_at"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM trades WHERE closed_at IS NULL ORDER BY opened_at").fetchall()
     finally:
         conn.close()
     return {"ok": True, "positions": [dict(r) for r in rows]}
@@ -288,7 +286,10 @@ def cmd_save_leg_close(args) -> dict:
         )
         conn.commit()
         if cur.rowcount == 0:
-            return {"ok": False, "error": f"no open leg found for order_id={spec['order_id']} leg_role={spec['leg_role']}"}
+            return {
+                "ok": False,
+                "error": f"no open leg found for order_id={spec['order_id']} leg_role={spec['leg_role']}",
+            }
     finally:
         conn.close()
     return {"ok": True, "order_id": spec["order_id"], "leg_role": spec["leg_role"]}
@@ -320,8 +321,7 @@ def cmd_save_close(args) -> dict:
         # individually beforehand (the agent path's close_side) keep their own close_price;
         # swept legs record none -- the position-level exit_debit is the priced exit.
         conn.execute(
-            "UPDATE trade_legs SET status = 'closed', closed_at = ? "
-            "WHERE order_id = ? AND status = 'open'",
+            "UPDATE trade_legs SET status = 'closed', closed_at = ? WHERE order_id = ? AND status = 'open'",
             (spec.get("closed_at", time.time()), order_id),
         )
         conn.commit()
@@ -352,9 +352,7 @@ def cmd_record_close_failure(args) -> dict:
         conn.commit()
         if cur.rowcount == 0:
             return {"ok": False, "error": f"no open trade found for order_id {order_id}"}
-        row = conn.execute(
-            "SELECT close_attempts FROM trades WHERE order_id = ?", (order_id,)
-        ).fetchone()
+        row = conn.execute("SELECT close_attempts FROM trades WHERE order_id = ?", (order_id,)).fetchone()
     finally:
         conn.close()
     return {"ok": True, "order_id": order_id, "close_attempts": row["close_attempts"]}
@@ -406,12 +404,23 @@ def cmd_save_entry_review(args) -> dict:
             " best_tier=excluded.best_tier, selected=excluded.selected, reason=excluded.reason, "
             " criteria_json=excluded.criteria_json, logged_at=excluded.logged_at",
             (
-                spec["scan_date"], spec["symbol"], spec.get("timing"), spec.get("price"),
-                spec.get("volume"), spec.get("winrate"), spec.get("winrate_sample"),
-                spec.get("iv_rv_ratio"), spec.get("term_structure"), spec.get("market_cap"),
-                spec.get("expected_move"), spec.get("best_tier"), 1 if spec.get("selected") else 0,
-                spec.get("reason"), json.dumps(crit) if crit is not None else None,
-                spec.get("logged_at", time.time()), spec.get("profile", "default"),
+                spec["scan_date"],
+                spec["symbol"],
+                spec.get("timing"),
+                spec.get("price"),
+                spec.get("volume"),
+                spec.get("winrate"),
+                spec.get("winrate_sample"),
+                spec.get("iv_rv_ratio"),
+                spec.get("term_structure"),
+                spec.get("market_cap"),
+                spec.get("expected_move"),
+                spec.get("best_tier"),
+                1 if spec.get("selected") else 0,
+                spec.get("reason"),
+                json.dumps(crit) if crit is not None else None,
+                spec.get("logged_at", time.time()),
+                spec.get("profile", "default"),
             ),
         )
         conn.commit()
@@ -450,15 +459,14 @@ def cmd_get_market_context(args) -> dict:
     VIX delta). Either may be None."""
     conn = _conn()
     try:
-        today = conn.execute(
-            "SELECT * FROM market_context WHERE context_date = ?", (args.date,)).fetchone()
+        today = conn.execute("SELECT * FROM market_context WHERE context_date = ?", (args.date,)).fetchone()
         prior = conn.execute(
             "SELECT * FROM market_context WHERE context_date < ? ORDER BY context_date DESC LIMIT 1",
-            (args.date,)).fetchone()
+            (args.date,),
+        ).fetchone()
     finally:
         conn.close()
-    return {"ok": True, "today": dict(today) if today else None,
-            "prior": dict(prior) if prior else None}
+    return {"ok": True, "today": dict(today) if today else None, "prior": dict(prior) if prior else None}
 
 
 def cmd_log_scan(args) -> dict:
@@ -540,7 +548,8 @@ def cmd_get_pnl_summary(args) -> dict:
             for s, vals in by_strategy.items()
         },
         "by_profile": _profiles.compare_profiles(
-            scored, tag_key="profile", summarize=_pnl_bundle, untagged="default"),
+            scored, tag_key="profile", summarize=_pnl_bundle, untagged="default"
+        ),
         "trades": closed,
     }
 

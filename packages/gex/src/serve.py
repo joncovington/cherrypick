@@ -602,7 +602,7 @@ def make_handler(cfg: dict, default_sym: str):
                 return
             if parsed.path == "/api/gex":
                 qs = parse_qs(parsed.query)
-                sym = (qs.get("symbol", [default_sym])[0] or default_sym)
+                sym = qs.get("symbol", [default_sym])[0] or default_sym
                 try:
                     payload = _service.build_gex(cfg, sym)
                 except Exception as exc:  # a data hiccup must not 500 the viewer
@@ -621,8 +621,13 @@ def _port_in_use(host: str, port: int) -> bool:
     return viz.port_in_use(port, host)
 
 
-def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
-          port: int | None = None, open_browser: bool = True) -> None:
+def serve(
+    cfg: dict,
+    symbol: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    open_browser: bool = True,
+) -> None:
     """Run the live GEX dashboard until interrupted (localhost-only)."""
     from config import default_symbol
 
@@ -665,9 +670,9 @@ def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
 
     from config import ws_port as _ws_port
     from push import GexPushServer
+
     push_srv = GexPushServer(cfg)
-    threading.Thread(target=push_srv.start, args=(host,),
-                     name="gex-push", daemon=True).start()
+    threading.Thread(target=push_srv.start, args=(host,), name="gex-push", daemon=True).start()
     print(f"cherrypick-gex push serving at ws://{host}:{_ws_port(cfg)}/")
 
     if open_browser:

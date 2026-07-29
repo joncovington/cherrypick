@@ -20,8 +20,12 @@ import scanner
 import strategy_metrics as sm
 
 STRATEGY_NAMES = [
-    "iron_fly", "double_calendar", "iron_condor", "atm_calendar",
-    "directional_credit_spread", "broken_wing_butterfly",
+    "iron_fly",
+    "double_calendar",
+    "iron_condor",
+    "atm_calendar",
+    "directional_credit_spread",
+    "broken_wing_butterfly",
 ]
 
 
@@ -47,25 +51,35 @@ def print_strategy_block(name: str, trades: list[dict], capital_basis: float | N
     cf = summary["core_five"]
 
     print(f"--- {name} " + "-" * max(1, 60 - len(name)))
-    print(f"  Trades: {sample['count']:>4}  "
-          f"(directional target 30: {'met' if sample['directional_met'] else 'not yet'}, "
-          f"significant target 100: {'met' if sample['significant_met'] else 'not yet'})")
+    print(
+        f"  Trades: {sample['count']:>4}  "
+        f"(directional target 30: {'met' if sample['directional_met'] else 'not yet'}, "
+        f"significant target 100: {'met' if sample['significant_met'] else 'not yet'})"
+    )
     if sample["count"] == 0:
         print("  No closed trades yet.")
         print()
         return
 
     print(f"  Win rate:       {_fmt(cf['win_rate']['value'], pct=True)}")
-    print(f"  Profit factor:  {_fmt(cf['profit_factor']['value'])}"
-          f"   [{_pass_glyph(cf['profit_factor']['pass'])}, need > {sm.BENCHMARKS['profit_factor_min']}]")
-    print(f"  Expectancy:     {_fmt(cf['expectancy']['value'], dollar=True)}"
-          f"   [{_pass_glyph(cf['expectancy']['pass'])}, need > {sm.BENCHMARKS['expectancy_cost_multiple_min']}x avg cost "
-          f"({_fmt(cf['expectancy']['avg_cost'], dollar=True)})]")
-    print(f"  Sharpe (trade): {_fmt(cf['sharpe']['value'])}"
-          f"   [{_pass_glyph(cf['sharpe']['pass'])}, need > {sm.BENCHMARKS['sharpe_min']}]")
+    print(
+        f"  Profit factor:  {_fmt(cf['profit_factor']['value'])}"
+        f"   [{_pass_glyph(cf['profit_factor']['pass'])}, need > {sm.BENCHMARKS['profit_factor_min']}]"
+    )
+    print(
+        f"  Expectancy:     {_fmt(cf['expectancy']['value'], dollar=True)}"
+        f"   [{_pass_glyph(cf['expectancy']['pass'])}, need > {sm.BENCHMARKS['expectancy_cost_multiple_min']}x avg cost "
+        f"({_fmt(cf['expectancy']['avg_cost'], dollar=True)})]"
+    )
+    print(
+        f"  Sharpe (trade): {_fmt(cf['sharpe']['value'])}"
+        f"   [{_pass_glyph(cf['sharpe']['pass'])}, need > {sm.BENCHMARKS['sharpe_min']}]"
+    )
     mdd = cf["max_drawdown"]["value"]
-    print(f"  Max drawdown:   {_fmt(mdd['absolute'], dollar=True)} ({_fmt(mdd['pct'], pct=True)})"
-          f"   [{_pass_glyph(cf['max_drawdown']['pass'])}, need < {sm.BENCHMARKS['max_drawdown_max_pct']*100:.0f}%]")
+    print(
+        f"  Max drawdown:   {_fmt(mdd['absolute'], dollar=True)} ({_fmt(mdd['pct'], pct=True)})"
+        f"   [{_pass_glyph(cf['max_drawdown']['pass'])}, need < {sm.BENCHMARKS['max_drawdown_max_pct'] * 100:.0f}%]"
+    )
     if summary["avg_hold_seconds"]:
         hours = summary["avg_hold_seconds"] / 3600
         print(f"  Avg hold:       {hours:.1f}h")
@@ -73,7 +87,9 @@ def print_strategy_block(name: str, trades: list[dict], capital_basis: float | N
     iv = summary["iv_crush"]
     if iv["avg_crush"] is not None:
         direction = "crush" if iv["avg_crush"] >= 0 else "expansion"
-        print(f"  Avg IV {direction}:  {abs(iv['avg_crush'])*100:.1f} vol pts  (n={iv['sample_count']}/{sample['count']})")
+        print(
+            f"  Avg IV {direction}:  {abs(iv['avg_crush']) * 100:.1f} vol pts  (n={iv['sample_count']}/{sample['count']})"
+        )
     else:
         print("  Avg IV crush:   n/a (no trades with both entry/exit IV captured)")
 
@@ -86,14 +102,20 @@ def print_strategy_block(name: str, trades: list[dict], capital_basis: float | N
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["live", "paper"], default="paper",
-                        help="'live' reads earnings_trades.db; 'paper' (default) reads "
-                             "paper_trades.db (both under the cherrypick data home, "
-                             "~/.cherrypick/data/earnings by default or $EARNINGS_DATA_DIR).")
+    parser.add_argument(
+        "--mode",
+        choices=["live", "paper"],
+        default="paper",
+        help="'live' reads earnings_trades.db; 'paper' (default) reads "
+        "paper_trades.db (both under the cherrypick data home, "
+        "~/.cherrypick/data/earnings by default or $EARNINGS_DATA_DIR).",
+    )
     parser.add_argument("--db", default=None, help="Overrides the mode-based default DB path.")
-    parser.add_argument("--profile", default=None,
-                        help="Book to report on. Defaults to 'strat_test' in paper mode, "
-                             "'default' in live mode.")
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="Book to report on. Defaults to 'strat_test' in paper mode, 'default' in live mode.",
+    )
     parser.add_argument("--strategy", default=None, help="limit to one strategy")
     parser.add_argument("--since", default=None, help="YYYY-MM-DD, only trades opened on/after this date")
     args = parser.parse_args()

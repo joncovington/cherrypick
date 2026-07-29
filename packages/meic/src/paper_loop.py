@@ -39,14 +39,17 @@ from pathlib import Path
 
 try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
     from zoneinfo import ZoneInfo
+
     _ET = ZoneInfo("America/New_York")
 except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
+
     _ET = pytz.timezone("America/New_York")
 
 
 def _now_et():
     return datetime.now(_ET)
+
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -107,8 +110,12 @@ def _setup_logging(console: bool = True):
     # the console handler for interactive/--once runs where stdout is real.
     if console and sys.stdout is not None and sys.stdout.isatty():
         handlers.append(logging.StreamHandler(sys.stdout))
-    logging.basicConfig(level=logging.INFO, handlers=handlers,
-                        format="%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=handlers,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
 
 def _handle_signal(signum, frame):
@@ -128,8 +135,14 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def _subrun(cmd, timeout=90):
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
-                          stdin=subprocess.DEVNULL, creationflags=_NO_WINDOW)
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        stdin=subprocess.DEVNULL,
+        creationflags=_NO_WINDOW,
+    )
 
 
 def _run_json(cmd, timeout=90):
@@ -159,6 +172,7 @@ def _symbols(cfg):
 # ---------------------------------------------------------------------------
 # Market-data → snapshot
 # ---------------------------------------------------------------------------
+
 
 def _delta_target(cfg, vix):
     if vix is None:
@@ -233,9 +247,11 @@ def _fetch_overview(symbol):
                 except (TypeError, ValueError):
                     pass
 
-        return (price,
-                _as_float(m, "implied_volatility_index_rank"),
-                _as_float(m, "implied_volatility_percentile"))
+        return (
+            price,
+            _as_float(m, "implied_volatility_index_rank"),
+            _as_float(m, "implied_volatility_percentile"),
+        )
     return None, None, None
 
 
@@ -265,9 +281,22 @@ def _build_candidates(symbol, last, widths, delta_targets, default_delta, today)
     `short_delta_target` a profile requests). Each candidate is tagged with its `short_delta` and
     `is_default_delta`; `_select_candidates` then hands each profile only its own band, so profiles
     without a `short_delta_target` see exactly the default-band menu they saw before."""
-    chain = _run_json(_TT + ["get_option_chain", "--symbol", symbol, "--expiration", today,
-                             "--include_quotes", "--include_greeks",
-                             "--around_price", str(last), "--strike_count", "80"])
+    chain = _run_json(
+        _TT
+        + [
+            "get_option_chain",
+            "--symbol",
+            symbol,
+            "--expiration",
+            today,
+            "--include_quotes",
+            "--include_greeks",
+            "--around_price",
+            str(last),
+            "--strike_count",
+            "80",
+        ]
+    )
     if not chain.get("ok"):
         return [], {}, chain.get("error", "chain fetch failed")
     entries = []
@@ -280,15 +309,22 @@ def _build_candidates(symbol, last, widths, delta_targets, default_delta, today)
         if strike is None or e.get("bid") is None or e.get("ask") is None:
             continue
         ot = str(e.get("option_type", "")).lower()
-        rec = {"strike": float(strike), "streamer_symbol": e.get("streamer_symbol"),
-               "delta": e.get("delta"), "bid": e.get("bid"), "ask": e.get("ask")}
+        rec = {
+            "strike": float(strike),
+            "streamer_symbol": e.get("streamer_symbol"),
+            "delta": e.get("delta"),
+            "bid": e.get("bid"),
+            "ask": e.get("ask"),
+        }
         if "c" in ot and "p" not in ot:
             calls.append(rec)
         elif "p" in ot:
             puts.append(rec)
-    leg_quotes = {r["streamer_symbol"]: {"bid": r["bid"], "ask": r["ask"],
-                                         "mid": round((r["bid"] + r["ask"]) / 2, 4)}
-                  for r in calls + puts if r["streamer_symbol"]}
+    leg_quotes = {
+        r["streamer_symbol"]: {"bid": r["bid"], "ask": r["ask"], "mid": round((r["bid"] + r["ask"]) / 2, 4)}
+        for r in calls + puts
+        if r["streamer_symbol"]
+    }
     if not calls or not puts:
         return [], leg_quotes, "no call/put quotes"
 
@@ -309,9 +345,17 @@ def _build_candidates(symbol, last, widths, delta_targets, default_delta, today)
             lc = by_call.get(short_call["strike"] + w)
             lp = by_put.get(short_put["strike"] - w)
             if lc and lp:
-                candidates.append({"wing_width": w, "short_put": short_put, "long_put": lp,
-                                   "short_call": short_call, "long_call": lc,
-                                   "short_delta": dt, "is_default_delta": is_default})
+                candidates.append(
+                    {
+                        "wing_width": w,
+                        "short_put": short_put,
+                        "long_put": lp,
+                        "short_call": short_call,
+                        "long_call": lc,
+                        "short_delta": dt,
+                        "is_default_delta": is_default,
+                    }
+                )
     if not candidates:
         return [], leg_quotes, "no short strike near delta"
     return candidates, leg_quotes, None
@@ -325,6 +369,7 @@ def _open_count():
 # ---------------------------------------------------------------------------
 # Iteration
 # ---------------------------------------------------------------------------
+
 
 def _is_action_outcome(o) -> bool:
     """A fill or exit (vs. a plain skip-reason string) — these stand out in the one-line log."""
@@ -350,8 +395,7 @@ def _fmt_symbol(sym, info):
         parts.append(" ".join(active))
     if skips:
         uniq = set(skips)
-        parts.append(f"all {next(iter(uniq))}" if (len(uniq) == 1 and not active)
-                     else f"{len(skips)} skip")
+        parts.append(f"all {next(iter(uniq))}" if (len(uniq) == 1 and not active) else f"{len(skips)} skip")
     return f"{sym}(ivr {ivr_s}): {'  '.join(parts) if parts else '-'}"
 
 
@@ -367,6 +411,7 @@ def _format_iteration(now_et, vix, vix1d_ratio, delta_target, summary):
 # ---------------------------------------------------------------------------
 # Deterministic end-of-day report
 # ---------------------------------------------------------------------------
+
 
 def _eod_report_path(day):
     return _LOG_FILE.parent / f"paper-eod-{day}.md"
@@ -393,7 +438,8 @@ def _write_eod_report(day):
         con.row_factory = sqlite3.Row
         rows = con.execute(
             "SELECT symbol, risk_profile, status, exit_reason, pnl, fees FROM ic_trades WHERE trade_date=?",
-            (day,)).fetchall()
+            (day,),
+        ).fetchall()
         con.close()
     except sqlite3.Error:
         rows = []
@@ -414,16 +460,20 @@ def _write_eod_report(day):
         exits[reason] = exits.get(reason, 0) + 1
 
     L = [f"# Paper Trading - EOD Report {day}", ""]
-    L.append("_Deterministic parallel-shadow engine. MEIC has no profit target - exits are "
-             "per-side stops, non-cash-settled time force-close, or cash-settled "
-             "expiration-settlement._")
+    L.append(
+        "_Deterministic parallel-shadow engine. MEIC has no profit target - exits are "
+        "per-side stops, non-cash-settled time force-close, or cash-settled "
+        "expiration-settlement._"
+    )
     L.append("")
     L.append("## Account-wide (all profiles)")
     L.append(f"- Entries filled: **{entries}**")
     L.append(f"- Net P&L (net of fees): **{_money(round(net_total, 2))}**")
     L.append(f"- Still open at report time: {open_n}")
     if by_symbol:
-        L.append("- By symbol: " + ", ".join(f"{s} {_money(round(v, 2))}" for s, v in sorted(by_symbol.items())))
+        L.append(
+            "- By symbol: " + ", ".join(f"{s} {_money(round(v, 2))}" for s, v in sorted(by_symbol.items()))
+        )
     L.append("")
 
     # Per-(profile × symbol) portfolios — the atomic unit the paper study runs on. Each pair is its
@@ -431,17 +481,23 @@ def _write_eod_report(day):
     # profiles OR symbols here; the sections below are roll-up lenses over these same trades.
     portfolios = summ.get("portfolios", {}) if summ.get("ok") else {}
     L.append("## Per portfolio (profile × symbol)")
-    L.append("_Each pair is a standalone book — these never net against one another. The per-profile "
-             "and by-symbol views below are lenses over the same trades, not separate accounting._")
-    L.append("| Profile | Symbol | Trades | Wins | Losses | Win % | Net P&L | Expectancy/IC | Profit Factor | Max DD |")
+    L.append(
+        "_Each pair is a standalone book — these never net against one another. The per-profile "
+        "and by-symbol views below are lenses over the same trades, not separate accounting._"
+    )
+    L.append(
+        "| Profile | Symbol | Trades | Wins | Losses | Win % | Net P&L | Expectancy/IC | Profit Factor | Max DD |"
+    )
     L.append("|---|---|---|---|---|---|---|---|---|---|")
     for _, s in sorted(portfolios.items(), key=lambda kv: -(kv[1].get("net_pnl") or 0)):
         wr = f"{s['win_rate_pct']:.0f}%" if s.get("win_rate_pct") is not None else "-"
         pf = f"{s['profit_factor']:.2f}" if s.get("profit_factor") is not None else "-"
         exp = _money(s.get("expectancy_per_trade")) if s.get("expectancy_per_trade") is not None else "-"
-        L.append(f"| {s.get('profile', '-')} | {s.get('symbol', '-')} | {s.get('total_trades', 0)} | "
-                 f"{s.get('win_count', 0)} | {s.get('loss_count', 0)} | {wr} | {_money(s.get('net_pnl'))} | "
-                 f"{exp} | {pf} | {_money(s.get('max_drawdown'))} |")
+        L.append(
+            f"| {s.get('profile', '-')} | {s.get('symbol', '-')} | {s.get('total_trades', 0)} | "
+            f"{s.get('win_count', 0)} | {s.get('loss_count', 0)} | {wr} | {_money(s.get('net_pnl'))} | "
+            f"{exp} | {pf} | {_money(s.get('max_drawdown'))} |"
+        )
     if not portfolios:
         L.append("| _(none)_ | - | 0 | - | - | - | $0.00 | - | - | - |")
     L.append("")
@@ -458,7 +514,9 @@ def _write_eod_report(day):
             ordered.append(tag)
 
     L.append("## Per profile (roll-up across symbols)")
-    L.append("| Profile | Symbol | Trades | Wins | Losses | Win % | Net P&L | Expectancy/IC | Profit Factor | Max DD |")
+    L.append(
+        "| Profile | Symbol | Trades | Wins | Losses | Win % | Net P&L | Expectancy/IC | Profit Factor | Max DD |"
+    )
     L.append("|---|---|---|---|---|---|---|---|---|---|")
     active_names = [n for n in ordered if profiles.get(n)]
     for name in active_names:
@@ -467,9 +525,11 @@ def _write_eod_report(day):
         wr = f"{s['win_rate_pct']:.0f}%" if s.get("win_rate_pct") is not None else "-"
         pf = f"{s['profit_factor']:.2f}" if s.get("profit_factor") is not None else "-"
         exp = _money(s.get("expectancy_per_trade")) if s.get("expectancy_per_trade") is not None else "-"
-        L.append(f"| {name} | {syms} | {s.get('total_trades', 0)} | {s.get('win_count', 0)} | "
-                 f"{s.get('loss_count', 0)} | {wr} | {_money(s.get('net_pnl'))} | {exp} | {pf} | "
-                 f"{_money(s.get('max_drawdown'))} |")
+        L.append(
+            f"| {name} | {syms} | {s.get('total_trades', 0)} | {s.get('win_count', 0)} | "
+            f"{s.get('loss_count', 0)} | {wr} | {_money(s.get('net_pnl'))} | {exp} | {pf} | "
+            f"{_money(s.get('max_drawdown'))} |"
+        )
     if not active_names:
         L.append("| _(none)_ | - | 0 | - | - | - | $0.00 | - | - | - |")
     idle = [n for n in ordered if not profiles.get(n)]
@@ -487,7 +547,9 @@ def _write_eod_report(day):
     else:
         L.append("_No entries today - flat session._")
     L.append("")
-    L.append(f"_Generated {_now_et().strftime('%Y-%m-%d %H:%M:%S %Z')} · paper DB only; live account untouched._")
+    L.append(
+        f"_Generated {_now_et().strftime('%Y-%m-%d %H:%M:%S %Z')} · paper DB only; live account untouched._"
+    )
 
     path = _eod_report_path(day)
     path.write_text("\n".join(L), encoding="utf-8")
@@ -497,6 +559,7 @@ def _write_eod_report(day):
 # ---------------------------------------------------------------------------
 # EOD analysis report — conversational, 7-section, still fully deterministic
 # ---------------------------------------------------------------------------
+
 
 def _analysis_path(day):
     return _LOG_FILE.parent / f"eod-analysis-{day}.md"
@@ -510,8 +573,8 @@ def _read_market_context(day):
         con.row_factory = sqlite3.Row
         today = con.execute("SELECT * FROM market_context WHERE context_date=?", (day,)).fetchone()
         prior = con.execute(
-            "SELECT * FROM market_context WHERE context_date < ? ORDER BY context_date DESC LIMIT 1",
-            (day,)).fetchone()
+            "SELECT * FROM market_context WHERE context_date < ? ORDER BY context_date DESC LIMIT 1", (day,)
+        ).fetchone()
         con.close()
     except sqlite3.Error:
         return None, None
@@ -535,7 +598,8 @@ def _loop_gate_tail(day):
         ).fetchone()[0]
         r = con.execute(
             "SELECT reasoning FROM loop_log WHERE loop_date=? AND action='paper_iteration' "
-            "ORDER BY loop_time DESC LIMIT 1", (day,)
+            "ORDER BY loop_time DESC LIMIT 1",
+            (day,),
         ).fetchone()
         con.close()
     except sqlite3.Error:
@@ -544,8 +608,9 @@ def _loop_gate_tail(day):
         return n, None
     # Strip the leading "[HH:MM ET] VIX .. 1D-ratio .. delta .." prefix; keep the per-symbol gate part.
     import re
+
     m = re.search(r"[A-Z]{2,5}\(ivr", r["reasoning"])
-    tail = r["reasoning"][m.start():].strip() if m else r["reasoning"].strip()
+    tail = r["reasoning"][m.start() :].strip() if m else r["reasoning"].strip()
     return n, tail
 
 
@@ -560,12 +625,21 @@ def _write_eod_analysis(day):
     try:
         con = sqlite3.connect(_PAPER_DB)
         con.row_factory = sqlite3.Row
-        rows = [dict(r) for r in con.execute(
-            "SELECT * FROM ic_trades WHERE trade_date=? ORDER BY entry_time", (day,)).fetchall()]
-        legs = [dict(r) for r in con.execute(
-            "SELECT l.side, l.exit_time, l.exit_reason, l.exit_price, l.pnl, l.ic_order_id "
-            "FROM ic_spread_legs l JOIN ic_trades t ON l.ic_order_id=t.ic_order_id "
-            "WHERE t.trade_date=? AND l.status='closed'", (day,)).fetchall()]
+        rows = [
+            dict(r)
+            for r in con.execute(
+                "SELECT * FROM ic_trades WHERE trade_date=? ORDER BY entry_time", (day,)
+            ).fetchall()
+        ]
+        legs = [
+            dict(r)
+            for r in con.execute(
+                "SELECT l.side, l.exit_time, l.exit_reason, l.exit_price, l.pnl, l.ic_order_id "
+                "FROM ic_spread_legs l JOIN ic_trades t ON l.ic_order_id=t.ic_order_id "
+                "WHERE t.trade_date=? AND l.status='closed'",
+                (day,),
+            ).fetchall()
+        ]
         con.close()
     except sqlite3.Error:
         rows, legs = [], []
@@ -591,30 +665,41 @@ def _write_eod_analysis(day):
     loop_iters, gate_tail = _loop_gate_tail(day)
 
     L = [f"# MEIC Paper - EOD Analysis {day}", ""]
-    L.append("_Plain-English read on the paper session. Auto-generated from the paper DB (no agent) - "
-             "conversational, but rule-based, not a hand-written synthesis. MEIC has no profit target: "
-             "exits are per-side stops, non-cash-settled time force-close, or cash-settled expiration._")
+    L.append(
+        "_Plain-English read on the paper session. Auto-generated from the paper DB (no agent) - "
+        "conversational, but rule-based, not a hand-written synthesis. MEIC has no profit target: "
+        "exits are per-side stops, non-cash-settled time force-close, or cash-settled expiration._"
+    )
     L.append("")
 
     # 1. Executive snapshot ----------------------------------------------------
     L.append("## 1. Executive snapshot")
     if not active:
-        L.append("Flat session - no ICs were filled today. A day with no trade is a decision, not a gap: "
-                 "the entry gates (IV-rank floor, credit floor, VIX/ATR/GEX regime, late-entry bias) held "
-                 "the book out.")
+        L.append(
+            "Flat session - no ICs were filled today. A day with no trade is a decision, not a gap: "
+            "the entry gates (IV-rank floor, credit floor, VIX/ATR/GEX regime, late-entry bias) held "
+            "the book out."
+        )
         if gate_tail:
-            L.append(f"Across **{loop_iters}** loop iterations, the end-of-session gate by symbol was: "
-                     f"`{gate_tail}`. (e.g. `regime_gex_negative` = net GEX below the gamma flip, the "
-                     "trending regime where short condors are gated off; `skip`/IV-rank = below the "
-                     "premium floor.)")
+            L.append(
+                f"Across **{loop_iters}** loop iterations, the end-of-session gate by symbol was: "
+                f"`{gate_tail}`. (e.g. `regime_gex_negative` = net GEX below the gamma flip, the "
+                "trending regime where short condors are gated off; `skip`/IV-rank = below the "
+                "premium floor.)"
+            )
     else:
         best = max(by_symbol.items(), key=lambda kv: kv[1]) if by_symbol else None
         worst = min(by_symbol.items(), key=lambda kv: kv[1]) if by_symbol else None
-        drag = f" - fees were {_money(round(fees, 2))}, {(fees / gross * 100):.0f}% of the {_money(round(gross, 2))} gross" if gross > 0 else f" - fees added {_money(round(fees, 2))} on top of a losing gross"
+        drag = (
+            f" - fees were {_money(round(fees, 2))}, {(fees / gross * 100):.0f}% of the {_money(round(gross, 2))} gross"
+            if gross > 0
+            else f" - fees added {_money(round(fees, 2))} on top of a losing gross"
+        )
         L.append(
             f"The book filled **{len(active)}** IC{'s' if len(active) != 1 else ''} today and closed the "
             f"session **{_money(round(net_total, 2))}** net of fees ({len(wins)} up, {len(losses)} down"
-            f"{f', {open_n} still open at report time' if open_n else ''}){drag}.")
+            f"{f', {open_n} still open at report time' if open_n else ''}){drag}."
+        )
         line = "Average winner ran " + (_money(round(avg_win, 2)) if avg_win is not None else "-")
         line += ", average loser " + (_money(round(avg_loss, 2)) if avg_loss is not None else "-") + "."
         if best and worst and best[0] != worst[0]:
@@ -626,11 +711,15 @@ def _write_eod_analysis(day):
 
     # 2. Position-level detail -------------------------------------------------
     L.append("## 2. Position-level detail")
-    L.append("_Iron condors, 0DTE. Greeks are captured at entry; there is no end-of-day greek snapshot "
-             "because the positions settle the same day._")
+    L.append(
+        "_Iron condors, 0DTE. Greeks are captured at entry; there is no end-of-day greek snapshot "
+        "because the positions settle the same day._"
+    )
     if active:
         L.append("")
-        L.append("| Symbol | Profile | Put / Call strikes | Width | Net credit | Short-call Δ | Call OTM | IV rank | Net P&L |")
+        L.append(
+            "| Symbol | Profile | Put / Call strikes | Width | Net credit | Short-call Δ | Call OTM | IV rank | Net P&L |"
+        )
         L.append("|---|---|---|---|---|---|---|---|---|")
         for r in active:
             up = r.get("underlying_price_entry")
@@ -638,9 +727,11 @@ def _write_eod_analysis(day):
             cd = f"{r['call_delta_at_entry']:.2f}" if r.get("call_delta_at_entry") is not None else "-"
             ivr = f"{r['iv_rank_at_entry'] * 100:.0f}%" if r.get("iv_rank_at_entry") is not None else "-"
             strikes = f"{r.get('put_strike', '-')} / {r.get('call_strike', '-')}"
-            L.append(f"| {r['symbol']} | {r.get('risk_profile', '-')} | {strikes} | "
-                     f"{r.get('wing_width', '-')} | {_money(r.get('net_credit'))} | {cd} | {call_otm} | "
-                     f"{ivr} | {_money(round(_net(r), 2))} |")
+            L.append(
+                f"| {r['symbol']} | {r.get('risk_profile', '-')} | {strikes} | "
+                f"{r.get('wing_width', '-')} | {_money(r.get('net_credit'))} | {cd} | {call_otm} | "
+                f"{ivr} | {_money(round(_net(r), 2))} |"
+            )
     else:
         L.append("")
         L.append("_No open or closed positions to detail._")
@@ -655,8 +746,10 @@ def _write_eod_analysis(day):
         L.append("|---|---|---|---|---|")
         for r in active:
             et = (r.get("entry_time") or "")[11:19] or (r.get("entry_time") or "-")
-            L.append(f"| {et} | {r['symbol']} | {r.get('risk_profile', '-')} | "
-                     f"{_money(r.get('net_credit'))} | {_money(r.get('fees'))} |")
+            L.append(
+                f"| {et} | {r['symbol']} | {r.get('risk_profile', '-')} | "
+                f"{_money(r.get('net_credit'))} | {_money(r.get('fees'))} |"
+            )
         if legs:
             L.append("")
             L.append("**Side exits** (per-side stops / settlements):")
@@ -666,8 +759,10 @@ def _write_eod_analysis(day):
             for lg in sorted(legs, key=lambda x: x.get("exit_time") or ""):
                 xt = (lg.get("exit_time") or "")[11:19] or (lg.get("exit_time") or "-")
                 px = f"{lg['exit_price']:.2f}" if lg.get("exit_price") is not None else "-"
-                L.append(f"| {xt} | {lg.get('side', '-')} | {lg.get('exit_reason', '-')} | {px} | "
-                         f"{_money(lg.get('pnl'))} |")
+                L.append(
+                    f"| {xt} | {lg.get('side', '-')} | {lg.get('exit_reason', '-')} | {px} | "
+                    f"{_money(lg.get('pnl'))} |"
+                )
     else:
         L.append("_No fills - nothing to log._")
     L.append("")
@@ -681,26 +776,46 @@ def _write_eod_analysis(day):
         for r in active:
             q = r.get("quantity") or 1
             parts = [
-                (-1, r.get("call_delta_at_entry")), (-1, r.get("put_delta_at_entry")),
-                (1, r.get("long_call_delta_at_entry")), (1, r.get("long_put_delta_at_entry")),
+                (-1, r.get("call_delta_at_entry")),
+                (-1, r.get("put_delta_at_entry")),
+                (1, r.get("long_call_delta_at_entry")),
+                (1, r.get("long_put_delta_at_entry")),
             ]
             for sign, d in parts:
                 if d is not None:
                     net_delta += sign * d * q
                     have_delta = True
-        max_loss = sum(((r.get("wing_width") or 0) - (r.get("net_credit") or 0)) * (r.get("dollar_multiplier") or 100) * (r.get("quantity") or 1) for r in active)
-        max_gain = sum((r.get("net_credit") or 0) * (r.get("dollar_multiplier") or 100) * (r.get("quantity") or 1) for r in active)
-        delta_txt = f"**{_signed(net_delta)}** (short legs negated; near zero = the book entered delta-balanced)" if have_delta else "not available (entry greeks missing)"
+        max_loss = sum(
+            ((r.get("wing_width") or 0) - (r.get("net_credit") or 0))
+            * (r.get("dollar_multiplier") or 100)
+            * (r.get("quantity") or 1)
+            for r in active
+        )
+        max_gain = sum(
+            (r.get("net_credit") or 0) * (r.get("dollar_multiplier") or 100) * (r.get("quantity") or 1)
+            for r in active
+        )
+        delta_txt = (
+            f"**{_signed(net_delta)}** (short legs negated; near zero = the book entered delta-balanced)"
+            if have_delta
+            else "not available (entry greeks missing)"
+        )
         L.append(f"- Net position delta at entry: {delta_txt}.")
-        L.append(f"- Defined risk on the book: max loss **{_money(round(max_loss, 2))}**, max credit "
-                 f"**{_money(round(max_gain, 2))}** (wing width minus credit, times the multiplier - "
-                 f"paper carries no NLV/buying-power basis, so defined risk stands in for margin used).")
-        conc = ", ".join(f"{s} {len([r for r in active if r['symbol'] == s])} IC(s), {_money(round(v, 2))}"
-                         for s, v in sorted(by_symbol.items()))
+        L.append(
+            f"- Defined risk on the book: max loss **{_money(round(max_loss, 2))}**, max credit "
+            f"**{_money(round(max_gain, 2))}** (wing width minus credit, times the multiplier - "
+            f"paper carries no NLV/buying-power basis, so defined risk stands in for margin used)."
+        )
+        conc = ", ".join(
+            f"{s} {len([r for r in active if r['symbol'] == s])} IC(s), {_money(round(v, 2))}"
+            for s, v in sorted(by_symbol.items())
+        )
         L.append(f"- Concentration by underlying: {conc}.")
         if len(by_symbol) == 1:
-            L.append("  - Single-underlying day: all risk sat in one name (no cross-symbol diversification, "
-                     "but also no correlated double-up).")
+            L.append(
+                "  - Single-underlying day: all risk sat in one name (no cross-symbol diversification, "
+                "but also no correlated double-up)."
+            )
     else:
         L.append("- No open risk - the book is flat.")
     L.append("")
@@ -709,7 +824,11 @@ def _write_eod_analysis(day):
     L.append("## 5. Market context")
     if today_ctx and today_ctx.get("vix") is not None:
         vix = today_ctx["vix"]
-        dv = f" ({_signed(vix - prior_ctx['vix'])} vs the prior session)" if (prior_ctx and prior_ctx.get("vix") is not None) else ""
+        dv = (
+            f" ({_signed(vix - prior_ctx['vix'])} vs the prior session)"
+            if (prior_ctx and prior_ctx.get("vix") is not None)
+            else ""
+        )
         line = f"VIX sat around **{vix:.1f}**{dv}."
         if today_ctx.get("vix1d_ratio") is not None:
             line += f" VIX1D/VIX ratio {today_ctx['vix1d_ratio']:.2f} (>1.30 flags an event-day regime)."
@@ -729,8 +848,10 @@ def _write_eod_analysis(day):
             ivr_txt = f"IV rank {ivr * 100:.0f}%" if ivr is not None else "IV rank -"
             L.append(f"- {s}: last ~{px}{move}; {ivr_txt}.")
     else:
-        L.append("No market-context snapshot was captured for this session (the loop records VIX / VIX1D / "
-                 "per-symbol IV rank each iteration - none landed, e.g. a backfilled or pre-capture day).")
+        L.append(
+            "No market-context snapshot was captured for this session (the loop records VIX / VIX1D / "
+            "per-symbol IV rank each iteration - none landed, e.g. a backfilled or pre-capture day)."
+        )
     try:
         d = datetime.strptime(day, "%Y-%m-%d").date()
         catalysts = []
@@ -741,13 +862,17 @@ def _write_eod_analysis(day):
         elif _cal.is_quarterly_expiry(d):
             catalysts.append("quarterly expiry")
         if catalysts:
-            L.append(f"- Calendar catalyst: {', '.join(catalysts)} - the loop applies its blackout / "
-                     "tightened-gate rules on these dates.")
+            L.append(
+                f"- Calendar catalyst: {', '.join(catalysts)} - the loop applies its blackout / "
+                "tightened-gate rules on these dates."
+            )
     except ValueError:
         pass
     if gate_tail:
-        L.append(f"- Entry gates at the last of **{loop_iters}** iterations: `{gate_tail}` "
-                 "(what the regime/IV/GEX gates decided per symbol - the reason entries did or didn't fire).")
+        L.append(
+            f"- Entry gates at the last of **{loop_iters}** iterations: `{gate_tail}` "
+            "(what the regime/IV/GEX gates decided per symbol - the reason entries did or didn't fire)."
+        )
     L.append("")
 
     # 6. Tax / accounting notes ------------------------------------------------
@@ -758,14 +883,20 @@ def _write_eod_analysis(day):
         s1256 = [s for s in syms if s in cash_settled]
         equity = [s for s in syms if s not in cash_settled]
         if s1256:
-            L.append(f"- **Section 1256** (broad-based cash-settled index options): {', '.join(s1256)}. "
-                     "These mark-to-market at 60% long-term / 40% short-term regardless of holding period "
-                     "and are exempt from the wash-sale rule.")
+            L.append(
+                f"- **Section 1256** (broad-based cash-settled index options): {', '.join(s1256)}. "
+                "These mark-to-market at 60% long-term / 40% short-term regardless of holding period "
+                "and are exempt from the wash-sale rule."
+            )
         if equity:
-            L.append(f"- **Equity-option treatment** (not 1256): {', '.join(equity)}. Ordinary "
-                     "short-term/long-term rules apply and wash-sale can bite on repeated same-name losses.")
-        L.append("- Holding period: every position is 0DTE (opened and settled same day) - short-term / "
-                 "intraday across the board.")
+            L.append(
+                f"- **Equity-option treatment** (not 1256): {', '.join(equity)}. Ordinary "
+                "short-term/long-term rules apply and wash-sale can bite on repeated same-name losses."
+            )
+        L.append(
+            "- Holding period: every position is 0DTE (opened and settled same day) - short-term / "
+            "intraday across the board."
+        )
     else:
         L.append("- No positions - no lots to classify.")
     L.append("")
@@ -773,8 +904,10 @@ def _write_eod_analysis(day):
     # 7. Notes / journal -------------------------------------------------------
     L.append("## 7. Notes / journal")
     if not active:
-        L.append("- Quiet by design. Worth a glance at the loop log to confirm the gates that fired match "
-                 "the day's conditions (a flat day and a silently-broken entry check look identical in P&L).")
+        L.append(
+            "- Quiet by design. Worth a glance at the loop log to confirm the gates that fired match "
+            "the day's conditions (a flat day and a silently-broken entry check look identical in P&L)."
+        )
     else:
         # Which exit reasons dominated, and on which side.
         exit_counts = {}
@@ -785,28 +918,42 @@ def _write_eod_analysis(day):
                 side_counts[lg["side"]] += 1
         if exit_counts:
             top = max(exit_counts.items(), key=lambda kv: kv[1])
-            L.append(f"- Exits were dominated by **{top[0]}** ({top[1]} of {sum(exit_counts.values())} side "
-                     f"exits). Put-side stops: {side_counts['put']}, call-side: {side_counts['call']}.")
+            L.append(
+                f"- Exits were dominated by **{top[0]}** ({top[1]} of {sum(exit_counts.values())} side "
+                f"exits). Put-side stops: {side_counts['put']}, call-side: {side_counts['call']}."
+            )
             if side_counts["call"] > side_counts["put"] and side_counts["call"] >= 2:
-                L.append("  - Call side did most of the stopping - consistent with an up-drift pressing the "
-                         "short calls. Wider call OTM (or the VIX-band delta scale) is the lever if this repeats.")
+                L.append(
+                    "  - Call side did most of the stopping - consistent with an up-drift pressing the "
+                    "short calls. Wider call OTM (or the VIX-band delta scale) is the lever if this repeats."
+                )
             elif side_counts["put"] > side_counts["call"] and side_counts["put"] >= 2:
                 L.append("  - Put side did most of the stopping - a down-move pressed the short puts.")
         else:
-            L.append("- No side stops fired - the ICs rode to settlement (the intended path for cash-settled "
-                     "names with an OTM close).")
+            L.append(
+                "- No side stops fired - the ICs rode to settlement (the intended path for cash-settled "
+                "names with an OTM close)."
+            )
         if gross > 0 and fees / gross > 0.30:
-            L.append(f"- **Recommendation:** fees ate {(fees / gross * 100):.0f}% of gross - lean toward wider "
-                     "widths / fewer narrow entries, where the fixed per-contract fee is a smaller drag.")
+            L.append(
+                f"- **Recommendation:** fees ate {(fees / gross * 100):.0f}% of gross - lean toward wider "
+                "widths / fewer narrow entries, where the fixed per-contract fee is a smaller drag."
+            )
         if avg_loss is not None and avg_win is not None and abs(avg_loss) > 2 * avg_win:
-            L.append("- **Recommendation:** average loser is more than 2x the average winner - the stop is "
-                     "letting losses run relative to the credit; revisit stop_trigger_ratio for these profiles.")
+            L.append(
+                "- **Recommendation:** average loser is more than 2x the average winner - the stop is "
+                "letting losses run relative to the credit; revisit stop_trigger_ratio for these profiles."
+            )
         if net_total < 0 and not wins:
-            L.append("- Every fill lost today. One session is noise, but if the pattern holds, check whether "
-                     "entries are clearing the fee-adjusted credit floor with real margin.")
+            L.append(
+                "- Every fill lost today. One session is noise, but if the pattern holds, check whether "
+                "entries are clearing the fee-adjusted credit floor with real margin."
+            )
     L.append("")
-    L.append(f"_Generated {_now_et().strftime('%Y-%m-%d %H:%M:%S %Z')} · paper DB only; live account "
-             "untouched. Companion to paper-eod-" + day + ".md._")
+    L.append(
+        f"_Generated {_now_et().strftime('%Y-%m-%d %H:%M:%S %Z')} · paper DB only; live account "
+        "untouched. Companion to paper-eod-" + day + ".md._"
+    )
 
     path = _analysis_path(day)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -818,11 +965,13 @@ def _open_advised_tags():
     """DISTINCT advised:* profile tags with open/partial rows -- positions that must keep being
     managed (exits, force-close, settlement) even when today's advice is absent or disabled."""
     import sqlite3
+
     try:
         conn = sqlite3.connect(_PAPER_DB)
         rows = conn.execute(
             "SELECT DISTINCT risk_profile FROM ic_trades "
-            "WHERE risk_profile LIKE 'advised:%' AND status IN ('open', 'partial')").fetchall()
+            "WHERE risk_profile LIKE 'advised:%' AND status IN ('open', 'partial')"
+        ).fetchall()
         conn.close()
         return [r[0] for r in rows]
     except sqlite3.Error:
@@ -863,17 +1012,22 @@ def _advice_profiles(cfg, today):
         if acfg.get("enabled") and acfg.get("bounds"):
             res = _core_advice.load(_core_home.state_dir(), "meic", today, acfg.get("bounds") or {})
             params = {p["param"]: p["value"] for p in res["proposals"]} if res["proposals"] else None
-            decision = {"day": today, "base_profile": base, "params": params,
-                        "reason": res["reason"], "proposals": res["proposals"],
-                        "rejected": res.get("rejected") or []}
+            decision = {
+                "day": today,
+                "base_profile": base,
+                "params": params,
+                "reason": res["reason"],
+                "proposals": res["proposals"],
+                "rejected": res.get("rejected") or [],
+            }
             for prop in res["proposals"]:
-                logger.info("advice applied: %s=%r -- %s", prop["param"], prop["value"],
-                            prop.get("rationale", ""))
+                logger.info(
+                    "advice applied: %s=%r -- %s", prop["param"], prop["value"], prop.get("rationale", "")
+                )
             if not res["proposals"]:
                 logger.info("advice: baseline (%s)", res["reason"] or "no proposals")
         else:
-            decision = {"day": today, "base_profile": base, "params": None,
-                        "reason": "advice_disabled"}
+            decision = {"day": today, "base_profile": base, "params": None, "reason": "advice_disabled"}
         try:
             state_file.write_text(json.dumps(decision, indent=2), encoding="utf-8")
         except OSError:
@@ -932,24 +1086,33 @@ def run_iteration(cfg, force=False):
         widths = paper.union_widths_for_symbol(symbol, cfg, profiles)
         extra_deltas = paper.union_short_deltas_for_symbol(symbol, cfg, profiles)
         delta_targets = [delta_target] + [d for d in extra_deltas if abs(d - delta_target) > 1e-9]
-        candidates, leg_quotes, cand_err = _build_candidates(symbol, price, widths, delta_targets,
-                                                             delta_target, today)
+        candidates, leg_quotes, cand_err = _build_candidates(
+            symbol, price, widths, delta_targets, delta_target, today
+        )
         gex = _run_json(_TT + ["get_gex", "--symbol", symbol])
         atr_lookback = int(cfg.get("regime_atr_lookback_days", 5))
         snapshot = {
-            "symbol": symbol, "date": today, "now_et": now_et, "expiration": today, "dte": 0,
-            "underlying_price": price, "iv_rank": ivr, "iv_pct": ivp, "iv_rank_source": "native",
-            "vix": vix, "vix1d_ratio": vix1d_ratio,
+            "symbol": symbol,
+            "date": today,
+            "now_et": now_et,
+            "expiration": today,
+            "dte": 0,
+            "underlying_price": price,
+            "iv_rank": ivr,
+            "iv_pct": ivp,
+            "iv_rank_source": "native",
+            "vix": vix,
+            "vix1d_ratio": vix1d_ratio,
             # Both feeds come off the streamer's stream_summary day-rows (exchange-official
             # session OHLC). None while warming up / streamer down -> the gates stay inactive.
             "atr_5day": _fetch_atr(symbol, atr_lookback),
             "intraday_range_pct": _fetch_intraday_range_pct(symbol),
             "session_quality": session,
             "gex": gex if gex.get("ok") else {"ok": False},
-            "candidates": candidates, "leg_quotes": leg_quotes,
+            "candidates": candidates,
+            "leg_quotes": leg_quotes,
         }
-        result = paper.process_symbol(snapshot, _PAPER_DB, "paper",
-                                      extra_profiles=advice_profiles)
+        result = paper.process_symbol(snapshot, _PAPER_DB, "paper", extra_profiles=advice_profiles)
         # Per-profile outcome for the log - fills and exits made to stand out from skips.
         outcomes = {}
         for prof, actions in result.get("results", {}).items():
@@ -962,8 +1125,12 @@ def run_iteration(cfg, force=False):
                     act = a["decision"].get("action")
                     if act and act != "hold":
                         outcomes[prof] = f"EXIT {act}"
-        summary[symbol] = {"ivr": ivr, "widths": sorted({c["wing_width"] for c in candidates}),
-                           "outcomes": outcomes, "cand_err": cand_err}
+        summary[symbol] = {
+            "ivr": ivr,
+            "widths": sorted({c["wing_width"] for c in candidates}),
+            "outcomes": outcomes,
+            "cand_err": cand_err,
+        }
 
     reason = _format_iteration(now_et, vix, vix1d_ratio, delta_target, summary)
     try:
@@ -1010,6 +1177,7 @@ def run_iteration(cfg, force=False):
 # Cadence / time gate
 # ---------------------------------------------------------------------------
 
+
 def _is_trading_time(now, cfg):
     # Weekend + NYSE-holiday gate via the shared calendar (cfg kept for signature compatibility).
     if not _cal.is_trading_day(now.date()):
@@ -1032,6 +1200,7 @@ def _sleep_seconds(now, cfg, open_positions):
 # Daemon control (mirrors src/streamer.py)
 # ---------------------------------------------------------------------------
 
+
 def _running_pid():
     if not _PID_FILE.exists():
         return None
@@ -1043,6 +1212,7 @@ def _running_pid():
     alive = False
     try:
         import psutil
+
         alive = psutil.pid_exists(pid)
     except ImportError:
         try:
@@ -1061,15 +1231,16 @@ def _running_pid():
 def _task_installed():
     if os.name != "nt":
         return False
-    r = subprocess.run(["schtasks", "/Query", "/TN", _TASK_NAME], capture_output=True, text=True,
-                       creationflags=_NO_WINDOW)
+    r = subprocess.run(
+        ["schtasks", "/Query", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
+    )
     return r.returncode == 0
 
 
 def _cmd_status():
     pid = _running_pid()
     info = {
-        "daemon_running": pid is not None,   # a long-running --start daemon (if used)
+        "daemon_running": pid is not None,  # a long-running --start daemon (if used)
         "pid": pid,
         "scheduled_task": _task_installed(),  # the recommended --install-task automation
         "open_positions": _open_count(),
@@ -1106,13 +1277,24 @@ def _spawn_detached():
         kwargs["creationflags"] = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     else:
         kwargs["start_new_session"] = True
-    subprocess.Popen([sys.executable, os.path.abspath(__file__), "--_run"],
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, close_fds=True, cwd=str(_ROOT), **kwargs)
+    subprocess.Popen(
+        [sys.executable, os.path.abspath(__file__), "--_run"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        cwd=str(_ROOT),
+        **kwargs,
+    )
     time.sleep(2)
     pid = _running_pid()
-    _emit({"ok": pid is not None, "pid": pid,
-                      "detail": "daemon spawned" if pid else "spawn did not register a PID yet"})
+    _emit(
+        {
+            "ok": pid is not None,
+            "pid": pid,
+            "detail": "daemon spawned" if pid else "spawn did not register a PID yet",
+        }
+    )
 
 
 def _loop():
@@ -1162,6 +1344,7 @@ def _loop():
 # must not overlap the next and double-process the paper DB)
 # ---------------------------------------------------------------------------
 
+
 def _acquire_once_lock():
     try:
         fd = os.open(str(_LOCK_FILE), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -1194,57 +1377,88 @@ def _release_once_lock():
 # completes, self-heals if one fails, no-ops outside market hours (time-gated), and persists
 # across sessions independent of any launching shell.
 
+
 def _install_task():
     if os.name != "nt":
-        _emit({"ok": False, "error": "scheduled-task install is Windows-only; on "
-                          "other OSes run `python src/paper_loop.py` in a terminal or via cron"})
+        _emit(
+            {
+                "ok": False,
+                "error": "scheduled-task install is Windows-only; on "
+                "other OSes run `python src/paper_loop.py` in a terminal or via cron",
+            }
+        )
         return
     # pythonw.exe = no console window, so the every-2-min --once run is truly headless.
     tr = f'"{_pythonw()}" "{os.path.abspath(__file__)}" --once'
-    r = subprocess.run(["schtasks", "/Create", "/TN", _TASK_NAME, "/TR", tr,
-                        "/SC", "MINUTE", "/MO", "2", "/F", "/IT"],
-                       capture_output=True, text=True, creationflags=_NO_WINDOW)
+    r = subprocess.run(
+        ["schtasks", "/Create", "/TN", _TASK_NAME, "/TR", tr, "/SC", "MINUTE", "/MO", "2", "/F", "/IT"],
+        capture_output=True,
+        text=True,
+        creationflags=_NO_WINDOW,
+    )
     ok = r.returncode == 0
     # Fire one run immediately so positions are managed without waiting for the first tick.
     if ok:
-        subprocess.run(["schtasks", "/Run", "/TN", _TASK_NAME], capture_output=True, text=True,
-                       creationflags=_NO_WINDOW)
-    _emit({"ok": ok, "task": _TASK_NAME, "cadence": "every 2 min",
-                      "detail": (r.stdout or r.stderr).strip()})
+        subprocess.run(
+            ["schtasks", "/Run", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
+        )
+    _emit({"ok": ok, "task": _TASK_NAME, "cadence": "every 2 min", "detail": (r.stdout or r.stderr).strip()})
 
 
 def _uninstall_task():
     if os.name != "nt":
         _emit({"ok": False, "error": "Windows-only"})
         return
-    subprocess.run(["schtasks", "/End", "/TN", _TASK_NAME], capture_output=True, text=True,
-                   creationflags=_NO_WINDOW)
-    r = subprocess.run(["schtasks", "/Delete", "/TN", _TASK_NAME, "/F"], capture_output=True, text=True,
-                       creationflags=_NO_WINDOW)
+    subprocess.run(
+        ["schtasks", "/End", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
+    )
+    r = subprocess.run(
+        ["schtasks", "/Delete", "/TN", _TASK_NAME, "/F"],
+        capture_output=True,
+        text=True,
+        creationflags=_NO_WINDOW,
+    )
     _emit({"ok": r.returncode == 0, "detail": (r.stdout or r.stderr).strip()})
 
 
 def main():
     parser = argparse.ArgumentParser(description="MEICAgent paper-trading loop daemon")
-    parser.add_argument("--install-task", action="store_true",
-                        help="Register a Windows scheduled task that runs --once every 2 min "
-                             "(the recommended unattended launcher) and fire one run now")
-    parser.add_argument("--uninstall-task", action="store_true",
-                        help="Remove the scheduled task (stops the unattended paper session)")
-    parser.add_argument("--start", action="store_true",
-                        help="Spawn a long-running detached daemon in the background (alternative "
-                             "to the scheduled task; less robust on Windows)")
+    parser.add_argument(
+        "--install-task",
+        action="store_true",
+        help="Register a Windows scheduled task that runs --once every 2 min "
+        "(the recommended unattended launcher) and fire one run now",
+    )
+    parser.add_argument(
+        "--uninstall-task",
+        action="store_true",
+        help="Remove the scheduled task (stops the unattended paper session)",
+    )
+    parser.add_argument(
+        "--start",
+        action="store_true",
+        help="Spawn a long-running detached daemon in the background (alternative "
+        "to the scheduled task; less robust on Windows)",
+    )
     parser.add_argument("--status", action="store_true", help="Print daemon/task status and exit")
     parser.add_argument("--stop", action="store_true", help="Stop a running --start daemon")
     parser.add_argument("--once", action="store_true", help="Run a single iteration and exit")
-    parser.add_argument("--force", action="store_true",
-                        help="With --once, run even outside market hours (for testing)")
-    parser.add_argument("--eod-report", action="store_true",
-                        help="Write the deterministic paper report AND the conversational analysis now (regenerates both)")
-    parser.add_argument("--eod-analysis", action="store_true",
-                        help="Write only the conversational 7-section EOD analysis now (regenerates)")
-    parser.add_argument("--date", default=None,
-                        help="With --eod-report/--eod-analysis, the day (YYYY-MM-DD); default today")
+    parser.add_argument(
+        "--force", action="store_true", help="With --once, run even outside market hours (for testing)"
+    )
+    parser.add_argument(
+        "--eod-report",
+        action="store_true",
+        help="Write the deterministic paper report AND the conversational analysis now (regenerates both)",
+    )
+    parser.add_argument(
+        "--eod-analysis",
+        action="store_true",
+        help="Write only the conversational 7-section EOD analysis now (regenerates)",
+    )
+    parser.add_argument(
+        "--date", default=None, help="With --eod-report/--eod-analysis, the day (YYYY-MM-DD); default today"
+    )
     parser.add_argument("--_run", action="store_true", help=argparse.SUPPRESS)  # internal: the detached child
     args = parser.parse_args()
 
@@ -1291,8 +1505,13 @@ def main():
     # in a terminal, or the detached child spawned by --start.
     existing = _running_pid()
     if existing is not None:
-        _emit({"ok": False, "error": f"Paper loop already running (pid {existing}). "
-                                                 f"Run 'python src/paper_loop.py --stop' first."})
+        _emit(
+            {
+                "ok": False,
+                "error": f"Paper loop already running (pid {existing}). "
+                f"Run 'python src/paper_loop.py --stop' first.",
+            }
+        )
         raise SystemExit(1)
     _setup_logging(console=False)  # daemon: file-only, no fragile stdout dependency
     _loop()

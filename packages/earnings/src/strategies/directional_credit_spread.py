@@ -55,7 +55,9 @@ def _strategy_config(config: dict) -> dict:
     return config.get("strategies", {}).get("directional_credit_spread", {})
 
 
-def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
+def fetch_price_and_term_structure(
+    symbol: str, earnings_date: date, earnings_timing: str, config: dict
+) -> dict:
     """Live price + term structure/expected move + side selection, via
     scanner.py's shared helpers and expected_move_butterfly.scanner.select_side().
     Mirrors iron_condor.py's fetch_price_and_term_structure with skew/side
@@ -90,7 +92,11 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
         front_call, front_put, back_call = atm["front_call"], atm["front_put"], atm["back_call"]
 
         ts = scanner.compute_expected_move_and_term_structure(
-            front_call["mid"], front_put["mid"], front_call["iv"], back_call["iv"], price,
+            front_call["mid"],
+            front_put["mid"],
+            front_call["iv"],
+            back_call["iv"],
+            price,
         )
 
         winrate_result = scanner.compute_winrate(symbol, config, config.get("winrate_lookback_quarters", 8))
@@ -100,7 +106,7 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
             if realized_moves:
                 mean_realized = sum(realized_moves) / len(realized_moves)
                 variance = sum((m - mean_realized) ** 2 for m in realized_moves) / len(realized_moves)
-                realized_move_dispersion = variance ** 0.5
+                realized_move_dispersion = variance**0.5
 
         side_result = scanner.select_side(symbol, front_exp, price, strategy_config)
         if not side_result.get("ok"):
@@ -194,7 +200,9 @@ def _wing_width_multiple(iv_rv_ratio: float | None, config: dict) -> float:
     return config.get("wing_width_multiple_high", 3.5)
 
 
-def _select_short_strike(entries: list[dict], side: str, price: float, expected_move: float, wing_multiple: float) -> dict | None:
+def _select_short_strike(
+    entries: list[dict], side: str, price: float, expected_move: float, wing_multiple: float
+) -> dict | None:
     """The one genuinely new piece of strike-selection logic in this
     project: search candidate short strikes on `side` and pick the one
     whose resulting BREAKEVEN (short strike minus credit, for a put spread;
@@ -214,7 +222,11 @@ def _select_short_strike(entries: list[dict], side: str, price: float, expected_
     """
     want = side[0].lower()
     candidates = sorted(
-        (e for e in entries if str(e.get("option_type", "")).strip().lower().startswith(want) and e.get("mid") is not None),
+        (
+            e
+            for e in entries
+            if str(e.get("option_type", "")).strip().lower().startswith(want) and e.get("mid") is not None
+        ),
         key=lambda e: float(e["strike_price"]),
     )
     target = price - expected_move if side == "put" else price + expected_move
@@ -240,7 +252,9 @@ def _select_short_strike(entries: list[dict], side: str, price: float, expected_
     return best
 
 
-def fetch_directional_credit_spread_order(symbol: str, earnings_date: date, earnings_timing: str, full_config: dict) -> dict:
+def fetch_directional_credit_spread_order(
+    symbol: str, earnings_date: date, earnings_timing: str, full_config: dict
+) -> dict:
     """Build a concrete, tradeable directional credit spread order: sell one
     OTM option, buy a further-OTM option of the same type/expiration, with
     the short strike chosen via _select_short_strike so breakeven lands at
@@ -274,10 +288,20 @@ def fetch_directional_credit_spread_order(symbol: str, earnings_date: date, earn
         # meaningfully further OTM than the raw expected-move boundary,
         # same wide-net reasoning as double_calendar's/iron_condor's chain
         # fetch.
-        chain = scanner.call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
-            "--include_quotes", "--strike_count", "40", "--around_price", str(price),
-        ])
+        chain = scanner.call_tt(
+            [
+                "get_option_chain",
+                "--symbol",
+                symbol,
+                "--expiration",
+                str(front_exp),
+                "--include_quotes",
+                "--strike_count",
+                "40",
+                "--around_price",
+                str(price),
+            ]
+        )
         if not chain.get("ok"):
             return {"ok": False, "error": chain.get("error", "get_option_chain failed")}
         entries = chain["chain"][str(front_exp)]
@@ -290,7 +314,12 @@ def fetch_directional_credit_spread_order(symbol: str, earnings_date: date, earn
         if picked is None:
             return {"ok": False, "error": "no valid short/long strike pair found"}
 
-        short_entry, long_entry, credit, breakeven = picked["short"], picked["long"], picked["credit"], picked["breakeven"]
+        short_entry, long_entry, credit, breakeven = (
+            picked["short"],
+            picked["long"],
+            picked["credit"],
+            picked["breakeven"],
+        )
         short_strike = float(short_entry["strike_price"])
         long_strike = float(long_entry["strike_price"])
 
@@ -300,8 +329,18 @@ def fetch_directional_credit_spread_order(symbol: str, earnings_date: date, earn
             "price": round(credit, 2),
             "price_effect": "Credit",
             "legs": [
-                {"symbol": short_entry["symbol"], "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1},
-                {"symbol": long_entry["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
+                {
+                    "symbol": short_entry["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Sell to Open",
+                    "quantity": 1,
+                },
+                {
+                    "symbol": long_entry["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Buy to Open",
+                    "quantity": 1,
+                },
             ],
         }
         return {
@@ -359,7 +398,9 @@ def cmd_get_candidates(args) -> dict:
     """
     config = scanner._load_config()
     strategy_config = _strategy_config(config)
-    return scanner.run_candidate_scan(args.date, config, fetch_price_and_term_structure, apply_tiering, strategy_config)
+    return scanner.run_candidate_scan(
+        args.date, config, fetch_price_and_term_structure, apply_tiering, strategy_config
+    )
 
 
 def main() -> None:

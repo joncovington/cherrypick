@@ -86,8 +86,7 @@ def _summarize(rows) -> dict:
 
 def stats_for_period(conn, start=None, end=None, arm=None, symbol=None) -> dict:
     where, params = _period_clause(start, end, arm, symbol)
-    rows = conn.execute(
-        f"SELECT gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params).fetchall()
+    rows = conn.execute(f"SELECT gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params).fetchall()
     return _summarize(rows)
 
 
@@ -117,7 +116,9 @@ def pnl_series(conn, granularity: str = "daily", arm=None, symbol=None) -> list[
     where, params = _period_clause(arm=arm, symbol=symbol)
     rows = conn.execute(
         f"SELECT trade_date, gross_pnl, fees, pnl FROM fly_positions WHERE {where} "
-        "AND trade_date IS NOT NULL ORDER BY trade_date", params).fetchall()
+        "AND trade_date IS NOT NULL ORDER BY trade_date",
+        params,
+    ).fetchall()
 
     buckets: dict[str, list] = {}
     for r in rows:
@@ -156,7 +157,8 @@ def by_arm(conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES) -> li
         where += f" AND entry_mode IN ({','.join('?' * len(entry_modes))})"
         params = [*params, *entry_modes]
     rows = conn.execute(
-        f"SELECT arm, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params).fetchall()
+        f"SELECT arm, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params
+    ).fetchall()
     grouped: dict[str, list] = {}
     for r in rows:
         grouped.setdefault(r["arm"] or "unassigned", []).append(r)
@@ -164,8 +166,7 @@ def by_arm(conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES) -> li
     return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
 
 
-def arm_comparison_exclusions(conn, start=None, end=None,
-                              entry_modes=COMPARISON_ENTRY_MODES) -> dict:
+def arm_comparison_exclusions(conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES) -> dict:
     """What `by_arm` held back, so the exclusion is stated rather than inferred from a gap.
 
     Without this the arm table would sum to less than the book's own P&L with nothing on the page to
@@ -177,7 +178,8 @@ def arm_comparison_exclusions(conn, start=None, end=None,
     clause = f"{where} AND entry_mode NOT IN ({','.join('?' * len(entry_modes))})"
     rows = conn.execute(
         f"SELECT arm, entry_mode, gross_pnl, fees, pnl FROM fly_positions WHERE {clause}",
-        [*params, *entry_modes]).fetchall()
+        [*params, *entry_modes],
+    ).fetchall()
     by_mode: dict[str, list] = {}
     by_arm_: dict[str, list] = {}
     for r in rows:
@@ -197,7 +199,8 @@ def by_entry_mode(conn, start=None, end=None) -> list[dict]:
     the finding — legged manufactures its own floor, outright spends one."""
     where, params = _period_clause(start, end)
     rows = conn.execute(
-        f"SELECT entry_mode, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params).fetchall()
+        f"SELECT entry_mode, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params
+    ).fetchall()
     grouped: dict[str, list] = {}
     for r in rows:
         grouped.setdefault(r["entry_mode"] or "unknown", []).append(r)
@@ -212,8 +215,8 @@ def by_entry_window(conn, start=None, end=None) -> list[dict]:
     """
     where, params = _period_clause(start, end)
     rows = conn.execute(
-        f"SELECT entry_window, arm, gross_pnl, fees, pnl FROM fly_positions WHERE {where}",
-        params).fetchall()
+        f"SELECT entry_window, arm, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params
+    ).fetchall()
     grouped: dict[str, list] = {}
     for r in rows:
         grouped.setdefault(r["entry_window"] or "unwindowed", []).append(r)
@@ -223,16 +226,31 @@ def by_entry_window(conn, start=None, end=None) -> list[dict]:
 def fee_drag(conn, start=None, end=None) -> list[dict]:
     """Fee drag per arm. Broken out because a legged fly pays two fee stacks against a credit that may
     be $35-105 — costs are not a rounding error for this strategy, they are the experiment."""
-    return [{"arm": r["arm"], "gross_pnl": r["gross_pnl"], "fees": r["fees"],
-             "net_pnl": r["net_pnl"], "fee_drag_pct": r["fee_drag_pct"], "trades": r["trades"]}
-            for r in by_arm(conn, start, end)]
+    return [
+        {
+            "arm": r["arm"],
+            "gross_pnl": r["gross_pnl"],
+            "fees": r["fees"],
+            "net_pnl": r["net_pnl"],
+            "fee_drag_pct": r["fee_drag_pct"],
+            "trades": r["trades"],
+        }
+        for r in by_arm(conn, start, end)
+    ]
 
 
 def daily_pnl(conn, arm=None) -> list[dict]:
     """Per-day totals for the calendar heatmap."""
-    return [{"date": b["bucket"], "trades": b["trades"], "gross_pnl": b["gross_pnl"],
-             "fees": b["fees"], "net_pnl": b["net_pnl"]}
-            for b in pnl_series(conn, "daily", arm=arm)]
+    return [
+        {
+            "date": b["bucket"],
+            "trades": b["trades"],
+            "gross_pnl": b["gross_pnl"],
+            "fees": b["fees"],
+            "net_pnl": b["net_pnl"],
+        }
+        for b in pnl_series(conn, "daily", arm=arm)
+    ]
 
 
 # --------------------------------------------------------------------------- completion & counterfactual
@@ -271,7 +289,9 @@ def completion_stats(conn, start=None, end=None) -> dict:
     rows = conn.execute(
         f"SELECT position_id, kind, entry_mode, credit, best_completing_debit, "
         f"completion_latency_min, underlying_at_entry, spot_at_completion "
-        f"FROM fly_positions{where}", params).fetchall()
+        f"FROM fly_positions{where}",
+        params,
+    ).fetchall()
 
     legged = [r for r in rows if r["entry_mode"] == "legged"]
     completed = [r for r in legged if r["kind"] == "fly"]
@@ -281,9 +301,11 @@ def completion_stats(conn, start=None, end=None) -> dict:
     # cleared `fee_buffer`, so a position appearing here was blocked by the floor, not the buffer —
     # even though it will also carry `completing_debit_too_high` rows from other moments in the session.
     floor_gated = {
-        r["position_id"] for r in conn.execute(
+        r["position_id"]
+        for r in conn.execute(
             "SELECT DISTINCT position_id FROM fly_decisions "
-            "WHERE mode = 'completion' AND reason = 'floor_below_minimum_after_fees'")
+            "WHERE mode = 'completion' AND reason = 'floor_below_minimum_after_fees'"
+        )
         if r["position_id"] is not None
     }
 
@@ -299,11 +321,12 @@ def completion_stats(conn, start=None, end=None) -> dict:
         else:
             buffer_blocked += 1
 
-    latencies = [r["completion_latency_min"] for r in completed
-                 if r["completion_latency_min"] is not None]
-    moves = [abs((r["spot_at_completion"] or 0) - (r["underlying_at_entry"] or 0))
-             for r in completed
-             if r["spot_at_completion"] is not None and r["underlying_at_entry"] is not None]
+    latencies = [r["completion_latency_min"] for r in completed if r["completion_latency_min"] is not None]
+    moves = [
+        abs((r["spot_at_completion"] or 0) - (r["underlying_at_entry"] or 0))
+        for r in completed
+        if r["spot_at_completion"] is not None and r["underlying_at_entry"] is not None
+    ]
     return {
         "legged_entries": len(legged),
         "completed": len(completed),
@@ -335,10 +358,16 @@ def completion_trend(conn, start=None, end=None) -> list[dict]:
         f"SELECT trade_date, COUNT(*) AS legged, "
         f"SUM(CASE WHEN kind = 'fly' THEN 1 ELSE 0 END) AS completed "
         f"FROM fly_positions WHERE {' AND '.join(clause)} "
-        f"GROUP BY trade_date ORDER BY trade_date", params).fetchall()
+        f"GROUP BY trade_date ORDER BY trade_date",
+        params,
+    ).fetchall()
     return [
-        {"day": r["trade_date"], "legged_entries": r["legged"], "completed": r["completed"],
-         "completion_rate": _rate(r["completed"], r["legged"])}
+        {
+            "day": r["trade_date"],
+            "legged_entries": r["legged"],
+            "completed": r["completed"],
+            "completion_rate": _rate(r["completed"], r["legged"]),
+        }
         for r in rows
     ]
 
@@ -366,8 +395,8 @@ def arm_divergence(conn, day: str | None = None) -> dict:
     if day:
         where, params = " WHERE trade_date = ?", [day]
     rows = conn.execute(
-        f"SELECT iteration_ts, symbol, arm, center FROM fly_iterations{where} "
-        "ORDER BY iteration_ts", params).fetchall()
+        f"SELECT iteration_ts, symbol, arm, center FROM fly_iterations{where} ORDER BY iteration_ts", params
+    ).fetchall()
 
     iterations: dict[tuple, dict] = {}
     for r in rows:
@@ -385,15 +414,18 @@ def arm_divergence(conn, day: str | None = None) -> dict:
             all_agree += 1
         arms = sorted(named)
         for i, a in enumerate(arms):
-            for b in arms[i + 1:]:
+            for b in arms[i + 1 :]:
                 pairs.setdefault((a, b), []).append(named[a] == named[b])
 
     return {
         "iterations": considered,
         "all_agree_rate": _rate(all_agree, considered),
         "pairs": [
-            {"arms": f"{a} vs {b}", "iterations": len(matches),
-             "agreement_rate": _rate(sum(matches), len(matches))}
+            {
+                "arms": f"{a} vs {b}",
+                "iterations": len(matches),
+                "agreement_rate": _rate(sum(matches), len(matches)),
+            }
             for (a, b), matches in sorted(pairs.items())
         ],
     }
@@ -407,7 +439,8 @@ def decision_journal(conn, day: str, arm: str | None = None) -> list[dict]:
         clause.append("arm = ?")
         params.append(arm)
     rows = conn.execute(
-        f"SELECT * FROM fly_decisions WHERE {' AND '.join(clause)} ORDER BY id DESC", params).fetchall()
+        f"SELECT * FROM fly_decisions WHERE {' AND '.join(clause)} ORDER BY id DESC", params
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -425,8 +458,9 @@ def positions_for_day(conn, day: str, arm: str | None = None) -> list[dict]:
 def trade_log(conn, limit: int = 1000, arm=None, symbol=None) -> list[dict]:
     where, params = _period_clause(arm=arm, symbol=symbol)
     rows = conn.execute(
-        f"SELECT * FROM fly_positions WHERE {where} "
-        "ORDER BY trade_date DESC, entry_time DESC LIMIT ?", [*params, limit]).fetchall()
+        f"SELECT * FROM fly_positions WHERE {where} ORDER BY trade_date DESC, entry_time DESC LIMIT ?",
+        [*params, limit],
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -444,8 +478,15 @@ def payoff_curve(conn, day: str, arm: str, step: float = 1.0, points: int = 120)
     Returns empty (not an error) for a book with no positions; an empty day is ordinary.
     """
     positions = [
-        {"kind": r["kind"], "side": r["side"], "center": r["center"], "wing_width": r["wing_width"],
-         "net": r["net"], "quantity": r["quantity"] or 1, "fees": r["fees"] or 0.0}
+        {
+            "kind": r["kind"],
+            "side": r["side"],
+            "center": r["center"],
+            "wing_width": r["wing_width"],
+            "net": r["net"],
+            "quantity": r["quantity"] or 1,
+            "fees": r["fees"] or 0.0,
+        }
         for r in positions_for_day(conn, day, arm)
     ]
     if not positions:
@@ -495,13 +536,16 @@ def _state_at(row: dict, when: str) -> dict | None:
     if not entry or when < entry:
         return None
     state = {
-        "kind": row["kind"], "side": row["side"], "center": row["center"],
-        "wing_width": row["wing_width"], "net": row["net"],
-        "quantity": row["quantity"] or 1, "fees": row["fees"] or 0.0,
+        "kind": row["kind"],
+        "side": row["side"],
+        "center": row["center"],
+        "wing_width": row["wing_width"],
+        "net": row["net"],
+        "quantity": row["quantity"] or 1,
+        "fees": row["fees"] or 0.0,
     }
     completed = row.get("completed_at")
-    if (row.get("entry_mode") == "legged" and completed and when < completed
-            and row.get("credit") is not None):
+    if row.get("entry_mode") == "legged" and completed and when < completed and row.get("credit") is not None:
         state["kind"] = "short_vertical"
         state["net"] = row["credit"]
         state["fees"] = fly.vertical_open_fee(row["symbol"], state["quantity"])
@@ -531,7 +575,9 @@ def session_timeline(conn, day: str | None = None) -> dict:
     rows = positions_for_day(conn, day)
     iterations = conn.execute(
         "SELECT iteration_ts, arm, center, center_reason, underlying_price FROM fly_iterations "
-        "WHERE trade_date = ? ORDER BY iteration_ts", (day,)).fetchall()
+        "WHERE trade_date = ? ORDER BY iteration_ts",
+        (day,),
+    ).fetchall()
     feed, feed_summary = data_quality(conn, day)
 
     arms = sorted({r["arm"] for r in rows if r["arm"]} | {r["arm"] for r in iterations if r["arm"]})
@@ -554,48 +600,87 @@ def session_timeline(conn, day: str | None = None) -> dict:
                 states = [s for s in (_state_at(dict(p), ts) for p in by_arm.get(arm, [])) if s]
                 if states:
                     settle_now[arm] = _round(fly.book_pnl(states, spot))
-        ticks.append({
-            "ts": ts,
-            "spot": _round(spot),
-            "centers": {e["arm"]: e["center"] for e in entries if e["center"] is not None},
-            "reasons": {e["arm"]: e["center_reason"] for e in entries if e["center_reason"]},
-            "settle_now": settle_now,
-        })
+        ticks.append(
+            {
+                "ts": ts,
+                "spot": _round(spot),
+                "centers": {e["arm"]: e["center"] for e in entries if e["center"] is not None},
+                "reasons": {e["arm"]: e["center_reason"] for e in entries if e["center_reason"]},
+                "settle_now": settle_now,
+            }
+        )
 
     events, spans = [], []
     for r in rows:
         if r.get("entry_time"):
-            events.append({
-                "kind": "entry", "ts": r["entry_time"], "arm": r["arm"],
-                "entry_mode": r["entry_mode"], "position_id": r["position_id"],
-                "center": r["center"], "spot": r["underlying_at_entry"],
-                "structure": "fly" if r["entry_mode"] == "outright" else f"short {r['side']}",
-            })
+            events.append(
+                {
+                    "kind": "entry",
+                    "ts": r["entry_time"],
+                    "arm": r["arm"],
+                    "entry_mode": r["entry_mode"],
+                    "position_id": r["position_id"],
+                    "center": r["center"],
+                    "spot": r["underlying_at_entry"],
+                    "structure": "fly" if r["entry_mode"] == "outright" else f"short {r['side']}",
+                }
+            )
         if r.get("completed_at"):
-            events.append({
-                "kind": "completion", "ts": r["completed_at"], "arm": r["arm"],
-                "entry_mode": r["entry_mode"], "position_id": r["position_id"],
-                "center": r["center"], "spot": r["spot_at_completion"], "structure": "fly",
-            })
-            drift = (None if r["spot_at_completion"] is None or r["underlying_at_entry"] is None
-                     else abs(r["spot_at_completion"] - r["underlying_at_entry"]))
-            spans.append({
-                "position_id": r["position_id"], "arm": r["arm"], "center": r["center"],
-                "from": r["entry_time"], "to": r["completed_at"],
-                "latency_min": r["completion_latency_min"], "drift": _round(drift, 1),
-            })
+            events.append(
+                {
+                    "kind": "completion",
+                    "ts": r["completed_at"],
+                    "arm": r["arm"],
+                    "entry_mode": r["entry_mode"],
+                    "position_id": r["position_id"],
+                    "center": r["center"],
+                    "spot": r["spot_at_completion"],
+                    "structure": "fly",
+                }
+            )
+            drift = (
+                None
+                if r["spot_at_completion"] is None or r["underlying_at_entry"] is None
+                else abs(r["spot_at_completion"] - r["underlying_at_entry"])
+            )
+            spans.append(
+                {
+                    "position_id": r["position_id"],
+                    "arm": r["arm"],
+                    "center": r["center"],
+                    "from": r["entry_time"],
+                    "to": r["completed_at"],
+                    "latency_min": r["completion_latency_min"],
+                    "drift": _round(drift, 1),
+                }
+            )
     events.sort(key=lambda e: e["ts"])
 
     # Credit spreads still waiting: the branch that carries full defined risk until it completes, and
     # the one a time axis makes visible while it is still happening rather than at settlement.
-    waiting = [{"position_id": r["position_id"], "arm": r["arm"], "center": r["center"],
-                "from": r["entry_time"], "best_debit": r["best_completing_debit"],
-                "credit": r["credit"]}
-               for r in rows
-               if r["entry_mode"] == "legged" and not r.get("completed_at")]
+    waiting = [
+        {
+            "position_id": r["position_id"],
+            "arm": r["arm"],
+            "center": r["center"],
+            "from": r["entry_time"],
+            "best_debit": r["best_completing_debit"],
+            "credit": r["credit"],
+        }
+        for r in rows
+        if r["entry_mode"] == "legged" and not r.get("completed_at")
+    ]
 
-    return {"date": day, "arms": arms, "ticks": ticks, "events": events, "spans": spans,
-            "waiting": waiting, "feed": feed, "feed_summary": feed_summary}
+    return {
+        "date": day,
+        "arms": arms,
+        "ticks": ticks,
+        "events": events,
+        "spans": spans,
+        "waiting": waiting,
+        "feed": feed,
+        "feed_summary": feed_summary,
+    }
 
 
 def data_quality(conn, day: str | None = None) -> tuple[list[dict], dict]:
@@ -610,11 +695,21 @@ def data_quality(conn, day: str | None = None) -> tuple[list[dict], dict]:
     day = day or today()
     rows = conn.execute(
         "SELECT iteration_ts, symbol, status, quotes_fresh, quotes_rejected, underlying_price "
-        "FROM fly_snapshots WHERE trade_date = ? ORDER BY iteration_ts", (day,)).fetchall()
+        "FROM fly_snapshots WHERE trade_date = ? ORDER BY iteration_ts",
+        (day,),
+    ).fetchall()
 
-    feed = [{"ts": r["iteration_ts"], "symbol": r["symbol"], "status": r["status"],
-             "fresh": r["quotes_fresh"], "rejected": r["quotes_rejected"],
-             "spot": _round(r["underlying_price"])} for r in rows]
+    feed = [
+        {
+            "ts": r["iteration_ts"],
+            "symbol": r["symbol"],
+            "status": r["status"],
+            "fresh": r["quotes_fresh"],
+            "rejected": r["quotes_rejected"],
+            "spot": _round(r["underlying_price"]),
+        }
+        for r in rows
+    ]
 
     by_reason: dict[str, int] = {}
     ok = 0

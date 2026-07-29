@@ -61,12 +61,14 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         flag, source = _live_enabled(name, root) if root.exists() else (None, None)
         store = accounts.keyring_store(cfg, name)
         designated = accounts._designated_number(store)
-        modules.append({
-            "module": name,
-            "live_enabled": flag,           # None = no readable config (unknown, not off)
-            "config_source": source,
-            "designated": mask_account(designated) if designated else None,
-        })
+        modules.append(
+            {
+                "module": name,
+                "live_enabled": flag,  # None = no readable config (unknown, not off)
+                "config_source": source,
+                "designated": mask_account(designated) if designated else None,
+            }
+        )
     # Credential source per module (own/shared/missing) — the onboarding panel's column,
     # merged in so the Live Ops card shows setup state next to the kill switches.
     try:

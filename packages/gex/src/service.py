@@ -265,7 +265,8 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     log_dir = _config.logs_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
         handlers=[logging.FileHandler(log_dir / "recorder.log", encoding="utf-8"), logging.StreamHandler()],
     )
     log = logging.getLogger("cherrypick-gex.recorder")
@@ -292,8 +293,7 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     return 0
 
 
-def record_regimes(cfg: dict, symbols: list[str] | None = None,
-                   min_interval_s: int = 300) -> int:
+def record_regimes(cfg: dict, symbols: list[str] | None = None, min_interval_s: int = 300) -> int:
     """Persist a compact GEX regime row per symbol (net GEX by OI and by volume, zero
     gamma, walls, spot) into gex_regime_history — the historical dimension the audit
     found entirely missing: regime-vs-outcome analysis needs to know what GEX WAS, and
@@ -326,8 +326,12 @@ def record_regimes(cfg: dict, symbols: list[str] | None = None,
                 if snap.source == "missing" or snap.expiration is None:
                     continue
                 profile = compute_gex_profile(
-                    snap.chain_entries, snap.greeks, snap.oi, snap.volume,
-                    snap.spot or 0, strike_scale=snap.strike_scale,
+                    snap.chain_entries,
+                    snap.greeks,
+                    snap.oi,
+                    snap.volume,
+                    snap.spot or 0,
+                    strike_scale=snap.strike_scale,
                 )
                 if not profile.get("ok"):
                     continue
@@ -339,10 +343,18 @@ def record_regimes(cfg: dict, symbols: list[str] | None = None,
                     "INSERT INTO gex_regime_history (symbol, trade_date, ts, spot, net_gex, "
                     "net_gex_vol, zero_gamma, call_wall, put_wall, expiration) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (sym, today, now, spot_disp,
-                     totals.get("net_gex"), totals.get("net_gex_vol"),
-                     nearest_zero_gamma(series, spot_disp, "net_gex"),
-                     call_wall, put_wall, str(snap.expiration)),
+                    (
+                        sym,
+                        today,
+                        now,
+                        spot_disp,
+                        totals.get("net_gex"),
+                        totals.get("net_gex_vol"),
+                        nearest_zero_gamma(series, spot_disp, "net_gex"),
+                        call_wall,
+                        put_wall,
+                        str(snap.expiration),
+                    ),
                 )
                 written += 1
             except Exception:
@@ -366,15 +378,25 @@ def build_gex(cfg: dict, symbol: str | None = None) -> dict:
     snap = _provider.snapshot_from_stream_cache(cfg["stream_cache_db"], symbol)
 
     if snap.source == "missing":
-        return {"ok": False, "symbol": symbol,
-                "error": f"stream cache not found at {cfg['stream_cache_db']} — is the MEIC streamer running?"}
+        return {
+            "ok": False,
+            "symbol": symbol,
+            "error": f"stream cache not found at {cfg['stream_cache_db']} — is the MEIC streamer running?",
+        }
     if snap.expiration is None:
-        return {"ok": False, "symbol": symbol,
-                "error": f"no cached chain for {symbol} yet — is the MEIC streamer subscribed to it?"}
+        return {
+            "ok": False,
+            "symbol": symbol,
+            "error": f"no cached chain for {symbol} yet — is the MEIC streamer subscribed to it?",
+        }
 
     profile = compute_gex_profile(
-        snap.chain_entries, snap.greeks, snap.oi, snap.volume,
-        snap.spot or 0, strike_scale=snap.strike_scale,
+        snap.chain_entries,
+        snap.greeks,
+        snap.oi,
+        snap.volume,
+        snap.spot or 0,
+        strike_scale=snap.strike_scale,
     )
     if not profile.get("ok"):
         return {"ok": False, "symbol": symbol, "error": profile.get("error", "insufficient GEX data")}

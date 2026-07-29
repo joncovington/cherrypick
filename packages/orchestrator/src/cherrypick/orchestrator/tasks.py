@@ -252,8 +252,22 @@ def create_monthly_task(name: str, tr: str, day: int, at_hhmm: str) -> dict[str,
     if not _IS_WINDOWS:
         return _cron_create(name, _monthly_schedule(day, at_hhmm), tr)
     r = subprocess.run(
-        ["schtasks", "/Create", "/TN", name, "/TR", tr, "/SC", "MONTHLY", "/D", str(int(day)),
-         "/ST", at_hhmm, "/F", "/IT"],
+        [
+            "schtasks",
+            "/Create",
+            "/TN",
+            name,
+            "/TR",
+            tr,
+            "/SC",
+            "MONTHLY",
+            "/D",
+            str(int(day)),
+            "/ST",
+            at_hhmm,
+            "/F",
+            "/IT",
+        ],
         capture_output=True,
         text=True,
         creationflags=CREATE_NO_WINDOW,
@@ -268,7 +282,10 @@ def _run_command(command: str) -> None:
     """Fire a cron-managed command once now (POSIX has no `schtasks /Run`)."""
     try:
         subprocess.Popen(
-            command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            command,
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             creationflags=CREATE_NO_WINDOW,
         )
     except OSError:

@@ -4,6 +4,7 @@ Loop-side of the advise pipeline: re-validation with cherrypick.core.advice, rea
 session persistence across --once processes, baseline on absent/invalid, and the management-only
 twin that keeps open advised positions exiting when today's advice is off.
 """
+
 from __future__ import annotations
 
 import json
@@ -40,8 +41,11 @@ def homes(tmp_path, monkeypatch):
     monkeypatch.setenv("MEIC_DATA_DIR", str(tmp_path / "meic"))
     db = tmp_path / "meic" / "paper_trades.db"
     db.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run([sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"),
-                    "--db", str(db), "init_db"], check=True, capture_output=True)
+    subprocess.run(
+        [sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"), "--db", str(db), "init_db"],
+        check=True,
+        capture_output=True,
+    )
     monkeypatch.setattr(paper_loop, "_PAPER_DB", str(db))
     return tmp_path
 
@@ -49,8 +53,14 @@ def homes(tmp_path, monkeypatch):
 def _write_artifact(home: Path, proposals, session=DAY):
     state = home / "home" / "state"
     expires = (datetime.now(UTC) + timedelta(hours=12)).isoformat()
-    core_advice.write(core_advice.advice_path(state, "meic", session), "meic", session,
-                      proposals, advisor="test", expires_at=expires)
+    core_advice.write(
+        core_advice.advice_path(state, "meic", session),
+        "meic",
+        session,
+        proposals,
+        advisor="test",
+        expires_at=expires,
+    )
 
 
 def test_valid_advice_builds_the_advised_book(homes):
@@ -61,8 +71,9 @@ def test_valid_advice_builds_the_advised_book(homes):
     assert adv["stop_trigger_ratio"] == 0.9
     # The rest of the def is the base profile's — the control differs in exactly the advice.
     base = paper.load_profiles()["conservative"]
-    assert {k: v for k, v in adv.items() if k != "stop_trigger_ratio"} == \
-           {k: v for k, v in base.items() if k != "stop_trigger_ratio"}
+    assert {k: v for k, v in adv.items() if k != "stop_trigger_ratio"} == {
+        k: v for k, v in base.items() if k != "stop_trigger_ratio"
+    }
     assert reason is None
 
 
@@ -86,8 +97,9 @@ def test_decision_is_read_once_per_session(homes):
     profiles2, reason2 = paper_loop._advice_profiles(CFG, DAY)
     assert profiles2 == {} and reason2 == "absent"  # replayed, not re-read
     # A NEW session re-derives its own decision.
-    _write_artifact(homes, [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "r"}],
-                    session="2026-07-30")
+    _write_artifact(
+        homes, [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "r"}], session="2026-07-30"
+    )
     profiles3, _ = paper_loop._advice_profiles(CFG, "2026-07-30")
     assert "advised:conservative" in profiles3
 
@@ -104,29 +116,42 @@ def test_open_advised_positions_get_a_management_only_twin(homes):
     conn.execute(
         "INSERT INTO ic_trades (ic_order_id, trade_date, symbol, risk_profile, status, "
         "created_at, updated_at) VALUES ('A1', ?, 'SPX', 'advised:conservative', 'open', ?, ?)",
-        (DAY, ts, ts))
+        (DAY, ts, ts),
+    )
     conn.commit()
     conn.close()
     profiles, _ = paper_loop._advice_profiles({"advice": {"enabled": False}}, DAY)
     twin = profiles["advised:conservative"]
     assert twin["max_concurrent_ics"] == 0  # exits run; entries cannot
     base = paper.load_profiles()["conservative"]
-    assert twin["stop_trigger_ratio"] == base.get("stop_trigger_ratio",
-                                                  twin["stop_trigger_ratio"])
+    assert twin["stop_trigger_ratio"] == base.get("stop_trigger_ratio", twin["stop_trigger_ratio"])
 
 
 def test_process_symbol_evaluates_extra_profiles(homes):
     """The engine seam: a synthetic advised profile is evaluated beside the registry ones."""
     # XSP — the head of the configured symbol set since the 2026-07-28 width-study reduction
     # (a symbol outside the traded set gets no per-profile results at all).
-    snapshot = {"symbol": "XSP", "date": DAY, "now_et": "13:00", "expiration": DAY, "dte": 0,
-                "underlying_price": 590.0, "iv_rank": 0.5, "vix": 15.0,
-                "session_quality": "midday", "gex": {"ok": False},
-                "candidates": [], "leg_quotes": {}}
+    snapshot = {
+        "symbol": "XSP",
+        "date": DAY,
+        "now_et": "13:00",
+        "expiration": DAY,
+        "dte": 0,
+        "underlying_price": 590.0,
+        "iv_rank": 0.5,
+        "vix": 15.0,
+        "session_quality": "midday",
+        "gex": {"ok": False},
+        "candidates": [],
+        "leg_quotes": {},
+    }
     base = paper.load_profiles()["conservative"]
-    result = paper.process_symbol(snapshot, paper_loop._PAPER_DB, "paper",
-                                  extra_profiles={"advised:conservative":
-                                                  {**base, "stop_trigger_ratio": 0.9}})
+    result = paper.process_symbol(
+        snapshot,
+        paper_loop._PAPER_DB,
+        "paper",
+        extra_profiles={"advised:conservative": {**base, "stop_trigger_ratio": 0.9}},
+    )
     assert "advised:conservative" in result["results"]
 
 

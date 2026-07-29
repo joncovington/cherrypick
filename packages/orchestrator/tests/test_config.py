@@ -97,7 +97,8 @@ def test_reconcile_schedule_settings_off_by_default():
 
 def test_reconcile_schedule_settings_overrides():
     s = c.reconcile_schedule_settings(
-        {"reconcile": {"schedule": {"enabled": True, "at": "16:35", "task_name": "x"}}})
+        {"reconcile": {"schedule": {"enabled": True, "at": "16:35", "task_name": "x"}}}
+    )
     assert s == {"enabled": True, "task_name": "x", "at": "16:35"}
 
 

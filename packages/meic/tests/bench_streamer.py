@@ -8,6 +8,7 @@ which tier (stream_cache / rest_cache / live) each command used.
 
 Exit code 1 if the streamer is not reachable.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -25,16 +26,16 @@ _STREAMER_PORT = 7699
 # Latency thresholds (ms). Tests fail if any command exceeds its limit.
 # These are generous to avoid false failures on slow CI machines.
 _THRESHOLDS = {
-    "stream_status":       500,
-    "get_quote":           500,   # Tier 1: stream_cache
-    "get_option_chain":    500,   # Tier 1: stream_cache
-    "get_strategies_w1":   500,   # Tier 1: stream_cache
-    "get_strategies_w2":   500,   # Tier 1: stream_cache
-    "get_account_info":    500,   # Tier 2: rest_cache (after first poll)
-    "get_positions":       500,   # Tier 2: rest_cache
-    "get_working_orders":  500,   # Tier 2: rest_cache
-    "get_market_overview": 500,   # Tier 2: rest_cache
-    "execute_trade_dry":  3000,   # Tier 3: live REST
+    "stream_status": 500,
+    "get_quote": 500,  # Tier 1: stream_cache
+    "get_option_chain": 500,  # Tier 1: stream_cache
+    "get_strategies_w1": 500,  # Tier 1: stream_cache
+    "get_strategies_w2": 500,  # Tier 1: stream_cache
+    "get_account_info": 500,  # Tier 2: rest_cache (after first poll)
+    "get_positions": 500,  # Tier 2: rest_cache
+    "get_working_orders": 500,  # Tier 2: rest_cache
+    "get_market_overview": 500,  # Tier 2: rest_cache
+    "execute_trade_dry": 3000,  # Tier 3: live REST
 }
 
 
@@ -72,12 +73,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol", default="XSP")
     parser.add_argument(
-        "--wait-warmup", action="store_true",
-        help="Wait up to 20s for the REST poller first cycle to complete"
+        "--wait-warmup",
+        action="store_true",
+        help="Wait up to 20s for the REST poller first cycle to complete",
     )
     parser.add_argument(
-        "--no-thresholds", action="store_true",
-        help="Print results without failing on slow commands"
+        "--no-thresholds", action="store_true", help="Print results without failing on slow commands"
     )
     args = parser.parse_args()
     sym = args.symbol
@@ -112,33 +113,45 @@ def main() -> None:
         return out
 
     print("\n── Tier 1: stream cache (quotes / chain / greeks) ───────────────")
-    bench("stream_status",  "stream_status")
-    bench("get_quote",      "get_quote",        "--symbol", sym)
-    bench("get_option_chain", "get_option_chain", "--symbol", sym,
-          "--include_quotes", "--include_greeks", "--strike_count", "10")
-    bench("get_strategies_w1", "get_strategies",  "--symbol", sym,
-          "--wing_width", "1", "--short_delta", "0.15")
-    bench("get_strategies_w2", "get_strategies",  "--symbol", sym,
-          "--wing_width", "2", "--short_delta", "0.15")
+    bench("stream_status", "stream_status")
+    bench("get_quote", "get_quote", "--symbol", sym)
+    bench(
+        "get_option_chain",
+        "get_option_chain",
+        "--symbol",
+        sym,
+        "--include_quotes",
+        "--include_greeks",
+        "--strike_count",
+        "10",
+    )
+    bench(
+        "get_strategies_w1", "get_strategies", "--symbol", sym, "--wing_width", "1", "--short_delta", "0.15"
+    )
+    bench(
+        "get_strategies_w2", "get_strategies", "--symbol", sym, "--wing_width", "2", "--short_delta", "0.15"
+    )
 
     print("\n── Tier 2: REST cache (polled every 15s) ────────────────────────")
-    bench("get_account_info",   "get_account_info")
-    bench("get_positions",      "get_positions")
+    bench("get_account_info", "get_account_info")
+    bench("get_positions", "get_positions")
     bench("get_working_orders", "get_working_orders")
-    bench("get_market_overview","get_market_overview", "--symbols", sym)
+    bench("get_market_overview", "get_market_overview", "--symbols", sym)
 
     print("\n── Tier 3: live REST (dedicated REST loop) ──────────────────────")
-    dry_order = json.dumps({
-        "order_type": "Limit",
-        "time_in_force": "Day",
-        "legs": [
-            {"symbol": f"{sym}  260630P00585000", "action": "Sell to Open",  "quantity": 1},
-            {"symbol": f"{sym}  260630P00580000", "action": "Buy to Open",   "quantity": 1},
-            {"symbol": f"{sym}  260630C00600000", "action": "Sell to Open",  "quantity": 1},
-            {"symbol": f"{sym}  260630C00605000", "action": "Buy to Open",   "quantity": 1},
-        ],
-        "price": 0.50,
-    })
+    dry_order = json.dumps(
+        {
+            "order_type": "Limit",
+            "time_in_force": "Day",
+            "legs": [
+                {"symbol": f"{sym}  260630P00585000", "action": "Sell to Open", "quantity": 1},
+                {"symbol": f"{sym}  260630P00580000", "action": "Buy to Open", "quantity": 1},
+                {"symbol": f"{sym}  260630C00600000", "action": "Sell to Open", "quantity": 1},
+                {"symbol": f"{sym}  260630C00605000", "action": "Buy to Open", "quantity": 1},
+            ],
+            "price": 0.50,
+        }
+    )
     bench("execute_trade_dry", "execute_trade", "--order", dry_order)
 
     # ── Summary ─────────────────────────────────────────────────────────────

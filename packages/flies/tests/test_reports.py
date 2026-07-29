@@ -32,33 +32,124 @@ DAY = "2026-07-20"
 def seeded(conn):
     """A day with one completed risk-free fly, one miss the market never offered, and one miss our
     own buffer turned down — enough for every panel to have something real to say."""
-    position(conn, "P1", day=DAY, arm="gex", kind="fly", net=1.05, credit=2.55, best_debit=1.50,
-             latency=23.0, spot_at_completion=6006.0, gross=105.0, pnl=98.11, risk_free=1,
-             window="09:45-10:15")
-    position(conn, "P2", day=DAY, arm="control", kind="short_vertical", credit=2.55,
-             best_debit=2.60, net=2.55, gross=-200.0, pnl=-203.44, risk_free=0)
-    position(conn, "P3", day=DAY, arm="time_window", kind="short_vertical", credit=2.10,
-             best_debit=2.02, net=2.10, gross=50.0, pnl=46.56, risk_free=0)
-    dbmod.save_book(conn, {"book_id": f"{DAY}:gex:SPX", "trade_date": DAY, "arm": "gex",
-                           "symbol": "SPX", "credit_collected": 255.0, "debits_paid": 150.0,
-                           "fees": 6.89, "net_cash": 98.11, "worst": 98.11, "worst_at": 5900.0,
-                           "floor_holds": 1, "band_low": None, "band_high": None,
-                           "unbounded_below": 0, "status": "settled"})
-    dbmod.save_book(conn, {"book_id": f"{DAY}:control:SPX", "trade_date": DAY, "arm": "control",
-                           "symbol": "SPX", "credit_collected": 255.0, "debits_paid": 0.0,
-                           "fees": 3.44, "net_cash": 251.56, "worst": -248.44, "worst_at": 5990.0,
-                           "floor_holds": 0, "band_low": 5997.0, "band_high": 6200.0,
-                           "unbounded_below": 1, "status": "settled"})
-    for ts, centers in [("T1", {"gex": 6005.0, "control": 6000.0}),
-                        ("T2", {"gex": 6000.0, "control": 6000.0})]:
+    position(
+        conn,
+        "P1",
+        day=DAY,
+        arm="gex",
+        kind="fly",
+        net=1.05,
+        credit=2.55,
+        best_debit=1.50,
+        latency=23.0,
+        spot_at_completion=6006.0,
+        gross=105.0,
+        pnl=98.11,
+        risk_free=1,
+        window="09:45-10:15",
+    )
+    position(
+        conn,
+        "P2",
+        day=DAY,
+        arm="control",
+        kind="short_vertical",
+        credit=2.55,
+        best_debit=2.60,
+        net=2.55,
+        gross=-200.0,
+        pnl=-203.44,
+        risk_free=0,
+    )
+    position(
+        conn,
+        "P3",
+        day=DAY,
+        arm="time_window",
+        kind="short_vertical",
+        credit=2.10,
+        best_debit=2.02,
+        net=2.10,
+        gross=50.0,
+        pnl=46.56,
+        risk_free=0,
+    )
+    dbmod.save_book(
+        conn,
+        {
+            "book_id": f"{DAY}:gex:SPX",
+            "trade_date": DAY,
+            "arm": "gex",
+            "symbol": "SPX",
+            "credit_collected": 255.0,
+            "debits_paid": 150.0,
+            "fees": 6.89,
+            "net_cash": 98.11,
+            "worst": 98.11,
+            "worst_at": 5900.0,
+            "floor_holds": 1,
+            "band_low": None,
+            "band_high": None,
+            "unbounded_below": 0,
+            "status": "settled",
+        },
+    )
+    dbmod.save_book(
+        conn,
+        {
+            "book_id": f"{DAY}:control:SPX",
+            "trade_date": DAY,
+            "arm": "control",
+            "symbol": "SPX",
+            "credit_collected": 255.0,
+            "debits_paid": 0.0,
+            "fees": 3.44,
+            "net_cash": 251.56,
+            "worst": -248.44,
+            "worst_at": 5990.0,
+            "floor_holds": 0,
+            "band_low": 5997.0,
+            "band_high": 6200.0,
+            "unbounded_below": 1,
+            "status": "settled",
+        },
+    )
+    for ts, centers in [
+        ("T1", {"gex": 6005.0, "control": 6000.0}),
+        ("T2", {"gex": 6000.0, "control": 6000.0}),
+    ]:
         for arm, center in centers.items():
-            dbmod.record_iteration(conn, iteration_ts=ts, trade_date=DAY, symbol="SPX", arm=arm,
-                                   center=center, center_reason="atm", underlying_price=6000.0)
-    dbmod.record_decision(conn, trade_date=DAY, arm="gex", symbol="SPX", mode="legged",
-                          reason="credit_below_floor", center=6000.0, when=f"{DAY}T09:50:00")
-    dbmod.record_decision(conn, trade_date=DAY, arm="gex", symbol="SPX", mode="legged",
-                          reason="entered", accepted=True, position_id="P1",
-                          when=f"{DAY}T11:25:00")
+            dbmod.record_iteration(
+                conn,
+                iteration_ts=ts,
+                trade_date=DAY,
+                symbol="SPX",
+                arm=arm,
+                center=center,
+                center_reason="atm",
+                underlying_price=6000.0,
+            )
+    dbmod.record_decision(
+        conn,
+        trade_date=DAY,
+        arm="gex",
+        symbol="SPX",
+        mode="legged",
+        reason="credit_below_floor",
+        center=6000.0,
+        when=f"{DAY}T09:50:00",
+    )
+    dbmod.record_decision(
+        conn,
+        trade_date=DAY,
+        arm="gex",
+        symbol="SPX",
+        mode="legged",
+        reason="entered",
+        accepted=True,
+        position_id="P1",
+        when=f"{DAY}T11:25:00",
+    )
 
 
 # --------------------------------------------------------------------------- dashboard
@@ -124,9 +215,19 @@ def test_section_renders_the_payoff_curve_as_bars(conn):
 def test_section_states_the_band_alongside_the_floor(conn):
     """A floor without the band it holds over is the claim this module exists to avoid making."""
     position(conn, "P1", day=DAY, arm="control", kind="short_vertical", net=2.55, status="open")
-    dbmod.save_book(conn, {"book_id": f"{DAY}:control:SPX", "trade_date": DAY, "arm": "control",
-                           "symbol": "SPX", "credit_collected": 255.0, "debits_paid": 0.0,
-                           "fees": 3.44, "status": "open"})
+    dbmod.save_book(
+        conn,
+        {
+            "book_id": f"{DAY}:control:SPX",
+            "trade_date": DAY,
+            "arm": "control",
+            "symbol": "SPX",
+            "credit_collected": 255.0,
+            "debits_paid": 0.0,
+            "fees": 3.44,
+            "status": "open",
+        },
+    )
     payload = section.build_section(None, DAY, "control")
     assert any(m["label"] == "Floor holds" for m in payload["metrics"])
     assert "loses outside the band" in payload["subtitle"]
@@ -211,8 +312,16 @@ def test_analysis_flags_high_arm_agreement_as_a_problem(conn):
     say so rather than let a month of useless data accumulate."""
     for ts in ("T1", "T2", "T3", "T4", "T5"):
         for arm in ("gex", "control"):
-            dbmod.record_iteration(conn, iteration_ts=ts, trade_date=DAY, symbol="SPX", arm=arm,
-                                   center=6000.0, center_reason="atm", underlying_price=6000.0)
+            dbmod.record_iteration(
+                conn,
+                iteration_ts=ts,
+                trade_date=DAY,
+                symbol="SPX",
+                arm=arm,
+                center=6000.0,
+                center_reason="atm",
+                underlying_price=6000.0,
+            )
     text = eodmod.build_eod_analysis(conn, DAY)
     assert "problem for the experiment" in text
 
@@ -226,8 +335,15 @@ def test_analysis_on_an_empty_day_still_says_something_useful(conn):
 def test_analysis_distinguishes_no_trades_from_no_data(conn):
     """The distinction that decides whether a barren day means anything: was it the market, or was it
     our plumbing?"""
-    dbmod.record_decision(conn, trade_date=DAY, arm="gex", symbol="SPX", mode="legged",
-                          reason="missing_leg_quotes", when=f"{DAY}T10:00:00")
+    dbmod.record_decision(
+        conn,
+        trade_date=DAY,
+        arm="gex",
+        symbol="SPX",
+        mode="legged",
+        reason="missing_leg_quotes",
+        when=f"{DAY}T10:00:00",
+    )
     text = eodmod.build_eod_analysis(conn, DAY)
     assert "we had no data, not that there was no trade" in text
 
@@ -245,6 +361,7 @@ def test_every_report_number_comes_from_analytics(conn):
     stats = analytics.stats_for_period(conn, DAY, DAY)
     text = eodmod.build_paper_eod(conn, DAY)
     from cherrypick.core import viz
+
     assert viz.fmt_money(stats["net_pnl"]) in text
     payload = dashboard.build_api_data(conn, DAY)
     assert payload["today"]["stats"]["net_pnl"] == stats["net_pnl"]

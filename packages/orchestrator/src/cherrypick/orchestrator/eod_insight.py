@@ -94,6 +94,7 @@ def _upcoming_calendar(day: str, horizon_days: int = 45) -> str:
     section; web research supplements it (data releases, anticipated earnings). Empty string on failure."""
     try:
         from cherrypick.core import calendar as _cal
+
         d0 = date.fromisoformat(day)
     except Exception:
         return ""
@@ -124,8 +125,10 @@ def _upcoming_calendar(day: str, horizon_days: int = 45) -> str:
         lines.append("- NYSE holiday (market closed): " + ", ".join(x.isoformat() for x in hol))
     if not lines:
         return ""
-    header = (f"===== suite market calendar — next ~{horizon_days} days from {day} "
-              "(deterministic, authoritative) =====")
+    header = (
+        f"===== suite market calendar — next ~{horizon_days} days from {day} "
+        "(deterministic, authoritative) ====="
+    )
     return header + "\n" + "\n".join(lines)
 
 
@@ -180,15 +183,24 @@ def _prompt(day: str) -> str:
     )
 
 
-def _run_claude(prompt: str, stdin_text: str, model: str | None, timeout: int,
-                research: bool = False) -> dict:
+def _run_claude(
+    prompt: str, stdin_text: str, model: str | None, timeout: int, research: bool = False
+) -> dict:
     """Invoke Claude Code headless (print mode). Dangerous tools are always denied; WebSearch is granted
     only when `research` is on (for the upcoming-events section). Injectable seam so tests never call the
     real CLI. Returns {"ok": True, "text": ...} or {"ok": False, "error": ...}."""
     disallowed = list(_DISALLOWED_TOOLS) if research else [*_DISALLOWED_TOOLS, "WebSearch"]
-    cmd = ["claude", "-p", prompt, "--output-format", "text",
-           "--disallowed-tools", *disallowed,
-           "--append-system-prompt", _SYSTEM]
+    cmd = [
+        "claude",
+        "-p",
+        prompt,
+        "--output-format",
+        "text",
+        "--disallowed-tools",
+        *disallowed,
+        "--append-system-prompt",
+        _SYSTEM,
+    ]
     if research:
         # Grant WebSearch and bound the tool-use loop so a research session can't run away.
         cmd += ["--allowed-tools", "WebSearch", "--max-turns", "8"]
@@ -200,9 +212,16 @@ def _run_claude(prompt: str, stdin_text: str, model: str | None, timeout: int,
         # CREATE_NO_WINDOW: when the watchdog launches this detached (no console), spawning the `claude`
         # CLI would otherwise pop a visible console window on Windows. stdin/stdout are piped, so claude
         # needs no console. (0 on POSIX.)
-        r = subprocess.run(cmd, input=stdin_text, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=timeout,
-                           creationflags=CREATE_NO_WINDOW)
+        r = subprocess.run(
+            cmd,
+            input=stdin_text,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            creationflags=CREATE_NO_WINDOW,
+        )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return {"ok": False, "error": f"claude invocation failed: {exc}"}
     if r.returncode != 0:
@@ -212,8 +231,11 @@ def _run_claude(prompt: str, stdin_text: str, model: str | None, timeout: int,
 
 
 def _wrap(day: str, text: str, researched: bool) -> str:
-    tools = ("read-only over the day's reports, with web search for the upcoming-events section"
-             if researched else "read-only over the day's reports, no tools")
+    tools = (
+        "read-only over the day's reports, with web search for the upcoming-events section"
+        if researched
+        else "read-only over the day's reports, no tools"
+    )
     return (
         f"# cherrypick - EOD Insight {day}\n\n"
         f"_AI-synthesized narrative over the day's deterministic paper reports (Claude Code, {tools}). "

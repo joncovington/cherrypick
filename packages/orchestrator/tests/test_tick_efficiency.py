@@ -21,6 +21,7 @@ def test_query_verbose_spawns_exactly_once(monkeypatch):
         class _R:
             returncode = 0
             stdout = "Status: Ready\nLast Result: 0\n"
+
         return _R()
 
     monkeypatch.setattr(tasks, "_IS_WINDOWS", True)
@@ -39,6 +40,7 @@ def test_query_verbose_missing_task_is_one_spawn_too(monkeypatch):
         class _R:
             returncode = 1
             stdout = ""
+
         return _R()
 
     monkeypatch.setattr(tasks, "_IS_WINDOWS", True)
@@ -54,8 +56,8 @@ def _fake_repo(tmp_path, sha="0123456789abcdef", packed=False):
     (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
     if packed:
         (git / "packed-refs").write_text(
-            f"# pack-refs with: peeled fully-peeled sorted\n{sha} refs/heads/main\n",
-            encoding="utf-8")
+            f"# pack-refs with: peeled fully-peeled sorted\n{sha} refs/heads/main\n", encoding="utf-8"
+        )
     else:
         (git / "refs" / "heads" / "main").write_text(sha + "\n", encoding="utf-8")
     return tmp_path
@@ -64,6 +66,7 @@ def _fake_repo(tmp_path, sha="0123456789abcdef", packed=False):
 def test_git_ref_reads_loose_ref_without_subprocess(tmp_path, monkeypatch):
     def _boom(*a, **k):
         raise AssertionError("git subprocess spawned")
+
     monkeypatch.setattr(subprocess, "run", _boom)
     assert dashboard._git_ref(_fake_repo(tmp_path)) == "0123456"
 

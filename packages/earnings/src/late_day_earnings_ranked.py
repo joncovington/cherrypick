@@ -34,7 +34,9 @@ def _run_python(args: list[str]) -> dict:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"{' '.join(args)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}")
+        raise RuntimeError(
+            f"{' '.join(args)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}"
+        )
     return json.loads(result.stdout)
 
 
@@ -48,10 +50,14 @@ class StrategyRanker:
     def get_ranked_candidates(self, date_str: str) -> dict:
         """Calls rank_strategies.py get_ranked_symbols for the real,
         live-scanned candidate universe."""
-        return _run_python([
-            str(self.src_dir / "rank_strategies.py"), "get_ranked_symbols",
-            "--date", date_str,
-        ])
+        return _run_python(
+            [
+                str(self.src_dir / "rank_strategies.py"),
+                "get_ranked_symbols",
+                "--date",
+                date_str,
+            ]
+        )
 
     def filter_selected(self, symbols: list[dict]) -> list[dict]:
         """Keep only symbols the ranker selected (a best strategy that cleared
@@ -67,26 +73,34 @@ class StrategyRanker:
             strategy = c["best_strategy"]
             order_script = self.src_dir / "strategies" / f"{strategy}.py"
             try:
-                order = _run_python([
-                    str(order_script), "get_order",
-                    "--symbol", c["symbol"],
-                    "--earnings_date", c["earnings_date"],
-                    "--earnings_timing", c["earnings_timing"],
-                ])
+                order = _run_python(
+                    [
+                        str(order_script),
+                        "get_order",
+                        "--symbol",
+                        c["symbol"],
+                        "--earnings_date",
+                        c["earnings_date"],
+                        "--earnings_timing",
+                        c["earnings_timing"],
+                    ]
+                )
             except Exception as exc:
                 order = {"ok": False, "error": str(exc)}
 
-            trades.append({
-                "symbol": c["symbol"],
-                "earnings_date": c["earnings_date"],
-                "earnings_timing": c["earnings_timing"],
-                "strategy": strategy,
-                "score": c["best_score"],
-                "order_ok": order.get("ok", False),
-                "order": order if order.get("ok") else None,
-                "order_error": None if order.get("ok") else order.get("error"),
-                "entry_price": order.get("credit") or order.get("price"),
-            })
+            trades.append(
+                {
+                    "symbol": c["symbol"],
+                    "earnings_date": c["earnings_date"],
+                    "earnings_timing": c["earnings_timing"],
+                    "strategy": strategy,
+                    "score": c["best_score"],
+                    "order_ok": order.get("ok", False),
+                    "order": order if order.get("ok") else None,
+                    "order_error": None if order.get("ok") else order.get("error"),
+                    "entry_price": order.get("credit") or order.get("price"),
+                }
+            )
         return trades
 
     def analyze(self, date_str: str) -> dict:
@@ -112,9 +126,7 @@ class StrategyRanker:
             "selected": trades,
             "rejected": rejected,
             "average_score": (
-                sum(t["score"] for t in trades if t["score"] is not None) / len(trades)
-                if trades
-                else 0
+                sum(t["score"] for t in trades if t["score"] is not None) / len(trades) if trades else 0
             ),
         }
 
@@ -138,7 +150,11 @@ class StrategyRanker:
         if analysis["selected"]:
             print("SELECTED TRADES (Ranked by Score)")
             for i, trade in enumerate(analysis["selected"], 1):
-                print(f"  {i}. {trade['symbol']:<8} Score: {trade.get('score', 0):.4f}" if trade.get("score") is not None else f"  {i}. {trade['symbol']:<8} Score: N/A")
+                print(
+                    f"  {i}. {trade['symbol']:<8} Score: {trade.get('score', 0):.4f}"
+                    if trade.get("score") is not None
+                    else f"  {i}. {trade['symbol']:<8} Score: N/A"
+                )
                 print(f"     Strategy: {trade['strategy']}")
                 if trade["order_ok"]:
                     print(f"     Entry: ${trade.get('entry_price', 0):.2f}")

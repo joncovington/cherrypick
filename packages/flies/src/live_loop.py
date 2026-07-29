@@ -77,8 +77,8 @@ def daily_loss_tripped(conn, day: str, limit_dollars: float | None) -> bool:
     if not limit_dollars:
         return False
     row = conn.execute(
-        "SELECT COALESCE(SUM(pnl), 0) FROM fly_positions "
-        "WHERE trade_date = ? AND status = 'settled'", (day,)).fetchone()
+        "SELECT COALESCE(SUM(pnl), 0) FROM fly_positions WHERE trade_date = ? AND status = 'settled'", (day,)
+    ).fetchone()
     return float(row[0] or 0.0) <= -abs(limit_dollars)
 
 
@@ -94,12 +94,11 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
     arm = (config.get("live") or {}).get("arm", DEFAULT_ARM)
     params = engine.merged_params(config, arm)
     day = snapshot["date"]
-    summary = {"arm": arm, "live": live, "entered": 0, "completed_orders": 0,
-               "cancelled": 0, "skips": []}
+    summary = {"arm": arm, "live": live, "entered": 0, "completed_orders": 0, "cancelled": 0, "skips": []}
 
     rows = conn.execute(
-        "SELECT * FROM fly_positions WHERE trade_date = ? AND arm = ? AND status = 'open'",
-        (day, arm)).fetchall()
+        "SELECT * FROM fly_positions WHERE trade_date = ? AND arm = ? AND status = 'open'", (day, arm)
+    ).fetchall()
     positions = [dict(r) for r in rows]
 
     # --- completion management (before new entries: finishing a fly beats starting one) ---
@@ -113,8 +112,9 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
             if _cutoff_reached(snapshot.get("now_min"), params):
                 res = broker.cancel(pos["completion_order_id"])
                 if res.get("ok"):
-                    conn.execute("UPDATE fly_positions SET completion_order_id = NULL WHERE id = ?",
-                                 (pos["id"],))
+                    conn.execute(
+                        "UPDATE fly_positions SET completion_order_id = NULL WHERE id = ?", (pos["id"],)
+                    )
                     conn.commit()
                     summary["cancelled"] += 1
             continue
@@ -123,15 +123,18 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
             summary["skips"].append({"position": pos.get("position_id"), "reason": reason})
             continue
         if _cutoff_reached(snapshot.get("now_min"), params):
-            summary["skips"].append({"position": pos.get("position_id"),
-                                     "reason": "completion_cutoff_reached"})
+            summary["skips"].append(
+                {"position": pos.get("position_id"), "reason": "completion_cutoff_reached"}
+            )
             continue
         spec = live_orders.completion_spec(snapshot, pos, plan)
         res = broker.place(spec, live=live)
         log(f"completion order ({'LIVE' if live else 'dry-run'}): {json.dumps(res, default=str)[:200]}")
         if res.get("ok") and live and res.get("order_id"):
-            conn.execute("UPDATE fly_positions SET completion_order_id = ? WHERE id = ?",
-                         (str(res["order_id"]), pos["id"]))
+            conn.execute(
+                "UPDATE fly_positions SET completion_order_id = ? WHERE id = ?",
+                (str(res["order_id"]), pos["id"]),
+            )
             conn.commit()
         summary["completed_orders"] += 1
 
@@ -147,17 +150,32 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
         # Rung-1 honesty: the row is recorded as open with its order id; fill confirmation and
         # the recorded credit coming from the ACTUAL fill (not the model) are rung-1 work.
         import book as bookmod
+
         pid = f"live-{day}-{arm}-{int(plan['center'])}"
-        dbmod.save_position(conn, {
-            "position_id": pid, "book_id": bookmod.book_id_for(day, arm, snapshot["symbol"]),
-            "trade_date": day, "arm": arm, "entry_mode": "legged", "symbol": snapshot["symbol"],
-            "kind": "short_vertical", "side": plan["side"], "center": plan["center"],
-            "wing_width": plan["wing_width"], "quantity": plan["quantity"], "net": plan["credit"],
-            "credit": plan["credit"], "fees": plan["open_fee"], "status": "open",
-            "entry_window": plan.get("entry_window"),
-            "underlying_at_entry": snapshot.get("underlying_price"),
-            "entry_time": clock.now_iso(), "entry_order_id": str(res["order_id"]),
-        })
+        dbmod.save_position(
+            conn,
+            {
+                "position_id": pid,
+                "book_id": bookmod.book_id_for(day, arm, snapshot["symbol"]),
+                "trade_date": day,
+                "arm": arm,
+                "entry_mode": "legged",
+                "symbol": snapshot["symbol"],
+                "kind": "short_vertical",
+                "side": plan["side"],
+                "center": plan["center"],
+                "wing_width": plan["wing_width"],
+                "quantity": plan["quantity"],
+                "net": plan["credit"],
+                "credit": plan["credit"],
+                "fees": plan["open_fee"],
+                "status": "open",
+                "entry_window": plan.get("entry_window"),
+                "underlying_at_entry": snapshot.get("underlying_price"),
+                "entry_time": clock.now_iso(),
+                "entry_order_id": str(res["order_id"]),
+            },
+        )
     summary["entered"] += 1
     return summary
 
@@ -170,9 +188,14 @@ class BrokerAdapter:
         import asyncio
 
         import broker_cli
+
         args = argparse.Namespace(order=json.dumps(spec), live=live)
         result = asyncio.run(broker_cli.cmd_execute_trade(args))
-        rid = (result.get("response") or {}).get("order", {}) if isinstance(result.get("response"), dict) else {}
+        rid = (
+            (result.get("response") or {}).get("order", {})
+            if isinstance(result.get("response"), dict)
+            else {}
+        )
         if isinstance(rid, dict) and rid.get("id") is not None:
             result["order_id"] = rid["id"]
         return result
@@ -185,19 +208,32 @@ class BrokerAdapter:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--once", action="store_true", required=True,
-                    help="Single iteration (the only mode the scaffold supports)")
-    ap.add_argument("--dry-run", dest="dry_run", action="store_true", default=True,
-                    help="Preflight orders, place nothing (DEFAULT — this is the rung-0 smoke)")
-    ap.add_argument("--live", dest="dry_run", action="store_false",
-                    help="Place real orders. Requires every readiness gate AND the breaker clear.")
+    ap.add_argument(
+        "--once",
+        action="store_true",
+        required=True,
+        help="Single iteration (the only mode the scaffold supports)",
+    )
+    ap.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        default=True,
+        help="Preflight orders, place nothing (DEFAULT — this is the rung-0 smoke)",
+    )
+    ap.add_argument(
+        "--live",
+        dest="dry_run",
+        action="store_false",
+        help="Place real orders. Requires every readiness gate AND the breaker clear.",
+    )
     args = ap.parse_args()
 
     config = load_config()
     import credentials as creds
+
     designated = creds.designated_account()
-    unmet = readiness(config, halt_present=os.path.exists(halt_flag_path()),
-                      designated=designated)
+    unmet = readiness(config, halt_present=os.path.exists(halt_flag_path()), designated=designated)
     live = not args.dry_run
     if live and unmet:
         print(json.dumps({"ok": False, "error": "live gates unmet", "unmet": unmet}))
@@ -207,10 +243,14 @@ def main() -> int:
 
     symbol = (config.get("live") or {}).get("symbol", "SPX")
     import paper_loop as _pl
+
     snapshot = provider.build_snapshot(
-        _pl.stream_cache_path(config), symbol,
+        _pl.stream_cache_path(config),
+        symbol,
         max_quote_age_seconds=config.get("defaults", {}).get(
-            "max_quote_age_seconds", provider.DEFAULT_MAX_QUOTE_AGE_SECONDS))
+            "max_quote_age_seconds", provider.DEFAULT_MAX_QUOTE_AGE_SECONDS
+        ),
+    )
     if not snapshot.get("ok"):
         print(json.dumps({"ok": False, "error": f"no snapshot: {snapshot.get('reason')}"}))
         return 1
@@ -225,8 +265,9 @@ def main() -> int:
         summary = run_once(config, snapshot, conn, BrokerAdapter(), live=live)
     finally:
         conn.close()
-    print(json.dumps({"ok": True, "at": datetime.now().isoformat(timespec="seconds"), **summary},
-                     default=str))
+    print(
+        json.dumps({"ok": True, "at": datetime.now().isoformat(timespec="seconds"), **summary}, default=str)
+    )
     return 0
 
 

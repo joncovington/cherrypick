@@ -30,11 +30,14 @@ def _meic_db(path, rows):  # (symbol, risk_profile, pnl, fees, exit_time)
 @pytest.fixture
 def env(tmp_path):
     (tmp_path / "meic").mkdir()
-    _meic_db(tmp_path / "meic" / "paper.db",
-             [("SPX", "conservative", 100.0, 5.0, "2026-07-10T15:45")])
-    _meic_db(tmp_path / "meic" / "live.db",
-             [("SPX", "conservative", -20.0, 6.0, "2026-07-10T15:50"),
-              ("SPX", "conservative", 40.0, 6.0, "2026-07-11T15:50")])
+    _meic_db(tmp_path / "meic" / "paper.db", [("SPX", "conservative", 100.0, 5.0, "2026-07-10T15:45")])
+    _meic_db(
+        tmp_path / "meic" / "live.db",
+        [
+            ("SPX", "conservative", -20.0, 6.0, "2026-07-10T15:50"),
+            ("SPX", "conservative", 40.0, 6.0, "2026-07-11T15:50"),
+        ],
+    )
     cfg = {
         "modules": {
             "meic": {

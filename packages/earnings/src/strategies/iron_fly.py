@@ -28,7 +28,9 @@ def _strategy_config(config: dict) -> dict:
     return config.get("strategies", {}).get("iron_fly", {})
 
 
-def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
+def fetch_price_and_term_structure(
+    symbol: str, earnings_date: date, earnings_timing: str, config: dict
+) -> dict:
     """Live price + term structure/expected move via tt.py/scanner.py's
     shared helpers.
 
@@ -77,7 +79,11 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
         front_call, front_put, back_call = atm["front_call"], atm["front_put"], atm["back_call"]
 
         ts = scanner.compute_expected_move_and_term_structure(
-            front_call["mid"], front_put["mid"], front_call["iv"], back_call["iv"], price,
+            front_call["mid"],
+            front_put["mid"],
+            front_call["iv"],
+            back_call["iv"],
+            price,
         )
         liquidity = scanner.fetch_liquidity_criteria(symbol, front_exp, expirations, front_call, front_put)
 
@@ -90,7 +96,7 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
             if realized_moves:
                 mean_realized = sum(realized_moves) / len(realized_moves)
                 variance = sum((m - mean_realized) ** 2 for m in realized_moves) / len(realized_moves)
-                realized_move_dispersion = variance ** 0.5
+                realized_move_dispersion = variance**0.5
             else:
                 realized_move_dispersion = None
 
@@ -229,10 +235,20 @@ def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str,
         # Wide strike window: need both the ATM short strike and wings
         # potentially far from it, unlike fetch_price_and_term_structure's
         # narrow +/-3-strike window (which only needs the ATM point).
-        front_chain = scanner.call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
-            "--include_quotes", "--strike_count", "40", "--around_price", str(price),
-        ])
+        front_chain = scanner.call_tt(
+            [
+                "get_option_chain",
+                "--symbol",
+                symbol,
+                "--expiration",
+                str(front_exp),
+                "--include_quotes",
+                "--strike_count",
+                "40",
+                "--around_price",
+                str(price),
+            ]
+        )
         if not front_chain.get("ok"):
             return {"ok": False, "error": front_chain.get("error", "get_option_chain failed")}
         entries = front_chain["chain"][str(front_exp)]
@@ -266,10 +282,30 @@ def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str,
             "price": round(net_credit, 2),
             "price_effect": "Credit",
             "legs": [
-                {"symbol": short_call["symbol"], "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1},
-                {"symbol": short_put["symbol"], "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1},
-                {"symbol": long_call["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
-                {"symbol": long_put["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
+                {
+                    "symbol": short_call["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Sell to Open",
+                    "quantity": 1,
+                },
+                {
+                    "symbol": short_put["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Sell to Open",
+                    "quantity": 1,
+                },
+                {
+                    "symbol": long_call["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Buy to Open",
+                    "quantity": 1,
+                },
+                {
+                    "symbol": long_put["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Buy to Open",
+                    "quantity": 1,
+                },
             ],
         }
         return {
@@ -338,7 +374,9 @@ def cmd_get_candidates(args) -> dict:
     """
     config = scanner._load_config()
     strategy_config = _strategy_config(config)
-    return scanner.run_candidate_scan(args.date, config, fetch_price_and_term_structure, apply_tiering, strategy_config)
+    return scanner.run_candidate_scan(
+        args.date, config, fetch_price_and_term_structure, apply_tiering, strategy_config
+    )
 
 
 def main() -> None:

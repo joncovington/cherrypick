@@ -36,5 +36,7 @@ jobs:
           fi
       - name: Lint (ruff)
         run: ruff check .
+      - name: Format (ruff)
+        run: ruff format --check .
       - name: Test (pytest)
         run: pytest
