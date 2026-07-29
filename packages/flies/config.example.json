@@ -25,8 +25,8 @@
     "strike_increment": 1,
     "quantity": 1,
 
-    "_max_positions": "Structures per (arm x symbol) book per session. The 'forest' is several separate profit zones, not one big bet — but each one pays its own fee stack, so this is a cost cap as much as a risk cap.",
-    "max_positions": 4,
+    "_max_positions": "Structures per (arm x symbol) book per session. Raised 4 -> 99 (effectively uncapped) 2026-07-29 for the paper width study: in paper the fee stack is modeled, not spent, so the cap's cost/risk rationale doesn't bind and it only throttled sample accrual — every structure is an independent sample, the MEIC width-study posture. Two things still bound entries: the one-structure-per-centre rule and each arm's entry windows. Keep this EQUAL across compared arms or net-P&L comparisons measure opportunity count, not the variable under test (this module's own history records that failure twice); time_window's per-window cap of 2 stays — window-spreading is that arm's machinery, so read it per-trade against control, not on net. Restore a real cap (and rethink it per symbol) before anything goes live.",
+    "max_positions": 99,
 
     "_no_entry_before": "Hard post-open blackout (ET). No arm may enter before this, regardless of its own entry_windows — the gate is checked before the window logic, so an arm asking for an earlier window is refused rather than obeyed. Set to 10:00 on 2026-07-27: on the first five sessions every dollar of loss sat in the first 30 minutes (23 positions entered 09:30-10:00 ET for -$1,948.32, against +$913.79 across the 32 entered later), concentrated in control and gex, both of which opened at 09:45. Expressed as a floor rather than by editing each arm's first window because four separate window lists are four chances to silently reopen the hole when an arm is added — MEIC is the worked example of that failure mode. The arm windows below were raised to match anyway, so the two agree; the floor is the backstop, not the primary statement.",
     "no_entry_before": "10:00",
