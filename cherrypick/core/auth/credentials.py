@@ -17,6 +17,11 @@ CLIENT_SECRET = "client_secret"
 REFRESH_TOKEN = "refresh_token"
 ACCOUNT_NUMBER = "account_number"
 
+# The suite-wide SHARED broker service (the onboarding redesign, docs/onboarding-redesign.md):
+# one login entered once, read THROUGH by every module's store via the legacy-fallback chain.
+# Module services stay the override/rotation layer -- writes always target a store's own service.
+SHARED_SERVICE = "cherrypick-broker"
+
 REQUIRED_SECRETS = (CLIENT_SECRET, REFRESH_TOKEN)
 ALL_SECRETS = (CLIENT_SECRET, REFRESH_TOKEN, ACCOUNT_NUMBER)
 

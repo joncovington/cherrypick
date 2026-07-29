@@ -6,6 +6,7 @@ from .credentials import (
     CLIENT_SECRET,
     REFRESH_TOKEN,
     REQUIRED_SECRETS,
+    SHARED_SERVICE,
     CredentialError,
     CredentialStore,
 )
@@ -21,4 +22,5 @@ __all__ = [
     "ACCOUNT_NUMBER",
     "REQUIRED_SECRETS",
     "ALL_SECRETS",
+    "SHARED_SERVICE",
 ]
