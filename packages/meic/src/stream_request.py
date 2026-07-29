@@ -16,14 +16,13 @@ subscribed — they survived only while they happened to sit inside the ATM wind
 that acute (~40–120 concurrent structures/day, all reading leg quotes), which is why this writer exists.
 
 Best-effort by design: a failed write must never break the paper loop. An unregistered symbol is a
-data-availability problem the readers already surface, not a reason to crash a scheduled run. Thin
-sibling of ``flies/src/stream_request.py`` (candidate to consolidate into
-``cherrypick.core.streamrequests`` later).
+data-availability problem the readers already surface, not a reason to crash a scheduled run. The
+write itself (path convention, symbol cleaning, atomic rename) lives in
+``cherrypick.core.streamrequests``; this file is the module-name + logger + leg-source adapter.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import sys
 from pathlib import Path
@@ -35,7 +34,7 @@ if _CORE.is_dir() and str(_CORE) not in sys.path:
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-from cherrypick.core import home as _home  # noqa: E402
+from cherrypick.core import streamrequests as _sr  # noqa: E402
 
 import paths as _paths  # noqa: E402
 
@@ -50,28 +49,13 @@ _LEG_QUERY = (
 )
 
 
-def _clean_symbols(symbols) -> list[str]:
-    out: set[str] = set()
-    for s in symbols or []:
-        if isinstance(s, str) and s.strip():
-            out.add(s.strip().upper())
-    return sorted(out)
-
-
 def write(symbols) -> Path:
-    """Atomically (over)write this module's request file. Write-then-rename so a concurrent reader in the
-    streamer never sees a partial file."""
-    directory = _home.ensure(_home.state_dir() / "stream_requests")
-    path = directory / f"{_MODULE}.json"
-    payload = {
-        "symbols": _clean_symbols(symbols),
-        "legs": [],
-        "leg_sources": [{"db": str(_paths.paper_db_path()), "query": _LEG_QUERY}],
-    }
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(payload), encoding="utf-8")
-    tmp.replace(path)
-    return path
+    """Atomically (over)write this module's request file — delegated to core (write-then-rename, so a
+    concurrent reader in the streamer never sees a partial file), plus MEIC's paper-ledger leg source."""
+    return _sr.write_request(
+        _MODULE, symbols,
+        leg_sources=[{"db": str(_paths.paper_db_path()), "query": _LEG_QUERY}],
+    )
 
 
 def register(config: dict) -> None:
