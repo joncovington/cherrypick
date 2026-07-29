@@ -534,11 +534,31 @@ def _account_table(listing: dict) -> None:
 
 
 def cmd_account(cfg, args) -> None:
-    """List / set / clear a module's designated live-trading account (masked)."""
+    """List / set / clear a designated live-trading account (masked). With --module, the
+    module's own designation (its override); WITHOUT --module, the SUITE-WIDE shared default
+    every module inherits through the store fallback chain."""
     module = args.module
     if not module:
-        _emit({"ok": False, "error": "account requires --module <name>"})
-        sys.exit(2)
+        if args.clear:
+            _emit(accounts.clear_shared_account())
+            return
+        if args.set:
+            # Setting the destination for LIVE orders — human-confirmed unless --yes.
+            if not args.yes:
+                print(
+                    "This designates the SUITE-WIDE default account every module will use for LIVE"
+                    " orders (a per-module designation still overrides). cherrypick never places"
+                    " trades; it only records the destination."
+                )
+                if input(
+                    f"Type 'yes' to set the suite's live-trading account to selection {args.set!r}: "
+                ).strip() != "yes":
+                    _emit({"ok": False, "error": "aborted"})
+                    sys.exit(1)
+            _emit(accounts.set_shared_account(cfg, args.set))
+            return
+        _emit(accounts.list_shared(cfg))
+        return
     if args.clear:
         _emit(accounts.clear_account(cfg, module))
         return

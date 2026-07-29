@@ -41,7 +41,10 @@ def fake_keyring(monkeypatch):
 
 def test_store_is_configured_for_earnings():
     assert credentials.store.service_name == "earningsagent"
-    assert credentials.store.legacy_service_names == ()  # no legacy fallback
+    # The one fallback is the suite-wide shared login (cherrypick-broker): entered once via
+    # the onboarding wizard, read through when this module has no secrets of its own.
+    from cherrypick.core.auth import SHARED_SERVICE
+    assert credentials.store.legacy_service_names == (SHARED_SERVICE,)
 
 
 def test_public_api_preserved():

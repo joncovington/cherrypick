@@ -25,6 +25,7 @@ if os.path.isdir(_CORE) and _CORE not in sys.path:
 
 from cherrypick.core.auth import (  # noqa: E402
     ACCOUNT_NUMBER,
+    SHARED_SERVICE,
     CredentialError,
     CredentialStore,
     SessionManager,
@@ -32,7 +33,9 @@ from cherrypick.core.auth import (  # noqa: E402
 
 SERVICE_NAME = "fliesagent"
 
-store = CredentialStore(SERVICE_NAME)
+# Own service first (the override/rotation layer), then the suite-wide shared login
+# (cherrypick-broker; entered once via the onboarding wizard).
+store = CredentialStore(SERVICE_NAME, legacy_service_names=(SHARED_SERVICE,))
 sessions = SessionManager(store)
 
 
