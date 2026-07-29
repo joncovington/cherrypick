@@ -165,7 +165,7 @@ def _query_broker(cfg: dict[str, Any], forced_module: str | None) -> dict[str, A
         root = cfgmod.module_root(mcfg, name)
         if not root.exists():
             continue
-        tool = cfgmod.broker_tool(mcfg)
+        tool = cfgmod.broker_tool(mcfg, name)
         try:
             numbers = [
                 a.get("account_number")

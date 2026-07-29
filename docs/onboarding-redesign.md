@@ -1,8 +1,12 @@
 # Onboarding redesign — one login, one command
 
-**Status: decided 2026-07-28; steps 1, 2, and 4 implemented** (shared service + CLI in
-core.auth, all three module stores read through it, suite-wide designation via `account`
-without `--module`). The wizard (3), status panel (5), and config defaults (6) remain.
+**Status: decided 2026-07-28; ALL STEPS IMPLEMENTED.** Shared service + CLI in core.auth
+(1), all three module stores read through it (2), the `connect` no-module wizard with the
+migrate offer (3), suite-wide designation via `account` without `--module` (4), the status
+panel — wizard end, doctor's yellow `onboarding` check, and credential-source columns on
+the Live Ops payload (5), known-module config defaults with the explicit-null opt-out (6),
+and the docs (7). The average-user path is now: `python run.py connect`, answer the
+prompts, done.
 
 **Decisions on the open questions:** (1) the wizard **migrates** existing module-service
 secrets into the shared service — copies deleted so one rotation point remains; the migrate

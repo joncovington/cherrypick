@@ -583,11 +583,13 @@ def cmd_account(cfg, args) -> None:
 
 
 def cmd_connect(cfg, args) -> None:
-    module = args.module
-    if not module:
-        _emit({"ok": False, "error": "connect requires --module <name>"})
-        sys.exit(2)
-    _emit(connect.run(cfg, module))
+    """With --module: the per-module onboarding (override layer). Without: the SUITE wizard —
+    shared login once, optional migration of per-module copies, one suite-wide designation,
+    opt-in webhooks, status panel."""
+    if not args.module:
+        _emit(connect.run_suite(cfg))
+        return
+    _emit(connect.run(cfg, args.module))
 
 
 def cmd_reconcile(cfg, scheduled: bool = False) -> None:

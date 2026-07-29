@@ -115,6 +115,8 @@ def test_unresolvable_selector_errors(env):
 
 def test_missing_keyring_service_degrades_cleanly(env):
     _, cfg = env
-    cfg["modules"]["meic"].pop("keyring_service")
+    # Popping the key no longer disables the surface (known-module defaults fill it in);
+    # the explicit null is the deliberate opt-out.
+    cfg["modules"]["meic"]["keyring_service"] = None
     out = accounts.list_accounts(cfg, "meic")
     assert out["ok"] is False and "keyring_service" in out["error"]

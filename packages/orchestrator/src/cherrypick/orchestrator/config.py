@@ -152,12 +152,36 @@ def paper_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path:
     return (module_root(module_cfg, name) / p).resolve()
 
 
-def broker_tool(module_cfg: dict[str, Any]) -> list[str]:
-    """The module's broker/credential CLI as an argv prefix, relative to its root. Defaults to
-    the historical `src/tt.py` (MEIC, earnings); a module without a tt.py declares its own --
-    flies: `["src/broker_cli.py"]`. Used by connect/account/reconcile so onboarding and the
-    isolation guard drive every module through config-declared argv, like everything else."""
-    return list(module_cfg.get("broker_tool") or ["src/tt.py"])
+# Known-module onboarding defaults (the redesign's step 6): applied when a config omits the
+# key, so an existing machine-local config needs ZERO broker keys for connect/account to work.
+# Config always wins when present; a genuinely new module still declares its keys in config.
+KNOWN_MODULE_DEFAULTS: dict[str, dict[str, Any]] = {
+    "meic": {"keyring_service": "meicagent", "broker_tool": ["src/tt.py"]},
+    "earnings": {"keyring_service": "earningsagent", "broker_tool": ["src/tt.py"]},
+    "flies": {"keyring_service": "fliesagent", "broker_tool": ["src/broker_cli.py"]},
+}
+
+
+def _module_default(name: str | None, key: str) -> Any:
+    return (KNOWN_MODULE_DEFAULTS.get(name or "") or {}).get(key)
+
+
+def broker_tool(module_cfg: dict[str, Any], name: str | None = None) -> list[str]:
+    """The module's broker/credential CLI as an argv prefix, relative to its root. Resolution:
+    explicit config -> known-module default (by name) -> the historical `src/tt.py`. Used by
+    connect/account/reconcile so onboarding and the isolation guard drive every module through
+    config-declared argv, like everything else."""
+    return list(module_cfg.get("broker_tool") or _module_default(name, "broker_tool")
+                or ["src/tt.py"])
+
+
+def module_keyring_service(module_cfg: dict[str, Any], name: str | None = None) -> str | None:
+    """The module's keyring service: explicit config -> known-module default -> None (no
+    account-selection surface for that module). An EXPLICIT null in config disables the
+    default -- the escape hatch for deliberately opting a known module out."""
+    if "keyring_service" in module_cfg:
+        return module_cfg["keyring_service"] or None
+    return _module_default(name, "keyring_service")
 
 
 def live_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path | None:
