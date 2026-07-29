@@ -48,6 +48,13 @@ def now_et(tz_name: str = _DEFAULT_TZ) -> datetime:
     return datetime.now(_tz(tz_name))
 
 
+def et_from_epoch(epoch: float, tz_name: str = _DEFAULT_TZ) -> datetime:
+    """A specific instant (unix epoch seconds) rendered in market time — for callers that already
+    hold a `now` timestamp (e.g. for testability) and need its ET wall-clock, without a second live
+    `now_et()` call that a test can't control."""
+    return datetime.fromtimestamp(epoch, _tz(tz_name))
+
+
 def to_local_hhmm(hhmm: str, tz_name: str = _DEFAULT_TZ) -> str:
     """Convert a wall-clock ``HH:MM`` expressed in ``tz_name`` (the market timezone) to the host's
     local ``HH:MM``.

@@ -313,6 +313,11 @@
     "_channels_note": "push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord), never in this file or env vars.",
     "channels": ["log", "desktop"],
     "trade_channels": ["log", "discord"],
-    "desktop_app_name": "cherrypick"
+    "desktop_app_name": "cherrypick",
+    "trade_summary": {
+      "_comment": "MEIC risk_profile prefixes routed to a periodic per-symbol digest instead of a per-trade push (the width study's ~150-200 trades/day would otherwise spam every entry/exit individually). Rows whose risk_profile starts with one of these prefixes are excluded from the normal per-trade lines; ladder profiles (conservative/moderate/aggressive/very-aggressive) are unaffected either way.",
+      "profile_prefixes": ["width-"],
+      "interval_minutes": 15
+    }
   }
 }
