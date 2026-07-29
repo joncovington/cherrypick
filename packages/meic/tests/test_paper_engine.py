@@ -480,13 +480,16 @@ def test_synthetic_entry_fill_records_the_gex_regime_at_entry():
     the flip DISTANCE the magnitude variant gates on is reconstructable."""
     snap = _base_snapshot(now_et="13:00")
     snap["gex"] = {"ok": True, "net_gex": 1.25e9, "gex_positive": True,
-                   "gamma_flip": 580.5, "spot": 590.25}
+                   "gamma_flip": 580.5, "spot": 590.25, "net_gex_vol": 9.5e8}
     _, _, chosen = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])
     row = paper.synthetic_entry_fill(snap, "conservative", chosen, _params(CONSERVATIVE), "paper")
     assert row["gex_net_at_entry"] == pytest.approx(1.25e9)
     assert row["gex_positive_at_entry"] == 1          # 0/1, not a bool — SQLite has no boolean
     assert row["gamma_flip_at_entry"] == pytest.approx(580.5)
     assert row["gex_spot_at_entry"] == pytest.approx(590.25)
+    # The flow (volume-weighted) series stamped beside the positioning series — same GEX gate
+    # (OI-based) governs entry, this is purely a recorded-for-later-analysis field.
+    assert row["gex_net_vol_at_entry"] == pytest.approx(9.5e8)
 
 
 def test_gex_at_entry_keeps_unknown_distinct_from_negative():
@@ -507,7 +510,8 @@ def test_gex_at_entry_is_all_none_when_unavailable():
     fact rather than a hole that looks like a schema bug later."""
     fields = paper._gex_at_entry({"ok": False, "error": "no OI cached"})
     assert set(fields) == {"gex_net_at_entry", "gex_positive_at_entry",
-                           "gamma_flip_at_entry", "gex_spot_at_entry"}
+                           "gamma_flip_at_entry", "gex_spot_at_entry",
+                           "gex_net_vol_at_entry"}
     assert all(v is None for v in fields.values())
 
 

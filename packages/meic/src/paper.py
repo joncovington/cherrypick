@@ -357,13 +357,17 @@ def _gex_at_entry(gex: dict | None) -> dict:
     gex = gex or {}
     if not gex.get("ok"):
         return {"gex_net_at_entry": None, "gex_positive_at_entry": None,
-                "gamma_flip_at_entry": None, "gex_spot_at_entry": None}
+                "gamma_flip_at_entry": None, "gex_spot_at_entry": None,
+                "gex_net_vol_at_entry": None}
     positive = gex.get("gex_positive")
     return {
         "gex_net_at_entry": gex.get("net_gex"),
         "gex_positive_at_entry": None if positive is None else int(bool(positive)),
         "gamma_flip_at_entry": gex.get("gamma_flip"),
         "gex_spot_at_entry": gex.get("spot"),
+        # The flow series (volume-weighted) beside the positioning series above; flip DISTANCE is
+        # derivable from gamma_flip_at_entry + gex_spot_at_entry, so it is not stored separately.
+        "gex_net_vol_at_entry": gex.get("net_gex_vol"),
     }
 
 
@@ -835,6 +839,7 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
         put_exit = max(_close_cost(sq, lpq, slippage_frac), 0) if put_open else None
         call_exit = max(_close_cost(cq, lcq, slippage_frac), 0) if call_open else None
         friction_applied = False
+        pin_applied = False
         if not is_cash_settled:
             # Physically-settled symbols pay a modeled friction on the force-close (wider
             # spreads near the bell + assignment/pin risk) so paper doesn't overstate their
@@ -842,15 +847,17 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
             # (credit − exit_price) moves the right (worse) direction.
             friction = params.get("physical_settlement_exit_friction", 0.05)
             if put_open:
-                put_exit = round(put_exit + friction +
-                                 _pin_penalty(trade.get("put_strike"), underlying_price,
-                                              trade.get("wing_width"), params), 4)
+                put_pin = _pin_penalty(trade.get("put_strike"), underlying_price,
+                                       trade.get("wing_width"), params)
+                put_exit = round(put_exit + friction + put_pin, 4)
                 friction_applied = True
+                pin_applied = pin_applied or put_pin > 0
             if call_open:
-                call_exit = round(call_exit + friction +
-                                  _pin_penalty(trade.get("call_strike"), underlying_price,
-                                               trade.get("wing_width"), params), 4)
+                call_pin = _pin_penalty(trade.get("call_strike"), underlying_price,
+                                        trade.get("wing_width"), params)
+                call_exit = round(call_exit + friction + call_pin, 4)
                 friction_applied = True
+                pin_applied = pin_applied or call_pin > 0
         return {
             "action": "force_close",
             "put_open": put_open,
@@ -861,6 +868,10 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
             "call_exit_slippage": call_slip if call_open else None,
             "reason": force_close_reason,
             "physical_friction_applied": friction_applied,
+            # The pin penalty is a MODELED cost that scales with wing width, so the width study
+            # must be able to see the model's hand per trade -- recorded distinctly from the flat
+            # friction (which every physical force-close pays).
+            "pin_risk_applied": pin_applied,
         }
 
     stop_trigger = trade.get("stop_trigger_current") or params["stop_trigger_ratio"]
@@ -1059,7 +1070,40 @@ def process_symbol(snapshot: dict, db_path: str, execution_mode: str, profiles_f
 
         results[name] = actions
 
+    _log_width_divergence(snapshot, results, db_path)
     return {"ok": True, "symbol": symbol, "results": results}
+
+
+def _log_width_divergence(snapshot: dict, results: dict, db_path: str) -> None:
+    """The width study's counterfactual: when one width-* arm entered this tick and a sibling arm
+    did not, record WHO sat out and WHY (floor / overlap / spacing ...). The iteration log condenses
+    skipped profiles, so without this the divergence -- the study's most informative datum, per the
+    flies fly_decisions lesson -- would be unrecoverable. Only divergent ticks are written (a tick
+    where every arm entered, or every arm skipped, records nothing), so volume stays small.
+    Best-effort: a logging hiccup must never disturb the engine."""
+    arms = {n: a for n, a in results.items() if n.startswith("width-")}
+    if not arms:
+        return
+    entered = [n for n, acts in arms.items() if any(x.get("entry") == "filled" for x in acts)]
+    skipped = {n: next((x.get("reason") for x in acts if x.get("entry") == "skipped"), "unknown")
+               for n, acts in arms.items()
+               if not any(x.get("entry") == "filled" for x in acts)}
+    if not entered or not skipped:
+        return
+    try:
+        import sqlite3 as _sq
+        now = str(_now_et())
+        conn = _sq.connect(db_path)
+        for arm, reason in sorted(skipped.items()):
+            conn.execute(
+                "INSERT INTO loop_log (loop_time, loop_date, symbol, action, reasoning, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (now, snapshot["date"], snapshot["symbol"], "width_arm_divergence",
+                 f"{arm} skipped ({reason}) while {','.join(sorted(entered))} entered", now))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 def _max_cost_updates(trade: dict, decision: dict) -> dict:
@@ -1200,10 +1244,14 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
                  "--exit_price", str(decision["call_exit_price"]), "--pnl", str(call_pnl)], db_path)
         # Preserve a prior per-side stop in the IC-level status (stop vs. force-close stays legible).
         was_stopped = trade.get("put_stop_cost") is not None or trade.get("call_stop_cost") is not None
+        pin = decision.get("pin_risk_applied")
         _update_trade(ic_order_id, {
             "status": "stopped" if was_stopped else "force_closed", "exit_time": now,
             "exit_reason": (reason + "+prior_stop") if was_stopped else reason,
             "pnl": existing_pnl + delta_pnl, "fees": (trade.get("fees") or 0) + fee,
+            # NULL when the decision predates the flag or the close wasn't physical -- a missing
+            # measurement, never a measured "no pin".
+            "pin_risk_applied": None if pin is None else int(bool(pin)),
             **max_updates,
             **_exit_slippage_update(trade, decision),
         }, db_path)

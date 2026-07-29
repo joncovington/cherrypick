@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS ic_trades (
     gex_positive_at_entry     INTEGER,
     gamma_flip_at_entry       REAL,
     gex_spot_at_entry         REAL,
+    gex_net_vol_at_entry      REAL,
+    pin_risk_applied          INTEGER,
     -- Stop-rule instrumentation. The per-side stop is the single largest loss mechanism in the paper
     -- book, and none of it was measurable after the fact: no per-leg intraday marks are stored, so an
     -- alternative threshold cannot be replayed from history.
@@ -238,6 +240,8 @@ def cmd_init_db(_args):
         ("gex_positive_at_entry",  "INTEGER"),
         ("gamma_flip_at_entry",    "REAL"),
         ("gex_spot_at_entry",      "REAL"),
+        ("gex_net_vol_at_entry",   "REAL"),
+        ("pin_risk_applied",       "INTEGER"),
         # Stop-rule instrumentation (see the CREATE above). Additive only — the orchestrator reads
         # this table through its `meic_ic` adapter, so columns may be appended but never renamed.
         ("put_max_cost",           "REAL"),

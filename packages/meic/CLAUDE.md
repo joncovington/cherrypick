@@ -112,7 +112,15 @@ Instead of hand-editing `config.json` to change entry thresholds, use the **risk
 
 See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, trade-off tables per tier, and progression guidance.
 
-**The ladder is the whole profile registry.** `config.risk.json` holds only the four tiers; the 15 symbol/wing/credit experiment cells were removed 2026-07-18 (recoverable from git history) because each pinned a *symbol* into its identity, which collides with the portfolio model below. The per-profile mechanism they used — `symbols`, `wing_widths_by_symbol` + `wing_selection`, `stagger_entries`, `short_delta_target` — is still fully supported for rebuilding cells as symbol-agnostic branches; see [docs/paper-experiments.md](docs/paper-experiments.md) (retired) for that reference.
+**The registry holds the ladder plus the wing-width study.** `config.risk.json` holds the four ladder
+tiers and four symbol-agnostic width-study arms (`width-2`/`width-5`/`width-10`/`width-adaptive`,
+added 2026-07-28 — forced-sampling cells that isolate wing width as its own variable). The 15
+symbol/wing/credit experiment cells were removed 2026-07-18 (recoverable from git history) because
+each pinned a *symbol* into its identity, which collides with the portfolio model below; the
+per-profile mechanism they used — `symbols`, `wing_widths_by_symbol` + `wing_selection`,
+`stagger_entries`, `short_delta_target` — is what the width-study arms now use *without* the
+`symbols` pin. See [docs/paper-experiments.md](docs/paper-experiments.md) for both the retired-cells
+reference and the resumed study's design.
 
 **Paper portfolio model**: one portfolio per **(profile × symbol)** pair, each with its own `max_concurrent_ics` and daily-entry budget — risk appetite and instrument are separate axes. A single shared budget starved whichever symbol was processed last (IWM: 1,313 iterations, zero fills). `daily_ic_trade_target` is soft guidance, not a cap: past it the credit floor is scaled by `over_target_credit_multiple`, so favorable conditions permit more. Ladder thresholds that used to be shared absolutes are derived per profile from its own `min_iv_rank` / credit floor (`low_iv_credit_floor_iv_rank_offset`, `low_iv_credit_relief_multiple`, `late_entry_bias_iv_rank_offset`) — a shared absolute silently flattened the ladder. Full reasoning and the invariants any change must preserve: [docs/risk-profiles.md](docs/risk-profiles.md#design-rationale).
 
@@ -120,7 +128,7 @@ See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, trade
 
 | Option | Current Value | What it controls |
 |---|---|---|
-| `symbols` | `["XSP"]` | List of underlyings to trade concurrently, e.g. `["XSP", "SPX"]`. Each gets its own live option window and its own GEX profile — there is no separate `gex_symbol`; GEX is always 1:1 with every traded symbol. The single-symbol `symbol` key is accepted as a deprecated alias for `["symbol"]` when `symbols` is absent. |
+| `symbols` | `["XSP", "QQQ"]` | List of underlyings to trade concurrently, e.g. `["XSP", "SPX"]`. Each gets its own live option window and its own GEX profile — there is no separate `gex_symbol`; GEX is always 1:1 with every traded symbol. The single-symbol `symbol` key is accepted as a deprecated alias for `["symbol"]` when `symbols` is absent. Reduced to this decorrelated cash/physical pair 2026-07-28 for the wing-width study below — one cash-settled (XSP), one physically-settled (QQQ), rejecting the same-underlying XSP/SPY pair for its maximum correlation. |
 | `delta_target` | `0.18` | Fallback target delta only if VIX is unavailable this iteration. Otherwise superseded by the VIX-banded scale below. Kept below `max_call_delta_entry_open_volatile`/`max_call_delta_entry_late` (0.19) so the target itself doesn't sit at the hard ceiling |
 | `delta_target_vix_low` / `_vix_elevated` / `_vix_high` / `_vix_crisis` | `0.16` / `0.14` / `0.12` / `0.10` | Target delta by VIX band: `≤18` / `≤25` / `≤35` / `>35` (see `vix_band_*_max`). Documented VIX-regime delta-scaling convention (16-delta at VIX 12–18, narrowing to 8–12 delta at VIX 35+/crisis), not independently backtested for this strategy — a reasoned starting point, not a proven-optimal breakpoint set |
 | `vix_band_low_max` / `_elevated_max` / `_high_max` | `18` / `25` / `35` | VIX band boundaries for the delta scale above |

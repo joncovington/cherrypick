@@ -12,9 +12,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # The canonical four-tier risk ladder. config.risk.json may additionally carry
 # symbol/wing/credit experiment cells (small-/medium-/large-/explore-) for the paper
-# account-size study — those are partial overlays merged onto config.json, not full presets.
+# account-size study, or symbol-agnostic width-study arms (width-*) — those are partial
+# overlays merged onto config.json, not full presets.
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
-EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore"}
+EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore", "width"}
+# width-* arms are forced-sampling study cells: symbol-agnostic (no `symbols` pin — the
+# (profile x symbol) grain supplies that axis) and deliberately uncapped on concurrency
+# (each structure is an independent sample, not a book), so they're exempt from the
+# symbol-pinning and concurrency-range checks the old small-/medium-/large-/explore-
+# cells are held to below.
+WIDTH_STUDY_PREFIX = "width-"
 
 
 @pytest.fixture
@@ -243,6 +250,8 @@ def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):
     declared symbol, and — if they stagger — a daily target + spacing to spread entries."""
     profiles = sample_risk_profiles["profiles"]
     for name in set(profiles) - LADDER:
+        if name.startswith(WIDTH_STUDY_PREFIX):
+            continue  # symbol-agnostic by design — checked in test_width_study_arms below
         p = profiles[name]
         assert isinstance(p.get("symbols"), list) and p["symbols"], f"{name} must pin `symbols`"
         wbs = p.get("wing_widths_by_symbol")
@@ -252,6 +261,42 @@ def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):
         if p.get("stagger_entries"):
             assert "daily_ic_trade_target" in p and "min_minutes_between_entries" in p, \
                 f"{name} staggers but lacks daily target / spacing"
+
+
+def test_width_study_arms(sample_risk_profiles):
+    """The four width-study arms exist, are enabled, are symbol-agnostic, and differ from each
+    other in exactly the one variable each is meant to isolate."""
+    profiles = sample_risk_profiles["profiles"]
+    names = {"width-2", "width-5", "width-10", "width-adaptive"}
+    assert names <= set(profiles)
+
+    fixed = {"width-2": 2, "width-5": 5, "width-10": 10}
+    sampling_keys = {"stagger_entries", "min_minutes_between_entries",
+                      "max_concurrent_ics", "daily_ic_trade_target"}
+    reference_sampling = None
+    for name in names:
+        p = profiles[name]
+        assert p.get("enabled") is True, f"{name} must be enabled"
+        assert "symbols" not in p, f"{name} must be symbol-agnostic (no `symbols` key)"
+        sampling = {k: p[k] for k in sampling_keys}
+        if reference_sampling is None:
+            reference_sampling = sampling
+        else:
+            assert sampling == reference_sampling, f"{name} sampling keys diverge from siblings"
+        assert p["stagger_entries"] is True
+        assert p["min_minutes_between_entries"] == 15
+        assert p["max_concurrent_ics"] == 99, f"{name} must run uncapped (each trade a sample)"
+        # 20 possible 15-min ticks across the 09:30-14:30 paper window; the cap must never bind.
+        assert p["daily_ic_trade_target"] > 20
+
+    for name, width in fixed.items():
+        p = profiles[name]
+        assert p["wing_selection"] == "fixed"
+        assert p["wing_widths_by_symbol"] == {"DEFAULT": [width]}
+
+    adaptive = profiles["width-adaptive"]
+    assert adaptive["wing_selection"] == "widest"
+    assert adaptive["wing_widths_by_symbol"] == {"DEFAULT": [2, 5, 10]}
 
 
 def test_all_profiles_have_description_note(sample_risk_profiles):
@@ -325,9 +370,10 @@ def test_profile_gate_values_in_reasonable_ranges(sample_risk_profiles):
         if "regime_vix_pause_threshold" in profile:
             assert profile["regime_vix_pause_threshold"] > 0
 
-        # Max concurrent ICs should be 1-10
+        # Max concurrent ICs should be 1-10, except the width-study arms, which run
+        # deliberately uncapped (99 — each trade is an independent sample, not a book).
         if "max_concurrent_ics" in profile:
-            assert 1 <= profile["max_concurrent_ics"] <= 10
+            assert 1 <= profile["max_concurrent_ics"] <= 99
 
         # Daily target should be 0+ (0 = ORB only)
         if "daily_ic_trade_target" in profile:

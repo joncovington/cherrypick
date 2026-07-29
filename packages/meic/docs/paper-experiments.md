@@ -1,26 +1,79 @@
 # Paper-trading experiment cells (account-size study)
 
-> ## ⚠️ RETIRED — 2026-07-18
+> ## Retired 2026-07-18 — resumed 2026-07-28 as the wing-width study
 >
-> **The 15 experiment cells described below were removed from `config.risk.json`.** It now holds
-> only the four-tier ladder. This document is kept because the **per-profile mechanism is still
-> fully supported by the engine** — `symbols`, `wing_widths_by_symbol`, `wing_selection`,
-> `stagger_entries`, `short_delta_target`, `regime_gex_require_positive`, and
-> `per_side_stop_management` all still work exactly as described, so this is the reference for
-> rebuilding cells if the study resumes. The cells themselves are recoverable from git history.
+> **The 15 experiment cells described below were removed from `config.risk.json`** because each one
+> pinned a *symbol* as part of its identity (`large-spx`, `small-xsp`, …), which collided with the
+> portfolio model the paper study runs on — the symbol is its own axis, one portfolio per
+> **(profile × symbol)** pair. This document is kept as the reference for the per-profile mechanism
+> (`symbols`, `wing_widths_by_symbol`, `wing_selection`, `stagger_entries`, `short_delta_target`,
+> `regime_gex_require_positive`, `per_side_stop_management`), which is still fully supported by the
+> engine; the cells themselves are recoverable from git history.
 >
-> **Why they were retired.** Each cell pinned a *symbol* as part of its identity
-> (`large-spx`, `small-xsp`, …). That collided with the portfolio model the paper study now runs on,
-> where **the symbol is its own axis**: one portfolio is formed per **(profile × symbol)** pair, each
-> with its own `max_concurrent_ics` and daily-entry budget. Under that model a symbol-pinned cell is
-> a category error — it fuses the two axes into one name, so `large-spx` and a hypothetical
-> `large-qqq` could never be compared as "the same strategy on two instruments."
->
-> **If the study resumes**, define cells as **symbol-agnostic branches** (one gate-config change,
-> no `symbols` pin) and let the portfolio grain supply the per-symbol split. See
-> [risk-profiles.md](risk-profiles.md) for the ladder's design rationale and the two-axis model.
+> **The study resumed 2026-07-28** as the wing-width study below, built the way this section always
+> said it should be: symbol-agnostic branches (no `symbols` pin), the portfolio grain supplying the
+> per-symbol split. See [risk-profiles.md](risk-profiles.md) for the ladder's design rationale and
+> the two-axis model.
 
 ---
+
+## The wing-width study (2026-07-28)
+
+Four forced-sampling arms in `config.risk.json` — `width-2`, `width-5`, `width-10`, `width-adaptive`
+— isolate wing width as its own variable, the question the retired account-size cells couldn't
+answer because they bundled width into a symbol-pinned identity. All four are symbol-agnostic (no
+`symbols` key), so the (profile × symbol) grain gives each arm its own book per configured symbol —
+currently **XSP** (cash-settled) and **QQQ** (physically-settled), the suite's two decorrelated,
+liquid 0DTE-eligible underlyings. XSP+SPY was considered and rejected: same underlying, maximum
+correlation by construction, and it duplicates rather than contrasts settlement mechanics. XSP/QQQ
+are still meaningfully correlated (~0.90, like any two liquid US index instruments) — mitigated by
+paper-only books and per-cell caps, not by any claim of independence.
+
+**The design, in one line:** every 15 minutes, evaluate the same market snapshot against three
+width pins (2/5/10, `wing_selection: "fixed"`) and one dynamic-width policy arm
+(`wing_selection: "widest"` over 2/5/10, the fee-drag-bias default) — same regime gates, same
+spacing, `max_concurrent_ics: 99` so each structure is an independent sample rather than a budgeted
+book. `conservative` keeps running as a **reference curve only** (different sampling semantics —
+soft daily target, floor drift, late-entry bias — so it is not a controlled comparison against the
+arms).
+
+**Why forced sampling instead of the account-size cells' throughput caps.** The retired cells used
+concurrency/daily caps to keep several time-cohorts open (~11 profile×symbol evaluations/iteration).
+The width study instead removes the cap entirely: at up to 20 possible 15-minute ticks in the
+09:30–14:30 paper window, each width gets up to ~20 independent samples/day/symbol, and every entry
+faces the *same* credit floor (`stagger_entries` makes the daily target a hard cap and skips
+over-target floor-tightening) — so a paired comparison across widths on the same tick is valid.
+
+**Reading the results, in order:**
+1. **True pairs first** — ticks where every fixed arm entered (from `ic_trades` entry timestamps).
+   Width-proportional credit floors mean each arm self-selects its entry set, so unrestricted
+   cross-arm comparison carries selection bias; paired differences on common ticks cancel the
+   session's regime.
+2. **Divergence second** — `loop_log` rows with `action = 'width_arm_divergence'` record which arm
+   sat out a tick while a sibling entered, and why (floor / overlap / spacing). A refused entry is a
+   width *outcome*, not missing data.
+3. **Per-cell streams third** — each arm's own conditional performance, the deployable read (that
+   arm as an actual strategy under its own gate).
+4. Same-day trades are clustered — the effective N for a regime-level claim is the **day** count
+   (≥14–20 sessions), not the trade count, regardless of how fast 6-session significance shows up
+   per cell.
+
+**Surfaces:**
+- `python src/db.py get_range_summary` — `by_profile["width-2"…]` pools each width across symbols
+  (convenient, but mixes cash/physical settlement mechanics — read with that caveat); portfolios
+  `width-2:XSP`, `width-2:QQQ`, … via `compare_profiles`.
+- The dashboard's Performance view carries a **Width Study** frame: one cumulative-P&L line chart
+  per symbol, one line per arm (`width_study` in the API payload, computed the same way as every
+  other performance series — `_pnl_series` per (symbol, profile) cell).
+- Every fill also stamps `gex_net_vol_at_entry` (the flow/volume-weighted GEX series) beside the
+  existing OI-based `gex_net_at_entry` — the entry gate stays OI-based (matching the live loop), but
+  0DTE positioning largely builds intraday where OI is blind, so the flow series lets a regime read
+  ask later whether volume-GEX would have gated differently. Flip *distance* is derivable from the
+  existing `gamma_flip_at_entry` + `gex_spot_at_entry` pair — no separate column needed.
+- QQQ's physical-settlement path applies a modeled pin-risk penalty that scales with wing width; a
+  force-closed QQQ trade that paid it is flagged (`ic_trades.pin_risk_applied`), so QQQ cells can be
+  read both gross and net of that modeled cost rather than treating a width "result" there as free of
+  the two uncalibrated settlement-friction constants.
 
 The parallel-shadow paper engine (`src/paper.py`, driven unattended by `src/paper_loop.py`)
 evaluates **every** profile in `config.risk.json` against each iteration's market snapshot, per

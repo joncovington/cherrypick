@@ -283,6 +283,28 @@ class _CachedOption:
         return object.__getattribute__(self, "_data")
 
 
+def _cache_get_volume(symbols: list[str]) -> dict[str, int]:
+    """Return {symbol: day volume} for symbols present in stream_trades (no age filter -- volume is a
+    running day total). Feeds the vol-GEX ("flow") series: OI updates overnight, so on a 0DTE chain
+    the OI series misses intraday-opened positioning; per-option volume is the flow proxy."""
+    conn = _cache_conn()
+    if conn is None:
+        return {}
+    out: dict[str, int] = {}
+    try:
+        placeholders = ",".join(["?" for _ in symbols])
+        rows = conn.execute(
+            f"SELECT symbol, volume FROM stream_trades WHERE symbol IN ({placeholders})",
+            symbols,
+        ).fetchall()
+        for row in rows:
+            if row["volume"] is not None:
+                out[row["symbol"]] = int(row["volume"])
+    except sqlite3.Error:
+        return {}
+    return out
+
+
 def _cache_get_oi(symbols: list[str]) -> dict[str, int]:
     """Return {symbol: open_interest} for symbols present in stream_oi (no age filter — OI is daily)."""
     conn = _cache_conn()
@@ -1144,6 +1166,14 @@ async def cmd_get_gex(args) -> dict:
             result["spot"] = spot
             result["oi_symbols_found"] = len(oi)
             result["greeks_symbols_found"] = len(greeks)
+            # Net vol-GEX ("flow") beside the OI series ("positioning"): same math, volume as the
+            # weight. The GATE keys on the OI series unchanged -- this field exists so the width
+            # study (and any later gate comparison) can measure what flow-weighted GEX would have
+            # said, since 0DTE positioning largely builds intraday where OI is blind.
+            volume = _cache_get_volume(streamer_symbols)
+            vol_result = _compute_gex(chain_entries, greeks, volume, spot)
+            result["net_gex_vol"] = vol_result.get("net_gex") if vol_result.get("ok") else None
+            result["vol_symbols_found"] = len(volume)
         return result
     except Exception as exc:
         return _error(exc)
