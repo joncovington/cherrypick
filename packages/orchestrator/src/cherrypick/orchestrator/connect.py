@@ -105,11 +105,14 @@ def run(cfg: dict[str, Any], module: str, prompt_fn=input) -> dict[str, Any]:
 # --------------------------------------------------------------------------- the suite wizard
 def _core_env() -> dict[str, str]:
     """Environment for `python -m cherrypick.core.auth` children: the shared core package on
-    PYTHONPATH (resolved from the orchestrator's own import, so it works installed or in-place)."""
+    PYTHONPATH (resolved from the orchestrator's own import, so it works installed or in-place).
+    The sys.path root is THREE levels above auth/__init__.py (auth -> core -> cherrypick ->
+    the _core checkout root); counting from cherrypick.core landed one level short and the
+    child couldn't import `cherrypick` at all."""
     import os
 
-    import cherrypick.core as _core
-    core_root = str(Path(_core.__file__).resolve().parents[1])
+    import cherrypick.core.auth as _auth
+    core_root = str(Path(_auth.__file__).resolve().parents[3])
     env = dict(os.environ)
     env["PYTHONPATH"] = core_root + os.pathsep + env.get("PYTHONPATH", "")
     return env
