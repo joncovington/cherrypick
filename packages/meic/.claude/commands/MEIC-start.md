@@ -1,20 +1,31 @@
-Start the full MEIC session: streamer and agent loop.
+Start the full MEIC session: verify the market-data producer, then the agent loop.
 
-## Step 1 — DXLink Streamer
+## Step 1 — Market data (the standalone streamer)
 
-Check if the streamer is running:
+Since the 2026-07-21 producer cutover the **standalone streamer** (`packages/streamer`) is the suite's
+single writer of the shared stream cache; MEIC's own `src/streamer.py` is the disabled rollback path.
+**Never start `src/streamer.py` while the standalone streamer runs** — two producers means two DXLink
+writers on one cache and one account.
+
+Check the producer (from the monorepo root):
 
 ```bash
-python src/streamer.py --status
+python ../streamer/run.py --status
 ```
 
-If `running` is `false`: start it as a hidden background process.
+Require **both** `"running": true and a small `oldest_event_age_s` during market hours (a connected but
+silent socket is the 2026-07-01 failure mode). If it is down, the orchestrator normally owns it — start
+it via `python ../orchestrator/run.py install` (idempotent; also re-registers tasks), or directly:
 
 ```bash
-Start-Process python -ArgumentList 'src\streamer.py' -WorkingDirectory $PWD -WindowStyle Hidden
+python ../streamer/run.py    # blocks; run detached/hidden
 ```
 
-## Step 3 — Agent loop
+(Only if this box was deliberately rolled back to MEIC-as-producer — `modules.meic.streamer.enabled`
+true in the cherrypick config — use `python src/streamer.py --status` / start instead. Exactly one
+producer ever runs.)
+
+## Step 2 — Agent loop
 
 Invoke the `/loop` skill with the prompt:
 

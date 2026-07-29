@@ -15,11 +15,18 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from cherrypick.core import advice as core_advice
+_SRC = Path(__file__).parent.parent / "src"
+sys.path.insert(0, str(_SRC))
+# Bootstrap src/_core BEFORE the core import: unlike the sibling tests (which import a module file that
+# bootstraps it), this file imports cherrypick.core directly, so on its own it failed collection unless
+# another test module happened to run first.
+_CORE = _SRC / "_core"
+if _CORE.is_dir() and str(_CORE) not in sys.path:
+    sys.path.insert(0, str(_CORE))
+from cherrypick.core import advice as core_advice  # noqa: E402
 
-import paper
-import paper_loop
+import paper  # noqa: E402
+import paper_loop  # noqa: E402
 
 DAY = "2026-07-29"
 BOUNDS = {"stop_trigger_ratio": {"min": 0.85, "max": 0.95}}
@@ -110,8 +117,10 @@ def test_open_advised_positions_get_a_management_only_twin(homes):
 
 def test_process_symbol_evaluates_extra_profiles(homes):
     """The engine seam: a synthetic advised profile is evaluated beside the registry ones."""
-    snapshot = {"symbol": "SPX", "date": DAY, "now_et": "13:00", "expiration": DAY, "dte": 0,
-                "underlying_price": 7500.0, "iv_rank": 0.5, "vix": 15.0,
+    # XSP — the head of the configured symbol set since the 2026-07-28 width-study reduction
+    # (a symbol outside the traded set gets no per-profile results at all).
+    snapshot = {"symbol": "XSP", "date": DAY, "now_et": "13:00", "expiration": DAY, "dte": 0,
+                "underlying_price": 590.0, "iv_rank": 0.5, "vix": 15.0,
                 "session_quality": "midday", "gex": {"ok": False},
                 "candidates": [], "leg_quotes": {}}
     base = paper.load_profiles()["conservative"]
