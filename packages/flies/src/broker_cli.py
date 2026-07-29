@@ -60,14 +60,10 @@ async def cmd_connection_status(_args) -> dict:
 
 
 async def cmd_list_accounts(_args) -> dict:
+    # Machine shape, matching MEIC's tt.py: FULL account numbers, because the orchestrator's
+    # account-designation flow needs them to write the keyring value (it masks for display).
     session = creds.get_session()
-    accounts = await _broker.list_accounts(session)
-    designated = creds.designated_account()
-    for a in accounts:
-        full = a.pop("account_number", "") or ""
-        a["account"] = "****" + full[-4:] if full else "?"
-        a["designated"] = bool(designated and full == designated)
-    return {"ok": True, "accounts": accounts}
+    return {"ok": True, "accounts": await _broker.list_accounts(session)}
 
 
 async def cmd_execute_trade(args) -> dict:
@@ -85,20 +81,42 @@ async def cmd_execute_trade(args) -> dict:
                                      deploy_limit_pct=limit)
 
 
+def cmd_secrets_set(args) -> dict:
+    """Hidden-input secrets flow, argv-compatible with tt.py's so the orchestrator's `connect`
+    drives both modules identically. Blank input keeps a stored value."""
+    import getpass
+    for key in args.keys:
+        value = getpass.getpass(f"{key} (input hidden, blank to keep current): ").strip()
+        if value:
+            creds.store.set_secret(key, value)
+    return {"ok": True, "service": creds.SERVICE_NAME, "secrets": creds.store.secrets_status()}
+
+
+def cmd_secrets_status(_args) -> dict:
+    return {"ok": True, "service": creds.SERVICE_NAME, "secrets": creds.store.secrets_status()}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("get_connection_status")
     sub.add_parser("list_accounts")
+    sub.add_parser("secrets_status")
+    ss = sub.add_parser("secrets_set")
+    ss.add_argument("--keys", nargs="+", default=["client_secret", "refresh_token"])
     et = sub.add_parser("execute_trade")
     et.add_argument("--order", required=True)
     et.add_argument("--live", action="store_true")
     args = ap.parse_args()
-    fn = {"get_connection_status": cmd_connection_status,
-          "list_accounts": cmd_list_accounts,
-          "execute_trade": cmd_execute_trade}[args.cmd]
+    sync = {"secrets_set": cmd_secrets_set, "secrets_status": cmd_secrets_status}
     try:
-        result = asyncio.run(fn(args))
+        if args.cmd in sync:
+            result = sync[args.cmd](args)
+        else:
+            fn = {"get_connection_status": cmd_connection_status,
+                  "list_accounts": cmd_list_accounts,
+                  "execute_trade": cmd_execute_trade}[args.cmd]
+            result = asyncio.run(fn(args))
     except Exception as exc:
         result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     print(json.dumps(result, default=str))

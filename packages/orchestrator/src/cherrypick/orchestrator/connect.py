@@ -22,19 +22,21 @@ from . import config as cfgmod
 from .util import first_json
 
 
-def _set_credentials(root) -> bool:
-    """Run the module's own hidden-input credential flow for the bearer secrets, tty inherited."""
+def _set_credentials(root, tool: list[str]) -> bool:
+    """Run the module's own hidden-input credential flow for the bearer secrets, tty inherited.
+    `tool` is the module's config-declared broker/credential CLI (cfgmod.broker_tool) — tt.py
+    for MEIC/earnings, broker_cli.py for flies — so onboarding never assumes a module's layout."""
     print("\n[1/3] tastytrade OAuth credentials (handled by the module; input hidden)")
     proc = subprocess.run(
-        [cfgmod.python_exe(), "src/tt.py", "secrets_set", "--keys", "client_secret", "refresh_token"],
+        [cfgmod.python_exe(), *tool, "secrets_set", "--keys", "client_secret", "refresh_token"],
         cwd=str(root),
     )
     return proc.returncode == 0
 
 
-def _verify_connection(root) -> dict[str, Any]:
+def _verify_connection(root, tool: list[str]) -> dict[str, Any]:
     print("\n[2/3] Verifying broker connection…")
-    status = first_json(doctor._run(root, ["src/tt.py", "get_connection_status"], timeout=35).stdout)
+    status = first_json(doctor._run(root, [*tool, "get_connection_status"], timeout=35).stdout)
     connected = bool(status.get("ok") or status.get("connected") or status.get("authenticated"))
     count = status.get("account_count")
     detail = "connected" if connected else "NOT connected"
@@ -86,9 +88,10 @@ def run(cfg: dict[str, Any], module: str, prompt_fn=input) -> dict[str, Any]:
     if not root.exists():
         return {"ok": False, "error": f"module checkout not found at {root}"}
 
-    if not _set_credentials(root):
+    tool = cfgmod.broker_tool(mcfg)
+    if not _set_credentials(root, tool):
         return {"ok": False, "error": "credential setup did not complete", "step": "secrets_set"}
-    conn = _verify_connection(root)
+    conn = _verify_connection(root, tool)
     account = _select_account(cfg, module, prompt_fn=prompt_fn)
     return {
         "ok": True,
