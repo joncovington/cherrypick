@@ -26,7 +26,7 @@ from cherrypick.notify import Notifier
 
 from . import config as cfgmod
 from . import eval_activity, tasks, timeutil, util
-from .util import first_json
+from .util import CREATE_NO_WINDOW, first_json
 
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
 _STATE_FILE = cfgmod.STATE_DIR / "watchdog_state.json"
@@ -71,6 +71,7 @@ def _run_module(module_root: Path, argv: list[str], timeout: int = 25) -> subpro
         capture_output=True,
         text=True,
         timeout=timeout,
+        creationflags=CREATE_NO_WINDOW,
     )
 
 

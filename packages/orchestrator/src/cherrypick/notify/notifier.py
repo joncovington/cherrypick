@@ -115,6 +115,10 @@ class Notifier:
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                # -WindowStyle Hidden alone still creates the console before hiding it — a visible
+                # flash on every toast when the parent (pythonw watchdog/trade-notify) has no console.
+                # Defined inline: this module deliberately imports nothing from cherrypick.orchestrator.
+                creationflags=0x08000000 if os.name == "nt" else 0,  # CREATE_NO_WINDOW
             )
             return {"ok": True}
         except Exception as exc:  # never let a push failure escape

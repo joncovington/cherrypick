@@ -171,7 +171,8 @@ def cmd_install(cfg) -> None:
         if kind == "self_healing":
             # MEIC manages its own self-healing task; just invoke its installer in place.
             r = subprocess.run(
-                [cfgmod.python_exe(), *paper["install_argv"]], cwd=str(root), capture_output=True, text=True
+                [cfgmod.python_exe(), *paper["install_argv"]], cwd=str(root), capture_output=True,
+                text=True, creationflags=CREATE_NO_WINDOW,
             )
             results[f"{name}.paper_task"] = {
                 "ok": r.returncode == 0,
@@ -286,6 +287,7 @@ def _ensure_daemon(root: Path, spec: dict) -> dict:
             capture_output=True,
             text=True,
             timeout=15,
+            creationflags=CREATE_NO_WINDOW,
         )
         running = bool(first_json(r.stdout).get("running")) if r.returncode == 0 else False
     except Exception:
@@ -303,7 +305,8 @@ def cmd_uninstall(cfg) -> None:
         paper = mcfg.get("paper", {})
         if paper.get("kind") == "self_healing" and paper.get("uninstall_argv"):
             r = subprocess.run(
-                [cfgmod.python_exe(), *paper["uninstall_argv"]], cwd=str(root), capture_output=True, text=True
+                [cfgmod.python_exe(), *paper["uninstall_argv"]], cwd=str(root), capture_output=True,
+                text=True, creationflags=CREATE_NO_WINDOW,
             )
             results[f"{name}.paper_task"] = {
                 "ok": r.returncode == 0,
@@ -333,7 +336,7 @@ def cmd_uninstall(cfg) -> None:
             try:
                 r = subprocess.run(
                     [cfgmod.python_exe(), *svc["stop_argv"]], cwd=str(sroot),
-                    capture_output=True, text=True, timeout=15,
+                    capture_output=True, text=True, timeout=15, creationflags=CREATE_NO_WINDOW,
                 )
                 results[f"service.{svc['id']}"] = {
                     "ok": r.returncode == 0,
@@ -440,7 +443,8 @@ def _run_earnings(cfg, phase: str) -> None:
 
     try:
         r = subprocess.run(
-            [cfgmod.python_exe(), *argv], cwd=str(root), capture_output=True, text=True, timeout=1800
+            [cfgmod.python_exe(), *argv], cwd=str(root), capture_output=True, text=True, timeout=1800,
+            creationflags=CREATE_NO_WINDOW,
         )
         try:
             result = json.loads(r.stdout or "{}")

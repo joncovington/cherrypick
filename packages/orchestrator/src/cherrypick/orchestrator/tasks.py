@@ -105,12 +105,14 @@ def _cron_command_for(text: str, name: str) -> str | None:
 
 
 def _crontab_read() -> str:
-    r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    r = subprocess.run(["crontab", "-l"], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
     return r.stdout if r.returncode == 0 else ""
 
 
 def _crontab_write(text: str) -> tuple[bool, str]:
-    r = subprocess.run(["crontab", "-"], input=text, capture_output=True, text=True)
+    r = subprocess.run(
+        ["crontab", "-"], input=text, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
+    )
     return r.returncode == 0, (r.stderr or r.stdout).strip()
 
 
@@ -265,7 +267,10 @@ def create_monthly_task(name: str, tr: str, day: int, at_hhmm: str) -> dict[str,
 def _run_command(command: str) -> None:
     """Fire a cron-managed command once now (POSIX has no `schtasks /Run`)."""
     try:
-        subprocess.Popen(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=CREATE_NO_WINDOW,
+        )
     except OSError:
         pass
 
