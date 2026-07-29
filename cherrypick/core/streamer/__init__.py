@@ -56,9 +56,9 @@ class _State:
         self.last_event_at: str | None = None
         self.conn = conn
         self.symbols = list(symbols)
-        self.chains: dict[str, dict] = {}          # symbol -> {streamer_symbol: option}
+        self.chains: dict[str, dict] = {}  # symbol -> {streamer_symbol: option}
         self.window_syms: dict[str, list[str]] = {}  # symbol -> subscribed window symbols
-        self.centers: dict[str, float] = {}         # symbol -> price the window is centred on
+        self.centers: dict[str, float] = {}  # symbol -> price the window is centred on
         self.pending_writes = 0
         self.last_commit_at = 0.0
 
@@ -104,8 +104,10 @@ class ChainStreamer:
     def _maybe_commit(self, state: _State) -> None:
         state.pending_writes += 1
         now = time.time()
-        if (state.pending_writes >= _COMMIT_BATCH_MAX_PENDING
-                or (now - state.last_commit_at) >= _COMMIT_BATCH_INTERVAL_S):
+        if (
+            state.pending_writes >= _COMMIT_BATCH_MAX_PENDING
+            or (now - state.last_commit_at) >= _COMMIT_BATCH_INTERVAL_S
+        ):
             state.conn.commit()
             state.pending_writes = 0
             state.last_commit_at = now
@@ -128,12 +130,15 @@ class ChainStreamer:
         self.log.info("Connecting DXLinkStreamer…")
         async with DXLinkStreamer(session) as streamer:
             streamcache.upsert_status(
-                state.conn, pid=os.getpid(), connected_since=datetime.now(UTC).isoformat(),
+                state.conn,
+                pid=os.getpid(),
+                connected_since=datetime.now(UTC).isoformat(),
                 reconnect_count=state.reconnect_count,
             )
             self.log.info("DXLinkStreamer connected (reconnects: %d)", state.reconnect_count)
-            await self._apply_subscriptions(streamer, state, self._subscriptions(),
-                                            Trade, Quote, Greeks, Summary)
+            await self._apply_subscriptions(
+                streamer, state, self._subscriptions(), Trade, Quote, Greeks, Summary
+            )
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(self._listen_trade(streamer, state, Trade))
                 tg.create_task(self._listen_quote(streamer, state, Quote))
@@ -144,10 +149,12 @@ class ChainStreamer:
                 tg.create_task(self._watch_stop(state))
                 for sym in self.symbols:
                     tg.create_task(
-                        self._symbol_refresher(streamer, state, sym, Quote, Greeks, Summary, Trade))
+                        self._symbol_refresher(streamer, state, sym, Quote, Greeks, Summary, Trade)
+                    )
 
-    async def _apply_subscriptions(self, streamer, state: _State, subs: dict,
-                                   Trade, Quote, Greeks, Summary) -> None:
+    async def _apply_subscriptions(
+        self, streamer, state: _State, subs: dict, Trade, Quote, Greeks, Summary
+    ) -> None:
         cls_map = {"Trade": Trade, "Quote": Quote, "Greeks": Greeks, "Summary": Summary}
         window_union: set[str] = set()
         for syms in state.window_syms.values():
@@ -175,8 +182,9 @@ class ChainStreamer:
             if state.stop_event.is_set():
                 break
             try:
-                await self._apply_subscriptions(streamer, state, self._subscriptions(),
-                                                Trade, Quote, Greeks, Summary)
+                await self._apply_subscriptions(
+                    streamer, state, self._subscriptions(), Trade, Quote, Greeks, Summary
+                )
                 if state.last_event_at:
                     streamcache.upsert_status(state.conn, last_event_at=state.last_event_at)
             except Exception as exc:
@@ -198,8 +206,13 @@ class ChainStreamer:
                     "VALUES (?, ?, ?, ?, ?) ON CONFLICT(symbol) DO UPDATE SET "
                     "last=excluded.last, change=excluded.change, volume=excluded.volume, "
                     "updated_at=excluded.updated_at",
-                    (event.event_symbol, streamcache.to_float(event.price),
-                     streamcache.to_float(event.change), streamcache.to_float(event.day_volume), ts),
+                    (
+                        event.event_symbol,
+                        streamcache.to_float(event.price),
+                        streamcache.to_float(event.change),
+                        streamcache.to_float(event.day_volume),
+                        ts,
+                    ),
                 )
                 self._maybe_commit(state)
                 self._touch(state, ts)
@@ -223,8 +236,15 @@ class ChainStreamer:
                     "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(symbol) DO UPDATE SET "
                     "bid=excluded.bid, ask=excluded.ask, mid=excluded.mid, "
                     "bid_size=excluded.bid_size, ask_size=excluded.ask_size, updated_at=excluded.updated_at",
-                    (event.event_symbol, bid, ask, mid,
-                     streamcache.to_float(event.bid_size), streamcache.to_float(event.ask_size), ts),
+                    (
+                        event.event_symbol,
+                        bid,
+                        ask,
+                        mid,
+                        streamcache.to_float(event.bid_size),
+                        streamcache.to_float(event.ask_size),
+                        ts,
+                    ),
                 )
                 self._maybe_commit(state)
                 self._touch(state, ts)
@@ -245,10 +265,17 @@ class ChainStreamer:
                     "delta=excluded.delta, gamma=excluded.gamma, theta=excluded.theta, "
                     "vega=excluded.vega, rho=excluded.rho, iv=excluded.iv, "
                     "price=excluded.price, updated_at=excluded.updated_at",
-                    (event.event_symbol, streamcache.to_float(event.delta), streamcache.to_float(event.gamma),
-                     streamcache.to_float(event.theta), streamcache.to_float(event.vega),
-                     streamcache.to_float(event.rho), streamcache.to_float(event.volatility),
-                     streamcache.to_float(event.price), ts),
+                    (
+                        event.event_symbol,
+                        streamcache.to_float(event.delta),
+                        streamcache.to_float(event.gamma),
+                        streamcache.to_float(event.theta),
+                        streamcache.to_float(event.vega),
+                        streamcache.to_float(event.rho),
+                        streamcache.to_float(event.volatility),
+                        streamcache.to_float(event.price),
+                        ts,
+                    ),
                 )
                 self._maybe_commit(state)
                 self._touch(state, ts)
@@ -290,12 +317,16 @@ class ChainStreamer:
                             "day_open=excluded.day_open, day_high=excluded.day_high, "
                             "day_low=excluded.day_low, day_close=excluded.day_close, "
                             "prev_day_close=excluded.prev_day_close, updated_at=excluded.updated_at",
-                            (event.event_symbol, _et_date(ts),
-                             streamcache.to_float(getattr(event, "day_open_price", None)),
-                             high, low,
-                             streamcache.to_float(getattr(event, "day_close_price", None)),
-                             streamcache.to_float(getattr(event, "prev_day_close_price", None)),
-                             ts),
+                            (
+                                event.event_symbol,
+                                _et_date(ts),
+                                streamcache.to_float(getattr(event, "day_open_price", None)),
+                                high,
+                                low,
+                                streamcache.to_float(getattr(event, "day_close_price", None)),
+                                streamcache.to_float(getattr(event, "prev_day_close_price", None)),
+                                ts,
+                            ),
                         )
                         wrote = True
                 if wrote:
@@ -307,6 +338,7 @@ class ChainStreamer:
     # -- per-symbol ATM/GEX window ---------------------------------------------------------------
     async def _fetch_dte0_chain(self, underlying: str) -> dict:
         from tastytrade.instruments import get_option_chain
+
         session = self.session_factory()
         chain = await get_option_chain(session, underlying)
         if not chain:
@@ -314,8 +346,9 @@ class ChainStreamer:
         nearest = min(chain.keys(), key=lambda e: abs((e - date.today()).days))
         return {o.streamer_symbol: o for o in chain[nearest] if getattr(o, "streamer_symbol", None)}
 
-    async def _symbol_refresher(self, streamer, state: _State, symbol: str,
-                                Quote, Greeks, Summary, Trade) -> None:
+    async def _symbol_refresher(
+        self, streamer, state: _State, symbol: str, Quote, Greeks, Summary, Trade
+    ) -> None:
         self.log.info("[%s] Fetching 0DTE option chain…", symbol)
         try:
             chain = await self._fetch_dte0_chain(symbol)
@@ -356,9 +389,16 @@ class ChainStreamer:
                                 await streamer.unsubscribe(Trade, srl)
                         state.window_syms[symbol] = new_syms
                         streamcache.upsert_status(
-                            state.conn, subscribed_symbols=self._total_subscribed(state))
-                        self.log.info("[%s] window re-centered at %.2f (+%d/-%d symbols, total: %d)",
-                                      symbol, price, len(add), len(remove), len(new_syms))
+                            state.conn, subscribed_symbols=self._total_subscribed(state)
+                        )
+                        self.log.info(
+                            "[%s] window re-centered at %.2f (+%d/-%d symbols, total: %d)",
+                            symbol,
+                            price,
+                            len(add),
+                            len(remove),
+                            len(new_syms),
+                        )
                     except Exception as exc:
                         self.log.warning("[%s] window update error: %s", symbol, exc)
                 state.centers[symbol] = price
@@ -404,8 +444,11 @@ class ChainStreamer:
                 if isinstance(exc, BaseExceptionGroup):
                     for i, sub in enumerate(exc.exceptions):
                         self.log.warning(
-                            "Stream error sub-exception %d/%d: %s", i + 1, len(exc.exceptions),
-                            "".join(traceback.format_exception(type(sub), sub, sub.__traceback__)))
+                            "Stream error sub-exception %d/%d: %s",
+                            i + 1,
+                            len(exc.exceptions),
+                            "".join(traceback.format_exception(type(sub), sub, sub.__traceback__)),
+                        )
                 self.log.warning("Stream error: %s — reconnecting in %.0fs", exc, delay)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, _RECONNECT_MAX)
@@ -416,9 +459,11 @@ class ChainStreamer:
     def run(self, install_signals: bool = True) -> None:
         """Blocking run: set up SIGTERM/SIGINT (optional) and drive the async reconnect loop."""
         if install_signals:
+
             def _handle(sig, frame):
                 self.log.info("Signal %s received — stopping", sig)
                 self.stop()
+
             try:
                 signal.signal(signal.SIGTERM, _handle)
                 signal.signal(signal.SIGINT, _handle)

@@ -43,8 +43,9 @@ class CredentialStore:
         prefix: entry-name prefix (defaults to "production"), matching the original `_PREFIX`.
     """
 
-    def __init__(self, service_name: str, legacy_service_names: Iterable[str] = (),
-                 prefix: str = _DEFAULT_PREFIX):
+    def __init__(
+        self, service_name: str, legacy_service_names: Iterable[str] = (), prefix: str = _DEFAULT_PREFIX
+    ):
         self.service_name = service_name
         self.legacy_service_names = tuple(legacy_service_names)
         self.prefix = prefix

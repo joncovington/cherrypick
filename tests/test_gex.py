@@ -9,8 +9,10 @@ from cherrypick.core import gex
 
 # --- dollar_gamma / interpolate_zero_gamma (ported golden master) -------------------------------
 def test_dollar_gamma_formula():
-    assert gex.dollar_gamma(gamma=0.05, quantity=1000, multiplier=100, spot=600.0) == \
-        0.05 * 1000 * 100 * 600.0 * 600.0 * 0.01
+    assert (
+        gex.dollar_gamma(gamma=0.05, quantity=1000, multiplier=100, spot=600.0)
+        == 0.05 * 1000 * 100 * 600.0 * 600.0 * 0.01
+    )
 
 
 def test_dollar_gamma_zero_when_spot_zero():
@@ -18,20 +20,27 @@ def test_dollar_gamma_zero_when_spot_zero():
 
 
 def test_interpolate_zero_gamma_crosses_between_two_strikes():
-    strikes = [{"strike": 595, "net_gex": -100}, {"strike": 600, "net_gex": 300},
-               {"strike": 605, "net_gex": -50}]
+    strikes = [
+        {"strike": 595, "net_gex": -100},
+        {"strike": 600, "net_gex": 300},
+        {"strike": 605, "net_gex": -50},
+    ]
     result = gex.interpolate_zero_gamma(strikes)
     assert result is not None and 595 < result < 600
 
 
 def test_interpolate_zero_gamma_none_when_no_crossing():
-    assert gex.interpolate_zero_gamma(
-        [{"strike": 595, "net_gex": 100}, {"strike": 600, "net_gex": 50}]) is None
+    assert (
+        gex.interpolate_zero_gamma([{"strike": 595, "net_gex": 100}, {"strike": 600, "net_gex": 50}]) is None
+    )
 
 
 def test_interpolate_zero_gamma_uses_cumulative_not_adjacent():
-    strikes = [{"strike": 595, "net_gex": 100}, {"strike": 600, "net_gex": -10},
-               {"strike": 605, "net_gex": 5}]  # adjacent flip, cumulative stays positive
+    strikes = [
+        {"strike": 595, "net_gex": 100},
+        {"strike": 600, "net_gex": -10},
+        {"strike": 605, "net_gex": 5},
+    ]  # adjacent flip, cumulative stays positive
     assert gex.interpolate_zero_gamma(strikes) is None
 
 
@@ -54,11 +63,11 @@ OI = {"C600": 100, "P600": 300, "C610": 50}
 def test_compute_gex_full_profile():
     out = gex.compute_gex(CHAIN, GREEKS, OI, spot=600.0)
     assert out["ok"] is True
-    assert out["net_gex"] == 180000.0          # (360000-1080000) + 900000
+    assert out["net_gex"] == 180000.0  # (360000-1080000) + 900000
     assert out["gex_positive"] is True
-    assert out["call_wall"] == 610             # 610 has the largest call_gex (900000)
+    assert out["call_wall"] == 610  # 610 has the largest call_gex (900000)
     assert out["put_wall"] == 600
-    assert out["gamma_flip"] == 608.0          # cumulative -720000 -> +180000 crosses at 600 + 0.8*10
+    assert out["gamma_flip"] == 608.0  # cumulative -720000 -> +180000 crosses at 600 + 0.8*10
     assert out["strikes_with_data"] == 2
     assert out["per_strike"] == [
         {"strike": 600, "call_gex": 360000.0, "put_gex": 1080000.0, "net_gex": -720000.0},
@@ -70,13 +79,14 @@ def test_compute_gex_accepts_greeks_objects_not_just_dicts():
     class G:
         def __init__(self, gamma):
             self.gamma = gamma
+
     out = gex.compute_gex(CHAIN, {"C600": G(0.01), "P600": G(0.01), "C610": G(0.05)}, OI, spot=600.0)
     assert out["ok"] is True and out["net_gex"] == 180000.0
 
 
 def test_compute_gex_skips_zero_oi_and_missing_greeks():
     greeks = {"C600": {"gamma": 0.01}}  # only one symbol has greeks
-    oi = {"C600": 0, "P600": 300}       # C600 has zero OI -> skipped; P600 has no greeks -> skipped
+    oi = {"C600": 0, "P600": 300}  # C600 has zero OI -> skipped; P600 has no greeks -> skipped
     out = gex.compute_gex(CHAIN, greeks, oi, spot=600.0)
     assert out["ok"] is False and "insufficient" in out["error"]
 
@@ -91,8 +101,11 @@ P_CHAIN = [
     {"strike_price": 600, "streamer_symbol": "P600", "option_type": "P", "shares_per_contract": 100},
     {"strike_price": 610, "streamer_symbol": "C610", "option_type": "C", "shares_per_contract": 100},
 ]
-P_GREEKS = {"C600": {"gamma": 0.01, "iv": 20.0}, "P600": {"gamma": 0.01, "iv": 22.0},
-            "C610": {"gamma": 0.05, "iv": 18.0}}
+P_GREEKS = {
+    "C600": {"gamma": 0.01, "iv": 20.0},
+    "P600": {"gamma": 0.01, "iv": 22.0},
+    "C610": {"gamma": 0.05, "iv": 18.0},
+}
 P_OI = {"C600": 100, "P600": 300, "C610": 50}
 P_VOL = {"C600": 10, "P600": 20, "C610": 5}
 # dollar_gamma(g, q, 100, 600) = g*q*360000
@@ -118,18 +131,19 @@ def test_compute_gex_profile_totals_walls_and_flip():
     assert t["total_call_gex"] == 1260000
     assert t["total_put_gex"] == 1080000
     assert t["net_gex"] == 180000 and t["gex_positive"] is True
-    assert t["max_gex_strike"] == 610          # larger |net_gex|
-    assert t["call_wall"] == 610               # max call_gex
-    assert t["put_wall"] == 600                # min (most negative) put_gex
-    assert t["zero_gamma"] == 608.0            # cumulative -720000 -> +180000 crosses at 600 + 0.8*10
+    assert t["max_gex_strike"] == 610  # larger |net_gex|
+    assert t["call_wall"] == 610  # max call_gex
+    assert t["put_wall"] == 600  # min (most negative) put_gex
+    assert t["zero_gamma"] == 608.0  # cumulative -720000 -> +180000 crosses at 600 + 0.8*10
 
 
 def test_compute_gex_profile_strike_scale_scales_display_only():
     # XSP-style: chain priced at 60, scaled ×10 into the SPX domain; math uses the unscaled spot.
     chain = [{"strike_price": 60, "streamer_symbol": "C60", "option_type": "c", "shares_per_contract": 100}]
-    out = gex.compute_gex_profile(chain, {"C60": {"gamma": 0.01}}, {"C60": 100}, {"C60": 0},
-                                  spot=60.0, strike_scale=10.0)
-    assert out["series"][0]["strike"] == 600.0          # displayed strike scaled
+    out = gex.compute_gex_profile(
+        chain, {"C60": {"gamma": 0.01}}, {"C60": 100}, {"C60": 0}, spot=60.0, strike_scale=10.0
+    )
+    assert out["series"][0]["strike"] == 600.0  # displayed strike scaled
     assert out["series"][0]["call_gex"] == round(0.01 * 100 * 100 * 60 * 60 * 0.01)  # math uses spot=60
 
 
@@ -140,20 +154,26 @@ def test_compute_gex_profile_empty_returns_not_ok():
 # --- nearest_zero_gamma (gexbot's local, nearest-spot flip) --------------------------------------
 def test_nearest_zero_gamma_interpolates_single_crossing():
     strikes = [{"strike": 590, "net_gex": -100}, {"strike": 600, "net_gex": 300}]
-    assert gex.nearest_zero_gamma(strikes, spot=1000.0) == 592.5   # 590 + (100/400)*10
+    assert gex.nearest_zero_gamma(strikes, spot=1000.0) == 592.5  # 590 + (100/400)*10
 
 
 def test_nearest_zero_gamma_none_when_no_crossing():
-    assert gex.nearest_zero_gamma(
-        [{"strike": 595, "net_gex": 100}, {"strike": 600, "net_gex": 50}], spot=600.0) is None
+    assert (
+        gex.nearest_zero_gamma([{"strike": 595, "net_gex": 100}, {"strike": 600, "net_gex": 50}], spot=600.0)
+        is None
+    )
 
 
 def test_nearest_zero_gamma_picks_crossing_closest_to_spot_and_differs_from_cumulative():
     # Three local sign changes at 595, 605, 615; the cumulative crossing is elsewhere (600).
-    strikes = [{"strike": 590, "net_gex": -100}, {"strike": 600, "net_gex": 100},
-               {"strike": 610, "net_gex": -100}, {"strike": 620, "net_gex": 100}]
-    assert gex.nearest_zero_gamma(strikes, spot=612.0) == 615.0    # nearest local flip to 612
-    assert gex.interpolate_zero_gamma(strikes) == 600.0           # cumulative flip — different level
+    strikes = [
+        {"strike": 590, "net_gex": -100},
+        {"strike": 600, "net_gex": 100},
+        {"strike": 610, "net_gex": -100},
+        {"strike": 620, "net_gex": 100},
+    ]
+    assert gex.nearest_zero_gamma(strikes, spot=612.0) == 615.0  # nearest local flip to 612
+    assert gex.interpolate_zero_gamma(strikes) == 600.0  # cumulative flip — different level
 
 
 def test_nearest_zero_gamma_honors_key():
@@ -164,9 +184,8 @@ def test_nearest_zero_gamma_honors_key():
 
 # --- net_walls (gexbot's net-GEX major-positive / major-negative walls) --------------------------
 def test_net_walls_returns_net_extreme_strikes():
-    series = [{"strike": 600, "net_gex": 50}, {"strike": 610, "net_gex": -80},
-              {"strike": 620, "net_gex": 30}]
-    assert gex.net_walls(series) == (600, 610)      # max net at 600, min net at 610
+    series = [{"strike": 600, "net_gex": 50}, {"strike": 610, "net_gex": -80}, {"strike": 620, "net_gex": 30}]
+    assert gex.net_walls(series) == (600, 610)  # max net at 600, min net at 610
 
 
 def test_net_walls_honors_key_and_handles_empty():

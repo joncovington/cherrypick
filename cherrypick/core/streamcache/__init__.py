@@ -128,8 +128,9 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     existing = {row[1] for row in conn.execute("PRAGMA table_info(stream_chain)")}
     if "underlying_symbol" not in existing:
         conn.execute("ALTER TABLE stream_chain ADD COLUMN underlying_symbol TEXT")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_chain_underlying "
-                 "ON stream_chain(underlying_symbol, expiration)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chain_underlying ON stream_chain(underlying_symbol, expiration)"
+    )
     conn.commit()
     return conn
 
@@ -141,8 +142,7 @@ def upsert_status(conn: sqlite3.Connection, **kwargs) -> None:
     vals = ", ".join("?" for _ in fields)
     updates = ", ".join(f"{k} = excluded.{k}" for k in fields if k != "id")
     conn.execute(
-        f"INSERT INTO stream_status (id, {cols}) VALUES (1, {vals}) "
-        f"ON CONFLICT(id) DO UPDATE SET {updates}",
+        f"INSERT INTO stream_status (id, {cols}) VALUES (1, {vals}) ON CONFLICT(id) DO UPDATE SET {updates}",
         list(fields.values()),
     )
     conn.commit()
@@ -156,8 +156,9 @@ def write_chain(conn: sqlite3.Connection, option_map: dict) -> int:
     for sym, o in option_map.items():
         dump = getattr(o, "model_dump", None)
         data = dump(mode="json") if callable(dump) else {"streamer_symbol": sym}
-        rows.append((sym, str(data.get("expiration_date", "")), data.get("underlying_symbol"),
-                     json.dumps(data), now))
+        rows.append(
+            (sym, str(data.get("expiration_date", "")), data.get("underlying_symbol"), json.dumps(data), now)
+        )
     conn.executemany(
         "INSERT INTO stream_chain (streamer_symbol, expiration, underlying_symbol, data_json, updated_at) "
         "VALUES (?, ?, ?, ?, ?) ON CONFLICT(streamer_symbol) DO UPDATE SET "

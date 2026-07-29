@@ -29,12 +29,18 @@ SessionFactory = Callable[[str, str, bool], Any]
 
 def _default_session_factory(client_secret: str, refresh_token: str, is_test: bool) -> Any:
     from tastytrade import Session  # imported lazily so core imports without the broker SDK
+
     return Session(client_secret, refresh_token, is_test=is_test)
 
 
 class SessionManager:
-    def __init__(self, credentials: CredentialStore, thread_local: bool = False,
-                 session_factory: SessionFactory | None = None, is_test: bool = False):
+    def __init__(
+        self,
+        credentials: CredentialStore,
+        thread_local: bool = False,
+        session_factory: SessionFactory | None = None,
+        is_test: bool = False,
+    ):
         self._creds = credentials
         self._thread_local = thread_local
         self._factory = session_factory or _default_session_factory

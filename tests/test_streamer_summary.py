@@ -31,9 +31,13 @@ class _FakeStreamer:
 
 def _summary_event(symbol, *, oi=None, o=None, h=None, lo=None, c=None, prev=None):
     return SimpleNamespace(
-        event_symbol=symbol, open_interest=oi,
-        day_open_price=o, day_high_price=h, day_low_price=lo,
-        day_close_price=c, prev_day_close_price=prev,
+        event_symbol=symbol,
+        open_interest=oi,
+        day_open_price=o,
+        day_high_price=h,
+        day_low_price=lo,
+        day_close_price=c,
+        prev_day_close_price=prev,
     )
 
 
@@ -47,9 +51,12 @@ def _run_summary(tmp_path, events, symbols=("SPX",)):
 
 
 def test_underlying_summary_lands_in_stream_summary(tmp_path):
-    conn = _run_summary(tmp_path, [
-        _summary_event("SPX", o=6000.0, h=6050.0, lo=5980.0, c=6040.0, prev=5995.0),
-    ])
+    conn = _run_summary(
+        tmp_path,
+        [
+            _summary_event("SPX", o=6000.0, h=6050.0, lo=5980.0, c=6040.0, prev=5995.0),
+        ],
+    )
     row = conn.execute("SELECT * FROM stream_summary WHERE symbol='SPX'").fetchone()
     assert row is not None
     assert row["day_high"] == 6050.0
@@ -60,9 +67,12 @@ def test_underlying_summary_lands_in_stream_summary(tmp_path):
 
 
 def test_option_summary_still_feeds_stream_oi_only(tmp_path):
-    conn = _run_summary(tmp_path, [
-        _summary_event(".SPXW260728C6000", oi=1234, h=12.0, lo=8.0),
-    ])
+    conn = _run_summary(
+        tmp_path,
+        [
+            _summary_event(".SPXW260728C6000", oi=1234, h=12.0, lo=8.0),
+        ],
+    )
     oi = conn.execute("SELECT open_interest FROM stream_oi").fetchone()
     assert oi["open_interest"] == 1234
     # Option OHLC is not the underlying's session range — never written to stream_summary.
@@ -70,10 +80,13 @@ def test_option_summary_still_feeds_stream_oi_only(tmp_path):
 
 
 def test_repeated_underlying_summaries_upsert_the_same_day_row(tmp_path):
-    conn = _run_summary(tmp_path, [
-        _summary_event("SPX", h=6050.0, lo=5980.0, prev=5995.0),
-        _summary_event("SPX", h=6070.0, lo=5975.0, prev=5995.0),  # range widened intraday
-    ])
+    conn = _run_summary(
+        tmp_path,
+        [
+            _summary_event("SPX", h=6050.0, lo=5980.0, prev=5995.0),
+            _summary_event("SPX", h=6070.0, lo=5975.0, prev=5995.0),  # range widened intraday
+        ],
+    )
     rows = conn.execute("SELECT * FROM stream_summary WHERE symbol='SPX'").fetchall()
     assert len(rows) == 1
     assert rows[0]["day_high"] == 6070.0
@@ -89,5 +102,13 @@ def test_summary_event_with_neither_oi_nor_range_is_ignored(tmp_path):
 def test_stream_summary_table_in_shared_ddl(tmp_path):
     conn = streamcache.connect(tmp_path / "fresh.db")
     cols = {r[1] for r in conn.execute("PRAGMA table_info(stream_summary)")}
-    assert cols == {"symbol", "trade_date", "day_open", "day_high", "day_low",
-                    "day_close", "prev_day_close", "updated_at"}
+    assert cols == {
+        "symbol",
+        "trade_date",
+        "day_open",
+        "day_high",
+        "day_low",
+        "day_close",
+        "prev_day_close",
+        "updated_at",
+    }

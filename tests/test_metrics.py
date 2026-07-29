@@ -13,6 +13,7 @@ def _rec(net, capital=None, session="2026-07-21", slippage=None):
 
 # --- return on capital ---------------------------------------------------------
 
+
 def test_roc_weighs_wide_and_narrow_structures_differently():
     # Same $15 net; 10x the capital -> 1/10th the RoC. The 2-wide == 10-wide bug, stated.
     narrow = metrics.return_on_capital([_rec(15.0, capital=200.0)])
@@ -29,6 +30,7 @@ def test_roc_unknown_capital_is_none_not_free():
 
 
 # --- sharpe / drawdown ---------------------------------------------------------
+
 
 def test_sharpe_refuses_thin_or_flat_series():
     assert metrics.sharpe([5.0]) is None
@@ -55,6 +57,7 @@ def test_sample_progress_tracks_the_next_unmet_target():
 
 
 # --- calibration_reading -------------------------------------------------------
+
 
 def test_calibration_reading_bundles_the_promotion_evidence():
     records = [
@@ -86,9 +89,15 @@ _LADDER = ["conservative", "moderate"]
 
 
 def _good_reading(**over):
-    base = {"sample": 25, "win_rate": 0.7, "days": 20, "net_pnl": 300.0,
-            "net_pnl_2x_slippage": 120.0, "slippage_coverage": 25,
-            "return_on_capital": 0.05}
+    base = {
+        "sample": 25,
+        "win_rate": 0.7,
+        "days": 20,
+        "net_pnl": 300.0,
+        "net_pnl_2x_slippage": 120.0,
+        "slippage_coverage": 25,
+        "return_on_capital": 0.05,
+    }
     base.update(over)
     return base
 
@@ -104,22 +113,19 @@ def test_min_return_on_capital_gates_when_enabled():
     rec = recommend_promotion(_good_reading(), "conservative", _LADDER, rule=rule)
     assert rec["eligible"] is False
     assert rec["checks"]["return_on_capital"]["pass"] is False
-    rec2 = recommend_promotion(_good_reading(return_on_capital=0.12), "conservative",
-                               _LADDER, rule=rule)
+    rec2 = recommend_promotion(_good_reading(return_on_capital=0.12), "conservative", _LADDER, rule=rule)
     assert rec2["eligible"] is True
 
 
 def test_unknown_capital_fails_the_roc_check():
     rule = {"min_return_on_capital": 0.01}
-    rec = recommend_promotion(_good_reading(return_on_capital=None), "conservative",
-                              _LADDER, rule=rule)
+    rec = recommend_promotion(_good_reading(return_on_capital=None), "conservative", _LADDER, rule=rule)
     assert rec["checks"]["return_on_capital"]["pass"] is False
 
 
 def test_slippage_survival_requires_positive_stressed_net():
     rule = {"require_slippage_survival": True}
-    dead = recommend_promotion(_good_reading(net_pnl_2x_slippage=-5.0), "conservative",
-                               _LADDER, rule=rule)
+    dead = recommend_promotion(_good_reading(net_pnl_2x_slippage=-5.0), "conservative", _LADDER, rule=rule)
     assert dead["eligible"] is False
     alive = recommend_promotion(_good_reading(), "conservative", _LADDER, rule=rule)
     assert alive["eligible"] is True
@@ -129,6 +135,5 @@ def test_slippage_survival_requires_full_coverage():
     """A stress test over part of the evidence certifies nothing: 20/25 rows carrying
     slippage must FAIL even with a positive stressed net."""
     rule = {"require_slippage_survival": True}
-    partial = recommend_promotion(_good_reading(slippage_coverage=20), "conservative",
-                                  _LADDER, rule=rule)
+    partial = recommend_promotion(_good_reading(slippage_coverage=20), "conservative", _LADDER, rule=rule)
     assert partial["checks"]["slippage_survival"]["pass"] is False

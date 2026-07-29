@@ -14,13 +14,27 @@ from cherrypick.core import calendar as cal
 
 # --- MEICAgent config lists, 2026 (the golden master) -------------------------------------------
 CFG_HOLIDAYS_2026 = {
-    date(2026, 1, 1), date(2026, 1, 19), date(2026, 2, 16), date(2026, 4, 3), date(2026, 5, 25),
-    date(2026, 6, 19), date(2026, 7, 3), date(2026, 9, 7), date(2026, 11, 26), date(2026, 12, 25),
+    date(2026, 1, 1),
+    date(2026, 1, 19),
+    date(2026, 2, 16),
+    date(2026, 4, 3),
+    date(2026, 5, 25),
+    date(2026, 6, 19),
+    date(2026, 7, 3),
+    date(2026, 9, 7),
+    date(2026, 11, 26),
+    date(2026, 12, 25),
 }
 CFG_QUARTERLY_2026 = [date(2026, 3, 31), date(2026, 6, 30), date(2026, 9, 30), date(2026, 12, 31)]
 CFG_FOMC_2026 = [
-    date(2026, 1, 28), date(2026, 3, 18), date(2026, 4, 29), date(2026, 6, 10),
-    date(2026, 7, 29), date(2026, 9, 16), date(2026, 10, 28), date(2026, 12, 16),
+    date(2026, 1, 28),
+    date(2026, 3, 18),
+    date(2026, 4, 29),
+    date(2026, 6, 10),
+    date(2026, 7, 29),
+    date(2026, 9, 16),
+    date(2026, 10, 28),
+    date(2026, 12, 16),
 ]
 
 
@@ -39,7 +53,10 @@ def test_fomc_2026_matches_config():
 def test_triple_witching_2026_is_the_correct_third_fridays():
     # Correct 3rd Fridays — note June is the 19th, NOT the config's erroneous 18th.
     assert cal.triple_witching_dates(2026) == [
-        date(2026, 3, 20), date(2026, 6, 19), date(2026, 9, 18), date(2026, 12, 18),
+        date(2026, 3, 20),
+        date(2026, 6, 19),
+        date(2026, 9, 18),
+        date(2026, 12, 18),
     ]
 
 
@@ -50,11 +67,14 @@ def test_config_triple_witching_june_bug_is_a_thursday():
 
 
 # --- computation helpers -----------------------------------------------------------------------
-@pytest.mark.parametrize("year,expected", [
-    (2024, date(2024, 3, 31)),
-    (2025, date(2025, 4, 20)),
-    (2026, date(2026, 4, 5)),
-])
+@pytest.mark.parametrize(
+    "year,expected",
+    [
+        (2024, date(2024, 3, 31)),
+        (2025, date(2025, 4, 20)),
+        (2026, date(2026, 4, 5)),
+    ],
+)
 def test_easter(year, expected):
     assert cal.easter(year) == expected
 
@@ -75,9 +95,9 @@ def test_juneteenth_only_from_2022():
 
 
 def test_is_trading_day_weekend_and_holiday():
-    assert cal.is_trading_day(date(2026, 7, 6)) is True    # a normal Monday
-    assert cal.is_trading_day(date(2026, 7, 4)) is False   # Saturday
-    assert cal.is_trading_day(date(2026, 12, 25)) is False # Christmas
+    assert cal.is_trading_day(date(2026, 7, 6)) is True  # a normal Monday
+    assert cal.is_trading_day(date(2026, 7, 4)) is False  # Saturday
+    assert cal.is_trading_day(date(2026, 12, 25)) is False  # Christmas
 
 
 def test_next_and_previous_trading_day_skip_holidays_and_weekends():

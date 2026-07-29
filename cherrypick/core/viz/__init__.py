@@ -600,7 +600,7 @@ def card_skeleton_html(section_id: str, title: str, endpoint: str, refresh: int 
     return (
         f'<section class="card cpsection" data-cp-section="{sid}" '
         f'data-endpoint="{html.escape(endpoint)}" data-refresh="{int(refresh)}">'
-        f"<h2>{html.escape(title)} <span class=\"cpsub muted\">loading…</span></h2>"
+        f'<h2>{html.escape(title)} <span class="cpsub muted">loading…</span></h2>'
         '<div class="cpmetrics"></div><div class="cpchart"></div><div class="cpts"></div>'
         '<div class="meta"><span class="cpnote muted"></span></div></section>'
     )
@@ -616,7 +616,7 @@ def card_inline_html(section_id: str, title: str, payload: dict) -> str:
     data = _json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
     return (
         f'<section class="card cpsection" data-cp-section="{sid}">'
-        f"<h2>{html.escape(title)} <span class=\"cpsub muted\"></span></h2>"
+        f'<h2>{html.escape(title)} <span class="cpsub muted"></span></h2>'
         f'<script type="application/json" class="cpdata">{data}</script>'
         '<div class="cpmetrics"></div><div class="cpchart"></div><div class="cpts"></div>'
         '<div class="meta"><span class="cpnote muted"></span></div></section>'

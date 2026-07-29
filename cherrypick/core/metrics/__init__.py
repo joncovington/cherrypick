@@ -44,7 +44,7 @@ def sharpe(values: Sequence[float]) -> float | None:
     var = sum((v - mean) ** 2 for v in values) / (n - 1)
     if var <= 0:
         return None
-    return round(mean / var ** 0.5, 3)
+    return round(mean / var**0.5, 3)
 
 
 def max_drawdown(values: Sequence[float]) -> float:

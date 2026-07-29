@@ -102,8 +102,9 @@ def compare_profiles(rows, *, tag_key: str, summarize, untagged: str = UNTAGGED)
 PROMOTION_RULE = {"min_days": 14, "min_win_rate": 0.60, "min_sample": 20}
 
 
-def recommend_promotion(reading: Mapping, current: str, ladder, *, rule: Mapping | None = None,
-                        deliberate_only=()) -> dict:
+def recommend_promotion(
+    reading: Mapping, current: str, ladder, *, rule: Mapping | None = None, deliberate_only=()
+) -> dict:
     """Advisory-only: should `current` graduate one rung up `ladder`? (plan Part 10 Phase D)
 
     Codifies the documented risk-ladder progression (MEICAgent docs/risk-profiles.md) as a pure
@@ -134,8 +135,7 @@ def recommend_promotion(reading: Mapping, current: str, ladder, *, rule: Mapping
     nxt = ladder[idx + 1] if idx + 1 < len(ladder) else None
 
     def _check(value, threshold):
-        return {"value": value, "threshold": threshold,
-                "pass": value is not None and value >= threshold}
+        return {"value": value, "threshold": threshold, "pass": value is not None and value >= threshold}
 
     checks = {
         "sample": _check(reading.get("sample"), thresholds["min_sample"]),
@@ -148,8 +148,9 @@ def recommend_promotion(reading: Mapping, current: str, ladder, *, rule: Mapping
     # A reading whose records carry no capital reads None and FAILS the check: unknown
     # capital cannot certify a capital-efficiency threshold.
     if "min_return_on_capital" in thresholds:
-        checks["return_on_capital"] = _check(reading.get("return_on_capital"),
-                                             thresholds["min_return_on_capital"])
+        checks["return_on_capital"] = _check(
+            reading.get("return_on_capital"), thresholds["min_return_on_capital"]
+        )
     # require_slippage_survival — the reading must stay profitable with the modeled
     # slippage fraction DOUBLED (net_pnl_2x_slippage > 0), and the recorded slippage must
     # cover the whole sample: a stress test over part of the evidence certifies nothing.
@@ -163,25 +164,43 @@ def recommend_promotion(reading: Mapping, current: str, ladder, *, rule: Mapping
         }
 
     def _verdict(eligible, recommendation, reason):
-        return {"current": current, "next": nxt, "eligible": eligible,
-                "checks": checks, "recommendation": recommendation, "reason": reason}
+        return {
+            "current": current,
+            "next": nxt,
+            "eligible": eligible,
+            "checks": checks,
+            "recommendation": recommendation,
+            "reason": reason,
+        }
 
     if nxt is None:
         return _verdict(False, "hold", f"{current} is the top of the ladder; nothing to graduate to.")
     if nxt in deliberate_only:
-        return _verdict(False, "hold", f"graduating to {nxt} is a deliberate, human-chosen "
-                        "experiment -- never auto-recommended.")
+        return _verdict(
+            False,
+            "hold",
+            f"graduating to {nxt} is a deliberate, human-chosen experiment -- never auto-recommended.",
+        )
     if all(c["pass"] for c in checks.values()):
-        return _verdict(True, f"graduate:{nxt}",
-                        f"{current} met every threshold over {reading.get('days')} sessions "
-                        f"(win rate {reading.get('win_rate')}, {reading.get('sample')} trades); "
-                        f"eligible to graduate to {nxt}.")
+        return _verdict(
+            True,
+            f"graduate:{nxt}",
+            f"{current} met every threshold over {reading.get('days')} sessions "
+            f"(win rate {reading.get('win_rate')}, {reading.get('sample')} trades); "
+            f"eligible to graduate to {nxt}.",
+        )
     failed = [name for name, c in checks.items() if not c["pass"]]
     return _verdict(False, "hold", f"hold {current}: {', '.join(failed)} below threshold.")
 
 
-def merge_profile(base: Mapping, profile_def: Mapping, *, reserved_keys: tuple = (),
-                  nested_namespaces: Mapping | None = None, validate: bool = False) -> dict:
+def merge_profile(
+    base: Mapping,
+    profile_def: Mapping,
+    *,
+    reserved_keys: tuple = (),
+    nested_namespaces: Mapping | None = None,
+    validate: bool = False,
+) -> dict:
     """Merge a profile's overrides onto `base`, returning a NEW config (base is not mutated).
 
     - Top-level keys in `profile_def` partially override `base`, EXCEPT: keys starting with `_`

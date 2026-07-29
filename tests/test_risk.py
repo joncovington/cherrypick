@@ -6,8 +6,7 @@ from cherrypick.core import risk
 
 
 def _eval(used, available, consume, pct):
-    return risk.evaluate_deploy_limit(Decimal(str(used)), Decimal(str(available)),
-                                      Decimal(str(consume)), pct)
+    return risk.evaluate_deploy_limit(Decimal(str(used)), Decimal(str(available)), Decimal(str(consume)), pct)
 
 
 def test_allows_when_projected_stays_at_or_below_limit():

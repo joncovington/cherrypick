@@ -67,8 +67,12 @@ def _pass_through(leg_quantities: list[int], clearing: float, regulatory: float)
     return sum(leg_quantities) * (clearing + regulatory)
 
 
-def _slippage(leg_quotes: list[dict], leg_quantities: list[int], frac_of_spread: float,
-              cap_frac_of_mid: float | None = None) -> float:
+def _slippage(
+    leg_quotes: list[dict],
+    leg_quantities: list[int],
+    frac_of_spread: float,
+    cap_frac_of_mid: float | None = None,
+) -> float:
     """Per-leg slippage = frac_of_spread of that leg's bid-ask width, optionally capped at
     cap_frac_of_mid of the leg's mid; x100 x that leg's total contracts, summed across legs.
 
@@ -89,16 +93,18 @@ def _slippage(leg_quotes: list[dict], leg_quantities: list[int], frac_of_spread:
     return total * 100
 
 
-def _apply_costs(order: dict, leg_quotes: list[dict], quantity: int, config: dict,
-                 commission_key: str) -> dict:
+def _apply_costs(
+    order: dict, leg_quotes: list[dict], quantity: int, config: dict, commission_key: str
+) -> dict:
     costs_cfg = _costs_config(config)
     leg_qtys = _leg_quantities(order, quantity)
-    commission = _commission(leg_qtys, costs_cfg[commission_key],
-                             costs_cfg["commission_cap_per_leg"])
-    pass_through = _pass_through(leg_qtys, costs_cfg["clearing_fee_per_contract"],
-                                 costs_cfg["regulatory_fee_per_contract"])
-    slippage = _slippage(leg_quotes, leg_qtys, costs_cfg["slippage_frac_of_spread"],
-                         costs_cfg.get("slippage_cap_frac_of_mid"))
+    commission = _commission(leg_qtys, costs_cfg[commission_key], costs_cfg["commission_cap_per_leg"])
+    pass_through = _pass_through(
+        leg_qtys, costs_cfg["clearing_fee_per_contract"], costs_cfg["regulatory_fee_per_contract"]
+    )
+    slippage = _slippage(
+        leg_quotes, leg_qtys, costs_cfg["slippage_frac_of_spread"], costs_cfg.get("slippage_cap_frac_of_mid")
+    )
     total = commission + pass_through + slippage
     return {
         "commission": round(commission, 2),
@@ -122,18 +128,19 @@ def apply_exit_costs(order: dict, leg_quotes: list[dict], quantity: int, config:
 
 
 # --------------------------------------------------------------------------- 2. IC open-fee schedule
-COMMISSION_OPEN_PER_CONTRACT = 1.00   # tastytrade: $1/contract to open
+COMMISSION_OPEN_PER_CONTRACT = 1.00  # tastytrade: $1/contract to open
 CLEARING_FEE_PER_CONTRACT = 0.10
-ORF_PER_CONTRACT = 0.02               # Options Regulatory Fee
-TAF_PER_SELL_CONTRACT = 0.00329       # FINRA Trading Activity Fee — sell legs only
+ORF_PER_CONTRACT = 0.02  # Options Regulatory Fee
+TAF_PER_SELL_CONTRACT = 0.00329  # FINRA Trading Activity Fee — sell legs only
 
 # Single-Listed Exchange Proprietary Index Options fee per contract (broad-based index options).
 # XSP is $0.00 under 10 contracts/leg. Symbols not listed use 0.00 (plain equity/ETF options schedule).
 INDEX_EXCHANGE_FEE_PER_CONTRACT = {"SPX": 0.60, "XSP": 0.00, "NDX": 0.25, "RUT": 0.18}
 
 
-def _ic_fee(symbol: str, quantity: int, legs: int, sell_legs: int, *,
-            commission_per_contract: float, ndigits: int) -> float:
+def _ic_fee(
+    symbol: str, quantity: int, legs: int, sell_legs: int, *, commission_per_contract: float, ndigits: int
+) -> float:
     """Shared IC fee stack: (commission + clearing + ORF + per-symbol index exchange fee) per leg
     per contract, plus FINRA TAF on the sell legs. `commission_per_contract` is the only difference
     between opening ($1) and closing/expiring ($0). `ndigits` sets the rounding precision."""
@@ -143,25 +150,32 @@ def _ic_fee(symbol: str, quantity: int, legs: int, sell_legs: int, *,
     return round(fee, ndigits)
 
 
-def ic_open_fee(symbol: str, quantity: int = 1, legs: int = 4, sell_legs: int = 2, *,
-                ndigits: int = 2) -> float:
+def ic_open_fee(
+    symbol: str, quantity: int = 1, legs: int = 4, sell_legs: int = 2, *, ndigits: int = 2
+) -> float:
     """Open-only fee for one iron condor (4 legs; 2 sells) at `quantity` contracts, per tastytrade's
     schedule including the per-symbol index exchange fee. Reproduces MEICAgent's
     `fee_estimate_fallback_per_contract` constants (SPX 6.89, XSP 4.49, NDX 5.49, RUT 5.21, else 4.49).
     `ndigits` chooses display precision: 2 (dollars-and-cents) by default; a caller wanting exact
     sub-cent parity (e.g. MEIC's paper engine) passes 4."""
-    return _ic_fee(symbol, quantity, legs, sell_legs,
-                   commission_per_contract=COMMISSION_OPEN_PER_CONTRACT, ndigits=ndigits)
+    return _ic_fee(
+        symbol,
+        quantity,
+        legs,
+        sell_legs,
+        commission_per_contract=COMMISSION_OPEN_PER_CONTRACT,
+        ndigits=ndigits,
+    )
 
 
-def ic_close_fee(symbol: str, quantity: int = 1, legs: int = 4, sell_legs: int = 2, *,
-                 ndigits: int = 2) -> float:
+def ic_close_fee(
+    symbol: str, quantity: int = 1, legs: int = 4, sell_legs: int = 2, *, ndigits: int = 2
+) -> float:
     """Fee to actively close IC legs — the same schedule MINUS the open-only $1/contract commission
     (clearing + ORF + per-symbol index exchange fee per leg, plus FINRA TAF on the sell legs).
     `legs`/`sell_legs` let a one-side close (2 legs, 1 sell) fee correctly vs a full 4-leg close
     (4 legs, 2 sells). `ndigits` as in `ic_open_fee`."""
-    return _ic_fee(symbol, quantity, legs, sell_legs,
-                   commission_per_contract=0.0, ndigits=ndigits)
+    return _ic_fee(symbol, quantity, legs, sell_legs, commission_per_contract=0.0, ndigits=ndigits)
 
 
 def ic_expire_fee() -> float:

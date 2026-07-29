@@ -31,6 +31,7 @@ def test_style_and_script_constants_present():
 
 # --- timeseries cards + inline wiring + the shared money formatter ---------------
 
+
 def test_card_inline_html_bakes_the_payload():
     out = viz.card_inline_html("equity", "Suite equity", {"ok": True, "metrics": []})
     assert 'class="cpdata"' in out
@@ -77,8 +78,14 @@ def test_port_in_use_detects_a_listener_and_a_free_port():
 def test_reorder_contract_is_attribute_driven():
     # The one drag-to-reorder copy: groups and behavior are declared with data attributes,
     # so no page ships page-specific reorder code.
-    for marker in ("data-cp-reorder", "data-cp-reorder-items", "data-cp-reorder-label",
-                   "data-cp-reorder-defer", "data-cp-reorder-store", "reset-layout"):
+    for marker in (
+        "data-cp-reorder",
+        "data-cp-reorder-items",
+        "data-cp-reorder-label",
+        "data-cp-reorder-defer",
+        "data-cp-reorder-store",
+        "reset-layout",
+    ):
         assert marker in viz.REORDER_JS
     # Unknown-keys-append: a card shipped after a layout was saved must never disappear.
     assert "indexOf" in viz.REORDER_JS
@@ -95,8 +102,7 @@ def test_cal_heat_is_the_honest_week_column_form():
 
 def test_table_component_contract():
     # Column spec + caller-owned filter state; selects populate from the UNFILTERED rows.
-    for marker in ("window.cpTable", "cpTableMatches", "cpFilterActive",
-                   "select", "daterange", "allRows"):
+    for marker in ("window.cpTable", "cpTableMatches", "cpFilterActive", "select", "daterange", "allRows"):
         assert marker in viz.TABLE_JS
     assert "filter-row" in viz.TABLE_STYLE
 

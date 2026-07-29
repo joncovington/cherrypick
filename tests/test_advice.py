@@ -27,20 +27,24 @@ def _artifact(proposals, session=SESSION, expires=None):
 
 
 def test_admits_in_bounds_proposals():
-    art = _artifact([
-        {"param": "stop_trigger_ratio", "value": 0.90, "rationale": "regime"},
-        {"param": "entry_price_strategy", "value": "mid", "rationale": "tight spreads"},
-    ])
+    art = _artifact(
+        [
+            {"param": "stop_trigger_ratio", "value": 0.90, "rationale": "regime"},
+            {"param": "entry_price_strategy", "value": "mid", "rationale": "tight spreads"},
+        ]
+    )
     v = advice.validate(art, BOUNDS, SESSION, now=NOW)
     assert v["ok"] is True
     assert [p["param"] for p in v["proposals"]] == ["stop_trigger_ratio", "entry_price_strategy"]
 
 
 def test_one_violation_rejects_all():
-    art = _artifact([
-        {"param": "stop_trigger_ratio", "value": 0.90, "rationale": "fine"},
-        {"param": "stop_trigger_ratio2", "value": 0.90, "rationale": "unknown param"},
-    ])
+    art = _artifact(
+        [
+            {"param": "stop_trigger_ratio", "value": 0.90, "rationale": "fine"},
+            {"param": "stop_trigger_ratio2", "value": 0.90, "rationale": "unknown param"},
+        ]
+    )
     v = advice.validate(art, BOUNDS, SESSION, now=NOW)
     assert v["ok"] is False and v["proposals"] == []
     assert "reject-all" in v["reason"]
@@ -48,21 +52,25 @@ def test_one_violation_rejects_all():
 
 
 def test_closed_range_is_closed_and_out_of_bounds_rejects():
-    ok = advice.validate(_artifact([{"param": "stop_trigger_ratio", "value": 0.85}]),
-                         BOUNDS, SESSION, now=NOW)
+    ok = advice.validate(
+        _artifact([{"param": "stop_trigger_ratio", "value": 0.85}]), BOUNDS, SESSION, now=NOW
+    )
     assert ok["ok"] is True  # boundary value admitted (closed range)
-    bad = advice.validate(_artifact([{"param": "stop_trigger_ratio", "value": 0.96}]),
-                          BOUNDS, SESSION, now=NOW)
+    bad = advice.validate(
+        _artifact([{"param": "stop_trigger_ratio", "value": 0.96}]), BOUNDS, SESSION, now=NOW
+    )
     assert bad["ok"] is False and "outside" in bad["rejected"][0]["reason"]
 
 
 def test_choices_membership_and_non_numeric_rejection():
-    bad_choice = advice.validate(_artifact([{"param": "entry_price_strategy", "value": "yolo"}]),
-                                 BOUNDS, SESSION, now=NOW)
+    bad_choice = advice.validate(
+        _artifact([{"param": "entry_price_strategy", "value": "yolo"}]), BOUNDS, SESSION, now=NOW
+    )
     assert bad_choice["ok"] is False
     # A bool is not the number 1 — it must not slip through an int range.
-    bad_bool = advice.validate(_artifact([{"param": "daily_ic_trade_target", "value": True}]),
-                               BOUNDS, SESSION, now=NOW)
+    bad_bool = advice.validate(
+        _artifact([{"param": "daily_ic_trade_target", "value": True}]), BOUNDS, SESSION, now=NOW
+    )
     assert bad_bool["ok"] is False and "not numeric" in bad_bool["rejected"][0]["reason"]
 
 
@@ -73,17 +81,18 @@ def test_wrong_session_never_sticky():
 
 
 def test_expired_advice_is_baseline():
-    art = _artifact([{"param": "stop_trigger_ratio", "value": 0.9}],
-                    expires=NOW - timedelta(minutes=1))
+    art = _artifact([{"param": "stop_trigger_ratio", "value": 0.9}], expires=NOW - timedelta(minutes=1))
     v = advice.validate(art, BOUNDS, SESSION, now=NOW)
     assert v["ok"] is False and v["reason"] == "advice expired"
 
 
 def test_duplicate_params_reject():
-    art = _artifact([
-        {"param": "stop_trigger_ratio", "value": 0.9},
-        {"param": "stop_trigger_ratio", "value": 0.85},
-    ])
+    art = _artifact(
+        [
+            {"param": "stop_trigger_ratio", "value": 0.9},
+            {"param": "stop_trigger_ratio", "value": 0.85},
+        ]
+    )
     v = advice.validate(art, BOUNDS, SESSION, now=NOW)
     assert v["ok"] is False and "duplicate" in v["rejected"][0]["reason"]
 
@@ -95,9 +104,14 @@ def test_load_absent_is_baseline(tmp_path):
 
 def test_write_then_load_round_trip(tmp_path):
     path = advice.advice_path(tmp_path, "meic", SESSION)
-    advice.write(path, "meic", SESSION,
-                 [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "r"}],
-                 advisor="test", expires_at=(NOW + timedelta(hours=8)).isoformat())
+    advice.write(
+        path,
+        "meic",
+        SESSION,
+        [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "r"}],
+        advisor="test",
+        expires_at=(NOW + timedelta(hours=8)).isoformat(),
+    )
     assert not path.with_suffix(".tmp").exists()  # atomic: no half-written leftover
     v = advice.load(tmp_path, "meic", SESSION, BOUNDS, now=NOW)
     assert v["ok"] is True and v["proposals"][0]["value"] == 0.9

@@ -83,12 +83,14 @@ def test_compare_profiles_groups_by_tag_and_summarizes():
 
 def test_compare_profiles_summarize_called_once_per_group():
     calls = []
+
     def summarize(group):
         calls.append(len(group))
         return len(group)
+
     rows = [{"p": "a"}, {"p": "a"}, {"p": "b"}]
     profiles.compare_profiles(rows, tag_key="p", summarize=summarize)
-    assert sorted(calls) == [1, 2]      # one call per group, never on the whole set
+    assert sorted(calls) == [1, 2]  # one call per group, never on the whole set
 
 
 def test_compare_profiles_untagged_rows_group_under_sentinel():
@@ -107,7 +109,7 @@ def test_compare_profiles_custom_untagged_sentinel():
 def test_compare_profiles_preserves_first_seen_order():
     rows = [{"p": "z"}, {"p": "a"}, {"p": "z"}]
     table = profiles.compare_profiles(rows, tag_key="p", summarize=len)
-    assert list(table) == ["z", "a"]    # first-seen order, not sorted
+    assert list(table) == ["z", "a"]  # first-seen order, not sorted
 
 
 def test_compare_profiles_empty_rows():
@@ -128,8 +130,7 @@ def test_recommend_promotion_eligible_when_all_thresholds_met():
 
 
 def test_recommend_promotion_holds_when_win_rate_below_threshold():
-    v = profiles.recommend_promotion({"sample": 40, "win_rate": 0.55, "days": 20},
-                                     "conservative", _LADDER)
+    v = profiles.recommend_promotion({"sample": 40, "win_rate": 0.55, "days": 20}, "conservative", _LADDER)
     assert v["eligible"] is False
     assert v["recommendation"] == "hold"
     assert v["checks"]["win_rate"]["pass"] is False
@@ -137,8 +138,7 @@ def test_recommend_promotion_holds_when_win_rate_below_threshold():
 
 
 def test_recommend_promotion_holds_when_sample_or_days_short():
-    v = profiles.recommend_promotion({"sample": 5, "win_rate": 0.9, "days": 3},
-                                     "conservative", _LADDER)
+    v = profiles.recommend_promotion({"sample": 5, "win_rate": 0.9, "days": 3}, "conservative", _LADDER)
     assert v["eligible"] is False
     assert v["checks"]["sample"]["pass"] is False
     assert v["checks"]["days"]["pass"] is False
@@ -146,8 +146,7 @@ def test_recommend_promotion_holds_when_sample_or_days_short():
 
 def test_recommend_promotion_none_win_rate_fails_closed():
     # too few trades for a win rate -> None must not count as passing
-    v = profiles.recommend_promotion({"sample": 40, "win_rate": None, "days": 20},
-                                     "conservative", _LADDER)
+    v = profiles.recommend_promotion({"sample": 40, "win_rate": None, "days": 20}, "conservative", _LADDER)
     assert v["checks"]["win_rate"]["pass"] is False
     assert v["eligible"] is False
 
@@ -162,8 +161,7 @@ def test_recommend_promotion_top_rung_holds():
 
 def test_recommend_promotion_deliberate_only_next_never_auto_recommended():
     # aggressive fully qualifies, but very-aggressive is opt-in-only -> hold, not graduate
-    v = profiles.recommend_promotion(_GOOD, "aggressive", _LADDER,
-                                     deliberate_only=("very-aggressive",))
+    v = profiles.recommend_promotion(_GOOD, "aggressive", _LADDER, deliberate_only=("very-aggressive",))
     assert v["next"] == "very-aggressive"
     assert v["eligible"] is False
     assert v["recommendation"] == "hold"
@@ -171,8 +169,9 @@ def test_recommend_promotion_deliberate_only_next_never_auto_recommended():
 
 
 def test_recommend_promotion_rule_override():
-    v = profiles.recommend_promotion({"sample": 40, "win_rate": 0.65, "days": 20},
-                                     "conservative", _LADDER, rule={"min_win_rate": 0.70})
+    v = profiles.recommend_promotion(
+        {"sample": 40, "win_rate": 0.65, "days": 20}, "conservative", _LADDER, rule={"min_win_rate": 0.70}
+    )
     assert v["checks"]["win_rate"]["threshold"] == 0.70
     assert v["checks"]["win_rate"]["pass"] is False
 
@@ -188,8 +187,8 @@ def test_merge_profile_flat_override_skips_underscore_and_leaves_base():
     profile = {"min_iv_rank": 0.2, "max_ics": 6, "_note": "comment"}
     merged = profiles.merge_profile(base, profile)
     assert merged == {"min_iv_rank": 0.2, "max_ics": 6, "force_close_time": "15:45"}
-    assert "_note" not in merged            # underscore comment skipped
-    assert base["min_iv_rank"] == 0.3       # base not mutated
+    assert "_note" not in merged  # underscore comment skipped
+    assert base["min_iv_rank"] == 0.3  # base not mutated
 
 
 # --------------------------------------------------------------------------- merge_profile (Earnings shape)
@@ -209,18 +208,19 @@ def test_merge_profile_nested_namespace_deep_merges_and_skips_unknown():
     profile = {
         "risk_pct_multiplier": 0.6,
         "strategy_overrides": {
-            "iron_fly": {"b": 99, "c": 3},        # merges over existing strategy
-            "ghost_strategy": {"z": 1},           # not in base -> skipped
+            "iron_fly": {"b": 99, "c": 3},  # merges over existing strategy
+            "ghost_strategy": {"z": 1},  # not in base -> skipped
         },
     }
     merged = profiles.merge_profile(
-        base, profile,
+        base,
+        profile,
         reserved_keys=("description",),
         nested_namespaces={"strategy_overrides": "strategies"},
     )
     assert merged["risk_pct_multiplier"] == 0.6
     assert merged["strategies"]["iron_fly"] == {"a": 1, "b": 99, "c": 3}
-    assert merged["strategies"]["double_calendar"] == {"a": 1}   # untouched
+    assert merged["strategies"]["double_calendar"] == {"a": 1}  # untouched
     assert "ghost_strategy" not in merged["strategies"]
     # base untouched
     assert base["strategies"]["iron_fly"] == {"a": 1, "b": 2}
@@ -230,9 +230,8 @@ def test_merge_profile_nested_namespace_deep_merges_and_skips_unknown():
 def test_merge_profile_namespace_key_not_treated_as_top_level_override():
     base = {"strategies": {"x": {"a": 1}}}
     profile = {"strategy_overrides": {"x": {"a": 2}}}
-    merged = profiles.merge_profile(
-        base, profile, nested_namespaces={"strategy_overrides": "strategies"})
-    assert "strategy_overrides" not in merged      # consumed as a namespace, not copied
+    merged = profiles.merge_profile(base, profile, nested_namespaces={"strategy_overrides": "strategies"})
+    assert "strategy_overrides" not in merged  # consumed as a namespace, not copied
     assert merged["strategies"]["x"] == {"a": 2}
 
 
@@ -246,11 +245,17 @@ def test_merge_profile_validate_rejects_unknown_key():
 def test_merge_profile_validate_exempts_reserved_underscore_and_namespaces():
     base = {"known": 1, "strategies": {"x": {"a": 1}}}
     profile = {
-        "known": 2, "_note": "c", "description": "d",
+        "known": 2,
+        "_note": "c",
+        "description": "d",
         "strategy_overrides": {"x": {"a": 9}},
     }
     merged = profiles.merge_profile(
-        base, profile, reserved_keys=("description",),
-        nested_namespaces={"strategy_overrides": "strategies"}, validate=True)
-    assert merged["known"] == 2                     # validated + applied
-    assert merged["strategies"]["x"] == {"a": 9}    # namespace merged, not validated as top-level
+        base,
+        profile,
+        reserved_keys=("description",),
+        nested_namespaces={"strategy_overrides": "strategies"},
+        validate=True,
+    )
+    assert merged["known"] == 2  # validated + applied
+    assert merged["strategies"]["x"] == {"a": 9}  # namespace merged, not validated as top-level

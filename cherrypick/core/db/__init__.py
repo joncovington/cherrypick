@@ -17,8 +17,7 @@ from typing import Any
 Migration = tuple[str, str, str]
 
 
-def connect(path: Any, *, row_factory: Any = sqlite3.Row,
-            pragmas: Sequence[str] = ()) -> sqlite3.Connection:
+def connect(path: Any, *, row_factory: Any = sqlite3.Row, pragmas: Sequence[str] = ()) -> sqlite3.Connection:
     """Open a SQLite connection with the suite's shared conventions.
 
     Creates the database's parent directory, opens the connection, sets `row_factory` (defaults to
@@ -38,8 +37,7 @@ def connect(path: Any, *, row_factory: Any = sqlite3.Row,
     return conn
 
 
-def apply_additive_migrations(conn: sqlite3.Connection,
-                              migrations: Iterable[Migration]) -> list[str]:
+def apply_additive_migrations(conn: sqlite3.Connection, migrations: Iterable[Migration]) -> list[str]:
     """Idempotently add missing columns. For each `(table, column, alter_sql)`, run `alter_sql` only
     if `column` is absent from `table` (checked via `PRAGMA table_info`). Commits once at the end.
 

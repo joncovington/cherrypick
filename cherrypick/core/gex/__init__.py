@@ -77,8 +77,9 @@ def nearest_zero_gamma(strikes: list[dict], spot: float, key: str = "net_gex") -
     return min(crossings, key=lambda z: abs(z - spot)) if crossings else None
 
 
-def compute_gex(chain_entries: list[dict], greeks: dict, oi: dict, spot: float,
-                multiplier: int = DEFAULT_MULTIPLIER) -> dict:
+def compute_gex(
+    chain_entries: list[dict], greeks: dict, oi: dict, spot: float, multiplier: int = DEFAULT_MULTIPLIER
+) -> dict:
     """Compute a GEX profile from an option-chain snapshot.
 
     Args:
@@ -146,9 +147,15 @@ def compute_gex(chain_entries: list[dict], greeks: dict, oi: dict, spot: float,
     }
 
 
-def compute_gex_profile(chain_entries: list[dict], greeks: dict, oi: dict, volume: dict,
-                        spot: float, default_multiplier: int = DEFAULT_MULTIPLIER,
-                        strike_scale: float = 1.0) -> dict:
+def compute_gex_profile(
+    chain_entries: list[dict],
+    greeks: dict,
+    oi: dict,
+    volume: dict,
+    spot: float,
+    default_multiplier: int = DEFAULT_MULTIPLIER,
+    strike_scale: float = 1.0,
+) -> dict:
     """Rich per-strike GEX profile with BOTH an OI ("positioning") and a volume ("flow") series.
 
     This is the "gexbot-lite" aggregation — the pure math behind the dashboard GEX panel, extracted
@@ -195,12 +202,23 @@ def compute_gex_profile(chain_entries: list[dict], greeks: dict, oi: dict, volum
             gex = -gex
             gex_vol = -gex_vol
 
-        d = strikes.setdefault(strike, {
-            "call_gamma": 0.0, "call_iv": 0.0, "call_oi": 0, "call_vol": 0,
-            "call_gex": 0.0, "call_gex_vol": 0.0,
-            "put_gamma": 0.0, "put_iv": 0.0, "put_oi": 0, "put_vol": 0,
-            "put_gex": 0.0, "put_gex_vol": 0.0,
-        })
+        d = strikes.setdefault(
+            strike,
+            {
+                "call_gamma": 0.0,
+                "call_iv": 0.0,
+                "call_oi": 0,
+                "call_vol": 0,
+                "call_gex": 0.0,
+                "call_gex_vol": 0.0,
+                "put_gamma": 0.0,
+                "put_iv": 0.0,
+                "put_oi": 0,
+                "put_vol": 0,
+                "put_gex": 0.0,
+                "put_gex_vol": 0.0,
+            },
+        )
         if "C" in otype:
             d["call_gamma"], d["call_iv"], d["call_oi"], d["call_vol"] = gamma, round(iv, 2), oi_val, vol_val
             d["call_gex"], d["call_gex_vol"] = gex, gex_vol
@@ -209,29 +227,37 @@ def compute_gex_profile(chain_entries: list[dict], greeks: dict, oi: dict, volum
             d["put_gex"], d["put_gex_vol"] = gex, gex_vol
 
     if not strikes:
-        return {"ok": False,
-                "error": "insufficient GEX data — OI/volume not yet cached (streamer must run first)"}
+        return {
+            "ok": False,
+            "error": "insufficient GEX data — OI/volume not yet cached (streamer must run first)",
+        }
 
     series = []
     for strike in sorted(strikes):
         d = strikes[strike]
         net = d["call_gex"] + d["put_gex"]
         net_vol = d["call_gex_vol"] + d["put_gex_vol"]
-        series.append({
-            "strike": round(strike * strike_scale, 2),
-            "call_iv": d["call_iv"], "put_iv": d["put_iv"],
-            "call_oi": d["call_oi"], "put_oi": d["put_oi"],
-            "call_vol": d["call_vol"], "put_vol": d["put_vol"],
-            "total_vol": d["call_vol"] + d["put_vol"],
-            "call_gamma": d["call_gamma"], "put_gamma": d["put_gamma"],
-            "call_gex": round(d["call_gex"]),
-            "put_gex": round(d["put_gex"]),   # negative value
-            "net_gex": round(net),
-            "abs_gex": round(abs(net)),
-            "call_gex_vol": round(d["call_gex_vol"]),
-            "put_gex_vol": round(d["put_gex_vol"]),
-            "net_gex_vol": round(net_vol),
-        })
+        series.append(
+            {
+                "strike": round(strike * strike_scale, 2),
+                "call_iv": d["call_iv"],
+                "put_iv": d["put_iv"],
+                "call_oi": d["call_oi"],
+                "put_oi": d["put_oi"],
+                "call_vol": d["call_vol"],
+                "put_vol": d["put_vol"],
+                "total_vol": d["call_vol"] + d["put_vol"],
+                "call_gamma": d["call_gamma"],
+                "put_gamma": d["put_gamma"],
+                "call_gex": round(d["call_gex"]),
+                "put_gex": round(d["put_gex"]),  # negative value
+                "net_gex": round(net),
+                "abs_gex": round(abs(net)),
+                "call_gex_vol": round(d["call_gex_vol"]),
+                "put_gex_vol": round(d["put_gex_vol"]),
+                "net_gex_vol": round(net_vol),
+            }
+        )
 
     total_call_gex = sum(s["call_gex"] for s in series if s["call_gex"] > 0)
     total_put_gex = abs(sum(s["put_gex"] for s in series if s["put_gex"] < 0))

@@ -27,14 +27,16 @@ def test_exit_costs_are_open_only_zero_commission():
 
 def test_commission_cap_per_leg():
     # 15 contracts * $1 = $15/leg, capped at $10/leg -> 2 legs = $20.
-    out = fees.apply_entry_costs(ORDER_2LEG, [{"bid": 0, "ask": 0}, {"bid": 0, "ask": 0}],
-                                 quantity=15, config={})
+    out = fees.apply_entry_costs(
+        ORDER_2LEG, [{"bid": 0, "ask": 0}, {"bid": 0, "ask": 0}], quantity=15, config={}
+    )
     assert out["commission"] == 20.00
 
 
 def test_config_overrides_default_costs():
-    out = fees.apply_entry_costs(ORDER_2LEG, LEG_QUOTES, quantity=3,
-                                 config={"tastytrade_costs": {"slippage_frac_of_spread": 0.5}})
+    out = fees.apply_entry_costs(
+        ORDER_2LEG, LEG_QUOTES, quantity=3, config={"tastytrade_costs": {"slippage_frac_of_spread": 0.5}}
+    )
     assert out["slippage"] == 24.00  # (0.10+0.06)*0.5*100*3, overriding the 0.125 default
 
 
@@ -47,8 +49,9 @@ def test_negative_spread_clamped_to_zero_slippage():
 def test_slippage_cap_bounds_junk_wing():
     # A deep-OTM wing quoted wide vs its value: 0.02 x 0.40 (mid 0.21, spread 0.38).
     # Uncapped: 0.38*0.125 = 0.0475/contract; cap: 0.15*0.21 = 0.0315 -> the cap binds.
-    out = fees.apply_entry_costs({"order": {"legs": [{}]}}, [{"bid": 0.02, "ask": 0.40}],
-                                 quantity=1, config={})
+    out = fees.apply_entry_costs(
+        {"order": {"legs": [{}]}}, [{"bid": 0.02, "ask": 0.40}], quantity=1, config={}
+    )
     assert out["slippage"] == 3.15  # 0.0315 * 100 * 1, not the uncapped 4.75
 
 
@@ -95,16 +98,27 @@ def test_flat_legs_unchanged_by_quantity_awareness():
 
 
 # --- Part 2: IC open-fee schedule reproduces MEIC's constants -----------------------------------
-@pytest.mark.parametrize("symbol,expected", [
-    ("SPX", 6.89), ("XSP", 4.49), ("NDX", 5.49), ("RUT", 5.21), ("AAPL", 4.49),  # AAPL -> DEFAULT
-])
+@pytest.mark.parametrize(
+    "symbol,expected",
+    [
+        ("SPX", 6.89),
+        ("XSP", 4.49),
+        ("NDX", 5.49),
+        ("RUT", 5.21),
+        ("AAPL", 4.49),  # AAPL -> DEFAULT
+    ],
+)
 def test_ic_open_fee_matches_meic_constants(symbol, expected):
     assert fees.ic_open_fee(symbol) == expected
 
 
 def test_ic_open_fee_table_matches_meic_fallback_dict():
     assert fees.ic_open_fee_table() == {
-        "SPX": 6.89, "XSP": 4.49, "NDX": 5.49, "RUT": 5.21, "DEFAULT": 4.49,
+        "SPX": 6.89,
+        "XSP": 4.49,
+        "NDX": 5.49,
+        "RUT": 5.21,
+        "DEFAULT": 4.49,
     }
 
 

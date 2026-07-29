@@ -38,12 +38,18 @@ def _num(value: Any) -> float | None:
 
 def _default_streamer_factory(session: Any) -> Any:
     from tastytrade import DXLinkStreamer  # imported lazily so core imports without the broker SDK
+
     return DXLinkStreamer(session)
 
 
-async def collect_events(session: Any, event_cls: Any, symbols: list[str], timeout: float,
-                         extract: Extract | None = None,
-                         streamer_factory: StreamerFactory | None = None) -> dict:
+async def collect_events(
+    session: Any,
+    event_cls: Any,
+    symbols: list[str],
+    timeout: float,
+    extract: Extract | None = None,
+    streamer_factory: StreamerFactory | None = None,
+) -> dict:
     """Subscribe to `event_cls` for `symbols`, collecting the latest value per symbol until either all
     symbols have reported or `timeout` seconds elapse. Returns {event_symbol: value}. `value` is the
     raw event unless `extract` is given, in which case `extract(event)` is stored (skipped when None).
@@ -81,26 +87,31 @@ async def collect_events(session: Any, event_cls: Any, symbols: list[str], timeo
 # --- per-event convenience wrappers (session injected; event classes imported lazily) -----------
 async def collect_greeks(session: Any, symbols: list[str], timeout: float, **kw) -> dict:
     from tastytrade.dxfeed import Greeks
+
     return await collect_events(session, Greeks, symbols, timeout, **kw)
 
 
 async def collect_quotes(session: Any, symbols: list[str], timeout: float, **kw) -> dict:
     from tastytrade.dxfeed import Quote
+
     return await collect_events(session, Quote, symbols, timeout, **kw)
 
 
 async def collect_last_prices(session: Any, symbols: list[str], timeout: float, **kw) -> dict:
     from tastytrade.dxfeed import Trade
+
     return await collect_events(session, Trade, symbols, timeout, extract=lambda e: _num(e.price), **kw)
 
 
 async def collect_open_interest(session: Any, symbols: list[str], timeout: float, **kw) -> dict:
     """Summary events carry open_interest (fire within seconds on a fresh on-demand subscribe)."""
     from tastytrade.dxfeed import Summary
+
     return await collect_events(session, Summary, symbols, timeout, extract=lambda e: e.open_interest, **kw)
 
 
 async def collect_option_volume(session: Any, symbols: list[str], timeout: float, **kw) -> dict:
     """Trade events carry day_volume (total volume traded for the day) alongside price."""
     from tastytrade.dxfeed import Trade
+
     return await collect_events(session, Trade, symbols, timeout, extract=lambda e: _num(e.day_volume), **kw)

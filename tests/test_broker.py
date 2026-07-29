@@ -51,8 +51,7 @@ class FakeOption:
 def test_resolve_account_explicit_number_takes_precedence():
     a1, a2 = FakeAccount("A1"), FakeAccount("A2")
     cls, calls = make_account_cls([a1], by_number={"A2": a2})
-    got = _run(broker.resolve_account("sess", account_number="A2", default_number="A1",
-                                      account_cls=cls))
+    got = _run(broker.resolve_account("sess", account_number="A2", default_number="A1", account_cls=cls))
     assert got is a2
     assert calls["by_number"] == ["A2"]  # explicit beats default; no list fetch
     assert calls["list"] == 0
@@ -152,30 +151,36 @@ def _fake_order_ns():
 
 
 def _leg(action="sell to open", qty=1):
-    return {"instrument_type": "Equity Option", "symbol": "AAPL  240119C00190000",
-            "action": action, "quantity": qty}
+    return {
+        "instrument_type": "Equity Option",
+        "symbol": "AAPL  240119C00190000",
+        "action": action,
+        "quantity": qty,
+    }
 
 
 def test_build_order_defaults_and_leg_mapping():
     order = broker.build_order({"legs": [_leg("buy to open", 2)]}, order_ns=_fake_order_ns())
-    assert order.time_in_force == "TIF:Day"      # default
-    assert order.order_type == "Type:Limit"      # default
+    assert order.time_in_force == "TIF:Day"  # default
+    assert order.order_type == "Type:Limit"  # default
     assert len(order.legs) == 1
     leg = order.legs[0]
     assert leg.action == "Action.BUY_TO_OPEN"
-    assert leg.quantity == Decimal("2")          # coerced to Decimal
-    assert "price" not in order.__dict__         # no price key when unset
+    assert leg.quantity == Decimal("2")  # coerced to Decimal
+    assert "price" not in order.__dict__  # no price key when unset
 
 
 def test_build_order_credit_price_is_negative():
     order = broker.build_order(
-        {"legs": [_leg()], "price": 1.50, "price_effect": "Credit"}, order_ns=_fake_order_ns())
+        {"legs": [_leg()], "price": 1.50, "price_effect": "Credit"}, order_ns=_fake_order_ns()
+    )
     assert order.price == Decimal("-1.5")
 
 
 def test_build_order_debit_price_is_positive():
     order = broker.build_order(
-        {"legs": [_leg()], "price": 1.50, "price_effect": "Debit"}, order_ns=_fake_order_ns())
+        {"legs": [_leg()], "price": 1.50, "price_effect": "Debit"}, order_ns=_fake_order_ns()
+    )
     assert order.price == Decimal("1.5")
 
 
@@ -191,8 +196,7 @@ def test_build_order_maps_all_actions():
 
 
 def test_build_order_stop_trigger_passed_through_when_present():
-    order = broker.build_order(
-        {"legs": [_leg()], "stop_trigger": "3.10"}, order_ns=_fake_order_ns())
+    order = broker.build_order({"legs": [_leg()], "stop_trigger": "3.10"}, order_ns=_fake_order_ns())
     assert order.stop_trigger == Decimal("3.10")
     # ...and omitted entirely when absent (EarningsAgent never sets it)
     order2 = broker.build_order({"legs": [_leg()]}, order_ns=_fake_order_ns())
@@ -223,8 +227,10 @@ class FakeBalances:
 
 class FakeSubmitAccount:
     """Records every place_order call so tests can assert whether a live submit happened."""
-    def __init__(self, preflight, live_response=None, account_number="A1", balances=None,
-                 balances_raise=False):
+
+    def __init__(
+        self, preflight, live_response=None, account_number="A1", balances=None, balances_raise=False
+    ):
         self.account_number = account_number
         self._preflight = preflight
         self._live_response = live_response or FakePreflight(tag="live")
@@ -264,8 +270,9 @@ def test_place_order_preflight_errors_block_submission():
 
 
 def test_place_order_live_submits_after_clean_preflight():
-    acct = FakeSubmitAccount(FakePreflight(warnings=["near the close"]),
-                             live_response=FakePreflight(tag="live"))
+    acct = FakeSubmitAccount(
+        FakePreflight(warnings=["near the close"]), live_response=FakePreflight(tag="live")
+    )
     out = _run(broker.place_order(acct, "sess", "order", live=True, serialize=lambda p: p.tag))
     assert out["ok"] is True and out["dry_run"] is False
     assert out["response"] == "live"
@@ -353,6 +360,9 @@ def test_governor_get_balances_override_is_used():
         return FakeBalances("1000", "9000")
 
     acct = FakeSubmitAccount(FakePreflight(bpe=FakeBPE("x", "y", "-1000")))  # no balances on account
-    out = _run(broker.place_order(acct, "sess", "order", live=True, deploy_limit_pct=50,
-                                  get_balances=fake_get_balances))
+    out = _run(
+        broker.place_order(
+            acct, "sess", "order", live=True, deploy_limit_pct=50, get_balances=fake_get_balances
+        )
+    )
     assert out["ok"] is True and calls["n"] == 1

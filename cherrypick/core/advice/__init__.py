@@ -79,8 +79,9 @@ def _check_proposal(p: Any, bounds: dict[str, Any]) -> str | None:
     return None
 
 
-def validate(artifact: Any, bounds: dict[str, Any], session: str,
-             now: datetime | None = None) -> dict[str, Any]:
+def validate(
+    artifact: Any, bounds: dict[str, Any], session: str, now: datetime | None = None
+) -> dict[str, Any]:
     """Deterministic admission check. Returns {"ok", "reason", "proposals", "rejected"} —
     ok False always means empty proposals (reject-all)."""
     now = now or datetime.now(timezone.utc)
@@ -115,14 +116,17 @@ def validate(artifact: Any, bounds: dict[str, Any], session: str,
             else:
                 seen.add(p["param"])
         if reason is not None:
-            rejected.append({
-                "param": (p or {}).get("param") if isinstance(p, dict) else None,
-                "value": (p or {}).get("value") if isinstance(p, dict) else p,
-                "reason": reason,
-            })
+            rejected.append(
+                {
+                    "param": (p or {}).get("param") if isinstance(p, dict) else None,
+                    "value": (p or {}).get("value") if isinstance(p, dict) else p,
+                    "reason": reason,
+                }
+            )
         else:
-            admitted.append({"param": p["param"], "value": p["value"],
-                             "rationale": str(p.get("rationale") or "")})
+            admitted.append(
+                {"param": p["param"], "value": p["value"], "rationale": str(p.get("rationale") or "")}
+            )
     if rejected:
         # One violation rejects the whole artifact: partial admission would let an advisor
         # smuggle an aggressive value behind innocuous ones and still land the rest.
@@ -130,8 +134,15 @@ def validate(artifact: Any, bounds: dict[str, Any], session: str,
     return {"ok": True, "reason": None, "proposals": admitted, "rejected": []}
 
 
-def write(path: Path | str, module: str, session: str, proposals: list[dict[str, Any]],
-          advisor: str, expires_at: str, rejected: list[dict[str, Any]] | None = None) -> Path:
+def write(
+    path: Path | str,
+    module: str,
+    session: str,
+    proposals: list[dict[str, Any]],
+    advisor: str,
+    expires_at: str,
+    rejected: list[dict[str, Any]] | None = None,
+) -> Path:
     """Write the artifact atomically (tmp + replace) — a loop must never read a half-written file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,8 +161,9 @@ def write(path: Path | str, module: str, session: str, proposals: list[dict[str,
     return path
 
 
-def load(state_dir: Path | str, module: str, session: str, bounds: dict[str, Any],
-         now: datetime | None = None) -> dict[str, Any]:
+def load(
+    state_dir: Path | str, module: str, session: str, bounds: dict[str, Any], now: datetime | None = None
+) -> dict[str, Any]:
     """The loop-side read: one call at session start, never per tick. Absent/unreadable/invalid
     all come back {"ok": False, "reason", "proposals": []} — i.e. baseline. The loop logs the
     reason and moves on; it never waits for, retries, or alerts about advice."""

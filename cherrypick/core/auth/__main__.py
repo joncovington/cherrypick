@@ -39,8 +39,11 @@ def cmd_setup(args) -> dict:
 
 
 def cmd_status(_args) -> dict:
-    return {"ok": True, "service": SHARED_SERVICE,
-            "secrets": CredentialStore(SHARED_SERVICE).secrets_status()}
+    return {
+        "ok": True,
+        "service": SHARED_SERVICE,
+        "secrets": CredentialStore(SHARED_SERVICE).secrets_status(),
+    }
 
 
 def cmd_migrate(args) -> dict:

@@ -42,12 +42,18 @@ AccountClass = Callable[..., Any]
 
 def _default_account_cls() -> Any:
     from tastytrade.account import Account  # imported lazily so core imports without the broker SDK
+
     return Account
 
 
 # --------------------------------------------------------------------------- account primitives
-async def resolve_account(session: Any, account_number: str | None = None,
-                          default_number: str | None = None, *, account_cls: Any = None) -> Any:
+async def resolve_account(
+    session: Any,
+    account_number: str | None = None,
+    default_number: str | None = None,
+    *,
+    account_cls: Any = None,
+) -> Any:
     """Resolve a single Account. Precedence: explicit `account_number` > `default_number` (e.g. the
     consumer's stored ACCOUNT_NUMBER) > the first account on the credentials. Raises RuntimeError if
     the credentials have no accounts. Byte-for-byte the behavior of both repos' `_get_account`, with
@@ -127,8 +133,14 @@ ACTION_MAP = {
 def _default_order_ns() -> Any:
     # Imported lazily so the module imports without the broker SDK.
     from tastytrade.order import Leg, NewOrder, OrderAction, OrderTimeInForce, OrderType
-    return SimpleNamespace(Leg=Leg, NewOrder=NewOrder, OrderAction=OrderAction,
-                           OrderTimeInForce=OrderTimeInForce, OrderType=OrderType)
+
+    return SimpleNamespace(
+        Leg=Leg,
+        NewOrder=NewOrder,
+        OrderAction=OrderAction,
+        OrderTimeInForce=OrderTimeInForce,
+        OrderType=OrderType,
+    )
 
 
 def build_order(spec: dict, *, order_ns: Any = None) -> Any:
@@ -151,12 +163,14 @@ def build_order(spec: dict, *, order_ns: Any = None) -> Any:
     legs = []
     for leg in spec.get("legs", []):
         action = ns.OrderAction[ACTION_MAP[str(leg["action"]).strip().lower()]]
-        legs.append(ns.Leg(
-            instrument_type=leg["instrument_type"],
-            symbol=leg["symbol"],
-            action=action,
-            quantity=Decimal(str(leg["quantity"])),
-        ))
+        legs.append(
+            ns.Leg(
+                instrument_type=leg["instrument_type"],
+                symbol=leg["symbol"],
+                action=action,
+                quantity=Decimal(str(leg["quantity"])),
+            )
+        )
     kwargs: dict = {"time_in_force": tif, "order_type": otype, "legs": legs}
     if spec.get("price") is not None:
         price = Decimal(str(spec["price"]))
@@ -176,16 +190,19 @@ def _buying_power_summary(preflight: Any) -> dict:
     summary: dict = {"warnings": warnings}
     bpe = getattr(preflight, "buying_power_effect", None)
     if bpe:
-        summary.update({
-            "current_buying_power": str(getattr(bpe, "current_buying_power", None)),
-            "new_buying_power": str(getattr(bpe, "new_buying_power", None)),
-            "change_in_buying_power": str(getattr(bpe, "change_in_buying_power", None)),
-        })
+        summary.update(
+            {
+                "current_buying_power": str(getattr(bpe, "current_buying_power", None)),
+                "new_buying_power": str(getattr(bpe, "new_buying_power", None)),
+                "change_in_buying_power": str(getattr(bpe, "change_in_buying_power", None)),
+            }
+        )
     return summary
 
 
-async def _deploy_governor(account: Any, session: Any, preflight: Any, limit_pct: float,
-                           get_balances: Callable[..., Any] | None) -> tuple[bool, dict]:
+async def _deploy_governor(
+    account: Any, session: Any, preflight: Any, limit_pct: float, get_balances: Callable[..., Any] | None
+) -> tuple[bool, dict]:
     """Evaluate the account deploy-limit cap for a preflighted order via `risk.evaluate_deploy_limit`.
 
     Reads the order's buying-power consumption from the preflight and the account's live deployed /
@@ -213,14 +230,21 @@ async def _deploy_governor(account: Any, session: Any, preflight: Any, limit_pct
 
     consume = -Decimal(str(change))  # a debit (negative change) consumes buying power
     allowed, info = risk.evaluate_deploy_limit(
-        Decimal(str(used)), Decimal(str(available)), consume, limit_pct)
+        Decimal(str(used)), Decimal(str(available)), consume, limit_pct
+    )
     return allowed, {"deploy_governor": "enforced", **info}
 
 
-async def place_order(account: Any, session: Any, order: Any, *, live: bool,
-                      serialize: Callable[[Any], Any] | None = None,
-                      deploy_limit_pct: float | None = None,
-                      get_balances: Callable[..., Any] | None = None) -> dict:
+async def place_order(
+    account: Any,
+    session: Any,
+    order: Any,
+    *,
+    live: bool,
+    serialize: Callable[[Any], Any] | None = None,
+    deploy_limit_pct: float | None = None,
+    get_balances: Callable[..., Any] | None = None,
+) -> dict:
     """Preflight an order (always a dry-run first), then submit it live **only** if `live` is True
     and the preflight reported no errors. Unifies the submission core of both repos'
     `cmd_execute_trade`; the CLI gating (how `--live`/`--dry_run` map to `live`), the
@@ -249,30 +273,46 @@ async def place_order(account: Any, session: Any, order: Any, *, live: bool,
     errors = [str(e) for e in (getattr(preflight, "errors", None) or [])]
     bp_summary = _buying_power_summary(preflight)
     if errors:
-        return {"ok": False, "error": "pre-flight validation failed",
-                "problems": errors, "buying_power": bp_summary}
+        return {
+            "ok": False,
+            "error": "pre-flight validation failed",
+            "problems": errors,
+            "buying_power": bp_summary,
+        }
 
     governor_info = None
     if deploy_limit_pct is not None and deploy_limit_pct > 0:
         allowed, governor_info = await _deploy_governor(
-            account, session, preflight, deploy_limit_pct, get_balances)
+            account, session, preflight, deploy_limit_pct, get_balances
+        )
         if live and not allowed:
-            reason = ("account deploy limit exceeded"
-                      if governor_info.get("deploy_governor") == "enforced"
-                      else "account deploy limit: could not verify account state")
-            return {"ok": False, "error": reason,
-                    "governor": governor_info, "buying_power": bp_summary}
+            reason = (
+                "account deploy limit exceeded"
+                if governor_info.get("deploy_governor") == "enforced"
+                else "account deploy limit: could not verify account state"
+            )
+            return {"ok": False, "error": reason, "governor": governor_info, "buying_power": bp_summary}
 
     if not live:
-        result = {"ok": True, "dry_run": True, "account_number": account.account_number,
-                  "buying_power": bp_summary, "response": serialize(preflight)}
+        result = {
+            "ok": True,
+            "dry_run": True,
+            "account_number": account.account_number,
+            "buying_power": bp_summary,
+            "response": serialize(preflight),
+        }
         if governor_info is not None:
             result["governor"] = governor_info
         return result
 
     response = await account.place_order(session, order, dry_run=False)
-    result = {"ok": True, "dry_run": False, "account_number": account.account_number,
-              "buying_power": bp_summary, "response": serialize(response)}
+    result = {
+        "ok": True,
+        "dry_run": False,
+        "account_number": account.account_number,
+        "buying_power": bp_summary,
+        "response": serialize(response),
+    }
     if governor_info is not None:
         result["governor"] = governor_info
     return result

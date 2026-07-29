@@ -20,12 +20,24 @@ MON, TUE, WED, THU, FRI, SAT, SUN = range(7)
 # these, so they cannot be computed — bundle known years and extend as the Fed publishes new schedules.
 _FOMC_DATES: dict[int, tuple[str, ...]] = {
     2025: (
-        "2025-01-29", "2025-03-19", "2025-05-07", "2025-06-18",
-        "2025-07-30", "2025-09-17", "2025-10-29", "2025-12-10",
+        "2025-01-29",
+        "2025-03-19",
+        "2025-05-07",
+        "2025-06-18",
+        "2025-07-30",
+        "2025-09-17",
+        "2025-10-29",
+        "2025-12-10",
     ),
     2026: (
-        "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-10",
-        "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-16",
+        "2026-01-28",
+        "2026-03-18",
+        "2026-04-29",
+        "2026-06-10",
+        "2026-07-29",
+        "2026-09-16",
+        "2026-10-28",
+        "2026-12-16",
     ),
 }
 
@@ -84,16 +96,16 @@ def nyse_holidays(year: int) -> set[date]:
     if new_year.year == year:
         hols.add(new_year)
 
-    hols.add(nth_weekday(year, 1, MON, 3))          # MLK Jr. Day — 3rd Monday of January
-    hols.add(nth_weekday(year, 2, MON, 3))          # Washington's Birthday — 3rd Monday of February
-    hols.add(easter(year) - timedelta(days=2))      # Good Friday — Friday before Easter
-    hols.add(last_weekday(year, 5, MON))            # Memorial Day — last Monday of May
-    if year >= 2022:                                 # Juneteenth — NYSE holiday since 2022
+    hols.add(nth_weekday(year, 1, MON, 3))  # MLK Jr. Day — 3rd Monday of January
+    hols.add(nth_weekday(year, 2, MON, 3))  # Washington's Birthday — 3rd Monday of February
+    hols.add(easter(year) - timedelta(days=2))  # Good Friday — Friday before Easter
+    hols.add(last_weekday(year, 5, MON))  # Memorial Day — last Monday of May
+    if year >= 2022:  # Juneteenth — NYSE holiday since 2022
         hols.add(_observed(date(year, 6, 19)))
-    hols.add(_observed(date(year, 7, 4)))           # Independence Day
-    hols.add(nth_weekday(year, 9, MON, 1))          # Labor Day — 1st Monday of September
-    hols.add(nth_weekday(year, 11, THU, 4))         # Thanksgiving — 4th Thursday of November
-    hols.add(_observed(date(year, 12, 25)))         # Christmas Day
+    hols.add(_observed(date(year, 7, 4)))  # Independence Day
+    hols.add(nth_weekday(year, 9, MON, 1))  # Labor Day — 1st Monday of September
+    hols.add(nth_weekday(year, 11, THU, 4))  # Thanksgiving — 4th Thursday of November
+    hols.add(_observed(date(year, 12, 25)))  # Christmas Day
     return hols
 
 

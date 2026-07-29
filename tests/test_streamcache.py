@@ -5,11 +5,16 @@ from cherrypick.core import streamcache
 
 class _Opt:
     """Minimal stand-in for a tastytrade Option (has model_dump + strike_price)."""
+
     def __init__(self, sym, strike, exp="2026-07-10", und="SPX"):
         self.streamer_symbol = sym
         self.strike_price = strike
-        self._d = {"streamer_symbol": sym, "strike_price": strike,
-                   "expiration_date": exp, "underlying_symbol": und}
+        self._d = {
+            "streamer_symbol": sym,
+            "strike_price": strike,
+            "expiration_date": exp,
+            "underlying_symbol": und,
+        }
 
     def model_dump(self, mode="json"):
         return dict(self._d)
