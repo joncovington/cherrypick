@@ -80,7 +80,18 @@ def test_payload_metrics_and_timeseries(tmp_path):
             ("strat_test:iron_condor", "iron_condor", "MSFT", -40.0, 10.0, 0.0, DAY2 - 60000, DAY2),
             ("default", "iron_fly", "TSLA", 999.0, 0.0, 0.0, DAY1 - 60000, DAY1),  # other book: excluded
         ],
-        open_rows=[("strat_test:iron_fly", "iron_fly", "NVDA", 1, 2.5, 400.0, 5.0, DAY2, )],
+        open_rows=[
+            (
+                "strat_test:iron_fly",
+                "iron_fly",
+                "NVDA",
+                1,
+                2.5,
+                400.0,
+                5.0,
+                DAY2,
+            )
+        ],
     )
     payload = ss.build_section(db_override=str(db))
     assert payload["ok"] is True

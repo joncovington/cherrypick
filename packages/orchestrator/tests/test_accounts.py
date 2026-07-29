@@ -49,8 +49,7 @@ def env(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(cfgmod, "ROOT", tmp_path)
     monkeypatch.setattr(accounts, "CredentialStore", _FakeStore)
-    monkeypatch.setattr(accounts, "_tt",
-                        lambda root, *argv, tool=None: {"ok": True, "accounts": _ACCTS})
+    monkeypatch.setattr(accounts, "_tt", lambda root, *argv, tool=None: {"ok": True, "accounts": _ACCTS})
     cfg = {
         "modules": {
             "meic": {

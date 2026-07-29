@@ -2,14 +2,16 @@ import pytest
 
 import costs
 
-CONFIG = {"tastytrade_costs": {
-    "commission_open_per_contract": 1.00,
-    "commission_close_per_contract": 0.00,
-    "commission_cap_per_leg": 10.00,
-    "clearing_fee_per_contract": 0.10,
-    "regulatory_fee_per_contract": 0.04,
-    "slippage_frac_of_spread": 0.25,
-}}
+CONFIG = {
+    "tastytrade_costs": {
+        "commission_open_per_contract": 1.00,
+        "commission_close_per_contract": 0.00,
+        "commission_cap_per_leg": 10.00,
+        "clearing_fee_per_contract": 0.10,
+        "regulatory_fee_per_contract": 0.04,
+        "slippage_frac_of_spread": 0.25,
+    }
+}
 
 TWO_LEG_ORDER = {"order": {"legs": [{"symbol": "A"}, {"symbol": "B"}]}}
 TWO_LEG_QUOTES = [{"bid": 3.00, "ask": 3.35}, {"bid": 1.00, "ask": 1.35}]
@@ -33,10 +35,18 @@ def test_exit_costs_have_zero_commission_by_default():
 def test_commission_cap_binds_per_leg():
     order = {"order": {"legs": [{"symbol": "A"}]}}
     quotes = [{"bid": 1.00, "ask": 1.10}]
-    assert costs.apply_entry_costs(order, quotes, quantity=5, config=CONFIG)["commission"] == pytest.approx(5.0)
-    assert costs.apply_entry_costs(order, quotes, quantity=10, config=CONFIG)["commission"] == pytest.approx(10.0)
-    assert costs.apply_entry_costs(order, quotes, quantity=15, config=CONFIG)["commission"] == pytest.approx(10.0)
-    assert costs.apply_entry_costs(order, quotes, quantity=100, config=CONFIG)["commission"] == pytest.approx(10.0)
+    assert costs.apply_entry_costs(order, quotes, quantity=5, config=CONFIG)["commission"] == pytest.approx(
+        5.0
+    )
+    assert costs.apply_entry_costs(order, quotes, quantity=10, config=CONFIG)["commission"] == pytest.approx(
+        10.0
+    )
+    assert costs.apply_entry_costs(order, quotes, quantity=15, config=CONFIG)["commission"] == pytest.approx(
+        10.0
+    )
+    assert costs.apply_entry_costs(order, quotes, quantity=100, config=CONFIG)["commission"] == pytest.approx(
+        10.0
+    )
 
 
 def test_cap_applies_per_leg_not_per_order():
@@ -55,7 +65,9 @@ def test_defaults_used_when_config_missing_tastytrade_costs_block():
     # Assert against the shipped default fraction (source of truth) so a future recalibration
     # of the slippage default doesn't silently rot this test — the spread here (0.20) is well
     # under the mid cap, so the plain fraction applies.
-    assert result["slippage"] == pytest.approx(0.20 * costs.DEFAULT_COSTS["slippage_frac_of_spread"] * 100 * 2)
+    assert result["slippage"] == pytest.approx(
+        0.20 * costs.DEFAULT_COSTS["slippage_frac_of_spread"] * 100 * 2
+    )
 
 
 def test_zero_width_quote_produces_zero_slippage():
@@ -77,15 +89,20 @@ def test_negative_spread_treated_as_zero():
 # rather than single worked examples.
 
 _SHAPES = [
-    [{"symbol": "A"}],                                                     # single
-    [{"symbol": "A"}, {"symbol": "B"}],                                    # vertical
+    [{"symbol": "A"}],  # single
+    [{"symbol": "A"}, {"symbol": "B"}],  # vertical
     [{"symbol": "A"}, {"symbol": "B"}, {"symbol": "C"}, {"symbol": "D"}],  # condor
-    [{"symbol": "A", "quantity": 1}, {"symbol": "B", "quantity": 2},
-     {"symbol": "C", "quantity": 1}],                                      # 1-2-1 fly
+    [
+        {"symbol": "A", "quantity": 1},
+        {"symbol": "B", "quantity": 2},
+        {"symbol": "C", "quantity": 1},
+    ],  # 1-2-1 fly
 ]
 _QUOTES = {
-    "A": {"bid": 3.00, "ask": 3.30}, "B": {"bid": 1.00, "ask": 1.10},
-    "C": {"bid": 0.50, "ask": 0.58}, "D": {"bid": 0.10, "ask": 0.16},
+    "A": {"bid": 3.00, "ask": 3.30},
+    "B": {"bid": 1.00, "ask": 1.10},
+    "C": {"bid": 0.50, "ask": 0.58},
+    "D": {"bid": 0.10, "ask": 0.16},
 }
 
 

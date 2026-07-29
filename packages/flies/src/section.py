@@ -26,8 +26,10 @@ from cherrypick.core import viz  # noqa: E402
 import analytics  # noqa: E402
 import db as dbmod  # noqa: E402
 
-_NOTE = ("payoff at expiry across price · green = book profits · a legged fly's floor is its own "
-         "credit; a funded book's floor holds only inside the funding spreads' wings")
+_NOTE = (
+    "payoff at expiry across price · green = book profits · a legged fly's floor is its own "
+    "credit; a funded book's floor holds only inside the funding spreads' wings"
+)
 
 
 def _money(v) -> str:
@@ -47,8 +49,7 @@ def _pick_arm(books: list[dict], requested: str | None) -> str | None:
         return requested
     if not books:
         return None
-    return max(books, key=lambda b: (b.get("credit_collected") or 0) + (b.get("debits_paid") or 0)
-               )["arm"]
+    return max(books, key=lambda b: (b.get("credit_collected") or 0) + (b.get("debits_paid") or 0))["arm"]
 
 
 def _completion_ts(conn) -> dict | None:
@@ -59,14 +60,17 @@ def _completion_ts(conn) -> dict | None:
         return None
     return {
         "labels": [t["day"] for t in trend],
-        "series": [{"name": "completion %",
-                    "values": [round((t["completion_rate"] or 0) * 100, 1) for t in trend],
-                    "tone": "accent"}],
+        "series": [
+            {
+                "name": "completion %",
+                "values": [round((t["completion_rate"] or 0) * 100, 1) for t in trend],
+                "tone": "accent",
+            }
+        ],
     }
 
 
-def build_section(db_path: str | None = None, day: str | None = None,
-                  arm: str | None = None) -> dict:
+def build_section(db_path: str | None = None, day: str | None = None, arm: str | None = None) -> dict:
     """Return a cherrypick.core.viz section payload, or {ok: False, error}."""
     conn = dbmod.connect(db_path)
     try:
@@ -91,20 +95,29 @@ def build_section(db_path: str | None = None, day: str | None = None,
         curve = analytics.payoff_curve(conn, day, chosen)
         stats = overview["stats"]
         completion = overview["completion"]
-        floor = (curve.get("floor") or {})
+        floor = curve.get("floor") or {}
         band = floor.get("band")
 
         metrics = [
-            {"label": "Net P&L", "value": _money(stats["net_pnl"]),
-             "tone": "pos" if (stats["net_pnl"] or 0) >= 0 else "neg"},
+            {
+                "label": "Net P&L",
+                "value": _money(stats["net_pnl"]),
+                "tone": "pos" if (stats["net_pnl"] or 0) >= 0 else "neg",
+            },
             {"label": "Positions", "value": str(len(overview["positions"])), "tone": "accent"},
-            {"label": "Risk-free", "value": f"{overview['risk_free_count']}/{overview['fly_count']}",
-             "tone": "pos" if overview["risk_free_count"] else None},
+            {
+                "label": "Risk-free",
+                "value": f"{overview['risk_free_count']}/{overview['fly_count']}",
+                "tone": "pos" if overview["risk_free_count"] else None,
+            },
             {"label": "Completion", "value": _pct(completion["completion_rate"])},
             # The floor is stated with the band it holds over, always. A floor without its band is the
             # claim this module exists to avoid making.
-            {"label": "Book floor", "value": _money(floor.get("worst")),
-             "tone": "pos" if floor.get("floor_holds") else "neg"},
+            {
+                "label": "Book floor",
+                "value": _money(floor.get("worst")),
+                "tone": "pos" if floor.get("floor_holds") else "neg",
+            },
         ]
         if band:
             metrics.append({"label": "Floor holds", "value": f"{band[0]:.0f}–{band[1]:.0f}"})

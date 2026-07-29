@@ -37,9 +37,11 @@ from cherrypick.core.gex import compute_gex  # noqa: E402
 
 try:
     from zoneinfo import ZoneInfo
+
     _ET = ZoneInfo("America/New_York")
 except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
+
     _ET = pytz.timezone("America/New_York")
 
 DEFAULT_MAX_QUOTE_AGE_SECONDS = 120
@@ -84,8 +86,12 @@ def _usable_quote(row, now_ts: float, max_age: float) -> dict | None:
     if ask <= 0 or bid < 0 or bid > ask:
         return None
     mid = row["mid"]
-    return {"bid": bid, "ask": ask, "mid": float(mid) if mid is not None else (bid + ask) / 2.0,
-            "age_seconds": round(now_ts - float(updated), 1)}
+    return {
+        "bid": bid,
+        "ask": ask,
+        "mid": float(mid) if mid is not None else (bid + ask) / 2.0,
+        "age_seconds": round(now_ts - float(updated), 1),
+    }
 
 
 def _chain_for_expiration(conn, symbol: str, expiration: str) -> list[dict]:
@@ -101,16 +107,18 @@ def _chain_for_expiration(conn, symbol: str, expiration: str) -> list[dict]:
         sym, strike = opt.get("streamer_symbol"), opt.get("strike_price")
         if not sym or strike is None:
             continue
-        entries.append({
-            "strike_price": float(strike),
-            "streamer_symbol": sym,
-            # The broker-side (OCC) symbol and instrument type ride along for the live scaffold's
-            # order builders; paper never reads them, and old cache rows just leave them None.
-            "occ_symbol": opt.get("symbol"),
-            "instrument_type": opt.get("instrument_type"),
-            "option_type": opt.get("option_type", ""),
-            "shares_per_contract": opt.get("shares_per_contract") or 100,
-        })
+        entries.append(
+            {
+                "strike_price": float(strike),
+                "streamer_symbol": sym,
+                # The broker-side (OCC) symbol and instrument type ride along for the live scaffold's
+                # order builders; paper never reads them, and old cache rows just leave them None.
+                "occ_symbol": opt.get("symbol"),
+                "instrument_type": opt.get("instrument_type"),
+                "option_type": opt.get("option_type", ""),
+                "shares_per_contract": opt.get("shares_per_contract") or 100,
+            }
+        )
     return entries
 
 
@@ -128,9 +136,14 @@ def nearest_expiration(conn, symbol: str) -> str | None:
     return row["expiration"] if row else None
 
 
-def build_snapshot(db_path, symbol: str, *, when: datetime | None = None,
-                   max_quote_age_seconds: float = DEFAULT_MAX_QUOTE_AGE_SECONDS,
-                   strike_window_pct: float = DEFAULT_STRIKE_WINDOW_PCT) -> dict:
+def build_snapshot(
+    db_path,
+    symbol: str,
+    *,
+    when: datetime | None = None,
+    max_quote_age_seconds: float = DEFAULT_MAX_QUOTE_AGE_SECONDS,
+    strike_window_pct: float = DEFAULT_STRIKE_WINDOW_PCT,
+) -> dict:
     """Build one engine-ready snapshot for `symbol`, or a `{"ok": False, "reason": ...}` refusal.
 
     The refusal path is not an error path. A streamer that hasn't cached open interest yet, a symbol
@@ -217,8 +230,11 @@ def build_snapshot(db_path, symbol: str, *, when: datetime | None = None,
             # Kept so a session's results can be audited against how good its data actually was —
             # a day that skipped every entry on stale quotes should be visible as that, not as a
             # day the strategy found nothing.
-            "quote_stats": {"fresh": len(puts) + len(calls), "rejected": stale,
-                            "max_age_seconds": max_quote_age_seconds},
+            "quote_stats": {
+                "fresh": len(puts) + len(calls),
+                "rejected": stale,
+                "max_age_seconds": max_quote_age_seconds,
+            },
         }
     finally:
         conn.close()
@@ -231,7 +247,7 @@ def _greeks_and_oi(conn, chain_symbols: list[str]) -> tuple[dict, dict]:
         return greeks, oi
     # Chunked: SQLite caps variables per statement (999 by default) and a full SPX chain exceeds it.
     for i in range(0, len(chain_symbols), 900):
-        chunk = chain_symbols[i:i + 900]
+        chunk = chain_symbols[i : i + 900]
         placeholders = ", ".join("?" * len(chunk))
         for r in conn.execute(
             f"SELECT symbol, gamma FROM stream_greeks WHERE symbol IN ({placeholders})", chunk

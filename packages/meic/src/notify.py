@@ -39,9 +39,11 @@ def _rotate_if_needed():
 def _now_iso():
     try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
         from zoneinfo import ZoneInfo
+
         et = ZoneInfo("America/New_York")
     except Exception:  # pragma: no cover - only where zoneinfo has no tz database
         import pytz
+
         et = pytz.timezone("America/New_York")
     return datetime.now(et).isoformat()
 

@@ -109,8 +109,9 @@ def vertical_debit(long_q: dict, short_q: dict, slippage_frac: float = DEFAULT_S
     return mid + slippage_frac * (_leg_spread(long_q) + _leg_spread(short_q))
 
 
-def fly_debit(lower_q: dict, center_q: dict, upper_q: dict,
-              slippage_frac: float = DEFAULT_SLIPPAGE_FRAC) -> float:
+def fly_debit(
+    lower_q: dict, center_q: dict, upper_q: dict, slippage_frac: float = DEFAULT_SLIPPAGE_FRAC
+) -> float:
     """Debit paid buying a whole symmetric fly outright (+1 lower, -2 center, +1 upper), POSITIVE.
 
     Four contracts, so the haircut covers four leg-spreads: the centre leg is quoted once but traded
@@ -191,10 +192,8 @@ def book_pnl(positions: list[dict], underlying: float) -> float:
 
 def book_cash(positions: list[dict]) -> dict:
     """Realized cash summary for a book: credit taken in, debits paid, fees, and the net of all three."""
-    credit = sum(p["net"] * CONTRACT_MULTIPLIER * p.get("quantity", 1)
-                 for p in positions if p["net"] > 0)
-    debits = sum(-p["net"] * CONTRACT_MULTIPLIER * p.get("quantity", 1)
-                 for p in positions if p["net"] < 0)
+    credit = sum(p["net"] * CONTRACT_MULTIPLIER * p.get("quantity", 1) for p in positions if p["net"] > 0)
+    debits = sum(-p["net"] * CONTRACT_MULTIPLIER * p.get("quantity", 1) for p in positions if p["net"] < 0)
     fee_total = sum(p.get("fees", 0.0) for p in positions)
     return {
         "credit_collected": round(credit, 2),
@@ -241,8 +240,14 @@ def book_floor(positions: list[dict], step: float = 1.0) -> dict:
         unbounded_below True when a short vertical leaves the book losing beyond its wings
     """
     if not positions:
-        return {"worst": 0.0, "worst_at": None, "floor_holds": True, "band": None,
-                "bands": [], "unbounded_below": False}
+        return {
+            "worst": 0.0,
+            "worst_at": None,
+            "floor_holds": True,
+            "band": None,
+            "bands": [],
+            "unbounded_below": False,
+        }
 
     prices = _scan_prices(positions, step)
     pnls = [book_pnl(positions, x) for x in prices]

@@ -80,8 +80,7 @@ def fetch_dolthub_calendar(date: str, config: dict) -> list[dict]:
     try:
         cur = conn.cursor(dictionary=True)
         cur.execute(
-            "SELECT act_symbol AS symbol, date, `when` AS timing "
-            "FROM earnings_calendar WHERE date = %s",
+            "SELECT act_symbol AS symbol, date, `when` AS timing FROM earnings_calendar WHERE date = %s",
             (date,),
         )
         return cur.fetchall()
@@ -212,8 +211,7 @@ def _nearest_close(symbol: str, date, direction: str, config: dict) -> dict | No
             )
         else:
             cur.execute(
-                "SELECT date, close FROM ohlcv WHERE act_symbol = %s AND date > %s "
-                "ORDER BY date ASC LIMIT 1",
+                "SELECT date, close FROM ohlcv WHERE act_symbol = %s AND date > %s ORDER BY date ASC LIMIT 1",
                 (symbol, date),
             )
         return cur.fetchone()
@@ -221,7 +219,9 @@ def _nearest_close(symbol: str, date, direction: str, config: dict) -> dict | No
         conn.close()
 
 
-def pre_and_reaction_closes(symbol: str, earnings_date, timing: str, config: dict) -> tuple[dict, dict] | None:
+def pre_and_reaction_closes(
+    symbol: str, earnings_date, timing: str, config: dict
+) -> tuple[dict, dict] | None:
     """Pick the pre-earnings and post-reaction trading-day closes based on `when`.
 
     'After market close' -> pre = earnings_date's own close, reaction = next trading day.
@@ -237,6 +237,7 @@ def pre_and_reaction_closes(symbol: str, earnings_date, timing: str, config: dic
         # date before doing an on_or_before lookup (which would otherwise just return
         # earnings_date itself if the market happened to be open that day).
         from datetime import timedelta
+
         pre = _nearest_close(symbol, earnings_date - timedelta(days=1), "on_or_before", config)
         reaction = _nearest_close(symbol, earnings_date - timedelta(days=1), "after", config)
     else:
@@ -246,7 +247,9 @@ def pre_and_reaction_closes(symbol: str, earnings_date, timing: str, config: dic
     return pre, reaction
 
 
-def fetch_atm_straddle_price(symbol: str, as_of_date, reaction_date, underlying_price: float, config: dict) -> dict | None:
+def fetch_atm_straddle_price(
+    symbol: str, as_of_date, reaction_date, underlying_price: float, config: dict
+) -> dict | None:
     """ATM straddle mid-price from the option_chain as of `as_of_date`, using the
     nearest expiration on or after `reaction_date`. Returns None (not an exception)
     on any data gap — missing expirations/strikes are a real, expected occurrence
@@ -352,15 +355,17 @@ def _compute_winrate_uncached(symbol: str, config: dict, lookback_quarters: int 
             continue
         realized_move = abs(float(reaction["close"]) - pre_close)
         implied_move = straddle["straddle_mid"]
-        results.append({
-            "earnings_date": str(row["date"]),
-            "pre_close": pre_close,
-            "reaction_close": float(reaction["close"]),
-            "realized_move": realized_move,
-            "implied_move": implied_move,
-            "win": implied_move > realized_move,
-            "expiration_used": straddle["expiration"],
-        })
+        results.append(
+            {
+                "earnings_date": str(row["date"]),
+                "pre_close": pre_close,
+                "reaction_close": float(reaction["close"]),
+                "realized_move": realized_move,
+                "implied_move": implied_move,
+                "win": implied_move > realized_move,
+                "expiration_used": straddle["expiration"],
+            }
+        )
 
     sample_size = len(results)
     wins = sum(1 for r in results if r["win"])
@@ -473,7 +478,9 @@ def call_tt(args_list: list[str]) -> dict:
             cache[key] = data
         return data
     if result.returncode != 0:
-        raise RuntimeError(f"tt.py {' '.join(args_list)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}")
+        raise RuntimeError(
+            f"tt.py {' '.join(args_list)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}"
+        )
     data = json.loads(result.stdout)
     if key is not None:
         cache[key] = data
@@ -523,9 +530,13 @@ def select_back_expiration(expirations: list, front_expiration, min_days_after: 
     the nearest expiration at least that many days out if this name has no
     monthly listing in the fetched window, rather than failing outright.
     """
-    back_exp = nearest_expiration_at_least_days_after(expirations, front_expiration, min_days_after, monthly_only=True)
+    back_exp = nearest_expiration_at_least_days_after(
+        expirations, front_expiration, min_days_after, monthly_only=True
+    )
     if back_exp is None:
-        back_exp = nearest_expiration_at_least_days_after(expirations, front_expiration, min_days_after, monthly_only=False)
+        back_exp = nearest_expiration_at_least_days_after(
+            expirations, front_expiration, min_days_after, monthly_only=False
+        )
     return back_exp
 
 
@@ -561,15 +572,35 @@ def fetch_front_back_atm_entries(symbol: str, front_expiration, back_expiration,
     {"ok": True, "front_call": ..., "front_put": ..., "back_call": ...} or
     an error dict.
     """
-    front_chain = call_tt([
-        "get_option_chain", "--symbol", symbol, "--expiration", str(front_expiration),
-        "--include_greeks", "--include_quotes", "--strike_count", "3",
-        "--around_price", str(price),
-    ])
-    back_chain = call_tt([
-        "get_option_chain", "--symbol", symbol, "--expiration", str(back_expiration),
-        "--include_greeks", "--strike_count", "3", "--around_price", str(price),
-    ])
+    front_chain = call_tt(
+        [
+            "get_option_chain",
+            "--symbol",
+            symbol,
+            "--expiration",
+            str(front_expiration),
+            "--include_greeks",
+            "--include_quotes",
+            "--strike_count",
+            "3",
+            "--around_price",
+            str(price),
+        ]
+    )
+    back_chain = call_tt(
+        [
+            "get_option_chain",
+            "--symbol",
+            symbol,
+            "--expiration",
+            str(back_expiration),
+            "--include_greeks",
+            "--strike_count",
+            "3",
+            "--around_price",
+            str(price),
+        ]
+    )
     if not front_chain.get("ok") or not back_chain.get("ok"):
         return {"ok": False, "error": "front/back chain fetch failed"}
 
@@ -588,7 +619,9 @@ def fetch_front_back_atm_entries(symbol: str, front_expiration, back_expiration,
     return {"ok": True, "front_call": front_call, "front_put": front_put, "back_call": back_call}
 
 
-def compute_expected_move_and_term_structure(front_call_mid: float, front_put_mid: float, front_iv: float, back_iv: float, underlying_price: float) -> dict:
+def compute_expected_move_and_term_structure(
+    front_call_mid: float, front_put_mid: float, front_iv: float, back_iv: float, underlying_price: float
+) -> dict:
     """Pure calculation, no I/O. Term structure mirrors EarningsEdgeDetection's
     convention: negative values mean the front-month is richer than the
     back-month (the earnings-event IV premium the trade is designed to
@@ -611,7 +644,9 @@ def compute_expected_move_and_term_structure(front_call_mid: float, front_put_mi
     }
 
 
-def fetch_liquidity_criteria(symbol: str, front_expiration, expirations: list, front_call: dict, front_put: dict) -> dict:
+def fetch_liquidity_criteria(
+    symbol: str, front_expiration, expirations: list, front_call: dict, front_put: dict
+) -> dict:
     """Shared liquidity signals every earnings strategy should screen on:
     bid/ask spread width at the front-month ATM strikes, weekly-vs-monthly
     expiration cadence, market cap, and front-month chain-wide combined
@@ -625,8 +660,10 @@ def fetch_liquidity_criteria(symbol: str, front_expiration, expirations: list, f
     """
     spread_pct = None
     if (
-        all(front_call.get(k) is not None for k in ("bid", "ask", "mid")) and front_call["mid"]
-        and all(front_put.get(k) is not None for k in ("bid", "ask", "mid")) and front_put["mid"]
+        all(front_call.get(k) is not None for k in ("bid", "ask", "mid"))
+        and front_call["mid"]
+        and all(front_put.get(k) is not None for k in ("bid", "ask", "mid"))
+        and front_put["mid"]
     ):
         spread_pct = max(
             (front_call["ask"] - front_call["bid"]) / front_call["mid"],
@@ -640,10 +677,19 @@ def fetch_liquidity_criteria(symbol: str, front_expiration, expirations: list, f
 
     combined_open_interest = None
     combined_option_volume = None
-    chain = call_tt([
-        "get_option_chain", "--symbol", symbol, "--expiration", str(front_expiration),
-        "--include_oi", "--include_volume", "--strike_count", "999",
-    ])
+    chain = call_tt(
+        [
+            "get_option_chain",
+            "--symbol",
+            symbol,
+            "--expiration",
+            str(front_expiration),
+            "--include_oi",
+            "--include_volume",
+            "--strike_count",
+            "999",
+        ]
+    )
     if chain.get("ok"):
         entries = chain["chain"].get(str(front_expiration), [])
         ois = [e["open_interest"] for e in entries if e.get("open_interest") is not None]
@@ -703,17 +749,46 @@ def apply_soft_criteria(criteria: dict, config: dict, hard_fail: list) -> None:
     config["_symbol_screen"]. Mutates `hard_fail` in place.
     """
     levels = _screen_levels(config)
-    _soft_gate(criteria.get("avg_volume"), config["min_avg_volume"], config["near_miss_min_avg_volume"],
-               levels["avg_volume"], "avg_volume", hard_fail)
-    _soft_gate(criteria.get("winrate"), config["min_winrate"], config["near_miss_min_winrate"],
-               levels["winrate"], "winrate", hard_fail)
-    _soft_gate(criteria.get("iv_rv_ratio"), config["min_iv_rv_ratio"], config["near_miss_min_iv_rv_ratio"],
-               levels["iv_rv_ratio"], "iv_rv_ratio", hard_fail)
-    _soft_gate(criteria.get("market_cap"), config["min_market_cap"], config["near_miss_min_market_cap"],
-               levels["market_cap"], "market_cap", hard_fail)
-    _soft_gate(criteria.get("combined_option_volume"), config["min_combined_option_volume"],
-               config["near_miss_min_combined_option_volume"], levels["combined_option_volume"],
-               "combined_option_volume", hard_fail)
+    _soft_gate(
+        criteria.get("avg_volume"),
+        config["min_avg_volume"],
+        config["near_miss_min_avg_volume"],
+        levels["avg_volume"],
+        "avg_volume",
+        hard_fail,
+    )
+    _soft_gate(
+        criteria.get("winrate"),
+        config["min_winrate"],
+        config["near_miss_min_winrate"],
+        levels["winrate"],
+        "winrate",
+        hard_fail,
+    )
+    _soft_gate(
+        criteria.get("iv_rv_ratio"),
+        config["min_iv_rv_ratio"],
+        config["near_miss_min_iv_rv_ratio"],
+        levels["iv_rv_ratio"],
+        "iv_rv_ratio",
+        hard_fail,
+    )
+    _soft_gate(
+        criteria.get("market_cap"),
+        config["min_market_cap"],
+        config["near_miss_min_market_cap"],
+        levels["market_cap"],
+        "market_cap",
+        hard_fail,
+    )
+    _soft_gate(
+        criteria.get("combined_option_volume"),
+        config["min_combined_option_volume"],
+        config["near_miss_min_combined_option_volume"],
+        levels["combined_option_volume"],
+        "combined_option_volume",
+        hard_fail,
+    )
 
 
 def apply_liquidity_gates(criteria: dict, config: dict, hard_fail: list) -> None:
@@ -752,7 +827,9 @@ def is_monthly_expiration(d) -> bool:
     return 15 <= d.day <= 21
 
 
-def nearest_expiration_at_least_days_after(expirations: list, after: object, min_days: int, monthly_only: bool = False):
+def nearest_expiration_at_least_days_after(
+    expirations: list, after: object, min_days: int, monthly_only: bool = False
+):
     """Nearest expiration that is at least `min_days` after `after`, optionally
     restricted to true monthly cycles (see is_monthly_expiration). Returns
     None if no candidate qualifies. `expirations` need not be pre-sorted.
@@ -780,14 +857,17 @@ def atm_entry(entries: list[dict], option_type: str, underlying_price: float) ->
     return min(matches, key=lambda e: abs(float(e["strike_price"]) - underlying_price))
 
 
-def nearest_strike_entry(entries: list[dict], option_type: str, target_strike: float, exclude_strike: float) -> dict | None:
+def nearest_strike_entry(
+    entries: list[dict], option_type: str, target_strike: float, exclude_strike: float
+) -> dict | None:
     """Like atm_entry, but targets an arbitrary strike (for wing/spread
     selection) and excludes a given strike so a degenerate zero-width
     spread can't be picked when strikes are sparse.
     """
     want = option_type[0].lower()
     matches = [
-        e for e in entries
+        e
+        for e in entries
         if str(e.get("option_type", "")).strip().lower().startswith(want)
         and float(e["strike_price"]) != exclude_strike
     ]
@@ -845,10 +925,21 @@ def fetch_quotes_by_symbol(underlying_symbol: str, expiration, option_symbols: l
     compute_generic_exit_debit) so no strategy re-implements its own
     quote-fetch-and-match logic for closing.
     """
-    chain = call_tt([
-        "get_option_chain", "--symbol", underlying_symbol, "--expiration", str(expiration),
-        "--include_quotes", "--include_greeks", "--strike_count", "999", "--around_price", str(price),
-    ])
+    chain = call_tt(
+        [
+            "get_option_chain",
+            "--symbol",
+            underlying_symbol,
+            "--expiration",
+            str(expiration),
+            "--include_quotes",
+            "--include_greeks",
+            "--strike_count",
+            "999",
+            "--around_price",
+            str(price),
+        ]
+    )
     if not chain.get("ok"):
         return {}
     entries = chain["chain"].get(str(expiration), [])
@@ -955,17 +1046,35 @@ def select_side(symbol: str, front_expiration, price: float, config: dict) -> di
     that would appear if comparing raw IV at dollar-distance strikes (price
     +/- expected_move) with unequal deltas.
     """
-    chain = call_tt([
-        "get_option_chain", "--symbol", symbol, "--expiration", str(front_expiration),
-        "--include_greeks", "--strike_count", "40", "--around_price", str(price),
-    ])
+    chain = call_tt(
+        [
+            "get_option_chain",
+            "--symbol",
+            symbol,
+            "--expiration",
+            str(front_expiration),
+            "--include_greeks",
+            "--strike_count",
+            "40",
+            "--around_price",
+            str(price),
+        ]
+    )
     if not chain.get("ok"):
         return {"ok": False, "error": chain.get("error", "get_option_chain failed")}
     entries = chain["chain"].get(str(front_expiration), [])
 
     target_delta = config.get("skew_delta_target", 0.25)
-    calls = [e for e in entries if str(e.get("option_type", "")).strip().lower().startswith("c") and e.get("delta") is not None]
-    puts = [e for e in entries if str(e.get("option_type", "")).strip().lower().startswith("p") and e.get("delta") is not None]
+    calls = [
+        e
+        for e in entries
+        if str(e.get("option_type", "")).strip().lower().startswith("c") and e.get("delta") is not None
+    ]
+    puts = [
+        e
+        for e in entries
+        if str(e.get("option_type", "")).strip().lower().startswith("p") and e.get("delta") is not None
+    ]
     if not calls or not puts:
         return {"ok": False, "error": "no greeks/delta data for skew measurement"}
 
@@ -1034,7 +1143,14 @@ def select_positions(ranked: list[dict], config: dict) -> dict:
     return {"selected": selected, "skipped": skipped}
 
 
-def run_candidate_scan(args_date: str, config: dict, fetch_criteria_fn, apply_tiering_fn, strategy_config: dict, extra_criteria_fn=None) -> dict:
+def run_candidate_scan(
+    args_date: str,
+    config: dict,
+    fetch_criteria_fn,
+    apply_tiering_fn,
+    strategy_config: dict,
+    extra_criteria_fn=None,
+) -> dict:
     """Shared cmd_get_candidates body: calendar fetch, per-symbol criteria
     (strategy-specific fetch_criteria_fn plus the common avg_volume/
     iv_rv_ratio/winrate signals), tiering, ranking, and position selection.
@@ -1074,15 +1190,17 @@ def run_candidate_scan(args_date: str, config: dict, fetch_criteria_fn, apply_ti
 
         tiering = apply_tiering_fn(criteria, strategy_config)
 
-        candidates.append({
-            "symbol": symbol,
-            "earnings_timing": entry["timing"],
-            "accepted": tiering["accepted"],
-            "reject_reasons": tiering["reject_reasons"],
-            "criteria": criteria,
-            "winrate_sample_size": winrate_sample_size,
-            "broker_data_error": broker_error,
-        })
+        candidates.append(
+            {
+                "symbol": symbol,
+                "earnings_timing": entry["timing"],
+                "accepted": tiering["accepted"],
+                "reject_reasons": tiering["reject_reasons"],
+                "criteria": criteria,
+                "winrate_sample_size": winrate_sample_size,
+                "broker_data_error": broker_error,
+            }
+        )
 
     candidates.sort(key=lambda c: 0 if c["accepted"] else 1)
 
@@ -1174,4 +1292,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

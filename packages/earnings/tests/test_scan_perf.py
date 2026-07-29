@@ -23,7 +23,10 @@ import strategy_test_runner as r
 def _fake_run(counter):
     def run(argv, capture_output, text, timeout):
         counter["n"] += 1
-        return types.SimpleNamespace(returncode=0, stdout=json.dumps({"ok": True, "argv": argv[2:]}), stderr="")
+        return types.SimpleNamespace(
+            returncode=0, stdout=json.dumps({"ok": True, "argv": argv[2:]}), stderr=""
+        )
+
     return run
 
 
@@ -70,8 +73,15 @@ def test_tt_cache_is_thread_local(monkeypatch):
 def _counting_winrate(counter):
     def compute(symbol, config, lookback_quarters=8):
         counter["n"] += 1
-        return {"ok": True, "symbol": symbol, "sample_size": lookback_quarters,
-                "winrate": 0.5, "quarters": [], "skipped": []}
+        return {
+            "ok": True,
+            "symbol": symbol,
+            "sample_size": lookback_quarters,
+            "winrate": 0.5,
+            "quarters": [],
+            "skipped": [],
+        }
+
     return compute
 
 
@@ -98,8 +108,8 @@ def test_winrate_memo_separates_symbol_lookback_and_as_of(monkeypatch):
     scanner.begin_tt_cache()
     try:
         scanner.compute_winrate("AAPL", {}, 12)
-        scanner.compute_winrate("MSFT", {}, 12)          # different symbol
-        scanner.compute_winrate("AAPL", {}, 8)           # different lookback
+        scanner.compute_winrate("MSFT", {}, 12)  # different symbol
+        scanner.compute_winrate("AAPL", {}, 8)  # different lookback
         scanner.compute_winrate("AAPL", {"_as_of_date": "2026-01-01"}, 12)  # test hook
     finally:
         scanner.end_tt_cache()
@@ -169,14 +179,18 @@ def _cfg(volume_floor=1_000_000, ivrv_floor=1.0, winrate_floor=0.4):
 
 def _stub_dolt(monkeypatch, avg, ivrv, winrate):
     monkeypatch.setattr(scanner, "fetch_avg_volume", lambda s, c: avg)
-    monkeypatch.setattr(scanner, "fetch_iv_rv_ratio", lambda s, c: {"ok": ivrv is not None, "iv_rv_ratio": ivrv})
+    monkeypatch.setattr(
+        scanner, "fetch_iv_rv_ratio", lambda s, c: {"ok": ivrv is not None, "iv_rv_ratio": ivrv}
+    )
     monkeypatch.setattr(scanner, "compute_winrate", lambda s, c, lb: {"winrate": winrate, "sample_size": 5})
 
 
 def test_dolt_only_hard_fails_flags_only_present_below_floor():
     sc = {"min_avg_volume": 1_000_000, "min_iv_rv_ratio": 1.0, "min_winrate": 0.4}
     assert rs._dolt_only_hard_fails(sc, 10_000, 2.0, 0.9) == ["avg_volume_below_minimum"]
-    assert rs._dolt_only_hard_fails(sc, None, 2.0, 0.9) == [], "a missing signal cannot be decided from Dolt alone"
+    assert rs._dolt_only_hard_fails(sc, None, 2.0, 0.9) == [], (
+        "a missing signal cannot be decided from Dolt alone"
+    )
     assert rs._dolt_only_hard_fails(sc, 5_000_000, 0.5, 0.9) == ["iv_rv_ratio_below_minimum"]
     assert rs._dolt_only_hard_fails(sc, 5_000_000, 2.0, 0.2) == ["winrate_below_minimum"]
     assert rs._dolt_only_hard_fails(sc, 5_000_000, 2.0, 0.9) == []

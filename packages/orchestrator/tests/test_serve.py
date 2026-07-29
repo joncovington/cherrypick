@@ -88,15 +88,19 @@ def test_md_to_html_renders_report_subset():
 
 def test_eod_card_links_metrics_analysis_digest_insight():
     eod = {
-        "session": "2026-07-16", "is_today": False,
+        "session": "2026-07-16",
+        "is_today": False,
         "modules": {"meic": {"ok": True, "net_pnl": -1.0, "trades": 1, "wins": 0, "losses": 1}},
-        "files": {"meic": "x"}, "analysis": {"meic": "xa"}, "digest": "d", "insight": "i",
+        "files": {"meic": "x"},
+        "analysis": {"meic": "xa"},
+        "digest": "d",
+        "insight": "i",
     }
     served = dashboard._eod_card_html(eod, serve=True)
-    assert "/eod-report?module=meic&amp;session=2026-07-16" in served       # metrics
-    assert "kind=analysis" in served                                        # analysis
-    assert "/eod-report?suite=1&amp;session=2026-07-16" in served           # digest
-    assert "/eod-report?insight=1&amp;session=2026-07-16" in served         # AI insight
+    assert "/eod-report?module=meic&amp;session=2026-07-16" in served  # metrics
+    assert "kind=analysis" in served  # analysis
+    assert "/eod-report?suite=1&amp;session=2026-07-16" in served  # digest
+    assert "/eod-report?insight=1&amp;session=2026-07-16" in served  # AI insight
     assert "AI insight" in served
 
     static = dashboard._eod_card_html(eod, serve=False)
@@ -426,13 +430,11 @@ def test_archived_report_text_reads_from_the_monthly_zip(tmp_path):
 
 
 def test_archived_report_text_misses_cleanly(tmp_path):
-    assert serve._archived_report_text(tmp_path, "meic", "paper-eod-2026-06-15.md",
-                                       "2026-06-15") is None
+    assert serve._archived_report_text(tmp_path, "meic", "paper-eod-2026-06-15.md", "2026-06-15") is None
     import zipfile
 
     month_dir = tmp_path / "archive" / "2026-06"
     month_dir.mkdir(parents=True)
     with zipfile.ZipFile(month_dir / "meic.zip", "w") as zf:
         zf.writestr("other-file.md", "x")
-    assert serve._archived_report_text(tmp_path, "meic", "paper-eod-2026-06-15.md",
-                                       "2026-06-15") is None
+    assert serve._archived_report_text(tmp_path, "meic", "paper-eod-2026-06-15.md", "2026-06-15") is None

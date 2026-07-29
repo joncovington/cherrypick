@@ -4,6 +4,7 @@ No real Claude invocation: the CLI call is behind injectable seams (`_claude_ava
 so these assert the gating (opt-in + feature-detected + needs reports), the success write path, and that
 the headless invocation forbids execution/edit/network tools.
 """
+
 import types
 
 import pytest

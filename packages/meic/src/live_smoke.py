@@ -43,8 +43,9 @@ _TT = [sys.executable, str(_SRC / "tt.py")]
 def _run_tt(args: list[str], timeout: int = 90) -> dict:
     """Run a tt.py command and parse its JSON. {"ok": False, "error"} on any failure."""
     try:
-        r = subprocess.run([*_TT, *args], capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=timeout)
+        r = subprocess.run(
+            [*_TT, *args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout
+        )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return {"ok": False, "error": f"tt.py {args[0]} failed to run: {exc}"}
     for line in reversed((r.stdout or "").strip().splitlines()):
@@ -107,25 +108,43 @@ def evaluate(result: dict, expect_account: str | None) -> list[dict]:
     def add(name, ok, detail):
         checks.append({"check": name, "ok": bool(ok), "detail": detail})
 
-    add("broker accepted the order (ok)", result.get("ok") is True,
-        result.get("error") or "preflight returned ok")
-    add("submission stayed a DRY RUN", result.get("dry_run") is True,
-        f"dry_run={result.get('dry_run')!r} — must be True")
+    add(
+        "broker accepted the order (ok)",
+        result.get("ok") is True,
+        result.get("error") or "preflight returned ok",
+    )
+    add(
+        "submission stayed a DRY RUN",
+        result.get("dry_run") is True,
+        f"dry_run={result.get('dry_run')!r} — must be True",
+    )
     bp = result.get("buying_power") or {}
     has_bp = any(v is not None for v in bp.values()) if isinstance(bp, dict) else False
-    add("preflight priced a buying-power effect", has_bp,
-        json.dumps(bp) if bp else "no buying_power fields in response")
+    add(
+        "preflight priced a buying-power effect",
+        has_bp,
+        json.dumps(bp) if bp else "no buying_power fields in response",
+    )
     acct = result.get("account_number")
     if expect_account:
-        add("ran against the designated account", acct == expect_account,
-            f"response account ...{str(acct)[-4:] if acct else '?'} vs designated ...{expect_account[-4:]}")
+        add(
+            "ran against the designated account",
+            acct == expect_account,
+            f"response account ...{str(acct)[-4:] if acct else '?'} vs designated ...{expect_account[-4:]}",
+        )
     else:
-        add("account designated", False,
-            "no designated account — run `cherrypick account --module meic --set <last4>` first")
+        add(
+            "account designated",
+            False,
+            "no designated account — run `cherrypick account --module meic --set <last4>` first",
+        )
     gov = result.get("governor")
     if gov is None:
-        add("deploy governor verdict (informational)", True,
-            "governor OFF (account_deploy_limit_pct=0) — set a positive % to exercise it")
+        add(
+            "deploy governor verdict (informational)",
+            True,
+            "governor OFF (account_deploy_limit_pct=0) — set a positive % to exercise it",
+        )
     else:
         add("deploy governor verdict (informational)", True, json.dumps(gov))
     return checks
@@ -136,6 +155,7 @@ def _designated_account() -> str | None:
         from cherrypick.core.auth import ACCOUNT_NUMBER, CredentialError
 
         from credentials import store
+
         try:
             return store.get_secret(ACCOUNT_NUMBER)
         except CredentialError:
@@ -149,8 +169,9 @@ def main() -> int:
     ap.add_argument("--symbol", default="XSP", help="0DTE index/ETF symbol (default XSP)")
     ap.add_argument("--quantity", type=int, default=1)
     ap.add_argument("--wing_width", type=float, default=None)
-    ap.add_argument("--yes", action="store_true",
-                    help="Skip the interactive confirmation (still a dry run, always)")
+    ap.add_argument(
+        "--yes", action="store_true", help="Skip the interactive confirmation (still a dry run, always)"
+    )
     args = ap.parse_args()
 
     print("== core.broker dry-run smoke (nothing will be placed) ==\n")
@@ -163,8 +184,10 @@ def main() -> int:
     print("      connected.")
 
     designated = _designated_account()
-    print(f"      designated account: "
-          f"{'****' + designated[-4:] if designated else 'NONE (evaluate() will flag this)'}")
+    print(
+        f"      designated account: "
+        f"{'****' + designated[-4:] if designated else 'NONE (evaluate() will flag this)'}"
+    )
 
     print(f"[2/4] scanning a 0DTE iron condor on {args.symbol}…")
     scan_args = ["get_strategies", "--symbol", args.symbol, "--target_dte", "0"]

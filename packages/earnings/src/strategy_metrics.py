@@ -77,7 +77,9 @@ def book_family_filter(profile: str, column: str = "profile"):
     return f"({column} = ? OR substr({column}, 1, ?) = ?)", [profile, len(prefix), prefix]
 
 
-def load_closed_trades(profile: str | None = None, strategy: str | None = None, since: str | None = None) -> list[dict]:
+def load_closed_trades(
+    profile: str | None = None, strategy: str | None = None, since: str | None = None
+) -> list[dict]:
     """Closed trades (dicts, parsed entry_context) ordered by closed_at,
     optionally filtered by profile/strategy/since (a scan_date-style
     'YYYY-MM-DD' or ISO timestamp string compared against opened_at's date).
@@ -111,8 +113,11 @@ def load_closed_trades(profile: str | None = None, strategy: str | None = None, 
         if since and t.get("opened_at"):
             from datetime import date as _date
             from datetime import datetime
+
             opened_date = datetime.fromtimestamp(t["opened_at"]).date()
-            since_date = _date.fromisoformat(since) if len(since) == 10 else datetime.fromisoformat(since).date()
+            since_date = (
+                _date.fromisoformat(since) if len(since) == 10 else datetime.fromisoformat(since).date()
+            )
             if opened_date < since_date:
                 continue
         trades.append(t)
@@ -284,11 +289,7 @@ def max_drawdown(trades: list[dict], capital_basis: float | None = None) -> dict
 
 
 def avg_hold_seconds(trades: list[dict]) -> float | None:
-    holds = [
-        t["closed_at"] - t["opened_at"]
-        for t in trades
-        if t.get("closed_at") and t.get("opened_at")
-    ]
+    holds = [t["closed_at"] - t["opened_at"] for t in trades if t.get("closed_at") and t.get("opened_at")]
     if not holds:
         return None
     return sum(holds) / len(holds)
@@ -310,6 +311,7 @@ def regime_buckets(trades: list[dict]) -> dict:
     each trade's stored entry_context, so a strategy's sample can be
     checked against the regimes it's actually designed for (e.g. iron_fly
     wants high IV/RV + low dispersion)."""
+
     def iv_band(ivrv):
         if ivrv is None:
             return "unknown"
@@ -362,7 +364,9 @@ def core_five(trades: list[dict], capital_basis: float | None = None) -> dict:
     }
 
 
-def winrate_backtest_agreement(paper_win_rate: float | None, backtest_win_rate: float | None, tolerance: float = 0.15) -> dict:
+def winrate_backtest_agreement(
+    paper_win_rate: float | None, backtest_win_rate: float | None, tolerance: float = 0.15
+) -> dict:
     """Whether paper win rate roughly agrees with the historical
     scanner.compute_winrate backtest for the same strategy/symbols --
     flags a strategy whose live paper behavior has drifted from its

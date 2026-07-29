@@ -79,8 +79,9 @@ def build_api_data(conn, day: str | None = None, arm: str | None = None) -> dict
     arm_filter = None if not arm or arm == "ALL" else arm
     overview = analytics.session_overview(conn, day)
 
-    arms = sorted({b["arm"] for b in overview["books"]} |
-                  {r["arm"] for r in analytics.by_arm(conn) if r["arm"]})
+    arms = sorted(
+        {b["arm"] for b in overview["books"]} | {r["arm"] for r in analytics.by_arm(conn) if r["arm"]}
+    )
     curves = {a: analytics.payoff_curve(conn, day, a) for a in arms} or {}
 
     return {
@@ -1049,8 +1050,7 @@ def _handler_for(db_path: str | None):
                 query = parse_qs(parsed.query)
                 conn = dbmod.connect(db_path)
                 try:
-                    payload = build_api_data(conn, query.get("date", [None])[0],
-                                             query.get("arm", [None])[0])
+                    payload = build_api_data(conn, query.get("date", [None])[0], query.get("arm", [None])[0])
                 except Exception as exc:  # a broken panel should not take the page down
                     payload = {"ok": False, "error": str(exc)}
                 finally:
@@ -1088,8 +1088,11 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="cherrypick-flies read-only dashboard")
     ap.add_argument("--port", type=int)
     ap.add_argument("--db")
-    ap.add_argument("--no-browser", action="store_true",
-                    help="don't open a browser tab on start (for headless/background launches)")
+    ap.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="don't open a browser tab on start (for headless/background launches)",
+    )
     ap.add_argument("--json", action="store_true", help="print one API payload and exit")
     args = ap.parse_args(argv)
 

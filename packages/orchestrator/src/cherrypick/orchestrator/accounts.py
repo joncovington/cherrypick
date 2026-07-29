@@ -106,6 +106,7 @@ def _context(cfg: dict[str, Any], module: str):
 
 def _shared_store() -> CredentialStore:
     from cherrypick.core.auth import SHARED_SERVICE
+
     return CredentialStore(SHARED_SERVICE)
 
 
@@ -138,8 +139,13 @@ def list_shared(cfg: dict[str, Any]) -> dict[str, Any]:
         }
         for a in accounts_list
     ]
-    return {"ok": True, "scope": "shared", "via_module": name, "accounts": rows,
-            "designated": mask_account(designated_full) if designated_full else None}
+    return {
+        "ok": True,
+        "scope": "shared",
+        "via_module": name,
+        "accounts": rows,
+        "designated": mask_account(designated_full) if designated_full else None,
+    }
 
 
 def set_shared_account(cfg: dict[str, Any], selector: str) -> dict[str, Any]:
@@ -170,6 +176,7 @@ def onboarding_status(cfg: dict[str, Any], store_factory=CredentialStore) -> dic
     model legible: an "own" entry overrides; "shared" means the module inherits the suite login.
     `store_factory` is injectable so tests never touch a real keyring."""
     from cherrypick.core.auth import REQUIRED_SECRETS, SHARED_SERVICE
+
     try:
         shared = store_factory(SHARED_SERVICE)
         shared_creds = all(shared.get_secret(k) for k in REQUIRED_SECRETS)
@@ -180,28 +187,34 @@ def onboarding_status(cfg: dict[str, Any], store_factory=CredentialStore) -> dic
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         service = cfgmod.module_keyring_service(mcfg, name)
         if not service:
-            modules.append({"module": name, "credentials": "n/a", "account": None,
-                            "account_source": None})
+            modules.append({"module": name, "credentials": "n/a", "account": None, "account_source": None})
             continue
         try:
             own = store_factory(service)  # plain store: measures the OWN layer, no fallback
             own_creds = all(own.get_secret(k) for k in REQUIRED_SECRETS)
             own_acct = own.get_secret(ACCOUNT_NUMBER)
         except CredentialError as exc:
-            modules.append({"module": name, "credentials": f"error: {exc}", "account": None,
-                            "account_source": None})
+            modules.append(
+                {"module": name, "credentials": f"error: {exc}", "account": None, "account_source": None}
+            )
             continue
         acct = own_acct or shared_acct
-        modules.append({
-            "module": name,
-            "credentials": "own" if own_creds else ("shared" if shared_creds else "missing"),
-            "account": mask_account(acct) if acct else None,
-            "account_source": "own" if own_acct else ("shared" if shared_acct else None),
-        })
-    return {"ok": True,
-            "shared": {"credentials": shared_creds,
-                       "account": mask_account(shared_acct) if shared_acct else None},
-            "modules": modules}
+        modules.append(
+            {
+                "module": name,
+                "credentials": "own" if own_creds else ("shared" if shared_creds else "missing"),
+                "account": mask_account(acct) if acct else None,
+                "account_source": "own" if own_acct else ("shared" if shared_acct else None),
+            }
+        )
+    return {
+        "ok": True,
+        "shared": {
+            "credentials": shared_creds,
+            "account": mask_account(shared_acct) if shared_acct else None,
+        },
+        "modules": modules,
+    }
 
 
 def list_accounts(cfg: dict[str, Any], module: str) -> dict[str, Any]:

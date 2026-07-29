@@ -49,9 +49,13 @@ def test_book_c_legged_flies_are_individually_risk_free():
             continue
         fees = fly.vertical_open_fee("SPX", 1) * 2
         position = {
-            "kind": "fly", "side": chain["side"], "center": chain["center"],
-            "wing_width": chain["wing_width"], "net": chain["expected_net"],
-            "quantity": chain["quantity"], "fees": fees,
+            "kind": "fly",
+            "side": chain["side"],
+            "center": chain["center"],
+            "wing_width": chain["wing_width"],
+            "net": chain["expected_net"],
+            "quantity": chain["quantity"],
+            "fees": fees,
         }
         assert fly.is_risk_free(position), f"{chain['label']} floor did not survive fees"
         floor = fly.position_floor(position)
@@ -64,9 +68,13 @@ def test_book_c_outright_fly_is_not_risk_free():
     rather than lumping it in with the legged ones."""
     chain = next(c for c in FIXTURES["book_c"]["chains"] if c["entry_mode"] == "outright")
     position = {
-        "kind": "fly", "side": chain["side"], "center": chain["center"],
-        "wing_width": chain["wing_width"], "net": chain["expected_net"],
-        "quantity": chain["quantity"], "fees": fly.fly_open_fee("SPX", 1),
+        "kind": "fly",
+        "side": chain["side"],
+        "center": chain["center"],
+        "wing_width": chain["wing_width"],
+        "net": chain["expected_net"],
+        "quantity": chain["quantity"],
+        "fees": fly.fly_open_fee("SPX", 1),
     }
     assert not fly.is_risk_free(position)
     assert fly.position_floor(position) < 0
@@ -74,8 +82,9 @@ def test_book_c_outright_fly_is_not_risk_free():
 
 def test_book_c_completing_direction_inverts_by_side():
     """The put fly completed as price rose; the call fly as price fell. Both real, both in one book."""
-    put_chain = next(c for c in FIXTURES["book_c"]["chains"]
-                     if c["side"] == "put" and c["entry_mode"] == "legged")
+    put_chain = next(
+        c for c in FIXTURES["book_c"]["chains"] if c["side"] == "put" and c["entry_mode"] == "legged"
+    )
     call_chain = next(c for c in FIXTURES["book_c"]["chains"] if c["side"] == "call")
     assert fly.completing_side_direction(put_chain["side"]) == "up"
     assert fly.completing_side_direction(call_chain["side"]) == "down"
@@ -104,8 +113,15 @@ def test_book_b_fly_expired_worthless():
     """The expected common case: the fly missed, and lost exactly its debit."""
     chain = FIXTURES["book_b"]["chains"][0]
     assert chain_pnl(chain["net"], chain["mark"]) == chain["expected_pnl"]
-    position = {"kind": "fly", "side": "put", "center": 6800, "wing_width": 5,
-                "net": chain["net"], "quantity": 1, "fees": 0.0}
+    position = {
+        "kind": "fly",
+        "side": "put",
+        "center": 6800,
+        "wing_width": 5,
+        "net": chain["net"],
+        "quantity": 1,
+        "fees": 0.0,
+    }
     # A fly bought for a debit and finishing outside its wings returns the debit as the loss.
     assert fly.position_pnl(position, 6700) == -10.0
 
@@ -115,10 +131,24 @@ def test_book_b_book_floor_is_not_unconditional():
     verticals is only 'risk-free' inside their wings, and `book_floor` has to report that rather than
     letting the green middle speak for the whole curve."""
     positions = [
-        {"kind": "fly", "side": "put", "center": 6800, "wing_width": 5, "net": -0.10,
-         "quantity": 1, "fees": 0.0},
-        {"kind": "short_vertical", "side": "put", "center": 6790, "wing_width": 5, "net": 3.35,
-         "quantity": 1, "fees": 0.0},
+        {
+            "kind": "fly",
+            "side": "put",
+            "center": 6800,
+            "wing_width": 5,
+            "net": -0.10,
+            "quantity": 1,
+            "fees": 0.0,
+        },
+        {
+            "kind": "short_vertical",
+            "side": "put",
+            "center": 6790,
+            "wing_width": 5,
+            "net": 3.35,
+            "quantity": 1,
+            "fees": 0.0,
+        },
     ]
     result = fly.book_floor(positions)
     assert result["unbounded_below"] is True

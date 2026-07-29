@@ -129,9 +129,7 @@ def main() -> None:
         raw["account_deploy_limit_pct"] = TEST_LIMIT_PCT
         cfg_path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
         # NOTE: no --live — dry run only. The core computes the governor verdict without submitting.
-        result = _run_tt(
-            root, ["src/tt.py", "execute_trade", "--order", json.dumps(order)], timeout=90
-        )
+        result = _run_tt(root, ["src/tt.py", "execute_trade", "--order", json.dumps(order)], timeout=90)
     finally:
         raw = json.loads(cfg_path.read_text(encoding="utf-8"))
         if prior is _MISSING:

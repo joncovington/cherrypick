@@ -112,6 +112,7 @@ def _core_env() -> dict[str, str]:
     import os
 
     import cherrypick.core.auth as _auth
+
     core_root = str(Path(_auth.__file__).resolve().parents[3])
     env = dict(os.environ)
     env["PYTHONPATH"] = core_root + os.pathsep + env.get("PYTHONPATH", "")
@@ -122,8 +123,7 @@ def _shared_setup() -> bool:
     """Hidden-input entry of the SHARED login, in a core child process with the tty inherited —
     the orchestrator never sees the bearer secrets, same fencing as the per-module tools."""
     print("\n[1/5] tastytrade login (stored ONCE, shared by every module; input hidden)")
-    proc = subprocess.run(
-        [cfgmod.python_exe(), "-m", "cherrypick.core.auth", "setup"], env=_core_env())
+    proc = subprocess.run([cfgmod.python_exe(), "-m", "cherrypick.core.auth", "setup"], env=_core_env())
     return proc.returncode == 0
 
 
@@ -154,14 +154,18 @@ def _offer_migration(cfg: dict[str, Any], prompt_fn=input) -> list[dict[str, Any
     results = []
     for service in with_copies:
         r = subprocess.run(
-            [cfgmod.python_exe(), "-m", "cherrypick.core.auth", "migrate",
-             "--from-service", service],
-            env=_core_env(), capture_output=True, text=True)
+            [cfgmod.python_exe(), "-m", "cherrypick.core.auth", "migrate", "--from-service", service],
+            env=_core_env(),
+            capture_output=True,
+            text=True,
+        )
         out = first_json(r.stdout) or {"ok": False, "error": "no output"}
         out["service"] = service
         if out.get("skipped_conflicts"):
-            print(f"      {service}: CONFLICT on {out['skipped_conflicts']} — shared holds a "
-                  "different value; resolve deliberately (see docs/onboarding-redesign.md).")
+            print(
+                f"      {service}: CONFLICT on {out['skipped_conflicts']} — shared holds a "
+                "different value; resolve deliberately (see docs/onboarding-redesign.md)."
+            )
         elif out.get("ok"):
             print(f"      {service}: migrated {out.get('migrated', [])}")
         else:
@@ -182,8 +186,10 @@ def _select_shared_account(cfg: dict[str, Any], prompt_fn=input) -> dict[str, An
         bits = [a["account"]] + [str(a[k]) for k in ("nickname", "type") if a.get(k)]
         print(f"      {i}) {'  '.join(bits)}{mark}")
         if "ira" in str(a.get("type") or "").lower():
-            print("         note: this is an IRA — confirm your options approval level covers "
-                  "defined-risk spreads.")
+            print(
+                "         note: this is an IRA — confirm your options approval level covers "
+                "defined-risk spreads."
+            )
     choice = prompt_fn("      Enter a number to designate (Enter to leave unset): ").strip()
     if not choice:
         print("      left unchanged.")
@@ -202,6 +208,7 @@ def _offer_webhooks(prompt_fn=input) -> None:
     import getpass
 
     from cherrypick.notify import secrets as notify_secrets
+
     print("\n[4/5] notifications (optional; log + desktop work with no secret. Enter to skip)")
     for channel in notify_secrets.SUPPORTED:
         url = getpass.getpass(f"      {channel} webhook URL (hidden, Enter to skip): ").strip()

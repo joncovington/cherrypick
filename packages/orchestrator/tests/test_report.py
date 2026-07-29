@@ -219,10 +219,14 @@ def test_report_open_positions_degrade_on_legacy_schema(tmp_path):
     cfg = _cfg(tmp_path)
     _meic_db(tmp_path / "meic" / "paper.db", [])
     conn = sqlite3.connect(tmp_path / "earn" / "paper.db")
-    conn.execute("CREATE TABLE trades (order_id INTEGER PRIMARY KEY, symbol TEXT, profile TEXT, "
-                 "strategy TEXT, pnl REAL, entry_cost REAL, exit_cost REAL, closed_at REAL)")
-    conn.execute("INSERT INTO trades (symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at) "
-                 "VALUES ('AAPL','strat_test','iron_fly',40.0,3.0,3.0,1699000000.0)")
+    conn.execute(
+        "CREATE TABLE trades (order_id INTEGER PRIMARY KEY, symbol TEXT, profile TEXT, "
+        "strategy TEXT, pnl REAL, entry_cost REAL, exit_cost REAL, closed_at REAL)"
+    )
+    conn.execute(
+        "INSERT INTO trades (symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at) "
+        "VALUES ('AAPL','strat_test','iron_fly',40.0,3.0,3.0,1699000000.0)"
+    )
     conn.commit()
     conn.close()
 
@@ -243,9 +247,12 @@ def test_eod_digest_surfaces_opened_positions_on_a_pure_entry_day(tmp_path, monk
     open_session = report._session_from_epoch(open_ep)
     _meic_db(tmp_path / "meic" / "paper.db", [])  # 0DTE, flat by the bell
     _earnings_db(
-        tmp_path / "earn" / "paper.db", rows=[],
-        open_rows=[("DHI", "strat_test", "iron_fly", 1480.0, open_ep),
-                   ("SCHW", "strat_test", "iron_fly", 748.0, open_ep)],
+        tmp_path / "earn" / "paper.db",
+        rows=[],
+        open_rows=[
+            ("DHI", "strat_test", "iron_fly", 1480.0, open_ep),
+            ("SCHW", "strat_test", "iron_fly", 748.0, open_ep),
+        ],
     )
 
     md = eod_digest.build_markdown(cfg, open_session, rep=report.run(cfg, session=open_session))
@@ -327,11 +334,13 @@ def test_eod_digest_snapshot_all_negative_session(tmp_path, monkeypatch):
     monkeypatch.setattr(cfgmod, "LOGS_DIR", tmp_path / "logs")
     cfg = _cfg(tmp_path)
     from datetime import datetime
+
     closed_at = datetime(2026, 7, 10, 12, 0).timestamp()  # settles on the 2026-07-10 session
     # meic loses less than earnings; both red.
     _meic_db(tmp_path / "meic" / "paper.db", [("SPX", "c", -100.0, 5.0, "2026-07-10T15:45")])
-    _earnings_db(tmp_path / "earn" / "paper.db",
-                 [("AAPL", "strat_test", "iron_fly", -200.0, 3.0, 3.0, closed_at)])
+    _earnings_db(
+        tmp_path / "earn" / "paper.db", [("AAPL", "strat_test", "iron_fly", -200.0, 3.0, 3.0, closed_at)]
+    )
 
     md = eod_digest.build_markdown(cfg, "2026-07-10", rep=report.run(cfg, session="2026-07-10"))
     assert "No module finished green" in md

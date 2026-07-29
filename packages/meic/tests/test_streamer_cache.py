@@ -3,6 +3,7 @@
 No live network, no streamer process — all tests seed a temp SQLite DB
 and call functions directly.
 """
+
 from __future__ import annotations
 
 import json
@@ -29,6 +30,7 @@ _DDL = _streamer.streamcache.DDL
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_db() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -44,6 +46,7 @@ def _make_db() -> sqlite3.Connection:
 def _handler(db_path: str) -> _streamer._ApiHandler:
     """Return a handler instance whose _db() opens the given file DB."""
     h = object.__new__(_streamer._ApiHandler)
+
     # The handler splits market-data reads (_market_db, the shared cache) from REST-cache reads
     # (_rest_db, MEIC's own cache). Point both at the test's temp file DB so these tests exercise the
     # readers against known data.
@@ -51,6 +54,7 @@ def _handler(db_path: str) -> _streamer._ApiHandler:
         c = sqlite3.connect(db_path, check_same_thread=False)
         c.row_factory = sqlite3.Row
         return c
+
     h._market_db = _db_override
     h._rest_db = _db_override
     return h
@@ -75,6 +79,7 @@ def _make_file_db() -> tuple[sqlite3.Connection, str]:
 # REST cache helpers
 # ---------------------------------------------------------------------------
 
+
 class TestSidecarDbSeparation:
     """The cutover invariant: the sidecar's REST poller must write MEIC's OWN cache, never the shared
     market-data cache (which the standalone streamer is the sole writer of). A regression here would put
@@ -92,6 +97,7 @@ class TestSidecarDbSeparation:
         monkeypatch.setattr(_streamer, "_SIDECAR_PID", tmp_path / "sidecar.pid")
         import io
         from contextlib import redirect_stdout
+
         buf = io.StringIO()
         with redirect_stdout(buf):
             _streamer._cmd_sidecar_status()
@@ -141,6 +147,7 @@ class TestRestCache:
 # ---------------------------------------------------------------------------
 # Sync get_quote
 # ---------------------------------------------------------------------------
+
 
 class TestSyncGetQuote:
     def setup_method(self):
@@ -211,10 +218,12 @@ class TestSyncGetOptionChain:
             for otype in ("C", "P"):
                 strike = strikes[k % len(strikes)]
                 sym = f".XSP260630{otype}{strike}"
-                opt = {**_SAMPLE_OPTION,
-                       "streamer_symbol": sym,
-                       "option_type": otype,
-                       "strike_price": str(strike)}
+                opt = {
+                    **_SAMPLE_OPTION,
+                    "streamer_symbol": sym,
+                    "option_type": otype,
+                    "strike_price": str(strike),
+                }
                 self.conn.execute(
                     "INSERT INTO stream_chain (streamer_symbol, expiration, underlying_symbol, data_json, updated_at) "
                     "VALUES (?, ?, ?, ?, ?) ON CONFLICT(streamer_symbol) DO UPDATE SET "
@@ -258,8 +267,10 @@ class TestSyncGetOptionChain:
 
     def test_chain_with_quotes(self):
         self._seed_chain(4)
-        syms = [row["streamer_symbol"]
-                for row in self.conn.execute("SELECT streamer_symbol FROM stream_chain").fetchall()]
+        syms = [
+            row["streamer_symbol"]
+            for row in self.conn.execute("SELECT streamer_symbol FROM stream_chain").fetchall()
+        ]
         self._seed_quotes(syms)
         result = self.h._sync_get_option_chain({"symbol": "XSP", "include_quotes": True})
         assert result is not None
@@ -268,16 +279,20 @@ class TestSyncGetOptionChain:
 
     def test_partial_quotes_returns_none(self):
         self._seed_chain(4)
-        syms = [row["streamer_symbol"]
-                for row in self.conn.execute("SELECT streamer_symbol FROM stream_chain").fetchall()]
+        syms = [
+            row["streamer_symbol"]
+            for row in self.conn.execute("SELECT streamer_symbol FROM stream_chain").fetchall()
+        ]
         self._seed_quotes(syms[:2])  # only half the symbols
         result = self.h._sync_get_option_chain({"symbol": "XSP", "include_quotes": True})
         assert result is None
 
     def test_chain_with_greeks(self):
         self._seed_chain(4)
-        syms = [row["streamer_symbol"]
-                for row in self.conn.execute("SELECT streamer_symbol FROM stream_chain").fetchall()]
+        syms = [
+            row["streamer_symbol"]
+            for row in self.conn.execute("SELECT streamer_symbol FROM stream_chain").fetchall()
+        ]
         self._seed_greeks(syms)
         result = self.h._sync_get_option_chain({"symbol": "XSP", "include_greeks": True})
         assert result is not None
@@ -286,9 +301,7 @@ class TestSyncGetOptionChain:
 
     def test_stale_chain_returns_none(self):
         self._seed_chain()
-        self.conn.execute(
-            "UPDATE stream_chain SET updated_at = ?", (time.time() - 5 * 3600,)
-        )
+        self.conn.execute("UPDATE stream_chain SET updated_at = ?", (time.time() - 5 * 3600,))
         self.conn.commit()
         result = self.h._sync_get_option_chain({"symbol": "XSP"})
         assert result is None
@@ -297,6 +310,7 @@ class TestSyncGetOptionChain:
 # ---------------------------------------------------------------------------
 # Sync get_strategies
 # ---------------------------------------------------------------------------
+
 
 class TestSyncGetStrategies:
     def setup_method(self):
@@ -314,8 +328,8 @@ class TestSyncGetStrategies:
         legs = [
             (".XSP260630P585", "P", 585, -0.10),
             (".XSP260630P590", "P", 590, -0.15),
-            (".XSP260630C595", "C", 595,  0.15),
-            (".XSP260630C600", "C", 600,  0.10),
+            (".XSP260630C595", "C", 595, 0.15),
+            (".XSP260630C600", "C", 600, 0.10),
         ]
         for sym, otype, strike, delta in legs:
             opt = {
@@ -379,9 +393,7 @@ class TestSyncGetStrategies:
         # Greeks use a 2700s (45-min) TTL here, not the 10s quote/trade TTL — DXLink
         # publishes Greeks in infrequent batches, not tick-by-tick. Backdate past
         # that window so the cache is treated as having no valid greeks.
-        self.conn.execute(
-            "UPDATE stream_greeks SET updated_at = ?", (time.time() - 2701,)
-        )
+        self.conn.execute("UPDATE stream_greeks SET updated_at = ?", (time.time() - 2701,))
         self.conn.commit()
         result = self.h._sync_get_strategies({"symbol": "XSP", "wing_width": 1, "short_delta": 0.15})
         assert result is None
@@ -390,6 +402,7 @@ class TestSyncGetStrategies:
 # ---------------------------------------------------------------------------
 # Multi-symbol config resolution
 # ---------------------------------------------------------------------------
+
 
 class TestConfiguredSymbols:
     def test_symbols_list_uppercased(self):
@@ -405,9 +418,10 @@ class TestConfiguredSymbols:
         assert _streamer._configured_symbols({}) == ["XSP"]
 
     def test_cli_override_takes_precedence(self):
-        assert _streamer._configured_symbols(
-            {"symbols": ["XSP"]}, cli_override=["spx", "ndx"]
-        ) == ["SPX", "NDX"]
+        assert _streamer._configured_symbols({"symbols": ["XSP"]}, cli_override=["spx", "ndx"]) == [
+            "SPX",
+            "NDX",
+        ]
 
     def test_blank_entries_filtered(self):
         assert _streamer._configured_symbols({"symbols": ["XSP", " ", "SPX"]}) == ["XSP", "SPX"]
@@ -416,6 +430,7 @@ class TestConfiguredSymbols:
 # ---------------------------------------------------------------------------
 # Multi-symbol subscription resolution
 # ---------------------------------------------------------------------------
+
 
 class TestResolveSubscriptionsMultiSymbol:
     def test_trade_subscribes_every_symbol(self):
@@ -436,6 +451,7 @@ class TestResolveSubscriptionsMultiSymbol:
 # Multi-symbol cache isolation — two symbols' chains must never cross-contaminate
 # ---------------------------------------------------------------------------
 
+
 class TestMultiSymbolChainIsolation:
     def setup_method(self):
         self.conn, self.path = _make_file_db()
@@ -451,8 +467,10 @@ class TestMultiSymbolChainIsolation:
             for otype in ("C", "P"):
                 sym = f".{underlying}260630{otype}{int(strike)}"
                 opt = {
-                    "streamer_symbol": sym, "option_type": otype,
-                    "strike_price": str(strike), "expiration_date": self.exp,
+                    "streamer_symbol": sym,
+                    "option_type": otype,
+                    "strike_price": str(strike),
+                    "expiration_date": self.exp,
                     "shares_per_contract": 100,
                 }
                 self.conn.execute(

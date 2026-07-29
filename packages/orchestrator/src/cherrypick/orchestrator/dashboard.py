@@ -330,10 +330,16 @@ def _equity_card_payload(cfg: dict[str, Any], pnl: dict[str, Any]) -> dict[str, 
         "ok": True,
         "subtitle": f"{len(labels)} sessions · cumulative net P&L (paper, net of modeled costs)",
         "metrics": [
-            {"label": "Net", "value": viz.fmt_money(suite.get("net_pnl")),
-             "tone": "pos" if (suite.get("net_pnl") or 0) >= 0 else "neg"},
-            {"label": "At 2x slippage", "value": viz.fmt_money(suite.get("net_pnl_2x_slippage")),
-             "tone": "pos" if (suite.get("net_pnl_2x_slippage") or 0) >= 0 else "neg"},
+            {
+                "label": "Net",
+                "value": viz.fmt_money(suite.get("net_pnl")),
+                "tone": "pos" if (suite.get("net_pnl") or 0) >= 0 else "neg",
+            },
+            {
+                "label": "At 2x slippage",
+                "value": viz.fmt_money(suite.get("net_pnl_2x_slippage")),
+                "tone": "pos" if (suite.get("net_pnl_2x_slippage") or 0) >= 0 else "neg",
+            },
             {"label": "Best day", "value": viz.fmt_money(best["net_pnl"]), "tone": "pos"},
             {"label": "Worst day", "value": viz.fmt_money(worst["net_pnl"]), "tone": "neg"},
         ],
@@ -777,9 +783,7 @@ def _liveops_card_html() -> str:
     isolation check whose designated-account listing IS the live book, broker-truth
     (via /api/reconcile — broker-touching, so on load / button only, never an interval)."""
     return (
-        '<section class="card" data-rkey="live-ops"><h2>live ops '
-        + _pill("GATES PHASE 5", "INFO")
-        + "</h2>"
+        '<section class="card" data-rkey="live-ops"><h2>live ops ' + _pill("GATES PHASE 5", "INFO") + "</h2>"
         '<div class="liveops-body" data-cp-liveops data-endpoint="/api/liveops">'
         '<span class="muted">reading kill switches…</span></div>'
         + _reconcile_subsection_html()
@@ -1096,8 +1100,10 @@ def _embed_cards_html(embed_views: list[dict[str, Any]]) -> str:
         )
     # data-cp-reorder-defer: iframes are heavy — moving one mid-drag reloads it, so the shared
     # reorder JS applies the move once, on drop.
-    return ('<div class="embed-grid" data-cp-reorder="embeds" data-cp-reorder-items=".card" '
-            'data-cp-reorder-defer>' + "".join(cards) + "</div>")
+    return (
+        '<div class="embed-grid" data-cp-reorder="embeds" data-cp-reorder-items=".card" '
+        "data-cp-reorder-defer>" + "".join(cards) + "</div>"
+    )
 
 
 _CAL_CSS = (
@@ -1155,13 +1161,13 @@ def _calibration_progress_html(module_views: list[dict[str, Any]]) -> str:
                         f'<span class="cpg-bar"><span class="cpg-fill{" ok" if passed else ""}" '
                         f'style="width:{frac * 100:.0f}%"></span></span>'
                         f'<span class="cpg-v">{html.escape(_fmt_check_val(value))} / '
-                        f'{html.escape(_fmt_check_val(threshold))}</span></div>'
+                        f"{html.escape(_fmt_check_val(threshold))}</span></div>"
                     )
                 else:  # non-numeric bar (e.g. slippage survival): a pass/fail chip
                     bars.append(
                         f'<div class="cpg"><span>{html.escape(cname)}</span>'
                         f'<span class="cpg-chip {"ok" if passed else "no"}">'
-                        f'{"PASS" if passed else "FAIL"}</span>'
+                        f"{'PASS' if passed else 'FAIL'}</span>"
                         f'<span class="cpg-v">{html.escape(_fmt_check_val(value))}</span></div>'
                     )
             verdict = rec.get("recommendation") or "—"
@@ -1174,8 +1180,11 @@ def _calibration_progress_html(module_views: list[dict[str, Any]]) -> str:
             blocks.append(f'<div class="cpg-mod"><h3>{html.escape(mv["name"])}</h3>{"".join(rows)}</div>')
     if not blocks:
         return ""
-    return ('<section class="card"><h2>calibration — progress toward promotion</h2>'
-            + "".join(blocks) + "</section>")
+    return (
+        '<section class="card"><h2>calibration — progress toward promotion</h2>'
+        + "".join(blocks)
+        + "</section>"
+    )
 
 
 def _render_html(model: dict[str, Any], serve: bool = False) -> str:
@@ -1235,7 +1244,8 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     # (serve mode with embeds configured) omit the summary grid as redundant. The static file render
     # has no embeds, so it keeps the grid as the only per-module P&L view.
     module_grid = (
-        "" if embeds_shown
+        ""
+        if embeds_shown
         else f'<div class="grid" data-cp-reorder="modules" data-cp-reorder-items=".card">{cards}</div>'
     )
     # The suite equity curve and calibration progression render in BOTH modes: the equity
@@ -1243,20 +1253,16 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     # that exists when nobody is watching — finally has a chart without needing a server.
     equity_card = ""
     if model.get("equity_card"):
-        equity_card = viz.card_inline_html("suite-equity", "suite equity — paper",
-                                           model["equity_card"])
+        equity_card = viz.card_inline_html("suite-equity", "suite equity — paper", model["equity_card"])
     calibration_card = _calibration_progress_html(model.get("modules", []))
     extra_style = viz.SECTION_STYLE + _CAL_CSS
-    extra_script = viz.SECTION_JS + viz.REORDER_JS + (
-        _DOCTOR_JS + _LIVEOPS_JS + _RECONCILE_JS if serve else ""
+    extra_script = (
+        viz.SECTION_JS + viz.REORDER_JS + (_DOCTOR_JS + _LIVEOPS_JS + _RECONCILE_JS if serve else "")
     )
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>cherrypick status</title><style>"
-        + _CSS
-        + extra_style
-        + "</style></head><body>"
+        "<title>cherrypick status</title><style>" + _CSS + extra_style + "</style></head><body>"
         "<div class='wrap' data-cp-reorder='sections' data-cp-reorder-items='.card' "
         "data-cp-reorder-store='cherrypick-dash-layout-v1'>"
         + header

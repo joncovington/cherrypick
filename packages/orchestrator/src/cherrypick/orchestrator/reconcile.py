@@ -118,8 +118,9 @@ def _designated_numbers(cfg: dict[str, Any]) -> set[str]:
     return out
 
 
-def _account_entry(root, number: str | None, designated: set[str],
-                   tool: list[str] | None = None) -> dict[str, Any]:
+def _account_entry(
+    root, number: str | None, designated: set[str], tool: list[str] | None = None
+) -> dict[str, Any]:
     """Positions (+ best-effort balances) for one account. `number` None = the module's default account
     (used only as a fallback when `list_accounts` yields nothing). The full number is passed to the
     broker query and matched against the designated set, but only the masked form is ever returned."""

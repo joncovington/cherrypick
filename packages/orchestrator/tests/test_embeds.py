@@ -66,8 +66,12 @@ def test_ensure_server_recycles_a_reachable_port_it_did_not_launch(tmp_path, mon
 
     monkeypatch.setattr(embeds, "_recycle_port", _rec)
     monkeypatch.setattr(embeds, "_launch_detached", _launch)
-    emb = {"id": "gex", "path": str(module), "port": 8802,
-           "serve_argv": ["run.py", "dashboard", "--serve", "--port", "{port}"]}
+    emb = {
+        "id": "gex",
+        "path": str(module),
+        "port": 8802,
+        "serve_argv": ["run.py", "dashboard", "--serve", "--port", "{port}"],
+    }
     res = embeds.ensure_server(emb, wait_seconds=1)
     assert calls["recycled"] == 8802
     assert calls["launched"] == ["run.py", "dashboard", "--serve", "--port", "8802"]
@@ -80,13 +84,17 @@ def test_recycle_servers_targets_only_reachable_server_embeds(monkeypatch):
     session's orphan). Static embeds and down ports are left alone."""
     killed = []
     monkeypatch.setattr(embeds, "_port_reachable", lambda h, p: p in (8801, 8802))
-    monkeypatch.setattr(embeds, "_recycle_port", lambda h, p: (killed.append(p) or True))
-    cfg = {"dashboard": {"embeds": [
-        {"id": "meic", "enabled": True, "kind": "server", "port": 8801},
-        {"id": "gex", "enabled": True, "kind": "server", "port": 8802},
-        {"id": "earnings", "enabled": True, "kind": "static"},        # static -> never recycled
-        {"id": "off", "enabled": False, "kind": "server", "port": 9999},  # disabled -> skipped
-    ]}}
+    monkeypatch.setattr(embeds, "_recycle_port", lambda h, p: killed.append(p) or True)
+    cfg = {
+        "dashboard": {
+            "embeds": [
+                {"id": "meic", "enabled": True, "kind": "server", "port": 8801},
+                {"id": "gex", "enabled": True, "kind": "server", "port": 8802},
+                {"id": "earnings", "enabled": True, "kind": "static"},  # static -> never recycled
+                {"id": "off", "enabled": False, "kind": "server", "port": 9999},  # disabled -> skipped
+            ]
+        }
+    }
     assert sorted(embeds.recycle_servers(cfg)) == ["gex", "meic"]
     assert sorted(killed) == [8801, 8802]
 
@@ -94,7 +102,7 @@ def test_recycle_servers_targets_only_reachable_server_embeds(monkeypatch):
 def test_recycle_servers_skips_ports_with_nothing_listening(monkeypatch):
     killed = []
     monkeypatch.setattr(embeds, "_port_reachable", lambda h, p: False)
-    monkeypatch.setattr(embeds, "_recycle_port", lambda h, p: (killed.append(p) or True))
+    monkeypatch.setattr(embeds, "_recycle_port", lambda h, p: killed.append(p) or True)
     cfg = {"dashboard": {"embeds": [{"id": "gex", "enabled": True, "kind": "server", "port": 8802}]}}
     assert embeds.recycle_servers(cfg) == []
     assert killed == []  # never kill a port that has nothing on it

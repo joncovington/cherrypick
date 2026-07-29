@@ -27,8 +27,9 @@ def env(tmp_path, monkeypatch):
     # Known-module defaults now resolve a keyring service for "meic" — stub the keyring
     # surfaces so unit tests never touch the real credential store.
     monkeypatch.setattr(liveops.accounts, "keyring_store", lambda cfg, name: None)
-    monkeypatch.setattr(liveops.accounts, "onboarding_status",
-                        lambda cfg: {"ok": True, "shared": {}, "modules": []})
+    monkeypatch.setattr(
+        liveops.accounts, "onboarding_status", lambda cfg: {"ok": True, "shared": {}, "modules": []}
+    )
     cfg = {
         "modules": {
             "meic": {"enabled": True, "path": str(tmp_path / "meic")},

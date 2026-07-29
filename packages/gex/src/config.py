@@ -15,7 +15,7 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent          # repo root (holds config.json / run.py)
+ROOT = Path(__file__).resolve().parent.parent  # repo root (holds config.json / run.py)
 CONFIG_PATH = ROOT / "config.json"
 EXAMPLE_PATH = ROOT / "config.example.json"
 
@@ -72,7 +72,8 @@ def load() -> dict:
     # below stays gex-owned (data/gex) — that one is this module's, not shared.
     marketdata = _home.data_dir("marketdata")
     cfg["stream_cache_db"] = (
-        _resolve(base, src["stream_cache_db"]) if src.get("stream_cache_db")
+        _resolve(base, src["stream_cache_db"])
+        if src.get("stream_cache_db")
         else marketdata / "stream_cache.db"
     )
     cfg["history_db_path"] = (

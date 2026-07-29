@@ -2,6 +2,7 @@
 
 No broker, no subprocess — the harness's only live behavior is the supervised run itself.
 """
+
 from __future__ import annotations
 
 import sys

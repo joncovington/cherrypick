@@ -109,18 +109,22 @@ def build_paper_eod(conn, day: str) -> str:
         L.append("| arm | trades | net | win rate | fee drag |")
         L.append("|---|---|---|---|---|")
         for a in arms:
-            L.append(f"| {a['arm']} | {a['trades']} | {_money(a['net_pnl'])} | "
-                     f"{_pct(a['win_rate'])} | {_drag(a['fee_drag_pct'])} |")
+            L.append(
+                f"| {a['arm']} | {a['trades']} | {_money(a['net_pnl'])} | "
+                f"{_pct(a['win_rate'])} | {_drag(a['fee_drag_pct'])} |"
+            )
     else:
         L.append("_Nothing settled today._")
     if excluded["trades"]:
         # Stated, not implied: without this the table simply sums to less than Session P&L above.
         L.append("")
-        L.append(f"_Compares {'/'.join(analytics.COMPARISON_ENTRY_MODES)} entries only. "
-                 f"Excludes {excluded['trades']} "
-                 f"{'/'.join(excluded['excluded_modes'])} position(s) worth "
-                 f"{_money(excluded['net_pnl'])}, which only some arms ever traded — they are in "
-                 f"Session P&L above and in the entry-mode breakdown, just not in this ranking._")
+        L.append(
+            f"_Compares {'/'.join(analytics.COMPARISON_ENTRY_MODES)} entries only. "
+            f"Excludes {excluded['trades']} "
+            f"{'/'.join(excluded['excluded_modes'])} position(s) worth "
+            f"{_money(excluded['net_pnl'])}, which only some arms ever traded — they are in "
+            f"Session P&L above and in the entry-mode breakdown, just not in this ranking._"
+        )
     L.append("")
 
     if windows:
@@ -128,8 +132,7 @@ def build_paper_eod(conn, day: str) -> str:
         L.append("| window | trades | net | win rate |")
         L.append("|---|---|---|---|")
         for w in windows:
-            L.append(f"| {w['window']} | {w['trades']} | {_money(w['net_pnl'])} | "
-                     f"{_pct(w['win_rate'])} |")
+            L.append(f"| {w['window']} | {w['trades']} | {_money(w['net_pnl'])} | {_pct(w['win_rate'])} |")
         L.append("")
 
     L.append("## Arm divergence")
@@ -148,15 +151,14 @@ def build_paper_eod(conn, day: str) -> str:
 def _completion_paragraph(completion: dict) -> str:
     legged, completed = completion["legged_entries"], completion["completed"]
     if not legged:
-        return ("No legged entries today, so there is nothing to say about completion yet. That is "
-                "the measurement the whole module exists to take, and a day without one is a day "
-                "without data — worth checking the decision journal for what gated the entries.")
+        return (
+            "No legged entries today, so there is nothing to say about completion yet. That is "
+            "the measurement the whole module exists to take, and a day without one is a day "
+            "without data — worth checking the decision journal for what gated the entries."
+        )
 
     rate = completion["completion_rate"] or 0
-    parts = [
-        f"{completed} of {legged} legged entries completed into a butterfly "
-        f"({rate * 100:.0f}%)."
-    ]
+    parts = [f"{completed} of {legged} legged entries completed into a butterfly ({rate * 100:.0f}%)."]
     if completed:
         parts.append(
             f"The ones that did took a median of {_num(completion['median_latency_min'], 1)} minutes "
@@ -217,8 +219,11 @@ def _floor_paragraph(books: list[dict]) -> str:
             "strategy makes, and on this book it is true rather than merely marketed."
         )
     for b in bounded:
-        band = ("no profitable band at all" if b["band_low"] is None
-                else f"profitable only between {b['band_low']:.0f} and {b['band_high']:.0f}")
+        band = (
+            "no profitable band at all"
+            if b["band_low"] is None
+            else f"profitable only between {b['band_low']:.0f} and {b['band_high']:.0f}"
+        )
         parts.append(
             f"The {b['arm']} book is {band}, worst case {_money(b['worst'])} around "
             f"{_num(b['worst_at'], 0)}. Its risk graph may look green across the middle, but it is "
@@ -230,11 +235,15 @@ def _floor_paragraph(books: list[dict]) -> str:
 
 def _divergence_paragraph(divergence: dict) -> str:
     if not divergence["iterations"]:
-        return ("Not enough iterations to compare what the arms wanted. Once there are, this is where "
-                "we find out whether the comparison can answer anything at all.")
+        return (
+            "Not enough iterations to compare what the arms wanted. Once there are, this is where "
+            "we find out whether the comparison can answer anything at all."
+        )
     rate = divergence["all_agree_rate"] or 0
-    body = (f"Across {divergence['iterations']} iterations the arms picked the same centre "
-            f"{rate * 100:.0f}% of the time.")
+    body = (
+        f"Across {divergence['iterations']} iterations the arms picked the same centre "
+        f"{rate * 100:.0f}% of the time."
+    )
     if rate > 0.8:
         return body + (
             " That is high agreement, and it is a problem for the experiment rather than a happy "
@@ -252,8 +261,10 @@ def _divergence_paragraph(divergence: dict) -> str:
 def _cost_paragraph(stats: dict, arms: list[dict]) -> str:
     if not stats["trades"]:
         return "Nothing settled, so there is no cost picture yet."
-    parts = [f"Fees took {_money(stats['fees'])} against {_money(stats['gross_pnl'])} of gross, "
-             f"a drag of {_drag(stats['fee_drag_pct'])}."]
+    parts = [
+        f"Fees took {_money(stats['fees'])} against {_money(stats['gross_pnl'])} of gross, "
+        f"a drag of {_drag(stats['fee_drag_pct'])}."
+    ]
     worst = [a for a in arms if (a["fee_drag_pct"] or 0) > 30]
     if worst:
         names = ", ".join(a["arm"] for a in worst)

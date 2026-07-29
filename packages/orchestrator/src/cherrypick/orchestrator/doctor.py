@@ -146,15 +146,24 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     # everywhere except earnings' scanner — the confirmed onboarding-redesign decision.
     try:
         from . import accounts as _accounts
+
         ob = _accounts.onboarding_status(cfg)
         if ob.get("ok"):
             missing = [m["module"] for m in ob["modules"] if m["credentials"] == "missing"]
-            parts = [f"{m['module']}: creds {m['credentials']}"
-                     + (f", account {m['account']} ({m['account_source']})" if m["account"] else "")
-                     for m in ob["modules"] if m["credentials"] != "n/a"]
+            parts = [
+                f"{m['module']}: creds {m['credentials']}"
+                + (f", account {m['account']} ({m['account_source']})" if m["account"] else "")
+                for m in ob["modules"]
+                if m["credentials"] != "n/a"
+            ]
             detail = "; ".join(parts) or "no modules with a keyring service"
-            checks.append(Check("onboarding", WARN if missing else OK,
-                                detail + (" — run `cherrypick connect`" if missing else "")))
+            checks.append(
+                Check(
+                    "onboarding",
+                    WARN if missing else OK,
+                    detail + (" — run `cherrypick connect`" if missing else ""),
+                )
+            )
         else:
             checks.append(Check("onboarding", WARN, ob.get("error", "keyring unavailable")))
     except Exception as exc:  # the panel is informational; it must never break doctor
@@ -229,12 +238,14 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         # eval activity — during RTH, is the loop actually evaluating candidates and deciding sensibly
         # (not just writing a file)? Session-gated: off-hours a stopped loop is expected, not a fault.
         if timeutil.is_session_window(now, holidays):
-            act = eval_activity.for_module(mcfg, name, now.date().isoformat(),
-                                           cfg.get("eval_activity", {}).get("window_minutes", 30))
+            act = eval_activity.for_module(
+                mcfg, name, now.date().isoformat(), cfg.get("eval_activity", {}).get("window_minutes", 30)
+            )
             if act is not None:
                 ea_cfg = cfg.get("eval_activity", {})
                 status, detail = eval_activity.assess(
-                    act, window_min=ea_cfg.get("window_minutes", 30),
+                    act,
+                    window_min=ea_cfg.get("window_minutes", 30),
                     eval_stale_min=ea_cfg.get("stale_minutes", 10),
                     error_frac_warn=ea_cfg.get("error_fraction", 0.5),
                 )
@@ -369,8 +380,11 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
                 status = first_json(r.stdout) if r.returncode == 0 else {}
                 running = bool(status.get("running"))
                 age = next(
-                    (status[k] for k in ("oldest_event_age_s", "stale_age_s")
-                     if isinstance(status.get(k), (int, float))),
+                    (
+                        status[k]
+                        for k in ("oldest_event_age_s", "stale_age_s")
+                        if isinstance(status.get(k), (int, float))
+                    ),
                     None,
                 )
                 if not running:
@@ -381,8 +395,13 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
                     # A connected-but-silent streamer is the 34-hour-stall failure — flag it, but only
                     # during market hours (off-hours a quiet feed is expected, not a fault).
                     if age is not None and age > limit and timeutil.is_market_hours():
-                        checks.append(Check("streamer", WARN,
-                                            f"running but silent — {fresh} (watchdog restarts at {limit}s)"))
+                        checks.append(
+                            Check(
+                                "streamer",
+                                WARN,
+                                f"running but silent — {fresh} (watchdog restarts at {limit}s)",
+                            )
+                        )
                     else:
                         quiet = "  (quiet off-hours)" if age is not None and age > limit else ""
                         checks.append(Check("streamer", OK, f"running, {fresh}{quiet}"))

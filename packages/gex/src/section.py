@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import service as _service
 
-_NOTE = "positioning = open interest · flow = traded volume · a simple self-hosted gexbot / SpotGamma / MenthorQ"
+_NOTE = (
+    "positioning = open interest · flow = traded volume · a simple self-hosted gexbot / SpotGamma / MenthorQ"
+)
 
 
 def _fmt(v) -> str:

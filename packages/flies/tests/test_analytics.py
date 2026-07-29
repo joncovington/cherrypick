@@ -12,19 +12,59 @@ def conn(tmp_path):
     return dbmod.connect(str(tmp_path / "paper_trades.db"))
 
 
-def position(conn, position_id, *, day="2026-07-20", arm="gex", symbol="SPX", kind="fly",
-             entry_mode="legged", center=6000.0, width=5.0, net=1.05, credit=2.55, fees=6.89,
-             gross=105.0, pnl=98.11, status="settled", window=None, best_debit=None,
-             latency=None, spot_at_completion=None, underlying=6000.0, risk_free=1):
-    dbmod.save_position(conn, {
-        "position_id": position_id, "book_id": f"{day}:{arm}:{symbol}", "trade_date": day,
-        "arm": arm, "entry_mode": entry_mode, "symbol": symbol, "kind": kind, "side": "put",
-        "center": center, "wing_width": width, "quantity": 1, "net": net, "credit": credit,
-        "fees": fees, "gross_pnl": gross, "pnl": pnl, "status": status, "entry_window": window,
-        "best_completing_debit": best_debit, "completion_latency_min": latency,
-        "spot_at_completion": spot_at_completion, "underlying_at_entry": underlying,
-        "risk_free": risk_free, "entry_time": f"{day}T12:00:00",
-    })
+def position(
+    conn,
+    position_id,
+    *,
+    day="2026-07-20",
+    arm="gex",
+    symbol="SPX",
+    kind="fly",
+    entry_mode="legged",
+    center=6000.0,
+    width=5.0,
+    net=1.05,
+    credit=2.55,
+    fees=6.89,
+    gross=105.0,
+    pnl=98.11,
+    status="settled",
+    window=None,
+    best_debit=None,
+    latency=None,
+    spot_at_completion=None,
+    underlying=6000.0,
+    risk_free=1,
+):
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position_id,
+            "book_id": f"{day}:{arm}:{symbol}",
+            "trade_date": day,
+            "arm": arm,
+            "entry_mode": entry_mode,
+            "symbol": symbol,
+            "kind": kind,
+            "side": "put",
+            "center": center,
+            "wing_width": width,
+            "quantity": 1,
+            "net": net,
+            "credit": credit,
+            "fees": fees,
+            "gross_pnl": gross,
+            "pnl": pnl,
+            "status": status,
+            "entry_window": window,
+            "best_completing_debit": best_debit,
+            "completion_latency_min": latency,
+            "spot_at_completion": spot_at_completion,
+            "underlying_at_entry": underlying,
+            "risk_free": risk_free,
+            "entry_time": f"{day}T12:00:00",
+        },
+    )
 
 
 # --------------------------------------------------------------------------- period stats
@@ -75,8 +115,8 @@ def test_series_sums_to_the_period_total(conn):
 def test_weekly_buckets_start_on_monday(conn):
     """SQLite's %W starts weeks on Sunday, which would split a trading week across two buckets — so
     the bucket key is computed in Python."""
-    position(conn, "P1", day="2026-07-20")   # Monday
-    position(conn, "P2", day="2026-07-24")   # Friday, same trading week
+    position(conn, "P1", day="2026-07-20")  # Monday
+    position(conn, "P2", day="2026-07-24")  # Friday, same trading week
     series = analytics.pnl_series(conn, "weekly")
     assert len(series) == 1 and series[0]["bucket"] == "2026-07-20"
 
@@ -122,7 +162,7 @@ def test_book_totals_stay_whole_when_the_comparison_is_filtered(conn):
     position(conn, "L1", arm="gex", entry_mode="legged", pnl=100.0)
     position(conn, "O1", arm="gex", entry_mode="outright", pnl=-90.0)
 
-    assert analytics.stats_for_period(conn)["net_pnl"] == 10.0     # whole book
+    assert analytics.stats_for_period(conn)["net_pnl"] == 10.0  # whole book
     assert sum(r["net_pnl"] for r in analytics.by_arm(conn)) == 100.0  # comparison only
     modes = {r["entry_mode"]: r for r in analytics.by_entry_mode(conn)}
     assert set(modes) == {"legged", "outright"}, "entry-mode breakdown still reports both"
@@ -170,9 +210,17 @@ def test_by_entry_window_groups_untagged_separately(conn):
 
 # --------------------------------------------------------------------------- completion counterfactual
 def _completion_refusal(conn, position_id, reason, *, day="2026-07-20", arm="gex", symbol="SPX"):
-    dbmod.record_decision(conn, trade_date=day, arm=arm, symbol=symbol, mode="completion",
-                          reason=reason, accepted=False, position_id=position_id,
-                          when=f"{day}T12:05:00")
+    dbmod.record_decision(
+        conn,
+        trade_date=day,
+        arm=arm,
+        symbol=symbol,
+        mode="completion",
+        reason=reason,
+        accepted=False,
+        position_id=position_id,
+        when=f"{day}T12:05:00",
+    )
 
 
 def test_counterfactual_separates_never_offered_from_our_own_gates(conn):
@@ -261,8 +309,16 @@ def test_completion_trend_empty_book(conn):
 # --------------------------------------------------------------------------- arm divergence
 def _iteration(conn, ts, centers, day="2026-07-20"):
     for arm, center in centers.items():
-        dbmod.record_iteration(conn, iteration_ts=ts, trade_date=day, symbol="SPX", arm=arm,
-                               center=center, center_reason="atm", underlying_price=6000.0)
+        dbmod.record_iteration(
+            conn,
+            iteration_ts=ts,
+            trade_date=day,
+            symbol="SPX",
+            arm=arm,
+            center=center,
+            center_reason="atm",
+            underlying_price=6000.0,
+        )
 
 
 def test_identical_centers_report_full_agreement(conn):
@@ -329,27 +385,62 @@ def test_session_overview_bundles_the_today_view(conn):
 
 
 # --------------------------------------------------------------------------- session timeline
-def _legged(conn, position_id, *, day="2026-07-20", arm="gex", center=6000.0, credit=2.55,
-            debit=1.50, entry="T12:00:00", completed=None, latency=None, spot_at_completion=None,
-            underlying=6000.0):
+def _legged(
+    conn,
+    position_id,
+    *,
+    day="2026-07-20",
+    arm="gex",
+    center=6000.0,
+    credit=2.55,
+    debit=1.50,
+    entry="T12:00:00",
+    completed=None,
+    latency=None,
+    spot_at_completion=None,
+    underlying=6000.0,
+):
     """A legged position, optionally completed — the case the timeline has to rewind correctly."""
     open_fee = fly.vertical_open_fee("SPX", 1)
-    dbmod.save_position(conn, {
-        "position_id": position_id, "book_id": f"{day}:{arm}:SPX", "trade_date": day, "arm": arm,
-        "entry_mode": "legged", "symbol": "SPX", "kind": "fly" if completed else "short_vertical",
-        "side": "put", "center": center, "wing_width": 5.0, "quantity": 1,
-        "net": credit - debit if completed else credit, "credit": credit,
-        "debit": debit if completed else None,
-        "fees": open_fee * 2 if completed else open_fee,
-        "entry_time": f"{day}{entry}", "completed_at": f"{day}{completed}" if completed else None,
-        "completion_latency_min": latency, "spot_at_completion": spot_at_completion,
-        "underlying_at_entry": underlying, "status": "open",
-    })
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position_id,
+            "book_id": f"{day}:{arm}:SPX",
+            "trade_date": day,
+            "arm": arm,
+            "entry_mode": "legged",
+            "symbol": "SPX",
+            "kind": "fly" if completed else "short_vertical",
+            "side": "put",
+            "center": center,
+            "wing_width": 5.0,
+            "quantity": 1,
+            "net": credit - debit if completed else credit,
+            "credit": credit,
+            "debit": debit if completed else None,
+            "fees": open_fee * 2 if completed else open_fee,
+            "entry_time": f"{day}{entry}",
+            "completed_at": f"{day}{completed}" if completed else None,
+            "completion_latency_min": latency,
+            "spot_at_completion": spot_at_completion,
+            "underlying_at_entry": underlying,
+            "status": "open",
+        },
+    )
 
 
 def _tick(conn, ts, *, day="2026-07-20", arm="gex", center=6000.0, spot=6000.0):
-    dbmod.record_iteration(conn, iteration_ts=f"{day}{ts}", trade_date=day, symbol="SPX", arm=arm,
-                           center=center, center_reason="atm", underlying_price=spot)
+    dbmod.record_iteration(
+        conn,
+        iteration_ts=f"{day}{ts}",
+        trade_date=day,
+        symbol="SPX",
+        arm=arm,
+        center=center,
+        center_reason="atm",
+        underlying_price=spot,
+    )
 
 
 def test_timeline_rewinds_a_completed_fly_to_the_vertical_it_used_to_be(conn):
@@ -360,8 +451,7 @@ def test_timeline_rewinds_a_completed_fly_to_the_vertical_it_used_to_be(conn):
     every fly existed from the moment its credit spread was sold — asserting exactly the
     per-position floor honesty rule 3 refuses to claim loosely.
     """
-    _legged(conn, "P1", entry="T12:00:00", completed="T12:30:00", latency=30.0,
-            spot_at_completion=6012.0)
+    _legged(conn, "P1", entry="T12:00:00", completed="T12:30:00", latency=30.0, spot_at_completion=6012.0)
     _tick(conn, "T12:15:00")
     _tick(conn, "T12:45:00")
     open_fee = fly.vertical_open_fee("SPX", 1)
@@ -386,8 +476,15 @@ def test_timeline_excludes_a_position_that_had_not_been_opened_yet(conn):
 def test_timeline_spans_carry_latency_and_the_drift_that_bought_it(conn):
     """The 2026-07-20 finding — completions arrived only after 10-21 points of drift — is a shape
     over time, and this is the pairing that lets it be seen rather than inferred."""
-    _legged(conn, "P1", entry="T10:00:00", completed="T10:21:00", latency=21.0,
-            underlying=6000.0, spot_at_completion=6014.0)
+    _legged(
+        conn,
+        "P1",
+        entry="T10:00:00",
+        completed="T10:21:00",
+        latency=21.0,
+        underlying=6000.0,
+        spot_at_completion=6014.0,
+    )
     _tick(conn, "T10:30:00")
     timeline = analytics.session_timeline(conn, "2026-07-20")
     span = timeline["spans"][0]
@@ -419,9 +516,16 @@ def test_timeline_keeps_each_arm_separate(conn):
 
 # --------------------------------------------------------------------------- feed / data quality
 def _snap(conn, ts, *, day="2026-07-20", symbol="SPX", status="ok", fresh=40, rejected=0, spot=6000.0):
-    dbmod.record_snapshot(conn, iteration_ts=f"{day}{ts}", trade_date=day, symbol=symbol,
-                          status=status, quotes_fresh=fresh, quotes_rejected=rejected,
-                          underlying_price=spot)
+    dbmod.record_snapshot(
+        conn,
+        iteration_ts=f"{day}{ts}",
+        trade_date=day,
+        symbol=symbol,
+        status=status,
+        quotes_fresh=fresh,
+        quotes_rejected=rejected,
+        underlying_price=spot,
+    )
 
 
 def test_data_quality_counts_refusals_by_reason(conn):

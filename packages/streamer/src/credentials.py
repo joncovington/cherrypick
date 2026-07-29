@@ -52,8 +52,9 @@ def status() -> dict[str, bool]:
     return {key: bool(creds.get_secret(key)) for key in STREAMER_SECRETS}
 
 
-def set_secrets(keys: list[str] | None = None,
-                prompt_fn: Callable[[str], str] = getpass.getpass) -> list[str]:
+def set_secrets(
+    keys: list[str] | None = None, prompt_fn: Callable[[str], str] = getpass.getpass
+) -> list[str]:
     """Prompt (hidden input by default) for each key and store it under the shared service.
 
     Empty input for a key skips it, leaving any existing value untouched. Returns the keys actually

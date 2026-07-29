@@ -87,7 +87,7 @@ def test_report_counts_pre_epoch_trades_without_rewriting_totals(tmp_path):
     out = report.run(cfg)
     meic = out["modules"]["meic"]
     assert out["data_epoch"]["date"] == "2026-07-01"
-    assert meic["trades"] == 23          # history is never rewritten
+    assert meic["trades"] == 23  # history is never rewritten
     assert meic["pre_epoch_trades"] == 20
 
 

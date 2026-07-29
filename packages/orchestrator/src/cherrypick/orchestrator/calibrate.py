@@ -95,5 +95,9 @@ def run(cfg: dict | None = None) -> dict:
             "profiles": profiles_out,
         }
 
-    return {"ok": True, "generated_at": datetime.now(timezone.utc).isoformat(),
-            "data_epoch": epoch, "modules": modules_out}
+    return {
+        "ok": True,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "data_epoch": epoch,
+        "modules": modules_out,
+    }

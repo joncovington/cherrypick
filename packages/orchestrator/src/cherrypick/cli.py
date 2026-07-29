@@ -171,8 +171,11 @@ def cmd_install(cfg) -> None:
         if kind == "self_healing":
             # MEIC manages its own self-healing task; just invoke its installer in place.
             r = subprocess.run(
-                [cfgmod.python_exe(), *paper["install_argv"]], cwd=str(root), capture_output=True,
-                text=True, creationflags=CREATE_NO_WINDOW,
+                [cfgmod.python_exe(), *paper["install_argv"]],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                creationflags=CREATE_NO_WINDOW,
             )
             results[f"{name}.paper_task"] = {
                 "ok": r.returncode == 0,
@@ -305,8 +308,11 @@ def cmd_uninstall(cfg) -> None:
         paper = mcfg.get("paper", {})
         if paper.get("kind") == "self_healing" and paper.get("uninstall_argv"):
             r = subprocess.run(
-                [cfgmod.python_exe(), *paper["uninstall_argv"]], cwd=str(root), capture_output=True,
-                text=True, creationflags=CREATE_NO_WINDOW,
+                [cfgmod.python_exe(), *paper["uninstall_argv"]],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                creationflags=CREATE_NO_WINDOW,
             )
             results[f"{name}.paper_task"] = {
                 "ok": r.returncode == 0,
@@ -335,8 +341,12 @@ def cmd_uninstall(cfg) -> None:
             sroot = cfgmod.module_root(svc, svc["id"])
             try:
                 r = subprocess.run(
-                    [cfgmod.python_exe(), *svc["stop_argv"]], cwd=str(sroot),
-                    capture_output=True, text=True, timeout=15, creationflags=CREATE_NO_WINDOW,
+                    [cfgmod.python_exe(), *svc["stop_argv"]],
+                    cwd=str(sroot),
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    creationflags=CREATE_NO_WINDOW,
                 )
                 results[f"service.{svc['id']}"] = {
                     "ok": r.returncode == 0,
@@ -443,7 +453,11 @@ def _run_earnings(cfg, phase: str) -> None:
 
     try:
         r = subprocess.run(
-            [cfgmod.python_exe(), *argv], cwd=str(root), capture_output=True, text=True, timeout=1800,
+            [cfgmod.python_exe(), *argv],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=1800,
             creationflags=CREATE_NO_WINDOW,
         )
         try:
@@ -554,9 +568,12 @@ def cmd_account(cfg, args) -> None:
                     " orders (a per-module designation still overrides). cherrypick never places"
                     " trades; it only records the destination."
                 )
-                if input(
-                    f"Type 'yes' to set the suite's live-trading account to selection {args.set!r}: "
-                ).strip() != "yes":
+                if (
+                    input(
+                        f"Type 'yes' to set the suite's live-trading account to selection {args.set!r}: "
+                    ).strip()
+                    != "yes"
+                ):
                     _emit({"ok": False, "error": "aborted"})
                     sys.exit(1)
             _emit(accounts.set_shared_account(cfg, args.set))
@@ -607,11 +624,13 @@ def cmd_reconcile(cfg, scheduled: bool = False) -> None:
         from cherrypick.notify import Notifier
 
         level = "CRITICAL" if verdict == reconcile.DRIFT else "WARNING"
-        title = ("Reconcile: DRIFT - undesignated account holds positions"
-                 if verdict == reconcile.DRIFT else "Reconcile: could not verify accounts")
+        title = (
+            "Reconcile: DRIFT - undesignated account holds positions"
+            if verdict == reconcile.DRIFT
+            else "Reconcile: could not verify accounts"
+        )
         try:
-            Notifier(cfg.get("notify")).notify(level, "reconcile.scheduled", title,
-                                               report_text[:1500])
+            Notifier(cfg.get("notify")).notify(level, "reconcile.scheduled", title, report_text[:1500])
         except Exception:
             pass  # the report is already printed/logged; notification is best-effort
     # exit by verdict: FLAT -> 0, DRIFT (real account not flat) -> 1, UNKNOWN (couldn't check) -> 2
@@ -861,9 +880,10 @@ def main() -> None:
         "--eod", action="store_true", help="For report: restrict to today's (ET) session instead of all-time"
     )
     parser.add_argument(
-        "--live", action="store_true",
+        "--live",
+        action="store_true",
         help="For report: the live-tagged ledgers (modules' live_db) instead of paper. Never feeds "
-             "calibrate/promotion -- those read paper only"
+        "calibrate/promotion -- those read paper only",
     )
     parser.add_argument(
         "--fast",
@@ -878,8 +898,11 @@ def main() -> None:
         help="For account: designate this account (a last-4 or 1-based index)",
     )
     parser.add_argument("--clear", action="store_true", help="For account: unset the designated account")
-    parser.add_argument("--scheduled", action="store_true",
-                        help="For reconcile: notify on a non-FLAT verdict (what the scheduled task passes)")
+    parser.add_argument(
+        "--scheduled",
+        action="store_true",
+        help="For reconcile: notify on a non-FLAT verdict (what the scheduled task passes)",
+    )
     parser.add_argument("--yes", action="store_true", help="For account --set: skip the confirmation prompt")
     parser.add_argument(
         "--serve",
@@ -895,11 +918,13 @@ def main() -> None:
         "--apply", action="store_true", help="For migrate-home: perform the move (default is a dry run)"
     )
     parser.add_argument(
-        "--month", default=None,
+        "--month",
+        default=None,
         help="For archive: restrict to one month 'YYYY-MM' (default: all finished months)",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="For archive: report what would be archived without writing or deleting",
     )
     args = parser.parse_args()

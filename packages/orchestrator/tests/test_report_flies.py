@@ -46,10 +46,13 @@ def _cfg(tmp_path):
 def test_reader_nets_gross_pnl_against_fees(tmp_path):
     db = tmp_path / "flies" / "paper.db"
     db.parent.mkdir(exist_ok=True)
-    _flies_db(db, [
-        ("SPX", "gex", "legged", "fly", 105.0, 6.89, "2026-07-20", "settled"),
-        ("SPX", "control", "outright", "fly", -20.0, 6.89, "2026-07-20", "settled"),
-    ])
+    _flies_db(
+        db,
+        [
+            ("SPX", "gex", "legged", "fly", 105.0, 6.89, "2026-07-20", "settled"),
+            ("SPX", "control", "outright", "fly", -20.0, 6.89, "2026-07-20", "settled"),
+        ],
+    )
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
     records = report._flies_closed(conn)
@@ -68,10 +71,13 @@ def test_reader_ignores_positions_that_have_not_settled(tmp_path):
     one would flatter the arm it belongs to."""
     db = tmp_path / "flies" / "paper.db"
     db.parent.mkdir(exist_ok=True)
-    _flies_db(db, [
-        ("SPX", "gex", "legged", "short_vertical", None, 3.44, "2026-07-20", "open"),
-        ("SPX", "gex", "legged", "fly", 35.0, 6.89, "2026-07-20", "settled"),
-    ])
+    _flies_db(
+        db,
+        [
+            ("SPX", "gex", "legged", "short_vertical", None, 3.44, "2026-07-20", "open"),
+            ("SPX", "gex", "legged", "fly", 35.0, 6.89, "2026-07-20", "settled"),
+        ],
+    )
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
     assert len(report._flies_closed(conn)) == 1
@@ -80,10 +86,13 @@ def test_reader_ignores_positions_that_have_not_settled(tmp_path):
 def test_report_picks_up_the_fly_book_schema(tmp_path):
     """End to end through the registry — the point of the integration, not just the reader."""
     cfg = _cfg(tmp_path)
-    _flies_db(tmp_path / "flies" / "paper.db", [
-        ("SPX", "gex", "legged", "fly", 105.0, 6.89, "2026-07-20", "settled"),
-        ("SPX", "time_window", "legged", "fly", 35.0, 6.89, "2026-07-20", "settled"),
-    ])
+    _flies_db(
+        tmp_path / "flies" / "paper.db",
+        [
+            ("SPX", "gex", "legged", "fly", 105.0, 6.89, "2026-07-20", "settled"),
+            ("SPX", "time_window", "legged", "fly", 35.0, 6.89, "2026-07-20", "settled"),
+        ],
+    )
     out = report.run(cfg)
     assert out["modules"]["flies"]["ok"] is True
     assert out["modules"]["flies"]["trades"] == 2
@@ -93,10 +102,13 @@ def test_open_positions_reader_tags_by_arm(tmp_path):
     """reconcile's view: open paper positions, attributed to the arm holding them."""
     db = tmp_path / "flies" / "paper.db"
     db.parent.mkdir(parents=True, exist_ok=True)
-    _flies_db(db, [
-        ("SPX", "gex", "legged", "short_vertical", None, 3.44, "2026-07-20", "open"),
-        ("SPX", "control", "legged", "fly", 35.0, 6.89, "2026-07-20", "settled"),
-    ])
+    _flies_db(
+        db,
+        [
+            ("SPX", "gex", "legged", "short_vertical", None, 3.44, "2026-07-20", "open"),
+            ("SPX", "control", "legged", "fly", 35.0, 6.89, "2026-07-20", "settled"),
+        ],
+    )
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
     assert reconcile._flies_open(conn) == [{"symbol": "SPX", "profile": "gex"}]

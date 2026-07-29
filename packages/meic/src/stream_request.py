@@ -53,7 +53,8 @@ def write(symbols) -> Path:
     """Atomically (over)write this module's request file — delegated to core (write-then-rename, so a
     concurrent reader in the streamer never sees a partial file), plus MEIC's paper-ledger leg source."""
     return _sr.write_request(
-        _MODULE, symbols,
+        _MODULE,
+        symbols,
         leg_sources=[{"db": str(_paths.paper_db_path()), "query": _LEG_QUERY}],
     )
 

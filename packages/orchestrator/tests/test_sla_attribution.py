@@ -50,12 +50,15 @@ def test_missed_run_is_reported_against_the_right_module(monkeypatch, tmp_path):
     """A missed flies entry must not surface as an Earnings alert."""
     monkeypatch.setattr(cfgmod, "STATE_DIR", tmp_path)
     (tmp_path / "earnings_entry.last.json").write_text(
-        json.dumps({"date": "2026-07-20", "ok": True}), encoding="utf-8")
+        json.dumps({"date": "2026-07-20", "ok": True}), encoding="utf-8"
+    )
 
     from datetime import datetime
+
     now = datetime(2026, 7, 20, 15, 0)
     findings = watchdog._check_earnings(
-        "flies", {"paper": {"kind": "cherrypick_scheduled", "entry_time": "12:00"}}, now, True)
+        "flies", {"paper": {"kind": "cherrypick_scheduled", "entry_time": "12:00"}}, now, True
+    )
 
     sla = [f for f in findings if f.key == "flies.entry_sla"]
     assert sla, "the flies module should have produced its own SLA finding"
@@ -68,12 +71,17 @@ def test_missed_run_is_reported_against_the_right_module(monkeypatch, tmp_path):
 def test_healthy_heartbeat_is_named_for_its_own_module(monkeypatch, tmp_path):
     monkeypatch.setattr(cfgmod, "STATE_DIR", tmp_path)
     (tmp_path / "flies_entry.last.json").write_text(
-        json.dumps({"date": "2026-07-20", "ok": True}), encoding="utf-8")
+        json.dumps({"date": "2026-07-20", "ok": True}), encoding="utf-8"
+    )
 
     from datetime import datetime
+
     findings = watchdog._check_earnings(
-        "flies", {"paper": {"kind": "cherrypick_scheduled", "entry_time": "12:00"}},
-        datetime(2026, 7, 20, 15, 0), True)
+        "flies",
+        {"paper": {"kind": "cherrypick_scheduled", "entry_time": "12:00"}},
+        datetime(2026, 7, 20, 15, 0),
+        True,
+    )
 
     sla = [f for f in findings if f.key == "flies.entry_sla"]
     assert sla and sla[0].status == watchdog.OK
@@ -89,8 +97,7 @@ def test_self_healing_alerts_name_their_own_module(monkeypatch):
     the wrong module by name.
     """
     monkeypatch.setattr(watchdog.tasks, "exists", lambda _n: False)
-    mcfg = {"paper": {"kind": "self_healing", "task_name": "cherrypick-flies-paper-loop"},
-            "path": "."}
+    mcfg = {"paper": {"kind": "self_healing", "task_name": "cherrypick-flies-paper-loop"}, "path": "."}
     findings = watchdog._check_meic("flies", mcfg, in_session=False)
 
     task = next(f for f in findings if f.key == "flies.task")
@@ -104,15 +111,12 @@ def test_meic_keeps_its_own_name(monkeypatch):
     """The existing module's alert text must be unchanged — this generalizes, it does not rename."""
     monkeypatch.setattr(watchdog.tasks, "exists", lambda _n: False)
     mcfg = {"paper": {"kind": "self_healing", "task_name": "cherrypick-meic-paper-loop"}, "path": "."}
-    task = next(f for f in watchdog._check_meic("meic", mcfg, in_session=False)
-                if f.key == "meic.task")
+    task = next(f for f in watchdog._check_meic("meic", mcfg, in_session=False) if f.key == "meic.task")
     assert task.title == "MEIC paper task missing"
 
 
 def test_registered_task_reports_ok_under_its_own_name(monkeypatch):
     monkeypatch.setattr(watchdog.tasks, "exists", lambda _n: True)
-    mcfg = {"paper": {"kind": "self_healing", "task_name": "cherrypick-flies-paper-loop"},
-            "path": "."}
-    task = next(f for f in watchdog._check_meic("flies", mcfg, in_session=False)
-                if f.key == "flies.task")
+    mcfg = {"paper": {"kind": "self_healing", "task_name": "cherrypick-flies-paper-loop"}, "path": "."}
+    task = next(f for f in watchdog._check_meic("flies", mcfg, in_session=False) if f.key == "flies.task")
     assert task.status == watchdog.OK and task.title == "Flies paper task"

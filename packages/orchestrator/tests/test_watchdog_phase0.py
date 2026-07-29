@@ -83,7 +83,8 @@ def test_entry_sla_grace_is_configurable(monkeypatch, tmp_path):
 
 def test_entry_sla_ok_when_heartbeat_landed(monkeypatch, tmp_path):
     (tmp_path / "earnings_entry.last.json").write_text(
-        json.dumps({"date": "2026-07-21", "ok": True}), encoding="utf-8")
+        json.dumps({"date": "2026-07-21", "ok": True}), encoding="utf-8"
+    )
     now = datetime(2026, 7, 21, 16, 30, tzinfo=_ET)
     sla = _sla_findings(monkeypatch, tmp_path, now)
     assert sla and sla[0].status == wd.OK
@@ -99,9 +100,9 @@ def lock_env(monkeypatch, tmp_path):
 
 def test_lock_round_trip(lock_env):
     assert tn._acquire_lock() is True
-    assert tn._acquire_lock() is False   # second holder loses
+    assert tn._acquire_lock() is False  # second holder loses
     tn._release_lock()
-    assert tn._acquire_lock() is True    # and can re-acquire after release
+    assert tn._acquire_lock() is True  # and can re-acquire after release
     tn._release_lock()
 
 
@@ -118,6 +119,7 @@ def test_run_skips_when_lock_is_held(lock_env):
 def test_stale_lock_is_taken_over(lock_env, monkeypatch):
     """A crashed holder must not wedge trade notification forever."""
     import os
+
     assert tn._acquire_lock()
     old = tn._LOCK.stat().st_mtime - tn._LOCK_STALE_SECONDS - 60
     os.utime(tn._LOCK, (old, old))
@@ -157,8 +159,11 @@ def eod_env(tmp_path, monkeypatch):
 
 
 def _cfg():
-    return {"eod_digest": {"enabled": True, "deadline": "16:45"},
-            "eod_insight": {"enabled": False}, "modules": {}}
+    return {
+        "eod_digest": {"enabled": True, "deadline": "16:45"},
+        "eod_insight": {"enabled": False},
+        "modules": {},
+    }
 
 
 def test_failed_eod_launch_still_marks_fired_but_notifies(eod_env, monkeypatch):

@@ -55,8 +55,11 @@ async def _account(session):
 async def cmd_connection_status(_args) -> dict:
     session = creds.get_session()
     n = await _broker.account_count(session)
-    return {"ok": True, "accounts": n,
-            "designated": ("****" + d[-4:]) if (d := creds.designated_account()) else None}
+    return {
+        "ok": True,
+        "accounts": n,
+        "designated": ("****" + d[-4:]) if (d := creds.designated_account()) else None,
+    }
 
 
 async def cmd_list_accounts(_args) -> dict:
@@ -77,14 +80,14 @@ async def cmd_execute_trade(args) -> dict:
     account = await _account(session)
     order = _broker.build_order(spec)
     limit = (config.get("live") or {}).get("account_deploy_limit_pct") or None
-    return await _broker.place_order(account, session, order, live=bool(args.live),
-                                     deploy_limit_pct=limit)
+    return await _broker.place_order(account, session, order, live=bool(args.live), deploy_limit_pct=limit)
 
 
 def cmd_secrets_set(args) -> dict:
     """Hidden-input secrets flow, argv-compatible with tt.py's so the orchestrator's `connect`
     drives both modules identically. Blank input keeps a stored value."""
     import getpass
+
     for key in args.keys:
         value = getpass.getpass(f"{key} (input hidden, blank to keep current): ").strip()
         if value:
@@ -113,9 +116,11 @@ def main() -> None:
         if args.cmd in sync:
             result = sync[args.cmd](args)
         else:
-            fn = {"get_connection_status": cmd_connection_status,
-                  "list_accounts": cmd_list_accounts,
-                  "execute_trade": cmd_execute_trade}[args.cmd]
+            fn = {
+                "get_connection_status": cmd_connection_status,
+                "list_accounts": cmd_list_accounts,
+                "execute_trade": cmd_execute_trade,
+            }[args.cmd]
             result = asyncio.run(fn(args))
     except Exception as exc:
         result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}

@@ -53,11 +53,14 @@ def _record_best_debit(conn, position: dict, debit: float, when: str) -> None:
     if best is not None and debit >= best:
         return
     position["best_completing_debit"] = debit
-    dbmod.save_position(conn, {
-        "position_id": position["position_id"],
-        "best_completing_debit": round(debit, 4),
-        "best_debit_at": when,
-    })
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "best_completing_debit": round(debit, 4),
+            "best_debit_at": when,
+        },
+    )
 
 
 def _to_position(row: dict) -> dict:
@@ -104,16 +107,33 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
     positions = [_to_position(r) for r in rows]
 
     def journal(mode, reason, *, accepted=False, center=None, position_id=None, detail=None):
-        dbmod.record_decision(conn, trade_date=trade_date, arm=arm, symbol=symbol, mode=mode,
-                              reason=reason, accepted=accepted, center=center,
-                              position_id=position_id, detail=detail, when=now)
+        dbmod.record_decision(
+            conn,
+            trade_date=trade_date,
+            arm=arm,
+            symbol=symbol,
+            mode=mode,
+            reason=reason,
+            accepted=accepted,
+            center=center,
+            position_id=position_id,
+            detail=detail,
+            when=now,
+        )
 
     # What this arm WANTED this iteration, recorded before any gate can veto it. Written even when
     # nothing trades, because arm divergence is measured over intentions, not fills.
     wanted_center, wanted_reason = engine.select_center(snapshot, params)
-    dbmod.record_iteration(conn, iteration_ts=now, trade_date=trade_date, symbol=symbol, arm=arm,
-                           center=wanted_center, center_reason=wanted_reason,
-                           underlying_price=snapshot.get("underlying_price"))
+    dbmod.record_iteration(
+        conn,
+        iteration_ts=now,
+        trade_date=trade_date,
+        symbol=symbol,
+        arm=arm,
+        center=wanted_center,
+        center_reason=wanted_reason,
+        underlying_price=snapshot.get("underlying_price"),
+    )
 
     # --- 1. complete any open credit spread that has become cheap enough to square off
     for pos in [p for p in positions if p["kind"] == "short_vertical" and p["status"] == "open"]:
@@ -121,34 +141,56 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
         if plan is not None:
             _record_best_debit(conn, pos, plan["debit"], now)
         if not done:
-            journal("completion", reason, center=pos["center"], position_id=pos["position_id"],
-                    detail=None if plan is None else f"debit {plan['debit']:.2f} vs gate "
-                                                     f"{plan['gate_debit']:.2f}")
-            actions.append({"action": "completion_skipped", "position_id": pos["position_id"],
-                            "reason": reason})
+            journal(
+                "completion",
+                reason,
+                center=pos["center"],
+                position_id=pos["position_id"],
+                detail=None
+                if plan is None
+                else f"debit {plan['debit']:.2f} vs gate {plan['gate_debit']:.2f}",
+            )
+            actions.append(
+                {"action": "completion_skipped", "position_id": pos["position_id"], "reason": reason}
+            )
             continue
         pos["kind"] = "fly"
         pos["net"] = plan["net"]
         pos["fees"] = pos["fees"] + plan["completion_fee"]
         latency = _minutes_since(pos.get("entry_time"), now)
-        dbmod.save_position(conn, {
-            "position_id": pos["position_id"],
-            "kind": "fly",
-            "net": plan["net"],
-            "debit": plan["debit"],
-            "fees": pos["fees"],
-            "floor_dollars": plan["floor"],
-            "risk_free": int(fly.is_risk_free(pos)),
-            "completed_at": now,
-            "completion_latency_min": latency,
-            "spot_at_completion": snapshot.get("underlying_price"),
-        })
-        journal("completion", "completed", accepted=True, center=pos["center"],
-                position_id=pos["position_id"],
-                detail=f"debit {plan['debit']:.2f}, floor ${plan['floor']:.2f} after fees")
-        actions.append({"action": "completed", "position_id": pos["position_id"],
-                        "debit": plan["debit"], "net": plan["net"], "floor": plan["floor"],
-                        "latency_min": latency})
+        dbmod.save_position(
+            conn,
+            {
+                "position_id": pos["position_id"],
+                "kind": "fly",
+                "net": plan["net"],
+                "debit": plan["debit"],
+                "fees": pos["fees"],
+                "floor_dollars": plan["floor"],
+                "risk_free": int(fly.is_risk_free(pos)),
+                "completed_at": now,
+                "completion_latency_min": latency,
+                "spot_at_completion": snapshot.get("underlying_price"),
+            },
+        )
+        journal(
+            "completion",
+            "completed",
+            accepted=True,
+            center=pos["center"],
+            position_id=pos["position_id"],
+            detail=f"debit {plan['debit']:.2f}, floor ${plan['floor']:.2f} after fees",
+        )
+        actions.append(
+            {
+                "action": "completed",
+                "position_id": pos["position_id"],
+                "debit": plan["debit"],
+                "net": plan["net"],
+                "floor": plan["floor"],
+                "latency_min": latency,
+            }
+        )
 
     open_positions = [p for p in positions if p["status"] == "open"]
 
@@ -158,10 +200,16 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
         if enter:
             position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}"
             pos = {
-                "kind": "short_vertical", "side": plan["side"], "center": plan["center"],
-                "wing_width": plan["wing_width"], "net": plan["credit"],
-                "quantity": plan["quantity"], "fees": plan["open_fee"],
-                "entry_mode": "legged", "status": "open", "position_id": position_id,
+                "kind": "short_vertical",
+                "side": plan["side"],
+                "center": plan["center"],
+                "wing_width": plan["wing_width"],
+                "net": plan["credit"],
+                "quantity": plan["quantity"],
+                "fees": plan["open_fee"],
+                "entry_mode": "legged",
+                "status": "open",
+                "position_id": position_id,
                 # Same reason as in `_to_position`: this dict is appended to the live list the entry
                 # gates read, so it has to carry the window or the per-window cap misses it until the
                 # next iteration re-reads from the DB.
@@ -169,24 +217,50 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             }
             positions.append(pos)
             open_positions.append(pos)
-            dbmod.save_position(conn, {
-                "position_id": position_id, "book_id": book_id, "trade_date": trade_date,
-                "arm": arm, "entry_mode": "legged", "symbol": symbol,
-                "kind": "short_vertical", "side": plan["side"], "center": plan["center"],
-                "wing_width": plan["wing_width"], "quantity": plan["quantity"],
-                "net": plan["credit"], "credit": plan["credit"], "fees": plan["open_fee"],
-                "entry_time": now, "entry_window": plan["entry_window"],
-                "center_reason": plan["center_reason"],
-                "completing_direction": plan["completing_direction"],
-                "underlying_at_entry": snapshot.get("underlying_price"),
-                "risk_free": 0, "status": "open",
-            })
-            journal("legged", "entered", accepted=True, center=plan["center"],
-                    position_id=position_id,
-                    detail=f"{plan['side']} spread for {plan['credit']:.2f} credit, needs spot "
-                           f"{plan['completing_direction']} to complete")
-            actions.append({"action": "credit_spread_opened", "position_id": position_id,
-                            "side": plan["side"], "center": plan["center"], "credit": plan["credit"]})
+            dbmod.save_position(
+                conn,
+                {
+                    "position_id": position_id,
+                    "book_id": book_id,
+                    "trade_date": trade_date,
+                    "arm": arm,
+                    "entry_mode": "legged",
+                    "symbol": symbol,
+                    "kind": "short_vertical",
+                    "side": plan["side"],
+                    "center": plan["center"],
+                    "wing_width": plan["wing_width"],
+                    "quantity": plan["quantity"],
+                    "net": plan["credit"],
+                    "credit": plan["credit"],
+                    "fees": plan["open_fee"],
+                    "entry_time": now,
+                    "entry_window": plan["entry_window"],
+                    "center_reason": plan["center_reason"],
+                    "completing_direction": plan["completing_direction"],
+                    "underlying_at_entry": snapshot.get("underlying_price"),
+                    "risk_free": 0,
+                    "status": "open",
+                },
+            )
+            journal(
+                "legged",
+                "entered",
+                accepted=True,
+                center=plan["center"],
+                position_id=position_id,
+                detail=f"{plan['side']} spread for {plan['credit']:.2f} credit, needs spot "
+                f"{plan['completing_direction']} to complete",
+            )
+            actions.append(
+                {
+                    "action": "credit_spread_opened",
+                    "position_id": position_id,
+                    "side": plan["side"],
+                    "center": plan["center"],
+                    "credit": plan["credit"],
+                }
+            )
         else:
             journal("legged", reason, center=wanted_center)
             actions.append({"action": "entry_skipped", "mode": "legged", "reason": reason})
@@ -198,36 +272,70 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
         # The reference book did fund flies from a still-open iron condor, so this defaults on to stay
         # faithful to it — but that premium is not yet earned, which is precisely why the book-level
         # floor below reports `unbounded_below` instead of claiming the book is risk-free.
-        realized = cash["net_cash"] if params.get("fund_from_open_credit", True) else max(
-            sum(fly.position_pnl(p, p["center"]) for p in positions if p["status"] != "open"), 0.0)
+        realized = (
+            cash["net_cash"]
+            if params.get("fund_from_open_credit", True)
+            else max(sum(fly.position_pnl(p, p["center"]) for p in positions if p["status"] != "open"), 0.0)
+        )
         enter, reason, plan = engine.evaluate_outright_entry(snapshot, params, open_positions, realized)
         if enter:
             position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-O"
             pos = {
-                "kind": "fly", "side": plan["side"], "center": plan["center"],
-                "wing_width": plan["wing_width"], "net": -plan["debit"],
-                "quantity": plan["quantity"], "fees": plan["open_fee"],
-                "entry_mode": "outright", "status": "open", "position_id": position_id,
+                "kind": "fly",
+                "side": plan["side"],
+                "center": plan["center"],
+                "wing_width": plan["wing_width"],
+                "net": -plan["debit"],
+                "quantity": plan["quantity"],
+                "fees": plan["open_fee"],
+                "entry_mode": "outright",
+                "status": "open",
+                "position_id": position_id,
                 "entry_window": plan["entry_window"],
             }
             positions.append(pos)
-            dbmod.save_position(conn, {
-                "position_id": position_id, "book_id": book_id, "trade_date": trade_date,
-                "arm": arm, "entry_mode": "outright", "symbol": symbol,
-                "kind": "fly", "side": plan["side"], "center": plan["center"],
-                "wing_width": plan["wing_width"], "quantity": plan["quantity"],
-                "net": -plan["debit"], "debit": plan["debit"], "fees": plan["open_fee"],
-                "entry_time": now, "entry_window": plan["entry_window"],
-                "center_reason": plan["center_reason"],
-                "underlying_at_entry": snapshot.get("underlying_price"),
-                "floor_dollars": fly.position_floor(pos),
-                "risk_free": int(fly.is_risk_free(pos)), "status": "open",
-            })
-            journal("outright", "entered", accepted=True, center=plan["center"],
-                    position_id=position_id,
-                    detail=f"fly bought for {plan['debit']:.2f} debit, funded from ${realized:.2f}")
-            actions.append({"action": "fly_bought", "position_id": position_id,
-                            "center": plan["center"], "debit": plan["debit"]})
+            dbmod.save_position(
+                conn,
+                {
+                    "position_id": position_id,
+                    "book_id": book_id,
+                    "trade_date": trade_date,
+                    "arm": arm,
+                    "entry_mode": "outright",
+                    "symbol": symbol,
+                    "kind": "fly",
+                    "side": plan["side"],
+                    "center": plan["center"],
+                    "wing_width": plan["wing_width"],
+                    "quantity": plan["quantity"],
+                    "net": -plan["debit"],
+                    "debit": plan["debit"],
+                    "fees": plan["open_fee"],
+                    "entry_time": now,
+                    "entry_window": plan["entry_window"],
+                    "center_reason": plan["center_reason"],
+                    "underlying_at_entry": snapshot.get("underlying_price"),
+                    "floor_dollars": fly.position_floor(pos),
+                    "risk_free": int(fly.is_risk_free(pos)),
+                    "status": "open",
+                },
+            )
+            journal(
+                "outright",
+                "entered",
+                accepted=True,
+                center=plan["center"],
+                position_id=position_id,
+                detail=f"fly bought for {plan['debit']:.2f} debit, funded from ${realized:.2f}",
+            )
+            actions.append(
+                {
+                    "action": "fly_bought",
+                    "position_id": position_id,
+                    "center": plan["center"],
+                    "debit": plan["debit"],
+                }
+            )
         else:
             journal("outright", reason, center=wanted_center)
             actions.append({"action": "entry_skipped", "mode": "outright", "reason": reason})
@@ -242,12 +350,19 @@ def _save_book(conn, book_id, trade_date, arm, symbol, positions, params, settle
     stats = engine.session_stats(positions)
     band = floor["band"] or (None, None)
     row = {
-        "book_id": book_id, "trade_date": trade_date, "arm": arm, "symbol": symbol,
+        "book_id": book_id,
+        "trade_date": trade_date,
+        "arm": arm,
+        "symbol": symbol,
         **cash,
-        "worst": floor["worst"], "worst_at": floor["worst_at"],
-        "floor_holds": int(floor["floor_holds"]), "band_low": band[0], "band_high": band[1],
+        "worst": floor["worst"],
+        "worst_at": floor["worst_at"],
+        "floor_holds": int(floor["floor_holds"]),
+        "band_low": band[0],
+        "band_high": band[1],
         "unbounded_below": int(floor["unbounded_below"]),
-        "completion_rate": stats["completion_rate"], "risk_free_rate": stats["risk_free_rate"],
+        "completion_rate": stats["completion_rate"],
+        "risk_free_rate": stats["risk_free_rate"],
         "pin_rate": stats["pin_rate"],
         "status": "settled" if settlement_price is not None else "open",
     }
@@ -258,8 +373,7 @@ def _save_book(conn, book_id, trade_date, arm, symbol, positions, params, settle
     return {"cash": cash, "floor": floor, "stats": stats}
 
 
-def settle_book(conn, trade_date: str, arm: str, symbol: str, settlement_price: float,
-                config: dict) -> dict:
+def settle_book(conn, trade_date: str, arm: str, symbol: str, settlement_price: float, config: dict) -> dict:
     """Cash-settle every open position in a book at the settlement print and close the book out."""
     params = engine.merged_params(config, arm)
     book_id = book_id_for(trade_date, arm, symbol)
@@ -269,15 +383,27 @@ def settle_book(conn, trade_date: str, arm: str, symbol: str, settlement_price: 
     settled = engine.settle([p for p in positions if p["status"] == "open"], settlement_price)
     for p in settled:
         gross = (p["net"] + p["expiry_payoff"]) * fly.CONTRACT_MULTIPLIER * p["quantity"]
-        dbmod.save_position(conn, {
-            "position_id": p["position_id"], "settlement_price": settlement_price,
-            "expiry_payoff": p["expiry_payoff"], "gross_pnl": round(gross, 2), "pnl": p["pnl"],
-            "pinned": int(p["pinned"]), "status": "settled", "exit_time": _now(),
-        })
+        dbmod.save_position(
+            conn,
+            {
+                "position_id": p["position_id"],
+                "settlement_price": settlement_price,
+                "expiry_payoff": p["expiry_payoff"],
+                "gross_pnl": round(gross, 2),
+                "pnl": p["pnl"],
+                "pinned": int(p["pinned"]),
+                "status": "settled",
+                "exit_time": _now(),
+            },
+        )
 
     final = [_to_position(r) for r in dbmod.book_positions(conn, book_id)]
     for p in final:
         p["status"] = "settled"
     summary = _save_book(conn, book_id, trade_date, arm, symbol, final, params, settlement_price)
-    return {"book_id": book_id, "settled": len(settled),
-            "pnl": round(fly.book_pnl(final, settlement_price), 2), **summary}
+    return {
+        "book_id": book_id,
+        "settled": len(settled),
+        "pnl": round(fly.book_pnl(final, settlement_price), 2),
+        **summary,
+    }

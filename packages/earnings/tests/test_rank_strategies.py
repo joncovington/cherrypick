@@ -8,19 +8,30 @@ def _make_entry(name, accepted=True, score_criteria=None):
     return {
         "name": name,
         "fetch_criteria_fn": lambda symbol, ed, et, cfg: {"ok": True, "criteria": dict(score_criteria)},
-        "apply_tiering_fn": lambda criteria, cfg: {"accepted": accepted, "reject_reasons": [] if accepted else ["x"]},
+        "apply_tiering_fn": lambda criteria, cfg: {
+            "accepted": accepted,
+            "reject_reasons": [] if accepted else ["x"],
+        },
         "strategy_config_fn": lambda cfg: {},
     }
 
 
 def test_evaluate_symbol_returns_one_result_per_strategy(monkeypatch):
-    monkeypatch.setattr(rank_strategies, "STRATEGY_REGISTRY", [
-        _make_entry("strat_a", accepted=True),
-        _make_entry("strat_b", accepted=False),
-    ])
+    monkeypatch.setattr(
+        rank_strategies,
+        "STRATEGY_REGISTRY",
+        [
+            _make_entry("strat_a", accepted=True),
+            _make_entry("strat_b", accepted=False),
+        ],
+    )
     monkeypatch.setattr(rank_strategies.scanner, "fetch_avg_volume", lambda *a, **k: 2000000)
-    monkeypatch.setattr(rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": True, "iv_rv_ratio": 1.5})
-    monkeypatch.setattr(rank_strategies.scanner, "compute_winrate", lambda *a, **k: {"winrate": 0.6, "sample_size": 8})
+    monkeypatch.setattr(
+        rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": True, "iv_rv_ratio": 1.5}
+    )
+    monkeypatch.setattr(
+        rank_strategies.scanner, "compute_winrate", lambda *a, **k: {"winrate": 0.6, "sample_size": 8}
+    )
 
     results = rank_strategies.evaluate_symbol("AAPL", date(2026, 7, 7), "After market close", {})
     assert [r["name"] for r in results] == ["strat_a", "strat_b"]
@@ -35,14 +46,18 @@ def test_evaluate_symbol_records_broker_error_when_fetch_fails(monkeypatch):
     monkeypatch.setattr(rank_strategies, "STRATEGY_REGISTRY", [entry])
     monkeypatch.setattr(rank_strategies.scanner, "fetch_avg_volume", lambda *a, **k: None)
     monkeypatch.setattr(rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": False})
-    monkeypatch.setattr(rank_strategies.scanner, "compute_winrate", lambda *a, **k: {"winrate": None, "sample_size": 0})
+    monkeypatch.setattr(
+        rank_strategies.scanner, "compute_winrate", lambda *a, **k: {"winrate": None, "sample_size": 0}
+    )
 
     results = rank_strategies.evaluate_symbol("AAPL", date(2026, 7, 7), "After market close", {})
     assert results[0]["broker_data_error"] == "no data"
 
 
 def test_reverify_symbol_unknown_strategy():
-    result = rank_strategies.reverify_symbol("AAPL", "not_a_strategy", date(2026, 7, 7), "After market close", {})
+    result = rank_strategies.reverify_symbol(
+        "AAPL", "not_a_strategy", date(2026, 7, 7), "After market close", {}
+    )
     assert result["ok"] is False
     assert "unknown_strategy" in result["reason"]
 
@@ -61,8 +76,12 @@ def test_reverify_symbol_succeeds_when_still_accepted(monkeypatch):
     entry = _make_entry("strat_a", accepted=True)
     monkeypatch.setattr(rank_strategies, "_REGISTRY_BY_NAME", {"strat_a": entry})
     monkeypatch.setattr(rank_strategies.scanner, "fetch_avg_volume", lambda *a, **k: 2000000)
-    monkeypatch.setattr(rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": True, "iv_rv_ratio": 1.5})
-    monkeypatch.setattr(rank_strategies.scanner, "compute_winrate", lambda *a, **k: {"winrate": 0.6, "sample_size": 8})
+    monkeypatch.setattr(
+        rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": True, "iv_rv_ratio": 1.5}
+    )
+    monkeypatch.setattr(
+        rank_strategies.scanner, "compute_winrate", lambda *a, **k: {"winrate": 0.6, "sample_size": 8}
+    )
 
     result = rank_strategies.reverify_symbol("AAPL", "strat_a", date(2026, 7, 7), "After market close", {})
     assert result["ok"] is True
@@ -73,8 +92,12 @@ def test_reverify_symbol_fails_when_rejected(monkeypatch):
     entry = _make_entry("strat_a", accepted=False)
     monkeypatch.setattr(rank_strategies, "_REGISTRY_BY_NAME", {"strat_a": entry})
     monkeypatch.setattr(rank_strategies.scanner, "fetch_avg_volume", lambda *a, **k: 2000000)
-    monkeypatch.setattr(rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": True, "iv_rv_ratio": 1.5})
-    monkeypatch.setattr(rank_strategies.scanner, "compute_winrate", lambda *a, **k: {"winrate": 0.6, "sample_size": 8})
+    monkeypatch.setattr(
+        rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": True, "iv_rv_ratio": 1.5}
+    )
+    monkeypatch.setattr(
+        rank_strategies.scanner, "compute_winrate", lambda *a, **k: {"winrate": 0.6, "sample_size": 8}
+    )
 
     result = rank_strategies.reverify_symbol("AAPL", "strat_a", date(2026, 7, 7), "After market close", {})
     assert result["ok"] is False

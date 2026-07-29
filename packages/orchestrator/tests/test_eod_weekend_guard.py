@@ -29,10 +29,14 @@ def _run(monkeypatch, cmd, day, force=False):
     emitted = {}
     monkeypatch.setattr(cli, "_emit", lambda obj: emitted.update(obj))
     # Both underlying entry points get stubbed so a weekday test can't do real I/O or a Claude call.
-    monkeypatch.setattr(cli.eod_digest, "run",
-                        lambda cfg, day: called.__setitem__("work", True) or {"digest": "x", "suite": {}})
-    monkeypatch.setattr(cli.eod_insight, "run",
-                        lambda cfg, day: called.__setitem__("work", True) or {"ok": True})
+    monkeypatch.setattr(
+        cli.eod_digest,
+        "run",
+        lambda cfg, day: called.__setitem__("work", True) or {"digest": "x", "suite": {}},
+    )
+    monkeypatch.setattr(
+        cli.eod_insight, "run", lambda cfg, day: called.__setitem__("work", True) or {"ok": True}
+    )
     monkeypatch.setattr(cli, "Notifier", lambda _n: types.SimpleNamespace(notify=lambda *a, **k: {}))
     args = types.SimpleNamespace(date=day, force=force)
     cmd({"notify": {}}, args)

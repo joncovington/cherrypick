@@ -16,9 +16,23 @@ from cherrypick.orchestrator import trade_notifier as tn
 
 pytestmark = pytest.mark.unit
 
-_COLS = ("id", "symbol", "risk_profile", "put_strike", "call_strike", "wing_width", "net_credit",
-         "quantity", "status", "exit_time", "exit_reason", "pnl", "fees", "put_stop_cost",
-         "call_stop_cost")
+_COLS = (
+    "id",
+    "symbol",
+    "risk_profile",
+    "put_strike",
+    "call_strike",
+    "wing_width",
+    "net_credit",
+    "quantity",
+    "status",
+    "exit_time",
+    "exit_reason",
+    "pnl",
+    "fees",
+    "put_stop_cost",
+    "call_stop_cost",
+)
 
 
 class _Recorder:
@@ -52,9 +66,7 @@ def _conn(rows):
         "status TEXT, exit_time TEXT, exit_reason TEXT, pnl REAL, fees REAL, put_stop_cost REAL, "
         "call_stop_cost REAL)"
     )
-    conn.executemany(
-        f"INSERT INTO ic_trades ({','.join(_COLS)}) VALUES ({','.join('?' * len(_COLS))})", rows
-    )
+    conn.executemany(f"INSERT INTO ic_trades ({','.join(_COLS)}) VALUES ({','.join('?' * len(_COLS))})", rows)
     conn.commit()
     return conn
 
@@ -109,8 +121,18 @@ def test_stop_and_exit_are_independent():
     c1 = tn._meic_process(stopped, state, _Recorder(), "meic")
     assert c1["stops_notified"] == 1 and c1["exits_notified"] == 0
 
-    closed = _conn([_row(id=1, status="closed", put_stop_cost=1.9, exit_time="2026-07-22T16:00",
-                         exit_reason="expired", pnl=-50.0)])
+    closed = _conn(
+        [
+            _row(
+                id=1,
+                status="closed",
+                put_stop_cost=1.9,
+                exit_time="2026-07-22T16:00",
+                exit_reason="expired",
+                pnl=-50.0,
+            )
+        ]
+    )
     n = _Recorder()
     c2 = tn._meic_process(closed, state, n, "meic")
     assert c2["stops_notified"] == 0 and c2["exits_notified"] == 1
@@ -128,8 +150,9 @@ def test_first_activation_does_not_backfill_existing_stops():
 def test_legacy_state_without_stop_watermark_seeds_instead_of_bursting():
     """State written before this feature has no notified_stop_keys. The first run must adopt the
     current stops (like a seed), not replay every open partial as a burst of pushes."""
-    conn = _conn([_row(id=1, status="partial", put_stop_cost=1.9),
-                  _row(id=2, status="partial", call_stop_cost=2.1)])
+    conn = _conn(
+        [_row(id=1, status="partial", put_stop_cost=1.9), _row(id=2, status="partial", call_stop_cost=2.1)]
+    )
     state = {"last_entry_id": 2, "notified_exit_ids": []}  # legacy: no stop watermark
     n = _Recorder()
     counts = tn._meic_process(conn, state, n, "meic")

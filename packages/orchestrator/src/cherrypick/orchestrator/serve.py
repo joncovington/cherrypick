@@ -91,11 +91,10 @@ def _md_to_html(md_text: str) -> str:
                 body.append([c.strip() for c in lines[i].strip().strip("|").split("|")])
                 i += 1
             thead = "".join(f"<th>{_md_inline(c)}</th>" for c in header)
-            rows = "".join(
-                "<tr>" + "".join(f"<td>{_md_inline(c)}</td>" for c in r) + "</tr>" for r in body
+            rows = "".join("<tr>" + "".join(f"<td>{_md_inline(c)}</td>" for c in r) + "</tr>" for r in body)
+            out.append(
+                f'<div class="tbl"><table><thead><tr>{thead}</tr></thead><tbody>{rows}</tbody></table></div>'
             )
-            out.append(f'<div class="tbl"><table><thead><tr>{thead}</tr></thead>'
-                       f"<tbody>{rows}</tbody></table></div>")
             continue
         m = re.match(r"^(#{1,6})\s+(.*)$", stripped)
         if m:

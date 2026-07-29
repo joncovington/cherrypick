@@ -33,12 +33,15 @@ from cherrypick.core import viz  # noqa: E402
 
 import dashboard as dash  # noqa: E402
 
-_NOTE = ("net of fees · win = resolved trade with pnl − fees > 0 · "
-         "0DTE iron condors, per-side stops, no profit target")
+_NOTE = (
+    "net of fees · win = resolved trade with pnl − fees > 0 · "
+    "0DTE iron condors, per-side stops, no profit target"
+)
 
 
-def build_section(mode: str = "paper", symbol: str | None = None, profile: str | None = None,
-                  db_override: str | None = None) -> dict:
+def build_section(
+    mode: str = "paper", symbol: str | None = None, profile: str | None = None, db_override: str | None = None
+) -> dict:
     """Return a cherrypick.core.viz section payload, or {ok: False, error}."""
     if mode not in ("paper", "live"):
         return {"ok": False, "error": f"unknown mode {mode!r} -- expected 'paper' or 'live'"}
@@ -102,10 +105,16 @@ def build_section(mode: str = "paper", symbol: str | None = None, profile: str |
     win_rate = f"{totals['wins'] / resolved * 100:.0f}% ({totals['wins']}/{resolved})" if resolved else "–"
 
     metrics = [
-        {"label": "Net P&L", "value": viz.fmt_money(net_after_fees),
-         "tone": "pos" if net_after_fees >= 0 else "neg"},
-        {"label": "Today", "value": viz.fmt_money(today_net, none="–"),
-         "tone": None if today_net is None else ("pos" if today_net >= 0 else "neg")},
+        {
+            "label": "Net P&L",
+            "value": viz.fmt_money(net_after_fees),
+            "tone": "pos" if net_after_fees >= 0 else "neg",
+        },
+        {
+            "label": "Today",
+            "value": viz.fmt_money(today_net, none="–"),
+            "tone": None if today_net is None else ("pos" if today_net >= 0 else "neg"),
+        },
         {"label": "Win rate", "value": win_rate},
         {"label": "Open ICs", "value": str(open_count), "tone": "accent"},
         {"label": "Trades", "value": str(totals["total_trades"])},
@@ -128,14 +137,21 @@ def build_section(mode: str = "paper", symbol: str | None = None, profile: str |
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=["live", "paper"], default="paper",
-                        help="'paper' (default) reads paper_trades.db; 'live' reads meic_trades.db. "
-                             "The suite dashboard always passes --mode paper.")
+    parser.add_argument(
+        "--mode",
+        choices=["live", "paper"],
+        default="paper",
+        help="'paper' (default) reads paper_trades.db; 'live' reads meic_trades.db. "
+        "The suite dashboard always passes --mode paper.",
+    )
     parser.add_argument("--db", default=None, help="Overrides the mode-based default DB path.")
     parser.add_argument("--symbol", default=None, help="Filter to one traded symbol (default: all).")
     parser.add_argument("--profile", default=None, help="Filter to one risk profile (default: all).")
-    parser.add_argument("--json", action="store_true",
-                        help="Emit JSON (the only output format; the flag matches the suite's section argv shape).")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit JSON (the only output format; the flag matches the suite's section argv shape).",
+    )
     args = parser.parse_args()
     print(json.dumps(build_section(args.mode, args.symbol, args.profile, args.db)))
 

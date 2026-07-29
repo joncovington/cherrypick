@@ -22,8 +22,14 @@ def loop_env(monkeypatch, tmp_path):
         "get_vix1d": {"ok": True, "last": 16.5},
         "get_gex": {"ok": True, "net_gex": 1.0, "gex_positive": True},
         "get_atr": {"ok": True, "symbol": "SPX", "atr": 55.0, "days": 5},
-        "get_intraday_range": {"ok": True, "symbol": "SPX", "day_high": 6050.0,
-                               "day_low": 6020.0, "range_points": 30.0, "range_pct": 0.00497},
+        "get_intraday_range": {
+            "ok": True,
+            "symbol": "SPX",
+            "day_high": 6050.0,
+            "day_low": 6020.0,
+            "range_points": 30.0,
+            "range_pct": 0.00497,
+        },
     }
 
     def fake_run_json(cmd):
@@ -36,8 +42,7 @@ def loop_env(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_loop, "_subrun", lambda cmd: None)
     monkeypatch.setattr(paper_loop, "_fetch_vix", lambda: 15.0)
     monkeypatch.setattr(paper_loop, "_fetch_overview", lambda s: (6040.0, 0.42, 0.61))
-    monkeypatch.setattr(paper_loop, "_build_candidates",
-                        lambda *a, **k: ([{"wing_width": 5}], {}, None))
+    monkeypatch.setattr(paper_loop, "_build_candidates", lambda *a, **k: ([{"wing_width": 5}], {}, None))
     monkeypatch.setattr(paper_loop, "_eod_report_path", lambda day: tmp_path / "eod.md")
 
     def capture(snapshot, db_path, mode, extra_profiles=None):

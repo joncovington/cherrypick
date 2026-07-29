@@ -60,6 +60,7 @@ def test_bwb_round_trip_scales_linearly_with_quantity():
 
 # --- end-to-end: entry -> close through the real save/price/close pipeline -------
 
+
 def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monkeypatch):
     """The audit's headline gap: no test ever drove cmd_run_entries -> cmd_run_closes on
     one DB. This one opens a broken-wing butterfly (the 1-2-1 shape R1 flattened) through
@@ -83,33 +84,52 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
 
     near, body, far = 2.00, 3.00, 1.20
     order = {
-        "ok": True, "strategy": "broken_wing_butterfly",
-        "net_debit": near + far - 2 * body,       # -2.80: a 2.80 net CREDIT
-        "underlying_price": 100.0, "expiration": "2026-08-21",
-        "order": {"legs": [
-            {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
-            {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
-            {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
-        ]},
+        "ok": True,
+        "strategy": "broken_wing_butterfly",
+        "net_debit": near + far - 2 * body,  # -2.80: a 2.80 net CREDIT
+        "underlying_price": 100.0,
+        "expiration": "2026-08-21",
+        "order": {
+            "legs": [
+                {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
+                {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
+                {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
+            ]
+        },
     }
     monkeypatch.setitem(runner._ORDER_FNS, "broken_wing_butterfly", lambda *a: order)
-    monkeypatch.setattr(runner.sizing, "compute_position_size",
-                        lambda *a: {"ok": True, "quantity": 1, "capital_at_risk": 220.0})
+    monkeypatch.setattr(
+        runner.sizing,
+        "compute_position_size",
+        lambda *a: {"ok": True, "quantity": 1, "capital_at_risk": 220.0},
+    )
     # bid == ask: zero spread -> zero slippage, and the exit's side-of-spread pricing
     # equals the entry mids, so any non-zero P&L is an accounting bug.
-    quotes = {"NEAR": {"bid": near, "ask": near, "iv": 0.5},
-              "BODY": {"bid": body, "ask": body, "iv": 0.6},
-              "FAR": {"bid": far, "ask": far, "iv": 0.4}}
-    monkeypatch.setattr(runner, "_leg_quotes_for_symbols",
-                        lambda u, syms, p: {s: quotes[s] for s in syms})
+    quotes = {
+        "NEAR": {"bid": near, "ask": near, "iv": 0.5},
+        "BODY": {"bid": body, "ask": body, "iv": 0.6},
+        "FAR": {"bid": far, "ask": far, "iv": 0.4},
+    }
+    monkeypatch.setattr(runner, "_leg_quotes_for_symbols", lambda u, syms, p: {s: quotes[s] for s in syms})
     monkeypatch.setattr(
-        runner, "_parallel_scan",
-        lambda *a, **k: [(
-            {"symbol": "XYZ", "date": "2026-07-28", "timing": "AMC"},
-            [{"name": "broken_wing_butterfly", "accepted": True, "reject_reasons": [],
-              "criteria": {}, "composite_score": 1.0}],
-            None,
-        )])
+        runner,
+        "_parallel_scan",
+        lambda *a, **k: [
+            (
+                {"symbol": "XYZ", "date": "2026-07-28", "timing": "AMC"},
+                [
+                    {
+                        "name": "broken_wing_butterfly",
+                        "accepted": True,
+                        "reject_reasons": [],
+                        "criteria": {},
+                        "composite_score": 1.0,
+                    }
+                ],
+                None,
+            )
+        ],
+    )
 
     entered = runner.cmd_run_entries(argparse.Namespace(date="2026-07-28"))
     assert entered["ok"] is True and len(entered["opened"]) == 1
@@ -121,8 +141,7 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
     assert row["entry_credit"] == pytest.approx(2.80)
     assert row["entry_slippage"] == pytest.approx(0.0)
 
-    monkeypatch.setattr(runner.scanner, "fetch_quote_and_expirations",
-                        lambda s: {"ok": True, "price": 100.0})
+    monkeypatch.setattr(runner.scanner, "fetch_quote_and_expirations", lambda s: {"ok": True, "price": 100.0})
     closed = runner.cmd_run_closes(argparse.Namespace())
     assert closed["closed"][0]["pnl"] == pytest.approx(0.0)
     assert closed["closed"][0]["exit_cost"] == pytest.approx(0.56)  # $0 close commission
@@ -133,6 +152,7 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
 
 # --- the R8 seam: multi-day strategies are managed, not force-closed -------------
 
+
 def _close_sweep_env(tmp_path, monkeypatch, quotes_by_symbol, config=None):
     """Common harness for cmd_run_closes tests: isolated DB, no network, canned quotes."""
     import db_paper
@@ -140,14 +160,18 @@ def _close_sweep_env(tmp_path, monkeypatch, quotes_by_symbol, config=None):
     monkeypatch.setattr(db_paper, "DB_PATH", tmp_path / "paper_trades.db")
     db_paper.cmd_init_db(argparse.Namespace())
     monkeypatch.setattr(runner.rank_strategies, "_verify_tastytrade_connection", lambda: True)
-    monkeypatch.setattr(runner.scanner, "_load_config",
-                        lambda *a, **k: config or {"close_quote_retries": 0, "strategies": {}})
+    monkeypatch.setattr(
+        runner.scanner, "_load_config", lambda *a, **k: config or {"close_quote_retries": 0, "strategies": {}}
+    )
     monkeypatch.setattr(runner, "_capture_market_context", lambda day: None)
-    monkeypatch.setattr(runner.scanner, "fetch_quote_and_expirations",
-                        lambda symbol: {"ok": True, "price": 100.0})
-    monkeypatch.setattr(runner, "_leg_quotes_for_symbols",
-                        lambda underlying, leg_symbols, price: {
-                            s: quotes_by_symbol[s] for s in leg_symbols})
+    monkeypatch.setattr(
+        runner.scanner, "fetch_quote_and_expirations", lambda symbol: {"ok": True, "price": 100.0}
+    )
+    monkeypatch.setattr(
+        runner,
+        "_leg_quotes_for_symbols",
+        lambda underlying, leg_symbols, price: {s: quotes_by_symbol[s] for s in leg_symbols},
+    )
     report = tmp_path / "eod.md"
     report.write_text("stub", encoding="utf-8")
     monkeypatch.setattr(runner, "_eod_report_path", lambda day: report)
@@ -156,14 +180,19 @@ def _close_sweep_env(tmp_path, monkeypatch, quotes_by_symbol, config=None):
 
 def _far_expiration(days=30):
     from datetime import date, timedelta
+
     return (date.today() + timedelta(days=days)).isoformat()
 
 
 def _save_calendar(db_paper, strategy, entry_credit, legs, trade_legs=None):
     spec = {
-        "order_id": f"{strategy}-1", "strategy": strategy, "symbol": "CAL",
-        "expiration": _far_expiration(), "entry_credit": entry_credit,
-        "legs_json": json.dumps(legs), "profile": f"strat_test:{strategy}",
+        "order_id": f"{strategy}-1",
+        "strategy": strategy,
+        "symbol": "CAL",
+        "expiration": _far_expiration(),
+        "entry_credit": entry_credit,
+        "legs_json": json.dumps(legs),
+        "profile": f"strat_test:{strategy}",
     }
     if trade_legs:
         spec["legs"] = trade_legs
@@ -174,8 +203,10 @@ def test_atm_calendar_is_held_when_its_strategy_says_hold(tmp_path, monkeypatch)
     """The old sweep force-closed every position the morning after entry — a one-night
     structure nobody intends to trade. A calendar at neither profit target nor stop,
     far from expiry, must be HELD, and a hold is a decision, not a close failure."""
-    legs = [{"symbol": "FRONT", "action": "Sell to Open", "quantity": 1},
-            {"symbol": "BACK", "action": "Buy to Open", "quantity": 1}]
+    legs = [
+        {"symbol": "FRONT", "action": "Sell to Open", "quantity": 1},
+        {"symbol": "BACK", "action": "Buy to Open", "quantity": 1},
+    ]
     # exit_debit = +1.0 (buy front back) - 4.0 (sell back) = -3.0 -> nets exactly the
     # 3.00 debit paid: zero profit, zero loss.
     quotes = {"FRONT": {"bid": 1.0, "ask": 1.0}, "BACK": {"bid": 4.0, "ask": 4.0}}
@@ -190,8 +221,10 @@ def test_atm_calendar_is_held_when_its_strategy_says_hold(tmp_path, monkeypatch)
 
 
 def test_atm_calendar_closes_on_its_own_profit_target(tmp_path, monkeypatch):
-    legs = [{"symbol": "FRONT", "action": "Sell to Open", "quantity": 1},
-            {"symbol": "BACK", "action": "Buy to Open", "quantity": 1}]
+    legs = [
+        {"symbol": "FRONT", "action": "Sell to Open", "quantity": 1},
+        {"symbol": "BACK", "action": "Buy to Open", "quantity": 1},
+    ]
     # Nets 4.00 against a 3.00 debit: profit 1.00 >= 3.00 * 0.25 -> profit_target.
     quotes = {"FRONT": {"bid": 1.0, "ask": 1.0}, "BACK": {"bid": 5.0, "ask": 5.0}}
     db_paper = _close_sweep_env(tmp_path, monkeypatch, quotes)
@@ -206,8 +239,10 @@ def test_atm_calendar_closes_on_its_own_profit_target(tmp_path, monkeypatch):
 def test_overnight_strategy_still_closes_unconditionally(tmp_path, monkeypatch):
     """The five overnight strategies keep the Step 3 close-window backstop: whatever is
     open at 09:45 closes regardless of P&L — that IS their design."""
-    legs = [{"symbol": "SC", "action": "Sell to Open", "quantity": 1},
-            {"symbol": "LC", "action": "Buy to Open", "quantity": 1}]
+    legs = [
+        {"symbol": "SC", "action": "Sell to Open", "quantity": 1},
+        {"symbol": "LC", "action": "Buy to Open", "quantity": 1},
+    ]
     quotes = {"SC": {"bid": 2.0, "ask": 2.1}, "LC": {"bid": 0.5, "ask": 0.6}}
     db_paper = _close_sweep_env(tmp_path, monkeypatch, quotes)
     _save_calendar(db_paper, "iron_fly", 2.00, legs)
@@ -221,10 +256,12 @@ def test_double_calendar_leg_stop_closes_whole_position_in_harness(tmp_path, mon
     """A front short past its delta stop: the strategy says close_side; the harness's
     single-close paper accounting exits the whole position, with the reason suffixed so
     the simplification stays visible in the journal. trade_legs sweep closes with it."""
-    legs = [{"symbol": "FC", "action": "Sell to Open", "quantity": 1},
-            {"symbol": "FP", "action": "Sell to Open", "quantity": 1},
-            {"symbol": "BC", "action": "Buy to Open", "quantity": 1},
-            {"symbol": "BP", "action": "Buy to Open", "quantity": 1}]
+    legs = [
+        {"symbol": "FC", "action": "Sell to Open", "quantity": 1},
+        {"symbol": "FP", "action": "Sell to Open", "quantity": 1},
+        {"symbol": "BC", "action": "Buy to Open", "quantity": 1},
+        {"symbol": "BP", "action": "Buy to Open", "quantity": 1},
+    ]
     trade_legs = [
         {"leg_role": "front_call", "symbol": "FC", "action": "Sell to Open", "quantity": 1},
         {"leg_role": "front_put", "symbol": "FP", "action": "Sell to Open", "quantity": 1},
@@ -246,12 +283,12 @@ def test_double_calendar_leg_stop_closes_whole_position_in_harness(tmp_path, mon
     assert result["held"] == []
     assert result["closed"][0]["reason"] == "leg_stop_overnight_gap_close_all"
     assert db_paper.cmd_get_open_positions(argparse.Namespace())["positions"] == []
-    legs_left = db_paper.cmd_get_open_legs(
-        argparse.Namespace(order_id="double_calendar-1"))["legs"]
+    legs_left = db_paper.cmd_get_open_legs(argparse.Namespace(order_id="double_calendar-1"))["legs"]
     assert legs_left == []
 
 
 # --- the R9 seam: a position that can't be priced at close must never vanish -----
+
 
 def test_run_closes_records_attempts_and_reports_stranded(tmp_path, monkeypatch):
     """First failed sweep: the skip carries close_attempts=1 and nothing is stranded
@@ -262,19 +299,26 @@ def test_run_closes_records_attempts_and_reports_stranded(tmp_path, monkeypatch)
 
     monkeypatch.setattr(db_paper, "DB_PATH", tmp_path / "paper_trades.db")
     db_paper.cmd_init_db(argparse.Namespace())
-    db_paper.cmd_save_trade(argparse.Namespace(data=json.dumps({
-        "order_id": "STUCK-1", "strategy": "iron_fly", "symbol": "HALT",
-        "expiration": "2026-08-21", "entry_credit": 2.0,
-        "legs_json": json.dumps([{"symbol": "H1", "action": "Sell to Open", "quantity": 1}]),
-        "profile": "strat_test:iron_fly",
-    })))
+    db_paper.cmd_save_trade(
+        argparse.Namespace(
+            data=json.dumps(
+                {
+                    "order_id": "STUCK-1",
+                    "strategy": "iron_fly",
+                    "symbol": "HALT",
+                    "expiration": "2026-08-21",
+                    "entry_credit": 2.0,
+                    "legs_json": json.dumps([{"symbol": "H1", "action": "Sell to Open", "quantity": 1}]),
+                    "profile": "strat_test:iron_fly",
+                }
+            )
+        )
+    )
 
     monkeypatch.setattr(runner.rank_strategies, "_verify_tastytrade_connection", lambda: True)
-    monkeypatch.setattr(runner.scanner, "_load_config",
-                        lambda *a, **k: {"close_quote_retries": 0})
+    monkeypatch.setattr(runner.scanner, "_load_config", lambda *a, **k: {"close_quote_retries": 0})
     monkeypatch.setattr(runner, "_capture_market_context", lambda day: None)
-    monkeypatch.setattr(runner.scanner, "fetch_quote_and_expirations",
-                        lambda symbol: {"ok": False})
+    monkeypatch.setattr(runner.scanner, "fetch_quote_and_expirations", lambda symbol: {"ok": False})
     monkeypatch.setattr(runner, "_leg_quotes_for_symbols", lambda *a, **k: None)
     # Pretend today's EOD report already exists so the sweep skips report generation.
     report = tmp_path / "eod.md"
@@ -306,17 +350,20 @@ def test_occ_expiration_handles_short_root_symbol():
     assert runner._occ_expiration("F     260710C00012500") == "2026-07-10"
 
 
-@pytest.mark.parametrize("order,expected", [
-    ({"strategy": "iron_fly", "credit": 0.90}, 0.90),
-    ({"strategy": "iron_condor", "credit": 0.80}, 0.80),
-    ({"strategy": "directional_credit_spread", "credit": 0.40}, 0.40),
-    ({"strategy": "atm_calendar", "debit": 3.12}, -3.12),
-    ({"strategy": "double_calendar", "debit": 0.45}, -0.45),
-    ({"strategy": "broken_wing_butterfly", "net_debit": 0.45}, -0.45),
-    # total_credit is not produced by any current strategy, but _per_contract_credit
-    # keeps it as a general fallback for a future multi-credit-leg strategy:
-    ({"strategy": "hypothetical_multi_credit", "total_credit": 1.25}, 1.25),
-])
+@pytest.mark.parametrize(
+    "order,expected",
+    [
+        ({"strategy": "iron_fly", "credit": 0.90}, 0.90),
+        ({"strategy": "iron_condor", "credit": 0.80}, 0.80),
+        ({"strategy": "directional_credit_spread", "credit": 0.40}, 0.40),
+        ({"strategy": "atm_calendar", "debit": 3.12}, -3.12),
+        ({"strategy": "double_calendar", "debit": 0.45}, -0.45),
+        ({"strategy": "broken_wing_butterfly", "net_debit": 0.45}, -0.45),
+        # total_credit is not produced by any current strategy, but _per_contract_credit
+        # keeps it as a general fallback for a future multi-credit-leg strategy:
+        ({"strategy": "hypothetical_multi_credit", "total_credit": 1.25}, 1.25),
+    ],
+)
 def test_per_contract_credit_covers_every_strategys_field_name(order, expected):
     """Regression test: each strategy's get_order result uses a different
     field name for its entry price -- iron_fly/iron_condor/directional use
@@ -334,13 +381,19 @@ def test_per_contract_credit_raises_on_unrecognized_shape():
 
 def test_entry_context_extracts_expected_fields():
     criteria = {
-        "iv_rv_ratio": 1.1, "realized_move_dispersion_pct": 0.12,
-        "skew_abs": 0.03, "winrate": 0.6, "avg_volume": 999999,
+        "iv_rv_ratio": 1.1,
+        "realized_move_dispersion_pct": 0.12,
+        "skew_abs": 0.03,
+        "winrate": 0.6,
+        "avg_volume": 999999,
     }
     ctx = runner._entry_context(criteria, composite_score=0.76)
     assert ctx == {
-        "iv_rv_ratio": 1.1, "dispersion": 0.12, "skew_abs": 0.03,
-        "winrate": 0.6, "composite_score": 0.76,
+        "iv_rv_ratio": 1.1,
+        "dispersion": 0.12,
+        "skew_abs": 0.03,
+        "winrate": 0.6,
+        "composite_score": 0.76,
     }
 
 

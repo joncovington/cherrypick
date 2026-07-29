@@ -15,9 +15,17 @@ import serve
 def test_render_page_has_all_three_tabs_and_charts():
     page = serve._render_page("SPX", 15, ["SPX", "XSP"]).decode()
     for marker in (
-        'data-gex-tab="gex"', 'data-gex-tab="ivskew"', 'data-gex-tab="volume"',
-        'id="gex-main-chart"', 'id="gex-iv-chart"', 'id="gex-oi-chart"', 'id="gex-vol-chart"',
-        "_spotHistoryPlugin", "renderGexMainChart", "renderIvChart", "renderVolChart",
+        'data-gex-tab="gex"',
+        'data-gex-tab="ivskew"',
+        'data-gex-tab="volume"',
+        'id="gex-main-chart"',
+        'id="gex-iv-chart"',
+        'id="gex-oi-chart"',
+        'id="gex-vol-chart"',
+        "_spotHistoryPlugin",
+        "renderGexMainChart",
+        "renderIvChart",
+        "renderVolChart",
     ):
         assert marker in page, f"missing {marker}"
 
@@ -32,7 +40,7 @@ def test_handler_serves_page_and_api(tmp_path):
     cfg = {
         "serve": {"refresh_seconds": 15},
         "symbols": ["SPX"],
-        "stream_cache_db": str(tmp_path / "nope.db"),   # missing -> build_gex returns ok:false gracefully
+        "stream_cache_db": str(tmp_path / "nope.db"),  # missing -> build_gex returns ok:false gracefully
         "history_db_path": str(tmp_path / "hist.db"),
     }
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), serve.make_handler(cfg, "SPX"))
@@ -56,6 +64,7 @@ def test_handler_serves_page_and_api(tmp_path):
         r = conn.getresponse()
         assert r.status == 200
         import json
+
         payload = json.loads(r.read())
         assert payload["ok"] is False and "streamer" in payload["error"]  # missing cache, handled cleanly
     finally:

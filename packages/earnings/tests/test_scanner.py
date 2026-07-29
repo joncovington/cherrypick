@@ -6,6 +6,7 @@ import scanner
 
 # --- has_weekly_options -----------------------------------------------------
 
+
 def test_has_weekly_options_true_when_gap_le_10_days():
     exps = [date(2026, 7, 10), date(2026, 7, 17), date(2026, 8, 21)]
     assert scanner.has_weekly_options(exps) is True
@@ -22,6 +23,7 @@ def test_has_weekly_options_unsorted_input():
 
 
 # --- reaction_date / select_front_expiration --------------------------------
+
 
 def test_reaction_date_after_market_close_is_next_day():
     assert scanner.reaction_date(date(2026, 7, 7), "After market close") == date(2026, 7, 8)
@@ -47,6 +49,7 @@ def test_select_front_expiration_no_eligible_expiration_returns_error():
 
 # --- is_monthly_expiration / nearest_expiration_at_least_days_after ---------
 
+
 def test_is_monthly_expiration_third_friday():
     assert scanner.is_monthly_expiration(date(2026, 7, 17)) is True
 
@@ -61,7 +64,9 @@ def test_is_monthly_expiration_rejects_friday_outside_window():
 
 def test_nearest_expiration_at_least_days_after_monthly_only():
     expirations = [date(2026, 7, 24), date(2026, 8, 21), date(2026, 9, 4)]
-    result = scanner.nearest_expiration_at_least_days_after(expirations, date(2026, 7, 10), 21, monthly_only=True)
+    result = scanner.nearest_expiration_at_least_days_after(
+        expirations, date(2026, 7, 10), 21, monthly_only=True
+    )
     assert result == date(2026, 8, 21)
 
 
@@ -111,9 +116,14 @@ def test_nearest_strike_entry_excludes_given_strike():
 
 # --- compute_expected_move_and_term_structure -------------------------------
 
+
 def test_compute_expected_move_and_term_structure_negative_when_front_richer():
     result = scanner.compute_expected_move_and_term_structure(
-        front_call_mid=7.0, front_put_mid=7.0, front_iv=0.60, back_iv=0.40, underlying_price=100.0,
+        front_call_mid=7.0,
+        front_put_mid=7.0,
+        front_iv=0.60,
+        back_iv=0.40,
+        underlying_price=100.0,
     )
     assert result["term_structure"] < 0
     assert result["expected_move_dollars"] == pytest.approx(0.85 * 14.0)
@@ -122,12 +132,17 @@ def test_compute_expected_move_and_term_structure_negative_when_front_richer():
 
 def test_compute_expected_move_and_term_structure_positive_when_back_richer():
     result = scanner.compute_expected_move_and_term_structure(
-        front_call_mid=1.0, front_put_mid=1.0, front_iv=0.30, back_iv=0.60, underlying_price=100.0,
+        front_call_mid=1.0,
+        front_put_mid=1.0,
+        front_iv=0.30,
+        back_iv=0.60,
+        underlying_price=100.0,
     )
     assert result["term_structure"] > 0
 
 
 # --- _soft_gate --------------------------------------------------------------
+
 
 def test_soft_gate_pass_level_accepts_at_or_above_pass():
     hard_fail = []
@@ -168,6 +183,7 @@ def test_soft_gate_missing_value_is_unverified_reject_unless_off():
 
 # --- apply_liquidity_gates (hard filters only) ----------------------------------
 
+
 def test_apply_liquidity_gates_all_pass(base_strategy_config, good_criteria):
     hard_fail = []
     scanner.apply_liquidity_gates(good_criteria, base_strategy_config, hard_fail)
@@ -189,6 +205,7 @@ def test_apply_liquidity_gates_requires_weekly_options(base_strategy_config, goo
 
 
 # --- apply_soft_criteria --------------------------------------------------------
+
 
 def test_apply_soft_criteria_all_pass(base_strategy_config, good_criteria):
     hard_fail = []
@@ -213,6 +230,7 @@ def test_apply_soft_criteria_honors_near_miss_level(base_strategy_config, good_c
 
 
 # --- _shrunk_winrate / compute_composite_score ----------------------------------
+
 
 def test_shrunk_winrate_full_sample_uses_raw_value():
     assert scanner._shrunk_winrate(0.85, 8, target_sample=8) == pytest.approx(0.85)
@@ -251,6 +269,7 @@ def test_compute_composite_score_defaults_iv_rv_to_one():
 
 # --- compute_generic_exit_debit ------------------------------------------------
 
+
 def _quote(bid, ask):
     return {"bid": bid, "ask": ask}
 
@@ -263,8 +282,10 @@ def test_compute_generic_exit_debit_iron_fly_shape():
         {"symbol": "LP", "action": "Buy to Open", "quantity": 1},
     ]
     quotes = {
-        "SC": _quote(1.0, 1.2), "SP": _quote(1.0, 1.2),
-        "LC": _quote(0.3, 0.4), "LP": _quote(0.3, 0.4),
+        "SC": _quote(1.0, 1.2),
+        "SP": _quote(1.0, 1.2),
+        "LC": _quote(0.3, 0.4),
+        "LP": _quote(0.3, 0.4),
     }
     exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
     # buy back shorts at ask (1.2 + 1.2), sell longs at bid (0.3 + 0.3)
@@ -300,29 +321,40 @@ def test_compute_generic_exit_debit_none_when_required_side_missing():
 
 # --- evaluate_credit_spread_exit / evaluate_debit_spread_exit -------------------
 
+
 def test_evaluate_credit_spread_exit_profit_target():
-    result = scanner.evaluate_credit_spread_exit(entry_credit=2.0, exit_debit=0.9, config={"profit_target_pct": 0.50})
+    result = scanner.evaluate_credit_spread_exit(
+        entry_credit=2.0, exit_debit=0.9, config={"profit_target_pct": 0.50}
+    )
     assert result == {"action": "close_all", "reason": "profit_target"}
 
 
 def test_evaluate_credit_spread_exit_stop_loss():
-    result = scanner.evaluate_credit_spread_exit(entry_credit=2.0, exit_debit=3.5, config={"stop_loss_credit_multiple": 1.5})
+    result = scanner.evaluate_credit_spread_exit(
+        entry_credit=2.0, exit_debit=3.5, config={"stop_loss_credit_multiple": 1.5}
+    )
     assert result == {"action": "close_all", "reason": "stop_loss"}
 
 
 def test_evaluate_credit_spread_exit_hold():
-    result = scanner.evaluate_credit_spread_exit(entry_credit=2.0, exit_debit=1.5, config={"profit_target_pct": 0.50})
+    result = scanner.evaluate_credit_spread_exit(
+        entry_credit=2.0, exit_debit=1.5, config={"profit_target_pct": 0.50}
+    )
     assert result == {"action": "hold"}
 
 
 def test_evaluate_debit_spread_exit_profit_target():
     # entry_credit stored negative (debit paid); exit_debit negative = nets credit on close
-    result = scanner.evaluate_debit_spread_exit(entry_credit=-2.0, exit_debit=-3.0, config={"profit_target_pct": 0.25})
+    result = scanner.evaluate_debit_spread_exit(
+        entry_credit=-2.0, exit_debit=-3.0, config={"profit_target_pct": 0.25}
+    )
     assert result == {"action": "close_all", "reason": "profit_target"}
 
 
 def test_evaluate_debit_spread_exit_stop_loss():
-    result = scanner.evaluate_debit_spread_exit(entry_credit=-2.0, exit_debit=1.5, config={"stop_loss_pct_of_debit": 0.40})
+    result = scanner.evaluate_debit_spread_exit(
+        entry_credit=-2.0, exit_debit=1.5, config={"stop_loss_pct_of_debit": 0.40}
+    )
     assert result == {"action": "close_all", "reason": "stop_loss"}
 
 
@@ -333,12 +365,21 @@ def test_evaluate_debit_spread_exit_hold():
 
 # --- rank_candidates / select_positions -----------------------------------------
 
+
 def test_rank_candidates_excludes_rejected():
     candidates = [
         {"accepted": False, "criteria": {"term_structure": -0.1, "iv_rv_ratio": 1.0, "winrate": 0.5}},
         {"accepted": False, "criteria": {"term_structure": -0.3, "iv_rv_ratio": 1.0, "winrate": 0.5}},
-        {"accepted": True, "symbol": "A", "criteria": {"term_structure": -0.2, "iv_rv_ratio": 1.0, "winrate": 0.5}},
-        {"accepted": True, "symbol": "B", "criteria": {"term_structure": -0.1, "iv_rv_ratio": 1.0, "winrate": 0.5}},
+        {
+            "accepted": True,
+            "symbol": "A",
+            "criteria": {"term_structure": -0.2, "iv_rv_ratio": 1.0, "winrate": 0.5},
+        },
+        {
+            "accepted": True,
+            "symbol": "B",
+            "criteria": {"term_structure": -0.1, "iv_rv_ratio": 1.0, "winrate": 0.5},
+        },
     ]
     ranked = scanner.rank_candidates(candidates, config={})
     assert len(ranked) == 2
@@ -363,18 +404,24 @@ def test_select_positions_blocks_correlated_names():
 
 # --- compute_winrate (mocked DB layer) -------------------------------------------
 
+
 def test_compute_winrate_no_earnings_dates(monkeypatch):
     monkeypatch.setattr(scanner, "fetch_historical_earnings_dates", lambda *a, **k: [])
     result = scanner.compute_winrate("AAPL", {}, lookback_quarters=8)
     assert result == {
-        "ok": True, "symbol": "AAPL", "sample_size": 0, "winrate": None,
-        "quarters": [], "skipped": [],
+        "ok": True,
+        "symbol": "AAPL",
+        "sample_size": 0,
+        "winrate": None,
+        "quarters": [],
+        "skipped": [],
     }
 
 
 def test_compute_winrate_skips_ambiguous_timing(monkeypatch):
     monkeypatch.setattr(
-        scanner, "fetch_historical_earnings_dates",
+        scanner,
+        "fetch_historical_earnings_dates",
         lambda *a, **k: [{"date": date(2026, 1, 1), "timing": "During Market"}],
     )
     result = scanner.compute_winrate("AAPL", {}, lookback_quarters=8)
@@ -384,15 +431,21 @@ def test_compute_winrate_skips_ambiguous_timing(monkeypatch):
 
 def test_compute_winrate_computes_win_when_implied_exceeds_realized(monkeypatch):
     monkeypatch.setattr(
-        scanner, "fetch_historical_earnings_dates",
+        scanner,
+        "fetch_historical_earnings_dates",
         lambda *a, **k: [{"date": date(2026, 1, 1), "timing": "After market close"}],
     )
     monkeypatch.setattr(
-        scanner, "pre_and_reaction_closes",
-        lambda *a, **k: ({"date": date(2026, 1, 1), "close": 100.0}, {"date": date(2026, 1, 2), "close": 103.0}),
+        scanner,
+        "pre_and_reaction_closes",
+        lambda *a, **k: (
+            {"date": date(2026, 1, 1), "close": 100.0},
+            {"date": date(2026, 1, 2), "close": 103.0},
+        ),
     )
     monkeypatch.setattr(
-        scanner, "fetch_atm_straddle_price",
+        scanner,
+        "fetch_atm_straddle_price",
         lambda *a, **k: {"expiration": "2026-01-16", "atm_strike": 100.0, "straddle_mid": 5.0},
     )
     result = scanner.compute_winrate("AAPL", {}, lookback_quarters=8)
@@ -402,6 +455,7 @@ def test_compute_winrate_computes_win_when_implied_exceeds_realized(monkeypatch)
 
 
 # --- fetch_entry_window_calendar (mocked DB layer) -------------------------------
+
 
 def test_fetch_entry_window_calendar_merges_today_amc_and_tomorrow_bmo(monkeypatch):
     def fake_calendar(iso_date, config):
@@ -414,6 +468,7 @@ def test_fetch_entry_window_calendar_merges_today_amc_and_tomorrow_bmo(monkeypat
             {"symbol": "BMO_TOMORROW", "timing": "Before market open"},
             {"symbol": "AMC_TOMORROW", "timing": "After market close"},
         ]
+
     monkeypatch.setattr(scanner, "fetch_dolthub_calendar", fake_calendar)
     result = scanner.fetch_entry_window_calendar({}, today=date(2026, 7, 7))
     symbols = [r["symbol"] for r in result]
