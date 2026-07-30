@@ -170,18 +170,22 @@ def test_build_order_defaults_and_leg_mapping():
     assert "price" not in order.__dict__  # no price key when unset
 
 
-def test_build_order_credit_price_is_negative():
+def test_build_order_credit_price_is_positive():
+    """tastytrade's own NewOrder.price docstring: "negative = debit, positive = credit" — verified
+    against the installed SDK's source (order.py), not assumed. Was inverted here until a live
+    entry order (2026-07-30) submitted as a credit was routed as a debit and rejected by the
+    exchange as outside the acceptable price range."""
     order = broker.build_order(
         {"legs": [_leg()], "price": 1.50, "price_effect": "Credit"}, order_ns=_fake_order_ns()
     )
-    assert order.price == Decimal("-1.5")
+    assert order.price == Decimal("1.5")
 
 
-def test_build_order_debit_price_is_positive():
+def test_build_order_debit_price_is_negative():
     order = broker.build_order(
         {"legs": [_leg()], "price": 1.50, "price_effect": "Debit"}, order_ns=_fake_order_ns()
     )
-    assert order.price == Decimal("1.5")
+    assert order.price == Decimal("-1.5")
 
 
 def test_build_order_price_without_effect_kept_as_is():

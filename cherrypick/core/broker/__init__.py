@@ -151,7 +151,9 @@ def build_order(spec: dict, *, order_ns: Any = None) -> Any:
       - time_in_force (default "Day"), order_type (default "Limit")
       - legs: [{instrument_type, symbol, action, quantity}] — `action` is a human string
         ("buy to open", ...) mapped through ACTION_MAP to the OrderAction enum
-      - price (optional) with price_effect "credit"/"debit" to sign it (credit -> negative)
+      - price (optional) with price_effect "credit"/"debit" to sign it (credit -> positive,
+        debit -> negative — tastytrade's own convention, `NewOrder.price`: "negative = debit,
+        positive = credit"; verified against the installed SDK's source, not assumed)
       - stop_trigger (optional)
 
     The tastytrade order classes are imported lazily, or injected via `order_ns` (an object exposing
@@ -177,7 +179,7 @@ def build_order(spec: dict, *, order_ns: Any = None) -> Any:
         effect = spec.get("price_effect")
         if effect is not None:
             magnitude = abs(price)
-            price = -magnitude if str(effect).strip().lower() == "credit" else magnitude
+            price = magnitude if str(effect).strip().lower() == "credit" else -magnitude
         kwargs["price"] = price
     if spec.get("stop_trigger") is not None:
         kwargs["stop_trigger"] = Decimal(str(spec["stop_trigger"]))
