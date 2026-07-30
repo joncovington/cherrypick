@@ -140,6 +140,15 @@ def test_ensure_server_missing_checkout(tmp_path, monkeypatch):
     monkeypatch.setattr(embeds, "_port_reachable", lambda h, p: False)
     res = embeds.ensure_server({"id": "meic", "path": str(tmp_path / "nope"), "port": 8801})
     assert res["ok"] is False and "not found" in res["detail"]
+    # served into the dashboard's iframe error message -- must never carry the absolute checkout
+    # path (drive letter / username), only the portable form.
+    assert str(tmp_path) not in res["detail"]
+
+
+def test_build_static_missing_checkout_never_leaks_absolute_path(tmp_path):
+    res = embeds.build_static({"id": "meic", "path": str(tmp_path / "nope")})
+    assert res["ok"] is False and "not found" in res["detail"]
+    assert str(tmp_path) not in res["detail"]
 
 
 def test_build_static_runs_generator_and_throttles(tmp_path, monkeypatch):
