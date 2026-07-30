@@ -193,6 +193,27 @@ def test_api_arm_filter_narrows_history(conn):
     assert {t["arm"] for t in only_gex["history"]["trades"]} == {"gex"}
 
 
+def test_api_symbol_roster_and_filter(conn):
+    """The book moved SPX -> XSP; both eras stay in the ledger, so the symbol selector must offer
+    both and narrowing to one must actually narrow history, performance, and the today card."""
+    seeded(conn)  # all SPX, per test_analytics.position's default
+    position(conn, "X1", day=DAY, arm="gex", symbol="XSP", kind="fly", net=0.20, pnl=15.0)
+
+    everything = dashboard.build_api_data(conn, DAY)
+    assert set(everything["symbols"]) == {"SPX", "XSP"}
+    assert everything["selected_symbol"] == "ALL"
+
+    only_xsp = dashboard.build_api_data(conn, DAY, None, "XSP")
+    assert only_xsp["selected_symbol"] == "XSP"
+    assert {t["symbol"] for t in only_xsp["history"]["trades"]} == {"XSP"}
+    assert only_xsp["history"]["by_arm"][0]["net_pnl"] == 15.0
+    assert only_xsp["performance"]["all_time"]["net_pnl"] == 15.0
+    # Today's tiles/positions/books all narrow to the selected scope too, via session_overview --
+    # the whole card must tell one consistent story for whatever arm/symbol is picked.
+    assert {p["symbol"] for p in only_xsp["today"]["positions"]} == {"XSP"}
+    assert only_xsp["today"]["stats"]["net_pnl"] == 15.0
+
+
 def test_page_is_self_contained(conn):
     """A loopback page that fetched from a CDN would break offline and add a third-party dependency
     to a surface whose only job is reading a local SQLite file."""

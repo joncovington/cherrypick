@@ -73,14 +73,26 @@ def port_in_use(port: int, host: str = HOST) -> bool:
     return viz.port_in_use(port, host)
 
 
-def build_api_data(conn, day: str | None = None, arm: str | None = None) -> dict:
+def build_api_data(conn, day: str | None = None, arm: str | None = None, symbol: str | None = None) -> dict:
     """Everything all three views need, in one payload — the client filters locally from here."""
     day = day or analytics.today()
     arm_filter = None if not arm or arm == "ALL" else arm
-    overview = analytics.session_overview(conn, day)
+    symbol_filter = None if not symbol or symbol == "ALL" else symbol
+    # The arm/symbol ROSTER is built from today's UNFILTERED books (an arm/symbol trading today but
+    # with nothing settled yet wouldn't appear in by_arm's settled-only view) — never from the
+    # filtered overview below, or picking one arm would collapse the other selector's own options.
+    today_books_unfiltered = analytics.books_for_day(conn, day)
+    overview = analytics.session_overview(conn, day, arm=arm_filter, symbol=symbol_filter)
 
     arms = sorted(
-        {b["arm"] for b in overview["books"]} | {r["arm"] for r in analytics.by_arm(conn) if r["arm"]}
+        {b["arm"] for b in today_books_unfiltered} | {r["arm"] for r in analytics.by_arm(conn) if r["arm"]}
+    )
+    # The symbol roster: distinct underlyings ever recorded, from both today's books and the full
+    # trade log — so the selector offers XSP (current) and SPX (retired, both books remain in the
+    # ledger) even on a day that only traded one of them.
+    symbols = sorted(
+        {b["symbol"] for b in today_books_unfiltered if b.get("symbol")}
+        | {r["symbol"] for r in analytics.trade_log(conn) if r.get("symbol")}
     )
     curves = {a: analytics.payoff_curve(conn, day, a) for a in arms} or {}
 
@@ -90,6 +102,8 @@ def build_api_data(conn, day: str | None = None, arm: str | None = None) -> dict
         "date": day,
         "arms": arms,
         "selected_arm": arm or "ALL",
+        "symbols": symbols,
+        "selected_symbol": symbol or "ALL",
         "today": {
             "stats": overview["stats"],
             "books": overview["books"],
@@ -104,22 +118,22 @@ def build_api_data(conn, day: str | None = None, arm: str | None = None) -> dict
             "timeline": analytics.session_timeline(conn, day),
         },
         "history": {
-            "trades": analytics.trade_log(conn, arm=arm_filter),
-            "by_arm": analytics.by_arm(conn),
+            "trades": analytics.trade_log(conn, arm=arm_filter, symbol=symbol_filter),
+            "by_arm": analytics.by_arm(conn, symbol=symbol_filter),
             # What by_arm held back, so the arm table summing below the book total is explained on
             # the page rather than left as an unexplained gap.
-            "arm_exclusions": analytics.arm_comparison_exclusions(conn),
-            "by_entry_mode": analytics.by_entry_mode(conn),
-            "by_window": analytics.by_entry_window(conn),
-            "fee_drag": analytics.fee_drag(conn),
-            "daily": analytics.daily_pnl(conn, arm=arm_filter),
+            "arm_exclusions": analytics.arm_comparison_exclusions(conn, symbol=symbol_filter),
+            "by_entry_mode": analytics.by_entry_mode(conn, symbol=symbol_filter),
+            "by_window": analytics.by_entry_window(conn, symbol=symbol_filter),
+            "fee_drag": analytics.fee_drag(conn, symbol=symbol_filter),
+            "daily": analytics.daily_pnl(conn, arm=arm_filter, symbol=symbol_filter),
         },
         "performance": {
-            "daily": analytics.pnl_series(conn, "daily", arm=arm_filter),
-            "weekly": analytics.pnl_series(conn, "weekly", arm=arm_filter),
-            "monthly": analytics.pnl_series(conn, "monthly", arm=arm_filter),
-            "all_time": analytics.stats_for_period(conn, arm=arm_filter),
-            "completion": analytics.completion_stats(conn),
+            "daily": analytics.pnl_series(conn, "daily", arm=arm_filter, symbol=symbol_filter),
+            "weekly": analytics.pnl_series(conn, "weekly", arm=arm_filter, symbol=symbol_filter),
+            "monthly": analytics.pnl_series(conn, "monthly", arm=arm_filter, symbol=symbol_filter),
+            "all_time": analytics.stats_for_period(conn, arm=arm_filter, symbol=symbol_filter),
+            "completion": analytics.completion_stats(conn, symbol=symbol_filter),
             "divergence": analytics.arm_divergence(conn),
         },
     }
@@ -145,6 +159,13 @@ border-radius:6px;font-size:13px}
 main{padding:18px 20px 60px}
 .view{display:none}.view.active{display:block}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+/* Positions / Book floors / Arm divergence share one row at a 3:3:2 width ratio -- scoped to the
+   Today grid only, so History/Performance keep the plain auto-fit layout above. The full-width
+   cards (Payoff/Timeline/Journal) keep their own inline grid-column:1/-1, which wins over this
+   default regardless of specificity; Arm divergence overrides the default via its own inline style. */
+#view-today .grid{grid-template-columns:repeat(8,1fr)}
+#view-today .grid>.card{grid-column:span 3}
+@media (max-width:900px){#view-today .grid{grid-template-columns:1fr}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
 .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:0 0 10px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px}
@@ -184,6 +205,27 @@ _BODY = """
   <label class="dim" style="font-size:12px">arm
     <select id="arm-select"><option value="ALL">all</option></select>
   </label>
+  <label class="dim" style="font-size:12px">symbol
+    <select id="symbol-select"><option value="ALL">all</option></select>
+  </label>
+  <label class="dim" style="font-size:12px">x-axis width
+    <select id="xwidth-select">
+      <option value="auto">auto</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+      <option value="500">500</option>
+      <option value="1000">1000</option>
+    </select>
+  </label>
+  <label class="dim" style="font-size:12px">y-axis range
+    <select id="ywidth-select">
+      <option value="auto">auto</option>
+      <option value="250">$250</option>
+      <option value="500">$500</option>
+      <option value="1000">$1,000</option>
+      <option value="5000">$5,000</option>
+    </select>
+  </label>
   <nav>
     <button data-view="today" class="active">Today</button>
     <button data-view="history">History</button>
@@ -208,8 +250,6 @@ _BODY = """
         that price. That is an expiry payoff evaluated at a live spot, <em>not</em> a mark — these
         positions are not quoted intraday.</div>
         <div class="note" id="timeline-feed"></div></div>
-      <div class="card"><h2>Positions</h2><div class="scroll"><table id="pos-tbl"></table></div></div>
-      <div class="card"><h2>Book floors</h2><div class="scroll"><table id="book-tbl"></table></div></div>
       <div class="card" style="grid-column:1/-1"><h2>Decision journal — why we did or didn't trade</h2>
         <canvas id="journal-gantt" height="120"></canvas>
         <div class="legend" id="journal-legend"></div>
@@ -218,7 +258,9 @@ _BODY = """
         a few rows that explain themselves rather than hundreds of identical ones. The strip draws each
         run as a bar over the span it held — a gate that blocked all morning is a bar covering the
         morning, next to the brief green marks where an entry actually fired.</div></div>
-      <div class="card"><h2>Arm divergence</h2><div class="scroll"><table id="div-tbl"></table></div>
+      <div class="card"><h2>Positions</h2><div class="scroll"><table id="pos-tbl"></table></div></div>
+      <div class="card"><h2>Book floors</h2><div class="scroll"><table id="book-tbl"></table></div></div>
+      <div class="card" style="grid-column:span 2"><h2>Arm divergence</h2><div class="scroll"><table id="div-tbl"></table></div>
         <div class="note" id="div-note"></div></div>
     </div>
   </section>
@@ -287,7 +329,7 @@ const fmtMoney = v => v === null || v === undefined ? '–'
 const fmtPct = v => v === null || v === undefined ? '–' : (v*100).toFixed(0) + '%';
 const fmtNum = (v,d=2) => v === null || v === undefined ? '–' : Number(v).toFixed(d);
 const tone = v => v === null || v === undefined ? '' : (v >= 0 ? 'pos' : 'neg');
-let DATA = null, ARM = 'ALL';
+let DATA = null, ARM = 'ALL', SYMBOL = 'ALL', XWIDTH = 'auto', YWIDTH = 'auto';
 
 /* ---------- per-column filters ----------
 
@@ -303,10 +345,14 @@ let DATA = null, ARM = 'ALL';
    State lives in a caller-owned object rather than in the DOM: every render replaces innerHTML, so
    anything read back off the inputs is gone the moment the 30s refresh fires mid-typing. */
 /* The filterable-table component lives in cherrypick.core.viz (this page's version was the
-   donor). Local aliases keep the eleven call sites reading naturally. */
+   donor). `table` is a local alias for the one function TABLE_JS only ever assigns onto
+   `window` (no naming collision). `matchesFilters`/`filterActive` are NOT aliased the same
+   way -- TABLE_JS declares those as bare top-level `function` statements of the same name, so
+   a `const matchesFilters = ...` here would try to redeclare an existing global with `const`,
+   which is a SyntaxError that silently killed this entire script (nothing below ever ran,
+   including every Today/History/Performance render). Both names already exist as callable
+   globals once TABLE_JS's <script> tag has run, so no local alias is needed at all. */
 const table = window.cpTable;
-const matchesFilters = window.cpTableMatches;
-const filterActive = window.cpFilterActive;
 
 function tiles(el, items) {
   el.innerHTML = items.map(i =>
@@ -326,7 +372,7 @@ function prep(cv) {
    across both charts and the legend. */
 const ARM_COLORS = ['#58a6ff','#d29922','#a371f7','#3fb950','#f778ba'];
 const armColor = (arm, arms) => ARM_COLORS[Math.max(0, (arms||[]).indexOf(arm)) % ARM_COLORS.length];
-const SPOT_COLOR = '#e6edf3';
+const SPOT_COLOR = '#e3b341';
 
 /* Round tick values, so the axes carry a readable scale rather than just their two endpoints. */
 function ticksFor(min, max, count) {
@@ -337,6 +383,35 @@ function ticksFor(min, max, count) {
   const out = [];
   for (let v = Math.ceil(min/step)*step; v <= max + 1e-9; v += step) out.push(v);
   return out;
+}
+
+/* A position's payoff is genuinely flat beyond its own scanned range (fly_payoff and
+   short_vertical_payoff both saturate there) -- so when the axis window is wider than one
+   curve's own price array (a default-width window next to a narrow-wing arm, say), the flat
+   floor must carry all the way to the window's edges at its own boundary value. Without this
+   the line -- and the single-arm fill, which is the "this book cannot lose here" claim --
+   stops wherever that arm's own data happened to end, which understates the floor rather than
+   drawing it. */
+function extendFlat(xs, ys, xMin, xMax) {
+  const ex = xs.slice(), ey = ys.slice();
+  if (ex[0] > xMin) { ex.unshift(xMin); ey.unshift(ey[0]); }
+  if (ex[ex.length-1] < xMax) { ex.push(xMax); ey.push(ey[ey.length-1]); }
+  return {xs: ex, ys: ey};
+}
+
+/* The min/max payoff actually visible within [xMin, xMax] -- NOT the curve's full scanned
+   range, which can run well past what the current x-window shows (see extendFlat above). Falls
+   back to the flat boundary value when the window sits entirely outside this curve's own data
+   (a narrow-wing arm under a wide fixed x-width, say), so a curve with nothing literally inside
+   the window still reports its real (flat) value rather than an empty range. */
+function visibleYRange(xs, ys, xMin, xMax) {
+  let mn = Infinity, mx = -Infinity;
+  xs.forEach((x,i) => { if (x >= xMin && x <= xMax) { mn = Math.min(mn, ys[i]); mx = Math.max(mx, ys[i]); } });
+  if (mn === Infinity) {
+    const ext = extendFlat(xs, ys, xMin, xMax);
+    mn = mx = ext.ys[0];
+  }
+  return {min: mn, max: mx};
 }
 
 const minuteOf = ts => {
@@ -384,7 +459,7 @@ function legend(el, items) {
    books by design and a combined total would hide the only contrast the experiment draws — and the
    previous behaviour, silently plotting arms[0] unlabelled whenever the filter said "all", read as
    though it were the whole book. */
-function drawPayoff(cv, curves, arms, selected, spot) {
+function drawPayoff(cv, curves, arms, selected, spot, xwidth, ywidth) {
   const {g, w, h} = prep(cv);
   const shown = (selected === 'ALL' ? arms : [selected])
     .filter(a => curves[a] && !curves[a].empty && curves[a].prices.length);
@@ -393,13 +468,41 @@ function drawPayoff(cv, curves, arms, selected, spot) {
     g.fillText('No positions yet today.', 12, h/2); return;
   }
   const pad = {l: 62, r: 12, t: 12, b: 26};
-  let xMin = Infinity, xMax = -Infinity, yMin = 0, yMax = 0;
+  // The x-axis is centred on the book's own centres (not each curve's full scanned price
+  // array, which pads +/-3x that arm's wing width beyond its outermost centre -- a wide-wing
+  // arm shown alongside narrow ones used to stretch the whole axis into mostly flat deadspace).
+  // `xwidth` picks the window: 'auto' is exactly the trades' own span plus a small buffer;
+  // a fixed width (50/100/500/1000) is a MINIMUM, not an override -- either way the window still
+  // only grows, never shrinks past that floor, and only as far as needed to keep every centre
+  // AND the current spot inside it. It never clips off where the market actually is.
+  let cMin = Infinity, cMax = -Infinity;
   shown.forEach(a => {
-    const c = curves[a];
-    xMin = Math.min(xMin, ...c.prices); xMax = Math.max(xMax, ...c.prices);
-    yMin = Math.min(yMin, ...c.pnl);    yMax = Math.max(yMax, ...c.pnl);
+    (curves[a].centers && curves[a].centers.length ? curves[a].centers : curves[a].prices).forEach(k => {
+      cMin = Math.min(cMin, k); cMax = Math.max(cMax, k);
+    });
   });
-  const span = (yMax - yMin) || 1; yMin -= span*0.1; yMax += span*0.1;
+  if (spot != null) { cMin = Math.min(cMin, spot); cMax = Math.max(cMax, spot); }
+  const mid = (cMin + cMax) / 2;
+  const naturalHalf = (cMax - cMin) / 2 + 2;
+  const half = (!xwidth || xwidth === 'auto') ? naturalHalf : Math.max(Number(xwidth) / 2, naturalHalf);
+  let xMin = mid - half, xMax = mid + half;
+
+  // The y-axis fits what's actually VISIBLE in that x-window, not each curve's full price array --
+  // a wide-wing arm's deep worst-case at a price the x-window no longer shows must not still
+  // inflate the y-scale and waste vertical space on a value nothing on screen reaches. `ywidth`
+  // works like `xwidth` but independently per side (not forced symmetric): a fixed tier is a
+  // MINIMUM for the downside and the upside separately, since a book's floor and its peak are
+  // rarely the same distance from zero and mirroring the smaller side just wastes space.
+  let yLo = 0, yHi = 0;
+  shown.forEach(a => {
+    const r = visibleYRange(curves[a].prices, curves[a].pnl, xMin, xMax);
+    yLo = Math.min(yLo, r.min); yHi = Math.max(yHi, r.max);
+  });
+  if (ywidth && ywidth !== 'auto') {
+    const ybound = Number(ywidth);
+    yLo = Math.min(yLo, -ybound); yHi = Math.max(yHi, ybound);
+  }
+  const span = (yHi - yLo) || 1; let yMin = yLo - span*0.1, yMax = yHi + span*0.1;
   const X = v => pad.l + (v - xMin) / ((xMax - xMin)||1) * (w - pad.l - pad.r);
   const Y = v => h - pad.b - (v - yMin) / ((yMax - yMin)||1) * (h - pad.t - pad.b);
   const zero = Y(0);
@@ -419,7 +522,8 @@ function drawPayoff(cv, curves, arms, selected, spot) {
   // A single arm gets the green/red fill — that fill IS the claim "this book cannot lose here", and
   // it is only meaningful for one book at a time.
   if (shown.length === 1) {
-    const c = curves[shown[0]], xs = c.prices, ys = c.pnl;
+    const c = curves[shown[0]];
+    const {xs, ys} = extendFlat(c.prices, c.pnl, xMin, xMax);
     [[1,'rgba(63,185,80,.28)'],[-1,'rgba(248,81,73,.24)']].forEach(([sign, fill]) => {
       g.beginPath(); g.moveTo(X(xs[0]), zero);
       xs.forEach((x,i) => g.lineTo(X(x), Y(sign > 0 ? Math.max(ys[i],0) : Math.min(ys[i],0))));
@@ -430,8 +534,9 @@ function drawPayoff(cv, curves, arms, selected, spot) {
 
   shown.forEach(a => {
     const c = curves[a], col = armColor(a, arms);
+    const {xs, ys} = extendFlat(c.prices, c.pnl, xMin, xMax);
     g.beginPath();
-    c.prices.forEach((x,i) => i ? g.lineTo(X(x), Y(c.pnl[i])) : g.moveTo(X(x), Y(c.pnl[i])));
+    xs.forEach((x,i) => i ? g.lineTo(X(x), Y(ys[i])) : g.moveTo(X(x), Y(ys[i])));
     g.strokeStyle = col; g.lineWidth = shown.length === 1 ? 1.8 : 1.4; g.stroke();
     (c.centers||[]).forEach(k => {
       g.strokeStyle = col; g.globalAlpha = .35; g.setLineDash([3,3]);
@@ -441,9 +546,18 @@ function drawPayoff(cv, curves, arms, selected, spot) {
   });
 
   if (spot) {
-    g.strokeStyle = SPOT_COLOR; g.lineWidth = 1; g.globalAlpha = .7;
+    g.strokeStyle = SPOT_COLOR; g.lineWidth = 2; g.globalAlpha = .85;
     g.beginPath(); g.moveTo(X(spot), pad.t); g.lineTo(X(spot), h - pad.b); g.stroke();
     g.globalAlpha = 1;
+    // The line alone doesn't say what "here" is -- label it with the actual spot price, clamped
+    // inside the plot area so it never clips off either edge.
+    const label = `spot ${fmtNum(spot)}`, lp = 5;
+    g.font = '11px system-ui';
+    const lw = g.measureText(label).width;
+    const lx = Math.min(Math.max(X(spot) - lw/2 - lp, pad.l), w - pad.r - lw - lp*2);
+    g.fillStyle = 'rgba(13,17,23,.92)'; g.strokeStyle = '#3d4653';
+    g.beginPath(); g.roundRect(lx, pad.t + 2, lw + lp*2, 16, 4); g.fill(); g.stroke();
+    g.fillStyle = SPOT_COLOR; g.fillText(label, lx + lp, pad.t + 13);
   }
 
   const hv = HOVER[cv.id];
@@ -771,11 +885,15 @@ function renderCalendar(days) {
 /* ---------- renderers ---------- */
 function renderToday(d) {
   const t = d.today, s = t.stats, c = t.completion;
+  // Every figure here -- tiles, positions, books -- is already narrowed to the selected arm and
+  // symbol server-side (analytics.session_overview), so the whole card tells one consistent story
+  // for whatever scope is picked, the same scope the payoff curve below draws.
+  const posRows = t.positions, bookRows = t.books;
   tiles($('#today-tiles'), [
     {k:'Net P&L', v:fmtMoney(s.net_pnl), t:tone(s.net_pnl)},
-    {k:'Positions', v:t.positions.length},
+    {k:'Positions', v:posRows.length},
     {k:'Open', v:t.open_count},
-    {k:'Risk-free', v:`${t.risk_free_count}/${t.fly_count}`, t:t.risk_free_count?'pos':''},
+    {k:'Risk-free', v:t.risk_free_count, t:t.risk_free_count?'pos':''},
     {k:'Completion', v:fmtPct(c.completion_rate)},
     {k:'Fees', v:fmtMoney(s.fees), t:'dim'},
   ]);
@@ -783,7 +901,7 @@ function renderToday(d) {
   const lastTick = ((t.timeline || {}).ticks || []).filter(x => x.spot != null).slice(-1)[0];
   const spot = lastTick ? lastTick.spot
     : (t.positions.find(p => p.underlying_at_entry) || {}).underlying_at_entry;
-  drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot);
+  drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot, XWIDTH, YWIDTH);
   drawTimeline($('#timeline'), t.timeline, ARM);
 
   // The feed's own report card: how many ticks actually built a snapshot, and what refused the rest.
@@ -794,7 +912,7 @@ function renderToday(d) {
     : `Feed: ${fs.ok}/${fs.ticks} ticks built a snapshot (${fmtPct(fs.ok_rate)})` +
       (fs.refused ? ' · refused ' + fs.refused + ': ' +
         Object.entries(fs.by_reason).map(([k,v]) => `${k} ×${v}`).join(', ') : ' · no refusals');
-  bindHover($('#payoff'), () => drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot));
+  bindHover($('#payoff'), () => drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot, XWIDTH, YWIDTH));
   bindHover($('#timeline'), () => drawTimeline($('#timeline'), t.timeline, ARM));
 
   // One floor sentence per arm. A single blended line would state the book-level claim across arms
@@ -812,8 +930,10 @@ function renderToday(d) {
         return `<span style="color:${armColor(a, d.arms)}">${a}</span> — ${body}`;
       }).join('<br>');
 
+  const posEmpty = ARM === 'ALL' && SYMBOL === 'ALL' ? 'No positions today.'
+    : `No ${[ARM, SYMBOL].filter(v => v !== 'ALL').join(' ')} positions today.`;
   table($('#pos-tbl'), [
-    {h:'Arm', f:r=>r.arm}, {h:'Mode', f:r=>r.entry_mode},
+    {h:'Symbol', f:r=>r.symbol}, {h:'Arm', f:r=>r.arm}, {h:'Mode', f:r=>r.entry_mode},
     {h:'Kind', f:r=>r.kind === 'fly' ? 'fly' : `short ${r.side}`},
     {h:'Centre', f:r=>fmtNum(r.center,0), num:1},
     {h:'Net', f:r=>fmtNum(r.net), num:1},
@@ -821,10 +941,10 @@ function renderToday(d) {
     {h:'', f:r=>r.risk_free ? '<span class="pill ok">risk-free</span>' :
         (r.kind==='fly'?'<span class="pill bad">floor negative</span>':'<span class="pill">at risk</span>')},
     {h:'Status', f:r=>r.status},
-  ], t.positions, 'No positions today.');
+  ], posRows, posEmpty);
 
   table($('#book-tbl'), [
-    {h:'Arm', f:r=>r.arm},
+    {h:'Symbol', f:r=>r.symbol}, {h:'Arm', f:r=>r.arm},
     {h:'Credit', f:r=>fmtMoney(r.credit_collected), num:1},
     {h:'Debits', f:r=>fmtMoney(r.debits_paid), num:1},
     {h:'Fees', f:r=>fmtMoney(r.fees), num:1},
@@ -832,7 +952,7 @@ function renderToday(d) {
     {h:'Band', f:r=>r.band_low === null ? '–' : `${fmtNum(r.band_low,0)}–${fmtNum(r.band_high,0)}`},
     {h:'', f:r=>r.floor_holds ? '<span class="pill ok">holds</span>'
         : '<span class="pill bad">bounded</span>'},
-  ], t.books, 'No books today.');
+  ], bookRows, ARM === 'ALL' && SYMBOL === 'ALL' ? 'No books today.' : 'No matching books today.');
 
   drawJournalGantt($('#journal-gantt'), t.journal);
   bindHover($('#journal-gantt'), () => drawJournalGantt($('#journal-gantt'), t.journal));
@@ -892,6 +1012,7 @@ const LOG_FILTERS = {};
 function logColumns() {
   return [
     {h:'Date', f:r=>r.trade_date, v:r=>r.trade_date, filter:'daterange'},
+    {h:'Symbol', f:r=>r.symbol, v:r=>r.symbol, filter:'select'},
     {h:'Arm', f:r=>r.arm, v:r=>r.arm, filter:'select'},
     {h:'Mode', f:r=>r.entry_mode, v:r=>r.entry_mode, filter:'select'},
     {h:'Kind', f:r=>r.kind === 'fly' ? 'fly' : `short ${r.side}`,
@@ -976,12 +1097,18 @@ function renderAll(d) {
       d.arms.map(a => `<option>${a}</option>`).join('');
     sel.value = ARM;
   }
+  const symSel = $('#symbol-select');
+  if (symSel.options.length - 1 !== (d.symbols||[]).length) {
+    symSel.innerHTML = '<option value="ALL">all</option>' +
+      (d.symbols||[]).map(s => `<option>${s}</option>`).join('');
+    symSel.value = SYMBOL;
+  }
   renderToday(d); renderHistory(d); renderPerformance(d);
 }
 
 async function refresh() {
   try {
-    const r = await fetch(`/api/data?arm=${encodeURIComponent(ARM)}`);
+    const r = await fetch(`/api/data?arm=${encodeURIComponent(ARM)}&symbol=${encodeURIComponent(SYMBOL)}`);
     const d = await r.json();
     if (d.ok) renderAll(d);
   } catch (e) { /* transient; the next tick retries */ }
@@ -995,6 +1122,9 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   if (DATA) renderAll(DATA);   // canvases size wrongly while hidden
 });
 $('#arm-select').onchange = e => { ARM = e.target.value; refresh(); };
+$('#symbol-select').onchange = e => { SYMBOL = e.target.value; refresh(); };
+$('#xwidth-select').onchange = e => { XWIDTH = e.target.value; if (DATA) renderAll(DATA); };
+$('#ywidth-select').onchange = e => { YWIDTH = e.target.value; if (DATA) renderAll(DATA); };
 // Date and mode moved into their own column cells; these two span columns and stay in the bar.
 ['#f-outcome','#f-search'].forEach(s => {
   $(s).oninput = renderLog; $(s).onchange = renderLog;
@@ -1050,7 +1180,12 @@ def _handler_for(db_path: str | None):
                 query = parse_qs(parsed.query)
                 conn = dbmod.connect(db_path)
                 try:
-                    payload = build_api_data(conn, query.get("date", [None])[0], query.get("arm", [None])[0])
+                    payload = build_api_data(
+                        conn,
+                        query.get("date", [None])[0],
+                        query.get("arm", [None])[0],
+                        query.get("symbol", [None])[0],
+                    )
                 except Exception as exc:  # a broken panel should not take the page down
                     payload = {"ok": False, "error": str(exc)}
                 finally:
