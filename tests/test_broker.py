@@ -425,3 +425,21 @@ def test_cancel_order_reports_sdk_failure_instead_of_raising():
     assert out["ok"] is False
     assert out["order_id"] == 789
     assert "order already filled" in out["error"]
+
+
+def test_working_orders_serializes_live_orders():
+    class _Live:
+        def __init__(self, oid, status, underlying):
+            self.id = oid
+            self.status = status
+            self.underlying_symbol = underlying
+
+    class _Acct:
+        async def get_live_orders(self, session):
+            return [_Live(11, "Live", "XSP"), _Live(12, "Received", "XSP")]
+
+    out = _run(broker.working_orders(_Acct(), "sess"))
+    assert out == [
+        {"order_id": 11, "status": "Live", "underlying_symbol": "XSP"},
+        {"order_id": 12, "status": "Received", "underlying_symbol": "XSP"},
+    ]

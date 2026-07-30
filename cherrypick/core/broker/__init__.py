@@ -345,3 +345,20 @@ async def cancel_order(account: Any, session: Any, order_id: Any) -> dict:
         return {"ok": True, "order_id": order_id}
     except Exception as exc:  # noqa: BLE001 — the SDK's cancel-failure exceptions aren't a fixed set
         return {"ok": False, "order_id": order_id, "error": f"{type(exc).__name__}: {exc}"}
+
+
+async def working_orders(account: Any, session: Any) -> list[dict]:
+    """Every live (working) order on the account, as [{order_id, status, underlying_symbol}].
+
+    The account is truth and a caller's ledger is belief: a working order the ledger doesn't
+    know about means a placement was recorded nowhere (e.g. a crash between place and the DB
+    write) and is resting unwatched. This is the primitive an orphan sweep diffs against."""
+    placed = await account.get_live_orders(session)
+    return [
+        {
+            "order_id": getattr(o, "id", None),
+            "status": str(getattr(o, "status", None)),
+            "underlying_symbol": getattr(o, "underlying_symbol", None),
+        }
+        for o in placed
+    ]
