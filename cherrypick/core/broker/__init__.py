@@ -316,3 +316,32 @@ async def place_order(
     if governor_info is not None:
         result["governor"] = governor_info
     return result
+
+
+# --------------------------------------------------------------------------- order lifecycle
+async def order_status(account: Any, session: Any, order_id: Any) -> dict:
+    """Fetch a placed order's current state. `status` is the tastytrade lifecycle string
+    ("Received"/"Live"/"Filled"/"Cancelled"/"Rejected"/...); `price` is the order's working
+    (and, once `status == "Filled"`, effective) price — the closest a `PlacedOrder` gets to a
+    real fill price without a separate transactions-API call, and materially truer than a
+    caller's pre-trade model estimate. Raises whatever the SDK raises on a bad/foreign order id
+    — callers decide how to treat that (there is no safe default to paper over)."""
+    placed = await account.get_order(session, int(order_id))
+    return {
+        "order_id": order_id,
+        "status": str(getattr(placed, "status", None)),
+        "cancellable": bool(getattr(placed, "cancellable", False)),
+        "price": str(getattr(placed, "price", None)),
+        "filled": str(getattr(placed, "status", "")).strip().lower() == "filled",
+    }
+
+
+async def cancel_order(account: Any, session: Any, order_id: Any) -> dict:
+    """Cancel a working order. Tastytrade's `delete_order` returns nothing on success and raises
+    on failure (already cancelled/filled/unknown id) — both are reported here rather than raised,
+    so a caller polling a stale order id gets a clean `{"ok": False, ...}` instead of a crash."""
+    try:
+        await account.delete_order(session, int(order_id))
+        return {"ok": True, "order_id": order_id}
+    except Exception as exc:  # noqa: BLE001 — the SDK's cancel-failure exceptions aren't a fixed set
+        return {"ok": False, "order_id": order_id, "error": f"{type(exc).__name__}: {exc}"}

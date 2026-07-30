@@ -366,3 +366,62 @@ def test_governor_get_balances_override_is_used():
         )
     )
     assert out["ok"] is True and calls["n"] == 1
+
+
+# --------------------------------------------------------------------------- order_status / cancel_order
+class FakePlacedOrder:
+    def __init__(self, status, price=None, cancellable=True):
+        self.status = status
+        self.price = price
+        self.cancellable = cancellable
+
+
+class FakeOrderAccount:
+    def __init__(self, orders=None, cancel_raises=None):
+        self._orders = orders or {}
+        self._cancel_raises = cancel_raises or {}
+        self.cancel_calls = []
+
+    async def get_order(self, session, order_id):
+        return self._orders[order_id]
+
+    async def delete_order(self, session, order_id):
+        self.cancel_calls.append(order_id)
+        if order_id in self._cancel_raises:
+            raise self._cancel_raises[order_id]
+
+
+def test_order_status_reports_filled():
+    acct = FakeOrderAccount(orders={123: FakePlacedOrder("Filled", price=Decimal("1.23"), cancellable=False)})
+    out = _run(broker.order_status(acct, "sess", 123))
+    assert out == {
+        "order_id": 123,
+        "status": "Filled",
+        "cancellable": False,
+        "price": "1.23",
+        "filled": True,
+    }
+
+
+def test_order_status_reports_live_working_order():
+    acct = FakeOrderAccount(orders={456: FakePlacedOrder("Live", price=Decimal("0.85"), cancellable=True)})
+    out = _run(broker.order_status(acct, "sess", 456))
+    assert out["status"] == "Live"
+    assert out["filled"] is False
+    assert out["cancellable"] is True
+    assert out["price"] == "0.85"
+
+
+def test_cancel_order_success():
+    acct = FakeOrderAccount(orders={}, cancel_raises={})
+    out = _run(broker.cancel_order(acct, "sess", 789))
+    assert out == {"ok": True, "order_id": 789}
+    assert acct.cancel_calls == [789]
+
+
+def test_cancel_order_reports_sdk_failure_instead_of_raising():
+    acct = FakeOrderAccount(cancel_raises={789: RuntimeError("order already filled")})
+    out = _run(broker.cancel_order(acct, "sess", 789))
+    assert out["ok"] is False
+    assert out["order_id"] == 789
+    assert "order already filled" in out["error"]
