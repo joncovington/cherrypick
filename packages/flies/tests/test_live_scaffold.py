@@ -128,9 +128,13 @@ def test_broker_cli_live_gates_are_the_same_posture():
 
 # --------------------------------------------------------------------------- the loop, faked
 class FakeBroker:
-    def __init__(self):
+    def __init__(self, order_statuses=None, cancel_ok=True):
         self.placed = []
         self.cancelled = []
+        self.status_calls = []
+        # order_id -> {"status": ..., "price": ...} the next status() call for it returns
+        self._statuses = dict(order_statuses or {})
+        self._cancel_ok = cancel_ok
 
     def place(self, spec, live):
         self.placed.append({"spec": spec, "live": live})
@@ -138,7 +142,11 @@ class FakeBroker:
 
     def cancel(self, order_id):
         self.cancelled.append(order_id)
-        return {"ok": True}
+        return {"ok": True} if self._cancel_ok else {"ok": False, "error": "cancel refused"}
+
+    def status(self, order_id):
+        self.status_calls.append(order_id)
+        return self._statuses.get(order_id, {"status": "Live", "price": None, "filled": False})
 
 
 @pytest.fixture
@@ -206,7 +214,10 @@ def test_working_completion_is_cancelled_at_the_cutoff(live_conn):
             "fees": 3.44,
             "status": "open",
             "entry_time": clock.now_iso(),
+            "entry_order_id": "ORD-P1",
+            "entry_fill_status": "filled",
             "completion_order_id": "ORD9",
+            "completion_fill_status": "pending",
         },
     )
     broker = FakeBroker()
@@ -252,3 +263,263 @@ def test_live_ledger_is_a_separate_file(tmp_path, monkeypatch):
     assert dbmod.live_db_path().endswith("live_trades.db")
     assert dbmod.default_db_path().endswith("paper_trades.db")
     assert dbmod.live_db_path() != dbmod.default_db_path()
+
+
+# --------------------------------------------------------------------------- concurrency gate
+def _pos(**over):
+    base = {
+        "status": "open",
+        "kind": "short_vertical",
+        "position_id": "X",
+        "net": 1.0,
+        "fees": 0.0,
+        "wing_width": 5,
+        "quantity": 1,
+    }
+    base.update(over)
+    return base
+
+
+def test_open_short_vertical_always_blocks():
+    assert live_loop._is_blocking(_pos(kind="short_vertical"), None) is True
+
+
+def test_completed_risk_free_fly_does_not_block():
+    # floor = 1.0*100 - 0 fees = $100 >= 0 -> risk-free
+    pos = _pos(kind="fly", net=1.0, fees=0.0)
+    assert live_loop._is_blocking(pos, None) is False
+
+
+def test_completed_negative_floor_fly_blocks_without_override():
+    # floor = 0.1*100 - 20 fees = -$10 < 0 -> not risk-free
+    pos = _pos(kind="fly", net=0.1, fees=20.0, position_id="NEG1")
+    assert live_loop._is_blocking(pos, None) is True
+    assert live_loop._is_blocking(pos, "some-other-id") is True
+
+
+def test_completed_negative_floor_fly_unblocked_by_matching_override():
+    pos = _pos(kind="fly", net=0.1, fees=20.0, position_id="NEG1")
+    assert live_loop._is_blocking(pos, "NEG1") is False
+
+
+def test_blocking_positions_ignores_closed_rows():
+    open_pos = _pos(position_id="A", status="open")
+    closed_pos = _pos(position_id="B", status="settled")
+    assert live_loop._blocking_positions([open_pos, closed_pos], None) == [open_pos]
+
+
+def test_entry_refused_while_a_spread_is_still_open(live_conn):
+    import clock
+
+    dbmod.save_position(
+        live_conn,
+        {
+            "position_id": "OPEN1",
+            "book_id": f"{DAY}:gex:SPX",
+            "trade_date": DAY,
+            "arm": "gex",
+            "entry_mode": "legged",
+            "symbol": "SPX",
+            "kind": "short_vertical",
+            "side": PUT,
+            "center": 7495.0,
+            "wing_width": 5,
+            "quantity": 1,
+            "net": 1.05,
+            "credit": 1.05,
+            "fees": 3.44,
+            "status": "open",
+            "entry_time": clock.now_iso(),
+            "entry_order_id": "ORD-OPEN1",
+            "entry_fill_status": "filled",
+        },
+    )
+    broker = FakeBroker()
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert summary["entered"] == 0
+    assert any("still an incomplete spread" in s.get("entry", "") for s in summary["skips"])
+    assert broker.placed == []  # no second entry order was ever placed
+
+
+def test_entry_allowed_once_completed_fly_is_risk_free(live_conn):
+    import clock
+
+    dbmod.save_position(
+        live_conn,
+        {
+            "position_id": "FLY1",
+            "book_id": f"{DAY}:gex:SPX",
+            "trade_date": DAY,
+            "arm": "gex",
+            "entry_mode": "legged",
+            "symbol": "SPX",
+            "kind": "fly",
+            "side": PUT,
+            "center": 7495.0,
+            "wing_width": 5,
+            "quantity": 1,
+            "net": 0.20,  # floor = 0.20*100 - 3.44 = $16.56 >= 0 -> risk-free
+            "fees": 3.44,
+            "status": "open",
+            "entry_time": clock.now_iso(),
+            "completed_at": clock.now_iso(),
+        },
+    )
+    broker = FakeBroker()
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert summary["entered"] == 1  # the risk-free completed fly did not block a new entry
+
+
+def test_entry_refused_when_completed_fly_has_negative_floor(live_conn):
+    import clock
+
+    dbmod.save_position(
+        live_conn,
+        {
+            "position_id": "FLYNEG",
+            "book_id": f"{DAY}:gex:SPX",
+            "trade_date": DAY,
+            "arm": "gex",
+            "entry_mode": "legged",
+            "symbol": "SPX",
+            "kind": "fly",
+            "side": PUT,
+            "center": 7495.0,
+            "wing_width": 5,
+            "quantity": 1,
+            "net": -50.0,  # deeply negative floor
+            "fees": 3.44,
+            "status": "open",
+            "entry_time": clock.now_iso(),
+            "completed_at": clock.now_iso(),
+        },
+    )
+    broker = FakeBroker()
+    cfg = _loop_cfg()
+    summary = live_loop.run_once(cfg, _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert summary["entered"] == 0
+    assert any("negative floor" in s.get("entry", "") for s in summary["skips"])
+    assert any("FLYNEG" in s.get("entry", "") for s in summary["skips"])
+
+    # With the explicit override naming this exact position, entry is permitted.
+    cfg["live"]["negative_floor_override"] = "FLYNEG"
+    summary2 = live_loop.run_once(cfg, _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert summary2["entered"] == 1
+
+
+# --------------------------------------------------------------------------- fill confirmation
+def _open_entry_row(order_id="ORD-E1", entry_fill_status="pending"):
+    import clock
+
+    return {
+        "position_id": "E1",
+        "book_id": f"{DAY}:gex:SPX",
+        "trade_date": DAY,
+        "arm": "gex",
+        "entry_mode": "legged",
+        "symbol": "SPX",
+        "kind": "short_vertical",
+        "side": PUT,
+        "center": 7495.0,
+        "wing_width": 5,
+        "quantity": 1,
+        "net": 1.05,  # modeled credit
+        "credit": 1.05,
+        "fees": 3.44,
+        "status": "open",
+        "entry_time": clock.now_iso(),
+        "entry_order_id": order_id,
+        "entry_fill_status": entry_fill_status,
+    }
+
+
+def test_entry_fill_confirmation_records_actual_price(live_conn):
+    dbmod.save_position(live_conn, _open_entry_row())
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Filled", "price": "1.15", "filled": True}})
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["entry_fill_status"] == "filled"
+    assert row["net"] == pytest.approx(1.15) and row["credit"] == pytest.approx(1.15)
+
+
+def test_entry_rejection_closes_the_position_without_a_trade(live_conn):
+    dbmod.save_position(live_conn, _open_entry_row())
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Rejected", "price": None, "filled": False}})
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["entry_fill_status"] == "rejected"
+    assert row["status"] == "cancelled"
+
+
+def test_completion_not_evaluated_until_entry_confirmed_filled(live_conn):
+    # entry still pending -> the completion-management loop must not try to complete it, even
+    # though evaluate_completion would otherwise fire on this snapshot/position combo.
+    dbmod.save_position(live_conn, _open_entry_row(entry_fill_status="pending"))
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Live", "price": "1.05", "filled": False}})
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert summary["completed_orders"] == 0
+    row = live_conn.execute("SELECT kind FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["kind"] == "short_vertical"
+
+
+def test_completion_fill_confirmation_flips_kind_and_records_actual_debit(live_conn):
+    import clock
+
+    dbmod.save_position(
+        live_conn,
+        {
+            **_open_entry_row(entry_fill_status="filled"),
+            "completion_order_id": "ORD-C1",
+            "completion_fill_status": "pending",
+        },
+    )
+    broker = FakeBroker(order_statuses={"ORD-C1": {"status": "Filled", "price": "0.80", "filled": True}})
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["kind"] == "fly"
+    assert row["completion_fill_status"] == "filled"
+    assert row["debit"] == pytest.approx(0.80)
+    # net = entry credit (1.05) - actual debit (0.80) = 0.25
+    assert row["net"] == pytest.approx(0.25)
+    assert row["completed_at"] is not None
+    _ = clock  # imported for parity with sibling tests; no direct use beyond fixture setup
+
+
+def test_completion_cancel_failure_is_logged_not_silently_dropped(live_conn):
+    import clock
+
+    dbmod.save_position(
+        live_conn,
+        {
+            "position_id": "STUCK1",
+            "book_id": f"{DAY}:gex:SPX",
+            "trade_date": DAY,
+            "arm": "gex",
+            "entry_mode": "legged",
+            "symbol": "SPX",
+            "kind": "short_vertical",
+            "side": PUT,
+            "center": 7495.0,
+            "wing_width": 5,
+            "quantity": 1,
+            "net": 1.05,
+            "credit": 1.05,
+            "fees": 3.44,
+            "status": "open",
+            "entry_time": clock.now_iso(),
+            "entry_order_id": "ORD-S1",
+            "entry_fill_status": "filled",
+            "completion_order_id": "ORD-STUCK",
+            "completion_fill_status": "pending",
+        },
+    )
+    logs = []
+    broker = FakeBroker(cancel_ok=False)
+    snap = _snapshot(now_min=15 * 60 + 45)  # past cutoff
+    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=logs.append)
+    assert summary["cancelled"] == 0
+    assert any("cutoff cancel FAILED" in m for m in logs)
+    row = live_conn.execute(
+        "SELECT completion_order_id FROM fly_positions WHERE position_id = 'STUCK1'"
+    ).fetchone()
+    assert row["completion_order_id"] == "ORD-STUCK"  # left in place, not silently cleared

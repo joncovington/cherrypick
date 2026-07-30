@@ -83,6 +83,22 @@ async def cmd_execute_trade(args) -> dict:
     return await _broker.place_order(account, session, order, live=bool(args.live), deploy_limit_pct=limit)
 
 
+async def cmd_order_status(args) -> dict:
+    """Read-only — no live gating needed, checking a working order's status places nothing."""
+    session = creds.get_session()
+    account = await _account(session)
+    return await _broker.order_status(account, session, args.order_id)
+
+
+async def cmd_cancel_order(args) -> dict:
+    """Cancelling a live order is not itself a new live submission (no --live gate here) —
+    the working order it targets could only exist because a prior live submission already
+    passed the gate; refusing to let it be pulled would be strictly less safe."""
+    session = creds.get_session()
+    account = await _account(session)
+    return await _broker.cancel_order(account, session, args.order_id)
+
+
 def cmd_secrets_set(args) -> dict:
     """Hidden-input secrets flow, argv-compatible with tt.py's so the orchestrator's `connect`
     drives both modules identically. Blank input keeps a stored value."""
@@ -110,6 +126,10 @@ def main() -> None:
     et = sub.add_parser("execute_trade")
     et.add_argument("--order", required=True)
     et.add_argument("--live", action="store_true")
+    os_ = sub.add_parser("order_status")
+    os_.add_argument("--order_id", required=True)
+    co = sub.add_parser("cancel_order")
+    co.add_argument("--order_id", required=True)
     args = ap.parse_args()
     sync = {"secrets_set": cmd_secrets_set, "secrets_status": cmd_secrets_status}
     try:
@@ -120,6 +140,8 @@ def main() -> None:
                 "get_connection_status": cmd_connection_status,
                 "list_accounts": cmd_list_accounts,
                 "execute_trade": cmd_execute_trade,
+                "order_status": cmd_order_status,
+                "cancel_order": cmd_cancel_order,
             }[args.cmd]
             result = asyncio.run(fn(args))
     except Exception as exc:
