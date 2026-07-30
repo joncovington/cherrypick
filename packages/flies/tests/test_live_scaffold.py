@@ -6,6 +6,7 @@ scaffold is INERT by default: no gate, no order.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import db as dbmod
+import engine
 import live_loop
 import live_orders
 import provider as _provider
@@ -90,6 +92,24 @@ def test_completion_spec_never_prices_past_the_engine_gate():
     assert actions["SPXW  260729P07495000"] == "sell to open"  # the centre, doubled to -2
 
 
+def test_close_fly_spec_closes_both_wings_and_buys_back_the_doubled_center():
+    pos = {"side": PUT, "center": 7495.0, "wing_width": 5, "quantity": 1}
+    plan = {"close_credit": 3.07}
+    spec = live_orders.close_fly_spec(_snapshot(), pos, plan)
+    assert spec["price"] == 3.05 and spec["price_effect"] == "credit"  # 3.07 floors to a nickel
+    legs = {leg["symbol"]: leg for leg in spec["legs"]}
+    assert legs["SPXW  260729P07490000"]["action"] == "sell to close"
+    assert legs["SPXW  260729P07495000"]["action"] == "buy to close"
+    assert legs["SPXW  260729P07495000"]["quantity"] == 2  # the doubled centre, bought back at once
+    assert legs["SPXW  260729P07500000"]["action"] == "sell to close"
+
+
+def test_close_fly_spec_refuses_a_credit_that_floors_to_nothing():
+    pos = {"side": PUT, "center": 7495.0, "wing_width": 5, "quantity": 1}
+    with pytest.raises(ValueError, match="close credit"):
+        live_orders.close_fly_spec(_snapshot(), pos, {"close_credit": 0.01})
+
+
 def test_order_builders_refuse_quotes_without_occ_symbols():
     snap = _snapshot()
     for q in snap["puts"].values():
@@ -129,16 +149,300 @@ def test_broker_cli_live_gates_are_the_same_posture():
     assert live_gates({"live": {"enabled": True, "gate0_confirmed": "jon"}}) == []
 
 
+def test_broker_cli_serialize_flattens_sdk_objects_and_leaves_plain_values_alone():
+    from broker_cli import _serialize
+
+    class FakeSdkOrder:
+        def model_dump(self, mode="json"):
+            return {"id": 489184188, "status": "Received", "reject_reason": None}
+
+    assert _serialize(None) is None and _serialize(5) == 5 and _serialize("x") == "x"
+    assert _serialize([1, FakeSdkOrder()]) == [
+        1,
+        {"id": 489184188, "status": "Received", "reject_reason": None},
+    ]
+    assert _serialize({"order": FakeSdkOrder()}) == {
+        "order": {"id": 489184188, "status": "Received", "reject_reason": None}
+    }
+    assert _serialize(object()).startswith("<object")
+
+
+def test_broker_adapter_place_extracts_order_id_from_serialized_response(monkeypatch):
+    """Regression for the 2026-07-30 incident: BrokerAdapter.place() must pass serialize= into
+    core.broker.place_order(), or result["response"] stays the raw (non-dict) SDK response object
+    and the order_id lookup at `(result.get("response") or {}).get("order", {})` silently finds
+    nothing every time. That is what let the live loop resubmit the same entry order on every
+    ~1-minute tick without ever recording a position -- 5+ live submissions in one session, 0 rows
+    in fly_positions, 8 orphaned broker orders left resting/rejected."""
+    import cherrypick.core.broker as core_broker
+
+    class FakeSdkResponse:
+        def model_dump(self, mode="json"):
+            return {
+                "order": {"id": 489184188, "status": "Received"},
+                "warnings": [],
+                "errors": [],
+            }
+
+    async def fake_place_order(account, session, order, *, live, serialize=None, deploy_limit_pct=None):
+        assert serialize is not None, "BrokerAdapter.place() must pass serialize="
+        return {"ok": True, "dry_run": not live, "response": serialize(FakeSdkResponse())}
+
+    monkeypatch.setattr(core_broker, "place_order", fake_place_order)
+    monkeypatch.setattr(core_broker, "build_order", lambda spec: object())
+
+    adapter = live_loop.BrokerAdapter(BASE_CFG)  # live.enabled + gate0_confirmed, so the gate passes
+    monkeypatch.setattr(adapter, "_ensure", lambda: None)
+    adapter._session, adapter._account = object(), object()
+
+    result = adapter.place({"legs": []}, live=True)
+    assert result["ok"] is True
+    assert result["order_id"] == 489184188
+    assert isinstance(result["response"], dict)  # never the raw SDK object
+
+
+def test_broker_cli_fresh_option_quotes_shapes_and_filters_rest_rows(monkeypatch):
+    """fresh_option_quotes is the fresh-quote-before-entry mechanism's one broker call: a plain
+    REST market-data GET, not the streamer. Drops rows with no usable two-sided market (missing,
+    crossed, or non-positive) rather than handing entry_fresh_reprice a nonsense quote."""
+    from tastytrade import market_data as md
+
+    import broker_cli
+
+    class Row:
+        def __init__(self, symbol, bid, ask, mid=None, updated_at=None):
+            self.symbol, self.bid, self.ask, self.mid, self.updated_at = symbol, bid, ask, mid, updated_at
+
+    async def fake_get_market_data_by_type(session, options=None, **kw):
+        assert options == ["A", "B", "C", "D"]
+        return [
+            Row("A", 1.0, 1.2, 1.1),
+            Row("B", 1.0, 1.2, None),  # mid absent -> computed from bid/ask
+            Row("C", None, 1.2),  # missing bid -> dropped
+            Row("D", 1.3, 1.2),  # crossed (bid > ask) -> dropped
+        ]
+
+    monkeypatch.setattr(md, "get_market_data_by_type", fake_get_market_data_by_type)
+
+    out = asyncio.run(broker_cli.fresh_option_quotes(object(), ["A", "B", "C", "D"]))
+    assert out["A"] == {"bid": 1.0, "ask": 1.2, "mid": 1.1, "updated_at": None}
+    assert out["B"]["mid"] == 1.1  # (1.0 + 1.2) / 2
+    assert "C" not in out and "D" not in out
+
+
+def test_broker_cli_fresh_option_quotes_empty_symbols_skips_the_call(monkeypatch):
+    from tastytrade import market_data as md
+
+    import broker_cli
+
+    async def boom(*a, **kw):
+        raise AssertionError("must not call the SDK for an empty symbol list")
+
+    monkeypatch.setattr(md, "get_market_data_by_type", boom)
+    assert asyncio.run(broker_cli.fresh_option_quotes(object(), [])) == {}
+
+
+def test_broker_adapter_fresh_quotes_delegates_and_fails_closed(monkeypatch):
+    import broker_cli
+
+    calls = []
+
+    async def fake_fresh(session, symbols):
+        calls.append(symbols)
+        return {"X": {"bid": 1.0, "ask": 1.1, "mid": 1.05}}
+
+    monkeypatch.setattr(broker_cli, "fresh_option_quotes", fake_fresh)
+    adapter = live_loop.BrokerAdapter(BASE_CFG)
+    monkeypatch.setattr(adapter, "_ensure", lambda: None)
+    adapter._session, adapter._account = object(), object()
+
+    assert adapter.fresh_quotes(["X"]) == {"X": {"bid": 1.0, "ask": 1.1, "mid": 1.05}}
+    assert calls == [["X"]]
+
+    async def fake_fresh_raises(session, symbols):
+        raise RuntimeError("network blip")
+
+    monkeypatch.setattr(broker_cli, "fresh_option_quotes", fake_fresh_raises)
+    assert adapter.fresh_quotes(["X"]) == {}  # fails closed, never raises to the caller
+
+
+# --------------------------------------------------------------------------- official settlement price
+def test_official_settlement_price_prefers_tastytrade(monkeypatch):
+    from tastytrade import market_data as md
+
+    import broker_cli
+
+    class Row:
+        def __init__(self, close=None, last=None, mark=None):
+            self.close, self.last, self.mark = close, last, mark
+
+    async def fake_get_market_data_by_type(session, indices=None, **kw):
+        assert indices == ["XSP"]
+        return [Row(close=743.76)]
+
+    monkeypatch.setattr(md, "get_market_data_by_type", fake_get_market_data_by_type)
+    monkeypatch.setattr(broker_cli, "_yahoo_index_price", lambda s: (_ for _ in ()).throw(AssertionError))
+    monkeypatch.setattr(broker_cli, "_barchart_index_price", lambda s: (_ for _ in ()).throw(AssertionError))
+
+    price, source = asyncio.run(broker_cli.official_settlement_price(object(), "XSP"))
+    assert price == 743.76 and source == "tastytrade"
+
+
+def test_official_settlement_price_falls_back_to_last_or_mark_when_close_is_unset(monkeypatch):
+    from tastytrade import market_data as md
+
+    import broker_cli
+
+    class Row:
+        def __init__(self, close=None, last=None, mark=None):
+            self.close, self.last, self.mark = close, last, mark
+
+    async def fake_get_market_data_by_type(session, indices=None, **kw):
+        return [Row(close=None, last=None, mark=743.76)]  # close not posted yet
+
+    monkeypatch.setattr(md, "get_market_data_by_type", fake_get_market_data_by_type)
+    price, source = asyncio.run(broker_cli.official_settlement_price(object(), "XSP"))
+    assert price == 743.76 and source == "tastytrade"
+
+
+def test_official_settlement_price_falls_back_to_yahoo_then_barchart(monkeypatch):
+    from tastytrade import market_data as md
+
+    import broker_cli
+
+    async def empty(session, indices=None, **kw):
+        return []
+
+    monkeypatch.setattr(md, "get_market_data_by_type", empty)
+    monkeypatch.setattr(broker_cli, "_yahoo_index_price", lambda s: 743.76)
+    monkeypatch.setattr(broker_cli, "_barchart_index_price", lambda s: (_ for _ in ()).throw(AssertionError))
+    price, source = asyncio.run(broker_cli.official_settlement_price(object(), "XSP"))
+    assert price == 743.76 and source == "yahoo"
+
+    monkeypatch.setattr(broker_cli, "_yahoo_index_price", lambda s: None)
+    monkeypatch.setattr(broker_cli, "_barchart_index_price", lambda s: 743.76)
+    price2, source2 = asyncio.run(broker_cli.official_settlement_price(object(), "XSP"))
+    assert price2 == 743.76 and source2 == "barchart"
+
+
+def test_official_settlement_price_reports_no_source_when_every_source_fails(monkeypatch):
+    from tastytrade import market_data as md
+
+    import broker_cli
+
+    async def boom(session, indices=None, **kw):
+        raise RuntimeError("network blip")
+
+    monkeypatch.setattr(md, "get_market_data_by_type", boom)
+    monkeypatch.setattr(broker_cli, "_yahoo_index_price", lambda s: None)
+    monkeypatch.setattr(broker_cli, "_barchart_index_price", lambda s: None)
+    price, reason = asyncio.run(broker_cli.official_settlement_price(object(), "XSP"))
+    assert price is None and reason == "no_source_available"
+
+
+def test_broker_adapter_official_settlement_price_delegates_and_fails_closed(monkeypatch):
+    import broker_cli
+
+    calls = []
+
+    async def fake_official(session, symbol):
+        calls.append(symbol)
+        return 743.76, "tastytrade"
+
+    monkeypatch.setattr(broker_cli, "official_settlement_price", fake_official)
+    adapter = live_loop.BrokerAdapter(BASE_CFG)
+    monkeypatch.setattr(adapter, "_ensure", lambda: None)
+    adapter._session, adapter._account = object(), object()
+
+    assert adapter.official_settlement_price("XSP") == (743.76, "tastytrade")
+    assert calls == ["XSP"]
+
+    async def fake_official_raises(session, symbol):
+        raise RuntimeError("network blip")
+
+    monkeypatch.setattr(broker_cli, "official_settlement_price", fake_official_raises)
+    assert adapter.official_settlement_price("XSP") == (None, "fetch_failed")  # fails closed
+
+
+def test_entry_fresh_reprice_matches_vertical_credit_on_the_same_quotes():
+    """entry_fresh_reprice must compute the credit the SAME way fly.vertical_credit already does
+    for the cached path (engine.py:248) -- apples-to-apples, not a second pricing model. Note
+    ENTRY_PLAN's own "credit": 1.07 is a fixture literal for the tick-floor tests above and is NOT
+    what _snapshot()'s real put quotes at these strikes imply -- don't compare against it here."""
+    import fly
+
+    spec = live_orders.entry_spec(_snapshot(), ENTRY_PLAN)
+    fresh = _quote_table(_snapshot())
+    short_q, long_q = fresh[spec["legs"][0]["symbol"]], fresh[spec["legs"][1]["symbol"]]
+    expected_credit = fly.vertical_credit(short_q, long_q)
+
+    new_price, info = live_orders.entry_fresh_reprice(spec, fresh)
+    assert info["fresh_credit"] == pytest.approx(expected_credit, abs=1e-9)
+    assert new_price == live_orders.tick_floor(expected_credit)
+
+
+def test_entry_fresh_reprice_missing_leg_refuses_to_price():
+    spec = live_orders.entry_spec(_snapshot(), ENTRY_PLAN)
+    short_sym = spec["legs"][0]["symbol"]
+    fresh = {k: v for k, v in _quote_table(_snapshot()).items() if k != short_sym}
+    new_price, info = live_orders.entry_fresh_reprice(spec, fresh)
+    assert new_price is None
+    assert info["reason"] == "fresh_quote_missing" and info["missing"] == [short_sym]
+
+
+def test_entry_fresh_reprice_worse_market_lowers_the_credit():
+    spec = live_orders.entry_spec(_snapshot(), ENTRY_PLAN)
+    fresh = _quote_table(_snapshot())
+    short_sym = spec["legs"][0]["symbol"]
+    baseline_price, baseline_info = live_orders.entry_fresh_reprice(spec, fresh)
+    # the short leg's real market is worth less than cached -> less credit available
+    fresh[short_sym] = {**fresh[short_sym], "mid": fresh[short_sym]["mid"] - 0.5}
+    new_price, info = live_orders.entry_fresh_reprice(spec, fresh)
+    assert info["fresh_credit"] < baseline_info["fresh_credit"]
+    assert new_price < baseline_price
+
+
 # --------------------------------------------------------------------------- the loop, faked
+def _quote_table(snapshot):
+    """{occ_symbol: {bid, ask, mid}} for every leg quote in a snapshot — the shape
+    FakeBroker.fresh_quotes reconstructs its answers from."""
+    table = {}
+    for book in (snapshot.get("puts") or {}, snapshot.get("calls") or {}):
+        for q in book.values():
+            if q.get("occ_symbol"):
+                table[q["occ_symbol"]] = {"bid": q["bid"], "ask": q["ask"], "mid": q["mid"]}
+    return table
+
+
 class FakeBroker:
-    def __init__(self, order_statuses=None, cancel_ok=True, working=None):
+    def __init__(
+        self,
+        order_statuses=None,
+        cancel_ok=True,
+        working=None,
+        snapshot=None,
+        fresh=None,
+        official_price=None,
+    ):
         self.placed = []
         self.cancelled = []
         self.status_calls = []
+        self.fresh_quote_calls = []
+        self.official_settlement_calls = []
         # order_id -> {"status": ..., "price": ...} the next status() call for it returns
         self._statuses = dict(order_statuses or {})
         self._cancel_ok = cancel_ok
         self._working = list(working or [])
+        # fresh_quotes() default: reconstruct quotes from a plain _snapshot() (every entry test
+        # but two uses exactly that; the two exceptions only override now_min, not strikes/quotes)
+        # so the "fresh" price comes out identical to the cached one and every pre-existing test
+        # keeps passing without wiring a snapshot through explicitly. `fresh` overrides entirely
+        # (e.g. {} to simulate an unavailable fetch, or a hand-built table to simulate divergence).
+        self._fresh_override = fresh
+        self._quote_table = _quote_table(snapshot if snapshot is not None else _snapshot())
+        # official_settlement_price() default: no source available (mirrors run_settle_live's
+        # own fall-to-provisional behavior). Pass (price, source) to simulate a successful fetch.
+        self._official_price = official_price or (None, "no_source_available")
 
     def place(self, spec, live):
         self.placed.append({"spec": spec, "live": live})
@@ -154,6 +458,16 @@ class FakeBroker:
 
     def working_orders(self):
         return list(self._working)
+
+    def fresh_quotes(self, symbols):
+        self.fresh_quote_calls.append(list(symbols))
+        if self._fresh_override is not None:
+            return dict(self._fresh_override)
+        return {s: self._quote_table[s] for s in symbols if s in self._quote_table}
+
+    def official_settlement_price(self, symbol):
+        self.official_settlement_calls.append(symbol)
+        return self._official_price
 
 
 @pytest.fixture
@@ -191,12 +505,185 @@ def test_dry_run_places_nothing_live_but_records_nothing_either(live_conn):
 
 
 def test_live_mode_records_the_entry_with_its_order_id(live_conn):
+    import fly
+
     broker = FakeBroker()
     summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
     assert summary["entered"] == 1
     row = live_conn.execute("SELECT * FROM fly_positions").fetchone()
     assert row["entry_order_id"] == "ORD1"
     assert row["kind"] == "short_vertical" and row["arm"] == "gex"
+    # Regression: save_position() omitted completing_direction entirely (paper's book.py always
+    # included it from the same plan dict) -- flies' first live fill (2026-07-30) recorded NULL,
+    # and the Discord notifier rendered "needs spot ? to complete" on a real position.
+    assert row["completing_direction"] is not None
+    # Regression (2026-07-30): a live entry never recorded floor_dollars either, so the dashboard's
+    # Floor column and the "max possible loss" tile sat blank until (if ever) it completed.
+    assert row["floor_dollars"] is not None
+    assert row["floor_dollars"] == pytest.approx(
+        fly.position_floor(
+            {
+                "kind": "short_vertical",
+                "side": row["side"],
+                "center": row["center"],
+                "wing_width": row["wing_width"],
+                "quantity": row["quantity"],
+                "net": row["net"],
+                "fees": row["fees"],
+            }
+        )
+    )
+
+
+def test_dry_run_never_calls_fresh_quotes(live_conn):
+    """The fresh-quote check is live-only -- paper/dry-run must issue zero extra broker calls."""
+    broker = FakeBroker()
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=False, log=lambda *_: None)
+    assert broker.fresh_quote_calls == []
+    assert broker.placed and broker.placed[0]["spec"]["price"] != 0  # entry still proceeded, unrepriced
+
+
+def test_live_entry_recorded_at_the_fresh_repriced_value(live_conn):
+    """When live, the recorded position's net/credit must be the fresh (submitted) price, not the
+    stale cached one -- the ledger's economics must match what actually went to the broker."""
+    import fly
+
+    broker = FakeBroker()
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    spec = broker.placed[0]["spec"]
+    short_q, long_q = (
+        broker._quote_table[spec["legs"][0]["symbol"]],
+        broker._quote_table[spec["legs"][1]["symbol"]],
+    )
+    expected = live_orders.tick_floor(fly.vertical_credit(short_q, long_q))
+    assert spec["price"] == expected
+    row = live_conn.execute("SELECT * FROM fly_positions").fetchone()
+    assert row["net"] == expected and row["credit"] == expected
+
+
+def test_live_entry_skipped_when_fresh_quote_unavailable(live_conn):
+    broker = FakeBroker(fresh={})  # simulates a failed/empty REST fetch
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert broker.placed == []  # never reaches broker.place()
+    assert any("fresh quote unavailable" in s.get("entry", "") for s in summary["skips"])
+    n = live_conn.execute("SELECT COUNT(*) FROM fly_positions").fetchone()[0]
+    assert n == 0
+
+
+def _real_entry_short_leg_symbol(snap, cfg):
+    """The OCC symbol run_once will actually use as the short/centre leg for this snapshot+config
+    combo, derived by running the real entry decision -- so a divergence test perturbs a leg that
+    is actually read by entry_fresh_reprice, not an arbitrary strike from the quote table."""
+    params = live_loop._merged_live_params(cfg, cfg["live"]["arm"])
+    enter, _, plan = engine.evaluate_credit_spread_entry(snap, params, [])
+    assert enter, "fixture must produce an entry for this test to target the right leg"
+    return live_orders.entry_spec(snap, plan)["legs"][0]["symbol"]
+
+
+def test_live_entry_skipped_when_fresh_quote_diverged_beyond_tolerance(live_conn):
+    snap = _snapshot()
+    table = _quote_table(snap)
+    short_symbol = _real_entry_short_leg_symbol(snap, _loop_cfg())
+    # well more than the default fresh_quote_tolerance_dollars (0.05)
+    worse = {k: (v if k != short_symbol else {**v, "mid": v["mid"] - 5.0}) for k, v in table.items()}
+    broker = FakeBroker(snapshot=snap, fresh=worse)
+    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
+    assert broker.placed == []
+    assert any("fresh quote diverged" in s.get("entry", "") for s in summary["skips"])
+    n = live_conn.execute("SELECT COUNT(*) FROM fly_positions").fetchone()[0]
+    assert n == 0
+
+
+def test_live_entry_proceeds_when_fresh_quote_within_tolerance(live_conn):
+    snap = _snapshot()
+    table = _quote_table(snap)
+    short_symbol = _real_entry_short_leg_symbol(snap, _loop_cfg())
+    within = {k: (v if k != short_symbol else {**v, "mid": v["mid"] - 0.01}) for k, v in table.items()}
+    broker = FakeBroker(snapshot=snap, fresh=within)
+    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
+    assert summary["entered"] == 1
+    assert len(broker.placed) == 1
+
+
+# --------------------------------------------------------------------------- journals (dashboard data)
+def test_every_tick_journals_the_snapshot_and_the_wanted_iteration(live_conn):
+    """Regression: live_loop never wrote fly_iterations/fly_snapshots at all (only paper's book.py/
+    paper_loop.py did) -- the live dashboard's Session Timeline card read "No iterations recorded
+    yet today" even on a session with a real fill. Every run_once tick must journal both, live or
+    dry-run, entered or not -- this is feed/intent telemetry, not a trading decision."""
+    broker = FakeBroker()
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=False, log=lambda *_: None)
+    snap_row = live_conn.execute("SELECT * FROM fly_snapshots").fetchone()
+    assert snap_row["status"] == "ok" and snap_row["symbol"] == "SPX"
+    iter_row = live_conn.execute("SELECT * FROM fly_iterations").fetchone()
+    assert iter_row["arm"] == "gex" and iter_row["center"] is not None
+
+
+def test_accepted_entry_is_journaled_as_a_decision(live_conn):
+    broker = FakeBroker()
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    row = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'entry'").fetchone()
+    assert row["reason"] == "entered" and row["accepted"] == 1
+    assert row["position_id"] == live_conn.execute("SELECT position_id FROM fly_positions").fetchone()[0]
+
+
+def test_refused_entry_is_journaled_with_the_engine_reason(live_conn):
+    # before the entry window -> engine.evaluate_credit_spread_entry refuses with a specific reason
+    snap = _snapshot(now_min=1)
+    broker = FakeBroker(snapshot=snap)
+    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
+    assert summary["entered"] == 0
+    row = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'entry'").fetchone()
+    assert row["accepted"] == 0
+    assert row["reason"] == summary["skips"][0]["entry"]
+    # Regression: the refusal-path journal() call was missing `center=` entirely (plan is None on
+    # refusal, so there's no plan["center"] -- book.py's own equivalent passes wanted_center
+    # instead, computed the same way for the iteration journal; live_loop.py's first cut of this
+    # forgot to). Without it the Decision Journal card's CENTRE/DETAIL columns render "-" even
+    # though the arm's wanted centre was known the whole time.
+    assert row["center_last"] is not None
+
+
+def test_fresh_quote_skip_paths_are_journaled_distinctly(live_conn):
+    broker = FakeBroker(fresh={})
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    row = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'entry'").fetchone()
+    assert row["reason"] == "fresh_quote_unavailable" and row["accepted"] == 0
+
+
+def test_repeated_identical_skip_reason_collapses_into_one_run(live_conn):
+    """record_decision's own contract (db.py): an unchanged reason bumps occurrences rather than
+    inserting a new row -- confirm run_once's journal() calls actually get this behavior, not just
+    the isolated db.py unit that already covers it."""
+    snap = _snapshot(now_min=1)  # before the entry window, same refusal reason every tick
+    for _ in range(3):
+        broker = FakeBroker(snapshot=snap)
+        live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
+    rows = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'entry'").fetchall()
+    assert len(rows) == 1 and rows[0]["occurrences"] == 3
+
+
+def test_position_id_is_unique_per_attempt_not_just_per_day_arm_centre(live_conn):
+    """Regression: position_id used to be f"live-{day}-{arm}-{center}" -- day+arm+centre only, no
+    per-attempt uniqueness. A later successful entry at the SAME centre as an earlier rejected one
+    collided on that id, and the UPSERT silently overwrote the rejected attempt's row, erasing it
+    from the ledger (2026-07-30: the orphan sweep kept re-flagging an order the ledger no longer
+    had any record of). The id must now carry a per-attempt timestamp component."""
+    broker = FakeBroker()
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    pid = live_conn.execute("SELECT position_id FROM fly_positions").fetchone()[0]
+    assert pid.startswith("live-gex-")
+    # arm-centre-YYYYMMDDHHMMSSffffff: the trailing component alone is a 20-digit microsecond
+    # timestamp -- far more entropy than the old day-only id ever carried.
+    assert pid.rsplit("-", 1)[-1].isdigit() and len(pid.rsplit("-", 1)[-1]) == 20
+
+
+def test_dry_run_still_journals_snapshot_and_iteration_but_not_a_position(live_conn):
+    broker = FakeBroker()
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=False, log=lambda *_: None)
+    assert live_conn.execute("SELECT COUNT(*) FROM fly_snapshots").fetchone()[0] == 1
+    assert live_conn.execute("SELECT COUNT(*) FROM fly_iterations").fetchone()[0] == 1
+    assert live_conn.execute("SELECT COUNT(*) FROM fly_positions").fetchone()[0] == 0
 
 
 def test_working_completion_is_cancelled_at_the_cutoff(live_conn):
@@ -368,7 +855,9 @@ def test_entry_allowed_once_completed_fly_is_risk_free(live_conn):
             "center": 7495.0,
             "wing_width": 5,
             "quantity": 1,
-            "net": 0.20,  # floor = 0.20*100 - 3.44 = $16.56 >= 0 -> risk-free
+            # floor = 1.05*100 - 3.44 fees - $20 worst-case exercise fee (4 contracts) = $81.56 >= 0
+            # -> risk-free
+            "net": 1.05,
             "fees": 3.44,
             "status": "open",
             "entry_time": clock.now_iso(),
@@ -493,11 +982,151 @@ def test_completion_fill_confirmation_flips_kind_and_records_actual_debit(live_c
     assert row["net"] == pytest.approx(0.25)
     assert row["completed_at"] is not None
     _ = clock  # imported for parity with sibling tests; no direct use beyond fixture setup
+    # Regression (2026-07-30): the moment a spread actually becomes a fly was never journaled at
+    # all -- neither of _confirm_completion_fill's two call sites (run_once's own fill-confirmation
+    # pass, and the burst watcher, which usually wins the race in practice) wrote to fly_decisions,
+    # so the live dashboard's Decision Journal card showed zero completion rows despite real
+    # completions having happened.
+    decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'completion'").fetchone()
+    assert decision["reason"] == "completed" and decision["accepted"] == 1
+    assert decision["position_id"] == "E1"
+
+
+def test_completion_terminal_unfilled_is_journaled_and_reverts_to_short_vertical(live_conn):
+    # A rejected/cancelled completion order reverts the position to a short vertical, and since
+    # nothing else changed about eligibility, the same tick immediately retries — place_resting_
+    # completion() claims the freed slot and rests a new order before run_once returns. So the
+    # end state carries a *new* completion_order_id, not None; what proves the revert happened is
+    # the journal, not a lingering empty slot.
+    dbmod.save_position(
+        live_conn,
+        {
+            **_open_entry_row(entry_fill_status="filled"),
+            "completion_order_id": "ORD-C1",
+            "completion_fill_status": "pending",
+        },
+    )
+    broker = FakeBroker(order_statuses={"ORD-C1": {"status": "Rejected", "price": None, "filled": False}})
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["kind"] == "short_vertical"
+    assert row["completion_order_id"] not in (None, "ORD-C1")
+    decisions = live_conn.execute(
+        "SELECT * FROM fly_decisions WHERE mode = 'completion' ORDER BY id"
+    ).fetchall()
+    assert [d["reason"] for d in decisions] == ["completion_rejected", "placed"]
+    assert decisions[0]["accepted"] == 0
+    assert decisions[1]["accepted"] == 1
+    assert all(d["position_id"] == "E1" for d in decisions)
+
+
+# --------------------------------------------------------------------------- pre-close ITM exit (live)
+def test_pre_close_exit_places_a_closing_order_when_cheaper_than_the_assignment_fee(live_conn):
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
+    )
+
+    # Inside the closing window, spot between the lower wing (7490) and the centre (7495); quotes
+    # hand-picked so the fly's combo mid (~3.0) matches its intrinsic payoff there (also 3.0),
+    # keeping the closing slippage small next to the $15 assignment fee (3 of 4 contracts ITM).
+    def close_q(occ, mid):
+        return {
+            "bid": mid - 0.1,
+            "ask": mid + 0.1,
+            "mid": mid,
+            "occ_symbol": occ,
+            "instrument_type": "Equity Option",
+        }
+
+    snap = _snapshot(
+        now_min=955,
+        underlying_price=7493.0,
+        puts={
+            7490.0: close_q("SPXW  260729P07490000", 0.2),
+            7495.0: close_q("SPXW  260729P07495000", 1.1),
+            7500.0: close_q("SPXW  260729P07500000", 5.1),
+        },
+    )
+    broker = FakeBroker()
+    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
+    assert summary.get("pre_close_exits_placed") == 1
+    close_orders = [p for p in broker.placed if p["spec"]["price_effect"] == "credit"]
+    assert len(close_orders) == 1
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["close_order_id"] is not None
+    assert row["close_fill_status"] == "pending"
+    decision = live_conn.execute(
+        "SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit' AND reason = 'placed'"
+    ).fetchone()
+    assert decision is not None and decision["accepted"] == 1 and decision["position_id"] == "E1"
+
+
+def test_pre_close_exit_leaves_an_otm_fly_alone_before_the_window(live_conn):
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
+    )
+    broker = FakeBroker()
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert "pre_close_exits_placed" not in summary
+    row = live_conn.execute("SELECT close_order_id FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["close_order_id"] is None
+
+
+def test_close_fill_confirmation_settles_the_position_at_the_actual_close_credit(live_conn):
+    dbmod.save_position(
+        live_conn,
+        {
+            **_open_entry_row(entry_fill_status="filled"),
+            "kind": "fly",
+            "net": 0.25,
+            "debit": 0.80,
+            "close_order_id": "ORD-X1",
+            "close_fill_status": "pending",
+        },
+    )
+    broker = FakeBroker(order_statuses={"ORD-X1": {"status": "Filled", "price": "3.00", "filled": True}})
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["status"] == "settled"
+    assert row["close_fill_status"] == "filled"
+    assert row["closed_before_expiry"] == 1
+    assert row["gross_pnl"] == pytest.approx((0.25 + 3.00) * 100)
+    decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit'").fetchone()
+    assert decision["reason"] == "filled" and decision["accepted"] == 1
+
+
+def test_close_terminal_unfilled_falls_back_to_an_open_fly(live_conn):
+    """A rejected/cancelled closing order releases the position back to an ordinary open fly,
+    which falls through to the normal settlement path (and the real assignment fee) -- the one
+    tail risk fly.position_floor's docstring names explicitly."""
+    dbmod.save_position(
+        live_conn,
+        {
+            **_open_entry_row(entry_fill_status="filled"),
+            "kind": "fly",
+            "net": 0.25,
+            "debit": 0.80,
+            "close_order_id": "ORD-X1",
+            "close_fill_status": "pending",
+        },
+    )
+    broker = FakeBroker(order_statuses={"ORD-X1": {"status": "Rejected", "price": None, "filled": False}})
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["kind"] == "fly" and row["status"] == "open"
+    assert row["close_order_id"] is None and row["close_fill_status"] == "rejected"
+    decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit'").fetchone()
+    assert decision["reason"] == "close_rejected" and decision["accepted"] == 0
 
 
 # --------------------------------------------------------------------------- resting completion pricing
 def test_max_safe_completion_debit_is_min_of_both_gates():
-    # SPX entry: credit 1.05, fees 3.44 recorded; completion adds another 3.44.
+    # SPX entry: credit 1.05, fees 3.44 recorded; completion adds another 3.44. Not reserving the
+    # resulting fly's worst-case exercise-assignment fee (2026-07-30) -- see
+    # fly.position_floor's docstring: engine.evaluate_pre_close_exit bounds that cost going
+    # forward instead, so this bound matches fly.position_floor's own (unbuffered) formula.
     # buffer gate: 1.05 - 0.10 = 0.95
     # floor bound at min_floor=10: 1.05 - (10 + 3.44 + 3.4433)/100 = 1.05 - 0.168833 = 0.881167
     pos = {
@@ -676,6 +1305,12 @@ def test_watcher_confirms_entry_and_places_completion(live_conn, monkeypatch):
     assert row["entry_fill_status"] == "filled"
     assert row["completion_order_id"] == "ORD1"  # placed by the watcher, immediately
     assert broker.cancelled == []  # the watcher never cancels
+    # Regression (2026-07-30): the watcher is the PRIMARY completion-placement path in practice
+    # (it polls far more often than the main tick), but its call to place_resting_completion was
+    # never journaled -- only run_once's own fallback copy was, and it usually loses the race.
+    decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'completion'").fetchone()
+    assert decision["reason"] == "placed" and decision["accepted"] == 1
+    assert decision["position_id"] == "E1"
 
 
 def test_watcher_exits_when_nothing_pending(live_conn, monkeypatch):
@@ -791,6 +1426,104 @@ def test_provisional_settle_marks_source_and_official_overwrites(live_conn, monk
     # ...and allowed with force.
     out4 = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", price=7490.0, force=True)
     assert out4["ok"]
+
+
+def test_settle_auto_fetches_official_price_and_skips_provisional_entirely(live_conn, monkeypatch):
+    """When a broker is given and it can answer, the settlement goes straight to 'official' --
+    the provisional (last-trade) path is never even consulted."""
+    import provider as providermod
+
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
+    )
+
+    def boom(*a, **kw):
+        raise AssertionError("must not read the stream cache when the broker already answered")
+
+    monkeypatch.setattr(providermod, "read_spot", boom)
+    broker = FakeBroker(official_price=(7495.5, "tastytrade"))
+    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", broker=broker)
+    assert out["ok"] and out["source"] == "official"
+    assert broker.official_settlement_calls == ["SPX"]
+    pos = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert pos["settlement_source"] == "official"
+
+
+def test_settle_falls_back_to_provisional_when_broker_fetch_is_unavailable(live_conn, monkeypatch):
+    import provider as providermod
+
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
+    )
+    monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: 7495.5)
+    broker = FakeBroker()  # default: no source available
+    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", broker=broker)
+    assert out["ok"] and out["source"] == "last_trade_provisional"
+    assert broker.official_settlement_calls == ["SPX"]  # it was tried, just came up empty
+
+
+def test_settle_retries_broker_fetch_on_a_still_provisional_book_and_upgrades(live_conn, monkeypatch):
+    """A settle call with no broker (or one that can't answer yet) leaves the book provisional;
+    a LATER call with a broker that now has an answer upgrades it to official -- the mechanism
+    the tick relies on to keep retrying every minute until the print is out."""
+    import provider as providermod
+
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
+    )
+    monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: 7495.5)
+    out1 = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", broker=FakeBroker())
+    assert out1["source"] == "last_trade_provisional"
+
+    broker2 = FakeBroker(official_price=(7494.0, "yahoo"))
+    out2 = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", broker=broker2)
+    assert out2["ok"] and out2["source"] == "official"
+    assert broker2.official_settlement_calls == ["SPX"]
+    pos = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert pos["settlement_source"] == "official"
+
+
+def test_settle_never_calls_broker_once_already_official(live_conn, monkeypatch):
+    """Once a book is officially settled, a subsequent settle attempt must short-circuit on the
+    already-official guard before ever touching the broker -- no repeated network calls on a tick
+    that keeps firing after the print already landed."""
+    import provider as providermod
+
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
+    )
+    monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: 7495.5)
+    live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", price=7495.5)  # official
+
+    def boom(symbol):
+        raise AssertionError("must not call the broker once already officially settled")
+
+    broker = FakeBroker()
+    broker.official_settlement_price = boom
+    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", broker=broker)
+    assert not out["ok"] and "official" in out["reason"]
+
+
+def test_session_officially_settled_requires_the_official_print_not_just_settled(live_conn, monkeypatch):
+    import provider as providermod
+
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
+    )
+    monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: 7495.5)
+    assert not live_loop.session_officially_settled(live_conn, DAY)
+
+    live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused")  # provisional
+    assert live_loop.session_already_settled(live_conn, DAY)
+    assert not live_loop.session_officially_settled(live_conn, DAY)  # still not official
+
+    live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", price=7495.5)  # official
+    assert live_loop.session_officially_settled(live_conn, DAY)
 
 
 def test_settle_targets_an_explicit_past_date(live_conn, monkeypatch):
