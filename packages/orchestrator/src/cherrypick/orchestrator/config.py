@@ -221,6 +221,20 @@ def module_logs_dir(name: str) -> Path:
     return LOGS_DIR / name
 
 
+def live_trading_enabled(module_cfg_doc: dict[str, Any]) -> bool:
+    """Whether a module's OWN config document (not the orchestrator's) has live trading switched
+    on, across the suite's two conventions: a top-level `enable_live_trading` bool (meic, earnings)
+    or a nested `live.enabled` bool (flies — the only module armed per-day rather than by a static
+    flag). Checking only the first convention left every flies-specific safety surface (the Live Ops
+    card, `cherrypick account`'s live warning) blind to flies actually being armed — it always read
+    as PAPER ONLY regardless of `live.enabled`. Either flag being true means true; a future module
+    could use either shape without a code change here."""
+    if bool(module_cfg_doc.get("enable_live_trading", False)):
+        return True
+    live = module_cfg_doc.get("live")
+    return bool(isinstance(live, dict) and live.get("enabled", False))
+
+
 def enabled_modules(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Return {name: module_cfg} for modules with enabled=true."""
     return {name: mcfg for name, mcfg in cfg.get("modules", {}).items() if mcfg.get("enabled", False)}
