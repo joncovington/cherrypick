@@ -105,6 +105,12 @@
   },
   "account_deploy_limit_pct": 0,
   "_account_deploy_limit_pct_note": "Account-level deploy cap (via cherrypit.risk). 0 = OFF (default). A positive value (e.g. 50) blocks a LIVE execute_trade whose buying power would push total deployed BP above that percent of account capacity (used + available derivative buying power). Fail-closed: if account state can't be read, the live order is blocked. Enforced only on live submits; a dry-run reports the governor verdict without blocking. Does not affect paper trading.",
+  "live": {
+    "symbol": null,
+    "gate0_confirmed": "",
+    "daily_loss_halt_dollars": 200
+  },
+  "_live_note": "Gates for src/live_loop.py (rung-1 measurement pilot), on top of enable_live_trading above. `symbol`: the ONE symbol this rung trades (live is single-symbol only; XSP is the natural first choice -- cash-settled, simplest EOD handling, cheapest fees). `gate0_confirmed`: empty until a human attests the pinned symbol's paper book clears recommend_promotion under the hardened rule (who/when, e.g. 'jon 2026-08-01') -- live_loop.readiness() refuses to place live orders while this is empty. `daily_loss_halt_dollars`: halts new live entries once today's realized P&L on the live ledger is at or below -this amount; open positions still exit normally.",
   "loop_interval_minutes": 5,
   "entry_window_start": "10:00",
   "entry_window_end": "14:30",
