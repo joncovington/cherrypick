@@ -17,6 +17,7 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
+from cherrypick.orchestrator import config as cfgmod
 from cherrypick.orchestrator import settings_serve
 
 pytestmark = pytest.mark.unit
@@ -28,6 +29,9 @@ TOKEN = "test-csrf-token"
 def server(tmp_path, monkeypatch):
     """The real handler over a sandbox home with a flies config, on an ephemeral port."""
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    # STATE_DIR is resolved once at import time, not re-read from the env var above — patch it
+    # directly so a halt-flag test here can NEVER touch the real ~/.cherrypick/state/halt-live.flag.
+    monkeypatch.setattr(cfgmod, "STATE_DIR", tmp_path / "state")
     cfg_dir = tmp_path / "config"
     cfg_dir.mkdir()
     (cfg_dir / "flies.json").write_text(
@@ -136,3 +140,33 @@ def test_unknown_routes(server):
 def test_non_loopback_bind_refused():
     out = settings_serve.serve({"modules": {}}, host="0.0.0.0", open_browser=False)
     assert out["ok"] is False and "loopback" in out["error"]
+
+
+def test_halt_status_and_toggle_round_trip(server):
+    status, _, body = _request(server + "/api/halt")
+    out = json.loads(body)
+    assert status == 200 and out["ok"] is True and out["present"] is False
+
+    status, _, body = _post(server, "/api/halt/set", {"present": True})
+    out = json.loads(body)
+    assert status == 200 and out["ok"] is True and out["present"] is True
+
+    status, _, body = _request(server + "/api/halt")
+    assert json.loads(body)["present"] is True
+
+    status, _, body = _post(server, "/api/halt/set", {"present": False})
+    assert json.loads(body)["present"] is False
+
+
+def test_halt_toggle_requires_csrf_and_host(server):
+    status, _, _ = _request(
+        server + "/api/halt/set", "POST", b'{"present": true}', {"Content-Type": "application/json"}
+    )
+    assert status == 403
+    status, _, _ = _request(
+        server + "/api/halt/set",
+        "POST",
+        b'{"present": true}',
+        {"Host": "rebind.attacker.example", "Content-Type": "application/json", "X-Csrf-Token": TOKEN},
+    )
+    assert status == 403

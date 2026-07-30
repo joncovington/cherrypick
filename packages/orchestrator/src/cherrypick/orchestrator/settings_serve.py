@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlparse
 
 from cherrypick.core import viz
 
-from . import configedit, secretsops
+from . import configedit, liveops, secretsops
 
 _MAX_BODY = 256 * 1024
 _LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
@@ -87,6 +87,8 @@ def _make_handler(cfg: dict[str, Any], csrf_token: str, port: int):
                     self._json({"ok": True, **loaded})
                 elif parsed.path == "/api/secrets":
                     self._json(secretsops.status(cfg))
+                elif parsed.path == "/api/halt":
+                    self._json(liveops.halt_status(cfg))
                 else:
                     self._send(404, b"not found", "text/plain")
             except Exception as exc:  # any hiccup renders inline, never breaks the server
@@ -150,6 +152,8 @@ def _make_handler(cfg: dict[str, Any], csrf_token: str, port: int):
                 return secretsops.set_webhook(str(body.get("channel", "")), body.get("url") or "")
             if path == "/api/webhook/delete":
                 return secretsops.delete_webhook(str(body.get("channel", "")))
+            if path == "/api/halt/set":
+                return liveops.set_halt(bool(body.get("present")))
             return {"ok": False, "error": "unknown route"}
 
     return _Handler
@@ -231,12 +235,23 @@ _PAGE = r"""<!DOCTYPE html>
   .tabs button.on { background:#4d9de0; color:#0d1218; border-color:#4d9de0; }
   pre.diff { background:#10151a; border:1px solid #2a343d; border-radius:6px; padding:10px;
             font-size:12px; overflow-x:auto; }
+  .haltbar { display:flex; justify-content:space-between; align-items:center; gap:12px;
+            padding:9px 22px; font-size:13px; border-bottom:1px solid #232c34; }
+  .haltbar button { border:1px solid #4a3030; border-radius:4px; padding:5px 14px; cursor:pointer;
+            background:#3a2020; color:#f2d9d9; flex-shrink:0; }
+  .haltbar button:hover { background:#472626; }
+  .halt-idle { background:#181e24; color:#7a8794; }
+  .halt-ok { background:#12241a; color:#7fd1a8; }
+  .halt-ok button { border-color:#2f4a3a; background:#1d3a2a; color:#d9f2e6; }
+  .halt-ok button:hover { background:#25462f; }
+  .halt-danger { background:#241414; color:#f2b3b3; }
 </style>
 </head>
 <body>
 <header><b>cherrypick settings</b>
   <span class="warn">the suite's one mutating surface — loopback + session-token gated; live-trading
   gates stay read-only here</span></header>
+<div id="haltbar"></div>
 <main>
   <nav id="nav"></nav>
   <div id="content"></div>
@@ -258,8 +273,35 @@ function msg(el, text, ok) {
 
 async function boot() {
   STATE = await get("/api/state");
-  renderNav(); show(CURRENT);
-  setInterval(() => { if (CURRENT === "secrets") show("secrets", true); }, 15000);
+  renderNav(); show(CURRENT); renderHalt();
+  setInterval(() => { if (CURRENT === "secrets") show("secrets", true); renderHalt(); }, 15000);
+}
+
+async function renderHalt() {
+  const h = await get("/api/halt");
+  const bar = document.getElementById("haltbar");
+  if (!h.ok) { bar.innerHTML = ""; return; }
+  const halted = h.present, live = h.any_live_enabled;
+  const cls = halted ? "halt-ok" : (live ? "halt-danger" : "halt-idle");
+  const live_modules = h.modules.filter(m => m.live_enabled).map(m => m.module).join(", ");
+  const label = halted
+    ? `Halt flag is SET — new live entries are blocked (${esc(h.path)}).`
+    : (live ? `Live trading enabled for: ${esc(live_modules)} — no halt flag set.`
+            : "No module has live trading enabled.");
+  bar.className = "haltbar " + cls;
+  bar.innerHTML = `<span>${label}</span>
+    <button id="haltbtn">${halted ? "Clear halt" : "Halt live trading now"}</button>`;
+  document.getElementById("haltbtn").onclick = async () => {
+    const prompt = halted
+      ? "Clear the suite halt flag? Live loops can open new entries again on their next tick."
+      : "Set the suite halt flag? This blocks NEW live entries on every module — open positions " +
+        "still follow their normal hold-to-settlement rules. It does not flip enable_live_trading " +
+        "and does not touch any module's code or config.";
+    if (!confirm(prompt)) return;
+    const res = await post("/api/halt/set", {present: !halted});
+    if (!res.ok) alert(res.error || "failed");
+    renderHalt();
+  };
 }
 
 function renderNav() {

@@ -19,7 +19,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from cherrypick.core.auth import ACCOUNT_NUMBER, CredentialError, CredentialStore
+from cherrypick.core import home as _home
+from cherrypick.core.auth import ACCOUNT_NUMBER, SHARED_SERVICE, CredentialError, CredentialStore
 
 from . import config as cfgmod
 from .reconcile import _tt  # module tt.py invocation (doctor._run + first_json), reused
@@ -28,22 +29,38 @@ from .util import mask_account
 
 def keyring_store(cfg: dict[str, Any], module: str) -> CredentialStore | None:
     """Build the shared `CredentialStore` for a module from its config-declared `keyring_service`
-    (and optional read-only `keyring_legacy_services`). None when the module declares no service."""
+    (plus optional read-only `keyring_legacy_services`, and always the shared suite login as the
+    final fallback). None when the module declares no service.
+
+    The shared-service fallback is unconditional, not config-driven, because every module's OWN
+    credentials.py already hardcodes it the same way (`legacy_service_names=(..., SHARED_SERVICE)`)
+    — that's what actually resolves at live-trading time. Before this fixed fallback, this store
+    disagreed with that resolution for any module relying on the shared login rather than its own
+    designated account (the common case): `cherrypick account`/the Live Ops card reported "no
+    account designated" while the module would in fact trade the shared account once armed, and
+    `reconcile` could raise a false DRIFT alert against that very account for the same reason."""
     mcfg = cfg.get("modules", {}).get(module) or {}
     service = cfgmod.module_keyring_service(mcfg, module)
     if not service:
         return None
     legacy = tuple(mcfg.get("keyring_legacy_services") or ())
+    if SHARED_SERVICE not in legacy and service != SHARED_SERVICE:
+        legacy = legacy + (SHARED_SERVICE,)
     return CredentialStore(service, legacy_service_names=legacy)
 
 
-def _live_enabled(root: Path) -> bool | None:
-    """Read the module's `enable_live_trading` (best-effort, read-only) so the stakes are visible."""
-    for rel in ("config/config.json", "config.json"):
-        p = root / rel
+def _live_enabled(root: Path, module: str | None = None) -> bool | None:
+    """Read the module's live-trading gate (best-effort, read-only) so the stakes are visible.
+    Home config first (`~/.cherrypick/config/<module>.json`, where a migrated module keeps it —
+    e.g. flies has no in-repo config.json at all, so checking only the repo locations always read
+    as unknown for it), then the in-repo fallbacks. See `config.live_trading_enabled` for the two
+    live-flag conventions checked once a document is found."""
+    candidates = [_home.config_path(module)] if module else []
+    candidates += [root / "config" / "config.json", root / "config.json"]
+    for p in candidates:
         if p.exists():
             try:
-                return bool(json.loads(p.read_text(encoding="utf-8")).get("enable_live_trading", False))
+                return cfgmod.live_trading_enabled(json.loads(p.read_text(encoding="utf-8")))
             except (OSError, ValueError):
                 return None
     return None
@@ -240,7 +257,7 @@ def list_accounts(cfg: dict[str, Any], module: str) -> dict[str, Any]:
         "module": module,
         "accounts": rows,
         "designated": mask_account(designated_full) if designated_full else None,
-        "live_enabled": _live_enabled(root),
+        "live_enabled": _live_enabled(root, module),
     }
 
 
