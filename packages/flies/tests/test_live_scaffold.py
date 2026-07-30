@@ -15,10 +15,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import db as dbmod
 import live_loop
 import live_orders
+import provider as _provider
 from broker_cli import live_gates
 from engine import PUT
 
-DAY = "2026-07-29"
+# Today, not a literal: run_watch and run_settle_live resolve "today" internally via
+# provider.now_et(), so fixture rows pinned to a past date would be invisible to them.
+DAY = _provider.now_et().date().isoformat()
 
 
 def _snapshot(**over):
@@ -338,7 +341,10 @@ def test_entry_refused_while_a_spread_is_still_open(live_conn):
     summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
     assert summary["entered"] == 0
     assert any("still an incomplete spread" in s.get("entry", "") for s in summary["skips"])
-    assert broker.placed == []  # no second entry order was ever placed
+    # No second ENTRY was placed — the only order is the resting COMPLETION for the confirmed
+    # spread (a debit), which the new tick places immediately on a confirmed entry fill.
+    assert all(p["spec"]["price_effect"] == "debit" for p in broker.placed)
+    assert len(broker.placed) == 1
 
 
 def test_entry_allowed_once_completed_fly_is_risk_free(live_conn):
@@ -483,6 +489,381 @@ def test_completion_fill_confirmation_flips_kind_and_records_actual_debit(live_c
     assert row["net"] == pytest.approx(0.25)
     assert row["completed_at"] is not None
     _ = clock  # imported for parity with sibling tests; no direct use beyond fixture setup
+
+
+# --------------------------------------------------------------------------- resting completion pricing
+def test_max_safe_completion_debit_is_min_of_both_gates():
+    # SPX entry: credit 1.05, fees 3.44 recorded; completion adds another 3.44.
+    # buffer gate: 1.05 - 0.10 = 0.95
+    # floor bound at min_floor=10: 1.05 - (10 + 3.44 + 3.4433)/100 = 1.05 - 0.168833 = 0.881167
+    pos = {
+        "side": PUT,
+        "center": 7495.0,
+        "wing_width": 5,
+        "quantity": 1,
+        "net": 1.05,
+        "fees": 3.44,
+        "symbol": "SPX",
+    }
+    bound = live_orders.max_safe_completion_debit(pos, 10.0, 0.10)
+    assert bound == pytest.approx(0.881167, abs=1e-4)
+    # with a tiny floor requirement the buffer gate binds instead
+    bound2 = live_orders.max_safe_completion_debit(pos, 0.0, 0.10)
+    assert bound2 == pytest.approx(0.95)
+
+
+def test_resting_completion_spec_prices_at_the_bound_and_derives_legs():
+    pos = {
+        "side": PUT,
+        "center": 7495.0,
+        "wing_width": 5,
+        "quantity": 1,
+        "net": 1.05,
+        "fees": 3.44,
+        "symbol": "SPX",
+    }
+    spec = live_orders.resting_completion_spec(
+        _snapshot(), pos, {"min_floor_dollars": 10, "fee_buffer": 0.10}
+    )
+    assert spec["price"] == 0.85  # 0.881167 tick-floored
+    actions = {leg["symbol"]: leg["action"] for leg in spec["legs"]}
+    assert actions["SPXW  260729P07500000"] == "buy to open"  # completing long = center + W for puts
+    assert actions["SPXW  260729P07495000"] == "sell to open"
+
+
+def test_completing_long_strike_by_side():
+    assert live_orders.completing_long_strike({"side": "put", "center": 100.0, "wing_width": 2}) == 102.0
+    assert live_orders.completing_long_strike({"side": "call", "center": 100.0, "wing_width": 2}) == 98.0
+
+
+def test_resting_completion_refuses_unsubmittable_credit():
+    pos = {
+        "side": PUT,
+        "center": 7495.0,
+        "wing_width": 5,
+        "quantity": 1,
+        "net": 0.05,
+        "fees": 3.44,
+        "symbol": "SPX",
+    }
+    with pytest.raises(ValueError, match="nothing submittable"):
+        live_orders.resting_completion_spec(_snapshot(), pos, {"min_floor_dollars": 10, "fee_buffer": 0.10})
+
+
+# --------------------------------------------------------------------------- entry management
+def test_unmoved_entry_evaluation_leaves_resting_order_alone(live_conn):
+    # The engine on this snapshot picks center 7500 at credit 1.15; a stored row at that center
+    # with a credit within one tick (1.12) is an UNMOVED evaluation -> the resting order stands.
+    row = _open_entry_row()
+    row["center"] = 7500.0
+    row["net"] = 1.12
+    row["credit"] = 1.12
+    dbmod.save_position(live_conn, row)
+    broker = FakeBroker()  # status defaults to Live/unfilled
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert broker.cancelled == []  # resting order untouched
+    row = live_conn.execute("SELECT status, entry_fill_status FROM fly_positions").fetchone()
+    assert row["status"] == "open" and row["entry_fill_status"] == "pending"
+    assert summary["entered"] == 0  # the pending spread still occupies the one slot
+
+
+def test_moved_entry_evaluation_cancels_and_replaces(live_conn):
+    stale = _open_entry_row()
+    stale["net"] = 1.50  # stored credit far from the fresh model's 1.07 -> replace
+    stale["credit"] = 1.50
+    dbmod.save_position(live_conn, stale)
+    broker = FakeBroker()
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert broker.cancelled == ["ORD-E1"]
+    old = live_conn.execute("SELECT status FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert old["status"] == "cancelled"
+    assert summary["entered"] == 1  # a fresh entry went in at current prices
+
+
+def test_entry_cancel_failure_repolls_and_records_the_fill(live_conn):
+    stale = _open_entry_row()
+    stale["net"] = 1.50
+    stale["credit"] = 1.50
+    dbmod.save_position(live_conn, stale)
+    broker = FakeBroker(
+        order_statuses={"ORD-E1": {"status": "Filled", "price": "1.48", "filled": True}}, cancel_ok=False
+    )
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["entry_fill_status"] == "filled"
+    assert row["net"] == pytest.approx(1.48)  # the actual fill price, recorded on the repoll
+
+
+# --------------------------------------------------------------------------- atomic claim
+def test_completion_claim_is_atomic(live_conn):
+    dbmod.save_position(live_conn, {**_open_entry_row(entry_fill_status="filled")})
+    row = dict(live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone())
+    broker = FakeBroker()
+    params = {"min_floor_dollars": 0.0, "fee_buffer": 0.10}
+    first = live_loop.place_resting_completion(
+        live_conn, row, _snapshot(), params, broker, live=True, log=lambda *_: None
+    )
+    assert first["completion_order_id"] == "ORD1"
+    # A second claimant (the row now carries an order id) must lose without placing anything.
+    stale_row = dict(row)  # what a racing watcher would hold: the pre-claim snapshot of the row
+    second = live_loop.place_resting_completion(
+        live_conn, stale_row, _snapshot(), params, broker, live=True, log=lambda *_: None
+    )
+    assert second is None
+    assert len(broker.placed) == 1
+
+
+def test_failed_placement_releases_the_claim(live_conn):
+    class RefusingBroker(FakeBroker):
+        def place(self, spec, live):
+            super().place(spec, live)
+            return {"ok": False, "error": "rejected"}
+
+    dbmod.save_position(live_conn, {**_open_entry_row(entry_fill_status="filled")})
+    row = dict(live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone())
+    live_loop.place_resting_completion(
+        live_conn,
+        row,
+        _snapshot(),
+        {"min_floor_dollars": 0.0, "fee_buffer": 0.10},
+        RefusingBroker(),
+        live=True,
+        log=lambda *_: None,
+    )
+    after = live_conn.execute(
+        "SELECT completion_order_id FROM fly_positions WHERE position_id = 'E1'"
+    ).fetchone()
+    assert after["completion_order_id"] is None  # claim released; a later tick can retry
+
+
+# --------------------------------------------------------------------------- watcher
+def _watch_cfg():
+    cfg = _loop_cfg()
+    cfg["live"]["symbol"] = "SPX"
+    cfg["live"]["fill_watch_seconds"] = 30
+    cfg["live"]["fill_watch_poll_seconds"] = 1
+    cfg["live"]["fill_heartbeat_seconds"] = 5
+    return cfg
+
+
+def _fake_cache(monkeypatch, snapshot):
+    import provider as providermod
+
+    monkeypatch.setattr(providermod, "build_snapshot", lambda *a, **k: snapshot)
+
+
+def test_watcher_confirms_entry_and_places_completion(live_conn, monkeypatch):
+    dbmod.save_position(live_conn, _open_entry_row())
+    _fake_cache(monkeypatch, _snapshot())
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Filled", "price": "1.10", "filled": True}})
+    ticks = iter(range(0, 1000))
+    out = live_loop.run_watch(
+        _watch_cfg(),
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+        clock_fn=lambda: next(ticks),
+    )
+    assert out["confirmed"] >= 1
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["entry_fill_status"] == "filled"
+    assert row["completion_order_id"] == "ORD1"  # placed by the watcher, immediately
+    assert broker.cancelled == []  # the watcher never cancels
+
+
+def test_watcher_exits_when_nothing_pending(live_conn, monkeypatch):
+    _fake_cache(monkeypatch, _snapshot())
+    broker = FakeBroker()
+    out = live_loop.run_watch(
+        _watch_cfg(),
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+        clock_fn=lambda: 0,
+    )
+    assert out["cycles"] == 0
+    assert broker.status_calls == []
+
+
+def test_watcher_cache_gates_status_polls(live_conn, monkeypatch):
+    # Market far from the limit: stored credit 5.00 vs natural ~1.2 -> not touched, and with a
+    # huge heartbeat the watcher should never call the broker at all.
+    far = _open_entry_row()
+    far["net"] = 5.00
+    far["credit"] = 5.00
+    dbmod.save_position(live_conn, far)
+    _fake_cache(monkeypatch, _snapshot())
+    broker = FakeBroker()
+    cfg = _watch_cfg()
+    cfg["live"]["fill_heartbeat_seconds"] = 10_000
+    t = {"now": 0.0}
+
+    def clock_fn():
+        t["now"] += 1.0
+        return t["now"]
+
+    out = live_loop.run_watch(
+        cfg,
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+        clock_fn=clock_fn,
+    )
+    assert out["cycles"] >= 1
+    assert broker.status_calls == []  # cache said "not touchable", heartbeat never elapsed
+
+
+def test_watcher_heartbeat_forces_a_poll(live_conn, monkeypatch):
+    far = _open_entry_row()
+    far["net"] = 5.00
+    far["credit"] = 5.00
+    dbmod.save_position(live_conn, far)
+    _fake_cache(monkeypatch, _snapshot())
+    broker = FakeBroker()
+    cfg = _watch_cfg()
+    cfg["live"]["fill_heartbeat_seconds"] = 3
+    t = {"now": 0.0}
+
+    def clock_fn():
+        t["now"] += 1.0
+        return t["now"]
+
+    live_loop.run_watch(
+        cfg,
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+        clock_fn=clock_fn,
+    )
+    assert broker.status_calls  # the heartbeat kicked in even though the cache said untouchable
+
+
+# --------------------------------------------------------------------------- settlement
+def _settle_cfg():
+    cfg = _loop_cfg()
+    cfg["live"]["symbol"] = "SPX"
+    cfg["symbols"] = ["SPX"]
+    return cfg
+
+
+def test_provisional_settle_marks_source_and_official_overwrites(live_conn, monkeypatch):
+    import provider as providermod
+
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
+    )
+    monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: 7495.5)
+    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused")
+    assert out["ok"] and out["source"] == "last_trade_provisional"
+    book = live_conn.execute("SELECT * FROM fly_books").fetchone()
+    assert book["status"] == "settled" and book["settlement_source"] == "last_trade_provisional"
+    pos = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert pos["status"] == "settled" and pos["settlement_source"] == "last_trade_provisional"
+    provisional_pnl = pos["pnl"]
+
+    # Official print re-settles at a different price and overwrites the provisional numbers.
+    out2 = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", price=7494.0)
+    assert out2["ok"] and out2["source"] == "official"
+    pos2 = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert pos2["settlement_source"] == "official"
+    assert pos2["pnl"] != provisional_pnl  # different print, different P&L
+
+    # A second official settle without --force is refused.
+    out3 = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", price=7490.0)
+    assert not out3["ok"] and "official" in out3["reason"]
+    # ...and allowed with force.
+    out4 = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", price=7490.0, force=True)
+    assert out4["ok"]
+
+
+def test_settle_targets_an_explicit_past_date(live_conn, monkeypatch):
+    """The next-morning official-print confirm settles YESTERDAY's book — `when` must reach
+    run_settle_live rather than being pinned to wall-clock today."""
+    from datetime import datetime as _dt
+
+    import provider as providermod
+
+    monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: None)  # explicit price only
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
+    )
+    when = _dt.fromisoformat(f"{DAY}T12:00:00")
+    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", when=when, price=7495.0)
+    assert out["ok"] and out["source"] == "official"
+    pos = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert pos["status"] == "settled" and pos["settlement_source"] == "official"
+
+
+def test_settle_refuses_without_fresh_spot_and_retries(live_conn, monkeypatch):
+    import provider as providermod
+
+    dbmod.save_position(live_conn, {**_open_entry_row(entry_fill_status="filled")})
+    monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: None)
+    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused")
+    assert not out["ok"] and out["reason"] == "no_settlement_price"
+    row = live_conn.execute("SELECT status FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["status"] == "open"  # untouched — the next tick retries
+
+
+def test_live_book_rollup_written_by_tick(live_conn):
+    broker = FakeBroker()
+    cfg = _loop_cfg()
+    cfg["live"]["symbol"] = "SPX"
+    live_loop.run_once(cfg, _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    book = live_conn.execute("SELECT * FROM fly_books").fetchone()
+    assert book is not None and book["arm"] == "gex" and book["status"] == "open"
+
+
+# --------------------------------------------------------------------------- locks and disarm
+def test_once_lock_blocks_second_acquirer(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    path = live_loop._once_lock_path()
+    assert live_loop._acquire_lock(path) is True
+    assert live_loop._acquire_lock(path) is False  # held
+    live_loop._release_lock(path)
+    assert live_loop._acquire_lock(path) is True
+    live_loop._release_lock(path)
+
+
+def test_stale_lock_is_stolen(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    path = live_loop._once_lock_path()
+    assert live_loop._acquire_lock(path) is True
+    old = __import__("time").time() - 600
+    __import__("os").utime(path, (old, old))
+    assert live_loop._acquire_lock(path, stale_seconds=180) is True  # stolen
+    live_loop._release_lock(path)
+
+
+def test_should_disarm(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    cfg = {"live": {"disarm_time": "17:00"}}
+    import provider as providermod
+
+    today = providermod.now_et().date().isoformat()
+    # No stamp at all -> disarm (arming didn't go through the command path).
+    assert live_loop.should_disarm(cfg, 10 * 60, today) is not None
+    live_loop._write_arm_stamp()
+    # Fresh stamp, mid-session -> keep running.
+    assert live_loop.should_disarm(cfg, 10 * 60, today) is None
+    # Fresh stamp but past disarm time -> disarm.
+    assert "disarm time" in live_loop.should_disarm(cfg, 17 * 60 + 1, today)
+    # Stale stamp (yesterday's arm surviving into today) -> disarm regardless of clock.
+    assert live_loop.should_disarm(cfg, 10 * 60, "2099-01-01") is not None
 
 
 def test_completion_cancel_failure_is_logged_not_silently_dropped(live_conn):

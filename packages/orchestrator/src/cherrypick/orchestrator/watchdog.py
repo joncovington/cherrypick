@@ -599,6 +599,125 @@ def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trad
     return [Finding(f"{name}.settle_overdue", OK, f"{label} settlement", "settled or no open positions")]
 
 
+def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool) -> list[Finding]:
+    """Watchdog the module's LIVE loop — active only when the module config carries a `live`
+    block with a `task_name`.
+
+    Three checks plus the disarm backstop:
+      (a) armed-window task check: the live loop self-disarms after `disarm_time`, so a missing
+          task is only CRITICAL while the module's own status says it should be armed.
+      (b) log freshness in-session (WARN) — a registered-but-silent live loop is the dangerous
+          state, since real working orders may be resting unwatched.
+      (c) settle-overdue after close + grace, via the module's live `--status` JSON.
+      (d) disarm backstop (the dead-man's switch's second layer): far outside market hours, a
+          live task STILL registered means self-disarm failed — the watchdog sets the suite
+          halt flag (its own liveops surface; every live tick then refuses at readiness) and
+          raises CRITICAL. Purely risk-reducing: it never touches the module's task itself.
+    """
+    live = mcfg.get("live") or {}
+    task_name = live.get("task_name")
+    if not task_name:
+        return []
+    label = name.upper() if len(name) <= 4 else name.capitalize()
+    findings: list[Finding] = []
+
+    status = None
+    if live.get("status_argv"):
+        try:
+            r = _run_module(cfgmod.module_root(mcfg), live["status_argv"], timeout=15)
+            status = first_json(r.stdout) if r.returncode == 0 else None
+        except Exception:
+            status = None
+
+    registered = tasks.exists(task_name)
+    armed_for = (status or {}).get("armed_for")
+    today = now_et.date().isoformat()
+
+    # (d) Disarm backstop first — it's the check that must never be skipped.
+    disarm_hhmm = str(live.get("disarm_time", "17:00"))
+    try:
+        h, m = disarm_hhmm.split(":")
+        disarm_minute = int(h) * 60 + int(m)
+    except ValueError:
+        disarm_minute = 17 * 60
+    grace = int(live.get("disarm_grace_minutes", 30))
+    now_minute = now_et.hour * 60 + now_et.minute
+    past_disarm_window = now_minute >= disarm_minute + grace or (armed_for and armed_for != today)
+    if registered and past_disarm_window:
+        from . import liveops
+
+        flag = liveops.halt_flag_path()
+        try:
+            flag.parent.mkdir(parents=True, exist_ok=True)
+            flag.touch()
+        except OSError:
+            pass
+        findings.append(
+            Finding(
+                f"{name}.live_disarm",
+                CRITICAL,
+                f"{label} LIVE task survived past disarm",
+                f"{task_name} still registered past {disarm_hhmm}+{grace}m (armed_for={armed_for}); "
+                "halt flag set — live ticks now refuse. Investigate why self-disarm failed, then "
+                "uninstall the task and clear the halt flag before re-arming.",
+            )
+        )
+        return findings  # halted state — the armed-window checks below would only add noise
+
+    if registered:
+        # (b) freshness while armed and in session: the live log must move every few minutes.
+        if in_session:
+            fresh_minutes = int(live.get("freshness_minutes", 5))
+            log_path = cfgmod.module_logs_dir(name) / str(live.get("log", "flies_live.log"))
+            try:
+                age_min = (now_et.timestamp() - os.path.getmtime(log_path)) / 60
+            except OSError:
+                age_min = None
+            if age_min is None or age_min > fresh_minutes:
+                shown = "missing" if age_min is None else f"{age_min:.0f} min old"
+                findings.append(
+                    Finding(
+                        f"{name}.live_fresh",
+                        CRITICAL,
+                        f"{label} LIVE loop silent",
+                        f"live log {shown} while the live task is armed and the market is open — "
+                        "real working orders may be resting unwatched.",
+                    )
+                )
+            else:
+                findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "fresh"))
+    elif armed_for == today and now_minute < disarm_minute:
+        # (a) status says armed-for-today but the task is gone mid-window.
+        findings.append(
+            Finding(
+                f"{name}.live_task",
+                CRITICAL,
+                f"{label} LIVE task missing",
+                f"{task_name} not registered but the arm stamp says armed for {armed_for}.",
+            )
+        )
+
+    # (c) live settlement overdue: same shape as the paper check, over the live status.
+    close_min = timeutil.MARKET_CLOSE.hour * 60 + timeutil.MARKET_CLOSE.minute
+    settle_grace = int(live.get("settlement_grace_minutes", 30))
+    if status and now_minute >= close_min + settle_grace:
+        if status.get("session_settled") is False and (status.get("open_positions") or 0) > 0:
+            findings.append(
+                Finding(
+                    f"{name}.live_settle_overdue",
+                    WARN,
+                    f"{label} LIVE settlement overdue",
+                    f"{status.get('open_positions')} open live position(s) past the close still "
+                    "unsettled — run the provisional settle or --settle --price <official>.",
+                )
+            )
+        else:
+            findings.append(
+                Finding(f"{name}.live_settle_overdue", OK, f"{label} live settlement", "settled or flat")
+            )
+    return findings
+
+
 def _check_eod(cfg: dict[str, Any], now: datetime, is_trading: bool) -> None:
     """Fire the EOD digest + insight ONCE per trading day, event-driven instead of at a fixed clock time.
 
@@ -772,6 +891,8 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
                 findings += _check_eval_activity(name, mcfg, now, in_session, ea_settings)
             elif kind == "cherrypick_scheduled":
                 findings += _check_earnings(name, mcfg, now, is_trading)
+            # The live-loop check is kind-independent: any module may declare a `live` block.
+            findings += _check_live(name, mcfg, now, in_session)
         except Exception as exc:
             findings.append(
                 Finding(
