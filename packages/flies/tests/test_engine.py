@@ -423,6 +423,37 @@ def test_completion_refuses_when_fees_would_eat_the_floor():
     assert not done and reason == "floor_below_minimum_after_fees"
 
 
+def test_completion_floor_matches_position_floor_exactly():
+    """Regression (2026-07-30): evaluate_completion used to compute its own floor inline
+    (net*100*qty - fees - completion_fee) instead of calling fly.position_floor -- a second,
+    driftable formula for the same number. A completion's dollar gate must always agree with
+    what `fly.position_floor` says the resulting fly's floor actually is, whatever that function
+    currently means (it has changed once already, the same day this test was written: it briefly
+    reserved a worst-case exercise-assignment fee, then stopped once `evaluate_pre_close_exit`
+    made that reservation unnecessary going forward -- see its docstring). Routing through the one
+    function is what makes that kind of change apply here for free instead of silently drifting."""
+    spread = open_spread(net=0.30)
+    thin = snapshot(puts={6000: q(1.00, 1.00), 6005: q(1.05, 1.05)})  # 0.05 debit, no slippage
+    done, reason, plan = engine.evaluate_completion(thin, spread, params())
+    assert done and reason == "ok"
+    assert plan["floor"] == pytest.approx(
+        round(
+            fly.position_floor(
+                {
+                    "kind": "fly",
+                    "side": "put",
+                    "center": 6000,
+                    "wing_width": 5,
+                    "net": plan["net"],
+                    "quantity": 1,
+                    "fees": spread["fees"] + plan["completion_fee"],
+                }
+            ),
+            2,
+        )
+    )
+
+
 def test_default_fee_buffer_keeps_the_floor_positive_on_spx():
     """The flip side, and the reason the default buffer is 0.10: at one SPX contract, 0.10 points of
     required improvement ($10) already exceeds the two fee stacks (~$6.89), so a completion that
@@ -455,6 +486,76 @@ def test_completion_ignores_a_position_that_is_already_a_fly():
     already = {**open_spread(), "kind": "fly"}
     done, reason, _ = engine.evaluate_completion(snapshot(), already, params())
     assert not done and reason == "not_a_credit_spread"
+
+
+# --------------------------------------------------------------------------- pre-close ITM exit
+def open_fly(net=1.0, fees=0.0):
+    return {
+        "kind": "fly",
+        "side": "put",
+        "center": 6000,
+        "wing_width": 5,
+        "net": net,
+        "quantity": 1,
+        "fees": fees,
+    }
+
+
+def _itm_close_snapshot(**over):
+    base = dict(
+        now_min=955,  # 15:55, inside the default 15:50 pre_close_exit_time window
+        underlying_price=5998.0,  # between the lower wing (5995) and the centre (6000)
+        puts={5995: q(0.0, 0.0), 6000: q(1.0, 1.0), 6005: q(5.0, 5.0)},
+    )
+    base.update(over)
+    return snapshot(**base)
+
+
+def test_pre_close_exit_ignores_a_position_that_is_not_a_fly():
+    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_snapshot(), open_spread(), params())
+    assert not close and reason == "not_a_fly" and plan is None
+
+
+def test_pre_close_exit_waits_for_its_window():
+    before = _itm_close_snapshot(now_min=12 * 60)  # noon, well before 15:50
+    close, reason, plan = engine.evaluate_pre_close_exit(before, open_fly(), params())
+    assert not close and reason == "before_pre_close_exit_window" and plan is None
+
+
+def test_pre_close_exit_window_is_configurable():
+    tighter = params(pre_close_exit_time="15:58")
+    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_snapshot(), open_fly(), tighter)
+    assert not close and reason == "before_pre_close_exit_window"  # 15:55 < 15:58
+
+
+def test_pre_close_exit_leaves_an_otm_fly_alone():
+    otm = _itm_close_snapshot(underlying_price=6100.0)  # spot well above every strike of a put fly
+    close, reason, plan = engine.evaluate_pre_close_exit(otm, open_fly(), params())
+    assert not close and reason == "no_itm_legs" and plan is None
+
+
+def test_pre_close_exit_refuses_without_leg_quotes():
+    bare = _itm_close_snapshot(puts={6000: q(1.0, 1.0)})  # missing the wings
+    close, reason, plan = engine.evaluate_pre_close_exit(bare, open_fly(), params())
+    assert not close and reason == "missing_leg_quotes" and plan is None
+
+
+def test_pre_close_exit_closes_when_cheaper_than_the_assignment_fee():
+    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_snapshot(), open_fly(), params())
+    assert close and reason == "ok"
+    # centre (x2, ITM since spot < 6000) + upper wing (ITM since spot < 6005) = 3 contracts
+    assert plan["itm_contracts"] == 3
+    assert plan["assignment_fee"] == 15.0
+    assert plan["close_credit"] == pytest.approx(3.0)  # zero-spread quotes: no slippage haircut
+    assert plan["slippage_cost"] < plan["assignment_fee"]
+    assert plan["lower_strike"] == 5995 and plan["upper_strike"] == 6005
+
+
+def test_pre_close_exit_holds_when_closing_costs_more_than_the_assignment_fee():
+    wide = _itm_close_snapshot(puts={5995: q(0.0, 0.2), 6000: q(0.9, 1.1), 6005: q(4.8, 5.2)})
+    close, reason, plan = engine.evaluate_pre_close_exit(wide, open_fly(), params(slippage_frac=5.0))
+    assert not close and reason == "closing_slippage_exceeds_assignment_fee"
+    assert plan["slippage_cost"] > plan["assignment_fee"]
 
 
 # --------------------------------------------------------------------------- outright entry
@@ -522,9 +623,16 @@ def test_settle_marks_pins_and_pnl():
     ]
     settled = engine.settle(positions, 6001.0)
     assert settled[0]["pinned"] is True
-    assert settled[0]["pnl"] == pytest.approx(505.0)  # (1.05 + 4.00) * 100
+    # (1.05 + 4.00) * 100 = 505, less a $5 exercise fee (only the upper wing, 6005, is ITM at 6001)
+    assert settled[0]["itm_contracts"] == 1
+    assert settled[0]["fees"] == pytest.approx(5.0)
+    assert settled[0]["pnl"] == pytest.approx(500.0)
     assert settled[1]["pinned"] is False
-    assert settled[1]["pnl"] == pytest.approx(-20.0)
+    # -0.20 * 100 = -20, less a $20 exercise fee (6001 is beyond every strike of the 6100 fly, so
+    # all 4 contracts are ITM even though the fly's own payoff is 0 there)
+    assert settled[1]["itm_contracts"] == 4
+    assert settled[1]["fees"] == pytest.approx(20.0)
+    assert settled[1]["pnl"] == pytest.approx(-40.0)
 
 
 def test_session_stats_report_the_three_numbers_that_matter():
