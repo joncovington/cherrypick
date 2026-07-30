@@ -54,7 +54,7 @@ def stub_entry_scan(monkeypatch):
 
 
 def _config(**overrides):
-    cfg = {"tier_floor": "Tier 2", "strategies": {}}
+    cfg = {"strategies": {}, "strat_test_portfolio": "per_strategy"}
     cfg.update(overrides)
     return cfg
 
@@ -62,11 +62,11 @@ def _config(**overrides):
 def test_a_hung_symbol_is_skipped_and_the_run_still_succeeds(monkeypatch, stub_entry_scan):
     """One symbol's Dolt evaluation stalling must not fail the whole run — it is skipped and the run
     returns ok, exactly the difference between a clean partial result and a 30-minute external kill."""
-    monkeypatch.setattr(scanner, "_load_config", lambda profile: _config(dolt_symbol_timeout_seconds=0.3))
+    monkeypatch.setattr(scanner, "_load_config", lambda *a, **k: _config(dolt_symbol_timeout_seconds=0.3))
     monkeypatch.setattr(scanner, "fetch_entry_window_calendar", lambda config: list(_CAL))
     monkeypatch.setattr(rank_strategies, "evaluate_symbol", lambda *a, **k: time.sleep(30))
 
-    result = r.cmd_run_entries(types.SimpleNamespace(profile="balanced"))
+    result = r.cmd_run_entries(types.SimpleNamespace(date=None))
 
     assert result["ok"] is True
     assert result["opened"] == []
@@ -74,10 +74,10 @@ def test_a_hung_symbol_is_skipped_and_the_run_still_succeeds(monkeypatch, stub_e
 
 
 def test_calendar_fetch_timeout_fails_fast_with_a_clear_cause(monkeypatch, stub_entry_scan):
-    monkeypatch.setattr(scanner, "_load_config", lambda profile: _config(dolt_calendar_timeout_seconds=0.3))
+    monkeypatch.setattr(scanner, "_load_config", lambda *a, **k: _config(dolt_calendar_timeout_seconds=0.3))
     monkeypatch.setattr(scanner, "fetch_entry_window_calendar", lambda config: time.sleep(30))
 
-    result = r.cmd_run_entries(types.SimpleNamespace(profile="balanced"))
+    result = r.cmd_run_entries(types.SimpleNamespace(date=None))
 
     assert result["ok"] is False
     assert "calendar fetch exceeded" in result["error"]
@@ -86,7 +86,7 @@ def test_calendar_fetch_timeout_fails_fast_with_a_clear_cause(monkeypatch, stub_
 def test_overall_budget_stops_the_scan_and_returns_partial(monkeypatch, stub_entry_scan):
     """A merely-slow (not hung) Dolt across many names must not push the run into its kill: the
     wall-clock backstop breaks the loop and still returns a result."""
-    monkeypatch.setattr(scanner, "_load_config", lambda profile: _config(entry_scan_budget_seconds=-1))
+    monkeypatch.setattr(scanner, "_load_config", lambda *a, **k: _config(entry_scan_budget_seconds=-1))
     monkeypatch.setattr(scanner, "fetch_entry_window_calendar", lambda config: list(_CAL))
     called = {"n": 0}
 
@@ -95,7 +95,7 @@ def test_overall_budget_stops_the_scan_and_returns_partial(monkeypatch, stub_ent
 
     monkeypatch.setattr(rank_strategies, "evaluate_symbol", _should_not_run)
 
-    result = r.cmd_run_entries(types.SimpleNamespace(profile="balanced"))
+    result = r.cmd_run_entries(types.SimpleNamespace(date=None))
 
     assert result["ok"] is True
     assert called["n"] == 0, "budget already blown -> no symbol should be evaluated"

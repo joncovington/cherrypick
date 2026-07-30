@@ -94,6 +94,7 @@ def _upcoming_calendar(day: str, horizon_days: int = 45) -> str:
     section; web research supplements it (data releases, anticipated earnings). Empty string on failure."""
     try:
         from cherrypick.core import calendar as _cal
+
         d0 = date.fromisoformat(day)
     except Exception:
         return ""
@@ -124,8 +125,10 @@ def _upcoming_calendar(day: str, horizon_days: int = 45) -> str:
         lines.append("- NYSE holiday (market closed): " + ", ".join(x.isoformat() for x in hol))
     if not lines:
         return ""
-    header = (f"===== suite market calendar — next ~{horizon_days} days from {day} "
-              "(deterministic, authoritative) =====")
+    header = (
+        f"===== suite market calendar — next ~{horizon_days} days from {day} "
+        "(deterministic, authoritative) ====="
+    )
     return header + "\n" + "\n".join(lines)
 
 
@@ -134,15 +137,31 @@ def _prompt(day: str) -> str:
         f"Below are today's ({day}) deterministic paper-trading EOD reports for the cherrypick suite "
         "(MEIC = 0DTE iron condors on index/ETF products with VIX-banded short deltas and VIX / VIX1D / "
         "ATR / GEX regime gates and per-side stops; Earnings = overnight defined-risk plays harvesting IV "
-        "crush; Flies = 0DTE net-credit SPX butterflies run as three comparable arms — gex (centre on the "
-        "strongest positive per-strike net GEX), time_window (ATM inside set windows), and control (one "
-        "fixed midday ATM entry, the baseline that makes the other two falsifiable)). "
+        "crush; Flies = 0DTE net-credit SPX butterflies run as four comparable arms, each differing from "
+        "the baseline in exactly one thing — gex (centre on the strongest positive per-strike net GEX), "
+        "time_window (ATM inside set windows, capped per window so each window is actually exercised), "
+        "wide_wing (ATM with wider wings, testing whether completions landing far from the centre can be "
+        "bracketed), and control (ATM all day, the baseline that makes the other three falsifiable)). "
         "The MEIC analysis includes an 'entry gates at the last iteration' line — use it to explain "
         "why entries did or didn't fire. For Flies, the numbers that matter are completion rate, the "
-        "counterfactual split on the misses (market never offered it vs our own fee buffer refusing it), "
-        "the floor AFTER fees, and arm divergence — high agreement between arms means the experiment "
-        "cannot separate them, which is a finding in itself. Its P&L over a handful of 0DTE sessions is "
-        "mostly noise; do not read a trend into it. "
+        "counterfactual split on the misses (market never offered it, versus one of our own gates "
+        "refusing it — reported separately as fee_buffer vs min_floor_dollars, which point at different "
+        "fixes and must not be conflated), the floor AFTER fees, and arm divergence — high agreement "
+        "between arms means the experiment cannot separate them, which is a finding in itself. Note that "
+        "an uncompleted legged entry is not a neutral outcome: it leaves an ordinary short vertical "
+        "carrying full defined risk, and that branch has been the module's dominant loss. Its P&L over a "
+        "handful of 0DTE sessions is mostly noise; do not read a trend into it. "
+        "STANDING WATCH ITEM (added 2026-07-29, flies): time_window's fee drag has run nearly double "
+        "control's (31.9% vs 23.8%, 6 vs 9 completed flies) — traced to opportunity exclusion (control's "
+        "two largest completions that day fell in the gap between time_window's windows) and a direct "
+        "instance of window-delayed entries completing at worse debits (both arms completed the same "
+        "center the same day; time_window's later, window-constrained entry left less time for the spot "
+        "drift that cheapens completions, roughly halving its net credit on that trade versus control's). "
+        "Check the Flies per-arm fee-drag table each day this arm appears in it. Once time_window has "
+        "accumulated roughly 14 trading sessions' worth of completions, explicitly call out whether the "
+        "fee-drag gap versus control has persisted, narrowed, or reversed — with that sample size it "
+        "stops being noise from a couple of outlier fills and becomes a real finding about the window "
+        "restriction's cost. Before ~14 sessions, do not treat the gap as settled. "
         "Write a substantive end-of-day debrief for the operator; the goal "
         "is genuine understanding of the day, not a summary of the numbers.\n\n"
         "Cover, in whatever structure reads best (markdown, short bold section labels):\n"
@@ -175,15 +194,24 @@ def _prompt(day: str) -> str:
     )
 
 
-def _run_claude(prompt: str, stdin_text: str, model: str | None, timeout: int,
-                research: bool = False) -> dict:
+def _run_claude(
+    prompt: str, stdin_text: str, model: str | None, timeout: int, research: bool = False
+) -> dict:
     """Invoke Claude Code headless (print mode). Dangerous tools are always denied; WebSearch is granted
     only when `research` is on (for the upcoming-events section). Injectable seam so tests never call the
     real CLI. Returns {"ok": True, "text": ...} or {"ok": False, "error": ...}."""
     disallowed = list(_DISALLOWED_TOOLS) if research else [*_DISALLOWED_TOOLS, "WebSearch"]
-    cmd = ["claude", "-p", prompt, "--output-format", "text",
-           "--disallowed-tools", *disallowed,
-           "--append-system-prompt", _SYSTEM]
+    cmd = [
+        "claude",
+        "-p",
+        prompt,
+        "--output-format",
+        "text",
+        "--disallowed-tools",
+        *disallowed,
+        "--append-system-prompt",
+        _SYSTEM,
+    ]
     if research:
         # Grant WebSearch and bound the tool-use loop so a research session can't run away.
         cmd += ["--allowed-tools", "WebSearch", "--max-turns", "8"]
@@ -195,9 +223,16 @@ def _run_claude(prompt: str, stdin_text: str, model: str | None, timeout: int,
         # CREATE_NO_WINDOW: when the watchdog launches this detached (no console), spawning the `claude`
         # CLI would otherwise pop a visible console window on Windows. stdin/stdout are piped, so claude
         # needs no console. (0 on POSIX.)
-        r = subprocess.run(cmd, input=stdin_text, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=timeout,
-                           creationflags=CREATE_NO_WINDOW)
+        r = subprocess.run(
+            cmd,
+            input=stdin_text,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            creationflags=CREATE_NO_WINDOW,
+        )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return {"ok": False, "error": f"claude invocation failed: {exc}"}
     if r.returncode != 0:
@@ -207,8 +242,11 @@ def _run_claude(prompt: str, stdin_text: str, model: str | None, timeout: int,
 
 
 def _wrap(day: str, text: str, researched: bool) -> str:
-    tools = ("read-only over the day's reports, with web search for the upcoming-events section"
-             if researched else "read-only over the day's reports, no tools")
+    tools = (
+        "read-only over the day's reports, with web search for the upcoming-events section"
+        if researched
+        else "read-only over the day's reports, no tools"
+    )
     return (
         f"# cherrypick - EOD Insight {day}\n\n"
         f"_AI-synthesized narrative over the day's deterministic paper reports (Claude Code, {tools}). "

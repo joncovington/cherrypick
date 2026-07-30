@@ -5,6 +5,7 @@ Nothing here touches a real tastytrade session, DXLink connection, or the
 real data/stream_cache.db -- _CACHE_DB is monkeypatched per-test to a tmp_path
 file, and Account/Session objects are hand-built fakes.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -50,6 +51,11 @@ CREATE TABLE IF NOT EXISTS orb_ranges (
     symbol TEXT NOT NULL, trade_date TEXT NOT NULL, orb_high REAL, orb_low REAL,
     captured_at REAL, PRIMARY KEY (symbol, trade_date)
 );
+CREATE TABLE IF NOT EXISTS stream_summary (
+    symbol TEXT NOT NULL, trade_date TEXT NOT NULL, day_open REAL, day_high REAL,
+    day_low REAL, day_close REAL, prev_day_close REAL, updated_at REAL NOT NULL,
+    PRIMARY KEY (symbol, trade_date)
+);
 """
 
 
@@ -74,6 +80,7 @@ def _insert(db_path, table, **cols):
 
 
 # --- _num / _serialize / _error ---------------------------------------------
+
 
 def test_num_converts_valid_values():
     assert tt._num("1.5") == 1.5
@@ -100,6 +107,7 @@ def test_serialize_model_dump_object():
     class _Model:
         def model_dump(self, mode="json"):
             return {"a": 1}
+
     assert tt._serialize(_Model()) == {"a": 1}
 
 
@@ -107,6 +115,7 @@ def test_serialize_falls_back_to_str():
     class _Plain:
         def __str__(self):
             return "plain-repr"
+
     assert tt._serialize(_Plain()) == "plain-repr"
 
 
@@ -123,13 +132,16 @@ def test_error_not_retryable_for_generic_exception():
 
 # --- _strike / _atm_window / _nearest_expiration ----------------------------
 
+
 def test_strike_converts_and_handles_bad_values():
     class _Opt:
         strike_price = "150.5"
+
     assert tt._strike(_Opt()) == 150.5
 
     class _BadOpt:
         strike_price = None
+
     assert tt._strike(_BadOpt()) is None
 
 
@@ -137,6 +149,7 @@ def test_atm_window_centers_on_around_price():
     class _Opt:
         def __init__(self, strike):
             self.strike_price = strike
+
     options = [_Opt(s) for s in (90, 95, 100, 105, 110)]
     result = tt._atm_window(options, strike_count=1, around_price=100)
     strikes = sorted(o.strike_price for o in result)
@@ -155,6 +168,7 @@ def test_nearest_expiration_picks_closest_to_target_days():
 
 # --- _live_trading_enabled ----------------------------------------------------
 
+
 def test_live_trading_enabled_reads_config(monkeypatch):
     monkeypatch.setattr(tt, "_load_config", lambda: {"enable_live_trading": True})
     assert tt._live_trading_enabled() is True
@@ -172,13 +186,24 @@ def test_live_trading_enabled_falls_back_to_env(monkeypatch):
 
 # --- cache readers -------------------------------------------------------------
 
+
 def test_cache_get_trade_fresh(cache_db):
-    _insert(cache_db, "stream_trades", symbol="XSP", last=601.5, change=1.0, volume=100, updated_at=time.time())
+    _insert(
+        cache_db, "stream_trades", symbol="XSP", last=601.5, change=1.0, volume=100, updated_at=time.time()
+    )
     assert tt._cache_get_trade("XSP") == 601.5
 
 
 def test_cache_get_trade_stale_returns_none(cache_db):
-    _insert(cache_db, "stream_trades", symbol="XSP", last=601.5, change=1.0, volume=100, updated_at=time.time() - 3600)
+    _insert(
+        cache_db,
+        "stream_trades",
+        symbol="XSP",
+        last=601.5,
+        change=1.0,
+        volume=100,
+        updated_at=time.time() - 3600,
+    )
     assert tt._cache_get_trade("XSP") is None
 
 
@@ -192,15 +217,45 @@ def test_cache_get_trade_no_db_returns_none(tmp_path, monkeypatch):
 
 
 def test_cache_get_quotes_filters_stale(cache_db):
-    _insert(cache_db, "stream_quotes", symbol="XSP", bid=1.0, ask=1.2, mid=1.1, bid_size=1, ask_size=1, updated_at=time.time())
-    _insert(cache_db, "stream_quotes", symbol="SPX", bid=2.0, ask=2.2, mid=2.1, bid_size=1, ask_size=1, updated_at=time.time() - 3600)
+    _insert(
+        cache_db,
+        "stream_quotes",
+        symbol="XSP",
+        bid=1.0,
+        ask=1.2,
+        mid=1.1,
+        bid_size=1,
+        ask_size=1,
+        updated_at=time.time(),
+    )
+    _insert(
+        cache_db,
+        "stream_quotes",
+        symbol="SPX",
+        bid=2.0,
+        ask=2.2,
+        mid=2.1,
+        bid_size=1,
+        ask_size=1,
+        updated_at=time.time() - 3600,
+    )
     result = tt._cache_get_quotes(["XSP", "SPX"])
     assert list(result.keys()) == ["XSP"]
     assert result["XSP"] == {"bid": 1.0, "ask": 1.2, "mid": 1.1}
 
 
 def test_cache_get_quotes_any_age_ignores_staleness(cache_db):
-    _insert(cache_db, "stream_quotes", symbol="SPX", bid=2.0, ask=2.2, mid=2.1, bid_size=1, ask_size=1, updated_at=time.time() - 999999)
+    _insert(
+        cache_db,
+        "stream_quotes",
+        symbol="SPX",
+        bid=2.0,
+        ask=2.2,
+        mid=2.1,
+        bid_size=1,
+        ask_size=1,
+        updated_at=time.time() - 999999,
+    )
     result = tt._cache_get_quotes_any_age(["SPX"])
     assert result["SPX"]["mid"] == 2.1
 
@@ -211,16 +266,34 @@ def test_cache_get_oi_no_age_filter(cache_db):
 
 
 def test_cache_get_greeks_filters_by_greeks_cache_age(cache_db):
-    _insert(cache_db, "stream_greeks", symbol="XSP", delta=0.3, gamma=0.01, theta=-0.02,
-            vega=0.1, rho=0.0, iv=0.2, price=1.5, updated_at=time.time())
+    _insert(
+        cache_db,
+        "stream_greeks",
+        symbol="XSP",
+        delta=0.3,
+        gamma=0.01,
+        theta=-0.02,
+        vega=0.1,
+        rho=0.0,
+        iv=0.2,
+        price=1.5,
+        updated_at=time.time(),
+    )
     result = tt._cache_get_greeks(["XSP"])
     assert result["XSP"]["delta"] == 0.3
 
 
 def test_cache_get_chain_filters_by_underlying_symbol(cache_db):
     payload = json.dumps({"strike_price": "600", "option_type": "C", "streamer_symbol": ".XSP1"})
-    _insert(cache_db, "stream_chain", streamer_symbol=".XSP1", expiration="2026-07-08",
-            underlying_symbol="XSP", data_json=payload, updated_at=time.time())
+    _insert(
+        cache_db,
+        "stream_chain",
+        streamer_symbol=".XSP1",
+        expiration="2026-07-08",
+        underlying_symbol="XSP",
+        data_json=payload,
+        updated_at=time.time(),
+    )
     result = tt._cache_get_chain("2026-07-08", symbol="XSP")
     assert len(result) == 1
     assert result[0].strike_price == "600"
@@ -228,8 +301,15 @@ def test_cache_get_chain_filters_by_underlying_symbol(cache_db):
 
 def test_cache_get_chain_none_when_stale(cache_db):
     payload = json.dumps({"strike_price": "600"})
-    _insert(cache_db, "stream_chain", streamer_symbol=".XSP1", expiration="2026-07-08",
-            underlying_symbol="XSP", data_json=payload, updated_at=time.time() - 5 * 3600)
+    _insert(
+        cache_db,
+        "stream_chain",
+        streamer_symbol=".XSP1",
+        expiration="2026-07-08",
+        underlying_symbol="XSP",
+        data_json=payload,
+        updated_at=time.time() - 5 * 3600,
+    )
     assert tt._cache_get_chain("2026-07-08", symbol="XSP") is None
 
 
@@ -238,6 +318,7 @@ def test_cache_get_chain_none_when_missing(cache_db):
 
 
 # --- _is_call / _is_put / _closest_by_delta / _nearest_by_strike ------------
+
 
 class _Opt:
     def __init__(self, option_type, strike_price, streamer_symbol=None):
@@ -302,10 +383,16 @@ def test_select_put_spread_uses_delta_when_greeks_present():
 
 # --- _build_order --------------------------------------------------------------
 
+
 def test_build_order_credit_price_is_negative():
     spec = {
-        "order_type": "Limit", "time_in_force": "Day", "price": 2.5, "price_effect": "Credit",
-        "legs": [{"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}],
+        "order_type": "Limit",
+        "time_in_force": "Day",
+        "price": 2.5,
+        "price_effect": "Credit",
+        "legs": [
+            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+        ],
     }
     order = tt._build_order(spec)
     assert order.price < 0
@@ -313,8 +400,11 @@ def test_build_order_credit_price_is_negative():
 
 def test_build_order_debit_price_is_positive():
     spec = {
-        "price": 2.5, "price_effect": "Debit",
-        "legs": [{"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1}],
+        "price": 2.5,
+        "price_effect": "Debit",
+        "legs": [
+            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1}
+        ],
     }
     order = tt._build_order(spec)
     assert order.price > 0
@@ -323,7 +413,9 @@ def test_build_order_debit_price_is_positive():
 def test_build_order_includes_stop_trigger_when_given():
     spec = {
         "stop_trigger": 5.0,
-        "legs": [{"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}],
+        "legs": [
+            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+        ],
     }
     order = tt._build_order(spec)
     assert order.stop_trigger is not None
@@ -331,24 +423,33 @@ def test_build_order_includes_stop_trigger_when_given():
 
 def test_build_order_maps_all_actions():
     for action in ("buy to open", "sell to open", "buy to close", "sell to close"):
-        spec = {"legs": [{"symbol": "X", "instrument_type": "Equity Option", "action": action, "quantity": 1}]}
+        spec = {
+            "legs": [{"symbol": "X", "instrument_type": "Equity Option", "action": action, "quantity": 1}]
+        }
         order = tt._build_order(spec)
         assert len(order.legs) == 1
 
 
 # --- cmd_execute_trade (mocked account/session) -------------------------------
 
+
 def test_cmd_execute_trade_blocks_live_when_disabled(monkeypatch):
     monkeypatch.setattr(tt, "_live_trading_enabled", lambda: False)
     args = type("Args", (), {"dry_run": False, "order": "{}", "account_number": None})()
     result = asyncio.run(tt.cmd_execute_trade(args))
-    assert result == {"ok": False, "error": "Live trading is disabled. Set enable_live_trading=true in config.json."}
+    assert result == {
+        "ok": False,
+        "error": "Live trading is disabled. Set enable_live_trading=true in config.json.",
+    }
 
 
 def test_cmd_execute_trade_dry_run_returns_without_submitting(monkeypatch):
     order_spec = {
-        "price": 1.0, "price_effect": "Credit",
-        "legs": [{"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}],
+        "price": 1.0,
+        "price_effect": "Credit",
+        "legs": [
+            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+        ],
     }
 
     class _Preflight:
@@ -358,6 +459,7 @@ def test_cmd_execute_trade_dry_run_returns_without_submitting(monkeypatch):
 
     class _FakeAccount:
         account_number = "ACC1"
+
         async def place_order(self, session_obj, order, dry_run):
             assert dry_run is True
             return _Preflight()
@@ -377,7 +479,11 @@ def test_cmd_execute_trade_dry_run_returns_without_submitting(monkeypatch):
 
 
 def test_cmd_execute_trade_preflight_errors_block_submission(monkeypatch):
-    order_spec = {"legs": [{"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}]}
+    order_spec = {
+        "legs": [
+            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+        ]
+    }
 
     class _Preflight:
         errors = ["insufficient buying power"]
@@ -386,6 +492,7 @@ def test_cmd_execute_trade_preflight_errors_block_submission(monkeypatch):
 
     class _FakeAccount:
         account_number = "ACC1"
+
         async def place_order(self, session_obj, order, dry_run):
             return _Preflight()
 
@@ -403,7 +510,11 @@ def test_cmd_execute_trade_preflight_errors_block_submission(monkeypatch):
 
 
 def test_cmd_execute_trade_live_submits_order(monkeypatch):
-    order_spec = {"legs": [{"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}]}
+    order_spec = {
+        "legs": [
+            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+        ]
+    }
 
     class _Preflight:
         errors = []
@@ -417,6 +528,7 @@ def test_cmd_execute_trade_live_submits_order(monkeypatch):
 
     class _FakeAccount:
         account_number = "ACC1"
+
         async def place_order(self, session_obj, order, dry_run):
             calls.append(dry_run)
             return _Preflight() if dry_run else _Response()
@@ -427,6 +539,11 @@ def test_cmd_execute_trade_live_submits_order(monkeypatch):
     monkeypatch.setattr(tt, "_get_account", _fake_get_account)
     monkeypatch.setattr(tt, "get_session", lambda: object())
     monkeypatch.setattr(tt, "_live_trading_enabled", lambda: True)
+    # Pin the governor OFF: this test exercises the submit path. With the machine config now setting
+    # account_deploy_limit_pct (the live-smoke prep), an unpinned read would run the fail-closed
+    # governor against a fake account that reports no balances. The governor's own behavior is the
+    # next test's job.
+    monkeypatch.setattr(tt, "_load_config", lambda: {})
 
     args = type("Args", (), {"dry_run": False, "order": json.dumps(order_spec), "account_number": None})()
     result = asyncio.run(tt.cmd_execute_trade(args))
@@ -438,7 +555,11 @@ def test_cmd_execute_trade_live_submits_order(monkeypatch):
 def test_cmd_execute_trade_deploy_governor_blocks_live_over_cap(monkeypatch):
     # account_deploy_limit_pct wired from config -> cherrypick.core.broker deploy governor blocks a live
     # order that would push deployed BP over the cap, before any live submit.
-    order_spec = {"legs": [{"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}]}
+    order_spec = {
+        "legs": [
+            {"symbol": "XSP_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+        ]
+    }
 
     class _BPE:
         change_in_buying_power = "-5300"  # consumes 5300 BP
@@ -456,9 +577,11 @@ def test_cmd_execute_trade_deploy_governor_blocks_live_over_cap(monkeypatch):
 
     class _FakeAccount:
         account_number = "ACC1"
+
         async def place_order(self, session_obj, order, dry_run):
             calls.append(dry_run)
             return _Preflight()
+
         async def get_balances(self, session_obj):
             return _Balances()
 
@@ -479,6 +602,7 @@ def test_cmd_execute_trade_deploy_governor_blocks_live_over_cap(monkeypatch):
 
 
 # --- cmd_secrets_status -------------------------------------------------------
+
 
 def test_cmd_secrets_status_reports_ready_when_required_set(monkeypatch):
     monkeypatch.setattr(
@@ -501,6 +625,7 @@ def test_cmd_secrets_status_not_ready_when_required_missing(monkeypatch):
 
 
 # --- _compute_gex --------------------------------------------------------------
+
 
 def _gex_entry(strike, opt_type, sym):
     return {"strike_price": str(strike), "option_type": opt_type, "streamer_symbol": sym}
@@ -537,6 +662,7 @@ def test_compute_gex_skips_entries_missing_oi_or_greeks():
 
 # --- cmd_get_orb_range ---------------------------------------------------------
 
+
 def test_cmd_get_orb_range_not_captured_yet(cache_db, monkeypatch):
     args = type("Args", (), {"symbol": "xsp"})()
     result = tt.cmd_get_orb_range(args)
@@ -545,8 +671,17 @@ def test_cmd_get_orb_range_not_captured_yet(cache_db, monkeypatch):
 
 def test_cmd_get_orb_range_returns_captured_values(cache_db):
     import pytz
+
     et_today = __import__("datetime").datetime.now(pytz.timezone("America/New_York")).strftime("%Y-%m-%d")
-    _insert(cache_db, "orb_ranges", symbol="XSP", trade_date=et_today, orb_high=605.0, orb_low=598.0, captured_at=time.time())
+    _insert(
+        cache_db,
+        "orb_ranges",
+        symbol="XSP",
+        trade_date=et_today,
+        orb_high=605.0,
+        orb_low=598.0,
+        captured_at=time.time(),
+    )
     args = type("Args", (), {"symbol": "xsp"})()
     result = tt.cmd_get_orb_range(args)
     assert result["ok"] is True
@@ -564,8 +699,10 @@ def test_cmd_get_orb_range_no_cache_db(tmp_path, monkeypatch):
 
 # --- cmd_stream_status (streamer._running_pid mocked) --------------------------
 
+
 def test_cmd_stream_status_not_running_no_cache(tmp_path, monkeypatch):
     import streamer
+
     monkeypatch.setattr(streamer, "_running_pid", lambda: None)
     monkeypatch.setattr(tt, "_CACHE_DB", tmp_path / "missing.db")
     result = tt.cmd_stream_status(None)
@@ -575,6 +712,7 @@ def test_cmd_stream_status_not_running_no_cache(tmp_path, monkeypatch):
 
 def test_cmd_stream_status_running_with_fresh_data(cache_db, monkeypatch):
     import streamer
+
     monkeypatch.setattr(streamer, "_running_pid", lambda: 4242)
     _insert(cache_db, "stream_trades", symbol="XSP", last=600.0, change=0, volume=10, updated_at=time.time())
     result = tt.cmd_stream_status(None)
@@ -586,7 +724,99 @@ def test_cmd_stream_status_running_with_fresh_data(cache_db, monkeypatch):
 
 def test_cmd_stream_status_stale_when_running_but_old_data(cache_db, monkeypatch):
     import streamer
+
     monkeypatch.setattr(streamer, "_running_pid", lambda: 4242)
-    _insert(cache_db, "stream_trades", symbol="XSP", last=600.0, change=0, volume=10, updated_at=time.time() - 3000)
+    _insert(
+        cache_db,
+        "stream_trades",
+        symbol="XSP",
+        last=600.0,
+        change=0,
+        volume=10,
+        updated_at=time.time() - 3000,
+    )
     result = tt.cmd_stream_status(None)
     assert result["stale_warning"] is True
+
+
+# --- get_atr / get_intraday_range (stream_summary readers) --------------------
+
+
+class _Args:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+def _summary_row(db_path, symbol, trade_date, high, low, prev, close=None, opn=None):
+    _insert(
+        db_path,
+        "stream_summary",
+        symbol=symbol,
+        trade_date=trade_date,
+        day_open=opn,
+        day_high=high,
+        day_low=low,
+        day_close=close,
+        prev_day_close=prev,
+        updated_at=time.time(),
+    )
+
+
+def test_true_ranges_uses_gap_versus_prev_close():
+    rows = [
+        {"day_high": 105.0, "day_low": 100.0, "prev_day_close": 95.0},  # gap up: |105-95|=10 > 5
+        {"day_high": 105.0, "day_low": 100.0, "prev_day_close": 103.0},  # inside: 5
+        {"day_high": 105.0, "day_low": 100.0, "prev_day_close": None},  # no prev: degrade to 5
+        {"day_high": None, "day_low": 100.0, "prev_day_close": 99.0},  # unusable: skipped
+    ]
+    assert tt._true_ranges(rows) == [10.0, 5.0, 5.0]
+
+
+def test_get_atr_averages_completed_days_and_excludes_today(cache_db):
+    today = tt._et_today()
+    # 5 completed sessions, each with true range 5.0 except one 10.0 gap day.
+    days = ["2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24"]
+    for i, d in enumerate(days):
+        prev = 95.0 if i == 0 else 103.0
+        _summary_row(cache_db, "SPX", d, 105.0, 100.0, prev)
+    # Today's partial row is huge — it must not contaminate the average.
+    _summary_row(cache_db, "SPX", today, 200.0, 100.0, 103.0)
+    out = tt.cmd_get_atr(_Args(symbol="SPX", days=5))
+    assert out["ok"] is True
+    assert out["atr"] == (10.0 + 5.0 * 4) / 5
+
+
+def test_get_atr_refuses_thin_history(cache_db):
+    _summary_row(cache_db, "SPX", "2026-07-23", 105.0, 100.0, 103.0)
+    _summary_row(cache_db, "SPX", "2026-07-24", 105.0, 100.0, 103.0)
+    out = tt.cmd_get_atr(_Args(symbol="SPX", days=5))
+    assert out["ok"] is False
+    assert out["days_available"] == 2
+
+
+def test_get_atr_without_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(tt, "_CACHE_DB", tmp_path / "missing.db")
+    assert tt.cmd_get_atr(_Args(symbol="SPX", days=5))["ok"] is False
+
+
+def test_get_intraday_range_reads_todays_row(cache_db):
+    today = tt._et_today()
+    _summary_row(cache_db, "SPX", today, 6050.0, 5990.0, 5995.0)
+    _insert(
+        cache_db,
+        "stream_trades",
+        symbol="SPX",
+        last=6000.0,
+        change=5.0,
+        volume=1000.0,
+        updated_at=time.time(),
+    )
+    out = tt.cmd_get_intraday_range(_Args(symbol="SPX"))
+    assert out["ok"] is True
+    assert out["range_points"] == 60.0
+    assert out["range_pct"] == round(60.0 / 6000.0, 6)
+
+
+def test_get_intraday_range_without_summary_row(cache_db):
+    out = tt.cmd_get_intraday_range(_Args(symbol="SPX"))
+    assert out["ok"] is False

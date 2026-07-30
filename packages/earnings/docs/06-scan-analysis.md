@@ -2,15 +2,15 @@
 
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
-How to actually read a day's scan output — what each field means, how tiering and ranking flow
+How to actually read a day's scan output — what each field means, how screening and ranking flow
 into each other, and how to tell a genuinely quiet night from something broken.
 
 ---
 
 ## The Two Commands You'll Actually Run
 
-**Single strategy, one date** — full tiered scan against every symbol on the calendar for that
-one strategy:
+**Single strategy, one date** — full accept/reject scan against every symbol on the calendar for
+that one strategy:
 
 ```bash
 python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
@@ -43,9 +43,8 @@ run it yourself before the market close to see exactly what the loop is about to
     {
       "symbol": "AAPL",
       "earnings_timing": "After market close",
-      "tier": "Tier 1",
-      "hard_fail_reasons": [],
-      "near_miss_reasons": [],
+      "accepted": true,
+      "reject_reasons": [],
       "criteria": {
         "price": 187.32,
         "term_structure": -0.021,
@@ -66,16 +65,16 @@ run it yourself before the market close to see exactly what the loop is about to
 }
 ```
 
-- **`candidates`** — every symbol on that date's calendar, sorted Tier 1 → Tier 2 → Near Miss →
-  Reject, each with the exact criteria that were computed and which (if any) hard filter or
-  near-miss band was tripped. `hard_fail_reasons` non-empty means `Reject`; a single
-  `near_miss_reasons` entry with no hard fails means `Tier 2`; everything clean is `Tier 1`. See
-  [Screening Criteria](./screening-criteria.md) for exactly what each named criterion checks and
-  its pass/near-miss/reject thresholds.
-- **`ranked`** — only Tier 1/Tier 2 candidates, scored by `scanner.compute_composite_score()`
-  (`abs(term_structure) * iv_rv_ratio * shrunk_winrate`) and sorted descending. Reject and Near
-  Miss never appear here — a score on a candidate that already failed hard filters doesn't mean
-  anything.
+- **`candidates`** — every symbol on that date's calendar, accepted ones first, each with the
+  exact criteria that were computed and (if rejected) which bars it failed. `accepted: true` with
+  an empty `reject_reasons` means it cleared every hard filter and every soft criterion at
+  whatever level `symbol_screen` sets; `accepted: false` lists one entry in `reject_reasons` per
+  bar it failed. See [Screening Criteria](./screening-criteria.md) for exactly what each named
+  criterion checks and its strict/near-miss thresholds.
+- **`ranked`** — only accepted candidates, scored by `scanner.compute_composite_score()`
+  (`abs(term_structure) * iv_rv_ratio * shrunk_winrate`) and sorted descending. Rejected
+  candidates never appear here — a score on a candidate that already failed a screening bar
+  doesn't mean anything.
 - **`selected`** — what survives `scanner.select_positions()`'s account-wide
   `max_concurrent_earnings_positions` cap and `correlation_block_list` check, walking down the
   ranked list and backfilling around any skip.
@@ -113,7 +112,7 @@ python src/rank_strategies.py get_ranked_symbols --date 07/15/2026
       "reason": "selected iron_fly (score 0.0214) over iron_condor (score 0.0179) within this symbol; ranked 1/4 across today's universe",
       "best_strategy": "iron_fly",
       "best_score": 0.0214,
-      "strategies": [ { "name": "iron_fly", "tier": "Tier 1", "...": "..." }, { "name": "iron_condor", "tier": "Tier 2", "...": "..." } ]
+      "strategies": [ { "name": "iron_fly", "accepted": true, "...": "..." }, { "name": "iron_condor", "accepted": true, "...": "..." } ]
     }
   ],
   "ranked": [ "...": "same shape as selected symbols, sorted by best_score" ],
@@ -124,9 +123,9 @@ python src/rank_strategies.py get_ranked_symbols --date 07/15/2026
 - **`strategies`** — the full result of running *every* registered strategy's own
   `apply_tiering()` against this one symbol, not just the winner. Useful for understanding *why*
   a symbol went to `iron_fly` instead of `iron_condor` on a given night — read both entries'
-  `tier` and `criteria` side by side.
-- **`best_strategy`** / **`best_score`** — the single highest-scoring Tier 1/2 strategy for this
-  symbol. `null` if nothing on this symbol cleared any strategy's tiering.
+  `accepted` and `criteria` side by side.
+- **`best_strategy`** / **`best_score`** — the single highest-scoring accepted strategy for this
+  symbol. `null` if nothing on this symbol cleared any strategy's screen.
 - **`outcome`** / **`reason`** — human-readable summary of both the within-symbol strategy
   choice and the symbol's cross-symbol rank, or the rejection reason if it never got selected
   (`rejected_no_viable_strategy`, `concurrency_cap_reached`, `correlation_blocked`, etc.).
@@ -139,10 +138,10 @@ trail for a past date rather than just tonight's console output.
 
 ## A Quiet Night Is Not a Bug
 
-A day with zero Tier 1/2 candidates across every strategy usually just means nothing on that
+A day with zero accepted candidates across every strategy usually just means nothing on that
 day's earnings calendar had rich enough IV/RV, negative enough term structure, or high enough
-liquidity to clear any strategy's hard filters. Read the specific `hard_fail_reasons` and
-`near_miss_reasons` before assuming something's broken:
+liquidity to clear any strategy's screen. Read the specific `reject_reasons` before assuming
+something's broken:
 
 - `front_expiration_days_too_far_out` / `no_weekly_options` clustering together — a batch of
   small/mid-cap names that only have monthly option cycles. Expected by construction; see
@@ -156,8 +155,8 @@ liquidity to clear any strategy's hard filters. Read the specific `hard_fail_rea
 
 ## Spot-Checking One Symbol By Hand
 
-If a candidate's tier surprises you, pull the individual signals directly rather than trusting
-the scan's summary line alone:
+If a candidate's accept/reject result surprises you, pull the individual signals directly rather
+than trusting the scan's summary line alone:
 
 ```bash
 python src/scanner.py get_iv_rv --symbol AAPL
@@ -166,7 +165,7 @@ python src/tt.py get_option_chain --symbol AAPL --expiration 2026-07-17 --includ
 ```
 
 These are the exact live calls the scan itself makes — running them by hand reproduces the same
-numbers `get_candidates` used, so you can confirm a rejection or tiering decision independently
+numbers `get_candidates` used, so you can confirm a rejection or acceptance decision independently
 instead of taking the scan's word for it.
 
 ---

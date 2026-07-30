@@ -31,7 +31,7 @@ stays NULL until every one of its legs is closed via save_leg_close and save_clo
 for the position as a whole.
 
 `profile` (defaults to 'default') tags which named risk profile / test book opened a trade
-or produced a scan_log row (see docs/paper-trading-profiles.md) -- lets many isolated books
+or produced a scan_log row (see docs/strat-test-portfolios.md) -- lets many isolated books
 share this one file without ever mixing their P&L or candidate history. `quantity` and
 `capital_at_risk` come from sizing.compute_position_size; `entry_cost`/`exit_cost` come from
 costs.py's tastytrade fee+slippage model (kept separate from entry_credit/exit_debit/pnl so
@@ -160,6 +160,16 @@ _MIGRATIONS = [
     ("trades", "entry_context", "ALTER TABLE trades ADD COLUMN entry_context TEXT"),
     ("trades", "entry_iv", "ALTER TABLE trades ADD COLUMN entry_iv REAL"),
     ("trades", "exit_iv", "ALTER TABLE trades ADD COLUMN exit_iv REAL"),
+    # Stranded-close accounting: a position whose legs can't be quoted at the close sweep
+    # must accumulate visible failed attempts, not silently stay open forever.
+    ("trades", "close_attempts", "ALTER TABLE trades ADD COLUMN close_attempts INTEGER NOT NULL DEFAULT 0"),
+    ("trades", "last_close_error", "ALTER TABLE trades ADD COLUMN last_close_error TEXT"),
+    ("trades", "last_close_attempt_at", "ALTER TABLE trades ADD COLUMN last_close_attempt_at REAL"),
+    # Cost-sensitivity: the slippage component of entry_cost/exit_cost, stored separately.
+    # Slippage is linear in slippage_frac_of_spread, so net P&L at a stressed 2x fraction
+    # = net - (entry_slippage + exit_slippage) exactly.
+    ("trades", "entry_slippage", "ALTER TABLE trades ADD COLUMN entry_slippage REAL"),
+    ("trades", "exit_slippage", "ALTER TABLE trades ADD COLUMN exit_slippage REAL"),
     ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
 ]
 
@@ -186,9 +196,7 @@ def cmd_init_db(args) -> dict:
 def cmd_get_open_positions(args) -> dict:
     conn = _conn()
     try:
-        rows = conn.execute(
-            "SELECT * FROM trades WHERE closed_at IS NULL ORDER BY opened_at"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM trades WHERE closed_at IS NULL ORDER BY opened_at").fetchall()
     finally:
         conn.close()
     return {"ok": True, "positions": [dict(r) for r in rows]}
@@ -208,8 +216,8 @@ def cmd_save_trade(args) -> dict:
             "INSERT INTO trades "
             "(order_id, strategy, symbol, expiration, short_strike, long_call_strike, "
             " long_put_strike, legs_json, entry_credit, opened_at, profile, quantity, "
-            " capital_at_risk, entry_cost, entry_context, entry_iv) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " capital_at_risk, entry_cost, entry_slippage, entry_context, entry_iv) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["order_id"],
                 spec.get("strategy", "iron_fly"),
@@ -225,6 +233,7 @@ def cmd_save_trade(args) -> dict:
                 spec.get("quantity"),
                 spec.get("capital_at_risk"),
                 spec.get("entry_cost"),
+                spec.get("entry_slippage"),
                 json.dumps(entry_context) if entry_context is not None else None,
                 spec.get("entry_iv"),
             ),
@@ -277,7 +286,10 @@ def cmd_save_leg_close(args) -> dict:
         )
         conn.commit()
         if cur.rowcount == 0:
-            return {"ok": False, "error": f"no open leg found for order_id={spec['order_id']} leg_role={spec['leg_role']}"}
+            return {
+                "ok": False,
+                "error": f"no open leg found for order_id={spec['order_id']} leg_role={spec['leg_role']}",
+            }
     finally:
         conn.close()
     return {"ok": True, "order_id": spec["order_id"], "leg_role": spec["leg_role"]}
@@ -292,16 +304,25 @@ def cmd_save_close(args) -> dict:
     conn = _conn()
     try:
         cur = conn.execute(
-            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, exit_iv = ? "
-            "WHERE order_id = ?",
+            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, "
+            "exit_slippage = ?, exit_iv = ? WHERE order_id = ?",
             (
                 spec.get("exit_debit"),
                 spec.get("pnl"),
                 spec.get("closed_at", time.time()),
                 spec.get("exit_cost"),
+                spec.get("exit_slippage"),
                 spec.get("exit_iv"),
                 order_id,
             ),
+        )
+        # A full-position close closes every leg by definition: sweep any trade_legs rows
+        # still open so get_open_legs never reports legs of a closed position. Legs closed
+        # individually beforehand (the agent path's close_side) keep their own close_price;
+        # swept legs record none -- the position-level exit_debit is the priced exit.
+        conn.execute(
+            "UPDATE trade_legs SET status = 'closed', closed_at = ? WHERE order_id = ? AND status = 'open'",
+            (spec.get("closed_at", time.time()), order_id),
         )
         conn.commit()
         if cur.rowcount == 0:
@@ -309,6 +330,32 @@ def cmd_save_close(args) -> dict:
     finally:
         conn.close()
     return {"ok": True, "order_id": order_id}
+
+
+def cmd_record_close_failure(args) -> dict:
+    """One failed close attempt for an open position: bump close_attempts and record why.
+    The close sweep calls this on every skip so a position that can't be quoted shows up
+    with a growing attempt count in the EOD report and the exit heartbeat, instead of
+    silently staying open and vanishing from every closed-trade metric."""
+    spec = json.loads(args.data)
+    order_id = spec.get("order_id")
+    if not order_id:
+        return {"ok": False, "error": "missing required field: order_id"}
+    conn = _conn()
+    try:
+        cur = conn.execute(
+            "UPDATE trades SET close_attempts = COALESCE(close_attempts, 0) + 1, "
+            "last_close_error = ?, last_close_attempt_at = ? "
+            "WHERE order_id = ? AND closed_at IS NULL",
+            (spec.get("reason"), spec.get("attempted_at", time.time()), order_id),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"ok": False, "error": f"no open trade found for order_id {order_id}"}
+        row = conn.execute("SELECT close_attempts FROM trades WHERE order_id = ?", (order_id,)).fetchone()
+    finally:
+        conn.close()
+    return {"ok": True, "order_id": order_id, "close_attempts": row["close_attempts"]}
 
 
 def cmd_save_market_context(args) -> dict:
@@ -357,12 +404,23 @@ def cmd_save_entry_review(args) -> dict:
             " best_tier=excluded.best_tier, selected=excluded.selected, reason=excluded.reason, "
             " criteria_json=excluded.criteria_json, logged_at=excluded.logged_at",
             (
-                spec["scan_date"], spec["symbol"], spec.get("timing"), spec.get("price"),
-                spec.get("volume"), spec.get("winrate"), spec.get("winrate_sample"),
-                spec.get("iv_rv_ratio"), spec.get("term_structure"), spec.get("market_cap"),
-                spec.get("expected_move"), spec.get("best_tier"), 1 if spec.get("selected") else 0,
-                spec.get("reason"), json.dumps(crit) if crit is not None else None,
-                spec.get("logged_at", time.time()), spec.get("profile", "default"),
+                spec["scan_date"],
+                spec["symbol"],
+                spec.get("timing"),
+                spec.get("price"),
+                spec.get("volume"),
+                spec.get("winrate"),
+                spec.get("winrate_sample"),
+                spec.get("iv_rv_ratio"),
+                spec.get("term_structure"),
+                spec.get("market_cap"),
+                spec.get("expected_move"),
+                spec.get("best_tier"),
+                1 if spec.get("selected") else 0,
+                spec.get("reason"),
+                json.dumps(crit) if crit is not None else None,
+                spec.get("logged_at", time.time()),
+                spec.get("profile", "default"),
             ),
         )
         conn.commit()
@@ -401,15 +459,14 @@ def cmd_get_market_context(args) -> dict:
     VIX delta). Either may be None."""
     conn = _conn()
     try:
-        today = conn.execute(
-            "SELECT * FROM market_context WHERE context_date = ?", (args.date,)).fetchone()
+        today = conn.execute("SELECT * FROM market_context WHERE context_date = ?", (args.date,)).fetchone()
         prior = conn.execute(
             "SELECT * FROM market_context WHERE context_date < ? ORDER BY context_date DESC LIMIT 1",
-            (args.date,)).fetchone()
+            (args.date,),
+        ).fetchone()
     finally:
         conn.close()
-    return {"ok": True, "today": dict(today) if today else None,
-            "prior": dict(prior) if prior else None}
+    return {"ok": True, "today": dict(today) if today else None, "prior": dict(prior) if prior else None}
 
 
 def cmd_log_scan(args) -> dict:
@@ -491,7 +548,8 @@ def cmd_get_pnl_summary(args) -> dict:
             for s, vals in by_strategy.items()
         },
         "by_profile": _profiles.compare_profiles(
-            scored, tag_key="profile", summarize=_pnl_bundle, untagged="default"),
+            scored, tag_key="profile", summarize=_pnl_bundle, untagged="default"
+        ),
         "trades": closed,
     }
 
@@ -512,6 +570,9 @@ def main() -> None:
 
     p_save_close = sub.add_parser("save_close")
     p_save_close.add_argument("--data", required=True)
+
+    p_close_fail = sub.add_parser("record_close_failure")
+    p_close_fail.add_argument("--data", required=True)
 
     p_get_open_legs = sub.add_parser("get_open_legs")
     p_get_open_legs.add_argument("--order_id", required=True)
@@ -541,6 +602,7 @@ def main() -> None:
         "get_open_positions": cmd_get_open_positions,
         "save_trade": cmd_save_trade,
         "save_close": cmd_save_close,
+        "record_close_failure": cmd_record_close_failure,
         "get_open_legs": cmd_get_open_legs,
         "save_leg_close": cmd_save_leg_close,
         "log_scan": cmd_log_scan,

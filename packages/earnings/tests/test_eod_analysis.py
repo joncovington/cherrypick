@@ -6,6 +6,7 @@ reader and the analysis writer at the temp DB/logs, and assert the markdown carr
 reconciles net-of-cost P&L and IV crush, flags equity-option (non-1256) treatment, and renders a clean
 flat-session path.
 """
+
 import argparse
 import json
 import time
@@ -40,17 +41,43 @@ def seeded(tmp_path, monkeypatch):
     ]
     for i, (strat, sym, car, ecr, edeb, eiv, xiv, ivrv) in enumerate(rows):
         oid = f"strat_test-{strat}-{sym}-{i}"
-        db_paper.cmd_save_trade(_ns(data=json.dumps({
-            "order_id": oid, "strategy": strat, "symbol": sym, "expiration": "2026-07-17",
-            "legs_json": json.dumps([{"symbol": f"{sym} C", "action": "Sell to Open", "quantity": 1}]),
-            "entry_credit": ecr, "profile": "strat_test", "quantity": 1, "capital_at_risk": car,
-            "entry_cost": 3.0, "entry_iv": eiv, "opened_at": open_ts,
-            "entry_context": {"iv_rv_ratio": ivrv},
-        })))
-        db_paper.cmd_save_close(_ns(data=json.dumps({
-            "order_id": oid, "exit_debit": edeb, "pnl": (ecr - edeb) * 100,
-            "exit_cost": 3.0, "exit_iv": xiv, "closed_at": close_ts,
-        })))
+        db_paper.cmd_save_trade(
+            _ns(
+                data=json.dumps(
+                    {
+                        "order_id": oid,
+                        "strategy": strat,
+                        "symbol": sym,
+                        "expiration": "2026-07-17",
+                        "legs_json": json.dumps(
+                            [{"symbol": f"{sym} C", "action": "Sell to Open", "quantity": 1}]
+                        ),
+                        "entry_credit": ecr,
+                        "profile": "strat_test",
+                        "quantity": 1,
+                        "capital_at_risk": car,
+                        "entry_cost": 3.0,
+                        "entry_iv": eiv,
+                        "opened_at": open_ts,
+                        "entry_context": {"iv_rv_ratio": ivrv},
+                    }
+                )
+            )
+        )
+        db_paper.cmd_save_close(
+            _ns(
+                data=json.dumps(
+                    {
+                        "order_id": oid,
+                        "exit_debit": edeb,
+                        "pnl": (ecr - edeb) * 100,
+                        "exit_cost": 3.0,
+                        "exit_iv": xiv,
+                        "closed_at": close_ts,
+                    }
+                )
+            )
+        )
     db_paper.cmd_save_market_context(_ns(data=json.dumps({"context_date": "2026-07-15", "vix": 16.2})))
     db_paper.cmd_save_market_context(_ns(data=json.dumps({"context_date": "2026-07-16", "vix": 14.9})))
     return logs
@@ -60,9 +87,15 @@ def test_analysis_has_all_seven_sections_and_reconciles(seeded):
     path = runner._write_eod_analysis("2026-07-16")
     md = path.read_text(encoding="utf-8")
 
-    for header in ("## 1. Executive snapshot", "## 2. Position-level detail", "## 3. Trade activity log",
-                   "## 4. Risk metrics", "## 5. Market context", "## 6. Tax / accounting notes",
-                   "## 7. Notes / journal"):
+    for header in (
+        "## 1. Executive snapshot",
+        "## 2. Position-level detail",
+        "## 3. Trade activity log",
+        "## 4. Risk metrics",
+        "## 5. Market context",
+        "## 6. Tax / accounting notes",
+        "## 7. Notes / journal",
+    ):
         assert header in md
 
     # Net of costs: (2.50-0.80)*100-6 = 164 ; (3.10-1.20)*100-6 = 184 ; total 348.
@@ -84,14 +117,42 @@ def test_analysis_flat_session_renders(seeded):
 
 def test_analysis_includes_symbols_reviewed_for_entry(seeded):
     # The entry scan the evening before the close session (2026-07-15) reviewed these symbols.
-    db_paper.cmd_save_entry_review(_ns(data=json.dumps({
-        "scan_date": "2026-07-15", "symbol": "ISRG", "timing": "AMC", "price": 402.05,
-        "volume": 2702779, "winrate": 0.75, "winrate_sample": 12, "iv_rv_ratio": 1.47,
-        "term_structure": -0.019, "market_cap": 142391166303, "best_tier": "Tier 1",
-        "selected": True, "reason": "opened iron_fly, iron_condor", "profile": "strat_test"})))
-    db_paper.cmd_save_entry_review(_ns(data=json.dumps({
-        "scan_date": "2026-07-15", "symbol": "NFLX", "winrate": 0.60, "selected": False,
-        "reason": "tier_excluded (7 strategies evaluated)", "profile": "strat_test"})))
+    db_paper.cmd_save_entry_review(
+        _ns(
+            data=json.dumps(
+                {
+                    "scan_date": "2026-07-15",
+                    "symbol": "ISRG",
+                    "timing": "AMC",
+                    "price": 402.05,
+                    "volume": 2702779,
+                    "winrate": 0.75,
+                    "winrate_sample": 12,
+                    "iv_rv_ratio": 1.47,
+                    "term_structure": -0.019,
+                    "market_cap": 142391166303,
+                    "best_tier": "accepted",
+                    "selected": True,
+                    "reason": "opened iron_fly, iron_condor",
+                    "profile": "strat_test",
+                }
+            )
+        )
+    )
+    db_paper.cmd_save_entry_review(
+        _ns(
+            data=json.dumps(
+                {
+                    "scan_date": "2026-07-15",
+                    "symbol": "NFLX",
+                    "winrate": 0.60,
+                    "selected": False,
+                    "reason": "screen_rejected (7 strategies evaluated)",
+                    "profile": "strat_test",
+                }
+            )
+        )
+    )
 
     md = runner._write_eod_analysis("2026-07-16").read_text(encoding="utf-8")  # close session
     assert "## Symbols reviewed for entry" in md

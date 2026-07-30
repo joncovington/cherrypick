@@ -42,7 +42,8 @@ def _spec(**overrides):
 
 def _status(monkeypatch, payload, returncode=0):
     monkeypatch.setattr(
-        wd, "_run_module",
+        wd,
+        "_run_module",
         lambda root, argv, timeout=15: _Result(returncode, json.dumps(payload)),
     )
 
@@ -70,8 +71,10 @@ def test_down_no_auto_restart_just_warns(monkeypatch, calls, tmp_path):
 
 def test_stalled_stops_then_restarts(monkeypatch, calls, tmp_path):
     # running=true but silent for 999s, connected long ago (not settling) -> stop then start.
-    _status(monkeypatch, {"running": True, "oldest_event_age_s": 999,
-                          "connected_since": "2020-01-01T00:00:00+00:00"})
+    _status(
+        monkeypatch,
+        {"running": True, "oldest_event_age_s": 999, "connected_since": "2020-01-01T00:00:00+00:00"},
+    )
     findings = wd._check_streamer_health("streamer", tmp_path, _spec())
     assert "stalled" in findings[0].title
     assert calls["stop"] and calls["start"] == [["run.py"]]

@@ -33,6 +33,7 @@ CLI:
   python src/paper_practice.py status         # rate-limit bucket fill (usage_percent)
   python src/paper_practice.py login --email <you>   # store a token (delegates to paper_replay)
 """
+
 import argparse
 import json
 import os
@@ -66,6 +67,7 @@ _VIX_IV_RANK_BANDS = [(12, 0.10), (15, 0.25), (18, 0.40), (22, 0.55), (27, 0.70)
 # ---------------------------------------------------------------------------
 # 0DTESPX client (hardened: idempotency + 429 backoff)
 # ---------------------------------------------------------------------------
+
 
 def _parse_retry_after(value) -> float:
     try:
@@ -151,6 +153,7 @@ class Client:
 # Pure helpers (unit-tested, no network)
 # ---------------------------------------------------------------------------
 
+
 def occ(strike, cp, yymmdd) -> str:
     """OCC/OSI instrument string for an SPX weekly (0DTE) option, e.g.
     occ(7450, 'P', '260709') -> 'SPXW  260709P07450000' (6-char root 'SPXW' + 2 spaces)."""
@@ -209,16 +212,27 @@ def build_candidates(snap: dict, spot: float, widths, target_delta: float, yymmd
         return []
 
     def leg(strike, d, cp):
-        return {"strike": float(strike), "streamer_symbol": occ(strike, cp, yymmdd),
-                "delta": d["delta"], "bid": d["bid"], "ask": d["ask"]}
+        return {
+            "strike": float(strike),
+            "streamer_symbol": occ(strike, cp, yymmdd),
+            "delta": d["delta"],
+            "bid": d["bid"],
+            "ask": d["ask"],
+        }
 
     cands = []
     for w in sorted(widths):
         lc, lp = sc + w, sp - w
         if lc in calls and lp in puts:
-            cands.append({"wing_width": w, "short_put": leg(sp, puts[sp], "P"),
-                          "long_put": leg(lp, puts[lp], "P"), "short_call": leg(sc, calls[sc], "C"),
-                          "long_call": leg(lc, calls[lc], "C")})
+            cands.append(
+                {
+                    "wing_width": w,
+                    "short_put": leg(sp, puts[sp], "P"),
+                    "long_put": leg(lp, puts[lp], "P"),
+                    "short_call": leg(sc, calls[sc], "C"),
+                    "long_call": leg(lc, calls[lc], "C"),
+                }
+            )
     return cands
 
 
@@ -235,7 +249,7 @@ def mark_map(positions) -> dict:
         if inst is None or price is None:
             continue
         try:
-            if abs(float(qty)) < 1e-9:   # closed leg still listed with quantity 0 -> treat as gone
+            if abs(float(qty)) < 1e-9:  # closed leg still listed with quantity 0 -> treat as gone
                 continue
         except (TypeError, ValueError):
             pass  # missing/invalid quantity -> keep (defensive)
@@ -284,6 +298,7 @@ def spx_eligible_profiles(base=None, profiles=None) -> list:
 # Results DB (per-IC rows via db.py, tagged execution_mode="practice_0dtespx")
 # ---------------------------------------------------------------------------
 
+
 def _db(db_path, args):
     subprocess.run([sys.executable, _DB_PY, "--db", db_path] + args, capture_output=True, text=True)
 
@@ -324,7 +339,7 @@ class _Book:
         self.stop_trig = params["stop_trigger_ratio"]
         self.max_adj = params.get("max_stop_adjustments_per_ic", 3)
         self.max_conc = params["max_concurrent_ics"]
-        self.daily_target = params.get("daily_ic_trade_target", 10 ** 9)
+        self.daily_target = params.get("daily_ic_trade_target", 10**9)
         self.spacing = params.get("min_minutes_between_entries", 0)
         self.open_ics = []
         self.todays = 0
@@ -335,42 +350,62 @@ class _Book:
         return sum(1 for ic in self.open_ics if ic["call"] == "open" or ic["put"] == "open")
 
     def eligible(self, now_min):
-        return (600 <= now_min < 870
-                and self.account_open() < self.max_conc
-                and self.todays < self.daily_target
-                and (self.last_min is None or now_min - self.last_min >= self.spacing))
+        return (
+            600 <= now_min < 870
+            and self.account_open() < self.max_conc
+            and self.todays < self.daily_target
+            and (self.last_min is None or now_min - self.last_min >= self.spacing)
+        )
 
 
 # ---------------------------------------------------------------------------
 # Order placement
 # ---------------------------------------------------------------------------
 
+
 def _place_ic(client, sid, chosen, yymmdd, now_min, entry_iso, spot):
-    L = {"sp": occ(chosen["short_put"]["strike"], "P", yymmdd),
-         "lp": occ(chosen["long_put"]["strike"], "P", yymmdd),
-         "sc": occ(chosen["short_call"]["strike"], "C", yymmdd),
-         "lc": occ(chosen["long_call"]["strike"], "C", yymmdd),
-         "sp_k": chosen["short_put"]["strike"], "sc_k": chosen["short_call"]["strike"]}
-    order = {"type": "limit", "price": f"{round(chosen['ic_natural_bid'], 2):.2f}",
-             "price_effect": "credit",
-             "legs": [{"instrument": L["sp"], "quantity": "1", "action": "sell to open"},
-                      {"instrument": L["lp"], "quantity": "1", "action": "buy to open"},
-                      {"instrument": L["sc"], "quantity": "1", "action": "sell to open"},
-                      {"instrument": L["lc"], "quantity": "1", "action": "buy to open"}]}
+    L = {
+        "sp": occ(chosen["short_put"]["strike"], "P", yymmdd),
+        "lp": occ(chosen["long_put"]["strike"], "P", yymmdd),
+        "sc": occ(chosen["short_call"]["strike"], "C", yymmdd),
+        "lc": occ(chosen["long_call"]["strike"], "C", yymmdd),
+        "sp_k": chosen["short_put"]["strike"],
+        "sc_k": chosen["short_call"]["strike"],
+    }
+    order = {
+        "type": "limit",
+        "price": f"{round(chosen['ic_natural_bid'], 2):.2f}",
+        "price_effect": "credit",
+        "legs": [
+            {"instrument": L["sp"], "quantity": "1", "action": "sell to open"},
+            {"instrument": L["lp"], "quantity": "1", "action": "buy to open"},
+            {"instrument": L["sc"], "quantity": "1", "action": "sell to open"},
+            {"instrument": L["lc"], "quantity": "1", "action": "buy to open"},
+        ],
+    }
     _, resp = client.place(sid, order)
     if not isinstance(resp, dict):
         return None
     fill = resp.get("fill_price") or resp.get("execution_price")
     if fill is None:
         return None
-    return {"legs": L, "net_credit": float(fill), "open_fee": float(resp.get("fees") or 0),
-            "entry_min": now_min, "entry_iso": entry_iso, "spot_entry": spot,
-            "wing": chosen["wing_width"], "call": "open", "put": "open",
-            "retry": {"call": 0, "put": 0},
-            # per-side exit debit (points) paid to close a stopped side; filled at settlement for the
-            # sides left to expire. drives per-IC P&L: net_credit - call_exit - put_exit.
-            "exit": {"call": None, "put": None}, "exit_fee": {"call": 0.0, "put": 0.0},
-            "exit_reason": {"call": None, "put": None}}
+    return {
+        "legs": L,
+        "net_credit": float(fill),
+        "open_fee": float(resp.get("fees") or 0),
+        "entry_min": now_min,
+        "entry_iso": entry_iso,
+        "spot_entry": spot,
+        "wing": chosen["wing_width"],
+        "call": "open",
+        "put": "open",
+        "retry": {"call": 0, "put": 0},
+        # per-side exit debit (points) paid to close a stopped side; filled at settlement for the
+        # sides left to expire. drives per-IC P&L: net_credit - call_exit - put_exit.
+        "exit": {"call": None, "put": None},
+        "exit_fee": {"call": 0.0, "put": 0.0},
+        "exit_reason": {"call": None, "put": None},
+    }
 
 
 def _place_close(client, sid, ic, side, cost, log, tag, retry=False):
@@ -379,24 +414,30 @@ def _place_close(client, sid, ic, side, cost, log, tag, retry=False):
     # debit limit: always marketable (the sim fills at the true, better price via improvement),
     # which avoids the mid-priced limit sitting unfilled when the spread is deep ITM.
     price = max(round(float(ic["wing"]), 2), 0.05)
-    order = {"type": "limit", "price": f"{price:.2f}", "price_effect": "debit",
-             "legs": [{"instrument": short_i, "quantity": "1", "action": "buy to close"},
-                      {"instrument": long_i, "quantity": "1", "action": "sell to close"}]}
+    order = {
+        "type": "limit",
+        "price": f"{price:.2f}",
+        "price_effect": "debit",
+        "legs": [
+            {"instrument": short_i, "quantity": "1", "action": "buy to close"},
+            {"instrument": long_i, "quantity": "1", "action": "sell to close"},
+        ],
+    }
     st, resp = client.place(sid, order)
     ic[side] = "pending_close"
     fp = resp.get("fill_price") if isinstance(resp, dict) else None
     fee = resp.get("fees") if isinstance(resp, dict) else None
-    if fp is not None and ic["exit"][side] is None:   # record the realized close debit once
+    if fp is not None and ic["exit"][side] is None:  # record the realized close debit once
         ic["exit"][side] = float(fp)
         ic["exit_fee"][side] = float(fee or 0)
         ic["exit_reason"][side] = "per_side_stop"
-    log(f"{tag} {'STOP-retry' if retry else 'STOP'} {side} cost {cost:.2f} bid {price} "
-        f"http {st} fill {fp}")
+    log(f"{tag} {'STOP-retry' if retry else 'STOP'} {side} cost {cost:.2f} bid {price} http {st} fill {fp}")
 
 
 # ---------------------------------------------------------------------------
 # Settlement / results row
 # ---------------------------------------------------------------------------
+
 
 def _finalize_ic(ic, spot_close):
     """Close out an IC at settlement: any side not stopped intraday expires and settles at its
@@ -418,15 +459,27 @@ def _finalize_ic(ic, spot_close):
 def _ic_row(book_name, date, ic, pnl, fees, status, exit_reason, exit_iso):
     L = ic["legs"]
     return {
-        "ic_order_id": ic["oid"], "trade_date": date, "entry_time": ic["entry_iso"],
-        "exit_time": exit_iso, "expiration": date, "symbol": "SPX",
-        "put_strike": L["sp_k"], "call_strike": L["sc_k"], "wing_width": ic["wing"],
-        "net_credit": ic["net_credit"], "quantity": 1,
-        "underlying_price_entry": ic["spot_entry"], "iv_rank_at_entry": ic.get("iv_rank"),
+        "ic_order_id": ic["oid"],
+        "trade_date": date,
+        "entry_time": ic["entry_iso"],
+        "exit_time": exit_iso,
+        "expiration": date,
+        "symbol": "SPX",
+        "put_strike": L["sp_k"],
+        "call_strike": L["sc_k"],
+        "wing_width": ic["wing"],
+        "net_credit": ic["net_credit"],
+        "quantity": 1,
+        "underlying_price_entry": ic["spot_entry"],
+        "iv_rank_at_entry": ic.get("iv_rank"),
         "session_quality": session_quality(ic["entry_min"]),
-        "risk_profile": book_name, "execution_mode": "practice_0dtespx",
-        "iv_rank_source": ic.get("iv_rank_source", "vix_band"), "pnl": pnl, "fees": fees,
-        "status": status, "exit_reason": exit_reason,
+        "risk_profile": book_name,
+        "execution_mode": "practice_0dtespx",
+        "iv_rank_source": ic.get("iv_rank_source", "vix_band"),
+        "pnl": pnl,
+        "fees": fees,
+        "status": status,
+        "exit_reason": exit_reason,
     }
 
 
@@ -434,8 +487,8 @@ def _ic_row(book_name, date, ic, pnl, fees, status, exit_reason, exit_iso):
 # Multi-profile day driver (all SPX-eligible books, one shared per-tick snapshot)
 # ---------------------------------------------------------------------------
 
-def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
-        iv_rank=None, client=None, log=print):
+
+def run(date, profile_names=None, cadence=120, dry=False, db_path=None, iv_rank=None, client=None, log=print):
     """Backtest one SPX day for every given (or all SPX-eligible) profile at once. Each profile is
     its own practice session (position isolation), but the metered option-chain snapshot is read
     ONCE per tick and shared across all books — so credit cost is per-tick, not per-profile. Writes
@@ -505,8 +558,9 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
                         if cost is not None:
                             ic["retry"][side] += 1
                             if ic["retry"][side] <= b.max_adj:
-                                _place_close(client, b.sid, ic, side, cost, log,
-                                             f"{now_et} {b.name}", retry=True)
+                                _place_close(
+                                    client, b.sid, ic, side, cost, log, f"{now_et} {b.name}", retry=True
+                                )
                             else:
                                 log(f"{now_et} {b.name} WARN {side} close unconfirmed")
 
@@ -520,21 +574,42 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
             rank = iv_rank if iv_rank is not None else vix_band_iv_rank(vix)
             rank_source = "override" if iv_rank is not None else "vix_band"
             for b in elig:
-                view = {"symbol": "SPX", "date": date, "now_et": now_et, "dte": 0,
-                        "underlying_price": spot, "iv_rank": rank, "vix": vix,
-                        "vix1d_ratio": None, "atr_5day": None,
-                        "session_quality": session_quality(now_min), "gex": {"ok": False},
-                        "candidates": cands, "leg_quotes": {}}
-                overlap = [{"put_strike": ic["legs"]["sp_k"], "call_strike": ic["legs"]["sc_k"]}
-                           for ic in b.open_ics if not (ic["call"] == "closed" and ic["put"] == "closed")]
+                view = {
+                    "symbol": "SPX",
+                    "date": date,
+                    "now_et": now_et,
+                    "dte": 0,
+                    "underlying_price": spot,
+                    "iv_rank": rank,
+                    "vix": vix,
+                    "vix1d_ratio": None,
+                    "atr_5day": None,
+                    "intraday_range_pct": None,
+                    "session_quality": session_quality(now_min),
+                    "gex": {"ok": False},
+                    "candidates": cands,
+                    "leg_quotes": {},
+                }
+                overlap = [
+                    {"put_strike": ic["legs"]["sp_k"], "call_strike": ic["legs"]["sc_k"]}
+                    for ic in b.open_ics
+                    if not (ic["call"] == "closed" and ic["put"] == "closed")
+                ]
                 entered, reason, chosen = paper.evaluate_entry(
-                    view, b.params, overlap, account_open_count=b.account_open(),
-                    todays_entry_count=b.todays, last_entry_min=b.last_min)
+                    view,
+                    b.params,
+                    overlap,
+                    account_open_count=b.account_open(),
+                    todays_entry_count=b.todays,
+                    last_entry_min=b.last_min,
+                )
                 if not entered:
                     continue
                 if dry:
-                    log(f"{now_et} {b.name} DRY would ENTER {chosen['wing_width']}w "
-                        f"credit~{chosen['ic_natural_bid']}")
+                    log(
+                        f"{now_et} {b.name} DRY would ENTER {chosen['wing_width']}w "
+                        f"credit~{chosen['ic_natural_bid']}"
+                    )
                     b.todays += 1
                     b.last_min = now_min
                     continue
@@ -547,8 +622,10 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
                     b.open_ics.append(ic)
                     b.todays += 1
                     b.last_min = now_min
-                    log(f"{now_et} {b.name} ENTER {ic['wing']}w "
-                        f"sp{ic['legs']['sp_k']:.0f}/sc{ic['legs']['sc_k']:.0f} credit {ic['net_credit']}")
+                    log(
+                        f"{now_et} {b.name} ENTER {ic['wing']}w "
+                        f"sp{ic['legs']['sp_k']:.0f}/sc{ic['legs']['sc_k']:.0f} credit {ic['net_credit']}"
+                    )
                 else:
                     log(f"{now_et} {b.name} ENTER failed (no fill)")
         cur += timedelta(seconds=cadence)
@@ -557,8 +634,13 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
     end_utc = end.astimezone(UTC)
     exit_iso = end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
     spot_close = lookup(int(end_utc.timestamp()))[0]
-    result = {"date": date, "dry": dry, "metered_snapshots": snaps + 1,
-              "db": db_path if (db_path and not dry) else None, "profiles": {}}
+    result = {
+        "date": date,
+        "dry": dry,
+        "metered_snapshots": snaps + 1,
+        "db": db_path if (db_path and not dry) else None,
+        "profiles": {},
+    }
     for b in books:
         client.set_clock(b.sid, exit_iso)
         sess = client.session(b.sid)
@@ -569,21 +651,45 @@ def run(date, profile_names=None, cadence=120, dry=False, db_path=None,
             if db_path and not dry:
                 _save_ic(db_path, _ic_row(b.name, date, ic, pnl, fees, status, exit_reason, exit_iso))
         result["profiles"][b.name] = {
-            "entries": b.todays, "net_pnl": round(net, 2),
-            "session_realized": sess.get("equity_options_realized_profit_loss") if isinstance(sess, dict) else None,
+            "entries": b.todays,
+            "net_pnl": round(net, 2),
+            "session_realized": sess.get("equity_options_realized_profit_loss")
+            if isinstance(sess, dict)
+            else None,
             "session_fees": sess.get("equity_options_fees") if isinstance(sess, dict) else None,
             "sid": b.sid,
         }
     return result
 
 
-def run_day(date, profile_name="conservative", cadence=120, dry=False, db_path=None,
-            iv_rank=None, client=None, log=print):
+def run_day(
+    date,
+    profile_name="conservative",
+    cadence=120,
+    dry=False,
+    db_path=None,
+    iv_rank=None,
+    client=None,
+    log=print,
+):
     """Single-profile convenience wrapper over run() (back-compat / focused runs)."""
-    res = run(date, [profile_name], cadence=cadence, dry=dry, db_path=db_path,
-              iv_rank=iv_rank, client=client, log=log)
-    return {"date": date, "profile": profile_name, "dry": dry,
-            "metered_snapshots": res["metered_snapshots"], **res["profiles"].get(profile_name, {})}
+    res = run(
+        date,
+        [profile_name],
+        cadence=cadence,
+        dry=dry,
+        db_path=db_path,
+        iv_rank=iv_rank,
+        client=client,
+        log=log,
+    )
+    return {
+        "date": date,
+        "profile": profile_name,
+        "dry": dry,
+        "metered_snapshots": res["metered_snapshots"],
+        **res["profiles"].get(profile_name, {}),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -612,8 +718,7 @@ def _pace(client, log, floor=_EST_DAY_CREDITS):
     time.sleep(wait)
 
 
-def run_range(start, end, profile_names=None, cadence=120, db_path=None, client=None,
-              log=print, pace=True):
+def run_range(start, end, profile_names=None, cadence=120, db_path=None, client=None, log=print, pace=True):
     """Backtest every available 0DTESPX session in [start, end] (inclusive) for the given (or all
     SPX-eligible) profiles, accumulating per-IC rows into db_path. Paces against the rate-limit
     bucket between days. Returns per-day net P&L plus a get_range_summary roll-up over the range."""
@@ -626,16 +731,21 @@ def run_range(start, end, profile_names=None, cadence=120, db_path=None, client=
         if pace:
             _pace(client, log)
         try:
-            res = run(day, profile_names, cadence=cadence, dry=False, db_path=db_path,
-                      client=client, log=log)
+            res = run(day, profile_names, cadence=cadence, dry=False, db_path=db_path, client=client, log=log)
             per_day[day] = {p: s["net_pnl"] for p, s in res["profiles"].items()}
             hits = ", ".join(f"{p} {s['net_pnl']:+.0f}" for p, s in res["profiles"].items() if s["entries"])
             log(f"# {day}: {hits or 'no entries'}")
         except Exception as exc:  # one bad day must not abort the batch
             log(f"# {day}: ERROR {exc}")
             per_day[day] = {"error": str(exc)}
-    out = {"start": start, "end": end, "days": len(days), "per_day": per_day,
-           "db": db_path, "cost_basis": "0dtespx"}
+    out = {
+        "start": start,
+        "end": end,
+        "days": len(days),
+        "per_day": per_day,
+        "db": db_path,
+        "cost_basis": "0dtespx",
+    }
     if db_path:
         out["range_summary"] = _range_summary(db_path, start, end)
     return out
@@ -645,6 +755,7 @@ def run_range(start, end, profile_names=None, cadence=120, db_path=None, client=
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="0DTESPX practice-session MEIC backtester (Phase 4)")
     sub = parser.add_subparsers(dest="command")
@@ -653,13 +764,15 @@ def main():
     p_run.add_argument("--date", default=None, help="a single day YYYY-MM-DD")
     p_run.add_argument("--start", default=None, help="range start YYYY-MM-DD (with --end)")
     p_run.add_argument("--end", default=None, help="range end YYYY-MM-DD (with --start)")
-    p_run.add_argument("--profiles", default=None,
-                       help="comma-separated profiles; default = all SPX-eligible")
+    p_run.add_argument(
+        "--profiles", default=None, help="comma-separated profiles; default = all SPX-eligible"
+    )
     p_run.add_argument("--profile", default=None, help="a single profile (back-compat shortcut)")
     p_run.add_argument("--cadence", type=int, default=120, help="clock step seconds (live loop uses 120)")
     p_run.add_argument("--dry", action="store_true", help="log intended entries without placing orders")
-    p_run.add_argument("--db", default=None,
-                       help="results DB path (default practice_trades.db in the data home)")
+    p_run.add_argument(
+        "--db", default=None, help="results DB path (default practice_trades.db in the data home)"
+    )
 
     p_rep = sub.add_parser("report", help="Per-profile P&L roll-up over a date range from the practice DB")
     p_rep.add_argument("--start", required=True)
@@ -675,8 +788,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "run":
-        names = (args.profiles.split(",") if args.profiles
-                 else [args.profile] if args.profile else None)
+        names = args.profiles.split(",") if args.profiles else [args.profile] if args.profile else None
         db_path = args.db or str(_paths.data_path("practice_trades.db"))
         if args.start and args.end:
             result = run_range(args.start, args.end, names, cadence=args.cadence, db_path=db_path)
@@ -688,12 +800,22 @@ def main():
         print(json.dumps({"ok": True, "result": result}, default=str))
     elif args.command == "report":
         db_path = args.db or str(_paths.data_path("practice_trades.db"))
-        print(json.dumps({"ok": True, "start": args.start, "end": args.end,
-                          "profiles": _range_summary(db_path, args.start, args.end)}, default=str))
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "start": args.start,
+                    "end": args.end,
+                    "profiles": _range_summary(db_path, args.start, args.end),
+                },
+                default=str,
+            )
+        )
     elif args.command == "status":
         print(json.dumps({"ok": True, "usage_percent": Client().usage_percent()}))
     elif args.command == "login":
         import getpass
+
         try:
             pw = None if args.code else getpass.getpass("0DTESPX password: ")
             tok = _replay.login(args.email, password=pw, code=args.code)

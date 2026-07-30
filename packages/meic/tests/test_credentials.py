@@ -6,6 +6,7 @@ the right service name + legacy fallback and preserves the module-level API exis
 No real keyring backend is touched — keyring's password functions are monkeypatched to an in-memory
 fake (patched globally, since the keyring calls now happen inside cherrypick-core).
 """
+
 from __future__ import annotations
 
 import sys
@@ -51,11 +52,23 @@ def test_store_is_configured_for_meic():
 
 
 def test_public_api_preserved():
-    for name in ("get_secret", "set_secret", "delete_secret",
-                 "secrets_present", "missing_secrets", "secrets_status"):
+    for name in (
+        "get_secret",
+        "set_secret",
+        "delete_secret",
+        "secrets_present",
+        "missing_secrets",
+        "secrets_status",
+    ):
         assert callable(getattr(credentials, name)), name
-    for const in ("CLIENT_SECRET", "REFRESH_TOKEN", "ACCOUNT_NUMBER",
-                  "REQUIRED_SECRETS", "ALL_SECRETS", "CredentialError"):
+    for const in (
+        "CLIENT_SECRET",
+        "REFRESH_TOKEN",
+        "ACCOUNT_NUMBER",
+        "REQUIRED_SECRETS",
+        "ALL_SECRETS",
+        "CredentialError",
+    ):
         assert hasattr(credentials, const), const
 
 

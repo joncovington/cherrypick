@@ -59,8 +59,8 @@ def test_captures_high_low_after_window(engine):
     orb = _orb.OpeningRangeTracker()
     orb(engine, "SPX", 100.0, _ts(9, 31))
     orb(engine, "SPX", 102.0, _ts(9, 33))  # high
-    orb(engine, "SPX", 99.0, _ts(9, 32))   # low
-    assert _row(engine) is None            # not persisted until the window closes
+    orb(engine, "SPX", 99.0, _ts(9, 32))  # low
+    assert _row(engine) is None  # not persisted until the window closes
     orb(engine, "SPX", 101.0, _ts(9, 36))  # first tick past 9:35 -> persist
     assert tuple(_row(engine)) == (102.0, 99.0)
 

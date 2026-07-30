@@ -2,29 +2,44 @@ import pytest
 
 import sizing
 
-BASE_CONFIG = {"available_capital_paper_mode": 100000, "risk_pct_multiplier": 1.0, "max_contracts_per_leg": 20}
+BASE_CONFIG = {
+    "available_capital_paper_mode": 100000,
+    "risk_pct_multiplier": 1.0,
+    "max_contracts_per_leg": 20,
+}
 STRATEGY_CONFIG = {"max_risk_per_trade_pct": 0.05}
 
 
 def test_iron_fly_per_contract_max_loss():
     order = {
-        "strategy": "iron_fly", "credit": 0.90,
-        "short_strike": 150.0, "long_call_strike": 155.0, "long_put_strike": 145.0,
+        "strategy": "iron_fly",
+        "credit": 0.90,
+        "short_strike": 150.0,
+        "long_call_strike": 155.0,
+        "long_put_strike": 145.0,
     }
     assert sizing.per_contract_max_loss(order, {}) == pytest.approx((5.0 - 0.90) * 100)
 
 
 def test_iron_condor_per_contract_max_loss():
     order = {
-        "strategy": "iron_condor", "credit": 0.80,
-        "short_call_strike": 155.0, "short_put_strike": 145.0,
-        "long_call_strike": 160.0, "long_put_strike": 140.0,
+        "strategy": "iron_condor",
+        "credit": 0.80,
+        "short_call_strike": 155.0,
+        "short_put_strike": 145.0,
+        "long_call_strike": 160.0,
+        "long_put_strike": 140.0,
     }
     assert sizing.per_contract_max_loss(order, {}) == pytest.approx((5.0 - 0.80) * 100)
 
 
 def test_directional_credit_spread_max_loss():
-    order = {"strategy": "directional_credit_spread", "credit": 0.40, "short_strike": 150.0, "long_strike": 145.0}
+    order = {
+        "strategy": "directional_credit_spread",
+        "credit": 0.40,
+        "short_strike": 150.0,
+        "long_strike": 145.0,
+    }
     assert sizing.per_contract_max_loss(order, {}) == pytest.approx((5.0 - 0.40) * 100)
 
 
@@ -104,8 +119,11 @@ def test_compute_position_size_unverified_max_loss():
 
 def test_live_mode_uses_injected_nlv_not_paper_capital():
     config = {
-        "enable_live_trading": True, "_live_nlv": 50000, "risk_pct_multiplier": 1.0,
-        "max_contracts_per_leg": 20, "available_capital_paper_mode": 999999,
+        "enable_live_trading": True,
+        "_live_nlv": 50000,
+        "risk_pct_multiplier": 1.0,
+        "max_contracts_per_leg": 20,
+        "available_capital_paper_mode": 999999,
     }
     order = {"strategy": "atm_calendar", "debit": 3.12}
     result = sizing.compute_position_size(order, STRATEGY_CONFIG, config)

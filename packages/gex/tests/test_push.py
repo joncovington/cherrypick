@@ -9,10 +9,12 @@ CFG = {"serve": {"port": 5055, "push_min_interval_seconds": 1.0}, "symbols": ["S
 
 def payload(symbol="SPX", price=7480.0, net=1.0):
     return {
-        "ok": True, "symbol": symbol, "underlying_price": price,
-        "expiration": "2026-07-20", "source": "stream_cache",
-        "series": [{"strike": 7500, "net_gex": net, "call_oi": 10, "put_oi": 5,
-                    "call_vol": 2, "put_vol": 1}],
+        "ok": True,
+        "symbol": symbol,
+        "underlying_price": price,
+        "expiration": "2026-07-20",
+        "source": "stream_cache",
+        "series": [{"strike": 7500, "net_gex": net, "call_oi": 10, "put_oi": 5, "call_vol": 2, "put_vol": 1}],
         "spot_history": [price],  # excluded from the key
     }
 
@@ -54,11 +56,11 @@ async def test_tick_broadcasts_only_on_change():
     srv.clients["SPX"] = {ws}
     srv._last_key["SPX"] = None
 
-    await srv.tick()          # first build -> initial broadcast
+    await srv.tick()  # first build -> initial broadcast
     assert len(ws.sent) == 1
-    await srv.tick()          # identical -> no send
+    await srv.tick()  # identical -> no send
     assert len(ws.sent) == 1
-    await srv.tick()          # net_gex changed -> send
+    await srv.tick()  # net_gex changed -> send
     assert len(ws.sent) == 2
 
 
@@ -86,9 +88,9 @@ async def test_snapshot_rebuilds_for_newcomer_not_stale_cache():
 
     srv = GexPushServer(CFG, build=build)
     a = FakeWS()
-    await srv._snapshot(a, "SPX")          # caches net=1.0
+    await srv._snapshot(a, "SPX")  # caches net=1.0
     assert broadcast_key(json.loads(a.sent[0])) == broadcast_key(payload(net=1.0))
-    state["net"] = 2.0                       # backing data moved while unwatched
+    state["net"] = 2.0  # backing data moved while unwatched
     b = FakeWS()
-    await srv._snapshot(b, "SPX")          # newcomer must see net=2.0, not cached 1.0
+    await srv._snapshot(b, "SPX")  # newcomer must see net=2.0, not cached 1.0
     assert json.loads(b.sent[0])["series"][0]["net_gex"] == 2.0

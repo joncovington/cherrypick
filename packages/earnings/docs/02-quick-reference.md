@@ -21,14 +21,14 @@ Returns tickers reporting earnings on that date. Cross-reference against timing 
 open` / `After market close`) to know whether a name belongs in today's entry window or
 tomorrow's.
 
-### Afternoon: full tiered scan for one strategy
+### Afternoon: full accept/reject scan for one strategy
 
 ```bash
 python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
 ```
 
 Same command shape for any strategy (`iron_condor`, `directional_credit_spread`,
-`broken_wing_butterfly`, `atm_calendar`, `double_calendar`). Returns Tier 1/2/3
+`broken_wing_butterfly`, `atm_calendar`, `double_calendar`). Returns accepted vs rejected
 candidates with pass/skip reasons per `docs/screening-criteria.md`, ranked candidates, and which
 ones survived the account-wide cap/correlation filter.
 
@@ -55,9 +55,9 @@ live chain, not a simulation.
 
 ## Strategy Selection at a Glance
 
-The actual routing logic lives in `src/rank_strategies.py` and each strategy's own tiering
-(`apply_tiering` in `src/strategies/<name>.py`), not a fixed lookup table — but as a rough mental
-model:
+The actual routing logic lives in `src/rank_strategies.py` and each strategy's own accept/reject
+screen (`apply_tiering` in `src/strategies/<name>.py`), not a fixed lookup table — but as a rough
+mental model:
 
 ```
 Medium IV, symmetric expected move           → iron_fly
@@ -105,15 +105,23 @@ command to run by hand.
 Real config lives in `config/config.json` (copy from `config/config.example.json` — see
 [Installation & Setup](./01-setup.md)). A few knobs you'll touch often:
 
-### Switch risk profile for paper testing
+### Loosen a soft screening criterion
 
-```bash
-python src/strategy_test_runner.py run_entries --date MM/DD/YYYY --profile balanced
+The five soft criteria are each screened at a level you choose in the top-level `symbol_screen`
+block:
+
+```json
+{
+  "symbol_screen": {
+    "winrate": "near_miss",
+    "iv_rv_ratio": "pass"
+  }
+}
 ```
 
-`--profile` selects `conservative` / `balanced` / `aggressive` from `config.json`'s `profiles`
-block (sizing basis, `risk_pct_multiplier`, `max_concurrent_earnings_positions`, `tier_floor`).
-Omit it to use the base config unchanged.
+`"pass"` (default) enforces the strict `min_*` threshold; `"near_miss"` only the looser
+`near_miss_min_*`; `"off"` skips the criterion. Hard filters always apply. See
+[Configuration Guide](./03-configuration.md).
 
 ### Adjust a strategy's profit target or stop
 
@@ -170,7 +178,7 @@ tickers in your universe isn't a bug.
 
 ### "Everything rejected"
 Read the `reason` field on each rejected candidate rather than assuming something's broken — a
-quiet, illiquid, or low-IV/RV night produces a lot of legitimate Tier 3 rejections. See
+quiet, illiquid, or low-IV/RV night produces a lot of legitimate rejections. See
 `docs/screening-criteria.md` for what each hard filter checks.
 
 ### "Strategy selection looks wrong"

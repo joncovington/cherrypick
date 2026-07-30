@@ -14,14 +14,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from cherrypick.core import viz
+
 from . import config as cfgmod
 from . import report, timeutil
 
 
 def _money(x: float | None) -> str:
-    if x is None:
-        return "-"
-    return f"-${abs(x):,.2f}" if x < 0 else f"${x:,.2f}"
+    # The suite's one formatter, keeping this surface's "-" placeholder for missing values.
+    return viz.fmt_money(x, none="-")
 
 
 def _pct(x: float | None) -> str:
@@ -54,11 +55,15 @@ def _snapshot(suite: dict, modules: dict) -> list[str]:
             # The blind spot the two-section earnings EOD was built to close, at suite level: a day
             # that closed nothing but opened positions is not flat — it put real overnight risk on.
             risk = _money(sopen["capital_at_risk"])
-            return [f"_No module *closed* a trade today, but **{sopen['positions']}** position(s) were "
-                    f"opened and are carried overnight (**{risk}** of defined max loss at risk). "
-                    "Realized P&L lands when they settle; see 'Opened this session' below._"]
-        return ["_Flat suite session - no module closed a trade today. Each module's own report says which "
-                "gates held its book out; a quiet day is a decision, not a gap._"]
+            return [
+                f"_No module *closed* a trade today, but **{sopen['positions']}** position(s) were "
+                f"opened and are carried overnight (**{risk}** of defined max loss at risk). "
+                "Realized P&L lands when they settle; see 'Opened this session' below._"
+            ]
+        return [
+            "_Flat suite session - no module closed a trade today. Each module's own report says which "
+            "gates held its book out; a quiet day is a decision, not a gap._"
+        ]
     net = suite.get("net_pnl")
     gross = suite.get("gross_pnl")
     cost = suite.get("cost") or 0.0
@@ -68,8 +73,10 @@ def _snapshot(suite: dict, modules: dict) -> list[str]:
         drag = f" Costs took {_money(cost)} - {cost / gross * 100:.0f}% of the {_money(gross)} gross."
     else:
         drag = f" Costs took {_money(cost)} on top of a losing gross."
-    lead = (f"Across the enabled modules the suite closed **{trades}** trade{'s' if trades != 1 else ''} "
-            f"for **Net {_money(net)}**.{drag}")
+    lead = (
+        f"Across the enabled modules the suite closed **{trades}** trade{'s' if trades != 1 else ''} "
+        f"for **Net {_money(net)}**.{drag}"
+    )
     out = [lead]
     # The gross-vs-net win-rate gap: how many trades had edge before costs but not after.
     gwr, nwr = suite.get("gross_win_rate"), suite.get("win_rate")
@@ -96,12 +103,16 @@ def _snapshot(suite: dict, modules: dict) -> list[str]:
             # Every module finished flat/negative — name the least-bad and the worst rather than
             # calling the least-bad module a "carrier" it wasn't.
             worst_name, worst_m = min(ok_mods.items(), key=lambda kv: kv[1].get("net_pnl") or 0.0)
-            tail = (f"No module finished green — {cname} least-bad ({_money(cnet)}), "
-                    f"{worst_name} worst ({_money(worst_m.get('net_pnl'))}).")
+            tail = (
+                f"No module finished green — {cname} least-bad ({_money(cnet)}), "
+                f"{worst_name} worst ({_money(worst_m.get('net_pnl'))})."
+            )
         out.append(tail)
     if sopen.get("positions"):
-        out.append(f"Separately, {sopen['positions']} position(s) were opened and carried overnight "
-                   f"({_money(sopen['capital_at_risk'])} at risk) — no realized P&L yet.")
+        out.append(
+            f"Separately, {sopen['positions']} position(s) were opened and carried overnight "
+            f"({_money(sopen['capital_at_risk'])} at risk) — no realized P&L yet."
+        )
     return out
 
 
@@ -160,9 +171,11 @@ def build_markdown(cfg: dict, day: str, rep: dict | None = None) -> str:
     sopen = suite.get("open") or {}
     if sopen.get("positions"):
         L.append("## Opened this session (carried overnight)")
-        L.append("_Positions entered today and held past the close — capital at risk (defined max loss), "
-                 "not realized P&L. These settle at the next open and land in that day's closed totals "
-                 "above. Multi-day strategies only; the 0DTE modules are flat by the bell._")
+        L.append(
+            "_Positions entered today and held past the close — capital at risk (defined max loss), "
+            "not realized P&L. These settle at the next open and land in that day's closed totals "
+            "above. Multi-day strategies only; the 0DTE modules are flat by the bell._"
+        )
         L.append("| Module | Positions | Capital at risk | Names |")
         L.append("|---|---|---|---|")
         for name in enabled:
@@ -171,13 +184,17 @@ def build_markdown(cfg: dict, day: str, rep: dict | None = None) -> str:
                 continue
             names = ", ".join(f"{s} x{n}" for s, n in (o.get("by_symbol") or {}).items())
             L.append(f"| {name} | {o['positions']} | {_money(o['capital_at_risk'])} | {names} |")
-        L.append(f"- Suite total carried overnight: **{sopen['positions']}** position(s), "
-                 f"**{_money(sopen['capital_at_risk'])}** of defined max loss at risk.")
+        L.append(
+            f"- Suite total carried overnight: **{sopen['positions']}** position(s), "
+            f"**{_money(sopen['capital_at_risk'])}** of defined max loss at risk."
+        )
         L.append("")
 
     L.append("## Module reports")
-    L.append("_Each module writes a terse metrics file (paper-eod) and a conversational 7-section read "
-             "(eod-analysis) for the session._")
+    L.append(
+        "_Each module writes a terse metrics file (paper-eod) and a conversational 7-section read "
+        "(eod-analysis) for the session._"
+    )
     for name, mcfg in enabled.items():
         f = _module_eod_file(mcfg, name, day)
         a = _module_analysis_file(name, day)

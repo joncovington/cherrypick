@@ -14,8 +14,12 @@ def _producer_cfg(streamer_dir):
         "timezone": "America/New_York",
         "modules": {},
         "notify": {"channels": ["log"]},
-        "streamer": {"enabled": True, "path": str(streamer_dir), "status_argv": ["run.py", "--status"],
-                     "stale_restart_seconds": 240},
+        "streamer": {
+            "enabled": True,
+            "path": str(streamer_dir),
+            "status_argv": ["run.py", "--status"],
+            "stale_restart_seconds": 240,
+        },
     }
 
 
@@ -36,8 +40,7 @@ def test_module_path_check_is_portable(tmp_path, monkeypatch):
     module.mkdir()
     cfg = {
         "timezone": "America/New_York",
-        "modules": {"meic": {"enabled": True, "path": str(module),
-                             "paper": {"paper_db": "data/paper.db"}}},
+        "modules": {"meic": {"enabled": True, "path": str(module), "paper": {"paper_db": "data/paper.db"}}},
         "notify": {"channels": ["log"]},
     }
     c = _check(doctor.run(cfg, fast=True), "meic.path")
@@ -91,8 +94,13 @@ def test_find_stray_artifacts_flags_runtime_outputs(tmp_path):
     (tmp_path / "reports" / "strategy_dashboard.html").write_text("<html>")
     (tmp_path / "dashboard.html").write_text("<html>")
     found = {p.name for p in doctor.find_stray_artifacts([tmp_path])}
-    assert found == {"paper_trades.db", "watchdog.log", "watchdog.last.json",
-                     "strategy_dashboard.html", "dashboard.html"}
+    assert found == {
+        "paper_trades.db",
+        "watchdog.log",
+        "watchdog.last.json",
+        "strategy_dashboard.html",
+        "dashboard.html",
+    }
 
 
 def test_find_stray_artifacts_skips_vendored_and_cache_dirs(tmp_path):

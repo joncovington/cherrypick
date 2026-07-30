@@ -56,7 +56,7 @@ python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
 ```
 
 Then run the forced-sampling paper-testing program to validate the whole pipeline end-to-end
-(scan → tier → size → cost-adjust → persist → close) without touching a real account:
+(scan → screen → size → cost-adjust → persist → close) without touching a real account:
 
 ```
 /paper-start
@@ -79,7 +79,7 @@ own. Inside the cherrypick suite it plays two roles:
 - **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator) package registers
   and watchdogs two self-healing daily OS tasks — an entry task (15:45 ET) and an exit task (09:45 ET) —
   that run this module's forced-sampling paper harness (`src/strategy_test_runner.py`, `run_entries` /
-  `run_closes`) into the isolated `strat_test` book, and reads the resulting `paper_trades.db` — which
+  `run_closes`) into the isolated strat_test books, and reads the resulting `paper_trades.db` — which
   lives in the shared cherrypick data home (`~/.cherrypick/data/earnings` by default) — for
   cross-module reporting. This module has no scheduler of its own. The orchestrator drives it **by
   subprocess only** — it never edits this code or config, never places, cancels, adjusts, or closes an
@@ -109,7 +109,8 @@ All defined-risk, all evaluated nightly against live tastytrade chains and DoltH
 
 See [docs/05-strategies.md](./docs/05-strategies.md) for full structure, entry conditions, and
 exit rules per strategy, and [docs/screening-criteria.md](./docs/screening-criteria.md) for the
-shared hard filters and tiering every candidate passes through before a strategy sees it.
+shared hard filters and the accept/reject screen every candidate passes through before a strategy
+sees it.
 
 ---
 
@@ -118,8 +119,8 @@ shared hard filters and tiering every candidate passes through before a strategy
 - **`src/scanner.py`** is the strategy-agnostic engine: earnings calendar, IV/RV ratio, winrate
   backtest, liquidity gates, ranking, expiration selection.
 - **`src/strategies/<name>.py`** holds only strategy-specific logic: hard-filter thresholds,
-  tiering, strike/order construction. New strategies can be added here without touching the
-  shared engine.
+  accept/reject screening, strike/order construction. New strategies can be added here without
+  touching the shared engine.
 - **`src/rank_strategies.py`** evaluates every enabled strategy against every candidate on the
   merged today-AMC/tomorrow-BMO earnings calendar, and picks each symbol's single best strategy.
 - **`src/tt.py`** is the tastytrade broker interface — quotes, chains, greeks, account info, and
@@ -153,8 +154,9 @@ Two separate paper-testing programs exist, and can run concurrently since they w
 isolated books:
 
 - **`/paper-start`** — forced-sampling strategy validation (`src/strategy_test_runner.py`):
-  opens every Tier 1/2 candidate for every strategy, not just each symbol's single best, so every
-  strategy accumulates a usable sample size quickly. Writes to `profile='strat_test'`.
+  opens every strategy that clears the screen on every viable symbol, not just each symbol's
+  single best, so every strategy accumulates a usable sample size quickly. Writes to per-strategy
+  strat_test books (`profile='strat_test:<strategy>'`, per `strat_test_portfolio`).
 - **`/paper-trading-start`** — one-shot production-ranking analysis (`rank_strategies.py`): what
   the real loop would pick tonight, without submitting anything.
 - **`/earnings-start`** — the actual continuous trading loop (paper or live per
@@ -182,7 +184,7 @@ pytest
 - [docs/01-setup.md](./docs/01-setup.md) — installation and first-run walkthrough
 - [docs/03-configuration.md](./docs/03-configuration.md) — every `config.json` parameter
 - [docs/05-strategies.md](./docs/05-strategies.md) — strategy-by-strategy structure and rules
-- [docs/screening-criteria.md](./docs/screening-criteria.md) — hard filters and tiering (source
+- [docs/screening-criteria.md](./docs/screening-criteria.md) — hard filters and the accept/reject screen (source
   of truth for what gates a candidate)
 - `CLAUDE.md` — the authoritative operational spec (loop steps, tool reference, config options,
   database schema)

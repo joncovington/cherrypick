@@ -32,33 +32,124 @@ DAY = "2026-07-20"
 def seeded(conn):
     """A day with one completed risk-free fly, one miss the market never offered, and one miss our
     own buffer turned down — enough for every panel to have something real to say."""
-    position(conn, "P1", day=DAY, arm="gex", kind="fly", net=1.05, credit=2.55, best_debit=1.50,
-             latency=23.0, spot_at_completion=6006.0, gross=105.0, pnl=98.11, risk_free=1,
-             window="09:45-10:15")
-    position(conn, "P2", day=DAY, arm="control", kind="short_vertical", credit=2.55,
-             best_debit=2.60, net=2.55, gross=-200.0, pnl=-203.44, risk_free=0)
-    position(conn, "P3", day=DAY, arm="time_window", kind="short_vertical", credit=2.10,
-             best_debit=2.02, net=2.10, gross=50.0, pnl=46.56, risk_free=0)
-    dbmod.save_book(conn, {"book_id": f"{DAY}:gex:SPX", "trade_date": DAY, "arm": "gex",
-                           "symbol": "SPX", "credit_collected": 255.0, "debits_paid": 150.0,
-                           "fees": 6.89, "net_cash": 98.11, "worst": 98.11, "worst_at": 5900.0,
-                           "floor_holds": 1, "band_low": None, "band_high": None,
-                           "unbounded_below": 0, "status": "settled"})
-    dbmod.save_book(conn, {"book_id": f"{DAY}:control:SPX", "trade_date": DAY, "arm": "control",
-                           "symbol": "SPX", "credit_collected": 255.0, "debits_paid": 0.0,
-                           "fees": 3.44, "net_cash": 251.56, "worst": -248.44, "worst_at": 5990.0,
-                           "floor_holds": 0, "band_low": 5997.0, "band_high": 6200.0,
-                           "unbounded_below": 1, "status": "settled"})
-    for ts, centers in [("T1", {"gex": 6005.0, "control": 6000.0}),
-                        ("T2", {"gex": 6000.0, "control": 6000.0})]:
+    position(
+        conn,
+        "P1",
+        day=DAY,
+        arm="gex",
+        kind="fly",
+        net=1.05,
+        credit=2.55,
+        best_debit=1.50,
+        latency=23.0,
+        spot_at_completion=6006.0,
+        gross=105.0,
+        pnl=98.11,
+        risk_free=1,
+        window="09:45-10:15",
+    )
+    position(
+        conn,
+        "P2",
+        day=DAY,
+        arm="control",
+        kind="short_vertical",
+        credit=2.55,
+        best_debit=2.60,
+        net=2.55,
+        gross=-200.0,
+        pnl=-203.44,
+        risk_free=0,
+    )
+    position(
+        conn,
+        "P3",
+        day=DAY,
+        arm="time_window",
+        kind="short_vertical",
+        credit=2.10,
+        best_debit=2.02,
+        net=2.10,
+        gross=50.0,
+        pnl=46.56,
+        risk_free=0,
+    )
+    dbmod.save_book(
+        conn,
+        {
+            "book_id": f"{DAY}:gex:SPX",
+            "trade_date": DAY,
+            "arm": "gex",
+            "symbol": "SPX",
+            "credit_collected": 255.0,
+            "debits_paid": 150.0,
+            "fees": 6.89,
+            "net_cash": 98.11,
+            "worst": 98.11,
+            "worst_at": 5900.0,
+            "floor_holds": 1,
+            "band_low": None,
+            "band_high": None,
+            "unbounded_below": 0,
+            "status": "settled",
+        },
+    )
+    dbmod.save_book(
+        conn,
+        {
+            "book_id": f"{DAY}:control:SPX",
+            "trade_date": DAY,
+            "arm": "control",
+            "symbol": "SPX",
+            "credit_collected": 255.0,
+            "debits_paid": 0.0,
+            "fees": 3.44,
+            "net_cash": 251.56,
+            "worst": -248.44,
+            "worst_at": 5990.0,
+            "floor_holds": 0,
+            "band_low": 5997.0,
+            "band_high": 6200.0,
+            "unbounded_below": 1,
+            "status": "settled",
+        },
+    )
+    for ts, centers in [
+        ("T1", {"gex": 6005.0, "control": 6000.0}),
+        ("T2", {"gex": 6000.0, "control": 6000.0}),
+    ]:
         for arm, center in centers.items():
-            dbmod.record_iteration(conn, iteration_ts=ts, trade_date=DAY, symbol="SPX", arm=arm,
-                                   center=center, center_reason="atm", underlying_price=6000.0)
-    dbmod.record_decision(conn, trade_date=DAY, arm="gex", symbol="SPX", mode="legged",
-                          reason="credit_below_floor", center=6000.0, when=f"{DAY}T09:50:00")
-    dbmod.record_decision(conn, trade_date=DAY, arm="gex", symbol="SPX", mode="legged",
-                          reason="entered", accepted=True, position_id="P1",
-                          when=f"{DAY}T11:25:00")
+            dbmod.record_iteration(
+                conn,
+                iteration_ts=ts,
+                trade_date=DAY,
+                symbol="SPX",
+                arm=arm,
+                center=center,
+                center_reason="atm",
+                underlying_price=6000.0,
+            )
+    dbmod.record_decision(
+        conn,
+        trade_date=DAY,
+        arm="gex",
+        symbol="SPX",
+        mode="legged",
+        reason="credit_below_floor",
+        center=6000.0,
+        when=f"{DAY}T09:50:00",
+    )
+    dbmod.record_decision(
+        conn,
+        trade_date=DAY,
+        arm="gex",
+        symbol="SPX",
+        mode="legged",
+        reason="entered",
+        accepted=True,
+        position_id="P1",
+        when=f"{DAY}T11:25:00",
+    )
 
 
 # --------------------------------------------------------------------------- dashboard
@@ -102,6 +193,27 @@ def test_api_arm_filter_narrows_history(conn):
     assert {t["arm"] for t in only_gex["history"]["trades"]} == {"gex"}
 
 
+def test_api_symbol_roster_and_filter(conn):
+    """The book moved SPX -> XSP; both eras stay in the ledger, so the symbol selector must offer
+    both and narrowing to one must actually narrow history, performance, and the today card."""
+    seeded(conn)  # all SPX, per test_analytics.position's default
+    position(conn, "X1", day=DAY, arm="gex", symbol="XSP", kind="fly", net=0.20, pnl=15.0)
+
+    everything = dashboard.build_api_data(conn, DAY)
+    assert set(everything["symbols"]) == {"SPX", "XSP"}
+    assert everything["selected_symbol"] == "ALL"
+
+    only_xsp = dashboard.build_api_data(conn, DAY, None, "XSP")
+    assert only_xsp["selected_symbol"] == "XSP"
+    assert {t["symbol"] for t in only_xsp["history"]["trades"]} == {"XSP"}
+    assert only_xsp["history"]["by_arm"][0]["net_pnl"] == 15.0
+    assert only_xsp["performance"]["all_time"]["net_pnl"] == 15.0
+    # Today's tiles/positions/books all narrow to the selected scope too, via session_overview --
+    # the whole card must tell one consistent story for whatever arm/symbol is picked.
+    assert {p["symbol"] for p in only_xsp["today"]["positions"]} == {"XSP"}
+    assert only_xsp["today"]["stats"]["net_pnl"] == 15.0
+
+
 def test_page_is_self_contained(conn):
     """A loopback page that fetched from a CDN would break offline and add a third-party dependency
     to a surface whose only job is reading a local SQLite file."""
@@ -124,9 +236,19 @@ def test_section_renders_the_payoff_curve_as_bars(conn):
 def test_section_states_the_band_alongside_the_floor(conn):
     """A floor without the band it holds over is the claim this module exists to avoid making."""
     position(conn, "P1", day=DAY, arm="control", kind="short_vertical", net=2.55, status="open")
-    dbmod.save_book(conn, {"book_id": f"{DAY}:control:SPX", "trade_date": DAY, "arm": "control",
-                           "symbol": "SPX", "credit_collected": 255.0, "debits_paid": 0.0,
-                           "fees": 3.44, "status": "open"})
+    dbmod.save_book(
+        conn,
+        {
+            "book_id": f"{DAY}:control:SPX",
+            "trade_date": DAY,
+            "arm": "control",
+            "symbol": "SPX",
+            "credit_collected": 255.0,
+            "debits_paid": 0.0,
+            "fees": 3.44,
+            "status": "open",
+        },
+    )
     payload = section.build_section(None, DAY, "control")
     assert any(m["label"] == "Floor holds" for m in payload["metrics"])
     assert "loses outside the band" in payload["subtitle"]
@@ -137,6 +259,23 @@ def test_section_on_an_empty_day_is_ok_not_an_error(conn):
     payload = section.build_section(None, DAY)
     assert payload["ok"] is True
     assert "no positions" in payload["title"].lower()
+    assert "timeseries" not in payload  # nothing recorded yet, so no trend either
+
+
+def test_section_carries_the_completion_trend(conn):
+    """The card draws rule 4's deciding number across sessions, not just today's blended rate."""
+    seeded(conn)
+    position(conn, "T1", day="2026-07-21", kind="fly")
+    position(conn, "T2", day="2026-07-21", kind="short_vertical")
+    payload = section.build_section(None, DAY, "gex")
+    ts = payload["timeseries"]
+    assert "2026-07-21" in ts["labels"]
+    assert ts["series"][0]["name"] == "completion %"
+    assert ts["series"][0]["values"][ts["labels"].index("2026-07-21")] == 50.0
+
+    # A morning with no positions yet still shows the history.
+    empty_day = section.build_section(None, "2026-07-25")
+    assert "timeseries" in empty_day and empty_day["timeseries"]["labels"] == ts["labels"]
 
 
 # --------------------------------------------------------------------------- EOD files
@@ -169,7 +308,10 @@ def test_paper_eod_leads_with_completion_not_pnl(conn):
     text = eodmod.build_paper_eod(conn, DAY)
     assert text.index("Completion rate") < text.index("Session P&L")
     assert "market never offered it" in text
-    assert "buffer too tight" in text.lower()
+    # The two gates are reported separately: completion needs D < C - fee_buffer AND a post-fee floor
+    # over min_floor_dollars, and lumping them together points at the wrong knob.
+    assert "blocked by fee_buffer" in text.lower()
+    assert "blocked by min_floor_dollars" in text.lower()
 
 
 def test_analysis_explains_the_counterfactual_split(conn):
@@ -191,8 +333,16 @@ def test_analysis_flags_high_arm_agreement_as_a_problem(conn):
     say so rather than let a month of useless data accumulate."""
     for ts in ("T1", "T2", "T3", "T4", "T5"):
         for arm in ("gex", "control"):
-            dbmod.record_iteration(conn, iteration_ts=ts, trade_date=DAY, symbol="SPX", arm=arm,
-                                   center=6000.0, center_reason="atm", underlying_price=6000.0)
+            dbmod.record_iteration(
+                conn,
+                iteration_ts=ts,
+                trade_date=DAY,
+                symbol="SPX",
+                arm=arm,
+                center=6000.0,
+                center_reason="atm",
+                underlying_price=6000.0,
+            )
     text = eodmod.build_eod_analysis(conn, DAY)
     assert "problem for the experiment" in text
 
@@ -206,8 +356,15 @@ def test_analysis_on_an_empty_day_still_says_something_useful(conn):
 def test_analysis_distinguishes_no_trades_from_no_data(conn):
     """The distinction that decides whether a barren day means anything: was it the market, or was it
     our plumbing?"""
-    dbmod.record_decision(conn, trade_date=DAY, arm="gex", symbol="SPX", mode="legged",
-                          reason="missing_leg_quotes", when=f"{DAY}T10:00:00")
+    dbmod.record_decision(
+        conn,
+        trade_date=DAY,
+        arm="gex",
+        symbol="SPX",
+        mode="legged",
+        reason="missing_leg_quotes",
+        when=f"{DAY}T10:00:00",
+    )
     text = eodmod.build_eod_analysis(conn, DAY)
     assert "we had no data, not that there was no trade" in text
 
@@ -224,6 +381,8 @@ def test_every_report_number_comes_from_analytics(conn):
     seeded(conn)
     stats = analytics.stats_for_period(conn, DAY, DAY)
     text = eodmod.build_paper_eod(conn, DAY)
-    assert f"${stats['net_pnl']:,.2f}" in text
+    from cherrypick.core import viz
+
+    assert viz.fmt_money(stats["net_pnl"]) in text
     payload = dashboard.build_api_data(conn, DAY)
     assert payload["today"]["stats"]["net_pnl"] == stats["net_pnl"]

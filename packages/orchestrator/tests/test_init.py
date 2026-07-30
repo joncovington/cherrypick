@@ -20,8 +20,11 @@ def test_validate_clean_config_has_no_errors():
     cfg = {
         "timezone": "America/New_York",
         "modules": {
-            "meic": {"enabled": True, "repo": "https://x/cherrypick-meic.git",
-                     "paper": {"trade_schema": "meic_ic"}},
+            "meic": {
+                "enabled": True,
+                "repo": "https://x/cherrypick-meic.git",
+                "paper": {"trade_schema": "meic_ic"},
+            },
         },
         "notify": {"channels": ["log", "desktop"]},
     }

@@ -33,7 +33,9 @@ def _strategy_config(config: dict) -> dict:
     return config.get("strategies", {}).get("iron_condor", {})
 
 
-def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
+def fetch_price_and_term_structure(
+    symbol: str, earnings_date: date, earnings_timing: str, config: dict
+) -> dict:
     """Live price + term structure/expected move via scanner.py's shared
     helpers. Mirrors iron_fly.py's fetch_price_and_term_structure exactly
     except there is no atm_delta_abs sanity check (that existed to confirm
@@ -64,7 +66,11 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
         front_call, front_put, back_call = atm["front_call"], atm["front_put"], atm["back_call"]
 
         ts = scanner.compute_expected_move_and_term_structure(
-            front_call["mid"], front_put["mid"], front_call["iv"], back_call["iv"], price,
+            front_call["mid"],
+            front_put["mid"],
+            front_call["iv"],
+            back_call["iv"],
+            price,
         )
         liquidity = scanner.fetch_liquidity_criteria(symbol, front_exp, expirations, front_call, front_put)
 
@@ -77,7 +83,7 @@ def fetch_price_and_term_structure(symbol: str, earnings_date: date, earnings_ti
             if realized_moves:
                 mean_realized = sum(realized_moves) / len(realized_moves)
                 variance = sum((m - mean_realized) ** 2 for m in realized_moves) / len(realized_moves)
-                realized_move_dispersion = variance ** 0.5
+                realized_move_dispersion = variance**0.5
             else:
                 realized_move_dispersion = None
 
@@ -136,23 +142,10 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
         if criteria["realized_move_dispersion_pct"] > max_dispersion:
             hard_fail.append("realized_move_too_inconsistent")
 
-    near_miss: list[str] = []
+    scanner.apply_liquidity_gates(criteria, config, hard_fail)
+    scanner.apply_soft_criteria(criteria, config, hard_fail)
 
-    scanner.apply_liquidity_gates(criteria, config, hard_fail, near_miss)
-    scanner._band(criteria.get("avg_volume"), config["min_avg_volume"], config["near_miss_min_avg_volume"], "avg_volume", near_miss, hard_fail)
-    scanner._band(criteria.get("iv_rv_ratio"), config["min_iv_rv_ratio"], config["near_miss_min_iv_rv_ratio"], "iv_rv_ratio", near_miss, hard_fail)
-    scanner._band(criteria.get("winrate"), config["min_winrate"], config["near_miss_min_winrate"], "winrate", near_miss, hard_fail)
-
-    if hard_fail:
-        tier = "Reject"
-    elif not near_miss:
-        tier = "Tier 1"
-    elif len(near_miss) == 1:
-        tier = "Tier 2"
-    else:
-        tier = "Near Miss"
-
-    return {"tier": tier, "hard_fail_reasons": hard_fail, "near_miss_reasons": near_miss}
+    return {"accepted": not hard_fail, "reject_reasons": hard_fail}
 
 
 def _wing_width_multiple(iv_rv_ratio: float | None, config: dict) -> float:
@@ -171,7 +164,9 @@ def _wing_width_multiple(iv_rv_ratio: float | None, config: dict) -> float:
     return config.get("wing_width_multiple_high", 3.5)
 
 
-def fetch_iron_condor_order(symbol: str, earnings_date: date, earnings_timing: str, full_config: dict) -> dict:
+def fetch_iron_condor_order(
+    symbol: str, earnings_date: date, earnings_timing: str, full_config: dict
+) -> dict:
     """Build a concrete, tradeable iron condor order spec: sell a strangle
     at the expected-move boundaries, buy wings sized by _wing_width_multiple()
     from each short strike outward. Mirrors fetch_iron_fly_order's structure
@@ -205,10 +200,20 @@ def fetch_iron_condor_order(symbol: str, earnings_date: date, earnings_timing: s
 
         # Wide strike window: need both short strikes (out at the
         # expected-move boundary) and wings potentially far beyond them.
-        front_chain = scanner.call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
-            "--include_quotes", "--strike_count", "40", "--around_price", str(price),
-        ])
+        front_chain = scanner.call_tt(
+            [
+                "get_option_chain",
+                "--symbol",
+                symbol,
+                "--expiration",
+                str(front_exp),
+                "--include_quotes",
+                "--strike_count",
+                "40",
+                "--around_price",
+                str(price),
+            ]
+        )
         if not front_chain.get("ok"):
             return {"ok": False, "error": front_chain.get("error", "get_option_chain failed")}
         entries = front_chain["chain"][str(front_exp)]
@@ -228,8 +233,12 @@ def fetch_iron_condor_order(symbol: str, earnings_date: date, earnings_timing: s
         wing_multiple = _wing_width_multiple(iv_rv_ratio, config)
         wing_width = wing_multiple * strangle_credit
 
-        long_call = scanner.nearest_strike_entry(entries, "call", short_call_strike + wing_width, short_call_strike)
-        long_put = scanner.nearest_strike_entry(entries, "put", short_put_strike - wing_width, short_put_strike)
+        long_call = scanner.nearest_strike_entry(
+            entries, "call", short_call_strike + wing_width, short_call_strike
+        )
+        long_put = scanner.nearest_strike_entry(
+            entries, "put", short_put_strike - wing_width, short_put_strike
+        )
         if long_call is None or long_put is None:
             return {"ok": False, "error": "no valid wing strikes found"}
         if long_call.get("mid") is None or long_put.get("mid") is None:
@@ -243,10 +252,30 @@ def fetch_iron_condor_order(symbol: str, earnings_date: date, earnings_timing: s
             "price": round(net_credit, 2),
             "price_effect": "Credit",
             "legs": [
-                {"symbol": short_call["symbol"], "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1},
-                {"symbol": short_put["symbol"], "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1},
-                {"symbol": long_call["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
-                {"symbol": long_put["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
+                {
+                    "symbol": short_call["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Sell to Open",
+                    "quantity": 1,
+                },
+                {
+                    "symbol": short_put["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Sell to Open",
+                    "quantity": 1,
+                },
+                {
+                    "symbol": long_call["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Buy to Open",
+                    "quantity": 1,
+                },
+                {
+                    "symbol": long_put["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Buy to Open",
+                    "quantity": 1,
+                },
             ],
         }
         return {
@@ -303,7 +332,9 @@ def cmd_get_candidates(args) -> dict:
     """
     config = scanner._load_config()
     strategy_config = _strategy_config(config)
-    return scanner.run_candidate_scan(args.date, config, fetch_price_and_term_structure, apply_tiering, strategy_config)
+    return scanner.run_candidate_scan(
+        args.date, config, fetch_price_and_term_structure, apply_tiering, strategy_config
+    )
 
 
 def main() -> None:

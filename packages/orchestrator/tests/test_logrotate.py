@@ -49,9 +49,11 @@ def test_archives_only_finished_months(tmp_path):
     assert res["ok"]
 
     # June files are zipped per scope; the archive tree exists.
-    for scope, name in (("suite", "eod-digest-2026-06-10.md"),
-                        ("meic", "paper-eod-2026-06-11.md"),
-                        ("earnings", "eod-analysis-2026-06-11.md")):
+    for scope, name in (
+        ("suite", "eod-digest-2026-06-10.md"),
+        ("meic", "paper-eod-2026-06-11.md"),
+        ("earnings", "eod-analysis-2026-06-11.md"),
+    ):
         z = root / "archive" / "2026-06" / f"{scope}.zip"
         assert z.exists(), f"missing {z}"
         with zipfile.ZipFile(z) as zf:

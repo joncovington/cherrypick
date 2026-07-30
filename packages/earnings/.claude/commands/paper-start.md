@@ -6,23 +6,23 @@ description: Run one day's cycle of the strategy-testing paper book (see docs/st
 
 Runs one full open→close cycle of the forced-sampling strategy test
 (`src/strategy_test_runner.py`, see `docs/strategy-testing-plan.md`):
-checks the dolt/tastytrade connections, opens every Tier 1/2 candidate
-into the `profile='strat_test'` paper book, then closes them all the
-following morning. Used both for the initial Week 0 validation (confirm
-all 10 strategies construct, size, cost-adjust, persist, and close with no
-error) and for every day of the Weeks 1-8 accumulation phase — re-invoke
-it daily. This is a **separate program** from the live/paper trading loop
-(`/earnings-start`) — it never touches `db.py`, never calls `tt.py
-execute_trade`, and writes only to the isolated `profile='strat_test'`
-book in the shared paper database, so it's safe to run alongside
-`/earnings-start` the same day.
+checks the dolt/tastytrade connections, opens every strategy that clears
+the screen on every viable symbol into the per-strategy strat_test paper
+books, then closes them all the following morning. Used both for the
+initial Week 0 validation (confirm every strategy constructs, sizes,
+cost-adjusts, persists, and closes with no error) and for every day of the
+Weeks 1-8 accumulation phase — re-invoke it daily. This is a **separate
+program** from the live/paper trading loop (`/earnings-start`) — it never
+touches `db.py`, never calls `tt.py execute_trade`, and writes only to the
+isolated strat_test books in the shared paper database, so it's safe to
+run alongside `/earnings-start` the same day.
 
 ## What to do when this command runs
 
 **Before starting**: check `.claude/strategy_test_lock` for a live PID.
 This is a **separate lock from `.claude/scheduled_tasks.lock`** (the
 live-loop's own) — the two can run concurrently, since this only ever
-writes `profile='strat_test'` rows. If another `/paper-start` session
+writes strat_test rows (`profile='strat_test:<strategy>'`). If another `/paper-start` session
 already holds this lock, stop and tell the user instead of starting a
 second one (double-entries into the same test book would corrupt the
 sample).
@@ -43,11 +43,11 @@ sample).
 
 3. **At the entry window**, run:
    ```
-   python src/strategy_test_runner.py run_entries --date <today MM/DD/YYYY> --profile balanced
+   python src/strategy_test_runner.py run_entries --date <today MM/DD/YYYY>
    ```
    Report the result clearly: how many (strategy, symbol) pairs opened,
    broken down by strategy, and how many were skipped with their reasons
-   (tier-excluded, risk-cap-exceeded, order-build-failed, etc.). A
+   (screen-rejected, risk-cap-exceeded, order-build-failed, etc.). A
    strategy opening zero trades tonight is not a bug — check the skip
    reasons before assuming something's wrong.
 
@@ -57,7 +57,7 @@ sample).
 
 5. **At the close window**, run:
    ```
-   python src/strategy_test_runner.py run_closes --profile balanced
+   python src/strategy_test_runner.py run_closes
    ```
    Report closed trades with P&L (gross and cost-adjusted per
    `entry_cost`/`exit_cost`), and any skips.
@@ -73,10 +73,11 @@ sample).
 /paper-start
 ```
 
-No options — this always runs the fixed `balanced` sizing profile (100k
-capital, `risk_pct_multiplier` 1.0) per the strategy-testing plan's "fixed
-testing basis" design, so results aren't confounded by which risk profile
-was active.
+No options — sizing always uses the single `available_capital_paper_mode`
+basis per the strategy-testing plan's "fixed testing basis" design, so
+per-strategy results aren't confounded by differing capital or risk
+settings. Each strategy accumulates in its own book by default
+(`strat_test_portfolio: "per_strategy"`).
 
 ## When to use
 
@@ -97,10 +98,10 @@ open→close cycle, then ends. Invoke it:
 - Same account-gate checks the live loop uses. Run
   `python src/tt.py get_connection_status` directly to diagnose.
 
-**Everything skipped with `tier_excluded_Tier 3` or no candidates at all**
-- Normal on a quiet night — the shared calendar scan found nothing
-  Tier 1/2 tonight. Re-run tomorrow; a single quiet night doesn't mean the
-  harness is broken.
+**Everything skipped with `screen_rejected` or no candidates at all**
+- Normal on a quiet night — nothing on the shared calendar scan cleared
+  the screen tonight. Re-run tomorrow; a single quiet night doesn't mean
+  the harness is broken.
 
 **`order_build_failed` or `leg_quotes_unavailable` for a specific strategy**
 - A live chain/quote call failed for that (symbol, strategy) pair at
@@ -110,5 +111,5 @@ open→close cycle, then ends. Invoke it:
 ## See also
 
 - `docs/strategy-testing-plan.md` — full multi-week plan this cycle feeds
-- `docs/paper-trading-profiles.md` — the risk-profile testing program this reuses later
+- `docs/strat-test-portfolios.md` — the per-strategy paper-book model this writes into
 - `/earnings-start` — the actual live/paper trading loop (separate program, separate lock)

@@ -50,12 +50,16 @@ RTH_CLOSE_MIN = 16 * 60
 DEFAULT_SETTLE_MIN = 16 * 60 + 20
 
 _TASK_NAME = "cherrypick-flies-paper-loop"
-# Every 2 minutes, matching MEIC. This cadence is load-bearing for THIS strategy in a way it is not
-# for MEIC: the completing spread of a legged fly can cheapen transiently, so a slower poll measures
-# a lower completion rate — the module's headline number — for reasons that have nothing to do with
-# the market. Note that any discrete poll underestimates what a resting limit order would catch live,
-# so the completion rate measured here is a floor on that count and a ceiling on live fill quality.
-_TASK_INTERVAL_MIN = 2
+# Every minute — the OS scheduler's floor. This cadence is load-bearing for THIS strategy in a way
+# it is not for MEIC (which stays at 2): the completing spread of a legged fly can cheapen
+# transiently, so a slower poll measures a lower completion rate — the module's headline number —
+# for reasons that have nothing to do with the market. Tightened 2 -> 1 on 2026-07-29 with the XSP
+# move: XSP premiums run ~1/10 of SPX against the same absolute fee stack, so the completion gate
+# clears by smaller margins and inter-tick dips matter proportionally more. Note that any discrete
+# poll underestimates what a resting limit order would catch live, so the completion rate measured
+# here is a floor on that count and a ceiling on live fill quality. Going below 1 minute would mean
+# a resident process instead of the self-healing scheduled task — a different reliability model.
+_TASK_INTERVAL_MIN = 1
 _NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
@@ -107,8 +111,7 @@ def _setup_logging() -> None:
 
     target.parent.mkdir(parents=True, exist_ok=True)
     fmt = logging.Formatter("[%(asctime)s] %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
-    handler = RotatingFileHandler(target, maxBytes=5 * 1024 * 1024, backupCount=5,
-                                  encoding="utf-8")
+    handler = RotatingFileHandler(target, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8")
     handler.setFormatter(fmt)
     _logger.addHandler(handler)
     # RotatingFileHandler subclasses StreamHandler, so the check has to exclude it explicitly or the
@@ -138,8 +141,8 @@ def settle_time_min(config: dict) -> int:
 
 
 def session_already_settled(conn, day: str) -> bool:
-    """Have this day's books been closed out? The marker is book state, so a task firing every two
-    minutes after the close settles once and then no-ops.
+    """Have this day's books been closed out? The marker is book state, so a task firing every
+    minute after the close settles once and then no-ops.
 
     This was the existence of `paper-eod-<day>.md`, which made the marker something any process able
     to create a file could set. On 2026-07-20 the test suite did exactly that against the real
@@ -151,8 +154,8 @@ def session_already_settled(conn, day: str) -> bool:
     settlement once so the day gets its roll-up and its report.
     """
     total, settled = conn.execute(
-        "SELECT COUNT(*), COALESCE(SUM(status = 'settled'), 0) FROM fly_books WHERE trade_date = ?",
-        (day,)).fetchone()
+        "SELECT COUNT(*), COALESCE(SUM(status = 'settled'), 0) FROM fly_books WHERE trade_date = ?", (day,)
+    ).fetchone()
     return total > 0 and total == settled
 
 
@@ -181,8 +184,11 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
     settled = session_already_settled(conn, day)
     if past_settle and not settled:
         _log(f"past settle time ({now_min // 60:02d}:{now_min % 60:02d}) — settling {day}")
-        return {"ok": True, "settled_session": True,
-                **run_settle(config, conn, cache_path=cache_path, when=when)}
+        return {
+            "ok": True,
+            "settled_session": True,
+            **run_settle(config, conn, cache_path=cache_path, when=when),
+        }
 
     if not force and not in_session(now_min):
         # A settled day is silent for the rest of the evening, and silence is what a dead loop looks
@@ -191,16 +197,18 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
         # the task fires ~700 times a day and a line per tick would bury the session it surrounds.
         if past_settle and settled and now_min % 60 < _TASK_INTERVAL_MIN:
             _log(f"{day} settled — idle until the next session")
-        return {"ok": True, "skipped": "outside_rth", "now_min": now_min,
-                "session_settled": settled}
+        return {"ok": True, "skipped": "outside_rth", "now_min": now_min, "session_settled": settled}
 
     arms = climod.enabled_arms(config)
     results = []
     for symbol in config.get("symbols", ["SPX"]):
         snapshot = provider.build_snapshot(
-            cache_path, symbol, when=when,
+            cache_path,
+            symbol,
+            when=when,
             max_quote_age_seconds=config.get("defaults", {}).get(
-                "max_quote_age_seconds", provider.DEFAULT_MAX_QUOTE_AGE_SECONDS),
+                "max_quote_age_seconds", provider.DEFAULT_MAX_QUOTE_AGE_SECONDS
+            ),
         )
         if not snapshot.get("ok"):
             # Not an error. A streamer still warming up, or a symbol with no fresh quotes, is an
@@ -208,17 +216,30 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
             # refusal to fly_snapshots too: the arm loop below never runs on a refusal, so without
             # this the tick leaves no trace and a feed outage looks identical to a quiet market.
             _log(f"{symbol}: no snapshot ({snapshot['reason']})")
-            dbmod.record_snapshot(conn, trade_date=day, symbol=symbol, status=snapshot["reason"],
-                                  quotes_rejected=snapshot.get("rejected"))
+            dbmod.record_snapshot(
+                conn,
+                trade_date=day,
+                symbol=symbol,
+                status=snapshot["reason"],
+                quotes_rejected=snapshot.get("rejected"),
+            )
             results.append({"symbol": symbol, "ok": False, "reason": snapshot["reason"]})
             continue
 
         stats = snapshot["quote_stats"]
-        _log(f"{symbol}: spot {snapshot['underlying_price']:.2f} dte {snapshot['dte']} "
-             f"quotes {stats['fresh']} fresh / {stats['rejected']} rejected")
-        dbmod.record_snapshot(conn, trade_date=day, symbol=symbol, status="ok",
-                              quotes_fresh=stats["fresh"], quotes_rejected=stats["rejected"],
-                              underlying_price=snapshot["underlying_price"])
+        _log(
+            f"{symbol}: spot {snapshot['underlying_price']:.2f} dte {snapshot['dte']} "
+            f"quotes {stats['fresh']} fresh / {stats['rejected']} rejected"
+        )
+        dbmod.record_snapshot(
+            conn,
+            trade_date=day,
+            symbol=symbol,
+            status="ok",
+            quotes_fresh=stats["fresh"],
+            quotes_rejected=stats["rejected"],
+            underlying_price=snapshot["underlying_price"],
+        )
         for arm in arms:
             outcome = bookmod.process_snapshot(snapshot, config, conn, arm)
             for action in outcome["actions"]:
@@ -228,8 +249,7 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
     return {"ok": True, "iterations": len(results), "results": results}
 
 
-def run_settle(config: dict, conn, *, cache_path: str, when=None,
-               price: float | None = None) -> dict:
+def run_settle(config: dict, conn, *, cache_path: str, when=None, price: float | None = None) -> dict:
     """Settle every book for the session at the settlement price.
 
     Caveat worth knowing when reading the results: `price` defaults to the last streamed trade, which
@@ -246,20 +266,26 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None,
         # once and cannot be undone. Refuse rather than settle the session against an old number —
         # the operator can re-run with --price once the feed recovers, or with the official print.
         settle_max_age = config.get("defaults", {}).get("settlement_max_age_seconds", 300)
-        settlement = (price if price is not None
-                      else provider.read_spot(cache_path, symbol, max_age_seconds=settle_max_age))
+        settlement = (
+            price
+            if price is not None
+            else provider.read_spot(cache_path, symbol, max_age_seconds=settle_max_age)
+        )
         if settlement is None:
-            _log(f"{symbol}: cannot settle — no price within {settle_max_age}s "
-                 f"(feed stale or down). Re-run with --price once it recovers.")
+            _log(
+                f"{symbol}: cannot settle — no price within {settle_max_age}s "
+                f"(feed stale or down). Re-run with --price once it recovers."
+            )
             out.append({"symbol": symbol, "ok": False, "reason": "no_settlement_price"})
             continue
         source = "explicit" if price is not None else "last_trade"
         for arm in climod.enabled_arms(config):
             result = bookmod.settle_book(conn, trade_date, arm, symbol, settlement, config)
-            _log(f"{symbol} [{arm}] settled at {settlement:.2f} ({source}): "
-                 f"P&L {result['pnl']:+.2f}, stats {result['stats']}")
-            out.append({"symbol": symbol, "arm": arm, "ok": True,
-                        "settlement_source": source, **result})
+            _log(
+                f"{symbol} [{arm}] settled at {settlement:.2f} ({source}): "
+                f"P&L {result['pnl']:+.2f}, stats {result['stats']}"
+            )
+            out.append({"symbol": symbol, "arm": arm, "ok": True, "settlement_source": source, **result})
 
     # Only write the reports if something actually settled.
     #
@@ -278,7 +304,7 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None,
 
 # --------------------------------------------------------------------------- scheduled task
 def _pythonw() -> str:
-    """pythonw.exe where available, so the every-2-minute run is genuinely headless — a console
+    """pythonw.exe where available, so the every-minute run is genuinely headless — a console
     window flashing up 200 times a session would make the machine unusable."""
     candidate = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
     return candidate if os.path.exists(candidate) else sys.executable
@@ -287,8 +313,9 @@ def _pythonw() -> str:
 def task_installed() -> bool:
     if os.name != "nt":
         return False
-    r = subprocess.run(["schtasks", "/Query", "/TN", _TASK_NAME],
-                       capture_output=True, text=True, creationflags=_NO_WINDOW)
+    r = subprocess.run(
+        ["schtasks", "/Query", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
+    )
     return r.returncode == 0
 
 
@@ -300,27 +327,56 @@ def install_task() -> dict:
     of its own and cannot disagree with the engine about when the day starts or ends.
     """
     if os.name != "nt":
-        return {"ok": False, "error": "scheduled-task install is Windows-only; elsewhere run "
-                                      "`python src/paper_loop.py --interval 120` or use cron"}
+        return {
+            "ok": False,
+            "error": "scheduled-task install is Windows-only; elsewhere run "
+            "`python src/paper_loop.py --interval 120` or use cron",
+        }
     tr = f'"{_pythonw()}" "{os.path.abspath(__file__)}" --once'
-    r = subprocess.run(["schtasks", "/Create", "/TN", _TASK_NAME, "/TR", tr,
-                        "/SC", "MINUTE", "/MO", str(_TASK_INTERVAL_MIN), "/F", "/IT"],
-                       capture_output=True, text=True, creationflags=_NO_WINDOW)
+    r = subprocess.run(
+        [
+            "schtasks",
+            "/Create",
+            "/TN",
+            _TASK_NAME,
+            "/TR",
+            tr,
+            "/SC",
+            "MINUTE",
+            "/MO",
+            str(_TASK_INTERVAL_MIN),
+            "/F",
+            "/IT",
+        ],
+        capture_output=True,
+        text=True,
+        creationflags=_NO_WINDOW,
+    )
     ok = r.returncode == 0
     if ok:  # fire once now so the first tick isn't up to two minutes away
-        subprocess.run(["schtasks", "/Run", "/TN", _TASK_NAME],
-                       capture_output=True, text=True, creationflags=_NO_WINDOW)
-    return {"ok": ok, "task": _TASK_NAME, "cadence": f"every {_TASK_INTERVAL_MIN} min",
-            "detail": (r.stdout or r.stderr).strip()}
+        subprocess.run(
+            ["schtasks", "/Run", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
+        )
+    return {
+        "ok": ok,
+        "task": _TASK_NAME,
+        "cadence": f"every {_TASK_INTERVAL_MIN} min",
+        "detail": (r.stdout or r.stderr).strip(),
+    }
 
 
 def uninstall_task() -> dict:
     if os.name != "nt":
         return {"ok": False, "error": "Windows-only"}
-    subprocess.run(["schtasks", "/End", "/TN", _TASK_NAME],
-                   capture_output=True, text=True, creationflags=_NO_WINDOW)
-    r = subprocess.run(["schtasks", "/Delete", "/TN", _TASK_NAME, "/F"],
-                       capture_output=True, text=True, creationflags=_NO_WINDOW)
+    subprocess.run(
+        ["schtasks", "/End", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
+    )
+    r = subprocess.run(
+        ["schtasks", "/Delete", "/TN", _TASK_NAME, "/F"],
+        capture_output=True,
+        text=True,
+        creationflags=_NO_WINDOW,
+    )
     return {"ok": r.returncode == 0, "task": _TASK_NAME, "detail": (r.stdout or r.stderr).strip()}
 
 
@@ -329,10 +385,12 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
     today? Deliberately file-only — no broker, no network — so it stays safe on a watchdog path."""
     when = provider.now_et()
     today = when.date().isoformat()
-    books = [dict(r) for r in conn.execute(
-        "SELECT * FROM fly_books WHERE trade_date = ?", (today,)).fetchall()]
-    positions = conn.execute(
-        "SELECT COUNT(*) FROM fly_positions WHERE trade_date = ?", (today,)).fetchone()[0]
+    books = [
+        dict(r) for r in conn.execute("SELECT * FROM fly_books WHERE trade_date = ?", (today,)).fetchall()
+    ]
+    positions = conn.execute("SELECT COUNT(*) FROM fly_positions WHERE trade_date = ?", (today,)).fetchone()[
+        0
+    ]
 
     # Can we actually SEE the market right now? This module has no streamer of its own, so when the
     # upstream one stalls we go blind and can do nothing about it but say so.
@@ -343,9 +401,13 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
     # that as perfect health. Observed 2026-07-20: 53 such lines during an 8-minute streamer stall,
     # with nothing anywhere reporting a problem.
     probe = provider.build_snapshot(
-        cache_path, (config.get("symbols") or ["SPX"])[0], when=when,
+        cache_path,
+        (config.get("symbols") or ["SPX"])[0],
+        when=when,
         max_quote_age_seconds=config.get("defaults", {}).get(
-            "max_quote_age_seconds", provider.DEFAULT_MAX_QUOTE_AGE_SECONDS))
+            "max_quote_age_seconds", provider.DEFAULT_MAX_QUOTE_AGE_SECONDS
+        ),
+    )
     data_ok = bool(probe.get("ok"))
     return {
         "ok": True,
@@ -374,17 +436,21 @@ def main(argv=None) -> int:
     ap.add_argument("--db")
     ap.add_argument("--stream-cache", help="override MEIC's stream cache path")
     ap.add_argument("--once", action="store_true", help="run a single iteration")
-    ap.add_argument("--interval", type=int, metavar="SECONDS",
-                    help="run continuously until the close")
+    ap.add_argument("--interval", type=int, metavar="SECONDS", help="run continuously until the close")
     ap.add_argument("--settle", action="store_true", help="cash-settle today's books")
     ap.add_argument("--price", type=float, help="explicit settlement price (see --settle)")
     ap.add_argument("--status", action="store_true")
-    ap.add_argument("--install-task", action="store_true",
-                    help=f"register the recurring {_TASK_NAME} task (every "
-                         f"{_TASK_INTERVAL_MIN} min; Windows)")
+    ap.add_argument(
+        "--install-task",
+        action="store_true",
+        help=f"register the recurring {_TASK_NAME} task (every {_TASK_INTERVAL_MIN} min; Windows)",
+    )
     ap.add_argument("--uninstall-task", action="store_true")
-    ap.add_argument("--eod-reports", action="store_true",
-                    help="rewrite paper-eod / eod-analysis for a day without re-settling")
+    ap.add_argument(
+        "--eod-reports",
+        action="store_true",
+        help="rewrite paper-eod / eod-analysis for a day without re-settling",
+    )
     ap.add_argument("--date", help="with --eod-reports, the day (YYYY-MM-DD); default today")
     ap.add_argument("--force", action="store_true", help="ignore the RTH session gate")
     args = ap.parse_args(argv)
@@ -412,8 +478,11 @@ def main(argv=None) -> int:
         print(json.dumps(eodmod.write_reports(conn, day), indent=2, default=str))
         return 0
     if args.settle:
-        print(json.dumps(run_settle(config, conn, cache_path=cache_path, price=args.price),
-                         indent=2, default=str))
+        print(
+            json.dumps(
+                run_settle(config, conn, cache_path=cache_path, price=args.price), indent=2, default=str
+            )
+        )
         return 0
     if args.interval:
         _log(f"loop starting, interval {args.interval}s, cache {cache_path}")
@@ -423,8 +492,9 @@ def main(argv=None) -> int:
         _log("session closed")
         return 0
     if args.once:
-        print(json.dumps(run_once(config, conn, cache_path=cache_path, force=args.force),
-                         indent=2, default=str))
+        print(
+            json.dumps(run_once(config, conn, cache_path=cache_path, force=args.force), indent=2, default=str)
+        )
         return 0
 
     ap.error("choose one of --once, --interval, --settle, --status")

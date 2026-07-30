@@ -9,9 +9,9 @@ MEIC's streamer wrapper. It carries NONE of MEIC's trading policy: no ORB captur
 subscriptions, no account REST poller, no ``127.0.0.1:7699`` HTTP API. Those stay in MEIC's wrapper
 (``packages/meic/src/streamer.py``); a live-trading module layers them onto the same shared engine.
 
-Credentials come from the OS keyring under the suite's shared service (``"meicagent"``, with a read-only
-fallback to the pre-rename ``"tastytrade-mcp"``), so a box that already has the suite's tastytrade OAuth
-stored needs no re-entry.
+Credentials come from the OS keyring under the ``"meicagent"`` service, with read-only fallbacks to the
+pre-rename ``"tastytrade-mcp"`` and the suite's shared broker login (``"cherrypick-broker"``), so a box
+that already has the suite's tastytrade OAuth stored — under any of the three — needs no re-entry.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ _CORE = Path(__file__).resolve().parent / "_core"
 if _CORE.is_dir() and str(_CORE) not in sys.path:
     sys.path.insert(0, str(_CORE))
 
-from cherrypick.core.auth import CredentialStore, SessionManager  # noqa: E402
+from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager  # noqa: E402
 from cherrypick.core.streamer import ChainStreamer  # noqa: E402
 
 import config as _config  # noqa: E402
@@ -39,7 +39,10 @@ import registry as _registry  # noqa: E402
 logger = logging.getLogger("cherrypick-streamer")
 
 _SERVICE = "meicagent"
-_LEGACY = "tastytrade-mcp"
+# Read-only fallbacks, in order: the pre-rename service, then the suite's shared broker login
+# (cherrypick-broker) — the same chain the module stores use, so a box whose per-module copies were
+# migrated into the shared service (core.auth migrate deletes the source) still authenticates.
+_LEGACY = ("tastytrade-mcp", SHARED_SERVICE)
 
 # Self-reported staleness threshold (mirrors MEIC's 600s). The orchestrator computes its own, tighter age
 # from oldest_event_age_s and does not trust this flag — it exists only for a human running --status.
@@ -52,7 +55,7 @@ def make_session_factory():
     thread_local: the engine's DXLink loop needs a session bound to its own event loop (tastytrade's
     Session holds a loop-bound httpx client) — see ``cherrypick.core.auth``.
     """
-    store = CredentialStore(_SERVICE, legacy_service_names=(_LEGACY,))
+    store = CredentialStore(_SERVICE, legacy_service_names=_LEGACY)
     return SessionManager(store, thread_local=True).get_session
 
 
@@ -117,11 +120,13 @@ def _pid_alive(pid: int) -> bool:
     # psutil, then the Win32 OpenProcess probe, then os.kill as a last resort.
     try:
         import psutil  # type: ignore
+
         return bool(psutil.pid_exists(pid))
     except ImportError:
         pass
     try:
         import ctypes
+
         synchronize = 0x00100000
         handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, pid)
         if handle:
@@ -237,8 +242,12 @@ def run_daemon(cfg: dict, symbols: list[str] | None = None) -> int:
     pid_file.parent.mkdir(parents=True, exist_ok=True)
     pid_file.write_text(str(os.getpid()))
     logger.info("cherrypick-streamer PID %d written to %s", os.getpid(), pid_file)
-    logger.info("Streaming %s (registry union) -> %s (±%d strikes each)", streamer.symbols,
-                _config.cache_path(cfg), streamer.window_strike_count)
+    logger.info(
+        "Streaming %s (registry union) -> %s (±%d strikes each)",
+        streamer.symbols,
+        _config.cache_path(cfg),
+        streamer.window_strike_count,
+    )
 
     try:
         streamer.run()  # blocks with reconnect/backoff until SIGTERM/SIGINT

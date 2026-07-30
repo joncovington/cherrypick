@@ -88,11 +88,14 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:
 
         # Candidate expirations for this underlying, nearest first. The underlying_symbol filter
         # matters: XSP and SPX share 0DTE dates, so an expiration-only match would blend two chains.
-        exps = [r["expiration"] for r in conn.execute(
-            "SELECT expiration FROM stream_chain WHERE underlying_symbol = ? "
-            "GROUP BY expiration ORDER BY ABS(JULIANDAY(expiration) - JULIANDAY('now'))",
-            (symbol,),
-        )]
+        exps = [
+            r["expiration"]
+            for r in conn.execute(
+                "SELECT expiration FROM stream_chain WHERE underlying_symbol = ? "
+                "GROUP BY expiration ORDER BY ABS(JULIANDAY(expiration) - JULIANDAY('now'))",
+                (symbol,),
+            )
+        ]
         if not exps:
             return GexSnapshot(symbol=symbol, spot=spot, expiration=None)
 
@@ -119,12 +122,14 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:
                 if not sym:
                     continue
                 cand_syms.append(sym)
-                cand_entries.append({
-                    "strike_price":        opt.get("strike_price"),
-                    "streamer_symbol":     sym,
-                    "option_type":         opt.get("option_type"),
-                    "shares_per_contract": opt.get("shares_per_contract") or 100,
-                })
+                cand_entries.append(
+                    {
+                        "strike_price": opt.get("strike_price"),
+                        "streamer_symbol": sym,
+                        "option_type": opt.get("option_type"),
+                        "shares_per_contract": opt.get("shares_per_contract") or 100,
+                    }
+                )
             if not cand_syms:
                 continue
             if cand == exps[0]:  # remember the nearest as the fallback
@@ -132,7 +137,8 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:
             ph = ", ".join("?" * len(cand_syms))
             has_greeks = conn.execute(
                 f"SELECT COUNT(*) FROM stream_greeks WHERE symbol IN ({ph}) "
-                "AND gamma IS NOT NULL AND gamma != 0", cand_syms,
+                "AND gamma IS NOT NULL AND gamma != 0",
+                cand_syms,
             ).fetchone()[0]
             if has_greeks:
                 expiration, entries, chain_syms = cand, cand_entries, cand_syms
@@ -151,15 +157,24 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:
                     "iv": _normalise_iv(float(r["iv"] or 0)),
                 }
             # Live OI comes from DXLink Summary events (stream_oi), never the static chain metadata.
-            for r in conn.execute(f"SELECT symbol, open_interest FROM stream_oi WHERE symbol IN ({ph})", chain_syms):
+            for r in conn.execute(
+                f"SELECT symbol, open_interest FROM stream_oi WHERE symbol IN ({ph})", chain_syms
+            ):
                 oi[r["symbol"]] = int(r["open_interest"] or 0)
             # Live per-option volume comes from DXLink Trade events (stream_trades.volume).
-            for r in conn.execute(f"SELECT symbol, volume FROM stream_trades WHERE symbol IN ({ph})", chain_syms):
+            for r in conn.execute(
+                f"SELECT symbol, volume FROM stream_trades WHERE symbol IN ({ph})", chain_syms
+            ):
                 volume[r["symbol"]] = int(r["volume"] or 0)
 
         return GexSnapshot(
-            symbol=symbol, spot=spot, expiration=expiration,
-            chain_entries=entries, greeks=greeks, oi=oi, volume=volume,
+            symbol=symbol,
+            spot=spot,
+            expiration=expiration,
+            chain_entries=entries,
+            greeks=greeks,
+            oi=oi,
+            volume=volume,
         )
     finally:
         conn.close()

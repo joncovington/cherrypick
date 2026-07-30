@@ -41,7 +41,8 @@ it's what the code actually reads.
 | `correlation_block_list` | Sector/date groupings you don't want opened simultaneously (e.g. two banks reporting the same night). Empty by default — see the note in `CLAUDE.md`: correlation risk isn't fully guarded today, so treat this as a partial mitigation, not a complete one. |
 | `reprice_interval_s` / `reprice_step` | Live-mode only: how often (seconds) and by how much an unfilled limit order reprices toward the market while working an entry. |
 | `tastytrade_costs` | Fee model for paper-mode cost-adjusted P&L — see below. |
-| `profiles` | Named risk profiles for paper-mode testing — see below. |
+| `symbol_screen` | Per-criterion strictness for the five soft screening criteria — see below. |
+| `strat_test_portfolio` | How the forced-sampling test buckets trades into books (`per_strategy` vs `combined`) — see below. |
 | `strategies` | Per-strategy parameter blocks — see below. |
 
 ---
@@ -73,49 +74,58 @@ do change.
 
 ---
 
-## `profiles`
+## `symbol_screen`
 
-Named risk profiles for paper-mode testing (see `docs/paper-trading-profiles.md` for the full
-rationale). Each layers on top of the base config: strategy defaults → per-strategy overrides →
-profile overrides.
+Sets how strictly each of the five **soft** screening criteria is applied. The hard filters
+(price, front-expiration window, open interest, term structure, ATM delta, expected move, weekly
+cadence, bid/ask spread) always apply and aren't listed here — only these five are configurable.
+See [Screening Criteria](./screening-criteria.md) for what each criterion checks.
 
 ```json
-"profiles": {
-  "conservative": {
-    "description": "Tightest sizing, Tier 1 only.",
-    "available_capital_paper_mode": 100000,
-    "risk_pct_multiplier": 0.6,
-    "max_concurrent_earnings_positions": 2,
-    "tier_floor": "Tier 1"
-  },
-  "balanced": {
-    "description": "Base-tuned sizing, Tier 1+2.",
-    "available_capital_paper_mode": 100000,
-    "risk_pct_multiplier": 1.0,
-    "max_concurrent_earnings_positions": 3,
-    "tier_floor": "Tier 2"
-  },
-  "aggressive": {
-    "description": "Larger sizing and more concurrent positions, Tier 1+2.",
-    "available_capital_paper_mode": 100000,
-    "risk_pct_multiplier": 1.6,
-    "max_concurrent_earnings_positions": 5,
-    "tier_floor": "Tier 2"
-  }
+"symbol_screen": {
+  "avg_volume": "pass",
+  "winrate": "pass",
+  "iv_rv_ratio": "pass",
+  "market_cap": "pass",
+  "combined_option_volume": "pass"
 }
 ```
 
-- `risk_pct_multiplier` scales every strategy's `max_risk_per_trade_pct` up or down.
-- `tier_floor` is either `"Tier 1"` (only the highest-conviction candidates) or `"Tier 2"`
-  (Tier 1 and Tier 2 both eligible).
-- Selected via `--profile` on `strategy_test_runner.py run_entries` / `run_closes`
-  (`python src/strategy_test_runner.py run_entries --date MM/DD/YYYY --profile balanced`).
-  Omitting `--profile` leaves the base config unchanged (an implicit `"default"` profile — no
-  multiplier, no tier floor beyond whatever each strategy's own tiering produces).
-- This is a paper-testing tool, not a live-trading feature — it exists so
-  `strategy_test_runner.py` can compare how the same night's candidates would size and tier
-  under different risk appetites, all writing to the same `profile='strat_test'` book tagged
-  by profile name.
+Each of the five is independently set to one of:
+
+- `"pass"` (the default for all five) — the candidate must clear the strict `min_*` threshold in
+  `strategies.<name>` for that criterion.
+- `"near_miss"` — the candidate only needs to clear the looser `near_miss_min_*` threshold. This
+  is the configurable stand-in for what used to be a fixed near-miss band: it tolerates a
+  marginal name on that one dimension instead of rejecting it outright.
+- `"off"` — the criterion isn't screened at all.
+
+The per-strategy `min_*` / `near_miss_min_*` thresholds still live under `strategies.<name>`
+(see below); `symbol_screen` just decides which of the two — or neither — is enforced. Screening
+stays a single **accept/reject** decision regardless of these levels; loosening a criterion to
+`"near_miss"` or `"off"` only widens what counts as accepted.
+
+---
+
+## `strat_test_portfolio`
+
+Controls how the forced-sampling strategy test (`strategy_test_runner.py`, see
+`docs/strat-test-portfolios.md`) buckets its paper trades into books via the `profile` column.
+
+```json
+"strat_test_portfolio": "per_strategy"
+```
+
+- `"per_strategy"` (default) — each strategy's forced-sampling trades are tagged
+  `strat_test:<strategy>` (e.g. `strat_test:iron_fly`), giving every strategy its own book —
+  its own P&L and equity curve. A newly added strategy automatically gets its own stream.
+- `"combined"` — all forced-sampling trades share a single `strat_test` book (the original
+  behavior), one blended P&L across every strategy.
+
+Reporting (`strategy_report.py` / `strategy_dashboard.py`) and the orchestrator's
+`report`/`calibrate` group by that book tag; a `--profile strat_test` request matches the whole
+family (the combined book plus all `strat_test:<strategy>` sub-books). Sizing basis for the test
+is just `available_capital_paper_mode` — there's no per-book capital or risk multiplier.
 
 ---
 
@@ -135,7 +145,7 @@ config block):
 |---|---|
 | `min_price` | Underlying price floor. |
 | `max_bid_ask_spread_pct` | Max ATM bid-ask spread as a fraction of mid — the shared liquidity gate. `0.15` (15%) is generous enough to tolerate normal earnings-week widening while still catching genuinely illiquid chains. |
-| `min_market_cap` / `near_miss_min_market_cap` | Market-cap floor (and a looser "near miss" floor used for tiering rather than an outright reject) via a live REST lookup. |
+| `min_market_cap` / `near_miss_min_market_cap` | Market-cap floor (strict) and a looser floor used when `market_cap` is set to `"near_miss"` in `symbol_screen`, via a live REST lookup. |
 | `min_combined_option_volume` / `near_miss_min_combined_option_volume` | Front-month, chain-wide daily contract volume floor. |
 | `min_combined_open_interest` | Front-month chain-wide open interest floor, sourced from on-demand DXLink `Summary` events. |
 | `require_weekly_options` | If `true`, hard-rejects names without a genuine weekly expiration cadence. Small/mid-cap names with only monthly options can legitimately fail here by construction — that's expected, not a bug. |

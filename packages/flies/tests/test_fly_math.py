@@ -5,6 +5,16 @@ import pytest
 import fly
 
 
+def test_slippage_frac_is_cores_single_source_of_truth():
+    """One fill model across the suite: fly.py's slippage fraction is core's
+    `slippage_frac_of_spread` by import, and the suite-calibrated value is 0.125
+    (a deliberate change to the fill model must update core and this pin together)."""
+    from cherrypick.core import fees as _fees
+
+    assert fly.DEFAULT_SLIPPAGE_FRAC is _fees.DEFAULT_COSTS["slippage_frac_of_spread"]
+    assert fly.DEFAULT_SLIPPAGE_FRAC == 0.125
+
+
 # --------------------------------------------------------------------------- payoffs
 @pytest.mark.parametrize("offset", [-100, -10, -5, -2.5, 0, 2.5, 5, 10, 100])
 def test_fly_payoff_is_bounded_zero_to_width(offset):
@@ -66,8 +76,15 @@ def test_fly_debit_charges_slippage_on_the_doubled_center():
 
 # --------------------------------------------------------------------------- floors
 def legged_fly(net, fees=0.0):
-    return {"kind": "fly", "side": "put", "center": 6000, "wing_width": 5,
-            "net": net, "quantity": 1, "fees": fees}
+    return {
+        "kind": "fly",
+        "side": "put",
+        "center": 6000,
+        "wing_width": 5,
+        "net": net,
+        "quantity": 1,
+        "fees": fees,
+    }
 
 
 def test_fly_held_for_a_credit_cannot_lose():
@@ -82,7 +99,7 @@ def test_fees_can_flip_the_floor_negative():
     """The failure mode that actually matters. A thin credit legged in against two SPX fee stacks is
     NOT risk-free, and the module has to be able to say so rather than reporting the gross credit."""
     fees = fly.vertical_open_fee("SPX", 1) * 2
-    thin = legged_fly(0.02, fees=fees)   # $2 of credit against ~$7 of fees
+    thin = legged_fly(0.02, fees=fees)  # $2 of credit against ~$7 of fees
     assert fly.position_floor(thin) < 0
     assert not fly.is_risk_free(thin)
 
@@ -93,8 +110,15 @@ def test_fees_can_flip_the_floor_negative():
 def test_short_vertical_floor_is_full_defined_risk():
     """The branch a legged entry lands in when the completion never happens — and the one it would be
     dishonest to describe as risk-free."""
-    position = {"kind": "short_vertical", "side": "put", "center": 6000, "wing_width": 5,
-                "net": 1.50, "quantity": 1, "fees": 0.0}
+    position = {
+        "kind": "short_vertical",
+        "side": "put",
+        "center": 6000,
+        "wing_width": 5,
+        "net": 1.50,
+        "quantity": 1,
+        "fees": 0.0,
+    }
     assert fly.position_floor(position) == -350.0
     assert not fly.is_risk_free(position)
 
@@ -119,8 +143,15 @@ def test_book_funded_by_a_short_vertical_is_only_green_in_a_band():
     green the middle of the risk graph looks. This distinction is the module's whole reason to
     report a band alongside the floor."""
     positions = [
-        {"kind": "short_vertical", "side": "put", "center": 6000, "wing_width": 5,
-         "net": 1.45, "quantity": 1, "fees": 0.0},
+        {
+            "kind": "short_vertical",
+            "side": "put",
+            "center": 6000,
+            "wing_width": 5,
+            "net": 1.45,
+            "quantity": 1,
+            "fees": 0.0,
+        },
         {**legged_fly(-0.50), "center": 6020},
     ]
     result = fly.book_floor(positions)
@@ -128,6 +159,115 @@ def test_book_funded_by_a_short_vertical_is_only_green_in_a_band():
     assert result["unbounded_below"] is True
     low, high = result["band"]
     assert low <= 6000 <= high
+
+
+def test_book_with_two_profit_zones_reports_a_band_that_never_spans_the_trough():
+    """The strategy's own premise is a FOREST — several profit zones with losing troughs
+    between them. The band must be one CONTIGUOUS non-negative zone (the one holding the
+    payoff maximum), not a min/max over every green grid point, which would claim the
+    floor holds across a trough where the book loses money."""
+    positions = [
+        # Two debit flies far enough apart that the region between them is negative.
+        {
+            "kind": "fly",
+            "side": "call",
+            "center": 6000,
+            "wing_width": 5,
+            "net": -1.00,
+            "quantity": 1,
+            "fees": 0.0,
+        },  # peak +400 at 6000, -100 away
+        {
+            "kind": "fly",
+            "side": "call",
+            "center": 6100,
+            "wing_width": 10,
+            "net": -0.50,
+            "quantity": 1,
+            "fees": 0.0,
+        },  # peak +950 at 6100, -50 away
+    ]
+    result = fly.book_floor(positions)
+    assert result["floor_holds"] is False
+    # The trough between the flies is genuinely negative...
+    assert fly.book_pnl(positions, 6050) < 0
+    # ...and there are exactly two zones, neither containing the trough.
+    assert len(result["bands"]) == 2
+    for low, high in result["bands"]:
+        assert not (low <= 6050 <= high)
+    # The headline band is the zone around the payoff maximum (6100), and it must not
+    # reach back across the trough toward the other fly's zone.
+    low, high = result["band"]
+    assert low <= 6100 <= high
+    assert low > 6050
+    # The two zones are the flies' own profitable neighborhoods.
+    (a_low, a_high), (b_low, b_high) = sorted(result["bands"])
+    assert a_low <= 6000 <= a_high
+    assert b_low <= 6100 <= b_high
+
+
+def test_single_zone_band_equals_its_only_zone():
+    positions = [
+        {
+            "kind": "short_vertical",
+            "side": "put",
+            "center": 6000,
+            "wing_width": 5,
+            "net": 1.45,
+            "quantity": 1,
+            "fees": 0.0,
+        },
+        {**legged_fly(-0.50), "center": 6020},
+    ]
+    result = fly.book_floor(positions)
+    assert len(result["bands"]) == 1
+    assert result["band"] == result["bands"][0]
+
+
+def test_book_negative_everywhere_has_no_band_and_no_zones():
+    # A short vertical whose credit can't cover its own fees anywhere: net 0.01 credit,
+    # huge fees — every grid point is negative.
+    positions = [
+        {
+            "kind": "short_vertical",
+            "side": "put",
+            "center": 6000,
+            "wing_width": 5,
+            "net": 0.01,
+            "quantity": 1,
+            "fees": 500.0,
+        }
+    ]
+    result = fly.book_floor(positions)
+    assert result["floor_holds"] is False
+    assert result["band"] is None
+    assert result["bands"] == []
+
+
+@pytest.mark.parametrize(
+    "centers",
+    [
+        (6000, 6010),
+        (6000, 6040),
+        (6000, 6100),
+        (6000, 6200),
+        (6000, 6015, 6120),
+        (5950, 6000, 6050),
+    ],
+)
+@pytest.mark.parametrize("net", [-1.00, -0.40, 0.20])
+def test_band_endpoints_and_midpoint_are_never_negative(centers, net):
+    """Property sweep over book shapes: whatever the zone structure, every reported band
+    must be genuinely non-negative at its endpoints and midpoint — the exact claim the
+    old min/max band violated whenever the forest had a trough."""
+    positions = [
+        {"kind": "fly", "side": "call", "center": c, "wing_width": 5, "net": net, "quantity": 1, "fees": 0.0}
+        for c in centers
+    ]
+    result = fly.book_floor(positions)
+    for low, high in result["bands"]:
+        for x in (low, high, (low + high) / 2):
+            assert fly.book_pnl(positions, x) >= -1e-6, f"band ({low}, {high}) claims non-negative at {x}"
 
 
 def test_book_cash_splits_credits_debits_and_fees():

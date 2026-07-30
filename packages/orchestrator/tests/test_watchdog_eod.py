@@ -34,8 +34,11 @@ def _write_eod(logs, name, day="2026-07-21"):
 
 
 def _cfg(digest=True, insight=False, deadline="16:45"):
-    return {"eod_digest": {"enabled": digest, "deadline": deadline},
-            "eod_insight": {"enabled": insight}, "modules": {}}
+    return {
+        "eod_digest": {"enabled": digest, "deadline": deadline},
+        "eod_insight": {"enabled": insight},
+        "modules": {},
+    }
 
 
 def _now(h, m, day=21):
@@ -96,3 +99,19 @@ def test_both_disabled_does_nothing(eod_env):
     _write_eod(eod_env["logs"], "meic"), _write_eod(eod_env["logs"], "flies")
     wd._check_eod(_cfg(digest=False, insight=False), _now(16, 30), is_trading=True)
     assert eod_env["launched"] == []
+
+
+def test_advise_fires_on_the_same_completion_event(eod_env):
+    _write_eod(eod_env["logs"], "meic"), _write_eod(eod_env["logs"], "flies")
+    cfg = _cfg(insight=True)
+    cfg["advise"] = {"enabled": True, "modules": {"meic": {"enabled": True}}}
+    wd._check_eod(cfg, _now(16, 30), is_trading=True)
+    assert eod_env["launched"] == ["notify-eod", "eod-insight", "advise"]
+
+
+def test_advise_needs_both_flags(eod_env):
+    _write_eod(eod_env["logs"], "meic"), _write_eod(eod_env["logs"], "flies")
+    cfg = _cfg(digest=False, insight=False)
+    cfg["advise"] = {"enabled": True, "modules": {"meic": {"enabled": False}}}
+    wd._check_eod(cfg, _now(16, 30), is_trading=True)
+    assert eod_env["launched"] == []  # no module opted in -> nothing to fire

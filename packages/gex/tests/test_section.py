@@ -3,10 +3,15 @@
 import section
 
 _CANNED = {
-    "ok": True, "symbol": "SPX", "expiration": "2026-07-10", "underlying_price": 7575.39,
+    "ok": True,
+    "symbol": "SPX",
+    "expiration": "2026-07-10",
+    "underlying_price": 7575.39,
     "source": "stream_cache",
-    "series": [{"strike": 7500, "net_gex": -1e9, "net_gex_vol": -2e8},
-               {"strike": 7600, "net_gex": 3e9, "net_gex_vol": 5e8}],
+    "series": [
+        {"strike": 7500, "net_gex": -1e9, "net_gex_vol": -2e8},
+        {"strike": 7600, "net_gex": 3e9, "net_gex_vol": 5e8},
+    ],
     "totals": {"net_gex": 2e9, "zero_gamma": 7470.0, "call_wall": 7600, "put_wall": 7525},
 }
 

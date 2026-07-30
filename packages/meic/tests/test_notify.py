@@ -3,6 +3,7 @@
 Writes to _LOG_PATH are redirected to a tmp_path file via monkeypatch so no
 real logs/agent.log is touched.
 """
+
 from __future__ import annotations
 
 import argparse

@@ -18,7 +18,7 @@ import subprocess
 from typing import Any
 
 from . import config as cfgmod
-from .util import first_json
+from .util import CREATE_NO_WINDOW, first_json
 
 
 def enabled_sections(cfg: dict[str, Any]) -> list[dict[str, Any]]:
@@ -61,8 +61,12 @@ def fetch(section_cfg: dict[str, Any], params: dict[str, str] | None = None, tim
         return {"ok": False, "error": "section has no fetch_argv"}
     try:
         proc = subprocess.run(
-            [cfgmod.python_exe(), *argv], cwd=str(root),
-            capture_output=True, text=True, timeout=timeout,
+            [cfgmod.python_exe(), *argv],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            creationflags=CREATE_NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": f"section timed out after {timeout}s"}

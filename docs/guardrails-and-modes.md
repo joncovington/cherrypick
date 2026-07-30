@@ -58,6 +58,15 @@ only the write to the keyring uses the full number.
 **Credentials in the OS keyring only** — broker OAuth tokens (in the modules) and Slack/Discord webhooks
 (in the orchestrator) live in the OS keyring, never in files, env vars, or logs.
 
+**The shared-credential model** (see [onboarding-redesign.md](onboarding-redesign.md)): the tastytrade
+login lives once in the shared `cherrypick-broker` keyring service, which every module's store reads
+*through* as a fallback; a module's own service, when set, always wins — that's the override and
+per-module rotation layer, and it's what `connect --module` writes. The suite-wide account designation
+follows the same shape (shared default, per-module override). Secrets are still only ever typed into
+module/core child processes with the tty inherited — the orchestrator process never sees a bearer
+secret; the status surfaces (doctor's onboarding line, the Live Ops card) show presence and *source*
+(own/shared/missing), never values.
+
 **Portable paths, disciplined layout.** Never hardcode absolute paths, usernames, hostnames (except
 `127.0.0.1`/`localhost`), or drive letters — derive from `Path(__file__)`, an env var, or config. Runtime
 files live under `~/.cherrypick`, not the checkout; scratch work goes in a gitignored `.tmp/`.

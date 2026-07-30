@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import socket
 import sqlite3
 import sys
 import threading
@@ -13,17 +12,26 @@ import urllib.parse
 import webbrowser
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from socketserver import ThreadingMixIn
 
-import paths as _paths
+_CORE = str(Path(__file__).resolve().parent / "_core")
+if os.path.isdir(_CORE) and _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+from cherrypick.core import viz  # noqa: E402
+
+import paths as _paths  # noqa: E402
 
 # ── Timezone helpers ─────────────────────────────────────────────────────────
 
 try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
     from zoneinfo import ZoneInfo
+
     _ET = ZoneInfo("America/New_York")
 except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
+
     _ET = pytz.timezone("America/New_York")
 
 
@@ -47,11 +55,12 @@ def _month_start() -> str:
 def _year_start() -> str:
     return datetime.now(_ET).strftime("%Y-01-01")
 
+
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
-_DB_PATH        = str(_paths.live_db_path())
-_PAPER_DB_PATH  = str(_paths.paper_db_path())
-_CACHE_DB_PATH  = str(_paths.stream_cache_path())
+_DB_PATH = str(_paths.live_db_path())
+_PAPER_DB_PATH = str(_paths.paper_db_path())
+_CACHE_DB_PATH = str(_paths.stream_cache_path())
 # "live" (default, meic_trades.db) or "paper" (paper_trades.db) in the data home — set from --mode
 # in main(). Drives the PAPER MODE banner; _DB_PATH itself is the only thing that changes
 # which data actually gets served. _CACHE_DB_PATH (the streamer cache) is never mode-dependent
@@ -77,6 +86,7 @@ def _one(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> dict | None:
 
 # ── Stats helpers ─────────────────────────────────────────────────────────────
 
+
 def _wl_ratio(wins: int, losses: int) -> float | None:
     total = (wins or 0) + (losses or 0)
     return round((wins or 0) / total * 100, 1) if total > 0 else None
@@ -88,9 +98,7 @@ def _fetch_spread_legs(conn: sqlite3.Connection, ic_order_ids: list[str]) -> dic
     if not ic_order_ids:
         return {}
     placeholders = ", ".join(["?"] * len(ic_order_ids))
-    rows = _rows(conn,
-        f"SELECT * FROM ic_spread_legs WHERE ic_order_id IN ({placeholders})",
-        ic_order_ids)
+    rows = _rows(conn, f"SELECT * FROM ic_spread_legs WHERE ic_order_id IN ({placeholders})", ic_order_ids)
     legs: dict[str, dict[str, dict]] = {}
     for r in rows:
         legs.setdefault(r["ic_order_id"], {})[r["side"]] = r
@@ -109,7 +117,9 @@ def _leg_outcome(leg_status: str | None, leg_pnl: float | None) -> tuple[int, in
     return (0, 0)
 
 
-def _spread_wins_losses(trade_status: str, trade_pnl: float | None, put_leg: dict | None, call_leg: dict | None) -> tuple[int, int]:
+def _spread_wins_losses(
+    trade_status: str, trade_pnl: float | None, put_leg: dict | None, call_leg: dict | None
+) -> tuple[int, int]:
     """Return (spread_wins, spread_losses) for one IC, counting each leg separately.
     Prefers real per-leg records. A side with no leg row is either (a) part of a
     legacy trade recorded before per-leg tracking existed — both sides then share
@@ -142,8 +152,13 @@ def _spread_wins_losses(trade_status: str, trade_pnl: float | None, put_leg: dic
     return (pw + cw, pl_ + cl_)
 
 
-def _stats_for_period(conn: sqlite3.Connection, start: str | None = None, end: str | None = None,
-                       symbol: str | None = None, profile: str | None = None) -> dict:
+def _stats_for_period(
+    conn: sqlite3.Connection,
+    start: str | None = None,
+    end: str | None = None,
+    symbol: str | None = None,
+    profile: str | None = None,
+) -> dict:
     """Compute stats for a date range, querying ic_trades directly for accuracy.
     start/end are inclusive YYYY-MM-DD strings; omit to mean unbounded. symbol filters to
     one traded symbol; omit (or "ALL") for the account-wide total across every symbol —
@@ -165,26 +180,29 @@ def _stats_for_period(conn: sqlite3.Connection, start: str | None = None, end: s
     if profile and profile.upper() != "ALL" and _has_column(conn, "ic_trades", "risk_profile"):
         where.append("risk_profile = ?")
         params.append(profile)
-    rows = _rows(conn,
-        f"SELECT ic_order_id, pnl, status FROM ic_trades WHERE {' AND '.join(where)}",
-        params)
-    legs = _fetch_spread_legs(conn, [r["ic_order_id"] for r in rows])
+    rows = _rows(
+        conn, f"SELECT ic_order_id, pnl, fees, status FROM ic_trades WHERE {' AND '.join(where)}", params
+    )
     net_pnl = 0.0
     total_trades = 0
     wins = 0
     losses = 0
+    # One win definition module-wide (matches db._range_stats_for_rows and the orchestrator's
+    # calibrate reading): a resolved trade whose net P&L (pnl - fees) is positive. The per-side
+    # spread lens (_spread_wins_losses) is a per-row display, never a headline win rate.
     for r in rows:
         net_pnl += float(r.get("pnl") or 0)
         total_trades += 1
-        trade_legs = legs.get(r["ic_order_id"], {})
-        w, loss = _spread_wins_losses(r.get("status"), r.get("pnl"), trade_legs.get("put"), trade_legs.get("call"))
-        wins += w
-        losses += loss
+        if r.get("pnl") is not None:
+            if float(r.get("pnl") or 0) - float(r.get("fees") or 0) > 0:
+                wins += 1
+            else:
+                losses += 1
     result = {
-        "net_pnl":      round(net_pnl, 2),
+        "net_pnl": round(net_pnl, 2),
         "total_trades": total_trades,
-        "wins":         wins,
-        "losses":       losses,
+        "wins": wins,
+        "losses": losses,
     }
     result["wl_ratio"] = _wl_ratio(wins, losses)
     return result
@@ -195,6 +213,12 @@ def _stats_for_period(conn: sqlite3.Connection, start: str | None = None, end: s
 # anchored on — matches the paper-trading plan's $100k-per-profile convention so
 # figures read identically here and in the weekly paper report.
 _BANKROLL_BASE = 100000
+
+# The wing-width study's forced-sampling arms (config.risk.json), in the fixed display order the
+# Width-study chart draws them: the three pinned widths, then the paired adaptive-policy arm.
+# conservative is deliberately excluded here — it's a reference curve, not part of the controlled
+# comparison (see docs/paper-experiments.md).
+WIDTH_STUDY_ARMS = ["width-2", "width-5", "width-10", "width-adaptive"]
 
 
 def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
@@ -214,8 +238,9 @@ def _period_bucket_key(granularity: str, trade_date: str) -> str:
     return trade_date
 
 
-def _pnl_series(conn: sqlite3.Connection, granularity: str, symbol: str | None = None,
-                 profile: str | None = None) -> list[dict]:
+def _pnl_series(
+    conn: sqlite3.Connection, granularity: str, symbol: str | None = None, profile: str | None = None
+) -> list[dict]:
     """Time-bucketed net P&L / win-rate / profit-factor series for the Performance view.
 
     Reuses _stats_for_period's exact WHERE clause and net_pnl convention (sum of the `pnl`
@@ -235,18 +260,29 @@ def _pnl_series(conn: sqlite3.Connection, granularity: str, symbol: str | None =
     if profile and _has_column(conn, "ic_trades", "risk_profile"):
         where.append("risk_profile = ?")
         params.append(profile)
-    rows = _rows(conn,
+    rows = _rows(
+        conn,
         f"SELECT ic_order_id, trade_date, pnl, fees, net_credit, status FROM ic_trades "
-        f"WHERE {' AND '.join(where)} ORDER BY trade_date", params)
-    legs = _fetch_spread_legs(conn, [r["ic_order_id"] for r in rows])
+        f"WHERE {' AND '.join(where)} ORDER BY trade_date",
+        params,
+    )
 
     buckets: dict[str, dict] = {}
     for r in rows:
         key = _period_bucket_key(granularity, r["trade_date"])
-        b = buckets.setdefault(key, {
-            "period": key, "net_pnl": 0.0, "gross_credit": 0.0, "fees": 0.0,
-            "trades": 0, "wins": 0, "losses": 0, "trade_pnls": [],
-        })
+        b = buckets.setdefault(
+            key,
+            {
+                "period": key,
+                "net_pnl": 0.0,
+                "gross_credit": 0.0,
+                "fees": 0.0,
+                "trades": 0,
+                "wins": 0,
+                "losses": 0,
+                "trade_pnls": [],
+            },
+        )
         pnl = float(r.get("pnl") or 0)
         b["net_pnl"] += pnl
         b["gross_credit"] += float(r.get("net_credit") or 0)
@@ -254,10 +290,11 @@ def _pnl_series(conn: sqlite3.Connection, granularity: str, symbol: str | None =
         b["trades"] += 1
         if r.get("pnl") is not None:
             b["trade_pnls"].append(pnl)
-        trade_legs = legs.get(r["ic_order_id"], {})
-        w, loss = _spread_wins_losses(r.get("status"), r.get("pnl"), trade_legs.get("put"), trade_legs.get("call"))
-        b["wins"] += w
-        b["losses"] += loss
+            # Same net-P&L win definition as _stats_for_period / db._range_stats_for_rows.
+            if pnl - float(r.get("fees") or 0) > 0:
+                b["wins"] += 1
+            else:
+                b["losses"] += 1
 
     series = sorted(buckets.values(), key=lambda b: b["period"])
     running = 0.0
@@ -304,14 +341,14 @@ def _risk_metrics(daily_series: list[dict], bankroll: float = _BANKROLL_BASE) ->
             return None
         m = sum(values) / len(values)
         var = sum((v - m) ** 2 for v in values) / (len(values) - 1)
-        return var ** 0.5
+        return var**0.5
 
     sd = _stdev(returns)
-    sharpe = round(mean_r / sd * (252 ** 0.5), 3) if sd else None
+    sharpe = round(mean_r / sd * (252**0.5), 3) if sd else None
 
     downside = [r for r in returns if r < 0]
     dd_sd = _stdev(downside) if len(downside) >= 2 else None
-    sortino = round(mean_r / dd_sd * (252 ** 0.5), 3) if dd_sd else None
+    sortino = round(mean_r / dd_sd * (252**0.5), 3) if dd_sd else None
 
     total_return = sum(returns)
     max_dd = max((b["drawdown"] for b in daily_series), default=0.0)
@@ -323,8 +360,11 @@ def _risk_metrics(daily_series: list[dict], bankroll: float = _BANKROLL_BASE) ->
     recovery_factor = round(net_pnl_total / max_dd, 3) if max_dd > 0 else None
 
     return {
-        "sharpe": sharpe, "sortino": sortino, "calmar": calmar,
-        "recovery_factor": recovery_factor, "sample_size": n,
+        "sharpe": sharpe,
+        "sortino": sortino,
+        "calmar": calmar,
+        "recovery_factor": recovery_factor,
+        "sample_size": n,
         # Overfit flags per docs/paper-trading.md's graduation-gate notes — Sharpe > 3 or
         # profit_factor > 4.0 is a curve-fit warning, not a stronger pass.
         "sharpe_overfit_flag": sharpe is not None and sharpe > 3,
@@ -332,6 +372,7 @@ def _risk_metrics(daily_series: list[dict], bankroll: float = _BANKROLL_BASE) ->
 
 
 # ── Per-spread status ─────────────────────────────────────────────────────────
+
 
 def _badge(label: str, btype: str) -> dict:
     return {"label": label, "type": btype}
@@ -358,7 +399,9 @@ def _leg_badge(leg: dict | None) -> dict | None:
     return _badge(status or "unknown", "unknown")
 
 
-def _spread_statuses(trade: dict, put_leg: dict | None = None, call_leg: dict | None = None) -> tuple[dict, dict]:
+def _spread_statuses(
+    trade: dict, put_leg: dict | None = None, call_leg: dict | None = None
+) -> tuple[dict, dict]:
     """Per-spread status badges. Uses real ic_spread_legs rows when available. A side
     with no leg row is either (a) part of a legacy trade recorded before per-leg
     tracking existed — both sides then show the same whole-trade-derived badge — or
@@ -373,11 +416,11 @@ def _spread_statuses(trade: dict, put_leg: dict | None = None, call_leg: dict | 
         time_str = s[11:16] if len(s) >= 16 else ""
 
     monitoring = _badge("monitoring", "monitoring")
-    expired    = _badge("expired",    "expired")
-    pending    = _badge("pending",    "pending")
-    cancelled  = _badge("cancelled",  "cancelled")
-    force      = _badge("force closed", "force_closed")
-    stopped    = _badge(f"STOPPED {time_str}".strip(), "stopped")
+    expired = _badge("expired", "expired")
+    pending = _badge("pending", "pending")
+    cancelled = _badge("cancelled", "cancelled")
+    force = _badge("force closed", "force_closed")
+    stopped = _badge(f"STOPPED {time_str}".strip(), "stopped")
 
     if put_leg is None and call_leg is None:
         if status in ("pending", "partial_entry"):
@@ -425,7 +468,10 @@ _HIST_TRADE_COLS = (
     "ic_order_id, trade_date, symbol, risk_profile, entry_time, exit_time, "
     "put_strike, call_strike, wing_width, net_credit, quantity, "
     "put_credit, call_credit, status, session_quality, "
-    "iv_rank_at_entry, iv_skew_signal, price_action_signal, "
+    # iv_skew_signal / price_action_signal deliberately not selected: the paper engine
+    # leaves both NULL (they were the retired agent loop's fields), so shipping them in
+    # every payload invites analysis over columns that are all NULL by construction.
+    "iv_rank_at_entry, "
     "put_delta_at_entry, call_delta_at_entry, "
     "exit_reason, pnl, fees, ai_entry_reasoning"
 )
@@ -435,8 +481,10 @@ def _history_trades(conn, sym_filter, prof_filter, limit=1000):
     """Full Today's-Trades-shape rows across every date (newest first), for the filterable
     trade log. Client filters/sorts within this window; the server just scopes by the two
     global selectors (symbol, profile) and caps the set."""
-    sql = (f"SELECT {_HIST_TRADE_COLS} FROM ic_trades "
-           "WHERE status NOT IN ('cancelled','pending','partial_entry')")
+    sql = (
+        f"SELECT {_HIST_TRADE_COLS} FROM ic_trades "
+        "WHERE status NOT IN ('cancelled','pending','partial_entry')"
+    )
     params: list = []
     if sym_filter:
         sql += " AND symbol = ?"
@@ -470,9 +518,12 @@ def _by_profile_compare(conn, sym_filter):
     if sym_filter:
         where.append("symbol = ?")
         params.append(sym_filter)
-    rows = _rows(conn,
+    rows = _rows(
+        conn,
         f"SELECT risk_profile, trade_date, entry_time, pnl, fees FROM ic_trades "
-        f"WHERE {' AND '.join(where)} ORDER BY risk_profile, trade_date, entry_time", params)
+        f"WHERE {' AND '.join(where)} ORDER BY risk_profile, trade_date, entry_time",
+        params,
+    )
     groups: dict[str, list] = {}
     for r in rows:
         groups.setdefault(r["risk_profile"], []).append(r)
@@ -483,7 +534,12 @@ def _by_profile_compare(conn, sym_filter):
         gross = sum(float(r.get("pnl") or 0) for r in rs)
         fees = sum(float(r.get("fees") or 0) for r in rs)
         net = gross - fees
-        wins = sum(1 for x in nets if x > 0)
+        # Win rate over RESOLVED trades only (pnl recorded), same denominator as
+        # db._range_stats_for_rows -- an open trade is not a loss yet.
+        resolved_nets = [
+            float(r.get("pnl") or 0) - float(r.get("fees") or 0) for r in rs if r.get("pnl") is not None
+        ]
+        wins = sum(1 for x in resolved_nets if x > 0)
         gw = sum(x for x in nets if x > 0)
         gl = abs(sum(x for x in nets if x <= 0))
         running = peak = maxdd = 0.0
@@ -491,17 +547,19 @@ def _by_profile_compare(conn, sym_filter):
             running += x
             peak = max(peak, running)
             maxdd = max(maxdd, peak - running)
-        out.append({
-            "profile":       prof,
-            "trades":        trades,
-            "gross_pnl":     round(gross, 2),
-            "fees":          round(fees, 2),
-            "net_pnl":       round(net, 2),
-            "win_rate_pct":  round(wins / trades * 100, 1) if trades else None,
-            "expectancy":    round(net / trades, 2) if trades else None,
-            "profit_factor": round(gw / gl, 2) if gl > 0 else None,
-            "max_drawdown":  round(maxdd, 2),
-        })
+        out.append(
+            {
+                "profile": prof,
+                "trades": trades,
+                "gross_pnl": round(gross, 2),
+                "fees": round(fees, 2),
+                "net_pnl": round(net, 2),
+                "win_rate_pct": round(wins / len(resolved_nets) * 100, 1) if resolved_nets else None,
+                "expectancy": round(net / trades, 2) if trades else None,
+                "profit_factor": round(gw / gl, 2) if gl > 0 else None,
+                "max_drawdown": round(maxdd, 2),
+            }
+        )
     out.sort(key=lambda d: d["net_pnl"], reverse=True)
     return out
 
@@ -529,12 +587,16 @@ def _by_signal(conn, sym_clause, sym_params):
     price-action signals are captured columns but the paper engine leaves them NULL, and stored
     entry_time mixes timezones, so neither is surfaced.) Honours both global filters via
     sym_clause."""
-    rows = _rows(conn, f"""
+    rows = _rows(
+        conn,
+        f"""
         SELECT trade_date, symbol, call_delta_at_entry, wing_width, pnl, fees
         FROM ic_trades
         WHERE pnl IS NOT NULL
           AND status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
-    """, sym_params)
+    """,
+        sym_params,
+    )
 
     def agg(keyfn, order=None):
         buckets: dict[str, dict] = {}
@@ -550,12 +612,14 @@ def _by_signal(conn, sym_clause, sym_params):
                 b["wins"] += 1
         result = []
         for k, b in buckets.items():
-            result.append({
-                "bucket":       k,
-                "trades":       b["trades"],
-                "avg_pnl":      round(b["net_sum"] / b["trades"], 2) if b["trades"] else None,
-                "win_rate_pct": round(b["wins"] / b["trades"] * 100, 1) if b["trades"] else None,
-            })
+            result.append(
+                {
+                    "bucket": k,
+                    "trades": b["trades"],
+                    "avg_pnl": round(b["net_sum"] / b["trades"], 2) if b["trades"] else None,
+                    "win_rate_pct": round(b["wins"] / b["trades"] * 100, 1) if b["trades"] else None,
+                }
+            )
         if order:
             idx = {v: i for i, v in enumerate(order)}
             result.sort(key=lambda d: idx.get(d["bucket"], len(order)))
@@ -576,16 +640,18 @@ def _by_signal(conn, sym_clause, sym_params):
         return (str(int(w)) if float(w).is_integer() else str(w)) + "-wide"
 
     return {
-        "by_delta":  agg(lambda r: _delta_band(r.get("call_delta_at_entry")), _DELTA_BANDS),
-        "by_wing":   agg(_wing),
+        "by_delta": agg(lambda r: _delta_band(r.get("call_delta_at_entry")), _DELTA_BANDS),
+        "by_wing": agg(_wing),
         "by_symbol": agg(lambda r: r.get("symbol")),
-        "by_dow":    agg(_dow, _DOW_ORDER),
+        "by_dow": agg(_dow, _DOW_ORDER),
     }
 
 
 def _daily_pnl(conn, sym_clause, sym_params):
     """Per-date gross/fees/net + trade count for the calendar heatmap. Honours both filters."""
-    rows = _rows(conn, f"""
+    rows = _rows(
+        conn,
+        f"""
         SELECT trade_date,
                COALESCE(SUM(pnl), 0)  AS gross,
                COALESCE(SUM(fees), 0) AS fees,
@@ -594,22 +660,27 @@ def _daily_pnl(conn, sym_clause, sym_params):
         WHERE status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
         GROUP BY trade_date
         ORDER BY trade_date ASC
-    """, sym_params)
+    """,
+        sym_params,
+    )
     out = []
     for r in rows:
         gross = float(r.get("gross") or 0)
         fees = float(r.get("fees") or 0)
-        out.append({
-            "date":      r["trade_date"],
-            "trades":    r["trades"],
-            "gross_pnl": round(gross, 2),
-            "fees":      round(fees, 2),
-            "net_pnl":   round(gross - fees, 2),
-        })
+        out.append(
+            {
+                "date": r["trade_date"],
+                "trades": r["trades"],
+                "gross_pnl": round(gross, 2),
+                "fees": round(fees, 2),
+                "net_pnl": round(gross - fees, 2),
+            }
+        )
     return out
 
 
 # ── API data builder ──────────────────────────────────────────────────────────
+
 
 def _build_api_data(symbol: str | None = None, profile: str | None = None) -> dict:
     """symbol filters trades/stats/analytics to one traded symbol; omit (or "ALL") for the
@@ -629,14 +700,23 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     conn = _connect()
     today = _today()
 
-    prof_filter = profile if (profile and profile.upper() != "ALL"
-                              and _has_column(conn, "ic_trades", "risk_profile")) else None
+    prof_filter = (
+        profile
+        if (profile and profile.upper() != "ALL" and _has_column(conn, "ic_trades", "risk_profile"))
+        else None
+    )
 
     stats = {
-        "today":    _stats_for_period(conn, start=today, end=today, symbol=sym_filter, profile=prof_filter),
-        "week":     _stats_for_period(conn, start=_week_start(),  end=today, symbol=sym_filter, profile=prof_filter),
-        "month":    _stats_for_period(conn, start=_month_start(), end=today, symbol=sym_filter, profile=prof_filter),
-        "year":     _stats_for_period(conn, start=_year_start(),  end=today, symbol=sym_filter, profile=prof_filter),
+        "today": _stats_for_period(conn, start=today, end=today, symbol=sym_filter, profile=prof_filter),
+        "week": _stats_for_period(
+            conn, start=_week_start(), end=today, symbol=sym_filter, profile=prof_filter
+        ),
+        "month": _stats_for_period(
+            conn, start=_month_start(), end=today, symbol=sym_filter, profile=prof_filter
+        ),
+        "year": _stats_for_period(
+            conn, start=_year_start(), end=today, symbol=sym_filter, profile=prof_filter
+        ),
         "all_time": _stats_for_period(conn, end=today, symbol=sym_filter, profile=prof_filter),
     }
 
@@ -644,7 +724,7 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         SELECT ic_order_id, symbol, risk_profile, entry_time, fill_confirmed_at,
                put_strike, call_strike, wing_width, net_credit, quantity,
                put_credit, call_credit, status, session_quality,
-               iv_rank_at_entry, iv_skew_signal, price_action_signal,
+               iv_rank_at_entry,
                stop_trigger_current, stop_limit_current, stop_adjustment_count,
                exit_time, exit_price, exit_reason, pnl, fees,
                ai_entry_reasoning
@@ -667,24 +747,31 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         trade_legs = today_legs.get(t["ic_order_id"], {})
         put_s, call_s = _spread_statuses(t, trade_legs.get("put"), trade_legs.get("call"))
         row = dict(t)
-        row["put_status"]  = put_s
+        row["put_status"] = put_s
         row["call_status"] = call_s
         trades.append(row)
 
-    last_loop = _one(conn, """
+    last_loop = _one(
+        conn,
+        """
         SELECT loop_time, action, open_trades_n, today_pnl,
                iv_rank, underlying_price, session_quality
         FROM loop_log
         WHERE loop_date = ?
         ORDER BY loop_time DESC LIMIT 1
-    """, (today,))
+    """,
+        (today,),
+    )
 
-    nlv_series = _rows(conn, """
+    nlv_series = _rows(
+        conn,
+        """
         SELECT summary_date AS date, closing_nlv, net_pnl
         FROM daily_summary
         WHERE closing_nlv IS NOT NULL
         ORDER BY summary_date ASC
-    """)
+    """,
+    )
 
     # Combined symbol+profile predicate reused by every analytics/history query below, so both
     # filters scope them identically (the name stays `sym_*` to leave those f-strings untouched).
@@ -694,27 +781,38 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         sym_clause += " AND risk_profile = ?"
         sym_params.append(prof_filter)
 
-    by_session = _rows(conn, f"""
+    by_session = _rows(
+        conn,
+        f"""
         SELECT session_quality,
                COUNT(*) AS total,
-               SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS wins,
+               SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0
+                        THEN 1 ELSE 0 END) AS wins,
                ROUND(AVG(pnl), 2) AS avg_pnl
         FROM ic_trades
         WHERE status NOT IN ('cancelled','pending','partial_entry')
           AND session_quality IS NOT NULL{sym_clause}
         GROUP BY session_quality
         ORDER BY total DESC
-    """, sym_params)
+    """,
+        sym_params,
+    )
 
-    by_exit = _rows(conn, f"""
+    by_exit = _rows(
+        conn,
+        f"""
         SELECT COALESCE(exit_reason, 'open') AS exit_reason, COUNT(*) AS count
         FROM ic_trades
         WHERE status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
         GROUP BY exit_reason
         ORDER BY count DESC
-    """, sym_params)
+    """,
+        sym_params,
+    )
 
-    by_iv = _rows(conn, f"""
+    by_iv = _rows(
+        conn,
+        f"""
         SELECT
             CASE
                 WHEN iv_rank_at_entry < 0.25 THEN '<25%'
@@ -724,32 +822,43 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
             END AS iv_bucket,
             COUNT(*) AS trades,
             ROUND(AVG(pnl), 2) AS avg_pnl,
-            SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS wins
+            SUM(CASE WHEN pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins
         FROM ic_trades
         WHERE pnl IS NOT NULL AND iv_rank_at_entry IS NOT NULL
           AND status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
         GROUP BY iv_bucket
         ORDER BY MIN(iv_rank_at_entry)
-    """, sym_params)
+    """,
+        sym_params,
+    )
 
-    fee_row = _one(conn, f"""
+    fee_row = (
+        _one(
+            conn,
+            f"""
         SELECT COALESCE(SUM(net_credit * quantity), 0) AS gross_credit,
                COALESCE(SUM(fees), 0)                  AS total_fees,
                COALESCE(SUM(pnl), 0)                   AS net_pnl
         FROM ic_trades
         WHERE status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
-    """, sym_params) or {}
+    """,
+            sym_params,
+        )
+        or {}
+    )
     gross = float(fee_row.get("gross_credit") or 0)
-    fees  = float(fee_row.get("total_fees") or 0)
-    net   = float(fee_row.get("net_pnl") or 0)
+    fees = float(fee_row.get("total_fees") or 0)
+    net = float(fee_row.get("net_pnl") or 0)
     fee_summary = {
-        "gross_credit":  round(gross, 2),
-        "total_fees":    round(fees, 2),
-        "net_pnl":       round(net, 2),
-        "fee_drag_pct":  round(fees / gross * 100, 1) if gross > 0 else None,
+        "gross_credit": round(gross, 2),
+        "total_fees": round(fees, 2),
+        "net_pnl": round(net, 2),
+        "fee_drag_pct": round(fees / gross * 100, 1) if gross > 0 else None,
     }
 
-    raw_recent = _rows(conn, f"""
+    raw_recent = _rows(
+        conn,
+        f"""
         SELECT trade_date, ic_order_id, symbol, entry_time, exit_time,
                put_strike, call_strike, wing_width,
                net_credit, put_credit, call_credit,
@@ -758,39 +867,47 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         WHERE status NOT IN ('cancelled','pending','partial_entry'){sym_clause}
         ORDER BY trade_date DESC, entry_time DESC
         LIMIT 60
-    """, sym_params)
+    """,
+        sym_params,
+    )
 
     recent_legs = _fetch_spread_legs(conn, [t["ic_order_id"] for t in raw_recent])
     recent_trades = []
     for t in raw_recent:
         trade_legs = recent_legs.get(t["ic_order_id"], {})
         put_s, call_s = _spread_statuses(t, trade_legs.get("put"), trade_legs.get("call"))
-        w, loss = _spread_wins_losses(t.get("status"), t.get("pnl"), trade_legs.get("put"), trade_legs.get("call"))
-        recent_trades.append({
-            "trade_date":    t.get("trade_date"),
-            "ic_order_id":   t.get("ic_order_id"),
-            "symbol":        t.get("symbol"),
-            "entry_time":    t.get("entry_time"),
-            "exit_time":     t.get("exit_time"),
-            "put_strike":    t.get("put_strike"),
-            "call_strike":   t.get("call_strike"),
-            "wing_width":    t.get("wing_width"),
-            "net_credit":    t.get("net_credit"),
-            "put_credit":    t.get("put_credit"),
-            "call_credit":   t.get("call_credit"),
-            "status":        t.get("status"),
-            "exit_reason":   t.get("exit_reason"),
-            "pnl":           t.get("pnl"),
-            "fees":          t.get("fees"),
-            "session_quality": t.get("session_quality"),
-            "put_status":    put_s,
-            "call_status":   call_s,
-            "spread_wins":   w,
-            "spread_losses": loss,
-        })
+        w, loss = _spread_wins_losses(
+            t.get("status"), t.get("pnl"), trade_legs.get("put"), trade_legs.get("call")
+        )
+        recent_trades.append(
+            {
+                "trade_date": t.get("trade_date"),
+                "ic_order_id": t.get("ic_order_id"),
+                "symbol": t.get("symbol"),
+                "entry_time": t.get("entry_time"),
+                "exit_time": t.get("exit_time"),
+                "put_strike": t.get("put_strike"),
+                "call_strike": t.get("call_strike"),
+                "wing_width": t.get("wing_width"),
+                "net_credit": t.get("net_credit"),
+                "put_credit": t.get("put_credit"),
+                "call_credit": t.get("call_credit"),
+                "status": t.get("status"),
+                "exit_reason": t.get("exit_reason"),
+                "pnl": t.get("pnl"),
+                "fees": t.get("fees"),
+                "session_quality": t.get("session_quality"),
+                "put_status": put_s,
+                "call_status": call_s,
+                "spread_wins": w,
+                "spread_losses": loss,
+            }
+        )
 
-    profile_rows = _rows(conn,
-        "SELECT DISTINCT risk_profile FROM ic_trades WHERE risk_profile IS NOT NULL ORDER BY risk_profile")
+    profile_rows = _rows(
+        conn,
+        "SELECT DISTINCT risk_profile FROM ic_trades WHERE risk_profile IS NOT NULL ORDER BY risk_profile",
+    )
     # A DB with no profile-tagged trades (today's live DB, or a fresh paper DB) falls back to
     # a single "live" entry — the profile selector then stays inert, exactly like before this
     # feature existed. A paper DB with real trades naturally returns the four risk profiles as
@@ -799,48 +916,63 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
 
     daily_series = _pnl_series(conn, "daily", symbol=sym_filter, profile=profile)
     performance = {
-        "daily":         daily_series,
-        "weekly":        _pnl_series(conn, "weekly", symbol=sym_filter, profile=profile),
-        "monthly":       _pnl_series(conn, "monthly", symbol=sym_filter, profile=profile),
+        "daily": daily_series,
+        "weekly": _pnl_series(conn, "weekly", symbol=sym_filter, profile=profile),
+        "monthly": _pnl_series(conn, "monthly", symbol=sym_filter, profile=profile),
         "bankroll_base": _BANKROLL_BASE,
-        "risk_metrics":  _risk_metrics(daily_series),
-        "profiles":      profiles,
+        "risk_metrics": _risk_metrics(daily_series),
+        "profiles": profiles,
         "selected_profile": profile or "ALL",
         # Ranked all-profiles scorecard — ignores the profile selector by design (symbol only).
-        "by_profile":    _by_profile_compare(conn, sym_filter),
+        "by_profile": _by_profile_compare(conn, sym_filter),
     }
 
     history_trades = _history_trades(conn, sym_filter, prof_filter)
     signals = _by_signal(conn, sym_clause, sym_params)
     daily_pnl = _daily_pnl(conn, sym_clause, sym_params)
 
+    # Width-study comparison: one daily cumulative_pnl series per (symbol x arm) cell — each
+    # already its own paper portfolio via the (profile x symbol) grain, so this is the same
+    # _pnl_series() the Performance view uses, just called once per cell rather than once for the
+    # page's current symbol/profile selection. Ignores the page's symbol/profile filters by design
+    # (like by_profile above) — the comparison view always shows every cell side by side.
+    width_study = {
+        "arms": WIDTH_STUDY_ARMS,
+        "symbols": {
+            sym: {arm: _pnl_series(conn, "daily", symbol=sym, profile=arm) for arm in WIDTH_STUDY_ARMS}
+            for sym in _load_symbols()
+        },
+    }
+
     conn.close()
 
     return {
-        "ok":         True,
-        "as_of":      _now_iso(),
-        "today":      today,
-        "symbols":         _load_symbols(),   # every configured symbol, for the selector
+        "ok": True,
+        "as_of": _now_iso(),
+        "today": today,
+        "symbols": _load_symbols(),  # every configured symbol, for the selector
         "selected_symbol": sym_filter or "ALL",
-        "stats":      stats,
-        "trades":     trades,
-        "last_loop":  last_loop,
+        "stats": stats,
+        "trades": trades,
+        "last_loop": last_loop,
         "nlv_series": nlv_series,
         "performance": performance,
+        "width_study": width_study,
         "analytics": {
-            "by_session":    by_session,
-            "by_exit":       by_exit,
-            "by_iv":         by_iv,
-            "fee_summary":   fee_summary,
+            "by_session": by_session,
+            "by_exit": by_exit,
+            "by_iv": by_iv,
+            "fee_summary": fee_summary,
             "recent_trades": recent_trades,
-            "history":       history_trades,
-            "signals":       signals,
-            "daily_pnl":     daily_pnl,
+            "history": history_trades,
+            "signals": signals,
+            "daily_pnl": daily_pnl,
         },
     }
 
 
 # ── symbols ────────────────────────────────────────────────────────────────
+
 
 def _load_symbols() -> list[str]:
     """Every traded symbol, in config order. Falls back to the deprecated
@@ -936,6 +1068,7 @@ nav{flex:1;padding:10px 0}
 .ttbl td{padding:9px 11px;border-bottom:1px solid #111519;vertical-align:middle}
 .ttbl tr:hover td{background:#0f1318}
 .tr{text-align:right}
+td.num,th.num{text-align:right}
 .tcredit{font-weight:600;color:#00c896}
 .tppos{font-weight:700;color:#00c896;text-align:right}
 .tpneg{font-weight:700;color:#e8423a;text-align:right}
@@ -1023,18 +1156,12 @@ nav{flex:1;padding:10px 0}
   background:none;border:none;cursor:pointer;padding:2px 0}
 .lf-clear:hover{color:#8b949e;text-decoration:underline}
 
-/* Daily Net P&L calendar heatmap */
-.cal-heat{display:flex;flex-wrap:wrap;gap:16px;margin-top:8px}
-.cal-month .cm-name{font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
-.cal-grid{display:grid;grid-template-columns:repeat(7,15px);grid-auto-rows:15px;gap:2px}
-.cal-cell{width:15px;height:15px;border-radius:2px;background:#111519}
-.cal-cell.has{cursor:default}
-.cal-legend{display:flex;align-items:center;gap:4px;font-size:9px;color:#6b7280;margin-top:8px}
-.cal-legend .cal-cell{width:11px;height:11px}
+/* Daily Net P&L calendar heatmap: shared renderer (cherrypick.core.viz) */
+%%CP_CAL_HEAT_STYLE%%
 
 </style>
 </head>
-<body>
+<body data-cp-reorder-store='meic-dash-layout-v1'>
 <div class="app">
 
 <aside class="sidebar">
@@ -1178,7 +1305,7 @@ nav{flex:1;padding:10px 0}
         <div class="empty" id="cal-heat-empty" style="display:none;padding:8px 0">No closed sessions yet.</div>
       </div>
 
-      <div class="ana-grid flow" style="margin-top:10px">
+      <div class="ana-grid flow" data-cp-reorder="history-ana" data-cp-reorder-items=".apanel" data-cp-reorder-label=".ptitle" style="margin-top:10px">
         <div class="apanel">
           <div class="ptitle">Win Rate by Session</div>
           <table class="atable" id="sess-tbl">
@@ -1202,7 +1329,7 @@ nav{flex:1;padding:10px 0}
         </div>
         <div class="apanel">
           <div class="ptitle">Fee Drag (All-Time)</div>
-          <div class="fee-grid">
+          <div class="fee-grid" data-cp-reorder="fee-drag" data-cp-reorder-items=".fee-card" data-cp-reorder-label=".fee-lbl">
             <div class="fee-card"><div class="fee-lbl">Gross Credit</div><div class="fee-val" id="f-gross">&mdash;</div></div>
             <div class="fee-card"><div class="fee-lbl">Total Fees</div><div class="fee-val neg" id="f-fees">&mdash;</div></div>
             <div class="fee-card"><div class="fee-lbl">Net P&amp;L</div><div class="fee-val" id="f-net">&mdash;</div></div>
@@ -1212,7 +1339,7 @@ nav{flex:1;padding:10px 0}
       </div>
 
       <!-- Signal-outcome breakdowns (avg NET P&L per pre-trade attribute) -->
-      <div class="ana-grid flow" style="margin-top:10px">
+      <div class="ana-grid flow" data-cp-reorder="signals-ana" data-cp-reorder-items=".apanel" data-cp-reorder-label=".ptitle" style="margin-top:10px">
         <div class="apanel">
           <div class="ptitle">Net P&amp;L by Short-Call Delta</div>
           <table class="atable" id="sig-delta-tbl">
@@ -1263,24 +1390,7 @@ nav{flex:1;padding:10px 0}
           <button type="button" class="lf-clear" id="lf-clear">clear</button>
         </div>
         <div style="overflow-x:auto">
-          <table class="atable" id="log-tbl" style="width:100%;min-width:1080px">
-            <thead><tr>
-              <th class="sortable" data-k="trade_date">Date<span class="ar"></span></th>
-              <th class="sortable" data-k="entry_time">Time<span class="ar"></span></th>
-              <th class="sortable" data-k="symbol">Symbol<span class="ar"></span></th>
-              <th class="sortable" data-k="risk_profile">Profile<span class="ar"></span></th>
-              <th class="sortable" data-k="wing_width">Width<span class="ar"></span></th>
-              <th class="sortable" data-k="put_strike">Put K<span class="ar"></span></th>
-              <th class="sortable" data-k="call_strike">Call K<span class="ar"></span></th>
-              <th>Put $</th><th>Call $</th>
-              <th class="sortable" data-k="net_credit">Net Cr<span class="ar"></span></th>
-              <th>Put</th><th>Call</th>
-              <th class="sortable" data-k="gross_pnl">Gross<span class="ar"></span></th>
-              <th class="sortable" data-k="net_pnl">Net<span class="ar"></span></th>
-              <th class="sortable" data-k="exit_reason">Exit<span class="ar"></span></th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
+          <table class="atable" id="log-tbl" style="width:100%;min-width:1080px"><tbody></tbody></table>
         </div>
       </div>
     </div>
@@ -1331,7 +1441,7 @@ nav{flex:1;padding:10px 0}
     <div class="frame" style="flex:0 0 auto">
       <div class="frame-hdr"><span class="frame-title">Risk-Adjusted Metrics</span>
         <span class="frame-sub" id="perf-overfit-note"></span></div>
-      <div class="fee-grid" style="padding:14px 18px 18px">
+      <div class="fee-grid" data-cp-reorder="fee-risk" data-cp-reorder-items=".fee-card" data-cp-reorder-label=".fee-lbl" style="padding:14px 18px 18px">
         <div class="fee-card"><div class="fee-lbl">Sharpe</div><div class="fee-val" id="rm-sharpe">&mdash;</div></div>
         <div class="fee-card"><div class="fee-lbl">Sortino</div><div class="fee-val" id="rm-sortino">&mdash;</div></div>
         <div class="fee-card"><div class="fee-lbl">Calmar</div><div class="fee-val" id="rm-calmar">&mdash;</div></div>
@@ -1354,8 +1464,15 @@ nav{flex:1;padding:10px 0}
       </div>
     </div>
 
+    <div class="frame" style="flex:0 0 210px" id="width-study-frame">
+      <div class="frame-hdr" style="padding-bottom:4px"><span class="frame-title">Width Study</span>
+        <span class="frame-sub">cumulative net P&amp;L &middot; forced-sampling arms, paired per symbol &middot; conservative excluded (reference curve only)</span></div>
+      <div class="ana-grid" id="width-study-grid"></div>
+      <div class="empty" id="width-study-empty" style="display:none;padding:18px 0">No width-study trades yet.</div>
+    </div>
+
     <div class="frame" style="flex:1;min-height:0;overflow:hidden">
-      <div class="ana-grid">
+      <div class="ana-grid" data-cp-reorder="perf-ana" data-cp-reorder-items=".apanel" data-cp-reorder-label=".ptitle">
         <div class="apanel">
           <div class="ptitle">Per-Period Net P&amp;L</div>
           <div class="chart-wrap" style="padding:6px 0"><canvas id="perf-pnlbar-canvas"></canvas>
@@ -1660,68 +1777,20 @@ function renderSignalTable(tblId, rows) {
 }
 
 // ── calendar heatmap ──────────────────────────────────────────────────────────
-// Month grids of daily net P&L; cell colour scales green(+)/red(−) by magnitude
-// relative to the window's largest absolute day. Weeks run Mon→Sun (top→bottom rows).
+// The shared week-column calendar (cherrypick.core.viz.cpCalHeat): Monday-anchored week
+// columns, Mon–Fri only, and an empty weekday cell means 'no settled session' — a different
+// thing from a flat day. Replaces this page's month-grid version (the audit counted two).
 function renderCalHeat(days) {
   const host  = document.getElementById('cal-heat');
   const empty = document.getElementById('cal-heat-empty');
   if (!host) return;
-  if (!days.length) { host.innerHTML = ''; empty.style.display = 'block'; return; }
-  empty.style.display = 'none';
-
-  const byDate = {};
-  let maxAbs = 0;
-  days.forEach(d => { byDate[d.date] = d; maxAbs = Math.max(maxAbs, Math.abs(d.net_pnl || 0)); });
-  if (maxAbs <= 0) maxAbs = 1;
-
-  const dates = days.map(d => d.date).sort();
-  const first = new Date(dates[0] + 'T00:00:00');
-  const last  = new Date(dates[dates.length - 1] + 'T00:00:00');
-
-  // group months present in the range
-  const months = [];
-  let cur = new Date(first.getFullYear(), first.getMonth(), 1);
-  const end = new Date(last.getFullYear(), last.getMonth(), 1);
-  while (cur <= end) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1); }
-
-  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const cellColor = net => {
-    if (net == null) return '#111519';
-    const t = Math.min(1, Math.abs(net) / maxAbs);
-    const a = 0.18 + 0.72 * t;                       // opacity ramp
-    return net >= 0 ? 'rgba(22,199,132,' + a.toFixed(2) + ')'
-                    : 'rgba(232,66,58,'  + a.toFixed(2) + ')';
-  };
-
-  host.innerHTML = months.map(m => {
-    const y = m.getFullYear(), mo = m.getMonth();
-    const dim = new Date(y, mo + 1, 0).getDate();
-    // Monday-based weekday of the 1st (0=Mon..6=Sun)
-    let lead = (new Date(y, mo, 1).getDay() + 6) % 7;
-    let cells = '';
-    for (let i = 0; i < lead; i++) cells += '<div class="cal-cell"></div>';
-    for (let dnum = 1; dnum <= dim; dnum++) {
-      const iso = y + '-' + String(mo + 1).padStart(2, '0') + '-' + String(dnum).padStart(2, '0');
-      const rec = byDate[iso];
-      if (rec) {
-        const tip = iso + ' · ' + fMoney(rec.net_pnl) + ' net · ' + rec.trades + ' trade' + (rec.trades !== 1 ? 's' : '');
-        cells += '<div class="cal-cell has" title="' + tip + '" style="background:' + cellColor(rec.net_pnl) + '"></div>';
-      } else {
-        cells += '<div class="cal-cell"></div>';
-      }
-    }
-    return '<div class="cal-month"><div class="cm-name">' + MN[mo] + ' ' + y + '</div>' +
-           '<div class="cal-grid">' + cells + '</div></div>';
-  }).join('') +
-  '<div class="cal-legend"><span>loss</span>' +
-  '<div class="cal-cell" style="background:rgba(232,66,58,.8)"></div>' +
-  '<div class="cal-cell" style="background:#111519"></div>' +
-  '<div class="cal-cell" style="background:rgba(22,199,132,.8)"></div><span>gain</span></div>';
+  const drew = window.cpCalHeat(host, days, fMoney);
+  if (empty) empty.style.display = drew ? 'none' : 'block';
 }
 
 // ── filterable trade log ──────────────────────────────────────────────────────
 let logRows = [];
-let logSort = { k: 'trade_date', dir: -1 };   // default: newest first (date desc, then time)
+let logSort = { i: 0, dir: -1 };   // default: newest first (Date desc; per-column defaults below)
 
 function populateLogFilters(rows) {
   const fill = (id, values, label) => {
@@ -1767,53 +1836,53 @@ function logFiltered() {
     return true;
   });
 
-  const k = logSort.k, dir = logSort.dir;
-  rows.sort((a, b) => {
-    let av, bv;
-    if (k === 'gross_pnl') { av = a.pnl; bv = b.pnl; }
-    else if (k === 'net_pnl') { av = logNet(a); bv = logNet(b); }
-    else { av = a[k]; bv = b[k]; }
-    if (av == null && bv == null) return 0;
-    if (av == null) return 1;
-    if (bv == null) return -1;
-    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
-    return String(av).localeCompare(String(bv)) * dir;
-  });
-  return rows;
+  return window.cpTableSort(rows, LOG_COLS, logSort);
 }
 
+// The trade log is the shared filterable table (cherrypick.core.viz.cpTable) with the sorting
+// this page always had: opt-in per column, caller-owned {i, dir} state, cpTableSort's nulls-last
+// ordering. Display markup stays here (badges, muted spans); raw sort values ride each column's
+// `s` accessor. The pre-table filter bar above is unchanged -- logFiltered() feeds the table.
+const LOG_COLS = [
+  {h:'Date', f:t => (t.trade_date || '—').substring(5), s:t => t.trade_date, defDir:-1},
+  {h:'Time', f:t => fTime(t.entry_time), s:t => t.entry_time, defDir:-1},
+  {h:'Symbol', f:t => '<span style="color:#6b7280;font-size:10px">' + (t.symbol || '—') + '</span>',
+   s:t => t.symbol},
+  {h:'Profile', f:t => '<span style="color:#8b5cf6;font-size:10px">' + (t.risk_profile || '—') + '</span>',
+   s:t => t.risk_profile},
+  {h:'Width', num:true, f:t => t.wing_width != null ? t.wing_width : '—', s:t => t.wing_width},
+  {h:'Put K', num:true, f:t => t.put_strike != null ? t.put_strike : '—', s:t => t.put_strike},
+  {h:'Call K', num:true, f:t => t.call_strike != null ? t.call_strike : '—', s:t => t.call_strike},
+  {h:'Put $', num:true, sortable:false,
+   f:t => '<span style="color:#6b7280">$' + Number(t.put_credit || 0).toFixed(2) + '</span>'},
+  {h:'Call $', num:true, sortable:false,
+   f:t => '<span style="color:#6b7280">$' + Number(t.call_credit || 0).toFixed(2) + '</span>'},
+  {h:'Net Cr', num:true, tone:() => 'tcredit',
+   f:t => '$' + Number(t.net_credit || 0).toFixed(2), s:t => t.net_credit},
+  {h:'Put', sortable:false, f:t => bdg(t.put_status)},
+  {h:'Call', sortable:false, f:t => bdg(t.call_status)},
+  {h:'Gross', num:true, f:t => t.pnl != null ? fMoney(t.pnl) : '—', s:t => t.pnl,
+   tone:t => t.pnl != null ? (t.pnl >= 0 ? 'pos' : 'neg') : ''},
+  {h:'Net', num:true, f:t => { const n = logNet(t); return n != null ? fMoney(n) : '—'; },
+   s:t => logNet(t), tone:t => { const n = logNet(t); return n != null ? (n >= 0 ? 'pos' : 'neg') : ''; }},
+  {h:'Exit', f:t => '<span style="color:#6b7280;font-size:10px">'
+   + (t.exit_reason || '—').replace(/_/g, ' ') + '</span>', s:t => t.exit_reason},
+];
+
 function renderTradeLog() {
-  const tb  = document.querySelector('#log-tbl tbody');
+  const tbl = document.getElementById('log-tbl');
   const cnt = document.getElementById('log-count');
-  if (!tb) return;
+  if (!tbl) return;
   const rows = logFiltered();
   cnt.textContent = rows.length + ' of ' + logRows.length + ' trade' + (logRows.length !== 1 ? 's' : '');
-  tb.innerHTML = !rows.length ? '<tr><td colspan="15" class="empty">No trades match the filters</td></tr>'
-    : rows.map(t => {
-        const net = logNet(t);
-        const gc  = t.pnl != null ? (t.pnl >= 0 ? 'pos' : 'neg') : '';
-        const nc  = net   != null ? (net   >= 0 ? 'pos' : 'neg') : '';
-        const tip = (t.ai_entry_reasoning || '')
-          .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        return '<tr title="' + tip + '">' +
-          '<td>' + (t.trade_date || '—').substring(5) + '</td>' +
-          '<td>' + fTime(t.entry_time) + '</td>' +
-          '<td style="color:#6b7280;font-size:10px">' + (t.symbol || '—') + '</td>' +
-          '<td style="color:#8b5cf6;font-size:10px">' + (t.risk_profile || '—') + '</td>' +
-          '<td class="tr">' + (t.wing_width != null ? t.wing_width : '—') + '</td>' +
-          '<td class="tr">' + (t.put_strike  != null ? t.put_strike  : '—') + '</td>' +
-          '<td class="tr">' + (t.call_strike != null ? t.call_strike : '—') + '</td>' +
-          '<td class="tr" style="color:#6b7280">$' + Number(t.put_credit  || 0).toFixed(2) + '</td>' +
-          '<td class="tr" style="color:#6b7280">$' + Number(t.call_credit || 0).toFixed(2) + '</td>' +
-          '<td class="tr tcredit">$' + Number(t.net_credit || 0).toFixed(2) + '</td>' +
-          '<td>' + bdg(t.put_status)  + '</td>' +
-          '<td>' + bdg(t.call_status) + '</td>' +
-          '<td class="tr ' + gc + '">' + (t.pnl != null ? fMoney(t.pnl) : '—') + '</td>' +
-          '<td class="tr ' + nc + '">' + (net != null ? fMoney(net) : '—') + '</td>' +
-          '<td style="color:#6b7280;font-size:10px">' + (t.exit_reason || '—').replace(/_/g, ' ') + '</td>' +
-          '</tr>';
-      }).join('');
-  syncSortIndicators('log-tbl', logSort);
+  window.cpTable(tbl, LOG_COLS, rows, 'No trades match the filters', {
+    sort: logSort,
+    onSort: i => {
+      logSort = { i, dir: logSort.i === i ? -logSort.dir : (LOG_COLS[i].defDir || 1) };
+      renderTradeLog();
+    },
+    rowTitle: t => t.ai_entry_reasoning || '',
+  });
 }
 
 // Reflect the active sort key/direction in a table's header arrows.
@@ -1925,6 +1994,62 @@ function renderPerformance(d) {
     renderPerfWinLoss(series);
   }
   renderPerfTable(series);
+  renderWidthStudy(d.width_study || {});
+}
+
+// ── width study (wing-width forced-sampling arms) ──────────────────────────────
+let widthStudyCharts = {};   // symbol -> Chart instance, kept across renders (update in place)
+const WIDTH_STUDY_COLORS = {
+  'width-2': '#00c896', 'width-5': '#4a9eff', 'width-10': '#f5a623', 'width-adaptive': '#8b5cf6',
+};
+
+function renderWidthStudy(ws) {
+  const arms = ws.arms || [];
+  const symbols = Object.keys(ws.symbols || {});
+  const grid = document.getElementById('width-study-grid');
+  const empty = document.getElementById('width-study-empty');
+  const hasAnyData = symbols.some(sym => arms.some(arm => (ws.symbols[sym][arm] || []).length > 0));
+  if (!grid) return;
+  grid.style.display = hasAnyData ? '' : 'none';
+  if (empty) empty.style.display = hasAnyData ? 'none' : 'block';
+  if (!hasAnyData) return;
+
+  symbols.forEach(sym => {
+    let canvas = document.getElementById('width-study-canvas-' + sym);
+    if (!canvas) {
+      const panel = document.createElement('div');
+      panel.className = 'apanel';
+      panel.innerHTML = '<div class="ptitle">' + sym + '</div>' +
+        '<div class="chart-wrap" style="padding:6px 0"><canvas id="width-study-canvas-' + sym + '"></canvas></div>';
+      grid.appendChild(panel);
+      canvas = document.getElementById('width-study-canvas-' + sym);
+    }
+    const bySym = ws.symbols[sym] || {};
+    // Union of periods across this symbol's arms (an arm can be missing a day another arm has,
+    // e.g. its floor refused every entry that day) — spanGaps lets each line skip its own nulls.
+    const periods = [...new Set(arms.flatMap(arm => (bySym[arm] || []).map(b => b.period)))].sort();
+    const datasets = arms.map(arm => {
+      const byPeriod = Object.fromEntries((bySym[arm] || []).map(b => [b.period, b.cumulative_pnl]));
+      return {
+        label: arm, data: periods.map(p => byPeriod[p] ?? null), spanGaps: true,
+        borderColor: WIDTH_STUDY_COLORS[arm] || '#6b7280',
+        backgroundColor: (WIDTH_STUDY_COLORS[arm] || '#6b7280') + '22',
+        borderWidth: 2, pointRadius: periods.length > 60 ? 0 : 2, pointHoverRadius: 5, tension: 0.2,
+      };
+    });
+    const opts = _baseOpts();
+    opts.plugins.legend = { display: true, labels: { color: '#8b949e', boxWidth: 10, font: { size: 10 } } };
+    opts.plugins.tooltip.callbacks = { label: ctx => ctx.dataset.label + ': ' +
+      (ctx.parsed.y == null ? '—' : '$' + ctx.parsed.y.toFixed(2)) };
+    opts.scales.y.ticks.callback = v => '$' + v.toLocaleString();
+    if (widthStudyCharts[sym]) {
+      widthStudyCharts[sym].data.labels = periods;
+      widthStudyCharts[sym].data.datasets = datasets;
+      widthStudyCharts[sym].update();
+    } else {
+      widthStudyCharts[sym] = new Chart(canvas, { type: 'line', data: { labels: periods, datasets }, options: opts });
+    }
+  });
 }
 
 // ── profile comparison ────────────────────────────────────────────────────────
@@ -2199,11 +2324,6 @@ if (lfClear) lfClear.addEventListener('click', () => {
   ['lf-outcome','lf-exit','lf-session'].forEach(id => { const e = document.getElementById(id); if (e) e.value = 'ALL'; });
   renderTradeLog();
 });
-document.querySelectorAll('#log-tbl th.sortable').forEach(th => th.addEventListener('click', () => {
-  const k = th.dataset.k;
-  logSort = { k, dir: logSort.k === k ? -logSort.dir : (k === 'trade_date' || k === 'entry_time' ? -1 : 1) };
-  renderTradeLog();
-}));
 document.querySelectorAll('#prof-cmp-tbl th.sortable').forEach(th => th.addEventListener('click', () => {
   const k = th.dataset.k;
   profCmpSort = { k, dir: profCmpSort.k === k ? -profCmpSort.dir : (k === 'profile' ? 1 : -1) };
@@ -2279,172 +2399,31 @@ setInterval(() => {
   if (cd <= 0) { cd = 30; fetchData(); }
 }, 1000);
 
-// ── drag-to-reorder cards/panels ──────────────────────────────────────────────
-// Self-contained (no libraries). Every .ana-grid / .fee-grid becomes a reorderable
-// group: its direct children can be dragged by a grip handle to reorder, and the
-// order is saved per-browser in localStorage. Column reflow (CSS auto-fit and the
-// 820px breakpoint) keeps working on top of whatever order the user sets.
-(function () {
-  const LS_KEY = 'meic-dash-layout-v1';
-  const GROUP_SEL = '.ana-grid, .fee-grid';
-
-  const slug = s => (s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-
-  function loadSaved() {
-    try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }
-    catch (e) { return {}; }
-  }
-  function persist(store) {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {}
-  }
-
-  // Stable id for a group: which view it lives in + its class + its index among
-  // same-class groups in that view. Independent of card order, so it survives reorders.
-  function groupKey(group) {
-    const view = group.closest('.view');
-    const viewId = view ? view.id : 'root';
-    const cls = group.classList.contains('ana-grid') ? 'ana' : 'fee';
-    const peers = [...(view || document).querySelectorAll('.' + (cls === 'ana' ? 'ana-grid' : 'fee-grid'))];
-    return viewId + ':' + cls + ':' + peers.indexOf(group);
-  }
-  // Stable id for a child: slug of its label (ptitle / fee-lbl), else its source index.
-  function childKey(child, idx) {
-    const lbl = child.querySelector('.ptitle, .fee-lbl');
-    const s = lbl ? slug(lbl.textContent) : '';
-    return s || ('idx-' + idx);
-  }
-
-  const store = loadSaved();
-  const srcOrder = new Map(); // groupKey -> original child-key order (for Reset)
-  let dragged = null, dragGroup = null;
-
-  function childrenOf(group) {
-    return [...group.children].filter(c => c.hasAttribute('data-rkey'));
-  }
-
-  function applyOrder(group, gk) {
-    const order = store[gk];
-    if (!order || !order.length) return;
-    const byKey = new Map(childrenOf(group).map(c => [c.getAttribute('data-rkey'), c]));
-    order.forEach(k => { const el = byKey.get(k); if (el) group.appendChild(el); });
-    // Any child not present in the saved order (e.g. a newly added card) keeps its
-    // relative position by being appended after the known ones.
-    byKey.forEach((el, k) => { if (!order.includes(k)) group.appendChild(el); });
-  }
-
-  function saveOrder(group, gk) {
-    store[gk] = childrenOf(group).map(c => c.getAttribute('data-rkey'));
-    persist(store);
-  }
-
-  // Row-major "insert before" target for the current pointer position.
-  function dragAfter(group, x, y) {
-    let best = null, bestScore = Infinity;
-    for (const el of childrenOf(group)) {
-      if (el === dragged) continue;
-      const r = el.getBoundingClientRect();
-      const cx = r.left + r.width / 2, cy = r.top + r.height / 2, gap = r.height * 0.5;
-      let before;
-      if (y < cy - gap) before = true;        // pointer is in an earlier row
-      else if (y > cy + gap) before = false;  // later row
-      else before = x < cx;                   // same row → compare x
-      if (before) {
-        const score = (cy - y) * (cy - y) + (cx - x) * (cx - x);
-        if (score < bestScore) { bestScore = score; best = el; }
-      }
-    }
-    return best;
-  }
-
-  function initGroup(group) {
-    const gk = groupKey(group);
-    const kids = [...group.children];
-    kids.forEach((child, idx) => {
-      // Only treat real cards/panels as reorderable (skip stray text nodes/wrappers).
-      if (!(child.classList.contains('apanel') || child.classList.contains('fee-card'))) return;
-      let key = childKey(child, idx);
-      // Guard against duplicate keys within a group.
-      let uniq = key, n = 2;
-      while (childrenOf(group).some(c => c.getAttribute('data-rkey') === uniq)) uniq = key + '-' + (n++);
-      child.setAttribute('data-rkey', uniq);
-
-      // The grip handle itself is the drag source (draggable=true) rather than toggling the
-      // card's draggable on mousedown — that toggle is unreliable in Chrome (draggability is
-      // decided before the mousedown handler runs), so grabbing a card did nothing.
-      const handle = document.createElement('span');
-      handle.className = 'reorder-handle';
-      handle.title = 'Drag to reorder';
-      handle.textContent = '⠇'; // ⠇ braille grip
-      handle.setAttribute('draggable', 'true');
-      child.insertBefore(handle, child.firstChild);
-
-      handle.addEventListener('dragstart', e => {
-        dragged = child; dragGroup = group;
-        child.classList.add('reorder-drag');
-        e.dataTransfer.effectAllowed = 'move';
-        try { e.dataTransfer.setData('text/plain', uniq); } catch (_) {}
-        try { e.dataTransfer.setDragImage(child, 20, 20); } catch (_) {}  // drag the whole card
-      });
-      handle.addEventListener('dragend', () => {
-        child.classList.remove('reorder-drag');
-        group.querySelectorAll('.reorder-over').forEach(el => el.classList.remove('reorder-over'));
-        if (dragged === child) { saveOrder(group, gk); showReset(); }
-        dragged = null; dragGroup = null;
-      });
-    });
-
-    srcOrder.set(gk, childrenOf(group).map(c => c.getAttribute('data-rkey')));
-
-    group.addEventListener('dragover', e => {
-      if (!dragged || dragGroup !== group) return;    // ignore drags from other groups
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      const after = dragAfter(group, e.clientX, e.clientY);
-      if (after == null) group.appendChild(dragged);
-      else if (after !== dragged) group.insertBefore(dragged, after);
-    });
-
-    applyOrder(group, gk);
-  }
-
-  function showReset() {
-    const btn = document.getElementById('reset-layout');
-    if (btn) btn.classList.add('show');
-  }
-
-  document.querySelectorAll(GROUP_SEL).forEach(initGroup);
-
-  // Show Reset if any saved layout already exists on load.
-  if (Object.keys(store).length) showReset();
-
-  const resetBtn = document.getElementById('reset-layout');
-  if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
-      document.querySelectorAll(GROUP_SEL).forEach(group => {
-        const gk = groupKey(group), order = srcOrder.get(gk);
-        if (!order) return;
-        const byKey = new Map(childrenOf(group).map(c => [c.getAttribute('data-rkey'), c]));
-        order.forEach(k => { const el = byKey.get(k); if (el) group.appendChild(el); });
-      });
-      for (const k in store) delete store[k];
-      localStorage.removeItem(LS_KEY);
-      resetBtn.classList.remove('show');
-    });
-  }
-})();
+// drag-to-reorder lives in cherrypick.core.viz.REORDER_JS now (the suite's one copy);
+// groups are declared with data-cp-reorder attributes on the grids above.
+%%CP_REORDER_JS%%
 </script>
 </body>
 </html>"""
 
+# The shared drag-to-reorder implementation is baked in at import time (the template stays one
+# literal; the token keeps the JS out of an f-string's brace-escaping).
+HTML = HTML.replace("%%CP_REORDER_JS%%", viz.REORDER_JS)
+HTML = HTML.replace("%%CP_CAL_HEAT_STYLE%%", viz.CAL_HEAT_STYLE + viz.TABLE_STYLE)
+HTML = HTML.replace("</script>\n</body>", viz.CAL_HEAT_JS + viz.TABLE_JS + "</script>\n</body>", 1)
+
 
 # ── HTTP handler ──────────────────────────────────────────────────────────────
+
 
 class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             page = HTML
             if _MODE == "paper":
-                page = page.replace("<!--MODE_BADGE-->", '<span class="mode-badge">Paper Mode — Simulated</span>')
+                page = page.replace(
+                    "<!--MODE_BADGE-->", '<span class="mode-badge">Paper Mode — Simulated</span>'
+                )
                 page = page.replace("<title>MEICAgent</title>", "<title>MEICAgent — Paper</title>")
             else:
                 page = page.replace("<!--MODE_BADGE-->", "")
@@ -2488,8 +2467,10 @@ class _ThreadingServer(ThreadingMixIn, HTTPServer):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-def _resolve_mode_defaults(mode: str, db_arg: str | None, port_arg: int | None,
-                            default_db_path: str = _DB_PATH) -> tuple[str, int]:
+
+def _resolve_mode_defaults(
+    mode: str, db_arg: str | None, port_arg: int | None, default_db_path: str = _DB_PATH
+) -> tuple[str, int]:
     """Pure resolution of (db_path, port) from --mode/--db/--port. Extracted out of main()
     so the default-resolution logic (the only part of --mode/--db/--port with real branching)
     is unit-testable without spinning up a real HTTP server or parsing sys.argv.
@@ -2510,28 +2491,32 @@ def _resolve_mode_defaults(mode: str, db_arg: str | None, port_arg: int | None,
 def main():
     global _DB_PATH, _MODE
     parser = argparse.ArgumentParser(description="MEICAgent Dashboard")
-    parser.add_argument("--mode", choices=["live", "paper"], default="live",
-                         help="'paper' points the dashboard at the data home's paper_trades.db "
-                              "and defaults the port to 5051, so it can run alongside the live "
-                              "dashboard (port 5050) without conflict.")
-    parser.add_argument("--port", type=int, default=None,
-                         help="Overrides the mode-based default (5050 live / 5051 paper).")
-    parser.add_argument("--db", default=None,
-                         help="Overrides the mode-based default DB path.")
-    parser.add_argument("--no-browser", action="store_true",
-                         help="Don't open a browser tab on start (for headless/background launches, "
-                              "e.g. the suite's `/serve-dashboard all`).")
+    parser.add_argument(
+        "--mode",
+        choices=["live", "paper"],
+        default="live",
+        help="'paper' points the dashboard at the data home's paper_trades.db "
+        "and defaults the port to 5051, so it can run alongside the live "
+        "dashboard (port 5050) without conflict.",
+    )
+    parser.add_argument(
+        "--port", type=int, default=None, help="Overrides the mode-based default (5050 live / 5051 paper)."
+    )
+    parser.add_argument("--db", default=None, help="Overrides the mode-based default DB path.")
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Don't open a browser tab on start (for headless/background launches, "
+        "e.g. the suite's `/serve-dashboard all`).",
+    )
     args = parser.parse_args()
 
     _MODE = args.mode
     _DB_PATH, port = _resolve_mode_defaults(args.mode, args.db, args.port)
     # `python dashboard.py` with no args resolves to (today's default meic_trades.db path, 5050)
     # — byte-identical to pre-paper-mode behavior.
-    # Check if already running
-    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    already = probe.connect_ex(("127.0.0.1", port)) == 0
-    probe.close()
-    if already:
+    # Check if already running (the suite's one bind-probe, cherrypick.core.viz)
+    if viz.port_in_use(port):
         if args.no_browser:
             print(f"Dashboard already running at http://localhost:{port}.")
         else:

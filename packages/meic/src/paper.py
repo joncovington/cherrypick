@@ -23,14 +23,17 @@ from datetime import datetime
 
 try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
     from zoneinfo import ZoneInfo
+
     _ET = ZoneInfo("America/New_York")
 except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
+
     _ET = pytz.timezone("America/New_York")
 
 
 def _now_et():
     return datetime.now(_ET)
+
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.join(_HERE, "..")
@@ -42,7 +45,9 @@ _DB_PY = os.path.join(_HERE, "db.py")
 # credentials.py bootstrap. The calendar computes NYSE holidays / quarterly + triple-witching expiries
 # from rules (no hand-maintained per-year config lists, and no drift like the old 2026-06-18 bug).
 if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)  # so `import paths` resolves when imported (tests, paper_loop), not just as a script
+    sys.path.insert(
+        0, _HERE
+    )  # so `import paths` resolves when imported (tests, paper_loop), not just as a script
 _CORE = os.path.join(_HERE, "_core")
 if os.path.isdir(_CORE) and _CORE not in sys.path:
     sys.path.insert(0, _CORE)
@@ -65,6 +70,7 @@ def _is_event_day(today, predicate) -> bool:
         return False
     return predicate(d)
 
+
 ALL_PROFILE_NAMES = ["conservative", "moderate", "aggressive", "very-aggressive"]
 
 
@@ -79,8 +85,7 @@ def all_profile_names(profiles: dict | None = None) -> list[str]:
     # are not profiles — mirrors merge_profile's own `_`-comment convention. Also skip any profile
     # explicitly turned off with `enabled: false` (the paper-experiment disable switch); a missing
     # `enabled` defaults to on, so the ladder and any active cell are unaffected.
-    names = [n for n in profiles
-             if not n.startswith("_") and profiles[n].get("enabled", True) is not False]
+    names = [n for n in profiles if not n.startswith("_") and profiles[n].get("enabled", True) is not False]
     ordered = [n for n in ALL_PROFILE_NAMES if n in names]
     ordered += [n for n in names if n not in ALL_PROFILE_NAMES]
     return ordered
@@ -93,6 +98,7 @@ def all_profile_names(profiles: dict | None = None) -> list[str]:
 # sites + tests stable and pass ndigits=4 so paper fees keep their exact sub-cent precision (2dp
 # rounding would break fee linearity across quantity). See cherrypick.core.fees.
 # ---------------------------------------------------------------------------
+
 
 def open_fees(symbol: str, quantity: int = 1) -> float:
     """Fee to open a full 4-leg IC (2 sell legs: short put + short call)."""
@@ -123,12 +129,24 @@ def expire_fees() -> float:
 # `slippage_frac_of_spread` haircut so both suite modules assume the same worked-limit
 # fill. Settlement (cash-settled intrinsic value) has no spread and is unaffected.
 #
-# Keep this in lockstep with cherrypick.core.fees.DEFAULT_COSTS["slippage_frac_of_spread"];
-# the 2026-07-17 slippage-literature review (see that module's comment) places 0.125 at the
-# optimistic edge of the 25-50%-of-the-way-to-the-touch practitioner band -- kept here for parity.
+# The fraction IS core's `slippage_frac_of_spread`, structurally -- not a literal kept in
+# lockstep by comment. The 2026-07-17 slippage-literature review (see that module's comment)
+# places 0.125 at the optimistic edge of the 25-50%-of-the-way-to-the-touch practitioner band.
 # ---------------------------------------------------------------------------
 
-DEFAULT_SLIPPAGE_FRAC = 0.125
+DEFAULT_SLIPPAGE_FRAC = _fees.DEFAULT_COSTS["slippage_frac_of_spread"]
+
+
+def _quote_usable(q: dict | None) -> bool:
+    """A leg quote the exit math can actually price: both sides present and not crossed.
+    A crossed quote (bid > ask) is a feed artifact — averaging it would price a stop
+    trigger off a fiction, so it counts as unavailable, exactly like a missing quote."""
+    if not q:
+        return False
+    bid, ask = q.get("bid"), q.get("ask")
+    if bid is None or ask is None:
+        return False
+    return bid <= ask
 
 
 def _leg_mid(q: dict) -> float:
@@ -156,6 +174,7 @@ def _close_cost(short_q: dict, long_q: dict, slippage_frac: float) -> float:
 # ---------------------------------------------------------------------------
 # Risk-profile loading
 # ---------------------------------------------------------------------------
+
 
 def load_profiles() -> dict:
     return _profiles.load_profiles(external_path=_RISK_PROFILES_PATH)
@@ -200,13 +219,18 @@ def _wing_selection_for_symbol(params: dict, symbol: str) -> str:
     credit-to-width bar, so this picks the smallest width that is still economically viable rather
     than blindly taking the smallest one."""
     wsbs = params.get("wing_selection_by_symbol") or {}
-    return (wsbs.get(symbol) or wsbs.get(symbol.upper())
-            or params.get("wing_selection")
-            or wsbs.get("DEFAULT") or "widest")
+    return (
+        wsbs.get(symbol)
+        or wsbs.get(symbol.upper())
+        or params.get("wing_selection")
+        or wsbs.get("DEFAULT")
+        or "widest"
+    )
 
 
-def union_widths_for_symbol(symbol: str, base_config: dict | None = None,
-                            profiles: dict | None = None) -> list[int]:
+def union_widths_for_symbol(
+    symbol: str, base_config: dict | None = None, profiles: dict | None = None
+) -> list[int]:
     """The union of every evaluated profile's wing widths for `symbol` (plus the base config's),
     so paper_loop can build one candidate *menu* per symbol from which each profile then picks its
     own allowed subset. Without this, candidates were built from the base widths alone and a
@@ -215,7 +239,7 @@ def union_widths_for_symbol(symbol: str, base_config: dict | None = None,
     profiles = profiles or load_profiles()
     widths: set = set()
     base_wbs = base_config.get("wing_widths_by_symbol", {})
-    for w in (base_wbs.get(symbol) or base_wbs.get("DEFAULT") or []):
+    for w in base_wbs.get(symbol) or base_wbs.get("DEFAULT") or []:
         widths.add(w)
     for _name, pdef in profiles.items():
         if _name.startswith("_"):
@@ -224,13 +248,14 @@ def union_widths_for_symbol(symbol: str, base_config: dict | None = None,
         prof_syms = [s.upper() for s in params.get("symbols", [])]
         if prof_syms and symbol.upper() not in prof_syms:
             continue
-        for w in (_profile_widths_for_symbol(params, symbol) or []):
+        for w in _profile_widths_for_symbol(params, symbol) or []:
             widths.add(w)
     return sorted(widths)
 
 
-def union_short_deltas_for_symbol(symbol: str, base_config: dict | None = None,
-                                  profiles: dict | None = None) -> list[float]:
+def union_short_deltas_for_symbol(
+    symbol: str, base_config: dict | None = None, profiles: dict | None = None
+) -> list[float]:
     """Distinct `short_delta_target` values any profile requests for `symbol` beyond the loop's
     VIX-banded default, so paper_loop can build candidates at each band. Profiles that declare
     none contribute nothing -- they use the banded-default candidate. Mirrors
@@ -255,6 +280,7 @@ def union_short_deltas_for_symbol(symbol: str, base_config: dict | None = None,
 # Deterministic gate evaluator
 # ---------------------------------------------------------------------------
 
+
 def _time_to_minutes(hhmm: str) -> int:
     h, m = hhmm.split(":")
     return int(h) * 60 + int(m)
@@ -274,8 +300,11 @@ def _select_candidates(candidates: list, params: dict, symbol: str) -> list:
     # untouched, so existing behavior is exactly preserved.
     target = params.get("short_delta_target")
     if target is not None:
-        candidates = [c for c in candidates if c.get("short_delta") is not None
-                      and abs(c["short_delta"] - target) < 1e-6]
+        candidates = [
+            c
+            for c in candidates
+            if c.get("short_delta") is not None and abs(c["short_delta"] - target) < 1e-6
+        ]
     elif any(c.get("short_delta") is not None for c in candidates):
         candidates = [c for c in candidates if c.get("is_default_delta")]
 
@@ -333,9 +362,44 @@ def _late_entry_bias_max(params: dict) -> float:
     return params.get("late_entry_bias_iv_rank_max", 0.45)
 
 
-def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
-                   account_open_count: int | None = None,
-                   todays_entry_count: int = 0, last_entry_min: int | None = None) -> tuple:
+def _gex_at_entry(gex: dict | None) -> dict:
+    """The four GEX-regime fields persisted on an accepted entry, or all-None when GEX was unavailable.
+
+    All-None is a meaningful reading, not a gap: it means the entry was taken with no GEX data, which
+    is precisely the case `regime_gex_require_positive` would have refused. Distinguishing "GEX was
+    positive" from "GEX was unknown" is the whole point of recording this, so the two must not collapse
+    into the same stored value. `gex_positive` is stored as 0/1 rather than a bool because SQLite has
+    no boolean type and the orchestrator's readers expect the column to compare numerically.
+    """
+    gex = gex or {}
+    if not gex.get("ok"):
+        return {
+            "gex_net_at_entry": None,
+            "gex_positive_at_entry": None,
+            "gamma_flip_at_entry": None,
+            "gex_spot_at_entry": None,
+            "gex_net_vol_at_entry": None,
+        }
+    positive = gex.get("gex_positive")
+    return {
+        "gex_net_at_entry": gex.get("net_gex"),
+        "gex_positive_at_entry": None if positive is None else int(bool(positive)),
+        "gamma_flip_at_entry": gex.get("gamma_flip"),
+        "gex_spot_at_entry": gex.get("spot"),
+        # The flow series (volume-weighted) beside the positioning series above; flip DISTANCE is
+        # derivable from gamma_flip_at_entry + gex_spot_at_entry, so it is not stored separately.
+        "gex_net_vol_at_entry": gex.get("net_gex_vol"),
+    }
+
+
+def evaluate_entry(
+    snapshot: dict,
+    params: dict,
+    open_ics: list,
+    account_open_count: int | None = None,
+    todays_entry_count: int = 0,
+    last_entry_min: int | None = None,
+) -> tuple:
     """Encode the Step-6 hard-stops from CLAUDE.md against one profile's thresholds.
 
     snapshot: one pre-fetched market snapshot for a symbol/session (see paper-loop.md for
@@ -381,7 +445,11 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
     # ATR gate is percentage-based (5-day ATR as a fraction of spot) so one threshold means
     # the same "elevated realized vol" across symbols spanning ~297 (IWM) to ~7500 (SPX) — a
     # fixed points threshold silently over-blocked SPX and never fired for QQQ/IWM.
-    if atr is not None and atr_underlying and (atr / atr_underlying) > params["regime_atr_pause_threshold_pct"]:
+    if (
+        atr is not None
+        and atr_underlying
+        and (atr / atr_underlying) > params["regime_atr_pause_threshold_pct"]
+    ):
         return False, "regime_atr_elevated", None
     gex = snapshot.get("gex") or {}
     if gex.get("ok") and gex.get("gex_positive") is False:
@@ -390,7 +458,8 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
     # also pause when GEX is unknown/unavailable -- not just when it is confirmed negative. Used
     # opt-in per profile to isolate the effect of the GEX gate.
     if params.get("regime_gex_require_positive", False) and not (
-            gex.get("ok") and gex.get("gex_positive") is True):
+        gex.get("ok") and gex.get("gex_positive") is True
+    ):
         return False, "regime_gex_not_positive", None
     # Magnitude variant (opt-in): require positive GEX AND spot at least this fraction from the
     # gamma-flip strike -- deep enough inside positive-gamma territory that pinning dominates, not
@@ -398,8 +467,13 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
     min_flip_dist = params.get("regime_gex_min_flip_distance_pct")
     if min_flip_dist is not None:
         flip, spot = gex.get("gamma_flip"), gex.get("spot")
-        deep_positive = (gex.get("ok") and gex.get("gex_positive") is True and flip and spot
-                         and abs(spot - flip) / spot >= min_flip_dist)
+        deep_positive = (
+            gex.get("ok")
+            and gex.get("gex_positive") is True
+            and flip
+            and spot
+            and abs(spot - flip) / spot >= min_flip_dist
+        )
         if not deep_positive:
             return False, "regime_gex_flip_too_close", None
 
@@ -414,18 +488,32 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
     target = params.get("daily_ic_trade_target", 0)
     over_target = bool(target) and todays_entry_count >= target
 
+    # Entry window — applies to EVERY profile, not just staggered ones.
+    #
+    # This check used to live inside the `stagger_entries` block below, and the ladder profiles omit
+    # that key, so in practice the paper engine enforced no entry window at all: it could open a fresh
+    # 0DTE IC from the opening bell to the force-close while `config.json` said 10:00–14:30 and the
+    # live loop honoured it. Measured on 2026-07-27, the earliest paper entry in the book was 09:30 ET
+    # and 112 of 199 in-session entries landed before 10:00 — so paper and live had silently diverged
+    # on entry timing for the whole dataset, and every conclusion drawn from this book inherits that.
+    # A gate that config claims to apply must actually apply; making it opt-in per profile was the bug.
+    #
+    # `paper_entry_window_start` overrides the start for the paper engine ONLY (see config.json for why
+    # it currently sits at 09:30). The end is shared: no entry has ever been taken at/after 14:30 ET, so
+    # enforcing it changes nothing historically and just stops the window drifting open again.
+    ews = _time_to_minutes(
+        params.get("paper_entry_window_start") or params.get("entry_window_start", "10:00")
+    )
+    ewe = _time_to_minutes(params.get("entry_window_end", "14:30"))
+    if now_min < ews or now_min >= ewe:
+        return False, "outside_entry_window", None
+
     # Staggered-entry controls (opt-in per profile via `stagger_entries`) — spread the daily target
     # across the session instead of filling every slot in the first passing iterations, giving
-    # time-of-day coverage of when a condor is opened. This block also enforces the entry window,
-    # which the live loop applies (10:00–14:30) but the paper gate historically did not — paper could
-    # open a fresh 0DTE IC as late as the force-close. Here the daily target IS a hard cap: staggering
+    # time-of-day coverage of when a condor is opened. Here the daily target IS a hard cap: staggering
     # exists to spread a fixed number of entries, so opting in means opting into the throttle. Ladder
     # profiles omit `stagger_entries` and keep the soft-guidance behavior above.
     if params.get("stagger_entries"):
-        ews = _time_to_minutes(params.get("entry_window_start", "10:00"))
-        ewe = _time_to_minutes(params.get("entry_window_end", "14:30"))
-        if now_min < ews or now_min >= ewe:
-            return False, "outside_entry_window", None
         if over_target:
             return False, "daily_target_reached", None
         spacing = params.get("min_minutes_between_entries", 0)
@@ -442,8 +530,12 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
     if account_open_count >= params["max_concurrent_ics"]:
         return False, "max_concurrent_ics_reached", None
 
-    # Quarterly / triple-witching hard stops
+    # Quarterly / triple-witching hard stops. intraday_range_pct is the session's
+    # (high - low) / price so far, exchange-official via the streamer's Summary rows;
+    # None (feed not yet warm / streamer down) leaves the range clauses inactive, the
+    # same fail-open convention as the ATR gate above.
     today = snapshot.get("date")
+    intraday_range_pct = snapshot.get("intraday_range_pct")
     is_quarterly = _is_event_day(today, _cal.is_quarterly_expiry)
     is_witching = _is_event_day(today, _cal.is_triple_witching)
     if is_quarterly or is_witching:
@@ -451,15 +543,27 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
             return False, "quarterly_open_volatile_skip", None
         if is_witching and now_min > _time_to_minutes("12:30"):
             return False, "triple_witching_no_new_entries", None
+        if (
+            is_quarterly
+            and intraday_range_pct is not None
+            and intraday_range_pct > params.get("quarterly_expiry_max_intraday_range_pct", 0.005)
+        ):
+            return False, "quarterly_intraday_range_exceeded", None
 
-    # FOMC blackout
+    # FOMC blackout. Post-blackout entries need normalized volatility: IV rank still
+    # holding, and the session range not already blown out. The range clause is
+    # percentage-based (the old literal was 3.5 POINTS — symbol-agnostic in exactly the
+    # way the ATR gate was already fixed for, and inert besides: nothing populated it).
     if _is_event_day(today, _cal.is_fomc_day):
         blackout_start = _time_to_minutes(params.get("fomc_blackout_start", "13:30"))
         blackout_end = _time_to_minutes(params.get("fomc_blackout_end", "14:30"))
         if now_min >= blackout_start and now_min < blackout_end:
             return False, "fomc_blackout", None
         if now_min >= blackout_end:
-            if iv_rank < 0.40 or snapshot.get("intraday_range", 0) > 3.5:
+            range_blown = intraday_range_pct is not None and intraday_range_pct > params.get(
+                "fomc_post_blackout_max_intraday_range_pct", 0.005
+            )
+            if iv_rank < params.get("fomc_post_blackout_min_iv_rank", 0.40) or range_blown:
                 return False, "fomc_post_blackout_insufficient_premium", None
 
     open_strikes = set()
@@ -523,8 +627,7 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
             last_reason = "non_positive_credit"
             continue
         low_iv_relief = iv_rank <= _low_iv_relief_max(params)
-        pct_floor = _low_iv_relief_floor(params) if low_iv_relief \
-            else params["min_credit_pct_of_width"]
+        pct_floor = _low_iv_relief_floor(params) if low_iv_relief else params["min_credit_pct_of_width"]
         # Past the daily target the bar rises: only a richer-than-usual credit earns an extra entry
         # (the daily target is guidance, so favorable conditions allow more — see `over_target`).
         if over_target:
@@ -537,8 +640,9 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
         gross_credit_dollars = net_credit * multiplier
         fee = open_fees(symbol, quantity=1)
         if gross_credit_dollars - fee < pct_floor * wing_width * multiplier:
-            last_reason = ("over_target_credit_below_floor" if over_target
-                           else "credit_below_fee_adjusted_floor")
+            last_reason = (
+                "over_target_credit_below_floor" if over_target else "credit_below_fee_adjusted_floor"
+            )
             continue
 
         chosen = dict(cand)
@@ -557,7 +661,10 @@ def evaluate_entry(snapshot: dict, params: dict, open_ics: list,
 # Synthetic fill / mark / exit engine
 # ---------------------------------------------------------------------------
 
-def synthetic_entry_fill(snapshot: dict, profile_name: str, chosen: dict, params: dict, execution_mode: str) -> dict:
+
+def synthetic_entry_fill(
+    snapshot: dict, profile_name: str, chosen: dict, params: dict, execution_mode: str
+) -> dict:
     """Build the ic_trades row for a synthetic fill priced at mid minus the slippage haircut."""
     now = str(_now_et())
     today = snapshot["date"]
@@ -579,6 +686,14 @@ def synthetic_entry_fill(snapshot: dict, profile_name: str, chosen: dict, params
         "put_credit": chosen["put_credit"],
         "call_credit": chosen["call_credit"],
         "net_credit": chosen["net_credit"],
+        # Modeled slippage dollars conceded opening the four legs (frac x spread sum x100).
+        # Exits accumulate onto this; net at a stressed 2x slippage = net - slippage_dollars.
+        "slippage_dollars": round(
+            params.get("slippage_frac_of_spread", DEFAULT_SLIPPAGE_FRAC)
+            * (_leg_spread(sp) + _leg_spread(lp) + _leg_spread(sc) + _leg_spread(lc))
+            * 100,
+            4,
+        ),
         "quantity": 1,
         "put_delta_at_entry": sp.get("delta"),
         "call_delta_at_entry": sc.get("delta"),
@@ -592,8 +707,16 @@ def synthetic_entry_fill(snapshot: dict, profile_name: str, chosen: dict, params
         "session_quality": snapshot.get("session_quality"),
         "iv_skew_signal": snapshot.get("iv_skew_signal"),
         "price_action_signal": snapshot.get("price_action_signal"),
+        # GEX regime at the moment this entry was accepted. `gex_positive` is what the live gate above
+        # keys on, and the two opt-in variants (regime_gex_require_positive, and the flip-distance
+        # variant that reads gamma_flip vs spot) are otherwise impossible to evaluate after the fact —
+        # nothing here recorded what GEX was when a fill happened, so their effect could only ever be
+        # argued, never measured. `spot` is the price tt.py's get_gex computed the profile against, so
+        # the flip DISTANCE is reconstructable; it can differ slightly from underlying_price_entry
+        # because the two come from separate calls, which is exactly why it is stored separately.
+        **_gex_at_entry(snapshot.get("gex")),
         "ai_entry_reasoning": f"paper/{execution_mode}/{profile_name}: deterministic entry, "
-                               f"widest clearing candidate ({chosen['wing_width']}-wide)",
+        f"widest clearing candidate ({chosen['wing_width']}-wide)",
         "stop_trigger_original": params["stop_trigger_ratio"],
         "stop_limit_original": params.get("stop_limit_ratio", 1.02),
         "stop_trigger_current": params["stop_trigger_ratio"],
@@ -626,6 +749,7 @@ def _leg_quote(snapshot_legs: dict, streamer_symbol: str):
 # docs/paper-trading.md. Friction figures are deliberately conservative, config-tunable, and
 # meant to be calibrated against a tiny-live run later (same philosophy as the 20-40% discount).
 
+
 def _is_cash_settled(symbol: str, base_config: dict) -> bool:
     listed = [s.upper() for s in base_config.get("cash_settled_symbols", [])]
     return symbol.upper() in listed
@@ -653,12 +777,14 @@ def force_close_active(snapshot: dict, base_config: dict, is_cash_settled: bool)
     today = snapshot.get("date")
 
     # FOMC blackout — all symbols, earliest trigger of the day
-    if _is_event_day(today, _cal.is_fomc_day) and \
-            now_min >= _time_to_minutes(base_config.get("fomc_blackout_start", "13:30")):
+    if _is_event_day(today, _cal.is_fomc_day) and now_min >= _time_to_minutes(
+        base_config.get("fomc_blackout_start", "13:30")
+    ):
         return True, "force_close_fomc"
     # Triple-witching / quarterly expiry — all symbols, 14:00 ET
-    if (_is_event_day(today, _cal.is_triple_witching) or
-            _is_event_day(today, _cal.is_quarterly_expiry)) and now_min >= _time_to_minutes("14:00"):
+    if (
+        _is_event_day(today, _cal.is_triple_witching) or _is_event_day(today, _cal.is_quarterly_expiry)
+    ) and now_min >= _time_to_minutes("14:00"):
         return True, "force_close_expiry_event"
     # Non-cash-settled symbols (QQQ/IWM/equities/futures) are closed before the bell to avoid
     # physical assignment — first at the earlier physical deadline, then a 15:45 backstop.
@@ -693,9 +819,16 @@ def _settlement_value(strike, underlying, wing_width, side) -> float:
     return round(min(max(intrinsic, 0.0), wing_width or 0.0), 4)
 
 
-def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close: bool,
-                        underlying_price: float | None = None, is_cash_settled: bool = True,
-                        force_close_reason: str = "force_close_eod", settle: bool = False) -> dict:
+def evaluate_open_trade(
+    trade: dict,
+    leg_quotes: dict,
+    params: dict,
+    force_close: bool,
+    underlying_price: float | None = None,
+    is_cash_settled: bool = True,
+    force_close_reason: str = "force_close_eod",
+    settle: bool = False,
+) -> dict:
     """Mark-to-market one open paper IC and decide its exit (MEIC has no profit target).
 
     leg_quotes: {streamer_symbol: {"bid":.., "ask":.., "mid":..}} for this trade's 4 legs,
@@ -717,31 +850,55 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
     # so a missing quote at the close can't strand an expiring position. force_close (events /
     # non-cash) takes precedence since it fires earlier in the day.
     if settle and not force_close:
+        # `*_exit_price` stays gated on the side still being open — it drives P&L, and a side that
+        # already stopped was paid for at its stop.
+        #
+        # `*_settle_value` is computed for BOTH sides regardless, and is recorded, not charged. It is
+        # what the side WOULD have been worth had it been held to settlement, which is the only way to
+        # answer the question the whole stop debate turns on: did stopping cost more than holding?
+        # For a stopped side, `settle_value < stop_cost` means the stop paid more than the position
+        # ultimately owed. Nothing recorded this before, so "would these have recovered?" could only
+        # ever be argued. Cash-settled only — this branch is the 'left to expire' path.
+        put_settle = _settlement_value(
+            trade.get("put_strike"), underlying_price, trade.get("wing_width"), "put"
+        )
+        call_settle = _settlement_value(
+            trade.get("call_strike"), underlying_price, trade.get("wing_width"), "call"
+        )
         return {
             "action": "expire",
             "put_open": put_open,
             "call_open": call_open,
-            "put_exit_price": _settlement_value(trade.get("put_strike"), underlying_price,
-                                                trade.get("wing_width"), "put") if put_open else None,
-            "call_exit_price": _settlement_value(trade.get("call_strike"), underlying_price,
-                                                 trade.get("wing_width"), "call") if call_open else None,
+            "put_exit_price": put_settle if put_open else None,
+            "call_exit_price": call_settle if call_open else None,
+            "put_settle_value": put_settle,
+            "call_settle_value": call_settle,
+            "settle_underlying": underlying_price,
         }
 
     sq = leg_quotes.get(trade["put_symbol"])
     cq = leg_quotes.get(trade["call_symbol"])
     lpq = leg_quotes.get(trade["long_put_symbol"])
     lcq = leg_quotes.get(trade["long_call_symbol"])
-    if not all([sq, cq, lpq, lcq]):
+    if not all(_quote_usable(q) for q in (sq, cq, lpq, lcq)):
         return {"action": "hold", "reason": "quotes_unavailable"}
 
     net_credit = trade["net_credit"]
     slippage_frac = params.get("slippage_frac_of_spread", DEFAULT_SLIPPAGE_FRAC)
     # MEIC has no profit target: an iron condor is only ever closed by a per-side stop, a
     # (non-cash-settled) time-based force-close, or an event force-close. See docs/strategy.md.
+    # Modeled slippage DOLLARS per side-close (frac x that side's two leg spreads x100),
+    # carried on every priced exit so the row accumulates its total slippage cost.
+    # Because slippage is linear in the fraction, net P&L at a stressed 2x fraction is
+    # exactly net - slippage_dollars: the cost-sensitivity column reads straight off it.
+    put_slip = round(slippage_frac * (_leg_spread(sq) + _leg_spread(lpq)) * 100, 4)
+    call_slip = round(slippage_frac * (_leg_spread(cq) + _leg_spread(lcq)) * 100, 4)
+
     if force_close:
         put_exit = max(_close_cost(sq, lpq, slippage_frac), 0) if put_open else None
         call_exit = max(_close_cost(cq, lcq, slippage_frac), 0) if call_open else None
         friction_applied = False
+        pin_applied = False
         if not is_cash_settled:
             # Physically-settled symbols pay a modeled friction on the force-close (wider
             # spreads near the bell + assignment/pin risk) so paper doesn't overstate their
@@ -749,54 +906,98 @@ def evaluate_open_trade(trade: dict, leg_quotes: dict, params: dict, force_close
             # (credit − exit_price) moves the right (worse) direction.
             friction = params.get("physical_settlement_exit_friction", 0.05)
             if put_open:
-                put_exit = round(put_exit + friction +
-                                 _pin_penalty(trade.get("put_strike"), underlying_price,
-                                              trade.get("wing_width"), params), 4)
+                put_pin = _pin_penalty(
+                    trade.get("put_strike"), underlying_price, trade.get("wing_width"), params
+                )
+                put_exit = round(put_exit + friction + put_pin, 4)
                 friction_applied = True
+                pin_applied = pin_applied or put_pin > 0
             if call_open:
-                call_exit = round(call_exit + friction +
-                                  _pin_penalty(trade.get("call_strike"), underlying_price,
-                                               trade.get("wing_width"), params), 4)
+                call_pin = _pin_penalty(
+                    trade.get("call_strike"), underlying_price, trade.get("wing_width"), params
+                )
+                call_exit = round(call_exit + friction + call_pin, 4)
                 friction_applied = True
+                pin_applied = pin_applied or call_pin > 0
         return {
             "action": "force_close",
             "put_open": put_open,
             "call_open": call_open,
             "put_exit_price": put_exit,
             "call_exit_price": call_exit,
+            "put_exit_slippage": put_slip if put_open else None,
+            "call_exit_slippage": call_slip if call_open else None,
             "reason": force_close_reason,
             "physical_friction_applied": friction_applied,
+            # The pin penalty is a MODELED cost that scales with wing width, so the width study
+            # must be able to see the model's hand per trade -- recorded distinctly from the flat
+            # friction (which every physical force-close pays).
+            "pin_risk_applied": pin_applied,
         }
 
     stop_trigger = trade.get("stop_trigger_current") or params["stop_trigger_ratio"]
-    call_cost_mid = cq["mid"] - lcq["mid"]
-    put_cost_mid = sq["mid"] - lpq["mid"]
+
+    # Trigger and fill are priced on the SAME basis: the cost to actually close the vertical
+    # (mid + slippage haircut), not the raw mid.
+    #
+    # These used to differ — the trigger compared `mid` against the threshold while the fill was
+    # charged `_close_cost` = mid + slippage_frac * (short_spread + long_spread), off the SAME quotes
+    # in the SAME iteration. So a stop could never fill at its own trigger level: it was short by the
+    # haircut every time, by construction, and the threshold the config states was never the amount
+    # actually risked. It is a small bias (~1.4% of the trigger on a typical SPX IC at
+    # slippage_frac 0.125) next to the ~9% total overshoot measured over 07-10..07-27 — but it is a
+    # CONSTANT bias, and leaving it in means the recorded overshoot mixes a model artifact with the
+    # real quantity of interest, which is how far the mid jumps between 2-minute evaluations. With
+    # the bases matched, overshoot measures loop cadence alone.
+    call_cost = _close_cost(cq, lcq, slippage_frac)
+    put_cost = _close_cost(sq, lpq, slippage_frac)
 
     # per_side_stop_management: false disables per-side stops entirely (a hold-to-expiry
     # cell), so the IC is only ever closed by a force-close or settlement -- held to expiry.
     stops_on = params.get("per_side_stop_management", True)
-    call_trigger = stops_on and call_open and call_cost_mid >= stop_trigger * net_credit
-    put_trigger = stops_on and put_open and put_cost_mid >= stop_trigger * net_credit
+    call_trigger = stops_on and call_open and call_cost >= stop_trigger * net_credit
+    put_trigger = stops_on and put_open and put_cost >= stop_trigger * net_credit
 
-    # Closing fills priced at mid + slippage haircut (see _close_cost); the former
-    # (short_ask - long_bid) * stop_limit worst-case model is superseded by the parity model.
+    # Every return carries the per-side cost-to-close observed this iteration, including "hold", so
+    # the caller can keep a running maximum. Without it nothing records how far a side ran, and no
+    # alternative stop threshold can ever be evaluated after the fact — the same instrumentation gap
+    # that made the GEX gates unmeasurable.
+    marks = {
+        "put_cost_now": round(put_cost, 4) if put_open else None,
+        "call_cost_now": round(call_cost, 4) if call_open else None,
+    }
+
     if call_trigger and put_trigger:
         return {
             "action": "stop_both",
-            "put_exit_price": round(_close_cost(sq, lpq, slippage_frac), 4),
-            "call_exit_price": round(_close_cost(cq, lcq, slippage_frac), 4),
+            "put_exit_price": round(put_cost, 4),
+            "call_exit_price": round(call_cost, 4),
+            "put_exit_slippage": put_slip,
+            "call_exit_slippage": call_slip,
+            **marks,
         }
     if call_trigger:
-        return {"action": "stop_call", "call_exit_price": round(_close_cost(cq, lcq, slippage_frac), 4)}
+        return {
+            "action": "stop_call",
+            "call_exit_price": round(call_cost, 4),
+            "call_exit_slippage": call_slip,
+            **marks,
+        }
     if put_trigger:
-        return {"action": "stop_put", "put_exit_price": round(_close_cost(sq, lpq, slippage_frac), 4)}
+        return {
+            "action": "stop_put",
+            "put_exit_price": round(put_cost, 4),
+            "put_exit_slippage": put_slip,
+            **marks,
+        }
 
-    return {"action": "hold"}
+    return {"action": "hold", **marks}
 
 
 # ---------------------------------------------------------------------------
 # DB I/O (shells out to db.py, pointed at the paper DB)
 # ---------------------------------------------------------------------------
+
 
 def _db(args_list: list, db_path: str) -> dict:
     cmd = [sys.executable, _DB_PY, "--db", db_path] + args_list
@@ -814,8 +1015,14 @@ def _save_trade(row: dict, db_path: str) -> dict:
 
 
 def _update_trade(ic_order_id: str, fields: dict, db_path: str) -> dict:
+    """Fields are passed to db.py as CLI flags, so a None must be DROPPED, not stringified — db.py
+    skips arguments that are None, but `str(None)` is the literal text "None", which would land in a
+    REAL column and read back as a string. Nothing passed None before the settlement counterfactual
+    made it possible for a field to be legitimately absent."""
     args_list = ["update_trade", "--ic_order_id", ic_order_id]
     for k, v in fields.items():
+        if v is None:
+            continue
         args_list += [f"--{k}", str(v)]
     return _db(args_list, db_path)
 
@@ -850,8 +1057,10 @@ def _profile_day_stats(profile: str, trade_date: str, db_path: str, symbol: str 
     try:
         con = sqlite3.connect(db_path)
         con.row_factory = sqlite3.Row
-        q = ("SELECT entry_time FROM ic_trades WHERE trade_date=? AND risk_profile=? "
-             "AND status NOT IN ('cancelled')")
+        q = (
+            "SELECT entry_time FROM ic_trades WHERE trade_date=? AND risk_profile=? "
+            "AND status NOT IN ('cancelled')"
+        )
         params = [trade_date, profile]
         if symbol:
             q += " AND symbol=?"
@@ -868,11 +1077,19 @@ def _profile_day_stats(profile: str, trade_date: str, db_path: str, symbol: str 
     return len(rows), last
 
 
-def process_symbol(snapshot: dict, db_path: str, execution_mode: str, profiles_filter=None) -> dict:
+def process_symbol(
+    snapshot: dict, db_path: str, execution_mode: str, profiles_filter=None, extra_profiles=None
+) -> dict:
     """Run all four profiles' mark-to-market/exit + entry evaluation for one symbol against
-    one already-fetched snapshot. Returns a per-profile action summary for logging."""
+    one already-fetched snapshot. Returns a per-profile action summary for logging.
+
+    `extra_profiles` are synthetic, caller-built profile defs evaluated alongside the registry
+    -- the advised shadow book (paper_loop._advice_profiles) rides this seam. Merged after the
+    registry so a synthetic name is never silently shadowed by a registry entry."""
     base_config = load_base_config()
     all_profiles = load_profiles()
+    if extra_profiles:
+        all_profiles = {**all_profiles, **extra_profiles}
     names = profiles_filter or all_profile_names(all_profiles)
     symbol = snapshot["symbol"]
     is_cash = _is_cash_settled(symbol, base_config)
@@ -894,11 +1111,16 @@ def process_symbol(snapshot: dict, db_path: str, execution_mode: str, profiles_f
         actions = []
 
         for trade in open_ics:
-            decision = evaluate_open_trade(trade, leg_quotes, params, force_close,
-                                           underlying_price=underlying_price,
-                                           is_cash_settled=is_cash,
-                                           force_close_reason=force_close_reason,
-                                           settle=settle)
+            decision = evaluate_open_trade(
+                trade,
+                leg_quotes,
+                params,
+                force_close,
+                underlying_price=underlying_price,
+                is_cash_settled=is_cash,
+                force_close_reason=force_close_reason,
+                settle=settle,
+            )
             actions.append({"ic_order_id": trade["ic_order_id"], "decision": decision})
             _apply_exit_decision(trade, decision, symbol, db_path)
 
@@ -911,16 +1133,28 @@ def process_symbol(snapshot: dict, db_path: str, execution_mode: str, profiles_f
             # Per-(profile × symbol) day stats: entry_count feeds the daily_ic_trade_target cap that
             # applies to every profile; last_entry_min additionally feeds the opt-in staggering
             # spacing gate. Scoped to this symbol so each portfolio has its own daily budget.
-            todays_entries, last_entry_min = _profile_day_stats(name, snapshot["date"], db_path, symbol=symbol)
-            entered, reason, chosen = evaluate_entry(snapshot, params, still_open,
-                                                     account_open_count=symbol_open,
-                                                     todays_entry_count=todays_entries,
-                                                     last_entry_min=last_entry_min)
+            todays_entries, last_entry_min = _profile_day_stats(
+                name, snapshot["date"], db_path, symbol=symbol
+            )
+            entered, reason, chosen = evaluate_entry(
+                snapshot,
+                params,
+                still_open,
+                account_open_count=symbol_open,
+                todays_entry_count=todays_entries,
+                last_entry_min=last_entry_min,
+            )
             if entered:
                 row = synthetic_entry_fill(snapshot, name, chosen, params, execution_mode)
                 save_result = _save_trade(row, db_path)
-                actions.append({"entry": "filled", "ic_order_id": row["ic_order_id"],
-                                 "net_credit": row["net_credit"], "save_result": save_result})
+                actions.append(
+                    {
+                        "entry": "filled",
+                        "ic_order_id": row["ic_order_id"],
+                        "net_credit": row["net_credit"],
+                        "save_result": save_result,
+                    }
+                )
             else:
                 actions.append({"entry": "skipped", "reason": reason})
         else:
@@ -928,7 +1162,80 @@ def process_symbol(snapshot: dict, db_path: str, execution_mode: str, profiles_f
 
         results[name] = actions
 
+    _log_width_divergence(snapshot, results, db_path)
     return {"ok": True, "symbol": symbol, "results": results}
+
+
+def _log_width_divergence(snapshot: dict, results: dict, db_path: str) -> None:
+    """The width study's counterfactual: when one width-* arm entered this tick and a sibling arm
+    did not, record WHO sat out and WHY (floor / overlap / spacing ...). The iteration log condenses
+    skipped profiles, so without this the divergence -- the study's most informative datum, per the
+    flies fly_decisions lesson -- would be unrecoverable. Only divergent ticks are written (a tick
+    where every arm entered, or every arm skipped, records nothing), so volume stays small.
+    Best-effort: a logging hiccup must never disturb the engine."""
+    arms = {n: a for n, a in results.items() if n.startswith("width-")}
+    if not arms:
+        return
+    entered = [n for n, acts in arms.items() if any(x.get("entry") == "filled" for x in acts)]
+    skipped = {
+        n: next((x.get("reason") for x in acts if x.get("entry") == "skipped"), "unknown")
+        for n, acts in arms.items()
+        if not any(x.get("entry") == "filled" for x in acts)
+    }
+    if not entered or not skipped:
+        return
+    try:
+        import sqlite3 as _sq
+
+        now = str(_now_et())
+        conn = _sq.connect(db_path)
+        for arm, reason in sorted(skipped.items()):
+            conn.execute(
+                "INSERT INTO loop_log (loop_time, loop_date, symbol, action, reasoning, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    now,
+                    snapshot["date"],
+                    snapshot["symbol"],
+                    "width_arm_divergence",
+                    f"{arm} skipped ({reason}) while {','.join(sorted(entered))} entered",
+                    now,
+                ),
+            )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def _max_cost_updates(trade: dict, decision: dict) -> dict:
+    """Running maximum cost-to-close per side, as {column: value} — empty when nothing set a new high.
+
+    Written only on a NEW high on purpose: every `_update_trade` is a db.py subprocess, and `hold` was
+    previously a no-op DB-wise, so writing each iteration would add a spawn per open IC per tick. The
+    maximum is monotone, so writes taper off once a side peaks.
+
+    This is what makes an alternative stop threshold answerable later: it records how far each side
+    actually ran, which no stored field captured before.
+    """
+    out = {}
+    for side in ("put", "call"):
+        cost_now = decision.get(f"{side}_cost_now")
+        if cost_now is None:
+            continue
+        prior = trade.get(f"{side}_max_cost")
+        if prior is None or cost_now > prior:
+            out[f"{side}_max_cost"] = cost_now
+    return out
+
+
+def _exit_slippage_update(trade: dict, decision: dict) -> dict:
+    """Accumulate this exit's modeled slippage dollars onto the row's running total.
+    Empty when the decision priced nothing (hold/expire — settlement crosses no spread)."""
+    add = (decision.get("put_exit_slippage") or 0) + (decision.get("call_exit_slippage") or 0)
+    if add <= 0:
+        return {}
+    return {"slippage_dollars": round(float(trade.get("slippage_dollars") or 0) + add, 4)}
 
 
 def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str) -> None:
@@ -937,7 +1244,18 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
     ic_order_id = trade["ic_order_id"]
     mult = 100
 
+    max_updates = _max_cost_updates(trade, decision)
+
     if action == "hold":
+        updates = dict(max_updates)
+        if decision.get("reason") == "quotes_unavailable":
+            # Feed-quality accounting: count the iterations this trade went unmarked so a
+            # stalled streamer is distinguishable from a quiet market in ic_trades itself
+            # (the flies fly_snapshots lesson, applied to the open-trade path).
+            updates["unmarked_iterations"] = int(trade.get("unmarked_iterations") or 0) + 1
+            updates["last_unmarked_at"] = now
+        if updates:
+            _update_trade(ic_order_id, updates, db_path)
         return
 
     if action == "expire":
@@ -948,40 +1266,129 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
         if decision["put_open"]:
             put_pnl = round((trade["put_credit"] - decision["put_exit_price"]) * mult, 2)
             delta_pnl += put_pnl
-            _db(["record_leg_exit", "--ic_order_id", ic_order_id, "--side", "put",
-                 "--status", "expired", "--exit_time", now, "--exit_reason", "expired_settlement",
-                 "--exit_price", str(decision["put_exit_price"]), "--pnl", str(put_pnl)], db_path)
+            _db(
+                [
+                    "record_leg_exit",
+                    "--ic_order_id",
+                    ic_order_id,
+                    "--side",
+                    "put",
+                    "--status",
+                    "expired",
+                    "--exit_time",
+                    now,
+                    "--exit_reason",
+                    "expired_settlement",
+                    "--exit_price",
+                    str(decision["put_exit_price"]),
+                    "--pnl",
+                    str(put_pnl),
+                ],
+                db_path,
+            )
         if decision["call_open"]:
             call_pnl = round((trade["call_credit"] - decision["call_exit_price"]) * mult, 2)
             delta_pnl += call_pnl
-            _db(["record_leg_exit", "--ic_order_id", ic_order_id, "--side", "call",
-                 "--status", "expired", "--exit_time", now, "--exit_reason", "expired_settlement",
-                 "--exit_price", str(decision["call_exit_price"]), "--pnl", str(call_pnl)], db_path)
+            _db(
+                [
+                    "record_leg_exit",
+                    "--ic_order_id",
+                    ic_order_id,
+                    "--side",
+                    "call",
+                    "--status",
+                    "expired",
+                    "--exit_time",
+                    now,
+                    "--exit_reason",
+                    "expired_settlement",
+                    "--exit_price",
+                    str(decision["call_exit_price"]),
+                    "--pnl",
+                    str(call_pnl),
+                ],
+                db_path,
+            )
         # If a side was already stopped intraday, the IC ends as 'stopped' (not 'expired') so stop
         # vs. expiry stays distinguishable at the IC level; a clean both-sides-expire is 'expired'.
         was_stopped = trade.get("put_stop_cost") is not None or trade.get("call_stop_cost") is not None
-        _update_trade(ic_order_id, {
-            "status": "stopped" if was_stopped else "expired", "exit_time": now,
-            "exit_reason": "stopped+expired_settlement" if was_stopped else "expired_settlement",
-            "pnl": existing_pnl + delta_pnl,
-        }, db_path)
+        _update_trade(
+            ic_order_id,
+            {
+                "status": "stopped" if was_stopped else "expired",
+                "exit_time": now,
+                "exit_reason": "stopped+expired_settlement" if was_stopped else "expired_settlement",
+                "pnl": existing_pnl + delta_pnl,
+                # Recorded for BOTH sides, including any already stopped — this is the counterfactual.
+                # For a stopped side, settle_value < its stop cost means the stop paid more than holding
+                # would have, which is the question the stop-rule debate actually turns on.
+                # `.get` because callers may hand-build an exit decision (tests, and any future caller
+                # that isn't evaluate_open_trade); a decision without these records NULL rather than
+                # failing the settlement that carries the actual P&L.
+                "put_settle_value": decision.get("put_settle_value"),
+                "call_settle_value": decision.get("call_settle_value"),
+                "settle_underlying": decision.get("settle_underlying"),
+                **max_updates,
+            },
+            db_path,
+        )
         return
 
     if action in ("stop_call", "stop_put", "stop_both"):
         fee = close_fees_one_side(symbol) if action != "stop_both" else close_fees_full_ic(symbol)
-        updates = {"fees": (trade.get("fees") or 0) + fee}
+        # `max_updates` folded in here so the peak isn't lost on the iteration that exits — the stop
+        # cost IS the running max at that moment, and it's the datum the counterfactual compares against.
+        updates = {
+            "fees": (trade.get("fees") or 0) + fee,
+            **max_updates,
+            **_exit_slippage_update(trade, decision),
+        }
         if action in ("stop_call", "stop_both"):
             call_pnl = round((trade["call_credit"] - decision["call_exit_price"]) * mult, 2)
             updates["call_stop_cost"] = decision["call_exit_price"]
-            _db(["record_leg_exit", "--ic_order_id", ic_order_id, "--side", "call",
-                 "--status", "stopped", "--exit_time", now, "--exit_reason", "per_side_stop",
-                 "--exit_price", str(decision["call_exit_price"]), "--pnl", str(call_pnl)], db_path)
+            _db(
+                [
+                    "record_leg_exit",
+                    "--ic_order_id",
+                    ic_order_id,
+                    "--side",
+                    "call",
+                    "--status",
+                    "stopped",
+                    "--exit_time",
+                    now,
+                    "--exit_reason",
+                    "per_side_stop",
+                    "--exit_price",
+                    str(decision["call_exit_price"]),
+                    "--pnl",
+                    str(call_pnl),
+                ],
+                db_path,
+            )
         if action in ("stop_put", "stop_both"):
             put_pnl = round((trade["put_credit"] - decision["put_exit_price"]) * mult, 2)
             updates["put_stop_cost"] = decision["put_exit_price"]
-            _db(["record_leg_exit", "--ic_order_id", ic_order_id, "--side", "put",
-                 "--status", "stopped", "--exit_time", now, "--exit_reason", "per_side_stop",
-                 "--exit_price", str(decision["put_exit_price"]), "--pnl", str(put_pnl)], db_path)
+            _db(
+                [
+                    "record_leg_exit",
+                    "--ic_order_id",
+                    ic_order_id,
+                    "--side",
+                    "put",
+                    "--status",
+                    "stopped",
+                    "--exit_time",
+                    now,
+                    "--exit_reason",
+                    "per_side_stop",
+                    "--exit_price",
+                    str(decision["put_exit_price"]),
+                    "--pnl",
+                    str(put_pnl),
+                ],
+                db_path,
+            )
         updates["status"] = "stopped" if action == "stop_both" else "partial"
         _update_trade(ic_order_id, updates, db_path)
         # Accumulate realized pnl for stopped legs; final pnl reconciled when the other
@@ -996,30 +1403,79 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
         return
 
     if action == "force_close":
-        fee = close_fees_full_ic(symbol) if (decision["put_open"] and decision["call_open"]) \
+        fee = (
+            close_fees_full_ic(symbol)
+            if (decision["put_open"] and decision["call_open"])
             else close_fees_one_side(symbol)
+        )
         reason = decision.get("reason") or "force_close_eod"
         existing_pnl = trade.get("pnl") or 0
         delta_pnl = 0
         if decision["put_open"]:
             put_pnl = round((trade["put_credit"] - decision["put_exit_price"]) * mult, 2)
             delta_pnl += put_pnl
-            _db(["record_leg_exit", "--ic_order_id", ic_order_id, "--side", "put",
-                 "--status", "force_closed", "--exit_time", now, "--exit_reason", reason,
-                 "--exit_price", str(decision["put_exit_price"]), "--pnl", str(put_pnl)], db_path)
+            _db(
+                [
+                    "record_leg_exit",
+                    "--ic_order_id",
+                    ic_order_id,
+                    "--side",
+                    "put",
+                    "--status",
+                    "force_closed",
+                    "--exit_time",
+                    now,
+                    "--exit_reason",
+                    reason,
+                    "--exit_price",
+                    str(decision["put_exit_price"]),
+                    "--pnl",
+                    str(put_pnl),
+                ],
+                db_path,
+            )
         if decision["call_open"]:
             call_pnl = round((trade["call_credit"] - decision["call_exit_price"]) * mult, 2)
             delta_pnl += call_pnl
-            _db(["record_leg_exit", "--ic_order_id", ic_order_id, "--side", "call",
-                 "--status", "force_closed", "--exit_time", now, "--exit_reason", reason,
-                 "--exit_price", str(decision["call_exit_price"]), "--pnl", str(call_pnl)], db_path)
+            _db(
+                [
+                    "record_leg_exit",
+                    "--ic_order_id",
+                    ic_order_id,
+                    "--side",
+                    "call",
+                    "--status",
+                    "force_closed",
+                    "--exit_time",
+                    now,
+                    "--exit_reason",
+                    reason,
+                    "--exit_price",
+                    str(decision["call_exit_price"]),
+                    "--pnl",
+                    str(call_pnl),
+                ],
+                db_path,
+            )
         # Preserve a prior per-side stop in the IC-level status (stop vs. force-close stays legible).
         was_stopped = trade.get("put_stop_cost") is not None or trade.get("call_stop_cost") is not None
-        _update_trade(ic_order_id, {
-            "status": "stopped" if was_stopped else "force_closed", "exit_time": now,
-            "exit_reason": (reason + "+prior_stop") if was_stopped else reason,
-            "pnl": existing_pnl + delta_pnl, "fees": (trade.get("fees") or 0) + fee,
-        }, db_path)
+        pin = decision.get("pin_risk_applied")
+        _update_trade(
+            ic_order_id,
+            {
+                "status": "stopped" if was_stopped else "force_closed",
+                "exit_time": now,
+                "exit_reason": (reason + "+prior_stop") if was_stopped else reason,
+                "pnl": existing_pnl + delta_pnl,
+                "fees": (trade.get("fees") or 0) + fee,
+                # NULL when the decision predates the flag or the close wasn't physical -- a missing
+                # measurement, never a measured "no pin".
+                "pin_risk_applied": None if pin is None else int(bool(pin)),
+                **max_updates,
+                **_exit_slippage_update(trade, decision),
+            },
+            db_path,
+        )
         return
 
 
@@ -1027,18 +1483,22 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="MEICAgent paper-trading engine")
     parser.add_argument("--db", default=str(_paths.paper_db_path()))
     sub = parser.add_subparsers(dest="command")
 
-    p_proc = sub.add_parser("process_symbol",
-                             help="Evaluate all four profiles' exits + entries for one symbol "
-                                  "against a pre-fetched market snapshot")
+    p_proc = sub.add_parser(
+        "process_symbol",
+        help="Evaluate all four profiles' exits + entries for one symbol "
+        "against a pre-fetched market snapshot",
+    )
     p_proc.add_argument("--snapshot", required=True, help="Snapshot JSON (or @path to a file)")
     p_proc.add_argument("--execution_mode", default="paper", choices=["paper", "replay"])
-    p_proc.add_argument("--profiles", default=None,
-                         help="Comma-separated subset of profiles; omit for all four")
+    p_proc.add_argument(
+        "--profiles", default=None, help="Comma-separated subset of profiles; omit for all four"
+    )
 
     p_fees = sub.add_parser("fees", help="Compute the tastytrade fee stack for one action")
     p_fees.add_argument("--symbol", required=True)
@@ -1058,8 +1518,10 @@ def main():
         print(json.dumps(result, default=str))
     elif args.command == "fees":
         fn = {
-            "open": open_fees, "close_full": close_fees_full_ic,
-            "close_side": close_fees_one_side, "expire": lambda s, q: expire_fees(),
+            "open": open_fees,
+            "close_full": close_fees_full_ic,
+            "close_side": close_fees_one_side,
+            "expire": lambda s, q: expire_fees(),
         }[args.action]
         fee = fn(args.symbol, args.quantity)
         print(json.dumps({"ok": True, "symbol": args.symbol, "action": args.action, "fee": fee}))

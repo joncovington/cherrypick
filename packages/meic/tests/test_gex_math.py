@@ -3,6 +3,7 @@ extracted from tt.py and dashboard.py after their two hand-maintained copies
 drifted out of sync (dashboard.py's once silently understated GEX ~75x for
 SPX by missing the spot**2 * 0.01 scale factor).
 """
+
 from __future__ import annotations
 
 import sys
@@ -44,7 +45,7 @@ def test_interpolate_zero_gamma_uses_cumulative_not_adjacent():
     bug this module's docstring documents)."""
     strikes = [
         {"strike": 595, "net_gex": 100},
-        {"strike": 600, "net_gex": -10},   # adjacent flip, but cumulative stays positive (90)
+        {"strike": 600, "net_gex": -10},  # adjacent flip, but cumulative stays positive (90)
         {"strike": 605, "net_gex": 5},
     ]
     assert gex_math.interpolate_zero_gamma(strikes) is None

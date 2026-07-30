@@ -21,15 +21,22 @@ def _mcfg(**streamer):
     return {
         "path": ".",
         "paper": {"kind": "self_healing", "task_name": "t"},
-        "streamer": {"enabled": True, "auto_restart": True,
-                     "status_argv": ["src/streamer.py", "--status"],
-                     "start_argv": ["src/streamer.py"], **streamer},
+        "streamer": {
+            "enabled": True,
+            "auto_restart": True,
+            "status_argv": ["src/streamer.py", "--status"],
+            "start_argv": ["src/streamer.py"],
+            **streamer,
+        },
     }
 
 
 def _status(**over):
-    base = {"running": True, "oldest_event_age_s": 5.0,
-            "connected_since": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()}
+    base = {
+        "running": True,
+        "oldest_event_age_s": 5.0,
+        "connected_since": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+    }
     base.update(over)
     return base
 
@@ -43,6 +50,7 @@ def spy(monkeypatch):
         def _fn(*_a, **_k):
             calls[key] += 1
             return True
+
         return _fn
 
     monkeypatch.setattr(watchdog, "_stop_streamer", record("stop"))
@@ -54,6 +62,7 @@ def _run(monkeypatch, status, mcfg=None):
     class R:
         returncode = 0
         stdout = json.dumps(status)
+
     monkeypatch.setattr(watchdog, "_run_module", lambda *a, **k: R())
     monkeypatch.setattr(watchdog.tasks, "exists", lambda _n: True)
     return watchdog._check_meic("meic", mcfg or _mcfg(), in_session=True)
@@ -103,8 +112,7 @@ def test_auto_restart_off_reports_but_does_not_act(monkeypatch, spy):
 
 
 def test_threshold_is_configurable(monkeypatch, spy):
-    findings = _run(monkeypatch, _status(oldest_event_age_s=100.0),
-                    _mcfg(stale_restart_seconds=60))
+    findings = _run(monkeypatch, _status(oldest_event_age_s=100.0), _mcfg(stale_restart_seconds=60))
     assert spy["start"] == 1
     assert "limit 60s" in next(x for x in findings if x.key == "meic.streamer").message
 
@@ -141,9 +149,11 @@ def test_unreadable_status_never_triggers_a_restart(monkeypatch, spy):
 
 def test_stall_check_is_session_only(monkeypatch, spy):
     """Quotes legitimately stop outside RTH — restarting all night would be pure churn."""
+
     class R:
         returncode = 0
         stdout = json.dumps(_status(oldest_event_age_s=99999.0))
+
     monkeypatch.setattr(watchdog, "_run_module", lambda *a, **k: R())
     monkeypatch.setattr(watchdog.tasks, "exists", lambda _n: True)
     findings = watchdog._check_meic("meic", _mcfg(), in_session=False)

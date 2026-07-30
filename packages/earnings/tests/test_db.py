@@ -28,8 +28,11 @@ def test_save_trade_requires_fields():
 
 def test_save_trade_and_get_open_positions_roundtrip():
     trade = {
-        "order_id": "O1", "symbol": "AAPL", "strategy": "iron_fly",
-        "expiration": "2026-08-21", "entry_credit": 2.50,
+        "order_id": "O1",
+        "symbol": "AAPL",
+        "strategy": "iron_fly",
+        "expiration": "2026-08-21",
+        "entry_credit": 2.50,
         "legs_json": json.dumps([{"symbol": "AAPL_C", "action": "Sell to Open", "quantity": 1}]),
     }
     result = db.cmd_save_trade(_ns(data=json.dumps(trade)))
@@ -43,8 +46,11 @@ def test_save_trade_and_get_open_positions_roundtrip():
 
 def test_save_trade_with_legs_populates_trade_legs():
     trade = {
-        "order_id": "O2", "symbol": "MSFT", "strategy": "double_calendar",
-        "expiration": "2026-08-21", "entry_credit": -3.0,
+        "order_id": "O2",
+        "symbol": "MSFT",
+        "strategy": "double_calendar",
+        "expiration": "2026-08-21",
+        "entry_credit": -3.0,
         "legs_json": "[]",
         "legs": [
             {"leg_role": "front_call", "symbol": "MSFT_FC", "action": "Sell to Open", "quantity": 1},
@@ -61,8 +67,12 @@ def test_save_trade_with_legs_populates_trade_legs():
 
 def test_save_trade_duplicate_order_id_fails():
     trade = {
-        "order_id": "DUPE", "symbol": "AAPL", "strategy": "iron_fly",
-        "expiration": "2026-08-21", "entry_credit": 2.50, "legs_json": "[]",
+        "order_id": "DUPE",
+        "symbol": "AAPL",
+        "strategy": "iron_fly",
+        "expiration": "2026-08-21",
+        "entry_credit": 2.50,
+        "legs_json": "[]",
     }
     assert db.cmd_save_trade(_ns(data=json.dumps(trade)))["ok"] is True
     result = db.cmd_save_trade(_ns(data=json.dumps(trade)))
@@ -71,15 +81,27 @@ def test_save_trade_duplicate_order_id_fails():
 
 def test_save_leg_close_updates_open_leg():
     trade = {
-        "order_id": "O3", "symbol": "TSLA", "strategy": "double_calendar",
-        "expiration": "2026-08-21", "entry_credit": 4.0, "legs_json": "[]",
+        "order_id": "O3",
+        "symbol": "TSLA",
+        "strategy": "double_calendar",
+        "expiration": "2026-08-21",
+        "entry_credit": 4.0,
+        "legs_json": "[]",
         "legs": [{"leg_role": "front_call", "symbol": "TSLA_FC", "action": "Sell to Open", "quantity": 1}],
     }
     db.cmd_save_trade(_ns(data=json.dumps(trade)))
 
-    result = db.cmd_save_leg_close(_ns(data=json.dumps({
-        "order_id": "O3", "leg_role": "front_call", "close_price": 1.0,
-    })))
+    result = db.cmd_save_leg_close(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": "O3",
+                    "leg_role": "front_call",
+                    "close_price": 1.0,
+                }
+            )
+        )
+    )
     assert result["ok"] is True
 
     legs = db.cmd_get_open_legs(_ns(order_id="O3"))
@@ -87,22 +109,42 @@ def test_save_leg_close_updates_open_leg():
 
 
 def test_save_leg_close_missing_position_fails():
-    result = db.cmd_save_leg_close(_ns(data=json.dumps({
-        "order_id": "NOPE", "leg_role": "short_call", "close_price": 1.0,
-    })))
+    result = db.cmd_save_leg_close(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": "NOPE",
+                    "leg_role": "short_call",
+                    "close_price": 1.0,
+                }
+            )
+        )
+    )
     assert result["ok"] is False
 
 
 def test_save_close_updates_trade():
     trade = {
-        "order_id": "O4", "symbol": "NVDA", "strategy": "iron_fly",
-        "expiration": "2026-08-21", "entry_credit": 3.0, "legs_json": "[]",
+        "order_id": "O4",
+        "symbol": "NVDA",
+        "strategy": "iron_fly",
+        "expiration": "2026-08-21",
+        "entry_credit": 3.0,
+        "legs_json": "[]",
     }
     db.cmd_save_trade(_ns(data=json.dumps(trade)))
 
-    result = db.cmd_save_close(_ns(data=json.dumps({
-        "order_id": "O4", "exit_debit": 1.0, "pnl": 200.0,
-    })))
+    result = db.cmd_save_close(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": "O4",
+                    "exit_debit": 1.0,
+                    "pnl": 200.0,
+                }
+            )
+        )
+    )
     assert result["ok"] is True
 
     positions = db.cmd_get_open_positions(_ns())
@@ -120,7 +162,16 @@ def test_log_scan_requires_fields():
 
 
 def test_log_scan_success():
-    result = db.cmd_log_scan(_ns(data=json.dumps({
-        "scan_date": "2026-07-07", "symbol": "AAPL", "strategy": "iron_fly", "tier": "Tier 1",
-    })))
+    result = db.cmd_log_scan(
+        _ns(
+            data=json.dumps(
+                {
+                    "scan_date": "2026-07-07",
+                    "symbol": "AAPL",
+                    "strategy": "iron_fly",
+                    "tier": "Tier 1",
+                }
+            )
+        )
+    )
     assert result["ok"] is True

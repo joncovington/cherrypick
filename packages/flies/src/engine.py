@@ -30,7 +30,20 @@ from __future__ import annotations
 import fly
 
 PUT, CALL = fly.PUT, fly.CALL
-ARMS = ("gex", "time_window", "control")
+# `wide_wing` is control's twin — ATM, same window — differing only in `wing_width`, so the pair
+# isolates wing width the way gex vs control isolates centring. It exists because completions arrive
+# only after spot has walked away from the centre: median drift to completion was 15.3-17.3 points
+# against a 5-point wing over 07-20..07-24, so 19 of 23 completed flies settled outside their wings.
+# The mechanism that makes a completion cheap is the one that puts the peak out of reach, and a wing
+# that brackets the observed drift is the obvious test of whether that is fixable or fundamental.
+#
+# The `width-N` arms (2026-07-29, with the XSP move) generalize that single hypothesis into a sweep:
+# each is another control twin pinning `wing_width` to N strike increments, so the wing question is
+# answered as a curve rather than one point. There is no `width-1` arm — `control` at the default
+# width IS the 1-increment rung, and a duplicate ATM book under a second name would double-count it.
+# `wide_wing` stays for the SPX-era books' attribution but is disabled in config on XSP, where its
+# 20-point wing is off-scale (the scaled equivalent of the drift it brackets is covered by width-2).
+ARMS = ("gex", "time_window", "control", "wide_wing", "width-2", "width-3", "width-4", "width-5")
 
 
 # --------------------------------------------------------------------------- config
@@ -130,11 +143,11 @@ def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
     # onto ATM, making it indistinguishable from `control`. `analytics.arm_divergence` is the
     # instrument for that — if agreement runs near 100%, this is the first number to revisit.
     max_dist = params.get("max_center_distance_pct", 0.003) * spot
+
     def total_gamma(entry):
         return abs(entry.get("call_gex", 0.0)) + abs(entry.get("put_gex", 0.0))
 
-    near = [s for s in per_strike
-            if total_gamma(s) > 0 and abs(s["strike"] - spot) <= max_dist]
+    near = [s for s in per_strike if total_gamma(s) > 0 and abs(s["strike"] - spot) <= max_dist]
     if not near:
         return atm_strike(spot, increment), "atm_no_gamma_near_spot"
     best = max(near, key=total_gamma)
@@ -153,6 +166,45 @@ def choose_side(snapshot: dict, center: float) -> str:
     return PUT if spot <= center else CALL
 
 
+def before_open_gate(params: dict, now_min: int | None) -> bool:
+    """Is it still inside the post-open blackout? A floor that an arm's own windows cannot override.
+
+    Deliberately NOT expressed as "just set every arm's first window later". Each arm carries its own
+    `entry_windows`, so four separate lists are four chances to silently reopen the hole when an arm is
+    added or edited — and MEIC is the worked example of what config-only enforcement looks like when it
+    fails there (its `entry_window_start` said 10:00 while the paper engine, which only applied the
+    check for opt-in profiles, traded from 09:30 for the entire dataset). This gate is checked before
+    the window logic and answers to `no_entry_before` alone, so an arm asking for an earlier window
+    gets refused rather than obeyed.
+
+    Off when unset, so nothing changes for a config that has not opted in.
+    """
+    floor = params.get("no_entry_before")
+    if not floor or now_min is None:
+        return False
+    return now_min < time_to_minutes(floor)
+
+
+def _window_cap_reached(params: dict, open_positions: list, window: str | None) -> bool:
+    """Has this entry window already used up its own share of the position budget?
+
+    A global `max_positions` alone does not make a multi-window arm test its windows: the book fills
+    in the first window and the later ones are never reached. Over 07-20..07-24 the time_window arm
+    put 15 of its 16 legged entries in 10:30-11:00, 1 in 12:30-13:00 and 0 in 14:00-14:30 — so the
+    timing hypothesis the arm exists to test was never actually exercised, and the per-window ranking
+    the config asks for had nothing to rank. It is the same failure the arm's `_history_note` already
+    records once, and a global cap cannot prevent it.
+
+    Off unless `max_positions_per_window` is configured, so single-window arms and the existing
+    behaviour are untouched. Positions entered before the cap existed carry no window and are simply
+    not counted against one.
+    """
+    cap = params.get("max_positions_per_window")
+    if cap is None or window is None:
+        return False
+    return sum(1 for p in open_positions if p.get("entry_window") == window) >= cap
+
+
 # --------------------------------------------------------------------------- legged entry (step 1)
 def evaluate_credit_spread_entry(snapshot: dict, params: dict, open_positions: list) -> tuple:
     """Should this arm sell an opening credit spread? Returns (enter, reason, plan | None).
@@ -163,12 +215,19 @@ def evaluate_credit_spread_entry(snapshot: dict, params: dict, open_positions: l
     if snapshot.get("dte", 0) != 0:
         return False, "no_0dte_expiration", None
 
+    # Checked BEFORE the arm's own windows so an arm cannot configure its way past the blackout.
+    if before_open_gate(params, snapshot.get("now_min")):
+        return False, "before_open_gate", None
+
     ok_window, window = in_entry_window(snapshot.get("now_min"), params.get("entry_windows", []))
     if not ok_window:
         return False, "outside_entry_window", None
 
     if len(open_positions) >= params.get("max_positions", 4):
         return False, "max_positions_reached", None
+
+    if _window_cap_reached(params, open_positions, window):
+        return False, "max_positions_this_window_reached", None
 
     center, center_reason = select_center(snapshot, params)
     if center is None:
@@ -214,18 +273,22 @@ def evaluate_credit_spread_entry(snapshot: dict, params: dict, open_positions: l
         return False, "credit_cannot_clear_fees", None
 
     completing_strike = center + width if side == PUT else center - width
-    return True, "ok", {
-        "side": side,
-        "center": center,
-        "center_reason": center_reason,
-        "wing_width": width,
-        "credit": round(credit, 4),
-        "quantity": qty,
-        "open_fee": fly.vertical_open_fee(symbol, qty),
-        "completing_strike": completing_strike,
-        "completing_direction": fly.completing_side_direction(side),
-        "entry_window": window,
-    }
+    return (
+        True,
+        "ok",
+        {
+            "side": side,
+            "center": center,
+            "center_reason": center_reason,
+            "wing_width": width,
+            "credit": round(credit, 4),
+            "quantity": qty,
+            "open_fee": fly.vertical_open_fee(symbol, qty),
+            "completing_strike": completing_strike,
+            "completing_direction": fly.completing_side_direction(side),
+            "entry_window": window,
+        },
+    )
 
 
 # --------------------------------------------------------------------------- legged entry (step 2)
@@ -281,8 +344,9 @@ def evaluate_completion(snapshot: dict, position: dict, params: dict) -> tuple:
 
 
 # --------------------------------------------------------------------------- outright entry
-def evaluate_outright_entry(snapshot: dict, params: dict, open_positions: list,
-                            realized_cash: float) -> tuple:
+def evaluate_outright_entry(
+    snapshot: dict, params: dict, open_positions: list, realized_cash: float
+) -> tuple:
     """Should the book buy a cheap fly outright, funded by premium it has already realized?
 
     `realized_cash` is the book's credit-minus-debits-minus-fees so far. Requiring the debit to fit
@@ -294,12 +358,19 @@ def evaluate_outright_entry(snapshot: dict, params: dict, open_positions: list,
     if snapshot.get("dte", 0) != 0:
         return False, "no_0dte_expiration", None
 
+    # Checked BEFORE the arm's own windows so an arm cannot configure its way past the blackout.
+    if before_open_gate(params, snapshot.get("now_min")):
+        return False, "before_open_gate", None
+
     ok_window, window = in_entry_window(snapshot.get("now_min"), params.get("entry_windows", []))
     if not ok_window:
         return False, "outside_entry_window", None
 
     if len(open_positions) >= params.get("max_positions", 4):
         return False, "max_positions_reached", None
+
+    if _window_cap_reached(params, open_positions, window):
+        return False, "max_positions_this_window_reached", None
 
     center, center_reason = select_center(snapshot, params)
     if center is None:
@@ -314,8 +385,9 @@ def evaluate_outright_entry(snapshot: dict, params: dict, open_positions: list,
         return False, "missing_leg_quotes", None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
-    debit = fly.fly_debit(quote(snapshot, side, lower), quote(snapshot, side, center),
-                          quote(snapshot, side, upper), slip)
+    debit = fly.fly_debit(
+        quote(snapshot, side, lower), quote(snapshot, side, center), quote(snapshot, side, upper), slip
+    )
     if debit <= 0:
         # A non-positive modeled debit means a stale or crossed quote, not free money: a long fly's
         # value is bounded below by zero, so nobody sells one for a credit.
@@ -333,17 +405,21 @@ def evaluate_outright_entry(snapshot: dict, params: dict, open_positions: list,
     if cost > realized_cash:
         return False, "not_funded_by_realized_credit", None
 
-    return True, "ok", {
-        "side": side,
-        "center": center,
-        "center_reason": center_reason,
-        "wing_width": width,
-        "debit": round(debit, 4),
-        "quantity": qty,
-        "open_fee": open_fee,
-        "cost": round(cost, 2),
-        "entry_window": window,
-    }
+    return (
+        True,
+        "ok",
+        {
+            "side": side,
+            "center": center,
+            "center_reason": center_reason,
+            "wing_width": width,
+            "debit": round(debit, 4),
+            "quantity": qty,
+            "open_fee": open_fee,
+            "cost": round(cost, 2),
+            "entry_window": window,
+        },
+    )
 
 
 # --------------------------------------------------------------------------- settlement
@@ -358,17 +434,21 @@ def settle(positions: list[dict], settlement_price: float) -> list[dict]:
     out = []
     for p in positions:
         pnl = fly.position_pnl(p, settlement_price)
-        out.append({
-            **p,
-            "settlement_price": settlement_price,
-            "expiry_payoff": round(
-                fly.fly_payoff(p["center"], p["wing_width"], settlement_price) if p["kind"] == "fly"
-                else fly.short_vertical_payoff(p["side"], p["center"], p["wing_width"], settlement_price),
-                4),
-            "pnl": round(pnl, 2),
-            "pinned": p["kind"] == "fly" and abs(settlement_price - p["center"]) < p["wing_width"],
-            "status": "settled",
-        })
+        out.append(
+            {
+                **p,
+                "settlement_price": settlement_price,
+                "expiry_payoff": round(
+                    fly.fly_payoff(p["center"], p["wing_width"], settlement_price)
+                    if p["kind"] == "fly"
+                    else fly.short_vertical_payoff(p["side"], p["center"], p["wing_width"], settlement_price),
+                    4,
+                ),
+                "pnl": round(pnl, 2),
+                "pinned": p["kind"] == "fly" and abs(settlement_price - p["center"]) < p["wing_width"],
+                "status": "settled",
+            }
+        )
     return out
 
 

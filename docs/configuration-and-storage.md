@@ -12,16 +12,22 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   config.json                     # orchestrator config
   config/meic.json                # MEIC engine config (home-first; else in-repo config.json)
   config/earnings.json            # Earnings engine config
+  config/flies.json               # Flies engine config
+  config/gex.json                 # GEX dashboard config
+  data/marketdata/stream_cache.db # the canonical shared DXLink stream cache (quotes/greeks/OI) —
+                                  #   written ONLY by the standalone streamer, read by every module
   data/meic/paper_trades.db       # MEIC paper ledger (ic_trades)   ← orchestrator reads this
-  data/meic/meic_trades.db        # MEIC live ledger (never touched by the orchestrator)
-  data/meic/stream_cache.db       # DXLink streamer cache (quotes/greeks/OI)
+  data/meic/meic_trades.db        # MEIC live ledger (read only by `report --live`)
   data/earnings/paper_trades.db   # Earnings paper ledger (trades)  ← orchestrator reads this
   data/earnings/earnings_trades.db# Earnings live ledger
+  data/flies/paper_trades.db      # Flies paper ledger (fly_positions / fly_books)
+  data/flies/live_trades.db       # Flies live ledger (inert scaffold)
+  data/gex/gex_history.db         # GEX spot trail + regime history
   logs/                           # suite logs + eod-digest-<day>.md + eod-insight-<day>.md
-  logs/meic/                      # MEIC logs + paper-eod / eod-analysis / (live) eod-<day>.md
-  logs/earnings/                  # Earnings logs + paper-eod / eod-analysis
+  logs/meic/  logs/earnings/  logs/flies/  logs/gex/  logs/streamer/   # per-module logs + EOD reports
   logs/archive/<YYYY-MM>/         # monthly zipped reports + rotated logs (one zip per scope)
-  state/                          # watchdog state + heartbeats
+  state/                          # watchdog state + heartbeats + advice/ + halt-live.flag (when set)
+  state/stream_requests/          # per-module streamer subscription requests (each module writes its own)
   dashboard.html                  # static dashboard render
 ```
 
@@ -32,9 +38,11 @@ tracked):
 
 | Config | Owned by | Sets |
 |---|---|---|
-| `~/.cherrypick/config.json` | Orchestrator | Which modules are enabled + their `path`; the per-module `paper` block (`paper_db`, `trade_schema`, task names, entry/exit times); `watchdog`, `trade_notify`, `notify`, `eod_digest`, `log_archive`, `eod_insight`, `reconcile`; timezone. |
-| `~/.cherrypick/config/meic.json` | MEIC | `symbols`, delta/VIX bands, wing widths, credit floors, entry/exit windows, stop policy, regime thresholds, cash-settled set, risk profiles. |
+| `~/.cherrypick/config.json` | Orchestrator | Which modules are enabled + their `path` and `live_db`; the per-module `paper` block (`paper_db`, `trade_schema`, task names, entry/exit times) and `calibration`; the top-level `streamer` (the standalone producer) and `services` (background daemons like the gex recorder); `watchdog`, `trade_notify`, `eval_activity`, `notify`, `eod_digest`, `eod_insight`, `advise`, `data_epoch`, `log_archive`, `reconcile`, `dashboard`; timezone. |
+| `~/.cherrypick/config/meic.json` | MEIC | `symbols`, delta/VIX bands, wing widths, credit floors, entry/exit windows, stop policy, regime thresholds, cash-settled set, deploy-limit pct (risk profiles live in the repo's `config.risk.json`). |
 | `~/.cherrypick/config/earnings.json` | Earnings | `available_capital_paper_mode`, position caps, entry/close windows, correlation block list, liquidity gates, per-strategy tuning, named profiles. |
+| `~/.cherrypick/config/flies.json` | Flies | `symbols`, wing/increment scaling, entry gates and floors, the experiment `arms` (incl. the width sweep), the inert `live` block. |
+| `~/.cherrypick/config/gex.json` | GEX | `symbols`, the shared stream-cache source path, serve host/port, history DB path. |
 
 **Resolution rules:**
 - A module `path` in the orchestrator config is resolved **relative to the config file's directory** /
@@ -47,16 +55,22 @@ tracked):
 
 ### Orchestrator scheduling knobs (defaults)
 
-| Block | Default | Task |
+| Block / source | Default | Task |
 |---|---|---|
 | `watchdog` | on, ~10 min | `cherrypick-watchdog` |
 | `trade_notify` | on, ~2 min | `cherrypick-trade-notify` |
-| `eod_digest` | **on**, 16:15 | `cherrypick-eod-digest` (runs `notify-eod`) |
+| module `paper` (kind `self_healing`) | module constants: MEIC 2 min, flies 1 min | `cherrypick-meic-paper-loop`, `cherrypick-flies-paper-loop` — registered by the modules' own `--install-task` |
+| module `paper` (kind `cherrypick_scheduled`) | entry 15:45 / exit 09:45 ET | `cherrypick-earnings-paper-entry`, `-exit` |
+| `paper.dolt_service` | on, ~5 min | `cherrypick-earnings-dolt` (keep-alive) |
+| `eod_digest` | **on**, event-driven (deadline backstop 16:45 ET) | *no task* — watchdog-fired once every module's paper-eod exists; `install` deletes any stale fixed-time task |
+| `eod_insight` | **off**, event-driven with the digest; needs Claude Code | *no task* (same event) |
+| `advise` | **off twice** (suite + per-module), event-driven with the digest | *no task* (same event) |
 | `log_archive` | **on**, day 1 @ 03:30 | `cherrypick-log-archive` (monthly) |
-| `eod_insight` | **off** | `cherrypick-eod-insight` (daily 16:20; needs Claude Code) |
+| `reconcile.schedule` | **off** (phase-5 posture, daily 16:30 when on) | `cherrypick-reconcile` |
 
-Each is opt-out (or opt-in for `eod_insight`) via its `enabled` key, then re-run `install`/`uninstall`.
-Full annotated examples live in `packages/orchestrator/config.example.json`.
+Each is opt-out (or opt-in where marked off) via its `enabled` key, then re-run `install`/`uninstall`.
+Full annotated examples live in `packages/orchestrator/config.example.json`; the complete verified
+inventory with commands and registration ownership is in [operations.md](operations.md).
 
 ## Databases & schemas
 

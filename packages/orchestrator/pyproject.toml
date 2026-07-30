@@ -35,7 +35,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+# keyrings.alt supplies a pure-Python backend for headless CI runners (no OS keyring service),
+# so the auth-CLI subprocess smoke test (test_onboarding.py) exercises real keyring plumbing
+# there too, not just on developer machines with a native backend. Never used outside CI/tests
+# (see .github/workflows/ci.yml's PYTHON_KEYRING_BACKEND) — real runs always use the OS backend.
+dev = ["pytest>=8", "ruff>=0.6", "keyrings.alt>=5"]
 
 # `pipx install cherrypick` (or an editable install) exposes the `cherrypick` command; the in-place
 # root cherrypick.py launcher stays for source-checkout / scheduler use.

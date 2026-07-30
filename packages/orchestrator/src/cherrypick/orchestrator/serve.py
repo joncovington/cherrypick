@@ -17,12 +17,13 @@ import json
 import re
 import threading
 import webbrowser
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from . import config as cfgmod
-from . import dashboard, doctor, embeds, reconcile, sections
+from . import dashboard, doctor, embeds, liveops, reconcile, sections
 
 _SESSION_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -90,11 +91,10 @@ def _md_to_html(md_text: str) -> str:
                 body.append([c.strip() for c in lines[i].strip().strip("|").split("|")])
                 i += 1
             thead = "".join(f"<th>{_md_inline(c)}</th>" for c in header)
-            rows = "".join(
-                "<tr>" + "".join(f"<td>{_md_inline(c)}</td>" for c in r) + "</tr>" for r in body
+            rows = "".join("<tr>" + "".join(f"<td>{_md_inline(c)}</td>" for c in r) + "</tr>" for r in body)
+            out.append(
+                f'<div class="tbl"><table><thead><tr>{thead}</tr></thead><tbody>{rows}</tbody></table></div>'
             )
-            out.append(f'<div class="tbl"><table><thead><tr>{thead}</tr></thead>'
-                       f"<tbody>{rows}</tbody></table></div>")
             continue
         m = re.match(r"^(#{1,6})\s+(.*)$", stripped)
         if m:
@@ -113,6 +113,25 @@ def _md_to_html(md_text: str) -> str:
         out.append(f"<p>{_md_inline(stripped)}</p>")
         i += 1
     return "\n".join(out)
+
+
+def _archived_report_text(logs_root, scope: str, filename: str, session: str) -> str | None:
+    """A rotated-away report's text out of its monthly archive zip, or None.
+
+    The archiver writes `logs/archive/<YYYY-MM>/<scope>.zip` with bare-filename arcnames
+    (scope = "suite" for the logs root's own files, else the module name), so the lookup
+    is fully derived from the already-validated session + the fixed filename — no client
+    input reaches the path. Best-effort: any zip problem reads as not-found."""
+    zpath = logs_root / "archive" / session[:7] / f"{scope}.zip"
+    if not zpath.exists():
+        return None
+    try:
+        with zipfile.ZipFile(zpath) as zf:
+            if filename in zf.namelist():
+                return zf.read(filename).decode("utf-8", errors="replace")
+    except Exception:
+        return None
+    return None
 
 
 def _md_page(title: str, md_text: str) -> bytes:
@@ -232,6 +251,9 @@ def _make_handler(cfg: dict[str, Any]):
             except Exception as exc:  # a module hiccup shows inline, never breaks the orchestrator server
                 self._send(200, _embed_error(emb, str(exc)), "text/html")
 
+        def _archived_or_none(self, path, scope: str, session: str) -> str | None:
+            return _archived_report_text(cfgmod.LOGS_DIR, scope, path.name, session)
+
         def _serve_eod_report(self, params: dict[str, list[str]]) -> None:
             """Serve an EOD markdown report — a module's terse `paper-eod-<day>.md` (kind=report,
             default) or conversational `eod-analysis-<day>.md` (kind=analysis), or the suite digest —
@@ -248,28 +270,36 @@ def _make_handler(cfg: dict[str, Any]):
                 return
             if is_insight:
                 path = cfgmod.log_file(f"eod-insight-{session}.md")
-                title = f"suite EOD insight — {session}"
+                title, scope = f"suite EOD insight — {session}", "suite"
             elif is_suite:
                 path = cfgmod.log_file(f"eod-digest-{session}.md")
-                title = f"suite EOD digest — {session}"
+                title, scope = f"suite EOD digest — {session}", "suite"
             else:
                 if module not in cfgmod.enabled_modules(cfg):
                     self._send(404, b"unknown module", "text/plain")
                     return
+                scope = module
                 if kind == "analysis":
                     path = cfgmod.module_logs_dir(module) / f"eod-analysis-{session}.md"
                     title = f"{module} EOD analysis — {session}"
                 else:
                     path = cfgmod.module_logs_dir(module) / f"paper-eod-{session}.md"
                     title = f"{module} EOD report — {session}"
-            if not path.exists():
-                self._send(404, b"report not found", "text/plain")
-                return
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except OSError as exc:
-                self._send(500, f"read error: {exc}".encode(), "text/plain")
-                return
+            if path.exists():
+                try:
+                    text = path.read_text(encoding="utf-8", errors="replace")
+                except OSError as exc:
+                    self._send(500, f"read error: {exc}".encode(), "text/plain")
+                    return
+            else:
+                # The monthly archiver zips finished months' reports away, which used to
+                # make every archived session 404 from this route — history became
+                # unreachable from the UI the day the month closed.
+                text = self._archived_or_none(path, scope, session)
+                if text is None:
+                    self._send(404, b"report not found", "text/plain")
+                    return
+                title += " (archived)"
             self._send(200, _md_page(title, text), "text/html; charset=utf-8")
 
         def do_GET(self):  # noqa: N802
@@ -295,6 +325,15 @@ def _make_handler(cfg: dict[str, Any]):
                         ],
                     }
                 except Exception as exc:  # a doctor hiccup shows inline, never crashes the server
+                    payload = {"ok": False, "error": str(exc)}
+                self._send(200, json.dumps(payload).encode("utf-8"), "application/json")
+                return
+            if parsed.path == "/api/liveops":
+                try:
+                    # Files + keyring only (kill switches, designated accounts, halt flag) — fast,
+                    # no broker. The broker-truth half of the Live Ops card is /api/reconcile.
+                    payload = liveops.run(cfg)
+                except Exception as exc:  # a liveops hiccup shows inline, never crashes the server
                     payload = {"ok": False, "error": str(exc)}
                 self._send(200, json.dumps(payload).encode("utf-8"), "application/json")
                 return

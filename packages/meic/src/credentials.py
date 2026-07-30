@@ -25,6 +25,7 @@ from cherrypick.core.auth import (
     CLIENT_SECRET,
     REFRESH_TOKEN,
     REQUIRED_SECRETS,
+    SHARED_SERVICE,
     CredentialError,
     CredentialStore,
 )
@@ -33,7 +34,9 @@ SERVICE_NAME = "meicagent"
 _LEGACY_SERVICE_NAME = "tastytrade-mcp"  # read-only fallback for pre-rename credentials
 
 # The single store instance for this module; session.py builds its SessionManager from it.
-store = CredentialStore(SERVICE_NAME, legacy_service_names=(_LEGACY_SERVICE_NAME,))
+# Read-through order: own service (the override/rotation layer) -> pre-rename legacy ->
+# the suite-wide shared login (cherrypick-broker; entered once via the onboarding wizard).
+store = CredentialStore(SERVICE_NAME, legacy_service_names=(_LEGACY_SERVICE_NAME, SHARED_SERVICE))
 
 get_secret = store.get_secret
 set_secret = store.set_secret

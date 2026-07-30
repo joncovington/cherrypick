@@ -18,15 +18,15 @@ import socket
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
-from . import eval_activity, tasks, timeutil
-from .util import first_json
+from . import eval_activity, tasks, timeutil, util
+from .util import CREATE_NO_WINDOW, first_json
 
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
 _STATE_FILE = cfgmod.STATE_DIR / "watchdog_state.json"
@@ -71,6 +71,7 @@ def _run_module(module_root: Path, argv: list[str], timeout: int = 25) -> subpro
         capture_output=True,
         text=True,
         timeout=timeout,
+        creationflags=CREATE_NO_WINDOW,
     )
 
 
@@ -216,8 +217,13 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     # Don't count a connection that has not had time to populate yet — a restart takes a few seconds to
     # resubscribe, and without this the next tick would see stale data and restart again, forever.
     settling = connection_age is not None and connection_age < limit
-    if (running and worst_stale is not None and worst_stale > limit and not settling
-            and spec.get("auto_restart")):
+    if (
+        running
+        and worst_stale is not None
+        and worst_stale > limit
+        and not settling
+        and spec.get("auto_restart")
+    ):
         _stop_streamer(root, spec)
         started = _start_streamer(root, spec["start_argv"])
         findings.append(
@@ -318,13 +324,19 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
     else:
         findings.append(Finding(f"{name}.task", OK, f"{label} paper task", "registered"))
 
-    # (b) freshness during the session
+    # (b) freshness during the session. The log lives in the shared logs home
+    # (~/.cherrypick/logs/<name>/), NOT the module checkout -- config declares it
+    # checkout-relative for historical reasons, so resolve the basename against
+    # module_logs_dir exactly like the dashboard does. Resolving against `root`
+    # silently misses (the old bug: _file_age_minutes returns None for a missing
+    # file, so half the freshness signal was dead with no error).
     if in_session:
+        log_rel = paper.get("log")
         ages = [
             a
             for a in (
                 _file_age_minutes(cfgmod.paper_db_path(mcfg, name)) if paper.get("paper_db") else None,
-                _file_age_minutes(root / paper["log"]) if paper.get("log") else None,
+                _file_age_minutes(cfgmod.module_logs_dir(name) / Path(log_rel).name) if log_rel else None,
             )
             if a is not None
         ]
@@ -392,11 +404,17 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
                 )
             )
 
-    # (c) entry SLA — after entry_time+grace on a trading day, the run must have happened
+    # (c) entry SLA — after entry_time+grace on a trading day, the run must have happened.
+    # The grace matters: the entry task fires AT entry_time, its subprocess may run up to
+    # 30 minutes (cli timeout 1800s), and the heartbeat is only written after it returns —
+    # so a comparison against entry_time alone raised CRITICAL for a run that was simply
+    # still in progress (the same false-alarm class _check_settlement's grace fixed).
     if is_trading and paper.get("entry_time"):
         try:
             eh, em = [int(x) for x in paper["entry_time"].split(":")]
-            grace_passed = now_et.time() >= datetime(now_et.year, now_et.month, now_et.day, eh, em).time()
+            grace = int(paper.get("entry_sla_grace_minutes", 35))
+            deadline = now_et.replace(hour=eh, minute=em, second=0, microsecond=0) + timedelta(minutes=grace)
+            grace_passed = now_et >= deadline
         except Exception:
             grace_passed = False
         if grace_passed:
@@ -432,11 +450,7 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
     return findings
 
 
-def _read_heartbeat(path: Path) -> dict[str, Any]:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+_read_heartbeat = util.read_json  # one implementation of the best-effort JSON read
 
 
 # --------------------------------------------------------------------------- drawdown (drift) alert
@@ -514,8 +528,9 @@ def _eod_launch(verb: str) -> bool:
     return _start_streamer(_RUN_PY.parent, [str(_RUN_PY), verb])
 
 
-def _check_eval_activity(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool,
-                         settings: dict[str, Any]) -> list[Finding]:
+def _check_eval_activity(
+    name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool, settings: dict[str, Any]
+) -> list[Finding]:
     """Is the loop actually EVALUATING candidates (not just writing a file), and is it deciding sensibly?
 
     Freshness only proves the loop ran; this proves it did meaningful work. Rejecting every candidate is
@@ -530,7 +545,9 @@ def _check_eval_activity(name: str, mcfg: dict[str, Any], now_et: datetime, in_s
         return []
     label = name.upper() if len(name) <= 4 else name.capitalize()
     status, detail = eval_activity.assess(
-        act, window_min=settings["window_minutes"], eval_stale_min=settings["stale_minutes"],
+        act,
+        window_min=settings["window_minutes"],
+        eval_stale_min=settings["stale_minutes"],
         error_frac_warn=settings["error_fraction"],
     )
     finding = WARN if status == eval_activity.WARN else OK
@@ -594,7 +611,9 @@ def _check_eod(cfg: dict[str, Any], now: datetime, is_trading: bool) -> None:
         return
     ed = cfgmod.eod_digest_settings(cfg)
     ei = cfgmod.insight_settings(cfg)
-    if not ed["enabled"] and not ei["enabled"]:
+    adv = cfgmod.advise_settings(cfg)
+    adv_on = adv["enabled"] and any(m.get("enabled") for m in adv["modules"].values())
+    if not ed["enabled"] and not ei["enabled"] and not adv_on:
         return
 
     day = now.date().isoformat()
@@ -611,18 +630,38 @@ def _check_eod(cfg: dict[str, Any], now: datetime, is_trading: bool) -> None:
     if missing and not past_deadline:
         return  # wait for the stragglers until the backstop
 
+    launched_ok = True
     if ed["enabled"]:
-        _eod_launch("notify-eod")
+        launched_ok = _eod_launch("notify-eod") and launched_ok
     if ei["enabled"]:
-        _eod_launch("eod-insight")
-    # Mark fired regardless of launch outcome so a transient Popen failure can't loop every tick; a
-    # failed launch is rare and the digest can always be run by hand.
+        launched_ok = _eod_launch("eod-insight") and launched_ok
+    if adv_on:
+        # Same completion event, same detachment: next-session advice is generated from the day's
+        # freshly-written reports, and the claude call never runs in the watchdog process. The
+        # watchdog fires it and forgets — it never waits on or alerts about advice generation.
+        launched_ok = _eod_launch("advise") and launched_ok
+    # Mark fired regardless of launch outcome so a transient Popen failure can't loop every tick —
+    # but a failed launch must not be SILENT: the digest exists for the walk-away guarantee, so a
+    # lost day gets a notification pointing at the manual re-run instead of vanishing.
     state[_EOD_FIRED_KEY] = day
     _save_state(state)
+    if not launched_ok:
+        try:
+            Notifier(cfg.get("notify")).notify(
+                "WARNING",
+                "eod.launch",
+                "EOD digest/insight launch failed",
+                f"Detached launch failed for {day}. Run `cherrypick notify-eod` (and `eod-insight`) by hand.",
+            )
+        except Exception:
+            pass
 
 
 def _log_findings(findings: list[Finding], overall: str) -> None:
     cfgmod.ensure_dirs()
+    # Own-log rotation: logrotate refuses active .log files by design, so without this the
+    # watchdog's log grew forever (and was re-read on every dashboard render).
+    util.rotate_if_large(_WATCHDOG_LOG)
     with _WATCHDOG_LOG.open("a", encoding="utf-8") as fh:
         fh.write(
             json.dumps({"ts": _utcnow(), "overall": overall, "findings": [asdict(f) for f in findings]})

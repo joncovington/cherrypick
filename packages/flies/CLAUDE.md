@@ -1,8 +1,8 @@
 # cherrypick-flies
 
-0DTE net-credit butterflies on SPX — the "profit forest". A **paper module**: it measures whether the
-strategy makes money net of costs, and it is built so that a negative answer is a usable result rather
-than something to tune away.
+0DTE net-credit butterflies on XSP (SPX through 2026-07-28; both books remain in the ledger) — the
+"profit forest". A **paper module**: it measures whether the strategy makes money net of costs, and it
+is built so that a negative answer is a usable result rather than something to tune away.
 
 ## What the strategy actually is
 
@@ -40,6 +40,10 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `src/section.py` | the compact `cherrypick.core.viz` card for the suite dashboard. |
 | `src/eod.py` | `paper-eod-<day>.md` and `eod-analysis-<day>.md`. |
 | `src/cli.py` | `once` / `settle` / `status` / `dashboard` / `section`. |
+| `src/live_loop.py` | LIVE scaffold, inert by default — gated on Gate 0 of the live plan. `--once --dry-run` is the rung-0 smoke. |
+| `src/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. |
+| `src/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). |
+| `src/credentials.py` | `fliesagent` keyring store + hidden-input CLI (orchestrator `connect` delegates here). |
 | `tests/fixtures/books.json` | three real tastytrade order chains, transcribed. |
 
 ## The read side
@@ -69,13 +73,28 @@ decision.
 **Four measurements this strategy needs and generic P&L reporting cannot give:**
 
 - **Completion rate** — how often a leg-in actually became a fly. If this is near zero the strategy is
-  short verticals wearing a costume, and no P&L on the completed ones changes that.
+  short verticals wearing a costume, and no P&L on the completed ones changes that. Besides the
+  blended rate, `analytics.completion_trend` gives it per session, and the suite-dashboard card
+  (`section.py`) draws that trend as a timeseries — a blended rate can drift slowly while looking
+  stable; the trend is what makes a deterioration (or a config change's effect) visible.
 - **The counterfactual** (`best_completing_debit`) — for misses, whether *the market never offered it*
-  or *our fee buffer refused it*. Identical in the P&L, opposite remedies.
+  or *one of our own gates refused it*. Identical in the P&L, opposite remedies. Completion is gated
+  by `D < C - fee_buffer` **and** `floor >= min_floor_dollars`, so "our gate" is reported as two
+  separate verdicts — `buffer_blocked` and `floor_blocked`. They were once lumped together as
+  `buffer_too_tight`, which pointed at the wrong knob: the first five sessions split 1 buffer vs 5
+  floor, and the single buffer case had a post-fee floor of **−$1.89**, i.e. the buffer correctly
+  refused a money-losing fly. Which gate bound is read from the `fly_decisions` journal, not
+  recomputed, so it cannot drift from the gate as configured.
 - **Completion latency** — a fly that took 40 minutes and 8 points of drift is far likelier to fill live
   than one that appeared for seconds. This is the paper-vs-live gap, measured.
 - **Arm divergence** — how often the arms picked different centres. High agreement means the experiment
-  cannot separate them, which is a finding to surface in week one, not month three.
+  cannot separate them, which is a finding to surface in week one, not month three. **Centre divergence
+  is only meaningful against an arm that centres differently** — i.e. `gex`. `control`, `time_window`,
+  `wide_wing` and the `width-N` arms are all ATM, so they agree on centre *by construction* (measured:
+  100% across 184 iterations on 2026-07-27) and that number says nothing about whether those arms are
+  redundant. Read `time_window` vs `control` on entry **timing** and completion, and the `width-N`
+  arms vs `control` on wing width. Reading a structural identity as a finding is how the redundancy
+  went unnoticed.
 
 **The last three of those live on a time axis, so the dashboard has one.** `analytics.session_timeline`
 assembles the day from rows already written — spot and every arm's wanted centre on each iteration,
@@ -103,10 +122,11 @@ line per arm rather than a blended book.
 This module **runs no streamer**. `provider.py` reads the suite's canonical shared stream cache
 (`~/.cherrypick/data/marketdata/stream_cache.db`) read-only — the same piggyback path `cherrypick-gex`
 uses — so the suite runs one streamer rather than three, and flies can never disturb the loop that is
-actually trading. Some producer must be streaming that cache — MEIC's streamer when MEIC is installed,
-otherwise the standalone `packages/streamer` daemon — subscribed to the symbols in `config.json`; open
-interest, and therefore GEX, exists only because the producer subscribes DXLink Summary for its ATM
-window.
+actually trading. The producer is the standalone `packages/streamer` daemon (the suite's single writer
+since the 2026-07-21 cutover; MEIC's in-module streamer is the disabled rollback path), subscribed to
+the union of every module's `state/stream_requests/` file — this module rewrites its own on every tick;
+open interest, and therefore GEX, exists only because the producer subscribes DXLink Summary for its
+ATM window.
 
 The provider refuses rather than guesses. Stale quotes (older than `max_quote_age_seconds`), crossed
 quotes, a missing spot, an empty chain — each returns `{"ok": False, "reason": ...}`, which the loop
@@ -118,17 +138,41 @@ mistaken for "the strategy found nothing".
 `cherrypick.core.fees` supplies the fee schedule and `cherrypick.core.gex.compute_gex` the per-strike
 GEX profile — neither is reimplemented here.
 
-## The three arms
+## The arms
 
-Separate books, differing **only** in where and when they centre a structure. Every gate is shared, so
-the comparison measures the signal rather than a bundle of confounded changes.
+Separate books, each differing from `control` in **exactly one** thing. Every gate is shared, so each
+comparison measures one variable rather than a bundle of confounded changes.
 
 - `gex` — centre on the strongest positive per-strike net GEX near spot. Degrades to ATM when the
   streamer has no OI cached yet, and records `center_reason` so those samples can be excluded later.
 - `time_window` — ATM, entering only inside configured windows. The windows are **not** ranked; we
   have no intraday history to rank them with. Each trade is tagged with its window and the ranking
-  comes out of our own sessions.
-- `control` — one fixed midday ATM entry. Without this, a profitable `gex` arm would prove nothing.
+  comes out of our own sessions. Its `max_positions_per_window` is what makes that ranking possible
+  at all — see below. Its windows **straddle** control's rather than nesting inside them (one before
+  control opens, one overlapping, one after control closes); nested windows made the two arms
+  identical in everything but opportunity count.
+- `control` — ATM, all day. The shared baseline: `gex` vs `control` isolates the **centring**,
+  `time_window` vs `control` the **timing**, `wide_wing` vs `control` the **width**. Without a naive
+  baseline a profitable arm would prove nothing.
+- `width-2` … `width-5` — control's twins (ATM, same window and cap) pinning `wing_width` to 2–5
+  strike increments; `control` at the default width is the sweep's 1-increment rung, so there is no
+  `width-1` arm (it would duplicate control's book under a second name). Added 2026-07-29 with the
+  XSP move, generalizing `wide_wing`'s single-point hypothesis into a curve. The signal behind it
+  (2026-07-27, first five SPX sessions): completions arrive only after spot has walked away from the
+  centre (median drift 15.3–17.3 SPX points against a 5-point wing), so 19 of 23 completed flies
+  settled outside their wings and the book collected its floor and nothing more. It is a hypothesis,
+  not a fix — wider wings cost more to build and risk more per structure, and if no width produces a
+  fee-positive floor then the drift is fundamental to the mechanism, which is itself a result (rule 6).
+- `wide_wing` — the SPX-era single-point version of the width question (a 20-point wing bracketing
+  the observed drift). **Disabled** since the sweep; kept in `ARMS` so its books' attribution stays
+  readable. On XSP its scaled equivalent (~2 points) is exactly `width-2`.
+
+**A global position cap does not make a multi-window arm test its windows.** `max_positions` alone let
+the book fill in the first window: over 07-20…07-24 `time_window` put 15 of its 16 legged entries in
+`10:30-11:00`, 1 in `12:30-13:00` and 0 in `14:00-14:30`, so the timing hypothesis was never exercised
+and the per-window ranking had nothing to rank. `max_positions_per_window` (off unless set; live on
+`time_window` at 2) caps what any one window may spend. This is the same failure the arm's config
+`_history_note` already records once — a shared cap being exhausted before the contrast can happen.
 
 ## The honesty rules
 
@@ -177,6 +221,23 @@ walks spot out of the wings), and `control` vs `time_window` wanted the identica
 141 shared iterations, so only the disjoint windows separate them. `gex` vs `control` disagreed 84%
 of the time and is the comparison with real power.
 
+**Five sessions in (07-20…07-24), the uncompleted branch is the whole result.** Rule 4 said completion
+rate would be the number that decides this, and it now has a threshold to clear. Settled: 40 legged
+entries, 23 completed. Every completed fly made money (avg **+$110.47**, min +$51.86 — the floor doing
+what it promises). The book still lost **−$1,175**, because the 17 misses averaged **−$208.51** each,
+and 4 outright flies lost on all four. A miss costs ~1.9× what a completion earns, so break-even
+completion rate is **≈65%** against **57.5%** observed. 07-24 settled on the official print (7411.98,
+confirmed), so its four inside-wings flies stand — but they carry ~half the positive P&L, and one
+session driving the result is a concentration caveat, not a validation.
+
+Three changes came out of that, all 2026-07-27: `min_floor_dollars` 50 → **10** (the old value assumed
+refusing a completion frees the position slot; it does not — it leaves the losing short vertical, so
+turning down a guaranteed +$9.36 to keep a lottery averaging −$208 was backwards; 5 completions were
+blocked by that gate alone at floors of $9.36–$39.36), `entry_modes` → **legged only** (outright lost
+4 of 4 and only `gex` was taking them, quietly confounding gex vs control), and the `wide_wing` arm.
+None of this separates the arms — 40 entries over 5 sessions, and the 50%/62%/62% spread is 2 trades
+wide. These are mechanism and accounting changes, not signal findings.
+
 **Settlement is marked in the database, not on disk.** `session_already_settled` asks whether every
 `fly_books` row for the day is `settled`. It used to ask whether `paper-eod-<day>.md` existed, which
 made the marker settable by anything that could write a file — on 2026-07-20 a test run against the
@@ -201,3 +262,9 @@ and neither is a detail:
   the completion rate measured here is an **upper bound** on the live rate, not an estimate of it.
 - **`fund_from_open_credit` needs a real buying-power check.** Funding an outright fly from a still-open
   credit spread spends premium that has not been earned.
+
+The full plan — the quantitative Gate 0 the paper experiment must pass first, how both blockers
+resolve (a 1-lot measurement pilot with an abort rule for the first; legged-only live v1 mooting the
+second), the live-loop architecture, kill switches, the fee-math symbol decision, and the rung-by-rung
+rollout — is [docs/live-trading-plan.md](docs/live-trading-plan.md). Until Gate 0 passes, the only
+work it calls for is running the paper experiment honestly.

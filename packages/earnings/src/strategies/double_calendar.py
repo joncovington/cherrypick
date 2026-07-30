@@ -56,16 +56,17 @@ def realized_move_dispersion(symbol: str, config: dict, lookback_quarters: int =
     plain average winrate doesn't capture.
     """
     winrate = scanner.compute_winrate(symbol, config, lookback_quarters)
-    pct_moves = [
-        q["realized_move"] / q["pre_close"]
-        for q in winrate["quarters"]
-        if q.get("pre_close")
-    ]
+    pct_moves = [q["realized_move"] / q["pre_close"] for q in winrate["quarters"] if q.get("pre_close")]
     if len(pct_moves) < 2:
-        return {"ok": False, "symbol": symbol, "sample_size": len(pct_moves), "error": "insufficient sample for dispersion"}
+        return {
+            "ok": False,
+            "symbol": symbol,
+            "sample_size": len(pct_moves),
+            "error": "insufficient sample for dispersion",
+        }
     mean = sum(pct_moves) / len(pct_moves)
     variance = sum((m - mean) ** 2 for m in pct_moves) / (len(pct_moves) - 1)
-    std_dev = variance ** 0.5
+    std_dev = variance**0.5
     return {
         "ok": True,
         "symbol": symbol,
@@ -75,7 +76,9 @@ def realized_move_dispersion(symbol: str, config: dict, lookback_quarters: int =
     }
 
 
-def fetch_price_and_expected_move(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
+def fetch_price_and_expected_move(
+    symbol: str, earnings_date: date, earnings_timing: str, config: dict
+) -> dict:
     """Live price, term structure, and expected move for double-calendar
     screening, via scanner.py's shared helpers. Mirrors iron_fly.py's
     fetch_price_and_term_structure but reads this strategy's own
@@ -112,7 +115,10 @@ def fetch_price_and_expected_move(symbol: str, earnings_date: date, earnings_tim
         min_days = strategy_config.get("back_month_min_days_after", 21)
         back_exp = scanner.select_back_expiration(expirations, front_exp, min_days)
         if back_exp is None:
-            return {"ok": False, "error": f"no monthly (or any) back-month expiration >={min_days} days after front"}
+            return {
+                "ok": False,
+                "error": f"no monthly (or any) back-month expiration >={min_days} days after front",
+            }
 
         atm = scanner.fetch_front_back_atm_entries(symbol, front_exp, back_exp, price)
         if not atm.get("ok"):
@@ -120,7 +126,11 @@ def fetch_price_and_expected_move(symbol: str, earnings_date: date, earnings_tim
         front_call, front_put, back_call = atm["front_call"], atm["front_put"], atm["back_call"]
 
         ts = scanner.compute_expected_move_and_term_structure(
-            front_call["mid"], front_put["mid"], front_call["iv"], back_call["iv"], price,
+            front_call["mid"],
+            front_put["mid"],
+            front_call["iv"],
+            back_call["iv"],
+            price,
         )
         liquidity = scanner.fetch_liquidity_criteria(symbol, front_exp, expirations, front_call, front_put)
 
@@ -168,30 +178,22 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
     if not criteria.get("chain_complete"):
         hard_fail.append("chain_complete_unverified")
 
-    if criteria.get("realized_move_dispersion_pct") is not None and config.get("max_realized_move_dispersion_pct") is not None:
+    if (
+        criteria.get("realized_move_dispersion_pct") is not None
+        and config.get("max_realized_move_dispersion_pct") is not None
+    ):
         if criteria["realized_move_dispersion_pct"] > config["max_realized_move_dispersion_pct"]:
             hard_fail.append("realized_move_too_inconsistent")
 
-    near_miss: list[str] = []
+    scanner.apply_liquidity_gates(criteria, config, hard_fail)
+    scanner.apply_soft_criteria(criteria, config, hard_fail)
 
-    scanner.apply_liquidity_gates(criteria, config, hard_fail, near_miss)
-    scanner._band(criteria.get("avg_volume"), config["min_avg_volume"], config["near_miss_min_avg_volume"], "avg_volume", near_miss, hard_fail)
-    scanner._band(criteria.get("iv_rv_ratio"), config["min_iv_rv_ratio"], config["near_miss_min_iv_rv_ratio"], "iv_rv_ratio", near_miss, hard_fail)
-    scanner._band(criteria.get("winrate"), config["min_winrate"], config["near_miss_min_winrate"], "winrate", near_miss, hard_fail)
-
-    if hard_fail:
-        tier = "Reject"
-    elif not near_miss:
-        tier = "Tier 1"
-    elif len(near_miss) == 1:
-        tier = "Tier 2"
-    else:
-        tier = "Near Miss"
-
-    return {"tier": tier, "hard_fail_reasons": hard_fail, "near_miss_reasons": near_miss}
+    return {"accepted": not hard_fail, "reject_reasons": hard_fail}
 
 
-def fetch_double_calendar_order(symbol: str, earnings_date: date, earnings_timing: str, full_config: dict) -> dict:
+def fetch_double_calendar_order(
+    symbol: str, earnings_date: date, earnings_timing: str, full_config: dict
+) -> dict:
     """Build a concrete, tradeable double calendar order spec: sell front-month
     call/put at the expected-move boundaries, buy the same two strikes in
     the back month. Net debit. `full_config` is the whole project config
@@ -216,7 +218,10 @@ def fetch_double_calendar_order(symbol: str, earnings_date: date, earnings_timin
         min_days = config.get("back_month_min_days_after", 21)
         back_exp = scanner.select_back_expiration(expirations, front_exp, min_days)
         if back_exp is None:
-            return {"ok": False, "error": f"no monthly (or any) back-month expiration >={min_days} days after front"}
+            return {
+                "ok": False,
+                "error": f"no monthly (or any) back-month expiration >={min_days} days after front",
+            }
 
         # Wide window on both expirations: strikes sit at the expected-move
         # boundaries, not ATM, so need a wide enough net to find them --
@@ -229,19 +234,39 @@ def fetch_double_calendar_order(symbol: str, earnings_date: date, earnings_timin
         # back-month chain. Strikes are now selected from the intersection
         # of what's actually listed in both chains, which guarantees an
         # exact match always exists once a candidate strike is chosen.
-        front_chain = scanner.call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
-            "--include_greeks", "--include_quotes", "--strike_count", "40",
-            "--around_price", str(price),
-        ])
+        front_chain = scanner.call_tt(
+            [
+                "get_option_chain",
+                "--symbol",
+                symbol,
+                "--expiration",
+                str(front_exp),
+                "--include_greeks",
+                "--include_quotes",
+                "--strike_count",
+                "40",
+                "--around_price",
+                str(price),
+            ]
+        )
         if not front_chain.get("ok"):
             return {"ok": False, "error": front_chain.get("error", "get_option_chain failed")}
         front_entries = front_chain["chain"][str(front_exp)]
 
-        back_chain = scanner.call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(back_exp),
-            "--include_quotes", "--strike_count", "40", "--around_price", str(price),
-        ])
+        back_chain = scanner.call_tt(
+            [
+                "get_option_chain",
+                "--symbol",
+                symbol,
+                "--expiration",
+                str(back_exp),
+                "--include_quotes",
+                "--strike_count",
+                "40",
+                "--around_price",
+                str(price),
+            ]
+        )
         if not back_chain.get("ok"):
             return {"ok": False, "error": back_chain.get("error", "get_option_chain failed")}
         back_entries = back_chain["chain"][str(back_exp)]
@@ -257,15 +282,36 @@ def fetch_double_calendar_order(symbol: str, earnings_date: date, earnings_timin
         call_target = price + expected_move
         put_target = price - expected_move
 
-        back_call_strikes = {float(e["strike_price"]) for e in back_entries if str(e.get("option_type", "")).strip().lower().startswith("c")}
-        back_put_strikes = {float(e["strike_price"]) for e in back_entries if str(e.get("option_type", "")).strip().lower().startswith("p")}
-        front_calls_with_back_match = [e for e in front_entries if str(e.get("option_type", "")).strip().lower().startswith("c") and float(e["strike_price"]) in back_call_strikes]
-        front_puts_with_back_match = [e for e in front_entries if str(e.get("option_type", "")).strip().lower().startswith("p") and float(e["strike_price"]) in back_put_strikes]
+        back_call_strikes = {
+            float(e["strike_price"])
+            for e in back_entries
+            if str(e.get("option_type", "")).strip().lower().startswith("c")
+        }
+        back_put_strikes = {
+            float(e["strike_price"])
+            for e in back_entries
+            if str(e.get("option_type", "")).strip().lower().startswith("p")
+        }
+        front_calls_with_back_match = [
+            e
+            for e in front_entries
+            if str(e.get("option_type", "")).strip().lower().startswith("c")
+            and float(e["strike_price"]) in back_call_strikes
+        ]
+        front_puts_with_back_match = [
+            e
+            for e in front_entries
+            if str(e.get("option_type", "")).strip().lower().startswith("p")
+            and float(e["strike_price"]) in back_put_strikes
+        ]
 
         front_call = scanner.nearest_strike_entry(front_calls_with_back_match, "call", call_target, -1.0)
         front_put = scanner.nearest_strike_entry(front_puts_with_back_match, "put", put_target, -1.0)
         if front_call is None or front_put is None:
-            return {"ok": False, "error": "no front-month strikes near expected-move boundaries with a matching back-month strike"}
+            return {
+                "ok": False,
+                "error": "no front-month strikes near expected-move boundaries with a matching back-month strike",
+            }
         if front_call.get("mid") is None or front_put.get("mid") is None:
             return {"ok": False, "error": "no quote data for front-month calendar strikes"}
 
@@ -274,7 +320,12 @@ def fetch_double_calendar_order(symbol: str, earnings_date: date, earnings_timin
 
         back_call = scanner.nearest_strike_entry(back_entries, "call", call_strike, -1.0)
         back_put = scanner.nearest_strike_entry(back_entries, "put", put_strike, -1.0)
-        if back_call is None or back_put is None or back_call.get("mid") is None or back_put.get("mid") is None:
+        if (
+            back_call is None
+            or back_put is None
+            or back_call.get("mid") is None
+            or back_put.get("mid") is None
+        ):
             return {"ok": False, "error": "no quote data for back-month calendar strikes"}
 
         # Net debit: pay more for the back-month legs than collected selling
@@ -287,10 +338,30 @@ def fetch_double_calendar_order(symbol: str, earnings_date: date, earnings_timin
             "price": round(net_debit, 2),
             "price_effect": "Debit",
             "legs": [
-                {"symbol": front_call["symbol"], "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1},
-                {"symbol": front_put["symbol"], "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1},
-                {"symbol": back_call["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
-                {"symbol": back_put["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
+                {
+                    "symbol": front_call["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Sell to Open",
+                    "quantity": 1,
+                },
+                {
+                    "symbol": front_put["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Sell to Open",
+                    "quantity": 1,
+                },
+                {
+                    "symbol": back_call["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Buy to Open",
+                    "quantity": 1,
+                },
+                {
+                    "symbol": back_put["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Buy to Open",
+                    "quantity": 1,
+                },
             ],
         }
         return {
@@ -327,7 +398,10 @@ def label_order_legs(order_result: dict) -> list[dict]:
 
 
 def evaluate_position(
-    position: dict, open_legs: list[dict], quotes: dict, config: dict,
+    position: dict,
+    open_legs: list[dict],
+    quotes: dict,
+    config: dict,
     is_first_check_of_day: bool = False,
 ) -> dict:
     """Decide what (if anything) to do with an open double calendar position
@@ -423,7 +497,14 @@ def cmd_get_candidates(args) -> dict:
     """
     config = scanner._load_config()
     strategy_config = _strategy_config(config)
-    return scanner.run_candidate_scan(args.date, config, fetch_price_and_expected_move, apply_tiering, strategy_config, extra_criteria_fn=_add_dispersion)
+    return scanner.run_candidate_scan(
+        args.date,
+        config,
+        fetch_price_and_expected_move,
+        apply_tiering,
+        strategy_config,
+        extra_criteria_fn=_add_dispersion,
+    )
 
 
 def main() -> None:

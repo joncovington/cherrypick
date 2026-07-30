@@ -27,11 +27,12 @@ python run.py doctor         # green/red readiness (read-only)
 python run.py install        # register OS scheduled tasks + start the standalone streamer producer (Windows-only)
 python run.py status         # task registration + last heartbeats
 python run.py watchdog       # one watchdog pass (what the scheduled task runs)
-python run.py report         # unified cross-module paper P&L (read-only); --eod / --date YYYY-MM-DD scopes to one session
+python run.py report         # unified cross-module paper P&L (read-only); --eod / --date YYYY-MM-DD scopes to one session; --live reads the live-tagged ledgers (modules' live_db) instead — a separate view that never feeds calibrate/promotion
 python run.py eod-digest     # write logs/eod-digest-<day>.md: one session's cross-module P&L + module paper-eod links
 python run.py notify-eod     # write the digest + push a one-line summary (the watchdog fires this, detached, once every module has settled)
 python run.py archive        # end-of-month rotation: zip each finished month's reports + rotated logs to logs/archive/ (--dry-run / --month YYYY-MM); scheduled monthly as cherrypick-log-archive
 python run.py eod-insight    # opt-in AI synthesis over the day's deterministic reports -> logs/eod-insight-<day>.md (needs Claude Code on PATH + eod_insight.enabled); watchdog-fired (detached) on the same completion event as the digest
+python run.py advise         # opt-in bounded next-session parameter proposals per module -> state/advice/<module>-<session>.json, validated by cherrypick.core.advice against each module's advice_bounds (needs Claude Code on PATH + advise.enabled + per-module enabled); watchdog-fired (detached) on the same completion event; loops re-validate and treat absent/stale/invalid as baseline
 python run.py dashboard      # regenerate the static status dashboard -> dashboard.html
 python run.py calibrate      # per-profile calibration readings + promotion recommendations
 python run.py migrate-home   # dry-run: move config files into ~/.cherrypick + sweep leftovers (--apply to perform)
@@ -75,24 +76,33 @@ resolved **relative to the config file's directory** — never hardcode absolute
   counterpart: a monthly `cherrypick-log-archive` task zips each finished month's reports + rotated logs
   into `logs/archive/<YYYY-MM>/<scope>.zip` and removes the originals (idempotent, never touches the
   current month or an active `.log`) — also files-only and off the reliability path. `eod_insight.py`
-  (`cherrypick eod-insight`) is the one place AI is invoked, and it is deliberately fenced: **opt-in and
-  feature-detected** (`eod_insight.enabled` + Claude Code on PATH — off by default), it pipes the day's
-  deterministic reports to `claude -p` in headless mode with **no execution/edit/network tools** and
-  writes `eod-insight-<day>.md` (surfaced on the dashboard EOD card). The watchdog **launches it detached**
-  on the same completion event as the digest — never in the watchdog process, so the `claude` call stays
-  off the reliability path. It is an enrichment surface **off the watchdog reliability path**, best-effort,
-  paper-reports-only — the deterministic `eod-analysis` stays the source of record, so the "no AI on the
-  reliability path" invariant holds.
+  (`cherrypick eod-insight`) and `advise.py` (`cherrypick advise`) are the two places AI is invoked, and
+  both are deliberately fenced: **opt-in and feature-detected** (their `enabled` flags + Claude Code on
+  PATH — off by default), piping the day's deterministic reports to `claude -p` in headless mode with
+  **no execution/edit/network tools**, and the orchestrator — never the agent — writes the output. The
+  watchdog **launches both detached** on the same completion event as the digest — never in the watchdog
+  process, so the `claude` calls stay off the reliability path. `eod-insight` writes prose
+  (`eod-insight-<day>.md`, surfaced on the dashboard EOD card). `advise` writes **bounded parameter
+  proposals** for the NEXT session (`state/advice/<module>-<session>.json`): every proposal must pass
+  `cherrypick.core.advice` against the module's `advice_bounds` manifest of closed legal ranges (one
+  violation rejects the whole set, the rejections written anyway for audit), the artifact is
+  single-session and expiring, and the module's paper loop re-validates with the **same core code** at
+  session start — absent/stale/invalid advice means baseline behavior, and advice can only ever narrow
+  into declared ranges. Both are enrichment surfaces, best-effort, paper-only — the deterministic
+  reports stay the source of record, so the "no AI on the reliability path" invariant holds.
 
 **Per-schema dispatch.** Each module's paper DB has a different schema, selected by
 `paper.trade_schema` in config (`"meic_ic"` → MEIC's `ic_trades`; `"earnings"` → the Earnings module's
 `trades`; `"fly_book"` → the Flies module's `fly_positions`, tagged by experiment *arm* rather than risk
-profile). `report.py`, `calibrate.py`, `reconcile.py`, and `trade_notifier.py` each carry a small
-reader/adapter registry keyed by that value; add a schema by extending those registries, not the
-callers. All four must be extended together — a schema registered in three of them vanishes silently
-from the fourth surface, with no error to notice. `report.py` additionally carries a **separate**
-`_OPEN_READERS` registry for positions carried past the close (overnight capital-at-risk, no realized
-P&L) that feeds only the report/digest — it is *not* one of the four, so it does not need matching
+profile). The canonical schema set lives in `schemas.py` (`SCHEMAS`), and the coverage invariant is
+enforced by `tests/test_schema_registry.py`, not prose: every surface registry (`report.py` readers and
+`_OPEN_READERS`, `reconcile.py`, `trade_notifier.py`, `eval_activity.py`) must account for every schema —
+with a reader, or an explicit not-applicable declaration (`eval_activity.NOT_APPLICABLE`, e.g. earnings,
+whose "did it run" is the entry-SLA check). `calibrate.py` reads through `report.py`'s registry and must
+never grow its own. Add a schema by adding it to `schemas.SCHEMAS` and extending each surface; a schema
+wired into some surfaces but not others now fails CI instead of vanishing silently. `report.py`'s
+`_OPEN_READERS` covers positions carried past the close (overnight capital-at-risk, no realized
+P&L) that feeds only the report/digest — it needs no matching
 entries in calibrate/reconcile/notifier. Only the multi-day earnings module carries overnight; the
 0DTE modules (MEIC, flies) settle within the session and return an empty overnight view by design.
 
@@ -119,20 +129,33 @@ is excluded from ruff and from the packaged wheel.
   offline. The one exception is deliberate and gated: `dashboard --serve` exposes a `/api/system` route
   that runs `doctor.run()` for a live-checks card, polled client-side. That broker-touching call lives
   only on the served path (never the static regen), mirroring how the live section cards work — so the
-  file written on every watchdog tick still never touches the broker. `dashboard --serve` also embeds
+  file written on every watchdog tick still never touches the broker. The serve-only **Live Ops card**
+  (`orchestrator/liveops.py`, `/api/liveops`) is the phase-5 gate surface: each module's
+  `enable_live_trading` kill switch (home config first, then in-repo), its designated live account
+  (masked, via the module keyring), and the suite **halt flag** — `state/halt-live.flag` in the
+  cherrypick home, whose *presence* is the signal (`liveops.halt_flag_path()` defines the path;
+  future live loops poll the same file). liveops is files + keyring only and never writes; the
+  broker-truth half of that card is the existing `/api/reconcile` panel, which composes into it
+  (a designated account's position listing is the live book). `dashboard --serve` also embeds
   each module's own dashboard in an iframe (`orchestrator/embeds.py`, `/embed/<id>` route): it launches
   a module's dashboard server or regenerates its static HTML on demand, driven by config-declared argv
   with **PAPER mode forced** in that argv. This too is serve-only (the static file omits the iframes)
   and never invokes a live/broker view.
 - **Paper ↔ live isolation.** cherrypick only invokes paper engines / paper DBs. Anything advisory
   (e.g. `calibrate`'s promotion recommendations, the drawdown alert) is advisory only — it never mutates
-  a module's config or switches live risk. The one place cherrypick reads the *real* broker account is
+  a module's config or switches live risk. Live P&L is visible only through the explicitly live-tagged
+  reader (`report.live_run`, `cherrypick report --live`) over a module's separate `live_db` config key —
+  a **separate function by design**, so `calibrate` (which reads `report.run`, paper only) can never see
+  a live ledger even by accident; a test asserts calibrate references neither `live_run` nor `live_db`.
+  The one place cherrypick reads the *real* broker account is
   `reconcile` (`orchestrator/reconcile.py`, `cherrypick reconcile` + the serve-only `/api/reconcile`
   card): a paper↔live isolation guard that enumerates **every** account on the login (`list_accounts` —
   tastytrade returns multiple per user) and flags any open positions/BP a paper-only suite shouldn't
   have. Like `doctor` it is a broker-touching, on-demand diagnostic — **off the watchdog reliability
   path**, read-only broker calls only (`list_accounts`/`get_positions`/`get_account_info`, never an
-  order), account numbers masked, advisory. It never trades or mutates config.
+  order), account numbers masked, advisory. It never trades or mutates config. For live operation
+  (phase 5), `reconcile.schedule.enabled` promotes it to a daily scheduled task (`reconcile
+  --scheduled`, its own task off the watchdog tick) that notifies on any non-FLAT verdict.
 - **The onboarding surface (`connect`/`account`) is the one narrow live-config exception.**
   `cherrypick connect --module <m>` and `cherrypick account --module <m>` (`orchestrator/connect.py`,
   `orchestrator/accounts.py`) let a user set up a module for eventual **live** trading: they run the
@@ -152,6 +175,15 @@ is excluded from ruff and from the packaged wheel.
   spot-trail recorder that `install` starts, the watchdog keeps alive via `status_argv`/`start_argv`,
   and `uninstall` stops; single-instance guarded, located by `path`/`repo` like modules but with no
   paper DB or schedule of their own). It never places, cancels, or closes an order.
+- **Every spawned process is headless.** The scheduled tasks run under `pythonw.exe` (no console), so
+  any console-subsystem child launched without `CREATE_NO_WINDOW` pops a visible terminal window on the
+  user's screen — on every watchdog tick, daemon restart, and desktop toast. Daemons and `services`
+  start via the detached no-window launcher (`watchdog._start_streamer`: `pythonw` +
+  `DETACHED|NO_WINDOW|NEW_GROUP`), and every other `subprocess.run`/`Popen` site passes
+  `creationflags=CREATE_NO_WINDOW` (`orchestrator/util.py`; 0 off-Windows, so call sites stay
+  cross-platform). `-WindowStyle Hidden` alone is not enough — the console flashes before PowerShell
+  hides it. Enforced by `tests/test_headless.py` (a source scan), whose one exemption is `connect.py`:
+  its delegated credential entry is interactive by design and must share the user's console.
 - **Account numbers are masked** to the last 4 digits (`****1234`) anywhere they surface in logs or
   output — never emit a full account number (suite-wide rule from `ROADMAP.md`).
 - **Best-effort side calls never break the reliability path.** The watchdog tick fires

@@ -3,8 +3,8 @@
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
 How a candidate actually gets from "reports earnings tonight" to "here's an order" — no
-decision tree lookup table, just each strategy's own tiering plus one cross-strategy ranking
-step.
+decision tree lookup table, just each strategy's own accept/reject screen plus one cross-strategy
+ranking step.
 
 ---
 
@@ -13,24 +13,26 @@ step.
 There's no single global "entry conditions" gate that all six strategies share and a router
 that then picks a bucket. Instead:
 
-1. **Each strategy tiers itself.** `src/strategies/<name>.py`'s `apply_tiering()` runs that
-   strategy's own hard filters and near-miss bands against a symbol and returns `Tier 1`,
-   `Tier 2`, `Near Miss`, or `Reject` with specific reasons. `iron_fly`'s version is documented
-   in full in [Screening Criteria](./screening-criteria.md) — the source of truth for hard
-   filter numbers, near-miss bands, and the composite scoring formula. The other six strategies
-   share the same shared-engine plumbing (`scanner.py`'s liquidity gates, IV/RV computation,
-   winrate backtest) but plug in their own thresholds and a few strategy-specific criteria
+1. **Each strategy screens itself.** `src/strategies/<name>.py`'s `apply_tiering()` runs that
+   strategy's own hard filters and soft criteria against a symbol and returns
+   `{"accepted": bool, "reject_reasons": [...]}` — a single accept/reject decision, with one
+   reason per bar failed. `iron_fly`'s version is documented in full in
+   [Screening Criteria](./screening-criteria.md) — the source of truth for hard filter numbers,
+   the configurable soft criteria (`symbol_screen`), and the composite scoring formula. The other
+   strategies share the same shared-engine plumbing (`scanner.py`'s liquidity gates, IV/RV
+   computation, winrate backtest) but plug in their own thresholds and a few strategy-specific
+   criteria
    (`double_calendar`'s realized-move dispersion, `broken_wing_butterfly`/`directional_credit_spread`'s
    skew gate, the calendars' `back_month_min_days_after`). See each strategy's own config block
    in [Configuration Guide](./03-configuration.md) for its exact numbers.
 
-2. **Cross-strategy ranking picks a winner per symbol.** A single symbol can tier Tier 1 or
-   Tier 2 under more than one strategy at once — a name with rich IV/RV and negative term
+2. **Cross-strategy ranking picks a winner per symbol.** A single symbol can be accepted under
+   more than one strategy at once — a name with rich IV/RV and negative term
    structure might legitimately qualify for `iron_fly`, `iron_condor`, and `directional_credit_spread`
    all on the same night. Opening more than one of those on the same underlying would just be
    the same overnight gap risk twice, not diversification. `src/rank_strategies.py` resolves
    this: it runs every registered strategy's `apply_tiering()` against every symbol on the
-   merged today-AMC/tomorrow-BMO calendar, keeps only the Tier 1/Tier 2 results, and picks each
+   merged today-AMC/tomorrow-BMO calendar, keeps only the accepted results, and picks each
    symbol's single highest-scoring strategy.
 
 ```bash
@@ -90,7 +92,7 @@ trail for a specific past night, not just tonight's console output.
 The scan that produces tonight's ranked list typically runs earlier in the afternoon; by the
 time the entry window actually opens, prices and IV may have moved. `rank_strategies.reverify_symbol()`
 re-runs the winning strategy's own `apply_tiering()` fresh, immediately before order submission,
-and rejects if it's fallen out of Tier 1/2 since the scan. This is Step 4b's re-verification
+and rejects if it's no longer accepted since the scan. This is Step 4b's re-verification
 check in `CLAUDE.md`'s Loop Steps, and Layer 2 of [Screening Criteria](./screening-criteria.md#layer-2--entry-time-re-verification-immediately-before-order-submission-not-at-scan-time) —
 same liquidity/term-structure/expected-move checks, just re-run live rather than trusted from
 the earlier scan.
@@ -107,8 +109,8 @@ python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
 ```
 
 Read the `reason` field on each symbol in the output. A quiet night with mostly
-`rejected_no_viable_strategy` or `tier_excluded` outcomes isn't a bug — it means nothing on that
-night's calendar cleared any strategy's hard filters. See
+`rejected_no_viable_strategy` or `screen_rejected` outcomes isn't a bug — it means nothing on that
+night's calendar cleared any strategy's screen. See
 [Screening Criteria](./screening-criteria.md) for what each specific rejection reason means.
 
 ---
