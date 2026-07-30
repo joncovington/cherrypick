@@ -345,3 +345,7 @@ def test_build_model_includes_eod_session_card(env, monkeypatch):
     assert eod["modules"]["meic"]["net_pnl"] == 95.0
     out = dashboard._render_html(m)
     assert "end of day" in out and "2026-07-10" in out
+    # The card only ever needs existence, not the path -- carrying an absolute path in the model
+    # (even unused by the renderer today) is a latent leak waiting for the next reader to add.
+    assert isinstance(eod["files"]["meic"], bool) and isinstance(eod["analysis"]["meic"], bool)
+    assert isinstance(eod.get("digest"), bool) and isinstance(eod.get("insight"), bool)

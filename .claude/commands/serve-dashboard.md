@@ -1,13 +1,16 @@
 ---
-description: Start/stop/restart cherrypick dashboards (suite/gex/meic/flies/all); --stop / --restart [module|all]
-argument-hint: [port] | all | --gex|--meic|--flies [port] | --meic --paper | --stop [module|all] | --restart [module|all]
+description: Start/stop/restart cherrypick dashboards (suite/gex/meic/flies/settings/all); --stop / --restart [module|all]
+argument-hint: [port] | all | --gex|--meic|--flies|--settings [port] | --meic --paper | --stop [module|all] | --restart [module|all]
 ---
 
 Start — or, with `--stop`, stop, or with `--restart`, restart (stop then start) — a cherrypick live
 dashboard server. The default target is the **suite** dashboard; `--gex` / `--meic` / `--flies` target a
-module's own dashboard, and `all` covers every installed dashboard at once. `--stop` and `--restart` take
-an optional target: bare (suite), `<module>`, or `all`. All views are read-only and loopback-only (bound
-to `127.0.0.1`).
+module's own dashboard, `--settings` targets the config/secrets editor, and `all` covers every installed
+**dashboard** at once — `all` never includes `--settings` (see the note on its row below). `--stop` and
+`--restart` take an optional target: bare (suite), `<module>`, `settings`, or `all`. Every dashboard row
+is read-only and loopback-only (bound to `127.0.0.1`); `--settings` is different — it is the suite's one
+**mutating** surface (config edits + keyring secrets), still loopback-only and additionally gated by a
+per-session CSRF token baked into its page, so it can't be driven by fetches from another origin.
 
 ## Module registry
 
@@ -20,9 +23,15 @@ procedures read this table, so no other part of this command needs to change.
 | `--gex` | gex | `packages/gex/run.py` exists | `python packages/gex/run.py dashboard --serve --port <port>` | `serve.port` in `~/.cherrypick/config/gex.json` (or `packages/gex/config.json`), else **5055** (WebSocket push on `serve.ws_port`, default `port + 1`, same process) | opens by default; **suppress with `--no-browser`** |
 | `--meic` | meic | `packages/meic/src/dashboard.py` exists | `python dashboard.py [--mode paper] --port <port>` — **must run with working dir `packages/meic/src`** (it does a bare `import paths`) | **5050** live / **5051** paper (`--paper` → `--mode paper`, paper_trades.db, "Paper Mode — Simulated") | opens by default; **suppress with `--no-browser`** |
 | `--flies` | flies | `packages/flies/run.py` exists | `python packages/flies/run.py dashboard --port <port>` | `FLIES_DASHBOARD_PORT` env, else **8803** | opens by default; **suppress with `--no-browser`** |
+| `--settings` | orchestrator suite | always (the repo itself) | `python packages/orchestrator/run.py settings --port <port>` | `settings.serve.port` in `~/.cherrypick/config.json` (or in-repo `config.example.json`), else **8804** — the next slot after the 88xx embeds | opens by default; **suppress with `--no-browser`** |
 
-All four modules share one browser convention: a dashboard opens a tab on start unless you pass
+All targets share one browser convention: a dashboard opens a tab on start unless you pass
 **`--no-browser`**.
+
+**`--settings` is excluded from `all`.** The other four rows are read-only status views meant to be
+open together; `--settings` can edit config and rotate secrets, so it stays a deliberate, individually
+started target — never auto-started by "Start/Stop/Restart all dashboards", and never listed alongside
+them in an `all` report. Start/stop/restart it explicitly with `--settings`.
 
 ## Route on `$ARGUMENTS`
 
@@ -37,7 +46,7 @@ Check `--restart` and `--stop` before the start flags:
   - `--stop all` → **Stop all dashboards**.
   - `--stop` with no target (or `--stop suite`) → **Stop a single dashboard** for the suite.
 - Else if it contains **`all`** → **Start all dashboards**.
-- Else if it contains **`--gex`** / **`--meic`** / **`--flies`** → **Start a single dashboard** for that module.
+- Else if it contains **`--gex`** / **`--meic`** / **`--flies`** / **`--settings`** → **Start a single dashboard** for that target.
 - Otherwise → **Start a single dashboard** for the suite. (Any bare number in `$ARGUMENTS` is the port.)
 
 ---
@@ -65,8 +74,10 @@ Using the chosen target's registry row:
 
 5. **Report** the URL `http://127.0.0.1:<port>/`. Mention it's read-only + loopback-only; for `--meic`
    `--paper` note "Paper Mode — simulated data only"; for `--gex`/`--flies` note live data needs the
-   shared stream cache being produced (off-hours it shows the last cached state); and that to stop it later
-   I can run `/serve-dashboard --stop <target>` (`--stop` alone for the suite).
+   shared stream cache being produced (off-hours it shows the last cached state); for `--settings` note
+   instead that it's the suite's one mutating surface (config edits + keyring secrets), CSRF-token gated,
+   and that live-trading gate fields render read-only there; and that to stop it later I can run
+   `/serve-dashboard --stop <target>` (`--stop` alone for the suite).
 
 ---
 
