@@ -107,7 +107,8 @@ async def _get_account(account_number: str | None = None):
     # Delegates to cherrypick.core.broker (src/_core). The stored account number is passed in as the
     # default so the core stays decoupled from this module's credentials shim.
     return await _broker.resolve_account(
-        get_session(), account_number,
+        get_session(),
+        account_number,
         default_number=_creds.get_secret(_creds.ACCOUNT_NUMBER),
     )
 
@@ -149,6 +150,7 @@ async def _collect_option_volume(symbols: list[str], timeout: float) -> dict:
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
+
 
 async def cmd_get_connection_status(_args) -> dict:
     status: dict = {
@@ -210,6 +212,7 @@ async def cmd_get_quote(args) -> dict:
 async def cmd_get_market_metrics(args) -> dict:
     try:
         from tastytrade.metrics import get_market_metrics
+
         symbol = args.symbol.strip().upper()
         session = get_session()
         metrics = await get_market_metrics(session, [symbol])
@@ -261,14 +264,10 @@ async def cmd_get_option_chain(args) -> dict:
         options_by_exp = {exp: list(chain[exp]) for exp in selected}
         if strike_count is not None:
             options_by_exp = {
-                exp: _atm_window(opts, strike_count, around_price)
-                for exp, opts in options_by_exp.items()
+                exp: _atm_window(opts, strike_count, around_price) for exp, opts in options_by_exp.items()
             }
 
-        serialized = {
-            str(exp): [_serialize(o) for o in opts]
-            for exp, opts in options_by_exp.items()
-        }
+        serialized = {str(exp): [_serialize(o) for o in opts] for exp, opts in options_by_exp.items()}
 
         result: dict = {"ok": True, "symbol": symbol, "chain": serialized}
 
@@ -311,7 +310,9 @@ async def cmd_get_option_chain(args) -> dict:
                         ask = _num(q.ask_price)
                         entry["bid"] = bid
                         entry["ask"] = ask
-                        entry["mid"] = round((bid + ask) / 2, 4) if bid is not None and ask is not None else None
+                        entry["mid"] = (
+                            round((bid + ask) / 2, 4) if bid is not None and ask is not None else None
+                        )
                         received += 1
             result["quotes_included"] = True
             result["quotes_complete"] = received == len(streamer_symbols)
@@ -369,7 +370,10 @@ def _build_order(spec: dict):
 async def cmd_execute_trade(args) -> dict:
     live = getattr(args, "live", False)
     if live and not _live_trading_enabled():
-        return {"ok": False, "error": "Live trading is disabled. Set enable_live_trading=true in config.json."}
+        return {
+            "ok": False,
+            "error": "Live trading is disabled. Set enable_live_trading=true in config.json.",
+        }
     try:
         spec = json.loads(args.order)
         account = await _get_account(getattr(args, "account_number", None))
@@ -379,8 +383,13 @@ async def cmd_execute_trade(args) -> dict:
         # configured) the account deploy-limit governor allows it. account_deploy_limit_pct defaults
         # to 0/off; a positive value caps deployed buying power at that % of account capacity.
         return await _broker.place_order(
-            account, get_session(), order, live=live, serialize=_serialize,
-            deploy_limit_pct=_load_config().get("account_deploy_limit_pct") or None)
+            account,
+            get_session(),
+            order,
+            live=live,
+            serialize=_serialize,
+            deploy_limit_pct=_load_config().get("account_deploy_limit_pct") or None,
+        )
     except Exception as exc:
         return _error(exc)
 
@@ -426,8 +435,13 @@ def cmd_secrets_set(args) -> dict:
 
 
 _ASYNC_COMMANDS = {
-    "get_connection_status", "list_accounts", "get_account_info",
-    "get_quote", "get_option_chain", "execute_trade", "get_market_metrics",
+    "get_connection_status",
+    "list_accounts",
+    "get_account_info",
+    "get_quote",
+    "get_option_chain",
+    "execute_trade",
+    "get_market_metrics",
 }
 
 
@@ -488,4 +502,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

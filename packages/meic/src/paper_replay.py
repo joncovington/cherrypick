@@ -62,7 +62,7 @@ _SERVICE_NAME = "meicagent"
 _TOKEN_KEY = "0dtespx:bearer_token"
 _CACHE_DIR = str(_paths.data_path("replay_cache"))
 _LOOP_INTERVAL_SECONDS = 120  # matches the live loop's in-position cadence
-_WING_WIDTHS = [2, 5, 10]      # candidate widths scanned each mark, widest-first in paper.py
+_WING_WIDTHS = [2, 5, 10]  # candidate widths scanned each mark, widest-first in paper.py
 
 
 class ReplayError(RuntimeError):
@@ -82,14 +82,16 @@ def _token() -> str:
 
 
 def _api_get(path: str, timeout: float = 15.0) -> dict:
-    req = urllib.request.Request(f"{_API_BASE}{path}",
-                                 headers={"Authorization": _token(), "User-Agent": _USER_AGENT})
+    req = urllib.request.Request(
+        f"{_API_BASE}{path}", headers={"Authorization": _token(), "User-Agent": _USER_AGENT}
+    )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         raise ReplayError(
-            f"0DTESPX API {path} -> HTTP {exc.code}: {exc.read().decode('utf-8', 'replace')}") from exc
+            f"0DTESPX API {path} -> HTTP {exc.code}: {exc.read().decode('utf-8', 'replace')}"
+        ) from exc
     except urllib.error.URLError as exc:
         raise ReplayError(f"0DTESPX API {path} unreachable: {exc.reason}") from exc
 
@@ -98,15 +100,19 @@ def _api_post(path: str, body: dict, timeout: float = 15.0) -> dict:
     """Unauthenticated JSON POST — used for the /auth endpoints that mint the bearer token
     (login is how you *get* the token, so it cannot itself be token-authenticated)."""
     data = json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(f"{_API_BASE}{path}", data=data,
-                                 headers={"Content-Type": "application/json",
-                                          "User-Agent": _USER_AGENT}, method="POST")
+    req = urllib.request.Request(
+        f"{_API_BASE}{path}",
+        data=data,
+        headers={"Content-Type": "application/json", "User-Agent": _USER_AGENT},
+        method="POST",
+    )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         raise ReplayError(
-            f"0DTESPX API {path} -> HTTP {exc.code}: {exc.read().decode('utf-8', 'replace')}") from exc
+            f"0DTESPX API {path} -> HTTP {exc.code}: {exc.read().decode('utf-8', 'replace')}"
+        ) from exc
     except urllib.error.URLError as exc:
         raise ReplayError(f"0DTESPX API {path} unreachable: {exc.reason}") from exc
 
@@ -183,8 +189,10 @@ def fetch_day(date: str, force: bool = False) -> list:
     cursor = start
     while cursor <= end:
         next_cursor = min(cursor + timedelta(seconds=_LOOP_INTERVAL_SECONDS), end)
-        path = (f"/market-data/option-chain-snapshots/"
-                f"{cursor.strftime('%Y-%m-%dT%H:%M:%S')}Z/{next_cursor.strftime('%Y-%m-%dT%H:%M:%S')}Z")
+        path = (
+            f"/market-data/option-chain-snapshots/"
+            f"{cursor.strftime('%Y-%m-%dT%H:%M:%S')}Z/{next_cursor.strftime('%Y-%m-%dT%H:%M:%S')}Z"
+        )
         chunk = _api_get(path)
         marks.append({"time_et": cursor.strftime("%H:%M"), "data": chunk})
         cursor = next_cursor
@@ -202,7 +210,7 @@ def _iv_rank_proxy(vix_series: list, lookback: int = 252) -> dict:
     values = [(row["date"], row["value"]) for row in vix_series if row.get("value") is not None]
     proxy = {}
     for i, (date, value) in enumerate(values):
-        window = [v for _, v in values[max(0, i - lookback):i + 1]]
+        window = [v for _, v in values[max(0, i - lookback) : i + 1]]
         if len(window) < 2:
             proxy[date] = {"vix": value, "iv_rank": None}
             continue
@@ -212,7 +220,9 @@ def _iv_rank_proxy(vix_series: list, lookback: int = 252) -> dict:
     return proxy
 
 
-def _select_candidate(strikes: list, underlying: float, wing_width: float, target_delta: float, is_call: bool):
+def _select_candidate(
+    strikes: list, underlying: float, wing_width: float, target_delta: float, is_call: bool
+):
     """Nearest-by-delta short strike + its wing, from 0DTESPX's per-strike bid/ask/delta
     rows. Mirrors tt.py's _closest_by_delta/_select_*_spread logic but keyed off delta only
     (0DTESPX provides unsigned delta, no gamma/theta/vega/IV)."""
@@ -235,8 +245,13 @@ def build_snapshot(date: str, mark: dict, iv_proxy_for_day: dict, target_delta: 
     underlying = raw.get("underlying_price") or raw.get("spot")
     strikes_raw = raw.get("strikes") or raw.get("chain") or []
     strikes = [
-        {"strike": float(s["strike"]), "streamer_symbol": f"SPX-{s['strike']}-{s.get('type', '')}",
-         "delta": s.get("delta"), "bid": s.get("bid"), "ask": s.get("ask")}
+        {
+            "strike": float(s["strike"]),
+            "streamer_symbol": f"SPX-{s['strike']}-{s.get('type', '')}",
+            "delta": s.get("delta"),
+            "bid": s.get("bid"),
+            "ask": s.get("ask"),
+        }
         for s in strikes_raw
     ]
     calls = [s for s in strikes if str(s["streamer_symbol"]).endswith("C") or s.get("type") == "C"]
@@ -250,18 +265,31 @@ def build_snapshot(date: str, mark: dict, iv_proxy_for_day: dict, target_delta: 
             continue
         short_call, long_call = call_pair
         short_put, long_put = put_pair
-        if any(s.get("bid") is None or s.get("ask") is None for s in (short_call, long_call, short_put, long_put)):
+        if any(
+            s.get("bid") is None or s.get("ask") is None for s in (short_call, long_call, short_put, long_put)
+        ):
             continue
-        candidates.append({
-            "wing_width": width,
-            "short_put": short_put, "long_put": long_put,
-            "short_call": short_call, "long_call": long_call,
-        })
+        candidates.append(
+            {
+                "wing_width": width,
+                "short_put": short_put,
+                "long_put": long_put,
+                "short_call": short_call,
+                "long_call": long_call,
+            }
+        )
 
-    leg_quotes = {s["streamer_symbol"]: {
-        "bid": s["bid"], "ask": s["ask"],
-        "mid": round((s["bid"] + s["ask"]) / 2, 4) if s.get("bid") is not None and s.get("ask") is not None else None,
-    } for s in strikes if s.get("bid") is not None}
+    leg_quotes = {
+        s["streamer_symbol"]: {
+            "bid": s["bid"],
+            "ask": s["ask"],
+            "mid": round((s["bid"] + s["ask"]) / 2, 4)
+            if s.get("bid") is not None and s.get("ask") is not None
+            else None,
+        }
+        for s in strikes
+        if s.get("bid") is not None
+    }
 
     ivp = iv_proxy_for_day.get(date, {"vix": None, "iv_rank": None})
 
@@ -275,8 +303,8 @@ def build_snapshot(date: str, mark: dict, iv_proxy_for_day: dict, target_delta: 
         "iv_rank": ivp["iv_rank"],
         "iv_rank_source": "vix_proxy",
         "vix": ivp["vix"],
-        "vix1d_ratio": None,   # not derivable from 0DTESPX; regime gate skips this trigger
-        "atr_5day": None,      # not derivable from a single day's snapshot; regime gate skips
+        "vix1d_ratio": None,  # not derivable from 0DTESPX; regime gate skips this trigger
+        "atr_5day": None,  # not derivable from a single day's snapshot; regime gate skips
         "session_quality": _session_quality(mark["time_et"]),
         "gex": {"ok": False, "reason": "replay_no_gamma_data"},
         "candidates": candidates,
@@ -308,8 +336,9 @@ def run_day(date: str, db_path: str, profiles_filter=None, force_fetch: bool = F
         snapshot = build_snapshot(date, mark, iv_proxy)
         if not snapshot["underlying_price"]:
             continue
-        result = paper.process_symbol(snapshot, db_path, execution_mode="replay",
-                                       profiles_filter=profiles_filter)
+        result = paper.process_symbol(
+            snapshot, db_path, execution_mode="replay", profiles_filter=profiles_filter
+        )
         per_mark_results.append({"time_et": mark["time_et"], "result": result})
 
     return {"ok": True, "date": date, "marks_processed": len(per_mark_results), "results": per_mark_results}
@@ -320,20 +349,28 @@ def main():
     parser.add_argument("--db", default=str(_paths.paper_db_path()))
     sub = parser.add_subparsers(dest="command")
 
-    p_tok = sub.add_parser("set_token", help="Store a 0DTESPX bearer token you already have in the "
-                                             "OS keyring (Windows Credential Manager)")
+    p_tok = sub.add_parser(
+        "set_token",
+        help="Store a 0DTESPX bearer token you already have in the OS keyring (Windows Credential Manager)",
+    )
     p_tok.add_argument("--token", required=True)
 
-    p_login = sub.add_parser("login", help="Log in to 0DTESPX and store the returned bearer token in "
-                                           "the OS keyring. Prompts for the password (never taken on "
-                                           "the command line); use --code for passwordless login.")
+    p_login = sub.add_parser(
+        "login",
+        help="Log in to 0DTESPX and store the returned bearer token in "
+        "the OS keyring. Prompts for the password (never taken on "
+        "the command line); use --code for passwordless login.",
+    )
     p_login.add_argument("--email", required=True)
-    p_login.add_argument("--code", default=None,
-                         help="6-digit verification code from `request_code` (passwordless login; "
-                              "skips the password prompt)")
+    p_login.add_argument(
+        "--code",
+        default=None,
+        help="6-digit verification code from `request_code` (passwordless login; skips the password prompt)",
+    )
 
-    p_code = sub.add_parser("request_code",
-                            help="Email yourself a fresh 6-digit verification code for passwordless login")
+    p_code = sub.add_parser(
+        "request_code", help="Email yourself a fresh 6-digit verification code for passwordless login"
+    )
     p_code.add_argument("--email", required=True)
 
     sub.add_parser("sessions", help="List available historical trading days")
@@ -366,9 +403,16 @@ def main():
         except ReplayError as exc:
             print(json.dumps({"ok": False, "error": str(exc)}))
             sys.exit(1)
-        print(json.dumps({"ok": True, "email": args.email,
-                          "detail": "verification code requested; check your email, then run: "
-                                    "login --email <email> --code <code>"}))
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "email": args.email,
+                    "detail": "verification code requested; check your email, then run: "
+                    "login --email <email> --code <code>",
+                }
+            )
+        )
     elif args.command == "sessions":
         try:
             print(json.dumps(_api_get("/market-data/sessions")))

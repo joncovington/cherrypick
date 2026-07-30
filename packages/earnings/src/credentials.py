@@ -24,6 +24,7 @@ from cherrypick.core.auth import (
     CLIENT_SECRET,
     REFRESH_TOKEN,
     REQUIRED_SECRETS,
+    SHARED_SERVICE,
     CredentialError,
     CredentialStore,
 )
@@ -31,7 +32,9 @@ from cherrypick.core.auth import (
 SERVICE_NAME = "earningsagent"
 
 # The single store instance for this module; session.py builds its SessionManager from it.
-store = CredentialStore(SERVICE_NAME)
+# Own service first (the override/rotation layer), then the suite-wide shared login
+# (cherrypick-broker; entered once via the onboarding wizard).
+store = CredentialStore(SERVICE_NAME, legacy_service_names=(SHARED_SERVICE,))
 
 get_secret = store.get_secret
 set_secret = store.set_secret

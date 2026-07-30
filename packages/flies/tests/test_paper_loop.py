@@ -52,8 +52,7 @@ def test_in_session_boundaries():
 
 
 def test_force_overrides_the_session_gate(cache_with_chain, conn):
-    result = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain),
-                                 when=at(3), force=True)
+    result = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(3), force=True)
     assert "skipped" not in result
 
 
@@ -92,7 +91,7 @@ def test_a_refused_snapshot_still_records_a_feed_row(tmp_path, conn):
     feed = conn.execute("SELECT * FROM fly_snapshots").fetchall()
     assert len(feed) == 1
     assert feed[0]["status"] == "stream_cache_missing"
-    assert feed[0]["quotes_fresh"] is None       # failed before any quote could be scanned
+    assert feed[0]["quotes_fresh"] is None  # failed before any quote could be scanned
 
 
 # --------------------------------------------------------------------------- settlement
@@ -100,8 +99,7 @@ def test_settle_uses_last_trade_by_default(cache_with_chain, conn):
     paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(12))
     result = paper_loop.run_settle(config(), conn, cache_path=str(cache_with_chain), when=at(16, 15))
     assert result["results"][0]["settlement_source"] == "last_trade"
-    assert conn.execute(
-        "SELECT COUNT(*) FROM fly_positions WHERE status = 'settled'").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM fly_positions WHERE status = 'settled'").fetchone()[0] == 1
 
 
 def test_explicit_settlement_price_wins(cache_with_chain, conn):
@@ -109,16 +107,16 @@ def test_explicit_settlement_price_wins(cache_with_chain, conn):
     a point of spot can settle on the wrong side of its centre because of that difference, so the
     override exists and is recorded as such."""
     paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(12))
-    result = paper_loop.run_settle(config(), conn, cache_path=str(cache_with_chain),
-                                   when=at(16, 15), price=6123.45)
+    result = paper_loop.run_settle(
+        config(), conn, cache_path=str(cache_with_chain), when=at(16, 15), price=6123.45
+    )
     assert result["results"][0]["settlement_source"] == "explicit"
     row = conn.execute("SELECT settlement_price FROM fly_positions").fetchone()
     assert row["settlement_price"] == 6123.45
 
 
 def test_settle_without_a_price_refuses(tmp_path, conn):
-    result = paper_loop.run_settle(config(), conn, cache_path=str(tmp_path / "absent.db"),
-                                   when=at(16, 15))
+    result = paper_loop.run_settle(config(), conn, cache_path=str(tmp_path / "absent.db"), when=at(16, 15))
     assert result["results"][0]["reason"] == "no_settlement_price"
 
 
@@ -161,8 +159,13 @@ def cache_with_chain(tmp_path):
     conn.commit()
     conn.close()
     # Expiry is the fixed trading day these tests run against, so dte is 0 for every `at(...)`.
-    seed(path, spot=5998.0, strikes=[5990, 5995, 6000, 6005, 6010],
-         expiration=TRADING_DAY.date().isoformat(), quote_for=intrinsic_quotes(5998.0))
+    seed(
+        path,
+        spot=5998.0,
+        strikes=[5990, 5995, 6000, 6005, 6010],
+        expiration=TRADING_DAY.date().isoformat(),
+        quote_for=intrinsic_quotes(5998.0),
+    )
     return path
 
 
@@ -175,11 +178,13 @@ def test_fixture_sanity(cache_with_chain):
     credit, not merely that a snapshot builds.
     """
     import engine
+
     snap = provider.build_snapshot(cache_with_chain, "SPX", when=at(12))
     assert snap["ok"] is True and snap["dte"] == 0
 
     enter, reason, plan = engine.evaluate_credit_spread_entry(
-        snap, engine.merged_params(config(), "control"), [])
+        snap, engine.merged_params(config(), "control"), []
+    )
     assert enter, f"fixture offers no tradeable credit ({reason})"
     assert plan["credit"] > 0
 
@@ -285,8 +290,12 @@ def test_market_holidays_are_skipped_too(cache_with_chain, conn, home):
     import datetime as _dt
 
     from cherrypick.core import calendar as cal
-    holiday = next(d for d in (_dt.date(2026, 1, 1), _dt.date(2026, 7, 3), _dt.date(2026, 12, 25))
-                   if not cal.is_trading_day(d))
+
+    holiday = next(
+        d
+        for d in (_dt.date(2026, 1, 1), _dt.date(2026, 7, 3), _dt.date(2026, 12, 25))
+        if not cal.is_trading_day(d)
+    )
     when = datetime(holiday.year, holiday.month, holiday.day, 16, 30, tzinfo=provider._ET)
     out = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=when)
     assert out["skipped"] == "not_a_trading_day"
@@ -299,6 +308,7 @@ def test_settlement_refuses_a_stale_price(cache_with_chain, conn, home):
     stalled feed would have settled the whole session against an hours-old print without complaint.
     """
     import sqlite3
+
     paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(12))
     c = sqlite3.connect(cache_with_chain)
     c.execute("UPDATE stream_trades SET updated_at = ?", (time.time() - 6000,))
@@ -308,8 +318,7 @@ def test_settlement_refuses_a_stale_price(cache_with_chain, conn, home):
     out = paper_loop.run_settle(config(), conn, cache_path=str(cache_with_chain), when=at(16, 30))
     assert out["ok"] is False
     assert out["results"][0]["reason"] == "no_settlement_price"
-    assert conn.execute(
-        "SELECT COUNT(*) FROM fly_positions WHERE status='settled'").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM fly_positions WHERE status='settled'").fetchone()[0] == 0
 
 
 def test_a_refused_settlement_does_not_block_the_retry(cache_with_chain, conn, home):
@@ -317,6 +326,7 @@ def test_a_refused_settlement_does_not_block_the_retry(cache_with_chain, conn, h
     stop the loop retrying, and leave every position open under a report describing a session that
     never closed."""
     import sqlite3
+
     paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(12))
     c = sqlite3.connect(cache_with_chain)
     c.execute("UPDATE stream_trades SET updated_at = ?", (time.time() - 6000,))
@@ -353,8 +363,7 @@ def test_a_stray_report_file_does_not_block_settlement(cache_with_chain, conn, h
     assert paper_loop.session_already_settled(conn, day) is False, "a file is not a settlement"
     out = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(16, 30))
     assert out.get("settled_session") is True
-    assert conn.execute(
-        "SELECT COUNT(*) FROM fly_positions WHERE status='settled'").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM fly_positions WHERE status='settled'").fetchone()[0] == 1
 
 
 def test_a_no_trade_day_still_settles_once(cache_with_chain, conn, home):
@@ -384,13 +393,15 @@ def test_the_settled_evening_leaves_a_rate_limited_heartbeat(cache_with_chain, c
 def test_an_explicit_price_bypasses_the_staleness_gate(cache_with_chain, conn, home):
     """The documented recovery path: settle with the official print when the feed is unavailable."""
     import sqlite3
+
     paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(12))
     c = sqlite3.connect(cache_with_chain)
     c.execute("UPDATE stream_trades SET updated_at = ?", (time.time() - 6000,))
     c.commit()
     c.close()
 
-    out = paper_loop.run_settle(config(), conn, cache_path=str(cache_with_chain),
-                                when=at(16, 30), price=7455.72)
+    out = paper_loop.run_settle(
+        config(), conn, cache_path=str(cache_with_chain), when=at(16, 30), price=7455.72
+    )
     assert out["ok"] is True
     assert out["results"][0]["settlement_source"] == "explicit"

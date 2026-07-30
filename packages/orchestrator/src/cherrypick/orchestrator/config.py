@@ -152,6 +152,52 @@ def paper_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path:
     return (module_root(module_cfg, name) / p).resolve()
 
 
+# Known-module onboarding defaults (the redesign's step 6): applied when a config omits the
+# key, so an existing machine-local config needs ZERO broker keys for connect/account to work.
+# Config always wins when present; a genuinely new module still declares its keys in config.
+KNOWN_MODULE_DEFAULTS: dict[str, dict[str, Any]] = {
+    "meic": {"keyring_service": "meicagent", "broker_tool": ["src/tt.py"]},
+    "earnings": {"keyring_service": "earningsagent", "broker_tool": ["src/tt.py"]},
+    "flies": {"keyring_service": "fliesagent", "broker_tool": ["src/broker_cli.py"]},
+}
+
+
+def _module_default(name: str | None, key: str) -> Any:
+    return (KNOWN_MODULE_DEFAULTS.get(name or "") or {}).get(key)
+
+
+def broker_tool(module_cfg: dict[str, Any], name: str | None = None) -> list[str]:
+    """The module's broker/credential CLI as an argv prefix, relative to its root. Resolution:
+    explicit config -> known-module default (by name) -> the historical `src/tt.py`. Used by
+    connect/account/reconcile so onboarding and the isolation guard drive every module through
+    config-declared argv, like everything else."""
+    return list(module_cfg.get("broker_tool") or _module_default(name, "broker_tool") or ["src/tt.py"])
+
+
+def module_keyring_service(module_cfg: dict[str, Any], name: str | None = None) -> str | None:
+    """The module's keyring service: explicit config -> known-module default -> None (no
+    account-selection surface for that module). An EXPLICIT null in config disables the
+    default -- the escape hatch for deliberately opting a known module out."""
+    if "keyring_service" in module_cfg:
+        return module_cfg["keyring_service"] or None
+    return _module_default(name, "keyring_service")
+
+
+def live_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path | None:
+    """Resolve a module's LIVE-trades DB from its top-level `live_db` key, or None when the module
+    declares none (flies never will -- it is paper by design). Same resolution rules as
+    `paper_db_path` (absolute / ~-and-env expanded / module-root relative). Deliberately a separate
+    key and a separate resolver: the paper path feeds `report.run` and everything promotion reads;
+    this one feeds only the explicitly live-tagged surfaces (`report.live_run`)."""
+    rel = module_cfg.get("live_db")
+    if not rel:
+        return None
+    p = Path(os.path.expandvars(os.path.expanduser(str(rel))))
+    if p.is_absolute():
+        return p.resolve()
+    return (module_root(module_cfg, name) / p).resolve()
+
+
 def sla_state_files(name: str, mcfg: dict) -> tuple[Path, Path]:
     """The (entry, exit) SLA heartbeat paths for a `cherrypick_scheduled` module.
 
@@ -215,6 +261,49 @@ def archive_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "task_name": la.get("task_name", "cherrypick-log-archive"),
         "day": int(la.get("day", 1)),
         "at": la.get("at", "03:30"),
+    }
+
+
+def data_epoch(cfg: dict[str, Any]) -> dict[str, Any] | None:
+    """The active data-epoch marker, or None when unset. An epoch is declared when a
+    correctness fix RESTATES what recorded paper history means (e.g. the phase-0
+    leg-ratio and win-definition fixes): `{"data_epoch": {"date": "YYYY-MM-DD",
+    "note": "..."}}`. `report` surfaces it descriptively (history is never rewritten);
+    `calibrate` enforces it — promotion readings use only sessions ON or AFTER the
+    epoch date, so a rung can never graduate on numbers produced by retired code."""
+    de = cfg.get("data_epoch") or {}
+    date = de.get("date")
+    if not date:
+        return None
+    return {"date": str(date), "note": de.get("note")}
+
+
+def advise_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved advise-pipeline config. **OFF by default, twice**: `advise.enabled` gates the
+    command, and each module under `advise.modules` must also set `enabled: true` and declare an
+    `advice_bounds` manifest (closed legal ranges) before any advice is generated for it. Needs
+    Claude Code on PATH, like eod_insight. Off the reliability path — the watchdog never waits
+    on or alerts about advice."""
+    a = cfg.get("advise", {}) or {}
+    return {
+        "enabled": a.get("enabled", False),
+        "model": a.get("model"),
+        "timeout_seconds": int(a.get("timeout_seconds", 180)),
+        "modules": a.get("modules", {}) or {},
+    }
+
+
+def reconcile_schedule_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved scheduled-reconcile config (phase 5: reconcile promoted to a daily task during
+    live operation). OFF by default -- the on-demand `cherrypick reconcile` and the serve-only
+    dashboard card remain the manual surfaces. When enabled, `install` registers a daily task
+    running `reconcile --scheduled`, which notifies on a non-FLAT verdict; its own task, off the
+    watchdog tick, so the broker call never rides the reliability path."""
+    sch = (cfg.get("reconcile", {}) or {}).get("schedule", {}) or {}
+    return {
+        "enabled": sch.get("enabled", False),
+        "task_name": sch.get("task_name", "cherrypick-reconcile"),
+        "at": sch.get("at", "16:30"),
     }
 
 

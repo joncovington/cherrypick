@@ -38,8 +38,9 @@ def _run_settle(monkeypatch, status_obj, now_et=_AFTER_CLOSE, is_trading=True, o
 
 
 def test_settlement_overdue_warns_with_count_and_reason(monkeypatch):
-    out = _run_settle(monkeypatch, {"session_settled": False, "positions_today": 5,
-                                     "data_reason": "no price within 300s"})
+    out = _run_settle(
+        monkeypatch, {"session_settled": False, "positions_today": 5, "data_reason": "no price within 300s"}
+    )
     assert len(out) == 1
     f = out[0]
     assert f.key == "flies.settle_overdue" and f.status == WARN
@@ -64,13 +65,13 @@ def test_no_check_unless_opted_in(monkeypatch):
 
 
 def test_no_check_before_the_close(monkeypatch):
-    assert _run_settle(monkeypatch, {"session_settled": False, "positions_today": 5},
-                       now_et=_BEFORE_CLOSE) == []
+    assert (
+        _run_settle(monkeypatch, {"session_settled": False, "positions_today": 5}, now_et=_BEFORE_CLOSE) == []
+    )
 
 
 def test_no_check_off_a_trading_day(monkeypatch):
-    assert _run_settle(monkeypatch, {"session_settled": False, "positions_today": 5},
-                       is_trading=False) == []
+    assert _run_settle(monkeypatch, {"session_settled": False, "positions_today": 5}, is_trading=False) == []
 
 
 def test_silent_when_status_lacks_the_settlement_signal(monkeypatch):
@@ -104,8 +105,9 @@ def _run_streamer(monkeypatch, status_obj, started_ok=True):
     monkeypatch.setattr(wd, "_run_module", lambda *a, **k: _R())
     monkeypatch.setattr(wd, "_stop_streamer", lambda *a, **k: True)
     calls = {"started": False}
-    monkeypatch.setattr(wd, "_start_streamer",
-                        lambda *a, **k: (calls.__setitem__("started", True) or started_ok))
+    monkeypatch.setattr(
+        wd, "_start_streamer", lambda *a, **k: calls.__setitem__("started", True) or started_ok
+    )
     spec = {"status_argv": ["s"], "start_argv": ["r"], "stale_restart_seconds": 240, "auto_restart": True}
     findings = wd._check_streamer_health("streamer", Path("."), spec)
     return findings, calls

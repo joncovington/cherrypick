@@ -57,9 +57,11 @@ if os.path.isdir(_CORE) and _CORE not in sys.path:
 
 try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
     from zoneinfo import ZoneInfo
+
     _ET = ZoneInfo("America/New_York")
 except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     import pytz
+
     _ET = pytz.timezone("America/New_York")
 
 from cherrypick.core import streamcache  # noqa: E402
@@ -73,16 +75,21 @@ from session import get_session  # noqa: E402
 # ---------------------------------------------------------------------------
 
 _ROOT = Path(__file__).parent.parent
-_CACHE_DB  = _paths.stream_cache_path()      # canonical shared cache ~/.cherrypick/data/marketdata/ (READ-ONLY here now — the standalone streamer owns it)
-_PID_FILE  = _paths.data_path("streamer.pid")
-_REST_DB   = _paths.data_path("rest_cache.db")   # MEIC-owned REST cache (account/positions/overview). The sidecar writes THIS, never the shared market-data cache.
-_SIDECAR_PID = _paths.data_path("sidecar.pid")   # PID for the REST-poller + 7699 API sidecar (distinct from the streamer PID)
+_CACHE_DB = _paths.stream_cache_path()  # canonical shared cache ~/.cherrypick/data/marketdata/ (READ-ONLY here now — the standalone streamer owns it)
+_PID_FILE = _paths.data_path("streamer.pid")
+_REST_DB = _paths.data_path(
+    "rest_cache.db"
+)  # MEIC-owned REST cache (account/positions/overview). The sidecar writes THIS, never the shared market-data cache.
+_SIDECAR_PID = _paths.data_path(
+    "sidecar.pid"
+)  # PID for the REST-poller + 7699 API sidecar (distinct from the streamer PID)
 _TRADES_DB = _paths.live_db_path()
-_LOG_FILE  = _paths.log_path("streamer.log")
+_LOG_FILE = _paths.log_path("streamer.log")
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
+
 
 def _setup_logging() -> None:
     _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -106,6 +113,7 @@ def _setup_logging() -> None:
     for _noisy in ("tastytrade", "httpx", "httpcore", "websockets", "asyncio"):
         logging.getLogger(_noisy).setLevel(logging.WARNING)
 
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -113,12 +121,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-
 # REST cache TTLs (seconds) per key
 _REST_TTL: dict[str, float] = {
-    "account_info":    20.0,
-    "positions":       20.0,
-    "working_orders":  10.0,
+    "account_info": 20.0,
+    "positions": 20.0,
+    "working_orders": 10.0,
     "market_overview": 60.0,
 }
 
@@ -133,9 +140,7 @@ def _write_rest_cache(conn: sqlite3.Connection, key: str, data: dict) -> None:
 
 
 def _read_rest_cache(conn: sqlite3.Connection, key: str) -> dict | None:
-    row = conn.execute(
-        "SELECT data_json, updated_at FROM stream_rest_cache WHERE key = ?", (key,)
-    ).fetchone()
+    row = conn.execute("SELECT data_json, updated_at FROM stream_rest_cache WHERE key = ?", (key,)).fetchone()
     if row is None:
         return None
     ttl = _REST_TTL.get(key, 30.0)
@@ -144,14 +149,13 @@ def _read_rest_cache(conn: sqlite3.Connection, key: str) -> dict | None:
     return json.loads(row["data_json"])
 
 
-
-
 # ---------------------------------------------------------------------------
 # Symbol resolution
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> dict:
-    p = _paths.config_path()   # home-first (~/.cherrypick/config/meic.json), in-repo fallback
+    p = _paths.config_path()  # home-first (~/.cherrypick/config/meic.json), in-repo fallback
     if p.exists():
         return json.loads(p.read_text())
     return {}
@@ -199,8 +203,8 @@ def _resolve_subscriptions(symbols: list[str]) -> dict[str, list[str]]:
 # Streamer daemon
 # ---------------------------------------------------------------------------
 
-_SYMBOL_POLL_S    = 30.0    # how often to re-check open trades (passed as the engine's subscription poll)
-_HTTP_PORT        = 7699    # streamer API port
+_SYMBOL_POLL_S = 30.0  # how often to re-check open trades (passed as the engine's subscription poll)
+_HTTP_PORT = 7699  # streamer API port
 
 # Per-symbol subscription window. Every traded symbol gets exactly one window sized to the
 # GEX requirement (wider than the ATM-only requirement of ~15 strikes) — GEX profile accuracy
@@ -208,33 +212,45 @@ _HTTP_PORT        = 7699    # streamer API port
 # per symbol comfortably covers both needs rather than maintaining two separate windows.
 # (Reconnect backoff + window re-center cadence now live in cherrypick.core.streamer, whose defaults
 # match the values MEIC used here; only the strike count and poll interval are passed through.)
-_WINDOW_STRIKE_COUNT = 20   # strikes each side of center (~40 strikes × 2 types = ~80 symbols)
+_WINDOW_STRIKE_COUNT = 20  # strikes each side of center (~40 strikes × 2 types = ~80 symbols)
 
 _NOMINAL_WING_PRICE = 0.01  # fallback price for a long wing leg with no quote at all
 
 # Shared state for the HTTP server thread
-_rest_loop: asyncio.AbstractEventLoop | None = None      # dedicated REST loop
+_rest_loop: asyncio.AbstractEventLoop | None = None  # dedicated REST loop
 
 # Default arg values for each command (mirrors argparse defaults in tt.py)
 _CMD_DEFAULTS: dict[str, dict] = {
     "get_connection_status": {},
     "list_accounts": {},
-    "get_account_info":    {"account_number": None},
-    "get_positions":       {"account_number": None},
+    "get_account_info": {"account_number": None},
+    "get_positions": {"account_number": None},
     "get_market_overview": {"quotes_timeout": 4.0},
-    "get_quote":           {"timeout": 6.0},
-    "get_option_chain":    {"expiration": None, "include_greeks": False, "include_quotes": False,
-                            "strike_count": 15, "around_price": None,
-                            "greeks_timeout": 6.0, "quotes_timeout": 6.0},
-    "get_strategies":      {"target_dte": 0, "wing_width": 5, "short_delta": 0.15,
-                            "around_price": None, "greeks_timeout": 6.0, "quotes_timeout": 6.0},
-    "get_working_orders":  {"account_number": None},
-    "execute_trade":       {"account_number": None, "dry_run": True},
-    "adjust_order":        {"account_number": None, "dry_run": True},
-    "close_position":      {"account_number": None},
-    "stream_status":       {},
-    "stream_subscribe":    {"timeout": 6.0},
-    "get_gex":             {"strike_count": 20, "around_price": None},
+    "get_quote": {"timeout": 6.0},
+    "get_option_chain": {
+        "expiration": None,
+        "include_greeks": False,
+        "include_quotes": False,
+        "strike_count": 15,
+        "around_price": None,
+        "greeks_timeout": 6.0,
+        "quotes_timeout": 6.0,
+    },
+    "get_strategies": {
+        "target_dte": 0,
+        "wing_width": 5,
+        "short_delta": 0.15,
+        "around_price": None,
+        "greeks_timeout": 6.0,
+        "quotes_timeout": 6.0,
+    },
+    "get_working_orders": {"account_number": None},
+    "execute_trade": {"account_number": None, "dry_run": True},
+    "adjust_order": {"account_number": None, "dry_run": True},
+    "close_position": {"account_number": None},
+    "stream_status": {},
+    "stream_subscribe": {"timeout": 6.0},
+    "get_gex": {"strike_count": 20, "around_price": None},
 }
 
 
@@ -286,9 +302,9 @@ class _OrbTracker:
 # ---------------------------------------------------------------------------
 
 _REST_POLL_KEYS_STATIC = [
-    ("account_info",    "get_account_info",    {"account_number": None}),
-    ("positions",       "get_positions",       {"account_number": None}),
-    ("working_orders",  "get_working_orders",  {"account_number": None}),
+    ("account_info", "get_account_info", {"account_number": None}),
+    ("positions", "get_positions", {"account_number": None}),
+    ("working_orders", "get_working_orders", {"account_number": None}),
 ]
 _REST_POLL_INTERVAL = 15.0
 
@@ -308,14 +324,15 @@ async def _rest_poller(symbols: list[str]) -> None:
     A dedicated connection removes this cross-thread contention entirely.
     """
     import tt
+
     # Write the REST cache to MEIC's OWN db — never the shared market-data cache, which the standalone
     # streamer is the sole writer of. streamcache.connect creates the full schema; only stream_rest_cache
     # is used here.
     conn = streamcache.connect(_REST_DB)
     fn_map = {
-        "get_account_info":    tt.cmd_get_account_info,
-        "get_positions":       tt.cmd_get_positions,
-        "get_working_orders":  tt.cmd_get_working_orders,
+        "get_account_info": tt.cmd_get_account_info,
+        "get_positions": tt.cmd_get_positions,
+        "get_working_orders": tt.cmd_get_working_orders,
         "get_market_overview": tt.cmd_get_market_overview,
     }
     # VIX is always needed for regime detection regardless of which symbols are traded.
@@ -361,6 +378,7 @@ def _start_rest_loop(symbols: list[str]) -> None:
 # HTTP API server
 # ---------------------------------------------------------------------------
 
+
 class _ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
 
@@ -385,6 +403,7 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
         # ── Tier 1: pure sync / stream-cache reads (no event loop) ──────────
         if command == "stream_status":
             import tt
+
             return tt.cmd_stream_status(argparse.Namespace())
 
         if command == "get_quote":
@@ -403,9 +422,9 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
 
         # ── Tier 2: REST-cache reads (polled every 15s by _rest_poller) ─────
         _REST_CACHE_KEY = {
-            "get_account_info":    "account_info",
-            "get_positions":       "positions",
-            "get_working_orders":  "working_orders",
+            "get_account_info": "account_info",
+            "get_positions": "positions",
+            "get_working_orders": "working_orders",
             "get_market_overview": "market_overview",
         }
         cache_key = _REST_CACHE_KEY.get(command)
@@ -419,7 +438,9 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
                 if command == "get_market_overview" and cached.get("ok") and "metrics" in cached:
                     requested = {s.upper() for s in args.get("symbols", [])}
                     if requested:
-                        filtered = [m for m in cached["metrics"] if (m or {}).get("symbol", "").upper() in requested]
+                        filtered = [
+                            m for m in cached["metrics"] if (m or {}).get("symbol", "").upper() in requested
+                        ]
                         if len(filtered) == len(requested):
                             result = dict(cached)
                             result["metrics"] = filtered
@@ -442,21 +463,22 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
             return {"ok": False, "error": f"unknown command: {command}"}
 
         import tt
+
         fn_map = {
             "get_connection_status": tt.cmd_get_connection_status,
-            "list_accounts":         tt.cmd_list_accounts,
-            "get_account_info":      tt.cmd_get_account_info,
-            "get_positions":         tt.cmd_get_positions,
-            "get_market_overview":   tt.cmd_get_market_overview,
-            "get_quote":             tt.cmd_get_quote,
-            "get_option_chain":      tt.cmd_get_option_chain,
-            "get_strategies":        tt.cmd_get_strategies,
-            "get_working_orders":    tt.cmd_get_working_orders,
-            "execute_trade":         tt.cmd_execute_trade,
-            "adjust_order":          tt.cmd_adjust_order,
-            "close_position":        tt.cmd_close_position,
-            "stream_subscribe":      tt.cmd_stream_subscribe,
-            "get_gex":               tt.cmd_get_gex,
+            "list_accounts": tt.cmd_list_accounts,
+            "get_account_info": tt.cmd_get_account_info,
+            "get_positions": tt.cmd_get_positions,
+            "get_market_overview": tt.cmd_get_market_overview,
+            "get_quote": tt.cmd_get_quote,
+            "get_option_chain": tt.cmd_get_option_chain,
+            "get_strategies": tt.cmd_get_strategies,
+            "get_working_orders": tt.cmd_get_working_orders,
+            "execute_trade": tt.cmd_execute_trade,
+            "adjust_order": tt.cmd_adjust_order,
+            "close_position": tt.cmd_close_position,
+            "stream_subscribe": tt.cmd_stream_subscribe,
+            "get_gex": tt.cmd_get_gex,
         }
         fn = fn_map.get(command)
         if fn is None:
@@ -497,10 +519,13 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
                 "SELECT last, updated_at FROM stream_trades WHERE symbol = ?", (sym,)
             ).fetchone()
             if row and row["last"] is not None and (now - row["updated_at"]) < 10:
-                return {"ok": True, "symbol": sym, "last": float(row["last"]),
-                        "source": "stream_cache"}
-            return {"ok": True, "symbol": sym, "last": None,
-                    "note": "not in stream cache — streamer may not have this symbol subscribed"}
+                return {"ok": True, "symbol": sym, "last": float(row["last"]), "source": "stream_cache"}
+            return {
+                "ok": True,
+                "symbol": sym,
+                "last": None,
+                "note": "not in stream cache — streamer may not have this symbol subscribed",
+            }
         finally:
             conn.close()
 
@@ -538,10 +563,10 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
             # ATM window filter
             if strike_count is not None:
                 strikes = sorted({float(o.get("strike_price", 0)) for o in options})
-                center = around_price if around_price else (strikes[len(strikes)//2] if strikes else None)
+                center = around_price if around_price else (strikes[len(strikes) // 2] if strikes else None)
                 if center and strikes:
                     nearest = min(range(len(strikes)), key=lambda i: abs(strikes[i] - center))
-                    keep = set(strikes[max(0, nearest-strike_count): nearest+strike_count+1])
+                    keep = set(strikes[max(0, nearest - strike_count) : nearest + strike_count + 1])
                     options = [o for o in options if float(o.get("strike_price", 0)) in keep]
 
             # Attach quotes and greeks from cache
@@ -580,10 +605,15 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
                 if s and s in greeks_map:
                     g = greeks_map[s]
                     o["delta"], o["gamma"], o["theta"], o["iv"] = (
-                        g["delta"], g["gamma"], g["theta"], g["iv"])
+                        g["delta"],
+                        g["gamma"],
+                        g["theta"],
+                        g["iv"],
+                    )
 
             return {
-                "ok": True, "symbol": sym,
+                "ok": True,
+                "symbol": sym,
                 "chain": {expiration: options},
                 "source": "stream_cache",
                 "greeks_included": include_greeks,
@@ -595,6 +625,7 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
     def _sync_get_strategies(self, args: dict) -> dict | None:
         """Build an IC candidate from cache; None if greeks or chain are missing."""
         from datetime import date as _date
+
         sym = args.get("symbol", "").strip().upper()
         wing_width = int(args.get("wing_width", 5))
         short_delta = float(args.get("short_delta", 0.15))
@@ -619,10 +650,14 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
                 return None
 
             options = [json.loads(r["data_json"]) for r in chain_rows]
-            calls = sorted((o for o in options if "C" in o.get("option_type", "")),
-                           key=lambda o: float(o.get("strike_price", 0)))
-            puts  = sorted((o for o in options if "P" in o.get("option_type", "")),
-                           key=lambda o: float(o.get("strike_price", 0)))
+            calls = sorted(
+                (o for o in options if "C" in o.get("option_type", "")),
+                key=lambda o: float(o.get("strike_price", 0)),
+            )
+            puts = sorted(
+                (o for o in options if "P" in o.get("option_type", "")),
+                key=lambda o: float(o.get("strike_price", 0)),
+            )
             if not calls or not puts:
                 return None
 
@@ -716,8 +751,11 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
                 return {**o, "mid": mid}
 
             return {
-                "ok": True, "symbol": sym, "strategy": "iron_condor",
-                "expiration": expiration, "dte": dte,
+                "ok": True,
+                "symbol": sym,
+                "strategy": "iron_condor",
+                "expiration": expiration,
+                "dte": dte,
                 "estimated_pop": round(max(0.0, 1.0 - 2.0 * short_delta), 3),
                 "net_credit": net_credit,
                 "contract_multiplier": mult,
@@ -727,10 +765,10 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
                 "greeks_used_for_strike_selection": bool(greeks_map),
                 "source": "stream_cache",
                 "legs": {
-                    "short_put":  _leg(sp, mids[0]),
-                    "long_put":   _leg(lp, mids[1]),
+                    "short_put": _leg(sp, mids[0]),
+                    "long_put": _leg(lp, mids[1]),
                     "short_call": _leg(sc, mids[2]),
-                    "long_call":  _leg(lc, mids[3]),
+                    "long_call": _leg(lc, mids[3]),
                 },
             }
         finally:
@@ -761,6 +799,7 @@ def _start_http_server() -> None:
 # ---------------------------------------------------------------------------
 # Main loop with reconnection
 # ---------------------------------------------------------------------------
+
 
 async def _main_loop(symbols: list[str]) -> None:
     # The persistent DXLink engine now lives in cherrypick.core.streamer; this daemon wires MEIC's
@@ -806,6 +845,7 @@ async def _main_loop(symbols: list[str]) -> None:
 # CLI: start / stop / status
 # ---------------------------------------------------------------------------
 
+
 def _running_pid(pid_file: Path = _PID_FILE) -> int | None:
     if not pid_file.exists():
         return None
@@ -820,10 +860,12 @@ def _running_pid(pid_file: Path = _PID_FILE) -> int | None:
     alive = False
     try:
         import psutil  # type: ignore
+
         alive = psutil.pid_exists(pid)
     except ImportError:
         try:
             import ctypes
+
             SYNCHRONIZE = 0x00100000
             handle = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
             if handle:
@@ -868,9 +910,11 @@ def _cmd_status() -> None:
         # Trade prints (underlying fills) are naturally sparse — a healthy connection
         # can go many minutes without one — so staleness must be judged by whichever
         # feed is freshest, not the one that happens to be quietest.
-        newest = max(
-            x["last"] for x in (qtrades, qquotes, qgreeks) if x["last"] is not None
-        ) if any(x["last"] for x in (qtrades, qquotes, qgreeks)) else None
+        newest = (
+            max(x["last"] for x in (qtrades, qquotes, qgreeks) if x["last"] is not None)
+            if any(x["last"] for x in (qtrades, qquotes, qgreeks))
+            else None
+        )
         info["oldest_event_age_s"] = round(now - newest, 1) if newest else None
 
         # Stale-cache guardrail: flags a silently-dead persistent connection
@@ -920,8 +964,9 @@ async def _sidecar_loop(symbols: list[str]) -> None:
 
     _SIDECAR_PID.parent.mkdir(exist_ok=True)
     _SIDECAR_PID.write_text(str(os.getpid()))
-    logger.info("MEIC sidecar PID %d written to %s (REST poller + 7699 API; no streaming)",
-                os.getpid(), _SIDECAR_PID)
+    logger.info(
+        "MEIC sidecar PID %d written to %s (REST poller + 7699 API; no streaming)", os.getpid(), _SIDECAR_PID
+    )
     try:
         await stop_event.wait()
     finally:
@@ -948,16 +993,24 @@ def _configured_symbols(cfg: dict, cli_override: list[str] | None = None) -> lis
 
 def main() -> None:
     import argparse
+
     parser = argparse.ArgumentParser(description="MEICAgent DXLink streamer daemon")
     parser.add_argument("--stop", action="store_true", help="Stop a running daemon")
     parser.add_argument("--status", action="store_true", help="Print status and exit")
-    parser.add_argument("--symbol", action="append", default=None,
-                        help="Override a traded symbol (repeatable, e.g. --symbol XSP --symbol SPX). "
-                             "Default: 'symbols' (or deprecated 'symbol') from config.json.")
-    parser.add_argument("--sidecar", action="store_true",
-                        help="Run ONLY the REST poller + 7699 HTTP API (no DXLink streaming). Use when "
-                             "the standalone streamer (packages/streamer) is the producer; keeps MEIC's "
-                             "REST/quote fast-path alive without a second market-data writer.")
+    parser.add_argument(
+        "--symbol",
+        action="append",
+        default=None,
+        help="Override a traded symbol (repeatable, e.g. --symbol XSP --symbol SPX). "
+        "Default: 'symbols' (or deprecated 'symbol') from config.json.",
+    )
+    parser.add_argument(
+        "--sidecar",
+        action="store_true",
+        help="Run ONLY the REST poller + 7699 HTTP API (no DXLink streaming). Use when "
+        "the standalone streamer (packages/streamer) is the producer; keeps MEIC's "
+        "REST/quote fast-path alive without a second market-data writer.",
+    )
     args = parser.parse_args()
 
     # Sidecar mode: REST poller + 7699 API only, with its own PID (distinct from the streamer).
@@ -970,11 +1023,15 @@ def main() -> None:
             return
         existing = _running_pid(_SIDECAR_PID)
         if existing is not None:
-            print(json.dumps({
-                "ok": False,
-                "error": f"Sidecar already running (pid {existing}). "
-                         f"Run 'python src/streamer.py --sidecar --stop' first.",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": f"Sidecar already running (pid {existing}). "
+                        f"Run 'python src/streamer.py --sidecar --stop' first.",
+                    }
+                )
+            )
             raise SystemExit(1)
         cfg = _load_config()
         symbols = _configured_symbols(cfg, cli_override=args.symbol)
@@ -992,11 +1049,15 @@ def main() -> None:
 
     existing_pid = _running_pid()
     if existing_pid is not None:
-        print(json.dumps({
-            "ok": False,
-            "error": f"Streamer already running (pid {existing_pid}). "
-                     f"Run 'python src/streamer.py --stop' first, or --status to inspect it.",
-        }))
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"Streamer already running (pid {existing_pid}). "
+                    f"Run 'python src/streamer.py --stop' first, or --status to inspect it.",
+                }
+            )
+        )
         raise SystemExit(1)
 
     cfg = _load_config()

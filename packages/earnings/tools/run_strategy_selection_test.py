@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-10-Day Earnings Entry Condition Framework Test
-Demonstrates strategy selection across market days
+10-Day Earnings Entry Condition Framework Demo
+Demonstrates strategy selection across market days. A runnable demo script, NOT a pytest
+suite -- it lived in tests/ where pytest collected zero tests from it. Run it directly.
 """
 
 import json
@@ -49,7 +50,7 @@ def select_strategy(c: Candidate) -> dict:
         "symbol": c.symbol,
         "strategy": strategy,
         "reason": reason,
-        "metrics": {"dispersion": d, "iv_rank": iv}
+        "metrics": {"dispersion": d, "iv_rank": iv},
     }
 
 
@@ -105,9 +106,9 @@ MARKET_DATA = {
 
 
 def main():
-    print("\n" + "="*90)
+    print("\n" + "=" * 90)
     print("10-DAY EARNINGS ENTRY CONDITION FRAMEWORK TEST")
-    print("="*90)
+    print("=" * 90)
 
     all_results = []
     strategy_totals = {}
@@ -116,7 +117,7 @@ def main():
         candidates = MARKET_DATA[date_str]
 
         print(f"\n[{date_str}] Analyzing {len(candidates)} candidates")
-        print("-"*90)
+        print("-" * 90)
 
         day_results = []
         for c in candidates:
@@ -133,9 +134,9 @@ def main():
             print(f"       {result['reason']}")
 
     # Summary
-    print("\n" + "="*90)
+    print("\n" + "=" * 90)
     print("10-DAY SUMMARY")
-    print("="*90)
+    print("=" * 90)
 
     total_candidates = len(all_results)
     print(f"Total candidates: {total_candidates}")
@@ -147,17 +148,21 @@ def main():
 
     # Save results
     with open("strategy_selection_results.json", "w") as f:
-        json.dump({
-            "summary": {
-                "dates": len(MARKET_DATA),
-                "total_candidates": total_candidates,
-                "strategies": strategy_totals,
+        json.dump(
+            {
+                "summary": {
+                    "dates": len(MARKET_DATA),
+                    "total_candidates": total_candidates,
+                    "strategies": strategy_totals,
+                },
+                "results": all_results,
             },
-            "results": all_results,
-        }, f, indent=2)
+            f,
+            indent=2,
+        )
 
     print("\nResults saved to strategy_selection_results.json")
-    print("="*90)
+    print("=" * 90)
 
 
 if __name__ == "__main__":

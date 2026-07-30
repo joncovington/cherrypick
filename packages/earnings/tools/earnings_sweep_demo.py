@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-10-Day Earnings Scan Test Harness
+10-Day Earnings Scan Demo Harness
+
+A runnable demo script, NOT a pytest suite -- it lived in tests/ as test_earnings_sweep.py,
+where pytest collected zero tests from it, so its green-ness was illusory. Run it directly.
 
 Tests the entry condition framework by:
 1. Iterating through next 10 market days
@@ -69,42 +72,60 @@ def analyze_candidate(symbol: str, criteria: dict) -> dict:
 
         if iv_rank > 1.20:
             analysis["recommended_strategy"] = "SHORT_STRADDLE"
-            analysis["reasoning"] = f"Low dispersion + high IV rank ({iv_rank:.2f}). Naked ATM straddle justified by predictability and premium."
+            analysis["reasoning"] = (
+                f"Low dispersion + high IV rank ({iv_rank:.2f}). Naked ATM straddle justified by predictability and premium."
+            )
         elif iv_rank > 1.00:
             analysis["recommended_strategy"] = "IRON_FLY"
-            analysis["reasoning"] = f"Low dispersion + medium IV ({iv_rank:.2f}). ATM hedged straddle offers predictable risk."
+            analysis["reasoning"] = (
+                f"Low dispersion + medium IV ({iv_rank:.2f}). ATM hedged straddle offers predictable risk."
+            )
         else:
             analysis["recommended_strategy"] = "ATM_CALENDAR"
-            analysis["reasoning"] = f"Low dispersion + low IV ({iv_rank:.2f}). Calendar spread captures term structure edge."
+            analysis["reasoning"] = (
+                f"Low dispersion + low IV ({iv_rank:.2f}). Calendar spread captures term structure edge."
+            )
 
     elif dispersion < 0.20:
         analysis["decision_path"].append("✓ Medium-low dispersion (0.15 ≤ σ < 0.20)")
 
         if iv_rank > 1.20:
             analysis["recommended_strategy"] = "BROKEN_WING_BUTTERFLY"
-            analysis["reasoning"] = f"Medium dispersion + high IV ({iv_rank:.2f}). Asymmetric straddle for skew edge."
+            analysis["reasoning"] = (
+                f"Medium dispersion + high IV ({iv_rank:.2f}). Asymmetric straddle for skew edge."
+            )
         else:
             analysis["recommended_strategy"] = "IRON_FLY"
-            analysis["reasoning"] = f"Medium dispersion + medium IV ({iv_rank:.2f}). Hedged straddle with wing protection."
+            analysis["reasoning"] = (
+                f"Medium dispersion + medium IV ({iv_rank:.2f}). Hedged straddle with wing protection."
+            )
 
     elif dispersion < 0.25:
         analysis["decision_path"].append("✓ Medium dispersion (0.20 ≤ σ < 0.25)")
 
         if iv_rank > 1.15:
             analysis["recommended_strategy"] = "DIRECTIONAL_SPREAD"
-            analysis["reasoning"] = f"Medium dispersion + good IV ({iv_rank:.2f}). Directional 2-leg spread for skew arbitrage."
+            analysis["reasoning"] = (
+                f"Medium dispersion + good IV ({iv_rank:.2f}). Directional 2-leg spread for skew arbitrage."
+            )
         else:
             analysis["recommended_strategy"] = "IRON_CONDOR"
-            analysis["reasoning"] = f"Medium dispersion + modest IV ({iv_rank:.2f}). Wide-range strangle at expected-move boundaries."
+            analysis["reasoning"] = (
+                f"Medium dispersion + modest IV ({iv_rank:.2f}). Wide-range strangle at expected-move boundaries."
+            )
 
     elif dispersion < 0.30:
         analysis["decision_path"].append("✓ Medium-high dispersion (0.25 ≤ σ < 0.30)")
         analysis["recommended_strategy"] = "IRON_CONDOR"
-        analysis["reasoning"] = f"High dispersion ({dispersion:.4f}) suggests a wide expected range. Strangle at expected-move boundaries with defined risk."
+        analysis["reasoning"] = (
+            f"High dispersion ({dispersion:.4f}) suggests a wide expected range. Strangle at expected-move boundaries with defined risk."
+        )
 
     else:
         analysis["decision_path"].append("❌ High dispersion (σ ≥ 0.30)")
-        analysis["reasoning"] = f"Dispersion too high ({dispersion:.4f}). Stock is unpredictable; no viable strategy."
+        analysis["reasoning"] = (
+            f"Dispersion too high ({dispersion:.4f}). Stock is unpredictable; no viable strategy."
+        )
         analysis["recommended_strategy"] = "REJECT"
 
     return analysis
@@ -142,23 +163,23 @@ def log_daily_scan(date_str: str, candidates: list[dict]) -> dict:
 def print_day_report(daily_log: dict) -> None:
     """Pretty-print daily scan results."""
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print(f"EARNINGS SCAN: {daily_log['date']}")
-    print("="*80)
+    print("=" * 80)
     print(f"Candidates found: {daily_log['candidates_found']}")
 
-    if not daily_log['analyses']:
+    if not daily_log["analyses"]:
         print("⚠️  No candidates available for analysis")
         return
 
     print("\nSTRATEGY RECOMMENDATIONS:")
-    print("-"*80)
+    print("-" * 80)
 
-    for analysis in daily_log['analyses']:
-        symbol = analysis['symbol']
-        strategy = analysis['recommended_strategy']
-        reasoning = analysis['reasoning']
-        dispersion = analysis['metrics']['dispersion_pct']
+    for analysis in daily_log["analyses"]:
+        symbol = analysis["symbol"]
+        strategy = analysis["recommended_strategy"]
+        reasoning = analysis["reasoning"]
+        dispersion = analysis["metrics"]["dispersion_pct"]
 
         # Format output
         status = "✓" if strategy != "REJECT" else "❌"
@@ -168,8 +189,8 @@ def print_day_report(daily_log: dict) -> None:
         print(f"   Reasoning: {reasoning}")
 
     print("\nSTRATEGY DISTRIBUTION:")
-    print("-"*80)
-    for strategy, count in daily_log['strategy_summary'].items():
+    print("-" * 80)
+    for strategy, count in daily_log["strategy_summary"].items():
         print(f"  {strategy}: {count} candidate(s)")
 
     print("\n")
@@ -184,12 +205,12 @@ def run_10day_sweep():
     start_date = "07/08/2026"  # Today
     market_days = get_next_market_days(start_date, num_days=10)
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("10-DAY EARNINGS SCAN & ENTRY ANALYSIS TEST HARNESS")
-    print("="*80)
+    print("=" * 80)
     print(f"Starting: {start_date}")
     print(f"Market days: {', '.join(market_days)}")
-    print("="*80)
+    print("=" * 80)
 
     all_daily_logs = []
     strategies_by_day = {}
@@ -233,10 +254,10 @@ def run_10day_sweep():
 
             # Aggregate results
             all_daily_logs.append(daily_log)
-            total_candidates += daily_log['candidates_found']
-            strategies_by_day[date_str] = daily_log['strategy_summary']
+            total_candidates += daily_log["candidates_found"]
+            strategies_by_day[date_str] = daily_log["strategy_summary"]
 
-            for strategy, count in daily_log['strategy_summary'].items():
+            for strategy, count in daily_log["strategy_summary"].items():
                 strategy_totals[strategy] = strategy_totals.get(strategy, 0) + count
 
         except Exception as e:
@@ -252,34 +273,38 @@ def run_10day_sweep():
             all_daily_logs.append(daily_log)
 
     # Summary report
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("10-DAY SUMMARY")
-    print("="*80)
+    print("=" * 80)
     print(f"Total candidates analyzed: {total_candidates}")
     print(f"Date range: {market_days[0]} to {market_days[-1]}")
     print("\nStrategy distribution (10 days):")
-    print("-"*80)
+    print("-" * 80)
     for strategy in sorted(strategy_totals.keys()):
         count = strategy_totals[strategy]
         print(f"  {strategy}: {count}")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST HARNESS COMPLETE")
-    print("="*80)
+    print("=" * 80)
 
     # Save full report
     report_file = Path(__file__).parent / "earnings_scan_report.json"
     with open(report_file, "w") as f:
-        json.dump({
-            "summary": {
-                "start_date": market_days[0],
-                "end_date": market_days[-1],
-                "num_days": len(market_days),
-                "total_candidates": total_candidates,
-                "strategy_totals": strategy_totals,
+        json.dump(
+            {
+                "summary": {
+                    "start_date": market_days[0],
+                    "end_date": market_days[-1],
+                    "num_days": len(market_days),
+                    "total_candidates": total_candidates,
+                    "strategy_totals": strategy_totals,
+                },
+                "daily_logs": all_daily_logs,
             },
-            "daily_logs": all_daily_logs,
-        }, f, indent=2)
+            f,
+            indent=2,
+        )
 
     print(f"\nDetailed report saved to: {report_file}")
 

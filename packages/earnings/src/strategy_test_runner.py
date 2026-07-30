@@ -3,10 +3,16 @@ strategy (see docs/strategy-testing-plan.md). `rank_strategies.py` opens
 only the single best strategy per symbol per night -- fine for the live
 loop, but candidates are scarce enough that most strategies would starve
 under natural selection and never reach a statistically meaningful sample
-in weeks. This module instead opens a **separate paper book**
-(`profile='strat_test'` in the shared data/paper_trades.db) with a trade
-for *every* strategy that tiers Tier 1/2 on *every* viable symbol each
-night -- up to one per (symbol, strategy) pair.
+in weeks. This module instead opens a **separate strat_test paper book**
+(the `profile` column in the shared data/paper_trades.db) with a trade for
+*every* strategy that clears the screen on *every* viable symbol each night
+-- up to one per (symbol, strategy) pair.
+
+The book is split by `strat_test_portfolio` config: "per_strategy" (the
+default) tags each trade `strat_test:<strategy>` so every strategy is its
+own portfolio with its own P&L/equity curve (and a newly added strategy
+automatically gets its own stream); "combined" keeps a single `strat_test`
+book (see docs/paper-trading.md and _book_tag).
 
 This is entirely separate from the live/paper trading loop (CLAUDE.md's
 Loop Steps, rank_strategies.py's own get_ranked_symbols) -- it never
@@ -15,12 +21,9 @@ positions or the correlation block list (the test book intentionally holds
 many overlapping positions at once), and never calls tt.py execute_trade.
 Always paper-only, regardless of config's enable_live_trading.
 
-Sizing basis is fixed to one profile (see config.json's "profiles" and
-docs/paper-trading-profiles.md) via --profile (default "balanced") so
-per-strategy comparison isn't confounded by which profile's capital/gates
-were active on a given night -- risk-profile comparison is a separate,
-later program. Fills are cost-adjusted via costs.py's tastytrade fee
-model, not mid-price.
+Sizing basis is config's available_capital_paper_mode (each per-strategy
+book draws on the full basis, as independent paper accounts). Fills are
+cost-adjusted via costs.py's tastytrade fee model, not mid-price.
 
 Position sizing/P&L convention: `entry_credit`/`exit_debit`/`pnl` in
 `trades` are stored **already multiplied by quantity** (not per-contract),
@@ -43,8 +46,8 @@ _avg_sold_iv). `iv_crush = entry_iv - exit_iv` is computed downstream in
 strategy_metrics.py, same pattern as cost-adjusted expectancy.
 
 Commands:
-  run_entries --date MM/DD/YYYY [--profile balanced]
-  run_closes [--profile balanced]
+  run_entries --date MM/DD/YYYY
+  run_closes
 """
 
 import argparse
@@ -59,6 +62,9 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
+
+from cherrypick.core import viz
 
 import costs
 import db_paper
@@ -85,6 +91,18 @@ _ORDER_FNS = {
     "atm_calendar": atm_calendar.fetch_atm_calendar_order,
     "directional_credit_spread": directional_credit_spread.fetch_directional_credit_spread_order,
     "broken_wing_butterfly": broken_wing_butterfly.fetch_broken_wing_butterfly_order,
+}
+
+# Multi-day strategies are MANAGED, not force-closed: the 09:45 sweep consults the
+# strategy's own evaluate_position (CLAUDE.md Steps 3b/3d) and closes only on its
+# verdict -- profit target, stop, leg stop, or its own time_exit backstop ahead of
+# front expiration. Force-closing them the morning after entry (the old behavior)
+# measured a one-night structure nobody intends to trade. The five overnight
+# strategies keep the unconditional sweep: that IS their Step 3 close-window design
+# ("IV crush already happened overnight; no more edge from holding").
+_MULTI_DAY = {
+    "atm_calendar": atm_calendar,
+    "double_calendar": double_calendar,
 }
 
 
@@ -120,7 +138,9 @@ def _leg_quotes_for_symbols(underlying: str, leg_symbols: list[str], price: floa
         q = quotes.get(s)
         if q is None or q.get("bid") is None or q.get("ask") is None:
             return None
-        result[s] = {"bid": q["bid"], "ask": q["ask"], "iv": q.get("iv")}
+        # delta rides along for double_calendar's per-leg stop (evaluate_position treats
+        # a missing delta as "skip that check", same optionality as iv).
+        result[s] = {"bid": q["bid"], "ask": q["ask"], "iv": q.get("iv"), "delta": q.get("delta")}
     return result
 
 
@@ -140,6 +160,17 @@ def _avg_sold_iv(legs: list[dict], quotes: dict) -> float | None:
     if not ivs:
         return None
     return sum(ivs) / len(ivs)
+
+
+def _scaled_legs(template_legs: list[dict], quantity: int) -> list[dict]:
+    """Scale a get_order leg template to the sized position for legs_json. Each leg's
+    stored quantity is its own structure ratio (e.g. broken_wing_butterfly's x2 body;
+    1 when the field is absent) times the position quantity. Overwriting with the
+    position quantity instead would flatten a 1-2-1 fly to 1-1-1, and the close --
+    which prices legs_json via scanner.compute_generic_exit_debit -- would buy the
+    body back once while entry_credit had sold it twice: a phantom profit of one
+    body price per contract on every ratioed structure."""
+    return [{**leg, "quantity": int(leg.get("quantity", 1) or 1) * quantity} for leg in template_legs]
 
 
 def _per_contract_credit(order: dict) -> float:
@@ -171,12 +202,30 @@ def _entry_context(criteria: dict, composite_score) -> dict:
 
 
 # --- Per-symbol entry review (the data reviewed for a symbol + the chosen/rejected decision) ---------
-_TIER_RANK = {"Tier 1": 1, "Tier 2": 2, "Tier 3": 3, "Near-Miss": 4, "Reject": 5}
+def _symbol_decision(results: list[dict]) -> str | None:
+    """The per-symbol screen outcome (what the Tier 1/2/Reject ladder used to
+    convey): "accepted" if any strategy cleared the screen, else "rejected"."""
+    if not results:
+        return None
+    return "accepted" if any(r.get("accepted") for r in results) else "rejected"
 
 
-def _best_tier(results: list[dict]) -> str | None:
-    tiers = [r.get("tier") for r in results if r.get("tier")]
-    return min(tiers, key=lambda t: _TIER_RANK.get(t, 9)) if tiers else None
+def _book_tag(config: dict, strategy_name: str) -> str:
+    """The paper-book (profile) tag a strat_test trade is written under. In
+    "per_strategy" mode (the default) each strategy gets its own book,
+    strat_test:<name>, so its P&L and equity curve stand alone and a newly
+    added strategy automatically gets its own stream; "combined" keeps the
+    single strat_test book."""
+    mode = config.get("strat_test_portfolio", "per_strategy")
+    if mode == "per_strategy":
+        return f"{TEST_PROFILE}:{strategy_name}"
+    return TEST_PROFILE
+
+
+def _is_strat_test_book(profile: str | None) -> bool:
+    """True for any strat_test book tag -- the single combined tag or a
+    per-strategy strat_test:<name> tag -- so run_closes sweeps them all."""
+    return bool(profile) and (profile == TEST_PROFILE or profile.startswith(TEST_PROFILE + ":"))
 
 
 def _richest_criteria(results: list[dict]) -> dict:
@@ -208,18 +257,36 @@ def _save_entry_review(scan_date, symbol, timing, results, opened_strategies, sk
     orchestrator's per-symbol notification and the EOD analysis. Best-effort; never breaks the scan."""
     crit = _richest_criteria(results)
     selected = bool(opened_strategies)
-    reason = ("opened " + ", ".join(sorted(set(opened_strategies)))) if selected else _summarize_skips(skip_reasons)
+    reason = (
+        ("opened " + ", ".join(sorted(set(opened_strategies))))
+        if selected
+        else _summarize_skips(skip_reasons)
+    )
     try:
-        db_paper.cmd_save_entry_review(argparse.Namespace(data=json.dumps({
-            "scan_date": scan_date, "symbol": symbol, "timing": timing,
-            "price": crit.get("price"), "volume": crit.get("avg_volume"),
-            "winrate": crit.get("winrate"), "winrate_sample": crit.get("winrate_sample_size"),
-            "iv_rv_ratio": crit.get("iv_rv_ratio"), "term_structure": crit.get("term_structure"),
-            "market_cap": crit.get("market_cap"),
-            "expected_move": crit.get("expected_move_dollars") or crit.get("expected_move"),
-            "best_tier": _best_tier(results), "selected": selected, "reason": reason,
-            "criteria": crit, "profile": TEST_PROFILE,
-        })))
+        db_paper.cmd_save_entry_review(
+            argparse.Namespace(
+                data=json.dumps(
+                    {
+                        "scan_date": scan_date,
+                        "symbol": symbol,
+                        "timing": timing,
+                        "price": crit.get("price"),
+                        "volume": crit.get("avg_volume"),
+                        "winrate": crit.get("winrate"),
+                        "winrate_sample": crit.get("winrate_sample_size"),
+                        "iv_rv_ratio": crit.get("iv_rv_ratio"),
+                        "term_structure": crit.get("term_structure"),
+                        "market_cap": crit.get("market_cap"),
+                        "expected_move": crit.get("expected_move_dollars") or crit.get("expected_move"),
+                        "best_tier": _symbol_decision(results),
+                        "selected": selected,
+                        "reason": reason,
+                        "criteria": crit,
+                        "profile": TEST_PROFILE,
+                    }
+                )
+            )
+        )
     except Exception:
         pass
 
@@ -227,6 +294,7 @@ def _save_entry_review(scan_date, symbol, timing, results, opened_strategies, sk
 # ---------------------------------------------------------------------------
 # Deterministic end-of-day paper report
 # ---------------------------------------------------------------------------
+
 
 def _logs_dir() -> Path:
     """The earnings logs home (~/.cherrypick/logs/earnings by default; see paths.logs_dir). Created on
@@ -241,9 +309,8 @@ def _eod_report_path(day: str) -> Path:
 
 
 def _money(x) -> str:
-    if x is None:
-        return "-"
-    return f"-${abs(x):,.2f}" if x < 0 else f"${x:,.2f}"
+    # The suite's one formatter (cherrypick.core.viz), keeping this report's "-" placeholder.
+    return viz.fmt_money(x, none="-")
 
 
 def _close_session(trade: dict) -> str:
@@ -311,11 +378,13 @@ def _write_eod_report(day: str) -> Path:
     wr = f"{overall['win_rate'] * 100:.0f}%" if overall["win_rate"] is not None else "-"
 
     L = [f"# Earnings Paper Trading - EOD Report {day}", ""]
-    L.append("_Deterministic forced-sampling paper book (strat_test). Defined-risk strategies only; "
-             "each position opens one afternoon and closes the next morning. Two sections, because the "
-             "two happen on different days: **Closed this session** is what settled this morning (realized "
-             "P&L, net of entry+exit costs); **Opened this session** is what was entered this afternoon and "
-             "is carried overnight (no P&L yet — capital at risk is the known max loss)._")
+    L.append(
+        "_Deterministic forced-sampling paper book (strat_test). Defined-risk strategies only; "
+        "each position opens one afternoon and closes the next morning. Two sections, because the "
+        "two happen on different days: **Closed this session** is what settled this morning (realized "
+        "P&L, net of entry+exit costs); **Opened this session** is what was entered this afternoon and "
+        "is carried overnight (no P&L yet — capital at risk is the known max loss)._"
+    )
     L.append("")
     L.append("## Closed this session (realized P&L)")
     L.append("")
@@ -324,8 +393,9 @@ def _write_eod_report(day: str) -> Path:
     L.append(f"- Net P&L (net of costs): **{_money(round(overall['net_pnl'], 2))}**")
     L.append(f"- Wins / Losses: {overall['wins']} / {overall['losses']} (win rate {wr})")
     if by_symbol:
-        L.append("- By symbol: " + ", ".join(
-            f"{s} {_money(round(v, 2))}" for s, v in sorted(by_symbol.items())))
+        L.append(
+            "- By symbol: " + ", ".join(f"{s} {_money(round(v, 2))}" for s, v in sorted(by_symbol.items()))
+        )
     L.append("")
 
     def _table(heading: str, col_label: str, groups: dict[str, list[dict]]) -> None:
@@ -337,11 +407,16 @@ def _write_eod_report(day: str) -> Path:
         for name, grp in sorted(groups.items()):
             s = _group_stats(grp)
             gwr = f"{s['win_rate'] * 100:.0f}%" if s["win_rate"] is not None else "-"
-            pf = "inf" if s["profit_factor"] == float("inf") else (
-                f"{s['profit_factor']:.2f}" if s["profit_factor"] is not None else "-")
+            pf = (
+                "inf"
+                if s["profit_factor"] == float("inf")
+                else (f"{s['profit_factor']:.2f}" if s["profit_factor"] is not None else "-")
+            )
             exp = _money(round(s["expectancy"], 2)) if s["expectancy"] is not None else "-"
-            L.append(f"| {name} | {s['trades']} | {s['wins']} | {s['losses']} | {gwr} | "
-                     f"{_money(round(s['net_pnl'], 2))} | {exp} | {pf} |")
+            L.append(
+                f"| {name} | {s['trades']} | {s['wins']} | {s['losses']} | {gwr} | "
+                f"{_money(round(s['net_pnl'], 2))} | {exp} | {pf} |"
+            )
         L.append("")
 
     _table("Per profile", "Profile", _group_by(trades, "profile"))
@@ -349,6 +424,22 @@ def _write_eod_report(day: str) -> Path:
 
     if not trades:
         L.append("_No trades closed this session - flat day._")
+        L.append("")
+
+    # Stranded at close --------------------------------------------------------
+    # Positions the close sweep tried and failed to price. They are still open, still
+    # carrying risk, and excluded from every closed-trade metric above -- which is exactly
+    # why they get their own section instead of silently disappearing from the report.
+    stranded_open = [t for t in metrics.load_open_trades() if (t.get("close_attempts") or 0) > 0]
+    if stranded_open:
+        L.append("## Stranded at close (failed close attempts)")
+        L.append("| Symbol | Strategy | Opened | Attempts | Last error |")
+        L.append("|---|---|---|---|---|")
+        for t in sorted(stranded_open, key=lambda x: -(x.get("close_attempts") or 0)):
+            L.append(
+                f"| {t['symbol']} | {t.get('strategy', '-')} | {_open_session(t) or '-'} | "
+                f"{t.get('close_attempts')} | {t.get('last_close_error') or '-'} |"
+            )
         L.append("")
 
     # Opened this session ------------------------------------------------------
@@ -363,24 +454,34 @@ def _write_eod_report(day: str) -> Path:
         by_sym_open: dict[str, int] = {}
         for t in opened:
             by_sym_open[t["symbol"]] = by_sym_open.get(t["symbol"], 0) + 1
-        L.append(f"- Positions opened: **{len(opened)}** across {len(by_sym_open)} name(s) "
-                 f"({', '.join(f'{s} x{n}' for s, n in sorted(by_sym_open.items()))}).")
-        L.append(f"- Capital at risk overnight (defined max loss, summed): **{_money(round(open_risk, 2))}**.")
+        L.append(
+            f"- Positions opened: **{len(opened)}** across {len(by_sym_open)} name(s) "
+            f"({', '.join(f'{s} x{n}' for s, n in sorted(by_sym_open.items()))})."
+        )
+        L.append(
+            f"- Capital at risk overnight (defined max loss, summed): **{_money(round(open_risk, 2))}**."
+        )
         L.append(f"- Entry costs paid: {_money(round(open_cost, 2))}.")
         L.append("")
         L.append("| Symbol | Strategy | Qty | Expiry | Entry credit | Capital at risk | Entry cost |")
         L.append("|---|---|---|---|---|---|---|")
         for t in sorted(opened, key=lambda x: (x["symbol"], x.get("strategy") or "")):
-            L.append(f"| {t['symbol']} | {t.get('strategy', '-')} | {t.get('quantity', '-')} | "
-                     f"{t.get('expiration', '-')} | {_money(t.get('entry_credit'))} | "
-                     f"{_money(t.get('capital_at_risk'))} | {_money(t.get('entry_cost'))} |")
+            L.append(
+                f"| {t['symbol']} | {t.get('strategy', '-')} | {t.get('quantity', '-')} | "
+                f"{t.get('expiration', '-')} | {_money(t.get('entry_credit'))} | "
+                f"{_money(t.get('capital_at_risk'))} | {_money(t.get('entry_cost'))} |"
+            )
     else:
-        L.append("_Nothing opened this session - no overnight risk carried (or the afternoon entry "
-                 "pass has not run yet; this section fills in after it does)._")
+        L.append(
+            "_Nothing opened this session - no overnight risk carried (or the afternoon entry "
+            "pass has not run yet; this section fills in after it does)._"
+        )
     L.append("")
 
-    L.append(f"_Generated {datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')} "
-             "· paper DB only; live account untouched._")
+    L.append(
+        f"_Generated {datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')} "
+        "· paper DB only; live account untouched._"
+    )
 
     path = _eod_report_path(day)
     path.write_text("\n".join(L), encoding="utf-8")
@@ -397,6 +498,7 @@ def cmd_eod_report(args) -> dict:
 # ---------------------------------------------------------------------------
 # EOD analysis report -- conversational, 7-section, still fully deterministic
 # ---------------------------------------------------------------------------
+
 
 def _analysis_path(day: str) -> Path:
     return _logs_dir() / f"eod-analysis-{day}.md"
@@ -415,7 +517,7 @@ def _write_eod_analysis(day: str) -> Path:
     trades = [t for t in metrics.load_closed_trades() if _close_session(t) == day]
     opened = [t for t in metrics.load_open_trades() if _open_session(t) == day]
     try:
-        config = scanner._load_config(TEST_PROFILE)
+        config = scanner._load_config()
     except Exception:
         config = {}
     block_list = config.get("correlation_block_list", []) or []
@@ -444,11 +546,13 @@ def _write_eod_analysis(day: str) -> Path:
             return {}
 
     L = [f"# Earnings Paper - EOD Analysis {day}", ""]
-    L.append("_Plain-English read on the forced-sampling paper book (strat_test). Auto-generated from the "
-             "paper DB (no agent) - conversational, but rule-based, not a hand-written synthesis. Defined-risk "
-             "strategies only; each position opens one afternoon and closes the next morning. Two sides, on "
-             "different days: what **settled** this morning (closed, realized P&L net of costs) and what was "
-             "**opened** this afternoon and is carried overnight (capital at risk, no P&L yet)._")
+    L.append(
+        "_Plain-English read on the forced-sampling paper book (strat_test). Auto-generated from the "
+        "paper DB (no agent) - conversational, but rule-based, not a hand-written synthesis. Defined-risk "
+        "strategies only; each position opens one afternoon and closes the next morning. Two sides, on "
+        "different days: what **settled** this morning (closed, realized P&L net of costs) and what was "
+        "**opened** this afternoon and is carried overnight (capital at risk, no P&L yet)._"
+    )
     L.append("")
 
     # Opened-this-session summary reused in the snapshot and in section 4.
@@ -459,28 +563,39 @@ def _write_eod_analysis(day: str) -> Path:
 
     def _opened_line() -> str:
         if not opened:
-            return ("No new positions were opened this afternoon, so nothing is carried into tonight — "
-                    "or the entry pass has not run yet (this analysis is regenerated after it does).")
+            return (
+                "No new positions were opened this afternoon, so nothing is carried into tonight — "
+                "or the entry pass has not run yet (this analysis is regenerated after it does)."
+            )
         names = ", ".join(f"{s} x{n}" for s, n in sorted(by_sym_open.items()))
-        return (f"**{len(opened)}** position{'s' if len(opened) != 1 else ''} opened this afternoon "
-                f"({names}), carrying **{_money(round(open_risk, 2))}** of defined max loss overnight. "
-                "These have no P&L yet — they settle at the next open and land in that day's closed section.")
+        return (
+            f"**{len(opened)}** position{'s' if len(opened) != 1 else ''} opened this afternoon "
+            f"({names}), carrying **{_money(round(open_risk, 2))}** of defined max loss overnight. "
+            "These have no P&L yet — they settle at the next open and land in that day's closed section."
+        )
 
     # 1. Executive snapshot ----------------------------------------------------
     L.append("## 1. Executive snapshot")
     if not trades:
-        L.append("Flat session - nothing settled this morning. Either no names qualified into the book last "
-                 "afternoon, or none were held into this close. A quiet book is a decision, not a gap - the "
-                 "scan_log shows which names were evaluated and why they were passed.")
+        L.append(
+            "Flat session - nothing settled this morning. Either no names qualified into the book last "
+            "afternoon, or none were held into this close. A quiet book is a decision, not a gap - the "
+            "scan_log shows which names were evaluated and why they were passed."
+        )
         L.append(_opened_line())
     else:
         best = max(by_symbol.items(), key=lambda kv: kv[1])
         worst = min(by_symbol.items(), key=lambda kv: kv[1])
         wr = f"{len(wins) / len(trades) * 100:.0f}%" if trades else "-"
-        drag = f", after {_money(round(costs_total, 2))} in costs ({(costs_total / gross * 100):.0f}% of the {_money(round(gross, 2))} gross)" if gross > 0 else f", with {_money(round(costs_total, 2))} of costs on top of a losing gross"
+        drag = (
+            f", after {_money(round(costs_total, 2))} in costs ({(costs_total / gross * 100):.0f}% of the {_money(round(gross, 2))} gross)"
+            if gross > 0
+            else f", with {_money(round(costs_total, 2))} of costs on top of a losing gross"
+        )
         L.append(
             f"**{len(trades)}** position{'s' if len(trades) != 1 else ''} closed out this session for "
-            f"**{_money(round(net_total, 2))}** net ({len(wins)} up, {len(losses)} down, win rate {wr}){drag}.")
+            f"**{_money(round(net_total, 2))}** net ({len(wins)} up, {len(losses)} down, win rate {wr}){drag}."
+        )
         line = "Average winner " + (_money(round(avg_win, 2)) if avg_win is not None else "-")
         line += ", average loser " + (_money(round(avg_loss, 2)) if avg_loss is not None else "-") + "."
         if best[0] != worst[0]:
@@ -491,11 +606,15 @@ def _write_eod_analysis(day: str) -> Path:
 
     # 2. Position-level detail -------------------------------------------------
     L.append("## 2. Position-level detail")
-    L.append("_Defined-risk earnings structures. Capital at risk is the known max loss set at entry; the IV "
-             "crush column is the entry-to-exit drop in the sold legs' implied vol - the edge these plays harvest._")
+    L.append(
+        "_Defined-risk earnings structures. Capital at risk is the known max loss set at entry; the IV "
+        "crush column is the entry-to-exit drop in the sold legs' implied vol - the edge these plays harvest._"
+    )
     if trades:
         L.append("")
-        L.append("| Symbol | Strategy | Legs | Qty | Max loss (cap@risk) | Entry IV | Exit IV | IV crush | Net P&L |")
+        L.append(
+            "| Symbol | Strategy | Legs | Qty | Max loss (cap@risk) | Entry IV | Exit IV | IV crush | Net P&L |"
+        )
         L.append("|---|---|---|---|---|---|---|---|---|")
         for t in trades:
             try:
@@ -506,9 +625,11 @@ def _write_eod_analysis(day: str) -> Path:
             ei = f"{t['entry_iv']:.1f}" if t.get("entry_iv") is not None else "-"
             xi = f"{t['exit_iv']:.1f}" if t.get("exit_iv") is not None else "-"
             ivc_txt = _signed(ivc) if ivc is not None else "-"
-            L.append(f"| {t['symbol']} | {t.get('strategy', '-')} | {nlegs} | {t.get('quantity', '-')} | "
-                     f"{_money(t.get('capital_at_risk'))} | {ei} | {xi} | {ivc_txt} | "
-                     f"{_money(round(metrics.net_pnl(t), 2))} |")
+            L.append(
+                f"| {t['symbol']} | {t.get('strategy', '-')} | {nlegs} | {t.get('quantity', '-')} | "
+                f"{_money(t.get('capital_at_risk'))} | {ei} | {xi} | {ivc_txt} | "
+                f"{_money(round(metrics.net_pnl(t), 2))} |"
+            )
     else:
         L.append("")
         L.append("_No positions settled - nothing to detail._")
@@ -517,18 +638,24 @@ def _write_eod_analysis(day: str) -> Path:
     # 3. Trade activity log ----------------------------------------------------
     L.append("## 3. Trade activity log")
     if trades:
-        L.append("| Opened | Closed | Symbol | Strategy | Entry credit | Exit debit | Entry cost | Exit cost |")
+        L.append(
+            "| Opened | Closed | Symbol | Strategy | Entry credit | Exit debit | Entry cost | Exit cost |"
+        )
         L.append("|---|---|---|---|---|---|---|---|")
         for t in sorted(trades, key=lambda x: x.get("opened_at") or 0):
+
             def _ts(v):
                 try:
                     return datetime.fromtimestamp(float(v)).strftime("%m-%d %H:%M")
                 except (TypeError, ValueError, OSError, OverflowError):
                     return "-"
-            L.append(f"| {_ts(t.get('opened_at'))} | {_ts(t.get('closed_at'))} | {t['symbol']} | "
-                     f"{t.get('strategy', '-')} | {_money(t.get('entry_credit'))} | "
-                     f"{_money(t.get('exit_debit'))} | {_money(t.get('entry_cost'))} | "
-                     f"{_money(t.get('exit_cost'))} |")
+
+            L.append(
+                f"| {_ts(t.get('opened_at'))} | {_ts(t.get('closed_at'))} | {t['symbol']} | "
+                f"{t.get('strategy', '-')} | {_money(t.get('entry_credit'))} | "
+                f"{_money(t.get('exit_debit'))} | {_money(t.get('entry_cost'))} | "
+                f"{_money(t.get('exit_cost'))} |"
+            )
     else:
         L.append("_No settlements - nothing to log._")
     L.append("")
@@ -541,8 +668,10 @@ def _write_eod_analysis(day: str) -> Path:
     # entry pass ran. Keying it off `opened` fixes that once the entry pass regenerates the file.
     L.append("## 4. Risk metrics")
     if opened:
-        L.append(f"- Capital at risk overnight tonight (defined max loss, summed): "
-                 f"**{_money(round(open_risk, 2))}** across {len(opened)} position(s) just opened.")
+        L.append(
+            f"- Capital at risk overnight tonight (defined max loss, summed): "
+            f"**{_money(round(open_risk, 2))}** across {len(opened)} position(s) just opened."
+        )
         conc = ", ".join(f"{s} {n} pos" for s, n in sorted(by_sym_open.items()))
         L.append(f"- Concentration by name: {conc}.")
         # Correlation groups from the block list (names that share overnight-gap risk) -- computed
@@ -555,17 +684,23 @@ def _write_eod_analysis(day: str) -> Path:
         collisions = {i: names for i, names in groups.items() if len(names) > 1}
         if collisions:
             for names in collisions.values():
-                L.append(f"  - Correlation flag: {', '.join(sorted(names))} sit in the same block-list group - "
-                         "the forced-sampling book intentionally ignores the correlation cap, so their overnight "
-                         "gap risk is effectively correlated (the live loop would not hold these together).")
+                L.append(
+                    f"  - Correlation flag: {', '.join(sorted(names))} sit in the same block-list group - "
+                    "the forced-sampling book intentionally ignores the correlation cap, so their overnight "
+                    "gap risk is effectively correlated (the live loop would not hold these together)."
+                )
         else:
-            L.append("  - No two names share a correlation block-list group - tonight's overnight risk is idiosyncratic per name.")
+            L.append(
+                "  - No two names share a correlation block-list group - tonight's overnight risk is idiosyncratic per name."
+            )
     else:
         L.append("- No positions were opened this session - no new overnight risk is carried into tonight.")
     if trades:
         settled_risk = sum(t.get("capital_at_risk") or 0.0 for t in trades)
-        L.append(f"- For reference, the {len(trades)} position(s) that settled this morning had carried "
-                 f"{_money(round(settled_risk, 2))} of defined max loss overnight; that risk is now resolved.")
+        L.append(
+            f"- For reference, the {len(trades)} position(s) that settled this morning had carried "
+            f"{_money(round(settled_risk, 2))} of defined max loss overnight; that risk is now resolved."
+        )
     L.append("")
 
     # 5. Market context --------------------------------------------------------
@@ -573,40 +708,64 @@ def _write_eod_analysis(day: str) -> Path:
     mctx = db_paper.cmd_get_market_context(argparse.Namespace(date=day))
     today_ctx, prior_ctx = mctx.get("today"), mctx.get("prior")
     if today_ctx and today_ctx.get("vix") is not None:
-        dv = f" ({_signed(today_ctx['vix'] - prior_ctx['vix'])} vs the prior capture, roughly entry-evening)" if (prior_ctx and prior_ctx.get("vix") is not None) else ""
+        dv = (
+            f" ({_signed(today_ctx['vix'] - prior_ctx['vix'])} vs the prior capture, roughly entry-evening)"
+            if (prior_ctx and prior_ctx.get("vix") is not None)
+            else ""
+        )
         L.append(f"VIX at this close sat around **{today_ctx['vix']:.1f}**{dv}.")
     else:
-        L.append("No VIX snapshot was captured around this session (best-effort capture; the per-name IV crush "
-                 "below is the volatility signal that actually matters for these plays).")
+        L.append(
+            "No VIX snapshot was captured around this session (best-effort capture; the per-name IV crush "
+            "below is the volatility signal that actually matters for these plays)."
+        )
     if crush["sample_count"]:
-        direction = "fell as expected (the post-earnings crush paid)" if crush["avg_crush"] and crush["avg_crush"] > 0 else "actually rose (no crush - the move outran the vol drop)"
-        L.append(f"- Average IV crush across the {crush['sample_count']} measured position(s): "
-                 f"**{_signed(crush['avg_crush'])}** vol points - implied vol {direction}.")
-    ivrvs = [c.get("iv_rv_ratio") for c in (_entry_ctx(t) for t in trades) if c.get("iv_rv_ratio") is not None]
+        direction = (
+            "fell as expected (the post-earnings crush paid)"
+            if crush["avg_crush"] and crush["avg_crush"] > 0
+            else "actually rose (no crush - the move outran the vol drop)"
+        )
+        L.append(
+            f"- Average IV crush across the {crush['sample_count']} measured position(s): "
+            f"**{_signed(crush['avg_crush'])}** vol points - implied vol {direction}."
+        )
+    ivrvs = [
+        c.get("iv_rv_ratio") for c in (_entry_ctx(t) for t in trades) if c.get("iv_rv_ratio") is not None
+    ]
     if ivrvs:
-        L.append(f"- Entry edge: average IV/RV ratio at entry was {sum(ivrvs) / len(ivrvs):.2f} "
-                 "(>1 means options were pricing more move than the stock had realized - the setup these plays want).")
-    L.append("- Catalyst: each position's own earnings release overnight is the event - there is no shared "
-             "market catalyst across names the way an index book has.")
+        L.append(
+            f"- Entry edge: average IV/RV ratio at entry was {sum(ivrvs) / len(ivrvs):.2f} "
+            "(>1 means options were pricing more move than the stock had realized - the setup these plays want)."
+        )
+    L.append(
+        "- Catalyst: each position's own earnings release overnight is the event - there is no shared "
+        "market catalyst across names the way an index book has."
+    )
     L.append("")
 
     # 6. Tax / accounting notes ------------------------------------------------
     L.append("## 6. Tax / accounting notes")
     L.append("_Informational only - not tax advice. Paper book, so nothing here is a real taxable event._")
     if trades:
-        L.append("- **Equity-option treatment** (not Section 1256): these are single-name equity options, so "
-                 "ordinary short-term/long-term capital-gains rules apply - not the 60/40 mark-to-market that "
-                 "broad-based index options get.")
-        L.append("- Holding period: opened one afternoon, closed the next morning - **short-term** across the board.")
+        L.append(
+            "- **Equity-option treatment** (not Section 1256): these are single-name equity options, so "
+            "ordinary short-term/long-term capital-gains rules apply - not the 60/40 mark-to-market that "
+            "broad-based index options get."
+        )
+        L.append(
+            "- Holding period: opened one afternoon, closed the next morning - **short-term** across the board."
+        )
         loss_names = {}
         for t in trades:
             if metrics.net_pnl(t) <= 0:
                 loss_names[t["symbol"]] = loss_names.get(t["symbol"], 0) + 1
         repeats = [s for s, n in loss_names.items() if n > 1]
         if repeats:
-            L.append(f"- **Wash-sale watch**: {', '.join(sorted(repeats))} closed at a loss more than once this "
-                     "session - repeated same-name losses within 30 days are where the wash-sale rule can defer a "
-                     "loss (equity options, unlike 1256, are subject to it).")
+            L.append(
+                f"- **Wash-sale watch**: {', '.join(sorted(repeats))} closed at a loss more than once this "
+                "session - repeated same-name losses within 30 days are where the wash-sale rule can defer a "
+                "loss (equity options, unlike 1256, are subject to it)."
+            )
     else:
         L.append("- No positions - no lots to classify.")
     L.append("")
@@ -615,13 +774,17 @@ def _write_eod_analysis(day: str) -> Path:
     L.append("## 7. Notes / journal")
     if not trades:
         if opened:
-            L.append(f"- Nothing settled this morning (nothing was held in from the prior afternoon), but the "
-                     f"book is not idle: {len(opened)} position(s) went on this afternoon and are carried into "
-                     "tonight. They settle at the next open and show up in that day's closed section.")
+            L.append(
+                f"- Nothing settled this morning (nothing was held in from the prior afternoon), but the "
+                f"book is not idle: {len(opened)} position(s) went on this afternoon and are carried into "
+                "tonight. They settle at the next open and show up in that day's closed section."
+            )
         else:
-            L.append("- Nothing settled and nothing opened. Worth confirming the entry pass actually ran this "
-                     "afternoon (a scan that found no candidates and a scan that silently failed look identical "
-                     "here) - the scan_log and the entry-review table below show which names were evaluated.")
+            L.append(
+                "- Nothing settled and nothing opened. Worth confirming the entry pass actually ran this "
+                "afternoon (a scan that found no candidates and a scan that silently failed look identical "
+                "here) - the scan_log and the entry-review table below show which names were evaluated."
+            )
     else:
         by_strategy = {}
         for t in trades:
@@ -629,22 +792,32 @@ def _write_eod_analysis(day: str) -> Path:
         strat_net = {s: sum(v) for s, v in by_strategy.items()}
         best_s = max(strat_net.items(), key=lambda kv: kv[1])
         worst_s = min(strat_net.items(), key=lambda kv: kv[1])
-        L.append(f"- Best strategy today: **{best_s[0]}** ({_money(round(best_s[1], 2))}); weakest: "
-                 f"**{worst_s[0]}** ({_money(round(worst_s[1], 2))}).")
+        L.append(
+            f"- Best strategy today: **{best_s[0]}** ({_money(round(best_s[1], 2))}); weakest: "
+            f"**{worst_s[0]}** ({_money(round(worst_s[1], 2))})."
+        )
         if crush["sample_count"] and crush["avg_crush"] is not None:
             if crush["avg_crush"] > 0 and net_total > 0:
-                L.append("- The thesis held: IV crushed and the book kept the premium. Textbook earnings-vol session.")
+                L.append(
+                    "- The thesis held: IV crushed and the book kept the premium. Textbook earnings-vol session."
+                )
             elif crush["avg_crush"] <= 0:
-                L.append("- **Recommendation:** IV rose rather than crushed - the stocks moved more than the vol "
-                         "gave back. If this recurs, the entry IV/RV bar may be too low for the current regime.")
+                L.append(
+                    "- **Recommendation:** IV rose rather than crushed - the stocks moved more than the vol "
+                    "gave back. If this recurs, the entry IV/RV bar may be too low for the current regime."
+                )
         if gross > 0 and costs_total / gross > 0.30:
-            L.append(f"- **Recommendation:** costs ate {(costs_total / gross * 100):.0f}% of gross - these are "
-                     "small defined-risk plays where the fixed per-contract fee bites; favor higher-conviction, "
-                     "better-liquidity names to keep the cost share down.")
+            L.append(
+                f"- **Recommendation:** costs ate {(costs_total / gross * 100):.0f}% of gross - these are "
+                "small defined-risk plays where the fixed per-contract fee bites; favor higher-conviction, "
+                "better-liquidity names to keep the cost share down."
+            )
         if avg_loss is not None and avg_win is not None and abs(avg_loss) > 2 * (avg_win or 0):
-            L.append("- **Recommendation:** the average loser is more than 2x the average winner - defined risk "
-                     "capped the damage, but the win/loss asymmetry says the losers are running to their max. "
-                     "Consider earlier profit-taking or tighter names.")
+            L.append(
+                "- **Recommendation:** the average loser is more than 2x the average winner - defined risk "
+                "capped the damage, but the win/loss asymmetry says the losers are running to their max. "
+                "Consider earlier profit-taking or tighter names."
+            )
     L.append("")
 
     # --- Symbols reviewed for entry (the scan behind these positions) ---------
@@ -652,11 +825,15 @@ def _write_eod_analysis(day: str) -> Path:
     scan_date, reviews = _entry_reviews_for(day)
     if reviews:
         chosen = sum(1 for rv in reviews if rv.get("selected"))
-        L.append(f"_The {scan_date} entry scan reviewed **{len(reviews)}** symbol(s) — {chosen} chosen, "
-                 f"{len(reviews) - chosen} rejected. The data reviewed per symbol and why each was taken "
-                 "or passed:_")
+        L.append(
+            f"_The {scan_date} entry scan reviewed **{len(reviews)}** symbol(s) — {chosen} chosen, "
+            f"{len(reviews) - chosen} rejected. The data reviewed per symbol and why each was taken "
+            "or passed:_"
+        )
         L.append("")
-        L.append("| Symbol | Decision | Price | Volume | Winrate | IV/RV | Term struct | Market cap | Tier | Reason |")
+        L.append(
+            "| Symbol | Decision | Price | Volume | Winrate | IV/RV | Term struct | Market cap | Tier | Reason |"
+        )
         L.append("|---|---|---|---|---|---|---|---|---|---|")
         for rv in reviews:
             price = f"${rv['price']:,.2f}" if rv.get("price") is not None else "-"
@@ -671,15 +848,21 @@ def _write_eod_analysis(day: str) -> Path:
             term = f"{rv['term_structure']:.3f}" if rv.get("term_structure") is not None else "-"
             mcap = f"{int(rv['market_cap']):,}" if rv.get("market_cap") is not None else "-"
             decision = "✅ chosen" if rv.get("selected") else "⚪ rejected"
-            L.append(f"| {rv['symbol']} | {decision} | {price} | {vol} | {wr} | {ivrv} | {term} | "
-                     f"{mcap} | {rv.get('best_tier') or '-'} | {rv.get('reason') or '-'} |")
+            L.append(
+                f"| {rv['symbol']} | {decision} | {price} | {vol} | {wr} | {ivrv} | {term} | "
+                f"{mcap} | {rv.get('best_tier') or '-'} | {rv.get('reason') or '-'} |"
+            )
     else:
-        L.append("_No entry-review records for the scan behind this session (the scan predates this "
-                 "feature, or ran on a different book)._")
+        L.append(
+            "_No entry-review records for the scan behind this session (the scan predates this "
+            "feature, or ran on a different book)._"
+        )
     L.append("")
 
-    L.append(f"_Generated {datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')} · paper DB only; "
-             "live account untouched. Companion to paper-eod-" + day + ".md._")
+    L.append(
+        f"_Generated {datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')} · paper DB only; "
+        "live account untouched. Companion to paper-eod-" + day + ".md._"
+    )
 
     path = _analysis_path(day)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -713,9 +896,17 @@ def _capture_market_context(day: str) -> None:
         vix = q.get("price") if isinstance(q, dict) and q.get("ok") else None
         if vix is None:
             return
-        db_paper.cmd_save_market_context(argparse.Namespace(data=json.dumps({
-            "context_date": day, "vix": vix, "updated_at": time.time(),
-        })))
+        db_paper.cmd_save_market_context(
+            argparse.Namespace(
+                data=json.dumps(
+                    {
+                        "context_date": day,
+                        "vix": vix,
+                        "updated_at": time.time(),
+                    }
+                )
+            )
+        )
     except Exception:
         pass
 
@@ -769,8 +960,13 @@ def _parallel_scan(calendar, config, workers, symbol_timeout, budget_seconds):
     try:
         fut_to_idx = {
             pool.submit(
-                _run_bounded, rank_strategies.evaluate_symbol, symbol_timeout,
-                e["symbol"], e["date"], e["timing"], config,
+                _run_bounded,
+                rank_strategies.evaluate_symbol,
+                symbol_timeout,
+                e["symbol"],
+                e["date"],
+                e["timing"],
+                config,
             ): i
             for i, e in enumerate(calendar)
         }
@@ -799,10 +995,7 @@ def cmd_run_entries(args) -> dict:
     if not rank_strategies._verify_tastytrade_connection():
         return {"ok": False, "error": "tastytrade connection failed"}
 
-    profile = args.profile
-    config = scanner._load_config(profile)
-    tier_floor = config.get("tier_floor", "Tier 2")
-    allowed_tiers = ("Tier 1",) if tier_floor == "Tier 1" else ("Tier 1", "Tier 2")
+    config = scanner._load_config()
 
     calendar_timeout = config.get("dolt_calendar_timeout_seconds", 30)
     try:
@@ -836,26 +1029,40 @@ def cmd_run_entries(args) -> dict:
         op0, sk0 = len(opened), len(skipped)  # this symbol's slice of the run-wide result lists
         for r in results:
             strategy_name = r["name"]
-            reasons = r["hard_fail_reasons"] or r["near_miss_reasons"]
-            db_paper.cmd_log_scan(argparse.Namespace(data=json.dumps({
-                "scan_date": scan_date,
-                "strategy": strategy_name,
-                "symbol": symbol,
-                "tier": r["tier"],
-                "outcome": r["tier"],
-                "reason": "; ".join(reasons) if reasons else None,
-                "logged_at": time.time(),
-                "profile": TEST_PROFILE,
-            })))
+            reasons = r["reject_reasons"]
+            decision = "accepted" if r["accepted"] else "rejected"
+            book = _book_tag(config, strategy_name)
+            db_paper.cmd_log_scan(
+                argparse.Namespace(
+                    data=json.dumps(
+                        {
+                            "scan_date": scan_date,
+                            "strategy": strategy_name,
+                            "symbol": symbol,
+                            "tier": decision,
+                            "outcome": decision,
+                            "reason": "; ".join(reasons) if reasons else None,
+                            "logged_at": time.time(),
+                            "profile": book,
+                        }
+                    )
+                )
+            )
 
-            if r["tier"] not in allowed_tiers:
-                skipped.append({"symbol": symbol, "strategy": strategy_name, "reason": f"tier_excluded_{r['tier']}"})
+            if not r["accepted"]:
+                skipped.append({"symbol": symbol, "strategy": strategy_name, "reason": "screen_rejected"})
                 continue
 
             try:
                 order = _ORDER_FNS[strategy_name](symbol, earnings_date, timing, config)
                 if not order.get("ok"):
-                    skipped.append({"symbol": symbol, "strategy": strategy_name, "reason": f"order_build_failed: {order.get('error')}"})
+                    skipped.append(
+                        {
+                            "symbol": symbol,
+                            "strategy": strategy_name,
+                            "reason": f"order_build_failed: {order.get('error')}",
+                        }
+                    )
                     continue
 
                 strategy_config = config["strategies"][strategy_name]
@@ -870,53 +1077,84 @@ def cmd_run_entries(args) -> dict:
                 price = order.get("underlying_price", 0.0)
                 leg_quotes = _leg_quotes_for_symbols(symbol, leg_symbols, price)
                 if leg_quotes is None:
-                    skipped.append({"symbol": symbol, "strategy": strategy_name, "reason": "leg_quotes_unavailable"})
+                    skipped.append(
+                        {"symbol": symbol, "strategy": strategy_name, "reason": "leg_quotes_unavailable"}
+                    )
                     continue
 
                 entry_costs = costs.apply_entry_costs(
-                    order, [leg_quotes[s] for s in leg_symbols], quantity, config,
+                    order,
+                    [leg_quotes[s] for s in leg_symbols],
+                    quantity,
+                    config,
                 )
                 entry_iv = _avg_sold_iv(template_legs, leg_quotes)
 
-                scaled_legs = [{**leg, "quantity": quantity} for leg in template_legs]
+                scaled_legs = _scaled_legs(template_legs, quantity)
                 per_contract = _per_contract_credit(order)
                 entry_credit = per_contract * quantity
 
                 order_id = f"{TEST_PROFILE}-{strategy_name}-{symbol}-{scan_date}-{int(time.time() * 1000)}"
-                save_result = db_paper.cmd_save_trade(argparse.Namespace(data=json.dumps({
+                save_spec = {
                     "order_id": order_id,
                     "strategy": strategy_name,
                     "symbol": symbol,
                     "expiration": order.get("expiration") or order.get("front_expiration"),
                     "legs_json": json.dumps(scaled_legs),
                     "entry_credit": entry_credit,
-                    "profile": TEST_PROFILE,
+                    "profile": book,
                     "quantity": quantity,
                     "capital_at_risk": size["capital_at_risk"],
                     "entry_cost": entry_costs["total_cost"],
+                    "entry_slippage": entry_costs["slippage"],
                     "entry_iv": entry_iv,
                     "entry_context": _entry_context(r["criteria"], r["composite_score"]),
-                })))
+                }
+                # Strategies with role-labeled legs (double_calendar today) get trade_legs
+                # rows, so the close sweep's evaluate_position can run its per-leg checks.
+                label_fn = getattr(_MULTI_DAY.get(strategy_name), "label_order_legs", None)
+                if label_fn is not None:
+                    save_spec["legs"] = [
+                        {**leg, "quantity": int(leg.get("quantity", 1) or 1) * quantity}
+                        for leg in label_fn(order)
+                    ]
+                save_result = db_paper.cmd_save_trade(argparse.Namespace(data=json.dumps(save_spec)))
                 if not save_result.get("ok"):
-                    skipped.append({"symbol": symbol, "strategy": strategy_name, "reason": f"save_trade_failed: {save_result.get('error')}"})
+                    skipped.append(
+                        {
+                            "symbol": symbol,
+                            "strategy": strategy_name,
+                            "reason": f"save_trade_failed: {save_result.get('error')}",
+                        }
+                    )
                     continue
 
-                opened.append({
-                    "order_id": order_id, "symbol": symbol, "strategy": strategy_name,
-                    "quantity": quantity, "capital_at_risk": size["capital_at_risk"],
-                    "entry_cost": entry_costs["total_cost"],
-                })
+                opened.append(
+                    {
+                        "order_id": order_id,
+                        "symbol": symbol,
+                        "strategy": strategy_name,
+                        "quantity": quantity,
+                        "capital_at_risk": size["capital_at_risk"],
+                        "entry_cost": entry_costs["total_cost"],
+                    }
+                )
             except Exception as exc:
                 # One candidate's unexpected failure (e.g. an order-building edge case)
                 # must not lose every other candidate's already-accumulated results for
                 # the night -- log and move on, same discipline as the evaluate_symbol
                 # try/except above.
-                skipped.append({"symbol": symbol, "strategy": strategy_name, "reason": f"unexpected_error: {exc}"})
+                skipped.append(
+                    {"symbol": symbol, "strategy": strategy_name, "reason": f"unexpected_error: {exc}"}
+                )
 
         # After all of this symbol's strategies: record the per-symbol review (data reviewed + the
         # chosen/rejected decision) for the notifier and the EOD analysis.
         _save_entry_review(
-            scan_date, symbol, timing, results,
+            scan_date,
+            symbol,
+            timing,
+            results,
             [o["strategy"] for o in opened[op0:]],
             [s.get("reason", "") for s in skipped[sk0:]],
         )
@@ -935,20 +1173,81 @@ def cmd_run_entries(args) -> dict:
     except Exception:
         pass
 
-    return {"ok": True, "date": scan_date, "profile": profile, "opened": opened, "skipped": skipped}
+    portfolio_mode = config.get("strat_test_portfolio", "per_strategy")
+    return {
+        "ok": True,
+        "date": scan_date,
+        "portfolio_mode": portfolio_mode,
+        "opened": opened,
+        "skipped": skipped,
+    }
+
+
+def _log_close_decision(trade: dict, outcome: str, reason: str | None) -> None:
+    """Journal the close sweep's per-position verdict (hold / closed + reason) to
+    scan_log -- the same audit trail the entry scan writes, so "why is this calendar
+    still open" and "what closed this" are answerable from the DB. Best-effort: a
+    journal failure must never affect the close itself."""
+    try:
+        db_paper.cmd_log_scan(
+            argparse.Namespace(
+                data=json.dumps(
+                    {
+                        "scan_date": _date.today().isoformat(),
+                        "strategy": trade.get("strategy"),
+                        "symbol": trade.get("symbol"),
+                        "tier": "close_sweep",
+                        "outcome": outcome,
+                        "reason": reason,
+                        "logged_at": time.time(),
+                        "profile": trade.get("profile"),
+                    }
+                )
+            )
+        )
+    except Exception:
+        pass
 
 
 def cmd_run_closes(args) -> dict:
     if not rank_strategies._verify_tastytrade_connection():
         return {"ok": False, "error": "tastytrade connection failed"}
 
-    config = scanner._load_config(args.profile)
+    config = scanner._load_config()
     _capture_market_context(_date.today().isoformat())  # close-session morning VIX for the analysis
     positions = db_paper.cmd_get_open_positions(argparse.Namespace())["positions"]
-    positions = [p for p in positions if p.get("profile") == TEST_PROFILE]
+    positions = [p for p in positions if _is_strat_test_book(p.get("profile"))]
 
     closed: list[dict] = []
     skipped: list[dict] = []
+    stranded: list[dict] = []
+    held: list[dict] = []
+    # A skipped close must never be silent: bump the position's close_attempts, carry
+    # the count on the skip record, and surface any position that has now missed more
+    # than one daily sweep as "stranded" so the orchestrator's exit heartbeat can warn.
+    retries = int(config.get("close_quote_retries", 1))
+    retry_pause = float(config.get("close_quote_retry_seconds", 30))
+
+    def _skip(trade: dict, reason: str) -> None:
+        entry = {"order_id": trade["order_id"], "symbol": trade["symbol"], "reason": reason}
+        try:
+            rec = db_paper.cmd_record_close_failure(
+                argparse.Namespace(
+                    data=json.dumps(
+                        {
+                            "order_id": trade["order_id"],
+                            "reason": reason,
+                        }
+                    )
+                )
+            )
+            attempts = rec.get("close_attempts") if rec.get("ok") else None
+        except Exception:
+            attempts = None
+        entry["close_attempts"] = attempts
+        skipped.append(entry)
+        if attempts is not None and attempts >= 2:
+            stranded.append(entry)
 
     for trade in positions:
         order_id = trade["order_id"]
@@ -961,19 +1260,60 @@ def cmd_run_closes(args) -> dict:
             quote = scanner.fetch_quote_and_expirations(symbol)
             price = quote.get("price", 0.0) if quote.get("ok") else 0.0
 
+            # Missing quotes get a short in-run retry window before the position is
+            # skipped for the day -- a slow open is recoverable, a halt is not.
             leg_quotes = _leg_quotes_for_symbols(symbol, leg_symbols, price)
+            for _ in range(retries):
+                if leg_quotes is not None:
+                    break
+                time.sleep(retry_pause)
+                leg_quotes = _leg_quotes_for_symbols(symbol, leg_symbols, price)
             if leg_quotes is None:
-                skipped.append({"order_id": order_id, "reason": "leg_quotes_unavailable"})
+                _skip(trade, "leg_quotes_unavailable")
                 continue
 
             full_quotes = {s: leg_quotes[s] for s in leg_symbols}
+
+            # Multi-day strategies: the strategy's own management logic decides. hold is a
+            # DECISION (the position keeps working), not a close failure. close_side (a
+            # double-calendar leg stop) closes the whole position here: the paper book is
+            # single-row/single-close accounting, and a front short past its delta stop
+            # means the structure is broken -- the harness exits rather than trims. The
+            # reason keeps the _close_all suffix so the two are distinguishable in the log.
+            strategy_name = trade.get("strategy") or ""
+            exit_reason = "close_window"
+            manager = _MULTI_DAY.get(strategy_name)
+            if manager is not None:
+                if strategy_name == "double_calendar":
+                    open_legs = db_paper.cmd_get_open_legs(argparse.Namespace(order_id=order_id)).get(
+                        "legs", []
+                    )
+                    decision = manager.evaluate_position(
+                        dict(trade), open_legs, full_quotes, config, is_first_check_of_day=True
+                    )
+                else:
+                    decision = manager.evaluate_position(
+                        dict(trade), full_quotes, config, is_first_check_of_day=True
+                    )
+                action = decision.get("action")
+                if action == "hold":
+                    held.append({"order_id": order_id, "symbol": symbol, "strategy": strategy_name})
+                    _log_close_decision(trade, "hold", None)
+                    continue
+                exit_reason = decision.get("reason") or action
+                if action == "close_side":
+                    exit_reason = f"{exit_reason}_close_all"
+
             exit_debit = scanner.compute_generic_exit_debit(legs, full_quotes)
             if exit_debit is None:
-                skipped.append({"order_id": order_id, "reason": "exit_debit_unavailable"})
+                _skip(trade, "exit_debit_unavailable")
                 continue
 
             exit_costs = costs.apply_exit_costs(
-                {"order": {"legs": legs}}, [leg_quotes[s] for s in leg_symbols], quantity, config,
+                {"order": {"legs": legs}},
+                [leg_quotes[s] for s in leg_symbols],
+                quantity,
+                config,
             )
             # Same legs list (action labels preserved from entry) -> this is the
             # same specific short contract(s)' IV, now, for a clean entry-vs-exit
@@ -982,22 +1322,38 @@ def cmd_run_closes(args) -> dict:
 
             pnl = (trade["entry_credit"] - exit_debit) * 100
 
-            close_result = db_paper.cmd_save_close(argparse.Namespace(data=json.dumps({
-                "order_id": order_id,
-                "exit_debit": exit_debit,
-                "pnl": pnl,
-                "exit_cost": exit_costs["total_cost"],
-                "exit_iv": exit_iv,
-            })))
+            close_result = db_paper.cmd_save_close(
+                argparse.Namespace(
+                    data=json.dumps(
+                        {
+                            "order_id": order_id,
+                            "exit_debit": exit_debit,
+                            "pnl": pnl,
+                            "exit_cost": exit_costs["total_cost"],
+                            "exit_slippage": exit_costs["slippage"],
+                            "exit_iv": exit_iv,
+                        }
+                    )
+                )
+            )
             if not close_result.get("ok"):
-                skipped.append({"order_id": order_id, "reason": f"save_close_failed: {close_result.get('error')}"})
+                _skip(trade, f"save_close_failed: {close_result.get('error')}")
                 continue
 
-            closed.append({"order_id": order_id, "symbol": symbol, "pnl": round(pnl, 2), "exit_cost": exit_costs["total_cost"]})
+            _log_close_decision(trade, "closed", exit_reason)
+            closed.append(
+                {
+                    "order_id": order_id,
+                    "symbol": symbol,
+                    "pnl": round(pnl, 2),
+                    "exit_cost": exit_costs["total_cost"],
+                    "reason": exit_reason,
+                }
+            )
         except Exception as exc:
             # Same discipline as cmd_run_entries: one position's unexpected failure
             # must not lose every other open position's already-accumulated closes.
-            skipped.append({"order_id": order_id, "reason": f"unexpected_error: {exc}"})
+            _skip(trade, f"unexpected_error: {exc}")
 
     # Once-per-day EOD report, written on the settlement (close) pass -- mirrors the MEIC paper
     # loop. Best-effort with a file-exists guard: a report failure must never fail the close
@@ -1015,7 +1371,7 @@ def cmd_run_closes(args) -> dict:
         except Exception:
             pass
 
-    return {"ok": True, "closed": closed, "skipped": skipped}
+    return {"ok": True, "closed": closed, "skipped": skipped, "stranded": stranded, "held": held}
 
 
 def main() -> None:
@@ -1024,10 +1380,8 @@ def main() -> None:
 
     p_entries = sub.add_parser("run_entries")
     p_entries.add_argument("--date", required=True)
-    p_entries.add_argument("--profile", default="balanced")
 
-    p_closes = sub.add_parser("run_closes")
-    p_closes.add_argument("--profile", default="balanced")
+    sub.add_parser("run_closes")
 
     p_eod = sub.add_parser("eod_report")
     p_eod.add_argument("--date", default=None, help="Close-session day (YYYY-MM-DD); default today")

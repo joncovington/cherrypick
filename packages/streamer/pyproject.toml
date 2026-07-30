@@ -7,7 +7,7 @@ name = "cherrypick-streamer"
 version = "0.1.0"
 description = "Standalone DXLink market-data streamer daemon — the suite's canonical stream-cache producer"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["keyring>=24"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]

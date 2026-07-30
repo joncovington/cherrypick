@@ -32,9 +32,10 @@ from cherrypick.core import fees as _fees  # noqa: E402
 
 CONTRACT_MULTIPLIER = 100
 
-# Keep in lockstep with cherrypick.core.fees.DEFAULT_COSTS["slippage_frac_of_spread"] and MEIC's
-# paper.DEFAULT_SLIPPAGE_FRAC — one fill model across the suite, not three.
-DEFAULT_SLIPPAGE_FRAC = 0.125
+# One fill model across the suite, not three: the fraction IS core's, structurally --
+# not a literal kept in lockstep by comment. MEIC's paper.DEFAULT_SLIPPAGE_FRAC reads
+# the same key.
+DEFAULT_SLIPPAGE_FRAC = _fees.DEFAULT_COSTS["slippage_frac_of_spread"]
 
 PUT, CALL = "put", "call"
 
@@ -108,8 +109,9 @@ def vertical_debit(long_q: dict, short_q: dict, slippage_frac: float = DEFAULT_S
     return mid + slippage_frac * (_leg_spread(long_q) + _leg_spread(short_q))
 
 
-def fly_debit(lower_q: dict, center_q: dict, upper_q: dict,
-              slippage_frac: float = DEFAULT_SLIPPAGE_FRAC) -> float:
+def fly_debit(
+    lower_q: dict, center_q: dict, upper_q: dict, slippage_frac: float = DEFAULT_SLIPPAGE_FRAC
+) -> float:
     """Debit paid buying a whole symmetric fly outright (+1 lower, -2 center, +1 upper), POSITIVE.
 
     Four contracts, so the haircut covers four leg-spreads: the centre leg is quoted once but traded
@@ -190,10 +192,8 @@ def book_pnl(positions: list[dict], underlying: float) -> float:
 
 def book_cash(positions: list[dict]) -> dict:
     """Realized cash summary for a book: credit taken in, debits paid, fees, and the net of all three."""
-    credit = sum(p["net"] * CONTRACT_MULTIPLIER * p.get("quantity", 1)
-                 for p in positions if p["net"] > 0)
-    debits = sum(-p["net"] * CONTRACT_MULTIPLIER * p.get("quantity", 1)
-                 for p in positions if p["net"] < 0)
+    credit = sum(p["net"] * CONTRACT_MULTIPLIER * p.get("quantity", 1) for p in positions if p["net"] > 0)
+    debits = sum(-p["net"] * CONTRACT_MULTIPLIER * p.get("quantity", 1) for p in positions if p["net"] < 0)
     fee_total = sum(p.get("fees", 0.0) for p in positions)
     return {
         "credit_collected": round(credit, 2),
@@ -234,20 +234,46 @@ def book_floor(positions: list[dict], step: float = 1.0) -> dict:
         worst           minimum P&L found on the scan grid
         worst_at        the price where that minimum occurs
         floor_holds     True when the book is non-negative EVERYWHERE (unconditionally risk-free)
-        band            (low, high) contiguous range around spot-of-max where P&L >= 0, or None
+        band            (low, high) of the CONTIGUOUS non-negative zone containing the payoff
+                        maximum, or None when the book is negative everywhere
+        bands           every contiguous non-negative zone, low-to-high (the forest's zones)
         unbounded_below True when a short vertical leaves the book losing beyond its wings
     """
     if not positions:
-        return {"worst": 0.0, "worst_at": None, "floor_holds": True, "band": None,
-                "unbounded_below": False}
+        return {
+            "worst": 0.0,
+            "worst_at": None,
+            "floor_holds": True,
+            "band": None,
+            "bands": [],
+            "unbounded_below": False,
+        }
 
     prices = _scan_prices(positions, step)
     pnls = [book_pnl(positions, x) for x in prices]
     worst = min(pnls)
     worst_at = prices[pnls.index(worst)]
 
-    positive = [x for x, v in zip(prices, pnls, strict=False) if v >= 0]
-    band = (min(positive), max(positive)) if positive else None
+    # Contiguous non-negative zones (runs on the grid). The strategy's own premise is a
+    # FOREST -- several profit zones with troughs between them -- so a min/max over all
+    # non-negative points would span a losing trough and claim the floor holds where it
+    # doesn't. `band` is the zone containing the payoff maximum: a single honest range
+    # that can understate coverage, never overstate it. The full set is in `bands`.
+    zones: list[tuple[float, float]] = []
+    run_start = run_end = None
+    for x, v in zip(prices, pnls, strict=True):
+        if v >= 0:
+            if run_start is None:
+                run_start = x
+            run_end = x
+        elif run_start is not None:
+            zones.append((run_start, run_end))
+            run_start = run_end = None
+    if run_start is not None:
+        zones.append((run_start, run_end))
+
+    best_at = prices[pnls.index(max(pnls))]
+    band = next((z for z in zones if z[0] <= best_at <= z[1]), None)
 
     # Beyond every strike the payoff is flat, so the endpoints of the grid are the true tails.
     unbounded = pnls[0] < 0 or pnls[-1] < 0
@@ -256,5 +282,6 @@ def book_floor(positions: list[dict], step: float = 1.0) -> dict:
         "worst_at": worst_at,
         "floor_holds": worst >= 0,
         "band": band,
+        "bands": zones,
         "unbounded_below": unbounded,
     }

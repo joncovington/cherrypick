@@ -65,7 +65,21 @@ BENCHMARKS = {
 }
 
 
-def load_closed_trades(profile: str | None = None, strategy: str | None = None, since: str | None = None) -> list[dict]:
+def book_family_filter(profile: str, column: str = "profile"):
+    """A (SQL fragment, params) pair matching a book tag and its per-strategy
+    sub-books: 'strat_test' covers both the combined 'strat_test' book and
+    every 'strat_test:<strategy>' book (strat_test_portfolio). Uses an exact
+    prefix comparison rather than `LIKE '<profile>:%'`, since '_' in a tag
+    like 'strat_test' is a LIKE single-char wildcard that would over-match
+    (e.g. 'stratXtest:...').
+    """
+    prefix = profile + ":"
+    return f"({column} = ? OR substr({column}, 1, ?) = ?)", [profile, len(prefix), prefix]
+
+
+def load_closed_trades(
+    profile: str | None = None, strategy: str | None = None, since: str | None = None
+) -> list[dict]:
     """Closed trades (dicts, parsed entry_context) ordered by closed_at,
     optionally filtered by profile/strategy/since (a scan_date-style
     'YYYY-MM-DD' or ISO timestamp string compared against opened_at's date).
@@ -78,8 +92,9 @@ def load_closed_trades(profile: str | None = None, strategy: str | None = None, 
         query = "SELECT * FROM trades WHERE closed_at IS NOT NULL"
         params: list = []
         if profile:
-            query += " AND profile = ?"
-            params.append(profile)
+            frag, fparams = book_family_filter(profile)
+            query += f" AND {frag}"
+            params.extend(fparams)
         if strategy:
             query += " AND strategy = ?"
             params.append(strategy)
@@ -98,8 +113,11 @@ def load_closed_trades(profile: str | None = None, strategy: str | None = None, 
         if since and t.get("opened_at"):
             from datetime import date as _date
             from datetime import datetime
+
             opened_date = datetime.fromtimestamp(t["opened_at"]).date()
-            since_date = _date.fromisoformat(since) if len(since) == 10 else datetime.fromisoformat(since).date()
+            since_date = (
+                _date.fromisoformat(since) if len(since) == 10 else datetime.fromisoformat(since).date()
+            )
             if opened_date < since_date:
                 continue
         trades.append(t)
@@ -118,8 +136,9 @@ def load_open_trades(profile: str | None = None, strategy: str | None = None) ->
         query = "SELECT * FROM trades WHERE closed_at IS NULL"
         params: list = []
         if profile:
-            query += " AND profile = ?"
-            params.append(profile)
+            frag, fparams = book_family_filter(profile)  # see load_closed_trades
+            query += f" AND {frag}"
+            params.extend(fparams)
         if strategy:
             query += " AND strategy = ?"
             params.append(strategy)
@@ -230,6 +249,21 @@ def equity_curve(trades: list[dict]) -> list[tuple[float, float]]:
     return curve
 
 
+def daily_equity_series(trades: list[dict]) -> tuple[list[str], list[float]]:
+    """equity_curve() on a date axis: (ISO close-date labels, end-of-day cumulative net P&L),
+    one point per session that closed a trade, for the suite's viz timeseries cards. A day with
+    no closes simply isn't a point — no interpolation across quiet sessions."""
+    from datetime import datetime
+
+    by_day: dict[str, float] = {}
+    running = 0.0
+    for t in sorted(trades, key=lambda x: x.get("closed_at") or 0):
+        running += net_pnl(t)
+        by_day[datetime.fromtimestamp(t.get("closed_at") or 0).date().isoformat()] = running
+    labels = list(by_day)
+    return labels, [by_day[d] for d in labels]
+
+
 def max_drawdown(trades: list[dict], capital_basis: float | None = None) -> dict:
     """Largest peak-to-trough decline in the cumulative net-P&L equity
     curve. Returns {"absolute": $, "pct": fraction} -- pct is relative to
@@ -255,11 +289,7 @@ def max_drawdown(trades: list[dict], capital_basis: float | None = None) -> dict
 
 
 def avg_hold_seconds(trades: list[dict]) -> float | None:
-    holds = [
-        t["closed_at"] - t["opened_at"]
-        for t in trades
-        if t.get("closed_at") and t.get("opened_at")
-    ]
+    holds = [t["closed_at"] - t["opened_at"] for t in trades if t.get("closed_at") and t.get("opened_at")]
     if not holds:
         return None
     return sum(holds) / len(holds)
@@ -281,6 +311,7 @@ def regime_buckets(trades: list[dict]) -> dict:
     each trade's stored entry_context, so a strategy's sample can be
     checked against the regimes it's actually designed for (e.g. iron_fly
     wants high IV/RV + low dispersion)."""
+
     def iv_band(ivrv):
         if ivrv is None:
             return "unknown"
@@ -333,7 +364,9 @@ def core_five(trades: list[dict], capital_basis: float | None = None) -> dict:
     }
 
 
-def winrate_backtest_agreement(paper_win_rate: float | None, backtest_win_rate: float | None, tolerance: float = 0.15) -> dict:
+def winrate_backtest_agreement(
+    paper_win_rate: float | None, backtest_win_rate: float | None, tolerance: float = 0.15
+) -> dict:
     """Whether paper win rate roughly agrees with the historical
     scanner.compute_winrate backtest for the same strategy/symbols --
     flags a strategy whose live paper behavior has drifted from its

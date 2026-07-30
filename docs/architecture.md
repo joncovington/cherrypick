@@ -13,6 +13,8 @@ One workspace holds the whole trading-tool suite as separate packages under `pac
 | `packages/meic` | The **MEIC** 0DTE multiple-entry iron-condor engine. |
 | `packages/earnings` | The **Earnings** defined-risk earnings-play engine. |
 | `packages/gex` | The standalone **GEX** (gamma-exposure) dashboard, built on the shared GEX engine and embedded by the orchestrator. |
+| `packages/flies` | The **Flies** 0DTE net-credit butterfly ("profit forest") paper engine — deliberately built so a negative result is usable (floors measured after fees, arm-based experiments). |
+| `packages/streamer` | The **standalone streamer** — the suite's single market-data producer, writing the canonical shared stream cache that every module reads; modules declare their symbols via `state/stream_requests/`. |
 
 Each package has its own `CLAUDE.md` with build commands, tech-stack reference, and invariants.
 
@@ -76,9 +78,13 @@ Each module's paper DB has a different schema, selected by `paper.trade_schema` 
 |---|---|---|---|
 | `meic_ic` | MEIC | `ic_trades` | `exit_time` set; net = `pnl − fees`; tag = `risk_profile`. |
 | `earnings` | Earnings | `trades` | `closed_at` set; net = `pnl − entry_cost − exit_cost`; tag = `profile`. |
+| `fly_book` | Flies | `fly_positions` | settled rows; net after the modeled fee stack; tag = experiment *arm* (not a risk profile). |
 
-`report.py`, `calibrate.py`, and `trade_notifier.py` each carry a small reader/adapter registry keyed by
-that value. **Add a schema by extending those registries, not the callers.**
+The canonical schema set lives in `schemas.SCHEMAS`, and coverage is enforced by a test
+(`tests/test_schema_registry.py`), not prose: every surface registry (`report.py`, `reconcile.py`,
+`trade_notifier.py`, `eval_activity.py`) must account for every schema — with a reader or an explicit
+not-applicable declaration. **Add a schema by adding it to `schemas.SCHEMAS` and extending each
+surface**; a schema wired into some surfaces but not others fails CI instead of vanishing silently.
 
 ## The managed home (`~/.cherrypick`)
 

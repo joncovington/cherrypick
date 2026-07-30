@@ -10,7 +10,6 @@ Loop Step 4b).
 Usage:
     python late_day_earnings_ranked.py
     python late_day_earnings_ranked.py --count 2
-    python late_day_earnings_ranked.py --config conservative
 
 Note: rank_strategies.py's calendar fetch is always "today's AMC +
 tomorrow's BMO" (scanner.fetch_entry_window_calendar) -- --date is passed
@@ -27,12 +26,6 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-TIER_FLOOR_BY_PROFILE = {
-    "conservative": ("Tier 1",),
-    "moderate": ("Tier 1", "Tier 2"),
-    "aggressive": ("Tier 1", "Tier 2"),  # Tier 3 isn't surfaced by rank_strategies.py (viable-only filter)
-}
-
 
 def _run_python(args: list[str]) -> dict:
     result = subprocess.run(
@@ -41,7 +34,9 @@ def _run_python(args: list[str]) -> dict:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"{' '.join(args)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}")
+        raise RuntimeError(
+            f"{' '.join(args)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}"
+        )
     return json.loads(result.stdout)
 
 
@@ -55,24 +50,20 @@ class StrategyRanker:
     def get_ranked_candidates(self, date_str: str) -> dict:
         """Calls rank_strategies.py get_ranked_symbols for the real,
         live-scanned candidate universe."""
-        return _run_python([
-            str(self.src_dir / "rank_strategies.py"), "get_ranked_symbols",
-            "--date", date_str,
-        ])
+        return _run_python(
+            [
+                str(self.src_dir / "rank_strategies.py"),
+                "get_ranked_symbols",
+                "--date",
+                date_str,
+            ]
+        )
 
-    def filter_by_conviction(self, symbols: list[dict]) -> list[dict]:
-        """Keep only symbols whose winning strategy tiered within this
-        profile's floor. rank_strategies.py already restricts "viable" to
-        Tier 1/2, so conservative further narrows to Tier 1 only."""
-        allowed_tiers = TIER_FLOOR_BY_PROFILE.get(self.config["min_conviction"], TIER_FLOOR_BY_PROFILE["moderate"])
-        kept = []
-        for s in symbols:
-            if s.get("outcome") != "selected" or not s.get("best_strategy"):
-                continue
-            winner = s["viable"][0] if s.get("viable") else None
-            if winner and winner["tier"] in allowed_tiers:
-                kept.append(s)
-        return kept
+    def filter_selected(self, symbols: list[dict]) -> list[dict]:
+        """Keep only symbols the ranker selected (a best strategy that cleared
+        the screen). rank_strategies.py already restricts "viable" to accepted
+        strategies, so this just drops the non-selected names."""
+        return [s for s in symbols if s.get("outcome") == "selected" and s.get("best_strategy")]
 
     def build_orders(self, candidates: list[dict]) -> list[dict]:
         """For each selected symbol, build the concrete tradeable order via
@@ -82,27 +73,34 @@ class StrategyRanker:
             strategy = c["best_strategy"]
             order_script = self.src_dir / "strategies" / f"{strategy}.py"
             try:
-                order = _run_python([
-                    str(order_script), "get_order",
-                    "--symbol", c["symbol"],
-                    "--earnings_date", c["earnings_date"],
-                    "--earnings_timing", c["earnings_timing"],
-                ])
+                order = _run_python(
+                    [
+                        str(order_script),
+                        "get_order",
+                        "--symbol",
+                        c["symbol"],
+                        "--earnings_date",
+                        c["earnings_date"],
+                        "--earnings_timing",
+                        c["earnings_timing"],
+                    ]
+                )
             except Exception as exc:
                 order = {"ok": False, "error": str(exc)}
 
-            trades.append({
-                "symbol": c["symbol"],
-                "earnings_date": c["earnings_date"],
-                "earnings_timing": c["earnings_timing"],
-                "strategy": strategy,
-                "score": c["best_score"],
-                "tier": c["viable"][0]["tier"] if c.get("viable") else None,
-                "order_ok": order.get("ok", False),
-                "order": order if order.get("ok") else None,
-                "order_error": None if order.get("ok") else order.get("error"),
-                "entry_price": order.get("credit") or order.get("price"),
-            })
+            trades.append(
+                {
+                    "symbol": c["symbol"],
+                    "earnings_date": c["earnings_date"],
+                    "earnings_timing": c["earnings_timing"],
+                    "strategy": strategy,
+                    "score": c["best_score"],
+                    "order_ok": order.get("ok", False),
+                    "order": order if order.get("ok") else None,
+                    "order_error": None if order.get("ok") else order.get("error"),
+                    "entry_price": order.get("credit") or order.get("price"),
+                }
+            )
         return trades
 
     def analyze(self, date_str: str) -> dict:
@@ -116,7 +114,7 @@ class StrategyRanker:
             }
 
         all_symbols = ranked["symbols"]
-        selected = self.filter_by_conviction(all_symbols)
+        selected = self.filter_selected(all_symbols)
         rejected = [s for s in all_symbols if s not in selected]
         trades = self.build_orders(selected)
 
@@ -128,9 +126,7 @@ class StrategyRanker:
             "selected": trades,
             "rejected": rejected,
             "average_score": (
-                sum(t["score"] for t in trades if t["score"] is not None) / len(trades)
-                if trades
-                else 0
+                sum(t["score"] for t in trades if t["score"] is not None) / len(trades) if trades else 0
             ),
         }
 
@@ -154,9 +150,12 @@ class StrategyRanker:
         if analysis["selected"]:
             print("SELECTED TRADES (Ranked by Score)")
             for i, trade in enumerate(analysis["selected"], 1):
-                print(f"  {i}. {trade['symbol']:<8} Score: {trade.get('score', 0):.4f}" if trade.get("score") is not None else f"  {i}. {trade['symbol']:<8} Score: N/A")
+                print(
+                    f"  {i}. {trade['symbol']:<8} Score: {trade.get('score', 0):.4f}"
+                    if trade.get("score") is not None
+                    else f"  {i}. {trade['symbol']:<8} Score: N/A"
+                )
                 print(f"     Strategy: {trade['strategy']}")
-                print(f"     Tier: {trade.get('tier', 'N/A')}")
                 if trade["order_ok"]:
                     print(f"     Entry: ${trade.get('entry_price', 0):.2f}")
                 else:
@@ -177,7 +176,6 @@ def main():
     """Run analysis and log results."""
     date_str = datetime.now().strftime("%m/%d/%Y")
     count = 3
-    config_profile = "moderate"
 
     args = sys.argv[1:]
     for i, arg in enumerate(args):
@@ -185,13 +183,8 @@ def main():
             date_str = args[i + 1]
         elif arg == "--count" and i + 1 < len(args):
             count = int(args[i + 1])
-        elif arg == "--config" and i + 1 < len(args):
-            config_profile = args[i + 1]
 
-    config = {
-        "min_conviction": config_profile if config_profile in TIER_FLOOR_BY_PROFILE else "moderate",
-        "max_positions_per_day": count,
-    }
+    config = {"max_positions_per_day": count}
 
     ranker = StrategyRanker(config)
     analysis = ranker.analyze(date_str)

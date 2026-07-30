@@ -25,12 +25,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--status", action="store_true", help="print status JSON and exit")
     parser.add_argument("--stop", action="store_true", help="stop a running daemon")
-    parser.add_argument("--symbol", action="append", default=None,
-                        help="underlying to stream (repeatable; default: config 'symbols')")
-    parser.add_argument("--secrets-set", action="store_true",
-                        help="store the shared tastytrade OAuth bearer secrets (hidden input) and exit")
-    parser.add_argument("--secrets-status", action="store_true",
-                        help="print which shared OAuth secrets are present and exit")
+    parser.add_argument(
+        "--symbol",
+        action="append",
+        default=None,
+        help="underlying to stream (repeatable; default: config 'symbols')",
+    )
+    parser.add_argument(
+        "--secrets-set",
+        action="store_true",
+        help="store the shared tastytrade OAuth bearer secrets (hidden input) and exit",
+    )
+    parser.add_argument(
+        "--secrets-status", action="store_true", help="print which shared OAuth secrets are present and exit"
+    )
     args = parser.parse_args(argv)
 
     cfg = _config.load()
@@ -55,11 +63,15 @@ def main(argv: list[str] | None = None) -> int:
 
     existing = _daemon.running_pid(cfg)
     if existing is not None:
-        print(json.dumps({
-            "ok": False,
-            "error": f"Streamer already running (pid {existing}). Run 'python run.py --stop' first, "
-                     f"or --status to inspect it.",
-        }))
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"Streamer already running (pid {existing}). Run 'python run.py --stop' first, "
+                    f"or --status to inspect it.",
+                }
+            )
+        )
         return 1
 
     syms = _config.symbols(cfg, cli_override=args.symbol)

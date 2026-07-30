@@ -16,6 +16,8 @@ Subcommands:
   watchdog             Run one watchdog pass (this is what the scheduled task invokes).
   report               Unified cross-module paper P&L (read-only): totals + per-profile breakdown.
                        --eod (today ET) or --date YYYY-MM-DD restricts to one session; default all-time.
+                       --live reads the live-tagged ledgers (modules' live_db) instead — a separate
+                       view that never feeds calibrate/promotion (those read paper only).
   eod-digest           Write the suite end-of-day digest (logs/eod-digest-<day>.md): one session's
                        cross-module P&L + links to each module's paper-eod file. --date; default today.
   notify-eod           Write the digest and push a one-line summary through the notify channels (the
@@ -25,6 +27,10 @@ Subcommands:
                        scheduled cherrypick-log-archive task runs this). --month YYYY-MM; --dry-run.
   eod-insight          AI synthesis over the day's deterministic reports → logs/eod-insight-<day>.md
                        (opt-in; needs Claude Code on PATH + eod_insight.enabled). --date; default today.
+  advise               Bounded next-session parameter proposals per module → state/advice/
+                       <module>-<session>.json, validated against each module's advice_bounds
+                       (opt-in twice: advise.enabled + advise.modules.<m>.enabled; needs Claude
+                       Code on PATH). Loops re-validate and fall back to baseline. --date.
   reconcile            Paper↔live isolation guard: query the real broker account (read-only) and flag
                        any open positions/BP a paper-only suite shouldn't have. On-demand; never trades.
   connect              Guided per-module onboarding (--module): set OAuth creds (via the module's own
@@ -58,6 +64,7 @@ from cherrypick.notify import Notifier
 from cherrypick.notify import secrets as notify_secrets
 from cherrypick.orchestrator import (
     accounts,
+    advise,
     calibrate,
     connect,
     dashboard,
@@ -164,7 +171,11 @@ def cmd_install(cfg) -> None:
         if kind == "self_healing":
             # MEIC manages its own self-healing task; just invoke its installer in place.
             r = subprocess.run(
-                [cfgmod.python_exe(), *paper["install_argv"]], cwd=str(root), capture_output=True, text=True
+                [cfgmod.python_exe(), *paper["install_argv"]],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                creationflags=CREATE_NO_WINDOW,
             )
             results[f"{name}.paper_task"] = {
                 "ok": r.returncode == 0,
@@ -233,6 +244,17 @@ def cmd_install(cfg) -> None:
     # Remove any stale fixed-time task from a prior install.
     results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
 
+    # Scheduled reconcile (phase 5): a daily paper<->live isolation check during live operation.
+    # Its own task, off the watchdog tick -- the broker call never rides the reliability path.
+    rs = cfgmod.reconcile_schedule_settings(cfg)
+    if rs["enabled"]:
+        rs_tr = tasks.build_tr(pyw, str(_LAUNCHER), "reconcile", "--scheduled")
+        results["reconcile_task"] = tasks.create_daily_task(
+            rs["task_name"], rs_tr, timeutil.to_local_hhmm(rs["at"], tz)
+        )
+    else:
+        results["reconcile_task"] = tasks.delete(rs["task_name"])
+
     # Start the standalone market-data producer (top-level `streamer`) if enabled — the same
     # start-detached-if-down contract as a service. The watchdog keeps it alive in-session thereafter;
     # its single-instance guard prevents a duplicate start (e.g. if it's already running).
@@ -268,6 +290,7 @@ def _ensure_daemon(root: Path, spec: dict) -> dict:
             capture_output=True,
             text=True,
             timeout=15,
+            creationflags=CREATE_NO_WINDOW,
         )
         running = bool(first_json(r.stdout).get("running")) if r.returncode == 0 else False
     except Exception:
@@ -285,7 +308,11 @@ def cmd_uninstall(cfg) -> None:
         paper = mcfg.get("paper", {})
         if paper.get("kind") == "self_healing" and paper.get("uninstall_argv"):
             r = subprocess.run(
-                [cfgmod.python_exe(), *paper["uninstall_argv"]], cwd=str(root), capture_output=True, text=True
+                [cfgmod.python_exe(), *paper["uninstall_argv"]],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                creationflags=CREATE_NO_WINDOW,
             )
             results[f"{name}.paper_task"] = {
                 "ok": r.returncode == 0,
@@ -306,6 +333,7 @@ def cmd_uninstall(cfg) -> None:
     results["eod_digest_task"] = tasks.delete(cfgmod.eod_digest_settings(cfg)["task_name"])
     results["log_archive_task"] = tasks.delete(cfgmod.archive_settings(cfg)["task_name"])
     results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
+    results["reconcile_task"] = tasks.delete(cfgmod.reconcile_schedule_settings(cfg)["task_name"])
     # Stop generic background services (e.g. the gex recorder) — unlike the streamer, these are the
     # orchestrator's own daemons, so a full uninstall stops them.
     for svc in cfgmod.enabled_services(cfg):
@@ -313,8 +341,12 @@ def cmd_uninstall(cfg) -> None:
             sroot = cfgmod.module_root(svc, svc["id"])
             try:
                 r = subprocess.run(
-                    [cfgmod.python_exe(), *svc["stop_argv"]], cwd=str(sroot),
-                    capture_output=True, text=True, timeout=15,
+                    [cfgmod.python_exe(), *svc["stop_argv"]],
+                    cwd=str(sroot),
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    creationflags=CREATE_NO_WINDOW,
                 )
                 results[f"service.{svc['id']}"] = {
                     "ok": r.returncode == 0,
@@ -421,7 +453,12 @@ def _run_earnings(cfg, phase: str) -> None:
 
     try:
         r = subprocess.run(
-            [cfgmod.python_exe(), *argv], cwd=str(root), capture_output=True, text=True, timeout=1800
+            [cfgmod.python_exe(), *argv],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=1800,
+            creationflags=CREATE_NO_WINDOW,
         )
         try:
             result = json.loads(r.stdout or "{}")
@@ -439,6 +476,7 @@ def _run_earnings(cfg, phase: str) -> None:
         "error": error,
         "opened": (result or {}).get("opened"),
         "closed": (result or {}).get("closed"),
+        "stranded": (result or {}).get("stranded"),
     }
     hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
     _append_log(log_path, {**rec, "result": result})
@@ -449,6 +487,20 @@ def _run_earnings(cfg, phase: str) -> None:
             f"earnings.{phase}",
             f"Earnings paper {phase} failed",
             f"{error or 'see logs/earnings_paper.log'}",
+        )
+    elif rec["stranded"]:
+        # The run itself succeeded but left positions it could not close for a second
+        # (or later) consecutive sweep. Silent stranding is how a position vanishes from
+        # every closed-trade metric -- say so, once per daily run, while it persists.
+        names = ", ".join(
+            f"{s.get('symbol', '?')} ({s.get('reason', 'unknown')} x{s.get('close_attempts', '?')})"
+            for s in rec["stranded"][:5]
+        )
+        Notifier(cfg.get("notify")).notify(
+            "WARNING",
+            "earnings.stranded",
+            f"Earnings paper: {len(rec['stranded'])} position(s) stranded at close",
+            names,
         )
 
     # Push any fills this run produced right away instead of waiting for the next trade-notify tick.
@@ -500,11 +552,34 @@ def _account_table(listing: dict) -> None:
 
 
 def cmd_account(cfg, args) -> None:
-    """List / set / clear a module's designated live-trading account (masked)."""
+    """List / set / clear a designated live-trading account (masked). With --module, the
+    module's own designation (its override); WITHOUT --module, the SUITE-WIDE shared default
+    every module inherits through the store fallback chain."""
     module = args.module
     if not module:
-        _emit({"ok": False, "error": "account requires --module <name>"})
-        sys.exit(2)
+        if args.clear:
+            _emit(accounts.clear_shared_account())
+            return
+        if args.set:
+            # Setting the destination for LIVE orders — human-confirmed unless --yes.
+            if not args.yes:
+                print(
+                    "This designates the SUITE-WIDE default account every module will use for LIVE"
+                    " orders (a per-module designation still overrides). cherrypick never places"
+                    " trades; it only records the destination."
+                )
+                if (
+                    input(
+                        f"Type 'yes' to set the suite's live-trading account to selection {args.set!r}: "
+                    ).strip()
+                    != "yes"
+                ):
+                    _emit({"ok": False, "error": "aborted"})
+                    sys.exit(1)
+            _emit(accounts.set_shared_account(cfg, args.set))
+            return
+        _emit(accounts.list_shared(cfg))
+        return
     if args.clear:
         _emit(accounts.clear_account(cfg, module))
         return
@@ -529,19 +604,37 @@ def cmd_account(cfg, args) -> None:
 
 
 def cmd_connect(cfg, args) -> None:
-    module = args.module
-    if not module:
-        _emit({"ok": False, "error": "connect requires --module <name>"})
-        sys.exit(2)
-    _emit(connect.run(cfg, module))
+    """With --module: the per-module onboarding (override layer). Without: the SUITE wizard —
+    shared login once, optional migration of per-module copies, one suite-wide designation,
+    opt-in webhooks, status panel."""
+    if not args.module:
+        _emit(connect.run_suite(cfg))
+        return
+    _emit(connect.run(cfg, args.module))
 
 
-def cmd_reconcile(cfg) -> None:
+def cmd_reconcile(cfg, scheduled: bool = False) -> None:
     result = reconcile.run(cfg)
     report_text, _worst = reconcile.format_report(result)
     print(report_text)
+    verdict = result.get("verdict")
+    if scheduled and verdict != reconcile.FLAT:
+        # The scheduled run (phase 5: daily during live operation) is only useful if someone
+        # hears about a bad verdict -- a FLAT day stays quiet, anything else pushes.
+        from cherrypick.notify import Notifier
+
+        level = "CRITICAL" if verdict == reconcile.DRIFT else "WARNING"
+        title = (
+            "Reconcile: DRIFT - undesignated account holds positions"
+            if verdict == reconcile.DRIFT
+            else "Reconcile: could not verify accounts"
+        )
+        try:
+            Notifier(cfg.get("notify")).notify(level, "reconcile.scheduled", title, report_text[:1500])
+        except Exception:
+            pass  # the report is already printed/logged; notification is best-effort
     # exit by verdict: FLAT -> 0, DRIFT (real account not flat) -> 1, UNKNOWN (couldn't check) -> 2
-    sys.exit({reconcile.FLAT: 0, reconcile.DRIFT: 1, reconcile.UNKNOWN: 2}.get(result.get("verdict"), 2))
+    sys.exit({reconcile.FLAT: 0, reconcile.DRIFT: 1, reconcile.UNKNOWN: 2}.get(verdict, 2))
 
 
 def cmd_notify_trades(cfg) -> None:
@@ -559,6 +652,11 @@ def _resolve_session(args) -> str | None:
 
 
 def cmd_report(cfg, args) -> None:
+    if args.live:
+        # The live-tagged view (phase 5): the same schema readers over each module's live_db.
+        # A separate function by design -- calibrate reads report.run and must only see paper.
+        _emit(report.live_run(cfg, session=_resolve_session(args)))
+        return
     _emit(report.run(cfg, session=_resolve_session(args)))
 
 
@@ -639,6 +737,19 @@ def cmd_eod_insight(cfg, args) -> None:
         _emit(skip)
         return
     _emit(eod_insight.run(cfg, day=day))
+
+
+def cmd_advise(cfg, args) -> None:
+    """Bounded parameter advice for the NEXT session, per advise-enabled module. Opt-in twice +
+    feature-detected (Claude Code on PATH); deterministic inputs only, all tools denied; the
+    orchestrator validates against advice_bounds and writes the artifact. Best-effort envelope,
+    off the reliability path -- loops re-validate and treat absent/invalid advice as baseline."""
+    day = args.date or (timeutil.now_et().strftime("%Y-%m-%d"))
+    skip = _non_trading_day_skip(day, args.force)
+    if skip is not None:
+        _emit(skip)
+        return
+    _emit(advise.run(cfg, day=day))
 
 
 def cmd_dashboard(cfg, args) -> None:
@@ -731,6 +842,7 @@ def main() -> None:
             "notify-eod",
             "archive",
             "eod-insight",
+            "advise",
             "reconcile",
             "connect",
             "account",
@@ -768,6 +880,12 @@ def main() -> None:
         "--eod", action="store_true", help="For report: restrict to today's (ET) session instead of all-time"
     )
     parser.add_argument(
+        "--live",
+        action="store_true",
+        help="For report: the live-tagged ledgers (modules' live_db) instead of paper. Never feeds "
+        "calibrate/promotion -- those read paper only",
+    )
+    parser.add_argument(
         "--fast",
         action="store_true",
         help="For doctor: skip the authenticated broker check (local/offline checks only)",
@@ -780,6 +898,11 @@ def main() -> None:
         help="For account: designate this account (a last-4 or 1-based index)",
     )
     parser.add_argument("--clear", action="store_true", help="For account: unset the designated account")
+    parser.add_argument(
+        "--scheduled",
+        action="store_true",
+        help="For reconcile: notify on a non-FLAT verdict (what the scheduled task passes)",
+    )
     parser.add_argument("--yes", action="store_true", help="For account --set: skip the confirmation prompt")
     parser.add_argument(
         "--serve",
@@ -795,11 +918,13 @@ def main() -> None:
         "--apply", action="store_true", help="For migrate-home: perform the move (default is a dry run)"
     )
     parser.add_argument(
-        "--month", default=None,
+        "--month",
+        default=None,
         help="For archive: restrict to one month 'YYYY-MM' (default: all finished months)",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="For archive: report what would be archived without writing or deleting",
     )
     args = parser.parse_args()
@@ -821,7 +946,8 @@ def main() -> None:
         "notify-eod": lambda: cmd_notify_eod(cfg, args),
         "archive": lambda: cmd_archive(cfg, args),
         "eod-insight": lambda: cmd_eod_insight(cfg, args),
-        "reconcile": lambda: cmd_reconcile(cfg),
+        "advise": lambda: cmd_advise(cfg, args),
+        "reconcile": lambda: cmd_reconcile(cfg, scheduled=args.scheduled),
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),
         "dashboard": lambda: cmd_dashboard(cfg, args),

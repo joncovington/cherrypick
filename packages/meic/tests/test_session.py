@@ -5,6 +5,7 @@ Here we verify MEIC wires a *thread-local* manager bound to its credential store
 point: the streamer's DXLink loop and REST-poller thread must not share one Session) and preserves the
 get_session / reset_session API. tastytrade is never constructed — an injected fake factory stands in.
 """
+
 from __future__ import annotations
 
 import sys
@@ -58,6 +59,7 @@ def test_get_session_caches_within_a_thread(monkeypatch):
 
 def test_session_is_thread_local_not_shared(monkeypatch):
     """Each thread must get its own Session (a shared one silently hangs awaits from a second loop)."""
+
     def factory(cs, rt, is_test):
         return object()
 

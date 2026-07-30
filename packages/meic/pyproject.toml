@@ -27,7 +27,8 @@ pythonpath   = ["tests", "src"]
 line-length = 110
 target-version = "py311"
 # src/_core is the cherrypick-core submodule — it carries its own ruff config and CI; never lint it here.
-extend-exclude = ["src/_core"]
+# .claude/commands is doc, not source — its fenced code blocks aren't meant to be reformatted.
+extend-exclude = ["src/_core", ".claude"]
 
 [tool.ruff.lint]
 # E/W pycodestyle, F pyflakes, I import-sorting, UP pyupgrade, B bugbear.

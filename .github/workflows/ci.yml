@@ -15,10 +15,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [orchestrator, meic, earnings, gex, flies]
+        package: [orchestrator, meic, earnings, gex, flies, streamer]
     defaults:
       run:
         working-directory: packages/${{ matrix.package }}
+    env:
+      # Headless CI runners have no OS keyring service; the orchestrator's auth-CLI subprocess
+      # smoke test (test_onboarding.py) needs a real backend to exercise the keyring plumbing it
+      # actually asserts on. keyrings.alt (an orchestrator dev-only dependency) supplies one.
+      # No-op for every other package's job -- keyring reads OS-native backends unless this is set.
+      PYTHON_KEYRING_BACKEND: ${{ matrix.package == 'orchestrator' && 'keyrings.alt.file.PlaintextKeyring' || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,5 +42,7 @@ jobs:
           fi
       - name: Lint (ruff)
         run: ruff check .
+      - name: Format (ruff)
+        run: ruff format --check .
       - name: Test (pytest)
         run: pytest

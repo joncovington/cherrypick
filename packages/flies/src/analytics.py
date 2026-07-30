@@ -17,12 +17,13 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+import clock  # noqa: E402
 import fly  # noqa: E402
 
 GRANULARITIES = ("daily", "weekly", "monthly")
@@ -85,8 +86,7 @@ def _summarize(rows) -> dict:
 
 def stats_for_period(conn, start=None, end=None, arm=None, symbol=None) -> dict:
     where, params = _period_clause(start, end, arm, symbol)
-    rows = conn.execute(
-        f"SELECT gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params).fetchall()
+    rows = conn.execute(f"SELECT gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params).fetchall()
     return _summarize(rows)
 
 
@@ -116,7 +116,9 @@ def pnl_series(conn, granularity: str = "daily", arm=None, symbol=None) -> list[
     where, params = _period_clause(arm=arm, symbol=symbol)
     rows = conn.execute(
         f"SELECT trade_date, gross_pnl, fees, pnl FROM fly_positions WHERE {where} "
-        "AND trade_date IS NOT NULL ORDER BY trade_date", params).fetchall()
+        "AND trade_date IS NOT NULL ORDER BY trade_date",
+        params,
+    ).fetchall()
 
     buckets: dict[str, list] = {}
     for r in rows:
@@ -131,12 +133,36 @@ def pnl_series(conn, granularity: str = "daily", arm=None, symbol=None) -> list[
 
 
 # --------------------------------------------------------------------------- breakdowns
-def by_arm(conn, start=None, end=None) -> list[dict]:
+# The arms differ by CENTRING, TIMING and WIDTH — never by entry mode. So an arm that also took
+# outright flies is not being compared like for like: `gex` was the only arm ever to take one (5 of
+# them, every one a loser, -$199.45 total), which charged its column with a cost no other arm could
+# incur and made "gex vs control" partly a legged-vs-outright comparison instead of a centring one.
+# The arm comparison therefore reads legged only. This is a READ-LAYER filter on purpose — the rows
+# stay in the ledger, `by_entry_mode` still reports both, and the book totals in `stats_for_period` /
+# `pnl_series` remain whole, because the book really did pay for those flies and rule 6 says a
+# negative result is the finding rather than something to remove.
+COMPARISON_ENTRY_MODES = ("legged",)
+
+
+def by_arm(conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES, symbol=None) -> list[dict]:
     """Per-arm comparison — the module's headline output. The arms exist to be compared; a blended
-    total would hide the only contrast the experiment is designed to draw."""
-    where, params = _period_clause(start, end)
+    total would hide the only contrast the experiment is designed to draw.
+
+    Scoped to `entry_modes` (legged only by default — see COMPARISON_ENTRY_MODES) so a mode only one
+    arm ever traded cannot distort the ranking. Pass `entry_modes=None` for the unfiltered view; the
+    amount held back is reported by `arm_comparison_exclusions`, so it is never silently dropped.
+
+    `symbol` narrows to one underlying (e.g. isolating XSP sessions from the retired SPX ones) — every
+    arm's book otherwise blends both, which is exactly the kind of silent cross-book mixing the module's
+    honesty rules exist to prevent (fee schedules and wing scale both differ by symbol).
+    """
+    where, params = _period_clause(start, end, symbol=symbol)
+    if entry_modes:
+        where += f" AND entry_mode IN ({','.join('?' * len(entry_modes))})"
+        params = [*params, *entry_modes]
     rows = conn.execute(
-        f"SELECT arm, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params).fetchall()
+        f"SELECT arm, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params
+    ).fetchall()
     grouped: dict[str, list] = {}
     for r in rows:
         grouped.setdefault(r["arm"] or "unassigned", []).append(r)
@@ -144,51 +170,97 @@ def by_arm(conn, start=None, end=None) -> list[dict]:
     return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
 
 
-def by_entry_mode(conn, start=None, end=None) -> list[dict]:
+def arm_comparison_exclusions(
+    conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES, symbol=None
+) -> dict:
+    """What `by_arm` held back, so the exclusion is stated rather than inferred from a gap.
+
+    Without this the arm table would sum to less than the book's own P&L with nothing on the page to
+    explain the difference — which is the failure mode the filter is supposed to avoid, not create.
+    """
+    where, params = _period_clause(start, end, symbol=symbol)
+    if not entry_modes:
+        return {"excluded_modes": [], "trades": 0, "net_pnl": 0.0, "by_mode": [], "by_arm": []}
+    clause = f"{where} AND entry_mode NOT IN ({','.join('?' * len(entry_modes))})"
+    rows = conn.execute(
+        f"SELECT arm, entry_mode, gross_pnl, fees, pnl FROM fly_positions WHERE {clause}",
+        [*params, *entry_modes],
+    ).fetchall()
+    by_mode: dict[str, list] = {}
+    by_arm_: dict[str, list] = {}
+    for r in rows:
+        by_mode.setdefault(r["entry_mode"] or "unknown", []).append(r)
+        by_arm_.setdefault(r["arm"] or "unassigned", []).append(r)
+    return {
+        "excluded_modes": sorted(by_mode),
+        "trades": len(rows),
+        "net_pnl": _round(sum((r["pnl"] or 0.0) for r in rows)),
+        "by_mode": [{"entry_mode": m, **_summarize(rs)} for m, rs in sorted(by_mode.items())],
+        "by_arm": [{"arm": a, **_summarize(rs)} for a, rs in sorted(by_arm_.items())],
+    }
+
+
+def by_entry_mode(conn, start=None, end=None, symbol=None) -> list[dict]:
     """legged vs outright. They perform differently enough that averaging them together would hide
     the finding — legged manufactures its own floor, outright spends one."""
-    where, params = _period_clause(start, end)
+    where, params = _period_clause(start, end, symbol=symbol)
     rows = conn.execute(
-        f"SELECT entry_mode, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params).fetchall()
+        f"SELECT entry_mode, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params
+    ).fetchall()
     grouped: dict[str, list] = {}
     for r in rows:
         grouped.setdefault(r["entry_mode"] or "unknown", []).append(r)
     return [{"entry_mode": m, **_summarize(rs)} for m, rs in sorted(grouped.items())]
 
 
-def by_entry_window(conn, start=None, end=None) -> list[dict]:
+def by_entry_window(conn, start=None, end=None, symbol=None) -> list[dict]:
     """Per time-of-day window.
 
     The windows are deliberately unranked in config — we had no intraday history to rank them with, so
     every trade is tagged and the ranking is meant to emerge here, from our own sessions.
     """
-    where, params = _period_clause(start, end)
+    where, params = _period_clause(start, end, symbol=symbol)
     rows = conn.execute(
-        f"SELECT entry_window, arm, gross_pnl, fees, pnl FROM fly_positions WHERE {where}",
-        params).fetchall()
+        f"SELECT entry_window, arm, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params
+    ).fetchall()
     grouped: dict[str, list] = {}
     for r in rows:
         grouped.setdefault(r["entry_window"] or "unwindowed", []).append(r)
     return [{"window": w, **_summarize(rs)} for w, rs in sorted(grouped.items())]
 
 
-def fee_drag(conn, start=None, end=None) -> list[dict]:
+def fee_drag(conn, start=None, end=None, symbol=None) -> list[dict]:
     """Fee drag per arm. Broken out because a legged fly pays two fee stacks against a credit that may
     be $35-105 — costs are not a rounding error for this strategy, they are the experiment."""
-    return [{"arm": r["arm"], "gross_pnl": r["gross_pnl"], "fees": r["fees"],
-             "net_pnl": r["net_pnl"], "fee_drag_pct": r["fee_drag_pct"], "trades": r["trades"]}
-            for r in by_arm(conn, start, end)]
+    return [
+        {
+            "arm": r["arm"],
+            "gross_pnl": r["gross_pnl"],
+            "fees": r["fees"],
+            "net_pnl": r["net_pnl"],
+            "fee_drag_pct": r["fee_drag_pct"],
+            "trades": r["trades"],
+        }
+        for r in by_arm(conn, start, end, symbol=symbol)
+    ]
 
 
-def daily_pnl(conn, arm=None) -> list[dict]:
+def daily_pnl(conn, arm=None, symbol=None) -> list[dict]:
     """Per-day totals for the calendar heatmap."""
-    return [{"date": b["bucket"], "trades": b["trades"], "gross_pnl": b["gross_pnl"],
-             "fees": b["fees"], "net_pnl": b["net_pnl"]}
-            for b in pnl_series(conn, "daily", arm=arm)]
+    return [
+        {
+            "date": b["bucket"],
+            "trades": b["trades"],
+            "gross_pnl": b["gross_pnl"],
+            "fees": b["fees"],
+            "net_pnl": b["net_pnl"],
+        }
+        for b in pnl_series(conn, "daily", arm=arm, symbol=symbol)
+    ]
 
 
 # --------------------------------------------------------------------------- completion & counterfactual
-def completion_stats(conn, start=None, end=None) -> dict:
+def completion_stats(conn, start=None, end=None, symbol=None, arm=None) -> dict:
     """Completion rate, latency, and the counterfactual split — the numbers that decide whether this
     strategy is real.
 
@@ -198,7 +270,19 @@ def completion_stats(conn, start=None, end=None) -> dict:
     market's fault or our gate's:
 
       never_offered   the best debit ever seen was still above the credit — no buffer would have helped
-      buffer_too_tight  the best debit beat the credit but not the buffer — our threshold cost us the fly
+      buffer_blocked  the debit beat the credit but not `fee_buffer` — our threshold cost us the fly
+      floor_blocked   it cleared the buffer but the post-fee floor missed `min_floor_dollars`
+
+    The last two used to be reported together as `buffer_too_tight`, which was actively misleading:
+    completion is gated by `D < C - fee_buffer` AND `floor >= min_floor_dollars`, so a miss lumped under
+    that name usually had nothing to do with the buffer. On the first five sessions the split was 1
+    buffer vs 5 floor — and the single buffer case had a post-fee floor of -$1.89, i.e. the buffer
+    correctly refused a money-losing fly. Reading that as "loosen the buffer" is the exact mistake this
+    counterfactual exists to prevent, and the two have opposite remedies.
+
+    Which gate bound is read from the `fly_decisions` journal rather than recomputed here: the engine
+    already recorded its reason against the config in force at the time, so this cannot drift from the
+    gate as configured, and this layer needs no access to config.
     """
     clause, params = [], []
     if start:
@@ -207,42 +291,100 @@ def completion_stats(conn, start=None, end=None) -> dict:
     if end:
         clause.append("trade_date <= ?")
         params.append(end)
+    if symbol and symbol != "ALL":
+        clause.append("symbol = ?")
+        params.append(symbol)
+    if arm and arm != "ALL":
+        clause.append("arm = ?")
+        params.append(arm)
     where = (" WHERE " + " AND ".join(clause)) if clause else ""
     rows = conn.execute(
-        f"SELECT kind, entry_mode, credit, best_completing_debit, completion_latency_min, "
-        f"underlying_at_entry, spot_at_completion FROM fly_positions{where}", params).fetchall()
+        f"SELECT position_id, kind, entry_mode, credit, best_completing_debit, "
+        f"completion_latency_min, underlying_at_entry, spot_at_completion "
+        f"FROM fly_positions{where}",
+        params,
+    ).fetchall()
 
     legged = [r for r in rows if r["entry_mode"] == "legged"]
     completed = [r for r in legged if r["kind"] == "fly"]
     missed = [r for r in legged if r["kind"] != "fly"]
 
-    never_offered, buffer_too_tight, unknown = 0, 0, 0
+    # Positions the floor gate ever turned down. Reaching that gate at all means the debit had already
+    # cleared `fee_buffer`, so a position appearing here was blocked by the floor, not the buffer —
+    # even though it will also carry `completing_debit_too_high` rows from other moments in the session.
+    floor_gated = {
+        r["position_id"]
+        for r in conn.execute(
+            "SELECT DISTINCT position_id FROM fly_decisions "
+            "WHERE mode = 'completion' AND reason = 'floor_below_minimum_after_fees'"
+        )
+        if r["position_id"] is not None
+    }
+
+    never_offered, buffer_blocked, floor_blocked, unknown = 0, 0, 0, 0
     for r in missed:
         best, credit = r["best_completing_debit"], r["credit"]
         if best is None or credit is None:
             unknown += 1
         elif best >= credit:
             never_offered += 1
+        elif r["position_id"] in floor_gated:
+            floor_blocked += 1
         else:
-            buffer_too_tight += 1
+            buffer_blocked += 1
 
-    latencies = [r["completion_latency_min"] for r in completed
-                 if r["completion_latency_min"] is not None]
-    moves = [abs((r["spot_at_completion"] or 0) - (r["underlying_at_entry"] or 0))
-             for r in completed
-             if r["spot_at_completion"] is not None and r["underlying_at_entry"] is not None]
+    latencies = [r["completion_latency_min"] for r in completed if r["completion_latency_min"] is not None]
+    moves = [
+        abs((r["spot_at_completion"] or 0) - (r["underlying_at_entry"] or 0))
+        for r in completed
+        if r["spot_at_completion"] is not None and r["underlying_at_entry"] is not None
+    ]
     return {
         "legged_entries": len(legged),
         "completed": len(completed),
         "completion_rate": _rate(len(completed), len(legged)),
         "never_offered": never_offered,
-        "buffer_too_tight": buffer_too_tight,
+        "buffer_blocked": buffer_blocked,
+        "floor_blocked": floor_blocked,
         "counterfactual_unknown": unknown,
         "median_latency_min": _round(_median(latencies), 1),
         "min_latency_min": _round(min(latencies), 1) if latencies else None,
         "max_latency_min": _round(max(latencies), 1) if latencies else None,
         "median_spot_move": _round(_median(moves)),
     }
+
+
+def completion_trend(conn, start=None, end=None, symbol=None) -> list[dict]:
+    """completion_stats' headline number on a date axis: one row per session with legged entries —
+    how many, how many became flies, and the rate. Rule 4 says completion rate is the number that
+    decides whether this strategy is real; a single blended rate can drift slowly while looking
+    stable, so the trend is what makes a deterioration (or a config change's effect) visible."""
+    clause, params = ["entry_mode = 'legged'"], []
+    if start:
+        clause.append("trade_date >= ?")
+        params.append(start)
+    if end:
+        clause.append("trade_date <= ?")
+        params.append(end)
+    if symbol and symbol != "ALL":
+        clause.append("symbol = ?")
+        params.append(symbol)
+    rows = conn.execute(
+        f"SELECT trade_date, COUNT(*) AS legged, "
+        f"SUM(CASE WHEN kind = 'fly' THEN 1 ELSE 0 END) AS completed "
+        f"FROM fly_positions WHERE {' AND '.join(clause)} "
+        f"GROUP BY trade_date ORDER BY trade_date",
+        params,
+    ).fetchall()
+    return [
+        {
+            "day": r["trade_date"],
+            "legged_entries": r["legged"],
+            "completed": r["completed"],
+            "completion_rate": _rate(r["completed"], r["legged"]),
+        }
+        for r in rows
+    ]
 
 
 def _median(values):
@@ -268,8 +410,8 @@ def arm_divergence(conn, day: str | None = None) -> dict:
     if day:
         where, params = " WHERE trade_date = ?", [day]
     rows = conn.execute(
-        f"SELECT iteration_ts, symbol, arm, center FROM fly_iterations{where} "
-        "ORDER BY iteration_ts", params).fetchall()
+        f"SELECT iteration_ts, symbol, arm, center FROM fly_iterations{where} ORDER BY iteration_ts", params
+    ).fetchall()
 
     iterations: dict[tuple, dict] = {}
     for r in rows:
@@ -287,15 +429,18 @@ def arm_divergence(conn, day: str | None = None) -> dict:
             all_agree += 1
         arms = sorted(named)
         for i, a in enumerate(arms):
-            for b in arms[i + 1:]:
+            for b in arms[i + 1 :]:
                 pairs.setdefault((a, b), []).append(named[a] == named[b])
 
     return {
         "iterations": considered,
         "all_agree_rate": _rate(all_agree, considered),
         "pairs": [
-            {"arms": f"{a} vs {b}", "iterations": len(matches),
-             "agreement_rate": _rate(sum(matches), len(matches))}
+            {
+                "arms": f"{a} vs {b}",
+                "iterations": len(matches),
+                "agreement_rate": _rate(sum(matches), len(matches)),
+            }
             for (a, b), matches in sorted(pairs.items())
         ],
     }
@@ -309,15 +454,19 @@ def decision_journal(conn, day: str, arm: str | None = None) -> list[dict]:
         clause.append("arm = ?")
         params.append(arm)
     rows = conn.execute(
-        f"SELECT * FROM fly_decisions WHERE {' AND '.join(clause)} ORDER BY id DESC", params).fetchall()
+        f"SELECT * FROM fly_decisions WHERE {' AND '.join(clause)} ORDER BY id DESC", params
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
-def positions_for_day(conn, day: str, arm: str | None = None) -> list[dict]:
+def positions_for_day(conn, day: str, arm: str | None = None, symbol: str | None = None) -> list[dict]:
     clause, params = ["trade_date = ?"], [day]
     if arm and arm != "ALL":
         clause.append("arm = ?")
         params.append(arm)
+    if symbol and symbol != "ALL":
+        clause.append("symbol = ?")
+        params.append(symbol)
     rows = conn.execute(
         f"SELECT * FROM fly_positions WHERE {' AND '.join(clause)} ORDER BY entry_time", params
     ).fetchall()
@@ -327,13 +476,23 @@ def positions_for_day(conn, day: str, arm: str | None = None) -> list[dict]:
 def trade_log(conn, limit: int = 1000, arm=None, symbol=None) -> list[dict]:
     where, params = _period_clause(arm=arm, symbol=symbol)
     rows = conn.execute(
-        f"SELECT * FROM fly_positions WHERE {where} "
-        "ORDER BY trade_date DESC, entry_time DESC LIMIT ?", [*params, limit]).fetchall()
+        f"SELECT * FROM fly_positions WHERE {where} ORDER BY trade_date DESC, entry_time DESC LIMIT ?",
+        [*params, limit],
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
-def books_for_day(conn, day: str) -> list[dict]:
-    rows = conn.execute("SELECT * FROM fly_books WHERE trade_date = ? ORDER BY arm", (day,)).fetchall()
+def books_for_day(conn, day: str, arm: str | None = None, symbol: str | None = None) -> list[dict]:
+    clause, params = ["trade_date = ?"], [day]
+    if arm and arm != "ALL":
+        clause.append("arm = ?")
+        params.append(arm)
+    if symbol and symbol != "ALL":
+        clause.append("symbol = ?")
+        params.append(symbol)
+    rows = conn.execute(
+        f"SELECT * FROM fly_books WHERE {' AND '.join(clause)} ORDER BY arm", params
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -346,8 +505,15 @@ def payoff_curve(conn, day: str, arm: str, step: float = 1.0, points: int = 120)
     Returns empty (not an error) for a book with no positions; an empty day is ordinary.
     """
     positions = [
-        {"kind": r["kind"], "side": r["side"], "center": r["center"], "wing_width": r["wing_width"],
-         "net": r["net"], "quantity": r["quantity"] or 1, "fees": r["fees"] or 0.0}
+        {
+            "kind": r["kind"],
+            "side": r["side"],
+            "center": r["center"],
+            "wing_width": r["wing_width"],
+            "net": r["net"],
+            "quantity": r["quantity"] or 1,
+            "fees": r["fees"] or 0.0,
+        }
         for r in positions_for_day(conn, day, arm)
     ]
     if not positions:
@@ -397,13 +563,16 @@ def _state_at(row: dict, when: str) -> dict | None:
     if not entry or when < entry:
         return None
     state = {
-        "kind": row["kind"], "side": row["side"], "center": row["center"],
-        "wing_width": row["wing_width"], "net": row["net"],
-        "quantity": row["quantity"] or 1, "fees": row["fees"] or 0.0,
+        "kind": row["kind"],
+        "side": row["side"],
+        "center": row["center"],
+        "wing_width": row["wing_width"],
+        "net": row["net"],
+        "quantity": row["quantity"] or 1,
+        "fees": row["fees"] or 0.0,
     }
     completed = row.get("completed_at")
-    if (row.get("entry_mode") == "legged" and completed and when < completed
-            and row.get("credit") is not None):
+    if row.get("entry_mode") == "legged" and completed and when < completed and row.get("credit") is not None:
         state["kind"] = "short_vertical"
         state["net"] = row["credit"]
         state["fees"] = fly.vertical_open_fee(row["symbol"], state["quantity"])
@@ -433,7 +602,9 @@ def session_timeline(conn, day: str | None = None) -> dict:
     rows = positions_for_day(conn, day)
     iterations = conn.execute(
         "SELECT iteration_ts, arm, center, center_reason, underlying_price FROM fly_iterations "
-        "WHERE trade_date = ? ORDER BY iteration_ts", (day,)).fetchall()
+        "WHERE trade_date = ? ORDER BY iteration_ts",
+        (day,),
+    ).fetchall()
     feed, feed_summary = data_quality(conn, day)
 
     arms = sorted({r["arm"] for r in rows if r["arm"]} | {r["arm"] for r in iterations if r["arm"]})
@@ -456,48 +627,87 @@ def session_timeline(conn, day: str | None = None) -> dict:
                 states = [s for s in (_state_at(dict(p), ts) for p in by_arm.get(arm, [])) if s]
                 if states:
                     settle_now[arm] = _round(fly.book_pnl(states, spot))
-        ticks.append({
-            "ts": ts,
-            "spot": _round(spot),
-            "centers": {e["arm"]: e["center"] for e in entries if e["center"] is not None},
-            "reasons": {e["arm"]: e["center_reason"] for e in entries if e["center_reason"]},
-            "settle_now": settle_now,
-        })
+        ticks.append(
+            {
+                "ts": ts,
+                "spot": _round(spot),
+                "centers": {e["arm"]: e["center"] for e in entries if e["center"] is not None},
+                "reasons": {e["arm"]: e["center_reason"] for e in entries if e["center_reason"]},
+                "settle_now": settle_now,
+            }
+        )
 
     events, spans = [], []
     for r in rows:
         if r.get("entry_time"):
-            events.append({
-                "kind": "entry", "ts": r["entry_time"], "arm": r["arm"],
-                "entry_mode": r["entry_mode"], "position_id": r["position_id"],
-                "center": r["center"], "spot": r["underlying_at_entry"],
-                "structure": "fly" if r["entry_mode"] == "outright" else f"short {r['side']}",
-            })
+            events.append(
+                {
+                    "kind": "entry",
+                    "ts": r["entry_time"],
+                    "arm": r["arm"],
+                    "entry_mode": r["entry_mode"],
+                    "position_id": r["position_id"],
+                    "center": r["center"],
+                    "spot": r["underlying_at_entry"],
+                    "structure": "fly" if r["entry_mode"] == "outright" else f"short {r['side']}",
+                }
+            )
         if r.get("completed_at"):
-            events.append({
-                "kind": "completion", "ts": r["completed_at"], "arm": r["arm"],
-                "entry_mode": r["entry_mode"], "position_id": r["position_id"],
-                "center": r["center"], "spot": r["spot_at_completion"], "structure": "fly",
-            })
-            drift = (None if r["spot_at_completion"] is None or r["underlying_at_entry"] is None
-                     else abs(r["spot_at_completion"] - r["underlying_at_entry"]))
-            spans.append({
-                "position_id": r["position_id"], "arm": r["arm"], "center": r["center"],
-                "from": r["entry_time"], "to": r["completed_at"],
-                "latency_min": r["completion_latency_min"], "drift": _round(drift, 1),
-            })
+            events.append(
+                {
+                    "kind": "completion",
+                    "ts": r["completed_at"],
+                    "arm": r["arm"],
+                    "entry_mode": r["entry_mode"],
+                    "position_id": r["position_id"],
+                    "center": r["center"],
+                    "spot": r["spot_at_completion"],
+                    "structure": "fly",
+                }
+            )
+            drift = (
+                None
+                if r["spot_at_completion"] is None or r["underlying_at_entry"] is None
+                else abs(r["spot_at_completion"] - r["underlying_at_entry"])
+            )
+            spans.append(
+                {
+                    "position_id": r["position_id"],
+                    "arm": r["arm"],
+                    "center": r["center"],
+                    "from": r["entry_time"],
+                    "to": r["completed_at"],
+                    "latency_min": r["completion_latency_min"],
+                    "drift": _round(drift, 1),
+                }
+            )
     events.sort(key=lambda e: e["ts"])
 
     # Credit spreads still waiting: the branch that carries full defined risk until it completes, and
     # the one a time axis makes visible while it is still happening rather than at settlement.
-    waiting = [{"position_id": r["position_id"], "arm": r["arm"], "center": r["center"],
-                "from": r["entry_time"], "best_debit": r["best_completing_debit"],
-                "credit": r["credit"]}
-               for r in rows
-               if r["entry_mode"] == "legged" and not r.get("completed_at")]
+    waiting = [
+        {
+            "position_id": r["position_id"],
+            "arm": r["arm"],
+            "center": r["center"],
+            "from": r["entry_time"],
+            "best_debit": r["best_completing_debit"],
+            "credit": r["credit"],
+        }
+        for r in rows
+        if r["entry_mode"] == "legged" and not r.get("completed_at")
+    ]
 
-    return {"date": day, "arms": arms, "ticks": ticks, "events": events, "spans": spans,
-            "waiting": waiting, "feed": feed, "feed_summary": feed_summary}
+    return {
+        "date": day,
+        "arms": arms,
+        "ticks": ticks,
+        "events": events,
+        "spans": spans,
+        "waiting": waiting,
+        "feed": feed,
+        "feed_summary": feed_summary,
+    }
 
 
 def data_quality(conn, day: str | None = None) -> tuple[list[dict], dict]:
@@ -512,11 +722,21 @@ def data_quality(conn, day: str | None = None) -> tuple[list[dict], dict]:
     day = day or today()
     rows = conn.execute(
         "SELECT iteration_ts, symbol, status, quotes_fresh, quotes_rejected, underlying_price "
-        "FROM fly_snapshots WHERE trade_date = ? ORDER BY iteration_ts", (day,)).fetchall()
+        "FROM fly_snapshots WHERE trade_date = ? ORDER BY iteration_ts",
+        (day,),
+    ).fetchall()
 
-    feed = [{"ts": r["iteration_ts"], "symbol": r["symbol"], "status": r["status"],
-             "fresh": r["quotes_fresh"], "rejected": r["quotes_rejected"],
-             "spot": _round(r["underlying_price"])} for r in rows]
+    feed = [
+        {
+            "ts": r["iteration_ts"],
+            "symbol": r["symbol"],
+            "status": r["status"],
+            "fresh": r["quotes_fresh"],
+            "rejected": r["quotes_rejected"],
+            "spot": _round(r["underlying_price"]),
+        }
+        for r in rows
+    ]
 
     by_reason: dict[str, int] = {}
     ok = 0
@@ -537,14 +757,23 @@ def data_quality(conn, day: str | None = None) -> tuple[list[dict], dict]:
 
 # --------------------------------------------------------------------------- rollup
 def today() -> str:
-    return datetime.now().date().isoformat()
+    """The ET session date, not the machine's local date. West of Eastern the local calendar day is
+    still yesterday well after the ET date has rolled, so a local date would ask for the wrong
+    session's rows on any evening read."""
+    return clock.today_iso()
 
 
-def session_overview(conn, day: str | None = None) -> dict:
-    """Everything the Today view and the section card need, in one call."""
+def session_overview(conn, day: str | None = None, arm: str | None = None, symbol: str | None = None) -> dict:
+    """Everything the Today view and the section card need, in one call.
+
+    `arm`/`symbol` narrow every figure here (books, positions, and the derived counts/stats/
+    completion) to the selected scope — the same filter the payoff curve and the History/
+    Performance views already apply, so switching either selector can't leave one card telling a
+    different story than the rest of the page.
+    """
     day = day or today()
-    books = books_for_day(conn, day)
-    positions = positions_for_day(conn, day)
+    books = books_for_day(conn, day, arm, symbol)
+    positions = positions_for_day(conn, day, arm, symbol)
     open_positions = [p for p in positions if p["status"] == "open"]
     flies = [p for p in positions if p["kind"] == "fly"]
     return {
@@ -554,8 +783,8 @@ def session_overview(conn, day: str | None = None) -> dict:
         "open_count": len(open_positions),
         "fly_count": len(flies),
         "risk_free_count": len([p for p in flies if p["risk_free"]]),
-        "stats": stats_for_period(conn, day, day),
-        "completion": completion_stats(conn, day, day),
+        "stats": stats_for_period(conn, day, day, arm=arm, symbol=symbol),
+        "completion": completion_stats(conn, day, day, symbol=symbol, arm=arm),
         "divergence": arm_divergence(conn, day),
-        "journal": decision_journal(conn, day),
+        "journal": decision_journal(conn, day, arm),
     }

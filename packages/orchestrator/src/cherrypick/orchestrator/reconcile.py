@@ -96,9 +96,11 @@ def _balances_summary(balances: Any) -> dict[str, Any]:
     return summary
 
 
-def _tt(root, *argv: str) -> dict[str, Any]:
-    """Run a read-only `tt.py` command in a module and return its parsed JSON ({} on any failure)."""
-    return first_json(doctor._run(root, ["src/tt.py", *argv], timeout=35).stdout)
+def _tt(root, *argv: str, tool: list[str] | None = None) -> dict[str, Any]:
+    """Run a read-only broker-tool command in a module and return its parsed JSON ({} on any
+    failure). `tool` is the module's config-declared argv prefix (cfgmod.broker_tool); the
+    default stays the historical `src/tt.py` so existing callers are unchanged."""
+    return first_json(doctor._run(root, [*(tool or ["src/tt.py"]), *argv], timeout=35).stdout)
 
 
 def _designated_numbers(cfg: dict[str, Any]) -> set[str]:
@@ -116,12 +118,14 @@ def _designated_numbers(cfg: dict[str, Any]) -> set[str]:
     return out
 
 
-def _account_entry(root, number: str | None, designated: set[str]) -> dict[str, Any]:
+def _account_entry(
+    root, number: str | None, designated: set[str], tool: list[str] | None = None
+) -> dict[str, Any]:
     """Positions (+ best-effort balances) for one account. `number` None = the module's default account
     (used only as a fallback when `list_accounts` yields nothing). The full number is passed to the
     broker query and matched against the designated set, but only the masked form is ever returned."""
     argv = ["get_positions"] + (["--account_number", str(number)] if number else [])
-    payload = _tt(root, *argv)
+    payload = _tt(root, *argv, tool=tool)
     full = number if number is not None else payload.get("account_number")
     account = mask_account(full)
     is_designated = bool(full and full in designated)
@@ -136,7 +140,7 @@ def _account_entry(root, number: str | None, designated: set[str]) -> dict[str, 
         }
     positions = payload.get("positions") or []
     ai_argv = ["get_account_info"] + (["--account_number", str(number)] if number else [])
-    ai = _tt(root, *ai_argv)
+    ai = _tt(root, *ai_argv, tool=tool)
     balances = _balances_summary(ai.get("balances")) if ai.get("ok") else {}
     return {
         "account": account,
@@ -162,16 +166,17 @@ def _query_broker(cfg: dict[str, Any], forced_module: str | None) -> dict[str, A
         root = cfgmod.module_root(mcfg, name)
         if not root.exists():
             continue
+        tool = cfgmod.broker_tool(mcfg, name)
         try:
             numbers = [
                 a.get("account_number")
-                for a in (_tt(root, "list_accounts").get("accounts") or [])
+                for a in (_tt(root, "list_accounts", tool=tool).get("accounts") or [])
                 if a.get("account_number")
             ]
             entries = (
-                [_account_entry(root, n, designated) for n in numbers]
+                [_account_entry(root, n, designated, tool=tool) for n in numbers]
                 if numbers
-                else [_account_entry(root, None, designated)]
+                else [_account_entry(root, None, designated, tool=tool)]
             )
         except Exception as exc:  # noqa: BLE001 — a launch failure just means try the next module
             last_err = f"{type(exc).__name__}: {exc}"

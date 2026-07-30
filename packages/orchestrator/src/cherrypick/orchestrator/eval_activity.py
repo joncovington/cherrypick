@@ -17,7 +17,6 @@ from __future__ import annotations
 import re
 import sqlite3
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from . import config as cfgmod
@@ -26,15 +25,23 @@ OK, WARN = "OK", "WARN"
 
 # Reject reasons that mean "the strategy looked and correctly abstained" — a quiet day, not a fault.
 _BENIGN_REASON = (
-    "regime_gex", "below_near_miss", "iv_rank", "credit", "delta", "otm", "skip",
-    "no_0dte", "correlation", "cap", "window", "no_fresh_quotes", "no_spot_price",
+    "regime_gex",
+    "below_near_miss",
+    "iv_rank",
+    "credit",
+    "delta",
+    "otm",
+    "skip",
+    "no_0dte",
+    "correlation",
+    "cap",
+    "window",
+    "no_fresh_quotes",
+    "no_spot_price",
 )
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
+from cherrypick.core.db import connect_ro as _connect_ro  # noqa: E402 — shared read-only opener
 
 
 def _age_min(ts_iso: str | None) -> float | None:
@@ -55,8 +62,14 @@ def _in_window(ts_iso: str | None, window_min: int) -> bool:
 
 
 def _empty() -> dict[str, Any]:
-    return {"iterations": 0, "evaluated": 0, "errors": 0, "entries": 0,
-            "last_age_min": None, "top_reason": None}
+    return {
+        "iterations": 0,
+        "evaluated": 0,
+        "errors": 0,
+        "entries": 0,
+        "last_age_min": None,
+        "top_reason": None,
+    }
 
 
 # --------------------------------------------------------------------------- meic_ic (loop_log)
@@ -83,8 +96,14 @@ def _meic_activity(conn, day: str, window_min: int) -> dict[str, Any]:
     ent = conn.execute("SELECT entry_time FROM ic_trades WHERE trade_date = ?", (day,)).fetchall()
     entries = sum(1 for e in ent if _in_window(e["entry_time"], window_min))
     top = max(reasons, key=reasons.get) if reasons else None
-    return {"iterations": len(recent), "evaluated": evaluated, "errors": errors,
-            "entries": entries, "last_age_min": last_age, "top_reason": top}
+    return {
+        "iterations": len(recent),
+        "evaluated": evaluated,
+        "errors": errors,
+        "entries": entries,
+        "last_age_min": last_age,
+        "top_reason": top,
+    }
 
 
 # --------------------------------------------------------------------------- fly_book (fly_snapshots)
@@ -104,15 +123,28 @@ def _flies_activity(conn, day: str, window_min: int) -> dict[str, Any]:
         top = max(set(refused), key=refused.count)
     ent = conn.execute("SELECT entry_time FROM fly_positions WHERE trade_date = ?", (day,)).fetchall()
     entries = sum(1 for e in ent if _in_window(e["entry_time"], window_min))
-    return {"iterations": len(recent), "evaluated": evaluated, "errors": errors,
-            "entries": entries, "last_age_min": last_age, "top_reason": top}
+    return {
+        "iterations": len(recent),
+        "evaluated": evaluated,
+        "errors": errors,
+        "entries": entries,
+        "last_age_min": last_age,
+        "top_reason": top,
+    }
 
 
 _READERS = {"meic_ic": _meic_activity, "fly_book": _flies_activity}
 
+# Schemas with NO eval-activity reader BY DESIGN, stated executably rather than only in
+# the module docstring: earnings is an event-driven daily scan whose "did it run" is the
+# entry-SLA check. The registry coverage test requires every schema to appear in _READERS
+# or here — a new schema wired nowhere fails CI instead of silently reading as healthy.
+NOT_APPLICABLE = frozenset({"earnings"})
 
-def assess(act: dict[str, Any], *, window_min: int, eval_stale_min: float,
-           error_frac_warn: float) -> tuple[str, str]:
+
+def assess(
+    act: dict[str, Any], *, window_min: int, eval_stale_min: float, error_frac_warn: float
+) -> tuple[str, str]:
     """Apply the four health triggers to an activity snapshot -> (status, detail). Rejecting-all is
     HEALTHY (legit gates), so the alarms are: stopped evaluating, iterating-but-not-evaluating, evals
     dominated by errors, and 0-entries for a non-benign reason."""

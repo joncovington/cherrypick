@@ -17,7 +17,6 @@ import html
 import json
 import os
 import re
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -27,9 +26,8 @@ from cherrypick.core import viz
 
 from cherrypick.notify import secrets as notify_secrets
 
-from . import calibrate, embeds, report, sections, tasks, timeutil
+from . import calibrate, embeds, report, sections, tasks, timeutil, util
 from . import config as cfgmod
-from .util import CREATE_NO_WINDOW
 
 _STATUS_COLORS = {
     "OK": "var(--pos)",
@@ -42,11 +40,7 @@ _LEVELS = ("CRITICAL", "WARN", "INFO", "NOTIFY", "OK")
 
 
 # --------------------------------------------------------------------------- file helpers
-def _read_json(path: Path) -> dict[str, Any]:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+_read_json = util.read_json  # one implementation of the best-effort JSON read
 
 
 def _age_minutes(iso_ts: str | None) -> float | None:
@@ -61,11 +55,26 @@ def _age_minutes(iso_ts: str | None) -> float | None:
         return None
 
 
+# Read at most this much from the END of a log for a tail. 50 display lines at the
+# observed ~830 bytes/line is ~42 KB; 256 KB leaves a wide margin while keeping the
+# render cost CONSTANT — the old whole-file read grew linearly with uptime (multiple
+# MB re-read and JSON-parsed per watchdog tick across five log sources).
+_TAIL_READ_BYTES = 256 * 1024
+
+
 def _tail(path: Path, n: int) -> list[str]:
-    """Last n non-empty lines of a text file; never raises."""
+    """Last n non-empty lines of a text file, reading only the file's tail; never raises."""
     try:
-        with path.open("r", encoding="utf-8", errors="replace") as fh:
-            lines = [ln.rstrip("\n") for ln in fh if ln.strip()]
+        with path.open("rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            fh.seek(max(0, size - _TAIL_READ_BYTES))
+            chunk = fh.read().decode("utf-8", errors="replace")
+        lines = [ln.rstrip("\r") for ln in chunk.split("\n") if ln.strip()]
+        # A mid-line start is possible when the seek landed inside a line; the partial
+        # first line only matters if it would be within the last n — drop it then.
+        if size > _TAIL_READ_BYTES and len(lines) <= n:
+            lines = lines[1:]
         return lines[-n:]
     except OSError:
         return []
@@ -94,18 +103,29 @@ def _parse_log_line(source: str, raw: str) -> dict[str, Any]:
 
 
 def _git_ref(root: Path) -> str | None:
-    """Short commit hash of a module checkout, best-effort. Local `git` only — no network, never
-    blocks the render (returns None on any failure, e.g. not a git checkout or git missing)."""
+    """Short commit hash of a module checkout, best-effort — by READING .git directly
+    (HEAD -> ref file / packed-refs), no subprocess. The old `git rev-parse` spawn ran
+    once per module on every render for a value that changes only when someone pulls.
+    Returns None on any failure (not a git checkout, detached oddity, etc.)."""
     try:
-        r = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            creationflags=CREATE_NO_WINDOW,
-        )
-        return r.stdout.strip() or None if r.returncode == 0 else None
-    except OSError:
+        git_dir = root / ".git"
+        if git_dir.is_file():  # worktree/submodule: "gitdir: <path>" indirection
+            target = git_dir.read_text(encoding="utf-8").split(":", 1)[1].strip()
+            git_dir = (root / target).resolve() if not Path(target).is_absolute() else Path(target)
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref:"):
+            return head[:7] or None  # detached HEAD stores the sha itself
+        ref = head.split(None, 1)[1]
+        ref_file = git_dir / ref
+        if ref_file.exists():
+            return ref_file.read_text(encoding="utf-8").strip()[:7] or None
+        packed = git_dir / "packed-refs"
+        if packed.exists():
+            for line in packed.read_text(encoding="utf-8").splitlines():
+                if line.endswith(ref) and not line.startswith("#"):
+                    return line.split()[0][:7] or None
+        return None
+    except (OSError, IndexError, UnicodeDecodeError):
         return None
 
 
@@ -237,6 +257,97 @@ def _eod_view(cfg: dict[str, Any], modules_cfg: dict[str, Any], tz: str) -> dict
     }
 
 
+def _vix_by_session(cfg: dict[str, Any]) -> dict[str, float]:
+    """VIX per session date from the first paper DB carrying a market_context table (MEIC
+    writes one row per day). The audit's finding: this series was captured daily and only
+    ever surfaced as prose — never plotted. Best-effort; {} when nothing carries it."""
+    for name, mcfg in cfgmod.enabled_modules(cfg).items():
+        db_path = cfgmod.paper_db_path(mcfg, name)
+        if not db_path.exists():
+            continue
+        try:
+            conn = report._connect_ro(db_path)
+        except Exception:
+            continue
+        try:
+            rows = conn.execute(
+                "SELECT context_date, vix FROM market_context WHERE vix IS NOT NULL"
+            ).fetchall()
+            if rows:
+                return {r["context_date"]: float(r["vix"]) for r in rows}
+        except Exception:
+            pass
+        finally:
+            conn.close()
+    return {}
+
+
+def _equity_card_payload(cfg: dict[str, Any], pnl: dict[str, Any]) -> dict[str, Any]:
+    """The suite equity curve — the first chart the suite's front door has ever had.
+    Cumulative net P&L per session (suite + up to three module lines) off report.run's
+    daily series, VIX overlaid on the right axis, the data_epoch marked. Everything is
+    a viz `timeseries` payload; the page inlines it so the static render works offline."""
+    daily = pnl.get("daily") or []
+    labels = [d["session"] for d in daily if d.get("session")]
+    if not labels:
+        return {"ok": False, "error": "no closed paper sessions yet"}
+    rows = [d for d in daily if d.get("session")]
+
+    module_totals: dict[str, float] = {}
+    for d in rows:
+        for m, v in (d.get("by_module") or {}).items():
+            module_totals[m] = module_totals.get(m, 0.0) + v
+    top_modules = [m for m, _ in sorted(module_totals.items(), key=lambda kv: -abs(kv[1]))[:3]]
+
+    series = []
+    running = 0.0
+    suite_vals = []
+    for d in rows:
+        running += d["net_pnl"]
+        suite_vals.append(round(running, 2))
+    series.append({"name": "suite", "values": suite_vals, "tone": "accent"})
+    tones = ["pos", "vol", "neg"]
+    for i, m in enumerate(top_modules):
+        acc, vals = 0.0, []
+        for d in rows:
+            acc += (d.get("by_module") or {}).get(m, 0.0)
+            vals.append(round(acc, 2))
+        series.append({"name": m, "values": vals, "tone": tones[i % len(tones)]})
+
+    vix = _vix_by_session(cfg)
+    overlay = [vix.get(s) for s in labels]
+    ts: dict[str, Any] = {"labels": labels, "series": series}
+    if any(v is not None for v in overlay):
+        ts["overlay"] = {"name": "VIX", "values": overlay}
+    epoch = pnl.get("data_epoch")
+    if epoch and epoch.get("date") in labels:
+        ts["markers"] = [{"label": "epoch", "at": epoch["date"]}]
+
+    suite = pnl.get("suite", {})
+    best = max(rows, key=lambda d: d["net_pnl"])
+    worst = min(rows, key=lambda d: d["net_pnl"])
+    return {
+        "ok": True,
+        "subtitle": f"{len(labels)} sessions · cumulative net P&L (paper, net of modeled costs)",
+        "metrics": [
+            {
+                "label": "Net",
+                "value": viz.fmt_money(suite.get("net_pnl")),
+                "tone": "pos" if (suite.get("net_pnl") or 0) >= 0 else "neg",
+            },
+            {
+                "label": "At 2x slippage",
+                "value": viz.fmt_money(suite.get("net_pnl_2x_slippage")),
+                "tone": "pos" if (suite.get("net_pnl_2x_slippage") or 0) >= 0 else "neg",
+            },
+            {"label": "Best day", "value": viz.fmt_money(best["net_pnl"]), "tone": "pos"},
+            {"label": "Worst day", "value": viz.fmt_money(worst["net_pnl"]), "tone": "neg"},
+        ],
+        "timeseries": ts,
+        "note": "dashed = VIX (right axis)" if "overlay" in ts else "",
+    }
+
+
 def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     """Assemble the dashboard render model from on-disk state only (no broker/network)."""
     cfg = cfg or cfgmod.load_config()
@@ -253,7 +364,9 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         except Exception:
             et_clock = None
 
-    pnl = report.run(cfg)
+    # session_range=(None, None) is the same all-time read plus the daily series the
+    # suite equity card draws — one pass, not two.
+    pnl = report.run(cfg, session_range=(None, None))
     # Per-profile promotion recommendations (advisory, file-only). Best-effort: a calibration hiccup
     # must never break the dashboard render.
     try:
@@ -310,6 +423,7 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         "notify_channels": cfg.get("notify", {}).get("channels", ["log"]),
         "active_findings": [f for f in findings if str(f.get("status", "")).upper() in ("WARN", "CRITICAL")],
         "suite": pnl.get("suite", {}),
+        "equity_card": _equity_card_payload(cfg, pnl),
         "eod": _eod_view(cfg, modules_cfg, tz),
         "modules": module_views,
         "logs": log_entries,
@@ -342,13 +456,6 @@ def _color(status: str) -> str:
     return _STATUS_COLORS.get(str(status).upper(), _STATUS_COLORS["UNKNOWN"])
 
 
-def _money(v: Any) -> str:
-    try:
-        return f"${float(v):+,.2f}"
-    except (TypeError, ValueError):
-        return "—"
-
-
 def _pill(text: str, status: str) -> str:
     return f'<span class="pill" style="background:{_color(status)}">{html.escape(str(text))}</span>'
 
@@ -361,10 +468,10 @@ def _summary_stats(s: dict[str, Any]) -> str:
     return (
         '<div class="stats">'
         f'<span>net <b style="color:{_color("OK") if (s.get("net_pnl") or 0) >= 0 else _color("CRITICAL")}">'
-        f"{html.escape(_money(s.get('net_pnl')))}</b></span>"
+        f"{html.escape(viz.fmt_money(s.get('net_pnl')))}</b></span>"
         f"<span>trades {int(s.get('trades', 0))}</span>"
         f"<span>win {html.escape(wr_str)} ({int(s.get('wins', 0))}/{int(s.get('losses', 0))})</span>"
-        f"<span>avg {html.escape(_money(s.get('avg_pnl')))}</span>"
+        f"<span>avg {html.escape(viz.fmt_money(s.get('avg_pnl')))}</span>"
         "</div>"
     )
 
@@ -379,7 +486,7 @@ def _by_profile_table(by_profile: dict[str, Any]) -> str:
             "<tr>"
             f"<td>{html.escape(str(tag))}</td>"
             f'<td style="color:{_color("OK") if net >= 0 else _color("CRITICAL")}">'
-            f"{html.escape(_money(s.get('net_pnl')))}</td>"
+            f"{html.escape(viz.fmt_money(s.get('net_pnl')))}</td>"
             f"<td>{int(s.get('trades', 0))}</td>"
             f"<td>{int(s.get('wins', 0))}/{int(s.get('losses', 0))}</td>"
             "</tr>"
@@ -409,7 +516,7 @@ def _eod_card_html(eod: dict[str, Any] | None, serve: bool = False) -> str:
             "<tr>"
             f"<td>{html.escape(str(name))}</td>"
             f'<td style="color:{_color("OK") if net >= 0 else _color("CRITICAL")}">'
-            f"{html.escape(_money(m.get('net_pnl')))}</td>"
+            f"{html.escape(viz.fmt_money(m.get('net_pnl')))}</td>"
             f"<td>{int(m.get('trades', 0))}</td>"
             f"<td>{int(m.get('wins', 0))}/{int(m.get('losses', 0))}</td>"
             "</tr>"
@@ -666,8 +773,22 @@ def _system_card_html(model: dict[str, Any], serve: bool) -> str:
     )
     if serve:
         body += _doctor_live_html()
-        body += _reconcile_subsection_html()  # paper↔live isolation now lives inside System
     return f'<section class="card"><h2>system</h2>{body}</section>'
+
+
+def _liveops_card_html() -> str:
+    """Serve-only Live Ops card — the phase-5 gate surface, in one place: each module's
+    enable_live_trading kill switch + designated live account and the suite halt flag (via
+    /api/liveops — files + keyring, cheap enough to poll), composed with the paper↔live
+    isolation check whose designated-account listing IS the live book, broker-truth
+    (via /api/reconcile — broker-touching, so on load / button only, never an interval)."""
+    return (
+        '<section class="card" data-rkey="live-ops"><h2>live ops ' + _pill("GATES PHASE 5", "INFO") + "</h2>"
+        '<div class="liveops-body" data-cp-liveops data-endpoint="/api/liveops">'
+        '<span class="muted">reading kill switches…</span></div>'
+        + _reconcile_subsection_html()
+        + "</section>"
+    )
 
 
 def _module_card(mv: dict[str, Any]) -> str:
@@ -804,126 +925,9 @@ function flt(btn,lvl){btn.classList.toggle('off');btn.classList.toggle('on');
 var show=btn.classList.contains('on');
 document.querySelectorAll('.logline[data-level="'+lvl+'"]').forEach(function(r){r.style.display=show?'':'none'});}
 
-// Drag-to-reorder the module cards (self-contained, no libraries). Each .grid card can be
-// dragged by its grip handle; the order is saved per-browser in localStorage and re-applied
-// on load, so it survives every dashboard regeneration. Column count still auto-fits to width.
-(function(){
-  var LS_KEY='cherrypick-dash-layout-v1';
-  var store; try{store=JSON.parse(localStorage.getItem(LS_KEY))||{};}catch(e){store={};}
-  function persist(){try{localStorage.setItem(LS_KEY,JSON.stringify(store));}catch(e){}}
-  // Three reorder groups: the module summary .grid, the .embed-grid of dashboards, and .wrap
-  // itself (the stacked top-level sections — system, eod, logs, live sections).
-  var grids=[].slice.call(document.querySelectorAll('.grid, .embed-grid, .wrap'));
-  var srcOrder={};
-  var dragged=null,dragGroup=null;
-
-  function kids(g){return [].slice.call(g.children).filter(function(c){return c.hasAttribute('data-rkey');});}
-  function keys(g){return kids(g).map(function(c){return c.getAttribute('data-rkey');});}
-  function slug(s){return (s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');}
-  // Stable group id (independent of DOM order) so saved layouts survive structure changes.
-  function groupKey(g){
-    if(g.classList.contains('embed-grid')) return 'embeds';
-    if(g.classList.contains('grid')) return 'modules';
-    return 'sections';
-  }
-  // .wrap's section cards need a stable data-rkey; derive one from the header text.
-  function ensureKey(card){
-    if(card.getAttribute('data-rkey')) return;
-    var hh=card.querySelector(':scope > h2');
-    var label=hh?((hh.childNodes[0]&&hh.childNodes[0].nodeValue)||hh.textContent):'';
-    var base=slug(label)||'section', k=base, n=2;
-    while(document.querySelector('[data-rkey="'+k+'"]')) k=base+'-'+(n++);
-    card.setAttribute('data-rkey',k);
-  }
-  // Move `node` before `ref` within group `g`; ref===null means "after the last item" — which
-  // for .wrap is *not* the same as appendChild (that would land past the footer/embeds).
-  function place(g,ref,node){
-    if(ref===null){
-      var items=kids(g),last=items[items.length-1];
-      if(last&&last!==node) g.insertBefore(node,last.nextSibling);
-    } else if(ref!==node) g.insertBefore(node,ref);
-  }
-
-  function dragAfter(g,x,y){
-    var best=null,bestScore=Infinity,list=kids(g);
-    for(var i=0;i<list.length;i++){
-      var el=list[i]; if(el===dragged) continue;
-      var r=el.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,gap=r.height*0.5,before;
-      if(y<cy-gap) before=true; else if(y>cy+gap) before=false; else before=x<cx;
-      if(before){var s=(cy-y)*(cy-y)+(cx-x)*(cx-x); if(s<bestScore){bestScore=s;best=el;}}
-    }
-    return best;
-  }
-  function showReset(){var b=document.getElementById('reset-layout'); if(b) b.classList.add('show');}
-
-  grids.forEach(function(g){
-    var gk=groupKey(g);
-    // Embedded dashboards are heavy iframes — moving one in the DOM reloads it, so reorder
-    // them only once, on drop (not live during dragover), to avoid reload thrash.
-    var live=!g.classList.contains('embed-grid');
-    [].slice.call(g.children).forEach(function(c){
-      if(c.nodeType===1&&c.classList.contains('card')) ensureKey(c);
-    });
-    kids(g).forEach(function(card){
-      // The grip handle itself is the drag source (draggable=true) rather than toggling the
-      // card's draggable on mousedown — that toggle is unreliable in Chrome (draggability is
-      // decided before the mousedown handler runs), which is why grabbing a card did nothing.
-      var h=document.createElement('span');
-      h.className='reorder-handle'; h.title='Drag to reorder'; h.textContent='\\u2807';
-      h.setAttribute('draggable','true');
-      card.insertBefore(h,card.firstChild);
-      h.addEventListener('dragstart',function(e){
-        dragged=card; dragGroup=g; card.classList.add('reorder-drag');
-        e.dataTransfer.effectAllowed='move';
-        try{e.dataTransfer.setData('text/plain',card.getAttribute('data-rkey'));}catch(_){}
-        try{e.dataTransfer.setDragImage(card,20,20);}catch(_){}  // drag the whole card, not the grip
-      });
-      h.addEventListener('dragend',function(){
-        card.classList.remove('reorder-drag');
-        if(dragged===card){
-          if(!live){  // apply the pending drop position once (single iframe reload)
-            [].forEach.call(g.querySelectorAll('.reorder-over'),function(el){el.classList.remove('reorder-over');});
-            if(g.__drop!==undefined){ place(g,g.__drop,card); g.__drop=undefined; }
-          }
-          store[gk]=keys(g); persist(); showReset();
-        }
-        dragged=null; dragGroup=null;
-      });
-    });
-    srcOrder[gk]=keys(g);
-    g.addEventListener('dragover',function(e){
-      if(!dragged||dragGroup!==g) return;
-      e.preventDefault(); e.dataTransfer.dropEffect='move';
-      var after=dragAfter(g,e.clientX,e.clientY);
-      if(live){
-        place(g,after,dragged);
-      } else {  // defer the move; just show where it'll land
-        [].forEach.call(g.querySelectorAll('.reorder-over'),function(el){el.classList.remove('reorder-over');});
-        g.__drop=after;
-        if(after) after.classList.add('reorder-over');
-      }
-    });
-    applyOrder(g, store[gk]);
-  });
-
-  // Reorder a group's items to match `order`, inserting before a fixed anchor (the element after
-  // the last item) so items stay in their region — for .wrap that's *before* the footer/embeds.
-  function applyOrder(g, order){
-    if(!order||!order.length) return;
-    var byKey={}; kids(g).forEach(function(c){byKey[c.getAttribute('data-rkey')]=c;});
-    var cur=kids(g), anchor=cur.length?cur[cur.length-1].nextSibling:null;
-    order.forEach(function(k){if(byKey[k]) g.insertBefore(byKey[k],anchor);});
-    kids(g).forEach(function(c){if(order.indexOf(c.getAttribute('data-rkey'))<0) g.insertBefore(c,anchor);});
-  }
-
-  if(Object.keys(store).length) showReset();
-  var reset=document.getElementById('reset-layout');
-  if(reset) reset.addEventListener('click',function(){
-    grids.forEach(function(g){ applyOrder(g, srcOrder[groupKey(g)]); });
-    store={}; try{localStorage.removeItem(LS_KEY);}catch(e){}
-    reset.classList.remove('show');
-  });
-})();
+// Drag-to-reorder lives in cherrypick.core.viz.REORDER_JS now (the suite's one copy,
+// this page's 3-group version was the donor); groups are declared with data-cp-reorder
+// attributes in the render below, and the saved-layout store key is unchanged.
 
 // Collapsible top-level sections. Click a section header to expand/collapse it; the state is
 // saved per-browser in localStorage. Defaults: System starts collapsed (diagnostics you don't
@@ -975,6 +979,41 @@ _DOCTOR_JS = """
     }).join('');
   }).catch(function(){}); }
   tick(); setInterval(tick, 30000);
+})();
+"""
+
+# Serve-only: polls /api/liveops (files + keyring — kill switches, designated accounts, halt flag)
+# for the Live Ops card. Cheap, so a 60s interval is fine; the broker-touching half of that card is
+# _RECONCILE_JS below. Kept out of the always-on _JS like the other serve-only scripts.
+_LIVEOPS_JS = """
+(function(){
+  var el=document.querySelector('[data-cp-liveops]'); if(!el) return;
+  var url=el.getAttribute('data-endpoint');
+  function esc(s){var d=document.createElement('div');d.textContent=s==null?'':(''+s);return d.innerHTML;}
+  function tick(){ fetch(url).then(function(r){return r.json();}).then(function(d){
+    if(!d||!d.ok){ el.className='liveops-body muted'; el.textContent=(d&&d.error)||'unavailable'; return; }
+    var h=d.halt_flag||{}; var out='';
+    if(h.present){
+      out+='<div class="drow"><span class="pill" style="background:var(--neg)">HALTED</span> '
+        +'halt flag present at <span class="muted">'+esc(h.path)+'</span> — live loops must not enter</div>';
+    } else {
+      out+='<div class="drow"><span class="pill" style="background:var(--pos)">CLEAR</span> '
+        +'no halt flag <span class="muted">('+esc(h.path)+' — create it to halt live entries)</span></div>';
+    }
+    (d.modules||[]).forEach(function(m){
+      var pill, color;
+      if(m.live_enabled===true){ pill='LIVE ENABLED'; color='var(--neg)'; }
+      else if(m.live_enabled===false){ pill='PAPER ONLY'; color='var(--pos)'; }
+      else { pill='UNKNOWN'; color='var(--warn)'; }
+      var acct=m.designated? 'live account <b>'+esc(m.designated)+'</b>'
+        : '<span class="muted">no live account designated</span>';
+      out+='<div class="drow"><span class="pill" style="background:'+color+'">'+pill+'</span> '
+        +'<b>'+esc(m.module)+'</b> · '+acct
+        +(m.config_source? ' <span class="muted">('+esc(m.config_source)+')</span>':'')+'</div>';
+    });
+    el.className='liveops-body'; el.innerHTML=out;
+  }).catch(function(){}); }
+  tick(); setInterval(tick, 60000);
 })();
 """
 
@@ -1059,7 +1098,93 @@ def _embed_cards_html(embed_views: list[dict[str, Any]]) -> str:
             f'{html.escape(e["title"])} dashboard"></iframe>'
             "</section>"
         )
-    return '<div class="embed-grid">' + "".join(cards) + "</div>"
+    # data-cp-reorder-defer: iframes are heavy — moving one mid-drag reloads it, so the shared
+    # reorder JS applies the move once, on drop.
+    return (
+        '<div class="embed-grid" data-cp-reorder="embeds" data-cp-reorder-items=".card" '
+        "data-cp-reorder-defer>" + "".join(cards) + "</div>"
+    )
+
+
+_CAL_CSS = (
+    ".cpg-mod{margin:8px 0}.cpg-mod h3{margin:4px 0;font-size:13px;text-transform:uppercase;"
+    "letter-spacing:.04em;opacity:.8}"
+    ".cpg-row{margin:6px 0 10px}.cpg-head{font-size:13px;font-weight:650;margin-bottom:3px}"
+    ".cpg{display:grid;grid-template-columns:130px 1fr 110px;gap:8px;align-items:center;"
+    "font-size:11px;margin:2px 0}"
+    ".cpg-bar{position:relative;height:6px;background:rgba(128,128,128,.2);border-radius:3px;"
+    "overflow:hidden}"
+    ".cpg-fill{position:absolute;left:0;top:0;bottom:0;background:var(--warn,#9a6700);"
+    "border-radius:3px}"
+    ".cpg-fill.ok{background:var(--pos,#1a7f37)}"
+    ".cpg-v{opacity:.75;text-align:right}"
+    ".cpg-chip{display:inline-block;padding:0 6px;border-radius:8px;font-size:10px;font-weight:650}"
+    ".cpg-chip.ok{color:var(--pos,#1a7f37)}.cpg-chip.no{color:var(--neg,#cf222e)}"
+)
+
+
+def _fmt_check_val(v: Any) -> str:
+    if v is None:
+        return "—"
+    if isinstance(v, float) and not v.is_integer():
+        return f"{v:.2f}"
+    return str(int(v)) if isinstance(v, (int, float)) else str(v)
+
+
+def _calibration_progress_html(module_views: list[dict[str, Any]]) -> str:
+    """Each ladder rung's march toward its promotion thresholds, as progress bars — the
+    calibrate output made visible (the audit: readings were point-in-time list items,
+    never a progression). Renders every check recommend_promotion evaluated, so the
+    hardened checks (return-on-capital, slippage survival) appear automatically the day
+    a module's rule enables them. Empty string when no module has a ladder."""
+    blocks = []
+    for mv in module_views:
+        cal = mv.get("calibration") or {}
+        if not cal.get("ok") or not cal.get("ladder"):
+            continue
+        profiles = cal.get("profiles", {})
+        rows = []
+        for tag in cal["ladder"]:
+            entry = profiles.get(tag)
+            rec = (entry or {}).get("recommendation") or {}
+            checks = rec.get("checks") or {}
+            if not checks:
+                continue
+            bars = []
+            for cname, c in checks.items():
+                value, threshold = c.get("value"), c.get("threshold")
+                passed = bool(c.get("pass"))
+                if isinstance(threshold, (int, float)) and threshold > 0:
+                    frac = 0.0 if value is None else max(0.0, min(1.0, float(value) / float(threshold)))
+                    bars.append(
+                        f'<div class="cpg"><span>{html.escape(cname)}</span>'
+                        f'<span class="cpg-bar"><span class="cpg-fill{" ok" if passed else ""}" '
+                        f'style="width:{frac * 100:.0f}%"></span></span>'
+                        f'<span class="cpg-v">{html.escape(_fmt_check_val(value))} / '
+                        f"{html.escape(_fmt_check_val(threshold))}</span></div>"
+                    )
+                else:  # non-numeric bar (e.g. slippage survival): a pass/fail chip
+                    bars.append(
+                        f'<div class="cpg"><span>{html.escape(cname)}</span>'
+                        f'<span class="cpg-chip {"ok" if passed else "no"}">'
+                        f"{'PASS' if passed else 'FAIL'}</span>"
+                        f'<span class="cpg-v">{html.escape(_fmt_check_val(value))}</span></div>'
+                    )
+            verdict = rec.get("recommendation") or "—"
+            tone = "OK" if rec.get("eligible") else "UNKNOWN"
+            rows.append(
+                f'<div class="cpg-row"><div class="cpg-head">{html.escape(tag)} '
+                f"{_pill(verdict, tone)}</div>{''.join(bars)}</div>"
+            )
+        if rows:
+            blocks.append(f'<div class="cpg-mod"><h3>{html.escape(mv["name"])}</h3>{"".join(rows)}</div>')
+    if not blocks:
+        return ""
+    return (
+        '<section class="card"><h2>calibration — progress toward promotion</h2>'
+        + "".join(blocks)
+        + "</section>"
+    )
 
 
 def _render_html(model: dict[str, Any], serve: bool = False) -> str:
@@ -1092,6 +1217,9 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
         + "</div>"
     )
     system_card = _system_card_html(model, serve)
+    # Live Ops is serve-only: both its endpoints (/api/liveops, /api/reconcile) exist only under
+    # --serve, and the static file must stay free of live-trading affordances anyway.
+    liveops_card = _liveops_card_html() if serve else ""
     eod_card = _eod_card_html(model.get("eod"), serve)
     cards = "".join(_module_card(mv) for mv in model.get("modules", []))
     logs = '<section class="card"><h2>recent logs</h2>' + _log_html(model.get("logs", [])) + "</section>"
@@ -1115,18 +1243,33 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     # The module summary cards duplicate the embedded module dashboards; when the embeds are shown
     # (serve mode with embeds configured) omit the summary grid as redundant. The static file render
     # has no embeds, so it keeps the grid as the only per-module P&L view.
-    module_grid = "" if embeds_shown else f'<div class="grid">{cards}</div>'
-    extra_style = viz.SECTION_STYLE if live_sections else ""
-    extra_script = (viz.SECTION_JS if live_sections else "") + (_DOCTOR_JS + _RECONCILE_JS if serve else "")
+    module_grid = (
+        ""
+        if embeds_shown
+        else f'<div class="grid" data-cp-reorder="modules" data-cp-reorder-items=".card">{cards}</div>'
+    )
+    # The suite equity curve and calibration progression render in BOTH modes: the equity
+    # card's payload is baked inline (viz.card_inline_html), so the static file — the page
+    # that exists when nobody is watching — finally has a chart without needing a server.
+    equity_card = ""
+    if model.get("equity_card"):
+        equity_card = viz.card_inline_html("suite-equity", "suite equity — paper", model["equity_card"])
+    calibration_card = _calibration_progress_html(model.get("modules", []))
+    extra_style = viz.SECTION_STYLE + _CAL_CSS
+    extra_script = (
+        viz.SECTION_JS + viz.REORDER_JS + (_DOCTOR_JS + _LIVEOPS_JS + _RECONCILE_JS if serve else "")
+    )
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>cherrypick status</title><style>"
-        + _CSS
-        + extra_style
-        + "</style></head><body><div class='wrap'>"
+        "<title>cherrypick status</title><style>" + _CSS + extra_style + "</style></head><body>"
+        "<div class='wrap' data-cp-reorder='sections' data-cp-reorder-items='.card' "
+        "data-cp-reorder-store='cherrypick-dash-layout-v1'>"
         + header
+        + equity_card
+        + calibration_card
         + system_card
+        + liveops_card
         + section_cards
         + module_grid
         + embed_cards

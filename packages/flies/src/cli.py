@@ -72,8 +72,10 @@ def cmd_once(args) -> int:
 def cmd_settle(args) -> int:
     config = load_config(args.config)
     conn = dbmod.connect(args.db)
-    out = [bookmod.settle_book(conn, args.date, arm, args.symbol, args.price, config)
-           for arm in enabled_arms(config)]
+    out = [
+        bookmod.settle_book(conn, args.date, arm, args.symbol, args.price, config)
+        for arm in enabled_arms(config)
+    ]
     print(json.dumps({"ok": True, "books": out}, indent=2, default=str))
     return 0
 
@@ -93,11 +95,13 @@ def cmd_status(args) -> int:
 
 def cmd_dashboard(args) -> int:
     import dashboard
+
     return dashboard.serve(dashboard.resolve_port(args.port), args.db, open_browser=not args.no_browser)
 
 
 def cmd_section(args) -> int:
     import section
+
     print(json.dumps(section.build_section(args.db, args.date, args.arm), indent=2, default=str))
     return 0
 
@@ -124,8 +128,11 @@ def main(argv=None) -> int:
 
     p_dash = sub.add_parser("dashboard", help="serve the read-only dashboard (loopback)")
     p_dash.add_argument("--port", type=int)
-    p_dash.add_argument("--no-browser", action="store_true",
-                        help="don't open a browser tab on start (for headless/background launches)")
+    p_dash.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="don't open a browser tab on start (for headless/background launches)",
+    )
     p_dash.set_defaults(func=cmd_dashboard)
 
     p_section = sub.add_parser("section", help="emit a cherrypick.core.viz card payload")

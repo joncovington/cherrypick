@@ -1,4 +1,5 @@
 """Unit tests for the risk-profile system: config.risk.json and profile switching."""
+
 from __future__ import annotations
 
 import json
@@ -12,9 +13,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # The canonical four-tier risk ladder. config.risk.json may additionally carry
 # symbol/wing/credit experiment cells (small-/medium-/large-/explore-) for the paper
-# account-size study — those are partial overlays merged onto config.json, not full presets.
+# account-size study, or symbol-agnostic width-study arms (width-*) — those are partial
+# overlays merged onto config.json, not full presets.
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
-EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore"}
+EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore", "width"}
+# width-* arms are forced-sampling study cells: symbol-agnostic (no `symbols` pin — the
+# (profile x symbol) grain supplies that axis) and deliberately uncapped on concurrency
+# (each structure is an independent sample, not a book), so they're exempt from the
+# symbol-pinning and concurrency-range checks the old small-/medium-/large-/explore-
+# cells are held to below.
+WIDTH_STUDY_PREFIX = "width-"
 
 
 @pytest.fixture
@@ -59,7 +67,9 @@ def test_conservative_profile_matches_config_defaults(sample_risk_profiles, samp
 
     # Check each gate value matches config.json
     for gate, value in conservative_gates.items():
-        assert sample_config.get(gate) == value, f"Gate {gate}: config.json={sample_config.get(gate)}, conservative={value}"
+        assert sample_config.get(gate) == value, (
+            f"Gate {gate}: config.json={sample_config.get(gate)}, conservative={value}"
+        )
 
 
 def test_moderate_profile_relaxes_gates_appropriately(sample_risk_profiles):
@@ -138,7 +148,10 @@ def test_very_aggressive_profile_relaxes_regime_gates(sample_risk_profiles):
 
     # The VIX1D event-day gate relaxes at the top rung too, matching VIX/ATR (it used to be the one
     # regime gate pinned flat across all four tiers).
-    assert very_aggressive["regime_vix1d_ratio_pause_threshold"] > aggressive["regime_vix1d_ratio_pause_threshold"]
+    assert (
+        very_aggressive["regime_vix1d_ratio_pause_threshold"]
+        > aggressive["regime_vix1d_ratio_pause_threshold"]
+    )
     assert very_aggressive["regime_vix1d_ratio_pause_threshold"] == 1.40
 
     # Offsets should be extreme
@@ -190,6 +203,7 @@ def test_ladder_derived_thresholds_scale_with_each_tier():
     terms to very-aggressive."""
     import sys
     from pathlib import Path
+
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     import paper
 
@@ -218,6 +232,7 @@ def test_ladder_credit_floor_is_monotonic_at_every_iv_level():
     enough that a tier inside its borderline band undercut the next tier's plain floor."""
     import sys
     from pathlib import Path
+
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     import paper
 
@@ -230,12 +245,18 @@ def test_ladder_credit_floor_is_monotonic_at_every_iv_level():
             p = merged[t]
             if iv_rank < p["min_iv_rank"]:
                 continue  # tier can't trade here at all
-            floors.append((t, paper._low_iv_relief_floor(p)
-                           if iv_rank <= paper._low_iv_relief_max(p)
-                           else p["min_credit_pct_of_width"]))
+            floors.append(
+                (
+                    t,
+                    paper._low_iv_relief_floor(p)
+                    if iv_rank <= paper._low_iv_relief_max(p)
+                    else p["min_credit_pct_of_width"],
+                )
+            )
         for (t_strict, f_strict), (t_loose, f_loose) in zip(floors, floors[1:], strict=False):
             assert f_strict >= f_loose, (
-                f"iv_rank {iv_rank}: {t_strict} floor {f_strict:.3f} < {t_loose} {f_loose:.3f}")
+                f"iv_rank {iv_rank}: {t_strict} floor {f_strict:.3f} < {t_loose} {f_loose:.3f}"
+            )
 
 
 def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):
@@ -243,6 +264,8 @@ def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):
     declared symbol, and — if they stagger — a daily target + spacing to spread entries."""
     profiles = sample_risk_profiles["profiles"]
     for name in set(profiles) - LADDER:
+        if name.startswith(WIDTH_STUDY_PREFIX):
+            continue  # symbol-agnostic by design — checked in test_width_study_arms below
         p = profiles[name]
         assert isinstance(p.get("symbols"), list) and p["symbols"], f"{name} must pin `symbols`"
         wbs = p.get("wing_widths_by_symbol")
@@ -250,8 +273,49 @@ def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):
         for sym in p["symbols"]:
             assert sym in wbs and wbs[sym], f"{name} missing wings for {sym}"
         if p.get("stagger_entries"):
-            assert "daily_ic_trade_target" in p and "min_minutes_between_entries" in p, \
+            assert "daily_ic_trade_target" in p and "min_minutes_between_entries" in p, (
                 f"{name} staggers but lacks daily target / spacing"
+            )
+
+
+def test_width_study_arms(sample_risk_profiles):
+    """The four width-study arms exist, are enabled, are symbol-agnostic, and differ from each
+    other in exactly the one variable each is meant to isolate."""
+    profiles = sample_risk_profiles["profiles"]
+    names = {"width-2", "width-5", "width-10", "width-adaptive"}
+    assert names <= set(profiles)
+
+    fixed = {"width-2": 2, "width-5": 5, "width-10": 10}
+    sampling_keys = {
+        "stagger_entries",
+        "min_minutes_between_entries",
+        "max_concurrent_ics",
+        "daily_ic_trade_target",
+    }
+    reference_sampling = None
+    for name in names:
+        p = profiles[name]
+        assert p.get("enabled") is True, f"{name} must be enabled"
+        assert "symbols" not in p, f"{name} must be symbol-agnostic (no `symbols` key)"
+        sampling = {k: p[k] for k in sampling_keys}
+        if reference_sampling is None:
+            reference_sampling = sampling
+        else:
+            assert sampling == reference_sampling, f"{name} sampling keys diverge from siblings"
+        assert p["stagger_entries"] is True
+        assert p["min_minutes_between_entries"] == 15
+        assert p["max_concurrent_ics"] == 99, f"{name} must run uncapped (each trade a sample)"
+        # 20 possible 15-min ticks across the 09:30-14:30 paper window; the cap must never bind.
+        assert p["daily_ic_trade_target"] > 20
+
+    for name, width in fixed.items():
+        p = profiles[name]
+        assert p["wing_selection"] == "fixed"
+        assert p["wing_widths_by_symbol"] == {"DEFAULT": [width]}
+
+    adaptive = profiles["width-adaptive"]
+    assert adaptive["wing_selection"] == "widest"
+    assert adaptive["wing_widths_by_symbol"] == {"DEFAULT": [2, 5, 10]}
 
 
 def test_all_profiles_have_description_note(sample_risk_profiles):
@@ -267,12 +331,19 @@ def test_profile_gate_values_are_valid_types(sample_risk_profiles):
     for profile_name, profile in sample_risk_profiles["profiles"].items():
         # Float gates
         float_gates = [
-            "min_iv_rank", "min_credit_pct_of_width", "low_iv_min_credit_pct_of_width",
-            "low_iv_credit_floor_iv_rank_max", "max_call_delta_entry",
-            "max_call_delta_entry_open_volatile", "max_call_delta_entry_late",
-            "min_call_otm_pct", "min_put_otm_pct", "late_entry_bias_iv_rank_max",
-            "regime_vix1d_ratio_pause_threshold", "stop_trigger_ratio",
-            "regime_atr_pause_threshold_pct"
+            "min_iv_rank",
+            "min_credit_pct_of_width",
+            "low_iv_min_credit_pct_of_width",
+            "low_iv_credit_floor_iv_rank_max",
+            "max_call_delta_entry",
+            "max_call_delta_entry_open_volatile",
+            "max_call_delta_entry_late",
+            "min_call_otm_pct",
+            "min_put_otm_pct",
+            "late_entry_bias_iv_rank_max",
+            "regime_vix1d_ratio_pause_threshold",
+            "stop_trigger_ratio",
+            "regime_atr_pause_threshold_pct",
         ]
 
         for gate in float_gates:
@@ -325,9 +396,10 @@ def test_profile_gate_values_in_reasonable_ranges(sample_risk_profiles):
         if "regime_vix_pause_threshold" in profile:
             assert profile["regime_vix_pause_threshold"] > 0
 
-        # Max concurrent ICs should be 1-10
+        # Max concurrent ICs should be 1-10, except the width-study arms, which run
+        # deliberately uncapped (99 — each trade is an independent sample, not a book).
         if "max_concurrent_ics" in profile:
-            assert 1 <= profile["max_concurrent_ics"] <= 10
+            assert 1 <= profile["max_concurrent_ics"] <= 99
 
         # Daily target should be 0+ (0 = ORB only)
         if "daily_ic_trade_target" in profile:
@@ -359,5 +431,7 @@ def test_profile_progression_is_monotonic(sample_risk_profiles):
 def test_config_json_stale_values_fixed(sample_config):
     """Verify that stale values in CLAUDE.md documentation have been fixed in config.json."""
     # These were the stale values reported in the plan
-    assert sample_config["min_credit_pct_of_width"] == 0.15, "min_credit_pct_of_width should be 0.15 (not 0.20 as docs said)"
+    assert sample_config["min_credit_pct_of_width"] == 0.15, (
+        "min_credit_pct_of_width should be 0.15 (not 0.20 as docs said)"
+    )
     assert sample_config["max_concurrent_ics"] == 4, "max_concurrent_ics should be 4 (not 2 as docs said)"

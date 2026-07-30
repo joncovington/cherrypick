@@ -22,7 +22,7 @@ which writes *configuration* (never an order). See [guardrails-and-modes.md](gua
 
 | Command | What it does |
 |---|---|
-| `install` | Register all scheduled tasks (MEIC paper loop, earnings entry/exit, watchdog, fast trade-notify, EOD digest, monthly log-archive, and — if enabled — the AI EOD insight) and start the streamer / services if down. See [scheduling](reporting-and-dashboard.md) and the task table in [configuration-and-storage.md](configuration-and-storage.md). |
+| `install` | Register all scheduled tasks (module paper loops, earnings entry/exit, Dolt keep-alive, watchdog, fast trade-notify, monthly log-archive, and — if enabled — the scheduled reconcile) and start the streamer / services if down. The EOD digest/insight/advise are **not** tasks — the watchdog fires them on a completion event, and `install` deletes any stale fixed-time registrations. Full verified inventory: [operations.md](operations.md). |
 | `uninstall` | Remove all cherrypick-managed scheduled tasks and stop the orchestrator's own background services. Recorded data and config are untouched. |
 | `status` | Task registration + last heartbeats + last earnings run. Local OS-scheduler queries only. |
 
@@ -32,7 +32,7 @@ which writes *configuration* (never an order). See [guardrails-and-modes.md](gua
 |---|---|---|
 | `doctor` | One green/red readiness check — Python, config, broker session, data feed, DBs, (earnings) Dolt. | `--fast` (skip the authenticated broker round-trip) |
 | `watchdog` | Run one watchdog pass — the reliability check the scheduled task invokes (data-fresh, streamer alive, earnings SLA, dedup/re-notify/recovery). stdlib + OS shell only. | — |
-| `reconcile` | Paper↔live isolation guard: enumerate **every** account on the login (read-only `list_accounts`/`get_positions`/`get_account_info`) and flag any open positions/BP a paper-only suite shouldn't hold. On-demand; never trades; accounts masked. | — |
+| `reconcile` | Paper↔live isolation guard: enumerate **every** account on the login (read-only `list_accounts`/`get_positions`/`get_account_info`) and flag any open positions/BP a paper-only suite shouldn't hold. On-demand; never trades; accounts masked. `reconcile.schedule.enabled` promotes it to a daily `cherrypick-reconcile` task (`--scheduled` notifies on any non-FLAT verdict) — the phase-5 posture once anything trades live. | `--scheduled` |
 | `notify-test` | Fire a test notification through every configured channel. | — |
 | `notify-trades` | Push new paper entries/exits to the trade channels (also runs best-effort on each watchdog tick). | — |
 
@@ -43,8 +43,9 @@ which writes *configuration* (never an order). See [guardrails-and-modes.md](gua
 | `report` | Unified cross-module paper P&L: totals + per-profile breakdown, **gross and net** of costs. | `--eod` (today ET), `--date YYYY-MM-DD` (one session; default all-time) |
 | `calibrate` | Per-profile calibration readings + advisory promotion recommendations (never changes risk settings). | — |
 | `eod-digest` | Write `logs/eod-digest-<day>.md`: one session's cross-module roll-up + a conversational snapshot + links to each module's paper-eod / eod-analysis files. | `--date` |
-| `notify-eod` | Write the digest **and** push a one-line summary through the notify channels (what the scheduled `cherrypick-eod-digest` task runs). | `--date` |
+| `notify-eod` | Write the digest **and** push a one-line summary through the notify channels (what the watchdog fires, detached, once every module has settled — or at the `eod_digest.deadline` backstop). | `--date` |
 | `eod-insight` | **Opt-in AI synthesis** over the day's deterministic reports → `logs/eod-insight-<day>.md`. Needs Claude Code on PATH + `eod_insight.enabled`; read-only, no dangerous tools, off the reliability path. Best-effort (prints `skipped`/`error` when absent/disabled). | `--date` |
+| `advise` | **Opt-in bounded parameter proposals** for the NEXT session → `state/advice/<module>-<session>.json`, validated by `cherrypick.core.advice` against each module's `advice_bounds` manifest of closed legal ranges (one violation rejects the whole set; rejections written for audit). Off by default **twice** (`advise.enabled` + per-module); needs Claude Code on PATH; all tools denied. The module's paper loop re-validates with the same core code at session start — absent/stale/invalid ⇒ baseline. Watchdog-fired detached on the same completion event as the digest. | `--date` |
 | `archive` | End-of-month rotation: zip each finished month's dated reports + rotated log backups into `logs/archive/<YYYY-MM>/<scope>.zip` and remove the originals (idempotent; never touches the current month or an active `.log`). | `--month YYYY-MM`, `--dry-run` |
 | `dashboard` | Regenerate the static status dashboard → `~/.cherrypick/dashboard.html`, **or** run a localhost live server with `--serve`. | `--serve`, `--host` (def `127.0.0.1`), `--port` (def `8787`), `--no-browser` |
 

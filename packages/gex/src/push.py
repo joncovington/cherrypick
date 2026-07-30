@@ -25,12 +25,17 @@ def broadcast_key(payload: dict) -> tuple:
     if not payload.get("ok"):
         return ("err", payload.get("error"))
     series = tuple(
-        (s.get("strike"), s.get("net_gex"), s.get("call_oi"), s.get("put_oi"),
-         s.get("call_vol"), s.get("put_vol"))
+        (
+            s.get("strike"),
+            s.get("net_gex"),
+            s.get("call_oi"),
+            s.get("put_oi"),
+            s.get("call_vol"),
+            s.get("put_vol"),
+        )
         for s in payload.get("series", [])
     )
-    return (payload.get("underlying_price"), payload.get("expiration"),
-            payload.get("source"), series)
+    return (payload.get("underlying_price"), payload.get("expiration"), payload.get("source"), series)
 
 
 class GexPushServer:

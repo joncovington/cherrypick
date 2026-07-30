@@ -17,8 +17,8 @@ def _cfg(tmp_path):
 
 def test_lock_is_single_writer(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
-    assert service.acquire_recorder_lock(cfg) is True          # nobody holds it -> we do
-    assert service.acquire_recorder_lock(cfg) is True          # re-entrant for the same process
+    assert service.acquire_recorder_lock(cfg) is True  # nobody holds it -> we do
+    assert service.acquire_recorder_lock(cfg) is True  # re-entrant for the same process
     assert service._recorder_pid_file(cfg).read_text().strip() == str(os.getpid())
 
     # A different, LIVE process holds it -> we must not acquire.
@@ -46,16 +46,16 @@ def test_stop_recorder_confirms_death_before_clearing_pidfile(tmp_path, monkeypa
     cfg = _cfg(tmp_path)
     pid = 424242
     service._recorder_pid_file(cfg).write_text(str(pid))
-    monkeypatch.setattr(service, "_pid_alive", lambda p: True)   # never dies on SIGTERM
-    monkeypatch.setattr("os.kill", lambda p, s: None)           # SIGTERM is a no-op here
-    monkeypatch.setattr("time.sleep", lambda s: None)           # don't actually wait the ~5s
+    monkeypatch.setattr(service, "_pid_alive", lambda p: True)  # never dies on SIGTERM
+    monkeypatch.setattr("os.kill", lambda p, s: None)  # SIGTERM is a no-op here
+    monkeypatch.setattr("time.sleep", lambda s: None)  # don't actually wait the ~5s
     forced = {"pid": None}
     monkeypatch.setattr(service, "_force_kill", lambda p: forced.__setitem__("pid", p))
 
     res = service.stop_recorder(cfg)
-    assert forced["pid"] == pid                                  # escalated to a force-kill
+    assert forced["pid"] == pid  # escalated to a force-kill
     assert res["signal"] == "SIGKILL"
-    assert not service._recorder_pid_file(cfg).exists()          # cleared only after the kill
+    assert not service._recorder_pid_file(cfg).exists()  # cleared only after the kill
 
 
 def test_stop_recorder_when_not_running(tmp_path):

@@ -31,12 +31,25 @@ def test_default_db_path_is_paper():
     assert sm.DB_PATH == sm.PAPER_DB_PATH
 
 
-def _trade(pnl, entry_cost=0.0, exit_cost=0.0, opened_at=0, closed_at=None, entry_context=None,
-           entry_iv=None, exit_iv=None):
+def _trade(
+    pnl,
+    entry_cost=0.0,
+    exit_cost=0.0,
+    opened_at=0,
+    closed_at=None,
+    entry_context=None,
+    entry_iv=None,
+    exit_iv=None,
+):
     return {
-        "pnl": pnl, "entry_cost": entry_cost, "exit_cost": exit_cost,
-        "opened_at": opened_at, "closed_at": closed_at if closed_at is not None else opened_at + 3600,
-        "entry_context": entry_context, "entry_iv": entry_iv, "exit_iv": exit_iv,
+        "pnl": pnl,
+        "entry_cost": entry_cost,
+        "exit_cost": exit_cost,
+        "opened_at": opened_at,
+        "closed_at": closed_at if closed_at is not None else opened_at + 3600,
+        "entry_context": entry_context,
+        "entry_iv": entry_iv,
+        "exit_iv": exit_iv,
     }
 
 
@@ -106,7 +119,9 @@ def test_equity_curve_orders_by_closed_at_and_accumulates():
 
 def test_max_drawdown_finds_peak_to_trough():
     trades = [
-        _trade(100, closed_at=1), _trade(-150, closed_at=2), _trade(50, closed_at=3),
+        _trade(100, closed_at=1),
+        _trade(-150, closed_at=2),
+        _trade(50, closed_at=3),
     ]
     # equity: 100, -50, 0 -> peak 100, trough -50 -> drawdown 150
     result = sm.max_drawdown(trades)

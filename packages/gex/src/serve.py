@@ -11,14 +11,23 @@ every refresh just re-reads MEIC's stream cache (this module never writes to it 
 from __future__ import annotations
 
 import json
-import socket
+import os
+import sys
 import threading
 import webbrowser
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-import service as _service
+# Bootstrap the cherrypick-core submodule (src/_core) before its import below — idempotent,
+# mirrors service.py; needed here so the viz import survives standalone imports of this module.
+_CORE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_core")
+if os.path.isdir(_CORE) and _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+from cherrypick.core import viz  # noqa: E402
+
+import service as _service  # noqa: E402
 
 _PAGE = r"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -593,7 +602,7 @@ def make_handler(cfg: dict, default_sym: str):
                 return
             if parsed.path == "/api/gex":
                 qs = parse_qs(parsed.query)
-                sym = (qs.get("symbol", [default_sym])[0] or default_sym)
+                sym = qs.get("symbol", [default_sym])[0] or default_sym
                 try:
                     payload = _service.build_gex(cfg, sym)
                 except Exception as exc:  # a data hiccup must not 500 the viewer
@@ -607,14 +616,18 @@ def make_handler(cfg: dict, default_sym: str):
 
 def _port_in_use(host: str, port: int) -> bool:
     """Probe before binding so a second launch reuses the running dashboard instead of dying on
-    EADDRINUSE — the port is the dashboard's singleton (mirrors flies.dashboard.port_in_use)."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.4)
-        return s.connect_ex((host, port)) == 0
+    EADDRINUSE — the port is the dashboard's singleton. The probe itself is the suite's one copy
+    in cherrypick.core.viz."""
+    return viz.port_in_use(port, host)
 
 
-def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
-          port: int | None = None, open_browser: bool = True) -> None:
+def serve(
+    cfg: dict,
+    symbol: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    open_browser: bool = True,
+) -> None:
     """Run the live GEX dashboard until interrupted (localhost-only)."""
     from config import default_symbol
 
@@ -646,6 +659,7 @@ def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
                 try:
                     if _service.acquire_recorder_lock(cfg):
                         _service.record_spots(cfg)
+                        _service.record_regimes(cfg)  # internally throttled to ~5-min rows
                 except Exception:  # a data hiccup must never kill the recorder
                     pass
                 stop.wait(refresh)
@@ -656,9 +670,9 @@ def serve(cfg: dict, symbol: str | None = None, host: str | None = None,
 
     from config import ws_port as _ws_port
     from push import GexPushServer
+
     push_srv = GexPushServer(cfg)
-    threading.Thread(target=push_srv.start, args=(host,),
-                     name="gex-push", daemon=True).start()
+    threading.Thread(target=push_srv.start, args=(host,), name="gex-push", daemon=True).start()
     print(f"cherrypick-gex push serving at ws://{host}:{_ws_port(cfg)}/")
 
     if open_browser:

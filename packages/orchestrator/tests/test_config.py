@@ -88,3 +88,20 @@ def test_eod_digest_settings_opt_out_and_overrides():
     assert c.eod_digest_settings({"eod_digest": {"enabled": False}})["enabled"] is False
     s = c.eod_digest_settings({"eod_digest": {"task_name": "my-eod", "deadline": "17:00"}})
     assert s["enabled"] is True and s["task_name"] == "my-eod" and s["deadline"] == "17:00"
+
+
+def test_reconcile_schedule_settings_off_by_default():
+    s = c.reconcile_schedule_settings({})
+    assert s == {"enabled": False, "task_name": "cherrypick-reconcile", "at": "16:30"}
+
+
+def test_reconcile_schedule_settings_overrides():
+    s = c.reconcile_schedule_settings(
+        {"reconcile": {"schedule": {"enabled": True, "at": "16:35", "task_name": "x"}}}
+    )
+    assert s == {"enabled": True, "task_name": "x", "at": "16:35"}
+
+
+def test_broker_tool_defaults_to_tt_and_is_overridable():
+    assert c.broker_tool({}) == ["src/tt.py"]
+    assert c.broker_tool({"broker_tool": ["src/broker_cli.py"]}) == ["src/broker_cli.py"]

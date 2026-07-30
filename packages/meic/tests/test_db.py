@@ -5,6 +5,7 @@ account-wide read commands (get_open_trades, get_today_count, get_today_pnl).
 No credentials or live connection required — all tests operate on a temp
 SQLite database file.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,10 +31,20 @@ def db_path(monkeypatch, tmp_path):
 
 def _insert_trade(db_path, **kwargs):
     defaults = dict(
-        trade_date="2026-07-02", entry_time="2026-07-02T10:00:00", symbol="XSP",
-        put_strike=590, call_strike=600, wing_width=2, net_credit=0.5, quantity=1,
-        status="expired", pnl=1.0, fees=0.2, ic_order_id="IC-1",
-        created_at="2026-07-02T10:00:00", updated_at="2026-07-02T10:00:00",
+        trade_date="2026-07-02",
+        entry_time="2026-07-02T10:00:00",
+        symbol="XSP",
+        put_strike=590,
+        call_strike=600,
+        wing_width=2,
+        net_credit=0.5,
+        quantity=1,
+        status="expired",
+        pnl=1.0,
+        fees=0.2,
+        ic_order_id="IC-1",
+        created_at="2026-07-02T10:00:00",
+        updated_at="2026-07-02T10:00:00",
     )
     defaults.update(kwargs)
     conn = sqlite3.connect(db_path)
@@ -45,6 +56,7 @@ def _insert_trade(db_path, **kwargs):
 
 
 # ── loop_log.symbol ─────────────────────────────────────────────────────────
+
 
 def test_init_db_creates_loop_log_symbol_column(db_path):
     conn = sqlite3.connect(db_path)
@@ -91,9 +103,17 @@ def test_init_db_migrates_preexisting_loop_log_without_symbol(monkeypatch, tmp_p
 
 def test_log_loop_action_stores_symbol(db_path):
     args = argparse.Namespace(
-        symbol="XSP", action="entry", reasoning="test", market_context="{}",
-        iv_rank=0.4, session_quality="prime", underlying_price=600.0,
-        open_trades=1, today_count=1, today_pnl=0.5, duration_ms=None,
+        symbol="XSP",
+        action="entry",
+        reasoning="test",
+        market_context="{}",
+        iv_rank=0.4,
+        session_quality="prime",
+        underlying_price=600.0,
+        open_trades=1,
+        today_count=1,
+        today_pnl=0.5,
+        duration_ms=None,
     )
     db.cmd_log_loop_action(args)
 
@@ -108,9 +128,17 @@ def test_log_loop_action_stores_symbol(db_path):
 def test_log_loop_action_symbol_none_for_iteration_summary(db_path):
     """An iteration-level summary row (not tied to one symbol) stores symbol=NULL."""
     args = argparse.Namespace(
-        symbol=None, action="iteration_summary", reasoning="", market_context="{}",
-        iv_rank=None, session_quality=None, underlying_price=None,
-        open_trades=None, today_count=None, today_pnl=None, duration_ms=None,
+        symbol=None,
+        action="iteration_summary",
+        reasoning="",
+        market_context="{}",
+        iv_rank=None,
+        session_quality=None,
+        underlying_price=None,
+        open_trades=None,
+        today_count=None,
+        today_pnl=None,
+        duration_ms=None,
     )
     db.cmd_log_loop_action(args)
 
@@ -122,11 +150,21 @@ def test_log_loop_action_symbol_none_for_iteration_summary(db_path):
 
 
 def _log_action(symbol, action, duration_ms):
-    db.cmd_log_loop_action(argparse.Namespace(
-        symbol=symbol, action=action, reasoning="", market_context="{}",
-        iv_rank=None, session_quality=None, underlying_price=None,
-        open_trades=None, today_count=None, today_pnl=None, duration_ms=duration_ms,
-    ))
+    db.cmd_log_loop_action(
+        argparse.Namespace(
+            symbol=symbol,
+            action=action,
+            reasoning="",
+            market_context="{}",
+            iv_rank=None,
+            session_quality=None,
+            underlying_price=None,
+            open_trades=None,
+            today_count=None,
+            today_pnl=None,
+            duration_ms=duration_ms,
+        )
+    )
 
 
 def test_log_loop_action_stores_duration_ms(db_path):
@@ -157,13 +195,16 @@ def test_get_step_timing_filters_by_action(db_path, capsys):
     _log_action(None, "timing_stop_management", 500)
     _log_action("SPX", "timing_entry_evaluation", 2500)
 
-    db.cmd_get_step_timing(argparse.Namespace(action="timing_entry_evaluation", symbol=None, lookback_days=None))
+    db.cmd_get_step_timing(
+        argparse.Namespace(action="timing_entry_evaluation", symbol=None, lookback_days=None)
+    )
     out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
 
     assert list(out["by_action"].keys()) == ["timing_entry_evaluation"]
 
 
 # ── --symbol filters on account-wide read commands ──────────────────────────
+
 
 def test_get_open_trades_no_filter_returns_all_symbols(db_path, capsys):
     _insert_trade(db_path, ic_order_id="IC-X", symbol="XSP", status="open")
@@ -230,3 +271,23 @@ def test_get_eod_summary_spans_all_symbols(db_path, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["total_entries"] == 2
     assert abs(out["net_pnl"] - 3.6) < 0.01
+
+
+def test_get_eod_summary_counts_wins_by_net_pnl(db_path, capsys):
+    """One win definition module-wide: an expired IC that lost money (ITM short) is a
+    LOSS, a profitable force-close is a WIN, and fees can flip a small gross winner.
+    Status is a lifecycle fact, not a verdict — matches _range_stats_for_rows and the
+    orchestrator's calibrate reading."""
+    # Expired but net-negative (short went ITM): pnl -2.0 — must count as a loss.
+    _insert_trade(db_path, ic_order_id="IC-EXP-LOSS", status="expired", pnl=-2.0, fees=0.2)
+    # Force-closed at a profit: must count as a win.
+    _insert_trade(db_path, ic_order_id="IC-FC-WIN", status="force_closed", pnl=1.5, fees=0.2)
+    # Fees flip a small gross winner negative: net 0.1 - 0.2 <= 0 — a loss.
+    _insert_trade(db_path, ic_order_id="IC-FEE-FLIP", status="expired", pnl=0.1, fees=0.2)
+    # Still open (no pnl yet): excluded from the win-rate denominator entirely.
+    _insert_trade(db_path, ic_order_id="IC-OPEN", status="open", pnl=None, fees=None)
+    db.cmd_get_eod_summary(None)
+    out = json.loads(capsys.readouterr().out)
+    assert out["win_count"] == 1
+    # 3 resolved trades (open excluded): 1 win / 3 = 33.3%
+    assert out["win_rate_pct"] == 33.3

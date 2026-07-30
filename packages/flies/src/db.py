@@ -13,7 +13,13 @@ import argparse
 import json
 import os
 import sqlite3
-from datetime import datetime
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+import clock  # noqa: E402
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS fly_positions (
@@ -161,6 +167,14 @@ def default_db_path() -> str:
     return os.path.join(home, "data", "flies", "paper_trades.db")
 
 
+def live_db_path() -> str:
+    """The LIVE ledger -- a separate file, same schema, never read by paper surfaces. The
+    orchestrator's `live_db` config key should point here so it appears in `report --live`
+    (and nowhere else)."""
+    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
+    return os.path.join(home, "data", "flies", "live_trades.db")
+
+
 # Columns added to fly_positions after the first release. CREATE TABLE IF NOT EXISTS silently does
 # nothing on an existing database, so a plain schema edit would leave older paper DBs missing these
 # and every write against them would fail at runtime rather than at startup.
@@ -169,6 +183,10 @@ _ADDED_POSITION_COLUMNS = {
     "best_debit_at": "TEXT",
     "completion_latency_min": "REAL",
     "spot_at_completion": "REAL",
+    # Live scaffold (docs/live-trading-plan.md): broker order ids on the position row. Paper rows
+    # simply leave them NULL -- the live ledger is a separate FILE (live_db_path), same schema.
+    "entry_order_id": "TEXT",
+    "completion_order_id": "TEXT",
 }
 
 
@@ -196,7 +214,9 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    """ET, with offset — see clock.py. Every timestamp this module persists is ET; it was naive
+    machine-local until 2026-07-27."""
+    return clock.now_iso()
 
 
 def _upsert(conn, table: str, key: str, row: dict) -> None:
@@ -224,10 +244,20 @@ def save_book(conn, row: dict) -> None:
     _upsert(conn, "fly_books", "book_id", row)
 
 
-def record_decision(conn, *, trade_date: str, arm: str, symbol: str, mode: str, reason: str,
-                    accepted: bool = False, center: float | None = None,
-                    position_id: str | None = None, detail: str | None = None,
-                    when: str | None = None) -> None:
+def record_decision(
+    conn,
+    *,
+    trade_date: str,
+    arm: str,
+    symbol: str,
+    mode: str,
+    reason: str,
+    accepted: bool = False,
+    center: float | None = None,
+    position_id: str | None = None,
+    detail: str | None = None,
+    when: str | None = None,
+) -> None:
     """Append to the decision journal, extending the current run when the reason is unchanged.
 
     "Current run" means the most recent row for this (trade_date, arm, symbol, mode) — so an unchanged
@@ -253,15 +283,35 @@ def record_decision(conn, *, trade_date: str, arm: str, symbol: str, mode: str, 
             "INSERT INTO fly_decisions (trade_date, arm, symbol, mode, reason, accepted, first_seen, "
             "last_seen, occurrences, center_first, center_last, position_id, detail) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
-            (trade_date, arm, symbol, mode, reason, int(accepted), now, now, center, center,
-             position_id, detail),
+            (
+                trade_date,
+                arm,
+                symbol,
+                mode,
+                reason,
+                int(accepted),
+                now,
+                now,
+                center,
+                center,
+                position_id,
+                detail,
+            ),
         )
     conn.commit()
 
 
-def record_iteration(conn, *, iteration_ts: str, trade_date: str, symbol: str, arm: str,
-                     center: float | None, center_reason: str | None,
-                     underlying_price: float | None) -> None:
+def record_iteration(
+    conn,
+    *,
+    iteration_ts: str,
+    trade_date: str,
+    symbol: str,
+    arm: str,
+    center: float | None,
+    center_reason: str | None,
+    underlying_price: float | None,
+) -> None:
     """Record what one arm wanted on one iteration. Idempotent on (iteration_ts, symbol, arm) so a
     re-run of the same snapshot doesn't inflate the divergence denominator."""
     conn.execute(
@@ -272,9 +322,17 @@ def record_iteration(conn, *, iteration_ts: str, trade_date: str, symbol: str, a
     conn.commit()
 
 
-def record_snapshot(conn, *, trade_date: str, symbol: str, status: str,
-                    quotes_fresh: int | None = None, quotes_rejected: int | None = None,
-                    underlying_price: float | None = None, iteration_ts: str | None = None) -> None:
+def record_snapshot(
+    conn,
+    *,
+    trade_date: str,
+    symbol: str,
+    status: str,
+    quotes_fresh: int | None = None,
+    quotes_rejected: int | None = None,
+    underlying_price: float | None = None,
+    iteration_ts: str | None = None,
+) -> None:
     """Record what the feed gave us this tick — on both the snapshot-built and the refused path.
 
     Idempotent on (iteration_ts, symbol) so a re-run of the same tick doesn't double-count. This is
@@ -283,8 +341,7 @@ def record_snapshot(conn, *, trade_date: str, symbol: str, status: str,
     conn.execute(
         "INSERT OR REPLACE INTO fly_snapshots (iteration_ts, trade_date, symbol, status, "
         "quotes_fresh, quotes_rejected, underlying_price) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (iteration_ts or _now(), trade_date, symbol, status, quotes_fresh, quotes_rejected,
-         underlying_price),
+        (iteration_ts or _now(), trade_date, symbol, status, quotes_fresh, quotes_rejected, underlying_price),
     )
     conn.commit()
 

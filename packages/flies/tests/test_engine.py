@@ -7,11 +7,19 @@ import fly
 
 BASE_CONFIG = {
     "defaults": {
-        "wing_width": 5, "strike_increment": 5, "quantity": 1, "max_positions": 4,
-        "entry_modes": ["legged", "outright"], "min_credit_pct_of_width": 0.20,
+        "wing_width": 5,
+        "strike_increment": 5,
+        "quantity": 1,
+        "max_positions": 4,
+        "entry_modes": ["legged", "outright"],
+        "min_credit_pct_of_width": 0.20,
         "max_credit_pct_of_width": 0.60,
-        "fee_buffer": 0.10, "min_floor_dollars": 0.0, "max_fly_debit": 0.50,
-        "max_center_distance_pct": 0.01, "slippage_frac": 0.125, "entry_windows": [],
+        "fee_buffer": 0.10,
+        "min_floor_dollars": 0.0,
+        "max_fly_debit": 0.50,
+        "max_center_distance_pct": 0.01,
+        "slippage_frac": 0.125,
+        "entry_windows": [],
     },
     "arms": {"gex": {}, "time_window": {}, "control": {}},
 }
@@ -24,7 +32,10 @@ def q(bid, ask):
 def snapshot(**over):
     """A 0DTE SPX snapshot with spot at 6000 and a plausible put/call grid around it."""
     snap = {
-        "symbol": "SPX", "date": "2026-07-20", "dte": 0, "underlying_price": 6000.0,
+        "symbol": "SPX",
+        "date": "2026-07-20",
+        "dte": 0,
+        "underlying_price": 6000.0,
         "now_min": 12 * 60,
         "puts": {5990: q(1.0, 1.4), 5995: q(2.6, 3.0), 6000: q(5.0, 5.4), 6005: q(8.6, 9.0)},
         "calls": {5995: q(8.6, 9.0), 6000: q(5.0, 5.4), 6005: q(2.6, 3.0), 6010: q(1.0, 1.4)},
@@ -53,11 +64,14 @@ def test_gex_arm_centers_on_max_total_gamma():
     The strike below with huge call and huge put gamma is the hardest-pinning one, and nets to
     roughly zero — the old net-GEX rule would have passed straight over it.
     """
-    gex = {"ok": True, "per_strike": [
-        {"strike": 5990, "call_gex": 1_000, "put_gex": 500, "net_gex": 500},
-        {"strike": 6005, "call_gex": 90_000, "put_gex": 88_000, "net_gex": 2_000},
-        {"strike": 6010, "call_gex": 9_000, "put_gex": 1_000, "net_gex": 8_000},
-    ]}
+    gex = {
+        "ok": True,
+        "per_strike": [
+            {"strike": 5990, "call_gex": 1_000, "put_gex": 500, "net_gex": 500},
+            {"strike": 6005, "call_gex": 90_000, "put_gex": 88_000, "net_gex": 2_000},
+            {"strike": 6010, "call_gex": 9_000, "put_gex": 1_000, "net_gex": 8_000},
+        ],
+    }
     center, reason = engine.select_center(snapshot(gex=gex), params("gex"))
     assert (center, reason) == (6005.0, "max_total_gamma")
 
@@ -65,20 +79,26 @@ def test_gex_arm_centers_on_max_total_gamma():
 def test_gex_arm_finds_a_strike_where_net_gex_is_negative_everywhere():
     """The case measured on a real SPX chain: put open interest dominates every strike near spot, so
     net GEX is negative across the whole neighbourhood and the old rule had nothing to select."""
-    gex = {"ok": True, "per_strike": [
-        {"strike": 5995, "call_gex": 10_000, "put_gex": 200_000, "net_gex": -190_000},
-        {"strike": 6005, "call_gex": 40_000, "put_gex": 800_000, "net_gex": -760_000},
-    ]}
+    gex = {
+        "ok": True,
+        "per_strike": [
+            {"strike": 5995, "call_gex": 10_000, "put_gex": 200_000, "net_gex": -190_000},
+            {"strike": 6005, "call_gex": 40_000, "put_gex": 800_000, "net_gex": -760_000},
+        ],
+    }
     center, reason = engine.select_center(snapshot(gex=gex), params("gex"))
     assert (center, reason) == (6005.0, "max_total_gamma")
 
 
 def test_gex_arm_ignores_strikes_beyond_the_distance_cap():
     """A huge GEX pile 3% away is not a 0DTE pin candidate — the cap keeps the arm centred near spot."""
-    gex = {"ok": True, "per_strike": [
-        {"strike": 6005, "call_gex": 1_000, "put_gex": 0, "net_gex": 1_000},
-        {"strike": 6200, "call_gex": 900_000, "put_gex": 0, "net_gex": 900_000},
-    ]}
+    gex = {
+        "ok": True,
+        "per_strike": [
+            {"strike": 6005, "call_gex": 1_000, "put_gex": 0, "net_gex": 1_000},
+            {"strike": 6200, "call_gex": 900_000, "put_gex": 0, "net_gex": 900_000},
+        ],
+    }
     center, _ = engine.select_center(snapshot(gex=gex), params("gex"))
     assert center == 6005.0
 
@@ -115,14 +135,14 @@ def test_entry_is_tagged_with_its_window_for_later_ranking():
     ranking emerge from our own sessions instead of assuming one."""
     p = params("time_window", entry_windows=[["11:00", "11:30"]])
     enter, _, plan = engine.evaluate_credit_spread_entry(
-        snapshot(now_min=11 * 60 + 10, underlying_price=5998.0), p, [])
+        snapshot(now_min=11 * 60 + 10, underlying_price=5998.0), p, []
+    )
     assert enter and plan["entry_window"] == "11:00-11:30"
 
 
 # --------------------------------------------------------------------------- legged entry (step 1)
 def test_credit_spread_entry_returns_a_complete_plan():
-    enter, reason, plan = engine.evaluate_credit_spread_entry(
-        snapshot(underlying_price=5998.0), params(), [])
+    enter, reason, plan = engine.evaluate_credit_spread_entry(snapshot(underlying_price=5998.0), params(), [])
     assert enter and reason == "ok"
     assert plan["side"] == "put" and plan["center"] == 6000.0
     # Completing a put fly centred at 6000 means buying the 6005/6000 put debit spread.
@@ -135,6 +155,110 @@ def test_entry_requires_0dte():
     assert not enter and reason == "no_0dte_expiration"
 
 
+# --------------------------------------------------------------------------- per-window cap
+WINDOWS = [["11:00", "12:30"], ["12:30", "13:00"]]
+
+
+def _held(window, n):
+    """n open positions already taken in `window`, parked off-centre so only the cap can refuse."""
+    return [{"center": 5000.0 + i, "entry_window": window, "status": "open"} for i in range(n)]
+
+
+def test_per_window_cap_blocks_a_window_that_spent_its_share():
+    p = params(entry_windows=WINDOWS, max_positions_per_window=2)
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(), p, _held("11:00-12:30", 2))
+    assert not enter and reason == "max_positions_this_window_reached"
+
+
+def test_per_window_cap_leaves_a_later_window_free():
+    """The whole point: a full first window must not consume the later windows' budget, which is how
+    15 of 16 entries ended up in one window and the timing hypothesis went untested."""
+    p = params(entry_windows=WINDOWS, max_positions_per_window=2)
+    # now_min sits inside the SECOND window while the first has already taken its two.
+    enter, reason, _ = engine.evaluate_credit_spread_entry(
+        snapshot(now_min=12 * 60 + 45), p, _held("11:00-12:30", 2)
+    )
+    assert enter, reason
+
+
+def test_global_max_positions_still_binds_across_windows():
+    p = params(entry_windows=WINDOWS, max_positions_per_window=4, max_positions=4)
+    held = _held("11:00-12:30", 2) + _held("12:30-13:00", 2)
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(now_min=12 * 60 + 45), p, held)
+    assert not enter and reason == "max_positions_reached"
+
+
+def test_per_window_cap_is_off_unless_configured():
+    """Existing single-window arms and books entered before the cap existed must be unaffected."""
+    p = params(entry_windows=WINDOWS)
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(), p, _held("11:00-12:30", 3))
+    assert enter, reason
+
+
+def test_positions_without_a_window_are_not_counted_against_one():
+    p = params(entry_windows=WINDOWS, max_positions_per_window=1)
+    legacy = [{"center": 5000.0, "entry_window": None, "status": "open"}]
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(), p, legacy)
+    assert enter, reason
+
+
+# --------------------------------------------------------------------------- post-open blackout
+def test_no_entry_before_blocks_the_first_thirty_minutes():
+    p = params(no_entry_before="10:00")
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(now_min=9 * 60 + 45), p, [])
+    assert not enter and reason == "before_open_gate"
+
+
+def test_no_entry_before_outranks_an_arm_asking_for_an_earlier_window():
+    """The whole point of a floor over per-arm windows: four window lists are four chances to reopen
+    the hole. An arm whose window opens at 09:35 must still be refused."""
+    p = params(no_entry_before="10:00", entry_windows=[["09:35", "10:30"]])
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(now_min=9 * 60 + 40), p, [])
+    assert not enter and reason == "before_open_gate"
+    # ...and allowed once past the floor, inside the same window.
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(now_min=10 * 60 + 5), p, [])
+    assert enter, reason
+
+
+def test_no_entry_before_also_gates_outright_entries():
+    p = params(no_entry_before="10:00")
+    enter, reason, _ = engine.evaluate_outright_entry(snapshot(now_min=9 * 60 + 45), p, [], 5000.0)
+    assert not enter and reason == "before_open_gate"
+
+
+def test_no_entry_before_is_off_when_unset():
+    p = params(entry_windows=[["09:35", "10:30"]])
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(now_min=9 * 60 + 40), p, [])
+    assert enter, reason
+
+
+# --------------------------------------------------------------------------- the wide_wing arm
+def test_wide_wing_arm_centers_atm_like_control_but_uses_its_own_width():
+    """It is control's twin so the pair isolates wing width — same centring, same window, wider wings."""
+    cfg = dict(BASE_CONFIG)
+    cfg["arms"] = dict(BASE_CONFIG["arms"], wide_wing={"wing_width": 20})
+    p = engine.merged_params(cfg, "wide_wing")
+    center, reason = engine.select_center(snapshot(underlying_price=6002.0), p)
+    assert (center, reason) == (6000.0, "atm")
+    assert p["wing_width"] == 20
+    assert "wide_wing" in engine.ARMS
+
+
+def test_width_arms_are_control_twins_sweeping_wing_width():
+    """width-2..width-5 pin wing_width to N strike increments; control at the default width is the
+    1-increment rung, so no width-1 arm exists (it would duplicate control's book under a new name)."""
+    assert "width-1" not in engine.ARMS
+    for n in (2, 3, 4, 5):
+        arm = f"width-{n}"
+        assert arm in engine.ARMS
+        cfg = dict(BASE_CONFIG)
+        cfg["arms"] = dict(BASE_CONFIG["arms"], **{arm: {"wing_width": n}})
+        p = engine.merged_params(cfg, arm)
+        center, reason = engine.select_center(snapshot(underlying_price=6002.0), p)
+        assert (center, reason) == (6000.0, "atm")
+        assert p["wing_width"] == n
+
+
 def test_entry_respects_the_position_cap():
     open_positions = [{"center": 5000 + i, "kind": "fly"} for i in range(4)]
     enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(), params(), open_positions)
@@ -145,13 +269,16 @@ def test_entry_will_not_stack_two_structures_on_one_center():
     """Two flies on the same strike double the pin bet without adding a profit zone — the opposite of
     what a forest of separate zones is for."""
     enter, reason, _ = engine.evaluate_credit_spread_entry(
-        snapshot(underlying_price=5998.0), params(), [{"center": 6000.0, "kind": "fly"}])
+        snapshot(underlying_price=5998.0), params(), [{"center": 6000.0, "kind": "fly"}]
+    )
     assert not enter and reason == "center_already_occupied"
 
 
 def test_entry_rejects_a_credit_below_the_floor():
-    thin = snapshot(underlying_price=5998.0,
-                    puts={5990: q(4.8, 5.2), 5995: q(4.9, 5.3), 6000: q(5.0, 5.4), 6005: q(8.6, 9.0)})
+    thin = snapshot(
+        underlying_price=5998.0,
+        puts={5990: q(4.8, 5.2), 5995: q(4.9, 5.3), 6000: q(5.0, 5.4), 6005: q(8.6, 9.0)},
+    )
     enter, reason, _ = engine.evaluate_credit_spread_entry(thin, params(), [])
     assert not enter and reason == "credit_below_floor"
 
@@ -170,7 +297,8 @@ def test_entry_rejects_an_intrinsic_heavy_credit():
     deep_itm = snapshot(
         underlying_price=7457.69,
         gex={"ok": True, "per_strike": [{"strike": 7525, "call_gex": 900_000, "put_gex": 0}]},
-        puts={7525: q(70.0, 70.6), 7520: q(65.4, 66.0)})
+        puts={7525: q(70.0, 70.6), 7520: q(65.4, 66.0)},
+    )
     # The OLD distance cap, so the gex arm reaches the wall exactly as it did against live quotes.
     p = params("gex", strike_increment=5, wing_width=5, max_center_distance_pct=0.01)
     assert engine.select_center(deep_itm, p)[0] == 7525, "fixture must reproduce the far centre"
@@ -182,8 +310,7 @@ def test_entry_rejects_an_intrinsic_heavy_credit():
 def test_the_ceiling_does_not_block_a_normal_atm_entry():
     """The counterweight — a ceiling that blocked ordinary entries would be worse than no ceiling.
     A real ATM SPX 5-wide priced at 41% of width, comfortably under the 60% cap."""
-    enter, reason, plan = engine.evaluate_credit_spread_entry(
-        snapshot(underlying_price=5998.0), params(), [])
+    enter, reason, plan = engine.evaluate_credit_spread_entry(snapshot(underlying_price=5998.0), params(), [])
     assert enter, reason
     assert plan["credit"] / plan["wing_width"] < 0.60
 
@@ -198,12 +325,13 @@ def test_the_two_defenses_are_independent():
     deep_itm = snapshot(
         underlying_price=7457.69,
         gex={"ok": True, "per_strike": [{"strike": 7525, "call_gex": 900_000, "put_gex": 0}]},
-        puts={7460: q(5.0, 5.4), 7455: q(3.0, 3.4),
-              7525: q(70.0, 70.6), 7520: q(65.4, 66.0)})
+        puts={7460: q(5.0, 5.4), 7455: q(3.0, 3.4), 7525: q(70.0, 70.6), 7520: q(65.4, 66.0)},
+    )
 
     # 1. Distance cap alone (ceiling disabled): the arm never reaches the far strike.
-    tight = params("gex", strike_increment=5, wing_width=5,
-                   max_center_distance_pct=0.003, max_credit_pct_of_width=99.0)
+    tight = params(
+        "gex", strike_increment=5, wing_width=5, max_center_distance_pct=0.003, max_credit_pct_of_width=99.0
+    )
     enter, _, plan = engine.evaluate_credit_spread_entry(deep_itm, tight, [])
     assert enter and plan["center"] == 7460
 
@@ -216,10 +344,13 @@ def test_the_two_defenses_are_independent():
 def test_gex_center_distance_cap_keeps_the_center_near_spot():
     """At the old 0.01 this admitted a centre 67 points from spot on a 7457 index. A 0DTE pin bet
     needs the centre reachable in the hours remaining."""
-    gex = {"ok": True, "per_strike": [
-        {"strike": 7460, "call_gex": 1_000, "put_gex": 0},
-        {"strike": 7525, "call_gex": 900_000, "put_gex": 0},   # the wall, 67 points away
-    ]}
+    gex = {
+        "ok": True,
+        "per_strike": [
+            {"strike": 7460, "call_gex": 1_000, "put_gex": 0},
+            {"strike": 7525, "call_gex": 900_000, "put_gex": 0},  # the wall, 67 points away
+        ],
+    }
     snap = snapshot(underlying_price=7457.69, gex=gex)
     p = params("gex", strike_increment=5, max_center_distance_pct=0.003)
     center, reason = engine.select_center(snap, p)
@@ -231,9 +362,10 @@ def test_entry_rejects_a_credit_that_cannot_clear_two_fee_stacks():
     """A credit spread that can never produce a risk-free fly has no business being opened inside
     this strategy, however attractive it looks as a standalone vertical."""
     p = params(min_credit_pct_of_width=0.0)
-    tiny = snapshot(underlying_price=5998.0,
-                    puts={5990: q(1.00, 1.02), 5995: q(1.02, 1.04), 6000: q(1.05, 1.07),
-                          6005: q(8.6, 9.0)})
+    tiny = snapshot(
+        underlying_price=5998.0,
+        puts={5990: q(1.00, 1.02), 5995: q(1.02, 1.04), 6000: q(1.05, 1.07), 6005: q(8.6, 9.0)},
+    )
     enter, reason, _ = engine.evaluate_credit_spread_entry(tiny, p, [])
     assert not enter and reason == "credit_cannot_clear_fees"
 
@@ -246,9 +378,17 @@ def test_entry_skips_when_a_leg_has_no_quote():
 
 # --------------------------------------------------------------------------- legged completion (step 2)
 def open_spread(net=2.55, side="put", fees=None):
-    return {"kind": "short_vertical", "side": side, "center": 6000, "wing_width": 5,
-            "net": net, "quantity": 1, "fees": fly.vertical_open_fee("SPX", 1) if fees is None else fees,
-            "status": "open", "position_id": "P1"}
+    return {
+        "kind": "short_vertical",
+        "side": side,
+        "center": 6000,
+        "wing_width": 5,
+        "net": net,
+        "quantity": 1,
+        "fees": fly.vertical_open_fee("SPX", 1) if fees is None else fees,
+        "status": "open",
+        "position_id": "P1",
+    }
 
 
 def test_completion_fires_when_the_debit_comes_in_cheap():
@@ -320,13 +460,13 @@ def test_completion_ignores_a_position_that_is_already_a_fly():
 # --------------------------------------------------------------------------- outright entry
 def cheap_fly_snapshot():
     """A grid where the 5995/6000/6005 call fly prices around 0.30."""
-    return snapshot(underlying_price=6002.0,
-                    calls={5995: q(7.0, 7.2), 6000: q(4.0, 4.2), 6005: q(1.3, 1.5)})
+    return snapshot(underlying_price=6002.0, calls={5995: q(7.0, 7.2), 6000: q(4.0, 4.2), 6005: q(1.3, 1.5)})
 
 
 def test_outright_entry_buys_a_cheap_fly_when_the_book_can_afford_it():
     enter, reason, plan = engine.evaluate_outright_entry(
-        cheap_fly_snapshot(), params(), [], realized_cash=500.0)
+        cheap_fly_snapshot(), params(), [], realized_cash=500.0
+    )
     assert enter and reason == "ok"
     assert plan["debit"] <= 0.50 and plan["cost"] <= 500.0
 
@@ -334,23 +474,24 @@ def test_outright_entry_buys_a_cheap_fly_when_the_book_can_afford_it():
 def test_outright_entry_rejects_an_expensive_fly():
     """Outright flies are bought deliberately cheap; an expensive one is a different trade entirely."""
     enter, reason, _ = engine.evaluate_outright_entry(
-        cheap_fly_snapshot(), params(max_fly_debit=0.10), [], realized_cash=500.0)
+        cheap_fly_snapshot(), params(max_fly_debit=0.10), [], realized_cash=500.0
+    )
     assert not enter and reason == "fly_debit_above_max"
 
 
 def test_outright_entry_will_not_spend_money_the_book_has_not_taken_in():
     """This is what bounds the funded mode's floor by construction — the book never goes into its own
     pocket to buy a lottery ticket."""
-    enter, reason, _ = engine.evaluate_outright_entry(
-        cheap_fly_snapshot(), params(), [], realized_cash=5.0)
+    enter, reason, _ = engine.evaluate_outright_entry(cheap_fly_snapshot(), params(), [], realized_cash=5.0)
     assert not enter and reason == "not_funded_by_realized_credit"
 
 
 def test_outright_entry_rejects_an_implausible_quote():
     """A long fly's value is bounded below by zero, so a non-positive modeled debit is a stale or
     crossed quote, not free money."""
-    crossed = snapshot(underlying_price=6002.0,
-                       calls={5995: q(1.0, 1.1), 6000: q(4.0, 4.1), 6005: q(1.0, 1.1)})
+    crossed = snapshot(
+        underlying_price=6002.0, calls={5995: q(1.0, 1.1), 6000: q(4.0, 4.1), 6005: q(1.0, 1.1)}
+    )
     enter, reason, _ = engine.evaluate_outright_entry(crossed, params(), [], realized_cash=500.0)
     assert not enter and reason == "implausible_fly_quote"
 
@@ -358,14 +499,30 @@ def test_outright_entry_rejects_an_implausible_quote():
 # --------------------------------------------------------------------------- settlement & stats
 def test_settle_marks_pins_and_pnl():
     positions = [
-        {"kind": "fly", "side": "put", "center": 6000, "wing_width": 5, "net": 1.05,
-         "quantity": 1, "fees": 0.0, "entry_mode": "legged"},
-        {"kind": "fly", "side": "put", "center": 6100, "wing_width": 5, "net": -0.20,
-         "quantity": 1, "fees": 0.0, "entry_mode": "outright"},
+        {
+            "kind": "fly",
+            "side": "put",
+            "center": 6000,
+            "wing_width": 5,
+            "net": 1.05,
+            "quantity": 1,
+            "fees": 0.0,
+            "entry_mode": "legged",
+        },
+        {
+            "kind": "fly",
+            "side": "put",
+            "center": 6100,
+            "wing_width": 5,
+            "net": -0.20,
+            "quantity": 1,
+            "fees": 0.0,
+            "entry_mode": "outright",
+        },
     ]
     settled = engine.settle(positions, 6001.0)
     assert settled[0]["pinned"] is True
-    assert settled[0]["pnl"] == pytest.approx(505.0)   # (1.05 + 4.00) * 100
+    assert settled[0]["pnl"] == pytest.approx(505.0)  # (1.05 + 4.00) * 100
     assert settled[1]["pinned"] is False
     assert settled[1]["pnl"] == pytest.approx(-20.0)
 
@@ -373,11 +530,30 @@ def test_settle_marks_pins_and_pnl():
 def test_session_stats_report_the_three_numbers_that_matter():
     positions = [
         # a legged entry that completed into a fly
-        {"kind": "fly", "side": "put", "center": 6000, "wing_width": 5, "net": 1.05,
-         "quantity": 1, "fees": 5.0, "entry_mode": "legged", "status": "settled", "pinned": True},
+        {
+            "kind": "fly",
+            "side": "put",
+            "center": 6000,
+            "wing_width": 5,
+            "net": 1.05,
+            "quantity": 1,
+            "fees": 5.0,
+            "entry_mode": "legged",
+            "status": "settled",
+            "pinned": True,
+        },
         # a legged entry that never completed — the branch expected to dominate
-        {"kind": "short_vertical", "side": "call", "center": 6050, "wing_width": 5, "net": 2.0,
-         "quantity": 1, "fees": 5.0, "entry_mode": "legged", "status": "open"},
+        {
+            "kind": "short_vertical",
+            "side": "call",
+            "center": 6050,
+            "wing_width": 5,
+            "net": 2.0,
+            "quantity": 1,
+            "fees": 5.0,
+            "entry_mode": "legged",
+            "status": "open",
+        },
     ]
     stats = engine.session_stats(positions)
     assert stats["completion_rate"] == 0.5

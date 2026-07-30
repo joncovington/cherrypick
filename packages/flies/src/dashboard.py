@@ -8,7 +8,7 @@ decisions — so nothing here can touch the loop-decision guardrail.
 no authentication. The orchestrator reaches it by iframe on the same host.
 
 Three views:
-  Today        the session timeline, the payoff curve (the profit forest itself), open positions with
+  Today        the payoff curve (the profit forest itself), the session timeline, open positions with
                their floors, the decision journal (as a Gantt strip over its table), and data quality.
   History      filterable trade log, per-arm comparison, a Monday-anchored daily calendar, entry
                windows, fee drag.
@@ -31,7 +31,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import socket
 import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -41,6 +40,11 @@ from urllib.parse import parse_qs, urlparse
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
+_CORE = os.path.join(_HERE, "_core")
+if os.path.isdir(_CORE) and _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+from cherrypick.core import viz  # noqa: E402
 
 import analytics  # noqa: E402
 import db as dbmod  # noqa: E402
@@ -64,28 +68,42 @@ def resolve_port(port_arg: int | None) -> int:
 
 def port_in_use(port: int, host: str = HOST) -> bool:
     """Probe before binding, so a second launch focuses the existing tab instead of dying on EADDRINUSE.
-    The orchestrator's embed `ensure_server` relaunches freely, and this is what makes that safe."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.4)
-        return s.connect_ex((host, port)) == 0
+    The orchestrator's embed `ensure_server` relaunches freely, and this is what makes that safe.
+    The probe itself is the suite's one copy in cherrypick.core.viz."""
+    return viz.port_in_use(port, host)
 
 
-def build_api_data(conn, day: str | None = None, arm: str | None = None) -> dict:
+def build_api_data(conn, day: str | None = None, arm: str | None = None, symbol: str | None = None) -> dict:
     """Everything all three views need, in one payload — the client filters locally from here."""
     day = day or analytics.today()
     arm_filter = None if not arm or arm == "ALL" else arm
-    overview = analytics.session_overview(conn, day)
+    symbol_filter = None if not symbol or symbol == "ALL" else symbol
+    # The arm/symbol ROSTER is built from today's UNFILTERED books (an arm/symbol trading today but
+    # with nothing settled yet wouldn't appear in by_arm's settled-only view) — never from the
+    # filtered overview below, or picking one arm would collapse the other selector's own options.
+    today_books_unfiltered = analytics.books_for_day(conn, day)
+    overview = analytics.session_overview(conn, day, arm=arm_filter, symbol=symbol_filter)
 
-    arms = sorted({b["arm"] for b in overview["books"]} |
-                  {r["arm"] for r in analytics.by_arm(conn) if r["arm"]})
+    arms = sorted(
+        {b["arm"] for b in today_books_unfiltered} | {r["arm"] for r in analytics.by_arm(conn) if r["arm"]}
+    )
+    # The symbol roster: distinct underlyings ever recorded, from both today's books and the full
+    # trade log — so the selector offers XSP (current) and SPX (retired, both books remain in the
+    # ledger) even on a day that only traded one of them.
+    symbols = sorted(
+        {b["symbol"] for b in today_books_unfiltered if b.get("symbol")}
+        | {r["symbol"] for r in analytics.trade_log(conn) if r.get("symbol")}
+    )
     curves = {a: analytics.payoff_curve(conn, day, a) for a in arms} or {}
 
     return {
         "ok": True,
-        "generated_at": analytics.datetime.now().isoformat(timespec="seconds"),
+        "generated_at": analytics.clock.now_iso(),
         "date": day,
         "arms": arms,
         "selected_arm": arm or "ALL",
+        "symbols": symbols,
+        "selected_symbol": symbol or "ALL",
         "today": {
             "stats": overview["stats"],
             "books": overview["books"],
@@ -100,19 +118,22 @@ def build_api_data(conn, day: str | None = None, arm: str | None = None) -> dict
             "timeline": analytics.session_timeline(conn, day),
         },
         "history": {
-            "trades": analytics.trade_log(conn, arm=arm_filter),
-            "by_arm": analytics.by_arm(conn),
-            "by_entry_mode": analytics.by_entry_mode(conn),
-            "by_window": analytics.by_entry_window(conn),
-            "fee_drag": analytics.fee_drag(conn),
-            "daily": analytics.daily_pnl(conn, arm=arm_filter),
+            "trades": analytics.trade_log(conn, arm=arm_filter, symbol=symbol_filter),
+            "by_arm": analytics.by_arm(conn, symbol=symbol_filter),
+            # What by_arm held back, so the arm table summing below the book total is explained on
+            # the page rather than left as an unexplained gap.
+            "arm_exclusions": analytics.arm_comparison_exclusions(conn, symbol=symbol_filter),
+            "by_entry_mode": analytics.by_entry_mode(conn, symbol=symbol_filter),
+            "by_window": analytics.by_entry_window(conn, symbol=symbol_filter),
+            "fee_drag": analytics.fee_drag(conn, symbol=symbol_filter),
+            "daily": analytics.daily_pnl(conn, arm=arm_filter, symbol=symbol_filter),
         },
         "performance": {
-            "daily": analytics.pnl_series(conn, "daily", arm=arm_filter),
-            "weekly": analytics.pnl_series(conn, "weekly", arm=arm_filter),
-            "monthly": analytics.pnl_series(conn, "monthly", arm=arm_filter),
-            "all_time": analytics.stats_for_period(conn, arm=arm_filter),
-            "completion": analytics.completion_stats(conn),
+            "daily": analytics.pnl_series(conn, "daily", arm=arm_filter, symbol=symbol_filter),
+            "weekly": analytics.pnl_series(conn, "weekly", arm=arm_filter, symbol=symbol_filter),
+            "monthly": analytics.pnl_series(conn, "monthly", arm=arm_filter, symbol=symbol_filter),
+            "all_time": analytics.stats_for_period(conn, arm=arm_filter, symbol=symbol_filter),
+            "completion": analytics.completion_stats(conn, symbol=symbol_filter),
             "divergence": analytics.arm_divergence(conn),
         },
     }
@@ -138,6 +159,13 @@ border-radius:6px;font-size:13px}
 main{padding:18px 20px 60px}
 .view{display:none}.view.active{display:block}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+/* Positions / Book floors / Arm divergence share one row at a 3:3:2 width ratio -- scoped to the
+   Today grid only, so History/Performance keep the plain auto-fit layout above. The full-width
+   cards (Payoff/Timeline/Journal) keep their own inline grid-column:1/-1, which wins over this
+   default regardless of specificity; Arm divergence overrides the default via its own inline style. */
+#view-today .grid{grid-template-columns:repeat(8,1fr)}
+#view-today .grid>.card{grid-column:span 3}
+@media (max-width:900px){#view-today .grid{grid-template-columns:1fr}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
 .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:0 0 10px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px}
@@ -153,17 +181,10 @@ tbody tr:hover{background:#1c222b}
 .scroll{overflow-x:auto;max-height:420px;overflow-y:auto}
 .empty{color:var(--dim);font-style:italic;padding:14px 4px}
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
-.reorder-handle{cursor:grab;color:var(--dim);float:right;user-select:none;font-size:15px;line-height:1}
+.f-clear{background:none;border:1px solid var(--line);color:var(--dim);border-radius:4px;
+padding:3px 8px;font-size:11px;cursor:pointer}
+.f-clear:hover{color:var(--fg);border-color:var(--accent)}
 canvas{width:100%!important}
-.cal{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;align-items:flex-start}
-.cal-side{display:grid;grid-template-rows:14px repeat(5,16px);row-gap:3px;font-size:10px;
-color:var(--dim);text-align:right;padding-right:2px;flex:none}
-.cal-main{display:flex;flex-direction:column}
-.cal-months{display:flex;gap:3px;height:14px;margin-bottom:3px;font-size:10px;color:var(--dim)}
-.cal-mon{width:16px;white-space:nowrap;overflow:visible;flex:none}
-.cal-weeks{display:flex;gap:3px}
-.cal-week{display:grid;grid-template-rows:repeat(5,16px);row-gap:3px}
-.hcell{width:16px;height:16px;border-radius:3px;background:#21262d}
 .note{color:var(--dim);font-size:11.5px;margin-top:10px;line-height:1.5}
 .pill{font-size:10.5px;padding:1px 7px;border-radius:9px;border:1px solid var(--line);color:var(--dim)}
 .pill.ok{color:var(--pos);border-color:#1f6f33}
@@ -184,16 +205,41 @@ _BODY = """
   <label class="dim" style="font-size:12px">arm
     <select id="arm-select"><option value="ALL">all</option></select>
   </label>
+  <label class="dim" style="font-size:12px">symbol
+    <select id="symbol-select"><option value="ALL">all</option></select>
+  </label>
+  <label class="dim" style="font-size:12px">x-axis width
+    <select id="xwidth-select">
+      <option value="auto">auto</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+      <option value="500">500</option>
+      <option value="1000">1000</option>
+    </select>
+  </label>
+  <label class="dim" style="font-size:12px">y-axis range
+    <select id="ywidth-select">
+      <option value="auto">auto</option>
+      <option value="250">$250</option>
+      <option value="500">$500</option>
+      <option value="1000">$1,000</option>
+      <option value="5000">$5,000</option>
+    </select>
+  </label>
   <nav>
     <button data-view="today" class="active">Today</button>
     <button data-view="history">History</button>
     <button data-view="performance">Performance</button>
   </nav>
 </header>
-<main>
+<main data-cp-reorder-store='flies-dash-layout-v1'>
   <section class="view active" id="view-today">
     <div class="tiles" id="today-tiles"></div>
-    <div class="grid">
+    <div class="grid" data-cp-reorder="view-today" data-cp-reorder-items=".card">
+      <div class="card" style="grid-column:1/-1"><h2>Payoff at expiry — the profit forest</h2>
+        <canvas id="payoff" height="260"></canvas>
+        <div class="legend" id="payoff-legend"></div>
+        <div class="note" id="payoff-note"></div></div>
       <div class="card" style="grid-column:1/-1"><h2>Session timeline — how the day actually went</h2>
         <canvas id="timeline" height="360"></canvas>
         <div class="legend" id="timeline-legend"></div>
@@ -204,12 +250,6 @@ _BODY = """
         that price. That is an expiry payoff evaluated at a live spot, <em>not</em> a mark — these
         positions are not quoted intraday.</div>
         <div class="note" id="timeline-feed"></div></div>
-      <div class="card" style="grid-column:1/-1"><h2>Payoff at expiry — the profit forest</h2>
-        <canvas id="payoff" height="260"></canvas>
-        <div class="legend" id="payoff-legend"></div>
-        <div class="note" id="payoff-note"></div></div>
-      <div class="card"><h2>Positions</h2><div class="scroll"><table id="pos-tbl"></table></div></div>
-      <div class="card"><h2>Book floors</h2><div class="scroll"><table id="book-tbl"></table></div></div>
       <div class="card" style="grid-column:1/-1"><h2>Decision journal — why we did or didn't trade</h2>
         <canvas id="journal-gantt" height="120"></canvas>
         <div class="legend" id="journal-legend"></div>
@@ -218,13 +258,15 @@ _BODY = """
         a few rows that explain themselves rather than hundreds of identical ones. The strip draws each
         run as a bar over the span it held — a gate that blocked all morning is a bar covering the
         morning, next to the brief green marks where an entry actually fired.</div></div>
-      <div class="card"><h2>Arm divergence</h2><div class="scroll"><table id="div-tbl"></table></div>
+      <div class="card"><h2>Positions</h2><div class="scroll"><table id="pos-tbl"></table></div></div>
+      <div class="card"><h2>Book floors</h2><div class="scroll"><table id="book-tbl"></table></div></div>
+      <div class="card" style="grid-column:span 2"><h2>Arm divergence</h2><div class="scroll"><table id="div-tbl"></table></div>
         <div class="note" id="div-note"></div></div>
     </div>
   </section>
 
   <section class="view" id="view-history">
-    <div class="grid">
+    <div class="grid" data-cp-reorder="view-history" data-cp-reorder-items=".card">
       <div class="card"><h2>By arm</h2><div class="scroll"><table id="arm-tbl"></table></div></div>
       <div class="card"><h2>By entry mode</h2><div class="scroll"><table id="mode-tbl"></table></div></div>
       <div class="card"><h2>By entry window</h2><div class="scroll"><table id="win-tbl"></table></div>
@@ -232,26 +274,27 @@ _BODY = """
       <div class="card"><h2>Fee drag</h2><div class="scroll"><table id="fee-tbl"></table></div>
         <div class="note">A legged fly pays two fee stacks against a credit that may be $35–105.
         Costs are not a rounding error for this strategy.</div></div>
-      <div class="card" style="grid-column:1/-1"><h2>Daily P&amp;L</h2><div class="cal" id="heat"></div>
+      <div class="card" style="grid-column:1/-1"><h2>Daily P&amp;L</h2><div id="heat"></div>
         <div class="note">A settled trading day per cell, Monday at the top of each week column. An
         empty cell is a session that never settled, not a flat one — the two are different findings.</div></div>
       <div class="card" style="grid-column:1/-1"><h2>Trade log</h2>
         <div class="filters">
-          <input type="date" id="f-from"><input type="date" id="f-to">
-          <select id="f-mode"><option value="">all modes</option><option>legged</option>
-            <option>outright</option></select>
           <select id="f-outcome"><option value="">all outcomes</option><option>win</option>
             <option>loss</option><option>pinned</option><option>risk-free</option></select>
-          <input id="f-search" placeholder="search…">
+          <input id="f-search" placeholder="search all columns…">
+          <button class="f-clear" id="f-clear">clear filters</button>
           <span class="dim" id="f-count"></span>
         </div>
-        <div class="scroll"><table id="log-tbl"></table></div></div>
+        <div class="scroll"><table id="log-tbl"></table></div>
+        <div class="note">Every column filters in its own header cell — text columns match on
+        substring, numeric and date columns take a min/max. They combine, so the count is what
+        survived all of them. Outcome and the search box above span every column.</div></div>
     </div>
   </section>
 
   <section class="view" id="view-performance">
     <div class="tiles" id="perf-tiles"></div>
-    <div class="grid">
+    <div class="grid" data-cp-reorder="view-performance" data-cp-reorder-items=".card">
       <div class="card" style="grid-column:1/-1"><h2>P&amp;L over time</h2>
         <div class="filters">
           <select id="perf-gran"><option>daily</option><option>weekly</option><option>monthly</option>
@@ -286,19 +329,30 @@ const fmtMoney = v => v === null || v === undefined ? '–'
 const fmtPct = v => v === null || v === undefined ? '–' : (v*100).toFixed(0) + '%';
 const fmtNum = (v,d=2) => v === null || v === undefined ? '–' : Number(v).toFixed(d);
 const tone = v => v === null || v === undefined ? '' : (v >= 0 ? 'pos' : 'neg');
-let DATA = null, ARM = 'ALL';
+let DATA = null, ARM = 'ALL', SYMBOL = 'ALL', XWIDTH = 'auto', YWIDTH = 'auto';
 
-function table(el, cols, rows, empty) {
-  if (!rows || !rows.length) { el.innerHTML = ''; el.insertAdjacentHTML('afterend', '');
-    el.innerHTML = `<tbody><tr><td class="empty">${empty || 'Nothing yet.'}</td></tr></tbody>`; return; }
-  const head = '<thead><tr>' + cols.map(c => `<th class="${c.num?'num':''}">${c.h}</th>`).join('') +
-    '</tr></thead>';
-  const body = '<tbody>' + rows.map(r => '<tr>' + cols.map(c => {
-    const v = c.f(r);
-    return `<td class="${c.num?'num':''} ${c.tone?c.tone(r):''}">${v === null || v === undefined ? '–' : v}</td>`;
-  }).join('') + '</tr>').join('') + '</tbody>';
-  el.innerHTML = head + body;
-}
+/* ---------- per-column filters ----------
+
+   A column opts in by declaring `filter`:
+     'select'    distinct values, gathered from the data so a new arm/window/mode appears by itself
+     'text'      case-insensitive substring
+     'range'     numeric min/max
+     'daterange' ISO date min/max
+
+   `c.v(row)` supplies the RAW value to filter on, because `c.f(row)` returns display markup (money
+   strings, pills) that would never compare correctly. Falls back to c.f when a column has no v.
+
+   State lives in a caller-owned object rather than in the DOM: every render replaces innerHTML, so
+   anything read back off the inputs is gone the moment the 30s refresh fires mid-typing. */
+/* The filterable-table component lives in cherrypick.core.viz (this page's version was the
+   donor). `table` is a local alias for the one function TABLE_JS only ever assigns onto
+   `window` (no naming collision). `matchesFilters`/`filterActive` are NOT aliased the same
+   way -- TABLE_JS declares those as bare top-level `function` statements of the same name, so
+   a `const matchesFilters = ...` here would try to redeclare an existing global with `const`,
+   which is a SyntaxError that silently killed this entire script (nothing below ever ran,
+   including every Today/History/Performance render). Both names already exist as callable
+   globals once TABLE_JS's <script> tag has run, so no local alias is needed at all. */
+const table = window.cpTable;
 
 function tiles(el, items) {
   el.innerHTML = items.map(i =>
@@ -318,7 +372,7 @@ function prep(cv) {
    across both charts and the legend. */
 const ARM_COLORS = ['#58a6ff','#d29922','#a371f7','#3fb950','#f778ba'];
 const armColor = (arm, arms) => ARM_COLORS[Math.max(0, (arms||[]).indexOf(arm)) % ARM_COLORS.length];
-const SPOT_COLOR = '#e6edf3';
+const SPOT_COLOR = '#e3b341';
 
 /* Round tick values, so the axes carry a readable scale rather than just their two endpoints. */
 function ticksFor(min, max, count) {
@@ -329,6 +383,35 @@ function ticksFor(min, max, count) {
   const out = [];
   for (let v = Math.ceil(min/step)*step; v <= max + 1e-9; v += step) out.push(v);
   return out;
+}
+
+/* A position's payoff is genuinely flat beyond its own scanned range (fly_payoff and
+   short_vertical_payoff both saturate there) -- so when the axis window is wider than one
+   curve's own price array (a default-width window next to a narrow-wing arm, say), the flat
+   floor must carry all the way to the window's edges at its own boundary value. Without this
+   the line -- and the single-arm fill, which is the "this book cannot lose here" claim --
+   stops wherever that arm's own data happened to end, which understates the floor rather than
+   drawing it. */
+function extendFlat(xs, ys, xMin, xMax) {
+  const ex = xs.slice(), ey = ys.slice();
+  if (ex[0] > xMin) { ex.unshift(xMin); ey.unshift(ey[0]); }
+  if (ex[ex.length-1] < xMax) { ex.push(xMax); ey.push(ey[ey.length-1]); }
+  return {xs: ex, ys: ey};
+}
+
+/* The min/max payoff actually visible within [xMin, xMax] -- NOT the curve's full scanned
+   range, which can run well past what the current x-window shows (see extendFlat above). Falls
+   back to the flat boundary value when the window sits entirely outside this curve's own data
+   (a narrow-wing arm under a wide fixed x-width, say), so a curve with nothing literally inside
+   the window still reports its real (flat) value rather than an empty range. */
+function visibleYRange(xs, ys, xMin, xMax) {
+  let mn = Infinity, mx = -Infinity;
+  xs.forEach((x,i) => { if (x >= xMin && x <= xMax) { mn = Math.min(mn, ys[i]); mx = Math.max(mx, ys[i]); } });
+  if (mn === Infinity) {
+    const ext = extendFlat(xs, ys, xMin, xMax);
+    mn = mx = ext.ys[0];
+  }
+  return {min: mn, max: mx};
 }
 
 const minuteOf = ts => {
@@ -376,7 +459,7 @@ function legend(el, items) {
    books by design and a combined total would hide the only contrast the experiment draws — and the
    previous behaviour, silently plotting arms[0] unlabelled whenever the filter said "all", read as
    though it were the whole book. */
-function drawPayoff(cv, curves, arms, selected, spot) {
+function drawPayoff(cv, curves, arms, selected, spot, xwidth, ywidth) {
   const {g, w, h} = prep(cv);
   const shown = (selected === 'ALL' ? arms : [selected])
     .filter(a => curves[a] && !curves[a].empty && curves[a].prices.length);
@@ -385,13 +468,41 @@ function drawPayoff(cv, curves, arms, selected, spot) {
     g.fillText('No positions yet today.', 12, h/2); return;
   }
   const pad = {l: 62, r: 12, t: 12, b: 26};
-  let xMin = Infinity, xMax = -Infinity, yMin = 0, yMax = 0;
+  // The x-axis is centred on the book's own centres (not each curve's full scanned price
+  // array, which pads +/-3x that arm's wing width beyond its outermost centre -- a wide-wing
+  // arm shown alongside narrow ones used to stretch the whole axis into mostly flat deadspace).
+  // `xwidth` picks the window: 'auto' is exactly the trades' own span plus a small buffer;
+  // a fixed width (50/100/500/1000) is a MINIMUM, not an override -- either way the window still
+  // only grows, never shrinks past that floor, and only as far as needed to keep every centre
+  // AND the current spot inside it. It never clips off where the market actually is.
+  let cMin = Infinity, cMax = -Infinity;
   shown.forEach(a => {
-    const c = curves[a];
-    xMin = Math.min(xMin, ...c.prices); xMax = Math.max(xMax, ...c.prices);
-    yMin = Math.min(yMin, ...c.pnl);    yMax = Math.max(yMax, ...c.pnl);
+    (curves[a].centers && curves[a].centers.length ? curves[a].centers : curves[a].prices).forEach(k => {
+      cMin = Math.min(cMin, k); cMax = Math.max(cMax, k);
+    });
   });
-  const span = (yMax - yMin) || 1; yMin -= span*0.1; yMax += span*0.1;
+  if (spot != null) { cMin = Math.min(cMin, spot); cMax = Math.max(cMax, spot); }
+  const mid = (cMin + cMax) / 2;
+  const naturalHalf = (cMax - cMin) / 2 + 2;
+  const half = (!xwidth || xwidth === 'auto') ? naturalHalf : Math.max(Number(xwidth) / 2, naturalHalf);
+  let xMin = mid - half, xMax = mid + half;
+
+  // The y-axis fits what's actually VISIBLE in that x-window, not each curve's full price array --
+  // a wide-wing arm's deep worst-case at a price the x-window no longer shows must not still
+  // inflate the y-scale and waste vertical space on a value nothing on screen reaches. `ywidth`
+  // works like `xwidth` but independently per side (not forced symmetric): a fixed tier is a
+  // MINIMUM for the downside and the upside separately, since a book's floor and its peak are
+  // rarely the same distance from zero and mirroring the smaller side just wastes space.
+  let yLo = 0, yHi = 0;
+  shown.forEach(a => {
+    const r = visibleYRange(curves[a].prices, curves[a].pnl, xMin, xMax);
+    yLo = Math.min(yLo, r.min); yHi = Math.max(yHi, r.max);
+  });
+  if (ywidth && ywidth !== 'auto') {
+    const ybound = Number(ywidth);
+    yLo = Math.min(yLo, -ybound); yHi = Math.max(yHi, ybound);
+  }
+  const span = (yHi - yLo) || 1; let yMin = yLo - span*0.1, yMax = yHi + span*0.1;
   const X = v => pad.l + (v - xMin) / ((xMax - xMin)||1) * (w - pad.l - pad.r);
   const Y = v => h - pad.b - (v - yMin) / ((yMax - yMin)||1) * (h - pad.t - pad.b);
   const zero = Y(0);
@@ -411,7 +522,8 @@ function drawPayoff(cv, curves, arms, selected, spot) {
   // A single arm gets the green/red fill — that fill IS the claim "this book cannot lose here", and
   // it is only meaningful for one book at a time.
   if (shown.length === 1) {
-    const c = curves[shown[0]], xs = c.prices, ys = c.pnl;
+    const c = curves[shown[0]];
+    const {xs, ys} = extendFlat(c.prices, c.pnl, xMin, xMax);
     [[1,'rgba(63,185,80,.28)'],[-1,'rgba(248,81,73,.24)']].forEach(([sign, fill]) => {
       g.beginPath(); g.moveTo(X(xs[0]), zero);
       xs.forEach((x,i) => g.lineTo(X(x), Y(sign > 0 ? Math.max(ys[i],0) : Math.min(ys[i],0))));
@@ -422,8 +534,9 @@ function drawPayoff(cv, curves, arms, selected, spot) {
 
   shown.forEach(a => {
     const c = curves[a], col = armColor(a, arms);
+    const {xs, ys} = extendFlat(c.prices, c.pnl, xMin, xMax);
     g.beginPath();
-    c.prices.forEach((x,i) => i ? g.lineTo(X(x), Y(c.pnl[i])) : g.moveTo(X(x), Y(c.pnl[i])));
+    xs.forEach((x,i) => i ? g.lineTo(X(x), Y(ys[i])) : g.moveTo(X(x), Y(ys[i])));
     g.strokeStyle = col; g.lineWidth = shown.length === 1 ? 1.8 : 1.4; g.stroke();
     (c.centers||[]).forEach(k => {
       g.strokeStyle = col; g.globalAlpha = .35; g.setLineDash([3,3]);
@@ -433,9 +546,18 @@ function drawPayoff(cv, curves, arms, selected, spot) {
   });
 
   if (spot) {
-    g.strokeStyle = SPOT_COLOR; g.lineWidth = 1; g.globalAlpha = .7;
+    g.strokeStyle = SPOT_COLOR; g.lineWidth = 2; g.globalAlpha = .85;
     g.beginPath(); g.moveTo(X(spot), pad.t); g.lineTo(X(spot), h - pad.b); g.stroke();
     g.globalAlpha = 1;
+    // The line alone doesn't say what "here" is -- label it with the actual spot price, clamped
+    // inside the plot area so it never clips off either edge.
+    const label = `spot ${fmtNum(spot)}`, lp = 5;
+    g.font = '11px system-ui';
+    const lw = g.measureText(label).width;
+    const lx = Math.min(Math.max(X(spot) - lw/2 - lp, pad.l), w - pad.r - lw - lp*2);
+    g.fillStyle = 'rgba(13,17,23,.92)'; g.strokeStyle = '#3d4653';
+    g.beginPath(); g.roundRect(lx, pad.t + 2, lw + lp*2, 16, 4); g.fill(); g.stroke();
+    g.fillStyle = SPOT_COLOR; g.fillText(label, lx + lp, pad.t + 13);
   }
 
   const hv = HOVER[cv.id];
@@ -753,55 +875,25 @@ function drawJournalGantt(cv, journal) {
    rows and weekends are simply absent. An empty weekday cell is a session that never settled — a
    different thing from a flat day, and the strategy's whole point is not to blur those. */
 function renderCalendar(days) {
-  const el = $('#heat');
-  if (!days || !days.length) { el.innerHTML = '<span class="empty">No settled days yet.</span>'; return; }
-  const byDate = new Map(days.map(d => [d.date, d]));
-  const max = Math.max(1, ...days.map(x => Math.abs(x.net_pnl || 0)));
-  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  // Parse and step dates in UTC so a local timezone never shifts a session onto the wrong day.
-  const parse = s => new Date(s + 'T00:00:00Z');
-  const weekday = dt => (dt.getUTCDay() + 6) % 7;   // Monday = 0
-  const iso = dt => dt.toISOString().slice(0, 10);
-  const addDays = (dt, n) => { const c = new Date(dt); c.setUTCDate(c.getUTCDate() + n); return c; };
-
-  const first = addDays(parse(days[0].date), -weekday(parse(days[0].date)));  // that week's Monday
-  const last = parse(days[days.length - 1].date);
-  const weeks = [];
-  for (let wk = new Date(first); wk <= last; wk = addDays(wk, 7)) weeks.push(new Date(wk));
-
-  const months = weeks.map((wk, i) => {
-    const m = wk.getUTCMonth();
-    const label = (i === 0 || m !== weeks[i-1].getUTCMonth()) ? MON[m] : '';
-    return `<span class="cal-mon">${label}</span>`;
-  }).join('');
-
-  const grid = weeks.map(wk => {
-    let cells = '';
-    for (let r = 0; r < 5; r++) {                     // Mon..Fri
-      const dt = addDays(wk, r), key = iso(dt);
-      if (dt < first || dt > last) { cells += '<div class="hcell" style="visibility:hidden"></div>'; continue; }
-      const d = byDate.get(key);
-      if (!d) { cells += `<div class="hcell" title="${key}: no settled session"></div>`; continue; }
-      const v = d.net_pnl || 0, a = Math.min(1, Math.abs(v)/max)*0.85 + 0.15;
-      const col = v > 0 ? `rgba(63,185,80,${a})` : v < 0 ? `rgba(248,81,73,${a})` : '#30363d';
-      cells += `<div class="hcell" style="background:${col}" title="${key}: ${fmtMoney(v)} (${d.trades} trades)"></div>`;
-    }
-    return `<div class="cal-week">${cells}</div>`;
-  }).join('');
-
-  el.innerHTML =
-    '<div class="cal-side"><div></div><div>Mon</div><div></div><div>Wed</div><div></div><div>Fri</div></div>' +
-    `<div class="cal-main"><div class="cal-months">${months}</div><div class="cal-weeks">${grid}</div></div>`;
+  // The shared week-column calendar (cherrypick.core.viz) — this page's layout was the donor,
+  // so nothing changes visually; an empty weekday still means 'no settled session', not flat.
+  if (!window.cpCalHeat($('#heat'), days, fmtMoney)) {
+    $('#heat').innerHTML = '<span class="empty">No settled days yet.</span>';
+  }
 }
 
 /* ---------- renderers ---------- */
 function renderToday(d) {
   const t = d.today, s = t.stats, c = t.completion;
+  // Every figure here -- tiles, positions, books -- is already narrowed to the selected arm and
+  // symbol server-side (analytics.session_overview), so the whole card tells one consistent story
+  // for whatever scope is picked, the same scope the payoff curve below draws.
+  const posRows = t.positions, bookRows = t.books;
   tiles($('#today-tiles'), [
     {k:'Net P&L', v:fmtMoney(s.net_pnl), t:tone(s.net_pnl)},
-    {k:'Positions', v:t.positions.length},
+    {k:'Positions', v:posRows.length},
     {k:'Open', v:t.open_count},
-    {k:'Risk-free', v:`${t.risk_free_count}/${t.fly_count}`, t:t.risk_free_count?'pos':''},
+    {k:'Risk-free', v:t.risk_free_count, t:t.risk_free_count?'pos':''},
     {k:'Completion', v:fmtPct(c.completion_rate)},
     {k:'Fees', v:fmtMoney(s.fees), t:'dim'},
   ]);
@@ -809,7 +901,7 @@ function renderToday(d) {
   const lastTick = ((t.timeline || {}).ticks || []).filter(x => x.spot != null).slice(-1)[0];
   const spot = lastTick ? lastTick.spot
     : (t.positions.find(p => p.underlying_at_entry) || {}).underlying_at_entry;
-  drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot);
+  drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot, XWIDTH, YWIDTH);
   drawTimeline($('#timeline'), t.timeline, ARM);
 
   // The feed's own report card: how many ticks actually built a snapshot, and what refused the rest.
@@ -820,7 +912,7 @@ function renderToday(d) {
     : `Feed: ${fs.ok}/${fs.ticks} ticks built a snapshot (${fmtPct(fs.ok_rate)})` +
       (fs.refused ? ' · refused ' + fs.refused + ': ' +
         Object.entries(fs.by_reason).map(([k,v]) => `${k} ×${v}`).join(', ') : ' · no refusals');
-  bindHover($('#payoff'), () => drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot));
+  bindHover($('#payoff'), () => drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot, XWIDTH, YWIDTH));
   bindHover($('#timeline'), () => drawTimeline($('#timeline'), t.timeline, ARM));
 
   // One floor sentence per arm. A single blended line would state the book-level claim across arms
@@ -838,8 +930,10 @@ function renderToday(d) {
         return `<span style="color:${armColor(a, d.arms)}">${a}</span> — ${body}`;
       }).join('<br>');
 
+  const posEmpty = ARM === 'ALL' && SYMBOL === 'ALL' ? 'No positions today.'
+    : `No ${[ARM, SYMBOL].filter(v => v !== 'ALL').join(' ')} positions today.`;
   table($('#pos-tbl'), [
-    {h:'Arm', f:r=>r.arm}, {h:'Mode', f:r=>r.entry_mode},
+    {h:'Symbol', f:r=>r.symbol}, {h:'Arm', f:r=>r.arm}, {h:'Mode', f:r=>r.entry_mode},
     {h:'Kind', f:r=>r.kind === 'fly' ? 'fly' : `short ${r.side}`},
     {h:'Centre', f:r=>fmtNum(r.center,0), num:1},
     {h:'Net', f:r=>fmtNum(r.net), num:1},
@@ -847,10 +941,10 @@ function renderToday(d) {
     {h:'', f:r=>r.risk_free ? '<span class="pill ok">risk-free</span>' :
         (r.kind==='fly'?'<span class="pill bad">floor negative</span>':'<span class="pill">at risk</span>')},
     {h:'Status', f:r=>r.status},
-  ], t.positions, 'No positions today.');
+  ], posRows, posEmpty);
 
   table($('#book-tbl'), [
-    {h:'Arm', f:r=>r.arm},
+    {h:'Symbol', f:r=>r.symbol}, {h:'Arm', f:r=>r.arm},
     {h:'Credit', f:r=>fmtMoney(r.credit_collected), num:1},
     {h:'Debits', f:r=>fmtMoney(r.debits_paid), num:1},
     {h:'Fees', f:r=>fmtMoney(r.fees), num:1},
@@ -858,7 +952,7 @@ function renderToday(d) {
     {h:'Band', f:r=>r.band_low === null ? '–' : `${fmtNum(r.band_low,0)}–${fmtNum(r.band_high,0)}`},
     {h:'', f:r=>r.floor_holds ? '<span class="pill ok">holds</span>'
         : '<span class="pill bad">bounded</span>'},
-  ], t.books, 'No books today.');
+  ], bookRows, ARM === 'ALL' && SYMBOL === 'ALL' ? 'No books today.' : 'No matching books today.');
 
   drawJournalGantt($('#journal-gantt'), t.journal);
   bindHover($('#journal-gantt'), () => drawJournalGantt($('#journal-gantt'), t.journal));
@@ -911,13 +1005,35 @@ function renderHistory(d) {
   renderLog();
 }
 
+/* Per-column filter state for the trade log, kept outside the DOM so the 30s auto-refresh can't wipe
+   a half-typed filter. Keyed by column index. */
+const LOG_FILTERS = {};
+
+function logColumns() {
+  return [
+    {h:'Date', f:r=>r.trade_date, v:r=>r.trade_date, filter:'daterange'},
+    {h:'Symbol', f:r=>r.symbol, v:r=>r.symbol, filter:'select'},
+    {h:'Arm', f:r=>r.arm, v:r=>r.arm, filter:'select'},
+    {h:'Mode', f:r=>r.entry_mode, v:r=>r.entry_mode, filter:'select'},
+    {h:'Kind', f:r=>r.kind === 'fly' ? 'fly' : `short ${r.side}`,
+     v:r=>r.kind === 'fly' ? 'fly' : `short ${r.side}`, filter:'select'},
+    {h:'Centre', f:r=>fmtNum(r.center,0), v:r=>r.center, num:1, filter:'range'},
+    {h:'Window', f:r=>r.entry_window || '–', v:r=>r.entry_window || '', filter:'select'},
+    {h:'Net', f:r=>fmtNum(r.net), v:r=>r.net, num:1, filter:'range'},
+    {h:'Fees', f:r=>fmtMoney(r.fees), v:r=>r.fees, num:1, filter:'range'},
+    {h:'P&L', f:r=>fmtMoney(r.pnl), v:r=>r.pnl, num:1, tone:r=>tone(r.pnl), filter:'range'},
+    {h:'Latency', f:r=>r.completion_latency_min === null ? '–' : r.completion_latency_min+'m',
+     v:r=>r.completion_latency_min, num:1, filter:'range'},
+    {h:'', f:r=>r.pinned ? '<span class="pill ok">pinned</span>' : ''},
+  ];
+}
+
 function renderLog() {
-  const rows = (DATA.history.trades || []).filter(t => {
-    const from = $('#f-from').value, to = $('#f-to').value;
-    if (from && t.trade_date < from) return false;
-    if (to && t.trade_date > to) return false;
-    const mode = $('#f-mode').value;
-    if (mode && t.entry_mode !== mode) return false;
+  const cols = logColumns();
+  const all = DATA.history.trades || [];
+  const rows = all.filter(t => {
+    // Outcome and search deliberately stay outside the column row: they span columns rather than
+    // belonging to one (pinned/risk-free aren't displayed columns at all).
     const oc = $('#f-outcome').value;
     if (oc === 'win' && !(t.pnl > 0)) return false;
     if (oc === 'loss' && !(t.pnl < 0)) return false;
@@ -925,20 +1041,16 @@ function renderLog() {
     if (oc === 'risk-free' && !t.risk_free) return false;
     const q = $('#f-search').value.trim().toLowerCase();
     if (q && !JSON.stringify(t).toLowerCase().includes(q)) return false;
-    return true;
+    return matchesFilters(cols, t, LOG_FILTERS);
   });
-  $('#f-count').textContent = `${rows.length} trade${rows.length===1?'':'s'}`;
-  table($('#log-tbl'), [
-    {h:'Date', f:r=>r.trade_date},{h:'Arm', f:r=>r.arm},{h:'Mode', f:r=>r.entry_mode},
-    {h:'Kind', f:r=>r.kind === 'fly' ? 'fly' : `short ${r.side}`},
-    {h:'Centre', f:r=>fmtNum(r.center,0), num:1},
-    {h:'Window', f:r=>r.entry_window || '–'},
-    {h:'Net', f:r=>fmtNum(r.net), num:1},
-    {h:'Fees', f:r=>fmtMoney(r.fees), num:1},
-    {h:'P&L', f:r=>fmtMoney(r.pnl), num:1, tone:r=>tone(r.pnl)},
-    {h:'Latency', f:r=>r.completion_latency_min === null ? '–' : r.completion_latency_min+'m', num:1},
-    {h:'', f:r=>r.pinned ? '<span class="pill ok">pinned</span>' : ''},
-  ], rows, 'No trades match these filters.');
+  const filtered = rows.length !== all.length;
+  $('#f-count').textContent = `${rows.length} trade${rows.length===1?'':'s'}` +
+    (filtered ? ` of ${all.length}` : '');
+  $('#f-clear').style.display =
+    (filterActive(LOG_FILTERS) || $('#f-outcome').value || $('#f-search').value) ? '' : 'none';
+  // allRows is the unfiltered set so each select keeps listing every value, not just the survivors.
+  table($('#log-tbl'), cols, rows, 'No trades match these filters.',
+        {state: LOG_FILTERS, onChange: renderLog, allRows: all});
 }
 
 function renderPerformance(d) {
@@ -970,7 +1082,8 @@ function renderPerformance(d) {
   ]);
   table($('#cf-tbl'), [{h:'Verdict', f:r=>r.k},{h:'Count', f:r=>r.v, num:1}], [
     {k:'Market never offered it', v:c.never_offered},
-    {k:'Buffer too tight', v:c.buffer_too_tight},
+    {k:'Blocked by fee_buffer', v:c.buffer_blocked},
+    {k:'Blocked by min_floor_dollars', v:c.floor_blocked},
     {k:'Never priced', v:c.counterfactual_unknown},
   ]);
 }
@@ -984,12 +1097,18 @@ function renderAll(d) {
       d.arms.map(a => `<option>${a}</option>`).join('');
     sel.value = ARM;
   }
+  const symSel = $('#symbol-select');
+  if (symSel.options.length - 1 !== (d.symbols||[]).length) {
+    symSel.innerHTML = '<option value="ALL">all</option>' +
+      (d.symbols||[]).map(s => `<option>${s}</option>`).join('');
+    symSel.value = SYMBOL;
+  }
   renderToday(d); renderHistory(d); renderPerformance(d);
 }
 
 async function refresh() {
   try {
-    const r = await fetch(`/api/data?arm=${encodeURIComponent(ARM)}`);
+    const r = await fetch(`/api/data?arm=${encodeURIComponent(ARM)}&symbol=${encodeURIComponent(SYMBOL)}`);
     const d = await r.json();
     if (d.ok) renderAll(d);
   } catch (e) { /* transient; the next tick retries */ }
@@ -1003,9 +1122,18 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   if (DATA) renderAll(DATA);   // canvases size wrongly while hidden
 });
 $('#arm-select').onchange = e => { ARM = e.target.value; refresh(); };
-['#f-from','#f-to','#f-mode','#f-outcome','#f-search'].forEach(s => {
+$('#symbol-select').onchange = e => { SYMBOL = e.target.value; refresh(); };
+$('#xwidth-select').onchange = e => { XWIDTH = e.target.value; if (DATA) renderAll(DATA); };
+$('#ywidth-select').onchange = e => { YWIDTH = e.target.value; if (DATA) renderAll(DATA); };
+// Date and mode moved into their own column cells; these two span columns and stay in the bar.
+['#f-outcome','#f-search'].forEach(s => {
   $(s).oninput = renderLog; $(s).onchange = renderLog;
 });
+$('#f-clear').onclick = () => {
+  Object.keys(LOG_FILTERS).forEach(k => delete LOG_FILTERS[k]);
+  $('#f-outcome').value = ''; $('#f-search').value = '';
+  renderLog();
+};
 $('#perf-gran').onchange = () => renderPerformance(DATA);
 $('#perf-cum').onchange = () => renderPerformance(DATA);
 window.addEventListener('resize', () => { if (DATA) renderAll(DATA); });
@@ -1013,66 +1141,16 @@ window.addEventListener('resize', () => { if (DATA) renderAll(DATA); });
 refresh();
 setInterval(refresh, 15000);
 
-/* ---------- drag-to-reorder (same behaviour as the MEIC and orchestrator dashboards) ---------- */
-(function(){
-  const LS_KEY = 'flies-dash-layout-v1';
-  const groups = () => document.querySelectorAll('.grid');
-  const store = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }
-                        catch(e){ return {}; } };
-  const gkey = g => (g.closest('.view')||{}).id || 'root';
-  const ckey = (c,i) => (c.querySelector('h2')||{}).textContent
-      ? (c.querySelector('h2').textContent.toLowerCase().replace(/[^a-z0-9]+/g,'-')) : 'card-'+i;
-  const srcOrder = new Map();
-
-  groups().forEach(g => {
-    srcOrder.set(gkey(g), [...g.children]);
-    [...g.children].forEach((c,i) => {
-      c.dataset.rkey = ckey(c,i);
-      const handle = document.createElement('span');
-      handle.className = 'reorder-handle'; handle.textContent = '⠿'; handle.draggable = true;
-      // The HANDLE is the drag source, not the card: toggling a card's draggable on mousedown is
-      // unreliable in Chrome, which is the same reason MEIC's dashboard does it this way.
-      handle.addEventListener('dragstart', e => {
-        c.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', c.dataset.rkey);
-      });
-      handle.addEventListener('dragend', () => { c.classList.remove('dragging'); save(g); });
-      (c.querySelector('h2') || c).appendChild(handle);
-    });
-    g.addEventListener('dragover', e => {
-      e.preventDefault();
-      const dragging = g.querySelector('.dragging'); if (!dragging) return;
-      const after = [...g.querySelectorAll('.card:not(.dragging)')].find(el => {
-        const b = el.getBoundingClientRect();
-        return e.clientY < b.top + b.height/2 || (e.clientY < b.bottom && e.clientX < b.left + b.width/2);
-      });
-      after ? g.insertBefore(dragging, after) : g.appendChild(dragging);
-    });
-  });
-
-  function save(g) {
-    const s = store(); s[gkey(g)] = [...g.children].map(c => c.dataset.rkey);
-    localStorage.setItem(LS_KEY, JSON.stringify(s));
-  }
-  const saved = store();
-  groups().forEach(g => {
-    const order = saved[gkey(g)]; if (!order) return;
-    const byKey = new Map([...g.children].map(c => [c.dataset.rkey, c]));
-    // Unknown keys are cards shipped after the layout was saved — append them rather than drop them,
-    // so a new panel never disappears for someone with a stored layout.
-    order.forEach(k => byKey.has(k) && g.appendChild(byKey.get(k)));
-  });
-  $('#reset-layout').onclick = () => {
-    localStorage.removeItem(LS_KEY);
-    groups().forEach(g => (srcOrder.get(gkey(g))||[]).forEach(c => g.appendChild(c)));
-  };
-})();
+/* drag-to-reorder lives in cherrypick.core.viz.REORDER_JS (the suite's one copy);
+   groups are declared with data-cp-reorder attributes in the markup. */
 """
 
 HTML = (
     "<!doctype html><meta charset='utf-8'><title>Flies — paper</title>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    f"<style>{_STYLE}</style>{_BODY}<script>{_JS}</script>"
+    f"<style>{_STYLE}{viz.REORDER_STYLE}{viz.CAL_HEAT_STYLE}{viz.TABLE_STYLE}</style>{_BODY}"
+    f"<script>{viz.CAL_HEAT_JS}</script><script>{viz.TABLE_JS}</script>"
+    f"<script>{_JS}</script><script>{viz.REORDER_JS}</script>"
 )
 
 
@@ -1102,8 +1180,12 @@ def _handler_for(db_path: str | None):
                 query = parse_qs(parsed.query)
                 conn = dbmod.connect(db_path)
                 try:
-                    payload = build_api_data(conn, query.get("date", [None])[0],
-                                             query.get("arm", [None])[0])
+                    payload = build_api_data(
+                        conn,
+                        query.get("date", [None])[0],
+                        query.get("arm", [None])[0],
+                        query.get("symbol", [None])[0],
+                    )
                 except Exception as exc:  # a broken panel should not take the page down
                     payload = {"ok": False, "error": str(exc)}
                 finally:
@@ -1141,8 +1223,11 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="cherrypick-flies read-only dashboard")
     ap.add_argument("--port", type=int)
     ap.add_argument("--db")
-    ap.add_argument("--no-browser", action="store_true",
-                    help="don't open a browser tab on start (for headless/background launches)")
+    ap.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="don't open a browser tab on start (for headless/background launches)",
+    )
     ap.add_argument("--json", action="store_true", help="print one API payload and exit")
     args = ap.parse_args(argv)
 

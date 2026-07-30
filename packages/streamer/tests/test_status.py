@@ -81,10 +81,15 @@ def test_status_tracks_underlying_spot_freshness_separately(home):
     conn = streamcache.connect(cache)
     now = _time.time()
     # SPX (a default-seeded underlying) frozen an hour ago; an option quote 5s ago keeps global fresh.
-    conn.execute("INSERT INTO stream_trades(symbol, last, change, volume, updated_at) VALUES (?,?,?,?,?)",
-                 ("SPX", 7517.0, 0.0, 0.0, now - 3600))
-    conn.execute("INSERT INTO stream_quotes(symbol, bid, ask, mid, bid_size, ask_size, updated_at) "
-                 "VALUES (?,?,?,?,?,?,?)", (".SPXW260722C7500", 1.0, 1.2, 1.1, 1, 1, now - 5))
+    conn.execute(
+        "INSERT INTO stream_trades(symbol, last, change, volume, updated_at) VALUES (?,?,?,?,?)",
+        ("SPX", 7517.0, 0.0, 0.0, now - 3600),
+    )
+    conn.execute(
+        "INSERT INTO stream_quotes(symbol, bid, ask, mid, bid_size, ask_size, updated_at) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (".SPXW260722C7500", 1.0, 1.2, 1.1, 1, 1, now - 5),
+    )
     conn.commit()
     conn.close()
 
@@ -106,8 +111,9 @@ def fake_keyring(monkeypatch):
 
     store: dict = {}
     monkeypatch.setattr(keyring, "get_password", lambda service, key: store.get((service, key)))
-    monkeypatch.setattr(keyring, "set_password",
-                        lambda service, key, value: store.__setitem__((service, key), value))
+    monkeypatch.setattr(
+        keyring, "set_password", lambda service, key, value: store.__setitem__((service, key), value)
+    )
     return store
 
 

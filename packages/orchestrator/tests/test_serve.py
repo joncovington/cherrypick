@@ -88,15 +88,19 @@ def test_md_to_html_renders_report_subset():
 
 def test_eod_card_links_metrics_analysis_digest_insight():
     eod = {
-        "session": "2026-07-16", "is_today": False,
+        "session": "2026-07-16",
+        "is_today": False,
         "modules": {"meic": {"ok": True, "net_pnl": -1.0, "trades": 1, "wins": 0, "losses": 1}},
-        "files": {"meic": "x"}, "analysis": {"meic": "xa"}, "digest": "d", "insight": "i",
+        "files": {"meic": "x"},
+        "analysis": {"meic": "xa"},
+        "digest": "d",
+        "insight": "i",
     }
     served = dashboard._eod_card_html(eod, serve=True)
-    assert "/eod-report?module=meic&amp;session=2026-07-16" in served       # metrics
-    assert "kind=analysis" in served                                        # analysis
-    assert "/eod-report?suite=1&amp;session=2026-07-16" in served           # digest
-    assert "/eod-report?insight=1&amp;session=2026-07-16" in served         # AI insight
+    assert "/eod-report?module=meic&amp;session=2026-07-16" in served  # metrics
+    assert "kind=analysis" in served  # analysis
+    assert "/eod-report?suite=1&amp;session=2026-07-16" in served  # digest
+    assert "/eod-report?insight=1&amp;session=2026-07-16" in served  # AI insight
     assert "AI insight" in served
 
     static = dashboard._eod_card_html(eod, serve=False)
@@ -111,16 +115,19 @@ def test_argv_substitutes_params():
 
 
 # --- render gating ------------------------------------------------------------------------------
-def test_section_card_only_rendered_in_serve_mode():
+# POLLING section cards (data-endpoint) are serve-only: only the live server answers
+# /api/section/<id>. Inline cards (payload baked in) render in both modes, so the viz
+# style/script now ships on every page — the gate is on data-endpoint, not on the CSS.
+def test_polling_section_card_only_rendered_in_serve_mode():
     served = dashboard._render_html(_MODEL, serve=True)
     assert 'data-cp-section="gex"' in served and 'data-endpoint="/api/section/gex"' in served
     static = dashboard._render_html(_MODEL, serve=False)
-    assert "cpsection" not in static and "data-cp-section" not in static
+    assert 'data-endpoint="/api/section/' not in static
 
 
-def test_no_sections_no_card():
+def test_no_sections_no_polling_card():
     model = dict(_MODEL, sections=[])
-    assert "cpsection" not in dashboard._render_html(model, serve=True)
+    assert 'data-endpoint="/api/section/' not in dashboard._render_html(model, serve=True)
 
 
 # --- end-to-end handler -------------------------------------------------------------------------
@@ -406,3 +413,28 @@ def test_api_reconcile_degrades_on_error(monkeypatch):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+# --- archived reports stay reachable ------------------------------------------------------------
+def test_archived_report_text_reads_from_the_monthly_zip(tmp_path):
+    """logrotate zips finished months away, which used to 404 every archived session
+    from /eod-report — history became unreachable the day the month closed."""
+    import zipfile
+
+    month_dir = tmp_path / "archive" / "2026-06"
+    month_dir.mkdir(parents=True)
+    with zipfile.ZipFile(month_dir / "meic.zip", "w") as zf:
+        zf.writestr("paper-eod-2026-06-15.md", "# archived report body")
+    text = serve._archived_report_text(tmp_path, "meic", "paper-eod-2026-06-15.md", "2026-06-15")
+    assert text == "# archived report body"
+
+
+def test_archived_report_text_misses_cleanly(tmp_path):
+    assert serve._archived_report_text(tmp_path, "meic", "paper-eod-2026-06-15.md", "2026-06-15") is None
+    import zipfile
+
+    month_dir = tmp_path / "archive" / "2026-06"
+    month_dir.mkdir(parents=True)
+    with zipfile.ZipFile(month_dir / "meic.zip", "w") as zf:
+        zf.writestr("other-file.md", "x")
+    assert serve._archived_report_text(tmp_path, "meic", "paper-eod-2026-06-15.md", "2026-06-15") is None

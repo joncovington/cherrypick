@@ -57,7 +57,10 @@ def test_the_forest_grows_alongside_a_completed_fly(conn):
     bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
     result = bookmod.process_snapshot(
         snapshot(underlying_price=6004.0, puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)}),
-        config, conn, "control")
+        config,
+        conn,
+        "control",
+    )
 
     rows = dbmod.book_positions(conn, result["book_id"])
     assert len(rows) == 2
@@ -84,7 +87,10 @@ def test_pin_is_recorded_when_the_fly_finishes_inside_its_wings(conn):
     bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
     bookmod.process_snapshot(
         snapshot(underlying_price=6004.0, puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)}),
-        config, conn, "control")
+        config,
+        conn,
+        "control",
+    )
 
     result = bookmod.settle_book(conn, "2026-07-20", "control", "SPX", 6000.5, config)
     rows = dbmod.book_positions(conn, result["book_id"])
@@ -122,8 +128,10 @@ def test_book_funded_by_an_open_spread_is_not_called_risk_free(conn):
 def test_each_arm_keeps_its_own_book(conn):
     """Arms must never share positions or capital — a shared book lets one lucky structure paper over
     a strategy that does not work, which is the reason MEIC moved to per-portfolio accounting."""
-    config = {"defaults": {**BASE_CONFIG["defaults"], "entry_modes": ["legged"]},
-              "arms": {"control": {}, "time_window": {}}}
+    config = {
+        "defaults": {**BASE_CONFIG["defaults"], "entry_modes": ["legged"]},
+        "arms": {"control": {}, "time_window": {}},
+    }
     snap = snapshot(underlying_price=5998.0)
     a = bookmod.process_snapshot(snap, config, conn, "control")
     b = bookmod.process_snapshot(snap, config, conn, "time_window")

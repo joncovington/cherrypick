@@ -30,22 +30,53 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from pathlib import Path
+import time
 from typing import Any
 
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
+from . import timeutil, util
 
 _STATE = cfgmod.STATE_DIR / "trade_notify.json"
 _ID_CAP = 4000  # bound the remembered-id lists (per schema, per direction)
 
+# The 2-minute trade-notify task and the 10-minute watchdog tick both call run(). The atomic
+# _save_state protects against a CORRUPT file, but not against the read-modify-write race: an
+# overlap loses one side's watermark update and replays already-notified fills as duplicate
+# pushes. A single-writer lockfile closes it — the loser skips, and the next 2-minute tick
+# covers anything it would have sent.
+_LOCK = cfgmod.STATE_DIR / "trade_notify.lock"
+_LOCK_STALE_SECONDS = 600  # a crashed holder must not wedge trade notification forever
+
+
+def _acquire_lock() -> bool:
+    cfgmod.ensure_dirs()
+    try:
+        if _LOCK.exists() and time.time() - _LOCK.stat().st_mtime > _LOCK_STALE_SECONDS:
+            _LOCK.unlink()
+    except OSError:
+        pass
+    try:
+        fd = os.open(_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return False
+    except OSError:
+        return False
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(str(os.getpid()))
+    return True
+
+
+def _release_lock() -> None:
+    try:
+        _LOCK.unlink()
+    except OSError:
+        pass
+
 
 def _load_state() -> dict:
-    try:
-        return json.loads(_STATE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return util.read_json(_STATE)
 
 
 def _save_state(state: dict) -> None:
@@ -57,10 +88,7 @@ def _save_state(state: dict) -> None:
     os.replace(tmp, _STATE)
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
+from cherrypick.core.db import connect_ro as _connect_ro  # noqa: E402 — shared read-only opener
 
 
 # --------------------------------------------------------------------------- MEIC ic_trades schema
@@ -101,7 +129,7 @@ def _meic_new_entries(conn, last_entry_id: int) -> list:
 
 def _meic_new_exits(conn, notified_ids: set) -> list:
     rows = conn.execute(
-        "SELECT id, symbol, risk_profile, exit_reason, pnl FROM ic_trades WHERE exit_time IS NOT NULL"
+        "SELECT id, symbol, risk_profile, exit_reason, pnl, fees FROM ic_trades WHERE exit_time IS NOT NULL"
     ).fetchall()
     return [r for r in rows if r["id"] not in notified_ids]
 
@@ -144,16 +172,84 @@ def _fmt_meic_exit(r) -> str:
     )
 
 
-def _meic_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
+def _is_summary_profile(risk_profile: str | None, prefixes: tuple[str, ...]) -> bool:
+    return bool(prefixes) and str(risk_profile or "").startswith(prefixes)
+
+
+def _short_arm_label(risk_profile: str) -> str:
+    """Compress a width-study arm's name into the digest's compact per-entry tag: 'width-5' -> 'w5',
+    'width-adaptive' -> 'adpt'. Falls back to the raw name for anything that doesn't match the
+    width-study naming shape, so a future study-prefixed profile still renders (just less tersely)."""
+    if risk_profile == "width-adaptive":
+        return "adpt"
+    if risk_profile and risk_profile.startswith("width-") and risk_profile[6:].isdigit():
+        return f"w{risk_profile[6:]}"
+    return risk_profile or "?"
+
+
+def _money(x: float) -> str:
+    return f"+${x:,.0f}" if x >= 0 else f"-${abs(x):,.0f}"
+
+
+def _meic_day_totals(conn, symbol: str, day: str, prefixes: tuple[str, ...]) -> tuple[int, float]:
+    """Count + net (pnl - fees) of every study-profile trade CLOSED today for one symbol — the
+    digest's running day total, independent of what this particular flush window caught."""
+    where = " OR ".join(["risk_profile LIKE ?"] * len(prefixes))
+    params = [symbol, day] + [f"{p}%" for p in prefixes]
+    row = conn.execute(
+        f"SELECT COUNT(*), COALESCE(SUM(pnl - fees), 0) FROM ic_trades "
+        f"WHERE symbol = ? AND exit_time IS NOT NULL AND substr(exit_time, 1, 10) = ? "
+        f"AND ({where})",
+        params,
+    ).fetchone()
+    return int(row[0] or 0), float(row[1] or 0.0)
+
+
+def _fmt_meic_summary(conn, pending: dict, day: str, hhmm: str, prefixes: tuple[str, ...]) -> str:
+    segments = []
+    for symbol in sorted(pending):
+        bucket = pending[symbol]
+        entries = bucket.get("entries", [])
+        exits = bucket.get("exits", [])
+        entry_part = f"{len(entries)} {'entry' if len(entries) == 1 else 'entries'}"
+        labels = " ".join(_short_arm_label(e) for e in entries)
+        if labels:
+            entry_part += f" ({labels})"
+        exit_net = sum(exits)
+        exit_part = f"{len(exits)} {'exit' if len(exits) == 1 else 'exits'} net {_money(exit_net)}"
+        day_count, day_net = _meic_day_totals(conn, symbol, day, prefixes)
+        segments.append(
+            f"{symbol}: {entry_part} · {exit_part} · day {day_count} trades net {_money(day_net)}"
+        )
+    return f"MEIC width study {hhmm} ET — " + " | ".join(segments)
+
+
+def _meic_process(
+    conn,
+    st: dict,
+    notifier: Notifier,
+    name: str,
+    summary_prefixes: tuple[str, ...] = (),
+    summary_interval_minutes: float = 15,
+    now: float | None = None,
+) -> dict:
+    now = time.time() if now is None else now
+    pending = st.setdefault("pending_summary", {})  # symbol -> {"entries": [profile,...], "exits": [net,...]}
+
     entries = _meic_new_entries(conn, st["last_entry_id"])
     for r in entries:
-        notifier.notify("INFO", f"trade.{name}.entry.{r['id']}", "Paper entry", _fmt_meic_entry(r))
+        if _is_summary_profile(r["risk_profile"], summary_prefixes):
+            pending.setdefault(r["symbol"], {"entries": [], "exits": []})["entries"].append(r["risk_profile"])
+        else:
+            notifier.notify("INFO", f"trade.{name}.entry.{r['id']}", "Paper entry", _fmt_meic_entry(r))
         st["last_entry_id"] = max(st["last_entry_id"], r["id"])
 
     # Per-wing stops: a wing hitting its stop sets put/call_stop_cost but not exit_time, so it is a
     # distinct event from the whole-IC exit and gets its own per-(id, wing) watermark. State that
     # predates this feature carries no stop watermark — seed it to the current stops (like first
     # activation, don't backfill) so pre-existing partials aren't blasted out in one burst.
+    # Study-profile stops are folded silently into the digest's eventual exit line (the exit already
+    # carries the trade's final P&L) rather than getting their own mid-trade notify.
     stops_notified = 0
     if "notified_stop_keys" not in st:
         st["notified_stop_keys"] = _meic_stopped_wing_keys(conn)
@@ -166,7 +262,8 @@ def _meic_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
                 key = f"{r['id']}:{wing}"
                 if key in stopped:
                     continue
-                notifier.notify("INFO", f"trade.{name}.stop.{key}", "Paper stop", _fmt_meic_stop(r, wing))
+                if not _is_summary_profile(r["risk_profile"], summary_prefixes):
+                    notifier.notify("INFO", f"trade.{name}.stop.{key}", "Paper stop", _fmt_meic_stop(r, wing))
                 stopped.add(key)
                 stops_notified += 1
         st["notified_stop_keys"] = list(stopped)[-_ID_CAP:]
@@ -174,11 +271,34 @@ def _meic_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     notified = set(st.get("notified_exit_ids", []))
     exits = _meic_new_exits(conn, notified)
     for r in exits:
-        notifier.notify("INFO", f"trade.{name}.exit.{r['id']}", "Paper exit", _fmt_meic_exit(r))
+        if _is_summary_profile(r["risk_profile"], summary_prefixes):
+            net = (r["pnl"] or 0.0) - (r["fees"] or 0.0)
+            pending.setdefault(r["symbol"], {"entries": [], "exits": []})["exits"].append(net)
+        else:
+            notifier.notify("INFO", f"trade.{name}.exit.{r['id']}", "Paper exit", _fmt_meic_exit(r))
         notified.add(r["id"])
     st["notified_exit_ids"] = sorted(notified)[-_ID_CAP:]
 
-    return {"entries_notified": len(entries), "stops_notified": stops_notified, "exits_notified": len(exits)}
+    summary_pushed = False
+    last_flush = st.get("last_summary_flush")
+    if last_flush is None:
+        st["last_summary_flush"] = now  # first activation of the digest path — flush from here on
+    elif pending and (now - last_flush) >= summary_interval_minutes * 60:
+        et = timeutil.et_from_epoch(now)
+        text = _fmt_meic_summary(
+            conn, pending, et.strftime("%Y-%m-%d"), et.strftime("%H:%M"), summary_prefixes
+        )
+        notifier.notify("INFO", f"trade.{name}.summary.{int(now)}", "Width study digest", text)
+        st["pending_summary"] = {}
+        st["last_summary_flush"] = now
+        summary_pushed = True
+
+    return {
+        "entries_notified": len(entries),
+        "stops_notified": stops_notified,
+        "exits_notified": len(exits),
+        "summary_pushed": summary_pushed,
+    }
 
 
 # --------------------------------------------------------------------------- Earnings trades schema
@@ -286,7 +406,7 @@ def _fmt_earnings_review(r) -> str:
     if r["expected_move"] is not None:
         lines.append(f"• Expected Move: ${r['expected_move']:,.2f}")
     if r["best_tier"]:
-        lines.append(f"• Best tier: {r['best_tier']}")
+        lines.append(f"• Screen: {r['best_tier']}")
     return "\n".join(lines)
 
 
@@ -405,36 +525,57 @@ _SCHEMAS = {
 
 # --------------------------------------------------------------------------- entrypoint
 def run(cfg: dict | None = None) -> dict:
-    cfg = cfg or cfgmod.load_config()
-    notify_cfg = cfg.get("notify", {})
-    channels = notify_cfg.get("trade_channels", ["log", "discord"])
-    notifier = Notifier({**notify_cfg, "channels": channels})
+    if not _acquire_lock():
+        # Another invocation (the 2-min task vs the watchdog tick) is mid-run; racing it
+        # would replay its already-notified ids. Skip — the next tick covers us.
+        return {"ok": True, "skipped": "another trade-notify run holds the lock"}
+    try:
+        cfg = cfg or cfgmod.load_config()
+        notify_cfg = cfg.get("notify", {})
+        channels = notify_cfg.get("trade_channels", ["log", "discord"])
+        notifier = Notifier({**notify_cfg, "channels": channels})
+        summary_cfg = notify_cfg.get("trade_summary", {})
+        summary_prefixes = tuple(summary_cfg.get("profile_prefixes", []))
+        summary_interval_minutes = summary_cfg.get("interval_minutes", 15)
 
-    state = _load_state()
-    summary: dict[str, Any] = {}
+        state = _load_state()
+        summary: dict[str, Any] = {}
 
-    for name, mcfg in cfgmod.enabled_modules(cfg).items():
-        paper = mcfg.get("paper", {})
-        if not paper.get("notify_trades"):
-            continue
-        db_path = cfgmod.paper_db_path(mcfg, name)
-        if not db_path.exists():
-            continue
-        adapter = _SCHEMAS.get(paper.get("trade_schema", "meic_ic"))
-        if adapter is None:  # unknown schema — skip cleanly
-            continue
-        seed_fn, process_fn = adapter
-
-        conn = _connect_ro(db_path)
-        try:
-            st = state.get(name)
-            if st is None:  # first activation — seed, don't backfill
-                state[name] = seed_fn(conn)
-                summary[name] = {"seeded": True}
+        for name, mcfg in cfgmod.enabled_modules(cfg).items():
+            paper = mcfg.get("paper", {})
+            if not paper.get("notify_trades"):
                 continue
-            summary[name] = process_fn(conn, st, notifier, name)
-        finally:
-            conn.close()
+            db_path = cfgmod.paper_db_path(mcfg, name)
+            if not db_path.exists():
+                continue
+            schema = paper.get("trade_schema", "meic_ic")
+            adapter = _SCHEMAS.get(schema)
+            if adapter is None:  # unknown schema — skip cleanly
+                continue
+            seed_fn, process_fn = adapter
 
-    _save_state(state)
-    return {"ok": True, "modules": summary}
+            conn = _connect_ro(db_path)
+            try:
+                st = state.get(name)
+                if st is None:  # first activation — seed, don't backfill
+                    state[name] = seed_fn(conn)
+                    summary[name] = {"seeded": True}
+                    continue
+                if schema == "meic_ic":
+                    summary[name] = process_fn(
+                        conn,
+                        st,
+                        notifier,
+                        name,
+                        summary_prefixes=summary_prefixes,
+                        summary_interval_minutes=summary_interval_minutes,
+                    )
+                else:
+                    summary[name] = process_fn(conn, st, notifier, name)
+            finally:
+                conn.close()
+
+        _save_state(state)
+        return {"ok": True, "modules": summary}
+    finally:
+        _release_lock()

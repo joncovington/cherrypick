@@ -200,7 +200,7 @@ Total entry debit: $0.60 (both calendars)
 
 There's no fixed lookup table mapping a market condition to a strategy — `rank_strategies.py`
 evaluates all six against every symbol and picks whichever scores highest among those that
-clear their own tiering. As a rough mental model of what tends to win under which conditions:
+clear their own screen. As a rough mental model of what tends to win under which conditions:
 
 - **Rich IV/RV, negative term structure, no strong skew** → `iron_fly` or `iron_condor`
   (the choice between them is a scoring outcome, not a rule — see

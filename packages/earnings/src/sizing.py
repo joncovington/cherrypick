@@ -28,7 +28,7 @@ Per-contract max loss (strikes in points, one contract = 100 shares):
 
 Every strategy is defined-risk (max loss known at entry from the order's own strikes/
 debit) -- there is no undefined-risk/naked margin-proxy path. The BWB gap term is a
-Phase-1 approximation (see docs/paper-trading-profiles.md), to be refined once real
+Phase-1 approximation (see docs/strat-test-portfolios.md), to be refined once real
 paper fills accumulate.
 """
 

@@ -14,8 +14,23 @@ from cherrypick.orchestrator import trade_notifier as tn
 
 pytestmark = pytest.mark.unit
 
-_COLS = ("position_id", "symbol", "arm", "entry_mode", "kind", "side", "center", "wing_width",
-         "net", "floor_dollars", "completing_direction", "completed_at", "pnl", "pinned", "status")
+_COLS = (
+    "position_id",
+    "symbol",
+    "arm",
+    "entry_mode",
+    "kind",
+    "side",
+    "center",
+    "wing_width",
+    "net",
+    "floor_dollars",
+    "completing_direction",
+    "completed_at",
+    "pnl",
+    "pinned",
+    "status",
+)
 
 
 class _Recorder:
@@ -52,13 +67,40 @@ def _conn(rows):
     return conn
 
 
-_SPREAD = _row(position_id="P1", entry_mode="legged", kind="short_vertical", side="put",
-               center=6000, net=2.55, completing_direction="up", status="open")
-_FLY = _row(position_id="P1", entry_mode="legged", kind="fly", side="put", center=6000,
-            net=1.05, floor_dollars=98.11, completed_at="2026-07-20T13:12:00", status="open")
-_SETTLED = _row(position_id="P1", entry_mode="legged", kind="fly", side="put", center=6000,
-                net=1.05, floor_dollars=98.11, completed_at="2026-07-20T13:12:00",
-                pnl=505.0, pinned=1, status="settled")
+_SPREAD = _row(
+    position_id="P1",
+    entry_mode="legged",
+    kind="short_vertical",
+    side="put",
+    center=6000,
+    net=2.55,
+    completing_direction="up",
+    status="open",
+)
+_FLY = _row(
+    position_id="P1",
+    entry_mode="legged",
+    kind="fly",
+    side="put",
+    center=6000,
+    net=1.05,
+    floor_dollars=98.11,
+    completed_at="2026-07-20T13:12:00",
+    status="open",
+)
+_SETTLED = _row(
+    position_id="P1",
+    entry_mode="legged",
+    kind="fly",
+    side="put",
+    center=6000,
+    net=1.05,
+    floor_dollars=98.11,
+    completed_at="2026-07-20T13:12:00",
+    pnl=505.0,
+    pinned=1,
+    status="settled",
+)
 
 
 def test_entry_message_states_which_way_spot_must_move():
@@ -83,8 +125,9 @@ def test_completion_message_leads_with_the_post_fee_floor():
 
 
 def test_outright_entry_reads_as_a_debit_not_a_credit():
-    bought = _row(position_id="P2", entry_mode="outright", kind="fly", side="put", center=6875,
-                  net=-0.20, status="open")
+    bought = _row(
+        position_id="P2", entry_mode="outright", kind="fly", side="put", center=6875, net=-0.20, status="open"
+    )
     n = _Recorder()
     tn._flies_process(_conn([bought]), {}, n, "flies")
     assert "bought for $0.20 debit" in n.sent[0][1]

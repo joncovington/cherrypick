@@ -105,12 +105,14 @@ def _cron_command_for(text: str, name: str) -> str | None:
 
 
 def _crontab_read() -> str:
-    r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    r = subprocess.run(["crontab", "-l"], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
     return r.stdout if r.returncode == 0 else ""
 
 
 def _crontab_write(text: str) -> tuple[bool, str]:
-    r = subprocess.run(["crontab", "-"], input=text, capture_output=True, text=True)
+    r = subprocess.run(
+        ["crontab", "-"], input=text, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
+    )
     return r.returncode == 0, (r.stderr or r.stdout).strip()
 
 
@@ -134,12 +136,16 @@ def exists(name: str) -> bool:
 
 
 def query_verbose(name: str) -> dict[str, Any]:
-    """Return parsed key fields for a task."""
-    if not exists(name):
-        return {"exists": False}
+    """Return parsed key fields for a task.
+
+    ONE schtasks spawn, not two: existence is read off /Query /V's own return code
+    (non-zero = no such task) instead of a separate exists() pre-check — the pre-check
+    doubled the per-task spawn count on every dashboard render (~7 tasks per tick)."""
     if not _IS_WINDOWS:
         marker = _cron_marker(name)
         line = next((ln for ln in _crontab_read().splitlines() if ln.rstrip().endswith(marker)), "")
+        if not line:
+            return {"exists": False}
         return {"exists": True, "backend": "cron", "schedule": " ".join(line.split()[:5])}
     r = subprocess.run(
         ["schtasks", "/Query", "/TN", name, "/V", "/FO", "LIST"],
@@ -147,6 +153,8 @@ def query_verbose(name: str) -> dict[str, Any]:
         text=True,
         creationflags=CREATE_NO_WINDOW,
     )
+    if r.returncode != 0:
+        return {"exists": False}
     fields: dict[str, Any] = {"exists": True}
     for line in (r.stdout or "").splitlines():
         if ":" not in line:
@@ -244,8 +252,22 @@ def create_monthly_task(name: str, tr: str, day: int, at_hhmm: str) -> dict[str,
     if not _IS_WINDOWS:
         return _cron_create(name, _monthly_schedule(day, at_hhmm), tr)
     r = subprocess.run(
-        ["schtasks", "/Create", "/TN", name, "/TR", tr, "/SC", "MONTHLY", "/D", str(int(day)),
-         "/ST", at_hhmm, "/F", "/IT"],
+        [
+            "schtasks",
+            "/Create",
+            "/TN",
+            name,
+            "/TR",
+            tr,
+            "/SC",
+            "MONTHLY",
+            "/D",
+            str(int(day)),
+            "/ST",
+            at_hhmm,
+            "/F",
+            "/IT",
+        ],
         capture_output=True,
         text=True,
         creationflags=CREATE_NO_WINDOW,
@@ -259,7 +281,13 @@ def create_monthly_task(name: str, tr: str, day: int, at_hhmm: str) -> dict[str,
 def _run_command(command: str) -> None:
     """Fire a cron-managed command once now (POSIX has no `schtasks /Run`)."""
     try:
-        subprocess.Popen(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            command,
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=CREATE_NO_WINDOW,
+        )
     except OSError:
         pass
 
@@ -311,9 +339,19 @@ def registry_snapshot(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def delete(name: str) -> dict[str, Any]:
+    """Remove a task. Deleting a task that isn't registered is a **successful no-op**, not a failure.
+
+    `install` calls this unconditionally to clear stale fixed-time tasks (the EOD digest and insight are
+    watchdog-fired now), and `schtasks /Delete` exits non-zero on an absent task — so reporting the raw
+    return code made every clean install report `ok: false` for those two, which in turn made install's
+    top-level `ok` permanently false and unable to signal a real failure. Test existence first rather
+    than matching the error text, which is localized.
+    """
     if not _IS_WINDOWS:
         ok, detail = _crontab_write(_cron_remove(_crontab_read(), name))
         return {"ok": ok, "detail": detail or f"cron: removed {name}"}
+    if not exists(name):
+        return {"ok": True, "detail": f"not registered: {name}"}
     subprocess.run(
         ["schtasks", "/End", "/TN", name], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
     )

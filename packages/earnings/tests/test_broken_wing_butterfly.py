@@ -27,21 +27,27 @@ class TestEvaluatePositionPerLegDeltaStop:
         """Position should close if any short leg's delta exceeds leg_stop_delta_abs."""
         position = {
             "entry_credit": -2.0,
-            "legs_json": json.dumps([
-                {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
-                {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
-                {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
-            ]),
+            "legs_json": json.dumps(
+                [
+                    {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
+                    {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
+                    {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
+                ]
+            ),
         }
         quotes = {
             "NEAR": {"bid": 0.1, "ask": 0.2, "delta": 0.15},
             "BODY": {"bid": 1.0, "ask": 1.1, "delta": 0.65},  # delta 0.65 > threshold 0.60
             "FAR": {"bid": 0.05, "ask": 0.1, "delta": 0.05},
         }
-        config = {"strategies": {"broken_wing_butterfly": {
-            "exit_days_before_earnings": 7,
-            "leg_stop_delta_abs": 0.60,
-        }}}
+        config = {
+            "strategies": {
+                "broken_wing_butterfly": {
+                    "exit_days_before_earnings": 7,
+                    "leg_stop_delta_abs": 0.60,
+                }
+            }
+        }
 
         result = bwb.evaluate_position(position, quotes, config)
         assert result["action"] == "close_all"
@@ -51,11 +57,13 @@ class TestEvaluatePositionPerLegDeltaStop:
         """Position should hold if all short legs are below delta threshold."""
         position = {
             "entry_credit": -2.0,
-            "legs_json": json.dumps([
-                {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
-                {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
-                {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
-            ]),
+            "legs_json": json.dumps(
+                [
+                    {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
+                    {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
+                    {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
+                ]
+            ),
         }
         # Quotes slightly worse than entry, position has small loss (between 0 and 10%)
         # exit_debit = 2*1.05 - 0.1 - 0.05 = 1.95, loss = 2.0 - 1.95 = 0.05 (2.5% loss)
@@ -64,12 +72,16 @@ class TestEvaluatePositionPerLegDeltaStop:
             "BODY": {"bid": 1.0, "ask": 1.05, "delta": 0.55},  # delta 0.55 < threshold 0.60
             "FAR": {"bid": 0.05, "ask": 0.1, "delta": 0.05},
         }
-        config = {"strategies": {"broken_wing_butterfly": {
-            "exit_days_before_earnings": 15,  # Avoid time exit
-            "leg_stop_delta_abs": 0.60,
-            "profit_target_pct": 0.10,
-            "stop_loss_credit_multiple": 2.0,
-        }}}
+        config = {
+            "strategies": {
+                "broken_wing_butterfly": {
+                    "exit_days_before_earnings": 15,  # Avoid time exit
+                    "leg_stop_delta_abs": 0.60,
+                    "profit_target_pct": 0.10,
+                    "stop_loss_credit_multiple": 2.0,
+                }
+            }
+        }
 
         result = bwb.evaluate_position(position, quotes, config)
         # Should hold because:
@@ -82,23 +94,29 @@ class TestEvaluatePositionPerLegDeltaStop:
         """If delta is missing for a leg, skip that leg's check."""
         position = {
             "entry_credit": -2.0,
-            "legs_json": json.dumps([
-                {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
-                {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
-                {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
-            ]),
+            "legs_json": json.dumps(
+                [
+                    {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
+                    {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
+                    {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
+                ]
+            ),
         }
         quotes = {
             "NEAR": {"bid": 0.1, "ask": 0.2},  # Missing delta
             "BODY": {"bid": 1.0, "ask": 1.05, "delta": 0.50},
             "FAR": {"bid": 0.05, "ask": 0.1},  # Missing delta
         }
-        config = {"strategies": {"broken_wing_butterfly": {
-            "exit_days_before_earnings": 15,
-            "leg_stop_delta_abs": 0.60,
-            "profit_target_pct": 0.10,
-            "stop_loss_credit_multiple": 2.0,
-        }}}
+        config = {
+            "strategies": {
+                "broken_wing_butterfly": {
+                    "exit_days_before_earnings": 15,
+                    "leg_stop_delta_abs": 0.60,
+                    "profit_target_pct": 0.10,
+                    "stop_loss_credit_multiple": 2.0,
+                }
+            }
+        }
 
         result = bwb.evaluate_position(position, quotes, config)
         # Should hold: we can't check delta for legs without it, but price is in hold zone
@@ -112,11 +130,13 @@ class TestEvaluatePositionProfitTarget:
         """Position should close when profit reaches 10% of credit received."""
         position = {
             "entry_credit": -2.0,  # Collected $2.00
-            "legs_json": json.dumps([
-                {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
-                {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
-                {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
-            ]),
+            "legs_json": json.dumps(
+                [
+                    {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
+                    {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
+                    {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
+                ]
+            ),
         }
         # Cost to close: buy 2 at 1.05, sell near at 0.10, sell far at 0.05 = 2.05 - 0.10 - 0.05 = 1.90
         # Profit = 2.00 - 1.90 = $0.10 = 5% of credit
@@ -127,12 +147,16 @@ class TestEvaluatePositionProfitTarget:
             "BODY": {"bid": 0.95, "ask": 1.00, "delta": 0.50},
             "FAR": {"bid": 0.05, "ask": 0.10, "delta": 0.05},
         }
-        config = {"strategies": {"broken_wing_butterfly": {
-            "exit_days_before_earnings": 15,
-            "leg_stop_delta_abs": 0.60,
-            "profit_target_pct": 0.10,
-            "stop_loss_credit_multiple": 2.0,
-        }}}
+        config = {
+            "strategies": {
+                "broken_wing_butterfly": {
+                    "exit_days_before_earnings": 15,
+                    "leg_stop_delta_abs": 0.60,
+                    "profit_target_pct": 0.10,
+                    "stop_loss_credit_multiple": 2.0,
+                }
+            }
+        }
 
         result = bwb.evaluate_position(position, quotes, config)
         # exit_debit = 2*1.00 - 0.10 - 0.05 = 1.85
@@ -159,11 +183,13 @@ class TestEvaluatePositionStopLoss:
         """Position should close when cost to close reaches 2x credit received."""
         position = {
             "entry_credit": -2.0,  # Collected $2.00
-            "legs_json": json.dumps([
-                {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
-                {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
-                {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
-            ]),
+            "legs_json": json.dumps(
+                [
+                    {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
+                    {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
+                    {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
+                ]
+            ),
         }
         # Prices moved against us significantly: costs $4.00 to close = 2.0x credit = stop loss
         quotes = {
@@ -171,12 +197,16 @@ class TestEvaluatePositionStopLoss:
             "BODY": {"bid": 2.00, "ask": 2.10, "delta": 0.70},  # Way ITM now
             "FAR": {"bid": 0.20, "ask": 0.30, "delta": 0.20},
         }
-        config = {"strategies": {"broken_wing_butterfly": {
-            "exit_days_before_earnings": 15,
-            "leg_stop_delta_abs": 0.80,  # Higher to not trigger leg stop
-            "profit_target_pct": 0.10,
-            "stop_loss_credit_multiple": 2.0,
-        }}}
+        config = {
+            "strategies": {
+                "broken_wing_butterfly": {
+                    "exit_days_before_earnings": 15,
+                    "leg_stop_delta_abs": 0.80,  # Higher to not trigger leg stop
+                    "profit_target_pct": 0.10,
+                    "stop_loss_credit_multiple": 2.0,
+                }
+            }
+        }
 
         result = bwb.evaluate_position(position, quotes, config)
         # exit_debit = 2*2.10 - 0.20 - 0.30 = 3.70 (less than 4.00 exactly)
@@ -214,11 +244,13 @@ class TestEvaluatePositionStopLoss:
         """Position should hold while cost to close is below 2x credit."""
         position = {
             "entry_credit": -2.0,  # Collected $2.00
-            "legs_json": json.dumps([
-                {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
-                {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
-                {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
-            ]),
+            "legs_json": json.dumps(
+                [
+                    {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
+                    {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
+                    {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
+                ]
+            ),
         }
         # Prices moved against us a bit: costs $3.50 to close < 2.0x credit ($4.00)
         quotes = {
@@ -226,12 +258,16 @@ class TestEvaluatePositionStopLoss:
             "BODY": {"bid": 1.80, "ask": 1.90, "delta": 0.65},
             "FAR": {"bid": 0.10, "ask": 0.20, "delta": 0.10},
         }
-        config = {"strategies": {"broken_wing_butterfly": {
-            "exit_days_before_earnings": 15,
-            "leg_stop_delta_abs": 0.80,
-            "profit_target_pct": 0.10,
-            "stop_loss_credit_multiple": 2.0,
-        }}}
+        config = {
+            "strategies": {
+                "broken_wing_butterfly": {
+                    "exit_days_before_earnings": 15,
+                    "leg_stop_delta_abs": 0.80,
+                    "profit_target_pct": 0.10,
+                    "stop_loss_credit_multiple": 2.0,
+                }
+            }
+        }
 
         result = bwb.evaluate_position(position, quotes, config)
         # exit_debit = 2*1.90 - 0.15 - 0.10 = 3.45 < 4.00
@@ -246,23 +282,29 @@ class TestEvaluatePositionIncompleteQuotes:
         """If any leg has no quote data, position should hold (retry next tick)."""
         position = {
             "entry_credit": -2.0,
-            "legs_json": json.dumps([
-                {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
-                {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
-                {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
-            ]),
+            "legs_json": json.dumps(
+                [
+                    {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
+                    {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
+                    {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
+                ]
+            ),
         }
         quotes = {
             "NEAR": {"bid": 0.1, "ask": 0.2, "delta": 0.15},
             # BODY is missing
             "FAR": {"bid": 0.05, "ask": 0.1, "delta": 0.05},
         }
-        config = {"strategies": {"broken_wing_butterfly": {
-            "exit_days_before_earnings": 15,
-            "leg_stop_delta_abs": 0.60,
-            "profit_target_pct": 0.10,
-            "stop_loss_credit_multiple": 2.0,
-        }}}
+        config = {
+            "strategies": {
+                "broken_wing_butterfly": {
+                    "exit_days_before_earnings": 15,
+                    "leg_stop_delta_abs": 0.60,
+                    "profit_target_pct": 0.10,
+                    "stop_loss_credit_multiple": 2.0,
+                }
+            }
+        }
 
         result = bwb.evaluate_position(position, quotes, config)
         assert result["action"] == "hold"
@@ -271,23 +313,29 @@ class TestEvaluatePositionIncompleteQuotes:
         """If a required quote side (bid/ask) is missing, hold."""
         position = {
             "entry_credit": -2.0,
-            "legs_json": json.dumps([
-                {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
-                {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
-                {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
-            ]),
+            "legs_json": json.dumps(
+                [
+                    {"symbol": "NEAR", "action": "Buy to Open", "quantity": 1},
+                    {"symbol": "BODY", "action": "Sell to Open", "quantity": 2},
+                    {"symbol": "FAR", "action": "Buy to Open", "quantity": 1},
+                ]
+            ),
         }
         quotes = {
             "NEAR": {"bid": 0.1, "ask": 0.2, "delta": 0.15},
             "BODY": {"bid": 1.0, "delta": 0.50},  # Missing ask
             "FAR": {"bid": 0.05, "ask": 0.1, "delta": 0.05},
         }
-        config = {"strategies": {"broken_wing_butterfly": {
-            "exit_days_before_earnings": 15,
-            "leg_stop_delta_abs": 0.60,
-            "profit_target_pct": 0.10,
-            "stop_loss_credit_multiple": 2.0,
-        }}}
+        config = {
+            "strategies": {
+                "broken_wing_butterfly": {
+                    "exit_days_before_earnings": 15,
+                    "leg_stop_delta_abs": 0.60,
+                    "profit_target_pct": 0.10,
+                    "stop_loss_credit_multiple": 2.0,
+                }
+            }
+        }
 
         result = bwb.evaluate_position(position, quotes, config)
         assert result["action"] == "hold"

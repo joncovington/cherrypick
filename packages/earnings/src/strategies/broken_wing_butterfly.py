@@ -49,7 +49,9 @@ def _strategy_config(config: dict) -> dict:
     return config.get("strategies", {}).get("broken_wing_butterfly", {})
 
 
-def fetch_price_and_expected_move(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
+def fetch_price_and_expected_move(
+    symbol: str, earnings_date: date, earnings_timing: str, config: dict
+) -> dict:
     """Live price + expected move + side selection, identical shape to
     expected_move_butterfly.py's fetch_price_and_expected_move -- the wing
     asymmetry is purely an order-construction detail (see
@@ -91,7 +93,7 @@ def fetch_price_and_expected_move(symbol: str, earnings_date: date, earnings_tim
             if realized_moves:
                 mean_realized = sum(realized_moves) / len(realized_moves)
                 variance = sum((m - mean_realized) ** 2 for m in realized_moves) / len(realized_moves)
-                realized_move_dispersion = variance ** 0.5
+                realized_move_dispersion = variance**0.5
 
         side_result = scanner.select_side(symbol, front_exp, price, strategy_config)
         if not side_result.get("ok"):
@@ -155,23 +157,10 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
     elif criteria["skew_abs"] < config["min_skew_abs"]:
         hard_fail.append("insufficient_skew_signal")
 
-    near_miss: list[str] = []
+    scanner.apply_liquidity_gates(criteria, config, hard_fail)
+    scanner.apply_soft_criteria(criteria, config, hard_fail)
 
-    scanner.apply_liquidity_gates(criteria, config, hard_fail, near_miss)
-    scanner._band(criteria.get("avg_volume"), config["min_avg_volume"], config["near_miss_min_avg_volume"], "avg_volume", near_miss, hard_fail)
-    scanner._band(criteria.get("iv_rv_ratio"), config["min_iv_rv_ratio"], config["near_miss_min_iv_rv_ratio"], "iv_rv_ratio", near_miss, hard_fail)
-    scanner._band(criteria.get("winrate"), config["min_winrate"], config["near_miss_min_winrate"], "winrate", near_miss, hard_fail)
-
-    if hard_fail:
-        tier = "Reject"
-    elif not near_miss:
-        tier = "Tier 1"
-    elif len(near_miss) == 1:
-        tier = "Tier 2"
-    else:
-        tier = "Near Miss"
-
-    return {"tier": tier, "hard_fail_reasons": hard_fail, "near_miss_reasons": near_miss}
+    return {"accepted": not hard_fail, "reject_reasons": hard_fail}
 
 
 def _wing_width_multiple(iv_rv_ratio: float | None, config: dict) -> float:
@@ -194,7 +183,9 @@ def _wing_width_multiple(iv_rv_ratio: float | None, config: dict) -> float:
     return config.get("wing_width_multiple_high", 1.5)
 
 
-def fetch_broken_wing_butterfly_order(symbol: str, earnings_date: date, earnings_timing: str, full_config: dict) -> dict:
+def fetch_broken_wing_butterfly_order(
+    symbol: str, earnings_date: date, earnings_timing: str, full_config: dict
+) -> dict:
     """Build a concrete, tradeable broken wing butterfly order: 2 short
     contracts at the expected-move strike (the body), protected by a narrow
     long wing toward current price and a wide long wing away from it --
@@ -229,10 +220,20 @@ def fetch_broken_wing_butterfly_order(symbol: str, earnings_date: date, earnings
         # Wide window: the wide wing can sit well beyond the body given
         # wide_wing_multiple -- same reasoning as iron_fly's/
         # expected_move_butterfly's wing-selection window.
-        chain = scanner.call_tt([
-            "get_option_chain", "--symbol", symbol, "--expiration", str(front_exp),
-            "--include_quotes", "--strike_count", "40", "--around_price", str(price),
-        ])
+        chain = scanner.call_tt(
+            [
+                "get_option_chain",
+                "--symbol",
+                symbol,
+                "--expiration",
+                str(front_exp),
+                "--include_quotes",
+                "--strike_count",
+                "40",
+                "--around_price",
+                str(price),
+            ]
+        )
         if not chain.get("ok"):
             return {"ok": False, "error": chain.get("error", "get_option_chain failed")}
         entries = chain["chain"][str(front_exp)]
@@ -281,7 +282,11 @@ def fetch_broken_wing_butterfly_order(symbol: str, earnings_date: date, earnings
         # real premiums are fetched at order-build time -- screening has no
         # visibility into it.
         if net_debit > 0:
-            return {"ok": False, "error": "net_debit_positive_credit_required", "net_debit": round(net_debit, 2)}
+            return {
+                "ok": False,
+                "error": "net_debit_positive_credit_required",
+                "net_debit": round(net_debit, 2),
+            }
 
         order = {
             "order_type": "Limit",
@@ -289,9 +294,24 @@ def fetch_broken_wing_butterfly_order(symbol: str, earnings_date: date, earnings
             "price": round(abs(net_debit), 2),
             "price_effect": "Debit" if net_debit >= 0 else "Credit",
             "legs": [
-                {"symbol": near_entry["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
-                {"symbol": body_entry["symbol"], "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 2},
-                {"symbol": far_entry["symbol"], "instrument_type": "Equity Option", "action": "Buy to Open", "quantity": 1},
+                {
+                    "symbol": near_entry["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Buy to Open",
+                    "quantity": 1,
+                },
+                {
+                    "symbol": body_entry["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Sell to Open",
+                    "quantity": 2,
+                },
+                {
+                    "symbol": far_entry["symbol"],
+                    "instrument_type": "Equity Option",
+                    "action": "Buy to Open",
+                    "quantity": 1,
+                },
             ],
         }
         return {
@@ -318,7 +338,9 @@ def fetch_broken_wing_butterfly_order(symbol: str, earnings_date: date, earnings
         return {"ok": False, "error": str(exc)}
 
 
-def evaluate_position(position: dict, quotes: dict, config: dict, is_first_check_of_day: bool = False) -> dict:
+def evaluate_position(
+    position: dict, quotes: dict, config: dict, is_first_check_of_day: bool = False
+) -> dict:
     """Decide whether to close an open broken wing butterfly position early
     (CLAUDE.md Step 3c) ahead of Step 3's unconditional close-window sweep.
 
@@ -365,7 +387,9 @@ def cmd_get_candidates(args) -> dict:
     """
     config = scanner._load_config()
     strategy_config = _strategy_config(config)
-    return scanner.run_candidate_scan(args.date, config, fetch_price_and_expected_move, apply_tiering, strategy_config)
+    return scanner.run_candidate_scan(
+        args.date, config, fetch_price_and_expected_move, apply_tiering, strategy_config
+    )
 
 
 def main() -> None:

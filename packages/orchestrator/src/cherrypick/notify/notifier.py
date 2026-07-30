@@ -52,8 +52,26 @@ class Notifier:
         self.app_name = cfg.get("desktop_app_name", "cherrypick")
 
     # -- the floor -----------------------------------------------------------------
+    @staticmethod
+    def _rotate_if_large(path, max_bytes: int = 5_000_000, keep: int = 3) -> None:
+        # Same size-based rotation as orchestrator.util.rotate_if_large, inlined: this
+        # package is deliberately stdlib-only with no orchestrator import (it sits on the
+        # reliability path), and without rotation notify.log grew without bound —
+        # logrotate refuses active .log files by design. Best-effort.
+        try:
+            if not path.exists() or path.stat().st_size < max_bytes:
+                return
+            for i in range(keep - 1, 0, -1):
+                src = path.with_name(f"{path.name}.{i}")
+                if src.exists():
+                    os.replace(src, path.with_name(f"{path.name}.{i + 1}"))
+            os.replace(path, path.with_name(f"{path.name}.1"))
+        except OSError:
+            pass
+
     def _write_log(self, level: str, key: str, title: str, message: str) -> None:
         _LOG.parent.mkdir(parents=True, exist_ok=True)
+        self._rotate_if_large(_LOG)
         line = json.dumps(
             {
                 "ts": _utcnow(),
@@ -97,6 +115,10 @@ class Notifier:
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                # -WindowStyle Hidden alone still creates the console before hiding it — a visible
+                # flash on every toast when the parent (pythonw watchdog/trade-notify) has no console.
+                # Defined inline: this module deliberately imports nothing from cherrypick.orchestrator.
+                creationflags=0x08000000 if os.name == "nt" else 0,  # CREATE_NO_WINDOW
             )
             return {"ok": True}
         except Exception as exc:  # never let a push failure escape

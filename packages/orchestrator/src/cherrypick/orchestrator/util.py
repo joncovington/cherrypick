@@ -46,3 +46,41 @@ def mask_account(value: Any) -> str:
     so a full account number is never emitted."""
     s = str(value or "").strip()
     return f"****{s[-4:]}" if len(s) >= 4 else "****"
+
+
+def rotate_if_large(path, max_bytes: int = 5_000_000, keep: int = 3) -> bool:
+    """Size-based rotation for the orchestrator's own append logs (watchdog/notify).
+
+    Nothing else rotates these: logrotate deliberately refuses active `.log` files, so
+    they grew without bound and were re-read on every dashboard render. When `path`
+    exceeds `max_bytes`, shift `path.N` -> `path.N+1` (dropping the oldest past `keep`)
+    and move the live file to `path.1`. The rotated `*.log.N` backups are exactly what
+    `cherrypick archive` already collects into the monthly zips. Best-effort: any OSError
+    (e.g. a concurrent holder on Windows) skips this rotation — the next write retries.
+    """
+    import os as _os
+    from pathlib import Path as _Path
+
+    path = _Path(path)
+    try:
+        if not path.exists() or path.stat().st_size < max_bytes:
+            return False
+        for i in range(keep - 1, 0, -1):
+            src = path.with_name(f"{path.name}.{i}")
+            if src.exists():
+                _os.replace(src, path.with_name(f"{path.name}.{i + 1}"))
+        _os.replace(path, path.with_name(f"{path.name}.1"))
+        return True
+    except OSError:
+        return False
+
+
+def read_json(path, default=None) -> Any:
+    """Best-effort JSON file read: the parsed value, or `default` ({} if omitted) on any
+    miss/parse failure. The one implementation of the pattern watchdog, dashboard, and
+    trade_notifier each hand-rolled."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {} if default is None else default

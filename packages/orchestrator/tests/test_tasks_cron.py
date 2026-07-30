@@ -145,3 +145,59 @@ def test_command_for_round_trips():
     text = tasks._cron_upsert("", NAME, tasks._cron_line("*/10 * * * *", CMD, NAME))
     assert tasks._cron_command_for(text, NAME) == f"{CMD} >/dev/null 2>&1"
     assert tasks._cron_command_for("", NAME) is None
+
+
+# --- delete() is idempotent (Windows backend; monkeypatched so it runs cross-platform) -------------
+def test_delete_absent_task_is_a_successful_noop(monkeypatch):
+    """`install` calls delete() unconditionally to clear the stale fixed-time EOD digest/insight tasks.
+    schtasks exits non-zero when there is nothing to delete, which used to surface as ok:false on every
+    clean install and made install's top-level `ok` useless as a failure signal."""
+    monkeypatch.setattr(tasks, "_IS_WINDOWS", True)
+    monkeypatch.setattr(tasks, "exists", lambda name: False)
+
+    def boom(*a, **kw):  # nothing should be shelled out for an absent task
+        raise AssertionError("subprocess.run must not be called when the task does not exist")
+
+    monkeypatch.setattr(tasks.subprocess, "run", boom)
+
+    result = tasks.delete("cherrypick-eod-digest")
+    assert result["ok"] is True
+    assert "cherrypick-eod-digest" in result["detail"]
+
+
+def test_delete_present_task_reports_the_schtasks_result(monkeypatch):
+    monkeypatch.setattr(tasks, "_IS_WINDOWS", True)
+    monkeypatch.setattr(tasks, "exists", lambda name: True)
+    calls = []
+
+    class _R:
+        returncode = 0
+        stdout = "SUCCESS: deleted"
+        stderr = ""
+
+    def fake_run(argv, **kw):
+        calls.append(argv)
+        return _R()
+
+    monkeypatch.setattr(tasks.subprocess, "run", fake_run)
+
+    result = tasks.delete(NAME)
+    assert result["ok"] is True
+    assert result["detail"] == "SUCCESS: deleted"
+    assert [a[1] for a in calls] == ["/End", "/Delete"]  # ended before deleting
+
+
+def test_delete_present_task_propagates_a_real_failure(monkeypatch):
+    monkeypatch.setattr(tasks, "_IS_WINDOWS", True)
+    monkeypatch.setattr(tasks, "exists", lambda name: True)
+
+    class _R:
+        returncode = 1
+        stdout = ""
+        stderr = "ERROR: Access is denied."
+
+    monkeypatch.setattr(tasks.subprocess, "run", lambda argv, **kw: _R())
+
+    result = tasks.delete(NAME)
+    assert result["ok"] is False
+    assert "Access is denied" in result["detail"]
