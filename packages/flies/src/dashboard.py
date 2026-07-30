@@ -111,6 +111,7 @@ def build_api_data(conn, day: str | None = None, arm: str | None = None, symbol:
             "open_count": overview["open_count"],
             "fly_count": overview["fly_count"],
             "risk_free_count": overview["risk_free_count"],
+            "max_possible_loss": overview["max_possible_loss"],
             "completion": overview["completion"],
             "divergence": overview["divergence"],
             "journal": overview["journal"],
@@ -615,7 +616,10 @@ function drawTimeline(cv, tl, selected) {
   const pnlTop = priceBot + splitGap;
 
   const mins = ticks.map(t => minuteOf(t.ts));
-  const tMin = Math.min(...mins), tMax = Math.max(...mins);
+  // Fixed to the regular session (9:30-16:00 ET), not the recorded ticks' own min/max — SPX/XSP
+  // both trade RTH only. A session that starts late or stops early should look short against a
+  // fixed axis, not stretch to fill it and read as a normal, complete day.
+  const tMin = 9*60 + 30, tMax = 16*60;
   const X = m => pad.l + (m - tMin) / ((tMax - tMin)||1) * (w - pad.l - pad.r);
 
   // Where the loop went quiet, BREAK the lines rather than joining across the hole.
@@ -909,6 +913,10 @@ function renderToday(d) {
     {k:'Risk-free', v:t.risk_free_count, t:t.risk_free_count?'pos':''},
     {k:'Completion', v:fmtPct(c.completion_rate)},
     {k:'Fees', v:fmtMoney(s.fees), t:'dim'},
+    // Every open position's own worst case (full defined risk for a short vertical, 0 for a
+    // fly) net of trading fees AND the worst-case $5/contract exercise-assignment fee, as if
+    // every leg finished ITM -- see fly.position_floor. Zero means nothing open can still lose.
+    {k:'Max possible loss', v:fmtMoney(t.max_possible_loss), t:t.max_possible_loss<0?'neg':'dim'},
   ]);
 
   const lastTick = ((t.timeline || {}).ticks || []).filter(x => x.spot != null).slice(-1)[0];
@@ -972,7 +980,7 @@ function renderToday(d) {
   table($('#journal-tbl'), [
     {h:'Arm', f:r=>r.arm}, {h:'Mode', f:r=>r.mode},
     {h:'Decision', f:r=>r.accepted ? `<span class="pill ok">${r.reason}</span>` : r.reason},
-    {h:'n', f:r=>r.occurrences, num:1},
+    {h:'consecutive rejection count', f:r=>r.occurrences, num:1},
     {h:'From', f:r=>(r.first_seen||'').slice(11,16)},
     {h:'To', f:r=>(r.last_seen||'').slice(11,16)},
     {h:'Centre', f:r=>r.center_last === null ? '–' : fmtNum(r.center_last,0), num:1},

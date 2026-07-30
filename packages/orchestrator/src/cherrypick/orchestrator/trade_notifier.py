@@ -526,12 +526,20 @@ _SCHEMAS = {
 class _LiveNotifier:
     """Wraps a Notifier so every live-ledger event is unmistakably LIVE: title prefixed, the
     schema formatters' "paper" wording rewritten, and the message pushed with a real-money
-    marker. Real money warrants the desktop toast too — paper deliberately doesn't get one."""
+    marker. Real money warrants the desktop toast too — paper deliberately doesn't get one.
+
+    Every schema's stage title is hardcoded "Paper entry"/"Paper exit"/etc. (it's the same
+    formatter table for both ledgers) — drop that word here rather than double it under the
+    "LIVE:" prefix this wrapper already adds. Found 2026-07-30 on flies' first live fill: the
+    message body's " paper " -> " LIVE " rewrite below was never mirrored onto the title, so a
+    real fill announced itself as "LIVE: Paper entry". Same gap would hit MEIC/Earnings the
+    moment either goes live — this wrapper is shared across all three schemas."""
 
     def __init__(self, inner: Notifier):
         self._inner = inner
 
     def notify(self, level: str, key: str, title: str, message: str):
+        title = title.replace("Paper ", "")
         message = message.replace(" paper ", " LIVE ")
         return self._inner.notify(level, f"live.{key}", f"LIVE: {title}", f"\U0001f6a8 {message}")
 

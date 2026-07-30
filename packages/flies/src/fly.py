@@ -123,6 +123,21 @@ def fly_debit(
     return mid + slippage_frac * spread
 
 
+def fly_close_credit(
+    lower_q: dict, center_q: dict, upper_q: dict, slippage_frac: float = DEFAULT_SLIPPAGE_FRAC
+) -> float:
+    """Credit received CLOSING an existing fly ahead of expiry (sell lower, buy back the doubled
+    centre, sell upper) — the mirror of `fly_debit`: selling nets LESS than mid by the same
+    four-leg haircut, exactly as `vertical_credit` sits below `vertical_debit`. Used only to decide
+    whether closing an ITM fly early is cheaper than the exercise-assignment fee it would otherwise
+    incur (see `engine.evaluate_pre_close_exit`) — never to price a *held* position, which stays on
+    intrinsic value (`fly_payoff`) until it actually trades.
+    """
+    mid = _leg_mid(lower_q) - 2 * _leg_mid(center_q) + _leg_mid(upper_q)
+    spread = _leg_spread(lower_q) + 2 * _leg_spread(center_q) + _leg_spread(upper_q)
+    return mid - slippage_frac * spread
+
+
 # --------------------------------------------------------------------------- fees
 def vertical_open_fee(symbol: str, quantity: int = 1) -> float:
     """Open a 2-leg vertical (1 sell leg). ndigits=4 so fees stay linear in quantity (MEIC parity)."""
@@ -135,14 +150,54 @@ def fly_open_fee(symbol: str, quantity: int = 1) -> float:
     return _fees.ic_open_fee(symbol, quantity, legs=4, sell_legs=2, ndigits=4)
 
 
-def expire_fee() -> float:
-    """Cash-settled expiry costs nothing — no closing transaction. SPX/XSP only, by design."""
-    return _fees.ic_expire_fee()
+def fly_close_fee(symbol: str, quantity: int = 1) -> float:
+    """Close a fly ahead of expiry. Same 4-contract/2-sell-contract shape as opening one (buying
+    back the doubled centre is 0 sell contracts, selling both wings is 2), at the schedule's
+    (lower, often $0) closing commission rate rather than the opening one."""
+    return _fees.ic_close_fee(symbol, quantity, legs=4, sell_legs=2, ndigits=4)
+
+
+def expire_fee(itm_contracts: int = 0) -> float:
+    """Cash-settled expiry: $0 per OTM leg (nothing to exercise), $5/contract for each of
+    `itm_contracts` that finishes ITM and is exercised/assigned overnight — see
+    `itm_contracts_at_settlement`. SPX/XSP only."""
+    return _fees.ic_expire_fee(itm_contracts)
+
+
+def itm_contracts_at_settlement(position: dict, settlement_price: float) -> int:
+    """How many contracts across this position's legs finish strictly ITM at `settlement_price` —
+    the count tastytrade's overnight $5/contract exercise-assignment fee is assessed on (charged
+    the next business day, not at expiry itself). Exactly-at-the-strike is treated as OTM (no
+    intrinsic value, nothing to exercise).
+
+    A short vertical has 2 legs (short `center`, long the wing). A completed fly has 3 distinct
+    strikes but 4 contracts — the centre carries 2 (one from the opening vertical, one from the
+    completing vertical), and the fee is per CONTRACT, not per unique strike.
+    """
+    side, center, width = position["side"], position["center"], position["wing_width"]
+    qty = position.get("quantity", 1)
+
+    def _itm(strike: float) -> bool:
+        return settlement_price < strike if side == PUT else settlement_price > strike
+
+    if position["kind"] == "fly":
+        legs = [(center - width, 1), (center, 2), (center + width, 1)]
+    else:
+        long_strike = center - width if side == PUT else center + width
+        legs = [(center, 1), (long_strike, 1)]
+    return sum(n for strike, n in legs if _itm(strike)) * qty
+
+
+def assignment_fee(position: dict, settlement_price: float) -> float:
+    """The overnight exercise-assignment fee this position would incur if it settled at
+    `settlement_price` right now — $0 when every leg is OTM."""
+    return expire_fee(itm_contracts_at_settlement(position, settlement_price))
 
 
 # --------------------------------------------------------------------------- position accounting
 def position_pnl(position: dict, underlying: float) -> float:
-    """Dollar P&L of one position at an expiry price, net of its recorded fees.
+    """Dollar P&L of one position at an expiry price, net of its recorded fees AND the
+    exercise-assignment fee this exact price would trigger (see `assignment_fee`).
 
     A position is a plain dict:
         kind        "fly" | "short_vertical"
@@ -152,6 +207,12 @@ def position_pnl(position: dict, underlying: float) -> float:
         net         per-contract cash so far: positive = credit taken in, negative = debit paid
         quantity    contracts
         fees        dollars already charged for this position
+        status      when "settled", `fees` is trusted to ALREADY include the real assignment fee
+                    (folded in once by `engine.settle()`) and none is added here again — every
+                    other status (open, or absent, i.e. a hypothetical mark on a still-live
+                    position) computes it fresh from `underlying`, so the payoff curve and the
+                    session-timeline replay stay honest about a cost that has not happened yet
+                    but would if the session ended at this price (honesty rule 1).
     """
     qty = position.get("quantity", 1)
     w = position["wing_width"]
@@ -160,19 +221,42 @@ def position_pnl(position: dict, underlying: float) -> float:
     else:
         payoff = short_vertical_payoff(position["side"], position["center"], w, underlying)
     cash = position["net"] + payoff
-    return cash * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0)
+    fees = position.get("fees", 0.0)
+    if position.get("status") != "settled":
+        fees += assignment_fee(position, underlying)
+    return cash * CONTRACT_MULTIPLIER * qty - fees
 
 
 def position_floor(position: dict) -> float:
-    """Worst-case dollar outcome of one position at expiry, net of fees — the honest "risk-free" number.
+    """Worst-case dollar outcome of one position GOING FORWARD, net of fees — the honest
+    "risk-free" number.
 
-    A fly's payoff bottoms out at 0, so its floor is simply the cash already taken in less fees. That
-    is a genuine per-position guarantee. A short vertical bottoms out at -W, full defined risk, and
-    calling THAT risk-free would be the lie this module exists to avoid.
+    A fly's payoff bottoms out at 0, so its floor is simply the cash already taken in less fees.
+    That is a genuine per-position guarantee. A short vertical bottoms out at -W, full defined
+    risk, and calling THAT risk-free would be the lie this module exists to avoid.
+
+    A SHORT VERTICAL's floor still reserves the worst-case exercise-assignment fee (both legs
+    ITM) — there is no mechanism here to avoid it, so the true worst case includes it.
+
+    A FLY's floor does NOT reserve one. `engine.evaluate_pre_close_exit` closes any fly with an
+    ITM leg ahead of expiry whenever doing so is cheaper than the assignment fee it would incur,
+    so going forward the realistic worst case is bounded by whichever of (close now, hold to
+    settlement) is cheaper — never more than the assignment fee itself, and often (this exit
+    exists specifically because it usually is) less. This is NOT a claim the fee can never be
+    paid: a broker/liquidity failure on the closing order would still fall back to the ordinary
+    settlement path and the real assignment fee, a tail risk this floor deliberately does not
+    reserve capital against, same as it does not reserve against the exit order itself failing
+    to submit. `position_pnl`, unlike this function, still prices the fee fresh at every
+    hypothetical price — this floor is the one place going-forward risk management gets to
+    change what "worst case" means; the payoff curve and settle_now stay a pure expiry question.
     """
     qty = position.get("quantity", 1)
-    worst_payoff = 0.0 if position["kind"] == "fly" else -position["wing_width"]
-    return (position["net"] + worst_payoff) * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0)
+    is_fly = position["kind"] == "fly"
+    worst_payoff = 0.0 if is_fly else -position["wing_width"]
+    fees = position.get("fees", 0.0)
+    if not is_fly:
+        fees += expire_fee(2 * qty)
+    return (position["net"] + worst_payoff) * CONTRACT_MULTIPLIER * qty - fees
 
 
 def is_risk_free(position: dict) -> bool:
@@ -207,8 +291,17 @@ def _scan_prices(positions: list[dict], step: float) -> list[float]:
     """Price grid spanning every position's payoff, padded a wing beyond the outermost strike.
 
     A book of flies and verticals is piecewise-linear with kinks only at strikes, so a grid stepping
-    through the strikes plus the flat regions beyond them sees every local minimum.
+    through the strikes plus the flat regions beyond them sees every local minimum of the PAYOFF.
+
+    The exercise-assignment fee is not linear, though — it is a step function that jumps by
+    $5/contract the instant a leg crosses its strike (see `itm_contracts_at_settlement`), so the
+    true worst dollar point sits an infinitesimal distance past a strike, not exactly on it. A
+    strike itself is included as the OTM side of that step by convention (exactly-at-the-money has
+    no intrinsic value to exercise), so a bare step grid would land the "worst" reading on the
+    wrong side of every jump. `eps`-shifted neighbors on both sides of each strike fix that, to
+    within a cent — negligible against a payoff scaled by CONTRACT_MULTIPLIER.
     """
+    eps = 0.01
     strikes = []
     for p in positions:
         w = p["wing_width"]
@@ -219,7 +312,10 @@ def _scan_prices(positions: list[dict], step: float) -> list[float]:
     while x <= hi + pad + 1e-9:
         prices.append(round(x, 4))
         x += step
-    return prices
+    for s in strikes:
+        prices.append(round(s - eps, 4))
+        prices.append(round(s + eps, 4))
+    return sorted(set(prices))
 
 
 def book_floor(positions: list[dict], step: float = 1.0) -> dict:
