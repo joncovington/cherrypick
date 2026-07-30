@@ -1,5 +1,9 @@
 # Strategy Overview
 
+**What this covers:** what MEIC actually trades and why — the iron condor structure, how strikes
+get picked, and the rules for closing a position. Part of the [MEIC module](../README.md) in the
+cherrypick suite.
+
 The `cherrypick-meic` module runs a **Multiple Entry Iron Condor (MEIC)** strategy on 0DTE options. Rather than placing a single IC at the open, it evaluates market conditions on each loop iteration and enters additional ICs throughout the day when conditions are favorable.
 
 ---

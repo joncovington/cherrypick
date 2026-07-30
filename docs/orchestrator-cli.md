@@ -5,6 +5,8 @@ a pip install (`pip install -e ".[dev]"`) also exposes them as `cherrypick <cmd>
 
 All commands are **read-only or paper-only** except the narrow onboarding pair (`connect`/`account`),
 which writes *configuration* (never an order). See [guardrails-and-modes.md](guardrails-and-modes.md).
+(The flies module's own live-trading loop is a separate program, started with `/live-flies-start` rather
+than any command on this page — see [strategy-engines.md](strategy-engines.md#flies--0dte-net-credit-butterflies).)
 
 ## Onboarding & setup
 

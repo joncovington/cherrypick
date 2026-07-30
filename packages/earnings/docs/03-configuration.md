@@ -61,16 +61,20 @@ cost-adjusted expectancy is computed downstream in `strategy_metrics.py`).
   "commission_cap_per_leg": 10.00,
   "clearing_fee_per_contract": 0.10,
   "regulatory_fee_per_contract": 0.04,
-  "slippage_frac_of_spread": 0.25
+  "slippage_frac_of_spread": 0.125,
+  "slippage_cap_frac_of_mid": 0.15
 }
 ```
 
 `commission_close_per_contract` is `0.00` by design — this mirrors tastytrade's actual
-open-only commission model, not a placeholder. `slippage_frac_of_spread` haircuts the fill
-price by a fraction of the quoted bid-ask width rather than assuming a mid-price fill. These
-rates come from tastytrade's published pricing page and are checked periodically — re-verify
-against the current schedule if it's been a while, since exchange/regulatory pass-through fees
-do change.
+open-only commission model, not a placeholder. `slippage_frac_of_spread` haircuts each leg's
+fill price by a fraction of its bid-ask width conceded from mid, rather than assuming a clean
+mid-price fill (0.125 = a quarter of the way from mid to the far touch; this was 0.25 before a
+2026 revision toward a more realistic worked-combo-limit assumption). `slippage_cap_frac_of_mid`
+caps a single leg's slippage at that fraction of its own mid price, so a deep-OTM, wide-spread
+wing leg can't dominate the modeled cost. These rates come from tastytrade's published pricing
+page and are checked periodically — re-verify against the current schedule if it's been a
+while, since exchange/regulatory pass-through fees do change.
 
 ---
 

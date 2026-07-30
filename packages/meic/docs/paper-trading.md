@@ -1,5 +1,9 @@
 # Paper-Trading Multi-Profile Evaluation
 
+**What this covers:** how MEIC's simulated (no real money) trading works, why it uses a custom
+engine instead of the broker's own sandbox, and the bar a risk profile has to clear before it's
+trusted with real capital. Part of the [MEIC module](../README.md) in the cherrypick suite.
+
 Capital-free evaluation of the four risk profiles (conservative / moderate / aggressive /
 very-aggressive) on identical market conditions, before graduating one to live trading via
 `/set-risk-profile`. This document is the operating reference; `.claude/commands/paper-loop.md`
