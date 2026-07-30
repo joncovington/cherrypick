@@ -141,6 +141,72 @@ def test_by_arm_ranks_by_net(conn):
     assert [r["arm"] for r in analytics.by_arm(conn)] == ["gex", "time_window", "control"]
 
 
+# --------------------------------------------------------------------------- symbol scope
+# The book moved SPX -> XSP (both eras remain in the ledger, see CLAUDE.md); every rollup that groups
+# only by arm/mode/window/date would otherwise silently blend the two symbols' rows under one arm,
+# which is exactly the kind of unstated book-mixing the module's honesty rules exist to forbid.
+def test_stats_for_period_narrows_to_one_symbol(conn):
+    position(conn, "S1", symbol="SPX", pnl=100.0)
+    position(conn, "S2", symbol="XSP", pnl=10.0)
+    assert analytics.stats_for_period(conn)["net_pnl"] == 110.0
+    assert analytics.stats_for_period(conn, symbol="XSP")["net_pnl"] == 10.0
+    assert analytics.stats_for_period(conn, symbol="SPX")["net_pnl"] == 100.0
+    assert analytics.stats_for_period(conn, symbol="ALL")["net_pnl"] == 110.0
+
+
+def test_pnl_series_and_daily_pnl_respect_symbol(conn):
+    position(conn, "S1", day="2026-07-20", symbol="SPX", pnl=100.0)
+    position(conn, "S2", day="2026-07-20", symbol="XSP", pnl=10.0)
+    series = analytics.pnl_series(conn, "daily", symbol="XSP")
+    assert len(series) == 1 and series[0]["net_pnl"] == 10.0
+    daily = analytics.daily_pnl(conn, symbol="SPX")
+    assert len(daily) == 1 and daily[0]["net_pnl"] == 100.0
+
+
+def test_by_arm_symbol_filter_excludes_the_other_symbols_rows(conn):
+    """An arm's SPX-era and XSP-era rows must not blend into one comparison row unless ALL is asked
+    for -- narrowing by symbol is how the honesty rule that governs arm-vs-arm comparisons extends to
+    a book that has changed underlyings mid-study."""
+    position(conn, "P1", arm="gex", symbol="SPX", pnl=100.0)
+    position(conn, "P2", arm="gex", symbol="XSP", pnl=10.0)
+    assert analytics.by_arm(conn)[0]["net_pnl"] == 110.0
+    assert analytics.by_arm(conn, symbol="XSP")[0]["net_pnl"] == 10.0
+    assert analytics.by_arm(conn, symbol="SPX")[0]["net_pnl"] == 100.0
+
+
+def test_by_entry_mode_and_window_and_fee_drag_respect_symbol(conn):
+    position(conn, "P1", arm="gex", symbol="SPX", entry_mode="legged", window="10:30-11:00", pnl=100.0)
+    position(conn, "P2", arm="gex", symbol="XSP", entry_mode="legged", window="10:30-11:00", pnl=10.0)
+    assert analytics.by_entry_mode(conn, symbol="XSP")[0]["net_pnl"] == 10.0
+    assert analytics.by_entry_window(conn, symbol="XSP")[0]["net_pnl"] == 10.0
+    assert analytics.fee_drag(conn, symbol="XSP")[0]["net_pnl"] == 10.0
+
+
+def test_arm_comparison_exclusions_respect_symbol(conn):
+    position(conn, "L1", arm="gex", symbol="XSP", entry_mode="legged", pnl=100.0)
+    position(conn, "O1", arm="gex", symbol="XSP", entry_mode="outright", pnl=-90.0)
+    position(conn, "O2", arm="gex", symbol="SPX", entry_mode="outright", pnl=-5.0)
+    exclusions = analytics.arm_comparison_exclusions(conn, symbol="XSP")
+    assert exclusions["trades"] == 1
+    assert exclusions["net_pnl"] == -90.0
+
+
+def test_trade_log_respects_symbol(conn):
+    position(conn, "P1", symbol="SPX", pnl=100.0)
+    position(conn, "P2", symbol="XSP", pnl=10.0)
+    rows = analytics.trade_log(conn, symbol="XSP")
+    assert len(rows) == 1 and rows[0]["position_id"] == "P2"
+
+
+def test_completion_stats_and_trend_respect_symbol(conn):
+    position(conn, "F1", symbol="XSP", kind="fly", entry_mode="legged")
+    position(conn, "F2", symbol="SPX", kind="short_vertical", entry_mode="legged", best_debit=0.0, credit=1.0)
+    stats = analytics.completion_stats(conn, symbol="XSP")
+    assert stats["legged_entries"] == 1 and stats["completed"] == 1
+    trend = analytics.completion_trend(conn, symbol="SPX")
+    assert len(trend) == 1 and trend[0]["legged_entries"] == 1 and trend[0]["completed"] == 0
+
+
 # --------------------------------------------------------------------------- arm comparison scope
 def test_arm_comparison_excludes_entry_modes_only_one_arm_traded(conn):
     """The arms differ by centring/timing/width, never by entry mode. gex was the only arm ever to
@@ -382,6 +448,70 @@ def test_session_overview_bundles_the_today_view(conn):
     assert overview["date"] == "2026-07-20"
     assert overview["open_count"] == 1 and overview["risk_free_count"] == 1
     assert "completion" in overview and "divergence" in overview and "journal" in overview
+
+
+def _book(conn, *, day="2026-07-20", arm="gex", symbol="XSP", net_cash=10.0):
+    dbmod.save_book(
+        conn,
+        {
+            "book_id": f"{day}:{arm}:{symbol}",
+            "trade_date": day,
+            "arm": arm,
+            "symbol": symbol,
+            "credit_collected": net_cash,
+            "debits_paid": 0.0,
+            "fees": 0.0,
+            "net_cash": net_cash,
+            "worst": net_cash,
+            "worst_at": None,
+            "floor_holds": 1,
+            "band_low": None,
+            "band_high": None,
+            "unbounded_below": 0,
+            "status": "open",
+        },
+    )
+
+
+def test_session_overview_narrows_every_figure_to_the_selected_arm_and_symbol(conn):
+    """Switching either selector must not leave one card (books/positions) telling a different
+    story than another (the derived counts, stats, completion) -- the whole Today view has to
+    agree on the same scope."""
+    position(conn, "P1", arm="gex", symbol="XSP", kind="fly", status="open", risk_free=1, pnl=None)
+    position(conn, "P2", arm="control", symbol="SPX", kind="fly", status="open", risk_free=0, pnl=None)
+    _book(conn, arm="gex", symbol="XSP")
+    _book(conn, arm="control", symbol="SPX")
+
+    everything = analytics.session_overview(conn, "2026-07-20")
+    assert everything["open_count"] == 2
+
+    xsp_only = analytics.session_overview(conn, "2026-07-20", symbol="XSP")
+    assert xsp_only["open_count"] == 1
+    assert xsp_only["risk_free_count"] == 1
+    assert {p["position_id"] for p in xsp_only["positions"]} == {"P1"}
+    assert {b["symbol"] for b in xsp_only["books"]} == {"XSP"}
+
+    gex_only = analytics.session_overview(conn, "2026-07-20", arm="gex")
+    assert {p["position_id"] for p in gex_only["positions"]} == {"P1"}
+
+
+def test_positions_for_day_and_books_for_day_accept_a_symbol_filter(conn):
+    position(conn, "P1", symbol="XSP")
+    position(conn, "P2", symbol="SPX")
+    _book(conn, symbol="XSP")
+    _book(conn, symbol="SPX")
+    assert {p["position_id"] for p in analytics.positions_for_day(conn, "2026-07-20", symbol="XSP")} == {"P1"}
+    books = analytics.books_for_day(conn, "2026-07-20", symbol="XSP")
+    assert {b["symbol"] for b in books} == {"XSP"}
+
+
+def test_completion_stats_accepts_an_arm_filter(conn):
+    position(conn, "F1", arm="gex", kind="fly", entry_mode="legged")
+    position(
+        conn, "F2", arm="control", kind="short_vertical", entry_mode="legged", best_debit=0.0, credit=1.0
+    )
+    gex_only = analytics.completion_stats(conn, arm="gex")
+    assert gex_only["legged_entries"] == 1 and gex_only["completed"] == 1
 
 
 # --------------------------------------------------------------------------- session timeline

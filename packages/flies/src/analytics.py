@@ -144,15 +144,19 @@ def pnl_series(conn, granularity: str = "daily", arm=None, symbol=None) -> list[
 COMPARISON_ENTRY_MODES = ("legged",)
 
 
-def by_arm(conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES) -> list[dict]:
+def by_arm(conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES, symbol=None) -> list[dict]:
     """Per-arm comparison — the module's headline output. The arms exist to be compared; a blended
     total would hide the only contrast the experiment is designed to draw.
 
     Scoped to `entry_modes` (legged only by default — see COMPARISON_ENTRY_MODES) so a mode only one
     arm ever traded cannot distort the ranking. Pass `entry_modes=None` for the unfiltered view; the
     amount held back is reported by `arm_comparison_exclusions`, so it is never silently dropped.
+
+    `symbol` narrows to one underlying (e.g. isolating XSP sessions from the retired SPX ones) — every
+    arm's book otherwise blends both, which is exactly the kind of silent cross-book mixing the module's
+    honesty rules exist to prevent (fee schedules and wing scale both differ by symbol).
     """
-    where, params = _period_clause(start, end)
+    where, params = _period_clause(start, end, symbol=symbol)
     if entry_modes:
         where += f" AND entry_mode IN ({','.join('?' * len(entry_modes))})"
         params = [*params, *entry_modes]
@@ -166,13 +170,15 @@ def by_arm(conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES) -> li
     return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
 
 
-def arm_comparison_exclusions(conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES) -> dict:
+def arm_comparison_exclusions(
+    conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES, symbol=None
+) -> dict:
     """What `by_arm` held back, so the exclusion is stated rather than inferred from a gap.
 
     Without this the arm table would sum to less than the book's own P&L with nothing on the page to
     explain the difference — which is the failure mode the filter is supposed to avoid, not create.
     """
-    where, params = _period_clause(start, end)
+    where, params = _period_clause(start, end, symbol=symbol)
     if not entry_modes:
         return {"excluded_modes": [], "trades": 0, "net_pnl": 0.0, "by_mode": [], "by_arm": []}
     clause = f"{where} AND entry_mode NOT IN ({','.join('?' * len(entry_modes))})"
@@ -194,10 +200,10 @@ def arm_comparison_exclusions(conn, start=None, end=None, entry_modes=COMPARISON
     }
 
 
-def by_entry_mode(conn, start=None, end=None) -> list[dict]:
+def by_entry_mode(conn, start=None, end=None, symbol=None) -> list[dict]:
     """legged vs outright. They perform differently enough that averaging them together would hide
     the finding — legged manufactures its own floor, outright spends one."""
-    where, params = _period_clause(start, end)
+    where, params = _period_clause(start, end, symbol=symbol)
     rows = conn.execute(
         f"SELECT entry_mode, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params
     ).fetchall()
@@ -207,13 +213,13 @@ def by_entry_mode(conn, start=None, end=None) -> list[dict]:
     return [{"entry_mode": m, **_summarize(rs)} for m, rs in sorted(grouped.items())]
 
 
-def by_entry_window(conn, start=None, end=None) -> list[dict]:
+def by_entry_window(conn, start=None, end=None, symbol=None) -> list[dict]:
     """Per time-of-day window.
 
     The windows are deliberately unranked in config — we had no intraday history to rank them with, so
     every trade is tagged and the ranking is meant to emerge here, from our own sessions.
     """
-    where, params = _period_clause(start, end)
+    where, params = _period_clause(start, end, symbol=symbol)
     rows = conn.execute(
         f"SELECT entry_window, arm, gross_pnl, fees, pnl FROM fly_positions WHERE {where}", params
     ).fetchall()
@@ -223,7 +229,7 @@ def by_entry_window(conn, start=None, end=None) -> list[dict]:
     return [{"window": w, **_summarize(rs)} for w, rs in sorted(grouped.items())]
 
 
-def fee_drag(conn, start=None, end=None) -> list[dict]:
+def fee_drag(conn, start=None, end=None, symbol=None) -> list[dict]:
     """Fee drag per arm. Broken out because a legged fly pays two fee stacks against a credit that may
     be $35-105 — costs are not a rounding error for this strategy, they are the experiment."""
     return [
@@ -235,11 +241,11 @@ def fee_drag(conn, start=None, end=None) -> list[dict]:
             "fee_drag_pct": r["fee_drag_pct"],
             "trades": r["trades"],
         }
-        for r in by_arm(conn, start, end)
+        for r in by_arm(conn, start, end, symbol=symbol)
     ]
 
 
-def daily_pnl(conn, arm=None) -> list[dict]:
+def daily_pnl(conn, arm=None, symbol=None) -> list[dict]:
     """Per-day totals for the calendar heatmap."""
     return [
         {
@@ -249,12 +255,12 @@ def daily_pnl(conn, arm=None) -> list[dict]:
             "fees": b["fees"],
             "net_pnl": b["net_pnl"],
         }
-        for b in pnl_series(conn, "daily", arm=arm)
+        for b in pnl_series(conn, "daily", arm=arm, symbol=symbol)
     ]
 
 
 # --------------------------------------------------------------------------- completion & counterfactual
-def completion_stats(conn, start=None, end=None) -> dict:
+def completion_stats(conn, start=None, end=None, symbol=None, arm=None) -> dict:
     """Completion rate, latency, and the counterfactual split — the numbers that decide whether this
     strategy is real.
 
@@ -285,6 +291,12 @@ def completion_stats(conn, start=None, end=None) -> dict:
     if end:
         clause.append("trade_date <= ?")
         params.append(end)
+    if symbol and symbol != "ALL":
+        clause.append("symbol = ?")
+        params.append(symbol)
+    if arm and arm != "ALL":
+        clause.append("arm = ?")
+        params.append(arm)
     where = (" WHERE " + " AND ".join(clause)) if clause else ""
     rows = conn.execute(
         f"SELECT position_id, kind, entry_mode, credit, best_completing_debit, "
@@ -342,7 +354,7 @@ def completion_stats(conn, start=None, end=None) -> dict:
     }
 
 
-def completion_trend(conn, start=None, end=None) -> list[dict]:
+def completion_trend(conn, start=None, end=None, symbol=None) -> list[dict]:
     """completion_stats' headline number on a date axis: one row per session with legged entries —
     how many, how many became flies, and the rate. Rule 4 says completion rate is the number that
     decides whether this strategy is real; a single blended rate can drift slowly while looking
@@ -354,6 +366,9 @@ def completion_trend(conn, start=None, end=None) -> list[dict]:
     if end:
         clause.append("trade_date <= ?")
         params.append(end)
+    if symbol and symbol != "ALL":
+        clause.append("symbol = ?")
+        params.append(symbol)
     rows = conn.execute(
         f"SELECT trade_date, COUNT(*) AS legged, "
         f"SUM(CASE WHEN kind = 'fly' THEN 1 ELSE 0 END) AS completed "
@@ -444,11 +459,14 @@ def decision_journal(conn, day: str, arm: str | None = None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def positions_for_day(conn, day: str, arm: str | None = None) -> list[dict]:
+def positions_for_day(conn, day: str, arm: str | None = None, symbol: str | None = None) -> list[dict]:
     clause, params = ["trade_date = ?"], [day]
     if arm and arm != "ALL":
         clause.append("arm = ?")
         params.append(arm)
+    if symbol and symbol != "ALL":
+        clause.append("symbol = ?")
+        params.append(symbol)
     rows = conn.execute(
         f"SELECT * FROM fly_positions WHERE {' AND '.join(clause)} ORDER BY entry_time", params
     ).fetchall()
@@ -464,8 +482,17 @@ def trade_log(conn, limit: int = 1000, arm=None, symbol=None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def books_for_day(conn, day: str) -> list[dict]:
-    rows = conn.execute("SELECT * FROM fly_books WHERE trade_date = ? ORDER BY arm", (day,)).fetchall()
+def books_for_day(conn, day: str, arm: str | None = None, symbol: str | None = None) -> list[dict]:
+    clause, params = ["trade_date = ?"], [day]
+    if arm and arm != "ALL":
+        clause.append("arm = ?")
+        params.append(arm)
+    if symbol and symbol != "ALL":
+        clause.append("symbol = ?")
+        params.append(symbol)
+    rows = conn.execute(
+        f"SELECT * FROM fly_books WHERE {' AND '.join(clause)} ORDER BY arm", params
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -736,11 +763,17 @@ def today() -> str:
     return clock.today_iso()
 
 
-def session_overview(conn, day: str | None = None) -> dict:
-    """Everything the Today view and the section card need, in one call."""
+def session_overview(conn, day: str | None = None, arm: str | None = None, symbol: str | None = None) -> dict:
+    """Everything the Today view and the section card need, in one call.
+
+    `arm`/`symbol` narrow every figure here (books, positions, and the derived counts/stats/
+    completion) to the selected scope — the same filter the payoff curve and the History/
+    Performance views already apply, so switching either selector can't leave one card telling a
+    different story than the rest of the page.
+    """
     day = day or today()
-    books = books_for_day(conn, day)
-    positions = positions_for_day(conn, day)
+    books = books_for_day(conn, day, arm, symbol)
+    positions = positions_for_day(conn, day, arm, symbol)
     open_positions = [p for p in positions if p["status"] == "open"]
     flies = [p for p in positions if p["kind"] == "fly"]
     return {
@@ -750,8 +783,8 @@ def session_overview(conn, day: str | None = None) -> dict:
         "open_count": len(open_positions),
         "fly_count": len(flies),
         "risk_free_count": len([p for p in flies if p["risk_free"]]),
-        "stats": stats_for_period(conn, day, day),
-        "completion": completion_stats(conn, day, day),
+        "stats": stats_for_period(conn, day, day, arm=arm, symbol=symbol),
+        "completion": completion_stats(conn, day, day, symbol=symbol, arm=arm),
         "divergence": arm_divergence(conn, day),
-        "journal": decision_journal(conn, day),
+        "journal": decision_journal(conn, day, arm),
     }
