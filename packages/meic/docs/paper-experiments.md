@@ -1,3 +1,9 @@
+**What this covers:** the history and design of a specific paper-trading study comparing wing
+widths, including a naming scheme that was later retired. More of an internal design record than
+a how-to guide — see [paper-trading.md](paper-trading.md) for the general paper-trading system
+and [risk-profiles.md](risk-profiles.md) for the risk-profile ladder it's built on. Part of the
+[MEIC module](../README.md) in the cherrypick suite.
+
 # Paper-trading experiment cells (account-size study)
 
 > ## Retired 2026-07-18 — resumed 2026-07-28 as the wing-width study

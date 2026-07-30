@@ -18,6 +18,16 @@ Paper and live books are strictly separated: separate SQLite files, and a module
 gated behind `enable_live_trading: true`. Even a paper "dry-run" never calls `execute_trade` (a dry-run
 performs a real margin check).
 
+**One narrow, explicitly-authorized exception: the flies live pilot.** The orchestrator itself still
+never places an order — but the flies module runs its own separate, per-day-armed live trading loop
+(started only via `/live-flies-start`, which requires a fresh explicit confirmation every single trading
+day and self-disarms every evening). This is a deliberate, small, tightly-bounded exception to the
+"paper by default" rule above, not a change to it — one strategy variant, one contract, one open
+position at a time. Every other guardrail on this page (masked accounts, keyring-only credentials, no
+AI/network on the decision path) still applies to it in full. See
+[`packages/flies/docs/live-trading-plan.md`](../packages/flies/docs/live-trading-plan.md) for the complete
+rulebook.
+
 ## The one live-config boundary: `connect` / `account`
 
 The **only** live-adjacent action the orchestrator performs is onboarding *configuration*:

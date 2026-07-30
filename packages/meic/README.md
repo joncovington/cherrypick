@@ -1,5 +1,14 @@
 # cherrypick-meic
 
+**What this module does:** MEIC trades multiple-entry iron condors — a defined-risk,
+premium-selling strategy — on same-day-expiring (0DTE) index options like SPX and XSP. It can
+run as **paper trading** (simulated, no real money, the recommended starting point) or as a
+**live** agent that watches the market and places real orders, gated behind an explicit setting
+you have to turn on yourself. It's one strategy module in the cherrypick suite, alongside
+earnings plays, a GEX dashboard, and the 0DTE butterfly module — see the suite overview below for
+how they fit together. Most of what you do here is run terminal commands, or ask Claude to run
+a `/`-prefixed command on your behalf — no coding required.
+
 > **The MEIC module of the [cherrypick](../../README.md) suite.** cherrypick is a monorepo of trading
 > modules driven by a shared **orchestrator**. This package (`packages/meic`) is the 0DTE iron-condor
 > engine; its siblings are [`packages/earnings`](../earnings) (overnight earnings plays),
@@ -148,7 +157,7 @@ Switch entry-gate thresholds with a single command instead of hand-editing `conf
 | **conservative** (default) | Strict IV-rank (≥30%) and credit floors, wide OTM buffers, latest entry time (12:00 PM) | Fewest trades (~1–2/day), highest per-trade safety margin |
 | **moderate** | Slightly relax IV-rank (≥22%) and credit floors, enter earlier (11:00 AM) | ~1 more trade/day, thinner credit cushion but offset by tighter 93% stop |
 | **aggressive** | Tier 1 + accept closer-to-money strikes (delta 0.22, OTM tighter); cap 3 concurrent ICs instead of 4 | ~2–3 more trades/week, each one riskier but position cap and 90% stop limit total exposure |
-| **very-aggressive** | Tier 2 + trade through higher-VIX (≤30) and trending (ATR ≤40) conditions; cap 2 concurrent ICs, stop at 85% | Most trades (~3–5 more/week on active weeks), each with high gamma/pin risk; only for deliberate short experiments |
+| **very-aggressive** | Tier 2 + trade through higher-VIX (≤30) and trending (ATR ≤2.0% of price) conditions; cap 2 concurrent ICs, stop at 85% | Most trades (~3–5 more/week on active weeks), each with high gamma/pin risk; only for deliberate short experiments |
 
 Use `/set-risk-profile <name>` to switch (backed up automatically, takes effect on next loop). The paper-trading system runs **all four profiles at once** so you can compare them on identical market days before committing to one. Start at **moderate** after 2–4 weeks if conservative rejects 40%+ of entries. See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, decision tree, and when to escalate.
 

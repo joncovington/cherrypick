@@ -215,7 +215,7 @@ These are the constraints the module exists to enforce. Breaking one makes the n
 ## Status
 
 **Complete and tested:** decision engine, floor accounting, paper DB, snapshot provider, session
-driver, CLI, and the orchestrator `fly_book` wiring across all four schema registries. 185 tests,
+driver, CLI, and the orchestrator `fly_book` wiring across all four schema registries. 300 tests,
 including a provider suite built against the real `cherrypick.core.streamcache` DDL so an upstream
 schema change fails here rather than silently producing empty snapshots. The package runs in CI (its
 own cell in the `.github/workflows/ci.yml` matrix, `ruff` + `pytest` on every push and PR).
