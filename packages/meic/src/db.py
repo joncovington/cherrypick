@@ -696,6 +696,11 @@ _UPDATABLE_TRADE_FIELDS = (
     "last_unmarked_at",
     # Cost-sensitivity instrumentation — accumulated on every priced exit.
     "slippage_dollars",
+    # Written only on a physically-settled force-close (paper._apply_exit_decision); missing from
+    # this whitelist meant every such force-close's update_trade call was rejected by argparse
+    # (`unrecognized arguments: --pin_risk_applied`), leaving the row stuck at status='open'
+    # forever despite its legs having already been recorded closed.
+    "pin_risk_applied",
 )
 
 
