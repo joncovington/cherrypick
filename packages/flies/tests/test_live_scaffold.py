@@ -131,13 +131,14 @@ def test_broker_cli_live_gates_are_the_same_posture():
 
 # --------------------------------------------------------------------------- the loop, faked
 class FakeBroker:
-    def __init__(self, order_statuses=None, cancel_ok=True):
+    def __init__(self, order_statuses=None, cancel_ok=True, working=None):
         self.placed = []
         self.cancelled = []
         self.status_calls = []
         # order_id -> {"status": ..., "price": ...} the next status() call for it returns
         self._statuses = dict(order_statuses or {})
         self._cancel_ok = cancel_ok
+        self._working = list(working or [])
 
     def place(self, spec, live):
         self.placed.append({"spec": spec, "live": live})
@@ -150,6 +151,9 @@ class FakeBroker:
     def status(self, order_id):
         self.status_calls.append(order_id)
         return self._statuses.get(order_id, {"status": "Live", "price": None, "filled": False})
+
+    def working_orders(self):
+        return list(self._working)
 
 
 @pytest.fixture
@@ -826,6 +830,44 @@ def test_live_book_rollup_written_by_tick(live_conn):
     live_loop.run_once(cfg, _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
     book = live_conn.execute("SELECT * FROM fly_books").fetchone()
     assert book is not None and book["arm"] == "gex" and book["status"] == "open"
+
+
+# --------------------------------------------------------------------------- orphan sweep
+def test_orphan_sweep_flags_unknown_working_orders(live_conn):
+    dbmod.save_position(live_conn, _open_entry_row(order_id="ORD-KNOWN"))
+    broker = FakeBroker(
+        working=[
+            {"order_id": "ORD-KNOWN", "status": "Live", "underlying_symbol": "XSP"},
+            {"order_id": "ORD-MYSTERY", "status": "Live", "underlying_symbol": "XSP"},
+        ]
+    )
+    logs = []
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=logs.append)
+    assert summary["orphaned_orders"] == 1
+    assert any("ORPHANED" in m and "ORD-MYSTERY" in m for m in logs)
+    assert live_loop.read_orphans()[0]["order_id"] == "ORD-MYSTERY"  # persisted for --status
+
+
+def test_orphan_sweep_clean_when_all_accounted_for(live_conn):
+    dbmod.save_position(live_conn, _open_entry_row(order_id="ORD-KNOWN"))
+    broker = FakeBroker(working=[{"order_id": "ORD-KNOWN", "status": "Live", "underlying_symbol": "XSP"}])
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert summary["orphaned_orders"] == 0
+    assert live_loop.read_orphans() == []
+
+
+def test_orphan_sweep_failure_does_not_break_the_tick(live_conn):
+    class SweepFails(FakeBroker):
+        def working_orders(self):
+            raise RuntimeError("broker unreachable")
+
+    logs = []
+    summary = live_loop.run_once(
+        _loop_cfg(), _snapshot(), live_conn, SweepFails(), live=True, log=logs.append
+    )
+    assert summary["orphaned_orders"] == 0
+    assert any("orphan sweep failed" in m for m in logs)
+    assert summary["entered"] == 1  # the rest of the tick ran normally
 
 
 # --------------------------------------------------------------------------- locks and disarm

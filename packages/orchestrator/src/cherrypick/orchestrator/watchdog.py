@@ -697,6 +697,21 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             )
         )
 
+    # (c2) orphaned orders: the last tick's broker-truth sweep found working orders the ledger
+    # has never heard of — real orders resting unwatched. Always CRITICAL, session or not.
+    if status and (status.get("orphaned_orders") or 0) > 0:
+        findings.append(
+            Finding(
+                f"{name}.live_orphans",
+                CRITICAL,
+                f"{label} ORPHANED live orders",
+                f"{status['orphaned_orders']} working order(s) at the broker unknown to the live "
+                "ledger — review in the broker UI before any further arming.",
+            )
+        )
+    elif status and "orphaned_orders" in status:
+        findings.append(Finding(f"{name}.live_orphans", OK, f"{label} live orders", "all accounted for"))
+
     # (c) live settlement overdue: same shape as the paper check, over the live status.
     close_min = timeutil.MARKET_CLOSE.hour * 60 + timeutil.MARKET_CLOSE.minute
     settle_grace = int(live.get("settlement_grace_minutes", 30))
