@@ -321,7 +321,23 @@ def evaluate_completion(snapshot: dict, position: dict, params: dict) -> tuple:
     credit = position["net"]
 
     net = credit - debit
-    floor = net * fly.CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0) - completion_fee
+    completed_fees = position.get("fees", 0.0) + completion_fee
+    # Reuse fly.position_floor rather than a second, duplicate formula: it already carries the
+    # worst-case exercise-assignment fee (4 contracts for a fly, see position_floor's own
+    # docstring), which a completion's own inline floor formerly omitted entirely -- a completion
+    # could clear the dollar gate on a floor that only looked non-negative because it never priced
+    # in the one cost every ITM leg of the resulting fly can actually incur.
+    floor = fly.position_floor(
+        {
+            "kind": "fly",
+            "side": side,
+            "center": center,
+            "wing_width": width,
+            "net": net,
+            "quantity": qty,
+            "fees": completed_fees,
+        }
+    )
     # Every return carries the priced debit, including the refusals. A refusal that discarded the
     # price would make "never completed" permanently ambiguous between "the market never offered it"
     # and "our buffer was too tight" -- and those call for opposite fixes. The caller records the
@@ -339,6 +355,77 @@ def evaluate_completion(snapshot: dict, position: dict, params: dict) -> tuple:
         return False, "completing_debit_too_high", plan
     if floor < params.get("min_floor_dollars", 0.0):
         return False, "floor_below_minimum_after_fees", plan
+
+    return True, "ok", plan
+
+
+# --------------------------------------------------------------------------- pre-close ITM exit
+DEFAULT_PRE_CLOSE_EXIT = "15:50"  # 10 minutes before the 16:00 ET close
+
+
+def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tuple:
+    """Should this completed fly be closed NOW, ahead of cash settlement, because it has an ITM
+    leg and closing is cheaper than the $5/contract exercise-assignment fee those legs would
+    otherwise incur overnight?
+
+    Fires only inside the configured window (`pre_close_exit_time`, default the final 10 minutes
+    of the session) — an ITM fly at 11am has all afternoon left to walk back out of the money, and
+    closing on a momentary touch would be exactly the improvised adjustment rule 5 forbids. This
+    is not that: it is a narrow, mechanical cost comparison in the closing minutes, when there is
+    no meaningful time left for the picture to change.
+
+    Only short vertical -> completed fly matters here (an uncompleted vertical's full defined risk
+    is unaffected by any of this and has no analogous exit modeled). The gate is a straight dollar
+    comparison, not a price gate like `evaluate_completion`'s: close only if the slippage cost of
+    doing so is strictly cheaper than the assignment fee avoided — otherwise holding to settlement
+    and paying the fee is the better of the two options, and this leaves the position alone.
+    """
+    if position.get("kind") != "fly":
+        return False, "not_a_fly", None
+
+    now_min = snapshot.get("now_min")
+    window_start = time_to_minutes(params.get("pre_close_exit_time", DEFAULT_PRE_CLOSE_EXIT))
+    if now_min is None or now_min < window_start:
+        return False, "before_pre_close_exit_window", None
+
+    spot = snapshot.get("underlying_price")
+    if spot is None:
+        return False, "no_spot_price", None
+
+    itm_contracts = fly.itm_contracts_at_settlement(position, spot)
+    if itm_contracts == 0:
+        return False, "no_itm_legs", None
+
+    side, center, width = position["side"], position["center"], position["wing_width"]
+    lower, upper = center - width, center + width
+    if not _have(snapshot, side, [lower, center, upper]):
+        return False, "missing_leg_quotes", None
+
+    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    close_credit = fly.fly_close_credit(
+        quote(snapshot, side, lower), quote(snapshot, side, center), quote(snapshot, side, upper), slip
+    )
+    symbol, qty = snapshot["symbol"], position.get("quantity", 1)
+    close_fee = fly.fly_close_fee(symbol, qty)
+    assignment_fee = fly.expire_fee(itm_contracts)
+
+    # Intrinsic value at the current spot: near-worthless extrinsic this close to expiry, and the
+    # number the assignment-fee side of the comparison is implicitly measured against (holding to
+    # settlement realizes ~this minus the assignment fee, assuming spot doesn't move further).
+    theoretical = fly.fly_payoff(center, width, spot)
+    slippage_cost = (theoretical - close_credit) * fly.CONTRACT_MULTIPLIER * qty + close_fee
+
+    plan = {
+        "close_credit": round(close_credit, 4),
+        "close_fee": round(close_fee, 4),
+        "itm_contracts": itm_contracts,
+        "assignment_fee": round(assignment_fee, 2),
+        "slippage_cost": round(slippage_cost, 2),
+        "lower_strike": lower,
+        "upper_strike": upper,
+    }
+    if slippage_cost >= assignment_fee:
+        return False, "closing_slippage_exceeds_assignment_fee", plan
 
     return True, "ok", plan
 
@@ -425,7 +512,10 @@ def evaluate_outright_entry(
 # --------------------------------------------------------------------------- settlement
 def settle(positions: list[dict], settlement_price: float) -> list[dict]:
     """Cash-settle every open position at expiry. SPX/XSP are European cash-settled, so there is no
-    assignment branch to model and no closing fee — the position simply resolves to intrinsic value.
+    physical assignment to model — but tastytrade still charges $5/contract the next business day
+    for every leg that finishes ITM and is exercised into cash (see `fly.itm_contracts_at_settlement`;
+    OTM legs expire worthless for free). That charge is folded into the position's `fees` here, once,
+    at the moment of settlement, so `pnl` and the persisted `fees` total both include it consistently.
 
     Deliberately there is no stop loss and no wing adjustment: once a structure exists it is held to
     settlement. v1 is measuring the base rate of this strategy, and an adjustment rule tuned before
@@ -433,7 +523,13 @@ def settle(positions: list[dict], settlement_price: float) -> list[dict]:
     """
     out = []
     for p in positions:
-        pnl = fly.position_pnl(p, settlement_price)
+        itm_contracts = fly.itm_contracts_at_settlement(p, settlement_price)
+        assignment = fly.expire_fee(itm_contracts)
+        settled_fees = round(p.get("fees", 0.0) + assignment, 2)
+        # status="settled" tells position_pnl the assignment fee is ALREADY folded into
+        # settled_fees above -- without it, position_pnl would (correctly, for a still-open
+        # position) compute its own fresh assignment fee from settlement_price and double-charge it.
+        pnl = fly.position_pnl({**p, "fees": settled_fees, "status": "settled"}, settlement_price)
         out.append(
             {
                 **p,
@@ -444,6 +540,9 @@ def settle(positions: list[dict], settlement_price: float) -> list[dict]:
                     else fly.short_vertical_payoff(p["side"], p["center"], p["wing_width"], settlement_price),
                     4,
                 ),
+                "fees": settled_fees,
+                "itm_contracts": itm_contracts,
+                "assignment_fee": assignment,
                 "pnl": round(pnl, 2),
                 "pinned": p["kind"] == "fly" and abs(settlement_price - p["center"]) < p["wing_width"],
                 "status": "settled",

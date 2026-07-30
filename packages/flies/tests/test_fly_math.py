@@ -74,6 +74,78 @@ def test_fly_debit_charges_slippage_on_the_doubled_center():
     assert debit == pytest.approx(0.50)
 
 
+def test_fly_close_credit_is_fly_debit_mirrored_below_mid():
+    """Closing sells the fly back, so it nets LESS than mid by the same haircut fly_debit pays
+    ABOVE mid to buy one — same asymmetry vertical_credit/vertical_debit already have."""
+    lower_q, center_q, upper_q = q(1.0, 1.2), q(2.0, 2.2), q(3.4, 3.6)
+    debit = fly.fly_debit(lower_q, center_q, upper_q, slippage_frac=0.125)
+    credit = fly.fly_close_credit(lower_q, center_q, upper_q, slippage_frac=0.125)
+    # mid 0.40 +/- haircut 0.10
+    assert credit == pytest.approx(0.30)
+    assert debit == pytest.approx(0.50)
+    assert credit < debit
+
+
+def test_fly_close_fee_matches_fly_open_fee_shape_at_the_closing_rate():
+    """Same 4-contract/2-sell-contract shape as opening (the doubled centre trades twice), priced
+    at tastytrade's close commission rather than open."""
+    assert fly.fly_close_fee("SPX", 1) == pytest.approx(
+        fly.fly_open_fee("SPX", 1) - 1.00 * 4, abs=0.01
+    )  # open-only $1/contract commission is the only difference, same as ic_close_fee vs ic_open_fee
+
+
+# --------------------------------------------------------------------------- exercise/assignment fee
+def test_expire_fee_is_zero_with_no_itm_contracts():
+    assert fly.expire_fee() == 0.0
+    assert fly.expire_fee(0) == 0.0
+
+
+def test_expire_fee_charges_five_dollars_per_itm_contract():
+    assert fly.expire_fee(1) == 5.00
+    assert fly.expire_fee(3) == 15.00
+
+
+def test_itm_contracts_short_put_vertical_counts_each_itm_leg_once():
+    position = {"kind": "short_vertical", "side": "put", "center": 6000, "wing_width": 5, "quantity": 1}
+    assert fly.itm_contracts_at_settlement(position, 6100) == 0  # both legs OTM
+    assert fly.itm_contracts_at_settlement(position, 5998) == 1  # only the short (center) ITM
+    assert fly.itm_contracts_at_settlement(position, 5990) == 2  # both legs ITM (max loss zone)
+    assert fly.itm_contracts_at_settlement(position, 6000) == 0  # exactly at the strike: not ITM
+
+
+def test_itm_contracts_short_call_vertical_mirrors_put():
+    position = {"kind": "short_vertical", "side": "call", "center": 6000, "wing_width": 5, "quantity": 1}
+    assert fly.itm_contracts_at_settlement(position, 5900) == 0
+    assert fly.itm_contracts_at_settlement(position, 6002) == 1
+    assert fly.itm_contracts_at_settlement(position, 6010) == 2
+
+
+def test_itm_contracts_fly_counts_the_doubled_center_twice():
+    """A completed fly has 3 distinct strikes (center-W, center, center+W) but 4 contracts -- the
+    centre carries 2 (one from the opening vertical, one from the completing vertical). For a put
+    fly, as settlement moves down through the strikes the ITM count steps 0 -> 1 -> 3 -> 4: the
+    centre's 2 contracts flip together (there is no "2" zone on its own), and the middle zone
+    (between the wings, below centre) landing on 3 is exactly what a real live session hit
+    (2026-07-30): a completed 740-center fly settled between its centre and lower wing, and
+    tastytrade charged the $5 fee on 3 contracts, matching this shape."""
+    position = {"kind": "fly", "side": "put", "center": 6000, "wing_width": 5, "quantity": 1}
+    assert fly.itm_contracts_at_settlement(position, 6010) == 0  # beyond the upper wing: all OTM
+    assert fly.itm_contracts_at_settlement(position, 6002) == 1  # between centre and upper wing
+    assert fly.itm_contracts_at_settlement(position, 5998) == 3  # between lower wing and centre
+    assert fly.itm_contracts_at_settlement(position, 4990) == 4  # beyond the lower wing: all 4 ITM
+
+
+def test_itm_contracts_scales_with_quantity():
+    position = {"kind": "fly", "side": "put", "center": 6000, "wing_width": 5, "quantity": 3}
+    assert fly.itm_contracts_at_settlement(position, 4990) == 12
+
+
+def test_assignment_fee_is_expire_fee_of_the_itm_count():
+    position = {"kind": "short_vertical", "side": "put", "center": 6000, "wing_width": 5, "quantity": 1}
+    assert fly.assignment_fee(position, 6100) == 0.0
+    assert fly.assignment_fee(position, 5990) == 10.00
+
+
 # --------------------------------------------------------------------------- floors
 def legged_fly(net, fees=0.0):
     return {
@@ -89,10 +161,19 @@ def legged_fly(net, fees=0.0):
 
 def test_fly_held_for_a_credit_cannot_lose():
     position = legged_fly(1.05, fees=0.0)
+    # A fly's floor does NOT reserve the worst-case exercise fee (2026-07-30):
+    # engine.evaluate_pre_close_exit closes an ITM fly ahead of expiry whenever that's cheaper
+    # than the assignment fee, so going forward the realistic worst case is just the gross
+    # credit net of trading fees -- see fly.position_floor's docstring for the full reasoning.
     assert fly.position_floor(position) == 105.0
     assert fly.is_risk_free(position)
+    # position_pnl, unlike position_floor, still prices the exercise fee fresh at EVERY
+    # hypothetical price (it's a pure expiry question, not a management-aware one) -- so an
+    # UNMANAGED hold to raw expiry still bottoms out at position_floor minus the worst-case $20
+    # assignment fee (4 contracts, out past the wings on both sides).
     for price in range(5900, 6101):
-        assert fly.position_pnl(position, price) >= 105.0
+        assert fly.position_pnl(position, price) >= 85.0
+    assert min(fly.position_pnl(position, p) for p in range(5900, 6101)) == pytest.approx(85.0)
 
 
 def test_fees_can_flip_the_floor_negative():
@@ -119,7 +200,8 @@ def test_short_vertical_floor_is_full_defined_risk():
         "quantity": 1,
         "fees": 0.0,
     }
-    assert fly.position_floor(position) == -350.0
+    # -350.0 defined-risk max loss, less the worst-case $10 exercise fee (both legs ITM there).
+    assert fly.position_floor(position) == -360.0
     assert not fly.is_risk_free(position)
 
 
@@ -135,7 +217,9 @@ def test_book_of_credit_flies_holds_its_floor_everywhere():
     result = fly.book_floor(positions)
     assert result["floor_holds"] is True
     assert result["unbounded_below"] is False
-    assert result["worst"] == 140.0  # both flies out of the money: 105 + 35
+    # Far enough below BOTH centres (5995 and 6035, 40 apart), every leg of both flies is
+    # simultaneously ITM: 105 + 35 gross, less $20 + $20 worst-case exercise fees.
+    assert result["worst"] == 100.0
 
 
 def test_book_funded_by_a_short_vertical_is_only_green_in_a_band():
