@@ -201,8 +201,11 @@ footer{padding:12px 20px;color:var(--dim);font-size:11.5px;border-top:1px solid 
 _BODY = """
 <header>
   <h1>Flies</h1>
-  <span class="badge {MODE_BADGE_CLASS}">{MODE_BADGE_TEXT}</span>
+  <span class="badge" id="mode-badge">paper</span>
   <span class="badge" id="asof">–</span>
+  <label class="dim" style="font-size:12px">source
+    <select id="source-select"><option value="paper">paper</option><option value="live">live — real money</option></select>
+  </label>
   <label class="dim" style="font-size:12px">arm
     <select id="arm-select"><option value="ALL">all</option></select>
   </label>
@@ -330,7 +333,7 @@ const fmtMoney = v => v === null || v === undefined ? '–'
 const fmtPct = v => v === null || v === undefined ? '–' : (v*100).toFixed(0) + '%';
 const fmtNum = (v,d=2) => v === null || v === undefined ? '–' : Number(v).toFixed(d);
 const tone = v => v === null || v === undefined ? '' : (v >= 0 ? 'pos' : 'neg');
-let DATA = null, ARM = 'ALL', SYMBOL = 'ALL', XWIDTH = 'auto', YWIDTH = 'auto';
+let DATA = null, ARM = 'ALL', SYMBOL = 'ALL', XWIDTH = 'auto', YWIDTH = 'auto', SOURCE = 'paper';
 
 /* ---------- per-column filters ----------
 
@@ -1091,6 +1094,10 @@ function renderPerformance(d) {
 
 function renderAll(d) {
   DATA = d;
+  const badge = $('#mode-badge');
+  const isLive = d.source === 'live';
+  badge.textContent = isLive ? 'LIVE — real money' : 'paper';
+  badge.classList.toggle('live', isLive);
   $('#asof').textContent = `${d.date} · ${d.generated_at.slice(11,16)}`;
   const sel = $('#arm-select');
   if (sel.options.length - 1 !== d.arms.length) {
@@ -1109,7 +1116,7 @@ function renderAll(d) {
 
 async function refresh() {
   try {
-    const r = await fetch(`/api/data?arm=${encodeURIComponent(ARM)}&symbol=${encodeURIComponent(SYMBOL)}`);
+    const r = await fetch(`/api/data?source=${encodeURIComponent(SOURCE)}&arm=${encodeURIComponent(ARM)}&symbol=${encodeURIComponent(SYMBOL)}`);
     const d = await r.json();
     if (d.ok) renderAll(d);
   } catch (e) { /* transient; the next tick retries */ }
@@ -1122,6 +1129,14 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   $('#view-' + b.dataset.view).classList.add('active');
   if (DATA) renderAll(DATA);   // canvases size wrongly while hidden
 });
+$('#source-select').onchange = e => {
+  SOURCE = e.target.value;
+  // arms/symbols can differ between ledgers (today: live is pinned to one arm) -- a stale
+  // selection from the other source would just render an empty page with no obvious reason.
+  ARM = 'ALL'; SYMBOL = 'ALL';
+  $('#arm-select').value = 'ALL'; $('#symbol-select').value = 'ALL';
+  refresh();
+};
 $('#arm-select').onchange = e => { ARM = e.target.value; refresh(); };
 $('#symbol-select').onchange = e => { SYMBOL = e.target.value; refresh(); };
 $('#xwidth-select').onchange = e => { XWIDTH = e.target.value; if (DATA) renderAll(DATA); };
@@ -1147,32 +1162,13 @@ setInterval(refresh, 15000);
 """
 
 
-def _is_live_db(db_path: str | None) -> bool:
-    """True when the dashboard is pointed at the LIVE ledger rather than the paper DB —
-    drives the header badge so live data can never be mistaken for paper on screen."""
-    if not db_path:
-        return False
-    try:
-        return os.path.abspath(db_path) == os.path.abspath(dbmod.live_db_path())
-    except OSError:
-        return False
-
-
-def _html(is_live: bool) -> str:
-    body = _BODY.replace("{MODE_BADGE_CLASS}", "live" if is_live else "").replace(
-        "{MODE_BADGE_TEXT}", "LIVE — real money" if is_live else "paper"
-    )
-    title = "Flies — LIVE" if is_live else "Flies — paper"
-    return (
-        f"<!doctype html><meta charset='utf-8'><title>{title}</title>"
-        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        f"<style>{_STYLE}{viz.REORDER_STYLE}{viz.CAL_HEAT_STYLE}{viz.TABLE_STYLE}</style>{body}"
-        f"<script>{viz.CAL_HEAT_JS}</script><script>{viz.TABLE_JS}</script>"
-        f"<script>{_JS}</script><script>{viz.REORDER_JS}</script>"
-    )
-
-
-HTML = _html(is_live=False)  # the paper-mode page, e.g. for --json / doc callers that want a default
+HTML = (
+    "<!doctype html><meta charset='utf-8'><title>Flies</title>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    f"<style>{_STYLE}{viz.REORDER_STYLE}{viz.CAL_HEAT_STYLE}{viz.TABLE_STYLE}</style>{_BODY}"
+    f"<script>{viz.CAL_HEAT_JS}</script><script>{viz.TABLE_JS}</script>"
+    f"<script>{_JS}</script><script>{viz.REORDER_JS}</script>"
+)
 
 
 # --------------------------------------------------------------------------- server
@@ -1180,8 +1176,9 @@ class _ThreadingServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
-def _handler_for(db_path: str | None):
-    page = _html(_is_live_db(db_path)).encode("utf-8")
+def _handler_for(paper_db: str | None, live_db: str | None = None):
+    live_db = live_db or dbmod.live_db_path()
+    page = HTML.encode("utf-8")
 
     class _Handler(BaseHTTPRequestHandler):
         def _send(self, body: bytes, content_type: str, status: int = 200) -> None:
@@ -1201,7 +1198,10 @@ def _handler_for(db_path: str | None):
                 return
             if parsed.path == "/api/data":
                 query = parse_qs(parsed.query)
-                conn = dbmod.connect(db_path)
+                # "live" is opt-in and exact-match only -- anything else (missing, typo'd,
+                # empty) falls back to paper, never the other way around.
+                source = query.get("source", ["paper"])[0]
+                conn = dbmod.connect(live_db if source == "live" else paper_db)
                 try:
                     payload = build_api_data(
                         conn,
@@ -1209,6 +1209,7 @@ def _handler_for(db_path: str | None):
                         query.get("arm", [None])[0],
                         query.get("symbol", [None])[0],
                     )
+                    payload["source"] = source if source == "live" else "paper"
                 except Exception as exc:  # a broken panel should not take the page down
                     payload = {"ok": False, "error": str(exc)}
                 finally:
@@ -1223,14 +1224,18 @@ def _handler_for(db_path: str | None):
     return _Handler
 
 
-def serve(port: int, db_path: str | None = None, open_browser: bool = True) -> int:
+def serve(
+    port: int, db_path: str | None = None, open_browser: bool = True, live_db: str | None = None
+) -> int:
     if port_in_use(port):
         print(f"already serving on http://{HOST}:{port}")
         if open_browser:
             webbrowser.open(f"http://{HOST}:{port}/")
         return 0
-    server = _ThreadingServer((HOST, port), _handler_for(db_path))
-    print(f"flies dashboard on http://{HOST}:{port}  (loopback only, read-only)")
+    server = _ThreadingServer((HOST, port), _handler_for(db_path, live_db))
+    print(
+        f"flies dashboard on http://{HOST}:{port}  (loopback only, read-only; paper + live source selector)"
+    )
     if open_browser:
         webbrowser.open(f"http://{HOST}:{port}/")
     try:
@@ -1245,23 +1250,31 @@ def serve(port: int, db_path: str | None = None, open_browser: bool = True) -> i
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="cherrypick-flies read-only dashboard")
     ap.add_argument("--port", type=int)
-    ap.add_argument("--db")
+    ap.add_argument("--db", help="paper DB path override (default: the resolved paper_trades.db)")
+    ap.add_argument("--live-db", help="live DB path override (default: the resolved live_trades.db)")
     ap.add_argument(
         "--no-browser",
         action="store_true",
         help="don't open a browser tab on start (for headless/background launches)",
     )
     ap.add_argument("--json", action="store_true", help="print one API payload and exit")
+    ap.add_argument(
+        "--source",
+        choices=["paper", "live"],
+        default="paper",
+        help="which ledger --json reads (the served dashboard always offers both via its selector)",
+    )
     args = ap.parse_args(argv)
 
     if args.json:
-        conn = dbmod.connect(args.db)
+        db_path = (args.live_db or dbmod.live_db_path()) if args.source == "live" else args.db
+        conn = dbmod.connect(db_path)
         try:
             print(json.dumps(build_api_data(conn), indent=2, default=str))
         finally:
             conn.close()
         return 0
-    return serve(resolve_port(args.port), args.db, open_browser=not args.no_browser)
+    return serve(resolve_port(args.port), args.db, open_browser=not args.no_browser, live_db=args.live_db)
 
 
 if __name__ == "__main__":
