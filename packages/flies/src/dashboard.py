@@ -425,16 +425,25 @@ const minuteOf = ts => {
 const hhmm = m => String(Math.floor(m/60)).padStart(2,'0') + ':' + String(Math.round(m%60)).padStart(2,'0');
 
 /* Hover state is per canvas, keyed by element id, so a crosshair on one chart never redraws the
-   other. Each chart registers a redraw thunk and gets a crosshair plus a readout for free. */
+   other. Each chart registers a redraw thunk and gets a crosshair plus a readout for free.
+
+   The mousemove/mouseleave LISTENERS are attached only once per canvas (hoverBound guards that —
+   addEventListener would otherwise stack a new one on every render). But bindHover() itself runs
+   on every render with a FRESH closure over that render's data, so the redraw function actually
+   invoked must be looked up at event time, not captured once at bind time -- otherwise the very
+   first bind (page load, source=paper) wins forever and hovering after any later refresh, or after
+   switching the source/arm/symbol selector, silently redraws with that first render's stale data. */
 const HOVER = {};
+const REDRAW = {};
 function bindHover(cv, redraw) {
+  REDRAW[cv.id] = redraw;
   if (cv.dataset.hoverBound) return;
   cv.dataset.hoverBound = '1'; cv.classList.add('hoverable');
   cv.addEventListener('mousemove', e => {
     const b = cv.getBoundingClientRect();
-    HOVER[cv.id] = {x: e.clientX - b.left, y: e.clientY - b.top}; redraw();
+    HOVER[cv.id] = {x: e.clientX - b.left, y: e.clientY - b.top}; REDRAW[cv.id]();
   });
-  cv.addEventListener('mouseleave', () => { delete HOVER[cv.id]; redraw(); });
+  cv.addEventListener('mouseleave', () => { delete HOVER[cv.id]; REDRAW[cv.id](); });
 }
 
 /* A readout box that stays inside the canvas rather than running off the right edge. */
