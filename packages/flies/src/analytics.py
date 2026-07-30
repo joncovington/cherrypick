@@ -397,6 +397,89 @@ def _median(values):
     return (ordered[mid - 1] + ordered[mid]) / 2
 
 
+# --------------------------------------------------------------------------- live vs paper
+# The abort rule from docs/live-trading-plan.md, instrumented: paper completion is an UPPER
+# BOUND on live completion (paper's gate is a clean inequality; live's step 2 is a working
+# limit that may sit unfilled), and the strategy's edge IS the completion rate — so once a
+# real sample exists, a live rate far enough below contemporaneous paper means the bound is
+# not achievable and the pilot should halt.
+ABORT_MIN_LIVE_ENTRIES = 30
+ABORT_COMPLETION_GAP = 0.15
+
+
+def live_vs_paper(live_conn, paper_conn, arm: str = "gex") -> dict:
+    """Live completion/latency/pricing vs CONTEMPORANEOUS paper for the same arm.
+
+    "Contemporaneous" is load-bearing: paper is restricted to exactly the sessions the live
+    arm traded, so a quiet week can't dilute either side. Live entries count ESTABLISHED
+    spreads only (an entry order that cancelled unfilled never held risk); paper's fill model
+    is instantaneous, so its entries are all accepted rows — that asymmetry is inherent to
+    what the two ledgers record, not a bug here."""
+    days = [
+        r[0]
+        for r in live_conn.execute(
+            "SELECT DISTINCT trade_date FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' "
+            "AND status != 'cancelled' ORDER BY trade_date",
+            (arm,),
+        )
+    ]
+
+    def _side(conn) -> dict:
+        empty = {
+            "sessions": 0,
+            "entries": 0,
+            "completed": 0,
+            "completion_rate": None,
+            "median_latency_min": None,
+            "avg_credit": None,
+            "avg_completion_debit": None,
+        }
+        if not days:
+            return empty
+        marks = ",".join("?" * len(days))
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                f"SELECT * FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' "
+                f"AND status != 'cancelled' AND trade_date IN ({marks})",
+                (arm, *days),
+            )
+        ]
+        completed = [r for r in rows if r["kind"] == "fly"]
+        latencies = [r["completion_latency_min"] for r in completed if r["completion_latency_min"]]
+        credits = [r["credit"] for r in rows if r["credit"] is not None]
+        debits = [r["debit"] for r in completed if r["debit"] is not None]
+        return {
+            "sessions": len(days),
+            "entries": len(rows),
+            "completed": len(completed),
+            "completion_rate": _rate(len(completed), len(rows)),
+            "median_latency_min": _median(latencies),
+            "avg_credit": _round(sum(credits) / len(credits), 4) if credits else None,
+            "avg_completion_debit": _round(sum(debits) / len(debits), 4) if debits else None,
+        }
+
+    live = _side(live_conn)
+    paper = _side(paper_conn)
+    gap = None
+    if live["completion_rate"] is not None and paper["completion_rate"] is not None:
+        gap = _round(paper["completion_rate"] - live["completion_rate"], 4)
+    armed = live["entries"] >= ABORT_MIN_LIVE_ENTRIES
+    return {
+        "arm": arm,
+        "sessions": days,
+        "live": live,
+        "paper": paper,
+        "completion_gap": gap,
+        "abort_rule": {
+            "min_live_entries": ABORT_MIN_LIVE_ENTRIES,
+            "gap_limit": ABORT_COMPLETION_GAP,
+            "armed": armed,
+            "triggered": bool(armed and gap is not None and gap > ABORT_COMPLETION_GAP),
+        },
+    }
+
+
 # --------------------------------------------------------------------------- arm divergence
 def arm_divergence(conn, day: str | None = None) -> dict:
     """How often the arms actually picked DIFFERENT centres.

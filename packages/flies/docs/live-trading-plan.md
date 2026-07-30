@@ -178,8 +178,15 @@ full-loop build):**
    that sets the halt flag when the task survives past `disarm_time` + grace);
    `trade_notifier` pushes live entries/completions/settlements from `live_db` with a LIVE
    prefix + desktop toast, off the trading loop.
-6. Live-vs-paper comparison lines in the flies report/analytics — **still not built** —
-   the one remaining item; a follow-up.
+6. Live-vs-paper comparison lines — **DONE**: `analytics.live_vs_paper` compares live to
+   CONTEMPORANEOUS paper (same arm, same sessions) on completion rate, latency, and pricing,
+   and evaluates this plan's **abort rule** (≥30 live entries and live completion >15 points
+   below paper → triggered). Surfaced in `live_loop.py --status`, and in the new
+   `live-eod-<day>.md` written on every live settlement (provisional and official alike);
+   the suite EOD digest gains a clearly-labeled LIVE section on any day the live ledger
+   settled trades. `live.max_structures_per_day` (null = off) adds the rung-1 throttle:
+   unlike the one-incomplete-at-a-time rule, a risk-free completion does not re-open the
+   day's budget — set 1 for this plan's strict one-structure-per-day rung-1 posture.
 
 **Lifecycle (the shape that shipped):** arming is PER-DAY — `/live-flies-start` (fresh YES)
 runs `--install-task`, registering the 1-min self-healing `cherrypick-flies-live-loop` tick;

@@ -832,6 +832,140 @@ def test_live_book_rollup_written_by_tick(live_conn):
     assert book is not None and book["arm"] == "gex" and book["status"] == "open"
 
 
+# --------------------------------------------------------------------------- per-day structure cap
+def test_max_structures_per_day_blocks_even_after_risk_free_completion(live_conn):
+    import clock
+
+    # A completed, RISK-FREE fly frees the concurrency slot -- but with the day cap at 1 it
+    # still spends the day's whole structure budget, so no second entry may follow.
+    dbmod.save_position(
+        live_conn,
+        {
+            "position_id": "DONE1",
+            "book_id": f"{DAY}:gex:SPX",
+            "trade_date": DAY,
+            "arm": "gex",
+            "entry_mode": "legged",
+            "symbol": "SPX",
+            "kind": "fly",
+            "side": PUT,
+            "center": 7495.0,
+            "wing_width": 5,
+            "quantity": 1,
+            "net": 0.30,
+            "fees": 3.44,
+            "status": "open",
+            "entry_time": clock.now_iso(),
+            "completed_at": clock.now_iso(),
+        },
+    )
+    cfg = _loop_cfg()
+    cfg["live"]["max_structures_per_day"] = 1
+    broker = FakeBroker()
+    summary = live_loop.run_once(cfg, _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert summary["entered"] == 0
+    assert any("max_structures_per_day reached (1/1)" in s.get("entry", "") for s in summary["skips"])
+    # Without the cap the same state permits a new entry (the risk-free fly doesn't block).
+    cfg["live"]["max_structures_per_day"] = None
+    summary2 = live_loop.run_once(cfg, _snapshot(), live_conn, FakeBroker(), live=True, log=lambda *_: None)
+    assert summary2["entered"] == 1
+
+
+def test_cancelled_entries_do_not_consume_the_day_budget(live_conn):
+    row = _open_entry_row()
+    row["status"] = "cancelled"
+    row["entry_fill_status"] = "cancelled"
+    dbmod.save_position(live_conn, row)
+    cfg = _loop_cfg()
+    cfg["live"]["max_structures_per_day"] = 1
+    summary = live_loop.run_once(cfg, _snapshot(), live_conn, FakeBroker(), live=True, log=lambda *_: None)
+    assert summary["entered"] == 1  # the unfilled/cancelled attempt never held risk
+
+
+# --------------------------------------------------------------------------- live vs paper
+def _paper_conn():
+    return dbmod.connect(dbmod.default_db_path())
+
+
+def _legged_row(conn, pid, *, kind, latency=None, credit=1.0, debit=None, day=None):
+    import clock
+
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": pid,
+            "book_id": f"{day or DAY}:gex:SPX",
+            "trade_date": day or DAY,
+            "arm": "gex",
+            "entry_mode": "legged",
+            "symbol": "SPX",
+            "kind": kind,
+            "side": PUT,
+            "center": 7495.0,
+            "wing_width": 5,
+            "quantity": 1,
+            "net": credit,
+            "credit": credit,
+            "debit": debit,
+            "fees": 3.44,
+            "status": "open",
+            "entry_time": clock.now_iso(),
+            "completion_latency_min": latency,
+            "completed_at": clock.now_iso() if kind == "fly" else None,
+        },
+    )
+
+
+def test_live_vs_paper_restricts_paper_to_live_sessions(live_conn):
+    import analytics
+
+    paper = _paper_conn()
+    # Live traded only DAY; paper has DAY plus another session that must NOT count.
+    _legged_row(live_conn, "L1", kind="fly", latency=8.0, debit=0.5)
+    _legged_row(live_conn, "L2", kind="short_vertical")
+    _legged_row(paper, "P1", kind="fly", latency=4.0, debit=0.4)
+    _legged_row(paper, "P2", kind="fly", latency=6.0, debit=0.3, day="2020-01-02")
+    out = analytics.live_vs_paper(live_conn, paper, "gex")
+    assert out["sessions"] == [DAY]
+    assert out["live"]["entries"] == 2 and out["live"]["completed"] == 1
+    assert out["paper"]["entries"] == 1  # the other-session paper row was excluded
+    assert out["completion_gap"] == pytest.approx(1.0 - 0.5)
+    assert out["abort_rule"]["armed"] is False and out["abort_rule"]["triggered"] is False
+    paper.close()
+
+
+def test_abort_rule_arms_and_triggers(live_conn):
+    import analytics
+
+    paper = _paper_conn()
+    # 30 live entries, 10 completed (33%); paper 10 entries, 9 completed (90%) -> gap 57pts.
+    for i in range(30):
+        _legged_row(live_conn, f"L{i}", kind="fly" if i < 10 else "short_vertical", debit=0.5)
+    for i in range(10):
+        _legged_row(paper, f"P{i}", kind="fly" if i < 9 else "short_vertical", debit=0.4)
+    out = analytics.live_vs_paper(live_conn, paper, "gex")
+    assert out["abort_rule"]["armed"] is True
+    assert out["abort_rule"]["triggered"] is True
+    paper.close()
+
+
+def test_live_eod_report_written_on_settle(live_conn, monkeypatch):
+    import provider as providermod
+
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
+    )
+    monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: 7495.5)
+    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused")
+    assert out["ok"] and out["report"] is not None
+    text = Path(out["report"]["live_eod"]).read_text(encoding="utf-8")
+    assert "Flies LIVE EOD" in text
+    assert "last_trade_provisional" in text and "PROVISIONAL" in text
+    assert "Live vs contemporaneous paper" in text
+    assert "Abort rule not yet armed" in text
+
+
 # --------------------------------------------------------------------------- orphan sweep
 def test_orphan_sweep_flags_unknown_working_orders(live_conn):
     dbmod.save_position(live_conn, _open_entry_row(order_id="ORD-KNOWN"))

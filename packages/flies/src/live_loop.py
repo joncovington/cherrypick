@@ -534,8 +534,25 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
             summary["completed_orders"] += 1
 
     # --- 4. concurrency gate + entry ---
+    # Per-day structure cap (live.max_structures_per_day, off when null): counts every
+    # ESTABLISHED structure today — settled and risk-free-completed included — so unlike the
+    # one-incomplete-at-a-time rule, freeing the slot never re-opens the day's budget. This is
+    # the rung-1 throttle: set 1 for the plan doc's strict one-structure-per-day posture.
+    day_capped = False
+    day_cap = live_cfg.get("max_structures_per_day")
+    if live and day_cap:
+        established = conn.execute(
+            "SELECT COUNT(*) FROM fly_positions WHERE trade_date = ? AND arm = ? AND status != 'cancelled'",
+            (day, arm),
+        ).fetchone()[0]
+        day_capped = established >= day_cap
+        if day_capped:
+            summary["skips"].append({"entry": f"max_structures_per_day reached ({established}/{day_cap})"})
+
     blockers = _blocking_positions(positions, live_cfg.get("negative_floor_override"))
-    if blockers:
+    if day_capped:
+        pass  # the day's structure budget is spent — no entry evaluation at all
+    elif blockers:
         negative = [p for p in blockers if p.get("kind") == "fly"]
         if negative:
             p = negative[0]
@@ -682,7 +699,30 @@ def run_settle_live(
             else ""
         )
     )
-    return {"ok": True, "book_id": book_id, "settlement": settlement, "source": source, **result}
+
+    # The live day's written record — refreshed on the official re-settle too. Best-effort:
+    # a report hiccup must never fail the settlement itself.
+    report = None
+    try:
+        import eod as eodmod
+
+        paper_conn = dbmod.connect(dbmod.default_db_path())
+        try:
+            report = eodmod.write_live_report(conn, paper_conn, day)
+            _log(f"wrote {report['live_eod']}")
+        finally:
+            paper_conn.close()
+    except Exception as exc:  # noqa: BLE001
+        _log(f"live EOD report failed ({type(exc).__name__}: {exc}) — settlement itself is recorded")
+
+    return {
+        "ok": True,
+        "book_id": book_id,
+        "settlement": settlement,
+        "source": source,
+        "report": report,
+        **result,
+    }
 
 
 # --------------------------------------------------------------------------- fill watcher
@@ -1071,7 +1111,23 @@ def run_status(config: dict, conn) -> dict:
         "orphaned_orders": len(read_orphans()),
         "last_log_write": last_tick,
         "log_file": str(lf),
+        # The pilot's core instrument: live vs contemporaneous paper, with the plan doc's abort
+        # rule evaluated. Files only (both ledgers are local SQLite); best-effort.
+        "live_vs_paper": _live_vs_paper_safe(conn, arm),
     }
+
+
+def _live_vs_paper_safe(live_conn, arm: str):
+    import analytics
+
+    try:
+        paper_conn = dbmod.connect(dbmod.default_db_path())
+        try:
+            return analytics.live_vs_paper(live_conn, paper_conn, arm)
+        finally:
+            paper_conn.close()
+    except Exception as exc:  # noqa: BLE001 — a broken comparison must not break --status
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
 # --------------------------------------------------------------------------- main
