@@ -42,7 +42,11 @@ def test_book_c_legged_flies_are_individually_risk_free():
     """The whole thesis, stated as a test: a legged fly's worst case at expiry is a profit.
 
     Checked at every price on a wide grid, not just at the strikes, and with a realistic SPX fee
-    stack charged for both legs of the leg-in.
+    stack charged for both legs of the leg-in. Compared against the TRUE unmanaged-expiry floor
+    (gross credit, less trading fees, less the worst-case $20 exercise-assignment fee) rather than
+    `position_floor` itself: that function no longer reserves the assignment fee for a fly
+    (2026-07-30 — `engine.evaluate_pre_close_exit` closes an ITM fly ahead of expiry whenever
+    that's cheaper), so it is a management-aware number, not a bound on an unmanaged hold.
     """
     for chain in FIXTURES["book_c"]["chains"]:
         if chain["entry_mode"] != "legged":
@@ -58,9 +62,9 @@ def test_book_c_legged_flies_are_individually_risk_free():
             "fees": fees,
         }
         assert fly.is_risk_free(position), f"{chain['label']} floor did not survive fees"
-        floor = fly.position_floor(position)
+        unmanaged_worst_case = chain["expected_net"] * fly.CONTRACT_MULTIPLIER - fees - fly.expire_fee(4)
         for offset in range(-50, 51, 1):
-            assert fly.position_pnl(position, chain["center"] + offset) >= floor - 1e-6
+            assert fly.position_pnl(position, chain["center"] + offset) >= unmanaged_worst_case - 1e-6
 
 
 def test_book_c_outright_fly_is_not_risk_free():
@@ -121,6 +125,10 @@ def test_book_b_fly_expired_worthless():
         "net": chain["net"],
         "quantity": 1,
         "fees": 0.0,
+        # Real, already-realized order-chain data -- status="settled" tells position_pnl to
+        # trust these recorded fees as final rather than guessing a fresh assignment fee for a
+        # position that (in reality) already settled.
+        "status": "settled",
     }
     # A fly bought for a debit and finishing outside its wings returns the debit as the loss.
     assert fly.position_pnl(position, 6700) == -10.0

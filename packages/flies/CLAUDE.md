@@ -190,7 +190,11 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    number that decides whether this strategy is real.
 5. **No adjustments after establishment.** No stops, no wing moves — hold to cash settlement. v1 is
    measuring a base rate, and an adjustment rule tuned before a single completion rate exists would be
-   fitting noise.
+   fitting noise. **One narrow, mechanical exception** (added 2026-07-30, applies to both paper and
+   live): `engine.evaluate_pre_close_exit` closes a completed fly with an ITM leg in the closing
+   minutes (`pre_close_exit_time`, default 15:50) whenever doing so costs less than the $5/contract
+   exercise-assignment fee those legs would otherwise incur overnight — a cost comparison, not a
+   P&L-driven stop or a strategy adjustment tuned on the session's own data.
 6. **If the floor comes out negative after fees, that is the finding.** The answer is to stop, not to
    loosen `fee_buffer` until the numbers look better.
 
@@ -198,8 +202,11 @@ These are the constraints the module exists to enforce. Breaking one makes the n
 
 - Paper by default; live is a deliberately narrow, per-day-armed pilot (one arm, one symbol, one
   incomplete position at a time — see `live_loop.py` and docs/live-trading-plan.md). SPX/XSP only —
-  both European cash-settled, so assignment is structurally impossible and there is no
-  early-exercise machinery to get wrong.
+  both European cash-settled, so EARLY exercise is structurally impossible and there is no
+  early-exercise machinery to get wrong. Cash exercise/assignment at expiry is NOT impossible,
+  though, and is not free: tastytrade charges $5/contract on every ITM leg the next business day
+  (confirmed against a real overnight charge, 2026-07-30) — modeled throughout (`fly.expire_fee`,
+  `itm_contracts_at_settlement`) and the reason `engine.evaluate_pre_close_exit` exists at all.
 - **No AI, no MCP, and no network on any decision path.** `fly.py` and `engine.py` are pure functions
   over a pre-fetched snapshot. Learning happens offline in the orchestrator's read side (`report`,
   `calibrate`, `eod-insight`) over closed rows — never inside the loop.
@@ -208,6 +215,15 @@ These are the constraints the module exists to enforce. Breaking one makes the n
   cancelled/replaced when the cached evaluation moved; fill-status polls fire only when cached quotes
   touch the working limit, plus a slow heartbeat). The broker API is only for acting (place/cancel)
   and for confirming what only it can know — a fill. Applies to all future live work in this module.
+  **One narrow, deliberate exception** (added 2026-07-30 after a live entry was rejected by the
+  broker's real-time execution-quality check on a cached price its own preflight dry-run never
+  flagged): immediately before submitting a live entry — never on the per-tick decision path, never
+  in paper — `live_orders.entry_fresh_reprice` re-fetches both legs once via a plain REST market-data
+  call (`broker_cli.fresh_option_quotes`, no streaming session) and submits at that fresh price,
+  or skips the entry this tick if it's unavailable or has moved against us beyond
+  `live.fresh_quote_tolerance_dollars`. The decision of *whether/what* to enter is still 100%
+  cache-driven; only the final submitted price gets a last-second freshness correction, at the exact
+  moment the broker is already about to be touched anyway.
 - Credentials in the OS keyring only. Account numbers masked to `****1234`.
 - Portable paths only; scratch work in `.tmp/`. Human-voice docs and commits, no AI attribution.
 - Instruction files hold no code.

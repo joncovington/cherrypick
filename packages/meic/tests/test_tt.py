@@ -384,7 +384,11 @@ def test_select_put_spread_uses_delta_when_greeks_present():
 # --- _build_order --------------------------------------------------------------
 
 
-def test_build_order_credit_price_is_negative():
+def test_build_order_credit_price_is_positive():
+    """tastytrade's own NewOrder.price docstring: "negative = debit, positive = credit" — verified
+    against the installed SDK's source. core.broker.build_order (which _build_order delegates to)
+    had this backwards until 2026-07-30, when a live flies entry meant as a credit was routed as a
+    debit and rejected by the exchange as outside the acceptable price range."""
     spec = {
         "order_type": "Limit",
         "time_in_force": "Day",
@@ -395,10 +399,10 @@ def test_build_order_credit_price_is_negative():
         ],
     }
     order = tt._build_order(spec)
-    assert order.price < 0
+    assert order.price > 0
 
 
-def test_build_order_debit_price_is_positive():
+def test_build_order_debit_price_is_negative():
     spec = {
         "price": 2.5,
         "price_effect": "Debit",
@@ -407,7 +411,7 @@ def test_build_order_debit_price_is_positive():
         ],
     }
     order = tt._build_order(spec)
-    assert order.price > 0
+    assert order.price < 0
 
 
 def test_build_order_includes_stop_trigger_when_given():

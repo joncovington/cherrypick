@@ -35,6 +35,7 @@ def position(
     spot_at_completion=None,
     underlying=6000.0,
     risk_free=1,
+    floor_dollars=None,
 ):
     dbmod.save_position(
         conn,
@@ -62,6 +63,7 @@ def position(
             "spot_at_completion": spot_at_completion,
             "underlying_at_entry": underlying,
             "risk_free": risk_free,
+            "floor_dollars": floor_dollars,
             "entry_time": f"{day}T12:00:00",
         },
     )
@@ -426,7 +428,9 @@ def test_payoff_curve_of_a_credit_fly_is_green_everywhere(conn):
     assert curve["empty"] is False
     assert min(curve["pnl"]) >= 0
     assert curve["floor"]["floor_holds"] is True
-    assert max(curve["pnl"]) == pytest.approx(1.05 * 100 + 500 - 6.89)
+    # Peak is at the centre, where the upper wing leg is (by convention) the one ITM side of the
+    # exactly-at-the-money boundary -- a $5 exercise fee even at the best price on the curve.
+    assert max(curve["pnl"]) == pytest.approx(1.05 * 100 + 500 - 6.89 - 5.00)
 
 
 def test_payoff_curve_of_an_open_vertical_dips_negative(conn):
@@ -448,6 +452,21 @@ def test_session_overview_bundles_the_today_view(conn):
     assert overview["date"] == "2026-07-20"
     assert overview["open_count"] == 1 and overview["risk_free_count"] == 1
     assert "completion" in overview and "divergence" in overview and "journal" in overview
+
+
+def test_max_possible_loss_aggregate(conn):
+    # Regression (2026-07-30): the dashboard's "total possible maximum loss" figure -- every
+    # open position's own worst case (defined risk / 0 for a fly), net of trading fees AND the
+    # worst-case exercise-assignment fee, as if every leg finished ITM.
+    # An open short vertical with real downside (negative floor) drags the total down...
+    position(conn, "P1", kind="short_vertical", status="open", floor_dollars=-360.0)
+    # ...a fly whose floor is already positive (can't become a loss) contributes nothing...
+    position(conn, "P2", kind="fly", status="open", floor_dollars=85.0)
+    # ...and a SETTLED position (its outcome is already realized, not a "possible" future loss)
+    # is excluded even though its floor was negative.
+    position(conn, "P3", kind="short_vertical", status="settled", floor_dollars=-200.0)
+    overview = analytics.session_overview(conn, "2026-07-20")
+    assert overview["max_possible_loss"] == -360.0
 
 
 def _book(conn, *, day="2026-07-20", arm="gex", symbol="XSP", net_cash=10.0):
@@ -590,8 +609,9 @@ def test_timeline_rewinds_a_completed_fly_to_the_vertical_it_used_to_be(conn):
     before, after = ticks[0]["settle_now"]["gex"], ticks[1]["settle_now"]["gex"]
     # short put spread at its short strike: no payoff, one fee stack, the credit still at risk
     assert before == pytest.approx(2.55 * 100 - open_fee, abs=0.01)
-    # a fly at its centre: full wing, and now two fee stacks
-    assert after == pytest.approx(1.05 * 100 + 500 - 2 * open_fee, abs=0.01)
+    # a fly at its centre: full wing, two fee stacks, and a $5 exercise fee -- at exactly the
+    # money the upper wing leg is (by convention) the one ITM side of that boundary.
+    assert after == pytest.approx(1.05 * 100 + 500 - 2 * open_fee - 5.00, abs=0.01)
 
 
 def test_timeline_excludes_a_position_that_had_not_been_opened_yet(conn):

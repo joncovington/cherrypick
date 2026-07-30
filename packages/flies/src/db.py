@@ -196,6 +196,14 @@ _ADDED_POSITION_COLUMNS = {
     # trade at settle time) vs 'official' (a human re-settled with the official print). Paper rows
     # leave it NULL -- paper's last-trade settlement is its documented, accepted approximation.
     "settlement_source": "TEXT",
+    # Pre-close ITM exit (engine.evaluate_pre_close_exit): close_order_id/close_fill_status track
+    # the live closing order the same way entry/completion do ('pending' | 'filled' | 'rejected' |
+    # 'cancelled'); paper has no order to track and settles the position directly, so it only ever
+    # sets closed_before_expiry. That flag distinguishes "closed early to dodge assignment" from an
+    # ordinary cash settlement on BOTH paper and live rows -- same column, same meaning either way.
+    "close_order_id": "TEXT",
+    "close_fill_status": "TEXT",
+    "closed_before_expiry": "INTEGER",
 }
 
 _ADDED_BOOK_COLUMNS = {

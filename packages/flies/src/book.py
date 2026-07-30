@@ -192,6 +192,63 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             }
         )
 
+    # --- 1.5. close any completed fly with an ITM leg, if cheaper than the assignment fee it
+    # would otherwise incur -- see engine.evaluate_pre_close_exit for the window/comparison. The
+    # one deliberate exception to rule 5 ("no adjustments, hold to settlement"): a cost-avoidance
+    # mechanism in the closing minutes, not a strategy adjustment tuned on the session's own data.
+    for pos in [p for p in positions if p["kind"] == "fly" and p["status"] == "open"]:
+        close, reason, plan = engine.evaluate_pre_close_exit(snapshot, pos, params)
+        if not close:
+            if reason not in ("not_a_fly", "before_pre_close_exit_window"):
+                journal(
+                    "pre_close_exit",
+                    reason,
+                    center=pos["center"],
+                    position_id=pos["position_id"],
+                    detail=None
+                    if plan is None
+                    else f"slippage {plan['slippage_cost']:.2f} vs assignment {plan['assignment_fee']:.2f}",
+                )
+            continue
+        gross = (pos["net"] + plan["close_credit"]) * fly.CONTRACT_MULTIPLIER * pos["quantity"]
+        total_fees = round(pos["fees"] + plan["close_fee"], 2)
+        pnl = round(gross - total_fees, 2)
+        pos["fees"] = total_fees
+        pos["pnl"] = pnl
+        pos["status"] = "settled"
+        dbmod.save_position(
+            conn,
+            {
+                "position_id": pos["position_id"],
+                "fees": total_fees,
+                "expiry_payoff": plan["close_credit"],
+                "gross_pnl": round(gross, 2),
+                "pnl": pnl,
+                "pinned": 0,  # closed early -- no true settlement price to judge this against
+                "closed_before_expiry": 1,
+                "status": "settled",
+                "exit_time": now,
+            },
+        )
+        journal(
+            "pre_close_exit",
+            "closed",
+            accepted=True,
+            center=pos["center"],
+            position_id=pos["position_id"],
+            detail=f"closed for {plan['close_credit']:.2f} credit, avoided ${plan['assignment_fee']:.2f} "
+            f"assignment fee ({plan['itm_contracts']} ITM contract(s))",
+        )
+        actions.append(
+            {
+                "action": "closed_before_expiry",
+                "position_id": pos["position_id"],
+                "close_credit": plan["close_credit"],
+                "assignment_fee_avoided": plan["assignment_fee"],
+                "pnl": pnl,
+            }
+        )
+
     open_positions = [p for p in positions if p["status"] == "open"]
 
     # --- 2. legged entry: sell a new credit spread
@@ -239,6 +296,10 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "center_reason": plan["center_reason"],
                     "completing_direction": plan["completing_direction"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
+                    # Full defined risk (-W) net of trading fees AND the worst-case exercise-
+                    # assignment fee (both legs ITM) -- the uncompleted branch's honest worst case,
+                    # not left blank until (if ever) it completes into a fly.
+                    "floor_dollars": fly.position_floor(pos),
                     "risk_free": 0,
                     "status": "open",
                 },
@@ -390,6 +451,7 @@ def settle_book(conn, trade_date: str, arm: str, symbol: str, settlement_price: 
                 "settlement_price": settlement_price,
                 "expiry_payoff": p["expiry_payoff"],
                 "gross_pnl": round(gross, 2),
+                "fees": p["fees"],
                 "pnl": p["pnl"],
                 "pinned": int(p["pinned"]),
                 "status": "settled",
@@ -405,5 +467,7 @@ def settle_book(conn, trade_date: str, arm: str, symbol: str, settlement_price: 
         "book_id": book_id,
         "settled": len(settled),
         "pnl": round(fly.book_pnl(final, settlement_price), 2),
+        "itm_contracts": sum(p.get("itm_contracts", 0) for p in settled),
+        "assignment_fees": round(sum(p.get("assignment_fee", 0.0) for p in settled), 2),
         **summary,
     }

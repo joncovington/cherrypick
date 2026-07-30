@@ -866,6 +866,12 @@ def session_overview(conn, day: str | None = None, arm: str | None = None, symbo
         "open_count": len(open_positions),
         "fly_count": len(flies),
         "risk_free_count": len([p for p in flies if p["risk_free"]]),
+        # The worst realistic dollar loss across every still-open position, net of trading fees
+        # AND the worst-case $5/contract exercise-assignment fee (as if every leg finished ITM --
+        # see fly.position_floor). A position whose own floor is already non-negative contributes
+        # nothing here (it cannot become a loss), so this is genuinely "how much could this book
+        # still lose," not a raw sum of every floor regardless of sign.
+        "max_possible_loss": round(sum(min(0.0, p.get("floor_dollars") or 0.0) for p in open_positions), 2),
         "stats": stats_for_period(conn, day, day, arm=arm, symbol=symbol),
         "completion": completion_stats(conn, day, day, symbol=symbol, arm=arm),
         "divergence": arm_divergence(conn, day),

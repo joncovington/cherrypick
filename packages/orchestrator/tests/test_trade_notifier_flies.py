@@ -182,6 +182,30 @@ def test_live_wrapper_makes_events_unmistakably_live():
     )
     level, key, title, message = inner.sent[0]
     assert key.startswith("live.")  # separate dedup keyspace from the paper events
-    assert title.startswith("LIVE:")
+    # Regression (2026-07-30, flies' first live fill): the message body's "paper"->"LIVE" rewrite
+    # was mirrored nowhere for the title, so a real fill announced itself as "LIVE: Paper entry" —
+    # startswith("LIVE:") alone doesn't catch that. The title must be exactly "LIVE: entry", not
+    # carry the schema formatters' hardcoded "Paper" word through under the live prefix.
+    assert title == "LIVE: entry"
+    assert "Paper" not in title
     assert " paper " not in message and " LIVE " in message
     assert message.startswith("\U0001f6a8")
+
+
+def test_live_wrapper_strips_paper_from_every_schema_title():
+    """The same wrapper is shared across meic/earnings/flies (trade_notifier.py:_SCHEMAS), whose
+    stage titles are "Paper entry"/"Paper exit"/"Paper stop"/"Paper settled" — every shape must
+    come out clean, not just flies' "entry"."""
+
+    class _Inner:
+        def __init__(self):
+            self.sent = []
+
+        def notify(self, level, key, title, message):
+            self.sent.append(title)
+
+    inner = _Inner()
+    wrapped = tn._LiveNotifier(inner)
+    for raw_title in ("Paper entry", "Paper exit", "Paper stop", "Paper settled"):
+        wrapped.notify("INFO", "trade.x", raw_title, "msg")
+    assert inner.sent == ["LIVE: entry", "LIVE: exit", "LIVE: stop", "LIVE: settled"]
