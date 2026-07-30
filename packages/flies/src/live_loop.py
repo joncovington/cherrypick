@@ -388,6 +388,59 @@ def _manage_pending_entry(conn, pos: dict, snapshot: dict, params: dict, others:
     return _confirm_entry_fill(conn, pos, broker, log)
 
 
+# --------------------------------------------------------------------------- orphan sweep
+def _orphans_path() -> str:
+    return os.path.join(_data_dir(), "live_orphans.json")
+
+
+def _sweep_orphans(conn, broker, log) -> int:
+    """Diff the broker's working orders (truth) against the ledger's order ids (belief).
+
+    The one crash window nothing else covers: a tick dying between a successful place and the
+    DB write leaves a real order resting at the broker with no ledger row — invisible to fill
+    polling, entry management, and the cutoff cancel alike. Any working order the ledger has
+    never heard of is persisted to live_orphans.json (which `--status` reports and the
+    watchdog raises CRITICAL on) and logged loudly. Detection only — cancelling an order this
+    process can't account for is a human's call, made with the broker UI open."""
+    if not hasattr(broker, "working_orders"):
+        return 0
+    try:
+        working = broker.working_orders()
+    except Exception as exc:  # noqa: BLE001 — a failed sweep must not break the tick
+        log(f"orphan sweep failed ({type(exc).__name__}: {exc}) — will retry next tick")
+        return 0
+    known = {
+        str(r[0])
+        for r in conn.execute(
+            "SELECT entry_order_id FROM fly_positions WHERE entry_order_id IS NOT NULL "
+            "UNION SELECT completion_order_id FROM fly_positions WHERE completion_order_id IS NOT NULL"
+        ).fetchall()
+    }
+    orphans = [o for o in working if str(o.get("order_id")) not in known]
+    try:
+        os.makedirs(_data_dir(), exist_ok=True)
+        with open(_orphans_path(), "w", encoding="utf-8") as f:
+            json.dump({"at": clock.now_iso(), "orphans": orphans}, f)
+    except OSError:
+        pass
+    if orphans:
+        log(
+            f"ORPHANED ORDERS at the broker, unknown to the ledger: "
+            f"{[o.get('order_id') for o in orphans]} — a placement was recorded nowhere "
+            "(or another system is trading this account). Review in the broker UI before "
+            "any further arming."
+        )
+    return len(orphans)
+
+
+def read_orphans() -> list[dict]:
+    try:
+        with open(_orphans_path(), encoding="utf-8") as f:
+            return json.load(f).get("orphans", [])
+    except (OSError, ValueError):
+        return []
+
+
 # --------------------------------------------------------------------------- the tick
 def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=print) -> dict:
     """One live iteration for the pinned arm — the full state machine.
@@ -414,6 +467,10 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
         "SELECT * FROM fly_positions WHERE trade_date = ? AND arm = ? AND status = 'open'", (day, arm)
     ).fetchall()
     positions = [dict(r) for r in rows]
+
+    # --- 0. orphan sweep: broker truth vs ledger belief ---
+    if live:
+        summary["orphaned_orders"] = _sweep_orphans(conn, broker, log)
 
     # --- 1. fill confirmation (before anything else acts on a position's current state) ---
     if live:
@@ -842,6 +899,12 @@ class BrokerAdapter:
             self._reset()
             return {"ok": False, "order_id": order_id, "error": f"{type(exc).__name__}: {exc}"}
 
+    def working_orders(self) -> list[dict]:
+        from cherrypick.core import broker as _broker
+
+        self._ensure()
+        return self._run(_broker.working_orders(self._account, self._session))
+
 
 # --------------------------------------------------------------------------- scheduled task
 def task_installed() -> bool:
@@ -851,6 +914,32 @@ def task_installed() -> bool:
         ["schtasks", "/Query", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
     )
     return r.returncode == 0
+
+
+def _allow_on_battery() -> dict:
+    """Clear Task Scheduler's default battery guards (DisallowStartIfOnBatteries /
+    StopIfGoingOnBatteries). schtasks can't set these; the orchestrator patches its own tasks
+    the same way (`tasks.allow_on_battery`), but the live task is registered HERE, module-side,
+    so it must patch itself — a laptop dropping to battery would otherwise silently stop the
+    loop with real working orders resting at the broker. Best-effort: a failure is reported
+    but never invalidates the registration (the watchdog freshness check is the backstop)."""
+    ps = (
+        "$ErrorActionPreference='Stop';"
+        f"$s=(Get-ScheduledTask -TaskName '{_TASK_NAME}').Settings;"
+        "$s.DisallowStartIfOnBatteries=$false;$s.StopIfGoingOnBatteries=$false;"
+        f"Set-ScheduledTask -TaskName '{_TASK_NAME}' -Settings $s | Out-Null"
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            creationflags=_NO_WINDOW,
+        )
+        return {"ok": r.returncode == 0, "detail": (r.stderr.strip()[:200] or "battery guards cleared")}
+    except OSError as exc:
+        return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
 
 
 def install_task() -> dict:
@@ -879,8 +968,10 @@ def install_task() -> dict:
         creationflags=_NO_WINDOW,
     )
     ok = r.returncode == 0
+    battery = None
     if ok:
         _write_arm_stamp()
+        battery = _allow_on_battery()
         subprocess.run(
             ["schtasks", "/Run", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
         )
@@ -889,6 +980,7 @@ def install_task() -> dict:
         "task": _TASK_NAME,
         "cadence": f"every {_TASK_INTERVAL_MIN} min",
         "armed_for": provider.now_et().date().isoformat(),
+        "battery": battery,
         "detail": (r.stdout or r.stderr).strip(),
     }
 
@@ -975,6 +1067,8 @@ def run_status(config: dict, conn) -> dict:
         "session_settled": session_already_settled(conn, today),
         "halt_flag": os.path.exists(halt_flag_path()),
         "breaker_tripped": daily_loss_tripped(conn, today, live_cfg.get("daily_loss_halt_dollars")),
+        # From the last tick's broker-truth sweep (files only here — status never talks to the broker).
+        "orphaned_orders": len(read_orphans()),
         "last_log_write": last_tick,
         "log_file": str(lf),
     }

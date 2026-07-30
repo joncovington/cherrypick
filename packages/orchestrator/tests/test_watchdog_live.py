@@ -128,6 +128,31 @@ def test_live_settle_overdue_warns(monkeypatch, tmp_path):
     assert "2 open live position" in settle[0].message
 
 
+def test_orphaned_orders_are_critical_any_time(monkeypatch, tmp_path):
+    _setup(
+        monkeypatch,
+        tmp_path,
+        status_obj={"armed_for": _TODAY, "orphaned_orders": 2},
+        registered=False,
+    )
+    out = wd._check_live("flies", _mcfg(), _AFTER_CLOSE, False)
+    orphans = [f for f in out if f.key == "flies.live_orphans"]
+    assert orphans and orphans[0].status == CRITICAL
+    assert "2 working order(s)" in orphans[0].message
+
+
+def test_zero_orphans_reports_ok_so_a_prior_alert_recovers(monkeypatch, tmp_path):
+    _setup(
+        monkeypatch,
+        tmp_path,
+        status_obj={"armed_for": _TODAY, "orphaned_orders": 0},
+        registered=False,
+    )
+    out = wd._check_live("flies", _mcfg(), _MIDDAY, True)
+    orphans = [f for f in out if f.key == "flies.live_orphans"]
+    assert orphans and orphans[0].status == OK
+
+
 def test_live_settled_reports_ok(monkeypatch, tmp_path):
     _setup(
         monkeypatch,

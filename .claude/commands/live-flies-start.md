@@ -43,6 +43,9 @@ to stop.
      re-arming. Only a fresh YES may clear it (step 4).
    - **Open live positions / pending orders / breaker state** from the `--status` JSON, plus
      whether today's session is already settled.
+   - **Orphaned orders**: if `--status` shows `orphaned_orders > 0`, **stop here** — the last
+     tick's broker-truth sweep found working orders the ledger has never heard of. That must be
+     resolved in the broker UI before arming anything.
    - **Market state**: whether it's currently a trading day inside RTH. Off-hours arming is
      allowed (the ticks no-op until the open) but say so plainly.
    - **The per-day contract**: state that this arms TODAY only — the loop self-disarms at the
