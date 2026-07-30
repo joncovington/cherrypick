@@ -1,7 +1,15 @@
 # cherrypick-gex
 
-A simple, self-hosted GEX (gamma-exposure) dashboard — a lightweight take on what gexbot.com,
-SpotGamma, and MenthorQ sell. Three tabs off one live option chain:
+**What this module does:** it's a read-only dashboard, not a trading strategy — it shows you
+dealer gamma-exposure positioning (where market makers are likely to buy or sell to hedge as
+price moves), option-implied-volatility skew, and traded volume, all by strike, updating live.
+Think of it as your own self-hosted version of what gexbot.com, SpotGamma, or MenthorQ sell,
+built on the suite's shared market-data feed. It never places an order — the other modules
+(MEIC, earnings, flies) use the same underlying gamma-exposure math to help decide when
+*they* should trade, and this dashboard is simply that same view surfaced for you to watch
+directly.
+
+Three tabs off one live option chain:
 
 - **GEX** — **net GEX by strike** with **open interest ("positioning") and traded volume ("flow") side
   by side**, the **gamma-flip / zero-gamma** level, the **call/put walls**, and a live spot marker with
@@ -19,17 +27,18 @@ card. See the suite's [documentation index](../../docs/README.md) for the big pi
 
 ## Two ways to run
 
-**Standalone (default).** `run.py stream` runs the shared `cherrypick.core.streamer` engine with this
-module's own tastytrade OAuth session and writes its **own** `data/stream_cache.db`; `run.py gex` /
-`dashboard --serve` read it. No cherrypick-meic needed. Credentials come from the OS keyring under the
-suite's service (`meicagent`, with a read-only fallback to the pre-rename `tastytrade-mcp`).
+**Piggyback (the default).** Out of the box this dashboard reads the suite's shared, canonical
+market-data cache — the same one MEIC, flies, and the standalone `streamer` package read and
+write — read-only. If any of those is already running, the dashboard just works with no
+market-data connection of its own to manage.
 
-**Piggyback.** Point `source.stream_cache_db` at a running cherrypick-meic streamer's
-`data/stream_cache.db` and **don't** run this module's streamer — it then only reads (read-only) the
-cache MEIC already maintains.
+**Standalone.** You can instead have this module run its own connection to the market-data feed
+(`run.py stream`) and keep its own local cache of quotes, entirely independent of any other
+module. It signs in using the same secure, OS-stored credentials as the rest of the suite.
 
-Either way, open interest and live per-option volume exist only because a streamer subscribes to the
-DXLink Summary and Trade events for the ATM/GEX strike window.
+Either way, the open-interest and per-option volume figures only exist because a live data
+connection is actively subscribed to the relevant strikes — without one running somewhere, the
+dashboard shows the last cached snapshot rather than live data.
 
 ## Setup
 
@@ -57,8 +66,10 @@ ruff check . && ruff format .                   # lint/format (src/_core is excl
 
 `config.json` (git-ignored, machine-local). Paths resolve **relative to the config file's directory**:
 
-- `source.stream_cache_db` — the cache path. Default `data/stream_cache.db` (this module's own, written
-  by `run.py stream`). Repoint at a cherrypick-meic cache to piggyback instead.
+- `source.stream_cache_db` — the cache path. Defaults to the suite's shared, canonical cache
+  (`~/.cherrypick/data/marketdata/stream_cache.db`) if omitted — the piggyback path. Point it at
+  `data/stream_cache.db` (or any path) to read this module's own standalone `run.py stream` output
+  instead.
 - `symbols` — default symbol list; the first is used when `--symbol` is omitted.
 - `streamer` — `{window_strike_count}` for `run.py stream` (strikes each side of the money to subscribe).
 - `serve` — `{host, port, refresh_seconds, ws_port, push_min_interval_seconds}` for the live view.

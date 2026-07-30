@@ -1,3 +1,8 @@
+**What this covers:** an engineering build plan for a historical backtesting tool, kept for the
+record rather than as a how-to guide. If you're looking for how to run paper trading day to day,
+see [paper-trading.md](paper-trading.md) instead. Part of the [MEIC module](../README.md) in the
+cherrypick suite.
+
 # Build plan — `paper_practice.py` (0DTESPX practice-session backtester)
 
 A **side backtesting project**: a ToS-compliant historical backtester that drives our real MEIC

@@ -1,5 +1,9 @@
 # Risk Profiles
 
+**What this covers:** the four preset "how aggressive should this be" settings you can switch
+between with one command, what each one trades off, and when to move up or down the ladder. Part
+of the [MEIC module](../README.md) in the cherrypick suite.
+
 ## Overview
 
 A **risk profile** is a named preset of entry-gate thresholds that you select based on market conditions or your confidence level. Instead of manually editing a dozen keys in `config.json` every time you want to trade more (or less) aggressively, you switch profiles with one slash command: `/set-risk-profile <name>`.
@@ -185,6 +189,7 @@ Guessing would encode an assumption as if it were a finding.
 | `min_iv_rank` | 0.30 → **0.20** | Accept even lower IV — 33% lower than conservative |
 | `min_credit_pct_of_width` | 0.15 → **0.10** | Accept tight credit — 33% haircut from conservative, matched by tighter stop and fewer concurrent ICs |
 | `max_call_delta_entry` | 0.20 → **0.22** | Accept calls 10% closer to ATM — higher gamma, but tighter OTM buffers gone so stops must absorb more |
+| `max_call_delta_entry_open_volatile` / `_late` | 0.19 → **0.21** | The tighter open/late-session ceilings also relax by the same margin, so they stay proportionally below the base ceiling instead of becoming the binding constraint |
 | `min_call_otm_pct` | 0.35% → **0.30%** | Calls only 0.30% OTM instead of 0.35% — much tighter |
 | `min_put_otm_pct` | 0.30% → **0.25%** | Puts only 0.25% OTM instead of 0.30% — much tighter |
 | `late_entry_bias_start_time` | 12:00 → **11:00** | Same as moderate |
@@ -241,7 +246,7 @@ The four tiers follow a deliberate sequence. **Do not skip ahead** — the inter
 | Delta relaxation (0.20→0.22) | Aggressive | +2–3% gamma per position | Cap concurrent positions to 3 |
 | OTM relaxation (0.35%→0.30%) | Aggressive | Strikes 17% closer to money = 2–3× higher pin/assignment risk at expiration | Pair with 5% tighter stops (0.95→0.90) |
 | Regime gate (VIX 25→30) | Very-Aggressive | Trade 30–50% of days you currently skip due to elevated vol | Reduce position cap to 2 and stop at 85% (10% tighter) |
-| ATR gate (30→40 pts) | Very-Aggressive | Trade trending markets with half the normal mean-reversion edge | Same tight offsets as VIX gate |
+| ATR gate (1.5%→2.0% of price) | Very-Aggressive | Trade trending markets with half the normal mean-reversion edge | Same tight offsets as VIX gate |
 
 ---
 

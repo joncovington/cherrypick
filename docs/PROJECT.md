@@ -26,14 +26,16 @@ It comes with four modules:
 - **Earnings** — **defined-risk earnings plays** (iron fly, double calendar, iron condor, ATM calendar,
   directional credit spread, broken-wing butterfly). It opens once before the close and
   closes once after the next open, sized to a simulated capital base.
-- **Flies** — 0DTE **net-credit butterflies** ("profit forest"), paper-only by design: it measures
-  whether the strategy makes money net of costs, arm-by-arm, and is built so a negative answer is a
-  usable result.
+- **Flies** — 0DTE **net-credit butterflies** ("profit forest"): it measures whether the strategy
+  makes money net of costs, arm-by-arm, and is built so a negative answer is a usable result. Paper
+  by default, with a small, explicitly-armed live pilot also available (see
+  [`packages/flies/docs/live-trading-plan.md`](../packages/flies/docs/live-trading-plan.md)).
 - **GEX** — a self-hosted read-only **gamma-exposure dashboard** over the shared market-data stream.
 
 By default everything runs in **paper mode** — the automation never places, cancels, or closes a real
-order. You can also connect a real tastytrade account for live market data and a read-only reconciliation
-check; see [Paper and live modes](#paper-and-live-modes).
+order on its own. You can also connect a real tastytrade account for live market data and a read-only
+reconciliation check, and (for flies) a deliberately narrow, manually-armed live pilot; see
+[Paper and live modes](#paper-and-live-modes).
 
 ---
 
@@ -243,7 +245,10 @@ python run.py secrets-set --channel discord      # paste your webhook URL when p
   engine — the automation will never do it for you, and you do so entirely at your own risk (see the
   disclaimer).
 
-Paper and live books are kept strictly separate, and credentials stay in your OS keyring.
+Paper and live books are kept strictly separate, and credentials stay in your OS keyring. The
+flies module's live pilot adds an extra safeguard on top of this: it has to be armed with a
+fresh, explicit confirmation every trading day, and it turns itself off automatically each
+evening — there's no way for one day's confirmation to silently carry into the next.
 
 ## How your account is protected
 

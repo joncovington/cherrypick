@@ -1,5 +1,10 @@
 # 0DTESPX.com API — reference notes
 
+**What this covers:** a technical/legal reference on a third-party historical-data API MEIC's
+paper-trading replay feature considered using, and why the module doesn't use it the way it
+originally planned to. More detailed and code-oriented than the rest of this module's docs. Part
+of the [MEIC module](../README.md) in the cherrypick suite.
+
 Research notes on the [0DTESPX.com](https://www.0dtespx.com) API, sourced from the OpenAPI spec
 (`/openapi.yaml`), the [walkthrough](https://www.0dtespx.com/docs/api/walkthrough),
 [`/llms.txt`](https://www.0dtespx.com/llms.txt), and the

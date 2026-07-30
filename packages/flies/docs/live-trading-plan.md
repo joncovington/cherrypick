@@ -1,196 +1,225 @@
-# Flies live trading — plan and gates
+# Flies live trading — the plan, the gates, and where things stand
 
-**Status: a deliberate, logged Gate-0 exception (2026-07-30) — see below.** Flies is a paper
-module built to make a negative result usable. The 07-20…07-24 window was negative (40
-legged entries completed 23 (57.5%) against a ≈65% break-even rate, book lost $1,175), but
-gex arm specifically, since the 07-27 config change, has run 8/9 completions and +$603 net —
-just 3 sessions and 9 entries, nowhere near Gate 0's own ≥20-session/≥100-entry bar. At the
-user's explicit direction, live was authorized anyway for the gex arm only, as a small,
-tightly-bounded pilot meant to surface real trading-mechanics bugs rather than to claim the
-statistical bar was cleared — `gate0_confirmed` in the home config records this explicitly.
-The concurrency guard below (at most one incomplete position at a time) is the corresponding
-risk control: the pilot is deliberately too small to matter much either way while the
-mechanics get proven out. This document still defines **what a clean "yes" looks like**, for
-when the paper verdict is actually judged to pass at real sample size.
+**What this document is:** the rulebook for moving the flies butterfly strategy (see the
+[module README](../README.md) for what the strategy actually is) from paper trading into real
+money. It defines the statistical bar the paper results need to clear before scaling up, the
+safety controls that apply regardless, and exactly what has been built so far. It's the
+reference to check before changing anything about how live trading runs, and the record of why
+each decision was made the way it was.
 
-Everything here inherits the suite guardrails: paper↔live isolation, no AI/MCP/network on
-the decision path, credentials in the OS keyring, account numbers masked, defined-risk only.
+**Where things stand today (2026-07-30):** live trading is running as a **small, deliberately
+under-sized pilot** — one strategy variant, one contract at a time, one open position at a
+time — authorized specifically to shake out real trading-mechanics bugs (order fills, timing,
+cancellations) before any larger commitment is considered. It is **not** a claim that the
+statistical bar below has been cleared. The paper results from 2026-07-20 through 07-24 were,
+on their own, a losing result (40 legged entries, 23 completions — 57.5%, against a roughly 65%
+break-even rate; the day's book lost $1,175 net). Since a set of configuration changes made
+2026-07-27, the `gex` variant specifically has done much better — 8 completions out of 9,
++$603 net — but that's only 3 sessions and 9 trades, nowhere near enough to trust statistically.
+The user made an explicit, informed decision to authorize a small live pilot anyway, precisely
+*because* it's small enough that being wrong about the strategy doesn't matter much, while still
+being real enough to find bugs that only show up with real orders and a real broker. That
+decision is recorded in the module's configuration as a logged, named exception — not a claim
+that the bar was met.
+
+Every guardrail that applies to the rest of the suite applies here too: paper and live money are
+kept completely separate in every report, nothing on the trading-decision path uses AI or any
+network call, credentials live only in the operating system's secure credential store, account
+numbers are always shown masked (e.g. `****1234`), and only strategies with strictly defined,
+bounded risk are traded live.
 
 ---
 
-## Gate 0 — the paper verdict (nothing below happens until this passes)
+## The bar the strategy needs to clear (Gate 0) — nothing below is meant to start until this passes
 
-All four, measured by the existing analytics layer, over a window that starts **after** the
-2026-07-27 config changes (min_floor_dollars 10, legged-only, wide_wing arm added), because
-data from before those changes measures a different strategy:
+This is the "is this actually a working strategy" question, answered from the paper-trading
+data using the module's own analytics, over a window that starts *after* the 2026-07-27 setting
+changes (data from before that point measured a meaningfully different strategy, so it doesn't
+count).
 
-1. **Completion rate ≥ the live break-even rate, sustained.** Break-even is recomputed from
-   the window's own miss-cost/completion-earn ratio (the frozen "≈65%" is the 5-session
-   number, not a constant). Minimum sample: ≥20 sessions and ≥100 legged entries.
-2. **Book net positive after fees over the window**, and the winning arm's reading passes
-   the hardened promotion thresholds the suite already uses (≥14 days, ≥20 samples,
-   significance guard, survives 0.25 slippage) — the same bar every other promotion clears.
-3. **A winning arm separable from control.** Arm divergence must show the winner actually
-   made different choices (gex vs control is the comparison with power; the ATM arms agree
-   on centre by construction), and the per-arm delta must favor it beyond noise.
-4. **The wide_wing hypothesis resolved** — either wider wings bracket the observed drift
-   (completions land inside wings, the book earns more than its floor) or they don't, in
-   which case the drift is fundamental to the mechanism and rule 6 likely ends the project.
+1. **Completion rate at or above the real break-even rate, sustained over a meaningful sample.**
+   The break-even rate isn't a fixed number — it's recalculated from that window's own ratio of
+   what a miss costs versus what a completion earns (the "roughly 65%" above was specific to the
+   first five sessions, not a permanent target). The minimum sample considered meaningful: at
+   least 20 trading sessions and at least 100 legged entries.
+2. **The day's book is net profitable after all fees, over that window** — and whichever
+   variant is winning has to clear the same, already-hardened bar the suite uses before trusting
+   any strategy result: at least 14 days, at least 20 sample trades, a statistical-significance
+   check, and the result has to survive a stress-test that assumes worse-than-modeled slippage.
+3. **The winning variant is genuinely separable from the plain baseline** — meaning it actually
+   made different trading choices, not just the same choices measured twice. (Two of the four
+   variants pick the same strike as the baseline by construction, so agreement between those
+   two proves nothing either way; the comparison that can actually show a difference is the
+   `gex` variant against the baseline.)
+4. **The wide-wing question is answered one way or the other** — either using wider strike
+   spacing captures the price movement that happens before a completion arrives (so completions
+   land inside the position's range and the book earns more than just its floor), or it
+   doesn't, in which case that price movement is a fundamental property of the strategy rather
+   than something a setting can fix — a genuinely negative finding, and an equally valid outcome
+   of this whole exercise.
 
-Gate 0 is evaluated by a human reading `strategy` reports, not by any automated trigger.
+This bar is judged by a person reading the reports — there's no automatic switch that flips.
 
-## The two documented blockers, resolved on paper (in CLAUDE.md "If this ever goes live")
+## The two open technical questions, and how they're resolved for the pilot
 
-**Legging is where live diverges hardest from paper.** Paper's completion gate is a clean
-inequality; live, step 1 fills and step 2 is a working limit that may sit unfilled or fill
-worse. Paper completion is therefore an **upper bound** on live completion — so the pilot's
-first job is to measure the live rate directly, at 1-lot, before anything scales. Live
-mechanics: step 1 is a 2-leg credit-spread limit (sell to open); step 2 is the completing
-2-leg debit vertical as a working Day limit at `D ≤ C − fee_buffer`, subject to the same
-post-fee floor gate, repriced only within that bound and canceled at a configured cutoff.
-A never-filled completion leaves an ordinary defined-risk short vertical held to cash
-settlement — the exact branch paper already accounts for. **Abort rule:** once ≥30 live
-legged entries exist, if live completion runs more than 15 percentage points below the
-contemporaneous paper rate, halt the pilot; the strategy's edge *is* the completion rate,
-and that gap means paper's upper bound is not achievable.
+Moving from paper to live raises two questions the paper simulation can't answer by itself.
 
-**`fund_from_open_credit` needs a real buying-power check.** Mooted for v1: `entry_modes`
-has been legged-only since 2026-07-27 (outright lost 4 of 4 and confounded the gex arm),
-and live v1 **forbids outright entirely**. If outright ever returns, it returns paper-first,
-and its live funding must clear `core.broker`'s preflight and deploy governor like any other
-order. Out of scope here.
+**How much does reality differ from the simulation when a two-step trade doesn't complete
+instantly?** In paper trading, "did the completing leg get cheap enough to buy" is a clean
+yes/no check against the recorded price. In live trading, the first leg (the credit spread)
+fills first, and the second leg (the completing purchase) is a resting order that might sit
+unfilled for a while or fill at a worse price than modeled. That means the paper-trading
+completion rate is best understood as a **ceiling** on what live trading can achieve, not a
+prediction of it — so the first job of the pilot is simply to measure the real, live completion
+rate directly, at the smallest possible size, before anything scales up. Mechanically: the
+first leg is a live 2-leg credit-spread order; the second leg rests as a working limit order at
+a price no worse than (credit collected − a fee buffer), subject to the same profit-floor check
+paper trading uses, and it's automatically cancelled at a fixed cutoff time if it hasn't filled.
+If it never fills, you're simply left holding the original credit spread to expiration — the
+same "uncompleted branch" outcome the paper simulation already tracks and reports separately.
+**A built-in abort rule protects against a bad surprise here:** once at least 30 live legged
+entries have happened, if the live completion rate falls more than 15 percentage points below
+the paper completion rate over the same days, the pilot halts automatically. The strategy's
+entire edge *is* the completion rate — a persistent gap that size would mean the paper ceiling
+simply isn't achievable in the real market.
 
-## Architecture — the MEIC phase-5 shape, reused
+**The "outright" entry mode needs a real check against actual buying power before it could ever
+go live.** This is moot for the pilot: outright entries were already turned off in paper trading
+as of 2026-07-27 (they lost money in all four instances tried, and were quietly skewing the
+comparison between strategy variants), and the live pilot **does not trade this mode at all**.
+If it's ever reconsidered, it goes back into paper trading first, and any live version would
+need to pass the same real balance checks every other live order does.
 
-The engine already returns decisions rather than performing fills (the same split MEIC
-uses), so live is an *applier*, not a rewrite:
+## How live trading is built
 
-- **`src/live_loop.py`** as `paper_loop.py`'s sibling: same provider snapshot (read-only
-  from the shared stream cache — the streamer stays the single producer), same pure
-  `engine.py`/`fly.py` decisions, but entries and completions submitted through
-  `cherrypick.core.broker` (`build_order` + `place_order` with the deploy governor). The
-  paper loop **keeps running in parallel** as the control for live-vs-paper divergence.
-- **`src/broker_cli.py`** — flies has no `tt.py`; a minimal broker CLI on `core.broker` +
-  `core.auth` with its own keyring service (`fliesagent`), onboarded via the orchestrator's
-  existing `connect`/`account` flow. Order placement, working-order status, cancel. Nothing
-  else — quotes keep coming from the stream cache.
-- **One arm goes live: the Gate-0 winner.** The four-arm design is an experiment harness,
-  not a live posture. The live config pins that arm's parameters; changing them mid-pilot
-  invalidates the measurement.
-- **A separate live ledger** (`live_trades.db`, the `fly_positions` schema plus broker
-  order-id columns), declared to the orchestrator via its `live_db` key so it appears in
-  `report --live` and never in a promotion reading. The paper DB is untouched.
-- **Kill switches, all of them:** `enable_live_trading` (config, default false, checked
-  every tick) + the suite halt flag (`state/halt-live.flag` — presence halts new entries,
-  polled per tick; already surfaced on the hub's Live Ops card) + a daily-loss breaker
-  (day's live net ≤ −limit ⇒ no new entries; open structures follow their normal
-  hold-to-settlement rules — they are defined-risk, and improvising exits is rule 5's
-  territory) + every entry through `core.risk.evaluate_deploy_limit`, fail-closed.
-- **Settlement discipline:** live book results are recorded against the official settlement
-  print (the `--price` path), never the last streamed trade. Daily scheduled `reconcile`
-  (already built) is mandatory during the pilot; the designated flies account is expected
-  to hold positions and is judged against the live ledger.
-- **Watchdog:** live-loop freshness SLA during market hours, stdlib-only like everything
-  else on the reliability path. The watchdog never places or cancels anything.
+Live trading reuses the exact same decision-making logic as paper trading — the code that
+decides "is this a good trade" doesn't know or care whether the order that follows is simulated
+or real. Live trading only adds the parts that talk to the actual brokerage account:
 
-**Symbol and sizing decision — made by fee math, not preference.** Paper runs SPX; fees ate
-82% of gross in the first session. XSP is 1/10 notional (smaller absolute risk per
-structure) but the fee stack is roughly fixed per contract, so fee drag is proportionally
-*worse* at XSP scale and may structurally sink the floor the strategy exists to earn. The
-pilot symbol is chosen by recomputing the fee-adjusted floor for both under the winning
-arm's parameters: if XSP floors positive after fees, pilot on XSP (smaller dollars at
-risk); if only SPX does, pilot on SPX 1-lot and accept the larger per-structure risk as the
-price of a real measurement. Both are European cash-settled — no assignment machinery
-either way. Never both concurrently (the correlation guard doesn't exist).
+- A separate live-trading process, running side-by-side with (not instead of) the paper-trading
+  process — paper keeps running throughout the pilot as the point of comparison.
+- A minimal, purpose-built connection to the broker for placing orders, checking their status,
+  and cancelling them. All pricing and trade decisions still come from the same shared,
+  read-only market-data feed the rest of the suite uses — the broker connection is used *only*
+  to act (place or cancel an order) or to confirm something only the broker can know (whether an
+  order actually filled). This "streamer before API calls" rule is a suite-wide convention, not
+  specific to live trading — see the [module's technical guide](../CLAUDE.md) for how it's
+  applied elsewhere.
+- **Only the winning strategy variant trades live.** The four-variant design exists to compare
+  strategies on paper; live trading isn't an experiment, so its settings are locked to whichever
+  variant is authorized (currently `gex`), and those settings don't change mid-pilot — changing
+  them partway through would make the measurement meaningless.
+- **A completely separate ledger for live trades**, kept out of every comparison, calibration,
+  or "what's working" report the suite generates from paper data — live results only ever show
+  up in their own dedicated view.
+- **Several independent kill switches**, any one of which stops new trades: a master on/off
+  setting (off by default, checked every minute); a suite-wide "halt" flag that any part of the
+  system (including the automated monitor) can set, which blocks new entries within about a
+  minute without touching anything already open; a daily loss limit (if the day's live trading
+  is down past a set dollar amount, no new positions open — anything already open still runs its
+  course to settlement, since these are always fully defined-risk trades); and a real,
+  broker-checked buying-power/exposure limit on every single order.
+- **Settlement discipline**: live-trading results are recorded against the official market
+  closing print, not the same "last streamed trade" approximation paper trading uses by default.
+  A daily automated reconciliation check compares what the system believes is open against what
+  the brokerage account actually shows.
+- **An automated monitor** watches that the live-trading process is actually running and
+  healthy during market hours — it can raise an alert or set the halt flag, but it never places
+  or cancels an order itself.
 
-## Rollout ladder — each rung graduates on data, human-confirmed
+**Why XSP instead of SPX for the pilot.** Paper trading runs on SPX, where fees ate 82% of gross
+profit in the very first session. XSP is the same underlying index at 1/10th the size, so the
+dollar risk per trade is smaller — but because the trading fees are roughly fixed per contract
+regardless of size, fees actually take a *larger* percentage bite at the smaller XSP scale. The
+choice between the two comes down to which one the fee-adjusted math actually favors under the
+winning variant's settings, not a preference — and for this pilot, XSP is the one that still
+clears its costs. Both are settled in cash with no possibility of early assignment, so neither
+carries assignment risk. The two are never traded live at the same time.
 
-- **Rung 0 — broker smoke.** The MEIC pattern (`live_smoke.py`): build a real credit-spread
-  and completing-vertical order pair from live quotes, preflight both through the dry-run
-  endpoint against the designated account, verify buying-power effects and the governor
-  verdict, place nothing. User-supervised.
-- **Rung 1 — measurement pilot.** 1 structure per day maximum, one symbol, ≥15 sessions.
-  Collect: live completion rate (the number), realized slippage per fill vs the modeled
-  haircut, actual fees vs the modeled stack, completion latency live vs paper. The abort
-  rule above is armed from entry one.
-- **Rung 2 — normal cadence at 1-lot.** Only if rung 1's live completion clears the
-  recomputed break-even. Config frozen; the hardened promotion rule evaluated on **live**
-  readings via the live-tagged reader.
-- **Scaling beyond 1-lot** is a separate human decision after rung 2 passes, and is out of
-  scope for this plan.
+## The rollout ladder — each step only starts once the one before it has been checked by a person
 
-## Measurement and isolation invariants
+- **Step 0 — broker smoke test.** Build a real order pair from live market data, run it through
+  the broker's practice/dry-run check against the real account, confirm the buying-power effect
+  and safety-limit result look right — and place nothing. Done under direct supervision.
+- **Step 1 — the measurement pilot (where things are now).** At most one position open at a
+  time, one strategy variant, at least 15 sessions. What gets collected: the real live
+  completion rate, how much worse fills are than the modeled price, actual fees versus the
+  modeled estimate, and how long completions actually take compared to paper. The abort rule
+  above is active from the very first trade.
+- **Step 2 — normal size at one contract.** Only reached if step 1's live completion rate clears
+  the recalculated break-even bar. Settings stay locked, and the suite's standard "is this
+  strategy working" evaluation runs on the live results directly, using the same hardened bar
+  every other strategy has to clear.
+- **Scaling beyond one contract** is a separate decision, made by a person, after step 2 passes —
+  and isn't addressed by this plan at all.
 
-- Live P&L is visible only through `report --live`; `calibrate` and every promotion
-  reading stay paper-only (enforced by construction and by test in the orchestrator).
-- Every live fill records actual price vs quoted mid, so the suite's modeled slippage
-  haircut finally gets replaced by measured values — closing the "unknown ≠ zero" caveat
-  from the paper cost model.
-- The paper loop's contemporaneous sessions are the control: live-vs-paper deltas in
-  completion, latency, and floor are first-class report lines, not an afterthought.
+## How live and paper results are kept honest and separate
 
-## Explicit non-goals
+- Live results are visible only through the live-specific report view. Every "what's working"
+  or calibration report the suite generates is paper-only, by construction and checked by tests.
+- Every live fill records the actual price it filled at versus what was quoted at the time — so
+  over the pilot, the suite's estimated slippage cost (previously just a modeled guess) gets
+  replaced with real, measured numbers.
+- The paper-trading process keeps running the same days live does, specifically so live results
+  can be compared against a paper "control" from the same sessions — differences in completion
+  rate, fill speed, and pricing between the two are reported as first-class numbers, not an
+  afterthought.
 
-No adjustments after establishment (rule 5). No outright or funded flies. No multi-arm
-live. No SPX+XSP concurrently. No agent anywhere near the live decision path — the advise
-pipeline may only ever touch the paper book, and nothing in phase 6's risk-reducing menu
-applies to flies until this plan's rungs are complete.
+## What this plan explicitly does not cover
 
-## Work breakdown and scaffold status
+No adjusting a position after it's opened (the strategy is hold-to-settlement by design, in both
+paper and live). No "outright" entries live. No more than one strategy variant live at once. No
+trading SPX and XSP live at the same time. No automated or AI-driven decision anywhere near a
+live order — anything that reads trading history to suggest changes is only ever allowed to look
+at paper data, and none of the suite's more advanced automation features apply to flies until
+this plan's steps are complete.
 
-**Scaffolded (2026-07-28, inert by default, gex arm pinned):** `credentials.py` (keyring
-service `fliesagent`, orchestrator `connect`-compatible), `broker_cli.py` (connection /
-accounts / order preflight through `core.broker` + governor; `--live` double-gated on
-`live.enabled` + a `gate0_confirmed` human attestation), `live_orders.py` (pure spec
-builders — the completion working order can never price past the engine's own gate),
-`live_loop.py` (readiness gates checked per tick: enabled + attestation + one configured
-arm + designated account + halt flag absent; daily-loss breaker on the live ledger;
-completion-order cutoff cancel; `--once --dry-run` — the default — preflights against the
-real account and places nothing, which **is** the rung-0 smoke), the live ledger
-(`live_trades.db`, same schema + order-id columns, a separate file from paper), and the
-provider now carries OCC symbols on every leg quote. All pure parts tested.
+## Build status
 
-**Remaining before rung 1 can start (after Gate 0) — updated 2026-07-30 (second pass, the
-full-loop build):**
+**Built and working (as of 2026-07-28, off by default until deliberately armed):** the secure
+credential connection to the broker, the broker command-line tool (account connection, order
+practice-checks, all gated behind the master on/off setting plus a recorded human sign-off), the
+order-building logic (which can never price an order past what the strategy's own profit-floor
+check allows), the live trading loop itself (checks every safety gate every single tick: enabled,
+signed off, one variant configured, the right account connected, no halt flag present; a daily
+loss breaker; automatic cancellation of stale orders), a fully separate live ledger, and support
+for the exact option contract identifiers the broker needs on every quote.
 
-1. Orchestrator wiring: `keyring_service: "fliesagent"` + `live_db` in the suite config;
-   run `connect`/`account` for flies — **DONE** (fliesagent keyring complete, designated
-   account set).
-2. Fill handling — **DONE**: every tick polls pending orders; the burst fill-watcher
-   (`--watch-fills`, spawned per tick while orders are pending) polls ~every 10s,
-   cache-gated (broker status only when cached quotes touch the working limit, or a
-   ~150s heartbeat); actual fill prices recorded, completion flips only on a confirmed
-   fill (`_confirm_entry_fill` / `_confirm_completion_fill`, `core.broker.order_status`).
-3. Working-order management — **DONE, by design rather than by repricing machinery**:
-   the ENTRY order is re-evaluated each tick from cache and cancelled/replaced only when
-   the evaluation moved (center or ≥ one tick of credit); the COMPLETION order rests once
-   at the max safe debit `min(credit − fee_buffer, min_floor_dollars bound)` — a static
-   price that IS the gate, so there is nothing to chase — and is cutoff-cancelled at
-   `completion_cutoff` via `core.broker.cancel_order` (a failed cancel re-polls status:
-   "already filled" is the expected race).
-4. Settlement for the live book — **DONE**: the tick auto-settles at `live.settle_time`
-   (16:20) from the last streamed trade, marked `settlement_source='last_trade_provisional'`;
-   `live_loop.py --settle --price <official>` re-settles marked `'official'` (overwrites
-   provisional; refuses to overwrite official without `--force`). Live `fly_books` roll-ups
-   are written every tick, so analytics/dashboard/settled-marker all see the live day.
-5. Watchdog live SLA + trade notifications — **DONE**: `watchdog._check_live` (armed-window
-   task presence, in-session log freshness, live settle-overdue, and the disarm backstop
-   that sets the halt flag when the task survives past `disarm_time` + grace);
-   `trade_notifier` pushes live entries/completions/settlements from `live_db` with a LIVE
-   prefix + desktop toast, off the trading loop.
-6. Live-vs-paper comparison lines — **DONE**: `analytics.live_vs_paper` compares live to
-   CONTEMPORANEOUS paper (same arm, same sessions) on completion rate, latency, and pricing,
-   and evaluates this plan's **abort rule** (≥30 live entries and live completion >15 points
-   below paper → triggered). Surfaced in `live_loop.py --status`, and in the new
-   `live-eod-<day>.md` written on every live settlement (provisional and official alike);
-   the suite EOD digest gains a clearly-labeled LIVE section on any day the live ledger
-   settled trades. `live.max_structures_per_day` (null = off) adds the rung-1 throttle:
-   unlike the one-incomplete-at-a-time rule, a risk-free completion does not re-open the
-   day's budget — set 1 for this plan's strict one-structure-per-day rung-1 posture.
+**Built and working (as of 2026-07-30, the full trading-cycle build):**
 
-**Lifecycle (the shape that shipped):** arming is PER-DAY — `/live-flies-start` (fresh YES)
-runs `--install-task`, registering the 1-min self-healing `cherrypick-flies-live-loop` tick;
-the loop self-disarms at `live.disarm_time` (default 17:00 ET) or on finding a stale arm
-stamp, and the watchdog backstops with the halt flag. The suite rule throughout: the
-streamer comes before API calls — pricing and gating from the stream cache; the broker is
-touched only to act (place/cancel) or to confirm what only it knows (fills).
+1. **Connecting the pieces together** — the live ledger and broker credentials are wired into
+   the suite's central configuration and monitoring. Done.
+2. **Watching for and recording fills** — every check-in polls any pending order; while an order
+   is actually pending, a short-lived helper process checks in roughly every 10 seconds (itself
+   gated by the shared market-data cache, so it isn't hammering the broker with pointless
+   checks) until the order fills or the window runs out. Only a broker-confirmed fill — never a
+   guess from cached prices — updates the ledger. Done.
+3. **Managing working orders without constant repricing** — the entry order is re-checked each
+   minute against current market data and only cancelled-and-replaced if the picked strike or
+   the price has genuinely moved; the completing order is placed once, at a price that already
+   builds in the profit-floor requirement, so there's nothing to chase — it just sits until it
+   fills or hits its cutoff time. Done.
+4. **Settling the live day's results** — an automatic provisional settlement happens at 16:20
+   ET from the last streamed trade price, clearly labeled as provisional; the official closing
+   print can be applied afterward to finalize the day's numbers, and that official number is
+   protected from being accidentally overwritten. Done.
+5. **Monitoring and alerts** — the automated monitor now watches the live loop specifically:
+   whether its scheduled task is still registered, whether its log is still updating during
+   market hours, whether settlement is overdue, and a backstop that raises the suite-wide halt
+   flag if the loop somehow fails to turn itself off at the end of the day. Trade notifications
+   (entries, completions, settlements) are pushed with a clear "LIVE" label plus a desktop popup,
+   completely separate from the trading loop itself. Done.
+6. **Comparing live to paper, day by day** — a dedicated comparison, restricted to the exact same
+   trading days for both, tracks completion rate, fill speed, and pricing side by side, and
+   evaluates the abort rule described above automatically. This shows up in the live status
+   check, in the end-of-day live report, and in the suite-wide daily digest on any day live
+   trades settled. A daily-structure cap is also available (off by default) to throttle how many
+   new positions can open per day, independent of the one-open-position-at-a-time rule. Done.
+
+**How arming works day to day:** live trading is armed **one day at a time**. Running the
+`/live-flies-start` command with a fresh confirmation registers the day's trading task; it turns
+itself off automatically at a set time each evening (17:00 ET by default), and the automated
+monitor backstops that shutoff with the suite halt flag if it somehow doesn't happen on its own.
+The rule that governs every piece of this: market data comes from the shared cache first, and
+the broker is only ever contacted to actually place or cancel an order, or to confirm a fill that
+only the broker can know about.

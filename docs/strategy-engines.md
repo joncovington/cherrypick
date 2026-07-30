@@ -1,7 +1,9 @@
 # Strategy engines
 
-The suite ships two trading engines plus a market-structure dashboard. This is the suite-level overview;
-each engine's own docs (linked below) are the source of truth for its internals.
+**What this covers:** a suite-level overview of what each trading strategy actually does, so you
+can decide which one(s) fit your goals before diving into an individual module's own docs. The
+suite ships three trading engines plus a market-structure dashboard; each engine's own docs
+(linked below) are the source of truth for its internals.
 
 ## MEIC — 0DTE multiple-entry iron condors
 
@@ -60,6 +62,30 @@ viable name) so each strategy accumulates a statistically useful sample fast; it
 [`earnings/docs/strategy-testing-plan.md`](../packages/earnings/docs/strategy-testing-plan.md),
 [`earnings/CLAUDE.md`](../packages/earnings/CLAUDE.md).
 
+## Flies — 0DTE net-credit butterflies
+
+**What it trades.** A long butterfly spread pays out somewhere between $0 and its maximum width
+at expiration and can never go negative — so a butterfly held for a **net credit** guarantees a
+profit at worst. No one will simply sell you one for a credit, so this module manufactures the
+credit itself: sell a defined-risk credit spread, then buy the spread that completes it into a
+full butterfly for a smaller debit. What's left is a butterfly held for the difference, and that
+difference is the position's guaranteed floor. If the completing leg never gets cheap enough, the
+position stays an ordinary credit spread — tracked and reported as its own outcome, since it's
+expected to be common.
+
+**What it measures.** Whether that manufactured credit survives real trading costs. Four parallel
+"arms" each change one variable (which strike is the center, what time of day trades happen) and
+are compared against a plain baseline, so a result can be attributed to a specific idea rather
+than a bundle of confounded changes. The completion rate — how often a credit spread actually
+turns into a full butterfly — is the single number the whole exercise turns on.
+
+**How it runs.** Paper trading (simulated) by default. A small, explicitly-armed live pilot is
+also supported: one strategy variant, one contract, one position open at a time, arming fresh
+every trading day and turning itself off automatically each evening.
+
+→ Depth: [`flies/README.md`](../packages/flies/README.md),
+[`flies/docs/live-trading-plan.md`](../packages/flies/docs/live-trading-plan.md).
+
 ## Risk-profile variance testing (the distinguishing capability)
 
 A **risk profile** is a named set of parameters — short-strike delta, credit floor, stop policy, regime
@@ -83,7 +109,7 @@ commissions and slippage?), and use `calibrate` to see when a profile has met a 
 
 → Depth: [`meic/docs/risk-profiles.md`](../packages/meic/docs/risk-profiles.md),
 [`meic/docs/paper-experiments.md`](../packages/meic/docs/paper-experiments.md),
-[`earnings/docs/paper-trading-profiles.md`](../packages/earnings/docs/paper-trading-profiles.md).
+[`earnings/docs/paper-trading.md`](../packages/earnings/docs/paper-trading.md).
 
 ## GEX — the gamma-exposure dashboard
 
@@ -96,9 +122,10 @@ GEX regime gate uses). Three tabs off one live option chain:
 - **IV Skew** — call vs put IV curve and open interest by strike.
 - **Volume** — call/put/total traded volume by strike.
 
-**Runs two ways:** *standalone* (`run.py stream` runs the shared streamer into its own
-`data/stream_cache.db`) or *piggyback* (read a running MEIC streamer's cache read-only). It never places
-orders. The orchestrator surfaces it as a compact live **section card** (`run.py section --json`, a
+**Runs two ways:** *standalone* (`run.py stream` runs its own market-data connection into its own
+`data/stream_cache.db`) or *piggyback* (read the shared connection another module — or the
+standalone `streamer` package — is already maintaining, read-only). It never places orders. The
+orchestrator surfaces it as a compact live **section card** (`run.py section --json`, a
 `cherrypick.core.viz` payload) and as a full **dashboard iframe embed**.
 
 → Depth: [`gex/README.md`](../packages/gex/README.md),
@@ -106,7 +133,7 @@ orders. The orchestrator surfaces it as a compact live **section card** (`run.py
 
 ## Shared foundations
 
-Both engines lean on `cherrypick.core`: `.fees` (the tastytrade commission/exchange/slippage model —
+All three engines lean on `cherrypick.core`: `.fees` (the tastytrade commission/exchange/slippage model —
 the same cost model across engines, so "net" figures are comparable), `.calendar` (NYSE holidays, FOMC,
 quarterly/triple-witching, computed not hand-maintained), `.profiles` (attribution tagging + comparison),
 and `.gex`/`.streamer` (the shared GEX + DXLink data path). See
