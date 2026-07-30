@@ -104,7 +104,12 @@ or real. Live trading only adds the parts that talk to the actual brokerage acco
   to act (place or cancel an order) or to confirm something only the broker can know (whether an
   order actually filled). This "streamer before API calls" rule is a suite-wide convention, not
   specific to live trading — see the [module's technical guide](../CLAUDE.md) for how it's
-  applied elsewhere.
+  applied elsewhere. **One narrow exception**, added after a live entry was rejected by the
+  broker's own real-time price-sanity check on a cached price: immediately before submitting a
+  live entry (only that moment, never the ongoing decision loop, never in paper) the two legs'
+  prices are re-confirmed with one fresh, direct market-data read and the order is priced from
+  that instead of the cache — or skipped for this tick if the fresh read isn't available or has
+  moved against the trade.
 - **Only the winning strategy variant trades live.** The four-variant design exists to compare
   strategies on paper; live trading isn't an experiment, so its settings are locked to whichever
   variant is authorized (currently `gex`), and those settings don't change mid-pilot — changing

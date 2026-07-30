@@ -49,6 +49,93 @@ def test_legged_lifecycle_from_credit_spread_to_risk_free_fly(conn):
     assert row["fees"] == pytest.approx(fly.vertical_open_fee("SPX", 1) * 2)
 
 
+def test_freshly_opened_credit_spread_records_its_worst_case_floor(conn):
+    """Regression (2026-07-30): a just-opened short vertical used to leave floor_dollars NULL
+    until (if ever) it completed into a fly, so the dashboard's Floor column sat blank for the
+    uncompleted branch -- exactly the case rule 4 says must be reported, not left invisible."""
+    config = one_arm_config(entry_modes=["legged"])
+    result = bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+    opened = next(a for a in result["actions"] if a["action"] == "credit_spread_opened")
+    row = dbmod.book_positions(conn, result["book_id"])[0]
+    assert row["position_id"] == opened["position_id"]
+    assert row["kind"] == "short_vertical"
+    assert row["floor_dollars"] is not None
+    # Full defined risk (-W), net of trading fees and the worst-case (both legs ITM) exercise fee.
+    assert row["floor_dollars"] == pytest.approx(
+        fly.position_floor(
+            {
+                "kind": "short_vertical",
+                "side": row["side"],
+                "center": row["center"],
+                "wing_width": row["wing_width"],
+                "quantity": row["quantity"],
+                "net": row["net"],
+                "fees": row["fees"],
+            }
+        )
+    )
+    assert row["floor_dollars"] < 0
+
+
+def test_pre_close_exit_closes_a_completed_fly_with_an_itm_leg(conn):
+    """The one deliberate exception to rule 5 ("no adjustments, hold to settlement"): inside the
+    closing window, a completed fly with an ITM leg is closed outright rather than held to real
+    cash settlement, whenever that's cheaper than the exercise-assignment fee it would otherwise
+    incur — see engine.evaluate_pre_close_exit. Applies to paper too (2026-07-30), so paper's
+    numbers stay representative of what live actually does now that assignment fees are modeled
+    in both."""
+    config = one_arm_config(entry_modes=["legged"])
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+    bookmod.process_snapshot(
+        snapshot(underlying_price=6004.0, puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)}),
+        config,
+        conn,
+        "control",
+    )
+    book_id = bookmod.book_id_for("2026-07-20", "control", "SPX")
+    fly_id = next(r["position_id"] for r in dbmod.book_positions(conn, book_id) if r["kind"] == "fly")
+
+    # Inside the closing window, spot has drifted back between the fly's lower wing (5995) and
+    # its centre (6000) -- 3 of its 4 contracts are ITM (the doubled centre plus the upper wing).
+    closing = snapshot(
+        now_min=955,
+        underlying_price=5998.0,
+        puts={5995: q(0.0, 0.0), 6000: q(1.0, 1.0), 6005: q(5.0, 5.0)},
+    )
+    result = bookmod.process_snapshot(closing, config, conn, "control")
+    closed = [a for a in result["actions"] if a["action"] == "closed_before_expiry"]
+    assert len(closed) == 1 and closed[0]["position_id"] == fly_id
+    assert closed[0]["assignment_fee_avoided"] == 15.0
+
+    row = next(r for r in dbmod.book_positions(conn, book_id) if r["position_id"] == fly_id)
+    assert row["status"] == "settled"
+    assert row["closed_before_expiry"] == 1
+    assert row["pnl"] == pytest.approx(closed[0]["pnl"])
+    # Closing realized ~$3.00/contract of intrinsic value (the zero-spread quotes concede no
+    # slippage) at only the ~$0.48 closing-fee stack -- nowhere near the $15 assignment fee held
+    # to expiry would have cost on top of the same intrinsic value.
+    assert row["expiry_payoff"] == pytest.approx(3.0)
+
+
+def test_pre_close_exit_leaves_an_otm_fly_alone(conn):
+    """No ITM legs -> nothing to avoid, so an OTM fly is untouched even inside the window."""
+    config = one_arm_config(entry_modes=["legged"])
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+    bookmod.process_snapshot(
+        snapshot(underlying_price=6004.0, puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)}),
+        config,
+        conn,
+        "control",
+    )
+    book_id = bookmod.book_id_for("2026-07-20", "control", "SPX")
+
+    late_but_otm = snapshot(now_min=955, underlying_price=6100.0)  # well above every strike
+    result = bookmod.process_snapshot(late_but_otm, config, conn, "control")
+    assert not [a for a in result["actions"] if a["action"] == "closed_before_expiry"]
+    row = next(r for r in dbmod.book_positions(conn, book_id) if r["kind"] == "fly")
+    assert row["status"] == "open"
+
+
 def test_the_forest_grows_alongside_a_completed_fly(conn):
     """Completing one structure does not stop the arm opening the next. That is the 'forest': several
     separate profit zones rather than one big bet, each standing on its own floor. Spot having drifted

@@ -23,10 +23,21 @@ Order lifecycle:
     the max safe debit `min(credit - fee_buffer, floor bound)` so it can never fill at a price
     either gate would refuse. The resting limit IS the gate; it catches every transient dip a
     poll would miss. Cancelled at `completion_cutoff` (default 15:30).
-  - SETTLEMENT: at `live.settle_time` (default 16:20) the tick settles live books from the last
-    streamed trade, marked `settlement_source='last_trade_provisional'`; a human re-settles
-    with the official print via `--settle --price X` (marked 'official'). Next-day settlement
-    happens automatically — settlement is checked before the session gate, like paper.
+  - PRE-CLOSE EXIT (2026-07-30): inside `live.pre_close_exit_time` (default 15:50), a completed
+    fly with an ITM leg is closed — sell both wings, buy back the doubled centre — IF doing so is
+    cheaper than the $5/contract exercise-assignment fee it would otherwise incur overnight (see
+    `engine.evaluate_pre_close_exit`). The one deliberate exception to rule 5's "no adjustments,
+    hold to settlement": a narrow, mechanical cost comparison in the closing minutes, not a
+    strategy adjustment. A close that never fills (or fails to place) simply falls through to the
+    ordinary SETTLEMENT step below, which pays the real assignment fee as the fallback.
+  - SETTLEMENT: at `live.settle_time` (default 16:20) each tick tries to auto-fetch the OFFICIAL
+    print (tastytrade -> Yahoo -> Barchart, see `broker_cli.official_settlement_price`) and settle
+    directly as `settlement_source='official'`; if every source comes up empty it falls back to
+    the last streamed trade, marked `'last_trade_provisional'`. A still-provisional session keeps
+    retrying the official fetch on every subsequent tick until it upgrades or the loop
+    self-disarms — a human can still force it with `--settle --price X` (marked 'official') if the
+    auto-fetch never lands. Next-day settlement happens automatically — settlement is checked
+    before the session gate, like paper.
   - SELF-DISARM (dead-man's switch): a live tick at/after `live.disarm_time` (default 17:00),
     or one that finds the arm stamp from a previous day, uninstalls its OWN scheduled task.
     Arming is per-day by design — today's YES can never carry into tomorrow. The orchestrator
@@ -37,6 +48,13 @@ attestation, one configured arm, a designated account, halt flag absent — plus
 breaker on the live ledger. Live concurrency: at most one incomplete position at a time (an
 open short vertical always blocks; a completed fly blocks only while its floor is negative and
 `live.negative_floor_override` doesn't name it).
+
+Journaled every tick, live or dry-run (added 2026-07-30 — until then live wrote none of this, so
+the live dashboard's Session Timeline and Decision Journal cards read empty even on a session
+with a real fill): `fly_snapshots` (feed quality), `fly_iterations` (what the pinned arm wanted,
+before any gate), `fly_decisions` (why an entry/completion was accepted or refused, via the same
+`record_decision` run-collapsing paper's book.py uses — a gate that refuses every tick is one row
+with a growing `occurrences`, not hundreds of identical ones).
 """
 
 from __future__ import annotations
@@ -188,11 +206,14 @@ def disarm_min(config: dict) -> int:
 
 
 def _merged_live_params(config: dict, arm: str) -> dict:
-    """The arm's engine params, with the live block's own overrides (completion_cutoff) on top."""
+    """The arm's engine params, with the live block's own overrides (completion_cutoff,
+    pre_close_exit_time) on top."""
     params = engine.merged_params(config, arm)
     live = _live_cfg(config)
     if live.get("completion_cutoff"):
         params["completion_cutoff"] = live["completion_cutoff"]
+    if live.get("pre_close_exit_time"):
+        params["pre_close_exit_time"] = live["pre_close_exit_time"]
     return params
 
 
@@ -218,8 +239,9 @@ def readiness(config: dict, *, halt_present: bool, designated: str | None) -> li
 
 def daily_loss_tripped(conn, day: str, limit_dollars: float | None) -> bool:
     """The daily-loss breaker over the LIVE ledger: settled net for `day` at or below
-    -limit halts new entries. Open structures keep their normal hold-to-settlement rules
-    (they are defined-risk; improvising exits is rule 5's territory)."""
+    -limit halts new entries. Open structures keep their normal hold-to-settlement rules —
+    the one exception is `evaluate_pre_close_exit`'s narrow, mechanical ITM cost comparison
+    in the closing minutes (2026-07-30), never a P&L-driven stop or adjustment."""
     if not limit_dollars:
         return False
     row = conn.execute(
@@ -309,6 +331,23 @@ def _confirm_completion_fill(conn, pos: dict, broker, log) -> dict:
             f"completion FILLED {pos['position_id']}: floor ${floor:.2f} after fees "
             f"({'risk-free' if risk_free else 'NOT risk-free'})"
         )
+        # "The moment worth waking up for" (trade_notifier.py's own words for this event) — journaled
+        # here, once, rather than at each of this function's two callers (run_once's own fill-
+        # confirmation pass and the burst watcher), so neither path can silently skip it.
+        dbmod.record_decision(
+            conn,
+            trade_date=pos["trade_date"],
+            arm=pos["arm"],
+            symbol=pos["symbol"],
+            mode="completion",
+            reason="completed",
+            accepted=True,
+            center=pos["center"],
+            position_id=pos["position_id"],
+            detail=f"debit {actual_debit:.2f}, floor ${floor:.2f} "
+            f"({'risk-free' if risk_free else 'NOT risk-free'})",
+            when=clock.now_iso(),
+        )
         return {**updated, "floor_dollars": floor, "risk_free": int(risk_free)}
     if state in _TERMINAL_UNFILLED:
         conn.execute(
@@ -317,7 +356,84 @@ def _confirm_completion_fill(conn, pos: dict, broker, log) -> dict:
         )
         conn.commit()
         log(f"completion {state.upper()} {pos['position_id']} — still a short vertical, may retry")
+        dbmod.record_decision(
+            conn,
+            trade_date=pos["trade_date"],
+            arm=pos["arm"],
+            symbol=pos["symbol"],
+            mode="completion",
+            reason=f"completion_{state}",
+            center=pos["center"],
+            position_id=pos["position_id"],
+            when=clock.now_iso(),
+        )
         return {**pos, "completion_order_id": None, "completion_fill_status": state}
+    return pos  # still working
+
+
+def _confirm_close_fill(conn, pos: dict, broker, log) -> dict:
+    """Poll a pending pre-close-exit order; on fill, settle the position at the ACTUAL close
+    credit (not the modeled one used to price the order) — the same real-fill-over-model
+    discipline `_confirm_completion_fill` follows for the completion debit. On a terminal
+    unfilled state (rejected/cancelled, or simply never filled before the market closed and the
+    caller cancels it — see the cutoff handling in run_once), the position is released back to
+    kind='fly'/status='open' and falls through to the ordinary settlement path, paying the real
+    assignment fee — the one tail risk `position_floor`'s docstring names explicitly."""
+    status = broker.status(pos["close_order_id"])
+    state = str(status.get("status") or "").strip().lower()
+    if state == "filled":
+        try:
+            actual_credit = abs(float(status.get("price")))
+        except (TypeError, ValueError):
+            actual_credit = 0.0
+        qty = pos.get("quantity", 1)
+        close_fee = fly.fly_close_fee(pos["symbol"], qty)
+        gross = (pos["net"] + actual_credit) * fly.CONTRACT_MULTIPLIER * qty
+        total_fees = round((pos.get("fees") or 0.0) + close_fee, 2)
+        pnl = round(gross - total_fees, 2)
+        conn.execute(
+            "UPDATE fly_positions SET status = 'settled', close_fill_status = 'filled', "
+            "fees = ?, gross_pnl = ?, pnl = ?, expiry_payoff = ?, pinned = 0, "
+            "closed_before_expiry = 1, exit_time = ? WHERE id = ?",
+            (total_fees, round(gross, 2), pnl, actual_credit, clock.now_iso(), pos["id"]),
+        )
+        conn.commit()
+        log(
+            f"pre-close exit FILLED {pos['position_id']}: closed for {actual_credit:.2f} credit, P&L {pnl:+.2f}"
+        )
+        dbmod.record_decision(
+            conn,
+            trade_date=pos["trade_date"],
+            arm=pos["arm"],
+            symbol=pos["symbol"],
+            mode="pre_close_exit",
+            reason="filled",
+            accepted=True,
+            center=pos["center"],
+            position_id=pos["position_id"],
+            detail=f"closed for {actual_credit:.2f} credit, P&L {pnl:+.2f}",
+            when=clock.now_iso(),
+        )
+        return {**pos, "status": "settled", "close_fill_status": "filled"}
+    if state in _TERMINAL_UNFILLED:
+        conn.execute(
+            "UPDATE fly_positions SET close_order_id = NULL, close_fill_status = ? WHERE id = ?",
+            (state, pos["id"]),
+        )
+        conn.commit()
+        log(f"pre-close exit {state.upper()} {pos['position_id']} — falls back to normal settlement")
+        dbmod.record_decision(
+            conn,
+            trade_date=pos["trade_date"],
+            arm=pos["arm"],
+            symbol=pos["symbol"],
+            mode="pre_close_exit",
+            reason=f"close_{state}",
+            center=pos["center"],
+            position_id=pos["position_id"],
+            when=clock.now_iso(),
+        )
+        return {**pos, "close_order_id": None, "close_fill_status": state}
     return pos  # still working
 
 
@@ -453,6 +569,7 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
     arm = live_cfg.get("arm", DEFAULT_ARM)
     params = _merged_live_params(config, arm)
     day = snapshot["date"]
+    symbol = snapshot["symbol"]
     summary = {
         "arm": arm,
         "live": live,
@@ -462,6 +579,50 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
         "pending_orders": 0,
         "skips": [],
     }
+
+    def journal(mode, reason, *, accepted=False, center=None, position_id=None, detail=None):
+        """The same decision journal paper's book.py writes (fly_decisions) — live never called
+        this at all until 2026-07-30's first live fill left the live dashboard's Session Timeline
+        and Decision Journal cards permanently empty ("no data" on a real position). Mirrors
+        book.py's `journal` closure so both ledgers read the same way on the dashboard."""
+        dbmod.record_decision(
+            conn,
+            trade_date=day,
+            arm=arm,
+            symbol=symbol,
+            mode=mode,
+            reason=reason,
+            accepted=accepted,
+            center=center,
+            position_id=position_id,
+            detail=detail,
+            when=clock.now_iso(),
+        )
+
+    # Feed-quality + "what this arm wanted" journals — every tick, before any gate, on the SAME
+    # cadence paper_loop.py/book.py already write them on (paper_snapshot's refusal path is
+    # recorded by the caller, main(), since run_once is never invoked without an ok snapshot).
+    stats = snapshot.get("quote_stats") or {}
+    dbmod.record_snapshot(
+        conn,
+        trade_date=day,
+        symbol=symbol,
+        status="ok",
+        quotes_fresh=stats.get("fresh"),
+        quotes_rejected=stats.get("rejected"),
+        underlying_price=snapshot.get("underlying_price"),
+    )
+    wanted_center, wanted_reason = engine.select_center(snapshot, params)
+    dbmod.record_iteration(
+        conn,
+        iteration_ts=clock.now_iso(),
+        trade_date=day,
+        symbol=symbol,
+        arm=arm,
+        center=wanted_center,
+        center_reason=wanted_reason,
+        underlying_price=snapshot.get("underlying_price"),
+    )
 
     rows = conn.execute(
         "SELECT * FROM fly_positions WHERE trade_date = ? AND arm = ? AND status = 'open'", (day, arm)
@@ -476,7 +637,9 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
     if live:
         updated = []
         for pos in positions:
-            if pos.get("completion_order_id") and pos.get("completion_fill_status") == "pending":
+            if pos.get("close_order_id") and pos.get("close_fill_status") == "pending":
+                pos = _confirm_close_fill(conn, pos, broker, log)
+            elif pos.get("completion_order_id") and pos.get("completion_fill_status") == "pending":
                 pos = _confirm_completion_fill(conn, pos, broker, log)
             elif pos.get("entry_order_id") and pos.get("entry_fill_status") not in (
                 "filled",
@@ -519,8 +682,22 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                     )
                     conn.commit()
                     summary["cancelled"] += 1
+                    journal(
+                        "completion",
+                        "cutoff_cancelled",
+                        accepted=True,
+                        center=pos["center"],
+                        position_id=pos["position_id"],
+                    )
                 else:
                     log(f"cutoff cancel FAILED for {pos['position_id']}: {res.get('error')}")
+                    journal(
+                        "completion",
+                        "cutoff_cancel_failed",
+                        center=pos["center"],
+                        position_id=pos["position_id"],
+                        detail=res.get("error"),
+                    )
             continue
         if not live:
             continue  # dry-run writes no rows, so there is nothing real to complete
@@ -528,10 +705,73 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
             summary["skips"].append(
                 {"position": pos.get("position_id"), "reason": "completion_cutoff_reached"}
             )
+            journal(
+                "completion",
+                "completion_cutoff_reached",
+                center=pos["center"],
+                position_id=pos["position_id"],
+            )
             continue
         placed = place_resting_completion(conn, pos, snapshot, params, broker, live=live, log=log)
         if placed is not None and placed.get("completion_order_id"):
             summary["completed_orders"] += 1
+            journal(
+                "completion",
+                "placed",
+                accepted=True,
+                center=pos["center"],
+                position_id=pos["position_id"],
+                detail=f"resting order {placed.get('completion_order_id')}",
+            )
+
+    # --- 3.5. pre-close ITM exit: close a completed fly ahead of expiry if cheaper than the
+    # assignment fee it would otherwise incur — the one deliberate exception to rule 5 ("no
+    # adjustments, hold to settlement"), live-only cost avoidance rather than a strategy
+    # adjustment. See engine.evaluate_pre_close_exit for the window/comparison.
+    if live:
+        for pos in positions:
+            if pos.get("kind") != "fly" or pos.get("close_order_id"):
+                continue
+            close, reason, plan = engine.evaluate_pre_close_exit(snapshot, pos, params)
+            if not close:
+                if reason not in ("not_a_fly", "before_pre_close_exit_window"):
+                    journal(
+                        "pre_close_exit",
+                        reason,
+                        center=pos["center"],
+                        position_id=pos["position_id"],
+                        detail=None
+                        if plan is None
+                        else f"slippage {plan['slippage_cost']:.2f} vs assignment {plan['assignment_fee']:.2f}",
+                    )
+                continue
+            spec = live_orders.close_fly_spec(snapshot, pos, plan)
+            res = broker.place(spec, live=live)
+            log(f"pre-close exit order (LIVE): {json.dumps(res, default=str)[:200]}")
+            if res.get("ok") and res.get("order_id"):
+                conn.execute(
+                    "UPDATE fly_positions SET close_order_id = ?, close_fill_status = 'pending' WHERE id = ?",
+                    (str(res["order_id"]), pos["id"]),
+                )
+                conn.commit()
+                summary["pre_close_exits_placed"] = summary.get("pre_close_exits_placed", 0) + 1
+                journal(
+                    "pre_close_exit",
+                    "placed",
+                    accepted=True,
+                    center=pos["center"],
+                    position_id=pos["position_id"],
+                    detail=f"order {res['order_id']}, targeting {plan['close_credit']:.2f} credit, "
+                    f"avoiding ${plan['assignment_fee']:.2f}",
+                )
+            else:
+                journal(
+                    "pre_close_exit",
+                    "placement_failed",
+                    center=pos["center"],
+                    position_id=pos["position_id"],
+                    detail=res.get("error"),
+                )
 
     # --- 4. concurrency gate + entry ---
     # Per-day structure cap (live.max_structures_per_day, off when null): counts every
@@ -548,6 +788,12 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
         day_capped = established >= day_cap
         if day_capped:
             summary["skips"].append({"entry": f"max_structures_per_day reached ({established}/{day_cap})"})
+            journal(
+                "entry",
+                "max_structures_per_day_reached",
+                center=wanted_center,
+                detail=f"{established}/{day_cap}",
+            )
 
     blockers = _blocking_positions(positions, live_cfg.get("negative_floor_override"))
     if day_capped:
@@ -563,46 +809,150 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                     f"{p['position_id']!r} to permit a new entry"
                 }
             )
+            journal(
+                "entry",
+                "negative_floor_blocks",
+                center=p["center"],
+                position_id=p["position_id"],
+                detail=f"floor ${fly.position_floor(p):.2f}",
+            )
         else:
             summary["skips"].append(
                 {"entry": f"blocked: {blockers[0]['position_id']} is still an incomplete spread"}
+            )
+            journal(
+                "entry",
+                "incomplete_spread_blocks",
+                center=blockers[0]["center"],
+                position_id=blockers[0]["position_id"],
             )
     else:
         enter, reason, plan = engine.evaluate_credit_spread_entry(snapshot, params, positions)
         if not enter:
             summary["skips"].append({"entry": reason})
+            # plan is None on refusal, so there's no plan["center"] -- wanted_center (this arm's
+            # target strike, computed above for the iteration journal) is the one useful thing to
+            # carry, same choice book.py's own refusal-path journal call makes.
+            journal("entry", reason, center=wanted_center)
         else:
             spec = live_orders.entry_spec(snapshot, plan)
-            res = broker.place(spec, live=live)
-            log(f"entry order ({'LIVE' if live else 'dry-run'}): {json.dumps(res, default=str)[:200]}")
-            if res.get("ok") and live and res.get("order_id"):
-                pid = f"live-{day}-{arm}-{int(plan['center'])}"
-                dbmod.save_position(
-                    conn,
-                    {
-                        "position_id": pid,
-                        "book_id": bookmod.book_id_for(day, arm, snapshot["symbol"]),
-                        "trade_date": day,
-                        "arm": arm,
-                        "entry_mode": "legged",
-                        "symbol": snapshot["symbol"],
-                        "kind": "short_vertical",
-                        "side": plan["side"],
-                        "center": plan["center"],
-                        "wing_width": plan["wing_width"],
-                        "quantity": plan["quantity"],
-                        "net": plan["credit"],
-                        "credit": plan["credit"],
-                        "fees": plan["open_fee"],
-                        "status": "open",
-                        "entry_window": plan.get("entry_window"),
-                        "underlying_at_entry": snapshot.get("underlying_price"),
-                        "entry_time": clock.now_iso(),
-                        "entry_order_id": str(res["order_id"]),
-                        "entry_fill_status": "pending",
-                    },
-                )
-            summary["entered"] += 1
+            entry_price = plan["credit"]
+            # FRESH-QUOTE CHECK (live-only, entry-only — the one narrow exception to "cached
+            # quotes gate broker calls"): the cached snapshot's credit can diverge from what the
+            # broker's real-time execution-quality check considers marketable (a low-liquidity
+            # 1-wide 0DTE vertical is the case that surfaced this — a "Spread Checker" rejection
+            # on 2026-07-30 with the preflight dry-run showing no warning at all). Immediately
+            # before submitting, and only when live, re-price off one fresh REST quote and refuse
+            # to submit rather than risk another rejection on stale data.
+            if live:
+                symbols = [leg["symbol"] for leg in spec["legs"]]
+                fresh = broker.fresh_quotes(symbols)
+                new_price, info = live_orders.entry_fresh_reprice(spec, fresh, params.get("slippage_frac"))
+                tolerance = live_cfg.get("fresh_quote_tolerance_dollars", 0.05)
+                if new_price is None:
+                    summary["skips"].append(
+                        {
+                            "entry": f"skipped: fresh quote unavailable "
+                            f"({info['reason']}: {info.get('missing')})"
+                        }
+                    )
+                    journal(
+                        "entry",
+                        "fresh_quote_unavailable",
+                        center=plan["center"],
+                        detail=f"{info['reason']}: {info.get('missing')}",
+                    )
+                    spec = None
+                elif plan["credit"] - info["fresh_credit"] > tolerance:
+                    summary["skips"].append(
+                        {
+                            "entry": f"skipped: fresh quote diverged (cached {plan['credit']:.2f}, "
+                            f"fresh {info['fresh_credit']:.2f}, tolerance {tolerance})"
+                        }
+                    )
+                    journal(
+                        "entry",
+                        "fresh_quote_diverged",
+                        center=plan["center"],
+                        detail=f"cached {plan['credit']:.2f}, fresh {info['fresh_credit']:.2f}",
+                    )
+                    spec = None
+                else:
+                    spec["price"] = new_price
+                    entry_price = new_price
+            if spec is not None:
+                res = broker.place(spec, live=live)
+                log(f"entry order ({'LIVE' if live else 'dry-run'}): {json.dumps(res, default=str)[:200]}")
+                if res.get("ok") and live and res.get("order_id"):
+                    # Per-attempt unique (paper's book.py convention: microsecond timestamp), not
+                    # day+arm+center alone — a retry at the SAME centre after an earlier rejection
+                    # used to collide on the same position_id, and the UPSERT silently overwrote
+                    # the rejected attempt's row, erasing it from the ledger entirely (surfaced
+                    # 2026-07-30: the orphan sweep kept re-flagging an order the ledger used to
+                    # know about, because the row that recorded it no longer existed).
+                    pid = f"live-{arm}-{int(plan['center'])}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}"
+                    # Worst-case dollar outcome as of THIS OPEN credit spread — full defined risk
+                    # (-W), net of trading fees AND the worst-case exercise-assignment fee (both
+                    # legs ITM), so the dashboard's Floor column has a real number for an
+                    # uncompleted position instead of sitting blank until it completes.
+                    floor = fly.position_floor(
+                        {
+                            "kind": "short_vertical",
+                            "side": plan["side"],
+                            "center": plan["center"],
+                            "wing_width": plan["wing_width"],
+                            "quantity": plan["quantity"],
+                            "net": entry_price,
+                            "fees": plan["open_fee"],
+                        }
+                    )
+                    dbmod.save_position(
+                        conn,
+                        {
+                            "position_id": pid,
+                            "book_id": bookmod.book_id_for(day, arm, snapshot["symbol"]),
+                            "trade_date": day,
+                            "arm": arm,
+                            "entry_mode": "legged",
+                            "symbol": snapshot["symbol"],
+                            "kind": "short_vertical",
+                            "side": plan["side"],
+                            "center": plan["center"],
+                            "wing_width": plan["wing_width"],
+                            "quantity": plan["quantity"],
+                            # `entry_price` is the fresh-repriced value when live (what was
+                            # actually submitted), else the cached `plan["credit"]` unchanged.
+                            "net": entry_price,
+                            "credit": entry_price,
+                            "fees": plan["open_fee"],
+                            "floor_dollars": floor,
+                            "risk_free": 0,
+                            "status": "open",
+                            "entry_window": plan.get("entry_window"),
+                            "completing_direction": plan.get("completing_direction"),
+                            "underlying_at_entry": snapshot.get("underlying_price"),
+                            "entry_time": clock.now_iso(),
+                            "entry_order_id": str(res["order_id"]),
+                            "entry_fill_status": "pending",
+                        },
+                    )
+                    journal(
+                        "entry",
+                        "entered",
+                        accepted=True,
+                        center=plan["center"],
+                        position_id=pid,
+                        detail=f"credit {entry_price:.2f}, order {res['order_id']}",
+                    )
+                else:
+                    if not live:
+                        decision_reason = "dry_run"
+                    elif not res.get("ok"):
+                        decision_reason = "placement_failed"
+                    else:
+                        decision_reason = "order_id_missing"  # placed but unrecordable — investigate
+                    journal("entry", decision_reason, center=plan["center"], detail=res.get("error"))
+                summary["entered"] += 1
 
     # --- 5. live book roll-up (so the dashboard/analytics/settled-marker see the live day) ---
     if live:
@@ -618,7 +968,8 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
             )
         pending = conn.execute(
             "SELECT COUNT(*) FROM fly_positions WHERE trade_date = ? AND arm = ? AND status = 'open' "
-            "AND (entry_fill_status = 'pending' OR completion_fill_status = 'pending')",
+            "AND (entry_fill_status = 'pending' OR completion_fill_status = 'pending' "
+            "OR close_fill_status = 'pending')",
             (day, arm),
         ).fetchone()[0]
         summary["pending_orders"] = int(pending)
@@ -636,12 +987,41 @@ def session_already_settled(conn, day: str) -> bool:
     return total > 0 and total == settled
 
 
+def session_officially_settled(conn, day: str) -> bool:
+    """Stricter than `session_already_settled`: true only once EVERY book has the OFFICIAL print,
+    not just a provisional one. Gates the tick's own settlement call — a merely provisional
+    session must keep being retried (auto-fetching the official price, see `run_settle_live`) on
+    every subsequent tick until it upgrades or the loop self-disarms, rather than being treated as
+    done the moment any settlement — even a stale last-trade guess — lands."""
+    total, official = conn.execute(
+        "SELECT COUNT(*), COALESCE(SUM(status = 'settled' AND settlement_source = 'official'), 0) "
+        "FROM fly_books WHERE trade_date = ?",
+        (day,),
+    ).fetchone()
+    return total > 0 and total == official
+
+
 def run_settle_live(
-    config: dict, conn, *, cache_path: str, when=None, price: float | None = None, force: bool = False
+    config: dict,
+    conn,
+    *,
+    cache_path: str,
+    when=None,
+    price: float | None = None,
+    force: bool = False,
+    broker=None,
 ) -> dict:
-    """Settle the live arm's books. No `price` = the provisional path (last streamed trade,
-    marked 'last_trade_provisional'); an explicit `price` = the official print (marked
-    'official', overwrites provisional, refuses to overwrite official without `force`)."""
+    """Settle the live arm's books. No `price` = try the official print first (`broker`, when
+    given, auto-fetches it — tastytrade -> Yahoo -> Barchart, see
+    `broker_cli.official_settlement_price`); if that comes up empty, falls back to the provisional
+    path (last streamed trade, marked 'last_trade_provisional'). An explicit `price` always wins
+    and marks 'official' directly (overwrites provisional, refuses to overwrite an existing
+    official settlement without `force`).
+
+    The auto-fetch is retried on every call, not just the first: a still-provisional book (source
+    != 'official') keeps trying on each subsequent tick until a source answers or the loop
+    self-disarms — the real settlement print isn't guaranteed to exist the instant the market
+    closes."""
     when = when or provider.now_et()
     day = when.date().isoformat()
     live_cfg = _live_cfg(config)
@@ -658,6 +1038,15 @@ def run_settle_live(
 
     if already_official and not force:
         return {"ok": False, "reason": "already settled with the official print (use --force to override)"}
+
+    auto_source = None
+    if price is None and broker is not None and not already_official:
+        auto_price, auto_reason = broker.official_settlement_price(symbol)
+        if auto_price is not None:
+            price, auto_source = auto_price, auto_reason
+        elif not already_settled:
+            _log(f"live settle: official price auto-fetch unavailable ({auto_reason}) — using last trade")
+
     if already_settled and price is None:
         return {"ok": True, "skipped": "already_settled", "book_id": book_id}
 
@@ -692,7 +1081,10 @@ def run_settle_live(
     conn.execute("UPDATE fly_books SET settlement_source = ? WHERE book_id = ?", (source, book_id))
     conn.commit()
     _log(
-        f"LIVE settled {book_id} at {settlement:.2f} ({source}): P&L {result['pnl']:+.2f}"
+        f"LIVE settled {book_id} at {settlement:.2f} "
+        f"({source}{f', auto-fetched via {auto_source}' if auto_source else ''}): "
+        f"P&L {result['pnl']:+.2f} "
+        f"({result['itm_contracts']} ITM contract(s), ${result['assignment_fees']:.2f} assignment fees)"
         + (
             " — confirm with: python src/live_loop.py --settle --price <official print>"
             if source == "last_trade_provisional"
@@ -792,7 +1184,8 @@ def run_watch(
         day = provider.now_et().date().isoformat()
         rows = conn.execute(
             "SELECT * FROM fly_positions WHERE trade_date = ? AND arm = ? AND status = 'open' "
-            "AND (entry_fill_status = 'pending' OR completion_fill_status = 'pending')",
+            "AND (entry_fill_status = 'pending' OR completion_fill_status = 'pending' "
+            "OR close_fill_status = 'pending')",
             (day, arm),
         ).fetchall()
         pending = [dict(r) for r in rows]
@@ -811,9 +1204,18 @@ def run_watch(
 
         for pos in pending:
             is_entry = pos.get("entry_fill_status") == "pending"
-            order_id = pos["entry_order_id"] if is_entry else pos["completion_order_id"]
+            is_close = pos.get("close_fill_status") == "pending"
+            if is_close:
+                order_id = pos["close_order_id"]
+            elif is_entry:
+                order_id = pos["entry_order_id"]
+            else:
+                order_id = pos["completion_order_id"]
             touched = True  # no cache view -> fall through to the heartbeat-limited poll
-            if naturals_ok:
+            # A pending close order is a Day limit placed once, in a short pre-close window with
+            # no time to wait out a cache touch -- poll it every cycle rather than gating on the
+            # natural-price heuristic below (which is only modeled for entry/completion anyway).
+            if naturals_ok and not is_close:
                 nat = _natural_prices(snapshot, pos)
                 if is_entry and "entry_natural_credit" in nat:
                     touched = nat["entry_natural_credit"] >= pos["net"] - live_orders.TICK
@@ -827,12 +1229,38 @@ def run_watch(
             if not touched and not due:
                 continue
             last_poll[str(order_id)] = clock_fn()
-            if is_entry:
+            if is_close:
+                updated = _confirm_close_fill(conn, pos, broker, log)
+                if updated.get("close_fill_status") == "filled":
+                    confirmed += 1
+            elif is_entry:
                 updated = _confirm_entry_fill(conn, pos, broker, log)
                 if updated.get("entry_fill_status") == "filled" and not updated.get("completion_order_id"):
                     confirmed += 1
                     if snapshot.get("ok"):
-                        place_resting_completion(conn, updated, snapshot, params, broker, live=live, log=log)
+                        placed = place_resting_completion(
+                            conn, updated, snapshot, params, broker, live=live, log=log
+                        )
+                        # Regression (2026-07-30): this is the PRIMARY completion-placement path in
+                        # practice — the watcher polls every ~poll seconds vs. the main tick's 1
+                        # minute, so it usually wins the atomic claim before run_once's own fallback
+                        # placer ever gets a turn. Instrumenting only run_once's copy of this call
+                        # left the Decision Journal showing zero completion rows despite real
+                        # completions having happened.
+                        if placed is not None and placed.get("completion_order_id"):
+                            dbmod.record_decision(
+                                conn,
+                                trade_date=day,
+                                arm=arm,
+                                symbol=symbol,
+                                mode="completion",
+                                reason="placed",
+                                accepted=True,
+                                center=updated.get("center"),
+                                position_id=updated.get("position_id"),
+                                detail=f"resting order {placed.get('completion_order_id')}",
+                                when=clock.now_iso(),
+                            )
             else:
                 updated = _confirm_completion_fill(conn, pos, broker, log)
                 if updated.get("completion_fill_status") == "filled":
@@ -905,7 +1333,14 @@ class BrokerAdapter:
             order = _broker.build_order(spec)
             limit = _live_cfg(self._config).get("account_deploy_limit_pct") or None
             result = self._run(
-                _broker.place_order(self._account, self._session, order, live=live, deploy_limit_pct=limit)
+                _broker.place_order(
+                    self._account,
+                    self._session,
+                    order,
+                    live=live,
+                    serialize=broker_cli._serialize,
+                    deploy_limit_pct=limit,
+                )
             )
         except Exception as exc:  # noqa: BLE001 — surfaced to the caller, session rebuilt next call
             self._reset()
@@ -918,6 +1353,34 @@ class BrokerAdapter:
         if isinstance(rid, dict) and rid.get("id") is not None:
             result["order_id"] = rid["id"]
         return result
+
+    def fresh_quotes(self, symbols: list[str]) -> dict:
+        """A one-shot REST bid/ask snapshot for `symbols`, used only to reprice a live entry
+        immediately before submission (see run_once). Fails closed: any error returns `{}`, which
+        the caller treats identically to 'nothing came back' — never a reason to fall back to a
+        stale cached price for a live order."""
+        import broker_cli
+
+        try:
+            self._ensure()
+            return self._run(broker_cli.fresh_option_quotes(self._session, symbols))
+        except Exception:  # noqa: BLE001 — fail-closed, see docstring
+            self._reset()
+            return {}
+
+    def official_settlement_price(self, symbol: str) -> tuple[float | None, str]:
+        """Best-effort auto-fetch of the official settlement print (tastytrade -> Yahoo ->
+        Barchart, see `broker_cli.official_settlement_price`). Fails closed: any error returns
+        `(None, "fetch_failed")`, which `run_settle_live` treats the same as every source coming
+        up empty — falling back to the existing last-trade-provisional path, never a guess."""
+        import broker_cli
+
+        try:
+            self._ensure()
+            return self._run(broker_cli.official_settlement_price(self._session, symbol))
+        except Exception:  # noqa: BLE001 — fail-closed, see docstring
+            self._reset()
+            return None, "fetch_failed"
 
     def status(self, order_id: str) -> dict:
         from cherrypick.core import broker as _broker
@@ -1195,7 +1658,13 @@ def main() -> int:
             if args.date:
                 when = datetime.fromisoformat(f"{args.date}T12:00:00")
             out = run_settle_live(
-                config, conn, cache_path=cache_path, when=when, price=args.price, force=args.force
+                config,
+                conn,
+                cache_path=cache_path,
+                when=when,
+                price=args.price,
+                force=args.force,
+                broker=BrokerAdapter(config),
             )
             print(json.dumps(out, indent=2, default=str))
             return 0 if out.get("ok") else 1
@@ -1247,9 +1716,14 @@ def main() -> int:
                 print(json.dumps({"ok": True, "skipped": "not_a_trading_day", "date": day}))
                 return 0
 
-            # Settlement before the session gate — the settle time is after the close.
-            if live and now_min >= settle_min(config) and not session_already_settled(conn, day):
-                out = run_settle_live(config, conn, cache_path=cache_path, when=when)
+            # Settlement before the session gate — the settle time is after the close. Gated on
+            # OFFICIAL, not just settled: a provisional settlement keeps retrying the auto
+            # official-price fetch on every subsequent tick until it upgrades or the loop
+            # self-disarms, rather than being treated as done after its first (guessed) pass.
+            if live and now_min >= settle_min(config) and not session_officially_settled(conn, day):
+                out = run_settle_live(
+                    config, conn, cache_path=cache_path, when=when, broker=BrokerAdapter(config)
+                )
                 print(json.dumps({"ok": True, "settled_session": True, **out}, default=str))
                 return 0
 
@@ -1262,6 +1736,17 @@ def main() -> int:
             snapshot = _build_snapshot(config, cache_path)
             if not snapshot.get("ok"):
                 _log(f"no snapshot: {snapshot.get('reason')}")
+                # run_once is never called on a refused snapshot, so it never gets a chance to
+                # journal this — without it, a feed outage and a quiet market are indistinguishable
+                # on the dashboard (same gap paper_loop.py's own comment describes for fly_snapshots).
+                symbol = _live_cfg(config).get("symbol", "XSP")
+                dbmod.record_snapshot(
+                    conn,
+                    trade_date=day,
+                    symbol=symbol,
+                    status=snapshot.get("reason", "unknown"),
+                    quotes_rejected=snapshot.get("rejected"),
+                )
                 print(json.dumps({"ok": False, "error": f"no snapshot: {snapshot.get('reason')}"}))
                 return 1
 
