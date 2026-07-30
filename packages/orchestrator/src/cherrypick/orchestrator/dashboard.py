@@ -236,15 +236,16 @@ def _eod_view(cfg: dict[str, Any], modules_cfg: dict[str, Any], tz: str) -> dict
         return None
     # Reports are written under the per-user logs home (~/.cherrypick/logs/<name>/), not the package
     # checkout — resolve them there via module_logs_dir, or the existence check always misses.
+    # Only existence is ever consumed downstream (the card links by module/session via /eod-report,
+    # never by path) -- booleans, not absolute paths, so a model built for the served page never
+    # carries a filesystem path further than it needs to.
     files = {}
     analysis = {}
     for name in modules_cfg:
-        p = cfgmod.module_logs_dir(name) / f"paper-eod-{session}.md"
-        files[name] = str(p) if p.exists() else None
-        a = cfgmod.module_logs_dir(name) / f"eod-analysis-{session}.md"
-        analysis[name] = str(a) if a.exists() else None
-    digest = cfgmod.log_file(f"eod-digest-{session}.md")
-    insight = cfgmod.log_file(f"eod-insight-{session}.md")
+        files[name] = (cfgmod.module_logs_dir(name) / f"paper-eod-{session}.md").exists()
+        analysis[name] = (cfgmod.module_logs_dir(name) / f"eod-analysis-{session}.md").exists()
+    digest = cfgmod.log_file(f"eod-digest-{session}.md").exists()
+    insight = cfgmod.log_file(f"eod-insight-{session}.md").exists()
     return {
         "session": session,
         "is_today": session == today,
@@ -252,8 +253,8 @@ def _eod_view(cfg: dict[str, Any], modules_cfg: dict[str, Any], tz: str) -> dict
         "modules": {n: rep.get("modules", {}).get(n, {}) for n in modules_cfg},
         "files": files,
         "analysis": analysis,
-        "digest": str(digest) if digest.exists() else None,
-        "insight": str(insight) if insight.exists() else None,
+        "digest": digest,
+        "insight": insight,
     }
 
 

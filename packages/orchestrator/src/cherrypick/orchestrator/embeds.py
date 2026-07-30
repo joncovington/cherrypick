@@ -89,7 +89,8 @@ def ensure_server(embed_cfg: dict[str, Any], wait_seconds: float = 6.0) -> dict[
         _recycle_port(host, port)
     root = cfgmod.module_root(embed_cfg, embed_cfg.get("id"))
     if not root.exists():
-        return {"ok": False, "running": False, "url": url, "detail": f"module checkout not found at {root}"}
+        where = cfgmod.portable_path(root)
+        return {"ok": False, "running": False, "url": url, "detail": f"module checkout not found at {where}"}
     argv = _subst(embed_cfg.get("serve_argv"), {"port": port})
     if not argv:
         return {"ok": False, "running": False, "url": url, "detail": "embed has no serve_argv"}
@@ -126,7 +127,7 @@ def _run_build(embed_cfg: dict[str, Any], root: Path, out_path: Path | None) -> 
     if proc.returncode != 0:
         return {"ok": False, "detail": ((proc.stderr or proc.stdout) or "build failed").strip()[:300]}
     if out_path and not out_path.exists():
-        return {"ok": False, "detail": f"build ran but output missing: {out_path}"}
+        return {"ok": False, "detail": f"build ran but output missing: {cfgmod.portable_path(out_path)}"}
     return {"ok": True, "path": str(out_path) if out_path else None, "detail": "built"}
 
 
@@ -168,7 +169,7 @@ def build_static(embed_cfg: dict[str, Any]) -> dict[str, Any]:
     eid = embed_cfg["id"]
     root = cfgmod.module_root(embed_cfg, eid)
     if not root.exists():
-        return {"ok": False, "detail": f"module checkout not found at {root}"}
+        return {"ok": False, "detail": f"module checkout not found at {cfgmod.portable_path(root)}"}
     out_path = _output_path(embed_cfg, root)
     interval = float(embed_cfg.get("refresh_seconds", 30))
     now = time.monotonic()

@@ -293,7 +293,8 @@ def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
         return []
     root = cfgmod.module_root(spec, "streamer")
     if not root.exists():
-        return [Finding("streamer", WARN, "streamer checkout missing", f"not found at {root}")]
+        msg = f"not found at {cfgmod.portable_path(root)}"
+        return [Finding("streamer", WARN, "streamer checkout missing", msg)]
     return _check_streamer_health("streamer", root, spec)
 
 
@@ -813,9 +814,8 @@ def _check_services(cfg: dict[str, Any]) -> list[Finding]:
         sid = svc["id"]
         root = cfgmod.module_root(svc, sid)
         if not root.exists():
-            findings.append(
-                Finding(f"service.{sid}", WARN, f"{sid} checkout missing", f"not found at {root}")
-            )
+            msg = f"not found at {cfgmod.portable_path(root)}"
+            findings.append(Finding(f"service.{sid}", WARN, f"{sid} checkout missing", msg))
             continue
         running = None
         try:

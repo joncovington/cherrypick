@@ -124,3 +124,13 @@ def test_producer_missing_checkout_warns(tmp_path):
     cfg = {"streamer": _spec(enabled=True, path=str(tmp_path / "nope"))}
     findings = wd._check_producer(cfg, in_session=True)
     assert findings[0].status == wd.WARN and "checkout missing" in findings[0].title
+    # this Finding's message is rendered verbatim into the served/static dashboard's Findings
+    # panel (dashboard._findings_html) -- must never carry the absolute checkout path.
+    assert str(tmp_path) not in findings[0].message
+
+
+def test_service_missing_checkout_warns_without_leaking_path(tmp_path):
+    cfg = {"services": [{"id": "gex-recorder", "enabled": True, "path": str(tmp_path / "nope")}]}
+    findings = wd._check_services(cfg)
+    assert findings[0].status == wd.WARN and "checkout missing" in findings[0].title
+    assert str(tmp_path) not in findings[0].message
