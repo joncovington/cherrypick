@@ -150,25 +150,40 @@ real account and places nothing, which **is** the rung-0 smoke), the live ledger
 (`live_trades.db`, same schema + order-id columns, a separate file from paper), and the
 provider now carries OCC symbols on every leg quote. All pure parts tested.
 
-**Remaining before rung 1 can start (after Gate 0) — updated 2026-07-30:**
+**Remaining before rung 1 can start (after Gate 0) — updated 2026-07-30 (second pass, the
+full-loop build):**
 
 1. Orchestrator wiring: `keyring_service: "fliesagent"` + `live_db` in the suite config;
-   run `connect`/`account` for flies — **S** — **DONE** (fliesagent keyring complete,
-   designated account set).
-2. Fill handling: poll the entry/completion working orders, record ACTUAL fill prices
-   (not the model's) on the ledger row, mark completions into flies — **M/L** — **DONE**
-   (`live_loop._confirm_entry_fill` / `_confirm_completion_fill`, `core.broker.order_status`).
-3. Working-order repricing within the gate bound + real order cancellation via the SDK
-   — **M** — **cancellation DONE** (`core.broker.cancel_order`); **repricing still not
-   built** — an unfilled completion is still cancelled outright at the cutoff, never
-   repriced within the gate bound first.
-4. Official-print settlement recording for the live book — **S/M** — not built; the
-   existing `--price` settle path is untested against `live_trades.db`.
-5. Watchdog live SLA + trade notifications from the live ledger — **M** — not built.
-6. Live-vs-paper comparison lines in the flies report/analytics — **M** — not built.
+   run `connect`/`account` for flies — **DONE** (fliesagent keyring complete, designated
+   account set).
+2. Fill handling — **DONE**: every tick polls pending orders; the burst fill-watcher
+   (`--watch-fills`, spawned per tick while orders are pending) polls ~every 10s,
+   cache-gated (broker status only when cached quotes touch the working limit, or a
+   ~150s heartbeat); actual fill prices recorded, completion flips only on a confirmed
+   fill (`_confirm_entry_fill` / `_confirm_completion_fill`, `core.broker.order_status`).
+3. Working-order management — **DONE, by design rather than by repricing machinery**:
+   the ENTRY order is re-evaluated each tick from cache and cancelled/replaced only when
+   the evaluation moved (center or ≥ one tick of credit); the COMPLETION order rests once
+   at the max safe debit `min(credit − fee_buffer, min_floor_dollars bound)` — a static
+   price that IS the gate, so there is nothing to chase — and is cutoff-cancelled at
+   `completion_cutoff` via `core.broker.cancel_order` (a failed cancel re-polls status:
+   "already filled" is the expected race).
+4. Settlement for the live book — **DONE**: the tick auto-settles at `live.settle_time`
+   (16:20) from the last streamed trade, marked `settlement_source='last_trade_provisional'`;
+   `live_loop.py --settle --price <official>` re-settles marked `'official'` (overwrites
+   provisional; refuses to overwrite official without `--force`). Live `fly_books` roll-ups
+   are written every tick, so analytics/dashboard/settled-marker all see the live day.
+5. Watchdog live SLA + trade notifications — **DONE**: `watchdog._check_live` (armed-window
+   task presence, in-session log freshness, live settle-overdue, and the disarm backstop
+   that sets the halt flag when the task survives past `disarm_time` + grace);
+   `trade_notifier` pushes live entries/completions/settlements from `live_db` with a LIVE
+   prefix + desktop toast, off the trading loop.
+6. Live-vs-paper comparison lines in the flies report/analytics — **still not built** —
+   the one remaining item; a follow-up.
 
-The concurrency guard (one incomplete position at a time, `live.negative_floor_override`
-for a human-confirmed exception) is the pilot's actual safety net while 3-6 remain open —
-see `live_loop.py`'s module docstring for the exact rule. Settlement, watchdog SLA, and
-live-vs-paper reporting are real gaps for anything beyond a supervised, human-watched pilot
-and should be treated as still-open work, not deferred indefinitely.
+**Lifecycle (the shape that shipped):** arming is PER-DAY — `/live-flies-start` (fresh YES)
+runs `--install-task`, registering the 1-min self-healing `cherrypick-flies-live-loop` tick;
+the loop self-disarms at `live.disarm_time` (default 17:00 ET) or on finding a stale arm
+stamp, and the watchdog backstops with the halt flag. The suite rule throughout: the
+streamer comes before API calls — pricing and gating from the stream cache; the broker is
+touched only to act (place/cancel) or to confirm what only it knows (fills).

@@ -19,6 +19,7 @@ reject the increment.
 
 from __future__ import annotations
 
+import fly
 from engine import PUT
 
 TICK = 0.05  # SPX/XSP index options tick in nickels at these price levels
@@ -89,6 +90,60 @@ def completion_spec(snapshot: dict, position: dict, plan: dict) -> dict:
         "price_effect": "debit",
         "legs": [
             _leg(_leg_quote(snapshot, side, plan["long_strike"]), "buy to open", qty),
+            _leg(_leg_quote(snapshot, side, center), "sell to open", qty),
+        ],
+    }
+
+
+def completing_long_strike(position: dict) -> float:
+    """The completing vertical's far strike, from the position row alone. A put spread sold at
+    centre C with wing W needs +1 at C+W to finish the fly (C-W is already the entry's long leg);
+    a call spread mirrors it at C-W."""
+    center, width = position["center"], position["wing_width"]
+    return center + width if position["side"] == PUT else center - width
+
+
+def max_safe_completion_debit(position: dict, min_floor_dollars: float, fee_buffer: float) -> float:
+    """The highest debit the resting completion order may pay without violating EITHER gate.
+
+    Two independent gates bound the price:
+      - fee_buffer (points):      debit <= credit - fee_buffer
+      - min_floor_dollars ($):    (credit - debit)*100*qty - fees_after_completion >= min_floor
+    The engine checks both per-tick in paper; a resting order priced only at the buffer gate
+    could fill into a fly whose floor is below the dollar gate, so the bound must be the min of
+    the two. `fees_after_completion` = the fees already recorded on the row (the entry stack)
+    plus the completing vertical's own stack.
+    """
+    credit = position["net"]
+    qty = position.get("quantity", 1)
+    fees_after = (position.get("fees") or 0.0) + fly.vertical_open_fee(position["symbol"], qty)
+    floor_bound = credit - (min_floor_dollars + fees_after) / (fly.CONTRACT_MULTIPLIER * qty)
+    return min(credit - fee_buffer, floor_bound)
+
+
+def resting_completion_spec(snapshot: dict, position: dict, params: dict) -> dict:
+    """The RESTING completion order: legs fully determined by the position row, priced once at
+    the max safe debit — the working limit IS the completion gate, so it can sit at the broker
+    all session catching every transient dip a discrete poll would miss. No engine evaluation is
+    needed or consulted; only the OCC symbols come from the snapshot's quotes."""
+    side, center = position["side"], position["center"]
+    qty = position.get("quantity", 1)
+    bound = max_safe_completion_debit(
+        position, params.get("min_floor_dollars", 0.0), params.get("fee_buffer", 0.10)
+    )
+    price = tick_floor(bound)
+    if price <= 0:
+        raise ValueError(
+            f"max safe completion debit {bound!r} floors to nothing submittable "
+            f"(credit {position['net']!r} too small against fees/floor)"
+        )
+    return {
+        "time_in_force": "Day",
+        "order_type": "Limit",
+        "price": price,
+        "price_effect": "debit",
+        "legs": [
+            _leg(_leg_quote(snapshot, side, completing_long_strike(position)), "buy to open", qty),
             _leg(_leg_quote(snapshot, side, center), "sell to open", qty),
         ],
     }

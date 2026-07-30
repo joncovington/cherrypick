@@ -192,17 +192,29 @@ _ADDED_POSITION_COLUMNS = {
     # risk); a pending completion still leaves the position kind='short_vertical' until confirmed.
     "entry_fill_status": "TEXT",
     "completion_fill_status": "TEXT",
+    # Live settlement provenance: 'last_trade_provisional' (auto-settled from the stream's last
+    # trade at settle time) vs 'official' (a human re-settled with the official print). Paper rows
+    # leave it NULL -- paper's last-trade settlement is its documented, accepted approximation.
+    "settlement_source": "TEXT",
+}
+
+_ADDED_BOOK_COLUMNS = {
+    "settlement_source": "TEXT",
 }
 
 
 def _migrate(conn: sqlite3.Connection) -> list[str]:
     """Add any columns missing from an older paper DB. Returns what it added (for tests and logs)."""
-    existing = {r["name"] for r in conn.execute("PRAGMA table_info(fly_positions)")}
     added = []
-    for column, sql_type in _ADDED_POSITION_COLUMNS.items():
-        if column not in existing:
-            conn.execute(f"ALTER TABLE fly_positions ADD COLUMN {column} {sql_type}")
-            added.append(column)
+    for table, columns in (
+        ("fly_positions", _ADDED_POSITION_COLUMNS),
+        ("fly_books", _ADDED_BOOK_COLUMNS),
+    ):
+        existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for column, sql_type in columns.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+                added.append(f"{table}.{column}")
     if added:
         conn.commit()
     return added

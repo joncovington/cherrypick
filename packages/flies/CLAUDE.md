@@ -40,7 +40,7 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `src/section.py` | the compact `cherrypick.core.viz` card for the suite dashboard. |
 | `src/eod.py` | `paper-eod-<day>.md` and `eod-analysis-<day>.md`. |
 | `src/cli.py` | `once` / `settle` / `status` / `dashboard` / `section`. |
-| `src/live_loop.py` | LIVE scaffold, inert by default — gated on Gate 0 of the live plan. `--once --dry-run` is the rung-0 smoke. |
+| `src/live_loop.py` | The LIVE loop: 1-min self-healing tick (`--once --live`, per-day arming via `/live-flies-start`, self-disarms at `live.disarm_time`) + burst fill-watchers (`--watch-fills`). `--once` (dry-run default) is the rung-0 smoke; `--status`, `--settle --price` for the official print. |
 | `src/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. |
 | `src/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). |
 | `src/credentials.py` | `fliesagent` keyring store + hidden-input CLI (orchestrator `connect` delegates here). |
@@ -196,11 +196,18 @@ These are the constraints the module exists to enforce. Breaking one makes the n
 
 ## Guardrails (suite-wide)
 
-- Paper only. SPX/XSP only — both European cash-settled, so assignment is structurally impossible and
-  there is no early-exercise machinery to get wrong.
+- Paper by default; live is a deliberately narrow, per-day-armed pilot (one arm, one symbol, one
+  incomplete position at a time — see `live_loop.py` and docs/live-trading-plan.md). SPX/XSP only —
+  both European cash-settled, so assignment is structurally impossible and there is no
+  early-exercise machinery to get wrong.
 - **No AI, no MCP, and no network on any decision path.** `fly.py` and `engine.py` are pure functions
   over a pre-fetched snapshot. Learning happens offline in the orchestrator's read side (`report`,
   `calibrate`, `eod-insight`) over closed rows — never inside the loop.
+- **The streamer comes before API calls** whenever practical, for efficiency or latency: all pricing
+  reads the shared stream cache, and cached quotes GATE broker calls (a resting entry order is only
+  cancelled/replaced when the cached evaluation moved; fill-status polls fire only when cached quotes
+  touch the working limit, plus a slow heartbeat). The broker API is only for acting (place/cancel)
+  and for confirming what only it can know — a fill. Applies to all future live work in this module.
 - Credentials in the OS keyring only. Account numbers masked to `****1234`.
 - Portable paths only; scratch work in `.tmp/`. Human-voice docs and commits, no AI attribution.
 - Instruction files hold no code.

@@ -1,101 +1,97 @@
 ---
-description: Start (or stop) the flies LIVE trading loop, gated behind a required literal YES confirmation
+description: Arm (or disarm) the flies LIVE trading loop for TODAY, gated behind a required literal YES confirmation
 argument-hint: [--stop]
 ---
 
-Fire real ticks of the flies live loop (`packages/flies/src/live_loop.py --live`) against the real
-designated account — real money, real orders. This is deliberately **not** a one-line wrapper: it
-exists specifically so nothing live ever starts without an explicit, freshly-typed confirmation, a
-current status readout, and a visible way to stop.
+Arm the flies live loop for today — real money, real orders, against the real designated
+account. Arming registers the self-healing `cherrypick-flies-live-loop` OS task (one
+`live_loop.py --once --live` tick per minute, with burst fill-watchers spawned as needed). The
+loop **self-disarms at `live.disarm_time` (default 17:00 ET)** and any tick that finds a
+previous day's arm stamp disarms immediately — arming is per-day by design, and the
+orchestrator watchdog backstops with the suite halt flag. This command exists so nothing live
+ever starts without a fresh, explicit confirmation, a current status readout, and a visible way
+to stop.
 
-`--stop` (or no live session currently running): stop the background tick loop started by a prior
-`/live-flies-start` — see "Stop" below. Anything else: the start flow.
+`--stop`: disarm — see "Stop" below. Anything else: the arm flow.
 
-## Start
+## Arm (default)
 
-1. **Refuse silently reusing an old confirmation.** This command must ask fresh every time it runs —
-   never treat a prior session's "YES" (in this conversation or a past one) as covering a new
-   invocation.
+1. **Never reuse an old confirmation.** Ask fresh every time this command runs — a prior
+   session's "YES" (in this conversation or any past one) covers nothing.
 
-2. **Pre-flight status readout** — gather and show all of this before asking for confirmation, so the
-   "YES" is informed, not reflexive:
-   - `readiness()`: run
+2. **Pre-flight status readout** — gather and show all of this before asking, so the YES is
+   informed, not reflexive. Run from `packages/flies`:
+   ```bash
+   python src/live_loop.py --status
+   ```
+   and present, in plain language:
+   - **Unmet readiness gates** — additionally run the readiness check:
      ```bash
      python -c "
-import sys; sys.path.insert(0, 'packages/flies/src')
-from cli import load_config
-import live_loop, credentials as creds, os
-cfg = load_config()
-halt = os.path.exists(live_loop.halt_flag_path())
-designated = creds.designated_account()
-unmet = live_loop.readiness(cfg, halt_present=halt, designated=designated)
-print('unmet gates:', unmet or 'NONE -- readiness passes')
-print('arm:', (cfg.get('live') or {}).get('arm'))
-print('gate0_confirmed:', (cfg.get('live') or {}).get('gate0_confirmed'))
-print('designated account:', ('****' + designated[-4:]) if designated else None)
-print('halt flag present:', halt)
-"
+   import sys; sys.path.insert(0, 'src')
+   from cli import load_config
+   import live_loop, credentials as creds, os
+   cfg = load_config()
+   unmet = live_loop.readiness(cfg, halt_present=os.path.exists(live_loop.halt_flag_path()), designated=creds.designated_account())
+   print('unmet gates:', unmet or 'NONE -- readiness passes')
+   "
      ```
-     If `unmet gates` is non-empty, **stop here** and report the unmet gates — do not proceed to
-     confirmation. There is nothing to confirm if the loop would refuse to act anyway.
-   - **Current live positions and concurrency state** for the configured arm/symbol (today's date):
-     query `live_trades.db` directly (read-only) for open rows, and for each one show
-     `position_id`, `kind`, whether it's currently blocking (`live_loop._is_blocking`), and — for a
-     completed fly — its floor via `fly.position_floor`. If nothing is open, say so plainly ("no open
-     live positions — the next tick may enter").
-   - **Daily-loss breaker state**: `live_loop.daily_loss_tripped(conn, today, daily_loss_halt_dollars)`
-     against the live ledger.
-   - **Market state**: is it currently within regular trading hours (roughly 09:30–16:00 ET) on a
-     trading day? If not, say so — the loop will preflight/tick but the entry/completion gates will
-     naturally decline outside market hours; don't imply an off-hours confirmation will immediately
-     trade.
+     If any gate other than the halt flag is unmet, **stop here** and report — there is nothing
+     to arm if every tick would refuse.
+   - **Halt flag**: if `--status` shows `halt_flag: true`, surface it PROMINENTLY — the watchdog
+     backstop may have set it after a failed self-disarm, which is worth understanding before
+     re-arming. Only a fresh YES may clear it (step 4).
+   - **Open live positions / pending orders / breaker state** from the `--status` JSON, plus
+     whether today's session is already settled.
+   - **Market state**: whether it's currently a trading day inside RTH. Off-hours arming is
+     allowed (the ticks no-op until the open) but say so plainly.
+   - **The per-day contract**: state that this arms TODAY only — the loop self-disarms at the
+     configured `disarm_time` and tomorrow needs a fresh `/live-flies-start`.
 
-3. **Ask for explicit confirmation** using the AskUserQuestion tool (not free-text parsing) with a
-   question naming the account (masked), the arm/symbol, and the concurrency rule, and exactly two
-   options: **"YES — start live ticking"** and **"No, cancel"**. Anything other than the literal YES
-   option must not proceed — including an ambiguous or partial answer. If the user picks "No", stop
-   here and take no further action.
+3. **Ask for explicit confirmation** using the AskUserQuestion tool (never free-text parsing)
+   with a question naming the masked account, the arm/symbol, the concurrency rule (one
+   incomplete position at a time), and the self-disarm time — exactly two options:
+   **"YES — arm live trading for today"** and **"No, cancel"**. Anything but the literal YES
+   option stops here with no action taken.
 
-4. **Start the tick loop, detached and observable.** Once YES is confirmed, run the loop in the
-   background so this conversation isn't blocked for the rest of the session, on a cadence matching
-   flies' paper loop (2 minutes) — but only during a reasonable trading window, and stopping itself at
-   the close or on the halt flag:
-   ```bash
-   cd packages/flies/src && nohup bash -c '
-     while true; do
-       now_min=$(python -c "import datetime,zoneinfo; n=datetime.datetime.now(zoneinfo.ZoneInfo(\"America/New_York\")); print(n.hour*60+n.minute)")
-       if [ -f "$HOME/.cherrypick/state/halt-live.flag" ]; then
-         echo "$(date): halt flag present, stopping"; break
-       fi
-       if [ "$now_min" -ge 960 ]; then
-         echo "$(date): past 16:00 ET, stopping"; break
-       fi
-       python live_loop.py --once --live 2>&1
-       sleep 120
-     done
-   ' > "$HOME/.cherrypick/logs/flies/live_loop_manual.log" 2>&1 &
-   echo "started, pid $!"
+4. **Arm.** Once YES is confirmed, from `packages/flies`:
+   - If the halt flag exists, delete it now (`~/.cherrypick/state/halt-live.flag`) — the YES
+     covers this explicitly; say that it was cleared and why it existed if known.
+   - ```bash
+     python src/live_loop.py --install-task
+     ```
+     This registers the 1-minute task, stamps today's arm date, and fires the first tick.
+
+5. **Report**: the task name, the armed-for date, the self-disarm time, the log to watch
+   (`tail -f ~/.cherrypick/logs/flies/flies_live.log`), the dashboard's live source
+   (http://127.0.0.1:8803/ → source: live), and how to stop early: `/live-flies-start --stop`,
+   or create the halt flag (`~/.cherrypick/state/halt-live.flag` — stops new entries within one
+   tick; open positions still follow their normal hold-to-settlement rules), or
+   `python src/live_loop.py --uninstall-task` directly. Also mention settlement: the loop
+   settles provisionally at 16:20 from the last streamed trade, and the official-print confirm
+   is `python src/live_loop.py --settle --price <official>`.
+
+## Stop / disarm (`--stop`)
+
+1. Show current state first: `python src/live_loop.py --status` (armed? open positions?
+   pending orders?).
+2. Confirm the disarm (a plain question is fine — disarming only stops NEW ticks; it places
+   no order and touches no open position).
+3. ```bash
+   python src/live_loop.py --uninstall-task
    ```
-   Run this via the Bash tool with `run_in_background: true` regardless (belt and suspenders — the
-   `nohup`/`&` above already detaches it from this shell, but the tool's own backgrounding keeps this
-   conversation free either way). Record the PID reported.
+4. Report what was disarmed and remind: open live positions are unaffected — they follow their
+   normal hold-to-settlement rules, and the completion/cutoff/settlement handling for anything
+   already open requires either re-arming or manual `--once --live` ticks. If the intent is a
+   harder stop that also blocks manual/future ticks, mention the halt flag.
 
-5. **Report** the PID, the log path, the confirmed arm/symbol, and how to check on it
-   (`tail -f ~/.cherrypick/logs/flies/live_loop_manual.log`) or stop it (`/live-flies-start --stop`, or
-   directly: create the halt flag, or `kill <pid>`). Remind that the halt flag
-   (`~/.cherrypick/state/halt-live.flag`) is the suite-wide kill switch and stops new entries within one
-   tick (existing positions still follow their normal hold-to-settlement rules).
+## Escape hatch
 
-## Stop (`--stop`)
-
-1. Find the running tick-loop process (the `nohup bash -c '...while true...'` loop from step 4 above,
-   or a plain `python live_loop.py` process) — check for a tracked PID from this conversation first;
-   otherwise look for a matching process by command line.
-2. Confirm before killing anything: show what was found, ask for confirmation the same way any
-   destructive action would (a plain "stop this?" is fine here — this only stops a polling loop, it
-   does not touch open positions or place any order).
-3. Kill it, confirm it's no longer running, and report. Existing open live positions are unaffected —
-   they still follow their normal hold-to-settlement rules; stopping the loop only stops new
-   entries/completions/cancels from being evaluated. If the intent is a harder stop, mention the halt
-   flag (`~/.cherrypick/state/halt-live.flag`) as the suite-wide switch that also blocks the orchestrator
-   and any future scheduled invocation, not just this manual loop.
+A single manual live tick (no task, no watcher respawn beyond this tick's own) is:
+```bash
+python src/live_loop.py --once --live
+```
+The rung-0 dry-run smoke (preflights against the real account, places nothing) remains:
+```bash
+python src/live_loop.py --once
+```

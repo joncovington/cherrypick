@@ -160,3 +160,28 @@ def test_seed_does_not_backfill_pre_existing_positions():
     counts = tn._flies_process(conn, state, n, "flies")
     assert n.sent == []
     assert all(v == 0 for v in counts.values())
+
+
+def test_live_wrapper_makes_events_unmistakably_live():
+    """The live ledger reuses the same formatters, so without the wrapper a real-money fill
+    would read as 'Flies paper ENTRY' — the exact mislabeling paper↔live isolation forbids."""
+
+    class _Inner:
+        def __init__(self):
+            self.sent = []
+
+        def notify(self, level, key, title, message):
+            self.sent.append((level, key, title, message))
+
+    inner = _Inner()
+    tn._LiveNotifier(inner).notify(
+        "INFO",
+        "trade.flies.entry.P1",
+        "Paper entry",
+        _msg := ("\U0001f7e2 Flies paper ENTRY — SPX short put spread 6000 w5 credit $2.55"),
+    )
+    level, key, title, message = inner.sent[0]
+    assert key.startswith("live.")  # separate dedup keyspace from the paper events
+    assert title.startswith("LIVE:")
+    assert " paper " not in message and " LIVE " in message
+    assert message.startswith("\U0001f6a8")
