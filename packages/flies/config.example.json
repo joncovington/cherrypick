@@ -6,14 +6,15 @@
     "stream_cache_db": "~/.cherrypick/data/marketdata/stream_cache.db"
   },
 
-  "_live_note": "LIVE SCAFFOLD -- inert by default (docs/live-trading-plan.md). Nothing here runs until Gate 0 of the plan passes: 'enabled' must be true AND 'gate0_confirmed' must carry a human attestation (who/when the paper verdict was judged to pass); the loop additionally requires a designated account (cherrypick account --module flies), refuses while the suite halt flag (state/halt-live.flag) exists, and halts new entries when the day's settled LIVE net reaches -daily_loss_halt_dollars. Exactly ONE arm goes live (the Gate-0 winner; default gex). `python src/live_loop.py --once --dry-run` preflights the orders it would place against the real designated account WITHOUT placing anything -- that run is the flies rung-0 smoke. account_deploy_limit_pct feeds core.broker's deploy governor on every submission.",
+  "_live_note": "LIVE SCAFFOLD (docs/live-trading-plan.md). 'enabled' must be true AND 'gate0_confirmed' must carry a human attestation; the loop additionally requires a designated account (cherrypick account --module flies), refuses while the suite halt flag (state/halt-live.flag) exists, and halts new entries when the day's settled LIVE net reaches -daily_loss_halt_dollars. Exactly ONE arm goes live (default gex). `python src/live_loop.py --once --dry-run` preflights against the real designated account WITHOUT placing anything -- the rung-0 smoke. account_deploy_limit_pct feeds core.broker's deploy governor on every submission. CONCURRENCY (2026-07-30): at most one position may be an incomplete spread at a time for the live arm -- an open short vertical always blocks a new entry; a completed fly blocks only if its floor is negative (not risk-free) after fees. To permit a new entry despite a specific stuck negative-floor fly, set negative_floor_override to that position's exact position_id (checked fresh each time -- an override never silently carries over to a different, later stuck position). gate0_confirmed is a human attestation, not a code-enforced statistical check -- Gate 0's own sample-size bar (>=20 sessions, >=100 legged entries post-07-27) can be knowingly waived for a small, tightly-bounded pilot; if so, say so in the attestation string and record why, same as any other gate0_confirmed entry.",
   "live": {
     "enabled": false,
     "gate0_confirmed": "",
     "arm": "gex",
     "symbol": "XSP",
     "daily_loss_halt_dollars": 200,
-    "account_deploy_limit_pct": 50
+    "account_deploy_limit_pct": 50,
+    "negative_floor_override": ""
   },
 
   "_symbols_note": "XSP as of 2026-07-29 (was SPX through 07-28; those books remain in the ledger under their own widths). SPX and XSP are the only symbols this module should ever run — both European cash-settled, so a short middle strike left open into expiration settles to cash and assignment is structurally impossible; a physically-settled symbol would need the assignment machinery MEIC carries. wing_width and strike_increment below are GLOBAL and denominated in points, so they must be re-scaled with the symbol: XSP trades near a tenth of SPX on a 1-point grid. The intent on either symbol is the width-arm sweep of 1..5 strike increments (control is the 1-increment rung; width-2..width-5 pin the rest) — on SPX that means increment 5 / widths 5..25, on XSP increment 1 / widths 1..5.",

@@ -1,13 +1,17 @@
 # Flies live trading — plan and gates
 
-**Status: not implemented, and deliberately conditional.** Flies is a paper module built to
-make a negative result usable, and as of the last settled window the result *is* negative:
-over 07-20…07-24, 40 legged entries completed 23 (57.5%) against a ≈65% break-even rate, the
-book lost $1,175, and a miss cost ~1.9× what a completion earned. Honesty rule 6 applies —
-if the floor comes out negative after fees, the answer is to stop, not to go live harder.
-This document therefore defines **what a "yes" would have to look like and exactly how live
-would then be built**, so that if the paper verdict turns, the path is already designed and
-none of it gets improvised under enthusiasm.
+**Status: a deliberate, logged Gate-0 exception (2026-07-30) — see below.** Flies is a paper
+module built to make a negative result usable. The 07-20…07-24 window was negative (40
+legged entries completed 23 (57.5%) against a ≈65% break-even rate, book lost $1,175), but
+gex arm specifically, since the 07-27 config change, has run 8/9 completions and +$603 net —
+just 3 sessions and 9 entries, nowhere near Gate 0's own ≥20-session/≥100-entry bar. At the
+user's explicit direction, live was authorized anyway for the gex arm only, as a small,
+tightly-bounded pilot meant to surface real trading-mechanics bugs rather than to claim the
+statistical bar was cleared — `gate0_confirmed` in the home config records this explicitly.
+The concurrency guard below (at most one incomplete position at a time) is the corresponding
+risk control: the pilot is deliberately too small to matter much either way while the
+mechanics get proven out. This document still defines **what a clean "yes" looks like**, for
+when the paper verdict is actually judged to pass at real sample size.
 
 Everything here inherits the suite guardrails: paper↔live isolation, no AI/MCP/network on
 the decision path, credentials in the OS keyring, account numbers masked, defined-risk only.
@@ -146,17 +150,25 @@ real account and places nothing, which **is** the rung-0 smoke), the live ledger
 (`live_trades.db`, same schema + order-id columns, a separate file from paper), and the
 provider now carries OCC symbols on every leg quote. All pure parts tested.
 
-**Remaining before rung 1 can start (after Gate 0):**
+**Remaining before rung 1 can start (after Gate 0) — updated 2026-07-30:**
 
 1. Orchestrator wiring: `keyring_service: "fliesagent"` + `live_db` in the suite config;
-   run `connect`/`account` for flies — **S**
+   run `connect`/`account` for flies — **S** — **DONE** (fliesagent keyring complete,
+   designated account set).
 2. Fill handling: poll the entry/completion working orders, record ACTUAL fill prices
-   (not the model's) on the ledger row, mark completions into flies — **M/L**
+   (not the model's) on the ledger row, mark completions into flies — **M/L** — **DONE**
+   (`live_loop._confirm_entry_fill` / `_confirm_completion_fill`, `core.broker.order_status`).
 3. Working-order repricing within the gate bound + real order cancellation via the SDK
-   (the scaffold's cancel refuses loudly rather than pretending) — **M**
-4. Official-print settlement recording for the live book — **S/M**
-5. Watchdog live SLA + trade notifications from the live ledger — **M**
-6. Live-vs-paper comparison lines in the flies report/analytics — **M**
+   — **M** — **cancellation DONE** (`core.broker.cancel_order`); **repricing still not
+   built** — an unfilled completion is still cancelled outright at the cutoff, never
+   repriced within the gate bound first.
+4. Official-print settlement recording for the live book — **S/M** — not built; the
+   existing `--price` settle path is untested against `live_trades.db`.
+5. Watchdog live SLA + trade notifications from the live ledger — **M** — not built.
+6. Live-vs-paper comparison lines in the flies report/analytics — **M** — not built.
 
-Until Gate 0 passes, the only work this plan calls for is the one it's already doing:
-running the paper experiment honestly and letting the completion rate decide.
+The concurrency guard (one incomplete position at a time, `live.negative_floor_override`
+for a human-confirmed exception) is the pilot's actual safety net while 3-6 remain open —
+see `live_loop.py`'s module docstring for the exact rule. Settlement, watchdog SLA, and
+live-vs-paper reporting are real gaps for anything beyond a supervised, human-watched pilot
+and should be treated as still-open work, not deferred indefinitely.

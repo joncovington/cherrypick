@@ -187,6 +187,11 @@ _ADDED_POSITION_COLUMNS = {
     # simply leave them NULL -- the live ledger is a separate FILE (live_db_path), same schema.
     "entry_order_id": "TEXT",
     "completion_order_id": "TEXT",
+    # Rung-1: fill confirmation, distinct from "an order was placed" -- 'pending' | 'filled' |
+    # 'rejected' | 'cancelled'. A pending entry still blocks a second entry (it's the position at
+    # risk); a pending completion still leaves the position kind='short_vertical' until confirmed.
+    "entry_fill_status": "TEXT",
+    "completion_fill_status": "TEXT",
 }
 
 
