@@ -1,5 +1,9 @@
 # Operating the Agent
 
+**What this covers:** the day-to-day routine for running a MEIC session once it's set up —
+starting the loop, watching the dashboard, and checking status. Part of the
+[MEIC module](../README.md) in the cherrypick suite.
+
 ## Pre-market session setup
 
 Run `/meic-start` before 9:30 ET — it launches the dashboard and agent loop in sequence:

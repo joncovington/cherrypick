@@ -1,5 +1,14 @@
 # cherrypick-earnings
 
+**What this module does:** earnings trades defined-risk options strategies around company
+earnings announcements — opening a position the evening before a report and closing it the
+next morning, without watching it overnight. It picks from six different structures each night
+based on which one fits that stock's setup best, and it can run as **paper trading** (simulated)
+or **live** trading, gated behind a setting you turn on yourself. It's one strategy module in the
+cherrypick suite, alongside the 0DTE iron-condor module, the butterfly module, and the GEX
+dashboard. Most of what you do here is run terminal commands, or ask Claude to run a
+`/`-prefixed command for you — no coding required.
+
 > **The earnings module of the [cherrypick](../../README.md) suite.** cherrypick is a monorepo of trading
 > modules driven by a shared **orchestrator**. This package (`packages/earnings`) is the overnight
 > earnings-play engine; its siblings are [`packages/meic`](../meic) (0DTE iron condors),
