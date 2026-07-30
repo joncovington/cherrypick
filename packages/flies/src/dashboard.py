@@ -150,6 +150,7 @@ header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-
 flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:10}
 h1{font-size:16px;margin:0;font-weight:600}
 .badge{font-size:11px;padding:2px 8px;border-radius:10px;background:#1f2937;color:var(--dim)}
+.badge.live{background:#7f1d1d;color:#fecaca;font-weight:700;letter-spacing:.03em}
 nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
 nav button{background:transparent;border:1px solid var(--line);color:var(--dim);padding:5px 12px;
 border-radius:6px;cursor:pointer;font-size:13px}
@@ -200,7 +201,7 @@ footer{padding:12px 20px;color:var(--dim);font-size:11.5px;border-top:1px solid 
 _BODY = """
 <header>
   <h1>Flies</h1>
-  <span class="badge">paper</span>
+  <span class="badge {MODE_BADGE_CLASS}">{MODE_BADGE_TEXT}</span>
   <span class="badge" id="asof">–</span>
   <label class="dim" style="font-size:12px">arm
     <select id="arm-select"><option value="ALL">all</option></select>
@@ -1145,13 +1146,33 @@ setInterval(refresh, 15000);
    groups are declared with data-cp-reorder attributes in the markup. */
 """
 
-HTML = (
-    "<!doctype html><meta charset='utf-8'><title>Flies — paper</title>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    f"<style>{_STYLE}{viz.REORDER_STYLE}{viz.CAL_HEAT_STYLE}{viz.TABLE_STYLE}</style>{_BODY}"
-    f"<script>{viz.CAL_HEAT_JS}</script><script>{viz.TABLE_JS}</script>"
-    f"<script>{_JS}</script><script>{viz.REORDER_JS}</script>"
-)
+
+def _is_live_db(db_path: str | None) -> bool:
+    """True when the dashboard is pointed at the LIVE ledger rather than the paper DB —
+    drives the header badge so live data can never be mistaken for paper on screen."""
+    if not db_path:
+        return False
+    try:
+        return os.path.abspath(db_path) == os.path.abspath(dbmod.live_db_path())
+    except OSError:
+        return False
+
+
+def _html(is_live: bool) -> str:
+    body = _BODY.replace("{MODE_BADGE_CLASS}", "live" if is_live else "").replace(
+        "{MODE_BADGE_TEXT}", "LIVE — real money" if is_live else "paper"
+    )
+    title = "Flies — LIVE" if is_live else "Flies — paper"
+    return (
+        f"<!doctype html><meta charset='utf-8'><title>{title}</title>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        f"<style>{_STYLE}{viz.REORDER_STYLE}{viz.CAL_HEAT_STYLE}{viz.TABLE_STYLE}</style>{body}"
+        f"<script>{viz.CAL_HEAT_JS}</script><script>{viz.TABLE_JS}</script>"
+        f"<script>{_JS}</script><script>{viz.REORDER_JS}</script>"
+    )
+
+
+HTML = _html(is_live=False)  # the paper-mode page, e.g. for --json / doc callers that want a default
 
 
 # --------------------------------------------------------------------------- server
@@ -1160,6 +1181,8 @@ class _ThreadingServer(ThreadingMixIn, HTTPServer):
 
 
 def _handler_for(db_path: str | None):
+    page = _html(_is_live_db(db_path)).encode("utf-8")
+
     class _Handler(BaseHTTPRequestHandler):
         def _send(self, body: bytes, content_type: str, status: int = 200) -> None:
             self.send_response(status)
@@ -1174,7 +1197,7 @@ def _handler_for(db_path: str | None):
         def do_GET(self):  # noqa: N802 - BaseHTTPRequestHandler's interface
             parsed = urlparse(self.path)
             if parsed.path in ("/", "/index.html"):
-                self._send(HTML.encode("utf-8"), "text/html; charset=utf-8")
+                self._send(page, "text/html; charset=utf-8")
                 return
             if parsed.path == "/api/data":
                 query = parse_qs(parsed.query)
