@@ -66,6 +66,7 @@ from cherrypick.orchestrator import (
     accounts,
     advise,
     calibrate,
+    configedit,
     connect,
     dashboard,
     doctor,
@@ -77,6 +78,7 @@ from cherrypick.orchestrator import (
     reconcile,
     report,
     serve,
+    settings_serve,
     tasks,
     timeutil,
     trade_notifier,
@@ -764,6 +766,28 @@ def cmd_dashboard(cfg, args) -> None:
     _emit(dashboard.run(cfg))
 
 
+def cmd_settings(cfg, args) -> None:
+    """The settings surface: a loopback web editor for the suite's configs + keyring secrets (the one
+    mutating HTTP server in the suite — see settings_serve). With --organize it instead reorders live
+    config(s) into their example's sections from the CLI and exits (dry-run unless --apply)."""
+    if args.organize:
+        ids = (
+            [t["id"] for t in configedit.targets(cfg) if t["exists"] and t["id"] != "meic-risk"]
+            if args.organize == "all"
+            else [args.organize]
+        )
+        results = {tid: configedit.organize(cfg, tid, apply=args.apply) for tid in ids}
+        _emit(
+            {
+                "ok": all(r.get("ok") for r in results.values()),
+                "dry_run": not args.apply,
+                "targets": {tid: {k: v for k, v in r.items() if k != "text"} for tid, r in results.items()},
+            }
+        )
+        return
+    _emit(settings_serve.serve(cfg, host=args.host, port=args.port, open_browser=not args.no_browser))
+
+
 def cmd_migrate_home(cfg, apply: bool) -> None:
     """Move config files into ~/.cherrypick and sweep regenerable leftovers out of the checkouts.
     Dry-run by default (prints the plan and touches nothing); pass --apply to perform it."""
@@ -857,6 +881,7 @@ def main() -> None:
             "secrets-set",
             "secrets-status",
             "secrets-delete",
+            "settings",
         ],
     )
     parser.add_argument(
@@ -909,10 +934,24 @@ def main() -> None:
         action="store_true",
         help="For dashboard: run a localhost live server instead of writing a static file",
     )
-    parser.add_argument("--host", default=None, help="For dashboard --serve: bind host (default 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=None, help="For dashboard --serve: bind port (def 8787)")
     parser.add_argument(
-        "--no-browser", action="store_true", help="For dashboard --serve: do not open a browser"
+        "--host", default=None, help="For dashboard --serve / settings: bind host (default 127.0.0.1)"
+    )
+    parser.add_argument(
+        "--port", type=int, default=None, help="For dashboard --serve (8787) / settings (8804): bind port"
+    )
+    parser.add_argument(
+        "--no-browser", action="store_true", help="For dashboard --serve / settings: do not open a browser"
+    )
+    parser.add_argument(
+        "--organize",
+        nargs="?",
+        const="all",
+        default=None,
+        metavar="TARGET",
+        help="For settings: organize live config(s) into their example's sections and exit (no server). "
+        "Names one target (orchestrator/meic/earnings/flies/gex/streamer) or all when bare. "
+        "Dry-run unless --apply.",
     )
     parser.add_argument(
         "--apply", action="store_true", help="For migrate-home: perform the move (default is a dry run)"
@@ -961,6 +1000,7 @@ def main() -> None:
         "secrets-set": lambda: cmd_secrets_set(args.channel, args.url),
         "secrets-status": lambda: cmd_secrets_status(),
         "secrets-delete": lambda: cmd_secrets_delete(args.channel),
+        "settings": lambda: cmd_settings(cfg, args),
     }
     dispatch[args.command]()
 

@@ -1,4 +1,5 @@
 {
+  "identity_header": "x",
   "_comment": "cherrypick orchestration config. Copy to config.json and adjust. A module is located by 'path' (relative to this file's directory — in the monorepo every module ships in the same checkout) or, for an out-of-tree module, a 'repo' URL cloned by `cherrypick install` into ~/.cherrypick/modules/<repo-name>. Never hardcode absolute machine paths.",
   "_home_note": "Runtime home (this config.json, logs/, state/, dashboard.html) = CHERRYPICK_HOME if set, else the repo root in a source checkout, else ~/.cherrypick for a pip-installed copy. An installed copy thus reads ~/.cherrypick/config.json.",
   "_modules_home_note": "Managed module checkouts live under CHERRYPICK_MODULES_HOME, else CHERRYPICK_HOME/modules, else ~/.cherrypick/modules. `install` clones a module only when its checkout is absent and never touches an existing one; `uninstall` leaves checkouts in place.",
@@ -124,6 +125,7 @@
       }
     }
   },
+  "watchdog_header": "x",
   "watchdog": {
     "task_name": "cherrypick-watchdog",
     "interval_minutes": 10,
@@ -136,6 +138,7 @@
     "stale_minutes": 10,
     "error_fraction": 0.5
   },
+  "dashboard_header": "x",
   "dashboard": {
     "_comment": "Read-only status dashboard: static self-contained HTML regenerated on each watchdog tick and by `cherrypick dashboard`. Surfaces suite health + P&L + logs, plus a System panel (scheduled tasks, installed modules, and a redacted config summary — webhook state only, never URLs). Under --serve it adds a live checks card that polls doctor.run() (the only broker-touching part, kept off the static path). 'output' is relative to this file's directory.",
     "output": "dashboard.html",
@@ -228,6 +231,25 @@
       }
     ]
   },
+  "settings_header": "x",
+  "settings": {
+    "_comment": "`cherrypick settings` — the local web editor for the suite's config files and keyring secrets. The suite's ONE mutating HTTP surface: loopback-only + per-session-token gated, run on demand in the foreground, never started by the watchdog or a scheduled task, and live-trading gate fields are read-only on it. Port 8804 is the next slot after the 88xx embeds (8801 meic, 8802 gex, 8803 flies).",
+    "serve": {
+      "host": "127.0.0.1",
+      "port": 8804
+    }
+  },
+  "streamer_header": "x",
+  "streamer": {
+    "_comment": "The suite's standalone market-data producer (packages/streamer) — the single streamer that writes the shared cache ~/.cherrypick/data/marketdata/stream_cache.db, which every module reads. THE sole producer since the 2026-07-21 cutover (modules.meic.streamer is the disabled rollback path; exactly ONE producer runs at a time). Session-gated and silence-restarted by the watchdog. Located by 'path' (relative to this file). Modules declare which symbols they need via ~/.cherrypick/state/stream_requests/<module>.json — every module regenerates its own file on each run — and the streamer streams the union.",
+    "enabled": true,
+    "path": "../streamer",
+    "status_argv": ["run.py", "--status"],
+    "start_argv": ["run.py"],
+    "stop_argv": ["run.py", "--stop"],
+    "auto_restart": true,
+    "stale_restart_seconds": 240
+  },
   "services": [
     {
       "_comment": "Long-running background daemons the orchestrator keeps alive: started at `install`, restarted by the watchdog if down (single-instance guarded), stopped at `uninstall`. Located by 'path' (relative to this file) or 'repo'. status_argv must print {\"running\": bool}. The gex spot-trail recorder samples every symbol's spot continuously so the GEX dashboard's spot trail has no gaps and builds all session, independent of whether the dashboard is open. Disabled by default.",
@@ -250,27 +272,39 @@
       "auto_restart": true
     }
   ],
-  "streamer": {
-    "_comment": "The suite's standalone market-data producer (packages/streamer) — the single streamer that writes the shared cache ~/.cherrypick/data/marketdata/stream_cache.db, which every module reads. THE sole producer since the 2026-07-21 cutover (modules.meic.streamer is the disabled rollback path; exactly ONE producer runs at a time). Session-gated and silence-restarted by the watchdog. Located by 'path' (relative to this file). Modules declare which symbols they need via ~/.cherrypick/state/stream_requests/<module>.json — every module regenerates its own file on each run — and the streamer streams the union.",
-    "enabled": true,
-    "path": "../streamer",
-    "status_argv": ["run.py", "--status"],
-    "start_argv": ["run.py"],
-    "stop_argv": ["run.py", "--stop"],
-    "auto_restart": true,
-    "stale_restart_seconds": 240
-  },
+  "notify_header": "x",
   "trade_notify": {
     "_comment": "Dedicated low-latency task that pushes new paper entries/exits to trade_channels. Runs far more often than the watchdog so fills reach you within ~interval_minutes instead of a full watchdog cycle.",
     "task_name": "cherrypick-trade-notify",
     "interval_minutes": 2
   },
+  "notify": {
+    "_channels_note": "push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord), never in this file or env vars.",
+    "channels": ["log", "desktop"],
+    "trade_channels": ["log", "discord"],
+    "desktop_app_name": "cherrypick",
+    "trade_summary": {
+      "_comment": "MEIC risk_profile prefixes routed to a periodic per-symbol digest instead of a per-trade push (the width study's ~150-200 trades/day would otherwise spam every entry/exit individually). Rows whose risk_profile starts with one of these prefixes are excluded from the normal per-trade lines; ladder profiles (conservative/moderate/aggressive/very-aggressive) are unaffected either way.",
+      "profile_prefixes": ["width-"],
+      "interval_minutes": 15
+    }
+  },
+  "eod_header": "x",
   "eod_digest": {
     "_comment": "Suite end-of-day digest: writes logs/eod-digest-<day>.md (one session's cross-module paper P&L, net of costs, plus a pointer to each module's own paper-eod file) and pushes a one-line summary through your notify channels. EVENT-DRIVEN (no fixed clock time): the watchdog fires it once EVERY installed module has written its paper-eod-<day>.md, so it can't race a module that settles a few minutes late (the old fixed 16:15 missed flies when it settled at 16:20). 'deadline' (ET, box-local clock) is the backstop - if some module is late or never writes (a flat flies session writes none), the digest fires anyway at the deadline with whatever exists, so it never skips. ON by default; OPT OUT with enabled=false then re-run `install` (removes the trigger's effect by disabling) or `uninstall`. 'task_name' is kept only so install/uninstall can remove a stale fixed-time task from a prior install. Read-only over the paper DBs; fired detached, off the watchdog reliability path.",
     "enabled": true,
     "task_name": "cherrypick-eod-digest",
     "deadline": "16:45"
   },
+  "eod_insight": {
+    "_comment": "AI EOD insight (`cherrypick eod-insight`). When enabled AND Claude Code (`claude`) is on PATH, pipes the day's DETERMINISTIC reports (each module's eod-analysis + paper-eod, and the suite digest) to Claude in headless print mode and writes a synthesized cross-module narrative to logs/eod-insight-<day>.md (linked from the dashboard EOD card). EVENT-DRIVEN: the watchdog launches it DETACHED on the same completion event as the digest (all modules' paper-eod present, or the digest deadline) - no fixed clock time - so the AI call never runs in the watchdog process. Claude runs with NO execution/edit/arbitrary-URL tools (Bash/Edit/Write/WebFetch/Task always disallowed) and never touches the broker or config - the orchestrator writes the file. 'research_events' (default true) additionally grants WebSearch ONLY, so the insight can research upcoming macro events (FOMC/CPI/jobs) and highly anticipated earnings for a forward-looking section (anchored on the suite's deterministic FOMC/expiry/holiday calendar); set false for a purely offline, reports-only synthesis. OFF by default overall (needs Claude + an authenticated session + a paid API call, and research adds web calls + latency); the deterministic eod-analysis remains the source of record and researched notes are best-effort. Off the watchdog reliability path; best-effort. Turn on with enabled=true then re-run `install`. 'model' null uses Claude's configured default. Paper/educational only, not financial advice.",
+    "enabled": false,
+    "task_name": "cherrypick-eod-insight",
+    "model": null,
+    "timeout_seconds": 120,
+    "research_events": true
+  },
+  "data_header": "x",
   "data_epoch": {
     "_comment": "Optional restatement marker. Declare when a correctness fix RESTATES what recorded paper history means (e.g. the phase-0 leg-ratio / fee-count / win-definition fixes): set 'date' to the first session traded on fixed code. `report` stays descriptive (totals still cover all history, plus a pre_epoch_trades count per module); `calibrate` ENFORCES it - promotion readings use only sessions on/after the date, so a rung can never graduate on numbers produced by retired code. Remove or leave date null when no restatement is in effect.",
     "date": null,
@@ -283,14 +317,7 @@
     "day": 1,
     "at": "03:30"
   },
-  "eod_insight": {
-    "_comment": "AI EOD insight (`cherrypick eod-insight`). When enabled AND Claude Code (`claude`) is on PATH, pipes the day's DETERMINISTIC reports (each module's eod-analysis + paper-eod, and the suite digest) to Claude in headless print mode and writes a synthesized cross-module narrative to logs/eod-insight-<day>.md (linked from the dashboard EOD card). EVENT-DRIVEN: the watchdog launches it DETACHED on the same completion event as the digest (all modules' paper-eod present, or the digest deadline) - no fixed clock time - so the AI call never runs in the watchdog process. Claude runs with NO execution/edit/arbitrary-URL tools (Bash/Edit/Write/WebFetch/Task always disallowed) and never touches the broker or config - the orchestrator writes the file. 'research_events' (default true) additionally grants WebSearch ONLY, so the insight can research upcoming macro events (FOMC/CPI/jobs) and highly anticipated earnings for a forward-looking section (anchored on the suite's deterministic FOMC/expiry/holiday calendar); set false for a purely offline, reports-only synthesis. OFF by default overall (needs Claude + an authenticated session + a paid API call, and research adds web calls + latency); the deterministic eod-analysis remains the source of record and researched notes are best-effort. Off the watchdog reliability path; best-effort. Turn on with enabled=true then re-run `install`. 'model' null uses Claude's configured default. Paper/educational only, not financial advice.",
-    "enabled": false,
-    "task_name": "cherrypick-eod-insight",
-    "model": null,
-    "timeout_seconds": 120,
-    "research_events": true
-  },
+  "advise_header": "x",
   "advise": {
     "_comment": "Per-session parameter advice (`cherrypick advise`) - Tier 1 of the agentic layer: agent advises, loop decides. Runs Claude headless over the day's DETERMINISTIC artifacts only (module EOD reports, suite digest, report/calibrate JSON, the shared market calendar; ALL tools denied, unlike eod_insight's research mode) and asks for parameter proposals for the NEXT session, restricted to each module's 'advice_bounds' manifest of closed legal ranges. The orchestrator validates with cherrypick.core.advice and writes state/advice/<module>-<session>.json; the module's paper loop re-validates with the SAME core code at session start and treats absent/stale/invalid advice as baseline - one bad proposal rejects the whole set (the rejections are still written, for audit). OFF by default TWICE: 'enabled' here AND per-module 'modules.<name>.enabled' must both be true. Kill switch: flip either flag, or delete the advice file. Paper loops only; advice can never widen behavior beyond the declared bounds.",
     "enabled": false,
@@ -315,17 +342,6 @@
       "enabled": false,
       "task_name": "cherrypick-reconcile",
       "at": "16:30"
-    }
-  },
-  "notify": {
-    "_channels_note": "push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord), never in this file or env vars.",
-    "channels": ["log", "desktop"],
-    "trade_channels": ["log", "discord"],
-    "desktop_app_name": "cherrypick",
-    "trade_summary": {
-      "_comment": "MEIC risk_profile prefixes routed to a periodic per-symbol digest instead of a per-trade push (the width study's ~150-200 trades/day would otherwise spam every entry/exit individually). Rows whose risk_profile starts with one of these prefixes are excluded from the normal per-trade lines; ladder profiles (conservative/moderate/aggressive/very-aggressive) are unaffected either way.",
-      "profile_prefixes": ["width-"],
-      "interval_minutes": 15
     }
   }
 }

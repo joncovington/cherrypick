@@ -1,8 +1,10 @@
 {
+  "live_header": "===== Live Gate & Capital (guarded) =====",
   "enable_live_trading": false,
   "account_deploy_limit_pct": 0,
   "_account_deploy_limit_pct_note": "Account-level deploy cap (via cherrypit.risk). 0 = OFF (default). A positive value (e.g. 50) blocks a LIVE execute_trade whose buying power would push total deployed BP above that percent of account capacity (used + available derivative buying power). Fail-closed: if account state can't be read, the live order is blocked. Enforced only on live submits; a dry-run reports the governor verdict without blocking. Does not affect paper trading.",
 
+  "costs_header": "===== Costs & Sizing =====",
   "_position_sizing_note": "available_capital_paper_mode is the simulated capital basis for paper mode's risk-cap checks (max_risk_per_trade_pct) -- no real broker balance is consulted in paper mode. Live mode always sources NLV/buying power from tastytrade directly via tt.py get_account_info.",
   "available_capital_paper_mode": 10000,
   "available_capital_live_mode_source": "tastytrade",
@@ -19,6 +21,7 @@
     "slippage_cap_frac_of_mid": 0.15
   },
 
+  "screening_header": "===== Screening & Concentration =====",
   "max_concurrent_earnings_positions": 3,
 
   "_symbol_screen_note": "Single accept/reject bar for a symbol's soft criteria (replaces the old Tier 1/2/Near-Miss ladder). Hard filters -- price, front-expiration window, open interest, term structure, ATM delta, expected move, weekly cadence, bid/ask spread -- always apply. Each soft criterion below is required at the chosen level: 'pass' uses the strict min_* threshold in strategies.<name>, 'near_miss' uses the looser near_miss_min_* threshold, 'off' drops the criterion entirely. Default is every criterion at 'pass' (the strict bar). See docs/screening-criteria.md.",
@@ -34,6 +37,7 @@
   "_per_name_concentration_is_intended": "DECIDED 2026-07-27, do not 'fix' this: every name clearing the accept bar runs EVERY strategy, and the resulting stack of structures on one name is the design, not a risk-control gap. The research question is which strategy is most profitable, which is only answerable if each strategy sees the same names under the same conditions — capping structures per name, or rotating strategies across names, would confound the comparison with selection differences and leave each strategy a different, much smaller sample. An EOD review on 2026-07-27 flagged one accepted name carrying six structures and $2,482 of overnight defined max loss ($1,323 in a single iron_fly) and recommended a per-name cap; that recommendation is declined on the above grounds. What bounds it is that every earnings strategy is DEFINED-RISK (naked was removed for exactly this reason), so the overnight worst case is known at entry — concentrated, not unbounded. The guard actually worth building is the missing CORRELATION guard: several index-correlated names qualifying the same night would collapse supposedly independent bets into one, which is a different problem from one name running the full sweep.",
   "strat_test_portfolio": "per_strategy",
 
+  "data_sources_header": "===== Data Sources (Dolt, Finnhub) =====",
   "earnings_calendar_source": "dolthub",
   "dolthub_host": "127.0.0.1",
   "dolthub_port": 3306,
@@ -55,6 +59,7 @@
 
   "finnhub_api_key_env_var": "FINNHUB_API_KEY",
 
+  "windows_header": "===== Windows & Execution =====",
   "entry_window_start": "15:30",
   "entry_window_end": "15:55",
   "close_window_start": "09:45",
@@ -67,6 +72,7 @@
   "reprice_interval_s": 10,
   "reprice_step": 0.05,
 
+  "strategies_header": "===== Strategies =====",
   "strategies": {
     "iron_fly": {
       "max_risk_per_trade_pct": 0.02,
