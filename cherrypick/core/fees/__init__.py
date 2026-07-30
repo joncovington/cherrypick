@@ -178,9 +178,19 @@ def ic_close_fee(
     return _ic_fee(symbol, quantity, legs, sell_legs, commission_per_contract=0.0, ndigits=ndigits)
 
 
-def ic_expire_fee() -> float:
-    """Expired-OTM options incur no closing transaction, so no fee."""
-    return 0.0
+# $5/contract, charged the next business day (not at expiry itself) on every leg that finishes
+# ITM at cash settlement and is therefore exercised/assigned -- OTM legs expire worthless and
+# cost nothing. Per CONTRACT, not per unique strike: a structure with two contracts resting on
+# the same ITM strike (e.g. a butterfly's doubled centre) is charged twice.
+# https://support.tastytrade.com/support/s/solutions/articles/43000435174, confirmed 2026-07-30.
+ASSIGNMENT_FEE_PER_CONTRACT = 5.00
+
+
+def ic_expire_fee(itm_contracts: int = 0) -> float:
+    """Cash-settlement cost: $0 for OTM legs (nothing to exercise), `ASSIGNMENT_FEE_PER_CONTRACT`
+    for each of `itm_contracts` that finished in the money and gets exercised/assigned overnight.
+    Defaults to 0 (all legs OTM / not yet known) so existing zero-arg callers are unaffected."""
+    return round(itm_contracts * ASSIGNMENT_FEE_PER_CONTRACT, 2)
 
 
 def ic_open_fee_table(symbols=("SPX", "XSP", "NDX", "RUT")) -> dict:

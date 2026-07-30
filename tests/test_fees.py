@@ -149,5 +149,11 @@ def test_ic_close_fee_default_symbol_has_no_index_exchange_fee():
     assert fees.ic_close_fee("AAPL") == fees.ic_close_fee("XSP")  # both 0.0 exchange fee
 
 
-def test_ic_expire_fee_is_zero():
+def test_ic_expire_fee_is_zero_with_no_itm_contracts():
     assert fees.ic_expire_fee() == 0.0
+    assert fees.ic_expire_fee(0) == 0.0
+
+
+def test_ic_expire_fee_charges_five_dollars_per_itm_contract():
+    assert fees.ic_expire_fee(1) == 5.00
+    assert fees.ic_expire_fee(4) == 20.00
