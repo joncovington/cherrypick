@@ -1811,8 +1811,8 @@ def test_orphan_sweep_flags_unknown_working_orders(live_conn):
     dbmod.save_position(live_conn, _open_entry_row(order_id="ORD-KNOWN"))
     broker = FakeBroker(
         working=[
-            {"order_id": "ORD-KNOWN", "status": "Live", "underlying_symbol": "XSP"},
-            {"order_id": "ORD-MYSTERY", "status": "Live", "underlying_symbol": "XSP"},
+            {"order_id": "ORD-KNOWN", "status": "Live", "underlying_symbol": "SPX"},
+            {"order_id": "ORD-MYSTERY", "status": "Live", "underlying_symbol": "SPX"},
         ]
     )
     logs = []
@@ -1824,7 +1824,23 @@ def test_orphan_sweep_flags_unknown_working_orders(live_conn):
 
 def test_orphan_sweep_clean_when_all_accounted_for(live_conn):
     dbmod.save_position(live_conn, _open_entry_row(order_id="ORD-KNOWN"))
-    broker = FakeBroker(working=[{"order_id": "ORD-KNOWN", "status": "Live", "underlying_symbol": "XSP"}])
+    broker = FakeBroker(working=[{"order_id": "ORD-KNOWN", "status": "Live", "underlying_symbol": "SPX"}])
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert summary["orphaned_orders"] == 0
+    assert live_loop.read_orphans() == []
+
+
+def test_orphan_sweep_ignores_working_orders_in_other_symbols(live_conn):
+    """The account isn't exclusive to this loop -- a resting order in a symbol this arm doesn't
+    trade (manual trading sharing the account, another module) is real and none of this sweep's
+    business. Confirmed 2026-07-30: a shared account's own manual trading across a dozen other
+    symbols was firing the CRITICAL orphan alert every tick."""
+    broker = FakeBroker(
+        working=[
+            {"order_id": "ORD-MANUAL-1", "status": "Live", "underlying_symbol": "AAPL"},
+            {"order_id": "ORD-MANUAL-2", "status": "Live", "underlying_symbol": "SOFI"},
+        ]
+    )
     summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
     assert summary["orphaned_orders"] == 0
     assert live_loop.read_orphans() == []
