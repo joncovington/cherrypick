@@ -238,10 +238,31 @@ _ADDED_POSITION_COLUMNS = {
     # too tight" call for opposite remedies.
     "best_roll_debit": "REAL",
     "best_roll_debit_at": "TEXT",
+    # Broker-cash reconciliation (fee_reconcile.py): a settled live position's net/fees/gross_pnl/
+    # pnl/expiry_payoff are modeled at settlement time (quoted fill-price approximation + a flat
+    # $5/ITM-contract assignment fee estimate). These columns hold that ORIGINAL modeled snapshot,
+    # written once the first time reconciliation runs, so overwriting the canonical columns below
+    # with broker-confirmed values never loses the model's own answer. NULL until reconciled; NULL
+    # forever on paper rows (nothing to reconcile against).
+    "modeled_net": "REAL",
+    "modeled_fees": "REAL",
+    "modeled_gross_pnl": "REAL",
+    "modeled_pnl": "REAL",
+    "modeled_expiry_payoff": "REAL",
+    "broker_reconciled_at": "TEXT",
+    # 'reconciled' (canonical columns now hold broker-confirmed values) | 'unmatched' (broker
+    # transactions couldn't be confidently tied to this position -- canonical columns left
+    # untouched, per the module's own honesty rule: don't silently guess). NULL = not attempted yet.
+    "broker_reconciliation_status": "TEXT",
 }
 
 _ADDED_BOOK_COLUMNS = {
     "settlement_source": "TEXT",
+    # Book-level mirror of the position-level reconciliation above -- see fee_reconcile.py.
+    "modeled_pnl": "REAL",
+    "modeled_fees": "REAL",
+    "broker_reconciled_at": "TEXT",
+    "broker_reconciliation_status": "TEXT",
 }
 
 

@@ -87,6 +87,7 @@ import book as bookmod  # noqa: E402
 import clock  # noqa: E402
 import db as dbmod  # noqa: E402
 import engine  # noqa: E402
+import fee_reconcile  # noqa: E402
 import fly  # noqa: E402
 import live_orders  # noqa: E402
 import paper_loop as _pl  # noqa: E402
@@ -1445,6 +1446,25 @@ class BrokerAdapter:
             self._reset()
             return {"order_id": order_id, "status": None, "error": f"{type(exc).__name__}: {exc}"}
 
+    def history(self, trade_date: str, symbol: str) -> tuple[list[dict] | None, str | None]:
+        """Real broker transactions for one session (fee_reconcile's source of truth). Fails
+        closed: any error returns `(None, reason)`, which the caller treats as "try again next
+        tick" — never a reason to reconcile from an empty or partial transaction list."""
+        from datetime import date
+
+        from cherrypick.core import broker as _broker
+
+        try:
+            self._ensure()
+            d = date.fromisoformat(trade_date)
+            transactions = self._run(
+                _broker.transaction_history(self._account, self._session, start_date=d, underlying_symbol=symbol)
+            )
+            return transactions, None
+        except Exception as exc:  # noqa: BLE001 — fail-closed, see docstring
+            self._reset()
+            return None, f"{type(exc).__name__}: {exc}"
+
     def cancel(self, order_id: str) -> dict:
         from cherrypick.core import broker as _broker
 
@@ -1768,6 +1788,29 @@ def main() -> int:
             if not _cal.is_trading_day(when.date()):
                 print(json.dumps({"ok": True, "skipped": "not_a_trading_day", "date": day}))
                 return 0
+
+            # Morning fee reconciliation — confirms the previous day's/days' settled sessions
+            # against real broker cash flow (fee_reconcile.py). Cheap on every tick: the pending
+            # check is a local DB query, so most ticks find nothing and skip straight past; only
+            # when something is actually pending does it touch the broker, and reconciling a date
+            # clears it from `pending_reconciliation`'s query, so this needs no separate
+            # once-per-day marker. Best-effort: a fetch failure just leaves the date pending for
+            # the next tick, same fail-closed posture as `official_settlement_price`.
+            if live:
+                symbol = _live_cfg(config).get("symbol", "XSP")
+                pending_dates = fee_reconcile.pending_reconciliation(conn, symbol)
+                if pending_dates:
+                    recon_broker = BrokerAdapter(config)
+                for pending_date in pending_dates:
+                    transactions, err = recon_broker.history(pending_date, symbol)
+                    if transactions is None:
+                        _log(f"fee reconcile: broker history fetch failed for {pending_date}: {err}")
+                        continue
+                    result = fee_reconcile.reconcile_date(conn, pending_date, symbol, transactions, log=_log)
+                    _log(
+                        f"fee reconcile {pending_date}: reconciled={result['reconciled']} "
+                        f"unmatched={result['unmatched']}"
+                    )
 
             # Settlement before the session gate — the settle time is after the close. Gated on
             # OFFICIAL, not just settled: a provisional settlement keeps retrying the auto
