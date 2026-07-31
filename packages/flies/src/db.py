@@ -204,6 +204,40 @@ _ADDED_POSITION_COLUMNS = {
     "close_order_id": "TEXT",
     "close_fill_status": "TEXT",
     "closed_before_expiry": "INTEGER",
+    # debit_first: the running-max counterfactual for an uncompleted long_vertical, mirroring
+    # best_completing_debit/best_debit_at above but in the opposite direction -- the best (highest)
+    # credit the completing sale was ever offered, so a miss can be read as "the market never paid
+    # enough" vs "our buffer was too tight" after the fact.
+    "best_completing_credit": "REAL",
+    "best_credit_at": "TEXT",
+    # Which completion path closed a legged entry out: 'debit' (bought the completing debit
+    # spread, kind -> 'fly') or 'iron' (sold the opposite-type credit spread, kind -> 'iron_fly').
+    # NULL for pre-2026-07-31 rows and for entries that are still open or never completed.
+    "completion_mode": "TEXT",
+    # Regime tagging (engine.classify_regime): a pure read of the snapshot at the two moments that
+    # matter for a future regime-conditioned mode selector -- what regime did we enter into, what
+    # regime did we complete into (they can differ). Descriptive only; nothing here gates a
+    # decision yet -- see engine.classify_regime's docstring. NULL for pre-2026-07-31 rows.
+    "entry_vol_bucket": "TEXT",
+    "entry_gex_bucket": "TEXT",
+    "entry_time_bucket": "TEXT",
+    "entry_skew_bucket": "TEXT",
+    "completion_vol_bucket": "TEXT",
+    "completion_gex_bucket": "TEXT",
+    "completion_time_bucket": "TEXT",
+    "completion_skew_bucket": "TEXT",
+    # bwb_roll: the far (skipped) wing's width, kept AFTER the roll for history/rewind (wing_width
+    # stays the near/protected width, unchanged by the roll). NULL for every other kind.
+    "far_width": "REAL",
+    "rolled_at": "TEXT",
+    "roll_debit": "REAL",
+    "roll_latency_min": "REAL",
+    "spot_at_roll": "REAL",
+    # Running MINIMUM roll debit ever seen for an open bwb -- mirrors best_completing_debit's
+    # counterfactual role: after the fact, "the roll was never cheap enough" vs "our buffer was
+    # too tight" call for opposite remedies.
+    "best_roll_debit": "REAL",
+    "best_roll_debit_at": "TEXT",
 }
 
 _ADDED_BOOK_COLUMNS = {

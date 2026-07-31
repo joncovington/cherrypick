@@ -213,6 +213,246 @@ def test_position_floor_scales_with_quantity():
     assert fly.position_floor(triple) == fly.position_floor(single) * 3
 
 
+# --------------------------------------------------------------------------- debit_first (Phase 1)
+def test_debit_vertical_payoff_call_side_is_bounded_and_ramps_between_the_strikes():
+    # +1 5995 call / -1 6000 call: worthless at/below 5995, maxed at/above 6000.
+    assert fly.debit_vertical_payoff("call", 6000, 5, 5990) == 0.0
+    assert fly.debit_vertical_payoff("call", 6000, 5, 5995) == 0.0
+    assert fly.debit_vertical_payoff("call", 6000, 5, 6000) == 5.0
+    assert fly.debit_vertical_payoff("call", 6000, 5, 6010) == 5.0
+    assert fly.debit_vertical_payoff("call", 6000, 5, 5997.5) == 2.5
+
+
+def test_debit_vertical_payoff_put_side_mirrors_call_side():
+    # +1 6005 put / -1 6000 put: worthless at/above 6005, maxed at/below 6000.
+    assert fly.debit_vertical_payoff("put", 6000, 5, 6010) == 0.0
+    assert fly.debit_vertical_payoff("put", 6000, 5, 6005) == 0.0
+    assert fly.debit_vertical_payoff("put", 6000, 5, 6000) == 5.0
+    assert fly.debit_vertical_payoff("put", 6000, 5, 5990) == 5.0
+    assert fly.debit_vertical_payoff("put", 6000, 5, 6002.5) == 2.5
+
+
+def test_debit_first_completing_direction_inverts_completing_side_direction():
+    """The whole point of offering debit_first alongside legged: the two monetize opposite drift
+    regimes at the same centre."""
+    for side in (fly.PUT, fly.CALL):
+        assert fly.debit_first_completing_direction(side) != fly.completing_side_direction(side)
+
+
+def debit_vertical(side="call", debit=1.0, fees=None):
+    return {
+        "kind": "long_vertical",
+        "side": side,
+        "center": 6000,
+        "wing_width": 5,
+        "net": -debit,
+        "quantity": 1,
+        "fees": fly.vertical_open_fee("SPX", 1) if fees is None else fees,
+        "status": "open",
+        "position_id": "D1",
+    }
+
+
+def test_long_vertical_floor_is_bounded_at_zero_never_negative_width():
+    """Unlike a short vertical (-W) or a fly (0), a long vertical's worst case at expiry is 0 -- the
+    debit paid is already spent, so the floor is the negative of what was paid, less fees and the
+    conservative assignment-fee reserve (see position_floor's long_vertical branch)."""
+    pos = debit_vertical(debit=1.0, fees=0.0)
+    expected = -1.0 * fly.CONTRACT_MULTIPLIER - fly.expire_fee(1)
+    assert fly.position_floor(pos) == pytest.approx(expected)
+    assert not fly.is_risk_free(pos)
+
+
+def test_long_vertical_floor_reserves_the_assignment_fee_unlike_a_fly():
+    """A fly reserves nothing (evaluate_pre_close_exit is assumed to beat the fee); a long vertical
+    is more conservative -- its cheapest dollar point is a leg barely ITM, where a 2-leg close's
+    slippage beats the fee less reliably."""
+    pos = debit_vertical(debit=0.0, fees=0.0)
+    assert fly.position_floor(pos) == pytest.approx(-fly.expire_fee(1))
+
+
+def test_itm_contracts_long_vertical_call_side():
+    pos = debit_vertical(side="call")
+    # Deep ITM through both call strikes (5995, 6000): 2 contracts.
+    assert fly.itm_contracts_at_settlement(pos, 6010) == 2
+    # Between the strikes: only the lower (5995) is ITM.
+    assert fly.itm_contracts_at_settlement(pos, 5997) == 1
+    # Below both strikes: 0.
+    assert fly.itm_contracts_at_settlement(pos, 5990) == 0
+
+
+def test_itm_contracts_long_vertical_put_side():
+    pos = debit_vertical(side="put")
+    # Deep ITM through both put strikes (6000, 6005): 2 contracts.
+    assert fly.itm_contracts_at_settlement(pos, 5990) == 2
+    assert fly.itm_contracts_at_settlement(pos, 6010) == 0
+
+
+def test_position_pnl_long_vertical_uses_debit_vertical_payoff():
+    pos = debit_vertical(side="call", debit=1.0, fees=0.0)
+    pnl = fly.position_pnl(pos, 6010)  # fully ITM -> payoff = wing_width = 5
+    # (net + payoff) * 100 - fees(0, before assignment) - assignment fee for 2 ITM legs
+    assert pnl == pytest.approx((-1.0 + 5.0) * 100 - fly.expire_fee(2))
+
+
+# --------------------------------------------------------------------------- iron completion (Phase 1b)
+@pytest.mark.parametrize("offset", [-100, -10, -5, -2.5, 0, 2.5, 5, 10, 100])
+def test_iron_fly_payoff_is_fly_payoff_shifted_down_by_width(offset):
+    assert fly.iron_fly_payoff(6000, 5, 6000 + offset) == fly.fly_payoff(6000, 5, 6000 + offset) - 5
+
+
+def test_iron_fly_payoff_bottoms_out_at_negative_width():
+    assert fly.iron_fly_payoff(6000, 5, 6000) == 0.0  # peaks at 0, not 5
+    assert fly.iron_fly_payoff(6000, 5, 6005) == -5.0
+    assert fly.iron_fly_payoff(6000, 5, 5995) == -5.0
+    assert fly.iron_fly_payoff(6000, 5, 6100) == -5.0  # bounded, does not keep falling
+
+
+def iron_fly(net, fees=0.0):
+    return {
+        "kind": "iron_fly",
+        "center": 6000,
+        "wing_width": 5,
+        "net": net,
+        "quantity": 1,
+        "fees": fees,
+    }
+
+
+def test_iron_fly_floor_is_the_two_credits_less_the_width():
+    # Two credits summing to 6.00 against a 5-wide fly: floor = (6.00 - 5) * 100 - fees.
+    pos = iron_fly(net=6.00, fees=0.0)
+    assert fly.position_floor(pos) == pytest.approx(100.0)
+    assert fly.is_risk_free(pos)
+
+
+def test_iron_fly_floor_can_be_negative_unlike_a_same_type_fly():
+    """The one honesty-critical difference from `fly`: two credits summed are NOT guaranteed to
+    clear the width, so this floor can and does go negative -- storing this under kind='fly' would
+    silently claim risk-free when it is not."""
+    pos = iron_fly(net=3.00, fees=0.0)  # 3.00 < wing_width 5 -- genuinely NOT risk-free
+    assert fly.position_floor(pos) == pytest.approx(-200.0)
+    assert not fly.is_risk_free(pos)
+
+
+def test_iron_fly_floor_flips_exactly_at_the_width_boundary():
+    at_boundary = iron_fly(net=5.00, fees=0.0)
+    assert fly.position_floor(at_boundary) == pytest.approx(0.0)
+    assert fly.is_risk_free(at_boundary)
+
+
+def test_itm_contracts_iron_fly_never_both_shorts_at_once():
+    pos = iron_fly(net=6.00)
+    # Deep past the put side: both put legs ITM, calls untouched.
+    assert fly.itm_contracts_at_settlement(pos, 5990) == 2
+    # Between the strikes but below centre: only the short put ITM.
+    assert fly.itm_contracts_at_settlement(pos, 5998) == 1
+    # At/above centre but below the call wing: only the short call ITM.
+    assert fly.itm_contracts_at_settlement(pos, 6002) == 1
+    # Deep past the call side: both call legs ITM.
+    assert fly.itm_contracts_at_settlement(pos, 6010) == 2
+    # Exactly at centre: neither short strike is crossed (strict ITM test).
+    assert fly.itm_contracts_at_settlement(pos, 6000) == 0
+
+
+def test_position_pnl_iron_fly_uses_iron_fly_payoff():
+    pos = iron_fly(net=6.00, fees=0.0)
+    pnl = fly.position_pnl(pos, 6002.5)  # payoff = fly_payoff(...) - 5 = 2.5 - 5 = -2.5
+    # (net + payoff) * 100, less the $5 assignment fee (one ITM leg: the short call at 6002.5 > 6000)
+    assert pnl == pytest.approx((6.00 - 2.5) * 100 - 5.0)
+
+
+# --------------------------------------------------------------------------- bwb_roll (Phase 2)
+def test_bwb_strikes_put_and_call():
+    assert fly.bwb_strikes("put", 6000, 5, 15) == (6005, 6000, 5985)
+    assert fly.bwb_strikes("call", 6000, 5, 15) == (5995, 6000, 6015)
+
+
+def test_bwb_payoff_put_side_kinks_and_tail():
+    # put BWB: near wing 6005 (protected/upside), far wing 5985 (risk/downside), width 5, tail -10
+    assert fly.bwb_payoff("put", 6000, 5, 15, 6005) == 0.0  # at/above near wing: worthless
+    assert fly.bwb_payoff("put", 6000, 5, 15, 6010) == 0.0  # further above: still worthless
+    assert fly.bwb_payoff("put", 6000, 5, 15, 6000) == 5.0  # peaks at centre, same as a symmetric fly
+    assert fly.bwb_payoff("put", 6000, 5, 15, 5995) == 0.0  # near-side zero, mirrors a symmetric fly
+    assert fly.bwb_payoff("put", 6000, 5, 15, 5985) == pytest.approx(-10.0)  # far wing: the tail
+    assert fly.bwb_payoff("put", 6000, 5, 15, 5900) == pytest.approx(-10.0)  # flat beyond the tail
+
+
+def test_bwb_payoff_call_side_mirrors_put_side():
+    assert fly.bwb_payoff("call", 6000, 5, 15, 5995) == 0.0
+    assert fly.bwb_payoff("call", 6000, 5, 15, 6000) == 5.0
+    assert fly.bwb_payoff("call", 6000, 5, 15, 6005) == 0.0
+    assert fly.bwb_payoff("call", 6000, 5, 15, 6015) == pytest.approx(-10.0)
+    assert fly.bwb_payoff("call", 6000, 5, 15, 6100) == pytest.approx(-10.0)
+
+
+def bwb(side="put", credit=1.5, far_width=15, fees=0.0):
+    return {
+        "kind": "bwb",
+        "side": side,
+        "center": 6000,
+        "wing_width": 5,
+        "far_width": far_width,
+        "net": credit,
+        "quantity": 1,
+        "fees": fees,
+    }
+
+
+def test_bwb_floor_is_the_real_negative_tail_plus_reserve():
+    pos = bwb(credit=1.5, far_width=15, fees=0.0)  # tail = -(15-5) = -10
+    expected = (1.5 - 10.0) * 100 - fly.expire_fee(4)
+    assert fly.position_floor(pos) == pytest.approx(expected)
+    assert not fly.is_risk_free(pos)
+
+
+def test_itm_contracts_bwb_asymmetric_wings():
+    pos = bwb(side="put")  # near 6005, far 5985
+    assert fly.itm_contracts_at_settlement(pos, 6010) == 0  # above near wing: none ITM
+    assert fly.itm_contracts_at_settlement(pos, 6002) == 1  # only short centre put ITM
+    assert fly.itm_contracts_at_settlement(pos, 5990) == 3  # both near+centre ITM (2), far not yet
+    assert fly.itm_contracts_at_settlement(pos, 5980) == 4  # deep past the far wing: all four
+
+
+def test_position_pnl_bwb_uses_bwb_payoff():
+    pos = bwb(credit=1.5, far_width=15, fees=0.0)
+    pnl = fly.position_pnl(pos, 6000)  # payoff = 5.0 (peak, at centre)
+    # (credit + payoff) * 100, less a $5 assignment fee: the near (put) wing at 6005 sits ABOVE
+    # spot, so it's genuinely ITM even exactly at the centre -- same property a regular put fly's
+    # upper wing has (S < strike is a strict test, and 6000 < 6005 is true).
+    assert pnl == pytest.approx((1.5 + 5.0) * 100 - 5.0)
+
+
+def test_book_floor_sees_the_bwb_tail_not_just_the_near_wing():
+    """Regression: without the far strike in _scan_prices, book_floor's grid would stop at the
+    near wing and never sample the true (negative) trough past the far wing."""
+    positions = [bwb(credit=1.5, far_width=15, fees=0.0)]
+    result = fly.book_floor(positions)
+    assert result["floor_holds"] is False
+    assert result["worst"] < -500  # the tail, not the near-wing zero
+
+
+# --------------------------------------------------------------------------- unknown kind (Phase 0 hardening)
+def test_position_pnl_raises_on_unknown_kind():
+    with pytest.raises(ValueError, match="unknown position kind"):
+        fly.position_pnl({**legged_fly(1.00), "kind": "garbage"}, 6000)
+
+
+def test_position_floor_raises_on_unknown_kind():
+    with pytest.raises(ValueError, match="unknown position kind"):
+        fly.position_floor({**legged_fly(1.00), "kind": "garbage"})
+
+
+def test_itm_contracts_raises_on_unknown_kind():
+    with pytest.raises(ValueError, match="unknown position kind"):
+        fly.itm_contracts_at_settlement({**legged_fly(1.00), "kind": "garbage"}, 6000)
+
+
+def test_scan_prices_raises_on_unknown_kind():
+    with pytest.raises(ValueError, match="unknown position kind"):
+        fly.book_floor([{**legged_fly(1.00), "kind": "garbage"}])
+
+
 # --------------------------------------------------------------------------- book level
 def test_book_of_credit_flies_holds_its_floor_everywhere():
     positions = [legged_fly(1.05), {**legged_fly(0.35), "center": 6040}]

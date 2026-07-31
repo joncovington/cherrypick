@@ -603,6 +603,433 @@ def test_pre_close_exit_vertical_refuses_without_leg_quotes():
     assert not close and reason == "missing_leg_quotes" and plan is None
 
 
+# --------------------------------------------------------------------------- regime tagging (Phase 1c)
+def test_classify_regime_baseline_snapshot():
+    """The module's own default fixture: a symmetric 6000-centred put/call grid at midday with no
+    GEX data cached -- normal vol, flat skew, midday, unknown GEX. A good sanity check that all
+    four dimensions read sensibly together, not just in isolation."""
+    regime = engine.classify_regime(snapshot(), params())
+    assert regime == {
+        "vol_bucket": "normal",
+        "gex_bucket": "unknown",
+        "time_bucket": "midday",
+        "skew_bucket": "flat",
+    }
+
+
+def test_vol_bucket_low_and_high():
+    cheap = snapshot(puts={6000: q(0.1, 0.1)}, calls={6000: q(0.1, 0.1)})
+    assert engine._classify_vol(cheap, params()) == "low"
+    rich = snapshot(puts={6000: q(15.0, 15.0)}, calls={6000: q(15.0, 15.0)})
+    assert engine._classify_vol(rich, params()) == "high"
+
+
+def test_vol_bucket_unknown_without_atm_quotes():
+    bare = snapshot(puts={}, calls={})
+    assert engine._classify_vol(bare, params()) == "unknown"
+
+
+def test_gex_bucket_pinning_vs_thin_vs_unknown():
+    concentrated = {"ok": True, "per_strike": [{"strike": 6000, "call_gex": 900_000, "put_gex": 900_000}]}
+    assert engine._classify_gex(snapshot(gex=concentrated), params()) == "pinning"
+
+    even = {
+        "ok": True,
+        "per_strike": [
+            {"strike": 5995, "call_gex": 10_000, "put_gex": 10_000},
+            {"strike": 6000, "call_gex": 10_000, "put_gex": 10_000},
+            {"strike": 6005, "call_gex": 10_000, "put_gex": 10_000},
+        ],
+    }
+    assert engine._classify_gex(snapshot(gex=even), params()) == "thin"
+
+    assert engine._classify_gex(snapshot(), params()) == "unknown"  # no gex key at all
+    assert engine._classify_gex(snapshot(gex={"ok": False}), params()) == "unknown"
+
+
+def test_time_bucket_open_midday_close_unknown():
+    assert engine._classify_time(snapshot(now_min=9 * 60 + 45), params()) == "open"
+    assert engine._classify_time(snapshot(now_min=12 * 60), params()) == "midday"
+    assert engine._classify_time(snapshot(now_min=15 * 60 + 45), params()) == "close"
+    bare = dict(snapshot())
+    del bare["now_min"]
+    assert engine._classify_time(bare, params()) == "unknown"
+
+
+def test_skew_bucket_put_and_call_and_unknown():
+    put_rich = snapshot(puts={5995: q(5.0, 5.2)}, calls={6005: q(1.0, 1.2)})
+    assert engine._classify_skew(put_rich, params()) == "put_skew"
+    call_rich = snapshot(puts={5995: q(1.0, 1.2)}, calls={6005: q(5.0, 5.2)})
+    assert engine._classify_skew(call_rich, params()) == "call_skew"
+    bare = snapshot(puts={}, calls={})
+    assert engine._classify_skew(bare, params()) == "unknown"
+
+
+# --------------------------------------------------------------------------- debit_first (Phase 1)
+def debit_snapshot(**over):
+    """Spot at the centre (6000) -> choose_debit_side picks CALL. Custom call quotes priced for a
+    plausible ~24% of width debit spread (5995/6000)."""
+    return snapshot(calls={5995: q(2.0, 2.4), 6000: q(1.0, 1.2)}, **over)
+
+
+def test_choose_debit_side_inverts_choose_side():
+    for spot in (5990.0, 6000.0, 6010.0):
+        snap = snapshot(underlying_price=spot)
+        assert engine.choose_debit_side(snap, 6000.0) != engine.choose_side(snap, 6000.0)
+
+
+def test_debit_vertical_entry_returns_a_complete_plan():
+    enter, reason, plan = engine.evaluate_debit_vertical_entry(debit_snapshot(), params(), [])
+    assert enter and reason == "ok"
+    assert plan["side"] == "call" and plan["center"] == 6000.0
+    assert 0.0 < plan["debit"] < plan["wing_width"]
+    assert plan["completing_direction"] == "up"  # CALL side completes on spot rising to centre
+
+
+def test_debit_vertical_entry_requires_0dte():
+    enter, reason, _ = engine.evaluate_debit_vertical_entry(debit_snapshot(dte=1), params(), [])
+    assert not enter and reason == "no_0dte_expiration"
+
+
+def test_debit_vertical_entry_rejects_a_debit_below_the_floor():
+    thin = snapshot(calls={5995: q(0.05, 0.07), 6000: q(0.0, 0.02)})
+    enter, reason, _ = engine.evaluate_debit_vertical_entry(thin, params(), [])
+    assert not enter and reason == "debit_below_floor_completion_implausible"
+
+
+def test_debit_vertical_entry_rejects_an_intrinsic_heavy_debit():
+    rich = snapshot(calls={5995: q(4.0, 4.2), 6000: q(0.9, 1.0)})
+    enter, reason, _ = engine.evaluate_debit_vertical_entry(rich, params(), [])
+    assert not enter and reason == "debit_above_ceiling_mostly_intrinsic"
+
+
+def test_debit_vertical_entry_refuses_when_the_debit_leaves_no_room_to_be_out_earned():
+    """The completing credit can never exceed `width`, so a debit that (with buffer + fees) already
+    reaches the width is a mathematically dead end."""
+    at_width = snapshot(calls={5995: q(5.4, 5.4), 6000: q(0.0, 0.0)})
+    enter, reason, _ = engine.evaluate_debit_vertical_entry(at_width, params(max_debit_pct_of_width=99.0), [])
+    assert not enter and reason == "debit_cannot_be_out_earned"
+
+
+def test_debit_vertical_entry_rejects_an_implausible_quote():
+    # The lower/cheaper strike (5995) priced BELOW the higher one (6000) -- a stale or crossed
+    # quote, since a call debit spread's value can never legitimately be negative.
+    crossed = snapshot(calls={5995: q(0.5, 0.6), 6000: q(1.0, 1.1)})
+    enter, reason, _ = engine.evaluate_debit_vertical_entry(crossed, params(), [])
+    assert not enter and reason == "implausible_debit_quote"
+
+
+def open_debit_vertical(debit=1.175, side="call", fees=None):
+    return {
+        "kind": "long_vertical",
+        "side": side,
+        "center": 6000,
+        "wing_width": 5,
+        "net": -debit,
+        "quantity": 1,
+        "fees": fly.vertical_open_fee("SPX", 1) if fees is None else fees,
+        "status": "open",
+        "position_id": "D1",
+    }
+
+
+def test_debit_completion_fires_when_the_credit_richens_enough():
+    """The mirror of test_completion_fires_when_the_debit_comes_in_cheap: spot has drifted toward the
+    centre, richening the completing credit spread (short 6000 call / long 6005 call) past the debit
+    already paid."""
+    rich = snapshot(calls={6000: q(3.0, 3.2), 6005: q(0.5, 0.6)})
+    done, reason, plan = engine.evaluate_debit_completion(rich, open_debit_vertical(), params())
+    assert done and reason == "ok"
+    assert plan["net"] > 0 and plan["floor"] > 0
+    assert plan["wing_strike"] == 6005
+
+
+def test_debit_completion_waits_when_the_credit_is_still_thin():
+    thin = snapshot(calls={6000: q(1.0, 1.1), 6005: q(0.7, 0.8)})
+    done, reason, _ = engine.evaluate_debit_completion(thin, open_debit_vertical(), params())
+    assert not done and reason == "completing_credit_too_low"
+
+
+def test_debit_completion_ignores_a_position_that_is_not_a_long_vertical():
+    done, reason, plan = engine.evaluate_debit_completion(debit_snapshot(), open_spread(), params())
+    assert not done and reason == "not_a_debit_vertical" and plan is None
+
+
+def test_debit_completion_floor_matches_position_floor_exactly():
+    """Same discipline as legged's completion: the dollar gate must route through fly.position_floor
+    rather than a second, driftable formula."""
+    spread = open_debit_vertical(debit=0.30)
+    rich = snapshot(calls={6000: q(2.00, 2.00), 6005: q(1.05, 1.05)})  # cheap/no-slippage credit
+    done, reason, plan = engine.evaluate_debit_completion(rich, spread, params())
+    assert done and reason == "ok"
+    assert plan["floor"] == pytest.approx(
+        round(
+            fly.position_floor(
+                {
+                    "kind": "fly",
+                    "side": "call",
+                    "center": 6000,
+                    "wing_width": 5,
+                    "net": plan["net"],
+                    "quantity": 1,
+                    "fees": spread["fees"] + plan["completion_fee"],
+                }
+            ),
+            2,
+        )
+    )
+
+
+def test_settle_sign_is_not_flipped_for_an_uncompleted_long_vertical():
+    """Regression: before _expiry_payoff's explicit dispatch, settle() priced anything that wasn't a
+    fly as a short vertical -- for a long vertical (whose worst case is 0, best case +W) that is
+    sign-flipped. Deep ITM through both legs must settle at +wing_width, never -wing_width."""
+    positions = [{**open_debit_vertical(debit=1.0, fees=0.0), "entry_mode": "debit_first"}]
+    settled = engine.settle(positions, 6010.0)  # deep ITM through both call legs
+    assert settled[0]["expiry_payoff"] == pytest.approx(5.0)
+    # (net + payoff) * 100 = (-1.0 + 5.0) * 100 = 400, less the 2-ITM-leg assignment fee
+    assert settled[0]["pnl"] == pytest.approx(400.0 - fly.expire_fee(2))
+
+
+def _itm_close_debit_vertical_snapshot(**over):
+    base = {
+        "now_min": 15 * 60 + 55,
+        "underlying_price": 6009.0,  # deep ITM through both call legs
+        "calls": {5995: q(14.9, 15.0), 6000: q(9.9, 10.0)},
+    }
+    base.update(over)
+    return snapshot(**base)
+
+
+def test_pre_close_exit_closes_an_itm_long_vertical_when_slippage_beats_the_fee():
+    close, reason, plan = engine.evaluate_pre_close_exit(
+        _itm_close_debit_vertical_snapshot(), open_debit_vertical(debit=1.0, fees=0.0), params()
+    )
+    assert close and reason == "ok"
+    assert plan["close_credit"] > 0
+    assert plan["itm_contracts"] == 2
+
+
+def test_pre_close_exit_long_vertical_before_the_window_refuses():
+    close, reason, _ = engine.evaluate_pre_close_exit(
+        _itm_close_debit_vertical_snapshot(now_min=12 * 60), open_debit_vertical(), params()
+    )
+    assert not close and reason == "before_pre_close_exit_window"
+
+
+# --------------------------------------------------------------------------- iron completion (Phase 1b)
+def test_iron_completion_fires_when_the_opposite_credit_richens_enough():
+    """A held put spread (open_spread, net 2.55) completes into an iron fly by SELLING the call
+    spread at the same centre, once that call spread has richened past the width+buffer gate."""
+    rich_calls = snapshot(calls={6000: q(4.0, 4.2), 6005: q(0.5, 0.6)})
+    done, reason, plan = engine.evaluate_iron_completion(rich_calls, open_spread(), params())
+    assert done and reason == "ok"
+    assert plan["net"] > 0 and plan["floor"] > 0
+    assert plan["opposite_side"] == "call" and plan["opposite_wing"] == 6005.0
+
+
+def test_iron_completion_waits_when_the_opposite_credit_is_still_thin():
+    """The module's own real quotes: a 6000/6005 call spread priced at 2.3, against a gate of
+    2.55 (width 5 + buffer 0.1 - the 2.55 credit already collected) -- not rich enough yet."""
+    done, reason, _ = engine.evaluate_iron_completion(snapshot(), open_spread(), params())
+    assert not done and reason == "iron_credit_too_low"
+
+
+def test_iron_completion_ignores_a_position_that_is_not_a_short_vertical():
+    done, reason, plan = engine.evaluate_iron_completion(snapshot(), open_debit_vertical(), params())
+    assert not done and reason == "not_a_credit_spread" and plan is None
+
+
+def test_iron_completion_refuses_without_the_opposite_types_leg_quotes():
+    bare = snapshot(calls={})
+    done, reason, plan = engine.evaluate_iron_completion(bare, open_spread(), params())
+    assert not done and reason == "missing_leg_quotes" and plan is None
+
+
+def test_iron_completion_floor_matches_position_floor_exactly():
+    rich_calls = snapshot(calls={6000: q(4.0, 4.2), 6005: q(0.5, 0.6)})
+    spread = open_spread(net=2.55)
+    done, reason, plan = engine.evaluate_iron_completion(rich_calls, spread, params())
+    assert done and reason == "ok"
+    assert plan["floor"] == pytest.approx(
+        round(
+            fly.position_floor(
+                {
+                    "kind": "iron_fly",
+                    "center": 6000,
+                    "wing_width": 5,
+                    "net": plan["net"],
+                    "quantity": 1,
+                    "fees": spread["fees"] + plan["completion_fee"],
+                }
+            ),
+            2,
+        )
+    )
+
+
+def test_iron_fly_settles_correctly_across_all_three_zones():
+    """Regression covering the same sign-flip hazard as debit_first's settle test, for the newest
+    kind: deep past either wing must settle at -wing_width, never mispriced as a same-type fly's 0
+    floor or a short vertical's -wing_width-only-one-side shape."""
+    pos = {
+        "kind": "iron_fly",
+        "center": 6000,
+        "wing_width": 5,
+        "net": 6.00,
+        "quantity": 1,
+        "fees": 0.0,
+        "entry_mode": "legged",
+    }
+    settled = engine.settle([pos], 6000.0)
+    assert settled[0]["expiry_payoff"] == pytest.approx(0.0)  # peaks at 0, not +width
+    settled = engine.settle([pos], 5990.0)
+    assert settled[0]["expiry_payoff"] == pytest.approx(-5.0)
+    settled = engine.settle([pos], 6010.0)
+    assert settled[0]["expiry_payoff"] == pytest.approx(-5.0)
+
+
+def _itm_close_iron_snapshot(**over):
+    base = {
+        "now_min": 15 * 60 + 55,
+        "underlying_price": 6009.0,  # deep past the call wing
+        "puts": {5995: q(0.0, 0.05), 6000: q(0.0, 0.05)},
+        "calls": {6000: q(9.0, 9.1), 6005: q(4.0, 4.1)},
+    }
+    base.update(over)
+    return snapshot(**base)
+
+
+def test_pre_close_exit_closes_an_itm_iron_fly_when_slippage_beats_the_fee():
+    pos = {
+        "kind": "iron_fly",
+        "center": 6000,
+        "wing_width": 5,
+        "net": 6.00,
+        "quantity": 1,
+        "fees": 0.0,
+    }
+    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_iron_snapshot(), pos, params())
+    assert close and reason == "ok"
+    assert plan["itm_contracts"] == 2  # both call legs ITM past 6005
+
+
+# --------------------------------------------------------------------------- bwb_roll (Phase 2)
+def bwb_snapshot(**over):
+    """Spot at 6000 -> choose_side picks PUT -> near wing 6005, far wing (ratio 2.0) 5990. Custom
+    put quotes priced for a plausible ~$1.10 net credit (tail = far_width - wing_width = 5)."""
+    return snapshot(
+        puts={5990: q(0.4, 0.6), 6000: q(1.9, 2.1), 6005: q(2.2, 2.4)},
+        **over,
+    )
+
+
+def test_bwb_entry_returns_a_complete_plan():
+    enter, reason, plan = engine.evaluate_bwb_entry(bwb_snapshot(), params(max_bwb_tail_dollars=1000), [])
+    assert enter and reason == "ok"
+    assert plan["side"] == "put" and plan["center"] == 6000.0
+    assert plan["wing_width"] == 5 and plan["far_width"] == 10.0  # ratio 2.0 * wing_width
+    assert 0.0 < plan["credit"] < plan["far_width"] - plan["wing_width"]
+
+
+def test_bwb_entry_requires_0dte():
+    enter, reason, _ = engine.evaluate_bwb_entry(bwb_snapshot(dte=1), params(), [])
+    assert not enter and reason == "no_0dte_expiration"
+
+
+def test_bwb_entry_rejects_far_width_not_wider_than_wing():
+    enter, reason, _ = engine.evaluate_bwb_entry(bwb_snapshot(), params(bwb_far_width_ratio=1.0), [])
+    assert not enter and reason == "far_width_not_wider_than_wing"
+
+
+def test_bwb_entry_rejects_a_credit_below_the_tail_floor():
+    thin = snapshot(puts={5990: q(1.0, 1.0), 6000: q(1.05, 1.05), 6005: q(1.1, 1.1)})
+    enter, reason, _ = engine.evaluate_bwb_entry(thin, params(max_bwb_tail_dollars=1000), [])
+    assert not enter and reason == "bwb_credit_below_floor"
+
+
+def test_bwb_entry_rejects_an_intrinsic_heavy_credit():
+    rich = snapshot(puts={5990: q(0.1, 0.1), 6000: q(4.0, 4.0), 6005: q(0.2, 0.2)})
+    enter, reason, _ = engine.evaluate_bwb_entry(rich, params(max_bwb_tail_dollars=1000), [])
+    assert not enter and reason == "bwb_credit_above_ceiling_mostly_intrinsic"
+
+
+def test_bwb_entry_rejects_tail_risk_above_max():
+    enter, reason, _ = engine.evaluate_bwb_entry(bwb_snapshot(), params(max_bwb_tail_dollars=1.0), [])
+    assert not enter and reason == "bwb_tail_risk_above_max"
+
+
+def open_bwb(credit=1.1, side="put", far_width=10.0, fees=None):
+    return {
+        "kind": "bwb",
+        "side": side,
+        "center": 6000,
+        "wing_width": 5,
+        "far_width": far_width,
+        "net": credit,
+        "quantity": 1,
+        "fees": fly.fly_open_fee("SPX", 1) if fees is None else fees,
+        "status": "open",
+        "position_id": "B1",
+    }
+
+
+def test_roll_fires_when_the_roll_debit_is_cheap_enough():
+    cheap_roll = snapshot(puts={5990: q(4.8, 5.0), 6005: q(5.0, 5.2)})
+    done, reason, plan = engine.evaluate_roll(cheap_roll, open_bwb(), params())
+    assert done and reason == "ok"
+    assert plan["net"] > 0 and plan["floor"] > 0
+    assert plan["near_wing"] == 6005.0
+
+
+def test_roll_waits_when_the_roll_debit_is_still_high():
+    expensive_roll = snapshot(puts={5990: q(0.1, 0.2), 6005: q(5.0, 5.2)})
+    done, reason, _ = engine.evaluate_roll(expensive_roll, open_bwb(), params())
+    assert not done and reason == "roll_debit_too_high"
+
+
+def test_roll_ignores_a_position_that_is_not_a_bwb():
+    done, reason, plan = engine.evaluate_roll(bwb_snapshot(), open_spread(), params())
+    assert not done and reason == "not_a_bwb" and plan is None
+
+
+def test_settle_bwb_across_near_centre_and_tail():
+    """Regression covering the settle-time sign-flip hazard for the newest, most asymmetric kind:
+    an unrolled bwb settling past its tail must show a NEGATIVE expiry payoff with all 4 contracts
+    ITM, never mispriced as bounded (a fly) or as a 2-leg vertical's -wing_width-only shape."""
+    pos = {**open_bwb(), "entry_mode": "bwb_roll"}
+    settled = engine.settle([pos], 6000.0)
+    assert settled[0]["expiry_payoff"] == pytest.approx(5.0)  # peak, at centre
+    assert settled[0]["pinned"] is False  # pin is a symmetric-fly concept; never true for a bwb
+    settled = engine.settle([pos], 5980.0)  # deep past the far wing
+    assert settled[0]["expiry_payoff"] == pytest.approx(-5.0)  # tail = wing_width - far_width
+    assert settled[0]["itm_contracts"] == 4
+
+
+def _itm_close_bwb_snapshot(**over):
+    base = {
+        "now_min": 15 * 60 + 55,
+        "underlying_price": 5980.0,  # deep past the far wing -- the real tail is realized
+        "puts": {5990: q(9.9, 10.0), 6000: q(19.9, 20.0), 6005: q(24.9, 25.0)},
+    }
+    base.update(over)
+    return snapshot(**base)
+
+
+def test_pre_close_exit_on_a_bwb_can_have_a_negative_close_credit():
+    """Deep past the tail, closing the bwb is itself a net cost (a negative close_credit) -- the
+    arithmetic must still hold and the comparison against the assignment fee still apply."""
+    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_bwb_snapshot(), open_bwb(), params())
+    assert plan is not None
+    assert plan["itm_contracts"] == 4
+    # Whether it actually fires depends on slippage vs the $20 assignment fee (4 contracts); the
+    # arithmetic (a real, possibly negative close_credit) is what this test guards.
+    if close:
+        assert reason == "ok"
+    else:
+        assert reason == "closing_slippage_exceeds_assignment_fee"
+
+
 # --------------------------------------------------------------------------- outright entry
 def cheap_fly_snapshot():
     """A grid where the 5995/6000/6005 call fly prices around 0.30."""
@@ -678,6 +1105,26 @@ def test_settle_marks_pins_and_pnl():
     assert settled[1]["itm_contracts"] == 4
     assert settled[1]["fees"] == pytest.approx(20.0)
     assert settled[1]["pnl"] == pytest.approx(-40.0)
+
+
+def test_settle_raises_on_unknown_kind():
+    """Regression: settle() used to compute expiry_payoff with an inline fly/else ternary that
+    would price any new kind as a short vertical -- sign-flipped for anything whose worst case
+    sits above zero. _expiry_payoff must raise instead of silently guessing."""
+    positions = [
+        {
+            "kind": "garbage",
+            "side": "put",
+            "center": 6000,
+            "wing_width": 5,
+            "net": 1.05,
+            "quantity": 1,
+            "fees": 0.0,
+            "entry_mode": "legged",
+        }
+    ]
+    with pytest.raises(ValueError, match="unknown position kind"):
+        engine.settle(positions, 6001.0)
 
 
 def test_session_stats_report_the_three_numbers_that_matter():
