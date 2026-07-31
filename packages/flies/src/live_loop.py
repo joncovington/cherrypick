@@ -1206,14 +1206,22 @@ def run_watch(
     sleep=time.sleep,
     clock_fn=time.monotonic,
 ) -> dict:
-    """The burst fill-watcher: cache-first polling of pending orders for up to `seconds`.
+    """The burst fill-watcher: for up to `seconds`, learns about fills either by PUSH (tastytrade's
+    account-alert websocket, `use_order_alert_stream`) or by cache-first polling of pending orders.
 
-    Streamer-before-API: each cycle reads the stream cache (free) and only calls the broker's
-    status endpoint when cached quotes show the market touching the working limit, or when
-    `heartbeat` has elapsed since that order's last real poll (fills the cache can't see:
-    price improvement, dips between cache writes). On confirming an ENTRY fill it immediately
-    places the resting completion (atomic claim — the main tick is the fallback placer). It
-    never cancels and makes no other decision."""
+    Streamer-before-API, extended 2026-07-31 with a second kind of stream: the shared market-data
+    cache still gates the fallback poll exactly as before (only calls `.status()` when cached
+    quotes show the market touching the working limit, or when `heartbeat` has elapsed since that
+    order's last real poll). When `use_order_alert_stream` is on, each cycle ALSO blocks up to
+    `poll` seconds on `broker.wait_for_order_alerts` — tastytrade's own account-alert websocket,
+    not the market-data cache — for a push notification on any pending order; a hit there is
+    treated exactly like a cache-touch (still routed through the ordinary `_confirm_*_fill` ->
+    `.status()` call, not a separate code path, so the DB-write logic never forks in two). Fails
+    closed: any streamer error is invisible here (`BrokerAdapter.wait_for_order_alerts` already
+    swallows it to `[]`), so a bad websocket just falls back to being byte-for-byte the pre-2026-07-31
+    cache-gated polling loop. On confirming an ENTRY fill it immediately places the resting
+    completion (atomic claim — the main tick is the fallback placer). It never cancels and makes
+    no other decision."""
     log = log or _log
     live_cfg = _live_cfg(config)
     arm = live_cfg.get("arm", DEFAULT_ARM)
@@ -1225,6 +1233,7 @@ def run_watch(
         if heartbeat is not None
         else live_cfg.get("fill_heartbeat_seconds", DEFAULT_HEARTBEAT_SECONDS)
     )
+    use_alert_stream = live_cfg.get("use_order_alert_stream", False)
     symbol = live_cfg.get("symbol", "XSP")
     start = clock_fn()
     deadline = start + seconds
@@ -1256,15 +1265,31 @@ def run_watch(
         )
         naturals_ok = bool(snapshot.get("ok"))
 
+        # Each position's relevant order this cycle (close > entry > completion, same priority
+        # the per-position loop below uses) -- computed once so the alert-wait call and the
+        # per-position confirm loop agree on exactly which order_id each position means.
+        order_id_for_pos = {}
+        for pos in pending:
+            if pos.get("close_fill_status") == "pending":
+                order_id_for_pos[pos["position_id"]] = pos["close_order_id"]
+            elif pos.get("entry_fill_status") == "pending":
+                order_id_for_pos[pos["position_id"]] = pos["entry_order_id"]
+            else:
+                order_id_for_pos[pos["position_id"]] = pos["completion_order_id"]
+
+        alerted_ids: set = set()
+        alert_order_ids: set = set()
+        remaining = deadline - clock_fn()
+        if use_alert_stream and remaining > 0:
+            wait_for = max(0.0, min(poll, remaining))
+            alert_order_ids = {str(oid) for oid in order_id_for_pos.values() if oid}
+            alerts = broker.wait_for_order_alerts(alert_order_ids, wait_for) if alert_order_ids else []
+            alerted_ids = {str(a["order_id"]) for a in alerts}
+
         for pos in pending:
             is_entry = pos.get("entry_fill_status") == "pending"
             is_close = pos.get("close_fill_status") == "pending"
-            if is_close:
-                order_id = pos["close_order_id"]
-            elif is_entry:
-                order_id = pos["entry_order_id"]
-            else:
-                order_id = pos["completion_order_id"]
+            order_id = order_id_for_pos[pos["position_id"]]
             touched = True  # no cache view -> fall through to the heartbeat-limited poll
             # A pending close order is a Day limit placed once, in a short pre-close window with
             # no time to wait out a cache touch -- poll it every cycle rather than gating on the
@@ -1279,6 +1304,9 @@ def run_watch(
                         pos, params.get("min_floor_dollars", 0.0), params.get("fee_buffer", 0.10)
                     )
                     touched = nat["completion_natural_debit"] <= bound + live_orders.TICK
+            # A push alert is treated exactly like a cache touch -- still confirmed through the
+            # ordinary .status() call below, never a second, divergent write path.
+            touched = touched or str(order_id) in alerted_ids
             due = clock_fn() - last_poll.get(str(order_id), start) >= heartbeat
             if not touched and not due:
                 continue
@@ -1320,7 +1348,9 @@ def run_watch(
                 if updated.get("completion_fill_status") == "filled":
                     confirmed += 1
 
-        if clock_fn() < deadline:
+        # The alert-wait call above already blocked for up to `poll` seconds this cycle when it
+        # ran -- sleeping again would double-wait every cycle for no benefit.
+        if not (use_alert_stream and alert_order_ids) and clock_fn() < deadline:
             sleep(poll)
 
     return {"ok": True, "cycles": cycles, "confirmed": confirmed}
@@ -1445,6 +1475,26 @@ class BrokerAdapter:
         except Exception as exc:  # noqa: BLE001
             self._reset()
             return {"order_id": order_id, "status": None, "error": f"{type(exc).__name__}: {exc}"}
+
+    def wait_for_order_alerts(self, order_ids: set, timeout_seconds: float) -> list[dict]:
+        """Block (up to `timeout_seconds`) for PUSHED fill/cancel/reject updates on `order_ids`
+        via tastytrade's account-alert websocket, instead of polling `.status()`. Same
+        {order_id, status, cancellable, price, filled} shape as `.status()`'s return, so
+        `_confirm_*_fill` needs no changes to consume either.
+
+        Fails closed to `[]` on any error (auth, subscribe, a dropped websocket, or a clean
+        timeout with nothing seen) -- exactly like every other method here. The caller's own
+        heartbeat poll is the safety net that makes this an optimization, not a dependency."""
+        from cherrypick.core import broker as _broker
+
+        try:
+            self._ensure()
+            return self._run(
+                _broker.wait_for_order_alerts(self._session, self._account, order_ids, timeout_seconds)
+            )
+        except Exception:  # noqa: BLE001
+            self._reset()
+            return []
 
     def history(self, trade_date: str, symbol: str) -> tuple[list[dict] | None, str | None]:
         """Real broker transactions for one session (fee_reconcile's source of truth). Fails

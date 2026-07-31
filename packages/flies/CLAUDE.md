@@ -282,6 +282,13 @@ These are the constraints the module exists to enforce. Breaking one makes the n
   `live.fresh_quote_tolerance_dollars`. The decision of *whether/what* to enter is still 100%
   cache-driven; only the final submitted price gets a last-second freshness correction, at the exact
   moment the broker is already about to be touched anyway.
+  **A second, independent exception** (added 2026-07-31, `live.use_order_alert_stream`, off by
+  default): the burst fill-watcher may additionally block on tastytrade's own account-alert
+  websocket (`AlertStreamer` — order/balance/position pushes, a completely separate stream from
+  the shared market-data cache above) for a PUSH notification of a fill, instead of only sleeping
+  on a fixed poll interval. This is still squarely "confirming what only the broker can know" —
+  it never informs a decision, only how quickly a fill is *noticed* — and it fails closed to the
+  exact same cache-gated poll behavior on any websocket/auth error. See `run_watch`'s docstring.
 - Credentials in the OS keyring only. Account numbers masked to `****1234`.
 - Portable paths only; scratch work in `.tmp/`. Human-voice docs and commits, no AI attribution.
 - Instruction files hold no code.
