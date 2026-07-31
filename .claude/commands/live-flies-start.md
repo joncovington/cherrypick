@@ -48,6 +48,11 @@ to stop.
      resolved in the broker UI before arming anything.
    - **Market state**: whether it's currently a trading day inside RTH. Off-hours arming is
      allowed (the ticks no-op until the open) but say so plainly.
+   - **Order-alert daemon** (only when `live.use_order_alert_daemon` is true): `--status` carries
+     an `alert_daemon` block. Report it, but treat it as INFORMATIONAL — the daemon only makes
+     fills get *noticed* sooner; a dead or missing one costs latency and nothing else, and is
+     never a reason to refuse to arm. If it reports `running: true` with a stale `heartbeat_at`,
+     say so (that's the silently-dead-websocket tell) — arming will restart it anyway.
    - **The per-day contract**: state that this arms TODAY only — the loop self-disarms at the
      configured `disarm_time` and tomorrow needs a fresh `/live-flies-start`.
 
@@ -64,6 +69,14 @@ to stop.
      python src/live_loop.py --install-task
      ```
      This registers the 1-minute task, stamps today's arm date, and fires the first tick.
+   - **Only if `live.use_order_alert_daemon` is true**, also start the order-alert daemon,
+     detached and headless, after first stopping any stale one:
+     ```bash
+     python src/alert_daemon.py --stop
+     pythonw src/alert_daemon.py
+     ```
+     It self-exits at `disarm_time`. If it fails to start, say so and CONTINUE — the loop
+     confirms fills without it (just later); a failed daemon never blocks arming.
 
 5. **Report**: the task name, the armed-for date, the self-disarm time, the log to watch
    (`tail -f ~/.cherrypick/logs/flies/flies_live.log`), the dashboard's live source
@@ -82,6 +95,11 @@ to stop.
    no order and touches no open position).
 3. ```bash
    python src/live_loop.py --uninstall-task
+   ```
+   Then, if `live.use_order_alert_daemon` is true, also stop the alert daemon (it holds an
+   authenticated broker session open; disarming should not leave one running):
+   ```bash
+   python src/alert_daemon.py --stop
    ```
 4. Report what was disarmed and remind: open live positions are unaffected — they follow their
    normal hold-to-settlement rules, and the completion/cutoff/settlement handling for anything
