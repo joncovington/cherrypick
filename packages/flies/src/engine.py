@@ -364,24 +364,27 @@ DEFAULT_PRE_CLOSE_EXIT = "15:50"  # 10 minutes before the 16:00 ET close
 
 
 def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tuple:
-    """Should this completed fly be closed NOW, ahead of cash settlement, because it has an ITM
-    leg and closing is cheaper than the $5/contract exercise-assignment fee those legs would
+    """Should this position be closed NOW, ahead of cash settlement, because it has an ITM leg
+    and closing is cheaper than the $5/contract exercise-assignment fee those legs would
     otherwise incur overnight?
 
     Fires only inside the configured window (`pre_close_exit_time`, default the final 10 minutes
-    of the session) — an ITM fly at 11am has all afternoon left to walk back out of the money, and
-    closing on a momentary touch would be exactly the improvised adjustment rule 5 forbids. This
-    is not that: it is a narrow, mechanical cost comparison in the closing minutes, when there is
-    no meaningful time left for the picture to change.
+    of the session) — an ITM position at 11am has all afternoon left to walk back out of the
+    money, and closing on a momentary touch would be exactly the improvised adjustment rule 5
+    forbids. This is not that: it is a narrow, mechanical cost comparison in the closing minutes,
+    when there is no meaningful time left for the picture to change.
 
-    Only short vertical -> completed fly matters here (an uncompleted vertical's full defined risk
-    is unaffected by any of this and has no analogous exit modeled). The gate is a straight dollar
-    comparison, not a price gate like `evaluate_completion`'s: close only if the slippage cost of
-    doing so is strictly cheaper than the assignment fee avoided — otherwise holding to settlement
-    and paying the fee is the better of the two options, and this leaves the position alone.
+    Applies to BOTH a completed fly and a still-open (uncompleted) short vertical: an ITM vertical
+    is already realizing its loss, and letting the assignment fee stack on top of that loss is the
+    same avoidable cost a fly's ITM leg has, just on the losing side instead of the winning one.
+    The gate is a straight dollar comparison either way, not a price gate like
+    `evaluate_completion`'s: close only if the slippage cost of doing so is strictly cheaper than
+    the assignment fee avoided — otherwise holding to settlement and paying the fee is the better
+    of the two options, and this leaves the position alone.
     """
-    if position.get("kind") != "fly":
-        return False, "not_a_fly", None
+    kind = position.get("kind")
+    if kind not in ("fly", "short_vertical"):
+        return False, "not_a_closeable_kind", None
 
     now_min = snapshot.get("now_min")
     window_start = time_to_minutes(params.get("pre_close_exit_time", DEFAULT_PRE_CLOSE_EXIT))
@@ -397,33 +400,59 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
         return False, "no_itm_legs", None
 
     side, center, width = position["side"], position["center"], position["wing_width"]
-    lower, upper = center - width, center + width
-    if not _have(snapshot, side, [lower, center, upper]):
-        return False, "missing_leg_quotes", None
-
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
-    close_credit = fly.fly_close_credit(
-        quote(snapshot, side, lower), quote(snapshot, side, center), quote(snapshot, side, upper), slip
-    )
     symbol, qty = snapshot["symbol"], position.get("quantity", 1)
-    close_fee = fly.fly_close_fee(symbol, qty)
+    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     assignment_fee = fly.expire_fee(itm_contracts)
 
-    # Intrinsic value at the current spot: near-worthless extrinsic this close to expiry, and the
-    # number the assignment-fee side of the comparison is implicitly measured against (holding to
-    # settlement realizes ~this minus the assignment fee, assuming spot doesn't move further).
-    theoretical = fly.fly_payoff(center, width, spot)
-    slippage_cost = (theoretical - close_credit) * fly.CONTRACT_MULTIPLIER * qty + close_fee
+    if kind == "fly":
+        lower, upper = center - width, center + width
+        if not _have(snapshot, side, [lower, center, upper]):
+            return False, "missing_leg_quotes", None
+        close_price = fly.fly_close_credit(
+            quote(snapshot, side, lower), quote(snapshot, side, center), quote(snapshot, side, upper), slip
+        )
+        close_fee = fly.fly_close_fee(symbol, qty)
+        # Intrinsic value at the current spot: near-worthless extrinsic this close to expiry, and
+        # the number the assignment-fee side of the comparison is implicitly measured against
+        # (holding to settlement realizes ~this minus the assignment fee, spot moving no further).
+        theoretical = fly.fly_payoff(center, width, spot)
+        slippage_cost = (theoretical - close_price) * fly.CONTRACT_MULTIPLIER * qty + close_fee
+        plan = {
+            "close_credit": round(close_price, 4),
+            "close_fee": round(close_fee, 4),
+            "itm_contracts": itm_contracts,
+            "assignment_fee": round(assignment_fee, 2),
+            "slippage_cost": round(slippage_cost, 2),
+            "lower_strike": lower,
+            "upper_strike": upper,
+        }
+    else:
+        long_strike = center - width if side == PUT else center + width
+        if not _have(snapshot, side, [center, long_strike]):
+            return False, "missing_leg_quotes", None
+        # Closing buys the centre back (it was the SHORT leg at open, so it's the leg being
+        # bought now) and sells the protective long_strike leg -- the reverse of entry_spec's
+        # actions, which is why vertical_debit's arguments are (centre, long_strike) here, not
+        # (long_strike, centre) the way an opening debit spread would pass them.
+        close_price = fly.vertical_debit(
+            quote(snapshot, side, center), quote(snapshot, side, long_strike), slip
+        )
+        close_fee = fly.vertical_close_fee(symbol, qty)
+        # The debit that would exactly buy back the vertical's current intrinsic liability -- the
+        # magnitude of short_vertical_payoff, which is <= 0 (a signed loss); closing pays this
+        # much (plus slippage) NOW instead of realizing the same loss (plus the assignment fee)
+        # at settlement.
+        theoretical = -fly.short_vertical_payoff(side, center, width, spot)
+        slippage_cost = (close_price - theoretical) * fly.CONTRACT_MULTIPLIER * qty + close_fee
+        plan = {
+            "close_debit": round(close_price, 4),
+            "close_fee": round(close_fee, 4),
+            "itm_contracts": itm_contracts,
+            "assignment_fee": round(assignment_fee, 2),
+            "slippage_cost": round(slippage_cost, 2),
+            "long_strike": long_strike,
+        }
 
-    plan = {
-        "close_credit": round(close_credit, 4),
-        "close_fee": round(close_fee, 4),
-        "itm_contracts": itm_contracts,
-        "assignment_fee": round(assignment_fee, 2),
-        "slippage_cost": round(slippage_cost, 2),
-        "lower_strike": lower,
-        "upper_strike": upper,
-    }
     if slippage_cost >= assignment_fee:
         return False, "closing_slippage_exceeds_assignment_fee", plan
 

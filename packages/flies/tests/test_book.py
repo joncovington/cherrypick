@@ -97,20 +97,24 @@ def test_pre_close_exit_closes_a_completed_fly_with_an_itm_leg(conn):
 
     # Inside the closing window, spot has drifted back between the fly's lower wing (5995) and
     # its centre (6000) -- 3 of its 4 contracts are ITM (the doubled centre plus the upper wing).
+    # This also happens to put the SECOND position "the forest" test documents (a fresh vertical
+    # the second tick opened at 6005, since spot 6004 re-centres control there) into its own ITM
+    # zone -- both legitimately close this same tick, which is the generalization's whole point.
     closing = snapshot(
         now_min=955,
         underlying_price=5998.0,
-        puts={5995: q(0.0, 0.0), 6000: q(1.0, 1.0), 6005: q(5.0, 5.0)},
+        puts={5990: q(0.0, 0.0), 5995: q(0.0, 0.0), 6000: q(1.0, 1.0), 6005: q(5.0, 5.0), 6010: q(7.0, 7.0)},
     )
     result = bookmod.process_snapshot(closing, config, conn, "control")
-    closed = [a for a in result["actions"] if a["action"] == "closed_before_expiry"]
-    assert len(closed) == 1 and closed[0]["position_id"] == fly_id
-    assert closed[0]["assignment_fee_avoided"] == 15.0
+    closed = {a["position_id"]: a for a in result["actions"] if a["action"] == "closed_before_expiry"}
+    assert fly_id in closed
+    assert closed[fly_id]["assignment_fee_avoided"] == 15.0
+    assert len(closed) == 2  # the fly, plus the forest's second (still-open) vertical
 
     row = next(r for r in dbmod.book_positions(conn, book_id) if r["position_id"] == fly_id)
     assert row["status"] == "settled"
     assert row["closed_before_expiry"] == 1
-    assert row["pnl"] == pytest.approx(closed[0]["pnl"])
+    assert row["pnl"] == pytest.approx(closed[fly_id]["pnl"])
     # Closing realized ~$3.00/contract of intrinsic value (the zero-spread quotes concede no
     # slippage) at only the ~$0.48 closing-fee stack -- nowhere near the $15 assignment fee held
     # to expiry would have cost on top of the same intrinsic value.
@@ -134,6 +138,31 @@ def test_pre_close_exit_leaves_an_otm_fly_alone(conn):
     assert not [a for a in result["actions"] if a["action"] == "closed_before_expiry"]
     row = next(r for r in dbmod.book_positions(conn, book_id) if r["kind"] == "fly")
     assert row["status"] == "open"
+
+
+def test_pre_close_exit_closes_an_itm_short_vertical(conn):
+    """The extension (2026-07-30): an uncompleted credit spread that's already ITM (already
+    losing) gets the same treatment a fly's ITM leg does -- closing it stops the assignment fee
+    from stacking on top of a loss the book has already realized."""
+    config = one_arm_config(entry_modes=["legged"])
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+    book_id = bookmod.book_id_for("2026-07-20", "control", "SPX")
+    vert_id = next(
+        r["position_id"] for r in dbmod.book_positions(conn, book_id) if r["kind"] == "short_vertical"
+    )
+
+    # Spot has drifted through the short strike (6000) but not past the protective long (5995) --
+    # only the short leg is ITM.
+    closing = snapshot(now_min=955, underlying_price=5998.0, puts={5995: q(0.0, 0.0), 6000: q(2.0, 2.0)})
+    result = bookmod.process_snapshot(closing, config, conn, "control")
+    closed = {a["position_id"]: a for a in result["actions"] if a["action"] == "closed_before_expiry"}
+    assert vert_id in closed
+    assert closed[vert_id]["assignment_fee_avoided"] == 5.0
+
+    row = next(r for r in dbmod.book_positions(conn, book_id) if r["position_id"] == vert_id)
+    assert row["status"] == "settled"
+    assert row["closed_before_expiry"] == 1
+    assert row["kind"] == "short_vertical"  # never flipped to fly -- it just closed as itself
 
 
 def test_the_forest_grows_alongside_a_completed_fly(conn):

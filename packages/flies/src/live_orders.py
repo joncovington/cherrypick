@@ -202,3 +202,26 @@ def close_fly_spec(snapshot: dict, position: dict, plan: dict) -> dict:
             _leg(_leg_quote(snapshot, side, center + width), "sell to close", qty),
         ],
     }
+
+
+def close_vertical_spec(snapshot: dict, position: dict, plan: dict) -> dict:
+    """Close an ITM (still-uncompleted) short vertical ahead of expiry, from an admitted
+    `evaluate_pre_close_exit` plan: buy back the centre (the original short leg), sell the
+    protective long leg. Day limit at the plan's priced close debit, floored to the tick (offering
+    slightly less, same convention as `completion_spec`)."""
+    side, center, width = position["side"], position["center"], position["wing_width"]
+    qty = position.get("quantity", 1)
+    long_strike = center - width if side == PUT else center + width
+    price = tick_floor(plan["close_debit"])
+    if price <= 0:
+        raise ValueError(f"close debit {plan['close_debit']!r} floors to nothing submittable")
+    return {
+        "time_in_force": "Day",
+        "order_type": "Limit",
+        "price": price,
+        "price_effect": "debit",
+        "legs": [
+            _leg(_leg_quote(snapshot, side, center), "buy to close", qty),
+            _leg(_leg_quote(snapshot, side, long_strike), "sell to close", qty),
+        ],
+    }
