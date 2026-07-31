@@ -711,3 +711,146 @@ def test_timeline_carries_the_feed(conn):
 def test_data_quality_on_an_empty_day_is_not_an_error(conn):
     feed, summary = analytics.data_quality(conn, "2026-07-20")
     assert feed == [] and summary["ticks"] == 0 and summary["ok_rate"] is None
+
+
+def test_entry_structure_label_covers_known_modes_and_falls_back_for_unknown():
+    assert analytics._entry_structure_label("legged", "put") == "short put"
+    assert analytics._entry_structure_label("legged", "call") == "short call"
+    assert analytics._entry_structure_label("outright", "put") == "fly"
+    # An entry_mode this map wasn't written for must surface as itself, not be guessed at as a
+    # short vertical (the old ternary's default) or crash.
+    assert analytics._entry_structure_label("debit_first", "put") == "debit put"
+    assert analytics._entry_structure_label("bwb_roll", "put") == "bwb put"
+    # An entry_mode this map wasn't written for at all must surface as itself, never crash.
+    assert analytics._entry_structure_label("some_future_mode", "put") == "some_future_mode"
+
+
+def _debit_first(
+    conn,
+    position_id,
+    *,
+    day="2026-07-20",
+    arm="gex",
+    center=6000.0,
+    credit=2.55,
+    debit=1.50,
+    entry="T12:00:00",
+    completed=None,
+    latency=None,
+    spot_at_completion=None,
+    underlying=6000.0,
+):
+    """A debit_first position, optionally completed -- the mirror of _legged, side=call."""
+    open_fee = fly.vertical_open_fee("SPX", 1)
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position_id,
+            "book_id": f"{day}:{arm}:SPX",
+            "trade_date": day,
+            "arm": arm,
+            "entry_mode": "debit_first",
+            "symbol": "SPX",
+            "kind": "fly" if completed else "long_vertical",
+            "side": "call",
+            "center": center,
+            "wing_width": 5.0,
+            "quantity": 1,
+            "net": credit - debit if completed else -debit,
+            "credit": credit if completed else None,
+            "debit": debit,
+            "fees": open_fee * 2 if completed else open_fee,
+            "entry_time": f"{day}{entry}",
+            "completed_at": f"{day}{completed}" if completed else None,
+            "completion_latency_min": latency,
+            "spot_at_completion": spot_at_completion,
+            "underlying_at_entry": underlying,
+            "status": "open",
+        },
+    )
+
+
+def test_timeline_rewinds_a_completed_debit_first_fly_to_the_long_vertical_it_used_to_be(conn):
+    """debit_first's counterpart of test_timeline_rewinds_a_completed_fly_to_the_vertical_it_used_to_be
+    -- before completion the position was a LONG vertical (a paid-for debit spread), not a fly."""
+    _debit_first(
+        conn, "P1", entry="T12:00:00", completed="T12:30:00", latency=30.0, spot_at_completion=6000.0
+    )
+    _tick(conn, "T12:15:00", spot=5995.0)  # the long vertical's own strike -- payoff 0, mirrors legged's
+    _tick(conn, "T12:45:00", spot=6000.0)  # the completed fly at its centre -- full wing
+    open_fee = fly.vertical_open_fee("SPX", 1)
+
+    ticks = analytics.session_timeline(conn, "2026-07-20")["ticks"]
+    before, after = ticks[0]["settle_now"]["gex"], ticks[1]["settle_now"]["gex"]
+    # long vertical at its own (center - w) strike: no payoff yet, one fee stack, no ITM legs.
+    assert before == pytest.approx(-1.50 * 100 - open_fee, abs=0.01)
+    # a fly at its centre: full wing, two fee stacks, one ITM leg by the same boundary convention.
+    assert after == pytest.approx(1.05 * 100 + 500 - 2 * open_fee - 5.00, abs=0.01)
+
+
+def _bwb(
+    conn,
+    position_id,
+    *,
+    day="2026-07-20",
+    arm="gex",
+    center=6000.0,
+    credit=1.1,
+    far_width=10.0,
+    roll_debit=0.3,
+    entry="T12:00:00",
+    rolled=None,
+    latency=None,
+    spot_at_roll=None,
+    underlying=6000.0,
+):
+    """A bwb_roll position, optionally rolled -- the mirror of _legged/_debit_first, side=put."""
+    open_fee = fly.fly_open_fee("SPX", 1)
+    roll_fee = fly.vertical_open_fee("SPX", 1)
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position_id,
+            "book_id": f"{day}:{arm}:SPX",
+            "trade_date": day,
+            "arm": arm,
+            "entry_mode": "bwb_roll",
+            "symbol": "SPX",
+            "kind": "fly" if rolled else "bwb",
+            "side": "put",
+            "center": center,
+            "wing_width": 5.0,
+            "far_width": far_width,
+            "quantity": 1,
+            "net": credit - roll_debit if rolled else credit,
+            "credit": credit,
+            "roll_debit": roll_debit if rolled else None,
+            "fees": open_fee + roll_fee if rolled else open_fee,
+            "entry_time": f"{day}{entry}",
+            "completed_at": f"{day}{rolled}" if rolled else None,
+            "rolled_at": f"{day}{rolled}" if rolled else None,
+            "completion_latency_min": latency,
+            "roll_latency_min": latency,
+            "spot_at_completion": spot_at_roll,
+            "spot_at_roll": spot_at_roll,
+            "underlying_at_entry": underlying,
+            "status": "open",
+        },
+    )
+
+
+def test_timeline_rewinds_a_rolled_bwb_to_the_broken_wing_it_used_to_be(conn):
+    """bwb_roll's counterpart of the legged/debit_first rewind tests -- before the roll the
+    position was a genuine BWB with real tail risk, not the symmetric fly it becomes after."""
+    _bwb(conn, "P1", entry="T12:00:00", rolled="T12:30:00", latency=30.0, spot_at_roll=6000.0)
+    _tick(conn, "T12:15:00", spot=6005.0)  # the bwb's own near-wing strike -- payoff 0, no ITM legs
+    _tick(conn, "T12:45:00", spot=6000.0)  # the rolled fly at its centre -- full wing
+    open_fee = fly.fly_open_fee("SPX", 1)
+    roll_fee = fly.vertical_open_fee("SPX", 1)
+
+    ticks = analytics.session_timeline(conn, "2026-07-20")["ticks"]
+    before, after = ticks[0]["settle_now"]["gex"], ticks[1]["settle_now"]["gex"]
+    # bwb at its own near-wing strike: no payoff yet, one fee stack, no ITM legs.
+    assert before == pytest.approx(1.1 * 100 - open_fee, abs=0.01)
+    # the rolled fly at its centre: full wing, two fee stacks, one ITM leg by the same convention.
+    assert after == pytest.approx((1.1 - 0.3) * 100 + 500 - open_fee - roll_fee - 5.00, abs=0.01)

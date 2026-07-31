@@ -45,10 +45,18 @@
     "entry_modes": [
       "legged"
     ],
+    "_completion_modes": "How an open legged credit spread may be completed. 'debit' = buy the completing same-type debit spread (the original mechanism). 'iron' = sell the OPPOSITE-type credit spread instead, producing an iron butterfly -- payoff-equivalent to a fly shifted down by wing_width, so risk-free iff the two credits summed clear wing_width plus fees (NOT assumed; the same floor gate enforces it). When both are enabled and both clear their gates on the same iteration, the higher post-fee floor wins. Off by default (['debit'] only) -- enable ['debit','iron'] only on its own arm, per the entry_modes rule above.",
+    "completion_modes": [
+      "debit"
+    ],
     "_min_credit_pct_of_width": "Opening credit floor as a fraction of wing width. Below this there is no room for the completing debit to come in cheaper AND clear two fee stacks.",
     "min_credit_pct_of_width": 0.2,
     "_max_credit_pct_of_width": "Opening credit CEILING. A vertical cannot be worth more than its width, so a credit near that width means the short leg is deep ITM and the premium is mostly intrinsic — a low-probability directional bet rather than a pin bet. Observed against real SPX quotes: a centre 67 points from spot produced a 77%-of-width credit with 67 points of intrinsic. The floor above cannot catch that, because a fatter intrinsic-heavy credit looks better to a floor.",
     "max_credit_pct_of_width": 0.6,
+    "_min_debit_pct_of_width": "debit_first's mirror of min_credit_pct_of_width: below this the debit vertical bought first is too far OTM to be plausible — little room left to richen before the completing credit spread's own width ceiling caps it.",
+    "min_debit_pct_of_width": 0.2,
+    "_max_debit_pct_of_width": "debit_first's mirror of max_credit_pct_of_width: a debit approaching the width means the long leg bought first is already deep ITM, leaving little room for the completing sale to out-earn it.",
+    "max_debit_pct_of_width": 0.6,
     "_fee_buffer": "Price points the completing debit must beat the original credit by. This is the gate that stops us 'completing' into a fly whose credit is real but smaller than the fees paid to build it.",
     "fee_buffer": 0.1,
     "_min_floor_dollars": "Reject a completion whose post-fee floor lands below this. Was 50.0 on the reasoning that a $5-27 guaranteed profit was 'not worth the position slot or the defined risk carried while waiting'. The first five sessions falsified the premise: refusing does NOT free the slot, it leaves the position as an uncompleted short vertical, and that branch realised an average of -$208.51 per position (17 of them, -$3,544 total) against +$110.47 for a completed fly. Turning down a guaranteed +$9.36 to keep a lottery ticket averaging -$208 is the losing side of that trade. Measured over 07-20..07-24, five completions were blocked by this gate alone at floors of $9.36-$39.36; converting them moves completion rate 57.5% -> 70%, past the ~65% break-even implied by those two averages. Scaled 10.0 -> 1.0 at the 2026-07-29 XSP move (premiums run ~1/10 of SPX; the same proportional bar). Revisit if the uncompleted branch ever stops being the dominant loss.",
@@ -67,6 +75,21 @@
     "book_scan_step": 0.2,
     "_pre_close_exit_time": "The one deliberate exception to rule 5 ('no adjustments, hold to settlement'), added 2026-07-30 and extended the same day to still-open verticals: inside this ET window (to session close), any ITM position is closed outright IF doing so costs less than the $5/contract exercise-assignment fee it would otherwise incur overnight (see engine.evaluate_pre_close_exit, fly.position_floor) -- a completed fly (sell both wings, buy back the doubled centre; pure fee avoidance) or a still-open short vertical (buy back the centre, sell the protective wing; stops the fee from stacking on top of a loss already being realized). A narrow, mechanical cost comparison in the closing minutes, not a P&L-driven stop. Applies to BOTH paper and live, so paper's numbers stay representative of what live actually does now that assignment fees are modeled in both -- override under 'live' below for a live-only value.",
     "pre_close_exit_time": "15:50",
+    "_regime_tagging": "engine.classify_regime tags every entry and completion (not every tick) along four dimensions, purely descriptive -- nothing here gates a decision, it exists to give a future regime-conditioned mode selector real labelled outcomes to be built from instead of guessed at. Every threshold below is a placeholder pending recalibration once real sessions accumulate, same as every other gate in this module.",
+    "regime_vol_low_pct": 0.0015,
+    "regime_vol_high_pct": 0.0035,
+    "regime_gex_pinning_share": 0.5,
+    "regime_skew_threshold": 0.15,
+    "regime_time_open_end": "10:00",
+    "regime_time_close_start": "15:30",
+    "_bwb_far_width_ratio": "bwb_roll's wide/risk-carrying wing, as a RATIO of wing_width (far_width = wing_width * ratio) -- not an absolute point value, since wing_width itself is manually rescaled per symbol and per width-sweep arm (control=1, width-2..width-5), and a fixed absolute far_width would need separately rescaling every time either changes. 2.0 matches the common near:far rule of thumb (roughly 1:2). The gap (far_width - wing_width) is the real tail this construction carries until rolled -- see fly.bwb_payoff, fly.position_floor's bwb branch. Placeholder pending recalibration once real sessions exist.",
+    "bwb_far_width_ratio": 2.0,
+    "_min_bwb_credit_pct_of_tail": "The entry credit is rent for the tail, so it is measured against the tail (far_width - wing_width), not against wing_width the way legged's credit gates are -- there is no width-bounded ceiling here since the structure's own worst case is already wing_width - far_width, not -wing_width.",
+    "min_bwb_credit_pct_of_tail": 0.15,
+    "_max_bwb_credit_pct_of_tail": "Ceiling, same intrinsic-heavy-credit logic as legged's own ceiling, measured against the tail instead of wing_width.",
+    "max_bwb_credit_pct_of_tail": 0.6,
+    "_max_bwb_tail_dollars": "Hard dollar cap on the tail risk a single bwb may carry (net of its own credit and open fee), independent of how the price-ratio gates above happen to price it. Placeholder pending recalibration.",
+    "max_bwb_tail_dollars": 150,
     "entry_windows": []
   },
   "arms_header": "===== Arms =====",
@@ -110,6 +133,46 @@
       "enabled": true,
       "_note": "ATM, same window and position cap as the gex arm. The shared baseline for EVERY comparison: gex vs control isolates the CENTRING rule (identical windows), time_window vs control isolates the TIMING (identical centring), width-N vs control isolates the WINGS. It must therefore match gex on everything except where it centres — and it doubles as the width sweep's 1-increment rung, since it trades the default wing_width.",
       "_history_note": "This was a single 12:00-12:15 window with max_positions 2, against gex's 09:45-14:30 and 4 — a 19x difference in entry opportunity. Per-trade metrics survive that, but net P&L per arm does not: the gex arm could have out-earned control purely by trading more often, and the headline comparison would have measured trade count rather than the GEX signal.",
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "debit-first": {
+      "enabled": true,
+      "_note": "Control's twin, isolating the LEGGING ORDER: buy the debit vertical first, complete by SELLING the credit spread second (entry_modes: [\"debit_first\"]) -- the exact reverse of legged's two trades. Completion drift direction is INVERTED from every other arm: legged needs spot to drift AWAY from the short strike; this arm needs spot to drift TOWARD the centre (reversion), so it and legged monetize opposite path regimes at the same centre. See docs/faq.md for the full construction.",
+      "entry_modes": [
+        "debit_first"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "iron": {
+      "enabled": true,
+      "_note": "Control's twin isolating the COMPLETION CHOICE: entry is identical to control (sell a credit spread first), but completion_modes allows selling the opposite-type credit spread (an iron butterfly) alongside the usual debit completion, taking whichever clears its gates with the higher post-fee floor. Unlike a same-type fly, an iron completion's floor can be genuinely negative -- the two credits summed are not guaranteed to clear wing_width plus fees, so this arm measures whether that condition is actually met in practice, not just in theory. See docs/faq.md for the full construction.",
+      "completion_modes": [
+        "debit",
+        "iron"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "bwb": {
+      "enabled": true,
+      "_note": "Control's twin isolating the ENTRY CONSTRUCTION: instead of legging in over two ticks, enter a broken-wing butterfly whole for a net credit (entry_modes: [\"bwb_roll\"]), then roll the far wide wing in to the near strike once the roll cheapens enough, converting to a symmetric fly. Until rolled this carries REAL tail risk (wing_width - far_width, negative) that fly.position_floor never reports as bounded -- this arm exists to measure whether the roll actually converts often enough, and cheaply enough, to be worth the tail carried while waiting. See docs/faq.md for the full construction and the researched trap (the roll cheapens under exactly the drift that makes the position profitable, and balloons past the credit precisely when the tail is threatened).",
+      "entry_modes": [
+        "bwb_roll"
+      ],
       "entry_windows": [
         [
           "10:00",

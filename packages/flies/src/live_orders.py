@@ -58,7 +58,16 @@ def _leg(q: dict, action: str, quantity: int) -> dict:
 def entry_spec(snapshot: dict, plan: dict) -> dict:
     """Step 1: the opening credit spread from an admitted `evaluate_credit_spread_entry` plan.
     Sell to open the centre (the short strike), buy to open the wing; Day limit at the plan's
-    modeled credit floored to the tick."""
+    modeled credit floored to the tick.
+
+    Live v1 is legged-only (docs/live-trading-plan.md) -- `debit_first`/`bwb_roll` are paper-only
+    research arms with no live order builders of their own, and `live_loop.py` never calls their
+    evaluate_* functions. This explicit shape check is the second, independent guard: a plan from
+    either paper-only mode carries a different key set (`debit` or `far_width`, never `credit`
+    alone) and is refused here with a clear error rather than a confusing KeyError two lines down.
+    """
+    if "credit" not in plan or "far_width" in plan:
+        raise ValueError("entry_spec is legged-only -- refusing a non-legged plan for live trading")
     side, center, width = plan["side"], plan["center"], plan["wing_width"]
     long_strike = center - width if side == PUT else center + width
     qty = plan.get("quantity", 1)

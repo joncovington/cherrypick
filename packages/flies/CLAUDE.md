@@ -166,6 +166,60 @@ comparison measures one variable rather than a bundle of confounded changes.
 - `wide_wing` — the SPX-era single-point version of the width question (a 20-point wing bracketing
   the observed drift). **Disabled** since the sweep; kept in `ARMS` so its books' attribution stays
   readable. On XSP its scaled equivalent (~2 points) is exactly `width-2`.
+- `debit-first` — control's twin isolating the **legging order**, added 2026-07-31 (`entry_modes:
+  ["debit_first"]`, `fly.debit_vertical_payoff`/`engine.evaluate_debit_vertical_entry`/
+  `evaluate_debit_completion`). `legged` sells the credit spread first and buys the completing
+  debit spread cheaper once spot drifts *away* from the short strike; this arm buys the debit
+  vertical first and completes by *selling* the credit spread once spot drifts back *toward* the
+  centre — literally `legged`'s two trades in the opposite order, monetizing the opposite drift
+  regime at the same centre. Its uncompleted branch is structurally different too: a long
+  vertical's worst case at expiry is the debit already paid (bounded, floor never below `-debit`),
+  never the `-W` full-defined-risk tail an uncompleted credit spread carries.
+- `iron` — control's twin isolating the **completion choice**, added 2026-07-31
+  (`completion_modes: ["debit", "iron"]`, `fly.iron_fly_payoff`/`engine.evaluate_iron_completion`).
+  `legged`'s completion always buys the same-type debit spread; this arm may instead complete by
+  *selling* the opposite-type credit spread (put held -> sell call, or vice versa), producing an
+  **iron butterfly** — the same geometry regardless of which side was legged first. Payoff-
+  equivalent to a same-type fly shifted down by `wing_width`, so it is **not** automatically
+  risk-free the way a completed fly is: the floor is genuinely `(credit1 + credit2 - wing_width) *
+  100 * qty - fees`, which can land negative even after both gates pass their price check, and
+  `position_floor`'s `iron_fly` branch never assumes otherwise. When both completion paths clear
+  their gates on the same iteration, the position takes whichever leaves the higher post-fee
+  floor. `completion_modes` defaults to `["debit"]` everywhere else, so no other arm's behavior
+  changes.
+- `bwb` — control's twin isolating the **entry construction**, added 2026-07-31 (`entry_modes:
+  ["bwb_roll"]`, kind `bwb`, `fly.bwb_payoff`/`fly.bwb_strikes`/`engine.evaluate_bwb_entry`/
+  `evaluate_roll`). Instead of legging in over two ticks, enters a broken-wing butterfly WHOLE for
+  a net credit: a near/protected wing at the usual `wing_width` and a far/wide wing at
+  `wing_width * bwb_far_width_ratio` (a ratio, not an absolute point value, so it scales
+  automatically with whatever `wing_width` an arm or symbol is already using — the common
+  real-world near:far rule of thumb is roughly 1:2). Until rolled, this carries REAL, negative
+  tail risk of `wing_width - far_width` that `fly.position_floor`'s `bwb` branch never reports as
+  bounded — the entry credit is priced as rent for that tail, not against `wing_width` the way
+  `legged`'s credit gates are. The roll buys the near strike and sells the held far strike (a
+  2-leg debit vertical of width `far_width - wing_width`), converting the position to an ordinary
+  symmetric fly once it clears its own price and floor gates — bringing the far wing back to
+  exactly `1.0x wing_width`. Researched trap (see `docs/faq.md`): the roll cheapens under exactly
+  the drift that makes the position profitable, and balloons past the credit precisely when the
+  tail is threatened — this arm measures whether that trade-off is actually survivable, not just
+  theoretically credit-positive.
+
+**Regime tagging (`engine.classify_regime`, added 2026-07-31).** Every entry and completion, across
+every arm, is tagged along four dimensions read purely from the snapshot in hand — `vol_bucket`
+(ATM straddle/spot), `gex_bucket` (per-strike gamma concentration, `"unknown"` when no OI cache
+exists yet, same honest degrade as the `gex` arm's own centring), `time_bucket` (open/midday/close),
+`skew_bucket` (OTM put vs. OTM call price at the exact strikes this module trades — a direct read of
+whether the chain itself is pricing in a direction). This is deliberately inert: nothing here gates a
+decision. It exists because the eventual goal is a live/paper mode that evaluates every eligible
+entry candidate (`legged`/`debit_first`/`bwb_roll`) and completion candidate (`debit`/`iron`) each
+tick and executes whichever wins *for the current regime* — Phase 1b's iron-vs-debit "take the
+higher floor" dispatch in `book.py` is already a working prototype of that pattern, generalized. That
+selector needs regime-labelled real outcomes to be built from, not guessed at, and the tag definition
+is expensive to change retroactively once data is accumulating — so it ships now, before `bwb_roll`
+adds a third entry mode to tag. Every threshold is a placeholder pending recalibration once real
+sessions exist, same honesty framing as every other gate. Deliberately excludes trend/chop: that
+needs a reference point in time no single snapshot carries, and guessing at that plumbing before
+there's a reason to would be the same mistake rule 6 warns against.
 
 **A global position cap does not make a multi-window arm test its windows.** `max_positions` alone let
 the book fill in the first window: over 07-20…07-24 `time_window` put 15 of its 16 legged entries in
