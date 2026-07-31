@@ -473,3 +473,45 @@ def test_working_orders_drops_terminal_orders():
 
     out = _run(broker.working_orders(_Acct(), "sess"))
     assert out == [{"order_id": 11, "status": "Live", "underlying_symbol": "XSP"}]
+
+
+# --------------------------------------------------------------------------- transaction_history
+class FakeTransaction:
+    def __init__(self, **kw):
+        self._data = kw
+
+    def model_dump(self, mode="json"):
+        return dict(self._data)
+
+
+class FakeHistoryAccount:
+    def __init__(self, transactions):
+        self._transactions = transactions
+        self.calls = []
+
+    async def get_history(self, session, start_date, end_date, underlying_symbol, symbol):
+        self.calls.append((start_date, end_date, underlying_symbol, symbol))
+        return self._transactions
+
+
+def test_transaction_history_serializes_and_defaults_end_date_to_start_date():
+    txns = [
+        FakeTransaction(id=1, transaction_type="Trade", value="251.88"),
+        FakeTransaction(id=2, transaction_type="Receive Deliver", value="-53.0"),
+    ]
+    acct = FakeHistoryAccount(txns)
+    d = date(2026, 7, 30)
+    out = _run(broker.transaction_history(acct, "sess", start_date=d, underlying_symbol="XSP"))
+    assert out == [
+        {"id": 1, "transaction_type": "Trade", "value": "251.88"},
+        {"id": 2, "transaction_type": "Receive Deliver", "value": "-53.0"},
+    ]
+    assert acct.calls == [(d, d, "XSP", None)]
+
+
+def test_transaction_history_respects_explicit_end_date_and_symbol():
+    acct = FakeHistoryAccount([])
+    start, end = date(2026, 7, 28), date(2026, 7, 30)
+    leg_symbol = "XSP   260730P00744000"
+    _run(broker.transaction_history(acct, "sess", start_date=start, end_date=end, symbol=leg_symbol))
+    assert acct.calls == [(start, end, None, leg_symbol)]
