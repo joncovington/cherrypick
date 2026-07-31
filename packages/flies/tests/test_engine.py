@@ -603,6 +603,68 @@ def test_pre_close_exit_vertical_refuses_without_leg_quotes():
     assert not close and reason == "missing_leg_quotes" and plan is None
 
 
+# --------------------------------------------------------------------------- regime tagging (Phase 1c)
+def test_classify_regime_baseline_snapshot():
+    """The module's own default fixture: a symmetric 6000-centred put/call grid at midday with no
+    GEX data cached -- normal vol, flat skew, midday, unknown GEX. A good sanity check that all
+    four dimensions read sensibly together, not just in isolation."""
+    regime = engine.classify_regime(snapshot(), params())
+    assert regime == {
+        "vol_bucket": "normal",
+        "gex_bucket": "unknown",
+        "time_bucket": "midday",
+        "skew_bucket": "flat",
+    }
+
+
+def test_vol_bucket_low_and_high():
+    cheap = snapshot(puts={6000: q(0.1, 0.1)}, calls={6000: q(0.1, 0.1)})
+    assert engine._classify_vol(cheap, params()) == "low"
+    rich = snapshot(puts={6000: q(15.0, 15.0)}, calls={6000: q(15.0, 15.0)})
+    assert engine._classify_vol(rich, params()) == "high"
+
+
+def test_vol_bucket_unknown_without_atm_quotes():
+    bare = snapshot(puts={}, calls={})
+    assert engine._classify_vol(bare, params()) == "unknown"
+
+
+def test_gex_bucket_pinning_vs_thin_vs_unknown():
+    concentrated = {"ok": True, "per_strike": [{"strike": 6000, "call_gex": 900_000, "put_gex": 900_000}]}
+    assert engine._classify_gex(snapshot(gex=concentrated), params()) == "pinning"
+
+    even = {
+        "ok": True,
+        "per_strike": [
+            {"strike": 5995, "call_gex": 10_000, "put_gex": 10_000},
+            {"strike": 6000, "call_gex": 10_000, "put_gex": 10_000},
+            {"strike": 6005, "call_gex": 10_000, "put_gex": 10_000},
+        ],
+    }
+    assert engine._classify_gex(snapshot(gex=even), params()) == "thin"
+
+    assert engine._classify_gex(snapshot(), params()) == "unknown"  # no gex key at all
+    assert engine._classify_gex(snapshot(gex={"ok": False}), params()) == "unknown"
+
+
+def test_time_bucket_open_midday_close_unknown():
+    assert engine._classify_time(snapshot(now_min=9 * 60 + 45), params()) == "open"
+    assert engine._classify_time(snapshot(now_min=12 * 60), params()) == "midday"
+    assert engine._classify_time(snapshot(now_min=15 * 60 + 45), params()) == "close"
+    bare = dict(snapshot())
+    del bare["now_min"]
+    assert engine._classify_time(bare, params()) == "unknown"
+
+
+def test_skew_bucket_put_and_call_and_unknown():
+    put_rich = snapshot(puts={5995: q(5.0, 5.2)}, calls={6005: q(1.0, 1.2)})
+    assert engine._classify_skew(put_rich, params()) == "put_skew"
+    call_rich = snapshot(puts={5995: q(1.0, 1.2)}, calls={6005: q(5.0, 5.2)})
+    assert engine._classify_skew(call_rich, params()) == "call_skew"
+    bare = snapshot(puts={}, calls={})
+    assert engine._classify_skew(bare, params()) == "unknown"
+
+
 # --------------------------------------------------------------------------- debit_first (Phase 1)
 def debit_snapshot(**over):
     """Spot at the centre (6000) -> choose_debit_side picks CALL. Custom call quotes priced for a

@@ -165,6 +165,107 @@ def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
     return float(best["strike"]), "max_total_gamma"
 
 
+# --------------------------------------------------------------------------- regime tagging
+def classify_regime(snapshot: dict, params: dict) -> dict:
+    """Tag the current market state along four dimensions, each a pure read of the snapshot
+    already in hand -- no cross-tick state, no new data source, same no-I/O discipline as every
+    other function here. Recorded (not acted on) at entry and completion, so the eventual
+    question this exists to answer -- "which entry/completion mode wins under which regime" --
+    has real, regime-labelled outcomes to be answered from once enough sessions accumulate.
+    Deliberately does NOT include a trend/chop read: that needs a reference point in time (spot
+    now vs. spot N minutes ago) that no single snapshot carries, and guessing at that plumbing
+    before there is a reason to is the mistake this module's honesty rules exist to prevent.
+
+    Returns {"vol_bucket", "gex_bucket", "time_bucket", "skew_bucket"} -- four independent values,
+    not one collapsed string, so analytics can slice on any one dimension or their cross product.
+    Every threshold below is a placeholder pending recalibration once real sessions accumulate,
+    flagged the same way in config.example.json as every other gate in this module.
+    """
+    return {
+        "vol_bucket": _classify_vol(snapshot, params),
+        "gex_bucket": _classify_gex(snapshot, params),
+        "time_bucket": _classify_time(snapshot, params),
+        "skew_bucket": _classify_skew(snapshot, params),
+    }
+
+
+def _classify_vol(snapshot: dict, params: dict) -> str:
+    """ATM straddle price / spot -- a cheap 0DTE expected-move proxy. No IV surface is available
+    here, so this reads the market's own pricing of the straddle directly rather than backing out
+    an implied vol number the snapshot has no inputs to compute honestly."""
+    spot = snapshot.get("underlying_price")
+    if spot is None or spot <= 0:
+        return "unknown"
+    strike = atm_strike(spot, params.get("strike_increment", 5))
+    put_q, call_q = quote(snapshot, PUT, strike), quote(snapshot, CALL, strike)
+    if put_q is None or call_q is None:
+        return "unknown"
+    straddle = fly._leg_mid(put_q) + fly._leg_mid(call_q)
+    ratio = straddle / spot
+    if ratio < params.get("regime_vol_low_pct", 0.0015):
+        return "low"
+    if ratio > params.get("regime_vol_high_pct", 0.0035):
+        return "high"
+    return "normal"
+
+
+def _classify_gex(snapshot: dict, params: dict) -> str:
+    """Reuses the `gex` arm's own per-strike concentration read (not arm-gated -- every arm can
+    tag the regime it traded in, not just the one that trades on it). "unknown" whenever the OI
+    cache the streamer would need isn't populated yet, mirroring `select_center`'s own honest
+    degrade -- never guessed."""
+    gex = snapshot.get("gex") or {}
+    per_strike = gex.get("per_strike") or []
+    if not gex.get("ok") or not per_strike:
+        return "unknown"
+    totals = [abs(s.get("call_gex", 0) + s.get("put_gex", 0)) for s in per_strike]
+    total_sum = sum(totals)
+    if total_sum <= 0:
+        return "unknown"
+    share = max(totals) / total_sum
+    return "pinning" if share >= params.get("regime_gex_pinning_share", 0.5) else "thin"
+
+
+def _classify_time(snapshot: dict, params: dict) -> str:
+    now_min = snapshot.get("now_min")
+    if now_min is None:
+        return "unknown"
+    open_end = time_to_minutes(params.get("regime_time_open_end", "10:00"))
+    close_start = time_to_minutes(params.get("regime_time_close_start", "15:30"))
+    if now_min < open_end:
+        return "open"
+    if now_min >= close_start:
+        return "close"
+    return "midday"
+
+
+def _classify_skew(snapshot: dict, params: dict) -> str:
+    """Reads directional skew straight out of the chain already in hand: compares the OTM put at
+    `center - wing_width` against the OTM call at `center + wing_width` -- the exact strikes this
+    module already trades, not an arbitrary distance. A richer put than its equidistant call means
+    the market is pricing more downside risk than upside, and vice versa."""
+    spot = snapshot.get("underlying_price")
+    if spot is None:
+        return "unknown"
+    center = atm_strike(spot, params.get("strike_increment", 5))
+    width = params.get("wing_width", 5)
+    put_q = quote(snapshot, PUT, center - width)
+    call_q = quote(snapshot, CALL, center + width)
+    if put_q is None or call_q is None:
+        return "unknown"
+    put_mid, call_mid = fly._leg_mid(put_q), fly._leg_mid(call_q)
+    avg = (put_mid + call_mid) / 2.0
+    if avg <= 0:
+        return "unknown"
+    diff = (put_mid - call_mid) / avg
+    threshold = params.get("regime_skew_threshold", 0.15)
+    if diff > threshold:
+        return "put_skew"
+    if diff < -threshold:
+        return "call_skew"
+    return "flat"
+
+
 def choose_side(snapshot: dict, center: float) -> str:
     """Which credit spread to sell first when legging in.
 

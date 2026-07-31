@@ -388,3 +388,32 @@ def test_completion_modes_unset_behaves_exactly_like_before_iron_existed(conn):
     completed = [a for a in result["actions"] if a["action"] in ("completed", "iron_completed")]
     assert len(completed) == 1
     assert completed[0]["action"] == "completed"  # never iron -- completion_modes defaults to debit-only
+
+
+# --------------------------------------------------------------------------- regime tagging (Phase 1c)
+def test_regime_tags_recorded_at_entry_and_can_differ_at_completion(conn):
+    """Entry and completion happen in different market states, so the two sets of regime columns
+    must be recorded independently -- not copied from entry, not left blank at completion."""
+    config = one_arm_config(entry_modes=["legged"])
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+    row = dbmod.book_positions(conn, bookmod.book_id_for("2026-07-20", "control", "SPX"))[0]
+    assert row["entry_vol_bucket"] == "normal"
+    assert row["entry_time_bucket"] == "midday"
+    assert row["entry_skew_bucket"] == "flat"
+    assert row["entry_gex_bucket"] == "unknown"
+    assert row["completion_vol_bucket"] is None  # not completed yet
+
+    # Complete at a later, different now_min (still midday here, but a different skew reading).
+    later = snapshot(
+        underlying_price=6004.0,
+        now_min=13 * 60,
+        puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)},
+        calls={5995: q(0.5, 0.6), 6005: q(0.2, 0.3)},
+    )
+    bookmod.process_snapshot(later, config, conn, "control")
+    row = dbmod.book_positions(conn, bookmod.book_id_for("2026-07-20", "control", "SPX"))[0]
+    assert row["kind"] == "fly"
+    assert row["completion_vol_bucket"] is not None
+    assert row["completion_time_bucket"] == "midday"
+    # Entry-side columns are untouched by the completion write.
+    assert row["entry_vol_bucket"] == "normal"

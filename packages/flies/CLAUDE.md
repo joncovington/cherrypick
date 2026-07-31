@@ -188,6 +188,23 @@ comparison measures one variable rather than a bundle of confounded changes.
   floor. `completion_modes` defaults to `["debit"]` everywhere else, so no other arm's behavior
   changes.
 
+**Regime tagging (`engine.classify_regime`, added 2026-07-31).** Every entry and completion, across
+every arm, is tagged along four dimensions read purely from the snapshot in hand — `vol_bucket`
+(ATM straddle/spot), `gex_bucket` (per-strike gamma concentration, `"unknown"` when no OI cache
+exists yet, same honest degrade as the `gex` arm's own centring), `time_bucket` (open/midday/close),
+`skew_bucket` (OTM put vs. OTM call price at the exact strikes this module trades — a direct read of
+whether the chain itself is pricing in a direction). This is deliberately inert: nothing here gates a
+decision. It exists because the eventual goal is a live/paper mode that evaluates every eligible
+entry candidate (`legged`/`debit_first`/`bwb_roll`) and completion candidate (`debit`/`iron`) each
+tick and executes whichever wins *for the current regime* — Phase 1b's iron-vs-debit "take the
+higher floor" dispatch in `book.py` is already a working prototype of that pattern, generalized. That
+selector needs regime-labelled real outcomes to be built from, not guessed at, and the tag definition
+is expensive to change retroactively once data is accumulating — so it ships now, before `bwb_roll`
+adds a third entry mode to tag. Every threshold is a placeholder pending recalibration once real
+sessions exist, same honesty framing as every other gate. Deliberately excludes trend/chop: that
+needs a reference point in time no single snapshot carries, and guessing at that plumbing before
+there's a reason to would be the same mistake rule 6 warns against.
+
 **A global position cap does not make a multi-window arm test its windows.** `max_positions` alone let
 the book fill in the first window: over 07-20…07-24 `time_window` put 15 of its 16 legged entries in
 `10:30-11:00`, 1 in `12:30-13:00` and 0 in `14:00-14:30`, so the timing hypothesis was never exercised
