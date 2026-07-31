@@ -48,6 +48,28 @@ def test_upsert_status_single_row(tmp_path):
     conn.close()
 
 
+def test_upsert_symbol_health_partial_updates_dont_blank_other_fields(tmp_path):
+    conn = streamcache.connect(tmp_path / "sc.db")
+    streamcache.upsert_symbol_health(conn, "XSP", chain_fetch_error="boom")
+    row = conn.execute(
+        "SELECT chain_loaded_at, chain_fetch_error FROM stream_symbol_health WHERE symbol = 'XSP'"
+    ).fetchone()
+    assert row["chain_fetch_error"] == "boom"
+    assert row["chain_loaded_at"] is None
+
+    # A success call clears the error and stamps chain_loaded_at, without a separate blank-out step.
+    streamcache.upsert_symbol_health(
+        conn, "XSP", chain_loaded_at="2026-07-31T12:00:00+00:00", chain_fetch_error=None
+    )
+    row = conn.execute(
+        "SELECT chain_loaded_at, chain_fetch_error FROM stream_symbol_health WHERE symbol = 'XSP'"
+    ).fetchone()
+    assert row["chain_loaded_at"] == "2026-07-31T12:00:00+00:00"
+    assert row["chain_fetch_error"] is None
+    assert conn.execute("SELECT COUNT(*) FROM stream_symbol_health").fetchone()[0] == 1
+    conn.close()
+
+
 def test_write_chain_tags_underlying(tmp_path):
     conn = streamcache.connect(tmp_path / "sc.db")
     opts = {"C600": _Opt("C600", 600), "P600": _Opt("P600", 600)}
