@@ -511,9 +511,10 @@ def _itm_close_snapshot(**over):
     return snapshot(**base)
 
 
-def test_pre_close_exit_ignores_a_position_that_is_not_a_fly():
-    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_snapshot(), open_spread(), params())
-    assert not close and reason == "not_a_fly" and plan is None
+def test_pre_close_exit_ignores_an_uncloseable_kind():
+    bogus = {**open_fly(), "kind": "outright_stub"}
+    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_snapshot(), bogus, params())
+    assert not close and reason == "not_a_closeable_kind" and plan is None
 
 
 def test_pre_close_exit_waits_for_its_window():
@@ -556,6 +557,50 @@ def test_pre_close_exit_holds_when_closing_costs_more_than_the_assignment_fee():
     close, reason, plan = engine.evaluate_pre_close_exit(wide, open_fly(), params(slippage_frac=5.0))
     assert not close and reason == "closing_slippage_exceeds_assignment_fee"
     assert plan["slippage_cost"] > plan["assignment_fee"]
+
+
+def _itm_close_vertical_snapshot(**over):
+    base = dict(
+        now_min=955,
+        underlying_price=5998.0,  # centre (6000, the short leg) ITM; protective long (5995) still OTM
+        puts={5995: q(0.0, 0.0), 6000: q(2.0, 2.0)},
+    )
+    base.update(over)
+    return snapshot(**base)
+
+
+def test_pre_close_exit_closes_an_itm_vertical_when_cheaper_than_the_assignment_fee():
+    """The extension (2026-07-30): an uncompleted vertical that's already losing gets the same
+    fee-avoidance treatment a fly's ITM leg does -- letting the assignment fee stack on top of a
+    loss that's already realized is exactly the avoidable cost this mechanism exists to catch."""
+    close, reason, plan = engine.evaluate_pre_close_exit(
+        _itm_close_vertical_snapshot(), open_spread(), params()
+    )
+    assert close and reason == "ok"
+    assert plan["itm_contracts"] == 1  # only the short centre leg is ITM; the protective long isn't
+    assert plan["assignment_fee"] == 5.0
+    assert plan["close_debit"] == pytest.approx(2.0)  # zero-spread quotes: no slippage haircut
+    assert plan["slippage_cost"] < plan["assignment_fee"]
+    assert plan["long_strike"] == 5995
+
+
+def test_pre_close_exit_holds_an_itm_vertical_when_closing_costs_more_than_the_assignment_fee():
+    wide = _itm_close_vertical_snapshot(puts={5995: q(0.0, 0.2), 6000: q(1.9, 2.1)})
+    close, reason, plan = engine.evaluate_pre_close_exit(wide, open_spread(), params(slippage_frac=5.0))
+    assert not close and reason == "closing_slippage_exceeds_assignment_fee"
+    assert plan["slippage_cost"] > plan["assignment_fee"]
+
+
+def test_pre_close_exit_leaves_an_otm_vertical_alone():
+    otm = _itm_close_vertical_snapshot(underlying_price=6100.0)  # spot well above the short strike
+    close, reason, plan = engine.evaluate_pre_close_exit(otm, open_spread(), params())
+    assert not close and reason == "no_itm_legs" and plan is None
+
+
+def test_pre_close_exit_vertical_refuses_without_leg_quotes():
+    bare = _itm_close_vertical_snapshot(puts={6000: q(2.0, 2.0)})  # missing the protective long
+    close, reason, plan = engine.evaluate_pre_close_exit(bare, open_spread(), params())
+    assert not close and reason == "missing_leg_quotes" and plan is None
 
 
 # --------------------------------------------------------------------------- outright entry
