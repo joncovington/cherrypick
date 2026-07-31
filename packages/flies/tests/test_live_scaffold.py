@@ -990,6 +990,11 @@ def test_completion_fill_confirmation_flips_kind_and_records_actual_debit(live_c
     decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'completion'").fetchone()
     assert decision["reason"] == "completed" and decision["accepted"] == 1
     assert decision["position_id"] == "E1"
+    # Regression (2026-07-30): live never recorded completion_latency_min/spot_at_completion the
+    # way paper's book.py always has, so a live session's Performance card showed blank median
+    # latency, latency range, and median spot move despite a real completion having happened.
+    assert row["completion_latency_min"] is not None and row["completion_latency_min"] >= 0
+    assert row["spot_at_completion"] == pytest.approx(7500.0)  # _snapshot()'s underlying_price
 
 
 def test_completion_terminal_unfilled_is_journaled_and_reverts_to_short_vertical(live_conn):
@@ -1119,6 +1124,79 @@ def test_close_terminal_unfilled_falls_back_to_an_open_fly(live_conn):
     assert row["close_order_id"] is None and row["close_fill_status"] == "rejected"
     decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit'").fetchone()
     assert decision["reason"] == "close_rejected" and decision["accepted"] == 0
+
+
+# --------------------------------------------------------------------------- pre-close ITM exit: verticals
+def test_pre_close_exit_places_a_closing_order_for_an_itm_vertical(live_conn):
+    """The extension (2026-07-30): a still-open, already-ITM credit spread gets the same
+    fee-avoidance closing order a completed fly does. _open_entry_row()'s default kind IS
+    short_vertical (center 7495, wing 5, side PUT) -- no override needed."""
+    dbmod.save_position(live_conn, _open_entry_row(entry_fill_status="filled"))
+
+    def close_q(occ, mid):
+        return {"bid": mid, "ask": mid, "mid": mid, "occ_symbol": occ, "instrument_type": "Equity Option"}
+
+    # Spot between the protective long (7490) and the short centre (7495) -- only the short leg
+    # is ITM. No quote at 7500 (the completing strike), so evaluate_completion can't also fire
+    # and race this: this snapshot exercises the pre-close-exit path in isolation.
+    snap = _snapshot(
+        now_min=955,
+        underlying_price=7493.0,
+        puts={
+            7490.0: close_q("SPXW  260729P07490000", 0.0),
+            7495.0: close_q("SPXW  260729P07495000", 2.0),
+        },
+    )
+    broker = FakeBroker()
+    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
+    assert summary.get("pre_close_exits_placed") == 1
+    close_orders = [p for p in broker.placed if p["spec"]["price_effect"] == "debit"]
+    assert len(close_orders) == 1
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["kind"] == "short_vertical"  # never touched by completion
+    assert row["close_order_id"] is not None
+    assert row["close_fill_status"] == "pending"
+    decision = live_conn.execute(
+        "SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit' AND reason = 'placed'"
+    ).fetchone()
+    assert decision is not None and decision["accepted"] == 1 and decision["position_id"] == "E1"
+
+
+def test_pre_close_exit_skips_a_vertical_with_a_resting_completion_order(live_conn):
+    """The sequencing guard: a vertical with a completion order still working (not yet cancelled
+    by completion_cutoff) must never be raced by a pre-close-exit close order on the same tick."""
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "completion_order_id": "ORD-C1"},
+    )
+    broker = FakeBroker(order_statuses={"ORD-C1": {"status": "Live", "price": None, "filled": False}})
+    snap = _snapshot(now_min=955, underlying_price=7493.0)  # inside the window
+    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
+    assert "pre_close_exits_placed" not in summary
+    row = live_conn.execute("SELECT close_order_id FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["close_order_id"] is None
+
+
+def test_close_fill_confirmation_settles_a_vertical_at_the_actual_close_debit(live_conn):
+    dbmod.save_position(
+        live_conn,
+        {
+            **_open_entry_row(entry_fill_status="filled"),
+            "close_order_id": "ORD-X2",
+            "close_fill_status": "pending",
+        },
+    )
+    broker = FakeBroker(order_statuses={"ORD-X2": {"status": "Filled", "price": "2.00", "filled": True}})
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["status"] == "settled"
+    assert row["kind"] == "short_vertical"
+    assert row["close_fill_status"] == "filled"
+    assert row["closed_before_expiry"] == 1
+    # net 1.05 credit collected at open, less the 2.00 debit paid to close: gross = (1.05-2.00)*100
+    assert row["gross_pnl"] == pytest.approx((1.05 - 2.00) * 100)
+    decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit'").fetchone()
+    assert decision["reason"] == "filled" and decision["accepted"] == 1
 
 
 # --------------------------------------------------------------------------- resting completion pricing
@@ -1311,6 +1389,35 @@ def test_watcher_confirms_entry_and_places_completion(live_conn, monkeypatch):
     decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'completion'").fetchone()
     assert decision["reason"] == "placed" and decision["accepted"] == 1
     assert decision["position_id"] == "E1"
+
+
+def test_watcher_confirms_a_completion_fill_and_records_latency_and_spot(live_conn, monkeypatch):
+    """The watcher's own copy of the completion-fill-confirmation call site -- the one that
+    usually wins the race in practice (polls every ~10s vs. the main tick's 1 minute) -- must
+    record completion_latency_min/spot_at_completion too, not just run_once's copy."""
+    dbmod.save_position(
+        live_conn,
+        {
+            **_open_entry_row(entry_fill_status="filled"),
+            "completion_order_id": "ORD-C1",
+            "completion_fill_status": "pending",
+        },
+    )
+    _fake_cache(monkeypatch, _snapshot())
+    broker = FakeBroker(order_statuses={"ORD-C1": {"status": "Filled", "price": "0.80", "filled": True}})
+    live_loop.run_watch(
+        _watch_cfg(),
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+    )
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["kind"] == "fly" and row["completion_fill_status"] == "filled"
+    assert row["completion_latency_min"] is not None and row["completion_latency_min"] >= 0
+    assert row["spot_at_completion"] == pytest.approx(7500.0)  # _snapshot()'s underlying_price
 
 
 def test_watcher_exits_when_nothing_pending(live_conn, monkeypatch):

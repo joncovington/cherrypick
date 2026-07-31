@@ -200,8 +200,10 @@ def test_short_vertical_floor_is_full_defined_risk():
         "quantity": 1,
         "fees": 0.0,
     }
-    # -350.0 defined-risk max loss, less the worst-case $10 exercise fee (both legs ITM there).
-    assert fly.position_floor(position) == -360.0
+    # -350.0 defined-risk max loss. Not reserving the worst-case exercise-assignment fee on top
+    # (2026-07-30) -- engine.evaluate_pre_close_exit closes an ITM vertical ahead of expiry the
+    # same way it does a fly, whenever that's cheaper than the fee; see position_floor's docstring.
+    assert fly.position_floor(position) == -350.0
     assert not fly.is_risk_free(position)
 
 

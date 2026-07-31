@@ -23,13 +23,18 @@ Order lifecycle:
     the max safe debit `min(credit - fee_buffer, floor bound)` so it can never fill at a price
     either gate would refuse. The resting limit IS the gate; it catches every transient dip a
     poll would miss. Cancelled at `completion_cutoff` (default 15:30).
-  - PRE-CLOSE EXIT (2026-07-30): inside `live.pre_close_exit_time` (default 15:50), a completed
-    fly with an ITM leg is closed — sell both wings, buy back the doubled centre — IF doing so is
-    cheaper than the $5/contract exercise-assignment fee it would otherwise incur overnight (see
-    `engine.evaluate_pre_close_exit`). The one deliberate exception to rule 5's "no adjustments,
-    hold to settlement": a narrow, mechanical cost comparison in the closing minutes, not a
-    strategy adjustment. A close that never fills (or fails to place) simply falls through to the
-    ordinary SETTLEMENT step below, which pays the real assignment fee as the fallback.
+  - PRE-CLOSE EXIT (2026-07-30, extended same day to short verticals): inside
+    `live.pre_close_exit_time` (default 15:50), any ITM position is closed IF doing so is cheaper
+    than the $5/contract exercise-assignment fee it would otherwise incur overnight (see
+    `engine.evaluate_pre_close_exit`) — a completed fly (sell both wings, buy back the doubled
+    centre, pure fee avoidance) or a still-open short vertical (buy back the centre, sell the
+    protective wing; already realizing a loss, so this stops the fee from stacking on top of it).
+    A vertical is only considered once its OWN entry has confirmed filled and any resting
+    completion order has already been cancelled (normally by `completion_cutoff`, well before this
+    window opens) — never races a working order. The one deliberate exception to rule 5's "no
+    adjustments, hold to settlement": a narrow, mechanical cost comparison in the closing minutes,
+    not a strategy adjustment. A close that never fills (or fails to place) simply falls through to
+    the ordinary SETTLEMENT step below, which pays the real assignment fee as the fallback.
   - SETTLEMENT: at `live.settle_time` (default 16:20) each tick tries to auto-fetch the OFFICIAL
     print (tastytrade -> Yahoo -> Barchart, see `broker_cli.official_settlement_price`) and settle
     directly as `settlement_source='official'`; if every source comes up empty it falls back to
@@ -306,8 +311,14 @@ def _confirm_entry_fill(conn, pos: dict, broker, log) -> dict:
     return pos  # still working — stays pending, still blocks a second entry
 
 
-def _confirm_completion_fill(conn, pos: dict, broker, log) -> dict:
-    """Poll a pending completion order; flip kind='fly' with the ACTUAL debit once confirmed."""
+def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = None) -> dict:
+    """Poll a pending completion order; flip kind='fly' with the ACTUAL debit once confirmed.
+
+    `spot` (the tick's own cached underlying price — never a fresh broker call, per streamer-
+    before-API) records `completion_latency_min`/`spot_at_completion` the same way paper's
+    book.py always has. Regression (2026-07-30): live never recorded either, so every live
+    Performance card's Completion panel (median latency, latency range, median spot move) read
+    blank for a real session with real completions."""
     status = broker.status(pos["completion_order_id"])
     state = str(status.get("status") or "").strip().lower()
     if state == "filled":
@@ -318,13 +329,16 @@ def _confirm_completion_fill(conn, pos: dict, broker, log) -> dict:
         completion_fee = fly.vertical_open_fee(pos["symbol"], pos.get("quantity", 1))
         new_net = pos["net"] - actual_debit
         new_fees = (pos.get("fees") or 0.0) + completion_fee
+        now = clock.now_iso()
+        latency = bookmod._minutes_since(pos.get("entry_time"), now)
         updated = {**pos, "kind": "fly", "net": new_net, "fees": new_fees}
         floor = fly.position_floor(updated)
         risk_free = fly.is_risk_free(updated)
         conn.execute(
             "UPDATE fly_positions SET kind = 'fly', net = ?, debit = ?, fees = ?, floor_dollars = ?, "
-            "risk_free = ?, completion_fill_status = 'filled', completed_at = ? WHERE id = ?",
-            (new_net, actual_debit, new_fees, floor, int(risk_free), clock.now_iso(), pos["id"]),
+            "risk_free = ?, completion_fill_status = 'filled', completed_at = ?, "
+            "completion_latency_min = ?, spot_at_completion = ? WHERE id = ?",
+            (new_net, actual_debit, new_fees, floor, int(risk_free), now, latency, spot, pos["id"]),
         )
         conn.commit()
         log(
@@ -346,9 +360,15 @@ def _confirm_completion_fill(conn, pos: dict, broker, log) -> dict:
             position_id=pos["position_id"],
             detail=f"debit {actual_debit:.2f}, floor ${floor:.2f} "
             f"({'risk-free' if risk_free else 'NOT risk-free'})",
-            when=clock.now_iso(),
+            when=now,
         )
-        return {**updated, "floor_dollars": floor, "risk_free": int(risk_free)}
+        return {
+            **updated,
+            "floor_dollars": floor,
+            "risk_free": int(risk_free),
+            "completion_latency_min": latency,
+            "spot_at_completion": spot,
+        }
     if state in _TERMINAL_UNFILLED:
         conn.execute(
             "UPDATE fly_positions SET completion_order_id = NULL, completion_fill_status = ? WHERE id = ?",
@@ -373,34 +393,39 @@ def _confirm_completion_fill(conn, pos: dict, broker, log) -> dict:
 
 def _confirm_close_fill(conn, pos: dict, broker, log) -> dict:
     """Poll a pending pre-close-exit order; on fill, settle the position at the ACTUAL close
-    credit (not the modeled one used to price the order) — the same real-fill-over-model
-    discipline `_confirm_completion_fill` follows for the completion debit. On a terminal
-    unfilled state (rejected/cancelled, or simply never filled before the market closed and the
-    caller cancels it — see the cutoff handling in run_once), the position is released back to
-    kind='fly'/status='open' and falls through to the ordinary settlement path, paying the real
-    assignment fee — the one tail risk `position_floor`'s docstring names explicitly."""
+    price (not the modeled one used to price the order) — the same real-fill-over-model
+    discipline `_confirm_completion_fill` follows for the completion debit. Covers both a
+    completed fly (closed for a credit) and a still-open short vertical (closed for a debit) —
+    `pos["kind"]` says which sign the fill applies with. On a terminal unfilled state
+    (rejected/cancelled, or simply never filled before the market closed and the caller cancels
+    it — see the cutoff handling in run_once), the position is released back to status='open' and
+    falls through to the ordinary settlement path, paying the real assignment fee — the one tail
+    risk `position_floor`'s docstring names explicitly."""
     status = broker.status(pos["close_order_id"])
     state = str(status.get("status") or "").strip().lower()
     if state == "filled":
         try:
-            actual_credit = abs(float(status.get("price")))
+            actual_price = abs(float(status.get("price")))
         except (TypeError, ValueError):
-            actual_credit = 0.0
+            actual_price = 0.0
+        is_fly = pos["kind"] == "fly"
         qty = pos.get("quantity", 1)
-        close_fee = fly.fly_close_fee(pos["symbol"], qty)
-        gross = (pos["net"] + actual_credit) * fly.CONTRACT_MULTIPLIER * qty
+        close_fee = (
+            fly.fly_close_fee(pos["symbol"], qty) if is_fly else fly.vertical_close_fee(pos["symbol"], qty)
+        )
+        close_price = actual_price if is_fly else -actual_price
+        gross = (pos["net"] + close_price) * fly.CONTRACT_MULTIPLIER * qty
         total_fees = round((pos.get("fees") or 0.0) + close_fee, 2)
         pnl = round(gross - total_fees, 2)
         conn.execute(
             "UPDATE fly_positions SET status = 'settled', close_fill_status = 'filled', "
             "fees = ?, gross_pnl = ?, pnl = ?, expiry_payoff = ?, pinned = 0, "
             "closed_before_expiry = 1, exit_time = ? WHERE id = ?",
-            (total_fees, round(gross, 2), pnl, actual_credit, clock.now_iso(), pos["id"]),
+            (total_fees, round(gross, 2), pnl, close_price, clock.now_iso(), pos["id"]),
         )
         conn.commit()
-        log(
-            f"pre-close exit FILLED {pos['position_id']}: closed for {actual_credit:.2f} credit, P&L {pnl:+.2f}"
-        )
+        cost_desc = f"{actual_price:.2f} credit" if is_fly else f"{actual_price:.2f} debit"
+        log(f"pre-close exit FILLED {pos['position_id']}: closed for {cost_desc}, P&L {pnl:+.2f}")
         dbmod.record_decision(
             conn,
             trade_date=pos["trade_date"],
@@ -411,7 +436,7 @@ def _confirm_close_fill(conn, pos: dict, broker, log) -> dict:
             accepted=True,
             center=pos["center"],
             position_id=pos["position_id"],
-            detail=f"closed for {actual_credit:.2f} credit, P&L {pnl:+.2f}",
+            detail=f"closed for {cost_desc}, P&L {pnl:+.2f}",
             when=clock.now_iso(),
         )
         return {**pos, "status": "settled", "close_fill_status": "filled"}
@@ -640,7 +665,7 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
             if pos.get("close_order_id") and pos.get("close_fill_status") == "pending":
                 pos = _confirm_close_fill(conn, pos, broker, log)
             elif pos.get("completion_order_id") and pos.get("completion_fill_status") == "pending":
-                pos = _confirm_completion_fill(conn, pos, broker, log)
+                pos = _confirm_completion_fill(conn, pos, broker, log, snapshot.get("underlying_price"))
             elif pos.get("entry_order_id") and pos.get("entry_fill_status") not in (
                 "filled",
                 *_TERMINAL_UNFILLED,
@@ -724,17 +749,27 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                 detail=f"resting order {placed.get('completion_order_id')}",
             )
 
-    # --- 3.5. pre-close ITM exit: close a completed fly ahead of expiry if cheaper than the
-    # assignment fee it would otherwise incur — the one deliberate exception to rule 5 ("no
-    # adjustments, hold to settlement"), live-only cost avoidance rather than a strategy
-    # adjustment. See engine.evaluate_pre_close_exit for the window/comparison.
+    # --- 3.5. pre-close ITM exit: close any ITM position ahead of expiry if cheaper than the
+    # assignment fee it would otherwise incur — a completed fly's ITM leg (pure fee avoidance,
+    # bounded payoff) or a still-open short vertical's ITM leg(s) (already realizing a loss;
+    # letting the assignment fee stack on top is the same avoidable cost on the losing side).
+    # The one deliberate exception to rule 5 ("no adjustments, hold to settlement"), live-only
+    # cost avoidance rather than a strategy adjustment. See engine.evaluate_pre_close_exit.
     if live:
         for pos in positions:
-            if pos.get("kind") != "fly" or pos.get("close_order_id"):
+            kind = pos.get("kind")
+            if kind not in ("fly", "short_vertical") or pos.get("close_order_id"):
+                continue
+            if kind == "short_vertical" and (
+                pos.get("entry_fill_status") != "filled" or pos.get("completion_order_id")
+            ):
+                # Still working its own entry, or a resting completion hasn't been cancelled yet
+                # (normally cleared by completion_cutoff well before pre_close_exit_time opens) --
+                # leave it alone rather than race a live order this tick didn't place.
                 continue
             close, reason, plan = engine.evaluate_pre_close_exit(snapshot, pos, params)
             if not close:
-                if reason not in ("not_a_fly", "before_pre_close_exit_window"):
+                if reason not in ("not_a_closeable_kind", "before_pre_close_exit_window"):
                     journal(
                         "pre_close_exit",
                         reason,
@@ -745,7 +780,12 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                         else f"slippage {plan['slippage_cost']:.2f} vs assignment {plan['assignment_fee']:.2f}",
                     )
                 continue
-            spec = live_orders.close_fly_spec(snapshot, pos, plan)
+            is_fly = kind == "fly"
+            spec = (
+                live_orders.close_fly_spec(snapshot, pos, plan)
+                if is_fly
+                else live_orders.close_vertical_spec(snapshot, pos, plan)
+            )
             res = broker.place(spec, live=live)
             log(f"pre-close exit order (LIVE): {json.dumps(res, default=str)[:200]}")
             if res.get("ok") and res.get("order_id"):
@@ -755,13 +795,16 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                 )
                 conn.commit()
                 summary["pre_close_exits_placed"] = summary.get("pre_close_exits_placed", 0) + 1
+                target = (
+                    f"{plan['close_credit']:.2f} credit" if is_fly else f"{plan['close_debit']:.2f} debit"
+                )
                 journal(
                     "pre_close_exit",
                     "placed",
                     accepted=True,
                     center=pos["center"],
                     position_id=pos["position_id"],
-                    detail=f"order {res['order_id']}, targeting {plan['close_credit']:.2f} credit, "
+                    detail=f"order {res['order_id']}, targeting {target}, "
                     f"avoiding ${plan['assignment_fee']:.2f}",
                 )
             else:
@@ -1262,7 +1305,7 @@ def run_watch(
                                 when=clock.now_iso(),
                             )
             else:
-                updated = _confirm_completion_fill(conn, pos, broker, log)
+                updated = _confirm_completion_fill(conn, pos, broker, log, snapshot.get("underlying_price"))
                 if updated.get("completion_fill_status") == "filled":
                     confirmed += 1
 
