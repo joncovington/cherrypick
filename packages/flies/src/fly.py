@@ -50,6 +50,20 @@ def fly_payoff(center: float, wing_width: float, underlying: float) -> float:
     return max(0.0, wing_width - abs(underlying - center))
 
 
+def iron_fly_payoff(center: float, wing_width: float, underlying: float) -> float:
+    """Per-contract expiry value of an IRON butterfly (short centre put + short centre call, long
+    both wings) centered at `center` -- payoff-equivalent to `fly_payoff` shifted down by
+    `wing_width`: bounded to [-wing_width, 0].
+
+    Completing a legged position by selling the OPPOSITE-type credit spread (put held -> sell
+    call, or vice versa) produces this shape instead of a single-type fly: the same intrinsic tent,
+    but the two credits were collected instead of one credit funding a debit. Whether the combined
+    position is genuinely risk-free depends entirely on whether the two credits summed exceed
+    `wing_width` plus fees -- see `position_floor`'s iron_fly branch, which does NOT assume they did.
+    """
+    return fly_payoff(center, wing_width, underlying) - wing_width
+
+
 def short_vertical_payoff(side: str, short_strike: float, wing_width: float, underlying: float) -> float:
     """Per-contract expiry value of a SHORT defined-risk vertical, as a signed number (<= 0).
 
@@ -166,6 +180,29 @@ def fly_close_credit(
     return mid - slippage_frac * spread
 
 
+def iron_close_credit(
+    lower_put_q: dict,
+    center_put_q: dict,
+    center_call_q: dict,
+    upper_call_q: dict,
+    slippage_frac: float = DEFAULT_SLIPPAGE_FRAC,
+) -> float:
+    """Credit received CLOSING an iron fly ahead of expiry (buy back both shorts -- centre put,
+    centre call -- and sell both longs -- lower put, upper call). Same role as `fly_close_credit`
+    for the pre-close ITM exit: can legitimately be NEGATIVE (a debit) when one side is deep ITM
+    and the other worthless, since closing then means paying up to buy back the expensive short
+    while collecting little for the near-worthless long on the other side.
+    """
+    mid = (_leg_mid(lower_put_q) + _leg_mid(upper_call_q)) - (_leg_mid(center_put_q) + _leg_mid(center_call_q))
+    spread = (
+        _leg_spread(lower_put_q)
+        + _leg_spread(center_put_q)
+        + _leg_spread(center_call_q)
+        + _leg_spread(upper_call_q)
+    )
+    return mid - slippage_frac * spread
+
+
 # --------------------------------------------------------------------------- fees
 def vertical_open_fee(symbol: str, quantity: int = 1) -> float:
     """Open a 2-leg vertical (1 sell leg). ndigits=4 so fees stay linear in quantity (MEIC parity)."""
@@ -208,13 +245,27 @@ def itm_contracts_at_settlement(position: dict, settlement_price: float) -> int:
     strikes but 4 contracts — the centre carries 2 (one from the opening vertical, one from the
     completing vertical), and the fee is per CONTRACT, not per unique strike.
     """
-    side, center, width = position["side"], position["center"], position["wing_width"]
+    center, width = position["center"], position["wing_width"]
     qty = position.get("quantity", 1)
+    kind = position["kind"]
+
+    if kind == "iron_fly":
+        # Long (center-w) put, short center put, short center call, long (center+w) call -- this
+        # geometry is the same regardless of which side was legged first (see engine's iron
+        # completion), so `side` carries no information here, unlike every other kind (and isn't
+        # even stored on an iron_fly row). Each option type has its own ITM direction, and the
+        # doubled centre a same-type fly gets is NOT possible here (a strike can't be
+        # simultaneously below AND above spot), so at most one of the two centre legs is ever
+        # ITM -- never both shorts at once.
+        put_itm = 2 if settlement_price < center - width else (1 if settlement_price < center else 0)
+        call_itm = 2 if settlement_price > center + width else (1 if settlement_price > center else 0)
+        return (put_itm + call_itm) * qty
+
+    side = position["side"]
 
     def _itm(strike: float) -> bool:
         return settlement_price < strike if side == PUT else settlement_price > strike
 
-    kind = position["kind"]
     if kind == "fly":
         legs = [(center - width, 1), (center, 2), (center + width, 1)]
     elif kind == "short_vertical":
@@ -266,6 +317,8 @@ def position_pnl(position: dict, underlying: float) -> float:
         payoff = short_vertical_payoff(position["side"], position["center"], w, underlying)
     elif kind == "long_vertical":
         payoff = debit_vertical_payoff(position["side"], position["center"], w, underlying)
+    elif kind == "iron_fly":
+        payoff = iron_fly_payoff(position["center"], w, underlying)
     else:
         raise ValueError(f"position_pnl: unknown position kind {kind!r}")
     cash = position["net"] + payoff
@@ -311,6 +364,14 @@ def position_floor(position: dict) -> float:
         # direction here, not an assumption the exit always beats the fee.
         worst_payoff = 0.0
         reserve = expire_fee(qty)
+    elif kind == "iron_fly":
+        # Same no-reserve convention as `fly`: `evaluate_pre_close_exit` covers iron_fly too, so
+        # the realistic worst case going forward is bounded by (close now, hold to settlement),
+        # whichever is cheaper -- never assumed to be zero, but not reserved against here either,
+        # for the same reasons `fly`'s branch above gives. The worst payoff itself is genuinely
+        # -wing_width (not 0): unlike a same-type fly, the two credits collected here are not
+        # guaranteed to exceed the width, so this floor CAN be negative even before fees.
+        worst_payoff = -position["wing_width"]
     else:
         raise ValueError(f"position_floor: unknown position kind {kind!r}")
     return (position["net"] + worst_payoff) * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0) - reserve
@@ -363,7 +424,7 @@ def _scan_prices(positions: list[dict], step: float) -> list[float]:
     for p in positions:
         w = p["wing_width"]
         kind = p["kind"]
-        if kind in ("fly", "short_vertical", "long_vertical"):
+        if kind in ("fly", "short_vertical", "long_vertical", "iron_fly"):
             strikes += [p["center"] - w, p["center"], p["center"] + w]
         else:
             raise ValueError(f"_scan_prices: unknown position kind {kind!r}")

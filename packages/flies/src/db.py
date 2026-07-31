@@ -210,6 +210,10 @@ _ADDED_POSITION_COLUMNS = {
     # enough" vs "our buffer was too tight" after the fact.
     "best_completing_credit": "REAL",
     "best_credit_at": "TEXT",
+    # Which completion path closed a legged entry out: 'debit' (bought the completing debit
+    # spread, kind -> 'fly') or 'iron' (sold the opposite-type credit spread, kind -> 'iron_fly').
+    # NULL for pre-2026-07-31 rows and for entries that are still open or never completed.
+    "completion_mode": "TEXT",
 }
 
 _ADDED_BOOK_COLUMNS = {

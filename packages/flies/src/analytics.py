@@ -771,7 +771,7 @@ def session_timeline(conn, day: str | None = None) -> dict:
                     "position_id": r["position_id"],
                     "center": r["center"],
                     "spot": r["spot_at_completion"],
-                    "structure": "fly",
+                    "structure": "iron fly" if r["kind"] == "iron_fly" else "fly",
                 }
             )
             drift = (

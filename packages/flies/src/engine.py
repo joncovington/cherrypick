@@ -53,6 +53,7 @@ ARMS = (
     "width-4",
     "width-5",
     "debit-first",
+    "iron",
 )
 
 
@@ -528,6 +529,71 @@ def evaluate_debit_completion(snapshot: dict, position: dict, params: dict) -> t
     return True, "ok", plan
 
 
+# --------------------------------------------------------------------------- iron completion
+def evaluate_iron_completion(snapshot: dict, position: dict, params: dict) -> tuple:
+    """Should this open credit spread be completed into an IRON butterfly now, by selling the
+    OPPOSITE-type credit spread at the same centre? Returns (complete, reason, plan).
+
+    Put held -> sell the call spread; call held -> sell the put spread -- the final geometry
+    (long (center-w) put, short center put, short center call, long (center+w) call) is the same
+    regardless of which side was legged first. Payoff-equivalent to a same-type fly shifted down
+    by `wing_width`, so risk-free iff the two credits summed clear `wing_width` plus fees -- NOT
+    assumed; the floor gate is what actually enforces it (`fly.iron_fly_payoff`,
+    `fly.position_floor`'s iron_fly branch).
+    """
+    if position.get("kind") != "short_vertical":
+        return False, "not_a_credit_spread", None
+
+    side, center, width = position["side"], position["center"], position["wing_width"]
+    opposite_side = CALL if side == PUT else PUT
+    opposite_wing = center - width if opposite_side == PUT else center + width
+    if not _have(snapshot, opposite_side, [center, opposite_wing]):
+        return False, "missing_leg_quotes", None
+
+    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    credit2 = fly.vertical_credit(
+        quote(snapshot, opposite_side, center), quote(snapshot, opposite_side, opposite_wing), slip
+    )
+
+    symbol = snapshot["symbol"]
+    qty = position.get("quantity", 1)
+    completion_fee = fly.vertical_open_fee(symbol, qty)
+    buffer_pts = params.get("fee_buffer", 0.10)
+    credit1 = position["net"]
+
+    net = credit1 + credit2
+    completed_fees = position.get("fees", 0.0) + completion_fee
+    floor = fly.position_floor(
+        {
+            "kind": "iron_fly",
+            "center": center,
+            "wing_width": width,
+            "net": net,
+            "quantity": qty,
+            "fees": completed_fees,
+        }
+    )
+    # The second credit this would have had to beat: with the first, enough to clear the width
+    # (the iron fly's worst-case tent) plus the fee buffer.
+    gate_credit = round(width + buffer_pts - credit1, 4)
+    plan = {
+        "credit": round(credit2, 4),
+        "net": round(net, 4),
+        "completion_fee": completion_fee,
+        "floor": round(floor, 2),
+        "opposite_side": opposite_side,
+        "opposite_wing": opposite_wing,
+        "gate_credit": gate_credit,
+    }
+
+    if credit2 <= gate_credit:
+        return False, "iron_credit_too_low", plan
+    if floor < params.get("min_floor_dollars", 0.0):
+        return False, "floor_below_minimum_after_fees", plan
+
+    return True, "ok", plan
+
+
 # --------------------------------------------------------------------------- pre-close ITM exit
 DEFAULT_PRE_CLOSE_EXIT = "15:50"  # 10 minutes before the 16:00 ET close
 
@@ -543,17 +609,17 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
     forbids. This is not that: it is a narrow, mechanical cost comparison in the closing minutes,
     when there is no meaningful time left for the picture to change.
 
-    Applies to a completed fly, a still-open (uncompleted) short vertical, and a still-open
-    (uncompleted) `debit_first` long vertical: an ITM vertical of either sign is realizing a real
+    Applies to a completed fly, a completed iron fly, a still-open (uncompleted) short vertical,
+    and a still-open (uncompleted) `debit_first` long vertical: an ITM leg is realizing a real
     dollar outcome one way or the other, and letting the assignment fee stack on top of it is the
-    same avoidable cost a fly's ITM leg has, just on a different leg. The gate is a straight
-    dollar comparison either way, not a price gate like `evaluate_completion`'s: close only if the
+    same avoidable cost regardless of which kind carries it. The gate is a straight dollar
+    comparison either way, not a price gate like `evaluate_completion`'s: close only if the
     slippage cost of doing so is strictly cheaper than the assignment fee avoided — otherwise
     holding to settlement and paying the fee is the better of the two options, and this leaves the
     position alone.
     """
     kind = position.get("kind")
-    if kind not in ("fly", "short_vertical", "long_vertical"):
+    if kind not in ("fly", "short_vertical", "long_vertical", "iron_fly"):
         return False, "not_a_closeable_kind", None
 
     now_min = snapshot.get("now_min")
@@ -569,7 +635,7 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
     if itm_contracts == 0:
         return False, "no_itm_legs", None
 
-    side, center, width = position["side"], position["center"], position["wing_width"]
+    side, center, width = position.get("side"), position["center"], position["wing_width"]
     symbol, qty = snapshot["symbol"], position.get("quantity", 1)
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     assignment_fee = fly.expire_fee(itm_contracts)
@@ -622,7 +688,7 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
             "slippage_cost": round(slippage_cost, 2),
             "long_strike": long_strike,
         }
-    else:  # long_vertical -- debit_first's opening trade, still uncompleted
+    elif kind == "long_vertical":  # debit_first's opening trade, still uncompleted
         long_strike = center - width if side == CALL else center + width
         if not _have(snapshot, side, [center, long_strike]):
             return False, "missing_leg_quotes", None
@@ -643,6 +709,29 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
             "assignment_fee": round(assignment_fee, 2),
             "slippage_cost": round(slippage_cost, 2),
             "long_strike": long_strike,
+        }
+    else:  # iron_fly -- geometry is fixed regardless of which side was legged first
+        lower_put, upper_call = center - width, center + width
+        if not _have(snapshot, PUT, [lower_put, center]) or not _have(snapshot, CALL, [center, upper_call]):
+            return False, "missing_leg_quotes", None
+        close_price = fly.iron_close_credit(
+            quote(snapshot, PUT, lower_put),
+            quote(snapshot, PUT, center),
+            quote(snapshot, CALL, center),
+            quote(snapshot, CALL, upper_call),
+            slip,
+        )
+        close_fee = fly.fly_close_fee(symbol, qty)  # same 4-contract/2-sell shape
+        theoretical = fly.iron_fly_payoff(center, width, spot)
+        slippage_cost = (theoretical - close_price) * fly.CONTRACT_MULTIPLIER * qty + close_fee
+        plan = {
+            "close_credit": round(close_price, 4),
+            "close_fee": round(close_fee, 4),
+            "itm_contracts": itm_contracts,
+            "assignment_fee": round(assignment_fee, 2),
+            "slippage_cost": round(slippage_cost, 2),
+            "lower_strike": lower_put,
+            "upper_strike": upper_call,
         }
 
     if slippage_cost >= assignment_fee:
@@ -747,6 +836,8 @@ def _expiry_payoff(position: dict, settlement_price: float) -> float:
         return fly.debit_vertical_payoff(
             position["side"], position["center"], position["wing_width"], settlement_price
         )
+    if kind == "iron_fly":
+        return fly.iron_fly_payoff(position["center"], position["wing_width"], settlement_price)
     raise ValueError(f"_expiry_payoff: unknown position kind {kind!r}")
 
 
@@ -779,7 +870,8 @@ def settle(positions: list[dict], settlement_price: float) -> list[dict]:
                 "itm_contracts": itm_contracts,
                 "assignment_fee": assignment,
                 "pnl": round(pnl, 2),
-                "pinned": p["kind"] == "fly" and abs(settlement_price - p["center"]) < p["wing_width"],
+                "pinned": p["kind"] in ("fly", "iron_fly")
+                and abs(settlement_price - p["center"]) < p["wing_width"],
                 "status": "settled",
             }
         )
@@ -795,9 +887,12 @@ def session_stats(positions: list[dict]) -> dict:
     pin_rate         share of flies that finished inside their wings (settled positions only).
     """
     flies = [p for p in positions if p["kind"] == "fly"]
+    iron_flies = [p for p in positions if p["kind"] == "iron_fly"]
     legged = [p for p in positions if p.get("entry_mode") == "legged"]
-    legged_flies = [p for p in legged if p["kind"] == "fly"]
-    settled_flies = [p for p in flies if p.get("status") == "settled"]
+    # A completion is a completion regardless of which completing trade closed it out -- an iron
+    # completion counts toward legged's completion_rate exactly like a debit completion does.
+    legged_completed = [p for p in legged if p["kind"] in ("fly", "iron_fly")]
+    settled_flies = [p for p in flies + iron_flies if p.get("status") == "settled"]
     debit_first = [p for p in positions if p.get("entry_mode") == "debit_first"]
     debit_first_flies = [p for p in debit_first if p["kind"] == "fly"]
 
@@ -807,12 +902,19 @@ def session_stats(positions: list[dict]) -> dict:
     return {
         "positions": len(positions),
         "flies": len(flies),
+        "iron_completions": len(iron_flies),
         # Named for what it counts: structures that never became flies. This counts settled ones too,
         # because after the bell "still a vertical" is the outcome, not a transient state.
         "uncompleted_verticals": len([p for p in positions if p["kind"] == "short_vertical"]),
         "uncompleted_long_verticals": len([p for p in positions if p["kind"] == "long_vertical"]),
-        "completion_rate": _rate(len(legged_flies), len(legged)),
+        "completion_rate": _rate(len(legged_completed), len(legged)),
         "debit_first_completion_rate": _rate(len(debit_first_flies), len(debit_first)),
-        "risk_free_rate": _rate(len([p for p in flies if fly.is_risk_free(p)]), len(flies)),
+        # Includes iron flies -- an iron completion is a real, final structure whose floor can
+        # legitimately be negative (unlike a same-type fly's), so it belongs in this rate exactly
+        # as much as a fly does; excluding it would silently hide the case this rate exists to
+        # catch.
+        "risk_free_rate": _rate(
+            len([p for p in flies + iron_flies if fly.is_risk_free(p)]), len(flies) + len(iron_flies)
+        ),
         "pin_rate": _rate(len([p for p in settled_flies if p.get("pinned")]), len(settled_flies)),
     }

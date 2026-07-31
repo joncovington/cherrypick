@@ -175,6 +175,18 @@ comparison measures one variable rather than a bundle of confounded changes.
   regime at the same centre. Its uncompleted branch is structurally different too: a long
   vertical's worst case at expiry is the debit already paid (bounded, floor never below `-debit`),
   never the `-W` full-defined-risk tail an uncompleted credit spread carries.
+- `iron` — control's twin isolating the **completion choice**, added 2026-07-31
+  (`completion_modes: ["debit", "iron"]`, `fly.iron_fly_payoff`/`engine.evaluate_iron_completion`).
+  `legged`'s completion always buys the same-type debit spread; this arm may instead complete by
+  *selling* the opposite-type credit spread (put held -> sell call, or vice versa), producing an
+  **iron butterfly** — the same geometry regardless of which side was legged first. Payoff-
+  equivalent to a same-type fly shifted down by `wing_width`, so it is **not** automatically
+  risk-free the way a completed fly is: the floor is genuinely `(credit1 + credit2 - wing_width) *
+  100 * qty - fees`, which can land negative even after both gates pass their price check, and
+  `position_floor`'s `iron_fly` branch never assumes otherwise. When both completion paths clear
+  their gates on the same iteration, the position takes whichever leaves the higher post-fee
+  floor. `completion_modes` defaults to `["debit"]` everywhere else, so no other arm's behavior
+  changes.
 
 **A global position cap does not make a multi-window arm test its windows.** `max_positions` alone let
 the book fill in the first window: over 07-20…07-24 `time_window` put 15 of its 16 legged entries in

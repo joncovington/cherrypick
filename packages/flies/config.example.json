@@ -45,6 +45,10 @@
     "entry_modes": [
       "legged"
     ],
+    "_completion_modes": "How an open legged credit spread may be completed. 'debit' = buy the completing same-type debit spread (the original mechanism). 'iron' = sell the OPPOSITE-type credit spread instead, producing an iron butterfly -- payoff-equivalent to a fly shifted down by wing_width, so risk-free iff the two credits summed clear wing_width plus fees (NOT assumed; the same floor gate enforces it). When both are enabled and both clear their gates on the same iteration, the higher post-fee floor wins. Off by default (['debit'] only) -- enable ['debit','iron'] only on its own arm, per the entry_modes rule above.",
+    "completion_modes": [
+      "debit"
+    ],
     "_min_credit_pct_of_width": "Opening credit floor as a fraction of wing width. Below this there is no room for the completing debit to come in cheaper AND clear two fee stacks.",
     "min_credit_pct_of_width": 0.2,
     "_max_credit_pct_of_width": "Opening credit CEILING. A vertical cannot be worth more than its width, so a credit near that width means the short leg is deep ITM and the premium is mostly intrinsic — a low-probability directional bet rather than a pin bet. Observed against real SPX quotes: a centre 67 points from spot produced a 77%-of-width credit with 67 points of intrinsic. The floor above cannot catch that, because a fatter intrinsic-heavy credit looks better to a floor.",
@@ -126,6 +130,20 @@
       "_note": "Control's twin, isolating the LEGGING ORDER: buy the debit vertical first, complete by SELLING the credit spread second (entry_modes: [\"debit_first\"]) -- the exact reverse of legged's two trades. Completion drift direction is INVERTED from every other arm: legged needs spot to drift AWAY from the short strike; this arm needs spot to drift TOWARD the centre (reversion), so it and legged monetize opposite path regimes at the same centre. See docs/faq.md for the full construction.",
       "entry_modes": [
         "debit_first"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "iron": {
+      "enabled": true,
+      "_note": "Control's twin isolating the COMPLETION CHOICE: entry is identical to control (sell a credit spread first), but completion_modes allows selling the opposite-type credit spread (an iron butterfly) alongside the usual debit completion, taking whichever clears its gates with the higher post-fee floor. Unlike a same-type fly, an iron completion's floor can be genuinely negative -- the two credits summed are not guaranteed to clear wing_width plus fees, so this arm measures whether that condition is actually met in practice, not just in theory. See docs/faq.md for the full construction.",
+      "completion_modes": [
+        "debit",
+        "iron"
       ],
       "entry_windows": [
         [
