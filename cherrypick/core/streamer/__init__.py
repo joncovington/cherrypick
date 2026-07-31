@@ -36,6 +36,9 @@ _RECONNECT_BASE = 2.0
 _RECONNECT_MAX = 60.0
 _COMMIT_BATCH_INTERVAL_S = 0.5
 _COMMIT_BATCH_MAX_PENDING = 25
+# 2+4+8+16+32+60s ~= 2 minutes of retries for a single symbol's chain fetch before giving up and
+# disabling its window for the rest of this connection's lifetime (same as before this existed).
+_CHAIN_FETCH_MAX_ATTEMPTS = 6
 
 _ET = ZoneInfo("America/New_York")
 
@@ -346,18 +349,58 @@ class ChainStreamer:
         nearest = min(chain.keys(), key=lambda e: abs((e - date.today()).days))
         return {o.streamer_symbol: o for o in chain[nearest] if getattr(o, "streamer_symbol", None)}
 
+    async def _fetch_dte0_chain_with_retry(self, symbol: str, state: _State) -> dict | None:
+        """Retry a failed chain fetch with the same doubling backoff `run_async` uses for
+        reconnects, instead of giving up after one attempt. A transient broker-side hiccup (an
+        HTML error page instead of JSON, a momentary auth blip) previously left a symbol's window
+        permanently disabled until the next full DXLink reconnect — which can be an hour or more
+        away — while every OTHER symbol kept ticking fine and masked it from the daemon's own
+        aggregate staleness check. `stream_symbol_health` is updated on every attempt (error set on
+        failure, cleared + `chain_loaded_at` stamped on success) so a caller reading the cache can
+        see this specific symbol's state even while the retry loop is still running."""
+        delay = _RECONNECT_BASE
+        for attempt in range(1, _CHAIN_FETCH_MAX_ATTEMPTS + 1):
+            self.log.info(
+                "[%s] Fetching 0DTE option chain… (attempt %d/%d)", symbol, attempt, _CHAIN_FETCH_MAX_ATTEMPTS
+            )
+            try:
+                chain = await self._fetch_dte0_chain(symbol)
+                self.log.info("[%s] 0DTE chain loaded: %d options", symbol, len(chain))
+                streamcache.write_chain(state.conn, chain)
+                streamcache.upsert_symbol_health(
+                    state.conn, symbol, chain_loaded_at=datetime.now(UTC).isoformat(), chain_fetch_error=None
+                )
+                return chain
+            except Exception as exc:
+                streamcache.upsert_symbol_health(state.conn, symbol, chain_fetch_error=str(exc))
+                if attempt == _CHAIN_FETCH_MAX_ATTEMPTS:
+                    self.log.error(
+                        "[%s] chain fetch failed %d/%d times, giving up: %s — window disabled",
+                        symbol,
+                        attempt,
+                        _CHAIN_FETCH_MAX_ATTEMPTS,
+                        exc,
+                    )
+                    return None
+                self.log.warning(
+                    "[%s] chain fetch attempt %d/%d failed: %s — retrying in %.0fs",
+                    symbol,
+                    attempt,
+                    _CHAIN_FETCH_MAX_ATTEMPTS,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, _RECONNECT_MAX)
+        return None  # unreachable, but keeps type-checkers honest
+
     async def _symbol_refresher(
         self, streamer, state: _State, symbol: str, Quote, Greeks, Summary, Trade
     ) -> None:
-        self.log.info("[%s] Fetching 0DTE option chain…", symbol)
-        try:
-            chain = await self._fetch_dte0_chain(symbol)
-            state.chains[symbol] = chain
-            self.log.info("[%s] 0DTE chain loaded: %d options", symbol, len(chain))
-            streamcache.write_chain(state.conn, chain)
-        except Exception as exc:
-            self.log.warning("[%s] Failed to fetch 0DTE chain: %s — window disabled", symbol, exc)
+        chain = await self._fetch_dte0_chain_with_retry(symbol, state)
+        if chain is None:
             return
+        state.chains[symbol] = chain
 
         state.window_syms.setdefault(symbol, [])
         while not state.stop_event.is_set():
