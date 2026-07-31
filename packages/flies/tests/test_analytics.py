@@ -711,3 +711,12 @@ def test_timeline_carries_the_feed(conn):
 def test_data_quality_on_an_empty_day_is_not_an_error(conn):
     feed, summary = analytics.data_quality(conn, "2026-07-20")
     assert feed == [] and summary["ticks"] == 0 and summary["ok_rate"] is None
+
+
+def test_entry_structure_label_covers_known_modes_and_falls_back_for_unknown():
+    assert analytics._entry_structure_label("legged", "put") == "short put"
+    assert analytics._entry_structure_label("legged", "call") == "short call"
+    assert analytics._entry_structure_label("outright", "put") == "fly"
+    # An entry_mode this map wasn't written for must surface as itself, not be guessed at as a
+    # short vertical (the old ternary's default) or crash.
+    assert analytics._entry_structure_label("debit_first", "put") == "debit_first"

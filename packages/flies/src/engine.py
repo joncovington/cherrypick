@@ -539,6 +539,21 @@ def evaluate_outright_entry(
 
 
 # --------------------------------------------------------------------------- settlement
+def _expiry_payoff(position: dict, settlement_price: float) -> float:
+    """Per-contract expiry value by kind — explicit dispatch, no fallthrough. A silent else here
+    once priced whatever future kind arrived as a short vertical, which is a SIGN-FLIPPED payoff
+    for anything whose worst case sits above zero (e.g. a debit-first long vertical) — the exact
+    hazard this function exists to close off before a new kind is ever settled for real."""
+    kind = position["kind"]
+    if kind == "fly":
+        return fly.fly_payoff(position["center"], position["wing_width"], settlement_price)
+    if kind == "short_vertical":
+        return fly.short_vertical_payoff(
+            position["side"], position["center"], position["wing_width"], settlement_price
+        )
+    raise ValueError(f"_expiry_payoff: unknown position kind {kind!r}")
+
+
 def settle(positions: list[dict], settlement_price: float) -> list[dict]:
     """Cash-settle every open position at expiry. SPX/XSP are European cash-settled, so there is no
     physical assignment to model — but tastytrade still charges $5/contract the next business day
@@ -563,12 +578,7 @@ def settle(positions: list[dict], settlement_price: float) -> list[dict]:
             {
                 **p,
                 "settlement_price": settlement_price,
-                "expiry_payoff": round(
-                    fly.fly_payoff(p["center"], p["wing_width"], settlement_price)
-                    if p["kind"] == "fly"
-                    else fly.short_vertical_payoff(p["side"], p["center"], p["wing_width"], settlement_price),
-                    4,
-                ),
+                "expiry_payoff": round(_expiry_payoff(p, settlement_price), 4),
                 "fees": settled_fees,
                 "itm_contracts": itm_contracts,
                 "assignment_fee": assignment,

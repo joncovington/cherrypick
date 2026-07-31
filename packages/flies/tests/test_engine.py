@@ -680,6 +680,26 @@ def test_settle_marks_pins_and_pnl():
     assert settled[1]["pnl"] == pytest.approx(-40.0)
 
 
+def test_settle_raises_on_unknown_kind():
+    """Regression: settle() used to compute expiry_payoff with an inline fly/else ternary that
+    would price any new kind as a short vertical -- sign-flipped for anything whose worst case
+    sits above zero. _expiry_payoff must raise instead of silently guessing."""
+    positions = [
+        {
+            "kind": "garbage",
+            "side": "put",
+            "center": 6000,
+            "wing_width": 5,
+            "net": 1.05,
+            "quantity": 1,
+            "fees": 0.0,
+            "entry_mode": "legged",
+        }
+    ]
+    with pytest.raises(ValueError, match="unknown position kind"):
+        engine.settle(positions, 6001.0)
+
+
 def test_session_stats_report_the_three_numbers_that_matter():
     positions = [
         # a legged entry that completed into a fly

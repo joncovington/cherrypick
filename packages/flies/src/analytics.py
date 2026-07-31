@@ -662,6 +662,14 @@ def _state_at(row: dict, when: str) -> dict | None:
     return state
 
 
+def _entry_structure_label(entry_mode: str, side: str) -> str:
+    """What a position's entry event should be labelled as, by construction. Explicit map, not a
+    ternary that quietly mislabels any mode it wasn't written for — an unrecognized entry_mode
+    falls back to the raw string rather than being guessed at as "short {side}"."""
+    labels = {"outright": "fly", "legged": f"short {side}"}
+    return labels.get(entry_mode, entry_mode)
+
+
 def session_timeline(conn, day: str | None = None) -> dict:
     """The session along a TIME axis — the one axis every other view here lacks.
 
@@ -732,7 +740,7 @@ def session_timeline(conn, day: str | None = None) -> dict:
                     "position_id": r["position_id"],
                     "center": r["center"],
                     "spot": r["underlying_at_entry"],
-                    "structure": "fly" if r["entry_mode"] == "outright" else f"short {r['side']}",
+                    "structure": _entry_structure_label(r["entry_mode"], r["side"]),
                 }
             )
         if r.get("completed_at"):
