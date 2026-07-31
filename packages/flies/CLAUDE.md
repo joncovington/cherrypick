@@ -249,7 +249,7 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    fitting noise. **One narrow, mechanical exception** (added 2026-07-30, applies to both paper and
    live, and to both a completed fly and a still-open short vertical): `engine.evaluate_pre_close_exit`
    closes any ITM leg in the closing minutes (`pre_close_exit_time`, default 15:50) whenever doing so
-   costs less than the $5/contract exercise-assignment fee it would otherwise incur overnight — a cost
+   costs less than the $5-per-ITM-strike exercise-assignment fee it would otherwise incur overnight — a cost
    comparison, not a P&L-driven stop or a strategy adjustment tuned on the session's own data. For a
    fly this is pure fee avoidance (the payoff is already bounded); for a vertical it stops the fee from
    stacking on top of a loss the position is already realizing. A vertical is only ever considered once
@@ -264,9 +264,18 @@ These are the constraints the module exists to enforce. Breaking one makes the n
   incomplete position at a time — see `live_loop.py` and docs/live-trading-plan.md). SPX/XSP only —
   both European cash-settled, so EARLY exercise is structurally impossible and there is no
   early-exercise machinery to get wrong. Cash exercise/assignment at expiry is NOT impossible,
-  though, and is not free: tastytrade charges $5/contract on every ITM leg the next business day
-  (confirmed against a real overnight charge, 2026-07-30) — modeled throughout (`fly.expire_fee`,
-  `itm_contracts_at_settlement`) and the reason `engine.evaluate_pre_close_exit` exists at all.
+  though, and is not free: tastytrade charges **$5 per ITM STRIKE** — one charge per distinct
+  option symbol that settles, *not* per contract and *not* scaled by quantity — the next business
+  day. Modeled throughout (`fly.expire_fee`, `fly.itm_legs_at_settlement`) and the reason
+  `engine.evaluate_pre_close_exit` exists at all.
+  **Corrected 2026-07-31.** This was modeled as $5/contract until real transactions disproved it:
+  a 2-contract XSP put leg was charged **$5.00, not $10.00** (`XSP 260730P00744000`, qty 2,
+  `clearing_fees -5.00`), alongside a 1-contract leg also at $5.00. So a butterfly's doubled centre
+  is ONE settlement event, and a completed fly pays at most 3 charges (its distinct strikes), never
+  4 (its contracts). The old model over-charged every settled fly with an ITM centre; both ledgers
+  were re-settled through the corrected math. `fee_reconcile` now compares modeled vs real fee
+  **per settlement symbol**, not just as an aggregate P&L delta — the aggregate is what let this
+  hide as ~$12 of apparent slippage noise for a day.
 - **No AI, no MCP, and no network on any decision path.** `fly.py` and `engine.py` are pure functions
   over a pre-fetched snapshot. Learning happens offline in the orchestrator's read side (`report`,
   `calibrate`, `eod-insight`) over closed rows — never inside the loop.

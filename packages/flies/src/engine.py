@@ -902,14 +902,14 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
     if spot is None:
         return False, "no_spot_price", None
 
-    itm_contracts = fly.itm_contracts_at_settlement(position, spot)
-    if itm_contracts == 0:
+    itm_legs = fly.itm_legs_at_settlement(position, spot)
+    if itm_legs == 0:
         return False, "no_itm_legs", None
 
     side, center, width = position.get("side"), position["center"], position["wing_width"]
     symbol, qty = snapshot["symbol"], position.get("quantity", 1)
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
-    assignment_fee = fly.expire_fee(itm_contracts)
+    assignment_fee = fly.expire_fee(itm_legs)
 
     if kind == "fly":
         lower, upper = center - width, center + width
@@ -927,7 +927,7 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
         plan = {
             "close_credit": round(close_price, 4),
             "close_fee": round(close_fee, 4),
-            "itm_contracts": itm_contracts,
+            "itm_legs": itm_legs,
             "assignment_fee": round(assignment_fee, 2),
             "slippage_cost": round(slippage_cost, 2),
             "lower_strike": lower,
@@ -954,7 +954,7 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
         plan = {
             "close_debit": round(close_price, 4),
             "close_fee": round(close_fee, 4),
-            "itm_contracts": itm_contracts,
+            "itm_legs": itm_legs,
             "assignment_fee": round(assignment_fee, 2),
             "slippage_cost": round(slippage_cost, 2),
             "long_strike": long_strike,
@@ -976,7 +976,7 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
         plan = {
             "close_credit": round(close_price, 4),
             "close_fee": round(close_fee, 4),
-            "itm_contracts": itm_contracts,
+            "itm_legs": itm_legs,
             "assignment_fee": round(assignment_fee, 2),
             "slippage_cost": round(slippage_cost, 2),
             "long_strike": long_strike,
@@ -998,7 +998,7 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
         plan = {
             "close_credit": round(close_price, 4),
             "close_fee": round(close_fee, 4),
-            "itm_contracts": itm_contracts,
+            "itm_legs": itm_legs,
             "assignment_fee": round(assignment_fee, 2),
             "slippage_cost": round(slippage_cost, 2),
             "lower_strike": lower_put,
@@ -1023,7 +1023,7 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
         plan = {
             "close_credit": round(close_price, 4),
             "close_fee": round(close_fee, 4),
-            "itm_contracts": itm_contracts,
+            "itm_legs": itm_legs,
             "assignment_fee": round(assignment_fee, 2),
             "slippage_cost": round(slippage_cost, 2),
             "lower_strike": lower_wing,
@@ -1148,7 +1148,7 @@ def _expiry_payoff(position: dict, settlement_price: float) -> float:
 def settle(positions: list[dict], settlement_price: float) -> list[dict]:
     """Cash-settle every open position at expiry. SPX/XSP are European cash-settled, so there is no
     physical assignment to model — but tastytrade still charges $5/contract the next business day
-    for every leg that finishes ITM and is exercised into cash (see `fly.itm_contracts_at_settlement`;
+    for every leg that finishes ITM and is exercised into cash (see `fly.itm_legs_at_settlement`;
     OTM legs expire worthless for free). That charge is folded into the position's `fees` here, once,
     at the moment of settlement, so `pnl` and the persisted `fees` total both include it consistently.
 
@@ -1158,8 +1158,8 @@ def settle(positions: list[dict], settlement_price: float) -> list[dict]:
     """
     out = []
     for p in positions:
-        itm_contracts = fly.itm_contracts_at_settlement(p, settlement_price)
-        assignment = fly.expire_fee(itm_contracts)
+        itm_legs = fly.itm_legs_at_settlement(p, settlement_price)
+        assignment = fly.expire_fee(itm_legs)
         settled_fees = round(p.get("fees", 0.0) + assignment, 2)
         # status="settled" tells position_pnl the assignment fee is ALREADY folded into
         # settled_fees above -- without it, position_pnl would (correctly, for a still-open
@@ -1171,7 +1171,7 @@ def settle(positions: list[dict], settlement_price: float) -> list[dict]:
                 "settlement_price": settlement_price,
                 "expiry_payoff": round(_expiry_payoff(p, settlement_price), 4),
                 "fees": settled_fees,
-                "itm_contracts": itm_contracts,
+                "itm_legs": itm_legs,
                 "assignment_fee": assignment,
                 "pnl": round(pnl, 2),
                 "pinned": p["kind"] in ("fly", "iron_fly")

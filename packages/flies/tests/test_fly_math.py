@@ -95,52 +95,55 @@ def test_fly_close_fee_matches_fly_open_fee_shape_at_the_closing_rate():
 
 
 # --------------------------------------------------------------------------- exercise/assignment fee
-def test_expire_fee_is_zero_with_no_itm_contracts():
+def test_expire_fee_is_zero_with_no_itm_legs():
     assert fly.expire_fee() == 0.0
     assert fly.expire_fee(0) == 0.0
 
 
-def test_expire_fee_charges_five_dollars_per_itm_contract():
+def test_expire_fee_charges_five_dollars_per_settlement_event():
     assert fly.expire_fee(1) == 5.00
     assert fly.expire_fee(3) == 15.00
 
 
-def test_itm_contracts_short_put_vertical_counts_each_itm_leg_once():
+def test_itm_legs_short_put_vertical_counts_each_itm_strike_once():
     position = {"kind": "short_vertical", "side": "put", "center": 6000, "wing_width": 5, "quantity": 1}
-    assert fly.itm_contracts_at_settlement(position, 6100) == 0  # both legs OTM
-    assert fly.itm_contracts_at_settlement(position, 5998) == 1  # only the short (center) ITM
-    assert fly.itm_contracts_at_settlement(position, 5990) == 2  # both legs ITM (max loss zone)
-    assert fly.itm_contracts_at_settlement(position, 6000) == 0  # exactly at the strike: not ITM
+    assert fly.itm_legs_at_settlement(position, 6100) == 0  # both legs OTM
+    assert fly.itm_legs_at_settlement(position, 5998) == 1  # only the short (center) ITM
+    assert fly.itm_legs_at_settlement(position, 5990) == 2  # both legs ITM (max loss zone)
+    assert fly.itm_legs_at_settlement(position, 6000) == 0  # exactly at the strike: not ITM
 
 
-def test_itm_contracts_short_call_vertical_mirrors_put():
+def test_itm_legs_short_call_vertical_mirrors_put():
     position = {"kind": "short_vertical", "side": "call", "center": 6000, "wing_width": 5, "quantity": 1}
-    assert fly.itm_contracts_at_settlement(position, 5900) == 0
-    assert fly.itm_contracts_at_settlement(position, 6002) == 1
-    assert fly.itm_contracts_at_settlement(position, 6010) == 2
+    assert fly.itm_legs_at_settlement(position, 5900) == 0
+    assert fly.itm_legs_at_settlement(position, 6002) == 1
+    assert fly.itm_legs_at_settlement(position, 6010) == 2
 
 
-def test_itm_contracts_fly_counts_the_doubled_center_twice():
-    """A completed fly has 3 distinct strikes (center-W, center, center+W) but 4 contracts -- the
-    centre carries 2 (one from the opening vertical, one from the completing vertical). For a put
-    fly, as settlement moves down through the strikes the ITM count steps 0 -> 1 -> 3 -> 4: the
-    centre's 2 contracts flip together (there is no "2" zone on its own), and the middle zone
-    (between the wings, below centre) landing on 3 is exactly what a real live session hit
-    (2026-07-30): a completed 740-center fly settled between its centre and lower wing, and
-    tastytrade charged the $5 fee on 3 contracts, matching this shape."""
+def test_itm_legs_fly_counts_the_doubled_center_once():
+    """CORRECTED 2026-07-31 (this test previously asserted the opposite). A completed fly holds 4
+    contracts across 3 DISTINCT strikes -- the centre carries 2 (one from the opening vertical,
+    one from the completing one) -- but the broker settles one option symbol as one transaction
+    and charges $5 once, however many contracts rest on it. So the fee count steps 0 -> 1 -> 2 -> 3
+    as a put fly's settlement walks down through its strikes, never 4."""
     position = {"kind": "fly", "side": "put", "center": 6000, "wing_width": 5, "quantity": 1}
-    assert fly.itm_contracts_at_settlement(position, 6010) == 0  # beyond the upper wing: all OTM
-    assert fly.itm_contracts_at_settlement(position, 6002) == 1  # between centre and upper wing
-    assert fly.itm_contracts_at_settlement(position, 5998) == 3  # between lower wing and centre
-    assert fly.itm_contracts_at_settlement(position, 4990) == 4  # beyond the lower wing: all 4 ITM
+    assert fly.itm_legs_at_settlement(position, 6010) == 0  # beyond the upper wing: all OTM
+    assert fly.itm_legs_at_settlement(position, 6002) == 1  # between centre and upper wing
+    assert fly.itm_legs_at_settlement(position, 5998) == 2  # centre + upper wing (centre counts ONCE)
+    assert fly.itm_legs_at_settlement(position, 4990) == 3  # beyond the lower wing: all 3 strikes
 
 
-def test_itm_contracts_scales_with_quantity():
-    position = {"kind": "fly", "side": "put", "center": 6000, "wing_width": 5, "quantity": 3}
-    assert fly.itm_contracts_at_settlement(position, 4990) == 12
+def test_itm_legs_do_not_scale_with_quantity():
+    """The decisive real-fill evidence: a 2-contract XSP put leg was charged $5.00, not $10.00.
+    One symbol settles once regardless of size, so quantity must not multiply the count."""
+    one = {"kind": "fly", "side": "put", "center": 6000, "wing_width": 5, "quantity": 1}
+    three = {**one, "quantity": 3}
+    assert fly.itm_legs_at_settlement(one, 4990) == 3
+    assert fly.itm_legs_at_settlement(three, 4990) == 3
+    assert fly.assignment_fee(three, 4990) == 15.00  # not 45.00
 
 
-def test_assignment_fee_is_expire_fee_of_the_itm_count():
+def test_assignment_fee_is_expire_fee_of_the_itm_leg_count():
     position = {"kind": "short_vertical", "side": "put", "center": 6000, "wing_width": 5, "quantity": 1}
     assert fly.assignment_fee(position, 6100) == 0.0
     assert fly.assignment_fee(position, 5990) == 10.00
@@ -169,11 +172,12 @@ def test_fly_held_for_a_credit_cannot_lose():
     assert fly.is_risk_free(position)
     # position_pnl, unlike position_floor, still prices the exercise fee fresh at EVERY
     # hypothetical price (it's a pure expiry question, not a management-aware one) -- so an
-    # UNMANAGED hold to raw expiry still bottoms out at position_floor minus the worst-case $20
-    # assignment fee (4 contracts, out past the wings on both sides).
+    # UNMANAGED hold to raw expiry still bottoms out at position_floor minus the worst-case $15
+    # assignment fee (3 settlement events -- one per distinct strike, out past the wings on
+    # both sides; corrected 2026-07-31 from $20/4 contracts against real fills).
     for price in range(5900, 6101):
-        assert fly.position_pnl(position, price) >= 85.0
-    assert min(fly.position_pnl(position, p) for p in range(5900, 6101)) == pytest.approx(85.0)
+        assert fly.position_pnl(position, price) >= 90.0
+    assert min(fly.position_pnl(position, p) for p in range(5900, 6101)) == pytest.approx(90.0)
 
 
 def test_fees_can_flip_the_floor_negative():
@@ -271,21 +275,21 @@ def test_long_vertical_floor_reserves_the_assignment_fee_unlike_a_fly():
     assert fly.position_floor(pos) == pytest.approx(-fly.expire_fee(1))
 
 
-def test_itm_contracts_long_vertical_call_side():
+def test_itm_legs_long_vertical_call_side():
     pos = debit_vertical(side="call")
     # Deep ITM through both call strikes (5995, 6000): 2 contracts.
-    assert fly.itm_contracts_at_settlement(pos, 6010) == 2
+    assert fly.itm_legs_at_settlement(pos, 6010) == 2
     # Between the strikes: only the lower (5995) is ITM.
-    assert fly.itm_contracts_at_settlement(pos, 5997) == 1
+    assert fly.itm_legs_at_settlement(pos, 5997) == 1
     # Below both strikes: 0.
-    assert fly.itm_contracts_at_settlement(pos, 5990) == 0
+    assert fly.itm_legs_at_settlement(pos, 5990) == 0
 
 
-def test_itm_contracts_long_vertical_put_side():
+def test_itm_legs_long_vertical_put_side():
     pos = debit_vertical(side="put")
     # Deep ITM through both put strikes (6000, 6005): 2 contracts.
-    assert fly.itm_contracts_at_settlement(pos, 5990) == 2
-    assert fly.itm_contracts_at_settlement(pos, 6010) == 0
+    assert fly.itm_legs_at_settlement(pos, 5990) == 2
+    assert fly.itm_legs_at_settlement(pos, 6010) == 0
 
 
 def test_position_pnl_long_vertical_uses_debit_vertical_payoff():
@@ -341,18 +345,18 @@ def test_iron_fly_floor_flips_exactly_at_the_width_boundary():
     assert fly.is_risk_free(at_boundary)
 
 
-def test_itm_contracts_iron_fly_never_both_shorts_at_once():
+def test_itm_legs_iron_fly_never_both_shorts_at_once():
     pos = iron_fly(net=6.00)
     # Deep past the put side: both put legs ITM, calls untouched.
-    assert fly.itm_contracts_at_settlement(pos, 5990) == 2
+    assert fly.itm_legs_at_settlement(pos, 5990) == 2
     # Between the strikes but below centre: only the short put ITM.
-    assert fly.itm_contracts_at_settlement(pos, 5998) == 1
+    assert fly.itm_legs_at_settlement(pos, 5998) == 1
     # At/above centre but below the call wing: only the short call ITM.
-    assert fly.itm_contracts_at_settlement(pos, 6002) == 1
+    assert fly.itm_legs_at_settlement(pos, 6002) == 1
     # Deep past the call side: both call legs ITM.
-    assert fly.itm_contracts_at_settlement(pos, 6010) == 2
+    assert fly.itm_legs_at_settlement(pos, 6010) == 2
     # Exactly at centre: neither short strike is crossed (strict ITM test).
-    assert fly.itm_contracts_at_settlement(pos, 6000) == 0
+    assert fly.itm_legs_at_settlement(pos, 6000) == 0
 
 
 def test_position_pnl_iron_fly_uses_iron_fly_payoff():
@@ -401,17 +405,19 @@ def bwb(side="put", credit=1.5, far_width=15, fees=0.0):
 
 def test_bwb_floor_is_the_real_negative_tail_plus_reserve():
     pos = bwb(credit=1.5, far_width=15, fees=0.0)  # tail = -(15-5) = -10
-    expected = (1.5 - 10.0) * 100 - fly.expire_fee(4)
+    # 3 settlement events (the doubled centre is ONE symbol), not 4 contracts -- corrected
+    # 2026-07-31 against real fills. See fly.position_floor's bwb branch.
+    expected = (1.5 - 10.0) * 100 - fly.expire_fee(3)
     assert fly.position_floor(pos) == pytest.approx(expected)
     assert not fly.is_risk_free(pos)
 
 
-def test_itm_contracts_bwb_asymmetric_wings():
+def test_itm_legs_bwb_asymmetric_wings():
     pos = bwb(side="put")  # near 6005, far 5985
-    assert fly.itm_contracts_at_settlement(pos, 6010) == 0  # above near wing: none ITM
-    assert fly.itm_contracts_at_settlement(pos, 6002) == 1  # only short centre put ITM
-    assert fly.itm_contracts_at_settlement(pos, 5990) == 3  # both near+centre ITM (2), far not yet
-    assert fly.itm_contracts_at_settlement(pos, 5980) == 4  # deep past the far wing: all four
+    assert fly.itm_legs_at_settlement(pos, 6010) == 0  # above near wing: none ITM
+    assert fly.itm_legs_at_settlement(pos, 6002) == 1  # only short centre put ITM
+    assert fly.itm_legs_at_settlement(pos, 5990) == 2  # near wing + centre (centre counts ONCE)
+    assert fly.itm_legs_at_settlement(pos, 5980) == 3  # deep past the far wing: all 3 strikes
 
 
 def test_position_pnl_bwb_uses_bwb_payoff():
@@ -443,9 +449,9 @@ def test_position_floor_raises_on_unknown_kind():
         fly.position_floor({**legged_fly(1.00), "kind": "garbage"})
 
 
-def test_itm_contracts_raises_on_unknown_kind():
+def test_itm_legs_raises_on_unknown_kind():
     with pytest.raises(ValueError, match="unknown position kind"):
-        fly.itm_contracts_at_settlement({**legged_fly(1.00), "kind": "garbage"}, 6000)
+        fly.itm_legs_at_settlement({**legged_fly(1.00), "kind": "garbage"}, 6000)
 
 
 def test_scan_prices_raises_on_unknown_kind():
@@ -459,9 +465,10 @@ def test_book_of_credit_flies_holds_its_floor_everywhere():
     result = fly.book_floor(positions)
     assert result["floor_holds"] is True
     assert result["unbounded_below"] is False
-    # Far enough below BOTH centres (5995 and 6035, 40 apart), every leg of both flies is
-    # simultaneously ITM: 105 + 35 gross, less $20 + $20 worst-case exercise fees.
-    assert result["worst"] == 100.0
+    # Far enough below BOTH centres (5995 and 6035, 40 apart), every strike of both flies is
+    # simultaneously ITM: 105 + 35 gross, less $15 + $15 worst-case exercise fees (3 settlement
+    # events each, not 4 contracts -- corrected 2026-07-31 against real fills).
+    assert result["worst"] == 110.0
 
 
 def test_book_funded_by_a_short_vertical_is_only_green_in_a_band():
@@ -608,3 +615,18 @@ def test_book_cash_splits_credits_debits_and_fees():
 def test_empty_book_is_trivially_flat():
     result = fly.book_floor([])
     assert result["worst"] == 0.0 and result["floor_holds"] is True
+
+
+def test_assignment_fee_matches_the_real_2026_07_30_broker_fills():
+    """Grounded directly in the tastytrade transactions that corrected this model, so it can never
+    silently revert to per-contract:
+
+        XSP 260730P00744000  Cash Settled Assignment  qty 2  clearing_fees -5.00
+        XSP 260730P00745000  Cash Settled Exercise    qty 1  clearing_fees -5.00
+
+    A completed 744-centre put fly settling at 743.76 leaves the centre (744, held x2 as the
+    doubled centre) and the upper wing (745) ITM, the lower wing (743) OTM. The broker charged
+    $5.00 + $5.00 = $10.00 across those two SYMBOLS -- not $15.00 for three contracts."""
+    position = {"kind": "fly", "side": "put", "center": 744.0, "wing_width": 1.0, "quantity": 1}
+    assert fly.itm_legs_at_settlement(position, 743.76) == 2  # the 744 centre and the 745 wing
+    assert fly.assignment_fee(position, 743.76) == 10.00

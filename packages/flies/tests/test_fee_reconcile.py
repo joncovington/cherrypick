@@ -166,3 +166,36 @@ def test_pending_reconciliation_excludes_today_and_out_of_window(live_conn):
 
     pending = fee_reconcile.pending_reconciliation(live_conn, SYMBOL, lookback_days=5, today="2026-07-31")
     assert pending == ["2026-07-30"]
+
+
+def test_real_fills_agree_with_the_per_settlement_event_fee_model(live_conn):
+    """The real 2026-07-30 chain charged $5.00 on each of two settling SYMBOLS -- including the
+    744 leg that carried 2 contracts. With the corrected per-event model those match exactly, so
+    no fee-model variance is reported."""
+    _save_744_position(live_conn, trade_date="2026-07-30")
+    result = fee_reconcile.reconcile_date(
+        live_conn, "2026-07-30", SYMBOL, _744_TRANSACTIONS, log=lambda *_: None
+    )
+    assert result["fee_variance"] == []
+
+
+def test_a_fee_that_stops_matching_the_model_is_flagged_per_symbol(live_conn):
+    """The guard against a silent re-definition of the fee (e.g. if the broker began charging per
+    contract, or tiered at larger size). One symbol charged $10 where the model says $5 must be
+    named explicitly -- the aggregate P&L delta alone read as ordinary slippage noise when this
+    exact bug was live."""
+    _save_744_position(live_conn, trade_date="2026-07-30")
+    txns = [
+        t if t.get("symbol") != "XSP   260730P00744000" or not t.get("clearing_fees")
+        else {**t, "clearing_fees": -10.0}
+        for t in _744_TRANSACTIONS
+    ]
+    logged = []
+    result = fee_reconcile.reconcile_date(
+        live_conn, "2026-07-30", SYMBOL, txns, log=logged.append
+    )
+    assert len(result["fee_variance"]) == 1
+    v = result["fee_variance"][0]
+    assert v["symbol"] == "XSP   260730P00744000"
+    assert v["modeled_fee"] == 5.0 and v["real_fee"] == 10.0
+    assert any("FEE-MODEL WARN" in m for m in logged)
