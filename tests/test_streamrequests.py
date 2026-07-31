@@ -15,7 +15,25 @@ def test_write_request_shape_and_cleaning(tmp_path, monkeypatch):
         "symbols": ["QQQ", "XSP"],
         "legs": [],
         "leg_sources": [],
+        "window_hints": {},
     }
+
+
+def test_write_request_carries_window_hints(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    path = streamrequests.write_request("demo", ["XSP"], window_hints={"xsp": 90, " qqq ": 30})
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["window_hints"] == {"XSP": 90, "QQQ": 30}
+
+
+def test_clean_window_hints_drops_junk_entries():
+    assert streamrequests.clean_window_hints(
+        {"xsp": 90, "bad": 0, "neg": -5, "float": 1.5, 7: 10, "ok": "40", None: 10}
+    ) == {"XSP": 90}
+
+
+def test_clean_window_hints_handles_none():
+    assert streamrequests.clean_window_hints(None) == {}
 
 
 def test_write_request_carries_legs_and_leg_sources(tmp_path, monkeypatch):
