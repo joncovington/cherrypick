@@ -93,6 +93,8 @@ import fly  # noqa: E402
 import live_orders  # noqa: E402
 import paper_loop as _pl  # noqa: E402
 import provider  # noqa: E402
+import stream_request  # noqa: E402
+import stream_window  # noqa: E402
 from cli import load_config  # noqa: E402
 
 DEFAULT_ARM = "gex"
@@ -1537,7 +1539,9 @@ class BrokerAdapter:
             self._ensure()
             d = date.fromisoformat(trade_date)
             transactions = self._run(
-                _broker.transaction_history(self._account, self._session, start_date=d, underlying_symbol=symbol)
+                _broker.transaction_history(
+                    self._account, self._session, start_date=d, underlying_symbol=symbol
+                )
             )
             return transactions, None
         except Exception as exc:  # noqa: BLE001 — fail-closed, see docstring
@@ -1905,6 +1909,20 @@ def main() -> int:
                         f"fee reconcile {pending_date}: reconciled={result['reconciled']} "
                         f"unmatched={result['unmatched']}"
                     )
+
+            # Tell the streamer which underlying we need kept fresh (best-effort), and whether it
+            # needs a wider-than-default ATM window after repeated missing_leg_quotes refusals
+            # (stream_window.py) -- live_loop previously registered no request of its own at all,
+            # free-riding entirely on paper_loop's or another module's registration of the same
+            # symbol. This DB (live_trades.db) has its own escalation state, independent of paper's.
+            if live:
+                symbol = _live_cfg(config).get("symbol", "XSP")
+                try:
+                    base_width = int(config.get("stream_window", {}).get("base_width", 60))
+                    hints = stream_window.hints_for_symbols(conn, [symbol], day, base_width=base_width)
+                except Exception:  # noqa: BLE001 — window escalation is advisory, never fatal
+                    hints = None
+                stream_request.register({"symbols": [symbol]}, window_hints=hints, live=True)
 
             # Settlement before the session gate — the settle time is after the close. Gated on
             # OFFICIAL, not just settled: a provisional settlement keeps retrying the auto

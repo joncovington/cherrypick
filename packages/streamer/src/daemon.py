@@ -82,6 +82,13 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
     def _protected_symbols() -> set[str]:
         return set(_registry.union_legs())
 
+    default_strike_count = int(scfg.get("window_strike_count", 60))
+
+    def _window_strike_count_for(symbol: str) -> int:
+        # A module's widened per-symbol request (e.g. flies escalating after repeated
+        # missing_leg_quotes) never narrows the configured default -- only ever widens it.
+        return max(default_strike_count, _registry.union_window_hints().get(symbol, 0))
+
     return ChainStreamer(
         session_factory=make_session_factory(),
         db_path=_config.cache_path(cfg),
@@ -89,7 +96,8 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         extra_subscriptions=_extra_subscriptions,
         protected_symbols=_protected_symbols,
         trade_hook=_orb.OpeningRangeTracker(),  # capture each symbol's 9:30-9:35 ET opening range
-        window_strike_count=int(scfg.get("window_strike_count", 20)),
+        window_strike_count=default_strike_count,
+        window_strike_count_for=_window_strike_count_for,
         logger=logger,
     )
 
