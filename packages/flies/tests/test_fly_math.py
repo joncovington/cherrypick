@@ -213,6 +213,27 @@ def test_position_floor_scales_with_quantity():
     assert fly.position_floor(triple) == fly.position_floor(single) * 3
 
 
+# --------------------------------------------------------------------------- unknown kind (Phase 0 hardening)
+def test_position_pnl_raises_on_unknown_kind():
+    with pytest.raises(ValueError, match="unknown position kind"):
+        fly.position_pnl({**legged_fly(1.00), "kind": "garbage"}, 6000)
+
+
+def test_position_floor_raises_on_unknown_kind():
+    with pytest.raises(ValueError, match="unknown position kind"):
+        fly.position_floor({**legged_fly(1.00), "kind": "garbage"})
+
+
+def test_itm_contracts_raises_on_unknown_kind():
+    with pytest.raises(ValueError, match="unknown position kind"):
+        fly.itm_contracts_at_settlement({**legged_fly(1.00), "kind": "garbage"}, 6000)
+
+
+def test_scan_prices_raises_on_unknown_kind():
+    with pytest.raises(ValueError, match="unknown position kind"):
+        fly.book_floor([{**legged_fly(1.00), "kind": "garbage"}])
+
+
 # --------------------------------------------------------------------------- book level
 def test_book_of_credit_flies_holds_its_floor_everywhere():
     positions = [legged_fly(1.05), {**legged_fly(0.35), "center": 6040}]

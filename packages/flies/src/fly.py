@@ -186,11 +186,14 @@ def itm_contracts_at_settlement(position: dict, settlement_price: float) -> int:
     def _itm(strike: float) -> bool:
         return settlement_price < strike if side == PUT else settlement_price > strike
 
-    if position["kind"] == "fly":
+    kind = position["kind"]
+    if kind == "fly":
         legs = [(center - width, 1), (center, 2), (center + width, 1)]
-    else:
+    elif kind == "short_vertical":
         long_strike = center - width if side == PUT else center + width
         legs = [(center, 1), (long_strike, 1)]
+    else:
+        raise ValueError(f"itm_contracts_at_settlement: unknown position kind {kind!r}")
     return sum(n for strike, n in legs if _itm(strike)) * qty
 
 
@@ -222,10 +225,13 @@ def position_pnl(position: dict, underlying: float) -> float:
     """
     qty = position.get("quantity", 1)
     w = position["wing_width"]
-    if position["kind"] == "fly":
+    kind = position["kind"]
+    if kind == "fly":
         payoff = fly_payoff(position["center"], w, underlying)
-    else:
+    elif kind == "short_vertical":
         payoff = short_vertical_payoff(position["side"], position["center"], w, underlying)
+    else:
+        raise ValueError(f"position_pnl: unknown position kind {kind!r}")
     cash = position["net"] + payoff
     fees = position.get("fees", 0.0)
     if position.get("status") != "settled":
@@ -255,8 +261,13 @@ def position_floor(position: dict) -> float:
     settle_now stay a pure expiry question.
     """
     qty = position.get("quantity", 1)
-    is_fly = position["kind"] == "fly"
-    worst_payoff = 0.0 if is_fly else -position["wing_width"]
+    kind = position["kind"]
+    if kind == "fly":
+        worst_payoff = 0.0
+    elif kind == "short_vertical":
+        worst_payoff = -position["wing_width"]
+    else:
+        raise ValueError(f"position_floor: unknown position kind {kind!r}")
     return (position["net"] + worst_payoff) * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0)
 
 
@@ -306,7 +317,11 @@ def _scan_prices(positions: list[dict], step: float) -> list[float]:
     strikes = []
     for p in positions:
         w = p["wing_width"]
-        strikes += [p["center"] - w, p["center"], p["center"] + w]
+        kind = p["kind"]
+        if kind in ("fly", "short_vertical"):
+            strikes += [p["center"] - w, p["center"], p["center"] + w]
+        else:
+            raise ValueError(f"_scan_prices: unknown position kind {kind!r}")
     lo, hi = min(strikes), max(strikes)
     pad = max(hi - lo, step * 4)
     prices, x = [], lo - pad
