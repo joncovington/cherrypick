@@ -489,7 +489,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             center=pos["center"],
             position_id=pos["position_id"],
             detail=f"closed for {cost_desc}, avoided ${plan['assignment_fee']:.2f} assignment fee "
-            f"({plan['itm_contracts']} ITM contract(s))",
+            f"({plan['itm_legs']} ITM leg(s))",
         )
         actions.append(
             {
@@ -869,7 +869,7 @@ def settle_book(conn, trade_date: str, arm: str, symbol: str, settlement_price: 
         "book_id": book_id,
         "settled": len(settled),
         "pnl": round(fly.book_pnl(final, settlement_price), 2),
-        "itm_contracts": sum(p.get("itm_contracts", 0) for p in settled),
+        "itm_legs": sum(p.get("itm_legs", 0) for p in settled),
         "assignment_fees": round(sum(p.get("assignment_fee", 0.0) for p in settled), 2),
         **summary,
     }

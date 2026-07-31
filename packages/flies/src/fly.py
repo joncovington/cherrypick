@@ -254,38 +254,39 @@ def fly_close_fee(symbol: str, quantity: int = 1) -> float:
     return _fees.ic_close_fee(symbol, quantity, legs=4, sell_legs=2, ndigits=4)
 
 
-def expire_fee(itm_contracts: int = 0) -> float:
-    """Cash-settled expiry: $0 per OTM leg (nothing to exercise), $5/contract for each of
-    `itm_contracts` that finishes ITM and is exercised/assigned overnight — see
-    `itm_contracts_at_settlement`. SPX/XSP only."""
-    return _fees.ic_expire_fee(itm_contracts)
+def expire_fee(itm_legs: int = 0) -> float:
+    """Cash-settled expiry: $0 per OTM leg (nothing to exercise), $5 per SETTLEMENT EVENT for each
+    of `itm_legs` — distinct ITM option symbols, not contracts — exercised/assigned overnight. See
+    `itm_legs_at_settlement`. SPX/XSP only."""
+    return _fees.ic_expire_fee(itm_legs)
 
 
-def itm_contracts_at_settlement(position: dict, settlement_price: float) -> int:
-    """How many contracts across this position's legs finish strictly ITM at `settlement_price` —
-    the count tastytrade's overnight $5/contract exercise-assignment fee is assessed on (charged
-    the next business day, not at expiry itself). Exactly-at-the-strike is treated as OTM (no
-    intrinsic value, nothing to exercise).
+def itm_legs_at_settlement(position: dict, settlement_price: float) -> int:
+    """How many DISTINCT option symbols across this position's legs finish strictly ITM at
+    `settlement_price` — the count tastytrade's overnight $5 exercise-assignment fee is assessed
+    on (charged the next business day, not at expiry itself). Exactly-at-the-strike is treated as
+    OTM (no intrinsic value, nothing to exercise).
 
-    A short vertical has 2 legs (short `center`, long the wing). A completed fly has 3 distinct
-    strikes but 4 contracts — the centre carries 2 (one from the opening vertical, one from the
-    completing vertical), and the fee is per CONTRACT, not per unique strike.
+    Per SETTLEMENT EVENT, not per contract, and NOT scaled by `quantity`. The broker settles one
+    symbol as one transaction and charges it once however many contracts rest on it — corrected
+    2026-07-31 against real fills (a 2-contract XSP put leg was charged $5.00, not $10.00; see
+    `cherrypick.core.fees` for the transactions). So a completed fly has 3 distinct strikes and
+    pays at most 3 events even though it holds 4 contracts: its doubled centre (one from the
+    opening vertical, one from the completing one) is a single symbol and settles once.
     """
     center, width = position["center"], position["wing_width"]
-    qty = position.get("quantity", 1)
     kind = position["kind"]
 
     if kind == "iron_fly":
         # Long (center-w) put, short center put, short center call, long (center+w) call -- this
         # geometry is the same regardless of which side was legged first (see engine's iron
         # completion), so `side` carries no information here, unlike every other kind (and isn't
-        # even stored on an iron_fly row). Each option type has its own ITM direction, and the
-        # doubled centre a same-type fly gets is NOT possible here (a strike can't be
-        # simultaneously below AND above spot), so at most one of the two centre legs is ever
-        # ITM -- never both shorts at once.
-        put_itm = 2 if settlement_price < center - width else (1 if settlement_price < center else 0)
-        call_itm = 2 if settlement_price > center + width else (1 if settlement_price > center else 0)
-        return (put_itm + call_itm) * qty
+        # even stored on an iron_fly row). Each option type has its own ITM direction, and all
+        # four strikes are distinct symbols (two puts, two calls), so each counts once. Price
+        # can't be below AND above the centre at once, so at most one side is ever ITM.
+        put_legs = 2 if settlement_price < center - width else (1 if settlement_price < center else 0)
+        call_legs = 2 if settlement_price > center + width else (1 if settlement_price > center else 0)
+        return put_legs + call_legs
 
     side = position["side"]
 
@@ -293,31 +294,29 @@ def itm_contracts_at_settlement(position: dict, settlement_price: float) -> int:
         return settlement_price < strike if side == PUT else settlement_price > strike
 
     if kind == "fly":
-        legs = [(center - width, 1), (center, 2), (center + width, 1)]
+        strikes = [center - width, center, center + width]
     elif kind == "short_vertical":
-        long_strike = center - width if side == PUT else center + width
-        legs = [(center, 1), (long_strike, 1)]
+        strikes = [center, center - width if side == PUT else center + width]
     elif kind == "long_vertical":
         # debit_first's opening trade: +1 (center-w) call / -1 center call (CALL side), or
         # +1 (center+w) put / -1 center put (PUT side) -- same two strikes as short_vertical's,
         # just held long instead of short.
-        long_strike = center - width if side == CALL else center + width
-        legs = [(center, 1), (long_strike, 1)]
+        strikes = [center, center - width if side == CALL else center + width]
     elif kind == "bwb":
         # Single-type (all put or all call), so the same _itm test applies to every leg -- unlike
-        # iron_fly's mixed-type geometry. Same 4-contract/doubled-centre shape as a same-type fly,
-        # just asymmetric spacing (near_wing at wing_width, far_wing at far_width).
+        # iron_fly's mixed-type geometry. Three distinct strikes like a symmetric fly (the doubled
+        # centre is one symbol), just asymmetric spacing.
         near_wing, _, far_wing = bwb_strikes(side, center, width, position["far_width"])
-        legs = [(near_wing, 1), (center, 2), (far_wing, 1)]
+        strikes = [near_wing, center, far_wing]
     else:
-        raise ValueError(f"itm_contracts_at_settlement: unknown position kind {kind!r}")
-    return sum(n for strike, n in legs if _itm(strike)) * qty
+        raise ValueError(f"itm_legs_at_settlement: unknown position kind {kind!r}")
+    return sum(1 for strike in strikes if _itm(strike))
 
 
 def assignment_fee(position: dict, settlement_price: float) -> float:
     """The overnight exercise-assignment fee this position would incur if it settled at
     `settlement_price` right now — $0 when every leg is OTM."""
-    return expire_fee(itm_contracts_at_settlement(position, settlement_price))
+    return expire_fee(itm_legs_at_settlement(position, settlement_price))
 
 
 # --------------------------------------------------------------------------- position accounting
@@ -393,11 +392,12 @@ def position_floor(position: dict) -> float:
     elif kind == "long_vertical":
         # Unlike a fly (no reserve) or a short vertical (full defined-risk, no reserve needed
         # either), a debit_first long vertical's worst payoff is genuinely 0 -- but its cheapest
-        # dollar point is a leg barely ITM, where a 2-leg close's slippage beats the $5/contract
+        # dollar point is a leg barely ITM, where a 2-leg close's slippage beats the $5
         # assignment fee less reliably than a fly's does. Reserve it; conservative is the honest
-        # direction here, not an assumption the exit always beats the fee.
+        # direction here, not an assumption the exit always beats the fee. One settlement event
+        # (the short centre), independent of quantity -- see `itm_legs_at_settlement`.
         worst_payoff = 0.0
-        reserve = expire_fee(qty)
+        reserve = expire_fee(1)
     elif kind == "iron_fly":
         # Same no-reserve convention as `fly`: `evaluate_pre_close_exit` covers iron_fly too, so
         # the realistic worst case going forward is bounded by (close now, hold to settlement),
@@ -409,11 +409,12 @@ def position_floor(position: dict) -> float:
     elif kind == "bwb":
         # Unlike fly/iron_fly, there is no "no-reserve, the exit covers it" convention here: the
         # tail scenario is a REAL loss (not a bounded-below payoff with an assignment fee on top
-        # of a win), and deep past the far wing all four contracts are ITM simultaneously -- the
+        # of a win), and deep past the far wing all three strikes settle ITM simultaneously -- the
         # single most reliable full-reserve case in the module. Reserve conservatively, same
-        # direction as long_vertical's reserve, for the same reason: honest is cheap here.
+        # direction as long_vertical's reserve, for the same reason: honest is cheap here. Three
+        # settlement events (the doubled centre is one symbol), independent of quantity.
         worst_payoff = -(position["far_width"] - position["wing_width"])
-        reserve = expire_fee(4 * qty)
+        reserve = expire_fee(3)
     else:
         raise ValueError(f"position_floor: unknown position kind {kind!r}")
     return (position["net"] + worst_payoff) * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0) - reserve
@@ -454,7 +455,7 @@ def _scan_prices(positions: list[dict], step: float) -> list[float]:
     through the strikes plus the flat regions beyond them sees every local minimum of the PAYOFF.
 
     The exercise-assignment fee is not linear, though — it is a step function that jumps by
-    $5/contract the instant a leg crosses its strike (see `itm_contracts_at_settlement`), so the
+    $5 the instant a leg crosses its strike (see `itm_legs_at_settlement`), so the
     true worst dollar point sits an infinitesimal distance past a strike, not exactly on it. A
     strike itself is included as the OTM side of that step by convention (exactly-at-the-money has
     no intrinsic value to exercise), so a bare step grid would land the "worst" reading on the

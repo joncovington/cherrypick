@@ -31,7 +31,7 @@ are comparable rather than a mix of confounded changes.
 
 What the module is actually *for* isn't the trade idea itself — it's measuring whether either
 way of building the credit survives real trading costs once a position actually settles:
-commissions, fees, bid/ask slippage, and (as of 2026-07-30) the $5/contract exercise-assignment
+commissions, fees, bid/ask slippage, and (as of 2026-07-30) the $5-per-ITM-strike exercise-assignment
 fee on any leg that finishes ITM. See the [module README](../README.md) for the full
 walkthrough and current results, and `CLAUDE.md`'s "honesty rules" for the specific claims this
 module is built to refuse to make (a per-position floor is not a book-level floor, an
@@ -40,7 +40,7 @@ uncompleted credit spread is not risk-free, and so on).
 ## Why not trade SPY, /ES, or /MES instead of SPX/XSP, now that the pre-close ITM exit closes ITM positions anyway?
 
 A larger notional — SPY (~$550–600) or the E-mini/Micro E-mini S&P 500 futures (/ES ~$250k+,
-/MES ~$25k notional per contract, vs. XSP's ~$70–80) — would shrink the $5/contract
+/MES ~$25k notional per contract, vs. XSP's ~$70–80) — would shrink the $5-per-strike
 exercise-assignment fee's bite as a fraction of a structure's value. That's the same lever the
 width-arm sweep (`control` through `width-5`) is already testing, just applied to the underlying
 instead of the wing. It doesn't work for any of these three, and the reason has nothing to do
@@ -74,14 +74,14 @@ Two concrete things break once exercise isn't a cash-settlement event:
   for free and a physically-settled symbol would not.
 
 The fee-avoidance argument for switching doesn't hold up on its own terms either: tastytrade's
-equity/ETF assignment fee is **the same $5/contract** as the index-option exercise fee this
+equity/ETF assignment fee is **the same $5** as the index-option exercise fee this
 module already models (`cherrypick.core.fees.ic_expire_fee`). None of SPY, /ES, or /MES would
 save anything on the cost being escaped — each would only add early-assignment risk this module
 isn't built to hold. (SPX/XSP exist as separate Cboe products specifically to fill the gap
 CME's own futures-options complex on the S&P 500 doesn't: there is no European-style,
 cash-settled route through /ES or /MES options at all.)
 
-If the real question underneath is *"is XSP too small a notional for a flat $5/contract fee to
+If the real question underneath is *"is XSP too small a notional for a flat $5-per-strike fee to
 be survivable,"* that's exactly what the width-arm sweep is already measuring, and **SPX** — same
 cash-settled, no-early-exercise mechanics, ~10x XSP's notional — is the lever to pull if XSP
 proves too small. Not a physically-settled or futures-settled symbol.

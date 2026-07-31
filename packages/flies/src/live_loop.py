@@ -1140,7 +1140,7 @@ def run_settle_live(
         f"LIVE settled {book_id} at {settlement:.2f} "
         f"({source}{f', auto-fetched via {auto_source}' if auto_source else ''}): "
         f"P&L {result['pnl']:+.2f} "
-        f"({result['itm_contracts']} ITM contract(s), ${result['assignment_fees']:.2f} assignment fees)"
+        f"({result['itm_legs']} ITM leg(s), ${result['assignment_fees']:.2f} assignment fees)"
         + (
             " — confirm with: python src/live_loop.py --settle --price <official print>"
             if source == "last_trade_provisional"
