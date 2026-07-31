@@ -89,6 +89,48 @@ def test_stalled_but_settling_does_not_restart(monkeypatch, calls, tmp_path):
     assert calls["start"] == [] and calls["stop"] == []
 
 
+def test_chain_fetch_error_triggers_restart_even_with_healthy_aggregate_ages(monkeypatch, calls, tmp_path):
+    # running=true, aggregate ages fresh (other symbols ticking fine), but XSP's chain fetch failed --
+    # the 2026-07-31 incident this check exists for.
+    _status(
+        monkeypatch,
+        {
+            "running": True,
+            "oldest_event_age_s": 1.0,
+            "underlyings_stale_age_s": 1.0,
+            "connected_since": "2020-01-01T00:00:00+00:00",
+            "chain_fetch_errors": {"XSP": "Couldn't parse response: <html>"},
+        },
+    )
+    findings = wd._check_streamer_health("streamer", tmp_path, _spec())
+    assert "stalled" in findings[0].title
+    assert "XSP" in findings[0].message
+    assert calls["stop"] and calls["start"] == [["run.py"]]
+
+
+def test_chain_fetch_error_no_auto_restart_just_warns(monkeypatch, calls, tmp_path):
+    _status(
+        monkeypatch,
+        {
+            "running": True,
+            "oldest_event_age_s": 1.0,
+            "underlyings_stale_age_s": 1.0,
+            "connected_since": "2020-01-01T00:00:00+00:00",
+            "chain_fetch_errors": {"XSP": "boom"},
+        },
+    )
+    findings = wd._check_streamer_health("streamer", tmp_path, _spec(auto_restart=False))
+    assert findings[0].title == "Streamer stalled"
+    assert calls["start"] == []
+
+
+def test_no_chain_fetch_errors_and_healthy_ages_is_ok(monkeypatch, calls, tmp_path):
+    _status(monkeypatch, {"running": True, "chain_fetch_errors": {}})
+    findings = wd._check_streamer_health("streamer", tmp_path, _spec())
+    assert findings[0].status == wd.OK
+    assert calls["start"] == [] and calls["stop"] == []
+
+
 def test_status_unreadable_is_unknown(monkeypatch, calls, tmp_path):
     _status(monkeypatch, {}, returncode=1)
     findings = wd._check_streamer_health("streamer", tmp_path, _spec())
