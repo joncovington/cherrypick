@@ -338,6 +338,31 @@ async def order_status(account: Any, session: Any, order_id: Any) -> dict:
     }
 
 
+async def transaction_history(
+    account: Any,
+    session: Any,
+    *,
+    start_date: date,
+    end_date: date | None = None,
+    underlying_symbol: str | None = None,
+    symbol: str | None = None,
+) -> list[dict]:
+    """Fetch broker transactions for a date range — GET-only, never mutates an order. This is the
+    source of truth for actual fill/settlement cash flow (real per-transaction `value`/`net_value`
+    and fee fields), unlike `order_status`'s `price` field, which is the order's own working/limit
+    price and, as documented there, "the closest a `PlacedOrder` gets to a real fill price without
+    a separate transactions-API call" — not a true realized amount. `end_date` defaults to
+    `start_date` (a single-day query is the common case for reconciling one session)."""
+    transactions = await account.get_history(
+        session,
+        start_date=start_date,
+        end_date=end_date or start_date,
+        underlying_symbol=underlying_symbol,
+        symbol=symbol,
+    )
+    return [t.model_dump(mode="json") for t in transactions]
+
+
 async def cancel_order(account: Any, session: Any, order_id: Any) -> dict:
     """Cancel a working order. Tastytrade's `delete_order` returns nothing on success and raises
     on failure (already cancelled/filled/unknown id) — both are reported here rather than raised,
