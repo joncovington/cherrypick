@@ -1494,6 +1494,82 @@ def test_watcher_cache_gates_status_polls(live_conn, monkeypatch):
     assert broker.status_calls == []  # cache said "not touchable", heartbeat never elapsed
 
 
+def test_watcher_confirms_from_the_daemon_inbox_without_opening_a_websocket(live_conn, monkeypatch):
+    """Daemon mode: a row the alert daemon already wrote to the WAL inbox is treated exactly like
+    a cache touch -- the watcher must confirm from it WITHOUT opening its own websocket, and (as
+    always) still confirm through the ordinary .status() call, never a second write path."""
+    import alerts_db
+
+    far = _open_entry_row()  # market far from the limit: cache-gating alone would never poll
+    far["net"] = 5.00
+    far["credit"] = 5.00
+    dbmod.save_position(live_conn, far)
+    _fake_cache(monkeypatch, _snapshot())
+
+    inbox = alerts_db.connect()
+    alerts_db.record_alert(
+        inbox,
+        {"order_id": "ORD-E1", "status": "Filled", "price": "1.10", "filled": True, "cancellable": False},
+        "2026-07-31T10:00:00-04:00",
+    )
+    inbox.close()
+
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Filled", "price": "1.10", "filled": True}})
+    cfg = _watch_cfg()
+    cfg["live"]["fill_heartbeat_seconds"] = 10_000
+    cfg["live"]["use_order_alert_daemon"] = True
+    ticks = iter(range(0, 1000))
+    live_loop.run_watch(
+        cfg,
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+        clock_fn=lambda: next(ticks),
+    )
+    assert broker.alert_calls == []  # the daemon owns the websocket; the watcher never opens one
+    assert broker.status_calls  # but the fill is still confirmed through the broker, as always
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["entry_fill_status"] == "filled"
+
+
+def test_watcher_with_an_empty_inbox_falls_back_to_the_heartbeat_poll(live_conn, monkeypatch):
+    """A daemon that died, stalled, or was never started must cost latency and nothing else --
+    the ordinary heartbeat poll still confirms the fill."""
+    far = _open_entry_row()
+    far["net"] = 5.00
+    far["credit"] = 5.00
+    dbmod.save_position(live_conn, far)
+    _fake_cache(monkeypatch, _snapshot())
+
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Filled", "price": "1.10", "filled": True}})
+    cfg = _watch_cfg()
+    cfg["live"]["fill_heartbeat_seconds"] = 3  # elapses during the run
+    cfg["live"]["use_order_alert_daemon"] = True
+    t = {"now": 0.0}
+
+    def clock_fn():
+        t["now"] += 1.0
+        return t["now"]
+
+    live_loop.run_watch(
+        cfg,
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+        clock_fn=clock_fn,
+    )
+    assert broker.alert_calls == []
+    assert broker.status_calls  # the heartbeat carried it despite an empty inbox
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["entry_fill_status"] == "filled"
+
+
 def test_watcher_alert_stream_off_by_default_never_calls_it(live_conn, monkeypatch):
     """Regression: use_order_alert_stream defaults to False, so an unmodified config must never
     touch the new call at all -- byte-for-byte the pre-2026-07-31 polling loop."""
