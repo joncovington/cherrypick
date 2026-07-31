@@ -295,6 +295,73 @@ def test_position_pnl_long_vertical_uses_debit_vertical_payoff():
     assert pnl == pytest.approx((-1.0 + 5.0) * 100 - fly.expire_fee(2))
 
 
+# --------------------------------------------------------------------------- iron completion (Phase 1b)
+@pytest.mark.parametrize("offset", [-100, -10, -5, -2.5, 0, 2.5, 5, 10, 100])
+def test_iron_fly_payoff_is_fly_payoff_shifted_down_by_width(offset):
+    assert fly.iron_fly_payoff(6000, 5, 6000 + offset) == fly.fly_payoff(6000, 5, 6000 + offset) - 5
+
+
+def test_iron_fly_payoff_bottoms_out_at_negative_width():
+    assert fly.iron_fly_payoff(6000, 5, 6000) == 0.0  # peaks at 0, not 5
+    assert fly.iron_fly_payoff(6000, 5, 6005) == -5.0
+    assert fly.iron_fly_payoff(6000, 5, 5995) == -5.0
+    assert fly.iron_fly_payoff(6000, 5, 6100) == -5.0  # bounded, does not keep falling
+
+
+def iron_fly(net, fees=0.0):
+    return {
+        "kind": "iron_fly",
+        "center": 6000,
+        "wing_width": 5,
+        "net": net,
+        "quantity": 1,
+        "fees": fees,
+    }
+
+
+def test_iron_fly_floor_is_the_two_credits_less_the_width():
+    # Two credits summing to 6.00 against a 5-wide fly: floor = (6.00 - 5) * 100 - fees.
+    pos = iron_fly(net=6.00, fees=0.0)
+    assert fly.position_floor(pos) == pytest.approx(100.0)
+    assert fly.is_risk_free(pos)
+
+
+def test_iron_fly_floor_can_be_negative_unlike_a_same_type_fly():
+    """The one honesty-critical difference from `fly`: two credits summed are NOT guaranteed to
+    clear the width, so this floor can and does go negative -- storing this under kind='fly' would
+    silently claim risk-free when it is not."""
+    pos = iron_fly(net=3.00, fees=0.0)  # 3.00 < wing_width 5 -- genuinely NOT risk-free
+    assert fly.position_floor(pos) == pytest.approx(-200.0)
+    assert not fly.is_risk_free(pos)
+
+
+def test_iron_fly_floor_flips_exactly_at_the_width_boundary():
+    at_boundary = iron_fly(net=5.00, fees=0.0)
+    assert fly.position_floor(at_boundary) == pytest.approx(0.0)
+    assert fly.is_risk_free(at_boundary)
+
+
+def test_itm_contracts_iron_fly_never_both_shorts_at_once():
+    pos = iron_fly(net=6.00)
+    # Deep past the put side: both put legs ITM, calls untouched.
+    assert fly.itm_contracts_at_settlement(pos, 5990) == 2
+    # Between the strikes but below centre: only the short put ITM.
+    assert fly.itm_contracts_at_settlement(pos, 5998) == 1
+    # At/above centre but below the call wing: only the short call ITM.
+    assert fly.itm_contracts_at_settlement(pos, 6002) == 1
+    # Deep past the call side: both call legs ITM.
+    assert fly.itm_contracts_at_settlement(pos, 6010) == 2
+    # Exactly at centre: neither short strike is crossed (strict ITM test).
+    assert fly.itm_contracts_at_settlement(pos, 6000) == 0
+
+
+def test_position_pnl_iron_fly_uses_iron_fly_payoff():
+    pos = iron_fly(net=6.00, fees=0.0)
+    pnl = fly.position_pnl(pos, 6002.5)  # payoff = fly_payoff(...) - 5 = 2.5 - 5 = -2.5
+    # (net + payoff) * 100, less the $5 assignment fee (one ITM leg: the short call at 6002.5 > 6000)
+    assert pnl == pytest.approx((6.00 - 2.5) * 100 - 5.0)
+
+
 # --------------------------------------------------------------------------- unknown kind (Phase 0 hardening)
 def test_position_pnl_raises_on_unknown_kind():
     with pytest.raises(ValueError, match="unknown position kind"):

@@ -755,6 +755,103 @@ def test_pre_close_exit_long_vertical_before_the_window_refuses():
     assert not close and reason == "before_pre_close_exit_window"
 
 
+# --------------------------------------------------------------------------- iron completion (Phase 1b)
+def test_iron_completion_fires_when_the_opposite_credit_richens_enough():
+    """A held put spread (open_spread, net 2.55) completes into an iron fly by SELLING the call
+    spread at the same centre, once that call spread has richened past the width+buffer gate."""
+    rich_calls = snapshot(calls={6000: q(4.0, 4.2), 6005: q(0.5, 0.6)})
+    done, reason, plan = engine.evaluate_iron_completion(rich_calls, open_spread(), params())
+    assert done and reason == "ok"
+    assert plan["net"] > 0 and plan["floor"] > 0
+    assert plan["opposite_side"] == "call" and plan["opposite_wing"] == 6005.0
+
+
+def test_iron_completion_waits_when_the_opposite_credit_is_still_thin():
+    """The module's own real quotes: a 6000/6005 call spread priced at 2.3, against a gate of
+    2.55 (width 5 + buffer 0.1 - the 2.55 credit already collected) -- not rich enough yet."""
+    done, reason, _ = engine.evaluate_iron_completion(snapshot(), open_spread(), params())
+    assert not done and reason == "iron_credit_too_low"
+
+
+def test_iron_completion_ignores_a_position_that_is_not_a_short_vertical():
+    done, reason, plan = engine.evaluate_iron_completion(snapshot(), open_debit_vertical(), params())
+    assert not done and reason == "not_a_credit_spread" and plan is None
+
+
+def test_iron_completion_refuses_without_the_opposite_types_leg_quotes():
+    bare = snapshot(calls={})
+    done, reason, plan = engine.evaluate_iron_completion(bare, open_spread(), params())
+    assert not done and reason == "missing_leg_quotes" and plan is None
+
+
+def test_iron_completion_floor_matches_position_floor_exactly():
+    rich_calls = snapshot(calls={6000: q(4.0, 4.2), 6005: q(0.5, 0.6)})
+    spread = open_spread(net=2.55)
+    done, reason, plan = engine.evaluate_iron_completion(rich_calls, spread, params())
+    assert done and reason == "ok"
+    assert plan["floor"] == pytest.approx(
+        round(
+            fly.position_floor(
+                {
+                    "kind": "iron_fly",
+                    "center": 6000,
+                    "wing_width": 5,
+                    "net": plan["net"],
+                    "quantity": 1,
+                    "fees": spread["fees"] + plan["completion_fee"],
+                }
+            ),
+            2,
+        )
+    )
+
+
+def test_iron_fly_settles_correctly_across_all_three_zones():
+    """Regression covering the same sign-flip hazard as debit_first's settle test, for the newest
+    kind: deep past either wing must settle at -wing_width, never mispriced as a same-type fly's 0
+    floor or a short vertical's -wing_width-only-one-side shape."""
+    pos = {
+        "kind": "iron_fly",
+        "center": 6000,
+        "wing_width": 5,
+        "net": 6.00,
+        "quantity": 1,
+        "fees": 0.0,
+        "entry_mode": "legged",
+    }
+    settled = engine.settle([pos], 6000.0)
+    assert settled[0]["expiry_payoff"] == pytest.approx(0.0)  # peaks at 0, not +width
+    settled = engine.settle([pos], 5990.0)
+    assert settled[0]["expiry_payoff"] == pytest.approx(-5.0)
+    settled = engine.settle([pos], 6010.0)
+    assert settled[0]["expiry_payoff"] == pytest.approx(-5.0)
+
+
+def _itm_close_iron_snapshot(**over):
+    base = {
+        "now_min": 15 * 60 + 55,
+        "underlying_price": 6009.0,  # deep past the call wing
+        "puts": {5995: q(0.0, 0.05), 6000: q(0.0, 0.05)},
+        "calls": {6000: q(9.0, 9.1), 6005: q(4.0, 4.1)},
+    }
+    base.update(over)
+    return snapshot(**base)
+
+
+def test_pre_close_exit_closes_an_itm_iron_fly_when_slippage_beats_the_fee():
+    pos = {
+        "kind": "iron_fly",
+        "center": 6000,
+        "wing_width": 5,
+        "net": 6.00,
+        "quantity": 1,
+        "fees": 0.0,
+    }
+    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_iron_snapshot(), pos, params())
+    assert close and reason == "ok"
+    assert plan["itm_contracts"] == 2  # both call legs ITM past 6005
+
+
 # --------------------------------------------------------------------------- outright entry
 def cheap_fly_snapshot():
     """A grid where the 5995/6000/6005 call fly prices around 0.30."""

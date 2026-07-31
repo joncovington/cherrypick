@@ -155,25 +155,87 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
         underlying_price=snapshot.get("underlying_price"),
     )
 
-    # --- 1. complete any open credit spread that has become cheap enough to square off
+    # --- 1. complete any open credit spread that has become cheap enough to square off, either by
+    # buying the completing debit spread (kind -> fly) or, if this arm's completion_modes allows
+    # it, by selling the OPPOSITE-type credit spread instead (kind -> iron_fly). When both are
+    # possible on the same iteration, take whichever leaves the higher post-fee floor.
     for pos in [p for p in positions if p["kind"] == "short_vertical" and p["status"] == "open"]:
-        done, reason, plan = engine.evaluate_completion(snapshot, pos, params)
-        if plan is not None:
-            _record_best_debit(conn, pos, plan["debit"], now)
-        if not done:
+        debit_done, debit_reason, debit_plan = engine.evaluate_completion(snapshot, pos, params)
+        if debit_plan is not None:
+            _record_best_debit(conn, pos, debit_plan["debit"], now)
+
+        iron_done = iron_plan = None
+        if "iron" in params.get("completion_modes", ["debit"]):
+            iron_done, _iron_reason, iron_plan = engine.evaluate_iron_completion(snapshot, pos, params)
+
+        take_iron = iron_done and (not debit_done or iron_plan["floor"] > debit_plan["floor"])
+
+        if not debit_done and not (iron_done and take_iron):
             journal(
                 "completion",
-                reason,
+                debit_reason,
                 center=pos["center"],
                 position_id=pos["position_id"],
                 detail=None
-                if plan is None
-                else f"debit {plan['debit']:.2f} vs gate {plan['gate_debit']:.2f}",
+                if debit_plan is None
+                else f"debit {debit_plan['debit']:.2f} vs gate {debit_plan['gate_debit']:.2f}",
             )
+            if iron_plan is not None and not iron_done:
+                journal(
+                    "iron_completion",
+                    _iron_reason,
+                    center=pos["center"],
+                    position_id=pos["position_id"],
+                    detail=f"iron credit {iron_plan['credit']:.2f} vs gate {iron_plan['gate_credit']:.2f}",
+                )
             actions.append(
-                {"action": "completion_skipped", "position_id": pos["position_id"], "reason": reason}
+                {"action": "completion_skipped", "position_id": pos["position_id"], "reason": debit_reason}
             )
             continue
+
+        if take_iron:
+            plan = iron_plan
+            pos["kind"] = "iron_fly"
+            pos["net"] = plan["net"]
+            pos["fees"] = pos["fees"] + plan["completion_fee"]
+            latency = _minutes_since(pos.get("entry_time"), now)
+            dbmod.save_position(
+                conn,
+                {
+                    "position_id": pos["position_id"],
+                    "kind": "iron_fly",
+                    "net": plan["net"],
+                    "credit": plan["credit"],
+                    "completion_mode": "iron",
+                    "fees": pos["fees"],
+                    "floor_dollars": plan["floor"],
+                    "risk_free": int(fly.is_risk_free(pos)),
+                    "completed_at": now,
+                    "completion_latency_min": latency,
+                    "spot_at_completion": snapshot.get("underlying_price"),
+                },
+            )
+            journal(
+                "iron_completion",
+                "completed",
+                accepted=True,
+                center=pos["center"],
+                position_id=pos["position_id"],
+                detail=f"iron credit {plan['credit']:.2f}, floor ${plan['floor']:.2f} after fees",
+            )
+            actions.append(
+                {
+                    "action": "iron_completed",
+                    "position_id": pos["position_id"],
+                    "credit": plan["credit"],
+                    "net": plan["net"],
+                    "floor": plan["floor"],
+                    "latency_min": latency,
+                }
+            )
+            continue
+
+        plan = debit_plan
         pos["kind"] = "fly"
         pos["net"] = plan["net"]
         pos["fees"] = pos["fees"] + plan["completion_fee"]
@@ -185,6 +247,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "kind": "fly",
                 "net": plan["net"],
                 "debit": plan["debit"],
+                "completion_mode": "debit",
                 "fees": pos["fees"],
                 "floor_dollars": plan["floor"],
                 "risk_free": int(fly.is_risk_free(pos)),
@@ -278,7 +341,9 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
     # to rule 5 ("no adjustments, hold to settlement"): a cost-avoidance mechanism in the closing
     # minutes, not a strategy adjustment tuned on the session's own data.
     for pos in [
-        p for p in positions if p["kind"] in ("fly", "short_vertical", "long_vertical") and p["status"] == "open"
+        p
+        for p in positions
+        if p["kind"] in ("fly", "short_vertical", "long_vertical", "iron_fly") and p["status"] == "open"
     ]:
         close, reason, plan = engine.evaluate_pre_close_exit(snapshot, pos, params)
         if not close:
@@ -293,9 +358,10 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     else f"slippage {plan['slippage_cost']:.2f} vs assignment {plan['assignment_fee']:.2f}",
                 )
             continue
-        # fly and long_vertical close for a credit (>= 0); short_vertical closes for a debit
-        # (a cost, so it subtracts from net) -- explicit by kind, no fallthrough.
-        if pos["kind"] in ("fly", "long_vertical"):
+        # fly, long_vertical, and iron_fly close for a credit (its sign can vary, but it is priced
+        # and returned as one -- close_credit); short_vertical closes for a debit (a cost, so it
+        # subtracts from net) -- explicit by kind, no fallthrough.
+        if pos["kind"] in ("fly", "long_vertical", "iron_fly"):
             close_price = plan["close_credit"]
         else:
             close_price = -plan["close_debit"]

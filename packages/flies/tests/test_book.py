@@ -329,3 +329,62 @@ def test_freshly_opened_debit_vertical_records_its_worst_case_floor(conn):
     assert row["kind"] == "long_vertical"
     assert row["floor_dollars"] is not None
     assert row["floor_dollars"] < 0
+
+
+# --------------------------------------------------------------------------- iron completion (Phase 1b)
+def test_iron_completion_lifecycle_from_credit_spread_to_iron_fly(conn):
+    """Mirror of the legged lifecycle test: sell a put spread, complete it into an IRON fly by
+    SELLING the call spread once it has richened past the width+buffer gate."""
+    config = one_arm_config(entry_modes=["legged"], completion_modes=["debit", "iron"])
+
+    first = bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+    opened = [a for a in first["actions"] if a["action"] == "credit_spread_opened"]
+    assert len(opened) == 1
+
+    rich_calls = snapshot(calls={6000: q(4.0, 4.2), 6005: q(0.5, 0.6)})
+    second = bookmod.process_snapshot(rich_calls, config, conn, "control")
+    completed = [a for a in second["actions"] if a["action"] == "iron_completed"]
+    assert len(completed) == 1
+    assert completed[0]["net"] > 0 and completed[0]["floor"] > 0
+
+    completed_id = completed[0]["position_id"]
+    rows = dbmod.book_positions(conn, bookmod.book_id_for("2026-07-20", "control", "SPX"))
+    row = next(r for r in rows if r["position_id"] == completed_id)
+    assert row["kind"] == "iron_fly"
+    assert row["completion_mode"] == "iron"
+    assert row["risk_free"] == 1
+    assert row["completed_at"] is not None
+
+
+def test_completion_prefers_whichever_candidate_leaves_the_higher_floor(conn):
+    """When both the debit completion and the iron completion clear their gates on the same
+    iteration, the position takes whichever leaves the higher post-fee floor -- here, the iron
+    completion's richer call spread beats the debit completion's modest one."""
+    config = one_arm_config(entry_modes=["legged"], completion_modes=["debit", "iron"])
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+
+    both_cheap = snapshot(
+        puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)},  # debit completion also clears its gate
+        calls={6000: q(4.8, 5.0), 6005: q(0.1, 0.2)},  # but the iron completion's floor is higher
+    )
+    result = bookmod.process_snapshot(both_cheap, config, conn, "control")
+    completed = [a for a in result["actions"] if a["action"] in ("completed", "iron_completed")]
+    assert len(completed) == 1
+    assert completed[0]["action"] == "iron_completed"
+
+
+def test_completion_modes_unset_behaves_exactly_like_before_iron_existed(conn):
+    """Regression: an arm that never sets completion_modes (i.e. every arm except "iron") must be
+    byte-identical to the pre-iron behaviour -- only the debit completion is ever evaluated."""
+    config = one_arm_config(entry_modes=["legged"])  # no completion_modes override
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+
+    # Quotes where BOTH completions would clear their gates if iron were even evaluated.
+    both_cheap = snapshot(
+        puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)},
+        calls={6000: q(4.8, 5.0), 6005: q(0.1, 0.2)},
+    )
+    result = bookmod.process_snapshot(both_cheap, config, conn, "control")
+    completed = [a for a in result["actions"] if a["action"] in ("completed", "iron_completed")]
+    assert len(completed) == 1
+    assert completed[0]["action"] == "completed"  # never iron -- completion_modes defaults to debit-only
