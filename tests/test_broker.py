@@ -9,6 +9,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
+import anyio
 import pytest
 
 from cherrypick.core import broker
@@ -515,3 +516,74 @@ def test_transaction_history_respects_explicit_end_date_and_symbol():
     leg_symbol = "XSP   260730P00744000"
     _run(broker.transaction_history(acct, "sess", start_date=start, end_date=end, symbol=leg_symbol))
     assert acct.calls == [(start, end, None, leg_symbol)]
+
+
+# --------------------------------------------------------------------------- wait_for_order_alerts
+class FakePlacedAlertOrder:
+    def __init__(self, order_id, status="Filled", cancellable=False, price="1.05"):
+        self.id = order_id
+        self.status = status
+        self.cancellable = cancellable
+        self.price = price
+
+
+class FakeAlertStreamer:
+    """Fake AlertStreamer: async context manager; subscribe_accounts records what it was given;
+    listen(cls) yields a canned list of orders then stops, or hangs forever (for timeout tests)."""
+
+    def __init__(self, session, orders=None, hang=False, raise_on_subscribe=None):
+        self.session = session
+        self._orders = orders or []
+        self._hang = hang
+        self._raise_on_subscribe = raise_on_subscribe
+        self.subscribed = None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def subscribe_accounts(self, accounts):
+        if self._raise_on_subscribe:
+            raise self._raise_on_subscribe
+        self.subscribed = list(accounts)
+
+    async def listen(self, alert_class):
+        if self._hang:
+            await anyio.sleep_forever()
+            return
+        for o in self._orders:
+            yield o
+
+
+def test_wait_for_order_alerts_returns_only_matching_orders():
+    """The account isn't exclusive to this caller -- an alert for an order not asked for (a
+    shared account's own manual trade) must never surface as if it were."""
+    orders = [FakePlacedAlertOrder(11, status="Filled"), FakePlacedAlertOrder(99, status="Filled")]
+    streamer_cls = lambda session: FakeAlertStreamer(session, orders=orders)  # noqa: E731
+    out = _run(broker.wait_for_order_alerts("sess", "acct", {"11"}, 1.0, streamer_cls=streamer_cls))
+    assert out == [
+        {"order_id": 11, "status": "Filled", "cancellable": False, "price": "1.05", "filled": True}
+    ]
+
+
+def test_wait_for_order_alerts_stops_once_every_requested_order_is_seen():
+    orders = [FakePlacedAlertOrder(11, status="Filled"), FakePlacedAlertOrder(12, status="Cancelled")]
+    streamer_cls = lambda session: FakeAlertStreamer(session, orders=orders)  # noqa: E731
+    out = _run(broker.wait_for_order_alerts("sess", "acct", {"11", "12"}, 1.0, streamer_cls=streamer_cls))
+    assert {o["order_id"] for o in out} == {11, 12}
+
+
+def test_wait_for_order_alerts_times_out_to_empty_when_nothing_arrives():
+    streamer_cls = lambda session: FakeAlertStreamer(session, hang=True)  # noqa: E731
+    out = _run(broker.wait_for_order_alerts("sess", "acct", {"11"}, 0.05, streamer_cls=streamer_cls))
+    assert out == []
+
+
+def test_wait_for_order_alerts_fails_closed_on_subscribe_error():
+    streamer_cls = lambda session: FakeAlertStreamer(  # noqa: E731
+        session, raise_on_subscribe=RuntimeError("auth expired")
+    )
+    out = _run(broker.wait_for_order_alerts("sess", "acct", {"11"}, 1.0, streamer_cls=streamer_cls))
+    assert out == []
