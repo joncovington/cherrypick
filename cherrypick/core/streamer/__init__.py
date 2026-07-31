@@ -76,7 +76,7 @@ class ChainStreamer:
         extra_subscriptions: Callable[[list[str]], dict[str, list[str]]] | None = None,
         protected_symbols: Callable[[], set[str]] | None = None,
         trade_hook: Callable[[ChainStreamer, str, float | None, float], None] | None = None,
-        window_strike_count: int = 20,
+        window_strike_count: int = 60,
         window_refresh_pts: float = 1.0,
         window_poll_s: float = 5.0,
         subscription_poll_s: float = 30.0,
