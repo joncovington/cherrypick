@@ -83,6 +83,7 @@ for _p in (_HERE, os.path.join(_HERE, "_core")):
 from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import home as _home  # noqa: E402
 
+import alerts_db  # noqa: E402
 import book as bookmod  # noqa: E402
 import clock  # noqa: E402
 import db as dbmod  # noqa: E402
@@ -1234,6 +1235,7 @@ def run_watch(
         else live_cfg.get("fill_heartbeat_seconds", DEFAULT_HEARTBEAT_SECONDS)
     )
     use_alert_stream = live_cfg.get("use_order_alert_stream", False)
+    use_alert_daemon = live_cfg.get("use_order_alert_daemon", False)
     symbol = live_cfg.get("symbol", "XSP")
     start = clock_fn()
     deadline = start + seconds
@@ -1242,6 +1244,19 @@ def run_watch(
     last_poll: dict[str, float] = {}
     cycles = 0
     confirmed = 0
+
+    # Daemon mode: read the WAL inbox a separately-running alert daemon appends to, rather than
+    # opening our own websocket per cycle. `alerts_checkpoint` starts at None so a freshly spawned
+    # watcher sees everything on file for its pending orders (it has no prior checkpoint of its
+    # own), then advances past what it has already acted on. A failure to open the inbox is not
+    # fatal -- it just leaves the watcher on its ordinary cache-gated polling.
+    alerts_conn = None
+    alerts_checkpoint: str | None = None
+    if use_alert_daemon:
+        try:
+            alerts_conn = alerts_db.connect()
+        except Exception as exc:  # noqa: BLE001
+            log(f"alert inbox unavailable ({type(exc).__name__}: {exc}) -- falling back to polling")
 
     while clock_fn() < deadline:
         day = provider.now_et().date().isoformat()
@@ -1280,9 +1295,21 @@ def run_watch(
         alerted_ids: set = set()
         alert_order_ids: set = set()
         remaining = deadline - clock_fn()
-        if use_alert_stream and remaining > 0:
+        pending_order_ids = {str(oid) for oid in order_id_for_pos.values() if oid}
+        if use_alert_daemon and alerts_conn is not None and pending_order_ids:
+            # Daemon mode: the websocket is already open in a separate process, appending to the
+            # WAL inbox. Read it (a local query, no network) instead of opening our own socket.
+            try:
+                inbox = alerts_db.alerts_since(alerts_conn, pending_order_ids, alerts_checkpoint)
+            except Exception as exc:  # noqa: BLE001 -- an unreadable inbox is never fatal here
+                log(f"alert inbox read failed ({type(exc).__name__}: {exc}) -- falling back to polling")
+                inbox = []
+            alerted_ids = {str(a["order_id"]) for a in inbox}
+            if inbox:
+                alerts_checkpoint = max(a["received_at"] for a in inbox)
+        elif use_alert_stream and remaining > 0:
             wait_for = max(0.0, min(poll, remaining))
-            alert_order_ids = {str(oid) for oid in order_id_for_pos.values() if oid}
+            alert_order_ids = pending_order_ids
             alerts = broker.wait_for_order_alerts(alert_order_ids, wait_for) if alert_order_ids else []
             alerted_ids = {str(a["order_id"]) for a in alerts}
 
@@ -1349,10 +1376,13 @@ def run_watch(
                     confirmed += 1
 
         # The alert-wait call above already blocked for up to `poll` seconds this cycle when it
-        # ran -- sleeping again would double-wait every cycle for no benefit.
+        # ran -- sleeping again would double-wait every cycle for no benefit. Daemon mode's inbox
+        # read is instant, though, so it still needs the sleep to pace the loop.
         if not (use_alert_stream and alert_order_ids) and clock_fn() < deadline:
             sleep(poll)
 
+    if alerts_conn is not None:
+        alerts_conn.close()
     return {"ok": True, "cycles": cycles, "confirmed": confirmed}
 
 
@@ -1697,10 +1727,25 @@ def run_status(config: dict, conn) -> dict:
         "orphaned_orders": len(read_orphans()),
         "last_log_write": last_tick,
         "log_file": str(lf),
+        # The order-alert daemon's own view of itself (PID probe + its heartbeat file). Only
+        # meaningful when live.use_order_alert_daemon is on; a stale heartbeat_at on a `running`
+        # process is the tell for a silently-dead websocket -- liveness alone can't see that.
+        "alert_daemon": _alert_daemon_status_safe() if live_cfg.get("use_order_alert_daemon") else None,
         # The pilot's core instrument: live vs contemporaneous paper, with the plan doc's abort
         # rule evaluated. Files only (both ledgers are local SQLite); best-effort.
         "live_vs_paper": _live_vs_paper_safe(conn, arm),
     }
+
+
+def _alert_daemon_status_safe():
+    """Best-effort: `--status` must never fail because the optional daemon module or its files
+    aren't there (it's an accelerator, and status is a read-only diagnostic)."""
+    try:
+        import alert_daemon
+
+        return alert_daemon.status()
+    except Exception as exc:  # noqa: BLE001
+        return {"running": None, "error": f"{type(exc).__name__}: {exc}"}
 
 
 def _live_vs_paper_safe(live_conn, arm: str):
