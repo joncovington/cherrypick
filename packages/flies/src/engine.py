@@ -43,7 +43,17 @@ PUT, CALL = fly.PUT, fly.CALL
 # width IS the 1-increment rung, and a duplicate ATM book under a second name would double-count it.
 # `wide_wing` stays for the SPX-era books' attribution but is disabled in config on XSP, where its
 # 20-point wing is off-scale (the scaled equivalent of the drift it brackets is covered by width-2).
-ARMS = ("gex", "time_window", "control", "wide_wing", "width-2", "width-3", "width-4", "width-5")
+ARMS = (
+    "gex",
+    "time_window",
+    "control",
+    "wide_wing",
+    "width-2",
+    "width-3",
+    "width-4",
+    "width-5",
+    "debit-first",
+)
 
 
 # --------------------------------------------------------------------------- config
@@ -359,6 +369,165 @@ def evaluate_completion(snapshot: dict, position: dict, params: dict) -> tuple:
     return True, "ok", plan
 
 
+# --------------------------------------------------------------------------- debit-first entry (step 1)
+def choose_debit_side(snapshot: dict, center: float) -> str:
+    """Which debit vertical to buy first when legging in via `debit_first` -- the inverse of
+    `choose_side`. Buy the side spot is currently on the OTM end of, so the debit is cheap now and
+    has room to richen as spot moves toward the centre -- the same direction the completing credit
+    spread richens in (see `fly.debit_first_completing_direction`). `choose_side` instead sells the
+    side spot has already crossed, betting on the COMPLETING spread cheapening on continued drift
+    away -- the opposite regime.
+    """
+    spot = snapshot.get("underlying_price", center)
+    return CALL if spot <= center else PUT
+
+
+def evaluate_debit_vertical_entry(snapshot: dict, params: dict, open_positions: list) -> tuple:
+    """Should this arm buy an opening debit vertical? Returns (enter, reason, plan | None).
+
+    Mirror of `evaluate_credit_spread_entry`, buying instead of selling: the debit vertical bought
+    here is completed later by SELLING the credit spread at the same centre
+    (`evaluate_debit_completion`) -- literally the same two trades `legged` makes, in the opposite
+    order.
+    """
+    if snapshot.get("dte", 0) != 0:
+        return False, "no_0dte_expiration", None
+
+    if before_open_gate(params, snapshot.get("now_min")):
+        return False, "before_open_gate", None
+
+    ok_window, window = in_entry_window(snapshot.get("now_min"), params.get("entry_windows", []))
+    if not ok_window:
+        return False, "outside_entry_window", None
+
+    if len(open_positions) >= params.get("max_positions", 4):
+        return False, "max_positions_reached", None
+
+    if _window_cap_reached(params, open_positions, window):
+        return False, "max_positions_this_window_reached", None
+
+    center, center_reason = select_center(snapshot, params)
+    if center is None:
+        return False, center_reason, None
+
+    if any(abs(p["center"] - center) < 1e-6 for p in open_positions):
+        return False, "center_already_occupied", None
+
+    width = params.get("wing_width", 5)
+    side = choose_debit_side(snapshot, center)
+    long_strike = center - width if side == CALL else center + width
+    if not _have(snapshot, side, [center, long_strike]):
+        return False, "missing_leg_quotes", None
+
+    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    debit = fly.vertical_debit(quote(snapshot, side, long_strike), quote(snapshot, side, center), slip)
+
+    if debit <= 0:
+        # A non-positive modeled debit means a stale or crossed quote -- a debit vertical's value
+        # is bounded below by zero, so nobody sells one for a credit.
+        return False, "implausible_debit_quote", None
+
+    min_debit = params.get("min_debit_pct_of_width", 0.20) * width
+    if debit < min_debit:
+        # Too cheap to be plausible: the far-OTM side of a debit spread this thin has little room
+        # left to richen before the completing credit spread's own ceiling caps it.
+        return False, "debit_below_floor_completion_implausible", None
+
+    max_debit = params.get("max_debit_pct_of_width", 0.60) * width
+    if debit > max_debit:
+        # Mirror of legged's intrinsic-heavy ceiling: a debit approaching the width means the long
+        # leg is deep ITM already, leaving little room for the completing sale to out-earn it.
+        return False, "debit_above_ceiling_mostly_intrinsic", None
+
+    symbol = snapshot["symbol"]
+    qty = params.get("quantity", 1)
+    open_fee = fly.vertical_open_fee(symbol, qty)
+    fee_buffer = params.get("fee_buffer", 0.10)
+    # The completing credit can never exceed `width` (a vertical's value is capped there), so a
+    # debit that already leaves no room for buffer + both fee stacks, expressed in price points,
+    # can never be out-earned -- refuse before ever taking the position on, the same feasibility
+    # check `credit_cannot_clear_fees` is for legged's entry.
+    completion_fee_est = fly.vertical_open_fee(symbol, qty)
+    fees_in_points = (open_fee + completion_fee_est) / (fly.CONTRACT_MULTIPLIER * qty)
+    if debit + fee_buffer + fees_in_points >= width:
+        return False, "debit_cannot_be_out_earned", None
+
+    return (
+        True,
+        "ok",
+        {
+            "side": side,
+            "center": center,
+            "center_reason": center_reason,
+            "wing_width": width,
+            "debit": round(debit, 4),
+            "quantity": qty,
+            "open_fee": open_fee,
+            "completing_direction": fly.debit_first_completing_direction(side),
+            "entry_window": window,
+        },
+    )
+
+
+# --------------------------------------------------------------------------- debit-first entry (step 2)
+def evaluate_debit_completion(snapshot: dict, position: dict, params: dict) -> tuple:
+    """Should this open long vertical (debit_first's opening trade) be completed into a butterfly
+    now, by SELLING the credit spread at the same centre? Returns (complete, reason, plan).
+
+    Mirror of `evaluate_completion` with the trade direction reversed: the gate is
+    `C > D + fee_buffer`, where D is the debit already paid.
+    """
+    if position.get("kind") != "long_vertical":
+        return False, "not_a_debit_vertical", None
+
+    side, center, width = position["side"], position["center"], position["wing_width"]
+    # The completing credit spread is legged's own entry geometry -- short the centre, long the
+    # wing on the far side, same formula `evaluate_credit_spread_entry` uses for its long_strike.
+    wing_strike = center - width if side == PUT else center + width
+    if not _have(snapshot, side, [center, wing_strike]):
+        return False, "missing_leg_quotes", None
+
+    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    credit = fly.vertical_credit(quote(snapshot, side, center), quote(snapshot, side, wing_strike), slip)
+
+    symbol = snapshot["symbol"]
+    qty = position.get("quantity", 1)
+    completion_fee = fly.vertical_open_fee(symbol, qty)
+    buffer_pts = params.get("fee_buffer", 0.10)
+    debit_paid = -position["net"]  # net is negative (a debit) for an open long_vertical
+
+    net = credit - debit_paid
+    completed_fees = position.get("fees", 0.0) + completion_fee
+    # Reuse fly.position_floor exactly as evaluate_completion does -- see its own comment on why
+    # a completion's floor check must go through the shared function rather than a duplicate.
+    floor = fly.position_floor(
+        {
+            "kind": "fly",
+            "side": side,
+            "center": center,
+            "wing_width": width,
+            "net": net,
+            "quantity": qty,
+            "fees": completed_fees,
+        }
+    )
+    plan = {
+        "credit": round(credit, 4),
+        "net": round(net, 4),
+        "completion_fee": completion_fee,
+        "floor": round(floor, 2),
+        "wing_strike": wing_strike,
+        "gate_credit": round(debit_paid + buffer_pts, 4),  # the credit this would have had to beat
+    }
+
+    if credit <= debit_paid + buffer_pts:
+        return False, "completing_credit_too_low", plan
+    if floor < params.get("min_floor_dollars", 0.0):
+        return False, "floor_below_minimum_after_fees", plan
+
+    return True, "ok", plan
+
+
 # --------------------------------------------------------------------------- pre-close ITM exit
 DEFAULT_PRE_CLOSE_EXIT = "15:50"  # 10 minutes before the 16:00 ET close
 
@@ -374,16 +543,17 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
     forbids. This is not that: it is a narrow, mechanical cost comparison in the closing minutes,
     when there is no meaningful time left for the picture to change.
 
-    Applies to BOTH a completed fly and a still-open (uncompleted) short vertical: an ITM vertical
-    is already realizing its loss, and letting the assignment fee stack on top of that loss is the
-    same avoidable cost a fly's ITM leg has, just on the losing side instead of the winning one.
-    The gate is a straight dollar comparison either way, not a price gate like
-    `evaluate_completion`'s: close only if the slippage cost of doing so is strictly cheaper than
-    the assignment fee avoided — otherwise holding to settlement and paying the fee is the better
-    of the two options, and this leaves the position alone.
+    Applies to a completed fly, a still-open (uncompleted) short vertical, and a still-open
+    (uncompleted) `debit_first` long vertical: an ITM vertical of either sign is realizing a real
+    dollar outcome one way or the other, and letting the assignment fee stack on top of it is the
+    same avoidable cost a fly's ITM leg has, just on a different leg. The gate is a straight
+    dollar comparison either way, not a price gate like `evaluate_completion`'s: close only if the
+    slippage cost of doing so is strictly cheaper than the assignment fee avoided — otherwise
+    holding to settlement and paying the fee is the better of the two options, and this leaves the
+    position alone.
     """
     kind = position.get("kind")
-    if kind not in ("fly", "short_vertical"):
+    if kind not in ("fly", "short_vertical", "long_vertical"):
         return False, "not_a_closeable_kind", None
 
     now_min = snapshot.get("now_min")
@@ -426,7 +596,7 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
             "lower_strike": lower,
             "upper_strike": upper,
         }
-    else:
+    elif kind == "short_vertical":
         long_strike = center - width if side == PUT else center + width
         if not _have(snapshot, side, [center, long_strike]):
             return False, "missing_leg_quotes", None
@@ -446,6 +616,28 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
         slippage_cost = (close_price - theoretical) * fly.CONTRACT_MULTIPLIER * qty + close_fee
         plan = {
             "close_debit": round(close_price, 4),
+            "close_fee": round(close_fee, 4),
+            "itm_contracts": itm_contracts,
+            "assignment_fee": round(assignment_fee, 2),
+            "slippage_cost": round(slippage_cost, 2),
+            "long_strike": long_strike,
+        }
+    else:  # long_vertical -- debit_first's opening trade, still uncompleted
+        long_strike = center - width if side == CALL else center + width
+        if not _have(snapshot, side, [center, long_strike]):
+            return False, "missing_leg_quotes", None
+        # Closing SELLS the held long leg and buys back the short centre -- the reverse of the
+        # opening trade, so this is a credit, priced with vertical_credit not vertical_debit.
+        close_price = fly.vertical_credit(
+            quote(snapshot, side, long_strike), quote(snapshot, side, center), slip
+        )
+        close_fee = fly.vertical_close_fee(symbol, qty)
+        # The credit that would exactly realize the vertical's current intrinsic value -- always
+        # >= 0, the mirror of short_vertical's always-<=0 theoretical.
+        theoretical = fly.debit_vertical_payoff(side, center, width, spot)
+        slippage_cost = (theoretical - close_price) * fly.CONTRACT_MULTIPLIER * qty + close_fee
+        plan = {
+            "close_credit": round(close_price, 4),
             "close_fee": round(close_fee, 4),
             "itm_contracts": itm_contracts,
             "assignment_fee": round(assignment_fee, 2),
@@ -551,6 +743,10 @@ def _expiry_payoff(position: dict, settlement_price: float) -> float:
         return fly.short_vertical_payoff(
             position["side"], position["center"], position["wing_width"], settlement_price
         )
+    if kind == "long_vertical":
+        return fly.debit_vertical_payoff(
+            position["side"], position["center"], position["wing_width"], settlement_price
+        )
     raise ValueError(f"_expiry_payoff: unknown position kind {kind!r}")
 
 
@@ -602,6 +798,8 @@ def session_stats(positions: list[dict]) -> dict:
     legged = [p for p in positions if p.get("entry_mode") == "legged"]
     legged_flies = [p for p in legged if p["kind"] == "fly"]
     settled_flies = [p for p in flies if p.get("status") == "settled"]
+    debit_first = [p for p in positions if p.get("entry_mode") == "debit_first"]
+    debit_first_flies = [p for p in debit_first if p["kind"] == "fly"]
 
     def _rate(n, d):
         return round(n / d, 4) if d else None
@@ -612,7 +810,9 @@ def session_stats(positions: list[dict]) -> dict:
         # Named for what it counts: structures that never became flies. This counts settled ones too,
         # because after the bell "still a vertical" is the outcome, not a transient state.
         "uncompleted_verticals": len([p for p in positions if p["kind"] == "short_vertical"]),
+        "uncompleted_long_verticals": len([p for p in positions if p["kind"] == "long_vertical"]),
         "completion_rate": _rate(len(legged_flies), len(legged)),
+        "debit_first_completion_rate": _rate(len(debit_first_flies), len(debit_first)),
         "risk_free_rate": _rate(len([p for p in flies if fly.is_risk_free(p)]), len(flies)),
         "pin_rate": _rate(len([p for p in settled_flies if p.get("pinned")]), len(settled_flies)),
     }

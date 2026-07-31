@@ -204,6 +204,12 @@ _ADDED_POSITION_COLUMNS = {
     "close_order_id": "TEXT",
     "close_fill_status": "TEXT",
     "closed_before_expiry": "INTEGER",
+    # debit_first: the running-max counterfactual for an uncompleted long_vertical, mirroring
+    # best_completing_debit/best_debit_at above but in the opposite direction -- the best (highest)
+    # credit the completing sale was ever offered, so a miss can be read as "the market never paid
+    # enough" vs "our buffer was too tight" after the fact.
+    "best_completing_credit": "REAL",
+    "best_credit_at": "TEXT",
 }
 
 _ADDED_BOOK_COLUMNS = {
