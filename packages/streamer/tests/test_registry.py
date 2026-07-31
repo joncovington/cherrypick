@@ -36,6 +36,23 @@ def test_union_symbols_across_modules_plus_seed(home):
     assert _registry.union_symbols(seed_symbols=["ndx"]) == ["NDX", "QQQ", "SPX", "XSP"]
 
 
+def test_union_window_hints_takes_the_max_per_symbol(home):
+    _registry.write_request("flies", ["XSP"], window_hints={"XSP": 40})
+    _registry.write_request("gex", ["XSP", "QQQ"], window_hints={"XSP": 90, "QQQ": 30})
+    assert _registry.union_window_hints() == {"XSP": 90, "QQQ": 30}
+
+
+def test_union_window_hints_one_modules_silence_never_narrows_another(home):
+    _registry.write_request("flies", ["XSP"], window_hints={"XSP": 90})
+    _registry.write_request("gex", ["XSP"])  # no hint at all for XSP
+    assert _registry.union_window_hints() == {"XSP": 90}
+
+
+def test_union_window_hints_empty_when_none_set(home):
+    _registry.write_request("flies", ["XSP"])
+    assert _registry.union_window_hints() == {}
+
+
 def test_explicit_legs_list(home):
     _registry.write_request("meic", ["SPX"], legs=[".SPX250620C6900"])
     assert _registry.union_legs() == [".SPX250620C6900"]
@@ -154,6 +171,14 @@ def test_build_streamer_no_legs_matches_engine_default(home):
     assert streamer._protected_symbols() == set()
 
 
+def test_build_streamer_window_strike_count_for_widens_on_a_hint(home):
+    _registry.write_request("flies", ["XSP"], window_hints={"XSP": 90})
+    streamer = _daemon.build_streamer({"symbols": ["XSP"], "streamer": {"window_strike_count": 60}})
+    assert streamer.window_strike_count == 60
+    assert streamer._window_strike_count_for("XSP") == 90  # hint wins over the configured default
+    assert streamer._window_strike_count_for("QQQ") == 60  # no hint -> falls back to the default
+
+
 def test_write_request_schema_is_flat_json(home):
     path = _registry.write_request("gex", ["SPX"])
     assert not path.with_name(path.name + ".tmp").exists()
@@ -161,4 +186,5 @@ def test_write_request_schema_is_flat_json(home):
         "symbols": ["SPX"],
         "legs": [],
         "leg_sources": [],
+        "window_hints": {},
     }

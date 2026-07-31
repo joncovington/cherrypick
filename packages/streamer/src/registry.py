@@ -72,7 +72,15 @@ def _clean_sources(sources) -> list[dict]:
     return out
 
 
-def write_request(module: str, symbols, legs=None, leg_sources=None) -> Path:
+def _clean_window_hints(window_hints) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for symbol, count in (window_hints or {}).items():
+        if isinstance(symbol, str) and symbol.strip() and isinstance(count, int) and count > 0:
+            out[symbol.strip().upper()] = count
+    return out
+
+
+def write_request(module: str, symbols, legs=None, leg_sources=None, window_hints=None) -> Path:
     """Consumer-side: (over)write this module's request file atomically.
 
     Called by a module at startup with its underlyings and (if it has open positions) the ``leg_sources``
@@ -85,6 +93,7 @@ def write_request(module: str, symbols, legs=None, leg_sources=None) -> Path:
         "symbols": _clean(symbols, upper=True),
         "legs": _clean(legs, upper=False),
         "leg_sources": _clean_sources(leg_sources),
+        "window_hints": _clean_window_hints(window_hints),
     }
     tmp = path.with_name(f"{path.name}.tmp")
     tmp.write_text(json.dumps(payload), encoding="utf-8")
@@ -114,6 +123,20 @@ def union_symbols(seed_symbols=None) -> list[str]:
     for data in _read_all():
         symbols.update(_clean(data.get("symbols"), upper=True))
     return sorted(symbols)
+
+
+def union_window_hints() -> dict[str, int]:
+    """Per-symbol widened ATM window requests: the MAX ``window_hints`` value for each symbol across
+    every module's file. A module's own need is never narrowed by another module's silence on that
+    symbol — e.g. flies escalating XSP after repeated ``missing_leg_quotes`` refusals must win even if
+    gex's request file doesn't mention a hint for XSP at all."""
+    hints: dict[str, int] = {}
+    for data in _read_all():
+        for symbol, count in (data.get("window_hints") or {}).items():
+            if isinstance(symbol, str) and symbol.strip() and isinstance(count, int) and count > 0:
+                key = symbol.strip().upper()
+                hints[key] = max(hints.get(key, 0), count)
+    return hints
 
 
 def union_legs() -> list[str]:

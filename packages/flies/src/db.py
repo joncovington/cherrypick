@@ -159,6 +159,20 @@ CREATE TABLE IF NOT EXISTS fly_snapshots (
     UNIQUE (iteration_ts, symbol)
 );
 CREATE INDEX IF NOT EXISTS idx_fly_snapshots_date ON fly_snapshots(trade_date);
+
+-- One row per symbol: the current auto-escalated streamer ATM-window width this loop is requesting,
+-- separate from the engine's own configured default. Written/read by stream_window.py, which widens
+-- this after repeated missing_leg_quotes refusals and decays it back down once they stop. Paper and
+-- live each have their own DB file, so their escalation state is naturally independent.
+CREATE TABLE IF NOT EXISTS fly_stream_window (
+    symbol                      TEXT PRIMARY KEY,
+    width                       INTEGER NOT NULL,
+    last_escalated_occurrences  INTEGER NOT NULL DEFAULT 0,
+    last_checked_occurrences    INTEGER NOT NULL DEFAULT 0,
+    last_escalated_at           TEXT,
+    last_miss_at                TEXT,
+    updated_at                  TEXT
+);
 """
 
 

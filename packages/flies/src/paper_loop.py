@@ -37,6 +37,7 @@ import db as dbmod  # noqa: E402
 import eod as eodmod  # noqa: E402
 import provider  # noqa: E402
 import stream_request  # noqa: E402
+import stream_window  # noqa: E402
 
 # Regular trading hours, ET, as minutes of day. The engine's own entry windows sit inside this; the
 # session gate exists so an out-of-hours run is a clean no-op rather than an iteration against a
@@ -465,10 +466,20 @@ def main(argv=None) -> int:
         return 0
 
     config = climod.load_config(args.config)
-    # Tell the streamer which underlyings we need kept fresh in the shared cache (best-effort).
-    stream_request.register(config)
     cache_path = args.stream_cache or stream_cache_path(config)
     conn = dbmod.connect(args.db)
+    # Tell the streamer which underlyings we need kept fresh in the shared cache (best-effort), and
+    # whether any of them need a wider-than-default ATM window after repeated missing_leg_quotes
+    # refusals (stream_window.py; state lives in this DB, so paper's escalation is independent of
+    # live's own).
+    try:
+        base_width = int(config.get("stream_window", {}).get("base_width", 60))
+        symbols = config.get("symbols") or ["SPX"]
+        today = provider.now_et().date().isoformat()
+        hints = stream_window.hints_for_symbols(conn, symbols, today, base_width=base_width)
+    except Exception:  # noqa: BLE001 — window escalation is advisory, never fatal to the loop
+        hints = None
+    stream_request.register(config, window_hints=hints)
 
     if args.status:
         print(json.dumps(run_status(config, conn, cache_path=cache_path), indent=2, default=str))
