@@ -75,6 +75,13 @@
     "book_scan_step": 0.2,
     "_pre_close_exit_time": "The one deliberate exception to rule 5 ('no adjustments, hold to settlement'), added 2026-07-30 and extended the same day to still-open verticals: inside this ET window (to session close), any ITM position is closed outright IF doing so costs less than the $5/contract exercise-assignment fee it would otherwise incur overnight (see engine.evaluate_pre_close_exit, fly.position_floor) -- a completed fly (sell both wings, buy back the doubled centre; pure fee avoidance) or a still-open short vertical (buy back the centre, sell the protective wing; stops the fee from stacking on top of a loss already being realized). A narrow, mechanical cost comparison in the closing minutes, not a P&L-driven stop. Applies to BOTH paper and live, so paper's numbers stay representative of what live actually does now that assignment fees are modeled in both -- override under 'live' below for a live-only value.",
     "pre_close_exit_time": "15:50",
+    "_regime_tagging": "engine.classify_regime tags every entry and completion (not every tick) along four dimensions, purely descriptive -- nothing here gates a decision, it exists to give a future regime-conditioned mode selector real labelled outcomes to be built from instead of guessed at. Every threshold below is a placeholder pending recalibration once real sessions accumulate, same as every other gate in this module.",
+    "regime_vol_low_pct": 0.0015,
+    "regime_vol_high_pct": 0.0035,
+    "regime_gex_pinning_share": 0.5,
+    "regime_skew_threshold": 0.15,
+    "regime_time_open_end": "10:00",
+    "regime_time_close_start": "15:30",
     "entry_windows": []
   },
   "arms_header": "===== Arms =====",

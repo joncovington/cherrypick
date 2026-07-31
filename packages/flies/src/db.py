@@ -214,6 +214,18 @@ _ADDED_POSITION_COLUMNS = {
     # spread, kind -> 'fly') or 'iron' (sold the opposite-type credit spread, kind -> 'iron_fly').
     # NULL for pre-2026-07-31 rows and for entries that are still open or never completed.
     "completion_mode": "TEXT",
+    # Regime tagging (engine.classify_regime): a pure read of the snapshot at the two moments that
+    # matter for a future regime-conditioned mode selector -- what regime did we enter into, what
+    # regime did we complete into (they can differ). Descriptive only; nothing here gates a
+    # decision yet -- see engine.classify_regime's docstring. NULL for pre-2026-07-31 rows.
+    "entry_vol_bucket": "TEXT",
+    "entry_gex_bucket": "TEXT",
+    "entry_time_bucket": "TEXT",
+    "entry_skew_bucket": "TEXT",
+    "completion_vol_bucket": "TEXT",
+    "completion_gex_bucket": "TEXT",
+    "completion_time_bucket": "TEXT",
+    "completion_skew_bucket": "TEXT",
 }
 
 _ADDED_BOOK_COLUMNS = {
