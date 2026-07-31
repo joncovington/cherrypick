@@ -54,6 +54,7 @@ ARMS = (
     "width-5",
     "debit-first",
     "iron",
+    "bwb",
 )
 
 
@@ -695,6 +696,174 @@ def evaluate_iron_completion(snapshot: dict, position: dict, params: dict) -> tu
     return True, "ok", plan
 
 
+# --------------------------------------------------------------------------- bwb entry (step 1)
+def _bwb_lower_upper(side: str, near_wing: float, far_wing: float) -> tuple[float, float]:
+    """Which of the two wings is numerically lower, by strike -- `fly.fly_debit`'s formula is
+    symmetric in lower/upper (the mid terms just add), but the quotes must be looked up at the
+    right strikes regardless."""
+    return (far_wing, near_wing) if side == PUT else (near_wing, far_wing)
+
+
+def evaluate_bwb_entry(snapshot: dict, params: dict, open_positions: list) -> tuple:
+    """Should this arm enter a broken-wing butterfly for a net credit? Returns (enter, reason, plan).
+
+    Side via `choose_side` (same heuristic legged uses). `far_width` (> wing_width) is the wide,
+    risk-carrying wing; the credit collected is rent for that tail, measured against it
+    (`min_bwb_credit_pct_of_tail`/`max_bwb_credit_pct_of_tail`), not against wing_width the way
+    legged's credit gates are -- there is no width-bounded ceiling here since the structure's own
+    worst case is already `wing_width - far_width`, not `-wing_width`.
+    """
+    if snapshot.get("dte", 0) != 0:
+        return False, "no_0dte_expiration", None
+
+    if before_open_gate(params, snapshot.get("now_min")):
+        return False, "before_open_gate", None
+
+    ok_window, window = in_entry_window(snapshot.get("now_min"), params.get("entry_windows", []))
+    if not ok_window:
+        return False, "outside_entry_window", None
+
+    if len(open_positions) >= params.get("max_positions", 4):
+        return False, "max_positions_reached", None
+
+    if _window_cap_reached(params, open_positions, window):
+        return False, "max_positions_this_window_reached", None
+
+    center, center_reason = select_center(snapshot, params)
+    if center is None:
+        return False, center_reason, None
+
+    if any(abs(p["center"] - center) < 1e-6 for p in open_positions):
+        return False, "center_already_occupied", None
+
+    width = params.get("wing_width", 5)
+    # A ratio, not an absolute point value: wing_width itself is manually rescaled per symbol and
+    # per width-sweep arm (control=1, width-2..width-5), and a fixed absolute far_width would need
+    # separately rescaling every time either of those changes. A ratio (the common real-world rule
+    # of thumb is roughly 1:2, near:far) scales automatically with whatever wing_width the arm is
+    # already using.
+    far_width = width * params.get("bwb_far_width_ratio", 2.0)
+    if far_width <= width:
+        return False, "far_width_not_wider_than_wing", None
+
+    side = choose_side(snapshot, center)
+    near_wing, _, far_wing = fly.bwb_strikes(side, center, width, far_width)
+    if not _have(snapshot, side, [near_wing, center, far_wing]):
+        return False, "missing_leg_quotes", None
+
+    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    lower_wing, upper_wing = _bwb_lower_upper(side, near_wing, far_wing)
+    # fly_debit prices the +1 lower / -2 centre / +1 upper combo as a debit (positive = cost);
+    # a broken-wing entered for a net credit comes out NEGATIVE there, so credit is its negation.
+    raw = fly.fly_debit(
+        quote(snapshot, side, lower_wing), quote(snapshot, side, center), quote(snapshot, side, upper_wing), slip
+    )
+    credit = -raw
+
+    tail = far_width - width
+    min_credit = params.get("min_bwb_credit_pct_of_tail", 0.15) * tail
+    if credit <= min_credit:
+        return False, "bwb_credit_below_floor", None
+
+    max_credit = params.get("max_bwb_credit_pct_of_tail", 0.6) * tail
+    if credit > max_credit:
+        return False, "bwb_credit_above_ceiling_mostly_intrinsic", None
+
+    symbol = snapshot["symbol"]
+    qty = params.get("quantity", 1)
+    open_fee = fly.fly_open_fee(symbol, qty)
+    # The tail risk this credit is being paid to carry, in dollars, net of the credit itself --
+    # capped so no single structure can carry more downside than the operator has decided to
+    # accept, independent of how the price gates above happen to price it.
+    tail_dollars = (tail - credit) * fly.CONTRACT_MULTIPLIER * qty + open_fee
+    if tail_dollars > params.get("max_bwb_tail_dollars", 150.0):
+        return False, "bwb_tail_risk_above_max", None
+
+    # The entry fee plus an anticipated roll fee (2-leg, same shape as legged's own completing
+    # fee) -- a credit that cannot clear even that combined stack could never be justified
+    # regardless of how the roll eventually prices.
+    anticipated_roll_fee = fly.vertical_open_fee(symbol, qty)
+    if credit * fly.CONTRACT_MULTIPLIER * qty <= open_fee + anticipated_roll_fee:
+        return False, "credit_cannot_clear_fees", None
+
+    return (
+        True,
+        "ok",
+        {
+            "side": side,
+            "center": center,
+            "center_reason": center_reason,
+            "wing_width": width,
+            "far_width": far_width,
+            "credit": round(credit, 4),
+            "quantity": qty,
+            "open_fee": open_fee,
+            "entry_window": window,
+        },
+    )
+
+
+# --------------------------------------------------------------------------- bwb roll (step 2)
+def evaluate_roll(snapshot: dict, position: dict, params: dict) -> tuple:
+    """Should this open broken-wing butterfly be rolled now -- buying the near strike, selling the
+    held far strike -- converting it into a symmetric fly at (credit - roll_debit)? Returns
+    (roll, reason, plan).
+
+    The roll is a 2-leg debit vertical of width (far_width - wing_width): buy the strike the
+    symmetric fly needs, sell the wide wing currently held. Gated the same shape as every other
+    completion in this module: price gate first (`roll_debit < credit - fee_buffer`), then the
+    resulting fly's actual floor (`fly.position_floor`), never assumed from the price gate alone.
+    """
+    if position.get("kind") != "bwb":
+        return False, "not_a_bwb", None
+
+    side, center, width = position["side"], position["center"], position["wing_width"]
+    far_width = position["far_width"]
+    near_wing, _, far_wing = fly.bwb_strikes(side, center, width, far_width)
+    if not _have(snapshot, side, [near_wing, far_wing]):
+        return False, "missing_leg_quotes", None
+
+    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    # Buy the near wing (what the symmetric fly needs), sell the far wing (currently held) --
+    # a debit vertical, long near / short far.
+    roll_debit = fly.vertical_debit(quote(snapshot, side, near_wing), quote(snapshot, side, far_wing), slip)
+
+    symbol = snapshot["symbol"]
+    qty = position.get("quantity", 1)
+    roll_fee = fly.vertical_open_fee(symbol, qty)
+    buffer_pts = params.get("fee_buffer", 0.10)
+    credit = position["net"]
+
+    net = credit - roll_debit
+    rolled_fees = position.get("fees", 0.0) + roll_fee
+    floor = fly.position_floor(
+        {
+            "kind": "fly",
+            "side": side,
+            "center": center,
+            "wing_width": width,
+            "net": net,
+            "quantity": qty,
+            "fees": rolled_fees,
+        }
+    )
+    plan = {
+        "roll_debit": round(roll_debit, 4),
+        "net": round(net, 4),
+        "roll_fee": roll_fee,
+        "floor": round(floor, 2),
+        "near_wing": near_wing,
+        "gate_debit": round(credit - buffer_pts, 4),  # the roll debit this would have had to beat
+    }
+
+    if roll_debit >= credit - buffer_pts:
+        return False, "roll_debit_too_high", plan
+    if floor < params.get("min_floor_dollars", 0.0):
+        return False, "floor_below_minimum_after_fees", plan
+
+    return True, "ok", plan
+
+
 # --------------------------------------------------------------------------- pre-close ITM exit
 DEFAULT_PRE_CLOSE_EXIT = "15:50"  # 10 minutes before the 16:00 ET close
 
@@ -711,16 +880,17 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
     when there is no meaningful time left for the picture to change.
 
     Applies to a completed fly, a completed iron fly, a still-open (uncompleted) short vertical,
-    and a still-open (uncompleted) `debit_first` long vertical: an ITM leg is realizing a real
-    dollar outcome one way or the other, and letting the assignment fee stack on top of it is the
-    same avoidable cost regardless of which kind carries it. The gate is a straight dollar
-    comparison either way, not a price gate like `evaluate_completion`'s: close only if the
-    slippage cost of doing so is strictly cheaper than the assignment fee avoided — otherwise
-    holding to settlement and paying the fee is the better of the two options, and this leaves the
-    position alone.
+    a still-open (uncompleted) `debit_first` long vertical, and a still-open (unrolled) `bwb`: an
+    ITM leg is realizing a real dollar outcome one way or the other, and letting the assignment
+    fee stack on top of it is the same avoidable cost regardless of which kind carries it. For an
+    unrolled bwb this matters most of all -- its tail is a real loss, and an unexited tail leg
+    pays the assignment fee on top of it. The gate is a straight dollar comparison either way, not
+    a price gate like `evaluate_completion`'s: close only if the slippage cost of doing so is
+    strictly cheaper than the assignment fee avoided — otherwise holding to settlement and paying
+    the fee is the better of the two options, and this leaves the position alone.
     """
     kind = position.get("kind")
-    if kind not in ("fly", "short_vertical", "long_vertical", "iron_fly"):
+    if kind not in ("fly", "short_vertical", "long_vertical", "iron_fly", "bwb"):
         return False, "not_a_closeable_kind", None
 
     now_min = snapshot.get("now_min")
@@ -811,7 +981,7 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
             "slippage_cost": round(slippage_cost, 2),
             "long_strike": long_strike,
         }
-    else:  # iron_fly -- geometry is fixed regardless of which side was legged first
+    elif kind == "iron_fly":  # geometry is fixed regardless of which side was legged first
         lower_put, upper_call = center - width, center + width
         if not _have(snapshot, PUT, [lower_put, center]) or not _have(snapshot, CALL, [center, upper_call]):
             return False, "missing_leg_quotes", None
@@ -833,6 +1003,31 @@ def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tup
             "slippage_cost": round(slippage_cost, 2),
             "lower_strike": lower_put,
             "upper_strike": upper_call,
+        }
+    else:  # bwb -- still unrolled; asymmetric, single-type, spacing-agnostic pricing still applies
+        far_width = position["far_width"]
+        near_wing, _, far_wing = fly.bwb_strikes(side, center, width, far_width)
+        lower_wing, upper_wing = _bwb_lower_upper(side, near_wing, far_wing)
+        if not _have(snapshot, side, [lower_wing, center, upper_wing]):
+            return False, "missing_leg_quotes", None
+        # fly_close_credit is symmetric in lower/upper (the mid terms just add) and spacing-
+        # agnostic, so it prices this asymmetric close exactly the same way it prices a same-type
+        # fly's -- can legitimately come out NEGATIVE (a debit) when the tail side is deep ITM and
+        # the near side is worthless; the arithmetic still holds.
+        close_price = fly.fly_close_credit(
+            quote(snapshot, side, lower_wing), quote(snapshot, side, center), quote(snapshot, side, upper_wing), slip
+        )
+        close_fee = fly.fly_close_fee(symbol, qty)
+        theoretical = fly.bwb_payoff(side, center, width, far_width, spot)
+        slippage_cost = (theoretical - close_price) * fly.CONTRACT_MULTIPLIER * qty + close_fee
+        plan = {
+            "close_credit": round(close_price, 4),
+            "close_fee": round(close_fee, 4),
+            "itm_contracts": itm_contracts,
+            "assignment_fee": round(assignment_fee, 2),
+            "slippage_cost": round(slippage_cost, 2),
+            "lower_strike": lower_wing,
+            "upper_strike": upper_wing,
         }
 
     if slippage_cost >= assignment_fee:
@@ -939,6 +1134,14 @@ def _expiry_payoff(position: dict, settlement_price: float) -> float:
         )
     if kind == "iron_fly":
         return fly.iron_fly_payoff(position["center"], position["wing_width"], settlement_price)
+    if kind == "bwb":
+        return fly.bwb_payoff(
+            position["side"],
+            position["center"],
+            position["wing_width"],
+            position["far_width"],
+            settlement_price,
+        )
     raise ValueError(f"_expiry_payoff: unknown position kind {kind!r}")
 
 
@@ -989,6 +1192,7 @@ def session_stats(positions: list[dict]) -> dict:
     """
     flies = [p for p in positions if p["kind"] == "fly"]
     iron_flies = [p for p in positions if p["kind"] == "iron_fly"]
+    bwbs = [p for p in positions if p["kind"] == "bwb"]
     legged = [p for p in positions if p.get("entry_mode") == "legged"]
     # A completion is a completion regardless of which completing trade closed it out -- an iron
     # completion counts toward legged's completion_rate exactly like a debit completion does.
@@ -996,6 +1200,8 @@ def session_stats(positions: list[dict]) -> dict:
     settled_flies = [p for p in flies + iron_flies if p.get("status") == "settled"]
     debit_first = [p for p in positions if p.get("entry_mode") == "debit_first"]
     debit_first_flies = [p for p in debit_first if p["kind"] == "fly"]
+    bwb_roll_entries = [p for p in positions if p.get("entry_mode") == "bwb_roll"]
+    bwb_rolled = [p for p in bwb_roll_entries if p["kind"] == "fly"]
 
     def _rate(n, d):
         return round(n / d, 4) if d else None
@@ -1008,14 +1214,18 @@ def session_stats(positions: list[dict]) -> dict:
         # because after the bell "still a vertical" is the outcome, not a transient state.
         "uncompleted_verticals": len([p for p in positions if p["kind"] == "short_vertical"]),
         "uncompleted_long_verticals": len([p for p in positions if p["kind"] == "long_vertical"]),
+        # Every bwb still in this kind never got rolled to a symmetric fly -- its real, negative-
+        # capable floor is the finding, same spirit as uncompleted_verticals.
+        "unrolled_bwbs": len(bwbs),
         "completion_rate": _rate(len(legged_completed), len(legged)),
         "debit_first_completion_rate": _rate(len(debit_first_flies), len(debit_first)),
-        # Includes iron flies -- an iron completion is a real, final structure whose floor can
-        # legitimately be negative (unlike a same-type fly's), so it belongs in this rate exactly
-        # as much as a fly does; excluding it would silently hide the case this rate exists to
-        # catch.
+        "bwb_roll_rate": _rate(len(bwb_rolled), len(bwb_roll_entries)),
+        # Includes iron flies and unrolled bwbs -- both carry a floor that can legitimately be
+        # negative (unlike a same-type fly's), so they belong in this rate exactly as much as a
+        # fly does; excluding either would silently hide the case this rate exists to catch.
         "risk_free_rate": _rate(
-            len([p for p in flies + iron_flies if fly.is_risk_free(p)]), len(flies) + len(iron_flies)
+            len([p for p in flies + iron_flies + bwbs if fly.is_risk_free(p)]),
+            len(flies) + len(iron_flies) + len(bwbs),
         ),
         "pin_rate": _rate(len([p for p in settled_flies if p.get("pinned")]), len(settled_flies)),
     }

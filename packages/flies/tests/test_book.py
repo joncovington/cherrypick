@@ -417,3 +417,46 @@ def test_regime_tags_recorded_at_entry_and_can_differ_at_completion(conn):
     assert row["completion_time_bucket"] == "midday"
     # Entry-side columns are untouched by the completion write.
     assert row["entry_vol_bucket"] == "normal"
+
+
+# --------------------------------------------------------------------------- bwb_roll (Phase 2)
+def test_bwb_lifecycle_from_broken_wing_to_rolled_symmetric_fly(conn):
+    """Enter a bwb for a net credit, then roll it once the roll cheapens enough -- ending the
+    session holding a symmetric fly at (credit - roll_debit), same shape as every other
+    completion lifecycle test in this file."""
+    config = one_arm_config(entry_modes=["bwb_roll"], max_bwb_tail_dollars=1000)
+
+    first_snap = snapshot(puts={5990: q(0.4, 0.6), 6000: q(1.9, 2.1), 6005: q(2.2, 2.4)})
+    first = bookmod.process_snapshot(first_snap, config, conn, "control")
+    opened = [a for a in first["actions"] if a["action"] == "bwb_opened"]
+    assert len(opened) == 1
+    assert first["stats"]["unrolled_bwbs"] == 1
+
+    cheap_roll = snapshot(puts={5990: q(4.8, 5.0), 6005: q(5.0, 5.2)})
+    second = bookmod.process_snapshot(cheap_roll, config, conn, "control")
+    rolled = [a for a in second["actions"] if a["action"] == "rolled"]
+    assert len(rolled) == 1
+    assert rolled[0]["net"] > 0 and rolled[0]["floor"] > 0
+
+    rolled_id = rolled[0]["position_id"]
+    rows = dbmod.book_positions(conn, bookmod.book_id_for("2026-07-20", "control", "SPX"))
+    row = next(r for r in rows if r["position_id"] == rolled_id)
+    assert row["kind"] == "fly", "the roll must UPDATE the position in place, not add a row"
+    assert row["risk_free"] == 1
+    assert row["rolled_at"] is not None
+    assert row["completed_at"] == row["rolled_at"]  # one finished-structure column for all readers
+    assert row["far_width"] == 10.0, "far_width is retained after the roll for history/rewind"
+
+
+def test_freshly_opened_bwb_records_its_real_negative_tail_floor(conn):
+    """Regression-shaped: a fresh bwb's floor_dollars must be the honest, possibly-large-negative
+    tail number -- never NULL, never a fly's bounded-at-zero floor."""
+    config = one_arm_config(entry_modes=["bwb_roll"], max_bwb_tail_dollars=1000)
+    snap = snapshot(puts={5990: q(0.4, 0.6), 6000: q(1.9, 2.1), 6005: q(2.2, 2.4)})
+    result = bookmod.process_snapshot(snap, config, conn, "control")
+    opened = next(a for a in result["actions"] if a["action"] == "bwb_opened")
+    row = dbmod.book_positions(conn, result["book_id"])[0]
+    assert row["position_id"] == opened["position_id"]
+    assert row["kind"] == "bwb"
+    assert row["floor_dollars"] is not None
+    assert row["floor_dollars"] < -400  # tail = -(10-5) * 100 = -500, less fees/reserve

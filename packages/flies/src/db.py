@@ -226,6 +226,18 @@ _ADDED_POSITION_COLUMNS = {
     "completion_gex_bucket": "TEXT",
     "completion_time_bucket": "TEXT",
     "completion_skew_bucket": "TEXT",
+    # bwb_roll: the far (skipped) wing's width, kept AFTER the roll for history/rewind (wing_width
+    # stays the near/protected width, unchanged by the roll). NULL for every other kind.
+    "far_width": "REAL",
+    "rolled_at": "TEXT",
+    "roll_debit": "REAL",
+    "roll_latency_min": "REAL",
+    "spot_at_roll": "REAL",
+    # Running MINIMUM roll debit ever seen for an open bwb -- mirrors best_completing_debit's
+    # counterfactual role: after the fact, "the roll was never cheap enough" vs "our buffer was
+    # too tight" call for opposite remedies.
+    "best_roll_debit": "REAL",
+    "best_roll_debit_at": "TEXT",
 }
 
 _ADDED_BOOK_COLUMNS = {

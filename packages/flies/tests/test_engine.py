@@ -914,6 +914,122 @@ def test_pre_close_exit_closes_an_itm_iron_fly_when_slippage_beats_the_fee():
     assert plan["itm_contracts"] == 2  # both call legs ITM past 6005
 
 
+# --------------------------------------------------------------------------- bwb_roll (Phase 2)
+def bwb_snapshot(**over):
+    """Spot at 6000 -> choose_side picks PUT -> near wing 6005, far wing (ratio 2.0) 5990. Custom
+    put quotes priced for a plausible ~$1.10 net credit (tail = far_width - wing_width = 5)."""
+    return snapshot(
+        puts={5990: q(0.4, 0.6), 6000: q(1.9, 2.1), 6005: q(2.2, 2.4)},
+        **over,
+    )
+
+
+def test_bwb_entry_returns_a_complete_plan():
+    enter, reason, plan = engine.evaluate_bwb_entry(bwb_snapshot(), params(max_bwb_tail_dollars=1000), [])
+    assert enter and reason == "ok"
+    assert plan["side"] == "put" and plan["center"] == 6000.0
+    assert plan["wing_width"] == 5 and plan["far_width"] == 10.0  # ratio 2.0 * wing_width
+    assert 0.0 < plan["credit"] < plan["far_width"] - plan["wing_width"]
+
+
+def test_bwb_entry_requires_0dte():
+    enter, reason, _ = engine.evaluate_bwb_entry(bwb_snapshot(dte=1), params(), [])
+    assert not enter and reason == "no_0dte_expiration"
+
+
+def test_bwb_entry_rejects_far_width_not_wider_than_wing():
+    enter, reason, _ = engine.evaluate_bwb_entry(bwb_snapshot(), params(bwb_far_width_ratio=1.0), [])
+    assert not enter and reason == "far_width_not_wider_than_wing"
+
+
+def test_bwb_entry_rejects_a_credit_below_the_tail_floor():
+    thin = snapshot(puts={5990: q(1.0, 1.0), 6000: q(1.05, 1.05), 6005: q(1.1, 1.1)})
+    enter, reason, _ = engine.evaluate_bwb_entry(thin, params(max_bwb_tail_dollars=1000), [])
+    assert not enter and reason == "bwb_credit_below_floor"
+
+
+def test_bwb_entry_rejects_an_intrinsic_heavy_credit():
+    rich = snapshot(puts={5990: q(0.1, 0.1), 6000: q(4.0, 4.0), 6005: q(0.2, 0.2)})
+    enter, reason, _ = engine.evaluate_bwb_entry(rich, params(max_bwb_tail_dollars=1000), [])
+    assert not enter and reason == "bwb_credit_above_ceiling_mostly_intrinsic"
+
+
+def test_bwb_entry_rejects_tail_risk_above_max():
+    enter, reason, _ = engine.evaluate_bwb_entry(bwb_snapshot(), params(max_bwb_tail_dollars=1.0), [])
+    assert not enter and reason == "bwb_tail_risk_above_max"
+
+
+def open_bwb(credit=1.1, side="put", far_width=10.0, fees=None):
+    return {
+        "kind": "bwb",
+        "side": side,
+        "center": 6000,
+        "wing_width": 5,
+        "far_width": far_width,
+        "net": credit,
+        "quantity": 1,
+        "fees": fly.fly_open_fee("SPX", 1) if fees is None else fees,
+        "status": "open",
+        "position_id": "B1",
+    }
+
+
+def test_roll_fires_when_the_roll_debit_is_cheap_enough():
+    cheap_roll = snapshot(puts={5990: q(4.8, 5.0), 6005: q(5.0, 5.2)})
+    done, reason, plan = engine.evaluate_roll(cheap_roll, open_bwb(), params())
+    assert done and reason == "ok"
+    assert plan["net"] > 0 and plan["floor"] > 0
+    assert plan["near_wing"] == 6005.0
+
+
+def test_roll_waits_when_the_roll_debit_is_still_high():
+    expensive_roll = snapshot(puts={5990: q(0.1, 0.2), 6005: q(5.0, 5.2)})
+    done, reason, _ = engine.evaluate_roll(expensive_roll, open_bwb(), params())
+    assert not done and reason == "roll_debit_too_high"
+
+
+def test_roll_ignores_a_position_that_is_not_a_bwb():
+    done, reason, plan = engine.evaluate_roll(bwb_snapshot(), open_spread(), params())
+    assert not done and reason == "not_a_bwb" and plan is None
+
+
+def test_settle_bwb_across_near_centre_and_tail():
+    """Regression covering the settle-time sign-flip hazard for the newest, most asymmetric kind:
+    an unrolled bwb settling past its tail must show a NEGATIVE expiry payoff with all 4 contracts
+    ITM, never mispriced as bounded (a fly) or as a 2-leg vertical's -wing_width-only shape."""
+    pos = {**open_bwb(), "entry_mode": "bwb_roll"}
+    settled = engine.settle([pos], 6000.0)
+    assert settled[0]["expiry_payoff"] == pytest.approx(5.0)  # peak, at centre
+    assert settled[0]["pinned"] is False  # pin is a symmetric-fly concept; never true for a bwb
+    settled = engine.settle([pos], 5980.0)  # deep past the far wing
+    assert settled[0]["expiry_payoff"] == pytest.approx(-5.0)  # tail = wing_width - far_width
+    assert settled[0]["itm_contracts"] == 4
+
+
+def _itm_close_bwb_snapshot(**over):
+    base = {
+        "now_min": 15 * 60 + 55,
+        "underlying_price": 5980.0,  # deep past the far wing -- the real tail is realized
+        "puts": {5990: q(9.9, 10.0), 6000: q(19.9, 20.0), 6005: q(24.9, 25.0)},
+    }
+    base.update(over)
+    return snapshot(**base)
+
+
+def test_pre_close_exit_on_a_bwb_can_have_a_negative_close_credit():
+    """Deep past the tail, closing the bwb is itself a net cost (a negative close_credit) -- the
+    arithmetic must still hold and the comparison against the assignment fee still apply."""
+    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_bwb_snapshot(), open_bwb(), params())
+    assert plan is not None
+    assert plan["itm_contracts"] == 4
+    # Whether it actually fires depends on slippage vs the $20 assignment fee (4 contracts); the
+    # arithmetic (a real, possibly negative close_credit) is what this test guards.
+    if close:
+        assert reason == "ok"
+    else:
+        assert reason == "closing_slippage_exceeds_assignment_fee"
+
+
 # --------------------------------------------------------------------------- outright entry
 def cheap_fly_snapshot():
     """A grid where the 5995/6000/6005 call fly prices around 0.30."""

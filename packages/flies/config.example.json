@@ -82,6 +82,14 @@
     "regime_skew_threshold": 0.15,
     "regime_time_open_end": "10:00",
     "regime_time_close_start": "15:30",
+    "_bwb_far_width_ratio": "bwb_roll's wide/risk-carrying wing, as a RATIO of wing_width (far_width = wing_width * ratio) -- not an absolute point value, since wing_width itself is manually rescaled per symbol and per width-sweep arm (control=1, width-2..width-5), and a fixed absolute far_width would need separately rescaling every time either changes. 2.0 matches the common near:far rule of thumb (roughly 1:2). The gap (far_width - wing_width) is the real tail this construction carries until rolled -- see fly.bwb_payoff, fly.position_floor's bwb branch. Placeholder pending recalibration once real sessions exist.",
+    "bwb_far_width_ratio": 2.0,
+    "_min_bwb_credit_pct_of_tail": "The entry credit is rent for the tail, so it is measured against the tail (far_width - wing_width), not against wing_width the way legged's credit gates are -- there is no width-bounded ceiling here since the structure's own worst case is already wing_width - far_width, not -wing_width.",
+    "min_bwb_credit_pct_of_tail": 0.15,
+    "_max_bwb_credit_pct_of_tail": "Ceiling, same intrinsic-heavy-credit logic as legged's own ceiling, measured against the tail instead of wing_width.",
+    "max_bwb_credit_pct_of_tail": 0.6,
+    "_max_bwb_tail_dollars": "Hard dollar cap on the tail risk a single bwb may carry (net of its own credit and open fee), independent of how the price-ratio gates above happen to price it. Placeholder pending recalibration.",
+    "max_bwb_tail_dollars": 150,
     "entry_windows": []
   },
   "arms_header": "===== Arms =====",
@@ -151,6 +159,19 @@
       "completion_modes": [
         "debit",
         "iron"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "bwb": {
+      "enabled": true,
+      "_note": "Control's twin isolating the ENTRY CONSTRUCTION: instead of legging in over two ticks, enter a broken-wing butterfly whole for a net credit (entry_modes: [\"bwb_roll\"]), then roll the far wide wing in to the near strike once the roll cheapens enough, converting to a symmetric fly. Until rolled this carries REAL tail risk (wing_width - far_width, negative) that fly.position_floor never reports as bounded -- this arm exists to measure whether the roll actually converts often enough, and cheaply enough, to be worth the tail carried while waiting. See docs/faq.md for the full construction and the researched trap (the roll cheapens under exactly the drift that makes the position profitable, and balloons past the credit precisely when the tail is threatened).",
+      "entry_modes": [
+        "bwb_roll"
       ],
       "entry_windows": [
         [

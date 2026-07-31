@@ -287,6 +287,10 @@ def completion_stats(conn, start=None, end=None, symbol=None, arm=None, entry_mo
     `entry_mode="debit_first"` runs the same shape of report on the mirror-image mode: the roles of
     credit/debit and the counterfactual direction flip (a debit_first miss means the best completing
     CREDIT ever offered never beat the DEBIT paid), but the meaning of each bucket is the same.
+
+    `entry_mode="bwb_roll"` reports the roll the same way: "completed" means rolled (kind -> fly),
+    the counterfactual compares `best_roll_debit` against the entry credit (the roll gate is
+    `roll_debit < credit - fee_buffer`), and the journal mode read for the floor split is `"roll"`.
     """
     clause, params = [], []
     if start:
@@ -304,15 +308,17 @@ def completion_stats(conn, start=None, end=None, symbol=None, arm=None, entry_mo
     where = (" WHERE " + " AND ".join(clause)) if clause else ""
     rows = conn.execute(
         f"SELECT position_id, kind, entry_mode, credit, debit, best_completing_debit, "
-        f"best_completing_credit, completion_latency_min, underlying_at_entry, spot_at_completion "
-        f"FROM fly_positions{where}",
+        f"best_completing_credit, best_roll_debit, completion_latency_min, underlying_at_entry, "
+        f"spot_at_completion FROM fly_positions{where}",
         params,
     ).fetchall()
 
     mode_rows = [r for r in rows if r["entry_mode"] == entry_mode]
     completed = [r for r in mode_rows if r["kind"] == "fly"]
     missed = [r for r in mode_rows if r["kind"] != "fly"]
-    completion_mode = "completion" if entry_mode == "legged" else "debit_completion"
+    completion_mode = {"legged": "completion", "debit_first": "debit_completion", "bwb_roll": "roll"}.get(
+        entry_mode, "completion"
+    )
 
     # Positions the floor gate ever turned down. Reaching that gate at all means the price side had
     # already cleared `fee_buffer`, so a position appearing here was blocked by the floor, not the
@@ -331,6 +337,9 @@ def completion_stats(conn, start=None, end=None, symbol=None, arm=None, entry_mo
     for r in missed:
         if entry_mode == "legged":
             best, target = r["best_completing_debit"], r["credit"]
+            offered = best is not None and target is not None and best < target
+        elif entry_mode == "bwb_roll":
+            best, target = r["best_roll_debit"], r["credit"]
             offered = best is not None and target is not None and best < target
         else:
             best, target = r["best_completing_credit"], r["debit"]
@@ -605,6 +614,7 @@ def payoff_curve(conn, day: str, arm: str, step: float = 1.0, points: int = 120)
             "side": r["side"],
             "center": r["center"],
             "wing_width": r["wing_width"],
+            "far_width": r["far_width"],
             "net": r["net"],
             "quantity": r["quantity"] or 1,
             "fees": r["fees"] or 0.0,
@@ -615,7 +625,9 @@ def payoff_curve(conn, day: str, arm: str, step: float = 1.0, points: int = 120)
         return {"ok": True, "empty": True, "prices": [], "pnl": [], "positions": 0}
 
     centers = [p["center"] for p in positions]
-    width = max(p["wing_width"] for p in positions)
+    # A bwb's far wing sits outside +/-wing_width, and its negative tail is exactly what this
+    # chart must not clip -- a truncated tail would read as "safe" when it isn't.
+    width = max(p["far_width"] or p["wing_width"] for p in positions)
     lo, hi = min(centers) - 3 * width, max(centers) + 3 * width
     span = hi - lo
     grid_step = max(step, span / points) if span else step
@@ -677,6 +689,11 @@ def _state_at(row: dict, when: str) -> dict | None:
             state["kind"] = "long_vertical"
             state["net"] = -row["debit"]
             state["fees"] = fly.vertical_open_fee(row["symbol"], state["quantity"])
+        elif entry_mode == "bwb_roll" and row.get("far_width") is not None:
+            state["kind"] = "bwb"
+            state["net"] = row["credit"]
+            state["far_width"] = row["far_width"]
+            state["fees"] = fly.fly_open_fee(row["symbol"], state["quantity"])
     return state
 
 
@@ -684,7 +701,12 @@ def _entry_structure_label(entry_mode: str, side: str) -> str:
     """What a position's entry event should be labelled as, by construction. Explicit map, not a
     ternary that quietly mislabels any mode it wasn't written for — an unrecognized entry_mode
     falls back to the raw string rather than being guessed at as "short {side}"."""
-    labels = {"outright": "fly", "legged": f"short {side}", "debit_first": f"debit {side}"}
+    labels = {
+        "outright": "fly",
+        "legged": f"short {side}",
+        "debit_first": f"debit {side}",
+        "bwb_roll": f"bwb {side}",
+    }
     return labels.get(entry_mode, entry_mode)
 
 
