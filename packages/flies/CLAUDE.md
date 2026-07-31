@@ -43,6 +43,8 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `src/live_loop.py` | The LIVE loop: 1-min self-healing tick (`--once --live`, per-day arming via `/live-flies-start`, self-disarms at `live.disarm_time`) + burst fill-watchers (`--watch-fills`). `--once` (dry-run default) is the rung-0 smoke; `--status`, `--settle --price` for the official print. |
 | `src/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. |
 | `src/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). |
+| `src/alert_daemon.py` | Optional order-alert daemon: one tastytrade account-alert websocket for the trading day, started on arm / stopped on disarm. Decides nothing — appends to the inbox below so fills are *noticed* sooner. |
+| `src/alerts_db.py` | The WAL-mode alert inbox (`live_alerts.db`), separate from the ledger on purpose — 1 writer (daemon), N readers (tick, watcher). |
 | `src/credentials.py` | `fliesagent` keyring store + hidden-input CLI (orchestrator `connect` delegates here). |
 | `tests/fixtures/books.json` | three real tastytrade order chains, transcribed. |
 
@@ -289,6 +291,19 @@ These are the constraints the module exists to enforce. Breaking one makes the n
   on a fixed poll interval. This is still squarely "confirming what only the broker can know" —
   it never informs a decision, only how quickly a fill is *noticed* — and it fails closed to the
   exact same cache-gated poll behavior on any websocket/auth error. See `run_watch`'s docstring.
+  **The daemon form of the same thing** (added 2026-07-31, `live.use_order_alert_daemon`, off by
+  default, supersedes the per-burst flag when both are on): rather than the watcher opening a
+  websocket per cycle, `src/alert_daemon.py` holds ONE account-alert connection for the trading
+  day and appends alerts to a WAL-mode inbox (`src/alerts_db.py`,
+  `data/flies/live_alerts.db`), which the watcher reads as a local query. Deliberately a
+  **separate database** from `live_trades.db`: that ledger's concurrency was tuned for exactly two
+  short-burst, file-locked writers (the tick and the watcher), and a third persistent writer would
+  stack onto it — the inbox is the 1-writer/N-reader shape WAL exists for, so the ledger's writers
+  are untouched. The daemon is **started on arm and stopped on disarm** (not an always-on
+  watchdog-supervised service like `packages/streamer`), self-exits at `disarm_time`, decides
+  nothing, places nothing, and never writes the ledger. This module's no-resident-daemon rule still
+  holds where it matters: the daemon is an accelerator only — if it dies, stalls, or was never
+  started, the heartbeat poll and `run_once`'s once-a-minute re-poll still confirm every fill.
 - Credentials in the OS keyring only. Account numbers masked to `****1234`.
 - Portable paths only; scratch work in `.tmp/`. Human-voice docs and commits, no AI attribution.
 - Instruction files hold no code.
