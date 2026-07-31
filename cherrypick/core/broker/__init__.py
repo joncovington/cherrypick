@@ -321,6 +321,20 @@ async def place_order(
 
 
 # --------------------------------------------------------------------------- order lifecycle
+def _serialize_placed_order(order_id: Any, placed: Any) -> dict:
+    """A `PlacedOrder` (however it arrived — REST poll or account-alert push) -> the one
+    {order_id, status, cancellable, price, filled} shape every confirm path in this suite
+    consumes. Shared so the push path (`wait_for_order_alerts`) and the poll path (`order_status`)
+    are byte-for-byte interchangeable to their callers."""
+    return {
+        "order_id": order_id,
+        "status": str(getattr(placed, "status", None)),
+        "cancellable": bool(getattr(placed, "cancellable", False)),
+        "price": str(getattr(placed, "price", None)),
+        "filled": str(getattr(placed, "status", "")).strip().lower() == "filled",
+    }
+
+
 async def order_status(account: Any, session: Any, order_id: Any) -> dict:
     """Fetch a placed order's current state. `status` is the tastytrade lifecycle string
     ("Received"/"Live"/"Filled"/"Cancelled"/"Rejected"/...); `price` is the order's working
@@ -329,13 +343,7 @@ async def order_status(account: Any, session: Any, order_id: Any) -> dict:
     caller's pre-trade model estimate. Raises whatever the SDK raises on a bad/foreign order id
     — callers decide how to treat that (there is no safe default to paper over)."""
     placed = await account.get_order(session, int(order_id))
-    return {
-        "order_id": order_id,
-        "status": str(getattr(placed, "status", None)),
-        "cancellable": bool(getattr(placed, "cancellable", False)),
-        "price": str(getattr(placed, "price", None)),
-        "filled": str(getattr(placed, "status", "")).strip().lower() == "filled",
-    }
+    return _serialize_placed_order(order_id, placed)
 
 
 async def transaction_history(
@@ -399,3 +407,55 @@ async def working_orders(account: Any, session: Any) -> list[dict]:
         for o in placed
         if getattr(o, "terminal_at", None) is None
     ]
+
+
+def _default_streamer_cls() -> Any:
+    from tastytrade.streamer import AlertStreamer  # imported lazily, same reason as _default_account_cls
+
+    return AlertStreamer
+
+
+async def wait_for_order_alerts(
+    session: Any,
+    account: Any,
+    order_ids: set,
+    timeout_seconds: float,
+    *,
+    streamer_cls: Any = None,
+) -> list[dict]:
+    """Block (up to `timeout_seconds`) for PUSHED updates on any of `order_ids`, via tastytrade's
+    account-alert websocket (`AlertStreamer` — a separate stream from the shared market-data
+    cache; this one carries order/balance/position pushes, not quotes). Returns them in the same
+    {order_id, status, cancellable, price, filled} shape `order_status` returns, via the same
+    `_serialize_placed_order` helper, so a caller's confirm logic needs no changes to consume
+    either the push or the poll path.
+
+    Ignores alerts for orders not in `order_ids` — the account this streams from is not
+    exclusive to one caller's ledger (a shared account may carry unrelated manual trading; see
+    the 2026-07-30 orphan-sweep incident, the same reason `working_orders` scopes itself).
+
+    Fails closed to `[]` on ANY error — auth, subscribe failure, a dropped websocket, a timeout
+    with nothing seen. This is deliberately NOT a "the fill definitely didn't happen" signal, only
+    "this call didn't see it" — callers must keep an independent poll-based fallback for exactly
+    that reason, the same way every other network-facing function in this module fails closed
+    rather than asserting a negative it cannot actually verify.
+    """
+    import anyio
+
+    cls = streamer_cls or _default_streamer_cls()
+    from tastytrade.order import PlacedOrder
+
+    found: list[dict] = []
+    try:
+        async with cls(session) as streamer:
+            await streamer.subscribe_accounts([account])
+            with anyio.move_on_after(timeout_seconds):
+                async for order in streamer.listen(PlacedOrder):
+                    order_id = getattr(order, "id", None)
+                    if str(order_id) in order_ids:
+                        found.append(_serialize_placed_order(order_id, order))
+                        if len(found) >= len(order_ids):
+                            break
+    except Exception:  # noqa: BLE001 — fail closed; the caller's poll fallback is what makes this safe
+        return []
+    return found
