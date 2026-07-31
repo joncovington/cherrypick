@@ -335,6 +335,9 @@ const fmtPct = v => v === null || v === undefined ? '–' : (v*100).toFixed(0) +
 const fmtNum = (v,d=2) => v === null || v === undefined ? '–' : Number(v).toFixed(d);
 const tone = v => v === null || v === undefined ? '' : (v >= 0 ? 'pos' : 'neg');
 let DATA = null, ARM = 'ALL', SYMBOL = 'ALL', XWIDTH = 'auto', YWIDTH = 'auto', SOURCE = 'paper';
+// The day's settlement print once the session has settled, else null -- see the Today view's
+// spot handling for why settlement beats the last intraday tick as the headline price.
+let SETTLE_PX = null;
 
 /* ---------- per-column filters ----------
 
@@ -473,7 +476,7 @@ function legend(el, items) {
    books by design and a combined total would hide the only contrast the experiment draws — and the
    previous behaviour, silently plotting arms[0] unlabelled whenever the filter said "all", read as
    though it were the whole book. */
-function drawPayoff(cv, curves, arms, selected, spot, xwidth, ywidth) {
+function drawPayoff(cv, curves, arms, selected, spot, xwidth, ywidth, spotLabel) {
   const {g, w, h} = prep(cv);
   const shown = (selected === 'ALL' ? arms : [selected])
     .filter(a => curves[a] && !curves[a].empty && curves[a].prices.length);
@@ -565,7 +568,7 @@ function drawPayoff(cv, curves, arms, selected, spot, xwidth, ywidth) {
     g.globalAlpha = 1;
     // The line alone doesn't say what "here" is -- label it with the actual spot price, clamped
     // inside the plot area so it never clips off either edge.
-    const label = `spot ${fmtNum(spot)}`, lp = 5;
+    const label = `${spotLabel || 'spot'} ${fmtNum(spot)}`, lp = 5;
     g.font = '11px system-ui';
     const lw = g.measureText(label).width;
     const lx = Math.min(Math.max(X(spot) - lw/2 - lp, pad.l), w - pad.r - lw - lp*2);
@@ -590,7 +593,7 @@ function drawPayoff(cv, curves, arms, selected, spot, xwidth, ywidth) {
   legend($('#payoff-legend'), [
     ...shown.map(a => ({c: armColor(a, arms), t: a})),
     {c: 'rgba(139,148,158,.8)', t: 'centres', dash: 1},
-    {c: SPOT_COLOR, t: 'spot now'},
+    {c: SPOT_COLOR, t: SETTLE_PX != null ? 'settlement' : 'spot now'},
   ]);
 }
 
@@ -920,9 +923,18 @@ function renderToday(d) {
   ]);
 
   const lastTick = ((t.timeline || {}).ticks || []).filter(x => x.spot != null).slice(-1)[0];
-  const spot = lastTick ? lastTick.spot
+  const lastSpot = lastTick ? lastTick.spot
     : (t.positions.find(p => p.underlying_at_entry) || {}).underlying_at_entry;
-  drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot, XWIDTH, YWIDTH);
+  // Once the session has SETTLED, the number that decides every payoff is the settlement print,
+  // not the last intraday tick -- and they can differ materially (2026-07-31, a month-end Friday:
+  // last tick 750.46 vs a 748.97 close, which was the difference between one fly paying nothing
+  // and paying near its max). Showing the intraday tick as the headline "spot" beside settled
+  // positions invited exactly that misread, so settlement wins here and is labelled as such.
+  const settled = (t.books || []).filter(b => b.status === 'settled' && b.settlement_price != null);
+  SETTLE_PX = settled.length ? settled[0].settlement_price : null;
+  const spot = SETTLE_PX != null ? SETTLE_PX : lastSpot;
+  const spotLabel = SETTLE_PX != null ? 'settled' : 'spot';
+  drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot, XWIDTH, YWIDTH, spotLabel);
   drawTimeline($('#timeline'), t.timeline, ARM);
 
   // The feed's own report card: how many ticks actually built a snapshot, and what refused the rest.
@@ -933,7 +945,7 @@ function renderToday(d) {
     : `Feed: ${fs.ok}/${fs.ticks} ticks built a snapshot (${fmtPct(fs.ok_rate)})` +
       (fs.refused ? ' · refused ' + fs.refused + ': ' +
         Object.entries(fs.by_reason).map(([k,v]) => `${k} ×${v}`).join(', ') : ' · no refusals');
-  bindHover($('#payoff'), () => drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot, XWIDTH, YWIDTH));
+  bindHover($('#payoff'), () => drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot, XWIDTH, YWIDTH, spotLabel));
   bindHover($('#timeline'), () => drawTimeline($('#timeline'), t.timeline, ARM));
 
   // One floor sentence per arm. A single blended line would state the book-level claim across arms
@@ -950,6 +962,21 @@ function renderToday(d) {
             (f.unbounded_below ? ', and loses outside that band.' : '.');
         return `<span style="color:${armColor(a, d.arms)}">${a}</span> — ${body}`;
       }).join('<br>');
+
+  // Once settled, say so explicitly -- with the provenance, and with the last intraday tick
+  // alongside when it differs. A settlement struck away from the last tick is ordinary (the
+  // closing auction moves the print, especially at month end), but it decides every payoff
+  // above, so it should never be something the reader has to infer.
+  if (SETTLE_PX != null && armsShown.length) {
+    const src = (settled[0].settlement_source || 'unknown').replace(/_/g, ' ');
+    const drift = lastSpot != null ? SETTLE_PX - lastSpot : null;
+    $('#payoff-note').innerHTML +=
+      `<br><span class="dim">Settled at <b>${fmtNum(SETTLE_PX,2)}</b> (${src})` +
+      (drift != null && Math.abs(drift) >= 0.01
+        ? ` — last intraday tick was ${fmtNum(lastSpot,2)}, ${fmtNum(Math.abs(drift),2)} ` +
+          `${drift > 0 ? 'below' : 'above'} the close.`
+        : '.') + '</span>';
+  }
 
   const posEmpty = ARM === 'ALL' && SYMBOL === 'ALL' ? 'No positions today.'
     : `No ${[ARM, SYMBOL].filter(v => v !== 'ALL').join(' ')} positions today.`;

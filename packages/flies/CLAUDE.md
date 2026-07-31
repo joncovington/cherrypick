@@ -255,6 +255,23 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    stacking on top of a loss the position is already realizing. A vertical is only ever considered once
    its own entry has confirmed and any resting completion order is gone, so it never races a working
    order.
+
+   **Two measured limitations of this exception (2026-07-31), both left as findings rather than
+   tuned away.** First, it evaluates against the *intraday* spot at 15:50-15:59 but the fee is
+   decided by the *settlement* print, and the closing auction moves that print: across 9 paper
+   sessions, **23 of 194 settled positions (11.9%)** had their ITM-leg count change between the
+   last look and settlement (median drift 0.17, max 5.52; net **+$80** of fees paid that the last
+   look didn't predict). On 2026-07-31 — a month-end Friday, when auctions are largest — the live
+   749 fly looked safely OTM at 15:59 (spot 750.46) and settled ITM at 748.97. This is
+   irreducible: the exit must act before a number that doesn't exist until after. Widening the ITM
+   test with a buffer would trade a *certain* slippage cost for an *uncertain* fee saving, which
+   the second finding says is a losing trade.
+   Second, **paper and live disagree sharply about whether closing is even worth it.** Paper has
+   fired this exit **34 times in 228 settled positions**, refusing on cost only 7 times; live has
+   fired it **0 times in 6**, refusing on cost every single time (slippage $54-104 against a
+   $15-20 fee). Paper's modeled slippage materially understates what closing a 0DTE fly actually
+   costs in the last ten minutes, so **paper results that include pre-close exits are not
+   representative of live** — read that arm's paper P&L with this specifically in mind.
 6. **If the floor comes out negative after fees, that is the finding.** The answer is to stop, not to
    loosen `fee_buffer` until the numbers look better.
 
