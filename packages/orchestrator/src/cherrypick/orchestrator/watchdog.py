@@ -600,6 +600,9 @@ def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trad
     return [Finding(f"{name}.settle_overdue", OK, f"{label} settlement", "settled or no open positions")]
 
 
+_TASK_STILL_RUNNING = 267009  # SCHED_S_TASK_RUNNING (0x41301) -- an in-progress tick, not a failure
+
+
 def _scheduler_age_minutes(info: dict[str, Any], now_et: datetime) -> float | None:
     """Minutes since the scheduler's own reported last run, or None if unparseable.
 
@@ -701,7 +704,11 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             if scheduler_info is not None:
                 age_min = _scheduler_age_minutes(scheduler_info, now_et)
                 last_result = scheduler_info.get("last_task_result")
-                failed = last_result not in (0, None)
+                # 267009 (0x41301) is SCHED_S_TASK_RUNNING -- Task Scheduler's sentinel for "this
+                # instance hasn't finished yet," reported while a tick is still mid-execution (e.g.
+                # a slow broker call). Not a failure; flagging it as one false-CRITICALed a live tick
+                # the watchdog simply happened to poll while it was still running.
+                failed = last_result not in (0, None, _TASK_STILL_RUNNING)
                 if age_min is None or age_min > fresh_minutes or failed:
                     if age_min is None:
                         shown = "unparseable last-run time"
