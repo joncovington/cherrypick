@@ -62,6 +62,7 @@ class _State:
         self.chains: dict[str, dict] = {}  # symbol -> {streamer_symbol: option}
         self.window_syms: dict[str, list[str]] = {}  # symbol -> subscribed window symbols
         self.centers: dict[str, float] = {}  # symbol -> price the window is centred on
+        self.window_strike_counts: dict[str, int] = {}  # symbol -> strike count last used to build it
         self.pending_writes = 0
         self.last_commit_at = 0.0
 
@@ -77,6 +78,7 @@ class ChainStreamer:
         protected_symbols: Callable[[], set[str]] | None = None,
         trade_hook: Callable[[ChainStreamer, str, float | None, float], None] | None = None,
         window_strike_count: int = 60,
+        window_strike_count_for: Callable[[str], int] | None = None,
         window_refresh_pts: float = 1.0,
         window_poll_s: float = 5.0,
         subscription_poll_s: float = 30.0,
@@ -89,6 +91,7 @@ class ChainStreamer:
         self._protected_symbols = protected_symbols or (lambda: set())
         self._trade_hook = trade_hook
         self.window_strike_count = window_strike_count
+        self._window_strike_count_for = window_strike_count_for
         self.window_refresh_pts = window_refresh_pts
         self.window_poll_s = window_poll_s
         self.subscription_poll_s = subscription_poll_s
@@ -408,9 +411,23 @@ class ChainStreamer:
             if price is None:
                 await asyncio.sleep(1)
                 continue
+            strike_count = (
+                self._window_strike_count_for(symbol)
+                if self._window_strike_count_for
+                else self.window_strike_count
+            )
             center = state.centers.get(symbol)
-            if center is None or abs(price - center) >= self.window_refresh_pts:
-                new_syms = streamcache.atm_window_syms(state.chains[symbol], price, self.window_strike_count)
+            prev_strike_count = state.window_strike_counts.get(symbol)
+            # Recompute on a price move past the refresh threshold OR a changed strike count (e.g. a
+            # consumer module widening its window_hints mid-session in response to missing_leg_quotes)
+            # -- a widen-only request at an unchanged price must not sit unapplied until the next move.
+            if (
+                center is None
+                or abs(price - center) >= self.window_refresh_pts
+                or strike_count != prev_strike_count
+            ):
+                new_syms = streamcache.atm_window_syms(state.chains[symbol], price, strike_count)
+                state.window_strike_counts[symbol] = strike_count
                 current_syms = state.window_syms.get(symbol, [])
                 if new_syms != current_syms:
                     old_set, new_set = set(current_syms), set(new_syms)
