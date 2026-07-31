@@ -85,17 +85,17 @@ whole day's book, not the individual position, and only holds up within the pric
 funding trades cover. *(As of the 2026-07-27 configuration update, this mode is switched off —
 see "Status" below.)*
 
-## The four strategy variants ("arms")
+## The strategy variants ("arms")
 
 The module runs several parallel copies of the strategy side by side, each changing exactly one
-variable, so results from one variant can be compared cleanly against a baseline rather than a
-mix of confounded changes:
-
-| Variant | Picks its center strike by... | What it's testing |
-|---|---|---|
-| `gex` | the strike with the strongest dealer positioning (net gamma exposure) near the current price | whether dealer hedging really does "pin" price near that strike |
-| `time_window` | the at-the-money strike, but only trades inside specific windows of the day | whether time-of-day matters |
-| `control` | the at-the-money strike, all day | the plain baseline every other variant is measured against |
+variable from the `control` baseline, so results from one variant can be compared cleanly rather
+than a mix of confounded changes. `gex` picks its centre by dealer gamma positioning, `time_window`
+by trading only inside specific windows, and `width-2`..`width-5` sweep the wing width — those
+change WHERE or WHEN a position is centred. `debit-first`, `iron`, and `bwb` instead change HOW the
+net credit is manufactured in the first place (buying the debit leg first, completing with an iron
+butterfly, or entering a broken-wing butterfly whole and rolling it in) — see
+[`CLAUDE.md`](CLAUDE.md)'s "The arms" section for the current, complete list and what each one is
+actually testing; it's the canonical source so this file doesn't drift out of sync with it.
 
 Each variant keeps a completely separate ledger, so one lucky trade in one variant can't make
 another variant look better than it is.

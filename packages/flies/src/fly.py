@@ -103,6 +103,32 @@ def debit_vertical_payoff(side: str, center: float, wing_width: float, underlyin
     return max(0.0, min(wing_width, (center + wing_width) - underlying))  # +1 (center+w) put / -1 center put
 
 
+def bwb_strikes(side: str, center: float, wing_width: float, far_width: float) -> tuple[float, float, float]:
+    """(near_wing, center, far_wing) for a broken-wing butterfly: the near wing sits on the
+    PROTECTED side at the usual `wing_width`, the far/wide wing sits on the RISK side at
+    `far_width` (> wing_width) -- the extra room bought with the wider wing is what manufactures
+    the entry credit, and it is also the real tail. PUT: near wing above centre (K+w), far wing
+    below (K-f) -- protected upside, risk downside. CALL: mirrored.
+    """
+    if side == PUT:
+        return center + wing_width, center, center - far_width
+    return center - wing_width, center, center + far_width
+
+
+def bwb_payoff(side: str, center: float, wing_width: float, far_width: float, underlying: float) -> float:
+    """Per-contract expiry value of a broken-wing butterfly. Bounded to
+    [wing_width - far_width, wing_width] -- unlike `fly_payoff`, the lower bound is NEGATIVE
+    (far_width > wing_width by construction), the real tail risk this construction carries until
+    the far wing is rolled in to match `wing_width` (see `engine.evaluate_roll`). Peaks at
+    `wing_width` at the centre, same as a symmetric fly; ramps to 0 at the near wing exactly like
+    a symmetric fly's near side; only the far side differs, extending past 0 down to the tail.
+    """
+    K, w, f, S = center, wing_width, far_width, underlying
+    if side == PUT:  # +1 (K+w) put / -2 K put / +1 (K-f) put
+        return max(0.0, (K + w) - S) - 2 * max(0.0, K - S) + max(0.0, (K - f) - S)
+    return max(0.0, S - (K - w)) - 2 * max(0.0, S - K) + max(0.0, S - (K + f))  # +1 (K-w)/-2 K/+1 (K+f) call
+
+
 # --------------------------------------------------------------------------- which way does it cheapen
 def completing_side_direction(side: str) -> str:
     """Which way spot must move for the COMPLETING spread to get cheaper — 'up' or 'down'.
@@ -277,6 +303,12 @@ def itm_contracts_at_settlement(position: dict, settlement_price: float) -> int:
         # just held long instead of short.
         long_strike = center - width if side == CALL else center + width
         legs = [(center, 1), (long_strike, 1)]
+    elif kind == "bwb":
+        # Single-type (all put or all call), so the same _itm test applies to every leg -- unlike
+        # iron_fly's mixed-type geometry. Same 4-contract/doubled-centre shape as a same-type fly,
+        # just asymmetric spacing (near_wing at wing_width, far_wing at far_width).
+        near_wing, _, far_wing = bwb_strikes(side, center, width, position["far_width"])
+        legs = [(near_wing, 1), (center, 2), (far_wing, 1)]
     else:
         raise ValueError(f"itm_contracts_at_settlement: unknown position kind {kind!r}")
     return sum(n for strike, n in legs if _itm(strike)) * qty
@@ -319,6 +351,8 @@ def position_pnl(position: dict, underlying: float) -> float:
         payoff = debit_vertical_payoff(position["side"], position["center"], w, underlying)
     elif kind == "iron_fly":
         payoff = iron_fly_payoff(position["center"], w, underlying)
+    elif kind == "bwb":
+        payoff = bwb_payoff(position["side"], position["center"], w, position["far_width"], underlying)
     else:
         raise ValueError(f"position_pnl: unknown position kind {kind!r}")
     cash = position["net"] + payoff
@@ -372,6 +406,14 @@ def position_floor(position: dict) -> float:
         # -wing_width (not 0): unlike a same-type fly, the two credits collected here are not
         # guaranteed to exceed the width, so this floor CAN be negative even before fees.
         worst_payoff = -position["wing_width"]
+    elif kind == "bwb":
+        # Unlike fly/iron_fly, there is no "no-reserve, the exit covers it" convention here: the
+        # tail scenario is a REAL loss (not a bounded-below payoff with an assignment fee on top
+        # of a win), and deep past the far wing all four contracts are ITM simultaneously -- the
+        # single most reliable full-reserve case in the module. Reserve conservatively, same
+        # direction as long_vertical's reserve, for the same reason: honest is cheap here.
+        worst_payoff = -(position["far_width"] - position["wing_width"])
+        reserve = expire_fee(4 * qty)
     else:
         raise ValueError(f"position_floor: unknown position kind {kind!r}")
     return (position["net"] + worst_payoff) * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0) - reserve
@@ -426,6 +468,11 @@ def _scan_prices(positions: list[dict], step: float) -> list[float]:
         kind = p["kind"]
         if kind in ("fly", "short_vertical", "long_vertical", "iron_fly"):
             strikes += [p["center"] - w, p["center"], p["center"] + w]
+        elif kind == "bwb":
+            # Include the far strike -- book_floor must see the true trough, which sits past the
+            # wide wing, not at +/-wing_width like every other kind.
+            near_wing, _, far_wing = bwb_strikes(p["side"], p["center"], w, p["far_width"])
+            strikes += [near_wing, p["center"], far_wing]
         else:
             raise ValueError(f"_scan_prices: unknown position kind {kind!r}")
     lo, hi = min(strikes), max(strikes)

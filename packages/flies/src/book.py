@@ -89,6 +89,24 @@ def _record_best_credit(conn, position: dict, credit: float, when: str) -> None:
     )
 
 
+def _record_best_roll_debit(conn, position: dict, roll_debit: float, when: str) -> None:
+    """Keep the running MINIMUM roll debit seen for an open bwb -- the same counterfactual role as
+    `_record_best_debit`: afterwards, "the roll was never cheap enough" vs "our buffer was too
+    tight" call for opposite remedies."""
+    best = position.get("best_roll_debit")
+    if best is not None and roll_debit >= best:
+        return
+    position["best_roll_debit"] = roll_debit
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "best_roll_debit": round(roll_debit, 4),
+            "best_roll_debit_at": when,
+        },
+    )
+
+
 def _to_position(row: dict) -> dict:
     """Database row -> the plain dict the pure math in fly.py consumes."""
     return {
@@ -113,6 +131,11 @@ def _to_position(row: dict) -> dict:
         # Carried so `max_positions_per_window` can count what this window has already spent. Without
         # it the cap would read every position as window-less and never bind.
         "entry_window": row["entry_window"],
+        # bwb_roll: the wide wing's width, needed by every fly.py function that touches a bwb's
+        # geometry. Kept after the roll too (wing_width alone can't tell a rolled bwb from a
+        # legged fly in history/rewind without it).
+        "far_width": row["far_width"],
+        "best_roll_debit": row["best_roll_debit"],
     }
 
 
@@ -343,6 +366,69 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             }
         )
 
+    # --- 1c. roll any open bwb whose roll (buy near wing, sell held far wing) has cheapened
+    # enough to beat the credit already collected, converting it into a symmetric fly.
+    for pos in [p for p in positions if p["kind"] == "bwb" and p["status"] == "open"]:
+        done, reason, plan = engine.evaluate_roll(snapshot, pos, params)
+        if plan is not None:
+            _record_best_roll_debit(conn, pos, plan["roll_debit"], now)
+        if not done:
+            journal(
+                "roll",
+                reason,
+                center=pos["center"],
+                position_id=pos["position_id"],
+                detail=None
+                if plan is None
+                else f"roll debit {plan['roll_debit']:.2f} vs gate {plan['gate_debit']:.2f}",
+            )
+            actions.append({"action": "roll_skipped", "position_id": pos["position_id"], "reason": reason})
+            continue
+        pos["kind"] = "fly"
+        pos["net"] = plan["net"]
+        pos["fees"] = pos["fees"] + plan["roll_fee"]
+        latency = _minutes_since(pos.get("entry_time"), now)
+        dbmod.save_position(
+            conn,
+            {
+                "position_id": pos["position_id"],
+                "kind": "fly",
+                "net": plan["net"],
+                "roll_debit": plan["roll_debit"],
+                "fees": pos["fees"],
+                "floor_dollars": plan["floor"],
+                "risk_free": int(fly.is_risk_free(pos)),
+                # One "finished structure" column for every reader -- for a bwb, completed_at and
+                # rolled_at are the SAME moment (the roll IS the completion), unlike a fly's
+                # completed_at which is set once at a genuinely separate step.
+                "completed_at": now,
+                "rolled_at": now,
+                "completion_latency_min": latency,
+                "roll_latency_min": latency,
+                "spot_at_completion": snapshot.get("underlying_price"),
+                "spot_at_roll": snapshot.get("underlying_price"),
+                **_regime_columns("completion", snapshot, params),
+            },
+        )
+        journal(
+            "roll",
+            "rolled",
+            accepted=True,
+            center=pos["center"],
+            position_id=pos["position_id"],
+            detail=f"rolled far wing in for {plan['roll_debit']:.2f} debit, floor ${plan['floor']:.2f} after fees",
+        )
+        actions.append(
+            {
+                "action": "rolled",
+                "position_id": pos["position_id"],
+                "roll_debit": plan["roll_debit"],
+                "net": plan["net"],
+                "floor": plan["floor"],
+                "latency_min": latency,
+            }
+        )
+
     # --- 1.5. close any ITM position ahead of expiry, if cheaper than the assignment fee it would
     # otherwise incur -- see engine.evaluate_pre_close_exit for the window/comparison. Covers a
     # completed fly's ITM leg (bounded payoff, so this is pure fee avoidance) AND a still-open
@@ -353,7 +439,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
     for pos in [
         p
         for p in positions
-        if p["kind"] in ("fly", "short_vertical", "long_vertical", "iron_fly") and p["status"] == "open"
+        if p["kind"] in ("fly", "short_vertical", "long_vertical", "iron_fly", "bwb") and p["status"] == "open"
     ]:
         close, reason, plan = engine.evaluate_pre_close_exit(snapshot, pos, params)
         if not close:
@@ -368,10 +454,10 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     else f"slippage {plan['slippage_cost']:.2f} vs assignment {plan['assignment_fee']:.2f}",
                 )
             continue
-        # fly, long_vertical, and iron_fly close for a credit (its sign can vary, but it is priced
-        # and returned as one -- close_credit); short_vertical closes for a debit (a cost, so it
-        # subtracts from net) -- explicit by kind, no fallthrough.
-        if pos["kind"] in ("fly", "long_vertical", "iron_fly"):
+        # fly, long_vertical, iron_fly, and bwb close for a credit (its sign can vary, but it is
+        # priced and returned as one -- close_credit); short_vertical closes for a debit (a cost,
+        # so it subtracts from net) -- explicit by kind, no fallthrough.
+        if pos["kind"] in ("fly", "long_vertical", "iron_fly", "bwb"):
             close_price = plan["close_credit"]
         else:
             close_price = -plan["close_debit"]
@@ -566,6 +652,80 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
         else:
             journal("debit_first", reason, center=wanted_center)
             actions.append({"action": "entry_skipped", "mode": "debit_first", "reason": reason})
+
+    # --- 2.75. bwb_roll entry: buy a broken-wing butterfly whole for a net credit
+    if "bwb_roll" in params.get("entry_modes", []):
+        enter, reason, plan = engine.evaluate_bwb_entry(snapshot, params, open_positions)
+        if enter:
+            position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-B"
+            pos = {
+                "kind": "bwb",
+                "side": plan["side"],
+                "center": plan["center"],
+                "wing_width": plan["wing_width"],
+                "far_width": plan["far_width"],
+                "net": plan["credit"],
+                "quantity": plan["quantity"],
+                "fees": plan["open_fee"],
+                "entry_mode": "bwb_roll",
+                "status": "open",
+                "position_id": position_id,
+                "entry_window": plan["entry_window"],
+            }
+            positions.append(pos)
+            open_positions.append(pos)
+            dbmod.save_position(
+                conn,
+                {
+                    "position_id": position_id,
+                    "book_id": book_id,
+                    "trade_date": trade_date,
+                    "arm": arm,
+                    "entry_mode": "bwb_roll",
+                    "symbol": symbol,
+                    "kind": "bwb",
+                    "side": plan["side"],
+                    "center": plan["center"],
+                    "wing_width": plan["wing_width"],
+                    "far_width": plan["far_width"],
+                    "quantity": plan["quantity"],
+                    "net": plan["credit"],
+                    "credit": plan["credit"],
+                    "fees": plan["open_fee"],
+                    "entry_time": now,
+                    "entry_window": plan["entry_window"],
+                    "center_reason": plan["center_reason"],
+                    "underlying_at_entry": snapshot.get("underlying_price"),
+                    **_regime_columns("entry", snapshot, params),
+                    # The real, negative-capable tail -- (wing_width - far_width) -- net of fees
+                    # and the full 4-contract assignment-fee reserve. Never reported as a fly's
+                    # floor; see fly.position_floor's bwb branch.
+                    "floor_dollars": fly.position_floor(pos),
+                    "risk_free": int(fly.is_risk_free(pos)),
+                    "status": "open",
+                },
+            )
+            journal(
+                "bwb_roll",
+                "entered",
+                accepted=True,
+                center=plan["center"],
+                position_id=position_id,
+                detail=f"{plan['side']} BWB (wing {plan['wing_width']}, far {plan['far_width']}) "
+                f"for {plan['credit']:.2f} credit",
+            )
+            actions.append(
+                {
+                    "action": "bwb_opened",
+                    "position_id": position_id,
+                    "side": plan["side"],
+                    "center": plan["center"],
+                    "credit": plan["credit"],
+                }
+            )
+        else:
+            journal("bwb_roll", reason, center=wanted_center)
+            actions.append({"action": "entry_skipped", "mode": "bwb_roll", "reason": reason})
 
     # --- 3. outright entry: buy a cheap fly, funded only by premium already taken in
     if "outright" in params.get("entry_modes", []):

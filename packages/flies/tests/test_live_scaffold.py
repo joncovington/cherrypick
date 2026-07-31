@@ -80,6 +80,23 @@ def test_entry_spec_sells_center_buys_wing_at_tick_floored_credit():
     assert actions["SPXW  260729P07490000"] == "buy to open"
 
 
+def test_entry_spec_refuses_a_debit_first_plan():
+    """Live v1 is legged-only. debit_first's plan has no 'credit' key (it has 'debit' instead) --
+    entry_spec must refuse it with a clear error, not a confusing KeyError two lines in."""
+    debit_first_plan = {**ENTRY_PLAN, "debit": 1.07}
+    del debit_first_plan["credit"]
+    with pytest.raises(ValueError, match="legged-only"):
+        live_orders.entry_spec(_snapshot(), debit_first_plan)
+
+
+def test_entry_spec_refuses_a_bwb_plan():
+    """bwb_roll's plan carries 'far_width', which no legged plan ever does -- refused even though
+    it (like legged) also carries 'credit'."""
+    bwb_plan = {**ENTRY_PLAN, "far_width": 10.0}
+    with pytest.raises(ValueError, match="legged-only"):
+        live_orders.entry_spec(_snapshot(), bwb_plan)
+
+
 def test_completion_spec_never_prices_past_the_engine_gate():
     pos = {"side": PUT, "center": 7495.0, "wing_width": 5, "quantity": 1}
     plan = {"debit": 0.93, "gate_debit": 0.87, "long_strike": 7500.0}

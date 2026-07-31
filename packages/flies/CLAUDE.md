@@ -187,6 +187,22 @@ comparison measures one variable rather than a bundle of confounded changes.
   their gates on the same iteration, the position takes whichever leaves the higher post-fee
   floor. `completion_modes` defaults to `["debit"]` everywhere else, so no other arm's behavior
   changes.
+- `bwb` — control's twin isolating the **entry construction**, added 2026-07-31 (`entry_modes:
+  ["bwb_roll"]`, kind `bwb`, `fly.bwb_payoff`/`fly.bwb_strikes`/`engine.evaluate_bwb_entry`/
+  `evaluate_roll`). Instead of legging in over two ticks, enters a broken-wing butterfly WHOLE for
+  a net credit: a near/protected wing at the usual `wing_width` and a far/wide wing at
+  `wing_width * bwb_far_width_ratio` (a ratio, not an absolute point value, so it scales
+  automatically with whatever `wing_width` an arm or symbol is already using — the common
+  real-world near:far rule of thumb is roughly 1:2). Until rolled, this carries REAL, negative
+  tail risk of `wing_width - far_width` that `fly.position_floor`'s `bwb` branch never reports as
+  bounded — the entry credit is priced as rent for that tail, not against `wing_width` the way
+  `legged`'s credit gates are. The roll buys the near strike and sells the held far strike (a
+  2-leg debit vertical of width `far_width - wing_width`), converting the position to an ordinary
+  symmetric fly once it clears its own price and floor gates — bringing the far wing back to
+  exactly `1.0x wing_width`. Researched trap (see `docs/faq.md`): the roll cheapens under exactly
+  the drift that makes the position profitable, and balloons past the credit precisely when the
+  tail is threatened — this arm measures whether that trade-off is actually survivable, not just
+  theoretically credit-positive.
 
 **Regime tagging (`engine.classify_regime`, added 2026-07-31).** Every entry and completion, across
 every arm, is tagged along four dimensions read purely from the snapshot in hand — `vol_bucket`
