@@ -144,6 +144,12 @@ def vertical_open_fee(symbol: str, quantity: int = 1) -> float:
     return _fees.ic_open_fee(symbol, quantity, legs=2, sell_legs=1, ndigits=4)
 
 
+def vertical_close_fee(symbol: str, quantity: int = 1) -> float:
+    """Close a 2-leg vertical ahead of expiry (buy back the short, sell the long -- still exactly
+    1 sell-side contract either direction), at the schedule's closing commission rate."""
+    return _fees.ic_close_fee(symbol, quantity, legs=2, sell_legs=1, ndigits=4)
+
+
 def fly_open_fee(symbol: str, quantity: int = 1) -> float:
     """Open a fly outright. Priced as 4 contracts / 2 sell contracts: the middle strike trades twice
     and tastytrade fees per CONTRACT, not per price level, so the doubled centre must be counted."""
@@ -235,28 +241,23 @@ def position_floor(position: dict) -> float:
     That is a genuine per-position guarantee. A short vertical bottoms out at -W, full defined
     risk, and calling THAT risk-free would be the lie this module exists to avoid.
 
-    A SHORT VERTICAL's floor still reserves the worst-case exercise-assignment fee (both legs
-    ITM) — there is no mechanism here to avoid it, so the true worst case includes it.
-
-    A FLY's floor does NOT reserve one. `engine.evaluate_pre_close_exit` closes any fly with an
-    ITM leg ahead of expiry whenever doing so is cheaper than the assignment fee it would incur,
-    so going forward the realistic worst case is bounded by whichever of (close now, hold to
-    settlement) is cheaper — never more than the assignment fee itself, and often (this exit
-    exists specifically because it usually is) less. This is NOT a claim the fee can never be
-    paid: a broker/liquidity failure on the closing order would still fall back to the ordinary
-    settlement path and the real assignment fee, a tail risk this floor deliberately does not
-    reserve capital against, same as it does not reserve against the exit order itself failing
-    to submit. `position_pnl`, unlike this function, still prices the fee fresh at every
-    hypothetical price — this floor is the one place going-forward risk management gets to
-    change what "worst case" means; the payoff curve and settle_now stay a pure expiry question.
+    Neither branch reserves the worst-case exercise-assignment fee. `engine.evaluate_pre_close_exit`
+    closes ANY position (completed fly or still-open vertical) with an ITM leg ahead of expiry
+    whenever doing so is cheaper than the assignment fee it would incur, so going forward the
+    realistic worst case is bounded by whichever of (close now, hold to settlement) is cheaper —
+    never more than the assignment fee itself, and often (this exit exists specifically because it
+    usually is) less. This is NOT a claim the fee can never be paid: a broker/liquidity failure on
+    the closing order would still fall back to the ordinary settlement path and the real assignment
+    fee, a tail risk this floor deliberately does not reserve capital against, same as it does not
+    reserve against the exit order itself failing to submit. `position_pnl`, unlike this function,
+    still prices the fee fresh at every hypothetical price — this floor is the one place
+    going-forward risk management gets to change what "worst case" means; the payoff curve and
+    settle_now stay a pure expiry question.
     """
     qty = position.get("quantity", 1)
     is_fly = position["kind"] == "fly"
     worst_payoff = 0.0 if is_fly else -position["wing_width"]
-    fees = position.get("fees", 0.0)
-    if not is_fly:
-        fees += expire_fee(2 * qty)
-    return (position["net"] + worst_payoff) * CONTRACT_MULTIPLIER * qty - fees
+    return (position["net"] + worst_payoff) * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0)
 
 
 def is_risk_free(position: dict) -> bool:

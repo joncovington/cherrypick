@@ -191,10 +191,14 @@ These are the constraints the module exists to enforce. Breaking one makes the n
 5. **No adjustments after establishment.** No stops, no wing moves — hold to cash settlement. v1 is
    measuring a base rate, and an adjustment rule tuned before a single completion rate exists would be
    fitting noise. **One narrow, mechanical exception** (added 2026-07-30, applies to both paper and
-   live): `engine.evaluate_pre_close_exit` closes a completed fly with an ITM leg in the closing
-   minutes (`pre_close_exit_time`, default 15:50) whenever doing so costs less than the $5/contract
-   exercise-assignment fee those legs would otherwise incur overnight — a cost comparison, not a
-   P&L-driven stop or a strategy adjustment tuned on the session's own data.
+   live, and to both a completed fly and a still-open short vertical): `engine.evaluate_pre_close_exit`
+   closes any ITM leg in the closing minutes (`pre_close_exit_time`, default 15:50) whenever doing so
+   costs less than the $5/contract exercise-assignment fee it would otherwise incur overnight — a cost
+   comparison, not a P&L-driven stop or a strategy adjustment tuned on the session's own data. For a
+   fly this is pure fee avoidance (the payoff is already bounded); for a vertical it stops the fee from
+   stacking on top of a loss the position is already realizing. A vertical is only ever considered once
+   its own entry has confirmed and any resting completion order is gone, so it never races a working
+   order.
 6. **If the floor comes out negative after fees, that is the finding.** The answer is to stop, not to
    loosen `fee_buffer` until the numbers look better.
 

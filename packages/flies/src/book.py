@@ -192,14 +192,17 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             }
         )
 
-    # --- 1.5. close any completed fly with an ITM leg, if cheaper than the assignment fee it
-    # would otherwise incur -- see engine.evaluate_pre_close_exit for the window/comparison. The
-    # one deliberate exception to rule 5 ("no adjustments, hold to settlement"): a cost-avoidance
-    # mechanism in the closing minutes, not a strategy adjustment tuned on the session's own data.
-    for pos in [p for p in positions if p["kind"] == "fly" and p["status"] == "open"]:
+    # --- 1.5. close any ITM position ahead of expiry, if cheaper than the assignment fee it would
+    # otherwise incur -- see engine.evaluate_pre_close_exit for the window/comparison. Covers a
+    # completed fly's ITM leg (bounded payoff, so this is pure fee avoidance) AND a still-open
+    # short vertical's ITM leg(s) (already realizing a loss -- letting the assignment fee stack on
+    # top of it is the same avoidable cost, just on the losing side). The one deliberate exception
+    # to rule 5 ("no adjustments, hold to settlement"): a cost-avoidance mechanism in the closing
+    # minutes, not a strategy adjustment tuned on the session's own data.
+    for pos in [p for p in positions if p["kind"] in ("fly", "short_vertical") and p["status"] == "open"]:
         close, reason, plan = engine.evaluate_pre_close_exit(snapshot, pos, params)
         if not close:
-            if reason not in ("not_a_fly", "before_pre_close_exit_window"):
+            if reason not in ("not_a_closeable_kind", "before_pre_close_exit_window"):
                 journal(
                     "pre_close_exit",
                     reason,
@@ -210,7 +213,9 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     else f"slippage {plan['slippage_cost']:.2f} vs assignment {plan['assignment_fee']:.2f}",
                 )
             continue
-        gross = (pos["net"] + plan["close_credit"]) * fly.CONTRACT_MULTIPLIER * pos["quantity"]
+        is_fly = pos["kind"] == "fly"
+        close_price = plan["close_credit"] if is_fly else -plan["close_debit"]
+        gross = (pos["net"] + close_price) * fly.CONTRACT_MULTIPLIER * pos["quantity"]
         total_fees = round(pos["fees"] + plan["close_fee"], 2)
         pnl = round(gross - total_fees, 2)
         pos["fees"] = total_fees
@@ -221,7 +226,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             {
                 "position_id": pos["position_id"],
                 "fees": total_fees,
-                "expiry_payoff": plan["close_credit"],
+                "expiry_payoff": close_price,
                 "gross_pnl": round(gross, 2),
                 "pnl": pnl,
                 "pinned": 0,  # closed early -- no true settlement price to judge this against
@@ -230,20 +235,21 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "exit_time": now,
             },
         )
+        cost_desc = f"{plan['close_credit']:.2f} credit" if is_fly else f"{plan['close_debit']:.2f} debit"
         journal(
             "pre_close_exit",
             "closed",
             accepted=True,
             center=pos["center"],
             position_id=pos["position_id"],
-            detail=f"closed for {plan['close_credit']:.2f} credit, avoided ${plan['assignment_fee']:.2f} "
-            f"assignment fee ({plan['itm_contracts']} ITM contract(s))",
+            detail=f"closed for {cost_desc}, avoided ${plan['assignment_fee']:.2f} assignment fee "
+            f"({plan['itm_contracts']} ITM contract(s))",
         )
         actions.append(
             {
                 "action": "closed_before_expiry",
                 "position_id": pos["position_id"],
-                "close_credit": plan["close_credit"],
+                "close_price": close_price,
                 "assignment_fee_avoided": plan["assignment_fee"],
                 "pnl": pnl,
             }
