@@ -35,10 +35,14 @@ def _mcfg(**live_over):
     return {"live": live}
 
 
-def _setup(monkeypatch, tmp_path, *, status_obj, registered):
+def _setup(monkeypatch, tmp_path, *, status_obj, registered, last_run_info=None):
     monkeypatch.setattr(wd.cfgmod, "module_root", lambda *a, **k: Path("."))
     monkeypatch.setattr(wd.cfgmod, "module_logs_dir", lambda name: tmp_path / "logs")
     monkeypatch.setattr(wd.tasks, "exists", lambda name: registered)
+    # Default None (unavailable) so these tests exercise the log-mtime fallback they were written
+    # against, not a real `schtasks`/PowerShell call against whatever's actually on this machine —
+    # tests that want the scheduler-based path pass last_run_info explicitly.
+    monkeypatch.setattr(wd.tasks, "last_run_info", lambda name: last_run_info)
     monkeypatch.setattr(liveops, "halt_flag_path", lambda: tmp_path / "halt-live.flag")
 
     class _R:
@@ -81,6 +85,52 @@ def test_silent_armed_live_loop_is_critical(monkeypatch, tmp_path):
     fresh = [f for f in out if f.key == "flies.live_fresh"]
     assert fresh and fresh[0].status == CRITICAL
     assert "resting unwatched" in fresh[0].message
+
+
+def test_scheduler_recent_successful_run_is_ok_even_with_no_log_activity(monkeypatch, tmp_path):
+    # The false-positive this replaces: a quiet tick (two completed, risk-free positions, nothing
+    # to log) used to read as "silent" from the log-mtime alone. The scheduler's own last-run record
+    # says it ran fine 30s ago -- that must be OK regardless of whether the log moved.
+    info = {"last_run_time": _MIDDAY.isoformat(), "last_task_result": 0}
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY}, registered=True, last_run_info=info)
+    # No log file written at all -- would be "missing" under the old check.
+    out = wd._check_live("flies", _mcfg(), _MIDDAY, True)
+    fresh = [f for f in out if f.key == "flies.live_fresh"]
+    assert fresh and fresh[0].status == OK
+
+
+def test_scheduler_stale_last_run_is_critical(monkeypatch, tmp_path):
+    from datetime import timedelta
+
+    stale = (_MIDDAY - timedelta(minutes=15)).isoformat()
+    info = {"last_run_time": stale, "last_task_result": 0}
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY}, registered=True, last_run_info=info)
+    out = wd._check_live("flies", _mcfg(), _MIDDAY, True)
+    fresh = [f for f in out if f.key == "flies.live_fresh"]
+    assert fresh and fresh[0].status == CRITICAL
+    assert "scheduler reports" in fresh[0].message
+
+
+def test_scheduler_nonzero_last_result_is_critical_even_if_recent(monkeypatch, tmp_path):
+    # A tick that ran a moment ago but FAILED (non-zero result) is not "fresh" -- the task executing
+    # doesn't mean the tick succeeded.
+    info = {"last_run_time": _MIDDAY.isoformat(), "last_task_result": 1}
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY}, registered=True, last_run_info=info)
+    out = wd._check_live("flies", _mcfg(), _MIDDAY, True)
+    fresh = [f for f in out if f.key == "flies.live_fresh"]
+    assert fresh and fresh[0].status == CRITICAL
+    assert "result=1" in fresh[0].message
+
+
+def test_scheduler_unavailable_falls_back_to_log_mtime(monkeypatch, tmp_path):
+    # last_run_info() -> None (POSIX, or a query failure) must still catch a genuinely silent loop
+    # via the log-mtime path, same as before this feature existed.
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY}, registered=True, last_run_info=None)
+    _touch_log(tmp_path, age_seconds=15 * 60)
+    out = wd._check_live("flies", _mcfg(), _MIDDAY, True)
+    fresh = [f for f in out if f.key == "flies.live_fresh"]
+    assert fresh and fresh[0].status == CRITICAL
+    assert "live log" in fresh[0].message
 
 
 def test_missing_task_mid_window_is_critical(monkeypatch, tmp_path):
