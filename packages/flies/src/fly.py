@@ -71,6 +71,24 @@ def long_vertical_payoff(side: str, short_strike: float, wing_width: float, unde
     return -short_vertical_payoff(side, short_strike, wing_width, underlying)
 
 
+def debit_vertical_payoff(side: str, center: float, wing_width: float, underlying: float) -> float:
+    """Per-contract expiry value of the DEBIT vertical bought FIRST by the `debit_first` entry
+    mode, as a signed number (>= 0, bounded to [0, wing_width]).
+
+    A call fly's debit leg is +1 (K-w) call / -1 K call (bull call debit spread); a put fly's is
+    +1 (K+w) put / -1 K put (bear put debit spread). Both are bought cheapest when spot sits on
+    their OTM side and richen toward `wing_width` as spot moves through the centre -- the mirror
+    image of `short_vertical_payoff`, whose worst case sits at -wing_width instead of this
+    structure's best case of +wing_width. Do NOT confuse with `long_vertical_payoff`, which prices
+    a different pair of strikes (the legged mode's COMPLETING debit spread, bought second, on the
+    far side of an already-sold credit spread) -- this function is the debit-first mode's OPENING
+    trade, priced against its own strikes.
+    """
+    if side == CALL:  # +1 (center-w) call / -1 center call
+        return max(0.0, min(wing_width, underlying - (center - wing_width)))
+    return max(0.0, min(wing_width, (center + wing_width) - underlying))  # +1 (center+w) put / -1 center put
+
+
 # --------------------------------------------------------------------------- which way does it cheapen
 def completing_side_direction(side: str) -> str:
     """Which way spot must move for the COMPLETING spread to get cheaper — 'up' or 'down'.
@@ -85,6 +103,16 @@ def completing_side_direction(side: str) -> str:
     moving away from the fly's center, in the direction of the credit spread already sold.
     """
     return "up" if side == PUT else "down"
+
+
+def debit_first_completing_direction(side: str) -> str:
+    """Which way spot must move for `debit_first`'s COMPLETING credit spread to richen -- the
+    inverse of `completing_side_direction`. `choose_debit_side` picks CALL when spot starts at or
+    below centre and PUT when spot starts above it, so either way the debit spread was bought on
+    spot's current side of the centre; the completing credit spread (short at the centre) richens
+    as spot moves TOWARD the centre (reversion), i.e. up from the CALL side, down from the PUT
+    side -- opposite of legged's completion, which is exactly the point of offering both."""
+    return "up" if side == CALL else "down"
 
 
 # --------------------------------------------------------------------------- quote-level pricing
@@ -192,6 +220,12 @@ def itm_contracts_at_settlement(position: dict, settlement_price: float) -> int:
     elif kind == "short_vertical":
         long_strike = center - width if side == PUT else center + width
         legs = [(center, 1), (long_strike, 1)]
+    elif kind == "long_vertical":
+        # debit_first's opening trade: +1 (center-w) call / -1 center call (CALL side), or
+        # +1 (center+w) put / -1 center put (PUT side) -- same two strikes as short_vertical's,
+        # just held long instead of short.
+        long_strike = center - width if side == CALL else center + width
+        legs = [(center, 1), (long_strike, 1)]
     else:
         raise ValueError(f"itm_contracts_at_settlement: unknown position kind {kind!r}")
     return sum(n for strike, n in legs if _itm(strike)) * qty
@@ -230,6 +264,8 @@ def position_pnl(position: dict, underlying: float) -> float:
         payoff = fly_payoff(position["center"], w, underlying)
     elif kind == "short_vertical":
         payoff = short_vertical_payoff(position["side"], position["center"], w, underlying)
+    elif kind == "long_vertical":
+        payoff = debit_vertical_payoff(position["side"], position["center"], w, underlying)
     else:
         raise ValueError(f"position_pnl: unknown position kind {kind!r}")
     cash = position["net"] + payoff
@@ -262,13 +298,22 @@ def position_floor(position: dict) -> float:
     """
     qty = position.get("quantity", 1)
     kind = position["kind"]
+    reserve = 0.0
     if kind == "fly":
         worst_payoff = 0.0
     elif kind == "short_vertical":
         worst_payoff = -position["wing_width"]
+    elif kind == "long_vertical":
+        # Unlike a fly (no reserve) or a short vertical (full defined-risk, no reserve needed
+        # either), a debit_first long vertical's worst payoff is genuinely 0 -- but its cheapest
+        # dollar point is a leg barely ITM, where a 2-leg close's slippage beats the $5/contract
+        # assignment fee less reliably than a fly's does. Reserve it; conservative is the honest
+        # direction here, not an assumption the exit always beats the fee.
+        worst_payoff = 0.0
+        reserve = expire_fee(qty)
     else:
         raise ValueError(f"position_floor: unknown position kind {kind!r}")
-    return (position["net"] + worst_payoff) * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0)
+    return (position["net"] + worst_payoff) * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0) - reserve
 
 
 def is_risk_free(position: dict) -> bool:
@@ -318,7 +363,7 @@ def _scan_prices(positions: list[dict], step: float) -> list[float]:
     for p in positions:
         w = p["wing_width"]
         kind = p["kind"]
-        if kind in ("fly", "short_vertical"):
+        if kind in ("fly", "short_vertical", "long_vertical"):
             strikes += [p["center"] - w, p["center"], p["center"] + w]
         else:
             raise ValueError(f"_scan_prices: unknown position kind {kind!r}")

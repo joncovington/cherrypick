@@ -49,6 +49,10 @@
     "min_credit_pct_of_width": 0.2,
     "_max_credit_pct_of_width": "Opening credit CEILING. A vertical cannot be worth more than its width, so a credit near that width means the short leg is deep ITM and the premium is mostly intrinsic — a low-probability directional bet rather than a pin bet. Observed against real SPX quotes: a centre 67 points from spot produced a 77%-of-width credit with 67 points of intrinsic. The floor above cannot catch that, because a fatter intrinsic-heavy credit looks better to a floor.",
     "max_credit_pct_of_width": 0.6,
+    "_min_debit_pct_of_width": "debit_first's mirror of min_credit_pct_of_width: below this the debit vertical bought first is too far OTM to be plausible — little room left to richen before the completing credit spread's own width ceiling caps it.",
+    "min_debit_pct_of_width": 0.2,
+    "_max_debit_pct_of_width": "debit_first's mirror of max_credit_pct_of_width: a debit approaching the width means the long leg bought first is already deep ITM, leaving little room for the completing sale to out-earn it.",
+    "max_debit_pct_of_width": 0.6,
     "_fee_buffer": "Price points the completing debit must beat the original credit by. This is the gate that stops us 'completing' into a fly whose credit is real but smaller than the fees paid to build it.",
     "fee_buffer": 0.1,
     "_min_floor_dollars": "Reject a completion whose post-fee floor lands below this. Was 50.0 on the reasoning that a $5-27 guaranteed profit was 'not worth the position slot or the defined risk carried while waiting'. The first five sessions falsified the premise: refusing does NOT free the slot, it leaves the position as an uncompleted short vertical, and that branch realised an average of -$208.51 per position (17 of them, -$3,544 total) against +$110.47 for a completed fly. Turning down a guaranteed +$9.36 to keep a lottery ticket averaging -$208 is the losing side of that trade. Measured over 07-20..07-24, five completions were blocked by this gate alone at floors of $9.36-$39.36; converting them moves completion rate 57.5% -> 70%, past the ~65% break-even implied by those two averages. Scaled 10.0 -> 1.0 at the 2026-07-29 XSP move (premiums run ~1/10 of SPX; the same proportional bar). Revisit if the uncompleted branch ever stops being the dominant loss.",
@@ -110,6 +114,19 @@
       "enabled": true,
       "_note": "ATM, same window and position cap as the gex arm. The shared baseline for EVERY comparison: gex vs control isolates the CENTRING rule (identical windows), time_window vs control isolates the TIMING (identical centring), width-N vs control isolates the WINGS. It must therefore match gex on everything except where it centres — and it doubles as the width sweep's 1-increment rung, since it trades the default wing_width.",
       "_history_note": "This was a single 12:00-12:15 window with max_positions 2, against gex's 09:45-14:30 and 4 — a 19x difference in entry opportunity. Per-trade metrics survive that, but net P&L per arm does not: the gex arm could have out-earned control purely by trading more often, and the headline comparison would have measured trade count rather than the GEX signal.",
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "debit-first": {
+      "enabled": true,
+      "_note": "Control's twin, isolating the LEGGING ORDER: buy the debit vertical first, complete by SELLING the credit spread second (entry_modes: [\"debit_first\"]) -- the exact reverse of legged's two trades. Completion drift direction is INVERTED from every other arm: legged needs spot to drift AWAY from the short strike; this arm needs spot to drift TOWARD the centre (reversion), so it and legged monetize opposite path regimes at the same centre. See docs/faq.md for the full construction.",
+      "entry_modes": [
+        "debit_first"
+      ],
       "entry_windows": [
         [
           "10:00",

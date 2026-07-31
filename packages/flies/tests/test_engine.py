@@ -603,6 +603,158 @@ def test_pre_close_exit_vertical_refuses_without_leg_quotes():
     assert not close and reason == "missing_leg_quotes" and plan is None
 
 
+# --------------------------------------------------------------------------- debit_first (Phase 1)
+def debit_snapshot(**over):
+    """Spot at the centre (6000) -> choose_debit_side picks CALL. Custom call quotes priced for a
+    plausible ~24% of width debit spread (5995/6000)."""
+    return snapshot(calls={5995: q(2.0, 2.4), 6000: q(1.0, 1.2)}, **over)
+
+
+def test_choose_debit_side_inverts_choose_side():
+    for spot in (5990.0, 6000.0, 6010.0):
+        snap = snapshot(underlying_price=spot)
+        assert engine.choose_debit_side(snap, 6000.0) != engine.choose_side(snap, 6000.0)
+
+
+def test_debit_vertical_entry_returns_a_complete_plan():
+    enter, reason, plan = engine.evaluate_debit_vertical_entry(debit_snapshot(), params(), [])
+    assert enter and reason == "ok"
+    assert plan["side"] == "call" and plan["center"] == 6000.0
+    assert 0.0 < plan["debit"] < plan["wing_width"]
+    assert plan["completing_direction"] == "up"  # CALL side completes on spot rising to centre
+
+
+def test_debit_vertical_entry_requires_0dte():
+    enter, reason, _ = engine.evaluate_debit_vertical_entry(debit_snapshot(dte=1), params(), [])
+    assert not enter and reason == "no_0dte_expiration"
+
+
+def test_debit_vertical_entry_rejects_a_debit_below_the_floor():
+    thin = snapshot(calls={5995: q(0.05, 0.07), 6000: q(0.0, 0.02)})
+    enter, reason, _ = engine.evaluate_debit_vertical_entry(thin, params(), [])
+    assert not enter and reason == "debit_below_floor_completion_implausible"
+
+
+def test_debit_vertical_entry_rejects_an_intrinsic_heavy_debit():
+    rich = snapshot(calls={5995: q(4.0, 4.2), 6000: q(0.9, 1.0)})
+    enter, reason, _ = engine.evaluate_debit_vertical_entry(rich, params(), [])
+    assert not enter and reason == "debit_above_ceiling_mostly_intrinsic"
+
+
+def test_debit_vertical_entry_refuses_when_the_debit_leaves_no_room_to_be_out_earned():
+    """The completing credit can never exceed `width`, so a debit that (with buffer + fees) already
+    reaches the width is a mathematically dead end."""
+    at_width = snapshot(calls={5995: q(5.4, 5.4), 6000: q(0.0, 0.0)})
+    enter, reason, _ = engine.evaluate_debit_vertical_entry(at_width, params(max_debit_pct_of_width=99.0), [])
+    assert not enter and reason == "debit_cannot_be_out_earned"
+
+
+def test_debit_vertical_entry_rejects_an_implausible_quote():
+    # The lower/cheaper strike (5995) priced BELOW the higher one (6000) -- a stale or crossed
+    # quote, since a call debit spread's value can never legitimately be negative.
+    crossed = snapshot(calls={5995: q(0.5, 0.6), 6000: q(1.0, 1.1)})
+    enter, reason, _ = engine.evaluate_debit_vertical_entry(crossed, params(), [])
+    assert not enter and reason == "implausible_debit_quote"
+
+
+def open_debit_vertical(debit=1.175, side="call", fees=None):
+    return {
+        "kind": "long_vertical",
+        "side": side,
+        "center": 6000,
+        "wing_width": 5,
+        "net": -debit,
+        "quantity": 1,
+        "fees": fly.vertical_open_fee("SPX", 1) if fees is None else fees,
+        "status": "open",
+        "position_id": "D1",
+    }
+
+
+def test_debit_completion_fires_when_the_credit_richens_enough():
+    """The mirror of test_completion_fires_when_the_debit_comes_in_cheap: spot has drifted toward the
+    centre, richening the completing credit spread (short 6000 call / long 6005 call) past the debit
+    already paid."""
+    rich = snapshot(calls={6000: q(3.0, 3.2), 6005: q(0.5, 0.6)})
+    done, reason, plan = engine.evaluate_debit_completion(rich, open_debit_vertical(), params())
+    assert done and reason == "ok"
+    assert plan["net"] > 0 and plan["floor"] > 0
+    assert plan["wing_strike"] == 6005
+
+
+def test_debit_completion_waits_when_the_credit_is_still_thin():
+    thin = snapshot(calls={6000: q(1.0, 1.1), 6005: q(0.7, 0.8)})
+    done, reason, _ = engine.evaluate_debit_completion(thin, open_debit_vertical(), params())
+    assert not done and reason == "completing_credit_too_low"
+
+
+def test_debit_completion_ignores_a_position_that_is_not_a_long_vertical():
+    done, reason, plan = engine.evaluate_debit_completion(debit_snapshot(), open_spread(), params())
+    assert not done and reason == "not_a_debit_vertical" and plan is None
+
+
+def test_debit_completion_floor_matches_position_floor_exactly():
+    """Same discipline as legged's completion: the dollar gate must route through fly.position_floor
+    rather than a second, driftable formula."""
+    spread = open_debit_vertical(debit=0.30)
+    rich = snapshot(calls={6000: q(2.00, 2.00), 6005: q(1.05, 1.05)})  # cheap/no-slippage credit
+    done, reason, plan = engine.evaluate_debit_completion(rich, spread, params())
+    assert done and reason == "ok"
+    assert plan["floor"] == pytest.approx(
+        round(
+            fly.position_floor(
+                {
+                    "kind": "fly",
+                    "side": "call",
+                    "center": 6000,
+                    "wing_width": 5,
+                    "net": plan["net"],
+                    "quantity": 1,
+                    "fees": spread["fees"] + plan["completion_fee"],
+                }
+            ),
+            2,
+        )
+    )
+
+
+def test_settle_sign_is_not_flipped_for_an_uncompleted_long_vertical():
+    """Regression: before _expiry_payoff's explicit dispatch, settle() priced anything that wasn't a
+    fly as a short vertical -- for a long vertical (whose worst case is 0, best case +W) that is
+    sign-flipped. Deep ITM through both legs must settle at +wing_width, never -wing_width."""
+    positions = [{**open_debit_vertical(debit=1.0, fees=0.0), "entry_mode": "debit_first"}]
+    settled = engine.settle(positions, 6010.0)  # deep ITM through both call legs
+    assert settled[0]["expiry_payoff"] == pytest.approx(5.0)
+    # (net + payoff) * 100 = (-1.0 + 5.0) * 100 = 400, less the 2-ITM-leg assignment fee
+    assert settled[0]["pnl"] == pytest.approx(400.0 - fly.expire_fee(2))
+
+
+def _itm_close_debit_vertical_snapshot(**over):
+    base = {
+        "now_min": 15 * 60 + 55,
+        "underlying_price": 6009.0,  # deep ITM through both call legs
+        "calls": {5995: q(14.9, 15.0), 6000: q(9.9, 10.0)},
+    }
+    base.update(over)
+    return snapshot(**base)
+
+
+def test_pre_close_exit_closes_an_itm_long_vertical_when_slippage_beats_the_fee():
+    close, reason, plan = engine.evaluate_pre_close_exit(
+        _itm_close_debit_vertical_snapshot(), open_debit_vertical(debit=1.0, fees=0.0), params()
+    )
+    assert close and reason == "ok"
+    assert plan["close_credit"] > 0
+    assert plan["itm_contracts"] == 2
+
+
+def test_pre_close_exit_long_vertical_before_the_window_refuses():
+    close, reason, _ = engine.evaluate_pre_close_exit(
+        _itm_close_debit_vertical_snapshot(now_min=12 * 60), open_debit_vertical(), params()
+    )
+    assert not close and reason == "before_pre_close_exit_window"
+
+
 # --------------------------------------------------------------------------- outright entry
 def cheap_fly_snapshot():
     """A grid where the 5995/6000/6005 call fly prices around 0.30."""

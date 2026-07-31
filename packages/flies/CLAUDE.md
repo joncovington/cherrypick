@@ -166,6 +166,15 @@ comparison measures one variable rather than a bundle of confounded changes.
 - `wide_wing` — the SPX-era single-point version of the width question (a 20-point wing bracketing
   the observed drift). **Disabled** since the sweep; kept in `ARMS` so its books' attribution stays
   readable. On XSP its scaled equivalent (~2 points) is exactly `width-2`.
+- `debit-first` — control's twin isolating the **legging order**, added 2026-07-31 (`entry_modes:
+  ["debit_first"]`, `fly.debit_vertical_payoff`/`engine.evaluate_debit_vertical_entry`/
+  `evaluate_debit_completion`). `legged` sells the credit spread first and buys the completing
+  debit spread cheaper once spot drifts *away* from the short strike; this arm buys the debit
+  vertical first and completes by *selling* the credit spread once spot drifts back *toward* the
+  centre — literally `legged`'s two trades in the opposite order, monetizing the opposite drift
+  regime at the same centre. Its uncompleted branch is structurally different too: a long
+  vertical's worst case at expiry is the debit already paid (bounded, floor never below `-debit`),
+  never the `-W` full-defined-risk tail an uncompleted credit spread carries.
 
 **A global position cap does not make a multi-window arm test its windows.** `max_positions` alone let
 the book fill in the first window: over 07-20…07-24 `time_window` put 15 of its 16 legged entries in

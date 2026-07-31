@@ -63,6 +63,25 @@ def _record_best_debit(conn, position: dict, debit: float, when: str) -> None:
     )
 
 
+def _record_best_credit(conn, position: dict, credit: float, when: str) -> None:
+    """Keep the running MAXIMUM completing credit seen for an open `debit_first` long vertical --
+    the mirror of `_record_best_debit`'s running minimum. Recorded on every evaluation, including
+    refusals, so a miss can be read afterwards as "the market never paid enough" vs "our buffer
+    was too tight."""
+    best = position.get("best_completing_credit")
+    if best is not None and credit <= best:
+        return
+    position["best_completing_credit"] = credit
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "best_completing_credit": round(credit, 4),
+            "best_credit_at": when,
+        },
+    )
+
+
 def _to_position(row: dict) -> dict:
     """Database row -> the plain dict the pure math in fly.py consumes."""
     return {
@@ -82,6 +101,7 @@ def _to_position(row: dict) -> dict:
         # Carried so the running-minimum comparison and the latency clock survive a loop restart —
         # both are cumulative over a session, not per-iteration.
         "best_completing_debit": row["best_completing_debit"],
+        "best_completing_credit": row["best_completing_credit"],
         "entry_time": row["entry_time"],
         # Carried so `max_positions_per_window` can count what this window has already spent. Without
         # it the cap would read every position as window-less and never bind.
@@ -192,6 +212,64 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             }
         )
 
+    # --- 1b. complete any open `debit_first` long vertical whose completing sale has richened
+    # enough to beat the debit already paid -- the same idea as step 1, direction reversed.
+    for pos in [p for p in positions if p["kind"] == "long_vertical" and p["status"] == "open"]:
+        done, reason, plan = engine.evaluate_debit_completion(snapshot, pos, params)
+        if plan is not None:
+            _record_best_credit(conn, pos, plan["credit"], now)
+        if not done:
+            journal(
+                "debit_completion",
+                reason,
+                center=pos["center"],
+                position_id=pos["position_id"],
+                detail=None
+                if plan is None
+                else f"credit {plan['credit']:.2f} vs gate {plan['gate_credit']:.2f}",
+            )
+            actions.append(
+                {"action": "debit_completion_skipped", "position_id": pos["position_id"], "reason": reason}
+            )
+            continue
+        pos["kind"] = "fly"
+        pos["net"] = plan["net"]
+        pos["fees"] = pos["fees"] + plan["completion_fee"]
+        latency = _minutes_since(pos.get("entry_time"), now)
+        dbmod.save_position(
+            conn,
+            {
+                "position_id": pos["position_id"],
+                "kind": "fly",
+                "net": plan["net"],
+                "credit": plan["credit"],
+                "fees": pos["fees"],
+                "floor_dollars": plan["floor"],
+                "risk_free": int(fly.is_risk_free(pos)),
+                "completed_at": now,
+                "completion_latency_min": latency,
+                "spot_at_completion": snapshot.get("underlying_price"),
+            },
+        )
+        journal(
+            "debit_completion",
+            "completed",
+            accepted=True,
+            center=pos["center"],
+            position_id=pos["position_id"],
+            detail=f"credit {plan['credit']:.2f}, floor ${plan['floor']:.2f} after fees",
+        )
+        actions.append(
+            {
+                "action": "debit_completed",
+                "position_id": pos["position_id"],
+                "credit": plan["credit"],
+                "net": plan["net"],
+                "floor": plan["floor"],
+                "latency_min": latency,
+            }
+        )
+
     # --- 1.5. close any ITM position ahead of expiry, if cheaper than the assignment fee it would
     # otherwise incur -- see engine.evaluate_pre_close_exit for the window/comparison. Covers a
     # completed fly's ITM leg (bounded payoff, so this is pure fee avoidance) AND a still-open
@@ -199,7 +277,9 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
     # top of it is the same avoidable cost, just on the losing side). The one deliberate exception
     # to rule 5 ("no adjustments, hold to settlement"): a cost-avoidance mechanism in the closing
     # minutes, not a strategy adjustment tuned on the session's own data.
-    for pos in [p for p in positions if p["kind"] in ("fly", "short_vertical") and p["status"] == "open"]:
+    for pos in [
+        p for p in positions if p["kind"] in ("fly", "short_vertical", "long_vertical") and p["status"] == "open"
+    ]:
         close, reason, plan = engine.evaluate_pre_close_exit(snapshot, pos, params)
         if not close:
             if reason not in ("not_a_closeable_kind", "before_pre_close_exit_window"):
@@ -213,8 +293,12 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     else f"slippage {plan['slippage_cost']:.2f} vs assignment {plan['assignment_fee']:.2f}",
                 )
             continue
-        is_fly = pos["kind"] == "fly"
-        close_price = plan["close_credit"] if is_fly else -plan["close_debit"]
+        # fly and long_vertical close for a credit (>= 0); short_vertical closes for a debit
+        # (a cost, so it subtracts from net) -- explicit by kind, no fallthrough.
+        if pos["kind"] in ("fly", "long_vertical"):
+            close_price = plan["close_credit"]
+        else:
+            close_price = -plan["close_debit"]
         gross = (pos["net"] + close_price) * fly.CONTRACT_MULTIPLIER * pos["quantity"]
         total_fees = round(pos["fees"] + plan["close_fee"], 2)
         pnl = round(gross - total_fees, 2)
@@ -235,7 +319,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "exit_time": now,
             },
         )
-        cost_desc = f"{plan['close_credit']:.2f} credit" if is_fly else f"{plan['close_debit']:.2f} debit"
+        cost_desc = f"{close_price:.2f} credit" if close_price >= 0 else f"{-close_price:.2f} debit"
         journal(
             "pre_close_exit",
             "closed",
@@ -331,6 +415,79 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
         else:
             journal("legged", reason, center=wanted_center)
             actions.append({"action": "entry_skipped", "mode": "legged", "reason": reason})
+
+    # --- 2.5. debit-first entry: buy a debit vertical, complete later by SELLING a credit spread
+    if "debit_first" in params.get("entry_modes", []):
+        enter, reason, plan = engine.evaluate_debit_vertical_entry(snapshot, params, open_positions)
+        if enter:
+            position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-D"
+            pos = {
+                "kind": "long_vertical",
+                "side": plan["side"],
+                "center": plan["center"],
+                "wing_width": plan["wing_width"],
+                "net": -plan["debit"],
+                "quantity": plan["quantity"],
+                "fees": plan["open_fee"],
+                "entry_mode": "debit_first",
+                "status": "open",
+                "position_id": position_id,
+                "entry_window": plan["entry_window"],
+            }
+            positions.append(pos)
+            open_positions.append(pos)
+            dbmod.save_position(
+                conn,
+                {
+                    "position_id": position_id,
+                    "book_id": book_id,
+                    "trade_date": trade_date,
+                    "arm": arm,
+                    "entry_mode": "debit_first",
+                    "symbol": symbol,
+                    "kind": "long_vertical",
+                    "side": plan["side"],
+                    "center": plan["center"],
+                    "wing_width": plan["wing_width"],
+                    "quantity": plan["quantity"],
+                    "net": -plan["debit"],
+                    "debit": plan["debit"],
+                    "fees": plan["open_fee"],
+                    "entry_time": now,
+                    "entry_window": plan["entry_window"],
+                    "center_reason": plan["center_reason"],
+                    "completing_direction": plan["completing_direction"],
+                    "underlying_at_entry": snapshot.get("underlying_price"),
+                    # Bounded at 0, never a -W tail (a long vertical can't lose more than its
+                    # debit) -- but negative, since the debit paid is a real cost with no credit
+                    # collected yet. See fly.position_floor's long_vertical branch for the
+                    # assignment-fee reserve this also carries.
+                    "floor_dollars": fly.position_floor(pos),
+                    "risk_free": 0,
+                    "status": "open",
+                },
+            )
+            journal(
+                "debit_first",
+                "entered",
+                accepted=True,
+                center=plan["center"],
+                position_id=position_id,
+                detail=f"{plan['side']} debit spread for {plan['debit']:.2f}, needs spot "
+                f"{plan['completing_direction']} to complete",
+            )
+            actions.append(
+                {
+                    "action": "debit_vertical_opened",
+                    "position_id": position_id,
+                    "side": plan["side"],
+                    "center": plan["center"],
+                    "debit": plan["debit"],
+                }
+            )
+        else:
+            journal("debit_first", reason, center=wanted_center)
+            actions.append({"action": "entry_skipped", "mode": "debit_first", "reason": reason})
 
     # --- 3. outright entry: buy a cheap fly, funded only by premium already taken in
     if "outright" in params.get("entry_modes", []):

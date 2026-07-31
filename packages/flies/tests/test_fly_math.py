@@ -213,6 +213,88 @@ def test_position_floor_scales_with_quantity():
     assert fly.position_floor(triple) == fly.position_floor(single) * 3
 
 
+# --------------------------------------------------------------------------- debit_first (Phase 1)
+def test_debit_vertical_payoff_call_side_is_bounded_and_ramps_between_the_strikes():
+    # +1 5995 call / -1 6000 call: worthless at/below 5995, maxed at/above 6000.
+    assert fly.debit_vertical_payoff("call", 6000, 5, 5990) == 0.0
+    assert fly.debit_vertical_payoff("call", 6000, 5, 5995) == 0.0
+    assert fly.debit_vertical_payoff("call", 6000, 5, 6000) == 5.0
+    assert fly.debit_vertical_payoff("call", 6000, 5, 6010) == 5.0
+    assert fly.debit_vertical_payoff("call", 6000, 5, 5997.5) == 2.5
+
+
+def test_debit_vertical_payoff_put_side_mirrors_call_side():
+    # +1 6005 put / -1 6000 put: worthless at/above 6005, maxed at/below 6000.
+    assert fly.debit_vertical_payoff("put", 6000, 5, 6010) == 0.0
+    assert fly.debit_vertical_payoff("put", 6000, 5, 6005) == 0.0
+    assert fly.debit_vertical_payoff("put", 6000, 5, 6000) == 5.0
+    assert fly.debit_vertical_payoff("put", 6000, 5, 5990) == 5.0
+    assert fly.debit_vertical_payoff("put", 6000, 5, 6002.5) == 2.5
+
+
+def test_debit_first_completing_direction_inverts_completing_side_direction():
+    """The whole point of offering debit_first alongside legged: the two monetize opposite drift
+    regimes at the same centre."""
+    for side in (fly.PUT, fly.CALL):
+        assert fly.debit_first_completing_direction(side) != fly.completing_side_direction(side)
+
+
+def debit_vertical(side="call", debit=1.0, fees=None):
+    return {
+        "kind": "long_vertical",
+        "side": side,
+        "center": 6000,
+        "wing_width": 5,
+        "net": -debit,
+        "quantity": 1,
+        "fees": fly.vertical_open_fee("SPX", 1) if fees is None else fees,
+        "status": "open",
+        "position_id": "D1",
+    }
+
+
+def test_long_vertical_floor_is_bounded_at_zero_never_negative_width():
+    """Unlike a short vertical (-W) or a fly (0), a long vertical's worst case at expiry is 0 -- the
+    debit paid is already spent, so the floor is the negative of what was paid, less fees and the
+    conservative assignment-fee reserve (see position_floor's long_vertical branch)."""
+    pos = debit_vertical(debit=1.0, fees=0.0)
+    expected = -1.0 * fly.CONTRACT_MULTIPLIER - fly.expire_fee(1)
+    assert fly.position_floor(pos) == pytest.approx(expected)
+    assert not fly.is_risk_free(pos)
+
+
+def test_long_vertical_floor_reserves_the_assignment_fee_unlike_a_fly():
+    """A fly reserves nothing (evaluate_pre_close_exit is assumed to beat the fee); a long vertical
+    is more conservative -- its cheapest dollar point is a leg barely ITM, where a 2-leg close's
+    slippage beats the fee less reliably."""
+    pos = debit_vertical(debit=0.0, fees=0.0)
+    assert fly.position_floor(pos) == pytest.approx(-fly.expire_fee(1))
+
+
+def test_itm_contracts_long_vertical_call_side():
+    pos = debit_vertical(side="call")
+    # Deep ITM through both call strikes (5995, 6000): 2 contracts.
+    assert fly.itm_contracts_at_settlement(pos, 6010) == 2
+    # Between the strikes: only the lower (5995) is ITM.
+    assert fly.itm_contracts_at_settlement(pos, 5997) == 1
+    # Below both strikes: 0.
+    assert fly.itm_contracts_at_settlement(pos, 5990) == 0
+
+
+def test_itm_contracts_long_vertical_put_side():
+    pos = debit_vertical(side="put")
+    # Deep ITM through both put strikes (6000, 6005): 2 contracts.
+    assert fly.itm_contracts_at_settlement(pos, 5990) == 2
+    assert fly.itm_contracts_at_settlement(pos, 6010) == 0
+
+
+def test_position_pnl_long_vertical_uses_debit_vertical_payoff():
+    pos = debit_vertical(side="call", debit=1.0, fees=0.0)
+    pnl = fly.position_pnl(pos, 6010)  # fully ITM -> payoff = wing_width = 5
+    # (net + payoff) * 100 - fees(0, before assignment) - assignment fee for 2 ITM legs
+    assert pnl == pytest.approx((-1.0 + 5.0) * 100 - fly.expire_fee(2))
+
+
 # --------------------------------------------------------------------------- unknown kind (Phase 0 hardening)
 def test_position_pnl_raises_on_unknown_kind():
     with pytest.raises(ValueError, match="unknown position kind"):

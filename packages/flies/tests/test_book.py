@@ -286,3 +286,46 @@ def test_arms_differ_only_in_where_they_center(conn):
     gex_center, _ = engine.select_center(snap, engine.merged_params(BASE_CONFIG, "gex"))
     atm_center, _ = engine.select_center(snap, engine.merged_params(BASE_CONFIG, "control"))
     assert gex_center == 6005.0 and atm_center == 6000.0
+
+
+# --------------------------------------------------------------------------- debit_first (Phase 1)
+def test_debit_first_lifecycle_from_debit_vertical_to_risk_free_fly(conn):
+    """Mirror of the legged lifecycle test: buy a debit vertical, complete it by SELLING a credit
+    spread once spot has drifted toward the centre, end the session holding a fly for a net credit."""
+    config = one_arm_config(entry_modes=["debit_first"])
+
+    first_snap = snapshot(calls={5995: q(2.0, 2.4), 6000: q(1.0, 1.2)})
+    first = bookmod.process_snapshot(first_snap, config, conn, "control")
+    opened = [a for a in first["actions"] if a["action"] == "debit_vertical_opened"]
+    assert len(opened) == 1
+    assert first["stats"]["uncompleted_long_verticals"] == 1
+
+    # Later the completing credit spread has richened (spot drifted TOWARD the centre).
+    later = snapshot(calls={6000: q(3.0, 3.2), 6005: q(0.5, 0.6)})
+    second = bookmod.process_snapshot(later, config, conn, "control")
+    completed = [a for a in second["actions"] if a["action"] == "debit_completed"]
+    assert len(completed) == 1
+    assert completed[0]["net"] > 0
+    assert completed[0]["floor"] > 0
+
+    completed_id = completed[0]["position_id"]
+    rows = dbmod.book_positions(conn, bookmod.book_id_for("2026-07-20", "control", "SPX"))
+    row = next(r for r in rows if r["position_id"] == completed_id)
+    assert row["kind"] == "fly", "the completion must UPDATE the position in place, not add a row"
+    assert row["risk_free"] == 1
+    assert row["completed_at"] is not None
+    assert row["fees"] == pytest.approx(fly.vertical_open_fee("SPX", 1) * 2)
+
+
+def test_freshly_opened_debit_vertical_records_its_worst_case_floor(conn):
+    """The debit_first counterpart of test_freshly_opened_credit_spread_records_its_worst_case_floor
+    -- floor_dollars must never be left NULL for the uncompleted branch."""
+    config = one_arm_config(entry_modes=["debit_first"])
+    snap = snapshot(calls={5995: q(2.0, 2.4), 6000: q(1.0, 1.2)})
+    result = bookmod.process_snapshot(snap, config, conn, "control")
+    opened = next(a for a in result["actions"] if a["action"] == "debit_vertical_opened")
+    row = dbmod.book_positions(conn, result["book_id"])[0]
+    assert row["position_id"] == opened["position_id"]
+    assert row["kind"] == "long_vertical"
+    assert row["floor_dollars"] is not None
+    assert row["floor_dollars"] < 0
