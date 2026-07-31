@@ -149,11 +149,15 @@ def test_ic_close_fee_default_symbol_has_no_index_exchange_fee():
     assert fees.ic_close_fee("AAPL") == fees.ic_close_fee("XSP")  # both 0.0 exchange fee
 
 
-def test_ic_expire_fee_is_zero_with_no_itm_contracts():
+def test_ic_expire_fee_is_zero_with_no_itm_legs():
     assert fees.ic_expire_fee() == 0.0
     assert fees.ic_expire_fee(0) == 0.0
 
 
-def test_ic_expire_fee_charges_five_dollars_per_itm_contract():
+def test_ic_expire_fee_charges_five_dollars_per_settlement_event():
+    """Per DISTINCT ITM symbol, not per contract. Corrected 2026-07-31 against real tastytrade
+    transactions: a 2-contract XSP put leg was charged $5.00, not $10.00 (see the evidence in
+    fees/__init__.py). Callers pass a count of settling SYMBOLS -- so a butterfly whose doubled
+    centre finishes ITM contributes 1 here, not 2."""
     assert fees.ic_expire_fee(1) == 5.00
-    assert fees.ic_expire_fee(4) == 20.00
+    assert fees.ic_expire_fee(3) == 15.00
