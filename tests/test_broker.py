@@ -447,3 +447,29 @@ def test_working_orders_serializes_live_orders():
         {"order_id": 11, "status": "Live", "underlying_symbol": "XSP"},
         {"order_id": 12, "status": "Received", "underlying_symbol": "XSP"},
     ]
+
+
+def test_working_orders_drops_terminal_orders():
+    """get_live_orders is really "orders placed today" -- filled/cancelled/rejected orders come
+    back in the same list as still-resting ones, distinguished only by `terminal_at`. Without
+    filtering on it, every decided order from earlier today (including unrelated manual trading
+    in the same account) would read as a still-working orphan forever."""
+
+    class _Order:
+        def __init__(self, oid, status, underlying, terminal_at):
+            self.id = oid
+            self.status = status
+            self.underlying_symbol = underlying
+            self.terminal_at = terminal_at
+
+    class _Acct:
+        async def get_live_orders(self, session):
+            return [
+                _Order(11, "Live", "XSP", None),
+                _Order(12, "Filled", "AAPL", "2026-07-30T14:00:00Z"),
+                _Order(13, "Cancelled", "SOFI", "2026-07-30T13:00:00Z"),
+                _Order(14, "Rejected", "XSP", "2026-07-30T12:00:00Z"),
+            ]
+
+    out = _run(broker.working_orders(_Acct(), "sess"))
+    assert out == [{"order_id": 11, "status": "Live", "underlying_symbol": "XSP"}]

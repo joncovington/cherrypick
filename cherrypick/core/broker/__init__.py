@@ -350,11 +350,20 @@ async def cancel_order(account: Any, session: Any, order_id: Any) -> dict:
 
 
 async def working_orders(account: Any, session: Any) -> list[dict]:
-    """Every live (working) order on the account, as [{order_id, status, underlying_symbol}].
+    """Every order still resting (unfilled, not cancelled/rejected/expired) on the account, as
+    [{order_id, status, underlying_symbol}].
 
     The account is truth and a caller's ledger is belief: a working order the ledger doesn't
     know about means a placement was recorded nowhere (e.g. a crash between place and the DB
-    write) and is resting unwatched. This is the primitive an orphan sweep diffs against."""
+    write) and is resting unwatched. This is the primitive an orphan sweep diffs against.
+
+    `get_live_orders` is misleadingly named — despite the `/orders/live` endpoint, the SDK's own
+    docstring says it returns "orders placed today," terminal ones included. Every `PlacedOrder`
+    carries `terminal_at` (set once a status is final, None while still working), so that field —
+    not the status string — is what actually distinguishes "still resting" from "already decided
+    hours ago." Without this filter, every filled/cancelled/rejected order placed anywhere on the
+    account today (including manual trading unrelated to whatever this session manages) reads as
+    a still-working orphan forever."""
     placed = await account.get_live_orders(session)
     return [
         {
@@ -363,4 +372,5 @@ async def working_orders(account: Any, session: Any) -> list[dict]:
             "underlying_symbol": getattr(o, "underlying_symbol", None),
         }
         for o in placed
+        if getattr(o, "terminal_at", None) is None
     ]
