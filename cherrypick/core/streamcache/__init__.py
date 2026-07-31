@@ -76,6 +76,16 @@ CREATE TABLE IF NOT EXISTS stream_status (
     subscribed_symbols  INTEGER DEFAULT 0,
     reconnect_count     INTEGER DEFAULT 0
 );
+-- Per-symbol chain-fetch health. A daemon-wide staleness check (stream_status/the freshest-of-any-
+-- event age) can stay healthy while ONE symbol's 0DTE chain fetch keeps failing and its window sits
+-- permanently disabled -- other symbols' quotes mask it. This is that symbol's own signal: NULL
+-- chain_fetch_error means its chain is currently loaded fine.
+CREATE TABLE IF NOT EXISTS stream_symbol_health (
+    symbol            TEXT PRIMARY KEY,
+    chain_loaded_at   TEXT,
+    chain_fetch_error TEXT,
+    updated_at        REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS orb_ranges (
     symbol      TEXT NOT NULL,
     trade_date  TEXT NOT NULL,
@@ -143,6 +153,22 @@ def upsert_status(conn: sqlite3.Connection, **kwargs) -> None:
     updates = ", ".join(f"{k} = excluded.{k}" for k in fields if k != "id")
     conn.execute(
         f"INSERT INTO stream_status (id, {cols}) VALUES (1, {vals}) ON CONFLICT(id) DO UPDATE SET {updates}",
+        list(fields.values()),
+    )
+    conn.commit()
+
+
+def upsert_symbol_health(conn: sqlite3.Connection, symbol: str, **kwargs) -> None:
+    """Upsert one symbol's chain-fetch health row with whatever fields are supplied — `updated_at`
+    is always refreshed, but an omitted field (e.g. a failure call that doesn't pass
+    `chain_loaded_at`) is left untouched rather than blanked, same convention as `upsert_status`."""
+    fields = {"symbol": symbol, "updated_at": time.time(), **kwargs}
+    cols = ", ".join(fields)
+    vals = ", ".join("?" for _ in fields)
+    updates = ", ".join(f"{k} = excluded.{k}" for k in fields if k != "symbol")
+    conn.execute(
+        f"INSERT INTO stream_symbol_health ({cols}) VALUES ({vals}) "
+        f"ON CONFLICT(symbol) DO UPDATE SET {updates}",
         list(fields.values()),
     )
     conn.commit()
