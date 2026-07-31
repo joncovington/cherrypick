@@ -600,6 +600,29 @@ def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trad
     return [Finding(f"{name}.settle_overdue", OK, f"{label} settlement", "settled or no open positions")]
 
 
+def _scheduler_age_minutes(info: dict[str, Any], now_et: datetime) -> float | None:
+    """Minutes since the scheduler's own reported last run, or None if unparseable.
+
+    `last_run_time` is in the SCHEDULER's local zone (whatever the machine runs, e.g. Mountain),
+    which is generally not the same zone as `now_et` (Eastern) — both are timezone-AWARE in
+    production, so the subtraction is correct regardless of the offset difference. The
+    aware/naive fallback below only matters for tests that pass a naive `now_et` fixture.
+    """
+    last_run = info.get("last_run_time")
+    if not isinstance(last_run, str):
+        return None
+    try:
+        ts = datetime.fromisoformat(last_run)
+    except ValueError:
+        return None
+    now = now_et
+    if ts.tzinfo is not None and now.tzinfo is None:
+        now = now.replace(tzinfo=ts.tzinfo)
+    elif ts.tzinfo is None and now.tzinfo is not None:
+        ts = ts.replace(tzinfo=now.tzinfo)
+    return (now - ts).total_seconds() / 60
+
+
 def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool) -> list[Finding]:
     """Watchdog the module's LIVE loop — active only when the module config carries a `live`
     block with a `task_name`.
@@ -607,8 +630,13 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
     Three checks plus the disarm backstop:
       (a) armed-window task check: the live loop self-disarms after `disarm_time`, so a missing
           task is only CRITICAL while the module's own status says it should be armed.
-      (b) log freshness in-session (WARN) — a registered-but-silent live loop is the dangerous
-          state, since real working orders may be resting unwatched.
+      (b) freshness in-session (CRITICAL) — a registered-but-silent live loop is the dangerous
+          state, since real working orders may be resting unwatched. On Windows this reads the
+          scheduler's OWN last-run record (`tasks.last_run_info`) rather than a log file's mtime —
+          a live tick that legitimately has nothing to log (e.g. two already-completed, risk-free
+          positions sitting quiet for 30+ minutes) used to read as "silent" and false-alarm; the
+          task having *run* is what matters, not whether it *logged* anything. POSIX cron has no
+          run-history to query, so it falls back to the log-mtime check `last_run_info` replaces.
       (c) settle-overdue after close + grace, via the module's live `--status` JSON.
       (d) disarm backstop (the dead-man's switch's second layer): far outside market hours, a
           live task STILL registered means self-disarm failed — the watchdog sets the suite
@@ -666,27 +694,52 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
         return findings  # halted state — the armed-window checks below would only add noise
 
     if registered:
-        # (b) freshness while armed and in session: the live log must move every few minutes.
+        # (b) freshness while armed and in session: the task must have actually RUN recently.
         if in_session:
             fresh_minutes = int(live.get("freshness_minutes", 5))
-            log_path = cfgmod.module_logs_dir(name) / str(live.get("log", "flies_live.log"))
-            try:
-                age_min = (now_et.timestamp() - os.path.getmtime(log_path)) / 60
-            except OSError:
-                age_min = None
-            if age_min is None or age_min > fresh_minutes:
-                shown = "missing" if age_min is None else f"{age_min:.0f} min old"
-                findings.append(
-                    Finding(
-                        f"{name}.live_fresh",
-                        CRITICAL,
-                        f"{label} LIVE loop silent",
-                        f"live log {shown} while the live task is armed and the market is open — "
-                        "real working orders may be resting unwatched.",
+            scheduler_info = tasks.last_run_info(task_name)
+            if scheduler_info is not None:
+                age_min = _scheduler_age_minutes(scheduler_info, now_et)
+                last_result = scheduler_info.get("last_task_result")
+                failed = last_result not in (0, None)
+                if age_min is None or age_min > fresh_minutes or failed:
+                    if age_min is None:
+                        shown = "unparseable last-run time"
+                    elif failed:
+                        shown = f"last run {age_min:.0f} min ago, result={last_result}"
+                    else:
+                        shown = f"last ran {age_min:.0f} min ago"
+                    findings.append(
+                        Finding(
+                            f"{name}.live_fresh",
+                            CRITICAL,
+                            f"{label} LIVE loop silent",
+                            f"scheduler reports {shown} while the live task is armed and the market "
+                            "is open — real working orders may be resting unwatched.",
+                        )
                     )
-                )
+                else:
+                    findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "fresh"))
             else:
-                findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "fresh"))
+                # POSIX (or a scheduler query failure): fall back to the log-mtime check.
+                log_path = cfgmod.module_logs_dir(name) / str(live.get("log", "flies_live.log"))
+                try:
+                    age_min = (now_et.timestamp() - os.path.getmtime(log_path)) / 60
+                except OSError:
+                    age_min = None
+                if age_min is None or age_min > fresh_minutes:
+                    shown = "missing" if age_min is None else f"{age_min:.0f} min old"
+                    findings.append(
+                        Finding(
+                            f"{name}.live_fresh",
+                            CRITICAL,
+                            f"{label} LIVE loop silent",
+                            f"live log {shown} while the live task is armed and the market is open — "
+                            "real working orders may be resting unwatched.",
+                        )
+                    )
+                else:
+                    findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "fresh"))
     elif armed_for == today and now_minute < disarm_minute:
         # (a) status says armed-for-today but the task is gone mid-window.
         findings.append(
