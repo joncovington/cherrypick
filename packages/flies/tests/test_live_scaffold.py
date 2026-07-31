@@ -440,12 +440,17 @@ class FakeBroker:
         snapshot=None,
         fresh=None,
         official_price=None,
+        alerts=None,
     ):
         self.placed = []
         self.cancelled = []
         self.status_calls = []
         self.fresh_quote_calls = []
         self.official_settlement_calls = []
+        self.alert_calls = []
+        # Queue of canned return values, one per wait_for_order_alerts() call; once exhausted,
+        # every further call returns [] (mirrors a real, always-fail-closed empty result).
+        self._alerts = list(alerts or [])
         # order_id -> {"status": ..., "price": ...} the next status() call for it returns
         self._statuses = dict(order_statuses or {})
         self._cancel_ok = cancel_ok
@@ -485,6 +490,10 @@ class FakeBroker:
     def official_settlement_price(self, symbol):
         self.official_settlement_calls.append(symbol)
         return self._official_price
+
+    def wait_for_order_alerts(self, order_ids, timeout_seconds):
+        self.alert_calls.append((set(order_ids), timeout_seconds))
+        return self._alerts.pop(0) if self._alerts else []
 
 
 @pytest.fixture
@@ -1483,6 +1492,63 @@ def test_watcher_cache_gates_status_polls(live_conn, monkeypatch):
     )
     assert out["cycles"] >= 1
     assert broker.status_calls == []  # cache said "not touchable", heartbeat never elapsed
+
+
+def test_watcher_alert_stream_off_by_default_never_calls_it(live_conn, monkeypatch):
+    """Regression: use_order_alert_stream defaults to False, so an unmodified config must never
+    touch the new call at all -- byte-for-byte the pre-2026-07-31 polling loop."""
+    dbmod.save_position(live_conn, _open_entry_row())
+    _fake_cache(monkeypatch, _snapshot())
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Filled", "price": "1.10", "filled": True}})
+    ticks = iter(range(0, 1000))
+    live_loop.run_watch(
+        _watch_cfg(),
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+        clock_fn=lambda: next(ticks),
+    )
+    assert broker.alert_calls == []
+
+
+def test_watcher_confirms_faster_via_a_push_alert_than_cache_gating_alone_would(live_conn, monkeypatch):
+    """With the market far from the cached limit and a huge heartbeat, cache-gating alone would
+    never poll (see test_watcher_cache_gates_status_polls) -- but a push alert must still confirm
+    the fill THIS cycle regardless of what the cache says."""
+    far = _open_entry_row()
+    far["net"] = 5.00
+    far["credit"] = 5.00
+    dbmod.save_position(live_conn, far)
+    _fake_cache(monkeypatch, _snapshot())
+    broker = FakeBroker(
+        order_statuses={"ORD-E1": {"status": "Filled", "price": "1.10", "filled": True}},
+        alerts=[[{"order_id": "ORD-E1", "status": "Filled", "cancellable": False, "price": "1.10", "filled": True}]],
+    )
+    cfg = _watch_cfg()
+    cfg["live"]["fill_heartbeat_seconds"] = 10_000
+    cfg["live"]["use_order_alert_stream"] = True
+    t = {"now": 0.0}
+
+    def clock_fn():
+        t["now"] += 1.0
+        return t["now"]
+
+    live_loop.run_watch(
+        cfg,
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+        clock_fn=clock_fn,
+    )
+    assert broker.alert_calls and broker.alert_calls[0][0] == {"ORD-E1"}
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["entry_fill_status"] == "filled"
 
 
 def test_watcher_heartbeat_forces_a_poll(live_conn, monkeypatch):
