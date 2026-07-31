@@ -117,14 +117,37 @@ def _streamer_underlying_stale_age(status: dict[str, Any]) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
-def _streamer_stale_detail(global_age: float | None, underlying_age: float | None, limit: int) -> str:
+def _streamer_chain_fetch_errors(status: dict[str, Any]) -> dict[str, str]:
+    """Symbols whose 0DTE chain fetch is currently failing (`stream_symbol_health.chain_fetch_error`
+    non-null), or `{}` if unreported/healthy.
+
+    Distinct from `_streamer_stale_age`/`_streamer_underlying_stale_age` (both freshest-of-any-symbol):
+    a chain fetch retries in-process for ~2 minutes (`cherrypick.core.streamer`) before giving up and
+    disabling that symbol's window — but if it does give up, every OTHER symbol can keep ticking fine
+    and mask the dead one from both aggregate ages indefinitely (the 2026-07-31 XSP incident: ~40
+    minutes silent, running=true and both aggregate ages fresh, because QQQ/SPX were fine). A producer
+    that doesn't report this field degrades cleanly to the aggregate-age checks alone.
+    """
+    errors = status.get("chain_fetch_errors")
+    return errors if isinstance(errors, dict) else {}
+
+
+def _streamer_stale_detail(
+    global_age: float | None,
+    underlying_age: float | None,
+    limit: int,
+    chain_errors: dict[str, str] | None = None,
+) -> str:
     """Name whichever feed(s) are stale, so the alert distinguishes a whole-stream silence from an
-    underlying-spot-only stall (the two have different causes)."""
+    underlying-spot-only stall or a single symbol's dead chain fetch (all different causes)."""
     parts = []
     if global_age is not None and global_age > limit:
         parts.append(f"no events for {global_age:.0f}s")
     if underlying_age is not None and underlying_age > limit:
         parts.append(f"underlying spot frozen for {underlying_age:.0f}s")
+    if chain_errors:
+        named = ", ".join(f"{sym}: {err}" for sym, err in chain_errors.items())
+        parts.append(f"chain fetch failing for {named}")
     return " and ".join(parts) or f"stale (limit {limit}s)"
 
 
@@ -207,23 +230,20 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
 
     stale_age = _streamer_stale_age(status)
     underlying_age = _streamer_underlying_stale_age(status)
+    chain_errors = _streamer_chain_fetch_errors(status)
     limit = spec.get("stale_restart_seconds", 240)
-    # A stall is EITHER the whole stream going quiet OR the underlying-spot feed dying while option
-    # quotes keep the global age fresh (2026-07-22). Judge on whichever available signal is most stale.
+    # A stall is the whole stream going quiet, OR the underlying-spot feed dying while option quotes
+    # keep the global age fresh (2026-07-22), OR a single symbol's chain fetch exhausting its in-process
+    # retries while every other symbol stays fresh (2026-07-31) — judge on whichever signal fires.
     stale_candidates = [a for a in (stale_age, underlying_age) if a is not None]
     worst_stale = max(stale_candidates) if stale_candidates else None
-    detail = _streamer_stale_detail(stale_age, underlying_age, limit)
+    is_stalled = (worst_stale is not None and worst_stale > limit) or bool(chain_errors)
+    detail = _streamer_stale_detail(stale_age, underlying_age, limit, chain_errors)
     connection_age = _streamer_connection_age(status)
     # Don't count a connection that has not had time to populate yet — a restart takes a few seconds to
     # resubscribe, and without this the next tick would see stale data and restart again, forever.
     settling = connection_age is not None and connection_age < limit
-    if (
-        running
-        and worst_stale is not None
-        and worst_stale > limit
-        and not settling
-        and spec.get("auto_restart")
-    ):
+    if running and is_stalled and not settling and spec.get("auto_restart"):
         _stop_streamer(root, spec)
         started = _start_streamer(root, spec["start_argv"])
         findings.append(
@@ -235,7 +255,7 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
                 + ("Restart issued." if started else "Could not relaunch; quotes stay stale."),
             )
         )
-    elif running and worst_stale is not None and worst_stale > limit:
+    elif running and is_stalled:
         findings.append(
             Finding(
                 label,
