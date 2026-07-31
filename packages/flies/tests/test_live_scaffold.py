@@ -72,6 +72,20 @@ ENTRY_PLAN = {
 
 
 # --------------------------------------------------------------------------- order builders
+def test_tick_heartbeat_reports_a_quiet_tick():
+    # A quiet tick (no entries/completions/cancels/pending) must still produce a non-empty line --
+    # this is what keeps the live log's mtime moving when run_once has nothing else to log.
+    quiet = {"arm": "gex", "live": True, "entered": 0, "completed_orders": 0, "cancelled": 0, "pending_orders": 0}
+    line = live_loop._tick_heartbeat(quiet)
+    assert line == "tick: entered=0 completed=0 cancelled=0 pending=0"
+
+
+def test_tick_heartbeat_reports_an_active_tick():
+    busy = {"entered": 1, "completed_orders": 2, "cancelled": 1, "pending_orders": 1}
+    line = live_loop._tick_heartbeat(busy)
+    assert line == "tick: entered=1 completed=2 cancelled=1 pending=1"
+
+
 def test_entry_spec_sells_center_buys_wing_at_tick_floored_credit():
     spec = live_orders.entry_spec(_snapshot(), ENTRY_PLAN)
     assert spec["price"] == 1.05 and spec["price_effect"] == "credit"  # 1.07 floors to a nickel

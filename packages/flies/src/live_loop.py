@@ -595,6 +595,15 @@ def read_orphans() -> list[dict]:
 
 
 # --------------------------------------------------------------------------- the tick
+def _tick_heartbeat(summary: dict) -> str:
+    """One line summarizing a completed tick, logged unconditionally so the live log's mtime
+    reflects "the loop ran" rather than "something happened" — see the call site's comment."""
+    return (
+        f"tick: entered={summary.get('entered', 0)} completed={summary.get('completed_orders', 0)} "
+        f"cancelled={summary.get('cancelled', 0)} pending={summary.get('pending_orders', 0)}"
+    )
+
+
 def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=print) -> dict:
     """One live iteration for the pinned arm — the full state machine.
 
@@ -1951,6 +1960,15 @@ def main() -> int:
             if live and (summary.get("pending_orders") or summary.get("entered")):
                 _spawn_watcher(live)
                 summary["watcher_spawned"] = True
+            # Unconditional per-tick heartbeat: run_once only calls `log()` on specific events
+            # (a cutoff-cancel failure, a pre-close exit, a new entry) — a quiet tick with existing
+            # risk-free positions and nothing to do produces NO log output otherwise. The watchdog's
+            # live-freshness check (packages/orchestrator) reads the log file's mtime as its only
+            # "is this loop actually alive" signal, so a quiet-but-healthy stretch (2026-07-31: two
+            # completed risk-free flies, ~30+ minutes with nothing to report) fired a false CRITICAL
+            # ("LIVE loop silent"). This line makes "the log moved" mean "the loop ran," independent
+            # of whether anything happened.
+            _log(_tick_heartbeat(summary))
         finally:
             _release_lock(_once_lock_path())
         print(
