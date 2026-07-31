@@ -122,6 +122,18 @@ def test_scheduler_nonzero_last_result_is_critical_even_if_recent(monkeypatch, t
     assert "result=1" in fresh[0].message
 
 
+def test_scheduler_task_still_running_is_ok_not_critical(monkeypatch, tmp_path):
+    # 267009 (SCHED_S_TASK_RUNNING) is Task Scheduler's sentinel for "this instance hasn't finished
+    # yet" -- reported while a tick is mid-execution (e.g. a slow broker call), not a real failure.
+    # This is the exact false CRITICAL seen in production: a recent, still-running tick flagged as
+    # a failed/silent loop just because the watchdog happened to poll mid-execution.
+    info = {"last_run_time": _MIDDAY.isoformat(), "last_task_result": 267009}
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": _TODAY}, registered=True, last_run_info=info)
+    out = wd._check_live("flies", _mcfg(), _MIDDAY, True)
+    fresh = [f for f in out if f.key == "flies.live_fresh"]
+    assert fresh and fresh[0].status == OK
+
+
 def test_scheduler_unavailable_falls_back_to_log_mtime(monkeypatch, tmp_path):
     # last_run_info() -> None (POSIX, or a query failure) must still catch a genuinely silent loop
     # via the log-mtime path, same as before this feature existed.
