@@ -210,8 +210,10 @@ def test_entry_window_binds_for_ladder_profiles_without_stagger_entries():
     """Regression: this check used to sit inside the opt-in `stagger_entries` block, which the ladder
     profiles omit — so the paper engine enforced no entry window at all and traded from 09:30 while
     config.json and the live loop both said 10:00. A gate config claims to apply must actually apply."""
-    params = _window_params(CONSERVATIVE)
-    assert "stagger_entries" not in params  # the ladder rungs don't opt in
+    # Built WITHOUT stagger_entries on purpose: every configured profile opts in since 2026-08-01,
+    # but the window must bind for a profile that does not, which is the regression this guards.
+    params = {**_window_params(CONSERVATIVE)}
+    params.pop("stagger_entries", None)
     entered, reason, _ = paper.evaluate_entry(_base_snapshot(now_et="09:45"), params, [])
     assert entered is False
     # Must be the window, not the late-entry bias — the window is checked first on purpose, so the
@@ -478,7 +480,10 @@ def test_evaluate_entry_rejects_strike_overlap_and_tries_narrower_candidate():
     # (same strikes in this fixture) also overlaps, so no candidate clears.
     snap = _base_snapshot(now_et="13:00")
     open_ics = [{"put_strike": 583.0, "call_strike": 598.0}]
-    entered, reason, _ = paper.evaluate_entry(snap, _params(CONSERVATIVE), open_ics)
+    # overlap_scope "all" is the legacy rule (any of the four strikes touching an open SHORT).
+    # Every configured profile now uses "shorts", so pin it here to keep this path covered.
+    params = {**_params(CONSERVATIVE), "overlap_scope": "all"}
+    entered, reason, _ = paper.evaluate_entry(snap, params, open_ics)
     assert entered is False
     assert reason == "strike_overlap"
 
@@ -1843,7 +1848,11 @@ def test_ladder_daily_target_is_soft_guidance_not_a_cap():
         iv_rank=0.50,
         candidates=[_candidate(5, 583, 598, sp_bid=0.70, sp_ask=0.80, sc_bid=0.65, sc_ask=0.75)],
     )
-    params = _params(CONSERVATIVE)
+    # stagger_entries stripped: with it set (as every configured profile now does) the target is a
+    # HARD cap, so the soft-guidance path below only exists for a profile that opts out. The path is
+    # still in the engine and still worth pinning.
+    params = {**_params(CONSERVATIVE), "daily_ic_trade_target": 2}
+    params.pop("stagger_entries", None)
     target = params["daily_ic_trade_target"]
     # Under the target: this credit clears the normal floor → enters.
     entered, reason, _ = paper.evaluate_entry(snap, params, [], todays_entry_count=0)
@@ -1862,7 +1871,11 @@ def test_over_target_rich_credit_still_enters():
         iv_rank=0.50,
         candidates=[_candidate(5, 583, 598, sp_bid=1.20, sp_ask=1.30, sc_bid=1.15, sc_ask=1.25)],
     )
-    params = _params(CONSERVATIVE)
+    # stagger_entries stripped and the target lowered: with stagger on (as every configured profile
+    # now has it) the target is a HARD cap and this path is unreachable by design. The soft-guidance
+    # branch still exists in the engine for a profile that opts out, so it stays pinned here.
+    params = {**_params(CONSERVATIVE), "daily_ic_trade_target": 2}
+    params.pop("stagger_entries", None)
     entered, reason, _ = paper.evaluate_entry(
         snap, params, [], todays_entry_count=params["daily_ic_trade_target"]
     )
@@ -1931,3 +1944,58 @@ def test_process_symbol_reports_save_failed_not_filled_when_the_insert_fails(tmp
     assert any(a["entry"] == "save_failed" for a in entries), entries
     assert not any(a["entry"] == "filled" for a in entries), "a failed save must never read as filled"
     assert any("no column named" in (a.get("error") or "") for a in entries)
+
+
+# ------------------------------------------------------- independent sampling (2026-08-01)
+def test_overlap_scope_shorts_blocks_only_an_exact_short_pair_repeat():
+    """The short pair is the profit zone, the way a butterfly's centre is.
+
+    Under the legacy "all" scope a new IC was blocked if ANY of its four strikes touched an open
+    SHORT, which forced successive shorts two strikes apart and was the main structural brake on
+    samples per session. Under "shorts" only an exact repeat of the same zone is refused, so
+    adjacent zones can share protection and many more independent samples fit in a session.
+    """
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+    params = {**_params(CONSERVATIVE), "overlap_scope": "shorts"}
+
+    # Exact same short pair already open -> refused.
+    same_zone = [{"put_strike": 583.0, "call_strike": 598.0}]
+    entered, reason, _ = paper.evaluate_entry(snap, params, same_zone)
+    assert entered is False and reason == "short_pair_occupied"
+
+    # The candidate is short 583/598 with longs at 578/603. An open IC whose SHORT put sits on this
+    # candidate's LONG put (578) is a different zone, so "shorts" allows it -- while the legacy scope
+    # refused it, which is precisely the constraint that forced shorts two strikes apart.
+    shares_a_long = [{"put_strike": 578.0, "call_strike": 593.0}]
+    entered, reason, _ = paper.evaluate_entry(snap, params, shares_a_long)
+    assert entered is True, reason
+
+    legacy = {**params, "overlap_scope": "all"}
+    entered, reason, _ = paper.evaluate_entry(snap, legacy, shares_a_long)
+    assert entered is False and reason == "strike_overlap"
+
+
+def test_overlap_scope_shorts_requires_both_shorts_to_match():
+    """One shared short is not a repeated zone -- a 583/598 and a 583/601 condor have different
+    profit zones and are different samples."""
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+    params = {**_params(CONSERVATIVE), "overlap_scope": "shorts"}
+    half_match = [{"put_strike": 583.0, "call_strike": 601.0}]  # put short shared, call short not
+    entered, reason, _ = paper.evaluate_entry(snap, params, half_match)
+    assert entered is True, reason
+
+
+def test_every_configured_profile_samples_independently():
+    """The registry-wide contract after 2026-08-01: no clock, no cap, zone-uniqueness only.
+
+    If a profile is ever given back a concurrency cap or an entry spacing, its P&L silently becomes
+    a book's P&L again while still being compared against sample-stream history.
+    """
+    profiles = paper.load_profiles()
+    for name, spec in profiles.items():
+        if name.startswith("_"):
+            continue
+        assert spec.get("overlap_scope") == "shorts", name
+        assert spec.get("min_minutes_between_entries") == 0, name
+        assert spec.get("max_concurrent_ics") == 99, name
+        assert spec.get("stagger_entries") is True, name  # keeps the cap hard, no floor drift
