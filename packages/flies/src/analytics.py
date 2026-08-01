@@ -200,6 +200,124 @@ def arm_comparison_exclusions(
     }
 
 
+# --------------------------------------------------------------------------- regime conditioning
+# The four dimensions `engine.classify_regime` tags, and the continuous measure recorded beside each
+# (2026-08-01). Bucketing on the stored string is the quick read; bucketing the float at analysis
+# time is what lets a threshold be re-derived from history instead of re-guessed and re-run.
+REGIME_DIMENSIONS = {
+    "vol": ("entry_vol_bucket", "entry_vol_value"),
+    "gex": ("entry_gex_bucket", "entry_gex_concentration"),
+    "time": ("entry_time_bucket", "entry_time_value"),
+    "skew": ("entry_skew_bucket", "entry_skew_value"),
+}
+
+
+def _edge_label(edges: list[float], value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    for i, edge in enumerate(edges):
+        if value < edge:
+            return f"<{edge:g}" if i == 0 else f"{edges[i - 1]:g}..{edge:g}"
+    return f">={edges[-1]:g}"
+
+
+def by_regime(
+    conn,
+    dimension: str,
+    start=None,
+    end=None,
+    entry_modes=COMPARISON_ENTRY_MODES,
+    symbol=None,
+    bucket_edges: list[float] | None = None,
+    phase: str = "entry",
+) -> list[dict]:
+    """Outcomes grouped by the regime the position was ENTERED into (or completed into, via
+    `phase`). Same stat bundle as `by_arm`, deliberately — a regime slice and an arm slice have to be
+    read against each other, and two different summary shapes would make that a translation exercise.
+
+    `dimension` is one of REGIME_DIMENSIONS. By default it groups on the stored bucket string; pass
+    `bucket_edges` to re-bucket the recorded float instead, which is the whole reason that float is
+    stored. Example: `bucket_edges=[0.4, 0.6, 0.8]` re-cuts GEX concentration without re-running a
+    single session.
+
+    Scoped to `entry_modes` (legged only by default) for the same reason `by_arm` is: a mode only one
+    arm ever traded would otherwise distort the comparison.
+
+    **Read the `trades` count before the P&L.** Regime tagging only started 2026-07-31 and cannot be
+    backfilled -- `paper_replay` has no historical gamma source -- so early results are thin, and a
+    dimension whose rows all land in one bucket is reporting no contrast rather than no effect. The
+    `unknown` bucket is carried rather than dropped: a regime we could not read is itself a fact
+    about the session, and hiding it would make coverage look better than it was.
+    """
+    if dimension not in REGIME_DIMENSIONS:
+        raise ValueError(f"by_regime: unknown dimension {dimension!r} (have {sorted(REGIME_DIMENSIONS)})")
+    if phase not in ("entry", "completion"):
+        raise ValueError(f"by_regime: phase must be 'entry' or 'completion', got {phase!r}")
+    bucket_col, value_col = (c.replace("entry_", f"{phase}_", 1) for c in REGIME_DIMENSIONS[dimension])
+
+    where, params = _period_clause(start, end, symbol=symbol)
+    if entry_modes:
+        where += f" AND entry_mode IN ({','.join('?' * len(entry_modes))})"
+        params = [*params, *entry_modes]
+    rows = conn.execute(
+        f"SELECT {bucket_col} AS bucket, {value_col} AS value, gross_pnl, fees, pnl "
+        f"FROM fly_positions WHERE {where}",
+        params,
+    ).fetchall()
+
+    grouped: dict[str, list] = {}
+    for r in rows:
+        key = _edge_label(bucket_edges, r["value"]) if bucket_edges else (r["bucket"] or "untagged")
+        grouped.setdefault(key, []).append(r)
+    out = []
+    for bucket, rs in grouped.items():
+        values = [r["value"] for r in rs if r["value"] is not None]
+        out.append(
+            {
+                "dimension": dimension,
+                "phase": phase,
+                "bucket": bucket,
+                # The measured range behind the bucket, so a threshold can be judged against what
+                # actually occurred rather than against what it was guessed to be.
+                "value_min": _round(min(values), 4) if values else None,
+                "value_max": _round(max(values), 4) if values else None,
+                **_summarize(rs),
+            }
+        )
+    return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
+
+
+def regime_coverage(conn, start=None, end=None, symbol=None) -> dict:
+    """How much of the settled book is regime-tagged at all, per dimension, and whether any
+    dimension is degenerate (every tagged row in one bucket).
+
+    This is the honesty guard on `by_regime`: a single-bucket dimension produces a table that looks
+    like a result and contains no contrast. `entry_gex_bucket` was exactly that -- 'thin' 60 times
+    out of 60 -- until the classifier was windowed on 2026-08-01, and nothing in the read layer
+    would have said so.
+    """
+    where, params = _period_clause(start, end, symbol=symbol)
+    total = conn.execute(f"SELECT COUNT(*) FROM fly_positions WHERE {where}", params).fetchone()[0]
+    out = {"settled_trades": total, "dimensions": {}}
+    for dim, (bucket_col, _) in REGIME_DIMENSIONS.items():
+        rows = conn.execute(
+            f"SELECT {bucket_col} AS bucket, COUNT(*) AS n FROM fly_positions WHERE {where} "
+            f"AND {bucket_col} IS NOT NULL GROUP BY 1",
+            params,
+        ).fetchall()
+        counts = {r["bucket"]: r["n"] for r in rows}
+        tagged = sum(counts.values())
+        out["dimensions"][dim] = {
+            "tagged": tagged,
+            "untagged": total - tagged,
+            "coverage_pct": _round(tagged / total * 100) if total else None,
+            "buckets": dict(sorted(counts.items(), key=lambda kv: -kv[1])),
+            # One populated bucket means the tag cannot discriminate — no contrast, not no effect.
+            "degenerate": tagged > 0 and len(counts) == 1,
+        }
+    return out
+
+
 def by_entry_mode(conn, start=None, end=None, symbol=None) -> list[dict]:
     """legged vs outright. They perform differently enough that averaging them together would hide
     the finding — legged manufactures its own floor, outright spends one."""

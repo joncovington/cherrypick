@@ -106,6 +106,36 @@ def cmd_section(args) -> int:
     return 0
 
 
+def cmd_regime(args) -> int:
+    """Regime-conditioned outcomes, plus the coverage guard that says whether to believe them."""
+    import analytics
+
+    conn = dbmod.connect(args.db)
+    edges = [float(e) for e in args.bucket_edges.split(",")] if args.bucket_edges else None
+    coverage = analytics.regime_coverage(conn, args.start, args.end, args.symbol)
+    dimensions = [args.dimension] if args.dimension else sorted(analytics.REGIME_DIMENSIONS)
+    out = {
+        "ok": True,
+        # Printed first, and deliberately: a regime table is only readable next to how much of the
+        # book carries the tag and whether the tag ever took more than one value.
+        "coverage": coverage,
+        "regimes": {
+            dim: analytics.by_regime(
+                conn,
+                dim,
+                start=args.start,
+                end=args.end,
+                symbol=args.symbol,
+                bucket_edges=edges,
+                phase=args.phase,
+            )
+            for dim in dimensions
+        },
+    }
+    print(json.dumps(out, indent=2, default=str))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="flies", description="0DTE net-credit butterfly paper module")
     ap.add_argument("--config")
@@ -140,6 +170,22 @@ def main(argv=None) -> int:
     p_section.add_argument("--date")
     p_section.add_argument("--arm")
     p_section.set_defaults(func=cmd_section)
+
+    p_regime = sub.add_parser(
+        "regime", help="outcomes grouped by the regime entered into, with a coverage guard"
+    )
+    p_regime.add_argument("--dimension", choices=["vol", "gex", "time", "skew"], help="default: all")
+    p_regime.add_argument("--start", help="trade_date >= (YYYY-MM-DD)")
+    p_regime.add_argument("--end", help="trade_date <= (YYYY-MM-DD)")
+    p_regime.add_argument("--symbol", help="narrow to one underlying")
+    p_regime.add_argument("--phase", choices=["entry", "completion"], default="entry")
+    p_regime.add_argument(
+        "--bucket-edges",
+        dest="bucket_edges",
+        help="comma-separated cuts applied to the RECORDED float instead of the stored bucket "
+        "(e.g. 0.4,0.6,0.8) — re-derives a threshold from history without re-running sessions",
+    )
+    p_regime.set_defaults(func=cmd_regime)
 
     args = ap.parse_args(argv)
     return args.func(args)

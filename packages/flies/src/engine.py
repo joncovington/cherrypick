@@ -279,6 +279,16 @@ def _classify_gex(snapshot: dict, params: dict) -> tuple[str, float | None]:
 
 
 def _classify_time(snapshot: dict, params: dict) -> tuple[str, int | None]:
+    """Session phase, and the raw minute-of-day behind it.
+
+    Known degenerate at the default boundaries (measured 2026-08-01): this module's entry windows
+    have only ever produced entries between 09:45 and 15:00, while "midday" spans 10:00-15:30, so
+    every one of the 60 tagged rows came back 'midday'. Deliberately NOT re-guessed here -- the raw
+    minute is now recorded alongside the bucket, so `analytics.by_regime(..., bucket_edges=[...])`
+    can cut it against what actually happened rather than against another guess. Note too that
+    `entry_window` already records real entry timing with genuine variety (6 distinct values), and
+    `analytics.by_entry_window` already reads it -- this dimension may simply be redundant.
+    """
     now_min = snapshot.get("now_min")
     if now_min is None:
         return "unknown", None
