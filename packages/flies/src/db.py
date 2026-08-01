@@ -210,11 +210,14 @@ _ADDED_POSITION_COLUMNS = {
     # trade at settle time) vs 'official' (a human re-settled with the official print). Paper rows
     # leave it NULL -- paper's last-trade settlement is its documented, accepted approximation.
     "settlement_source": "TEXT",
-    # Pre-close ITM exit (engine.evaluate_pre_close_exit): close_order_id/close_fill_status track
-    # the live closing order the same way entry/completion do ('pending' | 'filled' | 'rejected' |
-    # 'cancelled'); paper has no order to track and settles the position directly, so it only ever
-    # sets closed_before_expiry. That flag distinguishes "closed early to dodge assignment" from an
-    # ordinary cash settlement on BOTH paper and live rows -- same column, same meaning either way.
+    # HISTORICAL ONLY -- nothing writes these columns any more. They belong to the pre-close ITM
+    # exit, removed 2026-08-01 (it lost ~$34/position in paper and never fired in live; see
+    # CLAUDE.md rule 5). Retained because 34 settled paper rows carry closed_before_expiry = 1 and
+    # are the only record that the experiment ran: those rows closed at an intraday quote rather
+    # than a settlement price (pinned = 0), so the flag is what marks them as not comparable to
+    # ordinary settled rows. Kept in the schema so old ledgers still open and so analysis can
+    # exclude them; close_order_id additionally still appears in live_loop's orphan sweep and
+    # fee_reconcile, which must keep recognising order ids written before the removal.
     "close_order_id": "TEXT",
     "close_fill_status": "TEXT",
     "closed_before_expiry": "INTEGER",
