@@ -129,10 +129,12 @@ def test_open_advised_positions_get_a_management_only_twin(homes):
 
 def test_process_symbol_evaluates_extra_profiles(homes):
     """The engine seam: a synthetic advised profile is evaluated beside the registry ones."""
-    # XSP — the head of the configured symbol set since the 2026-07-28 width-study reduction
-    # (a symbol outside the traded set gets no per-profile results at all).
+    # Read the traded symbol from config rather than naming one: a symbol outside the configured
+    # set gets no per-profile results at all, so a hardcoded name silently breaks this test every
+    # time the symbol set changes (XSP on 2026-07-28, SPX on 2026-08-01 — twice now).
+    symbol = (paper.load_base_config().get("symbols") or ["SPX"])[0]
     snapshot = {
-        "symbol": "XSP",
+        "symbol": symbol,
         "date": DAY,
         "now_et": "13:00",
         "expiration": DAY,
