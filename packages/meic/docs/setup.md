@@ -1,5 +1,9 @@
 # Setup
 
+**What this covers:** getting MEIC installed and connected to your tastytrade account for the
+first time — the one-time setup you do before running any paper or live session. Part of the
+[MEIC module](../README.md) in the cherrypick suite.
+
 ## Requirements
 
 - **Python 3.11+**

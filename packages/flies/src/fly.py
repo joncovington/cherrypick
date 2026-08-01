@@ -50,6 +50,20 @@ def fly_payoff(center: float, wing_width: float, underlying: float) -> float:
     return max(0.0, wing_width - abs(underlying - center))
 
 
+def iron_fly_payoff(center: float, wing_width: float, underlying: float) -> float:
+    """Per-contract expiry value of an IRON butterfly (short centre put + short centre call, long
+    both wings) centered at `center` -- payoff-equivalent to `fly_payoff` shifted down by
+    `wing_width`: bounded to [-wing_width, 0].
+
+    Completing a legged position by selling the OPPOSITE-type credit spread (put held -> sell
+    call, or vice versa) produces this shape instead of a single-type fly: the same intrinsic tent,
+    but the two credits were collected instead of one credit funding a debit. Whether the combined
+    position is genuinely risk-free depends entirely on whether the two credits summed exceed
+    `wing_width` plus fees -- see `position_floor`'s iron_fly branch, which does NOT assume they did.
+    """
+    return fly_payoff(center, wing_width, underlying) - wing_width
+
+
 def short_vertical_payoff(side: str, short_strike: float, wing_width: float, underlying: float) -> float:
     """Per-contract expiry value of a SHORT defined-risk vertical, as a signed number (<= 0).
 
@@ -71,6 +85,50 @@ def long_vertical_payoff(side: str, short_strike: float, wing_width: float, unde
     return -short_vertical_payoff(side, short_strike, wing_width, underlying)
 
 
+def debit_vertical_payoff(side: str, center: float, wing_width: float, underlying: float) -> float:
+    """Per-contract expiry value of the DEBIT vertical bought FIRST by the `debit_first` entry
+    mode, as a signed number (>= 0, bounded to [0, wing_width]).
+
+    A call fly's debit leg is +1 (K-w) call / -1 K call (bull call debit spread); a put fly's is
+    +1 (K+w) put / -1 K put (bear put debit spread). Both are bought cheapest when spot sits on
+    their OTM side and richen toward `wing_width` as spot moves through the centre -- the mirror
+    image of `short_vertical_payoff`, whose worst case sits at -wing_width instead of this
+    structure's best case of +wing_width. Do NOT confuse with `long_vertical_payoff`, which prices
+    a different pair of strikes (the legged mode's COMPLETING debit spread, bought second, on the
+    far side of an already-sold credit spread) -- this function is the debit-first mode's OPENING
+    trade, priced against its own strikes.
+    """
+    if side == CALL:  # +1 (center-w) call / -1 center call
+        return max(0.0, min(wing_width, underlying - (center - wing_width)))
+    return max(0.0, min(wing_width, (center + wing_width) - underlying))  # +1 (center+w) put / -1 center put
+
+
+def bwb_strikes(side: str, center: float, wing_width: float, far_width: float) -> tuple[float, float, float]:
+    """(near_wing, center, far_wing) for a broken-wing butterfly: the near wing sits on the
+    PROTECTED side at the usual `wing_width`, the far/wide wing sits on the RISK side at
+    `far_width` (> wing_width) -- the extra room bought with the wider wing is what manufactures
+    the entry credit, and it is also the real tail. PUT: near wing above centre (K+w), far wing
+    below (K-f) -- protected upside, risk downside. CALL: mirrored.
+    """
+    if side == PUT:
+        return center + wing_width, center, center - far_width
+    return center - wing_width, center, center + far_width
+
+
+def bwb_payoff(side: str, center: float, wing_width: float, far_width: float, underlying: float) -> float:
+    """Per-contract expiry value of a broken-wing butterfly. Bounded to
+    [wing_width - far_width, wing_width] -- unlike `fly_payoff`, the lower bound is NEGATIVE
+    (far_width > wing_width by construction), the real tail risk this construction carries until
+    the far wing is rolled in to match `wing_width` (see `engine.evaluate_roll`). Peaks at
+    `wing_width` at the centre, same as a symmetric fly; ramps to 0 at the near wing exactly like
+    a symmetric fly's near side; only the far side differs, extending past 0 down to the tail.
+    """
+    K, w, f, S = center, wing_width, far_width, underlying
+    if side == PUT:  # +1 (K+w) put / -2 K put / +1 (K-f) put
+        return max(0.0, (K + w) - S) - 2 * max(0.0, K - S) + max(0.0, (K - f) - S)
+    return max(0.0, S - (K - w)) - 2 * max(0.0, S - K) + max(0.0, S - (K + f))  # +1 (K-w)/-2 K/+1 (K+f) call
+
+
 # --------------------------------------------------------------------------- which way does it cheapen
 def completing_side_direction(side: str) -> str:
     """Which way spot must move for the COMPLETING spread to get cheaper — 'up' or 'down'.
@@ -85,6 +143,16 @@ def completing_side_direction(side: str) -> str:
     moving away from the fly's center, in the direction of the credit spread already sold.
     """
     return "up" if side == PUT else "down"
+
+
+def debit_first_completing_direction(side: str) -> str:
+    """Which way spot must move for `debit_first`'s COMPLETING credit spread to richen -- the
+    inverse of `completing_side_direction`. `choose_debit_side` picks CALL when spot starts at or
+    below centre and PUT when spot starts above it, so either way the debit spread was bought on
+    spot's current side of the centre; the completing credit spread (short at the centre) richens
+    as spot moves TOWARD the centre (reversion), i.e. up from the CALL side, down from the PUT
+    side -- opposite of legged's completion, which is exactly the point of offering both."""
+    return "up" if side == CALL else "down"
 
 
 # --------------------------------------------------------------------------- quote-level pricing
@@ -123,10 +191,54 @@ def fly_debit(
     return mid + slippage_frac * spread
 
 
+def fly_close_credit(
+    lower_q: dict, center_q: dict, upper_q: dict, slippage_frac: float = DEFAULT_SLIPPAGE_FRAC
+) -> float:
+    """Credit received CLOSING an existing fly ahead of expiry (sell lower, buy back the doubled
+    centre, sell upper) — the mirror of `fly_debit`: selling nets LESS than mid by the same
+    four-leg haircut, exactly as `vertical_credit` sits below `vertical_debit`. Used only to decide
+    whether closing an ITM fly early is cheaper than the exercise-assignment fee it would otherwise
+    incur (see `engine.evaluate_pre_close_exit`) — never to price a *held* position, which stays on
+    intrinsic value (`fly_payoff`) until it actually trades.
+    """
+    mid = _leg_mid(lower_q) - 2 * _leg_mid(center_q) + _leg_mid(upper_q)
+    spread = _leg_spread(lower_q) + 2 * _leg_spread(center_q) + _leg_spread(upper_q)
+    return mid - slippage_frac * spread
+
+
+def iron_close_credit(
+    lower_put_q: dict,
+    center_put_q: dict,
+    center_call_q: dict,
+    upper_call_q: dict,
+    slippage_frac: float = DEFAULT_SLIPPAGE_FRAC,
+) -> float:
+    """Credit received CLOSING an iron fly ahead of expiry (buy back both shorts -- centre put,
+    centre call -- and sell both longs -- lower put, upper call). Same role as `fly_close_credit`
+    for the pre-close ITM exit: can legitimately be NEGATIVE (a debit) when one side is deep ITM
+    and the other worthless, since closing then means paying up to buy back the expensive short
+    while collecting little for the near-worthless long on the other side.
+    """
+    mid = (_leg_mid(lower_put_q) + _leg_mid(upper_call_q)) - (_leg_mid(center_put_q) + _leg_mid(center_call_q))
+    spread = (
+        _leg_spread(lower_put_q)
+        + _leg_spread(center_put_q)
+        + _leg_spread(center_call_q)
+        + _leg_spread(upper_call_q)
+    )
+    return mid - slippage_frac * spread
+
+
 # --------------------------------------------------------------------------- fees
 def vertical_open_fee(symbol: str, quantity: int = 1) -> float:
     """Open a 2-leg vertical (1 sell leg). ndigits=4 so fees stay linear in quantity (MEIC parity)."""
     return _fees.ic_open_fee(symbol, quantity, legs=2, sell_legs=1, ndigits=4)
+
+
+def vertical_close_fee(symbol: str, quantity: int = 1) -> float:
+    """Close a 2-leg vertical ahead of expiry (buy back the short, sell the long -- still exactly
+    1 sell-side contract either direction), at the schedule's closing commission rate."""
+    return _fees.ic_close_fee(symbol, quantity, legs=2, sell_legs=1, ndigits=4)
 
 
 def fly_open_fee(symbol: str, quantity: int = 1) -> float:
@@ -135,14 +247,82 @@ def fly_open_fee(symbol: str, quantity: int = 1) -> float:
     return _fees.ic_open_fee(symbol, quantity, legs=4, sell_legs=2, ndigits=4)
 
 
-def expire_fee() -> float:
-    """Cash-settled expiry costs nothing — no closing transaction. SPX/XSP only, by design."""
-    return _fees.ic_expire_fee()
+def fly_close_fee(symbol: str, quantity: int = 1) -> float:
+    """Close a fly ahead of expiry. Same 4-contract/2-sell-contract shape as opening one (buying
+    back the doubled centre is 0 sell contracts, selling both wings is 2), at the schedule's
+    (lower, often $0) closing commission rate rather than the opening one."""
+    return _fees.ic_close_fee(symbol, quantity, legs=4, sell_legs=2, ndigits=4)
+
+
+def expire_fee(itm_legs: int = 0) -> float:
+    """Cash-settled expiry: $0 per OTM leg (nothing to exercise), $5 per SETTLEMENT EVENT for each
+    of `itm_legs` — distinct ITM option symbols, not contracts — exercised/assigned overnight. See
+    `itm_legs_at_settlement`. SPX/XSP only."""
+    return _fees.ic_expire_fee(itm_legs)
+
+
+def itm_legs_at_settlement(position: dict, settlement_price: float) -> int:
+    """How many DISTINCT option symbols across this position's legs finish strictly ITM at
+    `settlement_price` — the count tastytrade's overnight $5 exercise-assignment fee is assessed
+    on (charged the next business day, not at expiry itself). Exactly-at-the-strike is treated as
+    OTM (no intrinsic value, nothing to exercise).
+
+    Per SETTLEMENT EVENT, not per contract, and NOT scaled by `quantity`. The broker settles one
+    symbol as one transaction and charges it once however many contracts rest on it — corrected
+    2026-07-31 against real fills (a 2-contract XSP put leg was charged $5.00, not $10.00; see
+    `cherrypick.core.fees` for the transactions). So a completed fly has 3 distinct strikes and
+    pays at most 3 events even though it holds 4 contracts: its doubled centre (one from the
+    opening vertical, one from the completing one) is a single symbol and settles once.
+    """
+    center, width = position["center"], position["wing_width"]
+    kind = position["kind"]
+
+    if kind == "iron_fly":
+        # Long (center-w) put, short center put, short center call, long (center+w) call -- this
+        # geometry is the same regardless of which side was legged first (see engine's iron
+        # completion), so `side` carries no information here, unlike every other kind (and isn't
+        # even stored on an iron_fly row). Each option type has its own ITM direction, and all
+        # four strikes are distinct symbols (two puts, two calls), so each counts once. Price
+        # can't be below AND above the centre at once, so at most one side is ever ITM.
+        put_legs = 2 if settlement_price < center - width else (1 if settlement_price < center else 0)
+        call_legs = 2 if settlement_price > center + width else (1 if settlement_price > center else 0)
+        return put_legs + call_legs
+
+    side = position["side"]
+
+    def _itm(strike: float) -> bool:
+        return settlement_price < strike if side == PUT else settlement_price > strike
+
+    if kind == "fly":
+        strikes = [center - width, center, center + width]
+    elif kind == "short_vertical":
+        strikes = [center, center - width if side == PUT else center + width]
+    elif kind == "long_vertical":
+        # debit_first's opening trade: +1 (center-w) call / -1 center call (CALL side), or
+        # +1 (center+w) put / -1 center put (PUT side) -- same two strikes as short_vertical's,
+        # just held long instead of short.
+        strikes = [center, center - width if side == CALL else center + width]
+    elif kind == "bwb":
+        # Single-type (all put or all call), so the same _itm test applies to every leg -- unlike
+        # iron_fly's mixed-type geometry. Three distinct strikes like a symmetric fly (the doubled
+        # centre is one symbol), just asymmetric spacing.
+        near_wing, _, far_wing = bwb_strikes(side, center, width, position["far_width"])
+        strikes = [near_wing, center, far_wing]
+    else:
+        raise ValueError(f"itm_legs_at_settlement: unknown position kind {kind!r}")
+    return sum(1 for strike in strikes if _itm(strike))
+
+
+def assignment_fee(position: dict, settlement_price: float) -> float:
+    """The overnight exercise-assignment fee this position would incur if it settled at
+    `settlement_price` right now — $0 when every leg is OTM."""
+    return expire_fee(itm_legs_at_settlement(position, settlement_price))
 
 
 # --------------------------------------------------------------------------- position accounting
 def position_pnl(position: dict, underlying: float) -> float:
-    """Dollar P&L of one position at an expiry price, net of its recorded fees.
+    """Dollar P&L of one position at an expiry price, net of its recorded fees AND the
+    exercise-assignment fee this exact price would trigger (see `assignment_fee`).
 
     A position is a plain dict:
         kind        "fly" | "short_vertical"
@@ -152,27 +332,92 @@ def position_pnl(position: dict, underlying: float) -> float:
         net         per-contract cash so far: positive = credit taken in, negative = debit paid
         quantity    contracts
         fees        dollars already charged for this position
+        status      when "settled", `fees` is trusted to ALREADY include the real assignment fee
+                    (folded in once by `engine.settle()`) and none is added here again — every
+                    other status (open, or absent, i.e. a hypothetical mark on a still-live
+                    position) computes it fresh from `underlying`, so the payoff curve and the
+                    session-timeline replay stay honest about a cost that has not happened yet
+                    but would if the session ended at this price (honesty rule 1).
     """
     qty = position.get("quantity", 1)
     w = position["wing_width"]
-    if position["kind"] == "fly":
+    kind = position["kind"]
+    if kind == "fly":
         payoff = fly_payoff(position["center"], w, underlying)
-    else:
+    elif kind == "short_vertical":
         payoff = short_vertical_payoff(position["side"], position["center"], w, underlying)
+    elif kind == "long_vertical":
+        payoff = debit_vertical_payoff(position["side"], position["center"], w, underlying)
+    elif kind == "iron_fly":
+        payoff = iron_fly_payoff(position["center"], w, underlying)
+    elif kind == "bwb":
+        payoff = bwb_payoff(position["side"], position["center"], w, position["far_width"], underlying)
+    else:
+        raise ValueError(f"position_pnl: unknown position kind {kind!r}")
     cash = position["net"] + payoff
-    return cash * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0)
+    fees = position.get("fees", 0.0)
+    if position.get("status") != "settled":
+        fees += assignment_fee(position, underlying)
+    return cash * CONTRACT_MULTIPLIER * qty - fees
 
 
 def position_floor(position: dict) -> float:
-    """Worst-case dollar outcome of one position at expiry, net of fees — the honest "risk-free" number.
+    """Worst-case dollar outcome of one position GOING FORWARD, net of fees — the honest
+    "risk-free" number.
 
-    A fly's payoff bottoms out at 0, so its floor is simply the cash already taken in less fees. That
-    is a genuine per-position guarantee. A short vertical bottoms out at -W, full defined risk, and
-    calling THAT risk-free would be the lie this module exists to avoid.
+    A fly's payoff bottoms out at 0, so its floor is simply the cash already taken in less fees.
+    That is a genuine per-position guarantee. A short vertical bottoms out at -W, full defined
+    risk, and calling THAT risk-free would be the lie this module exists to avoid.
+
+    Neither branch reserves the worst-case exercise-assignment fee. `engine.evaluate_pre_close_exit`
+    closes ANY position (completed fly or still-open vertical) with an ITM leg ahead of expiry
+    whenever doing so is cheaper than the assignment fee it would incur, so going forward the
+    realistic worst case is bounded by whichever of (close now, hold to settlement) is cheaper —
+    never more than the assignment fee itself, and often (this exit exists specifically because it
+    usually is) less. This is NOT a claim the fee can never be paid: a broker/liquidity failure on
+    the closing order would still fall back to the ordinary settlement path and the real assignment
+    fee, a tail risk this floor deliberately does not reserve capital against, same as it does not
+    reserve against the exit order itself failing to submit. `position_pnl`, unlike this function,
+    still prices the fee fresh at every hypothetical price — this floor is the one place
+    going-forward risk management gets to change what "worst case" means; the payoff curve and
+    settle_now stay a pure expiry question.
     """
     qty = position.get("quantity", 1)
-    worst_payoff = 0.0 if position["kind"] == "fly" else -position["wing_width"]
-    return (position["net"] + worst_payoff) * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0)
+    kind = position["kind"]
+    reserve = 0.0
+    if kind == "fly":
+        worst_payoff = 0.0
+    elif kind == "short_vertical":
+        worst_payoff = -position["wing_width"]
+    elif kind == "long_vertical":
+        # Unlike a fly (no reserve) or a short vertical (full defined-risk, no reserve needed
+        # either), a debit_first long vertical's worst payoff is genuinely 0 -- but its cheapest
+        # dollar point is a leg barely ITM, where a 2-leg close's slippage beats the $5
+        # assignment fee less reliably than a fly's does. Reserve it; conservative is the honest
+        # direction here, not an assumption the exit always beats the fee. One settlement event
+        # (the short centre), independent of quantity -- see `itm_legs_at_settlement`.
+        worst_payoff = 0.0
+        reserve = expire_fee(1)
+    elif kind == "iron_fly":
+        # Same no-reserve convention as `fly`: `evaluate_pre_close_exit` covers iron_fly too, so
+        # the realistic worst case going forward is bounded by (close now, hold to settlement),
+        # whichever is cheaper -- never assumed to be zero, but not reserved against here either,
+        # for the same reasons `fly`'s branch above gives. The worst payoff itself is genuinely
+        # -wing_width (not 0): unlike a same-type fly, the two credits collected here are not
+        # guaranteed to exceed the width, so this floor CAN be negative even before fees.
+        worst_payoff = -position["wing_width"]
+    elif kind == "bwb":
+        # Unlike fly/iron_fly, there is no "no-reserve, the exit covers it" convention here: the
+        # tail scenario is a REAL loss (not a bounded-below payoff with an assignment fee on top
+        # of a win), and deep past the far wing all three strikes settle ITM simultaneously -- the
+        # single most reliable full-reserve case in the module. Reserve conservatively, same
+        # direction as long_vertical's reserve, for the same reason: honest is cheap here. Three
+        # settlement events (the doubled centre is one symbol), independent of quantity.
+        worst_payoff = -(position["far_width"] - position["wing_width"])
+        reserve = expire_fee(3)
+    else:
+        raise ValueError(f"position_floor: unknown position kind {kind!r}")
+    return (position["net"] + worst_payoff) * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0) - reserve
 
 
 def is_risk_free(position: dict) -> bool:
@@ -207,19 +452,40 @@ def _scan_prices(positions: list[dict], step: float) -> list[float]:
     """Price grid spanning every position's payoff, padded a wing beyond the outermost strike.
 
     A book of flies and verticals is piecewise-linear with kinks only at strikes, so a grid stepping
-    through the strikes plus the flat regions beyond them sees every local minimum.
+    through the strikes plus the flat regions beyond them sees every local minimum of the PAYOFF.
+
+    The exercise-assignment fee is not linear, though — it is a step function that jumps by
+    $5 the instant a leg crosses its strike (see `itm_legs_at_settlement`), so the
+    true worst dollar point sits an infinitesimal distance past a strike, not exactly on it. A
+    strike itself is included as the OTM side of that step by convention (exactly-at-the-money has
+    no intrinsic value to exercise), so a bare step grid would land the "worst" reading on the
+    wrong side of every jump. `eps`-shifted neighbors on both sides of each strike fix that, to
+    within a cent — negligible against a payoff scaled by CONTRACT_MULTIPLIER.
     """
+    eps = 0.01
     strikes = []
     for p in positions:
         w = p["wing_width"]
-        strikes += [p["center"] - w, p["center"], p["center"] + w]
+        kind = p["kind"]
+        if kind in ("fly", "short_vertical", "long_vertical", "iron_fly"):
+            strikes += [p["center"] - w, p["center"], p["center"] + w]
+        elif kind == "bwb":
+            # Include the far strike -- book_floor must see the true trough, which sits past the
+            # wide wing, not at +/-wing_width like every other kind.
+            near_wing, _, far_wing = bwb_strikes(p["side"], p["center"], w, p["far_width"])
+            strikes += [near_wing, p["center"], far_wing]
+        else:
+            raise ValueError(f"_scan_prices: unknown position kind {kind!r}")
     lo, hi = min(strikes), max(strikes)
     pad = max(hi - lo, step * 4)
     prices, x = [], lo - pad
     while x <= hi + pad + 1e-9:
         prices.append(round(x, 4))
         x += step
-    return prices
+    for s in strikes:
+        prices.append(round(s - eps, 4))
+        prices.append(round(s + eps, 4))
+    return sorted(set(prices))
 
 
 def book_floor(positions: list[dict], step: float = 1.0) -> dict:

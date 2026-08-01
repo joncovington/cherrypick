@@ -111,6 +111,7 @@ def build_api_data(conn, day: str | None = None, arm: str | None = None, symbol:
             "open_count": overview["open_count"],
             "fly_count": overview["fly_count"],
             "risk_free_count": overview["risk_free_count"],
+            "max_possible_loss": overview["max_possible_loss"],
             "completion": overview["completion"],
             "divergence": overview["divergence"],
             "journal": overview["journal"],
@@ -150,6 +151,7 @@ header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-
 flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:10}
 h1{font-size:16px;margin:0;font-weight:600}
 .badge{font-size:11px;padding:2px 8px;border-radius:10px;background:#1f2937;color:var(--dim)}
+.badge.live{background:#7f1d1d;color:#fecaca;font-weight:700;letter-spacing:.03em}
 nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
 nav button{background:transparent;border:1px solid var(--line);color:var(--dim);padding:5px 12px;
 border-radius:6px;cursor:pointer;font-size:13px}
@@ -200,8 +202,11 @@ footer{padding:12px 20px;color:var(--dim);font-size:11.5px;border-top:1px solid 
 _BODY = """
 <header>
   <h1>Flies</h1>
-  <span class="badge">paper</span>
+  <span class="badge" id="mode-badge">paper</span>
   <span class="badge" id="asof">–</span>
+  <label class="dim" style="font-size:12px">source
+    <select id="source-select"><option value="paper">paper</option><option value="live">live — real money</option></select>
+  </label>
   <label class="dim" style="font-size:12px">arm
     <select id="arm-select"><option value="ALL">all</option></select>
   </label>
@@ -329,7 +334,10 @@ const fmtMoney = v => v === null || v === undefined ? '–'
 const fmtPct = v => v === null || v === undefined ? '–' : (v*100).toFixed(0) + '%';
 const fmtNum = (v,d=2) => v === null || v === undefined ? '–' : Number(v).toFixed(d);
 const tone = v => v === null || v === undefined ? '' : (v >= 0 ? 'pos' : 'neg');
-let DATA = null, ARM = 'ALL', SYMBOL = 'ALL', XWIDTH = 'auto', YWIDTH = 'auto';
+let DATA = null, ARM = 'ALL', SYMBOL = 'ALL', XWIDTH = 'auto', YWIDTH = 'auto', SOURCE = 'paper';
+// The day's settlement print once the session has settled, else null -- see the Today view's
+// spot handling for why settlement beats the last intraday tick as the headline price.
+let SETTLE_PX = null;
 
 /* ---------- per-column filters ----------
 
@@ -421,16 +429,25 @@ const minuteOf = ts => {
 const hhmm = m => String(Math.floor(m/60)).padStart(2,'0') + ':' + String(Math.round(m%60)).padStart(2,'0');
 
 /* Hover state is per canvas, keyed by element id, so a crosshair on one chart never redraws the
-   other. Each chart registers a redraw thunk and gets a crosshair plus a readout for free. */
+   other. Each chart registers a redraw thunk and gets a crosshair plus a readout for free.
+
+   The mousemove/mouseleave LISTENERS are attached only once per canvas (hoverBound guards that —
+   addEventListener would otherwise stack a new one on every render). But bindHover() itself runs
+   on every render with a FRESH closure over that render's data, so the redraw function actually
+   invoked must be looked up at event time, not captured once at bind time -- otherwise the very
+   first bind (page load, source=paper) wins forever and hovering after any later refresh, or after
+   switching the source/arm/symbol selector, silently redraws with that first render's stale data. */
 const HOVER = {};
+const REDRAW = {};
 function bindHover(cv, redraw) {
+  REDRAW[cv.id] = redraw;
   if (cv.dataset.hoverBound) return;
   cv.dataset.hoverBound = '1'; cv.classList.add('hoverable');
   cv.addEventListener('mousemove', e => {
     const b = cv.getBoundingClientRect();
-    HOVER[cv.id] = {x: e.clientX - b.left, y: e.clientY - b.top}; redraw();
+    HOVER[cv.id] = {x: e.clientX - b.left, y: e.clientY - b.top}; REDRAW[cv.id]();
   });
-  cv.addEventListener('mouseleave', () => { delete HOVER[cv.id]; redraw(); });
+  cv.addEventListener('mouseleave', () => { delete HOVER[cv.id]; REDRAW[cv.id](); });
 }
 
 /* A readout box that stays inside the canvas rather than running off the right edge. */
@@ -459,7 +476,7 @@ function legend(el, items) {
    books by design and a combined total would hide the only contrast the experiment draws — and the
    previous behaviour, silently plotting arms[0] unlabelled whenever the filter said "all", read as
    though it were the whole book. */
-function drawPayoff(cv, curves, arms, selected, spot, xwidth, ywidth) {
+function drawPayoff(cv, curves, arms, selected, spot, xwidth, ywidth, spotLabel) {
   const {g, w, h} = prep(cv);
   const shown = (selected === 'ALL' ? arms : [selected])
     .filter(a => curves[a] && !curves[a].empty && curves[a].prices.length);
@@ -551,7 +568,7 @@ function drawPayoff(cv, curves, arms, selected, spot, xwidth, ywidth) {
     g.globalAlpha = 1;
     // The line alone doesn't say what "here" is -- label it with the actual spot price, clamped
     // inside the plot area so it never clips off either edge.
-    const label = `spot ${fmtNum(spot)}`, lp = 5;
+    const label = `${spotLabel || 'spot'} ${fmtNum(spot)}`, lp = 5;
     g.font = '11px system-ui';
     const lw = g.measureText(label).width;
     const lx = Math.min(Math.max(X(spot) - lw/2 - lp, pad.l), w - pad.r - lw - lp*2);
@@ -576,7 +593,7 @@ function drawPayoff(cv, curves, arms, selected, spot, xwidth, ywidth) {
   legend($('#payoff-legend'), [
     ...shown.map(a => ({c: armColor(a, arms), t: a})),
     {c: 'rgba(139,148,158,.8)', t: 'centres', dash: 1},
-    {c: SPOT_COLOR, t: 'spot now'},
+    {c: SPOT_COLOR, t: SETTLE_PX != null ? 'settlement' : 'spot now'},
   ]);
 }
 
@@ -602,7 +619,10 @@ function drawTimeline(cv, tl, selected) {
   const pnlTop = priceBot + splitGap;
 
   const mins = ticks.map(t => minuteOf(t.ts));
-  const tMin = Math.min(...mins), tMax = Math.max(...mins);
+  // Fixed to the regular session (9:30-16:00 ET), not the recorded ticks' own min/max — SPX/XSP
+  // both trade RTH only. A session that starts late or stops early should look short against a
+  // fixed axis, not stretch to fill it and read as a normal, complete day.
+  const tMin = 9*60 + 30, tMax = 16*60;
   const X = m => pad.l + (m - tMin) / ((tMax - tMin)||1) * (w - pad.l - pad.r);
 
   // Where the loop went quiet, BREAK the lines rather than joining across the hole.
@@ -896,12 +916,25 @@ function renderToday(d) {
     {k:'Risk-free', v:t.risk_free_count, t:t.risk_free_count?'pos':''},
     {k:'Completion', v:fmtPct(c.completion_rate)},
     {k:'Fees', v:fmtMoney(s.fees), t:'dim'},
+    // Every open position's own worst case (full defined risk for a short vertical, 0 for a
+    // fly) net of trading fees AND the worst-case $5/contract exercise-assignment fee, as if
+    // every leg finished ITM -- see fly.position_floor. Zero means nothing open can still lose.
+    {k:'Max possible loss', v:fmtMoney(t.max_possible_loss), t:t.max_possible_loss<0?'neg':'dim'},
   ]);
 
   const lastTick = ((t.timeline || {}).ticks || []).filter(x => x.spot != null).slice(-1)[0];
-  const spot = lastTick ? lastTick.spot
+  const lastSpot = lastTick ? lastTick.spot
     : (t.positions.find(p => p.underlying_at_entry) || {}).underlying_at_entry;
-  drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot, XWIDTH, YWIDTH);
+  // Once the session has SETTLED, the number that decides every payoff is the settlement print,
+  // not the last intraday tick -- and they can differ materially (2026-07-31, a month-end Friday:
+  // last tick 750.46 vs a 748.97 close, which was the difference between one fly paying nothing
+  // and paying near its max). Showing the intraday tick as the headline "spot" beside settled
+  // positions invited exactly that misread, so settlement wins here and is labelled as such.
+  const settled = (t.books || []).filter(b => b.status === 'settled' && b.settlement_price != null);
+  SETTLE_PX = settled.length ? settled[0].settlement_price : null;
+  const spot = SETTLE_PX != null ? SETTLE_PX : lastSpot;
+  const spotLabel = SETTLE_PX != null ? 'settled' : 'spot';
+  drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot, XWIDTH, YWIDTH, spotLabel);
   drawTimeline($('#timeline'), t.timeline, ARM);
 
   // The feed's own report card: how many ticks actually built a snapshot, and what refused the rest.
@@ -912,7 +945,7 @@ function renderToday(d) {
     : `Feed: ${fs.ok}/${fs.ticks} ticks built a snapshot (${fmtPct(fs.ok_rate)})` +
       (fs.refused ? ' · refused ' + fs.refused + ': ' +
         Object.entries(fs.by_reason).map(([k,v]) => `${k} ×${v}`).join(', ') : ' · no refusals');
-  bindHover($('#payoff'), () => drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot, XWIDTH, YWIDTH));
+  bindHover($('#payoff'), () => drawPayoff($('#payoff'), t.curves, d.arms, ARM, spot, XWIDTH, YWIDTH, spotLabel));
   bindHover($('#timeline'), () => drawTimeline($('#timeline'), t.timeline, ARM));
 
   // One floor sentence per arm. A single blended line would state the book-level claim across arms
@@ -929,6 +962,21 @@ function renderToday(d) {
             (f.unbounded_below ? ', and loses outside that band.' : '.');
         return `<span style="color:${armColor(a, d.arms)}">${a}</span> — ${body}`;
       }).join('<br>');
+
+  // Once settled, say so explicitly -- with the provenance, and with the last intraday tick
+  // alongside when it differs. A settlement struck away from the last tick is ordinary (the
+  // closing auction moves the print, especially at month end), but it decides every payoff
+  // above, so it should never be something the reader has to infer.
+  if (SETTLE_PX != null && armsShown.length) {
+    const src = (settled[0].settlement_source || 'unknown').replace(/_/g, ' ');
+    const drift = lastSpot != null ? SETTLE_PX - lastSpot : null;
+    $('#payoff-note').innerHTML +=
+      `<br><span class="dim">Settled at <b>${fmtNum(SETTLE_PX,2)}</b> (${src})` +
+      (drift != null && Math.abs(drift) >= 0.01
+        ? ` — last intraday tick was ${fmtNum(lastSpot,2)}, ${fmtNum(Math.abs(drift),2)} ` +
+          `${drift > 0 ? 'below' : 'above'} the close.`
+        : '.') + '</span>';
+  }
 
   const posEmpty = ARM === 'ALL' && SYMBOL === 'ALL' ? 'No positions today.'
     : `No ${[ARM, SYMBOL].filter(v => v !== 'ALL').join(' ')} positions today.`;
@@ -959,7 +1007,7 @@ function renderToday(d) {
   table($('#journal-tbl'), [
     {h:'Arm', f:r=>r.arm}, {h:'Mode', f:r=>r.mode},
     {h:'Decision', f:r=>r.accepted ? `<span class="pill ok">${r.reason}</span>` : r.reason},
-    {h:'n', f:r=>r.occurrences, num:1},
+    {h:'consecutive rejection count', f:r=>r.occurrences, num:1},
     {h:'From', f:r=>(r.first_seen||'').slice(11,16)},
     {h:'To', f:r=>(r.last_seen||'').slice(11,16)},
     {h:'Centre', f:r=>r.center_last === null ? '–' : fmtNum(r.center_last,0), num:1},
@@ -1090,6 +1138,10 @@ function renderPerformance(d) {
 
 function renderAll(d) {
   DATA = d;
+  const badge = $('#mode-badge');
+  const isLive = d.source === 'live';
+  badge.textContent = isLive ? 'LIVE — real money' : 'paper';
+  badge.classList.toggle('live', isLive);
   $('#asof').textContent = `${d.date} · ${d.generated_at.slice(11,16)}`;
   const sel = $('#arm-select');
   if (sel.options.length - 1 !== d.arms.length) {
@@ -1108,7 +1160,7 @@ function renderAll(d) {
 
 async function refresh() {
   try {
-    const r = await fetch(`/api/data?arm=${encodeURIComponent(ARM)}&symbol=${encodeURIComponent(SYMBOL)}`);
+    const r = await fetch(`/api/data?source=${encodeURIComponent(SOURCE)}&arm=${encodeURIComponent(ARM)}&symbol=${encodeURIComponent(SYMBOL)}`);
     const d = await r.json();
     if (d.ok) renderAll(d);
   } catch (e) { /* transient; the next tick retries */ }
@@ -1121,6 +1173,14 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   $('#view-' + b.dataset.view).classList.add('active');
   if (DATA) renderAll(DATA);   // canvases size wrongly while hidden
 });
+$('#source-select').onchange = e => {
+  SOURCE = e.target.value;
+  // arms/symbols can differ between ledgers (today: live is pinned to one arm) -- a stale
+  // selection from the other source would just render an empty page with no obvious reason.
+  ARM = 'ALL'; SYMBOL = 'ALL';
+  $('#arm-select').value = 'ALL'; $('#symbol-select').value = 'ALL';
+  refresh();
+};
 $('#arm-select').onchange = e => { ARM = e.target.value; refresh(); };
 $('#symbol-select').onchange = e => { SYMBOL = e.target.value; refresh(); };
 $('#xwidth-select').onchange = e => { XWIDTH = e.target.value; if (DATA) renderAll(DATA); };
@@ -1145,8 +1205,9 @@ setInterval(refresh, 15000);
    groups are declared with data-cp-reorder attributes in the markup. */
 """
 
+
 HTML = (
-    "<!doctype html><meta charset='utf-8'><title>Flies — paper</title>"
+    "<!doctype html><meta charset='utf-8'><title>Flies</title>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     f"<style>{_STYLE}{viz.REORDER_STYLE}{viz.CAL_HEAT_STYLE}{viz.TABLE_STYLE}</style>{_BODY}"
     f"<script>{viz.CAL_HEAT_JS}</script><script>{viz.TABLE_JS}</script>"
@@ -1159,7 +1220,10 @@ class _ThreadingServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
-def _handler_for(db_path: str | None):
+def _handler_for(paper_db: str | None, live_db: str | None = None):
+    live_db = live_db or dbmod.live_db_path()
+    page = HTML.encode("utf-8")
+
     class _Handler(BaseHTTPRequestHandler):
         def _send(self, body: bytes, content_type: str, status: int = 200) -> None:
             self.send_response(status)
@@ -1174,11 +1238,14 @@ def _handler_for(db_path: str | None):
         def do_GET(self):  # noqa: N802 - BaseHTTPRequestHandler's interface
             parsed = urlparse(self.path)
             if parsed.path in ("/", "/index.html"):
-                self._send(HTML.encode("utf-8"), "text/html; charset=utf-8")
+                self._send(page, "text/html; charset=utf-8")
                 return
             if parsed.path == "/api/data":
                 query = parse_qs(parsed.query)
-                conn = dbmod.connect(db_path)
+                # "live" is opt-in and exact-match only -- anything else (missing, typo'd,
+                # empty) falls back to paper, never the other way around.
+                source = query.get("source", ["paper"])[0]
+                conn = dbmod.connect(live_db if source == "live" else paper_db)
                 try:
                     payload = build_api_data(
                         conn,
@@ -1186,6 +1253,7 @@ def _handler_for(db_path: str | None):
                         query.get("arm", [None])[0],
                         query.get("symbol", [None])[0],
                     )
+                    payload["source"] = source if source == "live" else "paper"
                 except Exception as exc:  # a broken panel should not take the page down
                     payload = {"ok": False, "error": str(exc)}
                 finally:
@@ -1200,14 +1268,18 @@ def _handler_for(db_path: str | None):
     return _Handler
 
 
-def serve(port: int, db_path: str | None = None, open_browser: bool = True) -> int:
+def serve(
+    port: int, db_path: str | None = None, open_browser: bool = True, live_db: str | None = None
+) -> int:
     if port_in_use(port):
         print(f"already serving on http://{HOST}:{port}")
         if open_browser:
             webbrowser.open(f"http://{HOST}:{port}/")
         return 0
-    server = _ThreadingServer((HOST, port), _handler_for(db_path))
-    print(f"flies dashboard on http://{HOST}:{port}  (loopback only, read-only)")
+    server = _ThreadingServer((HOST, port), _handler_for(db_path, live_db))
+    print(
+        f"flies dashboard on http://{HOST}:{port}  (loopback only, read-only; paper + live source selector)"
+    )
     if open_browser:
         webbrowser.open(f"http://{HOST}:{port}/")
     try:
@@ -1222,23 +1294,31 @@ def serve(port: int, db_path: str | None = None, open_browser: bool = True) -> i
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="cherrypick-flies read-only dashboard")
     ap.add_argument("--port", type=int)
-    ap.add_argument("--db")
+    ap.add_argument("--db", help="paper DB path override (default: the resolved paper_trades.db)")
+    ap.add_argument("--live-db", help="live DB path override (default: the resolved live_trades.db)")
     ap.add_argument(
         "--no-browser",
         action="store_true",
         help="don't open a browser tab on start (for headless/background launches)",
     )
     ap.add_argument("--json", action="store_true", help="print one API payload and exit")
+    ap.add_argument(
+        "--source",
+        choices=["paper", "live"],
+        default="paper",
+        help="which ledger --json reads (the served dashboard always offers both via its selector)",
+    )
     args = ap.parse_args(argv)
 
     if args.json:
-        conn = dbmod.connect(args.db)
+        db_path = (args.live_db or dbmod.live_db_path()) if args.source == "live" else args.db
+        conn = dbmod.connect(db_path)
         try:
             print(json.dumps(build_api_data(conn), indent=2, default=str))
         finally:
             conn.close()
         return 0
-    return serve(resolve_port(args.port), args.db, open_browser=not args.no_browser)
+    return serve(resolve_port(args.port), args.db, open_browser=not args.no_browser, live_db=args.live_db)
 
 
 if __name__ == "__main__":

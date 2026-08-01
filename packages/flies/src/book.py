@@ -63,6 +63,50 @@ def _record_best_debit(conn, position: dict, debit: float, when: str) -> None:
     )
 
 
+def _regime_columns(prefix: str, snapshot: dict, params: dict) -> dict:
+    """The four regime-tag columns for `prefix` ('entry' or 'completion'), ready to fold straight
+    into a `save_position` call. See `engine.classify_regime` -- descriptive telemetry only."""
+    regime = engine.classify_regime(snapshot, params)
+    return {f"{prefix}_{key}": value for key, value in regime.items()}
+
+
+def _record_best_credit(conn, position: dict, credit: float, when: str) -> None:
+    """Keep the running MAXIMUM completing credit seen for an open `debit_first` long vertical --
+    the mirror of `_record_best_debit`'s running minimum. Recorded on every evaluation, including
+    refusals, so a miss can be read afterwards as "the market never paid enough" vs "our buffer
+    was too tight."""
+    best = position.get("best_completing_credit")
+    if best is not None and credit <= best:
+        return
+    position["best_completing_credit"] = credit
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "best_completing_credit": round(credit, 4),
+            "best_credit_at": when,
+        },
+    )
+
+
+def _record_best_roll_debit(conn, position: dict, roll_debit: float, when: str) -> None:
+    """Keep the running MINIMUM roll debit seen for an open bwb -- the same counterfactual role as
+    `_record_best_debit`: afterwards, "the roll was never cheap enough" vs "our buffer was too
+    tight" call for opposite remedies."""
+    best = position.get("best_roll_debit")
+    if best is not None and roll_debit >= best:
+        return
+    position["best_roll_debit"] = roll_debit
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "best_roll_debit": round(roll_debit, 4),
+            "best_roll_debit_at": when,
+        },
+    )
+
+
 def _to_position(row: dict) -> dict:
     """Database row -> the plain dict the pure math in fly.py consumes."""
     return {
@@ -82,10 +126,16 @@ def _to_position(row: dict) -> dict:
         # Carried so the running-minimum comparison and the latency clock survive a loop restart —
         # both are cumulative over a session, not per-iteration.
         "best_completing_debit": row["best_completing_debit"],
+        "best_completing_credit": row["best_completing_credit"],
         "entry_time": row["entry_time"],
         # Carried so `max_positions_per_window` can count what this window has already spent. Without
         # it the cap would read every position as window-less and never bind.
         "entry_window": row["entry_window"],
+        # bwb_roll: the wide wing's width, needed by every fly.py function that touches a bwb's
+        # geometry. Kept after the roll too (wing_width alone can't tell a rolled bwb from a
+        # legged fly in history/rewind without it).
+        "far_width": row["far_width"],
+        "best_roll_debit": row["best_roll_debit"],
     }
 
 
@@ -135,25 +185,88 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
         underlying_price=snapshot.get("underlying_price"),
     )
 
-    # --- 1. complete any open credit spread that has become cheap enough to square off
+    # --- 1. complete any open credit spread that has become cheap enough to square off, either by
+    # buying the completing debit spread (kind -> fly) or, if this arm's completion_modes allows
+    # it, by selling the OPPOSITE-type credit spread instead (kind -> iron_fly). When both are
+    # possible on the same iteration, take whichever leaves the higher post-fee floor.
     for pos in [p for p in positions if p["kind"] == "short_vertical" and p["status"] == "open"]:
-        done, reason, plan = engine.evaluate_completion(snapshot, pos, params)
-        if plan is not None:
-            _record_best_debit(conn, pos, plan["debit"], now)
-        if not done:
+        debit_done, debit_reason, debit_plan = engine.evaluate_completion(snapshot, pos, params)
+        if debit_plan is not None:
+            _record_best_debit(conn, pos, debit_plan["debit"], now)
+
+        iron_done = iron_plan = None
+        if "iron" in params.get("completion_modes", ["debit"]):
+            iron_done, _iron_reason, iron_plan = engine.evaluate_iron_completion(snapshot, pos, params)
+
+        take_iron = iron_done and (not debit_done or iron_plan["floor"] > debit_plan["floor"])
+
+        if not debit_done and not (iron_done and take_iron):
             journal(
                 "completion",
-                reason,
+                debit_reason,
                 center=pos["center"],
                 position_id=pos["position_id"],
                 detail=None
-                if plan is None
-                else f"debit {plan['debit']:.2f} vs gate {plan['gate_debit']:.2f}",
+                if debit_plan is None
+                else f"debit {debit_plan['debit']:.2f} vs gate {debit_plan['gate_debit']:.2f}",
             )
+            if iron_plan is not None and not iron_done:
+                journal(
+                    "iron_completion",
+                    _iron_reason,
+                    center=pos["center"],
+                    position_id=pos["position_id"],
+                    detail=f"iron credit {iron_plan['credit']:.2f} vs gate {iron_plan['gate_credit']:.2f}",
+                )
             actions.append(
-                {"action": "completion_skipped", "position_id": pos["position_id"], "reason": reason}
+                {"action": "completion_skipped", "position_id": pos["position_id"], "reason": debit_reason}
             )
             continue
+
+        if take_iron:
+            plan = iron_plan
+            pos["kind"] = "iron_fly"
+            pos["net"] = plan["net"]
+            pos["fees"] = pos["fees"] + plan["completion_fee"]
+            latency = _minutes_since(pos.get("entry_time"), now)
+            dbmod.save_position(
+                conn,
+                {
+                    "position_id": pos["position_id"],
+                    "kind": "iron_fly",
+                    "net": plan["net"],
+                    "credit": plan["credit"],
+                    "completion_mode": "iron",
+                    "fees": pos["fees"],
+                    "floor_dollars": plan["floor"],
+                    "risk_free": int(fly.is_risk_free(pos)),
+                    "completed_at": now,
+                    "completion_latency_min": latency,
+                    "spot_at_completion": snapshot.get("underlying_price"),
+                    **_regime_columns("completion", snapshot, params),
+                },
+            )
+            journal(
+                "iron_completion",
+                "completed",
+                accepted=True,
+                center=pos["center"],
+                position_id=pos["position_id"],
+                detail=f"iron credit {plan['credit']:.2f}, floor ${plan['floor']:.2f} after fees",
+            )
+            actions.append(
+                {
+                    "action": "iron_completed",
+                    "position_id": pos["position_id"],
+                    "credit": plan["credit"],
+                    "net": plan["net"],
+                    "floor": plan["floor"],
+                    "latency_min": latency,
+                }
+            )
+            continue
+
+        plan = debit_plan
         pos["kind"] = "fly"
         pos["net"] = plan["net"]
         pos["fees"] = pos["fees"] + plan["completion_fee"]
@@ -165,12 +278,14 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "kind": "fly",
                 "net": plan["net"],
                 "debit": plan["debit"],
+                "completion_mode": "debit",
                 "fees": pos["fees"],
                 "floor_dollars": plan["floor"],
                 "risk_free": int(fly.is_risk_free(pos)),
                 "completed_at": now,
                 "completion_latency_min": latency,
                 "spot_at_completion": snapshot.get("underlying_price"),
+                **_regime_columns("completion", snapshot, params),
             },
         )
         journal(
@@ -189,6 +304,200 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "net": plan["net"],
                 "floor": plan["floor"],
                 "latency_min": latency,
+            }
+        )
+
+    # --- 1b. complete any open `debit_first` long vertical whose completing sale has richened
+    # enough to beat the debit already paid -- the same idea as step 1, direction reversed.
+    for pos in [p for p in positions if p["kind"] == "long_vertical" and p["status"] == "open"]:
+        done, reason, plan = engine.evaluate_debit_completion(snapshot, pos, params)
+        if plan is not None:
+            _record_best_credit(conn, pos, plan["credit"], now)
+        if not done:
+            journal(
+                "debit_completion",
+                reason,
+                center=pos["center"],
+                position_id=pos["position_id"],
+                detail=None
+                if plan is None
+                else f"credit {plan['credit']:.2f} vs gate {plan['gate_credit']:.2f}",
+            )
+            actions.append(
+                {"action": "debit_completion_skipped", "position_id": pos["position_id"], "reason": reason}
+            )
+            continue
+        pos["kind"] = "fly"
+        pos["net"] = plan["net"]
+        pos["fees"] = pos["fees"] + plan["completion_fee"]
+        latency = _minutes_since(pos.get("entry_time"), now)
+        dbmod.save_position(
+            conn,
+            {
+                "position_id": pos["position_id"],
+                "kind": "fly",
+                "net": plan["net"],
+                "credit": plan["credit"],
+                "fees": pos["fees"],
+                "floor_dollars": plan["floor"],
+                "risk_free": int(fly.is_risk_free(pos)),
+                "completed_at": now,
+                "completion_latency_min": latency,
+                "spot_at_completion": snapshot.get("underlying_price"),
+                **_regime_columns("completion", snapshot, params),
+            },
+        )
+        journal(
+            "debit_completion",
+            "completed",
+            accepted=True,
+            center=pos["center"],
+            position_id=pos["position_id"],
+            detail=f"credit {plan['credit']:.2f}, floor ${plan['floor']:.2f} after fees",
+        )
+        actions.append(
+            {
+                "action": "debit_completed",
+                "position_id": pos["position_id"],
+                "credit": plan["credit"],
+                "net": plan["net"],
+                "floor": plan["floor"],
+                "latency_min": latency,
+            }
+        )
+
+    # --- 1c. roll any open bwb whose roll (buy near wing, sell held far wing) has cheapened
+    # enough to beat the credit already collected, converting it into a symmetric fly.
+    for pos in [p for p in positions if p["kind"] == "bwb" and p["status"] == "open"]:
+        done, reason, plan = engine.evaluate_roll(snapshot, pos, params)
+        if plan is not None:
+            _record_best_roll_debit(conn, pos, plan["roll_debit"], now)
+        if not done:
+            journal(
+                "roll",
+                reason,
+                center=pos["center"],
+                position_id=pos["position_id"],
+                detail=None
+                if plan is None
+                else f"roll debit {plan['roll_debit']:.2f} vs gate {plan['gate_debit']:.2f}",
+            )
+            actions.append({"action": "roll_skipped", "position_id": pos["position_id"], "reason": reason})
+            continue
+        pos["kind"] = "fly"
+        pos["net"] = plan["net"]
+        pos["fees"] = pos["fees"] + plan["roll_fee"]
+        latency = _minutes_since(pos.get("entry_time"), now)
+        dbmod.save_position(
+            conn,
+            {
+                "position_id": pos["position_id"],
+                "kind": "fly",
+                "net": plan["net"],
+                "roll_debit": plan["roll_debit"],
+                "fees": pos["fees"],
+                "floor_dollars": plan["floor"],
+                "risk_free": int(fly.is_risk_free(pos)),
+                # One "finished structure" column for every reader -- for a bwb, completed_at and
+                # rolled_at are the SAME moment (the roll IS the completion), unlike a fly's
+                # completed_at which is set once at a genuinely separate step.
+                "completed_at": now,
+                "rolled_at": now,
+                "completion_latency_min": latency,
+                "roll_latency_min": latency,
+                "spot_at_completion": snapshot.get("underlying_price"),
+                "spot_at_roll": snapshot.get("underlying_price"),
+                **_regime_columns("completion", snapshot, params),
+            },
+        )
+        journal(
+            "roll",
+            "rolled",
+            accepted=True,
+            center=pos["center"],
+            position_id=pos["position_id"],
+            detail=f"rolled far wing in for {plan['roll_debit']:.2f} debit, floor ${plan['floor']:.2f} after fees",
+        )
+        actions.append(
+            {
+                "action": "rolled",
+                "position_id": pos["position_id"],
+                "roll_debit": plan["roll_debit"],
+                "net": plan["net"],
+                "floor": plan["floor"],
+                "latency_min": latency,
+            }
+        )
+
+    # --- 1.5. close any ITM position ahead of expiry, if cheaper than the assignment fee it would
+    # otherwise incur -- see engine.evaluate_pre_close_exit for the window/comparison. Covers a
+    # completed fly's ITM leg (bounded payoff, so this is pure fee avoidance) AND a still-open
+    # short vertical's ITM leg(s) (already realizing a loss -- letting the assignment fee stack on
+    # top of it is the same avoidable cost, just on the losing side). The one deliberate exception
+    # to rule 5 ("no adjustments, hold to settlement"): a cost-avoidance mechanism in the closing
+    # minutes, not a strategy adjustment tuned on the session's own data.
+    for pos in [
+        p
+        for p in positions
+        if p["kind"] in ("fly", "short_vertical", "long_vertical", "iron_fly", "bwb") and p["status"] == "open"
+    ]:
+        close, reason, plan = engine.evaluate_pre_close_exit(snapshot, pos, params)
+        if not close:
+            if reason not in ("not_a_closeable_kind", "before_pre_close_exit_window"):
+                journal(
+                    "pre_close_exit",
+                    reason,
+                    center=pos["center"],
+                    position_id=pos["position_id"],
+                    detail=None
+                    if plan is None
+                    else f"slippage {plan['slippage_cost']:.2f} vs assignment {plan['assignment_fee']:.2f}",
+                )
+            continue
+        # fly, long_vertical, iron_fly, and bwb close for a credit (its sign can vary, but it is
+        # priced and returned as one -- close_credit); short_vertical closes for a debit (a cost,
+        # so it subtracts from net) -- explicit by kind, no fallthrough.
+        if pos["kind"] in ("fly", "long_vertical", "iron_fly", "bwb"):
+            close_price = plan["close_credit"]
+        else:
+            close_price = -plan["close_debit"]
+        gross = (pos["net"] + close_price) * fly.CONTRACT_MULTIPLIER * pos["quantity"]
+        total_fees = round(pos["fees"] + plan["close_fee"], 2)
+        pnl = round(gross - total_fees, 2)
+        pos["fees"] = total_fees
+        pos["pnl"] = pnl
+        pos["status"] = "settled"
+        dbmod.save_position(
+            conn,
+            {
+                "position_id": pos["position_id"],
+                "fees": total_fees,
+                "expiry_payoff": close_price,
+                "gross_pnl": round(gross, 2),
+                "pnl": pnl,
+                "pinned": 0,  # closed early -- no true settlement price to judge this against
+                "closed_before_expiry": 1,
+                "status": "settled",
+                "exit_time": now,
+            },
+        )
+        cost_desc = f"{close_price:.2f} credit" if close_price >= 0 else f"{-close_price:.2f} debit"
+        journal(
+            "pre_close_exit",
+            "closed",
+            accepted=True,
+            center=pos["center"],
+            position_id=pos["position_id"],
+            detail=f"closed for {cost_desc}, avoided ${plan['assignment_fee']:.2f} assignment fee "
+            f"({plan['itm_legs']} ITM leg(s))",
+        )
+        actions.append(
+            {
+                "action": "closed_before_expiry",
+                "position_id": pos["position_id"],
+                "close_price": close_price,
+                "assignment_fee_avoided": plan["assignment_fee"],
+                "pnl": pnl,
             }
         )
 
@@ -239,6 +548,11 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "center_reason": plan["center_reason"],
                     "completing_direction": plan["completing_direction"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
+                    **_regime_columns("entry", snapshot, params),
+                    # Full defined risk (-W) net of trading fees AND the worst-case exercise-
+                    # assignment fee (both legs ITM) -- the uncompleted branch's honest worst case,
+                    # not left blank until (if ever) it completes into a fly.
+                    "floor_dollars": fly.position_floor(pos),
                     "risk_free": 0,
                     "status": "open",
                 },
@@ -264,6 +578,154 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
         else:
             journal("legged", reason, center=wanted_center)
             actions.append({"action": "entry_skipped", "mode": "legged", "reason": reason})
+
+    # --- 2.5. debit-first entry: buy a debit vertical, complete later by SELLING a credit spread
+    if "debit_first" in params.get("entry_modes", []):
+        enter, reason, plan = engine.evaluate_debit_vertical_entry(snapshot, params, open_positions)
+        if enter:
+            position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-D"
+            pos = {
+                "kind": "long_vertical",
+                "side": plan["side"],
+                "center": plan["center"],
+                "wing_width": plan["wing_width"],
+                "net": -plan["debit"],
+                "quantity": plan["quantity"],
+                "fees": plan["open_fee"],
+                "entry_mode": "debit_first",
+                "status": "open",
+                "position_id": position_id,
+                "entry_window": plan["entry_window"],
+            }
+            positions.append(pos)
+            open_positions.append(pos)
+            dbmod.save_position(
+                conn,
+                {
+                    "position_id": position_id,
+                    "book_id": book_id,
+                    "trade_date": trade_date,
+                    "arm": arm,
+                    "entry_mode": "debit_first",
+                    "symbol": symbol,
+                    "kind": "long_vertical",
+                    "side": plan["side"],
+                    "center": plan["center"],
+                    "wing_width": plan["wing_width"],
+                    "quantity": plan["quantity"],
+                    "net": -plan["debit"],
+                    "debit": plan["debit"],
+                    "fees": plan["open_fee"],
+                    "entry_time": now,
+                    "entry_window": plan["entry_window"],
+                    "center_reason": plan["center_reason"],
+                    "completing_direction": plan["completing_direction"],
+                    "underlying_at_entry": snapshot.get("underlying_price"),
+                    **_regime_columns("entry", snapshot, params),
+                    # Bounded at 0, never a -W tail (a long vertical can't lose more than its
+                    # debit) -- but negative, since the debit paid is a real cost with no credit
+                    # collected yet. See fly.position_floor's long_vertical branch for the
+                    # assignment-fee reserve this also carries.
+                    "floor_dollars": fly.position_floor(pos),
+                    "risk_free": 0,
+                    "status": "open",
+                },
+            )
+            journal(
+                "debit_first",
+                "entered",
+                accepted=True,
+                center=plan["center"],
+                position_id=position_id,
+                detail=f"{plan['side']} debit spread for {plan['debit']:.2f}, needs spot "
+                f"{plan['completing_direction']} to complete",
+            )
+            actions.append(
+                {
+                    "action": "debit_vertical_opened",
+                    "position_id": position_id,
+                    "side": plan["side"],
+                    "center": plan["center"],
+                    "debit": plan["debit"],
+                }
+            )
+        else:
+            journal("debit_first", reason, center=wanted_center)
+            actions.append({"action": "entry_skipped", "mode": "debit_first", "reason": reason})
+
+    # --- 2.75. bwb_roll entry: buy a broken-wing butterfly whole for a net credit
+    if "bwb_roll" in params.get("entry_modes", []):
+        enter, reason, plan = engine.evaluate_bwb_entry(snapshot, params, open_positions)
+        if enter:
+            position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-B"
+            pos = {
+                "kind": "bwb",
+                "side": plan["side"],
+                "center": plan["center"],
+                "wing_width": plan["wing_width"],
+                "far_width": plan["far_width"],
+                "net": plan["credit"],
+                "quantity": plan["quantity"],
+                "fees": plan["open_fee"],
+                "entry_mode": "bwb_roll",
+                "status": "open",
+                "position_id": position_id,
+                "entry_window": plan["entry_window"],
+            }
+            positions.append(pos)
+            open_positions.append(pos)
+            dbmod.save_position(
+                conn,
+                {
+                    "position_id": position_id,
+                    "book_id": book_id,
+                    "trade_date": trade_date,
+                    "arm": arm,
+                    "entry_mode": "bwb_roll",
+                    "symbol": symbol,
+                    "kind": "bwb",
+                    "side": plan["side"],
+                    "center": plan["center"],
+                    "wing_width": plan["wing_width"],
+                    "far_width": plan["far_width"],
+                    "quantity": plan["quantity"],
+                    "net": plan["credit"],
+                    "credit": plan["credit"],
+                    "fees": plan["open_fee"],
+                    "entry_time": now,
+                    "entry_window": plan["entry_window"],
+                    "center_reason": plan["center_reason"],
+                    "underlying_at_entry": snapshot.get("underlying_price"),
+                    **_regime_columns("entry", snapshot, params),
+                    # The real, negative-capable tail -- (wing_width - far_width) -- net of fees
+                    # and the full 4-contract assignment-fee reserve. Never reported as a fly's
+                    # floor; see fly.position_floor's bwb branch.
+                    "floor_dollars": fly.position_floor(pos),
+                    "risk_free": int(fly.is_risk_free(pos)),
+                    "status": "open",
+                },
+            )
+            journal(
+                "bwb_roll",
+                "entered",
+                accepted=True,
+                center=plan["center"],
+                position_id=position_id,
+                detail=f"{plan['side']} BWB (wing {plan['wing_width']}, far {plan['far_width']}) "
+                f"for {plan['credit']:.2f} credit",
+            )
+            actions.append(
+                {
+                    "action": "bwb_opened",
+                    "position_id": position_id,
+                    "side": plan["side"],
+                    "center": plan["center"],
+                    "credit": plan["credit"],
+                }
+            )
+        else:
+            journal("bwb_roll", reason, center=wanted_center)
+            actions.append({"action": "entry_skipped", "mode": "bwb_roll", "reason": reason})
 
     # --- 3. outright entry: buy a cheap fly, funded only by premium already taken in
     if "outright" in params.get("entry_modes", []):
@@ -315,6 +777,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "entry_window": plan["entry_window"],
                     "center_reason": plan["center_reason"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
+                    **_regime_columns("entry", snapshot, params),
                     "floor_dollars": fly.position_floor(pos),
                     "risk_free": int(fly.is_risk_free(pos)),
                     "status": "open",
@@ -390,6 +853,7 @@ def settle_book(conn, trade_date: str, arm: str, symbol: str, settlement_price: 
                 "settlement_price": settlement_price,
                 "expiry_payoff": p["expiry_payoff"],
                 "gross_pnl": round(gross, 2),
+                "fees": p["fees"],
                 "pnl": p["pnl"],
                 "pinned": int(p["pinned"]),
                 "status": "settled",
@@ -405,5 +869,7 @@ def settle_book(conn, trade_date: str, arm: str, symbol: str, settlement_price: 
         "book_id": book_id,
         "settled": len(settled),
         "pnl": round(fly.book_pnl(final, settlement_price), 2),
+        "itm_legs": sum(p.get("itm_legs", 0) for p in settled),
+        "assignment_fees": round(sum(p.get("assignment_fee", 0.0) for p in settled), 2),
         **summary,
     }

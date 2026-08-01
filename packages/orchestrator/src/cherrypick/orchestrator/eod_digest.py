@@ -190,6 +190,37 @@ def build_markdown(cfg: dict, day: str, rep: dict | None = None) -> str:
         )
         L.append("")
 
+    # LIVE section: rendered only when a live ledger settled trades this session, so the digest
+    # stays pure-paper on every other day. Reads through report.live_run — the isolation seam —
+    # never the promotion feed, and files only (the broker-truth live view remains reconcile).
+    try:
+        lrep = report.live_run(cfg, session=day)
+        lsuite = lrep.get("suite", {}) or {}
+        if lsuite.get("trades"):
+            L.append("## LIVE (real money)")
+            L.append(
+                "_Settled trades from the live ledgers this session — a separate book, excluded "
+                "from every promotion reading. Numbers match `cherrypick report --live`._"
+            )
+            L.append("| Module | Trades | Wins | Losses | Gross | Cost | Net P&L |")
+            L.append("|---|---|---|---|---|---|---|")
+            for name in enabled:
+                lm = (lrep.get("modules") or {}).get(name, {})
+                if not lm.get("ok") or not lm.get("trades"):
+                    continue
+                L.append(
+                    f"| {name} | {lm.get('trades', 0)} | {lm.get('wins', 0)} | {lm.get('losses', 0)} | "
+                    f"{_money(lm.get('gross_pnl'))} | {_money(lm.get('cost'))} | "
+                    f"{_money(lm.get('net_pnl'))} |"
+                )
+            L.append(
+                f"- Live net this session: **{_money(lsuite.get('net_pnl'))}** across "
+                f"{lsuite.get('trades', 0)} trade(s)."
+            )
+            L.append("")
+    except Exception:  # a live-read hiccup must never break the paper digest
+        pass
+
     L.append("## Module reports")
     L.append(
         "_Each module writes a terse metrics file (paper-eod) and a conversational 7-section read "

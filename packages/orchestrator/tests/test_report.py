@@ -311,6 +311,59 @@ def test_eod_digest_markdown_cites_report_numbers(tmp_path, monkeypatch):
     assert str(meic_logs / "eod-analysis-2026-07-10.md") in md2
 
 
+def _flies_live_db(path, rows):
+    """rows: (symbol, arm, entry_mode, gross_pnl, fees, trade_date) — settled live positions."""
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE fly_positions (id INTEGER PRIMARY KEY, symbol TEXT, arm TEXT, entry_mode TEXT, "
+        "gross_pnl REAL, fees REAL, trade_date TEXT, status TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO fly_positions (symbol, arm, entry_mode, gross_pnl, fees, trade_date, status) "
+        "VALUES (?, ?, ?, ?, ?, ?, 'settled')",
+        rows,
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_eod_digest_live_section_renders_only_when_live_settled(tmp_path, monkeypatch):
+    """The digest stays pure-paper until a live ledger settles trades that session — then a
+    clearly-labeled LIVE section appears, reading through report.live_run (never the promotion
+    feed)."""
+    from cherrypick.orchestrator import config as cfgmod
+    from cherrypick.orchestrator import eod_digest
+
+    monkeypatch.setattr(cfgmod, "LOGS_DIR", tmp_path / "logs")
+    cfg = _cfg(tmp_path)
+    _meic_db(tmp_path / "meic" / "paper.db", [("SPX", "conservative", 100.0, 5.0, "2026-07-10T15:45")])
+    _earnings_db(tmp_path / "earn" / "paper.db", [])
+    (tmp_path / "flies").mkdir()
+    cfg["modules"]["flies"] = {
+        "enabled": True,
+        "path": str(tmp_path / "flies"),
+        "paper": {"paper_db": "paper.db", "trade_schema": "fly_book"},
+        "live_db": str(tmp_path / "flies" / "live.db"),
+    }
+    # Flies' paper DB must exist for the paper table row (empty is fine).
+    _flies_live_db(tmp_path / "flies" / "paper.db", [])
+
+    # No live ledger yet -> no LIVE section.
+    md = eod_digest.build_markdown(cfg, "2026-07-10")
+    assert "## LIVE (real money)" not in md
+
+    # A settled live trade this session -> the section renders with its net.
+    _flies_live_db(tmp_path / "flies" / "live.db", [("XSP", "gex", "legged", 25.0, 4.49, "2026-07-10")])
+    md2 = eod_digest.build_markdown(cfg, "2026-07-10")
+    assert "## LIVE (real money)" in md2
+    assert "$20.51" in md2  # 25.00 gross - 4.49 fees
+    assert "excluded from every promotion reading" in md2
+
+    # A live trade on a DIFFERENT session leaves this day's digest pure-paper.
+    md3 = eod_digest.build_markdown(cfg, "2026-07-11")
+    assert "## LIVE (real money)" not in md3
+
+
 def test_eod_digest_snapshot_flat_session(tmp_path, monkeypatch):
     from cherrypick.orchestrator import config as cfgmod
     from cherrypick.orchestrator import eod_digest

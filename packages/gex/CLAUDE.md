@@ -7,9 +7,10 @@ Guidance for Claude Code when working in this repository.
 cherrypick-gex is a **GEX (gamma-exposure) dashboard** for the trading-tool suite — a simple
 self-hosted version of gexbot.com / SpotGamma / MenthorQ. It computes GEX via the shared
 `cherrypick.core.gex` engine and serves a localhost live view. It places no orders and never touches
-live trading. Two modes: **standalone** (`run.py stream` runs `cherrypick.core.streamer` to populate its
-own `data/stream_cache.db`) or **piggyback** (point `source.stream_cache_db` at a cherrypick-meic cache
-and read it read-only). The **cherrypick orchestrator** surfaces this module two ways: a compact live GEX
+live trading. Two modes: **piggyback** (the default — `source.stream_cache_db` resolves to the suite's
+canonical shared cache, `~/.cherrypick/data/marketdata/stream_cache.db`, read read-only) or
+**standalone** (`run.py stream` runs `cherrypick.core.streamer` to populate its own cache path instead,
+e.g. `data/stream_cache.db`, if `source.stream_cache_db` is repointed there). The **cherrypick orchestrator** surfaces this module two ways: a compact live GEX
 **section** card (subprocessing `python run.py section --symbol <sym> --json`, a `cherrypick.core.viz`
 payload) and the full **dashboard embed** (an iframe onto `run.py dashboard --serve`). This dashboard is
 the GEX/IV-Skew/Volume view the suite used to render inside MEIC's dashboard, moved here.

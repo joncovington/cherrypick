@@ -117,14 +117,37 @@ def _streamer_underlying_stale_age(status: dict[str, Any]) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
-def _streamer_stale_detail(global_age: float | None, underlying_age: float | None, limit: int) -> str:
+def _streamer_chain_fetch_errors(status: dict[str, Any]) -> dict[str, str]:
+    """Symbols whose 0DTE chain fetch is currently failing (`stream_symbol_health.chain_fetch_error`
+    non-null), or `{}` if unreported/healthy.
+
+    Distinct from `_streamer_stale_age`/`_streamer_underlying_stale_age` (both freshest-of-any-symbol):
+    a chain fetch retries in-process for ~2 minutes (`cherrypick.core.streamer`) before giving up and
+    disabling that symbol's window — but if it does give up, every OTHER symbol can keep ticking fine
+    and mask the dead one from both aggregate ages indefinitely (the 2026-07-31 XSP incident: ~40
+    minutes silent, running=true and both aggregate ages fresh, because QQQ/SPX were fine). A producer
+    that doesn't report this field degrades cleanly to the aggregate-age checks alone.
+    """
+    errors = status.get("chain_fetch_errors")
+    return errors if isinstance(errors, dict) else {}
+
+
+def _streamer_stale_detail(
+    global_age: float | None,
+    underlying_age: float | None,
+    limit: int,
+    chain_errors: dict[str, str] | None = None,
+) -> str:
     """Name whichever feed(s) are stale, so the alert distinguishes a whole-stream silence from an
-    underlying-spot-only stall (the two have different causes)."""
+    underlying-spot-only stall or a single symbol's dead chain fetch (all different causes)."""
     parts = []
     if global_age is not None and global_age > limit:
         parts.append(f"no events for {global_age:.0f}s")
     if underlying_age is not None and underlying_age > limit:
         parts.append(f"underlying spot frozen for {underlying_age:.0f}s")
+    if chain_errors:
+        named = ", ".join(f"{sym}: {err}" for sym, err in chain_errors.items())
+        parts.append(f"chain fetch failing for {named}")
     return " and ".join(parts) or f"stale (limit {limit}s)"
 
 
@@ -207,23 +230,20 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
 
     stale_age = _streamer_stale_age(status)
     underlying_age = _streamer_underlying_stale_age(status)
+    chain_errors = _streamer_chain_fetch_errors(status)
     limit = spec.get("stale_restart_seconds", 240)
-    # A stall is EITHER the whole stream going quiet OR the underlying-spot feed dying while option
-    # quotes keep the global age fresh (2026-07-22). Judge on whichever available signal is most stale.
+    # A stall is the whole stream going quiet, OR the underlying-spot feed dying while option quotes
+    # keep the global age fresh (2026-07-22), OR a single symbol's chain fetch exhausting its in-process
+    # retries while every other symbol stays fresh (2026-07-31) — judge on whichever signal fires.
     stale_candidates = [a for a in (stale_age, underlying_age) if a is not None]
     worst_stale = max(stale_candidates) if stale_candidates else None
-    detail = _streamer_stale_detail(stale_age, underlying_age, limit)
+    is_stalled = (worst_stale is not None and worst_stale > limit) or bool(chain_errors)
+    detail = _streamer_stale_detail(stale_age, underlying_age, limit, chain_errors)
     connection_age = _streamer_connection_age(status)
     # Don't count a connection that has not had time to populate yet — a restart takes a few seconds to
     # resubscribe, and without this the next tick would see stale data and restart again, forever.
     settling = connection_age is not None and connection_age < limit
-    if (
-        running
-        and worst_stale is not None
-        and worst_stale > limit
-        and not settling
-        and spec.get("auto_restart")
-    ):
+    if running and is_stalled and not settling and spec.get("auto_restart"):
         _stop_streamer(root, spec)
         started = _start_streamer(root, spec["start_argv"])
         findings.append(
@@ -235,7 +255,7 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
                 + ("Restart issued." if started else "Could not relaunch; quotes stay stale."),
             )
         )
-    elif running and worst_stale is not None and worst_stale > limit:
+    elif running and is_stalled:
         findings.append(
             Finding(
                 label,
@@ -293,7 +313,8 @@ def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
         return []
     root = cfgmod.module_root(spec, "streamer")
     if not root.exists():
-        return [Finding("streamer", WARN, "streamer checkout missing", f"not found at {root}")]
+        msg = f"not found at {cfgmod.portable_path(root)}"
+        return [Finding("streamer", WARN, "streamer checkout missing", msg)]
     return _check_streamer_health("streamer", root, spec)
 
 
@@ -599,6 +620,200 @@ def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trad
     return [Finding(f"{name}.settle_overdue", OK, f"{label} settlement", "settled or no open positions")]
 
 
+_TASK_STILL_RUNNING = 267009  # SCHED_S_TASK_RUNNING (0x41301) -- an in-progress tick, not a failure
+
+
+def _scheduler_age_minutes(info: dict[str, Any], now_et: datetime) -> float | None:
+    """Minutes since the scheduler's own reported last run, or None if unparseable.
+
+    `last_run_time` is in the SCHEDULER's local zone (whatever the machine runs, e.g. Mountain),
+    which is generally not the same zone as `now_et` (Eastern) — both are timezone-AWARE in
+    production, so the subtraction is correct regardless of the offset difference. The
+    aware/naive fallback below only matters for tests that pass a naive `now_et` fixture.
+    """
+    last_run = info.get("last_run_time")
+    if not isinstance(last_run, str):
+        return None
+    try:
+        ts = datetime.fromisoformat(last_run)
+    except ValueError:
+        return None
+    now = now_et
+    if ts.tzinfo is not None and now.tzinfo is None:
+        now = now.replace(tzinfo=ts.tzinfo)
+    elif ts.tzinfo is None and now.tzinfo is not None:
+        ts = ts.replace(tzinfo=now.tzinfo)
+    return (now - ts).total_seconds() / 60
+
+
+def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool) -> list[Finding]:
+    """Watchdog the module's LIVE loop — active only when the module config carries a `live`
+    block with a `task_name`.
+
+    Three checks plus the disarm backstop:
+      (a) armed-window task check: the live loop self-disarms after `disarm_time`, so a missing
+          task is only CRITICAL while the module's own status says it should be armed.
+      (b) freshness in-session (CRITICAL) — a registered-but-silent live loop is the dangerous
+          state, since real working orders may be resting unwatched. On Windows this reads the
+          scheduler's OWN last-run record (`tasks.last_run_info`) rather than a log file's mtime —
+          a live tick that legitimately has nothing to log (e.g. two already-completed, risk-free
+          positions sitting quiet for 30+ minutes) used to read as "silent" and false-alarm; the
+          task having *run* is what matters, not whether it *logged* anything. POSIX cron has no
+          run-history to query, so it falls back to the log-mtime check `last_run_info` replaces.
+      (c) settle-overdue after close + grace, via the module's live `--status` JSON.
+      (d) disarm backstop (the dead-man's switch's second layer): far outside market hours, a
+          live task STILL registered means self-disarm failed — the watchdog sets the suite
+          halt flag (its own liveops surface; every live tick then refuses at readiness) and
+          raises CRITICAL. Purely risk-reducing: it never touches the module's task itself.
+    """
+    live = mcfg.get("live") or {}
+    task_name = live.get("task_name")
+    if not task_name:
+        return []
+    label = name.upper() if len(name) <= 4 else name.capitalize()
+    findings: list[Finding] = []
+
+    status = None
+    if live.get("status_argv"):
+        try:
+            r = _run_module(cfgmod.module_root(mcfg), live["status_argv"], timeout=15)
+            status = first_json(r.stdout) if r.returncode == 0 else None
+        except Exception:
+            status = None
+
+    registered = tasks.exists(task_name)
+    armed_for = (status or {}).get("armed_for")
+    today = now_et.date().isoformat()
+
+    # (d) Disarm backstop first — it's the check that must never be skipped.
+    disarm_hhmm = str(live.get("disarm_time", "17:00"))
+    try:
+        h, m = disarm_hhmm.split(":")
+        disarm_minute = int(h) * 60 + int(m)
+    except ValueError:
+        disarm_minute = 17 * 60
+    grace = int(live.get("disarm_grace_minutes", 30))
+    now_minute = now_et.hour * 60 + now_et.minute
+    past_disarm_window = now_minute >= disarm_minute + grace or (armed_for and armed_for != today)
+    if registered and past_disarm_window:
+        from . import liveops
+
+        flag = liveops.halt_flag_path()
+        try:
+            flag.parent.mkdir(parents=True, exist_ok=True)
+            flag.touch()
+        except OSError:
+            pass
+        findings.append(
+            Finding(
+                f"{name}.live_disarm",
+                CRITICAL,
+                f"{label} LIVE task survived past disarm",
+                f"{task_name} still registered past {disarm_hhmm}+{grace}m (armed_for={armed_for}); "
+                "halt flag set — live ticks now refuse. Investigate why self-disarm failed, then "
+                "uninstall the task and clear the halt flag before re-arming.",
+            )
+        )
+        return findings  # halted state — the armed-window checks below would only add noise
+
+    if registered:
+        # (b) freshness while armed and in session: the task must have actually RUN recently.
+        if in_session:
+            fresh_minutes = int(live.get("freshness_minutes", 5))
+            scheduler_info = tasks.last_run_info(task_name)
+            if scheduler_info is not None:
+                age_min = _scheduler_age_minutes(scheduler_info, now_et)
+                last_result = scheduler_info.get("last_task_result")
+                # 267009 (0x41301) is SCHED_S_TASK_RUNNING -- Task Scheduler's sentinel for "this
+                # instance hasn't finished yet," reported while a tick is still mid-execution (e.g.
+                # a slow broker call). Not a failure; flagging it as one false-CRITICALed a live tick
+                # the watchdog simply happened to poll while it was still running.
+                failed = last_result not in (0, None, _TASK_STILL_RUNNING)
+                if age_min is None or age_min > fresh_minutes or failed:
+                    if age_min is None:
+                        shown = "unparseable last-run time"
+                    elif failed:
+                        shown = f"last run {age_min:.0f} min ago, result={last_result}"
+                    else:
+                        shown = f"last ran {age_min:.0f} min ago"
+                    findings.append(
+                        Finding(
+                            f"{name}.live_fresh",
+                            CRITICAL,
+                            f"{label} LIVE loop silent",
+                            f"scheduler reports {shown} while the live task is armed and the market "
+                            "is open — real working orders may be resting unwatched.",
+                        )
+                    )
+                else:
+                    findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "fresh"))
+            else:
+                # POSIX (or a scheduler query failure): fall back to the log-mtime check.
+                log_path = cfgmod.module_logs_dir(name) / str(live.get("log", "flies_live.log"))
+                try:
+                    age_min = (now_et.timestamp() - os.path.getmtime(log_path)) / 60
+                except OSError:
+                    age_min = None
+                if age_min is None or age_min > fresh_minutes:
+                    shown = "missing" if age_min is None else f"{age_min:.0f} min old"
+                    findings.append(
+                        Finding(
+                            f"{name}.live_fresh",
+                            CRITICAL,
+                            f"{label} LIVE loop silent",
+                            f"live log {shown} while the live task is armed and the market is open — "
+                            "real working orders may be resting unwatched.",
+                        )
+                    )
+                else:
+                    findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "fresh"))
+    elif armed_for == today and now_minute < disarm_minute:
+        # (a) status says armed-for-today but the task is gone mid-window.
+        findings.append(
+            Finding(
+                f"{name}.live_task",
+                CRITICAL,
+                f"{label} LIVE task missing",
+                f"{task_name} not registered but the arm stamp says armed for {armed_for}.",
+            )
+        )
+
+    # (c2) orphaned orders: the last tick's broker-truth sweep found working orders the ledger
+    # has never heard of — real orders resting unwatched. Always CRITICAL, session or not.
+    if status and (status.get("orphaned_orders") or 0) > 0:
+        findings.append(
+            Finding(
+                f"{name}.live_orphans",
+                CRITICAL,
+                f"{label} ORPHANED live orders",
+                f"{status['orphaned_orders']} working order(s) at the broker unknown to the live "
+                "ledger — review in the broker UI before any further arming.",
+            )
+        )
+    elif status and "orphaned_orders" in status:
+        findings.append(Finding(f"{name}.live_orphans", OK, f"{label} live orders", "all accounted for"))
+
+    # (c) live settlement overdue: same shape as the paper check, over the live status.
+    close_min = timeutil.MARKET_CLOSE.hour * 60 + timeutil.MARKET_CLOSE.minute
+    settle_grace = int(live.get("settlement_grace_minutes", 30))
+    if status and now_minute >= close_min + settle_grace:
+        if status.get("session_settled") is False and (status.get("open_positions") or 0) > 0:
+            findings.append(
+                Finding(
+                    f"{name}.live_settle_overdue",
+                    WARN,
+                    f"{label} LIVE settlement overdue",
+                    f"{status.get('open_positions')} open live position(s) past the close still "
+                    "unsettled — run the provisional settle or --settle --price <official>.",
+                )
+            )
+        else:
+            findings.append(
+                Finding(f"{name}.live_settle_overdue", OK, f"{label} live settlement", "settled or flat")
+            )
+    return findings
+
+
 def _check_eod(cfg: dict[str, Any], now: datetime, is_trading: bool) -> None:
     """Fire the EOD digest + insight ONCE per trading day, event-driven instead of at a fixed clock time.
 
@@ -679,9 +894,8 @@ def _check_services(cfg: dict[str, Any]) -> list[Finding]:
         sid = svc["id"]
         root = cfgmod.module_root(svc, sid)
         if not root.exists():
-            findings.append(
-                Finding(f"service.{sid}", WARN, f"{sid} checkout missing", f"not found at {root}")
-            )
+            msg = f"not found at {cfgmod.portable_path(root)}"
+            findings.append(Finding(f"service.{sid}", WARN, f"{sid} checkout missing", msg))
             continue
         running = None
         try:
@@ -772,6 +986,8 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
                 findings += _check_eval_activity(name, mcfg, now, in_session, ea_settings)
             elif kind == "cherrypick_scheduled":
                 findings += _check_earnings(name, mcfg, now, is_trading)
+            # The live-loop check is kind-independent: any module may declare a `live` block.
+            findings += _check_live(name, mcfg, now, in_session)
         except Exception as exc:
             findings.append(
                 Finding(

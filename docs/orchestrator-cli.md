@@ -3,8 +3,11 @@
 Every command the orchestrator exposes. Run them from `packages/orchestrator` as `python run.py <cmd>`;
 a pip install (`pip install -e ".[dev]"`) also exposes them as `cherrypick <cmd>` / `python -m cherrypick`.
 
-All commands are **read-only or paper-only** except the narrow onboarding pair (`connect`/`account`),
-which writes *configuration* (never an order). See [guardrails-and-modes.md](guardrails-and-modes.md).
+All commands are **read-only or paper-only** except the narrow onboarding pair (`connect`/`account`) and
+`settings`, which write *configuration* (never an order). See
+[guardrails-and-modes.md](guardrails-and-modes.md).
+(The flies module's own live-trading loop is a separate program, started with `/live-flies-start` rather
+than any command on this page — see [strategy-engines.md](strategy-engines.md#flies--0dte-net-credit-butterflies).)
 
 ## Onboarding & setup
 
@@ -17,6 +20,7 @@ which writes *configuration* (never an order). See [guardrails-and-modes.md](gua
 | `secrets-set` | Store a Slack/Discord webhook URL in the OS keyring (prompted without echo if `--url` omitted). | `--channel slack\|discord`, `--url` |
 | `secrets-status` | Show which push-channel webhooks are configured (secret-free). | — |
 | `secrets-delete` | Remove a stored webhook. | `--channel` |
+| `settings` | Local web editor for every config file + a keyring secrets manager (loopback `:8804`) — the suite's one mutating HTTP surface, run on demand, never watchdog-started. Live-trading gate fields render read-only. With `--organize` it instead reorders a live config into its example's sections and exits (no server). | `--host`, `--port` (def `8804`), `--no-browser`, `--organize [target]`, `--apply` |
 
 ## Turning the suite on/off
 
@@ -66,7 +70,8 @@ orchestrator invokes MEIC's installer during `install` rather than driving each 
 
 `--date YYYY-MM-DD` (report/eod-digest/notify-eod/eod-insight) · `--fast` (doctor) ·
 `--module` / `--set` / `--clear` / `--yes` (connect/account) ·
-`--serve` / `--host` / `--port` / `--no-browser` (dashboard) · `--apply` (migrate-home) ·
+`--serve` / `--host` / `--port` / `--no-browser` (dashboard, settings) · `--apply` (migrate-home,
+settings --organize) · `--organize [target]` (settings) ·
 `--month` / `--dry-run` (archive) · `--channel` / `--url` (secrets) · `--force` (init).
 
 ## Slash-command equivalents (Claude Code)

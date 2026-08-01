@@ -266,6 +266,25 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
   reliability framework.
 - **Throwaway-tolerant.** This watchdog/notify logic is the seed Phase 6b absorbs into `cherrypick-core`.
 
+## Settings surface: config editor + secrets manager (shipped 2026-07-30)
+- [x] **`cherrypick settings`** — a local web editor for every config file plus a keyring secrets
+      manager, on loopback `:8804`: the suite's one mutating HTTP surface (every dashboard here is
+      GET-only). Field edits locate the exact byte span of a value by JSON pointer and splice in the
+      new value (`configedit.splice_value`) rather than re-serializing, so a config's `_note`/`_header`
+      documentation and key order survive a one-field edit untouched; a raw-text tab covers everything
+      else. Every write is backed up to `state/config-backups/` before an atomic replace. Guarded
+      live-trading pointers (`enable_live_trading`, flies' `live.enabled`/`gate0_confirmed`, the live
+      loss/deploy-limit fields) are refused on both write paths, in either direction — this surface can
+      arm or de-risk nothing. Secrets set from the browser (`secretsops.py`) go straight to
+      `CredentialStore.set_secret` and are dropped; every response is status-shaped (booleans, masked
+      accounts) and never carries a value. Hardened against a mutating local server's real threat model:
+      every route checks the `Host` header (DNS rebinding), every POST needs the page's per-session CSRF
+      token, and the server sends no CORS headers. `--organize [target] [--apply]` reorders a config
+      into its example's section layout without touching a value — used to bring every shipped
+      `config.example.json` and every live config into logical sections (Identity & modules / Watchdog
+      & scheduling / Dashboard & serve / Settings / Streamer & services / Notifications / EOD / Data
+      lifecycle / Advise & reconcile, and each module's own grouping).
+
 ## Hardening backlog (surfaced 2026-07-11 productionization)
 > Items exposed while moving both modules to a managed-home fresh install (`~/.cherrypick/modules/*`)
 > with the earnings Dolt store relocated to `~/.cherrypick/data/earnings`.

@@ -3,6 +3,6 @@
   "_symbols_note": "Operator BASE symbols — a seed the streamer always includes. The full stream set is the UNION of this and every installed module's request file (~/.cherrypick/state/stream_requests/<module>.json), which modules write themselves. You normally leave this empty and let modules register what they need; list a symbol here only to force it streamed regardless of any module. New underlyings (here or from a module) are picked up at daemon start — a restart adds a chain window; open-position legs are dynamic and need no restart.",
   "symbols": [],
   "streamer": {
-    "window_strike_count": 20
+    "window_strike_count": 60
   }
 }

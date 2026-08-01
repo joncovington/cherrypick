@@ -523,6 +523,27 @@ _SCHEMAS = {
 }
 
 
+class _LiveNotifier:
+    """Wraps a Notifier so every live-ledger event is unmistakably LIVE: title prefixed, the
+    schema formatters' "paper" wording rewritten, and the message pushed with a real-money
+    marker. Real money warrants the desktop toast too — paper deliberately doesn't get one.
+
+    Every schema's stage title is hardcoded "Paper entry"/"Paper exit"/etc. (it's the same
+    formatter table for both ledgers) — drop that word here rather than double it under the
+    "LIVE:" prefix this wrapper already adds. Found 2026-07-30 on flies' first live fill: the
+    message body's " paper " -> " LIVE " rewrite below was never mirrored onto the title, so a
+    real fill announced itself as "LIVE: Paper entry". Same gap would hit MEIC/Earnings the
+    moment either goes live — this wrapper is shared across all three schemas."""
+
+    def __init__(self, inner: Notifier):
+        self._inner = inner
+
+    def notify(self, level: str, key: str, title: str, message: str):
+        title = title.replace("Paper ", "")
+        message = message.replace(" paper ", " LIVE ")
+        return self._inner.notify(level, f"live.{key}", f"LIVE: {title}", f"\U0001f6a8 {message}")
+
+
 # --------------------------------------------------------------------------- entrypoint
 def run(cfg: dict | None = None) -> dict:
     if not _acquire_lock():
@@ -572,6 +593,46 @@ def run(cfg: dict | None = None) -> dict:
                     )
                 else:
                     summary[name] = process_fn(conn, st, notifier, name)
+            finally:
+                conn.close()
+
+        # LIVE ledgers — same schema adapters over the module's live_db, separately opted in via
+        # live.notify_trades, with per-module state under "<name>:live" so ids never collide with
+        # paper's. All push happens HERE (the 2-min task / watchdog tick), never in the trading
+        # loop itself — the no-network-on-the-loop invariant, at a worst-case ~2-min lag.
+        for name, mcfg in cfgmod.enabled_modules(cfg).items():
+            live = mcfg.get("live") or {}
+            if not live.get("notify_trades"):
+                continue
+            db_path = cfgmod.live_db_path(mcfg, name)
+            if db_path is None or not db_path.exists():
+                continue
+            schema = mcfg.get("paper", {}).get("trade_schema", "meic_ic")
+            adapter = _SCHEMAS.get(schema)
+            if adapter is None:
+                continue
+            seed_fn, process_fn = adapter
+            live_channels = sorted(set(channels) | {"desktop"})
+            live_notifier = _LiveNotifier(Notifier({**notify_cfg, "channels": live_channels}))
+            key = f"{name}:live"
+            conn = _connect_ro(db_path)
+            try:
+                st = state.get(key)
+                if st is None:  # first activation — seed, don't backfill
+                    state[key] = seed_fn(conn)
+                    summary[key] = {"seeded": True}
+                    continue
+                if schema == "meic_ic":
+                    summary[key] = process_fn(
+                        conn,
+                        st,
+                        live_notifier,
+                        name,
+                        summary_prefixes=(),
+                        summary_interval_minutes=summary_interval_minutes,
+                    )
+                else:
+                    summary[key] = process_fn(conn, st, live_notifier, name)
             finally:
                 conn.close()
 

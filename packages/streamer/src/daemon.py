@@ -82,6 +82,13 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
     def _protected_symbols() -> set[str]:
         return set(_registry.union_legs())
 
+    default_strike_count = int(scfg.get("window_strike_count", 60))
+
+    def _window_strike_count_for(symbol: str) -> int:
+        # A module's widened per-symbol request (e.g. flies escalating after repeated
+        # missing_leg_quotes) never narrows the configured default -- only ever widens it.
+        return max(default_strike_count, _registry.union_window_hints().get(symbol, 0))
+
     return ChainStreamer(
         session_factory=make_session_factory(),
         db_path=_config.cache_path(cfg),
@@ -89,7 +96,8 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         extra_subscriptions=_extra_subscriptions,
         protected_symbols=_protected_symbols,
         trade_hook=_orb.OpeningRangeTracker(),  # capture each symbol's 9:30-9:35 ET opening range
-        window_strike_count=int(scfg.get("window_strike_count", 20)),
+        window_strike_count=default_strike_count,
+        window_strike_count_for=_window_strike_count_for,
         logger=logger,
     )
 
@@ -174,6 +182,7 @@ def status(cfg: dict) -> dict:
     cache = _config.cache_path(cfg)
     age: float | None = None
     u_age: float | None = None
+    symbol_health: dict[str, dict] = {}
     if cache.exists():
         conn = sqlite3.connect(f"file:{cache}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
@@ -203,6 +212,18 @@ def status(cfg: dict) -> dict:
                     underlyings,
                 ).fetchone()
                 u_newest = r["last"] if r and r["last"] is not None else None
+            # Per-symbol chain-fetch health: the aggregate ages above are freshest-of-any-symbol, so
+            # ONE symbol's chain fetch silently failing (window disabled) is invisible whenever other
+            # symbols keep ticking fine — this is that symbol's own signal (see
+            # cherrypick.core.streamer's _fetch_dte0_chain_with_retry).
+            for row in conn.execute(
+                "SELECT symbol, chain_loaded_at, chain_fetch_error, updated_at FROM stream_symbol_health"
+            ):
+                symbol_health[row["symbol"]] = {
+                    "chain_loaded_at": row["chain_loaded_at"],
+                    "chain_fetch_error": row["chain_fetch_error"],
+                    "age_s": round(now - row["updated_at"], 1),
+                }
         finally:
             conn.close()
         age = round(now - newest, 1) if newest else None
@@ -216,6 +237,10 @@ def status(cfg: dict) -> dict:
     info["stale_age_s"] = age
     info["underlyings_stale_age_s"] = u_age
     info["stale_warning"] = pid is not None and (age is None or age > _STALE_WARN_S)
+    info["symbol_health"] = symbol_health
+    info["chain_fetch_errors"] = {
+        s: h["chain_fetch_error"] for s, h in symbol_health.items() if h["chain_fetch_error"]
+    }
     return info
 
 

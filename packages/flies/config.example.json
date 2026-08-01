@@ -1,87 +1,131 @@
 {
+  "source_header": "===== Source & Symbols =====",
   "_comment": "cherrypick-flies: 0DTE net-credit butterflies. Paper-only. Copy to config.json and edit. The paper DB lives under the shared cherrypick home (~/.cherrypick/data/flies/paper_trades.db); override with FLIES_DB_PATH.",
-
   "_source_note": "The suite's canonical shared stream cache. This module reads it READ-ONLY and runs no streamer of its own — the suite runs one streamer, not three. Omit to accept ~/.cherrypick/data/marketdata/stream_cache.db. Precondition: some producer must be streaming it — MEIC's streamer when MEIC is installed, otherwise the standalone packages/streamer daemon — subscribed to the symbols below, since open interest (and therefore GEX) exists only because the producer subscribes DXLink Summary.",
   "source": {
     "stream_cache_db": "~/.cherrypick/data/marketdata/stream_cache.db"
   },
-
-  "_live_note": "LIVE SCAFFOLD -- inert by default (docs/live-trading-plan.md). Nothing here runs until Gate 0 of the plan passes: 'enabled' must be true AND 'gate0_confirmed' must carry a human attestation (who/when the paper verdict was judged to pass); the loop additionally requires a designated account (cherrypick account --module flies), refuses while the suite halt flag (state/halt-live.flag) exists, and halts new entries when the day's settled LIVE net reaches -daily_loss_halt_dollars. Exactly ONE arm goes live (the Gate-0 winner; default gex). `python src/live_loop.py --once --dry-run` preflights the orders it would place against the real designated account WITHOUT placing anything -- that run is the flies rung-0 smoke. account_deploy_limit_pct feeds core.broker's deploy governor on every submission.",
+  "live_header": "===== Live Gates (guarded) =====",
+  "_live_note": "THE LIVE LOOP (docs/live-trading-plan.md). 'enabled' must be true AND 'gate0_confirmed' must carry a human attestation; the loop additionally requires a designated account (cherrypick account --module flies), refuses while the suite halt flag (state/halt-live.flag) exists, and halts new entries when the day's settled LIVE net reaches -daily_loss_halt_dollars. Exactly ONE arm goes live (default gex). ARMING IS PER-DAY: /live-flies-start (a fresh YES every time) runs `live_loop.py --install-task`, registering a 1-min self-healing tick that SELF-DISARMS at disarm_time (and any tick finding a previous day's arm stamp disarms immediately) -- today's authorization can never carry into tomorrow; the orchestrator watchdog backstops by setting the halt flag if the task somehow survives. STREAMER BEFORE API (suite rule): all pricing reads the shared stream cache; cached quotes gate broker calls -- a resting entry order is only cancelled/replaced when the cached evaluation moved (center, or credit by >= one tick), and the burst fill-watcher (spawned per tick while orders are pending; polls every fill_watch_poll_seconds for fill_watch_seconds) only hits the broker's status endpoint when cached quotes touch the working limit or fill_heartbeat_seconds elapsed. ORDER ALERT STREAM (added 2026-07-31, use_order_alert_stream, default false): when on, the burst watcher ALSO blocks each cycle (up to fill_watch_poll_seconds) on tastytrade's own account-alert websocket for a PUSH notification of a fill/cancel/reject on any pending order -- a completely separate stream from the shared market-data cache above (this one carries order/balance/position pushes for the designated account, not quotes), used exclusively to learn about a fill sooner, never to decide anything. A push hit is treated exactly like a cache touch: still confirmed through the ordinary status-endpoint call, never a second write path. Fails closed on any websocket/auth error (falls straight back to the cache-gated poll above, byte-for-byte), so this is purely a latency optimization, never a dependency -- the poll-based fallback (and run_once's own once-a-minute re-poll) is what actually guarantees a fill is eventually confirmed. Left off by default until proven on real live sessions; flip on only after a manual read-only listen test against the real account. ORDER ALERT DAEMON (added 2026-07-31, use_order_alert_daemon, default false, supersedes use_order_alert_stream when both are on): instead of the watcher opening its own websocket per cycle, a small separate process (src/alert_daemon.py, started by /live-flies-start on arm and stopped on disarm, self-exiting at disarm_time) holds ONE account-alert connection open for the trading day and appends every alert to a dedicated WAL-mode inbox (data/flies/live_alerts.db). The watcher then reads that inbox -- a local query, no network, no handshake per cycle -- and treats a fresh row exactly like a cache touch. Deliberately a separate database from live_trades.db: the ledger's concurrency was tuned for exactly two short-burst writers (the tick and the watcher, each file-locked), and a third persistent writer would stack onto that; the inbox is the 1-writer/N-reader shape WAL exists for, so the ledger's writers are untouched. Same fail-closed posture as everything else here -- an unreadable/absent inbox, a dead daemon, or one that was never started just leaves the watcher on its ordinary cache-gated polling, and run_once's once-a-minute re-poll still confirms every fill regardless. The daemon never decides anything, never places or cancels an order, and never writes the ledger. FRESH-QUOTE CHECK (live-only, entry-only -- the one narrow exception to 'cached quotes gate broker calls', added 2026-07-30 after a live entry was rejected by the broker's real-time execution-quality check on a cached price its own preflight dry-run never flagged): immediately before submitting the opening credit-spread order, both legs' prices are re-fetched once via a plain REST market-data call (not the streamer) and the credit recomputed the same way the cached evaluation does; if either leg's fresh quote is unavailable the entry is skipped this tick (retried next tick), and if the fresh credit is worse than the cached one by more than fresh_quote_tolerance_dollars the entry is also skipped -- otherwise the order is submitted at the fresh (tick-floored) price, never the cached one. This fires only at the instant a live entry order is already about to be submitted, never on the per-tick decision path, and never in paper. COMPLETION: placed once, immediately after the entry fill confirms, resting at min(credit - fee_buffer, the min_floor_dollars-implied bound) so it can never fill at a price either gate would refuse; cancelled at completion_cutoff. PRE-CLOSE EXIT (see defaults.pre_close_exit_time for the full explanation, shared with paper): inside the window, any ITM position -- a completed fly or a still-open vertical whose entry has confirmed and whose resting completion order (if any) is gone -- is closed live via its own Day limit order if cheaper than the assignment fee; a close that never fills falls through to ordinary SETTLEMENT below and the real fee. SETTLEMENT: auto at settle_time from the last streamed trade marked 'last_trade_provisional'; confirm with `live_loop.py --settle --price <official print>` (marked 'official'). CONCURRENCY: at most one incomplete position at a time -- an open short vertical always blocks a new entry; a completed fly blocks only if its floor is negative (not risk-free) after fees; negative_floor_override names one exact position_id to waive. gate0_confirmed is a human attestation, not a code-enforced statistical check -- Gate 0's sample-size bar can be knowingly waived for a small pilot; if so, say so in the attestation string. max_structures_per_day (null = off) caps ESTABLISHED structures per day -- unlike the one-incomplete-at-a-time rule, a risk-free completion does NOT re-open this budget; set 1 for the plan doc's strict rung-1 one-structure-per-day posture.",
   "live": {
     "enabled": false,
     "gate0_confirmed": "",
     "arm": "gex",
     "symbol": "XSP",
     "daily_loss_halt_dollars": 200,
-    "account_deploy_limit_pct": 50
+    "account_deploy_limit_pct": 50,
+    "fresh_quote_tolerance_dollars": 0.05,
+    "negative_floor_override": "",
+    "completion_cutoff": "15:30",
+    "settle_time": "16:20",
+    "disarm_time": "17:00",
+    "fill_watch_seconds": 60,
+    "fill_watch_poll_seconds": 10,
+    "fill_heartbeat_seconds": 150,
+    "use_order_alert_stream": false,
+    "use_order_alert_daemon": false,
+    "max_structures_per_day": null
   },
-
+  "symbols_header": "===== Trading Symbols =====",
   "_symbols_note": "XSP as of 2026-07-29 (was SPX through 07-28; those books remain in the ledger under their own widths). SPX and XSP are the only symbols this module should ever run — both European cash-settled, so a short middle strike left open into expiration settles to cash and assignment is structurally impossible; a physically-settled symbol would need the assignment machinery MEIC carries. wing_width and strike_increment below are GLOBAL and denominated in points, so they must be re-scaled with the symbol: XSP trades near a tenth of SPX on a 1-point grid. The intent on either symbol is the width-arm sweep of 1..5 strike increments (control is the 1-increment rung; width-2..width-5 pin the rest) — on SPX that means increment 5 / widths 5..25, on XSP increment 1 / widths 1..5.",
-  "symbols": ["XSP"],
-
+  "symbols": [
+    "XSP"
+  ],
+  "defaults_header": "===== Entry & Sizing Defaults =====",
   "defaults": {
     "_wing_width": "Points per wing — the width of the control/gex/time_window books and the 1-increment rung of the width sweep. Scale with the symbol: 1 on XSP's 1-point grid, 5 on SPX's 5-point grid (the SPX reference books all used 5-wide flies, e.g. 6855/6860/6865).",
     "wing_width": 1,
     "strike_increment": 1,
     "quantity": 1,
-
     "_max_positions": "Structures per (arm x symbol) book per session. Raised 4 -> 99 (effectively uncapped) 2026-07-29 for the paper width study: in paper the fee stack is modeled, not spent, so the cap's cost/risk rationale doesn't bind and it only throttled sample accrual — every structure is an independent sample, the MEIC width-study posture. Two things still bound entries: the one-structure-per-centre rule and each arm's entry windows. Keep this EQUAL across compared arms or net-P&L comparisons measure opportunity count, not the variable under test (this module's own history records that failure twice); time_window's per-window cap of 2 stays — window-spreading is that arm's machinery, so read it per-trade against control, not on net. Restore a real cap (and rethink it per symbol) before anything goes live.",
     "max_positions": 99,
-
     "_no_entry_before": "Hard post-open blackout (ET). No arm may enter before this, regardless of its own entry_windows — the gate is checked before the window logic, so an arm asking for an earlier window is refused rather than obeyed. Set to 10:00 on 2026-07-27: on the first five sessions every dollar of loss sat in the first 30 minutes (23 positions entered 09:30-10:00 ET for -$1,948.32, against +$913.79 across the 32 entered later), concentrated in control and gex, both of which opened at 09:45. Expressed as a floor rather than by editing each arm's first window because four separate window lists are four chances to silently reopen the hole when an arm is added — MEIC is the worked example of that failure mode. The arm windows below were raised to match anyway, so the two agree; the floor is the backstop, not the primary statement.",
     "no_entry_before": "10:00",
-
     "_max_positions_per_window": "Structures any ONE entry window may take, on top of max_positions. null disables it (single-window arms need nothing here). A global cap alone does not make a multi-window arm test its windows: over 07-20..07-24 the time_window arm put 15 of its 16 legged entries in 10:30-11:00, 1 in 12:30-13:00 and 0 in 14:00-14:30 — the book was full before the later windows opened, so the timing hypothesis was never exercised and the per-window ranking the arm exists to produce had nothing to rank. Set it on the ARM, not here, and keep cap x windows >= max_positions or the book can never fill.",
     "max_positions_per_window": null,
-
     "_entry_modes": "legged = sell a credit spread, then buy the completing spread cheaper to end up holding a fly for a net credit. outright = buy a cheap fly with premium already taken in. Both were observed running side by side in the same real session, but outright is OFF as of 07-27 for two independent reasons. (1) It lost on every one of its four settled positions (-$171.31, avg -$42.83): it manufactures no floor, it spends one, so it only pays when the fly finishes in its wings, and 19 of 23 completed flies did not. (2) It was confounding the experiment — the gex arm was the only arm taking outright entries (5 of its 15), so gex vs control was no longer isolating the centring rule the way the arms are supposed to differ. Re-enable only as its own arm, never inside an existing one.",
-    "entry_modes": ["legged"],
-
+    "entry_modes": [
+      "legged"
+    ],
+    "_completion_modes": "How an open legged credit spread may be completed. 'debit' = buy the completing same-type debit spread (the original mechanism). 'iron' = sell the OPPOSITE-type credit spread instead, producing an iron butterfly -- payoff-equivalent to a fly shifted down by wing_width, so risk-free iff the two credits summed clear wing_width plus fees (NOT assumed; the same floor gate enforces it). When both are enabled and both clear their gates on the same iteration, the higher post-fee floor wins. Off by default (['debit'] only) -- enable ['debit','iron'] only on its own arm, per the entry_modes rule above.",
+    "completion_modes": [
+      "debit"
+    ],
     "_min_credit_pct_of_width": "Opening credit floor as a fraction of wing width. Below this there is no room for the completing debit to come in cheaper AND clear two fee stacks.",
-    "min_credit_pct_of_width": 0.20,
-
+    "min_credit_pct_of_width": 0.2,
     "_max_credit_pct_of_width": "Opening credit CEILING. A vertical cannot be worth more than its width, so a credit near that width means the short leg is deep ITM and the premium is mostly intrinsic — a low-probability directional bet rather than a pin bet. Observed against real SPX quotes: a centre 67 points from spot produced a 77%-of-width credit with 67 points of intrinsic. The floor above cannot catch that, because a fatter intrinsic-heavy credit looks better to a floor.",
-    "max_credit_pct_of_width": 0.60,
-
+    "max_credit_pct_of_width": 0.6,
+    "_min_debit_pct_of_width": "debit_first's mirror of min_credit_pct_of_width: below this the debit vertical bought first is too far OTM to be plausible — little room left to richen before the completing credit spread's own width ceiling caps it.",
+    "min_debit_pct_of_width": 0.2,
+    "_max_debit_pct_of_width": "debit_first's mirror of max_credit_pct_of_width: a debit approaching the width means the long leg bought first is already deep ITM, leaving little room for the completing sale to out-earn it.",
+    "max_debit_pct_of_width": 0.6,
     "_fee_buffer": "Price points the completing debit must beat the original credit by. This is the gate that stops us 'completing' into a fly whose credit is real but smaller than the fees paid to build it.",
-    "fee_buffer": 0.10,
-
+    "fee_buffer": 0.1,
     "_min_floor_dollars": "Reject a completion whose post-fee floor lands below this. Was 50.0 on the reasoning that a $5-27 guaranteed profit was 'not worth the position slot or the defined risk carried while waiting'. The first five sessions falsified the premise: refusing does NOT free the slot, it leaves the position as an uncompleted short vertical, and that branch realised an average of -$208.51 per position (17 of them, -$3,544 total) against +$110.47 for a completed fly. Turning down a guaranteed +$9.36 to keep a lottery ticket averaging -$208 is the losing side of that trade. Measured over 07-20..07-24, five completions were blocked by this gate alone at floors of $9.36-$39.36; converting them moves completion rate 57.5% -> 70%, past the ~65% break-even implied by those two averages. Scaled 10.0 -> 1.0 at the 2026-07-29 XSP move (premiums run ~1/10 of SPX; the same proportional bar). Revisit if the uncompleted branch ever stops being the dominant loss.",
     "min_floor_dollars": 1.0,
-
     "_max_fly_debit": "Outright flies are bought deliberately cheap ($10-50 observed in the reference books). Points, not dollars: 0.50 x 100 = $50.",
-    "max_fly_debit": 0.50,
-
+    "max_fly_debit": 0.5,
     "_fund_from_open_credit": "Whether an OPEN credit spread's premium may fund an outright fly. True matches the observed behavior (a live iron condor funded three flies), but that premium is not yet earned — which is why the book roll-up reports `unbounded_below` rather than calling such a book risk-free.",
     "fund_from_open_credit": true,
-
     "_max_center_distance_pct": "How far from spot the gex arm may centre a fly, as a fraction of spot. Tight on purpose: this is a 0DTE pin bet, and a centre far from spot needs a large move in the remaining hours just to reach the peak. 0.003 is about +/-22 points on a ~7500 index, roughly four strikes. Watch arm_divergence — if the gex arm agrees with control nearly always, this is the first value to revisit, because the arms can only be compared to the extent they disagree.",
     "max_center_distance_pct": 0.003,
-
     "_slippage_frac": "Fraction of each leg's bid-ask conceded from mid, per fill. Matches cherrypick.core.fees and MEIC's paper engine — one fill model across the suite.",
     "slippage_frac": 0.125,
-
     "_max_quote_age_seconds": "Legs quoted longer ago than this are dropped as stale, and a structure missing a leg is simply not offered. On 0DTE a few minutes is a different market, and pricing a fill off an old quote produces a paper result that looks real and isn't.",
     "max_quote_age_seconds": 120,
-
     "_book_scan_step": "Price step for the book-floor payoff scan. Keep it a fraction of strike_increment (0.2x, matching the SPX-era 1.0 against a 5-point grid) or the scan only samples the strikes themselves and a trough between them goes unmeasured.",
     "book_scan_step": 0.2,
+    "_pre_close_exit_time": "The one deliberate exception to rule 5 ('no adjustments, hold to settlement'), added 2026-07-30 and extended the same day to still-open verticals: inside this ET window (to session close), any ITM position is closed outright IF doing so costs less than the $5-per-ITM-strike exercise-assignment fee it would otherwise incur overnight (see engine.evaluate_pre_close_exit, fly.position_floor) -- a completed fly (sell both wings, buy back the doubled centre; pure fee avoidance) or a still-open short vertical (buy back the centre, sell the protective wing; stops the fee from stacking on top of a loss already being realized). A narrow, mechanical cost comparison in the closing minutes, not a P&L-driven stop. Applies to BOTH paper and live, so paper's numbers stay representative of what live actually does now that assignment fees are modeled in both -- override under 'live' below for a live-only value.",
+    "pre_close_exit_time": "15:50",
+    "_regime_tagging": "engine.classify_regime tags every entry and completion (not every tick) along four dimensions, purely descriptive -- nothing here gates a decision, it exists to give a future regime-conditioned mode selector real labelled outcomes to be built from instead of guessed at. Every threshold below is a placeholder pending recalibration once real sessions accumulate, same as every other gate in this module.",
+    "regime_vol_low_pct": 0.0015,
+    "regime_vol_high_pct": 0.0035,
+    "regime_gex_pinning_share": 0.5,
+    "regime_skew_threshold": 0.15,
+    "regime_time_open_end": "10:00",
+    "regime_time_close_start": "15:30",
+    "_bwb_far_width_ratio": "bwb_roll's wide/risk-carrying wing, as a RATIO of wing_width (far_width = wing_width * ratio) -- not an absolute point value, since wing_width itself is manually rescaled per symbol and per width-sweep arm (control=1, width-2..width-5), and a fixed absolute far_width would need separately rescaling every time either changes. 2.0 matches the common near:far rule of thumb (roughly 1:2). The gap (far_width - wing_width) is the real tail this construction carries until rolled -- see fly.bwb_payoff, fly.position_floor's bwb branch. Placeholder pending recalibration once real sessions exist.",
+    "bwb_far_width_ratio": 2.0,
+    "_min_bwb_credit_pct_of_tail": "The entry credit is rent for the tail, so it is measured against the tail (far_width - wing_width), not against wing_width the way legged's credit gates are -- there is no width-bounded ceiling here since the structure's own worst case is already wing_width - far_width, not -wing_width.",
+    "min_bwb_credit_pct_of_tail": 0.15,
+    "_max_bwb_credit_pct_of_tail": "Ceiling, same intrinsic-heavy-credit logic as legged's own ceiling, measured against the tail instead of wing_width.",
+    "max_bwb_credit_pct_of_tail": 0.6,
+    "_max_bwb_tail_dollars": "Hard dollar cap on the tail risk a single bwb may carry (net of its own credit and open fee), independent of how the price-ratio gates above happen to price it. Placeholder pending recalibration.",
+    "max_bwb_tail_dollars": 150,
     "entry_windows": []
   },
-
+  "arms_header": "===== Arms =====",
   "_arms_note": "Each arm differs from control in EXACTLY one thing, each with its own book. control is what makes every other arm falsifiable: gex vs control isolates centring, time_window vs control isolates timing, and the width-N arms vs control sweep wing width (control at the default width is the sweep's 1-increment rung — a width-1 arm would duplicate its book under a second name). wide_wing was the single-point version of the width question; it stays for the SPX-era books' attribution but is disabled now the sweep covers it.",
   "arms": {
     "gex": {
       "enabled": true,
       "_note": "Centre on the strongest positive per-strike net GEX within max_center_distance_pct of spot — the best available pin candidate. Degrades to ATM (and says so in center_reason) when the streamer has no open-interest cache yet.",
-      "entry_windows": [["10:00", "14:30"]]
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
     },
     "time_window": {
       "enabled": true,
       "_note": "ATM-centred, entering only inside these windows. Deliberately skips the opening hour, which is the specific timing hypothesis worth testing: 0DTE extrinsic is richest early, but so is realized vol, so an early entry buys more premium and more risk of being run over before the completing spread cheapens. Windows are still NOT ranked against each other — every trade is tagged with the window it entered in, and that ranking comes out of our own sessions.",
       "_history_note": "These were [09:45-10:15, 11:00-11:30, 13:00-13:30, 14:00-14:30] — a strict subset of the control arm's all-day window. A simulated session showed both arms exhausting max_positions inside the shared 09:45-10:15 overlap, so they took near-identical books and the timing restriction was never actually exercised. Starting after the open makes the contrast real.",
       "_windows_note": "Rewritten 2026-07-27 to STRADDLE control's window instead of nesting inside it. The old set (10:30-11:00, 12:30-13:00, 14:00-14:30) sat entirely within control's window, and both arms centre ATM — so the two could only ever want the same strike, and they did: 100% centre agreement across 184 iterations. That is not a measurement, it is an identity; any two ATM arms agree on centre by construction. The contrast this arm exists to draw is TIMING, so its windows must include time control does not trade. 14:30-15:00 runs after control has stopped and is the disjoint contrast; 10:00-10:30 and 12:30-13:00 are deliberate controlled overlaps. Read this arm against control on entry timing and completion, NOT on centre divergence. (A pre-open 09:35-10:00 window was briefly set here the same day and removed within the hour when the post-open blackout went in — it sat entirely inside no_entry_before and would have been dead config.)",
-      "entry_windows": [["10:00", "10:30"], ["12:30", "13:00"], ["14:30", "15:00"]],
+      "entry_windows": [
+        [
+          "10:00",
+          "10:30"
+        ],
+        [
+          "12:30",
+          "13:00"
+        ],
+        [
+          "14:30",
+          "15:00"
+        ]
+      ],
       "_late_window_risk": "The 14:30-15:00 window is the one to watch. Median completion latency has run 46-67 minutes, so an entry at 15:00 has under an hour to the 16:00 close and may not complete — leaving an uncompleted short vertical, which is the module's losing branch. That is the hypothesis being tested rather than an oversight: if late entries systematically fail to complete, the per-window completion table will say so and the window should come back off.",
       "_max_positions_per_window_note": "2 x 3 windows = 6 against a global max_positions of 4, so the global cap still binds overall but no single window can take more than half the book. Added 07-27 because 15 of 16 legged entries had been landing in the first window, leaving the other two untested.",
       "max_positions_per_window": 2,
@@ -91,34 +135,104 @@
       "enabled": true,
       "_note": "ATM, same window and position cap as the gex arm. The shared baseline for EVERY comparison: gex vs control isolates the CENTRING rule (identical windows), time_window vs control isolates the TIMING (identical centring), width-N vs control isolates the WINGS. It must therefore match gex on everything except where it centres — and it doubles as the width sweep's 1-increment rung, since it trades the default wing_width.",
       "_history_note": "This was a single 12:00-12:15 window with max_positions 2, against gex's 09:45-14:30 and 4 — a 19x difference in entry opportunity. Per-trade metrics survive that, but net P&L per arm does not: the gex arm could have out-earned control purely by trading more often, and the headline comparison would have measured trade count rather than the GEX signal.",
-      "entry_windows": [["10:00", "14:30"]]
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "debit-first": {
+      "enabled": true,
+      "_note": "Control's twin, isolating the LEGGING ORDER: buy the debit vertical first, complete by SELLING the credit spread second (entry_modes: [\"debit_first\"]) -- the exact reverse of legged's two trades. Completion drift direction is INVERTED from every other arm: legged needs spot to drift AWAY from the short strike; this arm needs spot to drift TOWARD the centre (reversion), so it and legged monetize opposite path regimes at the same centre. See docs/faq.md for the full construction.",
+      "entry_modes": [
+        "debit_first"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "iron": {
+      "enabled": true,
+      "_note": "Control's twin isolating the COMPLETION CHOICE: entry is identical to control (sell a credit spread first), but completion_modes allows selling the opposite-type credit spread (an iron butterfly) alongside the usual debit completion, taking whichever clears its gates with the higher post-fee floor. Unlike a same-type fly, an iron completion's floor can be genuinely negative -- the two credits summed are not guaranteed to clear wing_width plus fees, so this arm measures whether that condition is actually met in practice, not just in theory. See docs/faq.md for the full construction.",
+      "completion_modes": [
+        "debit",
+        "iron"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "bwb": {
+      "enabled": true,
+      "_note": "Control's twin isolating the ENTRY CONSTRUCTION: instead of legging in over two ticks, enter a broken-wing butterfly whole for a net credit (entry_modes: [\"bwb_roll\"]), then roll the far wide wing in to the near strike once the roll cheapens enough, converting to a symmetric fly. Until rolled this carries REAL tail risk (wing_width - far_width, negative) that fly.position_floor never reports as bounded -- this arm exists to measure whether the roll actually converts often enough, and cheaply enough, to be worth the tail carried while waiting. See docs/faq.md for the full construction and the researched trap (the roll cheapens under exactly the drift that makes the position profitable, and balloons past the credit precisely when the tail is threatened).",
+      "entry_modes": [
+        "bwb_roll"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
     },
     "wide_wing": {
       "enabled": false,
       "_note": "DISABLED 2026-07-29, superseded by the width-N sweep below (kept so the SPX-era books' attribution stays readable). It was the single-point width hypothesis: added 07-27 because completions arrive only after spot walks away from the centre (median drift 15.3-17.3 SPX points against a 5-point wing; 19 of 23 completed flies settled outside their wings), and a 20-point wing bracketed that drift. On XSP the scaled equivalent of that bracket (~2 points) is exactly the width-2 arm — the sweep answers the same question as a curve instead of one point.",
       "wing_width": 20,
-      "entry_windows": [["10:00", "14:30"]]
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
     },
     "_width_arms_note": "The width sweep: control twins (ATM, identical window and position cap) pinning wing_width to 2..5 strike increments; control at the default width is the 1-increment rung. Widths are in POINTS, so on XSP's 1-point grid width-N means N points; if the module ever moves back to SPX's 5-point grid these must be re-scaled to 10/15/20/25. Wider wings cost more to build and risk more per structure — if no width produces a fee-positive floor, the drift mechanism is fundamental, which is itself the result.",
     "width-2": {
       "enabled": true,
       "wing_width": 2,
-      "entry_windows": [["10:00", "14:30"]]
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
     },
     "width-3": {
       "enabled": true,
       "wing_width": 3,
-      "entry_windows": [["10:00", "14:30"]]
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
     },
     "width-4": {
       "enabled": true,
       "wing_width": 4,
-      "entry_windows": [["10:00", "14:30"]]
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
     },
     "width-5": {
       "enabled": true,
       "wing_width": 5,
-      "entry_windows": [["10:00", "14:30"]]
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
     }
   }
 }

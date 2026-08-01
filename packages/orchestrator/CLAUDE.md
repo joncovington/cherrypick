@@ -34,6 +34,7 @@ python run.py archive        # end-of-month rotation: zip each finished month's 
 python run.py eod-insight    # opt-in AI synthesis over the day's deterministic reports -> logs/eod-insight-<day>.md (needs Claude Code on PATH + eod_insight.enabled); watchdog-fired (detached) on the same completion event as the digest
 python run.py advise         # opt-in bounded next-session parameter proposals per module -> state/advice/<module>-<session>.json, validated by cherrypick.core.advice against each module's advice_bounds (needs Claude Code on PATH + advise.enabled + per-module enabled); watchdog-fired (detached) on the same completion event; loops re-validate and treat absent/stale/invalid as baseline
 python run.py dashboard      # regenerate the static status dashboard -> dashboard.html
+python run.py settings       # local config editor + secrets manager, loopback:8804 -- the suite's one mutating surface; --organize [target] [--apply] reorders config(s) into their example's sections instead of serving
 python run.py calibrate      # per-profile calibration readings + promotion recommendations
 python run.py migrate-home   # dry-run: move config files into ~/.cherrypick + sweep leftovers (--apply to perform)
 python run.py uninstall      # remove cherrypick-managed tasks
@@ -156,6 +157,27 @@ is excluded from ruff and from the packaged wheel.
   order), account numbers masked, advisory. It never trades or mutates config. For live operation
   (phase 5), `reconcile.schedule.enabled` promotes it to a daily scheduled task (`reconcile
   --scheduled`, its own task off the watchdog tick) that notifies on any non-FLAT verdict.
+- **The settings surface (`cherrypick settings`, port 8804) is the second narrow live-config
+  exception — and the suite's only mutating HTTP surface.** Every dashboard server in the suite is
+  GET-only; `settings_serve.py` adds config-write and secrets-write routes, so it earns its own
+  invariant rather than borrowing the read surfaces' "never writes" contract. It is loopback-only like
+  every server here, but additionally: every route (GET included) requires a matching `Host` header
+  (defeats DNS rebinding), and every POST requires a per-session CSRF token baked into the page plus an
+  `application/json` content type (the server sends no CORS headers, so a cross-origin fetch can't
+  reach it at all). Config writes (`configedit.py`) go through byte-offset splicing so a field edit
+  never disturbs the file's `_note`/`_header` documentation or key order, are backed up
+  (`state/config-backups/`) before every write, and refuse any change — in either direction — to a
+  guarded live-trading pointer (`configedit.GUARDED`: `enable_live_trading`, flies' `live.enabled` and
+  `gate0_confirmed`, and the live loss/deploy limits); those fields render read-only with a pointer to
+  their real CLI path, so this surface can never arm or de-risk live trading. This is also the one
+  place a bearer secret transits an orchestrator process: a POST body reaches `secretsops.py`, is
+  passed straight to `CredentialStore.set_secret` / `notify.secrets.set_webhook`, and is dropped —
+  never logged, never written to any file, never echoed in any response. Every GET response contains
+  only `secrets_status()` booleans, webhook set/not-set strings, and `mask_account()` output. Like the
+  onboarding exception below, it never places an order and is never started by the watchdog or a
+  scheduled task — it runs only when a human runs `cherrypick settings` (or `/serve-dashboard
+  --settings`) in the foreground, and `--organize` (reorder a config into its example's sections) is
+  the only other thing it does outside the server.
 - **The onboarding surface (`connect`/`account`) is the one narrow live-config exception.**
   `cherrypick connect --module <m>` and `cherrypick account --module <m>` (`orchestrator/connect.py`,
   `orchestrator/accounts.py`) let a user set up a module for eventual **live** trading: they run the

@@ -94,6 +94,34 @@ quantity, capital_at_risk (defined max loss), entry_cost/exit_cost, entry_contex
 > account designation (used by `connect`/`account`/`reconcile`). Renaming a DB or altering a schema
 > breaks cross-module `report`/`calibrate`.
 
+## The settings surface
+
+`cherrypick settings` (loopback `:8804`, see [guardrails-and-modes.md](guardrails-and-modes.md) for the
+security posture) is a local web editor for every config file above, plus a keyring secrets manager. It
+is the suite's one config-writing surface outside `init`'s never-clobbers scaffold, so its write paths
+are conservative by design:
+
+- **Field edits never re-serialize the file.** Every config here documents itself in its own data
+  (`_note`/`_comment` strings, `*_header` section markers, a deliberate key order) — a normal
+  load→`json.dumps`→save round trip would silently erase all of it. Instead, editing one value locates
+  its exact byte span by JSON pointer and splices in the new JSON encoding, so a one-field edit is a
+  one-line diff and everything else in the file is untouched. A "Raw" tab is available for edits the
+  form view doesn't expose; it writes the client's text verbatim after validation.
+- **Every write is backed up first.** A timestamped copy of the previous file goes to
+  `state/config-backups/<target>.<timestamp>.json` before the new version replaces it (atomic
+  tmp-then-`os.replace`, same idiom as the dashboard renderer).
+- **Guarded fields are read-only, in both directions.** `enable_live_trading` (meic/earnings),
+  flies' `live.enabled` and `live.gate0_confirmed` (a human attestation string), and the live
+  loss/deploy-limit fields cannot be changed from this surface — arming or de-risking live trading
+  stays on its existing deliberate path (`/live-flies-start`, hand-editing the live gates with the plan
+  doc open). The UI shows each locked field with a pointer to where it's actually changed; a direct API
+  call to the same pointer is refused server-side too.
+- **`--organize [target] [--apply]`** reorders a live config's top-level keys to match its
+  `config.example.json`'s section order — inserting the example's `*_header` markers, appending any
+  keys the example doesn't know about at the end, and changing no value. Dry-run by default; the applied
+  write goes through the same backup/atomic path as any other save. This is what brought every shipped
+  config (and this repo's `config.example.json` files) into the section layout above.
+
 ## Report & log files
 
 Deterministic per-session outputs (see [reporting-and-dashboard.md](reporting-and-dashboard.md)):

@@ -159,6 +159,20 @@ CREATE TABLE IF NOT EXISTS fly_snapshots (
     UNIQUE (iteration_ts, symbol)
 );
 CREATE INDEX IF NOT EXISTS idx_fly_snapshots_date ON fly_snapshots(trade_date);
+
+-- One row per symbol: the current auto-escalated streamer ATM-window width this loop is requesting,
+-- separate from the engine's own configured default. Written/read by stream_window.py, which widens
+-- this after repeated missing_leg_quotes refusals and decays it back down once they stop. Paper and
+-- live each have their own DB file, so their escalation state is naturally independent.
+CREATE TABLE IF NOT EXISTS fly_stream_window (
+    symbol                      TEXT PRIMARY KEY,
+    width                       INTEGER NOT NULL,
+    last_escalated_occurrences  INTEGER NOT NULL DEFAULT 0,
+    last_checked_occurrences    INTEGER NOT NULL DEFAULT 0,
+    last_escalated_at           TEXT,
+    last_miss_at                TEXT,
+    updated_at                  TEXT
+);
 """
 
 
@@ -187,17 +201,97 @@ _ADDED_POSITION_COLUMNS = {
     # simply leave them NULL -- the live ledger is a separate FILE (live_db_path), same schema.
     "entry_order_id": "TEXT",
     "completion_order_id": "TEXT",
+    # Rung-1: fill confirmation, distinct from "an order was placed" -- 'pending' | 'filled' |
+    # 'rejected' | 'cancelled'. A pending entry still blocks a second entry (it's the position at
+    # risk); a pending completion still leaves the position kind='short_vertical' until confirmed.
+    "entry_fill_status": "TEXT",
+    "completion_fill_status": "TEXT",
+    # Live settlement provenance: 'last_trade_provisional' (auto-settled from the stream's last
+    # trade at settle time) vs 'official' (a human re-settled with the official print). Paper rows
+    # leave it NULL -- paper's last-trade settlement is its documented, accepted approximation.
+    "settlement_source": "TEXT",
+    # Pre-close ITM exit (engine.evaluate_pre_close_exit): close_order_id/close_fill_status track
+    # the live closing order the same way entry/completion do ('pending' | 'filled' | 'rejected' |
+    # 'cancelled'); paper has no order to track and settles the position directly, so it only ever
+    # sets closed_before_expiry. That flag distinguishes "closed early to dodge assignment" from an
+    # ordinary cash settlement on BOTH paper and live rows -- same column, same meaning either way.
+    "close_order_id": "TEXT",
+    "close_fill_status": "TEXT",
+    "closed_before_expiry": "INTEGER",
+    # debit_first: the running-max counterfactual for an uncompleted long_vertical, mirroring
+    # best_completing_debit/best_debit_at above but in the opposite direction -- the best (highest)
+    # credit the completing sale was ever offered, so a miss can be read as "the market never paid
+    # enough" vs "our buffer was too tight" after the fact.
+    "best_completing_credit": "REAL",
+    "best_credit_at": "TEXT",
+    # Which completion path closed a legged entry out: 'debit' (bought the completing debit
+    # spread, kind -> 'fly') or 'iron' (sold the opposite-type credit spread, kind -> 'iron_fly').
+    # NULL for pre-2026-07-31 rows and for entries that are still open or never completed.
+    "completion_mode": "TEXT",
+    # Regime tagging (engine.classify_regime): a pure read of the snapshot at the two moments that
+    # matter for a future regime-conditioned mode selector -- what regime did we enter into, what
+    # regime did we complete into (they can differ). Descriptive only; nothing here gates a
+    # decision yet -- see engine.classify_regime's docstring. NULL for pre-2026-07-31 rows.
+    "entry_vol_bucket": "TEXT",
+    "entry_gex_bucket": "TEXT",
+    "entry_time_bucket": "TEXT",
+    "entry_skew_bucket": "TEXT",
+    "completion_vol_bucket": "TEXT",
+    "completion_gex_bucket": "TEXT",
+    "completion_time_bucket": "TEXT",
+    "completion_skew_bucket": "TEXT",
+    # bwb_roll: the far (skipped) wing's width, kept AFTER the roll for history/rewind (wing_width
+    # stays the near/protected width, unchanged by the roll). NULL for every other kind.
+    "far_width": "REAL",
+    "rolled_at": "TEXT",
+    "roll_debit": "REAL",
+    "roll_latency_min": "REAL",
+    "spot_at_roll": "REAL",
+    # Running MINIMUM roll debit ever seen for an open bwb -- mirrors best_completing_debit's
+    # counterfactual role: after the fact, "the roll was never cheap enough" vs "our buffer was
+    # too tight" call for opposite remedies.
+    "best_roll_debit": "REAL",
+    "best_roll_debit_at": "TEXT",
+    # Broker-cash reconciliation (fee_reconcile.py): a settled live position's net/fees/gross_pnl/
+    # pnl/expiry_payoff are modeled at settlement time (quoted fill-price approximation + a flat
+    # $5/ITM-contract assignment fee estimate). These columns hold that ORIGINAL modeled snapshot,
+    # written once the first time reconciliation runs, so overwriting the canonical columns below
+    # with broker-confirmed values never loses the model's own answer. NULL until reconciled; NULL
+    # forever on paper rows (nothing to reconcile against).
+    "modeled_net": "REAL",
+    "modeled_fees": "REAL",
+    "modeled_gross_pnl": "REAL",
+    "modeled_pnl": "REAL",
+    "modeled_expiry_payoff": "REAL",
+    "broker_reconciled_at": "TEXT",
+    # 'reconciled' (canonical columns now hold broker-confirmed values) | 'unmatched' (broker
+    # transactions couldn't be confidently tied to this position -- canonical columns left
+    # untouched, per the module's own honesty rule: don't silently guess). NULL = not attempted yet.
+    "broker_reconciliation_status": "TEXT",
+}
+
+_ADDED_BOOK_COLUMNS = {
+    "settlement_source": "TEXT",
+    # Book-level mirror of the position-level reconciliation above -- see fee_reconcile.py.
+    "modeled_pnl": "REAL",
+    "modeled_fees": "REAL",
+    "broker_reconciled_at": "TEXT",
+    "broker_reconciliation_status": "TEXT",
 }
 
 
 def _migrate(conn: sqlite3.Connection) -> list[str]:
     """Add any columns missing from an older paper DB. Returns what it added (for tests and logs)."""
-    existing = {r["name"] for r in conn.execute("PRAGMA table_info(fly_positions)")}
     added = []
-    for column, sql_type in _ADDED_POSITION_COLUMNS.items():
-        if column not in existing:
-            conn.execute(f"ALTER TABLE fly_positions ADD COLUMN {column} {sql_type}")
-            added.append(column)
+    for table, columns in (
+        ("fly_positions", _ADDED_POSITION_COLUMNS),
+        ("fly_books", _ADDED_BOOK_COLUMNS),
+    ):
+        existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for column, sql_type in columns.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+                added.append(f"{table}.{column}")
     if added:
         conn.commit()
     return added

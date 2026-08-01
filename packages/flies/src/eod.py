@@ -346,6 +346,99 @@ def build_eod_analysis(conn, day: str) -> str:
     return "\n".join(L)
 
 
+# --------------------------------------------------------------------------- live EOD
+def build_live_eod(live_conn, paper_conn, day: str) -> str:
+    """The LIVE day's metrics file — deliberately terse, and honest about provenance: every
+    settlement line names its source (last_trade_provisional vs official), and the live-vs-paper
+    section carries the plan doc's abort rule so the pilot's central measurement is on paper
+    (the kind you read), not a manual chore."""
+    import analytics
+
+    books = analytics.books_for_day(live_conn, day)
+    positions = analytics.positions_for_day(live_conn, day)
+    arm = books[0]["arm"] if books else (positions[0]["arm"] if positions else "gex")
+    lvp = analytics.live_vs_paper(live_conn, paper_conn, arm)
+
+    L = [f"# Flies LIVE EOD — {day}", ""]
+    L.append("_Real-money ledger (live_trades.db). Not paper; excluded from every promotion reading._")
+    L.append("")
+
+    L.append("## Book")
+    if not books:
+        L.append("- No live book rows for this day.")
+    for b in books:
+        src = b.get("settlement_source") or ("unsettled" if b["status"] != "settled" else "?")
+        pnl = _money(b.get("pnl")) if b.get("pnl") is not None else "n/a"
+        L.append(
+            f"- **{b['book_id']}** — {b['status']} (settlement: {src}), P&L {pnl}, "
+            f"credit {_money(b.get('credit_collected'))}, debits {_money(b.get('debits_paid'))}, "
+            f"fees {_money(b.get('fees'))}"
+        )
+        if b.get("settlement_source") == "last_trade_provisional":
+            L.append(
+                "  - PROVISIONAL — confirm with "
+                f"`python src/live_loop.py --settle --price <official print> --date {day}`"
+            )
+    L.append("")
+
+    L.append("## Positions")
+    if not positions:
+        L.append("- none")
+    else:
+        L.append("| id | kind | center | W | credit | debit | fees | floor | P&L | fills |")
+        L.append("|---|---|---|---|---|---|---|---|---|---|")
+        for p in positions:
+            fills = f"{p.get('entry_fill_status') or '-'}/{p.get('completion_fill_status') or '-'}"
+            L.append(
+                f"| {p['position_id']} | {p['kind']} | {_num(p['center'], 0)} | {_num(p['wing_width'], 0)} "
+                f"| {_num(p.get('credit'), 2)} | {_num(p.get('debit'), 2)} | {_money(p.get('fees'))} "
+                f"| {_money(p.get('floor_dollars'))} | {_money(p.get('pnl'))} | {fills} |"
+            )
+    L.append("")
+
+    L.append("## Live vs contemporaneous paper (the pilot's instrument)")
+    lv, pp = lvp["live"], lvp["paper"]
+    L.append(
+        f"- Live: {lv['completed']}/{lv['entries']} completed ({_pct(lv['completion_rate'])}) over "
+        f"{lv['sessions']} session(s); median latency {_num(lv['median_latency_min'], 0)} min; "
+        f"avg credit {_num(lv['avg_credit'], 2)}, avg completion debit {_num(lv['avg_completion_debit'], 2)}"
+    )
+    L.append(
+        f"- Paper (same arm, same sessions): {pp['completed']}/{pp['entries']} completed "
+        f"({_pct(pp['completion_rate'])}); median latency {_num(pp['median_latency_min'], 0)} min; "
+        f"avg credit {_num(pp['avg_credit'], 2)}, avg completion debit {_num(pp['avg_completion_debit'], 2)}"
+    )
+    ab = lvp["abort_rule"]
+    gap = lvp["completion_gap"]
+    if ab["triggered"]:
+        L.append(
+            f"- **ABORT RULE TRIGGERED**: live completion runs {_pct(gap)} below paper with "
+            f"{lv['entries']} live entries (limit {_pct(ab['gap_limit'])} at ≥{ab['min_live_entries']}). "
+            "Per docs/live-trading-plan.md: halt the pilot — paper's upper bound is not achievable."
+        )
+    elif ab["armed"]:
+        L.append(
+            f"- Abort rule ARMED ({lv['entries']} ≥ {ab['min_live_entries']} live entries): "
+            f"completion gap {_pct(gap)} vs limit {_pct(ab['gap_limit'])} — within bounds."
+        )
+    else:
+        L.append(
+            f"- Abort rule not yet armed: {lv['entries']}/{ab['min_live_entries']} live entries "
+            f"accrued (current completion gap {_pct(gap) if gap is not None else 'n/a'})."
+        )
+    L.append("")
+    return "\n".join(L)
+
+
+def write_live_report(live_conn, paper_conn, day: str, directory: Path | None = None) -> dict:
+    """Write live-eod-<day>.md. Overwrites — the official-print re-settle should refresh it."""
+    directory = directory or logs_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"live-eod-{day}.md"
+    path.write_text(build_live_eod(live_conn, paper_conn, day), encoding="utf-8")
+    return {"ok": True, "day": day, "live_eod": str(path)}
+
+
 # --------------------------------------------------------------------------- writers
 def write_reports(conn, day: str, directory: Path | None = None) -> dict:
     """Write both files for `day`. Overwrites — a re-run after a late settle should refresh them."""

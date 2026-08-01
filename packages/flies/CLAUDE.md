@@ -40,9 +40,11 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `src/section.py` | the compact `cherrypick.core.viz` card for the suite dashboard. |
 | `src/eod.py` | `paper-eod-<day>.md` and `eod-analysis-<day>.md`. |
 | `src/cli.py` | `once` / `settle` / `status` / `dashboard` / `section`. |
-| `src/live_loop.py` | LIVE scaffold, inert by default — gated on Gate 0 of the live plan. `--once --dry-run` is the rung-0 smoke. |
+| `src/live_loop.py` | The LIVE loop: 1-min self-healing tick (`--once --live`, per-day arming via `/live-flies-start`, self-disarms at `live.disarm_time`) + burst fill-watchers (`--watch-fills`). `--once` (dry-run default) is the rung-0 smoke; `--status`, `--settle --price` for the official print. |
 | `src/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. |
 | `src/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). |
+| `src/alert_daemon.py` | Optional order-alert daemon: one tastytrade account-alert websocket for the trading day, started on arm / stopped on disarm. Decides nothing — appends to the inbox below so fills are *noticed* sooner. |
+| `src/alerts_db.py` | The WAL-mode alert inbox (`live_alerts.db`), separate from the ledger on purpose — 1 writer (daemon), N readers (tick, watcher). |
 | `src/credentials.py` | `fliesagent` keyring store + hidden-input CLI (orchestrator `connect` delegates here). |
 | `tests/fixtures/books.json` | three real tastytrade order chains, transcribed. |
 
@@ -166,6 +168,60 @@ comparison measures one variable rather than a bundle of confounded changes.
 - `wide_wing` — the SPX-era single-point version of the width question (a 20-point wing bracketing
   the observed drift). **Disabled** since the sweep; kept in `ARMS` so its books' attribution stays
   readable. On XSP its scaled equivalent (~2 points) is exactly `width-2`.
+- `debit-first` — control's twin isolating the **legging order**, added 2026-07-31 (`entry_modes:
+  ["debit_first"]`, `fly.debit_vertical_payoff`/`engine.evaluate_debit_vertical_entry`/
+  `evaluate_debit_completion`). `legged` sells the credit spread first and buys the completing
+  debit spread cheaper once spot drifts *away* from the short strike; this arm buys the debit
+  vertical first and completes by *selling* the credit spread once spot drifts back *toward* the
+  centre — literally `legged`'s two trades in the opposite order, monetizing the opposite drift
+  regime at the same centre. Its uncompleted branch is structurally different too: a long
+  vertical's worst case at expiry is the debit already paid (bounded, floor never below `-debit`),
+  never the `-W` full-defined-risk tail an uncompleted credit spread carries.
+- `iron` — control's twin isolating the **completion choice**, added 2026-07-31
+  (`completion_modes: ["debit", "iron"]`, `fly.iron_fly_payoff`/`engine.evaluate_iron_completion`).
+  `legged`'s completion always buys the same-type debit spread; this arm may instead complete by
+  *selling* the opposite-type credit spread (put held -> sell call, or vice versa), producing an
+  **iron butterfly** — the same geometry regardless of which side was legged first. Payoff-
+  equivalent to a same-type fly shifted down by `wing_width`, so it is **not** automatically
+  risk-free the way a completed fly is: the floor is genuinely `(credit1 + credit2 - wing_width) *
+  100 * qty - fees`, which can land negative even after both gates pass their price check, and
+  `position_floor`'s `iron_fly` branch never assumes otherwise. When both completion paths clear
+  their gates on the same iteration, the position takes whichever leaves the higher post-fee
+  floor. `completion_modes` defaults to `["debit"]` everywhere else, so no other arm's behavior
+  changes.
+- `bwb` — control's twin isolating the **entry construction**, added 2026-07-31 (`entry_modes:
+  ["bwb_roll"]`, kind `bwb`, `fly.bwb_payoff`/`fly.bwb_strikes`/`engine.evaluate_bwb_entry`/
+  `evaluate_roll`). Instead of legging in over two ticks, enters a broken-wing butterfly WHOLE for
+  a net credit: a near/protected wing at the usual `wing_width` and a far/wide wing at
+  `wing_width * bwb_far_width_ratio` (a ratio, not an absolute point value, so it scales
+  automatically with whatever `wing_width` an arm or symbol is already using — the common
+  real-world near:far rule of thumb is roughly 1:2). Until rolled, this carries REAL, negative
+  tail risk of `wing_width - far_width` that `fly.position_floor`'s `bwb` branch never reports as
+  bounded — the entry credit is priced as rent for that tail, not against `wing_width` the way
+  `legged`'s credit gates are. The roll buys the near strike and sells the held far strike (a
+  2-leg debit vertical of width `far_width - wing_width`), converting the position to an ordinary
+  symmetric fly once it clears its own price and floor gates — bringing the far wing back to
+  exactly `1.0x wing_width`. Researched trap (see `docs/faq.md`): the roll cheapens under exactly
+  the drift that makes the position profitable, and balloons past the credit precisely when the
+  tail is threatened — this arm measures whether that trade-off is actually survivable, not just
+  theoretically credit-positive.
+
+**Regime tagging (`engine.classify_regime`, added 2026-07-31).** Every entry and completion, across
+every arm, is tagged along four dimensions read purely from the snapshot in hand — `vol_bucket`
+(ATM straddle/spot), `gex_bucket` (per-strike gamma concentration, `"unknown"` when no OI cache
+exists yet, same honest degrade as the `gex` arm's own centring), `time_bucket` (open/midday/close),
+`skew_bucket` (OTM put vs. OTM call price at the exact strikes this module trades — a direct read of
+whether the chain itself is pricing in a direction). This is deliberately inert: nothing here gates a
+decision. It exists because the eventual goal is a live/paper mode that evaluates every eligible
+entry candidate (`legged`/`debit_first`/`bwb_roll`) and completion candidate (`debit`/`iron`) each
+tick and executes whichever wins *for the current regime* — Phase 1b's iron-vs-debit "take the
+higher floor" dispatch in `book.py` is already a working prototype of that pattern, generalized. That
+selector needs regime-labelled real outcomes to be built from, not guessed at, and the tag definition
+is expensive to change retroactively once data is accumulating — so it ships now, before `bwb_roll`
+adds a third entry mode to tag. Every threshold is a placeholder pending recalibration once real
+sessions exist, same honesty framing as every other gate. Deliberately excludes trend/chop: that
+needs a reference point in time no single snapshot carries, and guessing at that plumbing before
+there's a reason to would be the same mistake rule 6 warns against.
 
 **A global position cap does not make a multi-window arm test its windows.** `max_positions` alone let
 the book fill in the first window: over 07-20…07-24 `time_window` put 15 of its 16 legged entries in
@@ -190,17 +246,90 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    number that decides whether this strategy is real.
 5. **No adjustments after establishment.** No stops, no wing moves — hold to cash settlement. v1 is
    measuring a base rate, and an adjustment rule tuned before a single completion rate exists would be
-   fitting noise.
+   fitting noise. **One narrow, mechanical exception** (added 2026-07-30, applies to both paper and
+   live, and to both a completed fly and a still-open short vertical): `engine.evaluate_pre_close_exit`
+   closes any ITM leg in the closing minutes (`pre_close_exit_time`, default 15:50) whenever doing so
+   costs less than the $5-per-ITM-strike exercise-assignment fee it would otherwise incur overnight — a cost
+   comparison, not a P&L-driven stop or a strategy adjustment tuned on the session's own data. For a
+   fly this is pure fee avoidance (the payoff is already bounded); for a vertical it stops the fee from
+   stacking on top of a loss the position is already realizing. A vertical is only ever considered once
+   its own entry has confirmed and any resting completion order is gone, so it never races a working
+   order.
+
+   **Two measured limitations of this exception (2026-07-31), both left as findings rather than
+   tuned away.** First, it evaluates against the *intraday* spot at 15:50-15:59 but the fee is
+   decided by the *settlement* print, and the closing auction moves that print: across 9 paper
+   sessions, **23 of 194 settled positions (11.9%)** had their ITM-leg count change between the
+   last look and settlement (median drift 0.17, max 5.52; net **+$80** of fees paid that the last
+   look didn't predict). On 2026-07-31 — a month-end Friday, when auctions are largest — the live
+   749 fly looked safely OTM at 15:59 (spot 750.46) and settled ITM at 748.97. This is
+   irreducible: the exit must act before a number that doesn't exist until after. Widening the ITM
+   test with a buffer would trade a *certain* slippage cost for an *uncertain* fee saving, which
+   the second finding says is a losing trade.
+   Second, **paper and live disagree sharply about whether closing is even worth it.** Paper has
+   fired this exit **34 times in 228 settled positions**, refusing on cost only 7 times; live has
+   fired it **0 times in 6**, refusing on cost every single time (slippage $54-104 against a
+   $15-20 fee). Paper's modeled slippage materially understates what closing a 0DTE fly actually
+   costs in the last ten minutes, so **paper results that include pre-close exits are not
+   representative of live** — read that arm's paper P&L with this specifically in mind.
 6. **If the floor comes out negative after fees, that is the finding.** The answer is to stop, not to
    loosen `fee_buffer` until the numbers look better.
 
 ## Guardrails (suite-wide)
 
-- Paper only. SPX/XSP only — both European cash-settled, so assignment is structurally impossible and
-  there is no early-exercise machinery to get wrong.
+- Paper by default; live is a deliberately narrow, per-day-armed pilot (one arm, one symbol, one
+  incomplete position at a time — see `live_loop.py` and docs/live-trading-plan.md). SPX/XSP only —
+  both European cash-settled, so EARLY exercise is structurally impossible and there is no
+  early-exercise machinery to get wrong. Cash exercise/assignment at expiry is NOT impossible,
+  though, and is not free: tastytrade charges **$5 per ITM STRIKE** — one charge per distinct
+  option symbol that settles, *not* per contract and *not* scaled by quantity — the next business
+  day. Modeled throughout (`fly.expire_fee`, `fly.itm_legs_at_settlement`) and the reason
+  `engine.evaluate_pre_close_exit` exists at all.
+  **Corrected 2026-07-31.** This was modeled as $5/contract until real transactions disproved it:
+  a 2-contract XSP put leg was charged **$5.00, not $10.00** (`XSP 260730P00744000`, qty 2,
+  `clearing_fees -5.00`), alongside a 1-contract leg also at $5.00. So a butterfly's doubled centre
+  is ONE settlement event, and a completed fly pays at most 3 charges (its distinct strikes), never
+  4 (its contracts). The old model over-charged every settled fly with an ITM centre; both ledgers
+  were re-settled through the corrected math. `fee_reconcile` now compares modeled vs real fee
+  **per settlement symbol**, not just as an aggregate P&L delta — the aggregate is what let this
+  hide as ~$12 of apparent slippage noise for a day.
 - **No AI, no MCP, and no network on any decision path.** `fly.py` and `engine.py` are pure functions
   over a pre-fetched snapshot. Learning happens offline in the orchestrator's read side (`report`,
   `calibrate`, `eod-insight`) over closed rows — never inside the loop.
+- **The streamer comes before API calls** whenever practical, for efficiency or latency: all pricing
+  reads the shared stream cache, and cached quotes GATE broker calls (a resting entry order is only
+  cancelled/replaced when the cached evaluation moved; fill-status polls fire only when cached quotes
+  touch the working limit, plus a slow heartbeat). The broker API is only for acting (place/cancel)
+  and for confirming what only it can know — a fill. Applies to all future live work in this module.
+  **One narrow, deliberate exception** (added 2026-07-30 after a live entry was rejected by the
+  broker's real-time execution-quality check on a cached price its own preflight dry-run never
+  flagged): immediately before submitting a live entry — never on the per-tick decision path, never
+  in paper — `live_orders.entry_fresh_reprice` re-fetches both legs once via a plain REST market-data
+  call (`broker_cli.fresh_option_quotes`, no streaming session) and submits at that fresh price,
+  or skips the entry this tick if it's unavailable or has moved against us beyond
+  `live.fresh_quote_tolerance_dollars`. The decision of *whether/what* to enter is still 100%
+  cache-driven; only the final submitted price gets a last-second freshness correction, at the exact
+  moment the broker is already about to be touched anyway.
+  **A second, independent exception** (added 2026-07-31, `live.use_order_alert_stream`, off by
+  default): the burst fill-watcher may additionally block on tastytrade's own account-alert
+  websocket (`AlertStreamer` — order/balance/position pushes, a completely separate stream from
+  the shared market-data cache above) for a PUSH notification of a fill, instead of only sleeping
+  on a fixed poll interval. This is still squarely "confirming what only the broker can know" —
+  it never informs a decision, only how quickly a fill is *noticed* — and it fails closed to the
+  exact same cache-gated poll behavior on any websocket/auth error. See `run_watch`'s docstring.
+  **The daemon form of the same thing** (added 2026-07-31, `live.use_order_alert_daemon`, off by
+  default, supersedes the per-burst flag when both are on): rather than the watcher opening a
+  websocket per cycle, `src/alert_daemon.py` holds ONE account-alert connection for the trading
+  day and appends alerts to a WAL-mode inbox (`src/alerts_db.py`,
+  `data/flies/live_alerts.db`), which the watcher reads as a local query. Deliberately a
+  **separate database** from `live_trades.db`: that ledger's concurrency was tuned for exactly two
+  short-burst, file-locked writers (the tick and the watcher), and a third persistent writer would
+  stack onto it — the inbox is the 1-writer/N-reader shape WAL exists for, so the ledger's writers
+  are untouched. The daemon is **started on arm and stopped on disarm** (not an always-on
+  watchdog-supervised service like `packages/streamer`), self-exits at `disarm_time`, decides
+  nothing, places nothing, and never writes the ledger. This module's no-resident-daemon rule still
+  holds where it matters: the daemon is an accelerator only — if it dies, stalls, or was never
+  started, the heartbeat poll and `run_once`'s once-a-minute re-poll still confirm every fill.
 - Credentials in the OS keyring only. Account numbers masked to `****1234`.
 - Portable paths only; scratch work in `.tmp/`. Human-voice docs and commits, no AI attribution.
 - Instruction files hold no code.
@@ -208,7 +337,7 @@ These are the constraints the module exists to enforce. Breaking one makes the n
 ## Status
 
 **Complete and tested:** decision engine, floor accounting, paper DB, snapshot provider, session
-driver, CLI, and the orchestrator `fly_book` wiring across all four schema registries. 185 tests,
+driver, CLI, and the orchestrator `fly_book` wiring across all four schema registries. 300 tests,
 including a provider suite built against the real `cherrypick.core.streamcache` DDL so an upstream
 schema change fails here rather than silently producing empty snapshots. The package runs in CI (its
 own cell in the `.github/workflows/ci.yml` matrix, `ruff` + `pytest` on every push and PR).

@@ -1,5 +1,9 @@
 # MEIC Entry Gates & Constraints
 
+**What this covers:** every checkpoint a potential trade has to pass before MEIC will actually
+enter it — the full list, in the order they're checked. Part of the [MEIC module](README.md) in
+the cherrypick suite.
+
 Complete reference of all gates, blocks, and constraints that control IC and ORB entry decisions in the
 cherrypick **MEIC** engine. See also [docs/](docs/README.md) for the strategy and operating guides, and
 the suite-wide [documentation index](../../docs/README.md).
