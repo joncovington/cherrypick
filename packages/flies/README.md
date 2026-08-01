@@ -145,7 +145,7 @@ sessions, raw P&L is mostly noise, and leading with it invites the wrong conclus
 Every number reported is already net of realistic commissions/fees plus a modeled slippage
 haircut (the same cost model MEIC and earnings use). A legged butterfly pays two full fee
 stacks against a credit that's often only $35–105, so costs here aren't a rounding error — they
-are a central part of what this module is measuring. That includes the $5/contract
+are a central part of what this module is measuring. That includes the $5-per-ITM-strike
 exercise-assignment fee tastytrade charges overnight on any leg that finishes ITM — see
 [docs/faq.md](docs/faq.md) for why that cost (not fee size on its own) rules out trading
 SPY, or futures options on /ES or /MES, instead of SPX/XSP.

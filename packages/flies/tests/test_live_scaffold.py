@@ -302,7 +302,9 @@ def test_official_settlement_price_prefers_tastytrade(monkeypatch):
     monkeypatch.setattr(broker_cli, "_barchart_index_price", lambda s: (_ for _ in ()).throw(AssertionError))
 
     price, source = asyncio.run(broker_cli.official_settlement_price(object(), "XSP"))
-    assert price == 743.76 and source == "tastytrade"
+    # A posted CLOSE is the one genuinely-official reading -- tagged as such, and neither web
+    # fallback is consulted (both raise if touched).
+    assert price == 743.76 and source == "tastytrade_close"
 
 
 def test_official_settlement_price_falls_back_to_last_or_mark_when_close_is_unset(monkeypatch):
@@ -318,8 +320,35 @@ def test_official_settlement_price_falls_back_to_last_or_mark_when_close_is_unse
         return [Row(close=None, last=None, mark=743.76)]  # close not posted yet
 
     monkeypatch.setattr(md, "get_market_data_by_type", fake_get_market_data_by_type)
+    # With no posted close, the web sources (whose post-close quote IS the closing print) are
+    # preferred over tastytrade's intraday mark...
+    monkeypatch.setattr(broker_cli, "_yahoo_index_price", lambda s: 744.10)
     price, source = asyncio.run(broker_cli.official_settlement_price(object(), "XSP"))
-    assert price == 743.76 and source == "tastytrade"
+    assert price == 744.10 and source == "yahoo"
+
+
+def test_official_settlement_price_marks_an_intraday_tick_provisional(monkeypatch):
+    """...and if NOTHING authoritative answers, the intraday mark is still returned (better than
+    no settlement at all) but tagged provisional, so `session_officially_settled` stays False and
+    the loop keeps retrying. Before 2026-07-31 this was stamped 'official' and stopped the retry."""
+    from tastytrade import market_data as md
+
+    import broker_cli
+
+    class Row:
+        def __init__(self, close=None, last=None, mark=None):
+            self.close, self.last, self.mark = close, last, mark
+
+    async def fake_get_market_data_by_type(session, indices=None, **kw):
+        return [Row(close=None, last=750.46, mark=None)]
+
+    monkeypatch.setattr(md, "get_market_data_by_type", fake_get_market_data_by_type)
+    monkeypatch.setattr(broker_cli, "_yahoo_index_price", lambda s: None)
+    monkeypatch.setattr(broker_cli, "_barchart_index_price", lambda s: None)
+    price, source = asyncio.run(broker_cli.official_settlement_price(object(), "XSP"))
+    assert price == 750.46
+    assert source == "tastytrade_last_provisional"
+    assert not live_loop._is_official_source(source)
 
 
 def test_official_settlement_price_falls_back_to_yahoo_then_barchart(monkeypatch):
@@ -1708,12 +1737,34 @@ def test_settle_auto_fetches_official_price_and_skips_provisional_entirely(live_
         raise AssertionError("must not read the stream cache when the broker already answered")
 
     monkeypatch.setattr(providermod, "read_spot", boom)
-    broker = FakeBroker(official_price=(7495.5, "tastytrade"))
+    broker = FakeBroker(official_price=(7495.5, "tastytrade_close"))
     out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", broker=broker)
-    assert out["ok"] and out["source"] == "official"
+    # The stored source keeps WHICH source answered, rather than flattening to a bare "official"
+    # -- it still counts as official (see live_loop._OFFICIAL_SOURCES), but the provenance is
+    # recoverable from the ledger afterwards.
+    assert out["ok"] and out["source"] == "tastytrade_close"
+    assert live_loop._is_official_source(out["source"])
     assert broker.official_settlement_calls == ["SPX"]
     pos = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert pos["settlement_source"] == "official"
+    assert pos["settlement_source"] == "tastytrade_close"
+
+
+def test_settle_keeps_retrying_when_only_an_intraday_tick_is_available(live_conn, monkeypatch):
+    """The 2026-07-31 case: tastytrade's `close` never posted, so the fetch could only offer an
+    intraday `last`. That settles the book (better than nothing) but must NOT be called official,
+    and must leave `session_officially_settled` False so the next tick tries again."""
+    import provider as providermod
+
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
+    )
+    monkeypatch.setattr(providermod, "read_spot", lambda *a, **kw: None)
+    broker = FakeBroker(official_price=(7504.6, "tastytrade_last_provisional"))
+    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", broker=broker)
+    assert out["ok"] and out["source"] == "tastytrade_last_provisional"
+    assert not live_loop._is_official_source(out["source"])
+    assert not live_loop.session_officially_settled(live_conn, DAY)
 
 
 def test_settle_falls_back_to_provisional_when_broker_fetch_is_unavailable(live_conn, monkeypatch):
@@ -1746,10 +1797,13 @@ def test_settle_retries_broker_fetch_on_a_still_provisional_book_and_upgrades(li
 
     broker2 = FakeBroker(official_price=(7494.0, "yahoo"))
     out2 = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", broker=broker2)
-    assert out2["ok"] and out2["source"] == "official"
+    # Yahoo's post-close quote IS the closing print, so it upgrades the book to official -- and
+    # the stored source records that it was yahoo, not a generic "official".
+    assert out2["ok"] and out2["source"] == "yahoo"
+    assert live_loop._is_official_source(out2["source"])
     assert broker2.official_settlement_calls == ["SPX"]
     pos = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert pos["settlement_source"] == "official"
+    assert pos["settlement_source"] == "yahoo"
 
 
 def test_settle_never_calls_broker_once_already_official(live_conn, monkeypatch):

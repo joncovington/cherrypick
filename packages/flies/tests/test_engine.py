@@ -544,9 +544,10 @@ def test_pre_close_exit_refuses_without_leg_quotes():
 def test_pre_close_exit_closes_when_cheaper_than_the_assignment_fee():
     close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_snapshot(), open_fly(), params())
     assert close and reason == "ok"
-    # centre (x2, ITM since spot < 6000) + upper wing (ITM since spot < 6005) = 3 contracts
-    assert plan["itm_contracts"] == 3
-    assert plan["assignment_fee"] == 15.0
+    # centre (ITM since spot < 6000) + upper wing (ITM since spot < 6005) = 2 settlement events
+    # (the doubled centre is ONE symbol, charged once -- corrected 2026-07-31 against real fills)
+    assert plan["itm_legs"] == 2
+    assert plan["assignment_fee"] == 10.0
     assert plan["close_credit"] == pytest.approx(3.0)  # zero-spread quotes: no slippage haircut
     assert plan["slippage_cost"] < plan["assignment_fee"]
     assert plan["lower_strike"] == 5995 and plan["upper_strike"] == 6005
@@ -577,7 +578,7 @@ def test_pre_close_exit_closes_an_itm_vertical_when_cheaper_than_the_assignment_
         _itm_close_vertical_snapshot(), open_spread(), params()
     )
     assert close and reason == "ok"
-    assert plan["itm_contracts"] == 1  # only the short centre leg is ITM; the protective long isn't
+    assert plan["itm_legs"] == 1  # only the short centre leg is ITM; the protective long isn't
     assert plan["assignment_fee"] == 5.0
     assert plan["close_debit"] == pytest.approx(2.0)  # zero-spread quotes: no slippage haircut
     assert plan["slippage_cost"] < plan["assignment_fee"]
@@ -787,7 +788,7 @@ def test_settle_sign_is_not_flipped_for_an_uncompleted_long_vertical():
     positions = [{**open_debit_vertical(debit=1.0, fees=0.0), "entry_mode": "debit_first"}]
     settled = engine.settle(positions, 6010.0)  # deep ITM through both call legs
     assert settled[0]["expiry_payoff"] == pytest.approx(5.0)
-    # (net + payoff) * 100 = (-1.0 + 5.0) * 100 = 400, less the 2-ITM-leg assignment fee
+    # (net + payoff) * 100 = (-1.0 + 5.0) * 100 = 400, less the 2-ITM-strike assignment fee
     assert settled[0]["pnl"] == pytest.approx(400.0 - fly.expire_fee(2))
 
 
@@ -807,7 +808,7 @@ def test_pre_close_exit_closes_an_itm_long_vertical_when_slippage_beats_the_fee(
     )
     assert close and reason == "ok"
     assert plan["close_credit"] > 0
-    assert plan["itm_contracts"] == 2
+    assert plan["itm_legs"] == 2
 
 
 def test_pre_close_exit_long_vertical_before_the_window_refuses():
@@ -911,7 +912,7 @@ def test_pre_close_exit_closes_an_itm_iron_fly_when_slippage_beats_the_fee():
     }
     close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_iron_snapshot(), pos, params())
     assert close and reason == "ok"
-    assert plan["itm_contracts"] == 2  # both call legs ITM past 6005
+    assert plan["itm_legs"] == 2  # both call strikes ITM past 6005 (distinct symbols, so still 2)
 
 
 # --------------------------------------------------------------------------- bwb_roll (Phase 2)
@@ -1003,7 +1004,7 @@ def test_settle_bwb_across_near_centre_and_tail():
     assert settled[0]["pinned"] is False  # pin is a symmetric-fly concept; never true for a bwb
     settled = engine.settle([pos], 5980.0)  # deep past the far wing
     assert settled[0]["expiry_payoff"] == pytest.approx(-5.0)  # tail = wing_width - far_width
-    assert settled[0]["itm_contracts"] == 4
+    assert settled[0]["itm_legs"] == 3  # 3 distinct strikes, not 4 contracts
 
 
 def _itm_close_bwb_snapshot(**over):
@@ -1021,8 +1022,8 @@ def test_pre_close_exit_on_a_bwb_can_have_a_negative_close_credit():
     arithmetic must still hold and the comparison against the assignment fee still apply."""
     close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_bwb_snapshot(), open_bwb(), params())
     assert plan is not None
-    assert plan["itm_contracts"] == 4
-    # Whether it actually fires depends on slippage vs the $20 assignment fee (4 contracts); the
+    assert plan["itm_legs"] == 3
+    # Whether it actually fires depends on slippage vs the $15 assignment fee (3 strikes); the
     # arithmetic (a real, possibly negative close_credit) is what this test guards.
     if close:
         assert reason == "ok"
@@ -1096,15 +1097,15 @@ def test_settle_marks_pins_and_pnl():
     settled = engine.settle(positions, 6001.0)
     assert settled[0]["pinned"] is True
     # (1.05 + 4.00) * 100 = 505, less a $5 exercise fee (only the upper wing, 6005, is ITM at 6001)
-    assert settled[0]["itm_contracts"] == 1
+    assert settled[0]["itm_legs"] == 1
     assert settled[0]["fees"] == pytest.approx(5.0)
     assert settled[0]["pnl"] == pytest.approx(500.0)
     assert settled[1]["pinned"] is False
-    # -0.20 * 100 = -20, less a $20 exercise fee (6001 is beyond every strike of the 6100 fly, so
-    # all 4 contracts are ITM even though the fly's own payoff is 0 there)
-    assert settled[1]["itm_contracts"] == 4
-    assert settled[1]["fees"] == pytest.approx(20.0)
-    assert settled[1]["pnl"] == pytest.approx(-40.0)
+    # -0.20 * 100 = -20, less a $15 exercise fee (6001 is beyond every strike of the 6100 fly, so
+    # all 3 STRIKES settle ITM -- the doubled centre is one symbol charged once, not two)
+    assert settled[1]["itm_legs"] == 3
+    assert settled[1]["fees"] == pytest.approx(15.0)
+    assert settled[1]["pnl"] == pytest.approx(-35.0)
 
 
 def test_settle_raises_on_unknown_kind():

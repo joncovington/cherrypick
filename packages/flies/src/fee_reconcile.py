@@ -138,7 +138,10 @@ def reconcile_date(conn, trade_date: str, symbol: str, transactions: list[dict],
             (trade_date, symbol),
         ).fetchall()
     ]
-    result = {"trade_date": trade_date, "symbol": symbol, "reconciled": [], "unmatched": [], "variance": []}
+    result = {
+        "trade_date": trade_date, "symbol": symbol,
+        "reconciled": [], "unmatched": [], "variance": [], "fee_variance": [],
+    }
     if not positions:
         return result
 
@@ -198,6 +201,37 @@ def reconcile_date(conn, trade_date: str, symbol: str, transactions: list[dict],
         conn.commit()
         result["reconciled"].append(position["position_id"])
         delta = round(real_pnl - (modeled_pnl or 0.0), 2)
+
+        # Per-SYMBOL settlement-fee comparison, not just the aggregate P&L delta. The 2026-07-31
+        # per-contract-vs-per-event bug surfaced only as a ~$12 aggregate delta that read as
+        # ordinary slippage noise; "modeled $10.00 vs real $5.00 on ONE symbol" is unambiguous.
+        # This is the check that would catch any future re-definition of the fee -- including
+        # whether it starts scaling with quantity at sizes larger than the 1-2 contracts the
+        # current flat-per-event model was verified against.
+        modeled_per_event = fly.expire_fee(1)
+        fee_variance = []
+        for txn in settlement_txns:
+            real_fee = round(_fee_total(txn), 2)
+            if real_fee <= 0:
+                continue  # an OTM expiration line carries no fee; nothing to compare
+            if abs(real_fee - modeled_per_event) > 0.01:
+                fee_variance.append(
+                    {
+                        "position_id": position["position_id"],
+                        "symbol": txn.get("symbol"),
+                        "quantity": txn.get("quantity"),
+                        "modeled_fee": modeled_per_event,
+                        "real_fee": real_fee,
+                    }
+                )
+        for v in fee_variance:
+            log(
+                f"fee_reconcile FEE-MODEL WARN: {v['position_id']} {v['symbol']} "
+                f"(qty {v['quantity']}) modeled ${v['modeled_fee']:.2f} vs real ${v['real_fee']:.2f} "
+                f"-- the per-settlement-event fee model may no longer match the broker"
+            )
+        result["fee_variance"].extend(fee_variance)
+
         result["variance"].append(
             {"position_id": position["position_id"], "modeled_pnl": modeled_pnl, "broker_pnl": real_pnl, "delta": delta}
         )
