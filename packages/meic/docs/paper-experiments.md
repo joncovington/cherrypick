@@ -6,6 +6,17 @@ and [risk-profiles.md](risk-profiles.md) for the risk-profile ladder it's built 
 
 # Paper-trading experiment cells (account-size study)
 
+> **2026-08-01 — symbols narrowed to SPX, registry narrowed to two rungs.** `symbols` is now
+> `["SPX"]`, dropping XSP and QQQ. That ends the deliberate cash-vs-physical settlement pairing
+> chosen on 2026-07-28 (QQQ was the physically-settled half) — accepted because no MEIC session has
+> recorded a trade since 07-28, so nothing was actually accumulating on that axis. The reason for the
+> move is fee drag: the flat $5-per-ITM-strike settlement fee and the per-contract commission stack
+> are near-constant in dollars while credit scales with the underlying, so a $7,500 index carries them
+> far better than a $750 one. `aggressive` and the four `width-*` arms were disabled the same day
+> (see `config.risk.json`); only `conservative` and `moderate` still run. Eight profiles across two
+> symbols was sixteen portfolios competing for the same ticks — more books than any of them was
+> answering a question about.
+
 > ## Retired 2026-07-18 — resumed 2026-07-28 as the wing-width study
 >
 > **The 15 experiment cells described below were removed from `config.risk.json`** because each one
