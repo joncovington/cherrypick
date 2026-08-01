@@ -2,7 +2,7 @@
   "_description": "Named risk-profile overrides for config.json \u2014 the four-tier risk LADDER, applied by /set-risk-profile. See docs/risk-profiles.md for the full design rationale (what the ladder's axis is, why its thresholds are profile-relative, and why trade count is deliberately not a ladder dimension), and GATES.md for the gate-by-gate catalog.",
   "_ladder_note": "The ladder is the ONLY profile registry now. Its axis is RISKIER TRADES, not more trades: climbing a rung loosens entry quality (IV floor, credit floor, short-call delta, OTM distance) and is offset by fewer concurrent positions and a tighter stop. Trade count is therefore flat across rungs (daily_ic_trade_target = 2 everywhere, always <= max_concurrent_ics). Thresholds that used to be shared absolutes are now derived per profile from its own min_iv_rank and credit floor (low_iv_credit_floor_iv_rank_offset, low_iv_credit_relief_multiple, late_entry_bias_iv_rank_offset in config.json) \u2014 a shared absolute silently flattened the ladder, see docs/risk-profiles.md. In reporting, one PORTFOLIO is formed per (profile x symbol) pair, each with its own max_concurrent_ics and daily-target budget.",
   "_removed_note": "The 15 symbol/wing/credit experiment cells (small-/medium-/large-/explore-) were removed on 2026-07-18 pending a rethink; they are recoverable from git history. They pinned a symbol and wing per cell, which conflicted with the (profile x symbol) portfolio model where the symbol is its own axis. Re-introduce them as symbol-agnostic branches if the study resumes.",
-  "_width_study_note": "WIDTH STUDY (2026-07-28): the four width-* profiles are forced-sampling experiment arms, the retired-cells study resumed in the symbol-agnostic form docs/paper-experiments.md prescribes. Each fixed arm differs from its siblings in EXACTLY one variable (the wing width); width-adaptive shares every sampling key and differs only in offering all three widths with the widest-first fee-drag-bias policy -- the paired policy-vs-fixed comparison. All arms: stagger_entries makes daily_ic_trade_target a HARD cap (24 > the 20 possible 15-min ticks in the 09:30-14:30 paper window, so it never binds) and skips the over-target floor tightening, so every sample faces the same gate; max_concurrent_ics 99 means each trade stands alone (a sample stream, not a book); NO symbols key -- the (profile x symbol) grain gives width-N:XSP and width-N:QQQ cells automatically. Regime gates (VIX/ATR/GEX) inherit from base config so every arm blocks at the same ticks and the pairing survives. conservative remains a REFERENCE curve only (different sampling semantics). Names use '-' not ':' (portfolio keys are prof:symbol). Read results per docs/paper-experiments.md's width-study section: true pairs first, divergence log second, per-cell streams third; same-day trades are clustered.",
+  "_width_study_note": "WIDTH STUDY (2026-07-28, STOOD DOWN 2026-08-01 without ever trading — see each arm's _disabled_note; the definitions below stay valid and the study can resume by flipping enabled back to true). The four width-* profiles are forced-sampling experiment arms, the retired-cells study resumed in the symbol-agnostic form docs/paper-experiments.md prescribes. Each fixed arm differs from its siblings in EXACTLY one variable (the wing width); width-adaptive shares every sampling key and differs only in offering all three widths with the widest-first fee-drag-bias policy -- the paired policy-vs-fixed comparison. All arms: stagger_entries makes daily_ic_trade_target a HARD cap (24 > the 20 possible 15-min ticks in the 09:30-14:30 paper window, so it never binds) and skips the over-target floor tightening, so every sample faces the same gate; max_concurrent_ics 99 means each trade stands alone (a sample stream, not a book); NO symbols key -- the (profile x symbol) grain gives width-N:XSP and width-N:QQQ cells automatically. Regime gates (VIX/ATR/GEX) inherit from base config so every arm blocks at the same ticks and the pairing survives. conservative remains a REFERENCE curve only (different sampling semantics). Names use '-' not ':' (portfolio keys are prof:symbol). Read results per docs/paper-experiments.md's width-study section: true pairs first, divergence log second, per-cell streams third; same-day trades are clustered.",
   "active_profile": "conservative",
   "profiles": {
     "conservative": {
@@ -43,6 +43,8 @@
     },
     "aggressive": {
       "_note": "Tier 2: Tier 1 + accept tighter OTM strikes (delta 0.22, calls 0.30% OTM, puts 0.25% OTM); offset with max_concurrent_ics=3 (25% fewer positions) and stop_trigger_ratio=0.90 (5% tighter than conservative). ~2\u20133 more trades/week, each one riskier but total exposure capped. Requires active stop management. Use after 2+ weeks on moderate with 60%+ win rate.",
+      "_disabled_note": "DISABLED 2026-08-01, narrowing the registry to conservative + moderate. Not a judgement on the rung's own numbers so much as on how many books were running at once: eight enabled profiles across two symbols produced sixteen portfolios competing for the same ticks, which is a lot of noise around whatever is being measured next. Its paper record over 10 sessions is -$728.94 across 59 trades (-$12.36/trade, 20.3% win rate), the second-worst rung. Kept rather than deleted \u2014 re-enable when there is a specific question it answers.",
+      "enabled": false,
       "min_iv_rank": 0.2,
       "min_credit_pct_of_width": 0.1,
       "max_call_delta_entry": 0.22,
@@ -81,7 +83,8 @@
     },
     "width-2": {
       "_note": "Width study, fixed arm: every entry is pinned to a 2-wide IC regardless of what the floor would otherwise pick. Forced-sampling: 15-minute spacing, no concurrency cap (99), each structure lives and dies on its own -- a sample stream, not a book. Paired against width-5/width-10/width-adaptive on the same tick.",
-      "enabled": true,
+      "_disabled_note": "DISABLED 2026-08-01 without ever having traded — the four width-* arms were added 2026-07-28 and have ZERO rows in paper_trades.db, so nothing is lost by standing them down and the study can resume from the same definitions whenever it is the question being asked. Narrowing the registry to conservative + moderate cuts sixteen competing portfolios (8 profiles x 2 symbols) down to a number that can actually be read.",
+      "enabled": false,
       "wing_widths_by_symbol": {
         "DEFAULT": [
           2
@@ -95,7 +98,8 @@
     },
     "width-5": {
       "_note": "Width study, fixed arm: every entry is pinned to a 5-wide IC regardless of what the floor would otherwise pick. Forced-sampling: 15-minute spacing, no concurrency cap (99), each structure lives and dies on its own -- a sample stream, not a book. Paired against width-2/width-10/width-adaptive on the same tick.",
-      "enabled": true,
+      "_disabled_note": "DISABLED 2026-08-01 without ever having traded — the four width-* arms were added 2026-07-28 and have ZERO rows in paper_trades.db, so nothing is lost by standing them down and the study can resume from the same definitions whenever it is the question being asked. Narrowing the registry to conservative + moderate cuts sixteen competing portfolios (8 profiles x 2 symbols) down to a number that can actually be read.",
+      "enabled": false,
       "wing_widths_by_symbol": {
         "DEFAULT": [
           5
@@ -109,7 +113,8 @@
     },
     "width-10": {
       "_note": "Width study, fixed arm: every entry is pinned to a 10-wide IC regardless of what the floor would otherwise pick. Forced-sampling: 15-minute spacing, no concurrency cap (99), each structure lives and dies on its own -- a sample stream, not a book. Paired against width-2/width-5/width-adaptive on the same tick.",
-      "enabled": true,
+      "_disabled_note": "DISABLED 2026-08-01 without ever having traded — the four width-* arms were added 2026-07-28 and have ZERO rows in paper_trades.db, so nothing is lost by standing them down and the study can resume from the same definitions whenever it is the question being asked. Narrowing the registry to conservative + moderate cuts sixteen competing portfolios (8 profiles x 2 symbols) down to a number that can actually be read.",
+      "enabled": false,
       "wing_widths_by_symbol": {
         "DEFAULT": [
           10
@@ -123,7 +128,8 @@
     },
     "width-adaptive": {
       "_note": "Width study, policy arm: offers 2/5/10 and picks the WIDEST that clears the credit floor (the fee-drag-bias policy), same forced-sampling cadence as the fixed arms. The paired policy-vs-fixed comparison -- same gates, same spacing, dynamic width per tick instead of a pin.",
-      "enabled": true,
+      "_disabled_note": "DISABLED 2026-08-01 without ever having traded — the four width-* arms were added 2026-07-28 and have ZERO rows in paper_trades.db, so nothing is lost by standing them down and the study can resume from the same definitions whenever it is the question being asked. Narrowing the registry to conservative + moderate cuts sixteen competing portfolios (8 profiles x 2 symbols) down to a number that can actually be read.",
+      "enabled": false,
       "wing_widths_by_symbol": {
         "DEFAULT": [
           2,
