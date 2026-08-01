@@ -63,9 +63,13 @@ def _record_best_debit(conn, position: dict, debit: float, when: str) -> None:
     )
 
 
-def _regime_columns(prefix: str, snapshot: dict, params: dict) -> dict:
-    """The four regime-tag columns for `prefix` ('entry' or 'completion'), ready to fold straight
-    into a `save_position` call. See `engine.classify_regime` -- descriptive telemetry only."""
+def regime_columns(prefix: str, snapshot: dict, params: dict) -> dict:
+    """The regime columns for `prefix` ('entry' or 'completion') -- buckets AND the continuous
+    measures behind them -- ready to fold straight into a `save_position` call. See
+    `engine.classify_regime`; descriptive telemetry only, nothing here gates a decision.
+
+    Public because `live_loop` writes these too (since 2026-08-01): keeping paper and live on one
+    prefix convention is what lets `analytics.by_regime` read both ledgers with the same query."""
     regime = engine.classify_regime(snapshot, params)
     return {f"{prefix}_{key}": value for key, value in regime.items()}
 
@@ -243,7 +247,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "completed_at": now,
                     "completion_latency_min": latency,
                     "spot_at_completion": snapshot.get("underlying_price"),
-                    **_regime_columns("completion", snapshot, params),
+                    **regime_columns("completion", snapshot, params),
                 },
             )
             journal(
@@ -285,7 +289,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "completed_at": now,
                 "completion_latency_min": latency,
                 "spot_at_completion": snapshot.get("underlying_price"),
-                **_regime_columns("completion", snapshot, params),
+                **regime_columns("completion", snapshot, params),
             },
         )
         journal(
@@ -344,7 +348,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "completed_at": now,
                 "completion_latency_min": latency,
                 "spot_at_completion": snapshot.get("underlying_price"),
-                **_regime_columns("completion", snapshot, params),
+                **regime_columns("completion", snapshot, params),
             },
         )
         journal(
@@ -407,7 +411,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "roll_latency_min": latency,
                 "spot_at_completion": snapshot.get("underlying_price"),
                 "spot_at_roll": snapshot.get("underlying_price"),
-                **_regime_columns("completion", snapshot, params),
+                **regime_columns("completion", snapshot, params),
             },
         )
         journal(
@@ -476,7 +480,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "center_reason": plan["center_reason"],
                     "completing_direction": plan["completing_direction"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
-                    **_regime_columns("entry", snapshot, params),
+                    **regime_columns("entry", snapshot, params),
                     # Full defined risk (-W) net of trading fees AND the worst-case exercise-
                     # assignment fee (both legs ITM) -- the uncompleted branch's honest worst case,
                     # not left blank until (if ever) it completes into a fly.
@@ -549,7 +553,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "center_reason": plan["center_reason"],
                     "completing_direction": plan["completing_direction"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
-                    **_regime_columns("entry", snapshot, params),
+                    **regime_columns("entry", snapshot, params),
                     # Bounded at 0, never a -W tail (a long vertical can't lose more than its
                     # debit) -- but negative, since the debit paid is a real cost with no credit
                     # collected yet. See fly.position_floor's long_vertical branch for the
@@ -624,7 +628,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "entry_window": plan["entry_window"],
                     "center_reason": plan["center_reason"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
-                    **_regime_columns("entry", snapshot, params),
+                    **regime_columns("entry", snapshot, params),
                     # The real, negative-capable tail -- (wing_width - far_width) -- net of fees
                     # and the full 4-contract assignment-fee reserve. Never reported as a fly's
                     # floor; see fly.position_floor's bwb branch.
@@ -705,7 +709,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "entry_window": plan["entry_window"],
                     "center_reason": plan["center_reason"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
-                    **_regime_columns("entry", snapshot, params),
+                    **regime_columns("entry", snapshot, params),
                     "floor_dollars": fly.position_floor(pos),
                     "risk_free": int(fly.is_risk_free(pos)),
                     "status": "open",

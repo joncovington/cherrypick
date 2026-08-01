@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -37,6 +38,12 @@ class GexSnapshot:
     volume: dict[str, int] = field(default_factory=dict)
     source: str = "stream_cache"
     strike_scale: float = 1.0
+    # How old the inputs behind this snapshot are, in seconds (None when nothing was read). A GEX
+    # surface built from a dead feed renders exactly like a live one, which is how a stalled
+    # streamer stayed invisible here; carrying the age lets the viewer say so. Deliberately
+    # ANNOTATED, not filtered: this is a read-only dashboard, and a stale chart labelled stale is
+    # more useful to a human than a blank one. The trading path (flies' provider) does refuse.
+    input_age_seconds: float | None = None
 
 
 def _connect_ro(db_path: Path) -> sqlite3.Connection:
@@ -147,19 +154,33 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:
         greeks: dict[str, dict] = {}
         oi: dict[str, int] = {}
         volume: dict[str, int] = {}
+        oldest_age: float | None = None
+        now_ts = time.time()
+
+        def _note_age(updated) -> None:
+            nonlocal oldest_age
+            if updated is None:
+                return
+            age = now_ts - float(updated)
+            if oldest_age is None or age > oldest_age:
+                oldest_age = age
+
         if chain_syms:
             # Filter every follow-up read to this chain's own symbols — an unfiltered SELECT * would
             # scan every other tracked symbol's rows on each refresh, for no benefit.
             ph = ", ".join("?" * len(chain_syms))
             for r in conn.execute(f"SELECT * FROM stream_greeks WHERE symbol IN ({ph})", chain_syms):
+                _note_age(r["updated_at"])
                 greeks[r["symbol"]] = {
                     "gamma": float(r["gamma"] or 0),
                     "iv": _normalise_iv(float(r["iv"] or 0)),
                 }
             # Live OI comes from DXLink Summary events (stream_oi), never the static chain metadata.
             for r in conn.execute(
-                f"SELECT symbol, open_interest FROM stream_oi WHERE symbol IN ({ph})", chain_syms
+                f"SELECT symbol, open_interest, updated_at FROM stream_oi WHERE symbol IN ({ph})",
+                chain_syms,
             ):
+                _note_age(r["updated_at"])
                 oi[r["symbol"]] = int(r["open_interest"] or 0)
             # Live per-option volume comes from DXLink Trade events (stream_trades.volume).
             for r in conn.execute(
@@ -175,6 +196,7 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:
             greeks=greeks,
             oi=oi,
             volume=volume,
+            input_age_seconds=round(oldest_age, 1) if oldest_age is not None else None,
         )
     finally:
         conn.close()

@@ -177,94 +177,147 @@ def classify_regime(snapshot: dict, params: dict) -> dict:
     now vs. spot N minutes ago) that no single snapshot carries, and guessing at that plumbing
     before there is a reason to is the mistake this module's honesty rules exist to prevent.
 
-    Returns {"vol_bucket", "gex_bucket", "time_bucket", "skew_bucket"} -- four independent values,
-    not one collapsed string, so analytics can slice on any one dimension or their cross product.
-    Every threshold below is a placeholder pending recalibration once real sessions accumulate,
-    flagged the same way in config.example.json as every other gate in this module.
+    Returns a bucket per dimension -- four independent values, not one collapsed string, so
+    analytics can slice on any one dimension or their cross product -- AND the continuous measure
+    each bucket was derived from, plus the GEX surface's own provenance.
+
+    **Recording the raw measure alongside the bucket is the point** (added 2026-08-01). Every
+    threshold here is a placeholder pending recalibration, and a bucket alone destroys the
+    information needed to recalibrate: a session tagged "thin" cannot later be re-bucketed under a
+    different threshold without re-running it, which is impossible. Storing the float means
+    thresholds can be re-derived from history at analysis time instead. MEIC learned this first --
+    see the rationale on its `gex_net_at_entry` columns (`meic/src/db.py:84-94`).
     """
+    vol_bucket, vol_value = _classify_vol(snapshot, params)
+    gex_bucket, gex_value = _classify_gex(snapshot, params)
+    time_bucket, time_value = _classify_time(snapshot, params)
+    skew_bucket, skew_value = _classify_skew(snapshot, params)
+    gex = snapshot.get("gex") or {}
+    gex_stats = snapshot.get("gex_stats") or {}
     return {
-        "vol_bucket": _classify_vol(snapshot, params),
-        "gex_bucket": _classify_gex(snapshot, params),
-        "time_bucket": _classify_time(snapshot, params),
-        "skew_bucket": _classify_skew(snapshot, params),
+        "vol_bucket": vol_bucket,
+        "gex_bucket": gex_bucket,
+        "time_bucket": time_bucket,
+        "skew_bucket": skew_bucket,
+        # The measures behind the buckets.
+        "vol_value": vol_value,
+        "gex_concentration": gex_value,
+        "time_value": time_value,
+        "skew_value": skew_value,
+        # GEX surface provenance: what the number was, and how much data stood behind it. Without
+        # the coverage/age pair, a regime tag from a healthy surface is indistinguishable from one
+        # computed off four surviving stale strikes.
+        "net_gex": gex.get("net_gex") if gex.get("ok") else None,
+        "gamma_flip": gex.get("gamma_flip") if gex.get("ok") else None,
+        "gex_spot": gex.get("spot") if gex.get("ok") else None,
+        "gex_strikes": gex_stats.get("strikes_with_data"),
+        "gex_input_age": gex_stats.get("oldest_input_age_seconds"),
     }
 
 
-def _classify_vol(snapshot: dict, params: dict) -> str:
+def _classify_vol(snapshot: dict, params: dict) -> tuple[str, float | None]:
     """ATM straddle price / spot -- a cheap 0DTE expected-move proxy. No IV surface is available
     here, so this reads the market's own pricing of the straddle directly rather than backing out
-    an implied vol number the snapshot has no inputs to compute honestly."""
+    an implied vol number the snapshot has no inputs to compute honestly.
+
+    Returns (bucket, straddle/spot ratio)."""
     spot = snapshot.get("underlying_price")
     if spot is None or spot <= 0:
-        return "unknown"
+        return "unknown", None
     strike = atm_strike(spot, params.get("strike_increment", 5))
     put_q, call_q = quote(snapshot, PUT, strike), quote(snapshot, CALL, strike)
     if put_q is None or call_q is None:
-        return "unknown"
+        return "unknown", None
     straddle = fly._leg_mid(put_q) + fly._leg_mid(call_q)
     ratio = straddle / spot
     if ratio < params.get("regime_vol_low_pct", 0.0015):
-        return "low"
+        return "low", ratio
     if ratio > params.get("regime_vol_high_pct", 0.0035):
-        return "high"
-    return "normal"
+        return "high", ratio
+    return "normal", ratio
 
 
-def _classify_gex(snapshot: dict, params: dict) -> str:
-    """Reuses the `gex` arm's own per-strike concentration read (not arm-gated -- every arm can
-    tag the regime it traded in, not just the one that trades on it). "unknown" whenever the OI
-    cache the streamer would need isn't populated yet, mirroring `select_center`'s own honest
-    degrade -- never guessed."""
+# Concentration is measured over the top N strikes, not the single largest. Pinning is a property
+# of a cluster: a doubled centre plus its immediate neighbours hold price together, and a measure
+# that only sees one strike splits that cluster's own mass and reads it as thin.
+_GEX_CONCENTRATION_TOP_N = 3
+
+
+def _classify_gex(snapshot: dict, params: dict) -> tuple[str, float | None]:
+    """How concentrated gamma is NEAR SPOT -- the condition under which pinning can actually act.
+
+    Returns (bucket, concentration share). "unknown" whenever the OI cache the streamer would need
+    isn't populated yet, mirroring `select_center`'s own honest degrade -- never guessed.
+
+    **Windowed to `regime_gex_window_pct` of spot (2026-08-01 fix).** This previously took one
+    strike's share of the ENTIRE chain -- and flies computes GEX over the whole surface
+    (`provider.build_snapshot`), typically 109-121 strikes on a real 0DTE session. A single strike's
+    share of that is small by construction, gamma 300 points away has no bearing on whether price
+    pins here, and the resulting tag was degenerate in practice: `entry_gex_bucket` came back
+    'thin' 60 times out of 60, never once 'pinning', while the sibling vol and skew tags varied
+    normally. A measure that cannot take its other value is not measuring anything.
+
+    The threshold remains uncalibrated -- but `classify_regime` now records this share as a float,
+    so it can be re-derived from history rather than re-guessed.
+    """
     gex = snapshot.get("gex") or {}
     per_strike = gex.get("per_strike") or []
-    if not gex.get("ok") or not per_strike:
-        return "unknown"
-    totals = [abs(s.get("call_gex", 0) + s.get("put_gex", 0)) for s in per_strike]
+    spot = gex.get("spot") or snapshot.get("underlying_price")
+    if not gex.get("ok") or not per_strike or not spot:
+        return "unknown", None
+    window = params.get("regime_gex_window_pct", 0.02) * spot
+    near = [s for s in per_strike if abs(s.get("strike", 0) - spot) <= window]
+    if not near:
+        return "unknown", None
+    totals = sorted((abs(s.get("call_gex", 0) + s.get("put_gex", 0)) for s in near), reverse=True)
     total_sum = sum(totals)
     if total_sum <= 0:
-        return "unknown"
-    share = max(totals) / total_sum
-    return "pinning" if share >= params.get("regime_gex_pinning_share", 0.5) else "thin"
+        return "unknown", None
+    share = sum(totals[:_GEX_CONCENTRATION_TOP_N]) / total_sum
+    threshold = params.get("regime_gex_pinning_concentration", 0.60)
+    return ("pinning" if share >= threshold else "thin"), share
 
 
-def _classify_time(snapshot: dict, params: dict) -> str:
+def _classify_time(snapshot: dict, params: dict) -> tuple[str, int | None]:
     now_min = snapshot.get("now_min")
     if now_min is None:
-        return "unknown"
+        return "unknown", None
     open_end = time_to_minutes(params.get("regime_time_open_end", "10:00"))
     close_start = time_to_minutes(params.get("regime_time_close_start", "15:30"))
     if now_min < open_end:
-        return "open"
+        return "open", now_min
     if now_min >= close_start:
-        return "close"
-    return "midday"
+        return "close", now_min
+    return "midday", now_min
 
 
 def _classify_skew(snapshot: dict, params: dict) -> str:
     """Reads directional skew straight out of the chain already in hand: compares the OTM put at
     `center - wing_width` against the OTM call at `center + wing_width` -- the exact strikes this
     module already trades, not an arbitrary distance. A richer put than its equidistant call means
-    the market is pricing more downside risk than upside, and vice versa."""
+    the market is pricing more downside risk than upside, and vice versa.
+
+    Returns (bucket, normalised put-minus-call difference)."""
     spot = snapshot.get("underlying_price")
     if spot is None:
-        return "unknown"
+        return "unknown", None
     center = atm_strike(spot, params.get("strike_increment", 5))
     width = params.get("wing_width", 5)
     put_q = quote(snapshot, PUT, center - width)
     call_q = quote(snapshot, CALL, center + width)
     if put_q is None or call_q is None:
-        return "unknown"
+        return "unknown", None
     put_mid, call_mid = fly._leg_mid(put_q), fly._leg_mid(call_q)
     avg = (put_mid + call_mid) / 2.0
     if avg <= 0:
-        return "unknown"
+        return "unknown", None
     diff = (put_mid - call_mid) / avg
     threshold = params.get("regime_skew_threshold", 0.15)
     if diff > threshold:
-        return "put_skew"
+        return "put_skew", diff
     if diff < -threshold:
-        return "call_skew"
-    return "flat"
+        return "call_skew", diff
+    return "flat", diff
 
 
 def choose_side(snapshot: dict, center: float) -> str:

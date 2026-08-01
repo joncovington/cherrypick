@@ -833,8 +833,15 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                             "risk_free": 0,
                             "status": "open",
                             "entry_window": plan.get("entry_window"),
+                            # center_reason and the regime tags were paper-only until 2026-08-01,
+                            # so live centre selection was unauditable -- every live row had
+                            # center_reason NULL, and the `gex` arm (the live default) gave no
+                            # record of whether it centred on gamma or degraded to ATM. The plan
+                            # has always carried it; only the live writer dropped it.
+                            "center_reason": plan.get("center_reason"),
                             "completing_direction": plan.get("completing_direction"),
                             "underlying_at_entry": snapshot.get("underlying_price"),
+                            **bookmod.regime_columns("entry", snapshot, params),
                             "entry_time": clock.now_iso(),
                             "entry_order_id": str(res["order_id"]),
                             "entry_fill_status": "pending",
@@ -1141,9 +1148,7 @@ def run_watch(
         snapshot = provider.build_snapshot(
             cache_path,
             symbol,
-            max_quote_age_seconds=config.get("defaults", {}).get(
-                "max_quote_age_seconds", provider.DEFAULT_MAX_QUOTE_AGE_SECONDS
-            ),
+            **provider.snapshot_kwargs(config),
         )
         naturals_ok = bool(snapshot.get("ok"))
 
@@ -1626,9 +1631,7 @@ def _build_snapshot(config: dict, cache_path: str):
     return provider.build_snapshot(
         cache_path,
         symbol,
-        max_quote_age_seconds=config.get("defaults", {}).get(
-            "max_quote_age_seconds", provider.DEFAULT_MAX_QUOTE_AGE_SECONDS
-        ),
+        **provider.snapshot_kwargs(config),
     )
 
 

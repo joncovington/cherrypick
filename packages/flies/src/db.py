@@ -243,6 +243,31 @@ _ADDED_POSITION_COLUMNS = {
     "completion_gex_bucket": "TEXT",
     "completion_time_bucket": "TEXT",
     "completion_skew_bucket": "TEXT",
+    # The continuous measures the buckets above were derived from, plus the GEX surface's own
+    # provenance (added 2026-08-01; NULL for earlier rows). Every regime threshold in this module
+    # is a placeholder pending recalibration, and a bucket alone cannot be recalibrated: re-deriving
+    # "would this session have been 'pinning' at a 0.5 cut instead of 0.6?" needs the number, and
+    # re-running the session to get it is impossible. Storing the float makes the thresholds a
+    # analysis-time choice instead of a permanent one. gex_strikes/gex_input_age are the coverage
+    # pair -- a regime tag off four surviving stale strikes must be distinguishable from a real one.
+    "entry_vol_value": "REAL",
+    "entry_gex_concentration": "REAL",
+    "entry_time_value": "REAL",
+    "entry_skew_value": "REAL",
+    "entry_net_gex": "REAL",
+    "entry_gamma_flip": "REAL",
+    "entry_gex_spot": "REAL",
+    "entry_gex_strikes": "REAL",
+    "entry_gex_input_age": "REAL",
+    "completion_vol_value": "REAL",
+    "completion_gex_concentration": "REAL",
+    "completion_time_value": "REAL",
+    "completion_skew_value": "REAL",
+    "completion_net_gex": "REAL",
+    "completion_gamma_flip": "REAL",
+    "completion_gex_spot": "REAL",
+    "completion_gex_strikes": "REAL",
+    "completion_gex_input_age": "REAL",
     # bwb_roll: the far (skipped) wing's width, kept AFTER the roll for history/rewind (wing_width
     # stays the near/protected width, unchanged by the roll). NULL for every other kind.
     "far_width": "REAL",
