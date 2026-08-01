@@ -310,6 +310,27 @@ def test_evaluate_entry_rejects_regime_gex_negative():
     assert reason == "regime_gex_negative"
 
 
+def test_regime_gex_block_negative_defaults_on_and_can_be_switched_off():
+    """The block is the DEFAULT and stays the default -- but it must be switchable, or the gate can
+    never be measured against its own control. It cuts roughly 40% of samples and nothing yet shows
+    the trades it cuts were worse than the ones it keeps; answering that needs a shadow profile
+    running with this false, everything else identical."""
+    snap = _base_snapshot(gex={"ok": True, "gex_positive": False})
+
+    # Absent key == blocked, so no existing config changes behaviour.
+    baseline = _params(CONSERVATIVE)
+    assert "regime_gex_block_negative" not in baseline
+    assert paper.evaluate_entry(snap, baseline, [])[1] == "regime_gex_negative"
+
+    # Explicitly off: negative GEX no longer refuses, and the entry is judged on everything else.
+    ungated = {**baseline, "regime_gex_block_negative": False}
+    assert paper.evaluate_entry(snap, ungated, [])[1] != "regime_gex_negative"
+
+    # The opt-in strict variant is a separate gate and is unaffected by the switch.
+    strict = {**_params(GEX_STRICT), "regime_gex_block_negative": False}
+    assert paper.evaluate_entry(snap, strict, [])[1] == "regime_gex_not_positive"
+
+
 def test_evaluate_entry_gexstrict_requires_positive_gex():
     # regime_gex_require_positive: entries pause
     # unless GEX is CONFIRMED positive (baseline only pauses on confirmed-negative).

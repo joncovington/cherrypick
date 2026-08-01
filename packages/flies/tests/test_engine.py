@@ -517,60 +517,87 @@ def test_classify_regime_baseline_snapshot():
     GEX data cached -- normal vol, flat skew, midday, unknown GEX. A good sanity check that all
     four dimensions read sensibly together, not just in isolation."""
     regime = engine.classify_regime(snapshot(), params())
-    assert regime == {
-        "vol_bucket": "normal",
-        "gex_bucket": "unknown",
-        "time_bucket": "midday",
-        "skew_bucket": "flat",
-    }
+    assert regime["vol_bucket"] == "normal"
+    assert regime["gex_bucket"] == "unknown"
+    assert regime["time_bucket"] == "midday"
+    assert regime["skew_bucket"] == "flat"
+    # Every bucket ships with the measure it came from, so a threshold can be re-derived later
+    # rather than re-guessed. An "unknown" bucket carries None -- never a fabricated zero.
+    assert regime["vol_value"] is not None and regime["skew_value"] is not None
+    assert regime["time_value"] == snapshot()["now_min"]
+    assert regime["gex_concentration"] is None
+    assert regime["net_gex"] is None and regime["gex_strikes"] is None
 
 
 def test_vol_bucket_low_and_high():
     cheap = snapshot(puts={6000: q(0.1, 0.1)}, calls={6000: q(0.1, 0.1)})
-    assert engine._classify_vol(cheap, params()) == "low"
+    bucket, value = engine._classify_vol(cheap, params())
+    assert bucket == "low" and value == pytest.approx(0.2 / 6000)
     rich = snapshot(puts={6000: q(15.0, 15.0)}, calls={6000: q(15.0, 15.0)})
-    assert engine._classify_vol(rich, params()) == "high"
+    bucket, value = engine._classify_vol(rich, params())
+    assert bucket == "high" and value == pytest.approx(30.0 / 6000)
 
 
 def test_vol_bucket_unknown_without_atm_quotes():
     bare = snapshot(puts={}, calls={})
-    assert engine._classify_vol(bare, params()) == "unknown"
+    assert engine._classify_vol(bare, params()) == ("unknown", None)
 
 
 def test_gex_bucket_pinning_vs_thin_vs_unknown():
     concentrated = {"ok": True, "per_strike": [{"strike": 6000, "call_gex": 900_000, "put_gex": 900_000}]}
-    assert engine._classify_gex(snapshot(gex=concentrated), params()) == "pinning"
+    bucket, share = engine._classify_gex(snapshot(gex=concentrated), params())
+    assert bucket == "pinning" and share == pytest.approx(1.0)
 
+    # Twenty evenly-loaded strikes: the top 3 hold 3/20 = 15%, well under the 60% cut.
     even = {
         "ok": True,
         "per_strike": [
-            {"strike": 5995, "call_gex": 10_000, "put_gex": 10_000},
-            {"strike": 6000, "call_gex": 10_000, "put_gex": 10_000},
-            {"strike": 6005, "call_gex": 10_000, "put_gex": 10_000},
+            {"strike": 6000 + 5 * i, "call_gex": 10_000, "put_gex": 10_000} for i in range(-10, 10)
         ],
     }
-    assert engine._classify_gex(snapshot(gex=even), params()) == "thin"
+    bucket, share = engine._classify_gex(snapshot(gex=even), params())
+    assert bucket == "thin" and share == pytest.approx(3 / 20)
 
-    assert engine._classify_gex(snapshot(), params()) == "unknown"  # no gex key at all
-    assert engine._classify_gex(snapshot(gex={"ok": False}), params()) == "unknown"
+    assert engine._classify_gex(snapshot(), params()) == ("unknown", None)  # no gex key at all
+    assert engine._classify_gex(snapshot(gex={"ok": False}), params()) == ("unknown", None)
+
+
+def test_gex_concentration_is_windowed_to_near_spot():
+    """Regression for the degenerate tag (fixed 2026-08-01). Measuring one strike's share of the
+    WHOLE chain -- 109-121 strikes on a real 0DTE surface -- made 'pinning' unreachable in practice:
+    entry_gex_bucket came back 'thin' 60 times out of 60. A cluster pinning price at spot must not
+    be diluted by gamma 300 points away that has no bearing on it."""
+    near_spot_cluster = [{"strike": 6000 + 5 * i, "call_gex": 500_000, "put_gex": 500_000} for i in (-1, 0, 1)]
+    far_away = [{"strike": 5000 + 5 * i, "call_gex": 400_000, "put_gex": 400_000} for i in range(40)]
+    gex = {"ok": True, "per_strike": near_spot_cluster + far_away}
+
+    bucket, share = engine._classify_gex(snapshot(gex=gex), params())
+    assert bucket == "pinning" and share == pytest.approx(1.0)  # the far mass is outside the window
+
+    # Widen the window far enough to swallow the distant mass and the same surface reads thin.
+    wide = params(regime_gex_window_pct=0.5)
+    bucket_wide, share_wide = engine._classify_gex(snapshot(gex=gex), wide)
+    assert bucket_wide == "thin" and share_wide < 0.6
 
 
 def test_time_bucket_open_midday_close_unknown():
-    assert engine._classify_time(snapshot(now_min=9 * 60 + 45), params()) == "open"
-    assert engine._classify_time(snapshot(now_min=12 * 60), params()) == "midday"
-    assert engine._classify_time(snapshot(now_min=15 * 60 + 45), params()) == "close"
+    assert engine._classify_time(snapshot(now_min=9 * 60 + 45), params()) == ("open", 9 * 60 + 45)
+    assert engine._classify_time(snapshot(now_min=12 * 60), params()) == ("midday", 12 * 60)
+    assert engine._classify_time(snapshot(now_min=15 * 60 + 45), params()) == ("close", 15 * 60 + 45)
     bare = dict(snapshot())
     del bare["now_min"]
-    assert engine._classify_time(bare, params()) == "unknown"
+    assert engine._classify_time(bare, params()) == ("unknown", None)
 
 
 def test_skew_bucket_put_and_call_and_unknown():
     put_rich = snapshot(puts={5995: q(5.0, 5.2)}, calls={6005: q(1.0, 1.2)})
-    assert engine._classify_skew(put_rich, params()) == "put_skew"
+    bucket, diff = engine._classify_skew(put_rich, params())
+    assert bucket == "put_skew" and diff > 0
     call_rich = snapshot(puts={5995: q(1.0, 1.2)}, calls={6005: q(5.0, 5.2)})
-    assert engine._classify_skew(call_rich, params()) == "call_skew"
+    bucket, diff = engine._classify_skew(call_rich, params())
+    assert bucket == "call_skew" and diff < 0
     bare = snapshot(puts={}, calls={})
-    assert engine._classify_skew(bare, params()) == "unknown"
+    assert engine._classify_skew(bare, params()) == ("unknown", None)
 
 
 # --------------------------------------------------------------------------- debit_first (Phase 1)
