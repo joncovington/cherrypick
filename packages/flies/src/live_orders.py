@@ -5,17 +5,16 @@ Turns the engine's decisions (the same `plan` dicts the paper book records) into
 on every leg quote. Nothing here talks to a broker, a DB, or a file — `live_loop.py` owns
 submission (through core.broker's preflight + governor) and `broker_cli.py` owns the CLI.
 
-Three orders exist in this strategy (live v1 is legged-only — see docs/live-trading-plan.md):
+Two orders exist in this strategy (live v1 is legged-only — see docs/live-trading-plan.md):
 
   entry_spec       step 1 — sell the opening credit spread (STO short strike, BTO wing)
   completion_spec  step 2 — buy the completing vertical (BTO far strike, STO the centre
                    AGAIN, doubling it into the fly's -2), as a working Day limit
-  close_fly_spec   step 3, conditional — close a completed fly ahead of expiry when it has an
-                   ITM leg and doing so is cheaper than the exercise-assignment fee it would
-                   otherwise incur (STC both wings, BTC the doubled centre); see
-                   `engine.evaluate_pre_close_exit`. The one deliberate exception to rule 5's
-                   "no adjustments, hold to settlement" — a cost-avoidance mechanism, not a
-                   strategy adjustment.
+
+There is no closing order: every position holds to cash settlement. A third, conditional
+`close_fly_spec`/`close_vertical_spec` pair existed until 2026-08-01 to close ITM positions in
+the final minutes when that beat the assignment fee; it was removed after measuring a
+~$34/position loss in paper and zero fires in live (CLAUDE.md rule 5).
 
 Prices are floored/ceilinged to the option tick in the direction that favors us: a credit
 asks for slightly less, a debit offers slightly less — conservative, and the exchange can't
@@ -149,16 +148,17 @@ def max_safe_completion_debit(position: dict, min_floor_dollars: float, fee_buff
     The engine checks both per-tick in paper; a resting order priced only at the buffer gate
     could fill into a fly whose floor is below the dollar gate, so the bound must be the min of
     the two. `fees_after_completion` = the fees already recorded on the row (the entry stack)
-    plus the completing vertical's own stack. Deliberately NOT reserving the resulting fly's
-    worst-case exercise-assignment fee here (unlike an uncompleted vertical) — `fly.position_floor`
-    no longer does either, since `engine.evaluate_pre_close_exit` bounds a fly's realistic
-    ITM-assignment cost going forward; see that function's docstring for the full reasoning and
-    the one tail risk (the closing order itself failing) this deliberately does not reserve for.
+    plus the completing vertical's own stack, PLUS the worst-case exercise-assignment fee the
+    resulting fly would owe — `fly.position_floor` reserves that (since 2026-08-01, when the
+    pre-close ITM exit that used to bound it was removed), so this bound must reserve exactly the
+    same amount or a resting order could fill into a fly the floor gate would have refused.
+    `tests/test_live_scaffold.py` pins the two against each other.
     """
     credit = position["net"]
     qty = position.get("quantity", 1)
     fees_after = (position.get("fees") or 0.0) + fly.vertical_open_fee(position["symbol"], qty)
-    floor_bound = credit - (min_floor_dollars + fees_after) / (fly.CONTRACT_MULTIPLIER * qty)
+    reserve = fly.expire_fee(fly.WORST_CASE_ITM_LEGS["fly"])
+    floor_bound = credit - (min_floor_dollars + fees_after + reserve) / (fly.CONTRACT_MULTIPLIER * qty)
     return min(credit - fee_buffer, floor_bound)
 
 
@@ -186,51 +186,5 @@ def resting_completion_spec(snapshot: dict, position: dict, params: dict) -> dic
         "legs": [
             _leg(_leg_quote(snapshot, side, completing_long_strike(position)), "buy to open", qty),
             _leg(_leg_quote(snapshot, side, center), "sell to open", qty),
-        ],
-    }
-
-
-def close_fly_spec(snapshot: dict, position: dict, plan: dict) -> dict:
-    """Close a completed fly ahead of expiry, from an admitted `evaluate_pre_close_exit` plan:
-    sell both wings, buy back the doubled centre. Day limit at the plan's priced close credit,
-    floored to the tick (asking for slightly less, so it can still cross a moving market in the
-    closing minutes)."""
-    side, center, width = position["side"], position["center"], position["wing_width"]
-    qty = position.get("quantity", 1)
-    price = tick_floor(plan["close_credit"])
-    if price <= 0:
-        raise ValueError(f"close credit {plan['close_credit']!r} floors to nothing submittable")
-    return {
-        "time_in_force": "Day",
-        "order_type": "Limit",
-        "price": price,
-        "price_effect": "credit",
-        "legs": [
-            _leg(_leg_quote(snapshot, side, center - width), "sell to close", qty),
-            _leg(_leg_quote(snapshot, side, center), "buy to close", qty * 2),
-            _leg(_leg_quote(snapshot, side, center + width), "sell to close", qty),
-        ],
-    }
-
-
-def close_vertical_spec(snapshot: dict, position: dict, plan: dict) -> dict:
-    """Close an ITM (still-uncompleted) short vertical ahead of expiry, from an admitted
-    `evaluate_pre_close_exit` plan: buy back the centre (the original short leg), sell the
-    protective long leg. Day limit at the plan's priced close debit, floored to the tick (offering
-    slightly less, same convention as `completion_spec`)."""
-    side, center, width = position["side"], position["center"], position["wing_width"]
-    qty = position.get("quantity", 1)
-    long_strike = center - width if side == PUT else center + width
-    price = tick_floor(plan["close_debit"])
-    if price <= 0:
-        raise ValueError(f"close debit {plan['close_debit']!r} floors to nothing submittable")
-    return {
-        "time_in_force": "Day",
-        "order_type": "Limit",
-        "price": price,
-        "price_effect": "debit",
-        "legs": [
-            _leg(_leg_quote(snapshot, side, center), "buy to close", qty),
-            _leg(_leg_quote(snapshot, side, long_strike), "sell to close", qty),
         ],
     }

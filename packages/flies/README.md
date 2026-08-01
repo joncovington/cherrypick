@@ -43,8 +43,14 @@ python run.py once --snapshot snapshot.json
 # monitoring and review
 python src/dashboard.py --port 8803 --open   # opens a browser dashboard: Today / History / Performance
 python run.py section --json                 # the compact summary card shown on the suite-wide dashboard
+python run.py regime                         # results grouped by the market regime each trade entered into
 python src/paper_loop.py --eod-reports       # regenerates the day's end-of-day report
 ```
+
+`regime` reports coverage first — how much of the book carries each tag, and whether a tag ever took
+more than one value — because a table split on a tag that never varied looks like a result and isn't.
+Pass `--dimension gex|vol|skew|time` for one dimension, or `--bucket-edges 0.4,0.6` to re-cut the
+recorded measurement at different thresholds without re-running any sessions.
 
 The paper-trading database lives at `~/.cherrypick/data/flies/paper_trades.db` (override with
 the `FLIES_DB_PATH` environment variable if you need a different location).

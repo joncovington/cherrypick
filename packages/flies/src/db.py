@@ -210,11 +210,14 @@ _ADDED_POSITION_COLUMNS = {
     # trade at settle time) vs 'official' (a human re-settled with the official print). Paper rows
     # leave it NULL -- paper's last-trade settlement is its documented, accepted approximation.
     "settlement_source": "TEXT",
-    # Pre-close ITM exit (engine.evaluate_pre_close_exit): close_order_id/close_fill_status track
-    # the live closing order the same way entry/completion do ('pending' | 'filled' | 'rejected' |
-    # 'cancelled'); paper has no order to track and settles the position directly, so it only ever
-    # sets closed_before_expiry. That flag distinguishes "closed early to dodge assignment" from an
-    # ordinary cash settlement on BOTH paper and live rows -- same column, same meaning either way.
+    # HISTORICAL ONLY -- nothing writes these columns any more. They belong to the pre-close ITM
+    # exit, removed 2026-08-01 (it lost ~$34/position in paper and never fired in live; see
+    # CLAUDE.md rule 5). Retained because 34 settled paper rows carry closed_before_expiry = 1 and
+    # are the only record that the experiment ran: those rows closed at an intraday quote rather
+    # than a settlement price (pinned = 0), so the flag is what marks them as not comparable to
+    # ordinary settled rows. Kept in the schema so old ledgers still open and so analysis can
+    # exclude them; close_order_id additionally still appears in live_loop's orphan sweep and
+    # fee_reconcile, which must keep recognising order ids written before the removal.
     "close_order_id": "TEXT",
     "close_fill_status": "TEXT",
     "closed_before_expiry": "INTEGER",
@@ -240,6 +243,31 @@ _ADDED_POSITION_COLUMNS = {
     "completion_gex_bucket": "TEXT",
     "completion_time_bucket": "TEXT",
     "completion_skew_bucket": "TEXT",
+    # The continuous measures the buckets above were derived from, plus the GEX surface's own
+    # provenance (added 2026-08-01; NULL for earlier rows). Every regime threshold in this module
+    # is a placeholder pending recalibration, and a bucket alone cannot be recalibrated: re-deriving
+    # "would this session have been 'pinning' at a 0.5 cut instead of 0.6?" needs the number, and
+    # re-running the session to get it is impossible. Storing the float makes the thresholds a
+    # analysis-time choice instead of a permanent one. gex_strikes/gex_input_age are the coverage
+    # pair -- a regime tag off four surviving stale strikes must be distinguishable from a real one.
+    "entry_vol_value": "REAL",
+    "entry_gex_concentration": "REAL",
+    "entry_time_value": "REAL",
+    "entry_skew_value": "REAL",
+    "entry_net_gex": "REAL",
+    "entry_gamma_flip": "REAL",
+    "entry_gex_spot": "REAL",
+    "entry_gex_strikes": "REAL",
+    "entry_gex_input_age": "REAL",
+    "completion_vol_value": "REAL",
+    "completion_gex_concentration": "REAL",
+    "completion_time_value": "REAL",
+    "completion_skew_value": "REAL",
+    "completion_net_gex": "REAL",
+    "completion_gamma_flip": "REAL",
+    "completion_gex_spot": "REAL",
+    "completion_gex_strikes": "REAL",
+    "completion_gex_input_age": "REAL",
     # bwb_roll: the far (skipped) wing's width, kept AFTER the roll for history/rewind (wing_width
     # stays the near/protected width, unchanged by the roll). NULL for every other kind.
     "far_width": "REAL",

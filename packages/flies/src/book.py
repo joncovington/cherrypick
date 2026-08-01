@@ -63,9 +63,13 @@ def _record_best_debit(conn, position: dict, debit: float, when: str) -> None:
     )
 
 
-def _regime_columns(prefix: str, snapshot: dict, params: dict) -> dict:
-    """The four regime-tag columns for `prefix` ('entry' or 'completion'), ready to fold straight
-    into a `save_position` call. See `engine.classify_regime` -- descriptive telemetry only."""
+def regime_columns(prefix: str, snapshot: dict, params: dict) -> dict:
+    """The regime columns for `prefix` ('entry' or 'completion') -- buckets AND the continuous
+    measures behind them -- ready to fold straight into a `save_position` call. See
+    `engine.classify_regime`; descriptive telemetry only, nothing here gates a decision.
+
+    Public because `live_loop` writes these too (since 2026-08-01): keeping paper and live on one
+    prefix convention is what lets `analytics.by_regime` read both ledgers with the same query."""
     regime = engine.classify_regime(snapshot, params)
     return {f"{prefix}_{key}": value for key, value in regime.items()}
 
@@ -243,7 +247,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "completed_at": now,
                     "completion_latency_min": latency,
                     "spot_at_completion": snapshot.get("underlying_price"),
-                    **_regime_columns("completion", snapshot, params),
+                    **regime_columns("completion", snapshot, params),
                 },
             )
             journal(
@@ -285,7 +289,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "completed_at": now,
                 "completion_latency_min": latency,
                 "spot_at_completion": snapshot.get("underlying_price"),
-                **_regime_columns("completion", snapshot, params),
+                **regime_columns("completion", snapshot, params),
             },
         )
         journal(
@@ -344,7 +348,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "completed_at": now,
                 "completion_latency_min": latency,
                 "spot_at_completion": snapshot.get("underlying_price"),
-                **_regime_columns("completion", snapshot, params),
+                **regime_columns("completion", snapshot, params),
             },
         )
         journal(
@@ -407,7 +411,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "roll_latency_min": latency,
                 "spot_at_completion": snapshot.get("underlying_price"),
                 "spot_at_roll": snapshot.get("underlying_price"),
-                **_regime_columns("completion", snapshot, params),
+                **regime_columns("completion", snapshot, params),
             },
         )
         journal(
@@ -426,78 +430,6 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "net": plan["net"],
                 "floor": plan["floor"],
                 "latency_min": latency,
-            }
-        )
-
-    # --- 1.5. close any ITM position ahead of expiry, if cheaper than the assignment fee it would
-    # otherwise incur -- see engine.evaluate_pre_close_exit for the window/comparison. Covers a
-    # completed fly's ITM leg (bounded payoff, so this is pure fee avoidance) AND a still-open
-    # short vertical's ITM leg(s) (already realizing a loss -- letting the assignment fee stack on
-    # top of it is the same avoidable cost, just on the losing side). The one deliberate exception
-    # to rule 5 ("no adjustments, hold to settlement"): a cost-avoidance mechanism in the closing
-    # minutes, not a strategy adjustment tuned on the session's own data.
-    for pos in [
-        p
-        for p in positions
-        if p["kind"] in ("fly", "short_vertical", "long_vertical", "iron_fly", "bwb") and p["status"] == "open"
-    ]:
-        close, reason, plan = engine.evaluate_pre_close_exit(snapshot, pos, params)
-        if not close:
-            if reason not in ("not_a_closeable_kind", "before_pre_close_exit_window"):
-                journal(
-                    "pre_close_exit",
-                    reason,
-                    center=pos["center"],
-                    position_id=pos["position_id"],
-                    detail=None
-                    if plan is None
-                    else f"slippage {plan['slippage_cost']:.2f} vs assignment {plan['assignment_fee']:.2f}",
-                )
-            continue
-        # fly, long_vertical, iron_fly, and bwb close for a credit (its sign can vary, but it is
-        # priced and returned as one -- close_credit); short_vertical closes for a debit (a cost,
-        # so it subtracts from net) -- explicit by kind, no fallthrough.
-        if pos["kind"] in ("fly", "long_vertical", "iron_fly", "bwb"):
-            close_price = plan["close_credit"]
-        else:
-            close_price = -plan["close_debit"]
-        gross = (pos["net"] + close_price) * fly.CONTRACT_MULTIPLIER * pos["quantity"]
-        total_fees = round(pos["fees"] + plan["close_fee"], 2)
-        pnl = round(gross - total_fees, 2)
-        pos["fees"] = total_fees
-        pos["pnl"] = pnl
-        pos["status"] = "settled"
-        dbmod.save_position(
-            conn,
-            {
-                "position_id": pos["position_id"],
-                "fees": total_fees,
-                "expiry_payoff": close_price,
-                "gross_pnl": round(gross, 2),
-                "pnl": pnl,
-                "pinned": 0,  # closed early -- no true settlement price to judge this against
-                "closed_before_expiry": 1,
-                "status": "settled",
-                "exit_time": now,
-            },
-        )
-        cost_desc = f"{close_price:.2f} credit" if close_price >= 0 else f"{-close_price:.2f} debit"
-        journal(
-            "pre_close_exit",
-            "closed",
-            accepted=True,
-            center=pos["center"],
-            position_id=pos["position_id"],
-            detail=f"closed for {cost_desc}, avoided ${plan['assignment_fee']:.2f} assignment fee "
-            f"({plan['itm_legs']} ITM leg(s))",
-        )
-        actions.append(
-            {
-                "action": "closed_before_expiry",
-                "position_id": pos["position_id"],
-                "close_price": close_price,
-                "assignment_fee_avoided": plan["assignment_fee"],
-                "pnl": pnl,
             }
         )
 
@@ -548,7 +480,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "center_reason": plan["center_reason"],
                     "completing_direction": plan["completing_direction"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
-                    **_regime_columns("entry", snapshot, params),
+                    **regime_columns("entry", snapshot, params),
                     # Full defined risk (-W) net of trading fees AND the worst-case exercise-
                     # assignment fee (both legs ITM) -- the uncompleted branch's honest worst case,
                     # not left blank until (if ever) it completes into a fly.
@@ -621,7 +553,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "center_reason": plan["center_reason"],
                     "completing_direction": plan["completing_direction"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
-                    **_regime_columns("entry", snapshot, params),
+                    **regime_columns("entry", snapshot, params),
                     # Bounded at 0, never a -W tail (a long vertical can't lose more than its
                     # debit) -- but negative, since the debit paid is a real cost with no credit
                     # collected yet. See fly.position_floor's long_vertical branch for the
@@ -696,7 +628,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "entry_window": plan["entry_window"],
                     "center_reason": plan["center_reason"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
-                    **_regime_columns("entry", snapshot, params),
+                    **regime_columns("entry", snapshot, params),
                     # The real, negative-capable tail -- (wing_width - far_width) -- net of fees
                     # and the full 4-contract assignment-fee reserve. Never reported as a fly's
                     # floor; see fly.position_floor's bwb branch.
@@ -777,7 +709,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "entry_window": plan["entry_window"],
                     "center_reason": plan["center_reason"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
-                    **_regime_columns("entry", snapshot, params),
+                    **regime_columns("entry", snapshot, params),
                     "floor_dollars": fly.position_floor(pos),
                     "risk_free": int(fly.is_risk_free(pos)),
                     "status": "open",

@@ -15,6 +15,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import db as dbmod
 import engine
+import fly
 import live_loop
 import live_orders
 import provider as _provider
@@ -107,24 +108,6 @@ def test_completion_spec_never_prices_past_the_engine_gate():
     actions = {leg["symbol"]: leg["action"] for leg in spec["legs"]}
     assert actions["SPXW  260729P07500000"] == "buy to open"  # the far strike
     assert actions["SPXW  260729P07495000"] == "sell to open"  # the centre, doubled to -2
-
-
-def test_close_fly_spec_closes_both_wings_and_buys_back_the_doubled_center():
-    pos = {"side": PUT, "center": 7495.0, "wing_width": 5, "quantity": 1}
-    plan = {"close_credit": 3.07}
-    spec = live_orders.close_fly_spec(_snapshot(), pos, plan)
-    assert spec["price"] == 3.05 and spec["price_effect"] == "credit"  # 3.07 floors to a nickel
-    legs = {leg["symbol"]: leg for leg in spec["legs"]}
-    assert legs["SPXW  260729P07490000"]["action"] == "sell to close"
-    assert legs["SPXW  260729P07495000"]["action"] == "buy to close"
-    assert legs["SPXW  260729P07495000"]["quantity"] == 2  # the doubled centre, bought back at once
-    assert legs["SPXW  260729P07500000"]["action"] == "sell to close"
-
-
-def test_close_fly_spec_refuses_a_credit_that_floors_to_nothing():
-    pos = {"side": PUT, "center": 7495.0, "wing_width": 5, "quantity": 1}
-    with pytest.raises(ValueError, match="close credit"):
-        live_orders.close_fly_spec(_snapshot(), pos, {"close_credit": 0.01})
 
 
 def test_order_builders_refuse_quotes_without_occ_symbols():
@@ -1081,187 +1064,19 @@ def test_completion_terminal_unfilled_is_journaled_and_reverts_to_short_vertical
 
 
 # --------------------------------------------------------------------------- pre-close ITM exit (live)
-def test_pre_close_exit_places_a_closing_order_when_cheaper_than_the_assignment_fee(live_conn):
-    dbmod.save_position(
-        live_conn,
-        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
-    )
-
-    # Inside the closing window, spot between the lower wing (7490) and the centre (7495); quotes
-    # hand-picked so the fly's combo mid (~3.0) matches its intrinsic payoff there (also 3.0),
-    # keeping the closing slippage small next to the $15 assignment fee (3 of 4 contracts ITM).
-    def close_q(occ, mid):
-        return {
-            "bid": mid - 0.1,
-            "ask": mid + 0.1,
-            "mid": mid,
-            "occ_symbol": occ,
-            "instrument_type": "Equity Option",
-        }
-
-    snap = _snapshot(
-        now_min=955,
-        underlying_price=7493.0,
-        puts={
-            7490.0: close_q("SPXW  260729P07490000", 0.2),
-            7495.0: close_q("SPXW  260729P07495000", 1.1),
-            7500.0: close_q("SPXW  260729P07500000", 5.1),
-        },
-    )
-    broker = FakeBroker()
-    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
-    assert summary.get("pre_close_exits_placed") == 1
-    close_orders = [p for p in broker.placed if p["spec"]["price_effect"] == "credit"]
-    assert len(close_orders) == 1
-    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["close_order_id"] is not None
-    assert row["close_fill_status"] == "pending"
-    decision = live_conn.execute(
-        "SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit' AND reason = 'placed'"
-    ).fetchone()
-    assert decision is not None and decision["accepted"] == 1 and decision["position_id"] == "E1"
-
-
-def test_pre_close_exit_leaves_an_otm_fly_alone_before_the_window(live_conn):
-    dbmod.save_position(
-        live_conn,
-        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
-    )
-    broker = FakeBroker()
-    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
-    assert "pre_close_exits_placed" not in summary
-    row = live_conn.execute("SELECT close_order_id FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["close_order_id"] is None
-
-
-def test_close_fill_confirmation_settles_the_position_at_the_actual_close_credit(live_conn):
-    dbmod.save_position(
-        live_conn,
-        {
-            **_open_entry_row(entry_fill_status="filled"),
-            "kind": "fly",
-            "net": 0.25,
-            "debit": 0.80,
-            "close_order_id": "ORD-X1",
-            "close_fill_status": "pending",
-        },
-    )
-    broker = FakeBroker(order_statuses={"ORD-X1": {"status": "Filled", "price": "3.00", "filled": True}})
-    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
-    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["status"] == "settled"
-    assert row["close_fill_status"] == "filled"
-    assert row["closed_before_expiry"] == 1
-    assert row["gross_pnl"] == pytest.approx((0.25 + 3.00) * 100)
-    decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit'").fetchone()
-    assert decision["reason"] == "filled" and decision["accepted"] == 1
-
-
-def test_close_terminal_unfilled_falls_back_to_an_open_fly(live_conn):
-    """A rejected/cancelled closing order releases the position back to an ordinary open fly,
-    which falls through to the normal settlement path (and the real assignment fee) -- the one
-    tail risk fly.position_floor's docstring names explicitly."""
-    dbmod.save_position(
-        live_conn,
-        {
-            **_open_entry_row(entry_fill_status="filled"),
-            "kind": "fly",
-            "net": 0.25,
-            "debit": 0.80,
-            "close_order_id": "ORD-X1",
-            "close_fill_status": "pending",
-        },
-    )
-    broker = FakeBroker(order_statuses={"ORD-X1": {"status": "Rejected", "price": None, "filled": False}})
-    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
-    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["kind"] == "fly" and row["status"] == "open"
-    assert row["close_order_id"] is None and row["close_fill_status"] == "rejected"
-    decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit'").fetchone()
-    assert decision["reason"] == "close_rejected" and decision["accepted"] == 0
 
 
 # --------------------------------------------------------------------------- pre-close ITM exit: verticals
-def test_pre_close_exit_places_a_closing_order_for_an_itm_vertical(live_conn):
-    """The extension (2026-07-30): a still-open, already-ITM credit spread gets the same
-    fee-avoidance closing order a completed fly does. _open_entry_row()'s default kind IS
-    short_vertical (center 7495, wing 5, side PUT) -- no override needed."""
-    dbmod.save_position(live_conn, _open_entry_row(entry_fill_status="filled"))
-
-    def close_q(occ, mid):
-        return {"bid": mid, "ask": mid, "mid": mid, "occ_symbol": occ, "instrument_type": "Equity Option"}
-
-    # Spot between the protective long (7490) and the short centre (7495) -- only the short leg
-    # is ITM. No quote at 7500 (the completing strike), so evaluate_completion can't also fire
-    # and race this: this snapshot exercises the pre-close-exit path in isolation.
-    snap = _snapshot(
-        now_min=955,
-        underlying_price=7493.0,
-        puts={
-            7490.0: close_q("SPXW  260729P07490000", 0.0),
-            7495.0: close_q("SPXW  260729P07495000", 2.0),
-        },
-    )
-    broker = FakeBroker()
-    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
-    assert summary.get("pre_close_exits_placed") == 1
-    close_orders = [p for p in broker.placed if p["spec"]["price_effect"] == "debit"]
-    assert len(close_orders) == 1
-    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["kind"] == "short_vertical"  # never touched by completion
-    assert row["close_order_id"] is not None
-    assert row["close_fill_status"] == "pending"
-    decision = live_conn.execute(
-        "SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit' AND reason = 'placed'"
-    ).fetchone()
-    assert decision is not None and decision["accepted"] == 1 and decision["position_id"] == "E1"
-
-
-def test_pre_close_exit_skips_a_vertical_with_a_resting_completion_order(live_conn):
-    """The sequencing guard: a vertical with a completion order still working (not yet cancelled
-    by completion_cutoff) must never be raced by a pre-close-exit close order on the same tick."""
-    dbmod.save_position(
-        live_conn,
-        {**_open_entry_row(entry_fill_status="filled"), "completion_order_id": "ORD-C1"},
-    )
-    broker = FakeBroker(order_statuses={"ORD-C1": {"status": "Live", "price": None, "filled": False}})
-    snap = _snapshot(now_min=955, underlying_price=7493.0)  # inside the window
-    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
-    assert "pre_close_exits_placed" not in summary
-    row = live_conn.execute("SELECT close_order_id FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["close_order_id"] is None
-
-
-def test_close_fill_confirmation_settles_a_vertical_at_the_actual_close_debit(live_conn):
-    dbmod.save_position(
-        live_conn,
-        {
-            **_open_entry_row(entry_fill_status="filled"),
-            "close_order_id": "ORD-X2",
-            "close_fill_status": "pending",
-        },
-    )
-    broker = FakeBroker(order_statuses={"ORD-X2": {"status": "Filled", "price": "2.00", "filled": True}})
-    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
-    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["status"] == "settled"
-    assert row["kind"] == "short_vertical"
-    assert row["close_fill_status"] == "filled"
-    assert row["closed_before_expiry"] == 1
-    # net 1.05 credit collected at open, less the 2.00 debit paid to close: gross = (1.05-2.00)*100
-    assert row["gross_pnl"] == pytest.approx((1.05 - 2.00) * 100)
-    decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit'").fetchone()
-    assert decision["reason"] == "filled" and decision["accepted"] == 1
 
 
 # --------------------------------------------------------------------------- resting completion pricing
 def test_max_safe_completion_debit_is_min_of_both_gates():
-    # SPX entry: credit 1.05, fees 3.44 recorded; completion adds another 3.44. Not reserving the
-    # resulting fly's worst-case exercise-assignment fee (2026-07-30) -- see
-    # fly.position_floor's docstring: engine.evaluate_pre_close_exit bounds that cost going
-    # forward instead, so this bound matches fly.position_floor's own (unbuffered) formula.
+    # SPX entry: credit 1.05, fees 3.44 recorded; completion adds another 3.44, PLUS the resulting
+    # fly's $15 worst-case exercise-assignment reserve (2026-08-01, when the pre-close ITM exit
+    # that used to bound that cost was removed) -- this bound must reserve exactly what
+    # fly.position_floor reserves, or a resting order could fill into a fly the floor gate refuses.
     # buffer gate: 1.05 - 0.10 = 0.95
-    # floor bound at min_floor=10: 1.05 - (10 + 3.44 + 3.4433)/100 = 1.05 - 0.168833 = 0.881167
+    # floor bound at min_floor=10: 1.05 - (10 + 3.44 + 3.4433 + 15)/100 = 1.05 - 0.318833 = 0.731167
     pos = {
         "side": PUT,
         "center": 7495.0,
@@ -1272,10 +1087,35 @@ def test_max_safe_completion_debit_is_min_of_both_gates():
         "symbol": "SPX",
     }
     bound = live_orders.max_safe_completion_debit(pos, 10.0, 0.10)
-    assert bound == pytest.approx(0.881167, abs=1e-4)
-    # with a tiny floor requirement the buffer gate binds instead
-    bound2 = live_orders.max_safe_completion_debit(pos, 0.0, 0.10)
-    assert bound2 == pytest.approx(0.95)
+    assert bound == pytest.approx(0.731167, abs=1e-4)
+    # Even at min_floor=0 the floor gate binds rather than the 0.95 buffer gate, and no credit
+    # can change that: both gates sit a FIXED distance below the credit, so which one binds
+    # depends only on (fees + reserve) vs fee_buffer*100. At $6.88 of fees plus the $15 reserve
+    # against a $10 buffer, the floor gate wins outright -- one practical consequence of the
+    # 2026-08-01 reserve is that the default fee_buffer no longer binds on SPX flies at all.
+    assert live_orders.max_safe_completion_debit(pos, 0.0, 0.10) == pytest.approx(0.831167, abs=1e-4)
+    # A buffer wide enough to clear fees + reserve does still bind, so the min() is real.
+    assert live_orders.max_safe_completion_debit(pos, 0.0, 0.50) == pytest.approx(0.55)
+
+
+def test_max_safe_completion_debit_reserves_exactly_what_position_floor_does():
+    """The invariant the bound exists to hold: a completion filling AT the bound must produce a fly
+    whose fly.position_floor is exactly min_floor_dollars -- never a cent below. If position_floor's
+    assignment reserve and this bound's ever diverge, a resting order could fill into a fly the
+    floor gate would have refused, which is the one thing a resting limit must not be able to do."""
+    pos = {
+        "side": PUT, "center": 7495.0, "wing_width": 5, "quantity": 1,
+        "net": 1.05, "fees": 3.44, "symbol": "SPX",
+    }
+    min_floor = 10.0
+    bound = live_orders.max_safe_completion_debit(pos, min_floor, 0.10)
+    completed = {
+        **pos,
+        "kind": "fly",
+        "net": pos["net"] - bound,
+        "fees": pos["fees"] + fly.vertical_open_fee(pos["symbol"], 1),
+    }
+    assert fly.position_floor(completed) == pytest.approx(min_floor, abs=1e-6)
 
 
 def test_resting_completion_spec_prices_at_the_bound_and_derives_legs():
@@ -1291,7 +1131,7 @@ def test_resting_completion_spec_prices_at_the_bound_and_derives_legs():
     spec = live_orders.resting_completion_spec(
         _snapshot(), pos, {"min_floor_dollars": 10, "fee_buffer": 0.10}
     )
-    assert spec["price"] == 0.85  # 0.881167 tick-floored
+    assert spec["price"] == 0.70  # 0.731167 tick-floored
     actions = {leg["symbol"]: leg["action"] for leg in spec["legs"]}
     assert actions["SPXW  260729P07500000"] == "buy to open"  # completing long = center + W for puts
     assert actions["SPXW  260729P07495000"] == "sell to open"

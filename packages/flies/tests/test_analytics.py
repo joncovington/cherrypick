@@ -36,6 +36,7 @@ def position(
     underlying=6000.0,
     risk_free=1,
     floor_dollars=None,
+    regime=None,
 ):
     dbmod.save_position(
         conn,
@@ -65,6 +66,10 @@ def position(
             "risk_free": risk_free,
             "floor_dollars": floor_dollars,
             "entry_time": f"{day}T12:00:00",
+            # Regime tags, threaded the same way `window` is. Pass e.g.
+            # regime={"gex_bucket": "pinning", "gex_concentration": 0.71}; keys are prefixed
+            # "entry_" to match what book.regime_columns writes.
+            **{f"entry_{k}": v for k, v in (regime or {}).items()},
         },
     )
 
@@ -854,3 +859,65 @@ def test_timeline_rewinds_a_rolled_bwb_to_the_broken_wing_it_used_to_be(conn):
     assert before == pytest.approx(1.1 * 100 - open_fee, abs=0.01)
     # the rolled fly at its centre: full wing, two fee stacks, one ITM leg by the same convention.
     assert after == pytest.approx((1.1 - 0.3) * 100 + 500 - open_fee - roll_fee - 5.00, abs=0.01)
+
+
+# --------------------------------------------------------------------------- regime conditioning
+def test_by_regime_groups_on_the_stored_bucket(conn):
+    position(conn, "P1", pnl=100.0, regime={"gex_bucket": "pinning", "gex_concentration": 0.75})
+    position(conn, "P2", pnl=50.0, regime={"gex_bucket": "pinning", "gex_concentration": 0.68})
+    position(conn, "P3", pnl=-30.0, regime={"gex_bucket": "thin", "gex_concentration": 0.20})
+    rows = {r["bucket"]: r for r in analytics.by_regime(conn, "gex")}
+    assert rows["pinning"]["trades"] == 2 and rows["pinning"]["net_pnl"] == 150.0
+    assert rows["thin"]["trades"] == 1 and rows["thin"]["net_pnl"] == -30.0
+    # The measured range is carried so a threshold can be judged against what actually occurred.
+    assert rows["pinning"]["value_min"] == 0.68 and rows["pinning"]["value_max"] == 0.75
+
+
+def test_by_regime_rebuckets_the_recorded_float_at_analysis_time(conn):
+    """The whole reason the float is stored: re-cutting a threshold must not require re-running
+    sessions, which for regime data is impossible (there is no backfill path)."""
+    position(conn, "P1", pnl=100.0, regime={"gex_bucket": "thin", "gex_concentration": 0.35})
+    position(conn, "P2", pnl=-40.0, regime={"gex_bucket": "thin", "gex_concentration": 0.90})
+    # Both stored as "thin"; a 0.5 cut separates them without touching the ledger.
+    assert len(analytics.by_regime(conn, "gex")) == 1
+    rebucketed = {r["bucket"]: r for r in analytics.by_regime(conn, "gex", bucket_edges=[0.5])}
+    assert rebucketed["<0.5"]["net_pnl"] == 100.0
+    assert rebucketed[">=0.5"]["net_pnl"] == -40.0
+
+
+def test_by_regime_keeps_untagged_rows_visible(conn):
+    """Pre-2026-07-31 rows carry no regime and cannot be backfilled. Dropping them would make
+    coverage look better than it is; they get their own bucket instead."""
+    position(conn, "P1", pnl=10.0, regime={"gex_bucket": "thin", "gex_concentration": 0.2})
+    position(conn, "P2", pnl=20.0)  # no regime at all
+    buckets = {r["bucket"] for r in analytics.by_regime(conn, "gex")}
+    assert buckets == {"thin", "untagged"}
+
+
+def test_by_regime_rejects_an_unknown_dimension(conn):
+    with pytest.raises(ValueError, match="unknown dimension"):
+        analytics.by_regime(conn, "moon_phase")
+
+
+def test_regime_coverage_flags_a_degenerate_dimension(conn):
+    """The honesty guard. A dimension whose every tagged row lands in one bucket produces a table
+    that looks like a result and contains no contrast -- which is exactly what entry_gex_bucket was
+    ('thin' 60/60) before the classifier was windowed, with nothing in the read layer saying so."""
+    position(conn, "P1", pnl=10.0, regime={"gex_bucket": "thin", "skew_bucket": "put_skew"})
+    position(conn, "P2", pnl=20.0, regime={"gex_bucket": "thin", "skew_bucket": "flat"})
+    position(conn, "P3", pnl=30.0)  # untagged
+    cov = analytics.regime_coverage(conn)
+    assert cov["settled_trades"] == 3
+    assert cov["dimensions"]["gex"]["degenerate"] is True
+    assert cov["dimensions"]["gex"]["tagged"] == 2
+    assert cov["dimensions"]["gex"]["untagged"] == 1
+    assert cov["dimensions"]["skew"]["degenerate"] is False
+
+
+def test_by_regime_reads_the_completion_phase_too(conn):
+    """Entry and completion regimes can differ -- that difference is the point of storing both."""
+    position(conn, "P1", pnl=10.0, regime={"vol_bucket": "high"})
+    conn.execute("UPDATE fly_positions SET completion_vol_bucket = 'low' WHERE position_id = 'P1'")
+    conn.commit()
+    assert analytics.by_regime(conn, "vol", phase="entry")[0]["bucket"] == "high"
+    assert analytics.by_regime(conn, "vol", phase="completion")[0]["bucket"] == "low"

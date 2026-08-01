@@ -177,94 +177,157 @@ def classify_regime(snapshot: dict, params: dict) -> dict:
     now vs. spot N minutes ago) that no single snapshot carries, and guessing at that plumbing
     before there is a reason to is the mistake this module's honesty rules exist to prevent.
 
-    Returns {"vol_bucket", "gex_bucket", "time_bucket", "skew_bucket"} -- four independent values,
-    not one collapsed string, so analytics can slice on any one dimension or their cross product.
-    Every threshold below is a placeholder pending recalibration once real sessions accumulate,
-    flagged the same way in config.example.json as every other gate in this module.
+    Returns a bucket per dimension -- four independent values, not one collapsed string, so
+    analytics can slice on any one dimension or their cross product -- AND the continuous measure
+    each bucket was derived from, plus the GEX surface's own provenance.
+
+    **Recording the raw measure alongside the bucket is the point** (added 2026-08-01). Every
+    threshold here is a placeholder pending recalibration, and a bucket alone destroys the
+    information needed to recalibrate: a session tagged "thin" cannot later be re-bucketed under a
+    different threshold without re-running it, which is impossible. Storing the float means
+    thresholds can be re-derived from history at analysis time instead. MEIC learned this first --
+    see the rationale on its `gex_net_at_entry` columns (`meic/src/db.py:84-94`).
     """
+    vol_bucket, vol_value = _classify_vol(snapshot, params)
+    gex_bucket, gex_value = _classify_gex(snapshot, params)
+    time_bucket, time_value = _classify_time(snapshot, params)
+    skew_bucket, skew_value = _classify_skew(snapshot, params)
+    gex = snapshot.get("gex") or {}
+    gex_stats = snapshot.get("gex_stats") or {}
     return {
-        "vol_bucket": _classify_vol(snapshot, params),
-        "gex_bucket": _classify_gex(snapshot, params),
-        "time_bucket": _classify_time(snapshot, params),
-        "skew_bucket": _classify_skew(snapshot, params),
+        "vol_bucket": vol_bucket,
+        "gex_bucket": gex_bucket,
+        "time_bucket": time_bucket,
+        "skew_bucket": skew_bucket,
+        # The measures behind the buckets.
+        "vol_value": vol_value,
+        "gex_concentration": gex_value,
+        "time_value": time_value,
+        "skew_value": skew_value,
+        # GEX surface provenance: what the number was, and how much data stood behind it. Without
+        # the coverage/age pair, a regime tag from a healthy surface is indistinguishable from one
+        # computed off four surviving stale strikes.
+        "net_gex": gex.get("net_gex") if gex.get("ok") else None,
+        "gamma_flip": gex.get("gamma_flip") if gex.get("ok") else None,
+        "gex_spot": gex.get("spot") if gex.get("ok") else None,
+        "gex_strikes": gex_stats.get("strikes_with_data"),
+        "gex_input_age": gex_stats.get("oldest_input_age_seconds"),
     }
 
 
-def _classify_vol(snapshot: dict, params: dict) -> str:
+def _classify_vol(snapshot: dict, params: dict) -> tuple[str, float | None]:
     """ATM straddle price / spot -- a cheap 0DTE expected-move proxy. No IV surface is available
     here, so this reads the market's own pricing of the straddle directly rather than backing out
-    an implied vol number the snapshot has no inputs to compute honestly."""
+    an implied vol number the snapshot has no inputs to compute honestly.
+
+    Returns (bucket, straddle/spot ratio)."""
     spot = snapshot.get("underlying_price")
     if spot is None or spot <= 0:
-        return "unknown"
+        return "unknown", None
     strike = atm_strike(spot, params.get("strike_increment", 5))
     put_q, call_q = quote(snapshot, PUT, strike), quote(snapshot, CALL, strike)
     if put_q is None or call_q is None:
-        return "unknown"
+        return "unknown", None
     straddle = fly._leg_mid(put_q) + fly._leg_mid(call_q)
     ratio = straddle / spot
     if ratio < params.get("regime_vol_low_pct", 0.0015):
-        return "low"
+        return "low", ratio
     if ratio > params.get("regime_vol_high_pct", 0.0035):
-        return "high"
-    return "normal"
+        return "high", ratio
+    return "normal", ratio
 
 
-def _classify_gex(snapshot: dict, params: dict) -> str:
-    """Reuses the `gex` arm's own per-strike concentration read (not arm-gated -- every arm can
-    tag the regime it traded in, not just the one that trades on it). "unknown" whenever the OI
-    cache the streamer would need isn't populated yet, mirroring `select_center`'s own honest
-    degrade -- never guessed."""
+# Concentration is measured over the top N strikes, not the single largest. Pinning is a property
+# of a cluster: a doubled centre plus its immediate neighbours hold price together, and a measure
+# that only sees one strike splits that cluster's own mass and reads it as thin.
+_GEX_CONCENTRATION_TOP_N = 3
+
+
+def _classify_gex(snapshot: dict, params: dict) -> tuple[str, float | None]:
+    """How concentrated gamma is NEAR SPOT -- the condition under which pinning can actually act.
+
+    Returns (bucket, concentration share). "unknown" whenever the OI cache the streamer would need
+    isn't populated yet, mirroring `select_center`'s own honest degrade -- never guessed.
+
+    **Windowed to `regime_gex_window_pct` of spot (2026-08-01 fix).** This previously took one
+    strike's share of the ENTIRE chain -- and flies computes GEX over the whole surface
+    (`provider.build_snapshot`), typically 109-121 strikes on a real 0DTE session. A single strike's
+    share of that is small by construction, gamma 300 points away has no bearing on whether price
+    pins here, and the resulting tag was degenerate in practice: `entry_gex_bucket` came back
+    'thin' 60 times out of 60, never once 'pinning', while the sibling vol and skew tags varied
+    normally. A measure that cannot take its other value is not measuring anything.
+
+    The threshold remains uncalibrated -- but `classify_regime` now records this share as a float,
+    so it can be re-derived from history rather than re-guessed.
+    """
     gex = snapshot.get("gex") or {}
     per_strike = gex.get("per_strike") or []
-    if not gex.get("ok") or not per_strike:
-        return "unknown"
-    totals = [abs(s.get("call_gex", 0) + s.get("put_gex", 0)) for s in per_strike]
+    spot = gex.get("spot") or snapshot.get("underlying_price")
+    if not gex.get("ok") or not per_strike or not spot:
+        return "unknown", None
+    window = params.get("regime_gex_window_pct", 0.02) * spot
+    near = [s for s in per_strike if abs(s.get("strike", 0) - spot) <= window]
+    if not near:
+        return "unknown", None
+    totals = sorted((abs(s.get("call_gex", 0) + s.get("put_gex", 0)) for s in near), reverse=True)
     total_sum = sum(totals)
     if total_sum <= 0:
-        return "unknown"
-    share = max(totals) / total_sum
-    return "pinning" if share >= params.get("regime_gex_pinning_share", 0.5) else "thin"
+        return "unknown", None
+    share = sum(totals[:_GEX_CONCENTRATION_TOP_N]) / total_sum
+    threshold = params.get("regime_gex_pinning_concentration", 0.60)
+    return ("pinning" if share >= threshold else "thin"), share
 
 
-def _classify_time(snapshot: dict, params: dict) -> str:
+def _classify_time(snapshot: dict, params: dict) -> tuple[str, int | None]:
+    """Session phase, and the raw minute-of-day behind it.
+
+    Known degenerate at the default boundaries (measured 2026-08-01): this module's entry windows
+    have only ever produced entries between 09:45 and 15:00, while "midday" spans 10:00-15:30, so
+    every one of the 60 tagged rows came back 'midday'. Deliberately NOT re-guessed here -- the raw
+    minute is now recorded alongside the bucket, so `analytics.by_regime(..., bucket_edges=[...])`
+    can cut it against what actually happened rather than against another guess. Note too that
+    `entry_window` already records real entry timing with genuine variety (6 distinct values), and
+    `analytics.by_entry_window` already reads it -- this dimension may simply be redundant.
+    """
     now_min = snapshot.get("now_min")
     if now_min is None:
-        return "unknown"
+        return "unknown", None
     open_end = time_to_minutes(params.get("regime_time_open_end", "10:00"))
     close_start = time_to_minutes(params.get("regime_time_close_start", "15:30"))
     if now_min < open_end:
-        return "open"
+        return "open", now_min
     if now_min >= close_start:
-        return "close"
-    return "midday"
+        return "close", now_min
+    return "midday", now_min
 
 
 def _classify_skew(snapshot: dict, params: dict) -> str:
     """Reads directional skew straight out of the chain already in hand: compares the OTM put at
     `center - wing_width` against the OTM call at `center + wing_width` -- the exact strikes this
     module already trades, not an arbitrary distance. A richer put than its equidistant call means
-    the market is pricing more downside risk than upside, and vice versa."""
+    the market is pricing more downside risk than upside, and vice versa.
+
+    Returns (bucket, normalised put-minus-call difference)."""
     spot = snapshot.get("underlying_price")
     if spot is None:
-        return "unknown"
+        return "unknown", None
     center = atm_strike(spot, params.get("strike_increment", 5))
     width = params.get("wing_width", 5)
     put_q = quote(snapshot, PUT, center - width)
     call_q = quote(snapshot, CALL, center + width)
     if put_q is None or call_q is None:
-        return "unknown"
+        return "unknown", None
     put_mid, call_mid = fly._leg_mid(put_q), fly._leg_mid(call_q)
     avg = (put_mid + call_mid) / 2.0
     if avg <= 0:
-        return "unknown"
+        return "unknown", None
     diff = (put_mid - call_mid) / avg
     threshold = params.get("regime_skew_threshold", 0.15)
     if diff > threshold:
-        return "put_skew"
+        return "put_skew", diff
     if diff < -threshold:
-        return "call_skew"
-    return "flat"
+        return "call_skew", diff
+    return "flat", diff
 
 
 def choose_side(snapshot: dict, center: float) -> str:
@@ -860,178 +923,6 @@ def evaluate_roll(snapshot: dict, position: dict, params: dict) -> tuple:
         return False, "roll_debit_too_high", plan
     if floor < params.get("min_floor_dollars", 0.0):
         return False, "floor_below_minimum_after_fees", plan
-
-    return True, "ok", plan
-
-
-# --------------------------------------------------------------------------- pre-close ITM exit
-DEFAULT_PRE_CLOSE_EXIT = "15:50"  # 10 minutes before the 16:00 ET close
-
-
-def evaluate_pre_close_exit(snapshot: dict, position: dict, params: dict) -> tuple:
-    """Should this position be closed NOW, ahead of cash settlement, because it has an ITM leg
-    and closing is cheaper than the $5/contract exercise-assignment fee those legs would
-    otherwise incur overnight?
-
-    Fires only inside the configured window (`pre_close_exit_time`, default the final 10 minutes
-    of the session) — an ITM position at 11am has all afternoon left to walk back out of the
-    money, and closing on a momentary touch would be exactly the improvised adjustment rule 5
-    forbids. This is not that: it is a narrow, mechanical cost comparison in the closing minutes,
-    when there is no meaningful time left for the picture to change.
-
-    Applies to a completed fly, a completed iron fly, a still-open (uncompleted) short vertical,
-    a still-open (uncompleted) `debit_first` long vertical, and a still-open (unrolled) `bwb`: an
-    ITM leg is realizing a real dollar outcome one way or the other, and letting the assignment
-    fee stack on top of it is the same avoidable cost regardless of which kind carries it. For an
-    unrolled bwb this matters most of all -- its tail is a real loss, and an unexited tail leg
-    pays the assignment fee on top of it. The gate is a straight dollar comparison either way, not
-    a price gate like `evaluate_completion`'s: close only if the slippage cost of doing so is
-    strictly cheaper than the assignment fee avoided — otherwise holding to settlement and paying
-    the fee is the better of the two options, and this leaves the position alone.
-    """
-    kind = position.get("kind")
-    if kind not in ("fly", "short_vertical", "long_vertical", "iron_fly", "bwb"):
-        return False, "not_a_closeable_kind", None
-
-    now_min = snapshot.get("now_min")
-    window_start = time_to_minutes(params.get("pre_close_exit_time", DEFAULT_PRE_CLOSE_EXIT))
-    if now_min is None or now_min < window_start:
-        return False, "before_pre_close_exit_window", None
-
-    spot = snapshot.get("underlying_price")
-    if spot is None:
-        return False, "no_spot_price", None
-
-    itm_legs = fly.itm_legs_at_settlement(position, spot)
-    if itm_legs == 0:
-        return False, "no_itm_legs", None
-
-    side, center, width = position.get("side"), position["center"], position["wing_width"]
-    symbol, qty = snapshot["symbol"], position.get("quantity", 1)
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
-    assignment_fee = fly.expire_fee(itm_legs)
-
-    if kind == "fly":
-        lower, upper = center - width, center + width
-        if not _have(snapshot, side, [lower, center, upper]):
-            return False, "missing_leg_quotes", None
-        close_price = fly.fly_close_credit(
-            quote(snapshot, side, lower), quote(snapshot, side, center), quote(snapshot, side, upper), slip
-        )
-        close_fee = fly.fly_close_fee(symbol, qty)
-        # Intrinsic value at the current spot: near-worthless extrinsic this close to expiry, and
-        # the number the assignment-fee side of the comparison is implicitly measured against
-        # (holding to settlement realizes ~this minus the assignment fee, spot moving no further).
-        theoretical = fly.fly_payoff(center, width, spot)
-        slippage_cost = (theoretical - close_price) * fly.CONTRACT_MULTIPLIER * qty + close_fee
-        plan = {
-            "close_credit": round(close_price, 4),
-            "close_fee": round(close_fee, 4),
-            "itm_legs": itm_legs,
-            "assignment_fee": round(assignment_fee, 2),
-            "slippage_cost": round(slippage_cost, 2),
-            "lower_strike": lower,
-            "upper_strike": upper,
-        }
-    elif kind == "short_vertical":
-        long_strike = center - width if side == PUT else center + width
-        if not _have(snapshot, side, [center, long_strike]):
-            return False, "missing_leg_quotes", None
-        # Closing buys the centre back (it was the SHORT leg at open, so it's the leg being
-        # bought now) and sells the protective long_strike leg -- the reverse of entry_spec's
-        # actions, which is why vertical_debit's arguments are (centre, long_strike) here, not
-        # (long_strike, centre) the way an opening debit spread would pass them.
-        close_price = fly.vertical_debit(
-            quote(snapshot, side, center), quote(snapshot, side, long_strike), slip
-        )
-        close_fee = fly.vertical_close_fee(symbol, qty)
-        # The debit that would exactly buy back the vertical's current intrinsic liability -- the
-        # magnitude of short_vertical_payoff, which is <= 0 (a signed loss); closing pays this
-        # much (plus slippage) NOW instead of realizing the same loss (plus the assignment fee)
-        # at settlement.
-        theoretical = -fly.short_vertical_payoff(side, center, width, spot)
-        slippage_cost = (close_price - theoretical) * fly.CONTRACT_MULTIPLIER * qty + close_fee
-        plan = {
-            "close_debit": round(close_price, 4),
-            "close_fee": round(close_fee, 4),
-            "itm_legs": itm_legs,
-            "assignment_fee": round(assignment_fee, 2),
-            "slippage_cost": round(slippage_cost, 2),
-            "long_strike": long_strike,
-        }
-    elif kind == "long_vertical":  # debit_first's opening trade, still uncompleted
-        long_strike = center - width if side == CALL else center + width
-        if not _have(snapshot, side, [center, long_strike]):
-            return False, "missing_leg_quotes", None
-        # Closing SELLS the held long leg and buys back the short centre -- the reverse of the
-        # opening trade, so this is a credit, priced with vertical_credit not vertical_debit.
-        close_price = fly.vertical_credit(
-            quote(snapshot, side, long_strike), quote(snapshot, side, center), slip
-        )
-        close_fee = fly.vertical_close_fee(symbol, qty)
-        # The credit that would exactly realize the vertical's current intrinsic value -- always
-        # >= 0, the mirror of short_vertical's always-<=0 theoretical.
-        theoretical = fly.debit_vertical_payoff(side, center, width, spot)
-        slippage_cost = (theoretical - close_price) * fly.CONTRACT_MULTIPLIER * qty + close_fee
-        plan = {
-            "close_credit": round(close_price, 4),
-            "close_fee": round(close_fee, 4),
-            "itm_legs": itm_legs,
-            "assignment_fee": round(assignment_fee, 2),
-            "slippage_cost": round(slippage_cost, 2),
-            "long_strike": long_strike,
-        }
-    elif kind == "iron_fly":  # geometry is fixed regardless of which side was legged first
-        lower_put, upper_call = center - width, center + width
-        if not _have(snapshot, PUT, [lower_put, center]) or not _have(snapshot, CALL, [center, upper_call]):
-            return False, "missing_leg_quotes", None
-        close_price = fly.iron_close_credit(
-            quote(snapshot, PUT, lower_put),
-            quote(snapshot, PUT, center),
-            quote(snapshot, CALL, center),
-            quote(snapshot, CALL, upper_call),
-            slip,
-        )
-        close_fee = fly.fly_close_fee(symbol, qty)  # same 4-contract/2-sell shape
-        theoretical = fly.iron_fly_payoff(center, width, spot)
-        slippage_cost = (theoretical - close_price) * fly.CONTRACT_MULTIPLIER * qty + close_fee
-        plan = {
-            "close_credit": round(close_price, 4),
-            "close_fee": round(close_fee, 4),
-            "itm_legs": itm_legs,
-            "assignment_fee": round(assignment_fee, 2),
-            "slippage_cost": round(slippage_cost, 2),
-            "lower_strike": lower_put,
-            "upper_strike": upper_call,
-        }
-    else:  # bwb -- still unrolled; asymmetric, single-type, spacing-agnostic pricing still applies
-        far_width = position["far_width"]
-        near_wing, _, far_wing = fly.bwb_strikes(side, center, width, far_width)
-        lower_wing, upper_wing = _bwb_lower_upper(side, near_wing, far_wing)
-        if not _have(snapshot, side, [lower_wing, center, upper_wing]):
-            return False, "missing_leg_quotes", None
-        # fly_close_credit is symmetric in lower/upper (the mid terms just add) and spacing-
-        # agnostic, so it prices this asymmetric close exactly the same way it prices a same-type
-        # fly's -- can legitimately come out NEGATIVE (a debit) when the tail side is deep ITM and
-        # the near side is worthless; the arithmetic still holds.
-        close_price = fly.fly_close_credit(
-            quote(snapshot, side, lower_wing), quote(snapshot, side, center), quote(snapshot, side, upper_wing), slip
-        )
-        close_fee = fly.fly_close_fee(symbol, qty)
-        theoretical = fly.bwb_payoff(side, center, width, far_width, spot)
-        slippage_cost = (theoretical - close_price) * fly.CONTRACT_MULTIPLIER * qty + close_fee
-        plan = {
-            "close_credit": round(close_price, 4),
-            "close_fee": round(close_fee, 4),
-            "itm_legs": itm_legs,
-            "assignment_fee": round(assignment_fee, 2),
-            "slippage_cost": round(slippage_cost, 2),
-            "lower_strike": lower_wing,
-            "upper_strike": upper_wing,
-        }
-
-    if slippage_cost >= assignment_fee:
-        return False, "closing_slippage_exceeds_assignment_fee", plan
 
     return True, "ok", plan
 

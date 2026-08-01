@@ -47,6 +47,17 @@ except Exception:  # pragma: no cover - only where zoneinfo has no tz database
 DEFAULT_MAX_QUOTE_AGE_SECONDS = 120
 DEFAULT_STRIKE_WINDOW_PCT = 0.015
 
+# GEX inputs get their own, much longer age limit than quotes. Greeks and open interest move on a
+# different clock: OI is a once-a-day exchange snapshot delivered over DXLink Summary events, and
+# gamma updates far less often than a quote does, so the 120s quote limit would reject a perfectly
+# good surface. What this is here to catch is the case that was previously invisible -- a stale or
+# dead feed producing a GEX number that looks exactly as confident as a live one. Measured against
+# the cache on 2026-08-01, a healthy session sits well inside this and a dead feed is days outside.
+DEFAULT_MAX_GEX_INPUT_AGE_SECONDS = 1800  # 30 minutes
+# Below this many contributing strikes the surface is too sparse to locate a wall or a flip on.
+# `compute_gex` already counts them (`strikes_with_data`); nothing consumed the number until now.
+DEFAULT_MIN_GEX_STRIKES = 20
+
 
 def now_et() -> datetime:
     return datetime.now(_ET)
@@ -136,6 +147,24 @@ def nearest_expiration(conn, symbol: str) -> str | None:
     return row["expiration"] if row else None
 
 
+def snapshot_kwargs(config: dict) -> dict:
+    """The `build_snapshot` data-quality knobs read out of a loaded config's `defaults` block.
+
+    One helper because four call sites (paper_loop's tick and its streamer probe, live_loop's tick
+    and its watcher) all need the identical set, and the freshness limits are exactly the kind of
+    thing that goes wrong by being applied in three places out of four."""
+    defaults = config.get("defaults", {}) or {}
+    return {
+        "max_quote_age_seconds": defaults.get(
+            "max_quote_age_seconds", DEFAULT_MAX_QUOTE_AGE_SECONDS
+        ),
+        "max_gex_input_age_seconds": defaults.get(
+            "max_gex_input_age_seconds", DEFAULT_MAX_GEX_INPUT_AGE_SECONDS
+        ),
+        "min_gex_strikes": defaults.get("min_gex_strikes", DEFAULT_MIN_GEX_STRIKES),
+    }
+
+
 def build_snapshot(
     db_path,
     symbol: str,
@@ -143,6 +172,8 @@ def build_snapshot(
     when: datetime | None = None,
     max_quote_age_seconds: float = DEFAULT_MAX_QUOTE_AGE_SECONDS,
     strike_window_pct: float = DEFAULT_STRIKE_WINDOW_PCT,
+    max_gex_input_age_seconds: float | None = DEFAULT_MAX_GEX_INPUT_AGE_SECONDS,
+    min_gex_strikes: int = DEFAULT_MIN_GEX_STRIKES,
 ) -> dict:
     """Build one engine-ready snapshot for `symbol`, or a `{"ok": False, "reason": ...}` refusal.
 
@@ -207,8 +238,39 @@ def build_snapshot(
 
         # GEX is computed over the FULL chain, not the near-spot window: walls and the gamma flip are
         # properties of the whole surface, and truncating it would move them.
-        greeks, oi = _greeks_and_oi(conn, [e["streamer_symbol"] for e in entries])
+        greeks, oi, gex_input_stats = _greeks_and_oi(
+            conn,
+            [e["streamer_symbol"] for e in entries],
+            now_ts=now_ts,
+            max_age_seconds=max_gex_input_age_seconds,
+        )
         gex = compute_gex(entries, greeks, oi, spot)
+        gex_stats = {
+            "strikes_with_data": gex.get("strikes_with_data", 0) if gex.get("ok") else 0,
+            "min_strikes": min_gex_strikes,
+            "max_input_age_seconds": max_gex_input_age_seconds,
+            "oldest_input_age_seconds": gex_input_stats["oldest_age"],
+            "greeks_fresh": gex_input_stats["greeks_fresh"],
+            "greeks_stale": gex_input_stats["greeks_stale"],
+            "oi_fresh": gex_input_stats["oi_fresh"],
+            "oi_stale": gex_input_stats["oi_stale"],
+        }
+        # Coverage refusal. A GEX surface built from a handful of surviving strikes still returns
+        # ok=True with a confident-looking wall and flip; downgrading it to a refusal here is what
+        # lets `select_center` fall back to ATM (its `atm_gex_unavailable` path) instead of centring
+        # a real butterfly on noise. The reason string is carried so the Decision Journal can tell a
+        # thin session from a broken feed -- the same distinction `quote_stats.rejected` draws.
+        if gex.get("ok") and gex_stats["strikes_with_data"] < min_gex_strikes:
+            gex = {
+                "ok": False,
+                "error": (
+                    f"insufficient GEX coverage — {gex_stats['strikes_with_data']} strikes with data "
+                    f"(need {min_gex_strikes}); {gex_input_stats['greeks_stale']} greeks and "
+                    f"{gex_input_stats['oi_stale']} OI rows rejected as stale"
+                ),
+                "insufficient_coverage": True,
+            }
+            gex_stats["refused"] = "insufficient_coverage"
 
         today = when.date()
         try:
@@ -235,29 +297,79 @@ def build_snapshot(
                 "rejected": stale,
                 "max_age_seconds": max_quote_age_seconds,
             },
+            # The same audit trail for the GEX surface. Without this, a session that centred every
+            # butterfly on stale gamma is indistinguishable from one that centred on live gamma.
+            "gex_stats": gex_stats,
         }
     finally:
         conn.close()
 
 
-def _greeks_and_oi(conn, chain_symbols: list[str]) -> tuple[dict, dict]:
+def _greeks_and_oi(
+    conn,
+    chain_symbols: list[str],
+    *,
+    now_ts: float | None = None,
+    max_age_seconds: float | None = None,
+) -> tuple[dict, dict, dict]:
+    """Gamma and open interest for `chain_symbols`, dropping rows older than `max_age_seconds`.
+
+    Returns `(greeks, oi, stats)`. Until 2026-08-01 this read both tables with no age filter at all,
+    so an hours-stale gamma produced a GEX number indistinguishable from a live one -- on a path
+    that picks the live butterfly's centre strike (`engine.select_center`, and `DEFAULT_ARM` is
+    "gex"). The quote path in this same module has always rejected stale rows and reported the
+    count (`_usable_quote`, `quote_stats`); this extends that discipline to the GEX inputs.
+
+    Passing `max_age_seconds=None` disables the filter and restores the old behaviour, which the
+    tests use to isolate the age logic from everything else.
+    """
     greeks: dict[str, dict] = {}
     oi: dict[str, int] = {}
+    stats = {"greeks_fresh": 0, "greeks_stale": 0, "oi_fresh": 0, "oi_stale": 0, "oldest_age": None}
     if not chain_symbols:
-        return greeks, oi
+        return greeks, oi, stats
+
+    def _fresh(updated) -> tuple[bool, float | None]:
+        if max_age_seconds is None:
+            return True, None
+        if updated is None:
+            return False, None
+        age = (now_ts if now_ts is not None else time.time()) - float(updated)
+        return age <= max_age_seconds, age
+
+    def _note_age(age: float | None) -> None:
+        if age is None:
+            return
+        if stats["oldest_age"] is None or age > stats["oldest_age"]:
+            stats["oldest_age"] = round(age, 1)
+
     # Chunked: SQLite caps variables per statement (999 by default) and a full SPX chain exceeds it.
     for i in range(0, len(chain_symbols), 900):
         chunk = chain_symbols[i : i + 900]
         placeholders = ", ".join("?" * len(chunk))
         for r in conn.execute(
-            f"SELECT symbol, gamma FROM stream_greeks WHERE symbol IN ({placeholders})", chunk
+            f"SELECT symbol, gamma, updated_at FROM stream_greeks WHERE symbol IN ({placeholders})",
+            chunk,
         ):
+            ok, age = _fresh(r["updated_at"])
+            if not ok:
+                stats["greeks_stale"] += 1
+                continue
+            _note_age(age)
+            stats["greeks_fresh"] += 1
             greeks[r["symbol"]] = {"gamma": float(r["gamma"] or 0)}
         for r in conn.execute(
-            f"SELECT symbol, open_interest FROM stream_oi WHERE symbol IN ({placeholders})", chunk
+            f"SELECT symbol, open_interest, updated_at FROM stream_oi WHERE symbol IN ({placeholders})",
+            chunk,
         ):
+            ok, age = _fresh(r["updated_at"])
+            if not ok:
+                stats["oi_stale"] += 1
+                continue
+            _note_age(age)
+            stats["oi_fresh"] += 1
             oi[r["symbol"]] = int(r["open_interest"] or 0)
-    return greeks, oi
+    return greeks, oi, stats
 
 
 def read_spot(db_path, symbol: str, *, max_age_seconds: float | None = None) -> float | None:

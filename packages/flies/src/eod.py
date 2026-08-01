@@ -276,6 +276,70 @@ def _cost_paragraph(stats: dict, arms: list[dict]) -> str:
     return " ".join(parts)
 
 
+def _regime_paragraph(coverage: dict, conn) -> str:
+    """Regime coverage across the WHOLE book (not just today) plus any dimension that separates.
+
+    Deliberately cumulative: one session's regime tags are four labels on a handful of rows and say
+    nothing. The question this section exists to answer is whether the tags are accumulating into
+    something answerable, and the honest daily answer for a while will be "not yet".
+    """
+    total = coverage["settled_trades"]
+    if not total:
+        return "No settled positions yet, so nothing is regime-tagged."
+
+    lines, degenerate, thin = [], [], []
+    for dim, info in coverage["dimensions"].items():
+        if not info["tagged"]:
+            thin.append(dim)
+            continue
+        spread = ", ".join(f"{b} {n}" for b, n in info["buckets"].items())
+        lines.append(f"- **{dim}** — {info['tagged']}/{total} tagged ({_drag(info['coverage_pct'])}): {spread}")
+        if info["degenerate"]:
+            degenerate.append(dim)
+
+    out = [
+        "Regime tags are descriptive only — nothing here gates a decision. They exist so a future "
+        "regime-conditioned mode selector can be built from labelled outcomes rather than guessed at. "
+        "Tagging began 2026-07-31 and **cannot be backfilled**, so coverage climbs only as new "
+        "sessions settle.",
+        "",
+        *lines,
+    ]
+    if thin:
+        out += ["", f"No rows tagged yet for: {', '.join(thin)}."]
+    if degenerate:
+        out += [
+            "",
+            f"⚠️ **{', '.join(degenerate)}** landed every tagged row in a single bucket. That is a "
+            "measurement problem, not a market observation — a tag that cannot take its other value "
+            "carries no information, and any P&L split on it would be an artefact. The continuous "
+            "measure behind each bucket is stored alongside it, so the cut can be re-derived with "
+            "`flies regime --dimension <dim> --bucket-edges ...` without re-running any session.",
+        ]
+
+    # Only show a P&L split where the dimension actually separates — a one-bucket table reads as a
+    # finding to anyone skimming, and it is not one.
+    for dim, info in coverage["dimensions"].items():
+        if info["tagged"] < 2 or info["degenerate"]:
+            continue
+        rows = [r for r in analytics.by_regime(conn, dim) if r["bucket"] != "untagged"]
+        if len(rows) < 2:
+            continue
+        out += ["", f"**{dim}** split (settled, legged, all sessions):", ""]
+        out += ["| bucket | trades | net P&L | avg | win rate |", "|---|---:|---:|---:|---:|"]
+        for r in rows:
+            out.append(
+                f"| {r['bucket']} | {r['trades']} | {_money(r['net_pnl'])} | "
+                f"{_money(r['avg_pnl'])} | {_pct(r['win_rate'])} |"
+            )
+    out += [
+        "",
+        "Read the trade counts before the P&L. At these sample sizes a bucket's net is one or two "
+        "sessions' noise, and no configuration change should follow from it yet.",
+    ]
+    return "\n".join(out)
+
+
 def build_eod_analysis(conn, day: str) -> str:
     stats = analytics.stats_for_period(conn, day, day)
     completion = analytics.completion_stats(conn, day, day)
@@ -305,6 +369,10 @@ def build_eod_analysis(conn, day: str) -> str:
         "## What did it cost?",
         "",
         _cost_paragraph(stats, arms),
+        "",
+        "## What regimes did we trade into?",
+        "",
+        _regime_paragraph(analytics.regime_coverage(conn), conn),
         "",
         "## What stopped us trading",
         "",
