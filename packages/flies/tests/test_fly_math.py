@@ -74,26 +74,6 @@ def test_fly_debit_charges_slippage_on_the_doubled_center():
     assert debit == pytest.approx(0.50)
 
 
-def test_fly_close_credit_is_fly_debit_mirrored_below_mid():
-    """Closing sells the fly back, so it nets LESS than mid by the same haircut fly_debit pays
-    ABOVE mid to buy one — same asymmetry vertical_credit/vertical_debit already have."""
-    lower_q, center_q, upper_q = q(1.0, 1.2), q(2.0, 2.2), q(3.4, 3.6)
-    debit = fly.fly_debit(lower_q, center_q, upper_q, slippage_frac=0.125)
-    credit = fly.fly_close_credit(lower_q, center_q, upper_q, slippage_frac=0.125)
-    # mid 0.40 +/- haircut 0.10
-    assert credit == pytest.approx(0.30)
-    assert debit == pytest.approx(0.50)
-    assert credit < debit
-
-
-def test_fly_close_fee_matches_fly_open_fee_shape_at_the_closing_rate():
-    """Same 4-contract/2-sell-contract shape as opening (the doubled centre trades twice), priced
-    at tastytrade's close commission rather than open."""
-    assert fly.fly_close_fee("SPX", 1) == pytest.approx(
-        fly.fly_open_fee("SPX", 1) - 1.00 * 4, abs=0.01
-    )  # open-only $1/contract commission is the only difference, same as ic_close_fee vs ic_open_fee
-
-
 # --------------------------------------------------------------------------- exercise/assignment fee
 def test_expire_fee_is_zero_with_no_itm_legs():
     assert fly.expire_fee() == 0.0
@@ -164,19 +144,15 @@ def legged_fly(net, fees=0.0):
 
 def test_fly_held_for_a_credit_cannot_lose():
     position = legged_fly(1.05, fees=0.0)
-    # A fly's floor does NOT reserve the worst-case exercise fee (2026-07-30):
-    # engine.evaluate_pre_close_exit closes an ITM fly ahead of expiry whenever that's cheaper
-    # than the assignment fee, so going forward the realistic worst case is just the gross
-    # credit net of trading fees -- see fly.position_floor's docstring for the full reasoning.
-    assert fly.position_floor(position) == 105.0
+    # $105 of gross credit less the worst-case $15 assignment fee (3 settlement events -- one per
+    # distinct strike, all ITM out past a wing). The fee IS reserved since 2026-08-01: the
+    # pre-close ITM exit that used to bound it was removed, so the position genuinely carries it
+    # to settlement. See fly.WORST_CASE_ITM_LEGS for the per-kind derivation.
+    assert fly.position_floor(position) == 90.0
     assert fly.is_risk_free(position)
-    # position_pnl, unlike position_floor, still prices the exercise fee fresh at EVERY
-    # hypothetical price (it's a pure expiry question, not a management-aware one) -- so an
-    # UNMANAGED hold to raw expiry still bottoms out at position_floor minus the worst-case $15
-    # assignment fee (3 settlement events -- one per distinct strike, out past the wings on
-    # both sides; corrected 2026-07-31 from $20/4 contracts against real fills).
-    for price in range(5900, 6101):
-        assert fly.position_pnl(position, price) >= 90.0
+    # The floor is now exactly the worst point on the expiry curve -- position_pnl prices the fee
+    # fresh at every hypothetical price, and its minimum must equal the floor. Nothing is managed
+    # in between any more, so the two can no longer disagree.
     assert min(fly.position_pnl(position, p) for p in range(5900, 6101)) == pytest.approx(90.0)
 
 
@@ -204,17 +180,24 @@ def test_short_vertical_floor_is_full_defined_risk():
         "quantity": 1,
         "fees": 0.0,
     }
-    # -350.0 defined-risk max loss. Not reserving the worst-case exercise-assignment fee on top
-    # (2026-07-30) -- engine.evaluate_pre_close_exit closes an ITM vertical ahead of expiry the
-    # same way it does a fly, whenever that's cheaper than the fee; see position_floor's docstring.
-    assert fly.position_floor(position) == -350.0
+    # -350.0 defined-risk max loss, plus the $10 worst-case assignment fee that stacks on top of
+    # it: past the short wing BOTH strikes settle ITM, so the payoff floor and the fee bottom out
+    # at the same price. Reserved since 2026-08-01 (see fly.WORST_CASE_ITM_LEGS).
+    assert fly.position_floor(position) == -360.0
     assert not fly.is_risk_free(position)
 
 
-def test_position_floor_scales_with_quantity():
+def test_position_floor_scales_with_quantity_except_the_flat_assignment_reserve():
+    """The payoff term scales with contracts; the assignment reserve does NOT. tastytrade charges
+    $5 per settling SYMBOL however many contracts rest on it (corrected 2026-07-31 against real
+    fills), so tripling size triples the credit at risk but leaves the $15 reserve untouched —
+    which makes a larger position proportionally MORE risk-free, not less."""
     single = legged_fly(1.00)
     triple = {**legged_fly(1.00), "quantity": 3}
-    assert fly.position_floor(triple) == fly.position_floor(single) * 3
+    reserve = fly.expire_fee(fly.WORST_CASE_ITM_LEGS["fly"])
+    assert fly.position_floor(triple) == (fly.position_floor(single) + reserve) * 3 - reserve
+    # Strictly better than naive 3x scaling, by the two reserves no longer double-counted.
+    assert fly.position_floor(triple) == fly.position_floor(single) * 3 + 2 * reserve
 
 
 # --------------------------------------------------------------------------- debit_first (Phase 1)
@@ -267,11 +250,15 @@ def test_long_vertical_floor_is_bounded_at_zero_never_negative_width():
     assert not fly.is_risk_free(pos)
 
 
-def test_long_vertical_floor_reserves_the_assignment_fee_unlike_a_fly():
-    """A fly reserves nothing (evaluate_pre_close_exit is assumed to beat the fee); a long vertical
-    is more conservative -- its cheapest dollar point is a leg barely ITM, where a 2-leg close's
-    slippage beats the fee less reliably."""
+def test_long_vertical_reserves_one_settlement_event_not_two():
+    """A long vertical has TWO strikes but reserves only ONE event -- the subtlety
+    fly.WORST_CASE_ITM_LEGS exists to record. Its payoff is worst (0) below the long strike, where
+    NOTHING is ITM; the binding point is just past the long strike, where the payoff is still ~0
+    but exactly one strike has gone ITM. By the time both are ITM the payoff has climbed to +W,
+    which is far from the worst case. Reserving 2 here would be wrong, not merely conservative."""
     pos = debit_vertical(debit=0.0, fees=0.0)
+    assert fly.WORST_CASE_ITM_LEGS["long_vertical"] == 1
+    assert fly.itm_legs_at_settlement(pos, 6010) == 2  # both ITM -- but not at the worst payoff
     assert fly.position_floor(pos) == pytest.approx(-fly.expire_fee(1))
 
 
@@ -324,9 +311,11 @@ def iron_fly(net, fees=0.0):
 
 
 def test_iron_fly_floor_is_the_two_credits_less_the_width():
-    # Two credits summing to 6.00 against a 5-wide fly: floor = (6.00 - 5) * 100 - fees.
+    # Two credits summing to 6.00 against a 5-wide fly: floor = (6.00 - 5) * 100 - fees, less the
+    # $10 worst-case assignment reserve (beyond either wing that side settles 2 strikes ITM, which
+    # is also where the payoff bottoms out at -W -- see fly.WORST_CASE_ITM_LEGS).
     pos = iron_fly(net=6.00, fees=0.0)
-    assert fly.position_floor(pos) == pytest.approx(100.0)
+    assert fly.position_floor(pos) == pytest.approx(90.0)
     assert fly.is_risk_free(pos)
 
 
@@ -335,14 +324,22 @@ def test_iron_fly_floor_can_be_negative_unlike_a_same_type_fly():
     clear the width, so this floor can and does go negative -- storing this under kind='fly' would
     silently claim risk-free when it is not."""
     pos = iron_fly(net=3.00, fees=0.0)  # 3.00 < wing_width 5 -- genuinely NOT risk-free
-    assert fly.position_floor(pos) == pytest.approx(-200.0)
+    assert fly.position_floor(pos) == pytest.approx(-210.0)
     assert not fly.is_risk_free(pos)
 
 
-def test_iron_fly_floor_flips_exactly_at_the_width_boundary():
-    at_boundary = iron_fly(net=5.00, fees=0.0)
-    assert fly.position_floor(at_boundary) == pytest.approx(0.0)
-    assert fly.is_risk_free(at_boundary)
+def test_iron_fly_floor_flips_at_the_width_plus_reserve_boundary():
+    """The boundary moved out by the assignment reserve: clearing the width is no longer enough,
+    the credits must also cover the $10 fee the wings-out scenario actually charges. Asserted as a
+    flip across the boundary rather than an equality at it -- the exact crossing point (net 5.10)
+    is not representable in binary float, so `position_floor` lands a few 1e-14 off zero there and
+    an equality test would be asserting on rounding noise rather than on the boundary."""
+    reserve = fly.expire_fee(fly.WORST_CASE_ITM_LEGS["iron_fly"])
+    boundary = 5.0 + reserve / fly.CONTRACT_MULTIPLIER  # width + the fee, in points
+    assert not fly.is_risk_free(iron_fly(net=boundary - 0.01, fees=0.0))
+    assert fly.is_risk_free(iron_fly(net=boundary + 0.01, fees=0.0))
+    # Clearing the width alone -- what used to qualify -- no longer does.
+    assert not fly.is_risk_free(iron_fly(net=5.00, fees=0.0))
 
 
 def test_itm_legs_iron_fly_never_both_shorts_at_once():
@@ -436,6 +433,53 @@ def test_book_floor_sees_the_bwb_tail_not_just_the_near_wing():
     result = fly.book_floor(positions)
     assert result["floor_holds"] is False
     assert result["worst"] < -500  # the tail, not the near-wing zero
+
+
+# ------------------------------------------------- WORST_CASE_ITM_LEGS vs a brute-force price scan
+# fly.position_floor reserves a per-kind assignment fee from a hand-derived table. These tests are
+# what keep that table honest: position_pnl already prices the fee fresh at any settlement price,
+# so scanning every price and taking the minimum yields the floor from first principles. The table
+# must reproduce it exactly -- for every kind, at every quantity.
+def _scan_floor(position, lo=5900, hi=6101, step=0.25):
+    """The true worst-case net over every settlement price, computed without the table."""
+    prices, p = [], float(lo)
+    while p <= hi:
+        prices.append(p)
+        p += step
+    # Sample just past each strike too: the fee is a STEP function at the strikes, so the binding
+    # point is often an epsilon past one (long_vertical's whole subtlety) and a coarse grid can
+    # step over it.
+    width, center = position["wing_width"], position["center"]
+    far = position.get("far_width", width)
+    for k in (center - width, center, center + width, center - far, center + far):
+        prices += [k - 1e-6, k, k + 1e-6]
+    return min(fly.position_pnl({**position, "status": "open"}, px) for px in prices)
+
+
+@pytest.mark.parametrize("quantity", [1, 3])
+@pytest.mark.parametrize(
+    "position",
+    [
+        pytest.param(legged_fly(1.05, fees=0.0), id="fly"),
+        pytest.param(
+            {"kind": "short_vertical", "side": "put", "center": 6000, "wing_width": 5,
+             "net": 1.50, "quantity": 1, "fees": 0.0},
+            id="short_vertical",
+        ),
+        pytest.param(debit_vertical(debit=1.0, fees=0.0), id="long_vertical"),
+        pytest.param(iron_fly(net=6.00, fees=0.0), id="iron_fly"),
+        pytest.param(bwb(credit=1.5, far_width=15, fees=0.0), id="bwb"),
+    ],
+)
+def test_position_floor_equals_the_brute_force_worst_case(position, quantity):
+    pos = {**position, "quantity": quantity}
+    assert fly.position_floor(pos) == pytest.approx(_scan_floor(pos), abs=0.01)
+
+
+def test_worst_case_itm_legs_covers_every_kind_position_floor_accepts():
+    """A new kind added to position_floor without a table entry must fail loudly here, not
+    silently reserve nothing."""
+    assert set(fly.WORST_CASE_ITM_LEGS) == {"fly", "short_vertical", "long_vertical", "iron_fly", "bwb"}
 
 
 # --------------------------------------------------------------------------- unknown kind (Phase 0 hardening)
