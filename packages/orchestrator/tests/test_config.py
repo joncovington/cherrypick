@@ -105,3 +105,24 @@ def test_reconcile_schedule_settings_overrides():
 def test_broker_tool_defaults_to_tt_and_is_overridable():
     assert c.broker_tool({}) == ["src/tt.py"]
     assert c.broker_tool({"broker_tool": ["src/broker_cli.py"]}) == ["src/broker_cli.py"]
+
+
+def test_live_trading_enabled_top_level_convention():
+    """meic/earnings shape: a top-level bool."""
+    assert c.live_trading_enabled({"enable_live_trading": True}) is True
+    assert c.live_trading_enabled({"enable_live_trading": False}) is False
+    assert c.live_trading_enabled({}) is False
+
+
+def test_live_trading_enabled_nested_live_convention():
+    """flies' shape: nested under 'live'. Checking only the top-level key left every flies-specific
+    safety surface reading PAPER ONLY even while its live loop was armed — the bug this guards."""
+    assert c.live_trading_enabled({"live": {"enabled": True, "gate0_confirmed": "jon 2026-07-30"}}) is True
+    assert c.live_trading_enabled({"live": {"enabled": False}}) is False
+    assert c.live_trading_enabled({"live": {}}) is False
+    assert c.live_trading_enabled({"live": "not a dict"}) is False
+
+
+def test_live_trading_enabled_either_convention_wins():
+    assert c.live_trading_enabled({"enable_live_trading": True, "live": {"enabled": False}}) is True
+    assert c.live_trading_enabled({"enable_live_trading": False, "live": {"enabled": True}}) is True

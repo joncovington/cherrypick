@@ -3,6 +3,7 @@ orchestrator-written artifacts. Claude is never invoked — the _run_claude seam
 """
 
 import json
+from datetime import date
 
 import pytest
 from cherrypick.core import advice as core_advice
@@ -12,7 +13,12 @@ from cherrypick.orchestrator import config as cfgmod
 
 pytestmark = pytest.mark.unit
 
-DAY = "2026-07-28"  # a Tuesday's predecessor: next trading day is 2026-07-29
+# Today, not a literal. The validator's TTL check compares the artifact's expires_at (end of
+# the TARGET session) against wall-clock now, so a hardcoded past date makes every artifact
+# arrive pre-expired the moment the calendar rolls past it — which is exactly how this suite
+# went red on 2026-07-30 with no code change at all.
+DAY = date.today().isoformat()
+SESSION = advise._next_session({}, DAY)  # the same computation run() uses
 
 
 @pytest.fixture
@@ -64,16 +70,16 @@ def test_in_bounds_proposals_are_written_and_loadable(env, monkeypatch):
         },
     )
     out = advise.run(cfg, day=DAY)
-    assert out["ok"] is True and out["session"] == "2026-07-29"
+    assert out["ok"] is True and out["session"] == SESSION
     m = out["modules"]["meic"]
     assert m["ok"] is True and m["proposals"] == 1 and m["rejected"] == 0
 
     # The loop-side read (same core code) admits it for that session…
-    loaded = core_advice.load(state, "meic", "2026-07-29", cfg["advise"]["modules"]["meic"]["advice_bounds"])
+    loaded = core_advice.load(state, "meic", SESSION, cfg["advise"]["modules"]["meic"]["advice_bounds"])
     assert loaded["ok"] is True and loaded["proposals"][0]["value"] == 0.9
     # …and the artifact records provenance.
-    art = json.loads(core_advice.advice_path(state, "meic", "2026-07-29").read_text())
-    assert art["advisor"] == advise.ADVISOR and art["session"] == "2026-07-29"
+    art = json.loads(core_advice.advice_path(state, "meic", SESSION).read_text())
+    assert art["advisor"] == advise.ADVISOR and art["session"] == SESSION
 
 
 def test_out_of_bounds_rejects_all_but_still_audits(env, monkeypatch):
@@ -97,9 +103,9 @@ def test_out_of_bounds_rejects_all_but_still_audits(env, monkeypatch):
     m = out["modules"]["meic"]
     assert m["ok"] is False and m["proposals"] == 0 and m["rejected"] == 1
     # The artifact exists for audit, and the loop-side read yields baseline (no proposals).
-    loaded = core_advice.load(state, "meic", "2026-07-29", cfg["advise"]["modules"]["meic"]["advice_bounds"])
+    loaded = core_advice.load(state, "meic", SESSION, cfg["advise"]["modules"]["meic"]["advice_bounds"])
     assert loaded["proposals"] == []
-    art = json.loads(core_advice.advice_path(state, "meic", "2026-07-29").read_text())
+    art = json.loads(core_advice.advice_path(state, "meic", SESSION).read_text())
     assert art["rejected"][0]["param"] == "stop_trigger_ratio_x"
 
 
@@ -135,5 +141,5 @@ def test_next_session_skips_weekend():
 
 
 def test_expires_at_is_end_of_session_et():
-    exp = advise._expires_at("2026-07-29")
-    assert exp.startswith("2026-07-29T23:59:59")
+    exp = advise._expires_at(SESSION)
+    assert exp.startswith(f"{SESSION}T23:59:59")

@@ -60,12 +60,14 @@ Fills are modeled at mid price minus a slippage allowance, on top of the actual 
 commission/exchange schedule — the same cost model across both engines — so reported "net" figures reflect
 real transaction costs.
 
-## The two strategy engines
+## The three strategy engines
 
 - **MEIC** — 0DTE multiple-entry iron condors on indices/ETFs (SPX, XSP, QQQ, IWM, …), with per-side
   stops, regime gates (VIX, VIX1D, ATR, GEX), and all the risk-profile machinery above.
 - **Earnings** — defined-risk earnings plays (iron flies, calendars, condors, broken-wing flies, and more),
-  each sized to a fixed dollar risk.
+  each sized to a fixed dollar risk, held overnight around a company's earnings report.
+- **Flies** — 0DTE net-credit butterflies on SPX/XSP built from two credit spreads, measuring whether the
+  manufactured credit survives real trading costs. See [packages/flies](packages/flies).
 
 ## Paper & live modes
 
@@ -77,7 +79,9 @@ real transaction costs.
   `connect` so the engines use *your* live market data and can **reconcile** against your real positions (a
   read-only safety check that flags anything a paper-only suite shouldn't be holding). Trading for real is a
   **deliberate, manual** action you take per module — the automation will never do it for you, and if you
-  go there you do so **entirely at your own risk** (see the disclaimer).
+  go there you do so **entirely at your own risk** (see the disclaimer). The flies module additionally
+  supports a small, explicitly-armed live pilot (one contract, one position at a time, arms fresh each
+  trading day) — see [packages/flies/docs/live-trading-plan.md](packages/flies/docs/live-trading-plan.md).
 
 Credentials live in your operating system's secure keyring — never in a file — and paper and live books are
 kept strictly separate.

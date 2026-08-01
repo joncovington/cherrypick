@@ -112,7 +112,11 @@ def test_live_trading_enabled_falls_back_to_env(monkeypatch):
 # --- _build_order ------------------------------------------------------------
 
 
-def test_build_order_credit_price_is_negative():
+def test_build_order_credit_price_is_positive():
+    """tastytrade's own NewOrder.price docstring: "negative = debit, positive = credit" — verified
+    against the installed SDK's source. core.broker.build_order (which _build_order delegates to)
+    had this backwards until 2026-07-30, when a live flies entry meant as a credit was routed as a
+    debit and rejected by the exchange as outside the acceptable price range."""
     spec = {
         "order_type": "Limit",
         "time_in_force": "Day",
@@ -123,11 +127,11 @@ def test_build_order_credit_price_is_negative():
         ],
     }
     order = tt._build_order(spec)
-    assert order.price < 0
+    assert order.price > 0
     assert len(order.legs) == 1
 
 
-def test_build_order_debit_price_is_positive():
+def test_build_order_debit_price_is_negative():
     spec = {
         "order_type": "Limit",
         "time_in_force": "Day",
@@ -138,7 +142,7 @@ def test_build_order_debit_price_is_positive():
         ],
     }
     order = tt._build_order(spec)
-    assert order.price > 0
+    assert order.price < 0
 
 
 def test_build_order_maps_all_actions():

@@ -18,6 +18,16 @@ Paper and live books are strictly separated: separate SQLite files, and a module
 gated behind `enable_live_trading: true`. Even a paper "dry-run" never calls `execute_trade` (a dry-run
 performs a real margin check).
 
+**One narrow, explicitly-authorized exception: the flies live pilot.** The orchestrator itself still
+never places an order — but the flies module runs its own separate, per-day-armed live trading loop
+(started only via `/live-flies-start`, which requires a fresh explicit confirmation every single trading
+day and self-disarms every evening). This is a deliberate, small, tightly-bounded exception to the
+"paper by default" rule above, not a change to it — one strategy variant, one contract, one open
+position at a time. Every other guardrail on this page (masked accounts, keyring-only credentials, no
+AI/network on the decision path) still applies to it in full. See
+[`packages/flies/docs/live-trading-plan.md`](../packages/flies/docs/live-trading-plan.md) for the complete
+rulebook.
+
 ## The one live-config boundary: `connect` / `account`
 
 The **only** live-adjacent action the orchestrator performs is onboarding *configuration*:
@@ -31,6 +41,31 @@ The boundary is strict: it still **never** places/cancels/closes/adjusts an orde
 `enable_live_trading`, never runs a module's live engine, and never edits a module's code/config files.
 Account writes are human-confirmed. `reconcile` honors the designation — a designated live account is
 *expected* to hold positions (not flagged as drift).
+
+## The second live-config boundary: `settings`
+
+`cherrypick settings` (loopback `:8804`) is the suite's second narrow live-config exception, and its
+only mutating HTTP surface — every dashboard here is GET-only. Two things make it safe to run:
+
+- **Guarded live-trading fields are read-only, both ways.** `enable_live_trading`, flies'
+  `live.enabled`/`live.gate0_confirmed`, and the live loss/deploy-limit fields are locked in the UI and
+  refused server-side on both write paths (a field-level edit and a raw-text save). This surface can
+  arm nothing and disarm nothing — the deliberate paths above (`/live-flies-start`, hand-editing a gate
+  with the plan doc open) stay the only way to touch them.
+- **A secret transits the process once, then is gone.** Unlike `connect`, which never lets the
+  orchestrator see a bearer secret at all, a settings POST body necessarily does pass through this
+  process — the trade-off for a browser-based secrets UI. It goes straight to
+  `CredentialStore.set_secret` / the webhook store and is dropped: never logged, never written to a
+  file, never echoed back. Every GET response carries only `secrets_status()` booleans, webhook
+  set/not-set strings, and masked account numbers — the same values-never-cross-the-wire contract as
+  `connect`/`account`, just enforced per-request instead of by keeping the orchestrator out of the loop.
+
+Because it's a mutating local server, loopback binding alone isn't the whole story: every route checks
+the `Host` header (defeats DNS rebinding from a page open in your browser), and every POST additionally
+requires the per-session CSRF token baked into the page — the server sends no CORS headers, so a
+cross-origin fetch can't reach it regardless. See
+[configuration-and-storage.md](configuration-and-storage.md#the-settings-surface) for the config-write
+mechanics (byte-offset splicing, backups, `--organize`).
 
 ## Load-bearing invariants
 

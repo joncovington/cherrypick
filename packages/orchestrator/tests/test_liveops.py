@@ -89,3 +89,52 @@ def test_liveops_card_is_serve_only():
     # The card composes both halves of live ops: kill switches + the paper↔live/live-book check.
     assert "data-cp-liveops" in card and "/api/liveops" in card
     assert "data-cp-reconcile" in card and "/api/reconcile" in card
+
+
+def test_kill_switches_read_flies_nested_convention(env):
+    """flies gates live trading via nested `live.enabled`, not the top-level `enable_live_trading`
+    meic/earnings use. Before config.live_trading_enabled checked both, this view -- and the halt
+    banner built on it -- reported flies as PAPER ONLY even while its live loop was armed."""
+    tmp_path, cfg = env
+    (tmp_path / "earn" / "config.json").write_text(
+        json.dumps({"live": {"enabled": True, "gate0_confirmed": "jon 2026-07-30"}})
+    )
+    out = liveops.run(cfg)
+    by_name = {m["module"]: m["live_enabled"] for m in out["modules"]}
+    assert by_name["earn"] is True
+
+
+def test_halt_status_flags_any_module_live_enabled(env):
+    tmp_path, cfg = env
+    (tmp_path / "meic" / "config.json").write_text(json.dumps({"enable_live_trading": True}))
+    (tmp_path / "earn" / "config.json").write_text(json.dumps({"enable_live_trading": False}))
+    out = liveops.halt_status(cfg)
+    assert out["ok"] is True and out["present"] is False and out["any_live_enabled"] is True
+    by_name = {m["module"]: m["live_enabled"] for m in out["modules"]}
+    assert by_name == {"meic": True, "earn": False}
+
+
+def test_halt_status_no_module_live_enabled(env):
+    tmp_path, cfg = env
+    (tmp_path / "meic" / "config.json").write_text(json.dumps({"enable_live_trading": False}))
+    (tmp_path / "earn" / "config.json").write_text(json.dumps({"enable_live_trading": False}))
+    assert liveops.halt_status(cfg)["any_live_enabled"] is False
+
+
+def test_set_halt_creates_and_clears_the_flag(env):
+    assert liveops.halt_flag_path().exists() is False
+    out = liveops.set_halt(True)
+    assert out["ok"] is True and out["present"] is True
+    assert liveops.halt_flag_path().exists() is True
+    out = liveops.set_halt(False)
+    assert out["ok"] is True and out["present"] is False
+    assert liveops.halt_flag_path().exists() is False
+
+
+def test_set_halt_is_idempotent(env):
+    liveops.set_halt(True)
+    liveops.set_halt(True)  # touching an already-present flag doesn't error
+    assert liveops.halt_flag_path().exists() is True
+    liveops.set_halt(False)
+    liveops.set_halt(False)  # deleting an already-absent flag doesn't error
+    assert liveops.halt_flag_path().exists() is False
