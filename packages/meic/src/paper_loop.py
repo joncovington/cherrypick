@@ -1048,6 +1048,29 @@ def _advice_profiles(cfg, today):
     return out, decision.get("reason")
 
 
+def _ensure_paper_schema() -> None:
+    """Bring the paper DB's schema up to date before the iteration writes to it.
+
+    `db.py`'s additive column migrations live in `cmd_init_db`, which is a CLI subcommand nothing
+    invoked automatically — so a paper DB created before a column was added stayed missing it
+    forever, and every INSERT naming that column failed. That is not hypothetical: on 2026-07-30/31
+    the loop reported 186 fills and persisted **zero** rows, because five columns
+    (`slippage_dollars`, `gex_net_vol_at_entry`, `pin_risk_applied`, `unmarked_iterations`,
+    `last_unmarked_at`) had never been added to the live paper file.
+
+    Idempotent (`CREATE TABLE IF NOT EXISTS` + guarded `ALTER TABLE`), so the cost is one subprocess
+    per iteration. Deliberately NON-FATAL: a schema-ensure that cannot run must not take the session
+    down — the save-failure check in `paper.process_symbol` is the backstop that makes any resulting
+    write failure loud instead of silent.
+    """
+    try:
+        res = subprocess.run([*_DB, "init_db"], capture_output=True, text=True, timeout=60)
+        if res.returncode != 0:
+            logging.warning("paper schema ensure failed: %s", (res.stderr or "").strip()[:200])
+    except Exception as exc:  # noqa: BLE001 -- never let schema maintenance kill the loop
+        logging.warning("paper schema ensure errored: %s: %s", type(exc).__name__, exc)
+
+
 def run_iteration(cfg, force=False):
     now = _now_et()
     if not force and not _is_trading_time(now, cfg):
@@ -1119,6 +1142,10 @@ def run_iteration(cfg, force=False):
             for a in actions:
                 if a.get("entry") == "filled":
                     outcomes[prof] = f"FILL ${a.get('net_credit')}"
+                elif a.get("entry") == "save_failed":
+                    # Loud on purpose, and never rendered as a FILL: the row did not persist, so
+                    # the study has no record of it. See paper.process_symbol for what this cost.
+                    outcomes[prof] = f"SAVE-FAILED {str(a.get('error'))[:80]}"
                 elif a.get("entry") == "skipped":
                     outcomes.setdefault(prof, a.get("reason"))
                 elif "decision" in a:
@@ -1495,6 +1522,7 @@ def main():
             _emit({"ok": True, "skipped": "another --once is already running"})
             return
         try:
+            _ensure_paper_schema()
             summary = run_iteration(_load_config(), force=args.force)
         finally:
             _release_once_lock()

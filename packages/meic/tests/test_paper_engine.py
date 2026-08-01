@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -118,6 +119,34 @@ def _base_snapshot(**overrides):
     }
     snap.update(overrides)
     return snap
+
+
+# The three process_symbol tests below run paper.py as a SUBPROCESS, which reads the operator's real
+# config -- so their snapshot symbol has to be one the configured set actually trades or every
+# profile is skipped and the result is an empty dict. They have chased that set twice already (off
+# XSP on 2026-07-18, back on for the 07-28 width study, off again for SPX on 08-01), so derive it
+# instead of naming it. Strikes scale with the symbol's own price level; the credit gates are
+# fractions of width, so the same wing width and bids clear them at either scale.
+_TRADED_SYMBOL = (paper.load_base_config().get("symbols") or ["SPX"])[0]
+_SYMBOL_SCALE = {"SPX": 7500.0, "XSP": 590.0, "QQQ": 480.0, "SPY": 590.0, "IWM": 220.0, "NDX": 21000.0}
+
+
+def _traded_snapshot(*, wing=5, sp_bid=None, sc_bid=None, **overrides):
+    """A _base_snapshot on the configured symbol, with strikes placed at that symbol's own scale."""
+    spot = _SYMBOL_SCALE.get(_TRADED_SYMBOL, 590.0)
+    put_k = round(spot * 0.984 / wing) * wing
+    call_k = round(spot * 1.013 / wing) * wing
+    kw = {}
+    if sp_bid is not None:
+        kw["sp_bid"] = sp_bid
+    if sc_bid is not None:
+        kw["sc_bid"] = sc_bid
+    return _base_snapshot(
+        symbol=_TRADED_SYMBOL,
+        underlying_price=spot,
+        candidates=[_candidate(wing, put_k, call_k, sp_delta=-0.15, sc_delta=0.15, **kw)],
+        **overrides,
+    )
 
 
 CONSERVATIVE = paper.load_profiles()["conservative"]
@@ -1374,11 +1403,11 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
         capture_output=True,
     )
 
-    # XSP — the head of the configured symbol set since the 2026-07-28 width-study reduction (this
-    # test has chased the traded set before: it moved OFF XSP when the 07-18 set dropped it). A
-    # single well-credited 5-wide candidate so the fill is unambiguous.
-    snapshot = _base_snapshot(
-        now_et="13:00", date="2026-07-09", candidates=[_candidate(5, 583, 598, sp_bid=0.80, sc_bid=0.75)]
+    # Symbol and strike scale come from the configured set (see _traded_snapshot) rather than being
+    # named here: this test has chased the traded set three times now. A single well-credited 5-wide
+    # candidate so the fill is unambiguous.
+    snapshot = _traded_snapshot(
+        wing=5, sp_bid=0.80, sc_bid=0.75, now_et="13:00", date="2026-07-09"
     )
     result = subprocess.run(
         [
@@ -1411,7 +1440,7 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
             db_path,
             "get_open_trades",
             "--symbol",
-            "XSP",
+            _TRADED_SYMBOL,
             "--date",
             "2026-07-09",
         ],
@@ -1423,7 +1452,25 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
     assert open_out["open_trades"][0]["risk_profile"] == "conservative"
 
 
-def test_process_symbol_concurrency_budget_is_per_symbol(paper_db_path):
+@pytest.fixture()
+def two_symbol_env(tmp_path):
+    """Env for a paper.py subprocess whose configured symbol set is exactly SPX + QQQ.
+
+    The per-(profile x symbol) budget tests need TWO configured symbols to say anything: a snapshot
+    for a symbol outside the set is skipped wholesale, so borrowing the operator's live config makes
+    them pass or fail on an unrelated setting (they broke when the set narrowed to SPX on
+    2026-08-01, and had chased it twice before). CHERRYPICK_HOME redirects paths.config_path() at a
+    fixture config instead, so the assertion is about the budget logic and nothing else.
+    """
+    home = tmp_path / "home"
+    (home / "config").mkdir(parents=True)
+    base = json.loads((Path(__file__).parent.parent / "config.example.json").read_text(encoding="utf-8"))
+    base["symbols"] = ["SPX", "QQQ"]
+    (home / "config" / "meic.json").write_text(json.dumps(base), encoding="utf-8")
+    return {**os.environ, "CHERRYPICK_HOME": str(home)}
+
+
+def test_process_symbol_concurrency_budget_is_per_symbol(paper_db_path, two_symbol_env):
     # max_concurrent_ics is a per-(profile × symbol) budget: a profile maxed out on one symbol must
     # still be able to enter another, so a busy symbol can't starve a quiet one of slots.
     cap = CONSERVATIVE["max_concurrent_ics"]
@@ -1460,6 +1507,7 @@ def test_process_symbol_concurrency_budget_is_per_symbol(paper_db_path):
         ],
         capture_output=True,
         text=True,
+        env=two_symbol_env,
     )
     assert result.returncode == 0, result.stderr
     out = json.loads(result.stdout.strip().splitlines()[-1])
@@ -1468,7 +1516,7 @@ def test_process_symbol_concurrency_budget_is_per_symbol(paper_db_path):
     assert any(a.get("entry") == "filled" for a in actions), actions
 
 
-def test_process_symbol_daily_target_is_per_symbol(paper_db_path):
+def test_process_symbol_daily_target_is_per_symbol(paper_db_path, two_symbol_env):
     # The daily-target count is per (profile × symbol): hitting the target on one symbol must not
     # raise the bar (or block) on another — SPX's entries don't spend QQQ's budget.
     target = _params(CONSERVATIVE)["daily_ic_trade_target"]
@@ -1505,6 +1553,7 @@ def test_process_symbol_daily_target_is_per_symbol(paper_db_path):
         ],
         capture_output=True,
         text=True,
+        env=two_symbol_env,
     )
     assert result.returncode == 0, result.stderr
     out = json.loads(result.stdout.strip().splitlines()[-1])
@@ -1848,3 +1897,37 @@ def test_process_symbol_skips_profile_not_trading_symbol(tmp_path, monkeypatch):
     out = paper.process_symbol(snapshot, db_path, "paper")
     assert "xsp-only" not in out["results"]  # pinned to XSP -> skipped for an SPX snapshot
     assert "spx-only" in out["results"]  # pinned to SPX -> evaluated
+
+
+def test_process_symbol_reports_save_failed_not_filled_when_the_insert_fails(tmp_path, monkeypatch):
+    """A fill that did not persist is NOT a fill.
+
+    Regression for the silent data loss of 2026-07-30/31: the loop reported 186 fills and persisted
+    zero rows, because five columns had never been migrated into the live paper DB and every INSERT
+    failed. `save_result` was appended to the action log and never inspected, so each one read as
+    "filled" with nothing behind it. A paper study can absorb a refused entry; it cannot absorb a
+    recorded entry that does not exist.
+    """
+    db_path = str(tmp_path / "paper_savefail.db")
+    subprocess.run(
+        [sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"), "--db", db_path, "init_db"],
+        check=True,
+        capture_output=True,
+    )
+    only_conservative = {"conservative": paper.load_profiles()["conservative"]}
+    monkeypatch.setattr(paper, "load_profiles", lambda: only_conservative)
+    monkeypatch.setattr(
+        paper, "_save_trade", lambda row, db: {"ok": False, "error": "table ic_trades has no column named x"}
+    )
+    snapshot = _base_snapshot(
+        symbol="SPX",
+        now_et="13:00",
+        underlying_price=7500.0,
+        iv_rank=0.32,
+        candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)],
+    )
+    out = paper.process_symbol(snapshot, db_path, "paper")
+    entries = [a for acts in out["results"].values() for a in acts if "entry" in a]
+    assert any(a["entry"] == "save_failed" for a in entries), entries
+    assert not any(a["entry"] == "filled" for a in entries), "a failed save must never read as filled"
+    assert any("no column named" in (a.get("error") or "") for a in entries)
