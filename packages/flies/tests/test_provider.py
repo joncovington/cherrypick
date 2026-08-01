@@ -54,6 +54,7 @@ def seed(
     strikes=_DEFAULT_STRIKES,
     expiration=None,
     quote_age=0.0,
+    greek_age=0.0,
     symbol="SPX",
     oi=1000,
     gamma=0.001,
@@ -98,7 +99,7 @@ def seed(
             )
             conn.execute(
                 "INSERT OR REPLACE INTO stream_greeks (symbol, gamma, updated_at) VALUES (?, ?, ?)",
-                (streamer_symbol, gamma, now),
+                (streamer_symbol, gamma, now - greek_age),
             )
             conn.execute(
                 "INSERT OR REPLACE INTO stream_oi (symbol, open_interest, updated_at) VALUES (?, ?, ?)",
@@ -134,10 +135,54 @@ def test_snapshot_feeds_the_engine_without_translation(cache):
 
 
 def test_gex_is_computed_over_the_whole_chain(cache):
-    seed(cache)
+    # A realistic-width chain (41 strikes), not the 9-strike default: a real SPX/XSP 0DTE surface
+    # carries 109-121 strikes with data, and this test is specifically about the FULL chain rather
+    # than the near-spot trading window, so seeding a wide one is what it meant all along.
+    seed(cache, strikes=tuple(range(5900, 6101, 5)))
     snap = provider.build_snapshot(cache, "SPX")
     assert snap["gex"]["ok"] is True
     assert snap["gex"]["strikes_with_data"] > 0
+    # The near-spot quote window is much narrower than the GEX chain — that is the point.
+    assert snap["gex"]["strikes_with_data"] > len(snap["puts"])
+
+
+def test_thin_gex_coverage_is_refused_not_reported_as_a_surface(cache):
+    """A handful of surviving strikes still yields a wall and a flip that look exactly as confident
+    as a full surface's. Downgrading to ok=False is what lets `select_center` fall back to ATM
+    instead of centring a real butterfly on noise."""
+    seed(cache)  # the 9-strike default, below the 20-strike floor
+    snap = provider.build_snapshot(cache, "SPX")
+    assert snap["ok"] is True  # the session is fine; only the GEX surface is refused
+    assert snap["gex"]["ok"] is False
+    assert snap["gex"]["insufficient_coverage"] is True
+    assert snap["gex_stats"]["refused"] == "insufficient_coverage"
+    # The gex arm degrades rather than skipping the session.
+    import engine
+
+    center, reason = engine.select_center(snap, {"arm": "gex", "strike_increment": 5})
+    assert center == 6000.0 and reason == "atm_gex_unavailable"
+
+
+def test_stale_greeks_are_rejected_from_the_gex_surface(cache):
+    """The gap this closes: before 2026-08-01 gamma and OI were read with no age filter at all, so a
+    dead feed produced a GEX number indistinguishable from a live one -- on the path that picks the
+    live butterfly's centre strike."""
+    wide = tuple(range(5900, 6101, 5))
+    fresh = provider.build_snapshot(cache, "SPX")  # nothing seeded yet
+    assert fresh["ok"] is False
+
+    seed(cache, strikes=wide, greek_age=7200)  # two hours old
+    snap = provider.build_snapshot(cache, "SPX")
+    assert snap["gex_stats"]["greeks_stale"] > 0
+    assert snap["gex_stats"]["greeks_fresh"] == 0
+    assert snap["gex"]["ok"] is False  # nothing left to build a surface from
+
+    # The same chain inside the age limit is accepted, and the age is reported either way.
+    seed(cache, strikes=wide, greek_age=60)
+    ok = provider.build_snapshot(cache, "SPX")
+    assert ok["gex"]["ok"] is True
+    assert ok["gex_stats"]["greeks_stale"] == 0
+    assert ok["gex_stats"]["oldest_input_age_seconds"] >= 60
 
 
 # --------------------------------------------------------------------------- the refusal paths

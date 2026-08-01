@@ -452,7 +452,13 @@ def evaluate_entry(
     ):
         return False, "regime_atr_elevated", None
     gex = snapshot.get("gex") or {}
-    if gex.get("ok") and gex.get("gex_positive") is False:
+    # The baseline GEX block: refuse when net GEX is confirmed negative. Configurable since
+    # 2026-08-01 (default true — unchanged behaviour) purely so it can be turned OFF in a shadow
+    # profile and the gate measured against its own control. It refuses roughly 40% of samples
+    # (SPX net-GEX sign runs ~61% positive, and swings hard by day: 2.3% positive on 2026-07-29,
+    # 98.3% on 2026-07-31), and nothing yet establishes that the trades it cuts were worse than the
+    # ones it keeps. That question is only answerable by running both, which requires this switch.
+    if params.get("regime_gex_block_negative", True) and gex.get("ok") and gex.get("gex_positive") is False:
         return False, "regime_gex_negative", None
     # Strict variant (opt-in per profile): require GEX to be explicitly positive, so entries
     # also pause when GEX is unknown/unavailable -- not just when it is confirmed negative. Used

@@ -207,9 +207,7 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
             cache_path,
             symbol,
             when=when,
-            max_quote_age_seconds=config.get("defaults", {}).get(
-                "max_quote_age_seconds", provider.DEFAULT_MAX_QUOTE_AGE_SECONDS
-            ),
+            **provider.snapshot_kwargs(config),
         )
         if not snapshot.get("ok"):
             # Not an error. A streamer still warming up, or a symbol with no fresh quotes, is an
@@ -405,9 +403,7 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
         cache_path,
         (config.get("symbols") or ["SPX"])[0],
         when=when,
-        max_quote_age_seconds=config.get("defaults", {}).get(
-            "max_quote_age_seconds", provider.DEFAULT_MAX_QUOTE_AGE_SECONDS
-        ),
+        **provider.snapshot_kwargs(config),
     )
     data_ok = bool(probe.get("ok"))
     return {

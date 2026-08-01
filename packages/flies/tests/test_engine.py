@@ -428,10 +428,10 @@ def test_completion_floor_matches_position_floor_exactly():
     (net*100*qty - fees - completion_fee) instead of calling fly.position_floor -- a second,
     driftable formula for the same number. A completion's dollar gate must always agree with
     what `fly.position_floor` says the resulting fly's floor actually is, whatever that function
-    currently means (it has changed once already, the same day this test was written: it briefly
-    reserved a worst-case exercise-assignment fee, then stopped once `evaluate_pre_close_exit`
-    made that reservation unnecessary going forward -- see its docstring). Routing through the one
-    function is what makes that kind of change apply here for free instead of silently drifting."""
+    currently means -- and it HAS changed twice: it briefly reserved a worst-case
+    exercise-assignment fee, stopped when the pre-close ITM exit was introduced to bound that cost,
+    then reserved it again on 2026-08-01 when that exit was removed. Routing through the one
+    function is what made each of those changes apply here for free instead of silently drifting."""
     spread = open_spread(net=0.30)
     thin = snapshot(puts={6000: q(1.00, 1.00), 6005: q(1.05, 1.05)})  # 0.05 debit, no slippage
     done, reason, plan = engine.evaluate_completion(thin, spread, params())
@@ -501,65 +501,6 @@ def open_fly(net=1.0, fees=0.0):
     }
 
 
-def _itm_close_snapshot(**over):
-    base = dict(
-        now_min=955,  # 15:55, inside the default 15:50 pre_close_exit_time window
-        underlying_price=5998.0,  # between the lower wing (5995) and the centre (6000)
-        puts={5995: q(0.0, 0.0), 6000: q(1.0, 1.0), 6005: q(5.0, 5.0)},
-    )
-    base.update(over)
-    return snapshot(**base)
-
-
-def test_pre_close_exit_ignores_an_uncloseable_kind():
-    bogus = {**open_fly(), "kind": "outright_stub"}
-    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_snapshot(), bogus, params())
-    assert not close and reason == "not_a_closeable_kind" and plan is None
-
-
-def test_pre_close_exit_waits_for_its_window():
-    before = _itm_close_snapshot(now_min=12 * 60)  # noon, well before 15:50
-    close, reason, plan = engine.evaluate_pre_close_exit(before, open_fly(), params())
-    assert not close and reason == "before_pre_close_exit_window" and plan is None
-
-
-def test_pre_close_exit_window_is_configurable():
-    tighter = params(pre_close_exit_time="15:58")
-    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_snapshot(), open_fly(), tighter)
-    assert not close and reason == "before_pre_close_exit_window"  # 15:55 < 15:58
-
-
-def test_pre_close_exit_leaves_an_otm_fly_alone():
-    otm = _itm_close_snapshot(underlying_price=6100.0)  # spot well above every strike of a put fly
-    close, reason, plan = engine.evaluate_pre_close_exit(otm, open_fly(), params())
-    assert not close and reason == "no_itm_legs" and plan is None
-
-
-def test_pre_close_exit_refuses_without_leg_quotes():
-    bare = _itm_close_snapshot(puts={6000: q(1.0, 1.0)})  # missing the wings
-    close, reason, plan = engine.evaluate_pre_close_exit(bare, open_fly(), params())
-    assert not close and reason == "missing_leg_quotes" and plan is None
-
-
-def test_pre_close_exit_closes_when_cheaper_than_the_assignment_fee():
-    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_snapshot(), open_fly(), params())
-    assert close and reason == "ok"
-    # centre (ITM since spot < 6000) + upper wing (ITM since spot < 6005) = 2 settlement events
-    # (the doubled centre is ONE symbol, charged once -- corrected 2026-07-31 against real fills)
-    assert plan["itm_legs"] == 2
-    assert plan["assignment_fee"] == 10.0
-    assert plan["close_credit"] == pytest.approx(3.0)  # zero-spread quotes: no slippage haircut
-    assert plan["slippage_cost"] < plan["assignment_fee"]
-    assert plan["lower_strike"] == 5995 and plan["upper_strike"] == 6005
-
-
-def test_pre_close_exit_holds_when_closing_costs_more_than_the_assignment_fee():
-    wide = _itm_close_snapshot(puts={5995: q(0.0, 0.2), 6000: q(0.9, 1.1), 6005: q(4.8, 5.2)})
-    close, reason, plan = engine.evaluate_pre_close_exit(wide, open_fly(), params(slippage_frac=5.0))
-    assert not close and reason == "closing_slippage_exceeds_assignment_fee"
-    assert plan["slippage_cost"] > plan["assignment_fee"]
-
-
 def _itm_close_vertical_snapshot(**over):
     base = dict(
         now_min=955,
@@ -570,100 +511,93 @@ def _itm_close_vertical_snapshot(**over):
     return snapshot(**base)
 
 
-def test_pre_close_exit_closes_an_itm_vertical_when_cheaper_than_the_assignment_fee():
-    """The extension (2026-07-30): an uncompleted vertical that's already losing gets the same
-    fee-avoidance treatment a fly's ITM leg does -- letting the assignment fee stack on top of a
-    loss that's already realized is exactly the avoidable cost this mechanism exists to catch."""
-    close, reason, plan = engine.evaluate_pre_close_exit(
-        _itm_close_vertical_snapshot(), open_spread(), params()
-    )
-    assert close and reason == "ok"
-    assert plan["itm_legs"] == 1  # only the short centre leg is ITM; the protective long isn't
-    assert plan["assignment_fee"] == 5.0
-    assert plan["close_debit"] == pytest.approx(2.0)  # zero-spread quotes: no slippage haircut
-    assert plan["slippage_cost"] < plan["assignment_fee"]
-    assert plan["long_strike"] == 5995
-
-
-def test_pre_close_exit_holds_an_itm_vertical_when_closing_costs_more_than_the_assignment_fee():
-    wide = _itm_close_vertical_snapshot(puts={5995: q(0.0, 0.2), 6000: q(1.9, 2.1)})
-    close, reason, plan = engine.evaluate_pre_close_exit(wide, open_spread(), params(slippage_frac=5.0))
-    assert not close and reason == "closing_slippage_exceeds_assignment_fee"
-    assert plan["slippage_cost"] > plan["assignment_fee"]
-
-
-def test_pre_close_exit_leaves_an_otm_vertical_alone():
-    otm = _itm_close_vertical_snapshot(underlying_price=6100.0)  # spot well above the short strike
-    close, reason, plan = engine.evaluate_pre_close_exit(otm, open_spread(), params())
-    assert not close and reason == "no_itm_legs" and plan is None
-
-
-def test_pre_close_exit_vertical_refuses_without_leg_quotes():
-    bare = _itm_close_vertical_snapshot(puts={6000: q(2.0, 2.0)})  # missing the protective long
-    close, reason, plan = engine.evaluate_pre_close_exit(bare, open_spread(), params())
-    assert not close and reason == "missing_leg_quotes" and plan is None
-
-
 # --------------------------------------------------------------------------- regime tagging (Phase 1c)
 def test_classify_regime_baseline_snapshot():
     """The module's own default fixture: a symmetric 6000-centred put/call grid at midday with no
     GEX data cached -- normal vol, flat skew, midday, unknown GEX. A good sanity check that all
     four dimensions read sensibly together, not just in isolation."""
     regime = engine.classify_regime(snapshot(), params())
-    assert regime == {
-        "vol_bucket": "normal",
-        "gex_bucket": "unknown",
-        "time_bucket": "midday",
-        "skew_bucket": "flat",
-    }
+    assert regime["vol_bucket"] == "normal"
+    assert regime["gex_bucket"] == "unknown"
+    assert regime["time_bucket"] == "midday"
+    assert regime["skew_bucket"] == "flat"
+    # Every bucket ships with the measure it came from, so a threshold can be re-derived later
+    # rather than re-guessed. An "unknown" bucket carries None -- never a fabricated zero.
+    assert regime["vol_value"] is not None and regime["skew_value"] is not None
+    assert regime["time_value"] == snapshot()["now_min"]
+    assert regime["gex_concentration"] is None
+    assert regime["net_gex"] is None and regime["gex_strikes"] is None
 
 
 def test_vol_bucket_low_and_high():
     cheap = snapshot(puts={6000: q(0.1, 0.1)}, calls={6000: q(0.1, 0.1)})
-    assert engine._classify_vol(cheap, params()) == "low"
+    bucket, value = engine._classify_vol(cheap, params())
+    assert bucket == "low" and value == pytest.approx(0.2 / 6000)
     rich = snapshot(puts={6000: q(15.0, 15.0)}, calls={6000: q(15.0, 15.0)})
-    assert engine._classify_vol(rich, params()) == "high"
+    bucket, value = engine._classify_vol(rich, params())
+    assert bucket == "high" and value == pytest.approx(30.0 / 6000)
 
 
 def test_vol_bucket_unknown_without_atm_quotes():
     bare = snapshot(puts={}, calls={})
-    assert engine._classify_vol(bare, params()) == "unknown"
+    assert engine._classify_vol(bare, params()) == ("unknown", None)
 
 
 def test_gex_bucket_pinning_vs_thin_vs_unknown():
     concentrated = {"ok": True, "per_strike": [{"strike": 6000, "call_gex": 900_000, "put_gex": 900_000}]}
-    assert engine._classify_gex(snapshot(gex=concentrated), params()) == "pinning"
+    bucket, share = engine._classify_gex(snapshot(gex=concentrated), params())
+    assert bucket == "pinning" and share == pytest.approx(1.0)
 
+    # Twenty evenly-loaded strikes: the top 3 hold 3/20 = 15%, well under the 60% cut.
     even = {
         "ok": True,
         "per_strike": [
-            {"strike": 5995, "call_gex": 10_000, "put_gex": 10_000},
-            {"strike": 6000, "call_gex": 10_000, "put_gex": 10_000},
-            {"strike": 6005, "call_gex": 10_000, "put_gex": 10_000},
+            {"strike": 6000 + 5 * i, "call_gex": 10_000, "put_gex": 10_000} for i in range(-10, 10)
         ],
     }
-    assert engine._classify_gex(snapshot(gex=even), params()) == "thin"
+    bucket, share = engine._classify_gex(snapshot(gex=even), params())
+    assert bucket == "thin" and share == pytest.approx(3 / 20)
 
-    assert engine._classify_gex(snapshot(), params()) == "unknown"  # no gex key at all
-    assert engine._classify_gex(snapshot(gex={"ok": False}), params()) == "unknown"
+    assert engine._classify_gex(snapshot(), params()) == ("unknown", None)  # no gex key at all
+    assert engine._classify_gex(snapshot(gex={"ok": False}), params()) == ("unknown", None)
+
+
+def test_gex_concentration_is_windowed_to_near_spot():
+    """Regression for the degenerate tag (fixed 2026-08-01). Measuring one strike's share of the
+    WHOLE chain -- 109-121 strikes on a real 0DTE surface -- made 'pinning' unreachable in practice:
+    entry_gex_bucket came back 'thin' 60 times out of 60. A cluster pinning price at spot must not
+    be diluted by gamma 300 points away that has no bearing on it."""
+    near_spot_cluster = [{"strike": 6000 + 5 * i, "call_gex": 500_000, "put_gex": 500_000} for i in (-1, 0, 1)]
+    far_away = [{"strike": 5000 + 5 * i, "call_gex": 400_000, "put_gex": 400_000} for i in range(40)]
+    gex = {"ok": True, "per_strike": near_spot_cluster + far_away}
+
+    bucket, share = engine._classify_gex(snapshot(gex=gex), params())
+    assert bucket == "pinning" and share == pytest.approx(1.0)  # the far mass is outside the window
+
+    # Widen the window far enough to swallow the distant mass and the same surface reads thin.
+    wide = params(regime_gex_window_pct=0.5)
+    bucket_wide, share_wide = engine._classify_gex(snapshot(gex=gex), wide)
+    assert bucket_wide == "thin" and share_wide < 0.6
 
 
 def test_time_bucket_open_midday_close_unknown():
-    assert engine._classify_time(snapshot(now_min=9 * 60 + 45), params()) == "open"
-    assert engine._classify_time(snapshot(now_min=12 * 60), params()) == "midday"
-    assert engine._classify_time(snapshot(now_min=15 * 60 + 45), params()) == "close"
+    assert engine._classify_time(snapshot(now_min=9 * 60 + 45), params()) == ("open", 9 * 60 + 45)
+    assert engine._classify_time(snapshot(now_min=12 * 60), params()) == ("midday", 12 * 60)
+    assert engine._classify_time(snapshot(now_min=15 * 60 + 45), params()) == ("close", 15 * 60 + 45)
     bare = dict(snapshot())
     del bare["now_min"]
-    assert engine._classify_time(bare, params()) == "unknown"
+    assert engine._classify_time(bare, params()) == ("unknown", None)
 
 
 def test_skew_bucket_put_and_call_and_unknown():
     put_rich = snapshot(puts={5995: q(5.0, 5.2)}, calls={6005: q(1.0, 1.2)})
-    assert engine._classify_skew(put_rich, params()) == "put_skew"
+    bucket, diff = engine._classify_skew(put_rich, params())
+    assert bucket == "put_skew" and diff > 0
     call_rich = snapshot(puts={5995: q(1.0, 1.2)}, calls={6005: q(5.0, 5.2)})
-    assert engine._classify_skew(call_rich, params()) == "call_skew"
+    bucket, diff = engine._classify_skew(call_rich, params())
+    assert bucket == "call_skew" and diff < 0
     bare = snapshot(puts={}, calls={})
-    assert engine._classify_skew(bare, params()) == "unknown"
+    assert engine._classify_skew(bare, params()) == ("unknown", None)
 
 
 # --------------------------------------------------------------------------- debit_first (Phase 1)
@@ -802,22 +736,6 @@ def _itm_close_debit_vertical_snapshot(**over):
     return snapshot(**base)
 
 
-def test_pre_close_exit_closes_an_itm_long_vertical_when_slippage_beats_the_fee():
-    close, reason, plan = engine.evaluate_pre_close_exit(
-        _itm_close_debit_vertical_snapshot(), open_debit_vertical(debit=1.0, fees=0.0), params()
-    )
-    assert close and reason == "ok"
-    assert plan["close_credit"] > 0
-    assert plan["itm_legs"] == 2
-
-
-def test_pre_close_exit_long_vertical_before_the_window_refuses():
-    close, reason, _ = engine.evaluate_pre_close_exit(
-        _itm_close_debit_vertical_snapshot(now_min=12 * 60), open_debit_vertical(), params()
-    )
-    assert not close and reason == "before_pre_close_exit_window"
-
-
 # --------------------------------------------------------------------------- iron completion (Phase 1b)
 def test_iron_completion_fires_when_the_opposite_credit_richens_enough():
     """A held put spread (open_spread, net 2.55) completes into an iron fly by SELLING the call
@@ -888,31 +806,6 @@ def test_iron_fly_settles_correctly_across_all_three_zones():
     assert settled[0]["expiry_payoff"] == pytest.approx(-5.0)
     settled = engine.settle([pos], 6010.0)
     assert settled[0]["expiry_payoff"] == pytest.approx(-5.0)
-
-
-def _itm_close_iron_snapshot(**over):
-    base = {
-        "now_min": 15 * 60 + 55,
-        "underlying_price": 6009.0,  # deep past the call wing
-        "puts": {5995: q(0.0, 0.05), 6000: q(0.0, 0.05)},
-        "calls": {6000: q(9.0, 9.1), 6005: q(4.0, 4.1)},
-    }
-    base.update(over)
-    return snapshot(**base)
-
-
-def test_pre_close_exit_closes_an_itm_iron_fly_when_slippage_beats_the_fee():
-    pos = {
-        "kind": "iron_fly",
-        "center": 6000,
-        "wing_width": 5,
-        "net": 6.00,
-        "quantity": 1,
-        "fees": 0.0,
-    }
-    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_iron_snapshot(), pos, params())
-    assert close and reason == "ok"
-    assert plan["itm_legs"] == 2  # both call strikes ITM past 6005 (distinct symbols, so still 2)
 
 
 # --------------------------------------------------------------------------- bwb_roll (Phase 2)
@@ -1005,30 +898,6 @@ def test_settle_bwb_across_near_centre_and_tail():
     settled = engine.settle([pos], 5980.0)  # deep past the far wing
     assert settled[0]["expiry_payoff"] == pytest.approx(-5.0)  # tail = wing_width - far_width
     assert settled[0]["itm_legs"] == 3  # 3 distinct strikes, not 4 contracts
-
-
-def _itm_close_bwb_snapshot(**over):
-    base = {
-        "now_min": 15 * 60 + 55,
-        "underlying_price": 5980.0,  # deep past the far wing -- the real tail is realized
-        "puts": {5990: q(9.9, 10.0), 6000: q(19.9, 20.0), 6005: q(24.9, 25.0)},
-    }
-    base.update(over)
-    return snapshot(**base)
-
-
-def test_pre_close_exit_on_a_bwb_can_have_a_negative_close_credit():
-    """Deep past the tail, closing the bwb is itself a net cost (a negative close_credit) -- the
-    arithmetic must still hold and the comparison against the assignment fee still apply."""
-    close, reason, plan = engine.evaluate_pre_close_exit(_itm_close_bwb_snapshot(), open_bwb(), params())
-    assert plan is not None
-    assert plan["itm_legs"] == 3
-    # Whether it actually fires depends on slippage vs the $15 assignment fee (3 strikes); the
-    # arithmetic (a real, possibly negative close_credit) is what this test guards.
-    if close:
-        assert reason == "ok"
-    else:
-        assert reason == "closing_slippage_exceeds_assignment_fee"
 
 
 # --------------------------------------------------------------------------- outright entry

@@ -71,11 +71,18 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 ### 7. GEX Negative Gate (Symbol-Specific)
 - **Trigger**: Net GEX < 0 (price below gamma flip); dealers short gamma
 - **Effect**: Pause IC entries for THIS symbol
-- **Config**: None (computed from streamer's GEX data)
+- **Config**: `regime_gex_block_negative` (default `true` — the gate is on unless a profile turns it off)
 - **Rationale**: Negative gamma = dealer amplification of moves, unstable for short premium
 - **IC Impact**: Blocks this symbol's IC entries
 - **ORB Impact**: NOT blocked
 - **Fallback**: If GEX data unavailable, proceed without GEX (do not block on missing data)
+- **Unproven** (noted 2026-08-01): this gate refuses roughly 40% of samples — SPX net-GEX sign runs
+  ~61% positive and swings hard by day (2.3% positive on 2026-07-29, 98.3% on 2026-07-31) — and
+  nothing yet establishes that the trades it cuts would have been worse than the ones it keeps.
+  Only 20 trades carry `gex_net_at_entry` (all from 2026-07-28) and no backfill exists. The switch
+  is there so a shadow profile with `regime_gex_block_negative: false` can run beside the gated one
+  — same days, one difference — and settle it. Until then the gate stays on by default, but treat
+  it as untested rather than validated.
 
 ### 8. Zero-Gamma Threat (Symbol-Specific, Non-Blocking)
 - **Trigger**: Price within 0.3% of gamma flip level; close to regime boundary

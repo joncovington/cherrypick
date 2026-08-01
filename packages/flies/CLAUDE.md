@@ -218,10 +218,36 @@ tick and executes whichever wins *for the current regime* — Phase 1b's iron-vs
 higher floor" dispatch in `book.py` is already a working prototype of that pattern, generalized. That
 selector needs regime-labelled real outcomes to be built from, not guessed at, and the tag definition
 is expensive to change retroactively once data is accumulating — so it ships now, before `bwb_roll`
-adds a third entry mode to tag. Every threshold is a placeholder pending recalibration once real
-sessions exist, same honesty framing as every other gate. Deliberately excludes trend/chop: that
-needs a reference point in time no single snapshot carries, and guessing at that plumbing before
-there's a reason to would be the same mistake rule 6 warns against.
+adds a third entry mode to tag. Deliberately excludes trend/chop: that needs a reference point in
+time no single snapshot carries, and guessing at that plumbing before there's a reason to would be
+the same mistake rule 6 warns against.
+
+**Store the measure, not just the bucket (2026-08-01).** Every threshold above is a placeholder, and
+a bucket alone cannot be recalibrated — re-deriving "would this have been `pinning` at a different
+cut?" needs the number, and re-running the session to get it is impossible (regime data has no
+backfill path; `paper_replay` has no historical gamma source). `classify_regime` therefore returns
+the continuous measure behind each bucket plus the GEX surface's provenance (`net_gex`,
+`gamma_flip`, `gex_strikes`, `gex_input_age`), and both ledgers store them. `analytics.by_regime(...,
+bucket_edges=[...])` re-cuts the float at analysis time. MEIC learned this first — see the rationale
+on its `gex_net_at_entry` columns.
+
+**Two dimensions were measured degenerate, and are documented rather than re-guessed.**
+`entry_gex_bucket` came back `thin` **60/60** because concentration was measured as one strike's
+share of the *entire* chain (109–121 strikes on a real 0DTE surface); it is now windowed to near
+spot and measured over the top 3 strikes, since pinning is a property of a cluster. `time_bucket`
+came back `midday` **60/60** because entries only ever occur 09:45–15:00 while "midday" spans
+10:00–15:30 — constant by construction, and redundant with `entry_window`, which already records
+real timing with 6 distinct values and has its own analytics. Its boundaries were deliberately *not*
+re-guessed: the raw minute is recorded now, so `bucket_edges` can cut it against what actually
+happened. `analytics.regime_coverage` flags any single-bucket dimension, and the EOD report warns on
+it and withholds that dimension's P&L table — a one-bucket table reads as a finding and is not one.
+
+**GEX inputs are refused when stale or thin (2026-08-01).** `provider._greeks_and_oi` previously read
+gamma and OI with no age filter at all, so a dead feed produced a surface indistinguishable from a
+live one — on the path that picks the live butterfly's centre (`DEFAULT_ARM` is `gex`). Now bounded
+by `max_gex_input_age_seconds` (1800, much longer than the quote limit because OI is a once-a-day
+snapshot) and `min_gex_strikes` (20); below that the surface is refused and `select_center` degrades
+to ATM. `snapshot["gex_stats"]` carries fresh/stale/coverage the way `quote_stats` always has.
 
 **A global position cap does not make a multi-window arm test its windows.** `max_positions` alone let
 the book fill in the first window: over 07-20…07-24 `time_window` put 15 of its 16 legged entries in
@@ -244,34 +270,42 @@ These are the constraints the module exists to enforce. Breaking one makes the n
 4. **The uncompleted branch is reported separately.** When a legged entry never completes, you are
    holding an ordinary credit spread with full defined risk. `completion_rate` is expected to be the
    number that decides whether this strategy is real.
-5. **No adjustments after establishment.** No stops, no wing moves — hold to cash settlement. v1 is
-   measuring a base rate, and an adjustment rule tuned before a single completion rate exists would be
-   fitting noise. **One narrow, mechanical exception** (added 2026-07-30, applies to both paper and
-   live, and to both a completed fly and a still-open short vertical): `engine.evaluate_pre_close_exit`
-   closes any ITM leg in the closing minutes (`pre_close_exit_time`, default 15:50) whenever doing so
-   costs less than the $5-per-ITM-strike exercise-assignment fee it would otherwise incur overnight — a cost
-   comparison, not a P&L-driven stop or a strategy adjustment tuned on the session's own data. For a
-   fly this is pure fee avoidance (the payoff is already bounded); for a vertical it stops the fee from
-   stacking on top of a loss the position is already realizing. A vertical is only ever considered once
-   its own entry has confirmed and any resting completion order is gone, so it never races a working
-   order.
+5. **No adjustments after establishment.** No stops, no wing moves, no exceptions — hold to cash
+   settlement. v1 is measuring a base rate, and an adjustment rule tuned before a single completion
+   rate exists would be fitting noise.
 
-   **Two measured limitations of this exception (2026-07-31), both left as findings rather than
-   tuned away.** First, it evaluates against the *intraday* spot at 15:50-15:59 but the fee is
-   decided by the *settlement* print, and the closing auction moves that print: across 9 paper
-   sessions, **23 of 194 settled positions (11.9%)** had their ITM-leg count change between the
-   last look and settlement (median drift 0.17, max 5.52; net **+$80** of fees paid that the last
-   look didn't predict). On 2026-07-31 — a month-end Friday, when auctions are largest — the live
-   749 fly looked safely OTM at 15:59 (spot 750.46) and settled ITM at 748.97. This is
-   irreducible: the exit must act before a number that doesn't exist until after. Widening the ITM
-   test with a buffer would trade a *certain* slippage cost for an *uncertain* fee saving, which
-   the second finding says is a losing trade.
-   Second, **paper and live disagree sharply about whether closing is even worth it.** Paper has
-   fired this exit **34 times in 228 settled positions**, refusing on cost only 7 times; live has
-   fired it **0 times in 6**, refusing on cost every single time (slippage $54-104 against a
-   $15-20 fee). Paper's modeled slippage materially understates what closing a 0DTE fly actually
-   costs in the last ten minutes, so **paper results that include pre-close exits are not
-   representative of live** — read that arm's paper P&L with this specifically in mind.
+   **A pre-close ITM exit existed from 2026-07-30 to 2026-08-01 as the one deliberate exception to
+   this rule, and was removed after measurement. Keep the negative result.** It closed any ITM
+   position in the final ten minutes whenever modeled closing slippage came in under the
+   $5-per-ITM-strike assignment fee — framed as a cost comparison rather than an adjustment, which
+   is why it was allowed through rule 5 at all. Comparing like with like (early-closed positions
+   against positions that were *also* ITM and *did* pay the fee):
+
+   | | n | mean P&L | median | negative |
+   |---|---|---|---|---|
+   | Closed before expiry | 34 | **−$105.64** | −$80.94 | 68% |
+   | Held, paid the fee | 115 | **−$71.93** | +$0.61 | 50% |
+
+   Closing cost ~**$34/position** in the mean and flipped the median from breakeven to −$81 — in
+   *paper*, where slippage is modeled optimistically at 12.5% of spread. Live fired it **0 times in
+   6**, refusing on cost every time (slippage $54–$104 against a $15–$20 fee, median 2.9× adverse).
+
+   Three reasons it could not be fixed by tuning, all worth remembering before anything like it is
+   proposed again. **It is structurally upside-down**: the fee is flat in dollars while closing cost
+   scales with the option's dollar spread, so the trade gets *worse* with notional, not better
+   (0DTE ATM spreads on 2026-07-31: XSP ~$1.50/contract, SPX ~$37.50/contract, against the identical
+   flat $5/strike). **It forfeits the thing the module is for**: a net-credit fly's guarantee is a
+   non-negative floor *at settlement*, and closing early trades that guarantee away for $5–15 of fee
+   avoidance. **It acts on a number that does not exist yet**: it evaluates intraday spot at
+   15:50–15:59 but the fee is decided by the settlement print, and across 9 paper sessions 23 of 194
+   settled positions (11.9%) had their ITM-leg count change in between (net +$80 of unpredicted fees).
+
+   Consequences still live in the code: `fly.position_floor` reserves the worst-case assignment fee
+   again (`fly.WORST_CASE_ITM_LEGS`), since nothing bounds that cost any more, which tightens
+   `live_orders.max_safe_completion_debit` with it. And the 34 paper rows carrying
+   `closed_before_expiry = 1` closed at an intraday quote rather than a settlement price (`pinned =
+   0`) — **exclude them when reading paper P&L**, they are not comparable to ordinary settled rows
+   and are not representative of current behavior.
 6. **If the floor comes out negative after fees, that is the finding.** The answer is to stop, not to
    loosen `fee_buffer` until the numbers look better.
 
@@ -283,8 +317,9 @@ These are the constraints the module exists to enforce. Breaking one makes the n
   early-exercise machinery to get wrong. Cash exercise/assignment at expiry is NOT impossible,
   though, and is not free: tastytrade charges **$5 per ITM STRIKE** — one charge per distinct
   option symbol that settles, *not* per contract and *not* scaled by quantity — the next business
-  day. Modeled throughout (`fly.expire_fee`, `fly.itm_legs_at_settlement`) and the reason
-  `engine.evaluate_pre_close_exit` exists at all.
+  day. Modeled throughout (`fly.expire_fee`, `fly.itm_legs_at_settlement`), reserved in every
+  position's floor (`fly.WORST_CASE_ITM_LEGS`), and paid rather than dodged — see rule 5 on why the
+  mechanism that used to dodge it was removed.
   **Corrected 2026-07-31.** This was modeled as $5/contract until real transactions disproved it:
   a 2-contract XSP put leg was charged **$5.00, not $10.00** (`XSP 260730P00744000`, qty 2,
   `clearing_fees -5.00`), alongside a 1-contract leg also at $5.00. So a butterfly's doubled centre
