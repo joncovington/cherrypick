@@ -178,19 +178,29 @@ def ic_close_fee(
     return _ic_fee(symbol, quantity, legs, sell_legs, commission_per_contract=0.0, ndigits=ndigits)
 
 
-# $5/contract, charged the next business day (not at expiry itself) on every leg that finishes
-# ITM at cash settlement and is therefore exercised/assigned -- OTM legs expire worthless and
-# cost nothing. Per CONTRACT, not per unique strike: a structure with two contracts resting on
-# the same ITM strike (e.g. a butterfly's doubled centre) is charged twice.
-# https://support.tastytrade.com/support/s/solutions/articles/43000435174, confirmed 2026-07-30.
-ASSIGNMENT_FEE_PER_CONTRACT = 5.00
+# $5 per SETTLEMENT EVENT, charged the next business day (not at expiry itself) on every distinct
+# option symbol that finishes ITM at cash settlement and is therefore exercised/assigned -- OTM
+# legs expire worthless and cost nothing.
+#
+# Per EVENT, not per contract: the broker settles one symbol as one transaction and charges it
+# once, however many contracts rest on it. Corrected 2026-07-31 against real tastytrade
+# transactions (the support article was previously read as per-contract, which these disprove):
+#
+#   XSP 260730P00744000  Cash Settled Assignment  qty 2  clearing_fees -5.00
+#   XSP 260730P00745000  Cash Settled Exercise    qty 1  clearing_fees -5.00
+#
+# The 2-contract leg was charged $5.00, not $10.00 -- so a butterfly's doubled centre is ONE
+# event, and quantity does not multiply the charge. (Both observed samples are 1-2 contracts;
+# if the broker ever tiers at larger size this would under-model, which is what the per-symbol
+# comparison in flies' `fee_reconcile` exists to catch.) The charge lands in `clearing_fees`.
+ASSIGNMENT_FEE_PER_SETTLEMENT = 5.00
 
 
-def ic_expire_fee(itm_contracts: int = 0) -> float:
-    """Cash-settlement cost: $0 for OTM legs (nothing to exercise), `ASSIGNMENT_FEE_PER_CONTRACT`
-    for each of `itm_contracts` that finished in the money and gets exercised/assigned overnight.
+def ic_expire_fee(itm_legs: int = 0) -> float:
+    """Cash-settlement cost: $0 for OTM legs (nothing to exercise), `ASSIGNMENT_FEE_PER_SETTLEMENT`
+    for each of `itm_legs` -- DISTINCT ITM option symbols, not contracts (see the comment above).
     Defaults to 0 (all legs OTM / not yet known) so existing zero-arg callers are unaffected."""
-    return round(itm_contracts * ASSIGNMENT_FEE_PER_CONTRACT, 2)
+    return round(itm_legs * ASSIGNMENT_FEE_PER_SETTLEMENT, 2)
 
 
 def ic_open_fee_table(symbols=("SPX", "XSP", "NDX", "RUT")) -> dict:
