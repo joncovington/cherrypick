@@ -218,10 +218,36 @@ tick and executes whichever wins *for the current regime* — Phase 1b's iron-vs
 higher floor" dispatch in `book.py` is already a working prototype of that pattern, generalized. That
 selector needs regime-labelled real outcomes to be built from, not guessed at, and the tag definition
 is expensive to change retroactively once data is accumulating — so it ships now, before `bwb_roll`
-adds a third entry mode to tag. Every threshold is a placeholder pending recalibration once real
-sessions exist, same honesty framing as every other gate. Deliberately excludes trend/chop: that
-needs a reference point in time no single snapshot carries, and guessing at that plumbing before
-there's a reason to would be the same mistake rule 6 warns against.
+adds a third entry mode to tag. Deliberately excludes trend/chop: that needs a reference point in
+time no single snapshot carries, and guessing at that plumbing before there's a reason to would be
+the same mistake rule 6 warns against.
+
+**Store the measure, not just the bucket (2026-08-01).** Every threshold above is a placeholder, and
+a bucket alone cannot be recalibrated — re-deriving "would this have been `pinning` at a different
+cut?" needs the number, and re-running the session to get it is impossible (regime data has no
+backfill path; `paper_replay` has no historical gamma source). `classify_regime` therefore returns
+the continuous measure behind each bucket plus the GEX surface's provenance (`net_gex`,
+`gamma_flip`, `gex_strikes`, `gex_input_age`), and both ledgers store them. `analytics.by_regime(...,
+bucket_edges=[...])` re-cuts the float at analysis time. MEIC learned this first — see the rationale
+on its `gex_net_at_entry` columns.
+
+**Two dimensions were measured degenerate, and are documented rather than re-guessed.**
+`entry_gex_bucket` came back `thin` **60/60** because concentration was measured as one strike's
+share of the *entire* chain (109–121 strikes on a real 0DTE surface); it is now windowed to near
+spot and measured over the top 3 strikes, since pinning is a property of a cluster. `time_bucket`
+came back `midday` **60/60** because entries only ever occur 09:45–15:00 while "midday" spans
+10:00–15:30 — constant by construction, and redundant with `entry_window`, which already records
+real timing with 6 distinct values and has its own analytics. Its boundaries were deliberately *not*
+re-guessed: the raw minute is recorded now, so `bucket_edges` can cut it against what actually
+happened. `analytics.regime_coverage` flags any single-bucket dimension, and the EOD report warns on
+it and withholds that dimension's P&L table — a one-bucket table reads as a finding and is not one.
+
+**GEX inputs are refused when stale or thin (2026-08-01).** `provider._greeks_and_oi` previously read
+gamma and OI with no age filter at all, so a dead feed produced a surface indistinguishable from a
+live one — on the path that picks the live butterfly's centre (`DEFAULT_ARM` is `gex`). Now bounded
+by `max_gex_input_age_seconds` (1800, much longer than the quote limit because OI is a once-a-day
+snapshot) and `min_gex_strikes` (20); below that the surface is refused and `select_center` degrades
+to ATM. `snapshot["gex_stats"]` carries fresh/stale/coverage the way `quote_stats` always has.
 
 **A global position cap does not make a multi-window arm test its windows.** `max_positions` alone let
 the book fill in the first window: over 07-20…07-24 `time_window` put 15 of its 16 legged entries in
