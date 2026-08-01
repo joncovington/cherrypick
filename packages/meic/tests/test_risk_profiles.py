@@ -16,13 +16,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # account-size study, or symbol-agnostic width-study arms (width-*) — those are partial
 # overlays merged onto config.json, not full presets.
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
-EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore", "width"}
+EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore", "width", "gex"}
 # width-* arms are forced-sampling study cells: symbol-agnostic (no `symbols` pin — the
 # (profile x symbol) grain supplies that axis) and deliberately uncapped on concurrency
 # (each structure is an independent sample, not a book), so they're exempt from the
 # symbol-pinning and concurrency-range checks the old small-/medium-/large-/explore-
 # cells are held to below.
+# Study-arm prefixes: symbol-agnostic forced-sampling cells, exempt from the symbol-pinning
+# and concurrency-range checks the old small-/medium-/large-/explore- cells are held to.
 WIDTH_STUDY_PREFIX = "width-"
+STUDY_ARM_PREFIXES = ("width-", "gex-")
 
 
 @pytest.fixture
@@ -264,8 +267,8 @@ def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):
     declared symbol, and — if they stagger — a daily target + spacing to spread entries."""
     profiles = sample_risk_profiles["profiles"]
     for name in set(profiles) - LADDER:
-        if name.startswith(WIDTH_STUDY_PREFIX):
-            continue  # symbol-agnostic by design — checked in test_width_study_arms below
+        if name.startswith(STUDY_ARM_PREFIXES):
+            continue  # symbol-agnostic by design — checked in the per-study tests below
         p = profiles[name]
         assert isinstance(p.get("symbols"), list) and p["symbols"], f"{name} must pin `symbols`"
         wbs = p.get("wing_widths_by_symbol")
@@ -440,3 +443,41 @@ def test_config_json_stale_values_fixed(sample_config):
         "min_credit_pct_of_width should be 0.15 (not 0.20 as docs said)"
     )
     assert sample_config["max_concurrent_ics"] == 4, "max_concurrent_ics should be 4 (not 2 as docs said)"
+
+
+# --------------------------------------------------------------------------- GEX study (2026-08-01)
+def test_gex_study_arms_differ_in_exactly_one_key(sample_risk_profiles):
+    """The invariant the whole GEX experiment rests on.
+
+    gex-open and gex-blocked exist to answer one question: does refusing entry on confirmed-negative
+    net GEX earn the ~40% of samples it cuts? That answer is only attributable if the two arms are
+    identical in every other respect. If anyone edits one arm and not the other, this fails loudly
+    rather than quietly turning the study into a comparison of two different strategies -- the
+    failure flies recorded twice, where an arm with a wider window out-earned control purely by
+    trading more often and the headline measured trade count instead of the variable under test.
+    """
+    profiles = sample_risk_profiles["profiles"]
+    assert {"gex-open", "gex-blocked"} <= set(profiles)
+    open_arm, blocked = profiles["gex-open"], profiles["gex-blocked"]
+
+    keys = {k for k in set(open_arm) | set(blocked) if not k.startswith("_")}
+    differing = {k for k in keys if open_arm.get(k) != blocked.get(k)}
+    assert differing == {"regime_gex_block_negative"}, f"arms diverge beyond the treatment: {differing}"
+
+    assert open_arm["regime_gex_block_negative"] is False  # control: takes negative-GEX entries
+    assert blocked["regime_gex_block_negative"] is True  # treatment: runs the live policy
+
+
+def test_gex_study_arms_are_forced_sampling(sample_risk_profiles):
+    """Both arms must face the GATE as their only binding constraint — the width study's rule.
+
+    stagger_entries makes daily_ic_trade_target a hard cap, which also skips the over-target
+    credit-floor tightening; without it the two arms would face different floors once one of them
+    ran ahead on entries, and the comparison would silently measure floor drift.
+    """
+    for name in ("gex-open", "gex-blocked"):
+        p = sample_risk_profiles["profiles"][name]
+        assert p["stagger_entries"] is True
+        assert p["min_minutes_between_entries"] == 15
+        assert p["max_concurrent_ics"] == 99, f"{name} must run uncapped (each trade a sample)"
+        assert p["daily_ic_trade_target"] > 20, f"{name}'s daily cap must never bind"

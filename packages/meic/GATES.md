@@ -81,8 +81,10 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
   nothing yet establishes that the trades it cuts would have been worse than the ones it keeps.
   Only 20 trades carry `gex_net_at_entry` (all from 2026-07-28) and no backfill exists. The switch
   is there so a shadow profile with `regime_gex_block_negative: false` can run beside the gated one
-  — same days, one difference — and settle it. Until then the gate stays on by default, but treat
-  it as untested rather than validated.
+  — same days, one difference — and settle it. **That study is now running**: the `gex-open` /
+  `gex-blocked` arm pair, read with `python src/experiment.py` — see
+  [docs/paper-experiments.md](docs/paper-experiments.md#gex-study-2026-08-01--does-the-gex-gate-earn-what-it-cuts).
+  Until it reports, the gate stays on by default, but treat it as untested rather than validated.
 
 ### 8. Zero-Gamma Threat (Symbol-Specific, Non-Blocking)
 - **Trigger**: Price within 0.3% of gamma flip level; close to regime boundary

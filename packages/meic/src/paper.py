@@ -1189,14 +1189,21 @@ def process_symbol(
     return {"ok": True, "symbol": symbol, "results": results}
 
 
+# Profile-name prefixes whose arms form a controlled study, and whose divergence is therefore
+# worth recording. Generalized from a bare "width-" literal on 2026-08-01 when the GEX study was
+# added -- an arm family with no divergence log loses the study's most informative datum, because a
+# refused entry is an OUTCOME, not missing data, and the iteration log condenses skipped profiles.
+STUDY_ARM_PREFIXES = ("width-", "gex-")
+
+
 def _log_width_divergence(snapshot: dict, results: dict, db_path: str) -> None:
-    """The width study's counterfactual: when one width-* arm entered this tick and a sibling arm
+    """A study's counterfactual: when one arm entered this tick and a sibling arm
     did not, record WHO sat out and WHY (floor / overlap / spacing ...). The iteration log condenses
     skipped profiles, so without this the divergence -- the study's most informative datum, per the
     flies fly_decisions lesson -- would be unrecoverable. Only divergent ticks are written (a tick
     where every arm entered, or every arm skipped, records nothing), so volume stays small.
     Best-effort: a logging hiccup must never disturb the engine."""
-    arms = {n: a for n, a in results.items() if n.startswith("width-")}
+    arms = {n: a for n, a in results.items() if n.startswith(STUDY_ARM_PREFIXES)}
     if not arms:
         return
     entered = [n for n, acts in arms.items() if any(x.get("entry") == "filled" for x in acts)]

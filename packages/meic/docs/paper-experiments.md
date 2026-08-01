@@ -4,6 +4,51 @@ a how-to guide — see [paper-trading.md](paper-trading.md) for the general pape
 and [risk-profiles.md](risk-profiles.md) for the risk-profile ladder it's built on. Part of the
 [MEIC module](../README.md) in the cherrypick suite.
 
+## GEX study (2026-08-01) — does the GEX gate earn what it cuts?
+
+**The question.** `regime_gex_block_negative` refuses entry whenever net GEX is confirmed negative.
+It is on by default and it is the module's single biggest brake: across 2026-07-29…31 it blocked
+**400 in-window iterations** (234 QQQ, 166 XSP). Nothing establishes that the trades it removes would
+have been worse than the ones it keeps. Only 20 historical trades carry GEX at all, all from one
+session, and there is no backfill path — so this is forward-looking only.
+
+**The arms.** `gex-open` (control, ungated) and `gex-blocked` (treatment, runs the live policy),
+identical in **every** key except `regime_gex_block_negative`. `test_gex_study_arms_differ_in_exactly_one_key`
+pins that, because an arm edited on one side and not the other silently turns the study into a
+comparison of two different strategies — the failure flies recorded twice, where a wider window let
+one arm out-earn control purely by trading more often.
+
+Both are forced-sampling like the width arms (`stagger_entries`, 15-minute spacing,
+`max_concurrent_ics: 99`, `daily_ic_trade_target: 24`) so the **gate is the only thing that ever
+binds**, and both face an identical credit floor on identical ticks — `stagger_entries` makes the
+daily target a hard cap, which also skips the over-target floor tightening that would otherwise drift
+between them. Symbol-agnostic, so the `(profile × symbol)` grain supplies that axis.
+
+**Read order** — `python src/experiment.py`:
+
+1. **The within-arm counterfactual, on `gex-open` alone.** This is the primary read. All three GEX
+   gates are pure entry filters and every fill stamps the GEX state it saw, so splitting the ungated
+   arm's own trades by `gex_positive_at_entry` shows exactly what each gate would have blocked, on the
+   same days, with every trade informative. `block_negative`, `require_positive` and a swept
+   `min_flip_distance_pct` all come out of the same rows — three answers from one arm.
+2. **`gex-open` vs `gex-blocked` P&L.** Secondary. The only read that sees the path-dependent
+   portfolio effect (a blocked entry frees a slot and changes what trades later), which the within-arm
+   split structurally cannot.
+3. **The divergence log** (`loop_log.action = 'width_arm_divergence'`, now written for `gex-` arms
+   too): who sat out and why. A refused entry is an outcome, not missing data.
+
+**Sessions are the sample, not trades.** Same-day trades share a regime. `experiment.py` reports
+`sessions` beside every trade count and refuses to quote a bootstrap interval below **14 sessions**
+(`PROMOTION_RULE.min_days`); the bootstrap resamples whole sessions rather than individual trades,
+because with fewer than ~30 clusters per-trade inference is badly optimistic. Read at 14, decide at
+20+.
+
+**The decision.** If the blocked trades are not meaningfully worse than the allowed ones, the gate is
+cutting ~40% of samples for nothing and `regime_gex_block_negative` should default to `false` — the
+same standard applied to flies' pre-close ITM exit. If they are worse, the flip-distance sweep says
+whether the stricter variants are worth enabling. Nothing changes the live loop automatically.
+
+
 # Paper-trading experiment cells (account-size study)
 
 > **2026-08-01 — symbols narrowed to SPX, registry narrowed to two rungs.** `symbols` is now
