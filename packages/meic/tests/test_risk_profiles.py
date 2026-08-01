@@ -279,8 +279,14 @@ def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):
 
 
 def test_width_study_arms(sample_risk_profiles):
-    """The four width-study arms exist, are enabled, are symbol-agnostic, and differ from each
-    other in exactly the one variable each is meant to isolate."""
+    """The four width-study arms exist, are symbol-agnostic, and differ from each other in exactly
+    the one variable each is meant to isolate.
+
+    Deliberately does NOT assert they are enabled. Whether an arm is currently running is an
+    operational choice (all four were stood down 2026-08-01, having never traded); whether its
+    DEFINITION is still a valid controlled comparison is the invariant worth pinning, and it is what
+    lets the study resume from these definitions rather than re-deriving them.
+    """
     profiles = sample_risk_profiles["profiles"]
     names = {"width-2", "width-5", "width-10", "width-adaptive"}
     assert names <= set(profiles)
@@ -295,7 +301,6 @@ def test_width_study_arms(sample_risk_profiles):
     reference_sampling = None
     for name in names:
         p = profiles[name]
-        assert p.get("enabled") is True, f"{name} must be enabled"
         assert "symbols" not in p, f"{name} must be symbol-agnostic (no `symbols` key)"
         sampling = {k: p[k] for k in sampling_keys}
         if reference_sampling is None:
