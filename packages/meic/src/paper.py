@@ -1153,14 +1153,31 @@ def process_symbol(
             if entered:
                 row = synthetic_entry_fill(snapshot, name, chosen, params, execution_mode)
                 save_result = _save_trade(row, db_path)
-                actions.append(
-                    {
-                        "entry": "filled",
-                        "ic_order_id": row["ic_order_id"],
-                        "net_credit": row["net_credit"],
-                        "save_result": save_result,
-                    }
-                )
+                # A fill that did not persist is NOT a fill. This check exists because its absence
+                # cost two full sessions: on 2026-07-30/31 the loop logged 186 fills while the
+                # INSERT was failing on five columns the live paper DB had never been migrated to
+                # have (the migration only runs from `db.py init_db`, which nothing calls
+                # automatically). `save_result` was recorded into the log and never inspected, so
+                # every one of those reads as "filled" in the iteration log with no row behind it.
+                # Silent data loss is the one failure mode a paper study cannot absorb.
+                if save_result.get("ok") is False:
+                    actions.append(
+                        {
+                            "entry": "save_failed",
+                            "ic_order_id": row["ic_order_id"],
+                            "net_credit": row["net_credit"],
+                            "error": save_result.get("error"),
+                        }
+                    )
+                else:
+                    actions.append(
+                        {
+                            "entry": "filled",
+                            "ic_order_id": row["ic_order_id"],
+                            "net_credit": row["net_credit"],
+                            "save_result": save_result,
+                        }
+                    )
             else:
                 actions.append({"entry": "skipped", "reason": reason})
         else:
