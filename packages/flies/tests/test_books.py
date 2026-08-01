@@ -62,7 +62,8 @@ def test_book_c_legged_flies_are_individually_risk_free():
             "fees": fees,
         }
         assert fly.is_risk_free(position), f"{chain['label']} floor did not survive fees"
-        unmanaged_worst_case = chain["expected_net"] * fly.CONTRACT_MULTIPLIER - fees - fly.expire_fee(4)
+        # 3 settlement events (distinct strikes), not 4 contracts -- corrected 2026-07-31.
+        unmanaged_worst_case = chain["expected_net"] * fly.CONTRACT_MULTIPLIER - fees - fly.expire_fee(3)
         for offset in range(-50, 51, 1):
             assert fly.position_pnl(position, chain["center"] + offset) >= unmanaged_worst_case - 1e-6
 

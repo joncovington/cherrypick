@@ -249,12 +249,29 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    fitting noise. **One narrow, mechanical exception** (added 2026-07-30, applies to both paper and
    live, and to both a completed fly and a still-open short vertical): `engine.evaluate_pre_close_exit`
    closes any ITM leg in the closing minutes (`pre_close_exit_time`, default 15:50) whenever doing so
-   costs less than the $5/contract exercise-assignment fee it would otherwise incur overnight — a cost
+   costs less than the $5-per-ITM-strike exercise-assignment fee it would otherwise incur overnight — a cost
    comparison, not a P&L-driven stop or a strategy adjustment tuned on the session's own data. For a
    fly this is pure fee avoidance (the payoff is already bounded); for a vertical it stops the fee from
    stacking on top of a loss the position is already realizing. A vertical is only ever considered once
    its own entry has confirmed and any resting completion order is gone, so it never races a working
    order.
+
+   **Two measured limitations of this exception (2026-07-31), both left as findings rather than
+   tuned away.** First, it evaluates against the *intraday* spot at 15:50-15:59 but the fee is
+   decided by the *settlement* print, and the closing auction moves that print: across 9 paper
+   sessions, **23 of 194 settled positions (11.9%)** had their ITM-leg count change between the
+   last look and settlement (median drift 0.17, max 5.52; net **+$80** of fees paid that the last
+   look didn't predict). On 2026-07-31 — a month-end Friday, when auctions are largest — the live
+   749 fly looked safely OTM at 15:59 (spot 750.46) and settled ITM at 748.97. This is
+   irreducible: the exit must act before a number that doesn't exist until after. Widening the ITM
+   test with a buffer would trade a *certain* slippage cost for an *uncertain* fee saving, which
+   the second finding says is a losing trade.
+   Second, **paper and live disagree sharply about whether closing is even worth it.** Paper has
+   fired this exit **34 times in 228 settled positions**, refusing on cost only 7 times; live has
+   fired it **0 times in 6**, refusing on cost every single time (slippage $54-104 against a
+   $15-20 fee). Paper's modeled slippage materially understates what closing a 0DTE fly actually
+   costs in the last ten minutes, so **paper results that include pre-close exits are not
+   representative of live** — read that arm's paper P&L with this specifically in mind.
 6. **If the floor comes out negative after fees, that is the finding.** The answer is to stop, not to
    loosen `fee_buffer` until the numbers look better.
 
@@ -264,9 +281,18 @@ These are the constraints the module exists to enforce. Breaking one makes the n
   incomplete position at a time — see `live_loop.py` and docs/live-trading-plan.md). SPX/XSP only —
   both European cash-settled, so EARLY exercise is structurally impossible and there is no
   early-exercise machinery to get wrong. Cash exercise/assignment at expiry is NOT impossible,
-  though, and is not free: tastytrade charges $5/contract on every ITM leg the next business day
-  (confirmed against a real overnight charge, 2026-07-30) — modeled throughout (`fly.expire_fee`,
-  `itm_contracts_at_settlement`) and the reason `engine.evaluate_pre_close_exit` exists at all.
+  though, and is not free: tastytrade charges **$5 per ITM STRIKE** — one charge per distinct
+  option symbol that settles, *not* per contract and *not* scaled by quantity — the next business
+  day. Modeled throughout (`fly.expire_fee`, `fly.itm_legs_at_settlement`) and the reason
+  `engine.evaluate_pre_close_exit` exists at all.
+  **Corrected 2026-07-31.** This was modeled as $5/contract until real transactions disproved it:
+  a 2-contract XSP put leg was charged **$5.00, not $10.00** (`XSP 260730P00744000`, qty 2,
+  `clearing_fees -5.00`), alongside a 1-contract leg also at $5.00. So a butterfly's doubled centre
+  is ONE settlement event, and a completed fly pays at most 3 charges (its distinct strikes), never
+  4 (its contracts). The old model over-charged every settled fly with an ITM centre; both ledgers
+  were re-settled through the corrected math. `fee_reconcile` now compares modeled vs real fee
+  **per settlement symbol**, not just as an aggregate P&L delta — the aggregate is what let this
+  hide as ~$12 of apparent slippage noise for a day.
 - **No AI, no MCP, and no network on any decision path.** `fly.py` and `engine.py` are pure functions
   over a pre-fetched snapshot. Learning happens offline in the orchestrator's read side (`report`,
   `calibrate`, `eod-insight`) over closed rows — never inside the loop.

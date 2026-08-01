@@ -37,7 +37,8 @@ Order lifecycle:
     the ordinary SETTLEMENT step below, which pays the real assignment fee as the fallback.
   - SETTLEMENT: at `live.settle_time` (default 16:20) each tick tries to auto-fetch the OFFICIAL
     print (tastytrade -> Yahoo -> Barchart, see `broker_cli.official_settlement_price`) and settle
-    directly as `settlement_source='official'`; if every source comes up empty it falls back to
+    directly, tagged with WHICH source answered (see broker_cli.official_settlement_price -- only a
+    posted close counts as official); if every source comes up empty it falls back to
     the last streamed trade, marked `'last_trade_provisional'`. A still-provisional session keeps
     retrying the official fetch on every subsequent tick until it upgrades or the loop
     self-disarms — a human can still force it with `--settle --price X` (marked 'official') if the
@@ -1043,16 +1044,27 @@ def session_already_settled(conn, day: str) -> bool:
     return total > 0 and total == settled
 
 
+# Settlement-source values that represent a genuinely POSTED closing print (see
+# `broker_cli.official_settlement_price`). Anything else -- an intraday last/mark tick, or the
+# stream cache's last trade -- is provisional and must keep the retry alive.
+_OFFICIAL_SOURCES = {"official", "tastytrade_close", "yahoo", "barchart"}
+
+
+def _is_official_source(source: str | None) -> bool:
+    return source in _OFFICIAL_SOURCES
+
+
 def session_officially_settled(conn, day: str) -> bool:
     """Stricter than `session_already_settled`: true only once EVERY book has the OFFICIAL print,
     not just a provisional one. Gates the tick's own settlement call — a merely provisional
     session must keep being retried (auto-fetching the official price, see `run_settle_live`) on
     every subsequent tick until it upgrades or the loop self-disarms, rather than being treated as
     done the moment any settlement — even a stale last-trade guess — lands."""
+    marks = ",".join("?" * len(_OFFICIAL_SOURCES))
     total, official = conn.execute(
-        "SELECT COUNT(*), COALESCE(SUM(status = 'settled' AND settlement_source = 'official'), 0) "
-        "FROM fly_books WHERE trade_date = ?",
-        (day,),
+        f"SELECT COUNT(*), COALESCE(SUM(status = 'settled' AND settlement_source IN ({marks})), 0) "
+        f"FROM fly_books WHERE trade_date = ?",
+        (*sorted(_OFFICIAL_SOURCES), day),
     ).fetchone()
     return total > 0 and total == official
 
@@ -1088,7 +1100,7 @@ def run_settle_live(
     existing = conn.execute("SELECT status, settlement_source FROM fly_books WHERE book_id = ?", (book_id,))
     row = existing.fetchone()
     already_official = (
-        row is not None and row["status"] == "settled" and row["settlement_source"] == "official"
+        row is not None and row["status"] == "settled" and _is_official_source(row["settlement_source"])
     )
     already_settled = row is not None and row["status"] == "settled"
 
@@ -1118,7 +1130,16 @@ def run_settle_live(
         source = "last_trade_provisional"
     else:
         settlement = price
-        source = "official"
+        # Only a POSTED CLOSING value earns 'official'. An intraday last/mark tick is marked
+        # provisional so `session_officially_settled` stays False and the loop keeps retrying
+        # until a real close posts (or the day disarms and a human confirms with --price).
+        # Before 2026-07-31 every auto-fetch was stamped 'official' regardless of which field
+        # answered, which both overstated the number and stopped the retry.
+        # Keep WHICH source answered rather than flattening to a bare "official" -- the provenance
+        # stays recoverable from the ledger. A human-supplied --price (auto_source None) is
+        # official by definition. `_OFFICIAL_SOURCES` decides which of these still count as
+        # official for `session_officially_settled`'s retry gate.
+        source = auto_source if auto_source is not None else "official"
         if already_settled:
             # Re-settle: flip the book's rows back to open so settle_book recomputes at the
             # official print through the exact same tested path as the first settlement.
@@ -1140,7 +1161,7 @@ def run_settle_live(
         f"LIVE settled {book_id} at {settlement:.2f} "
         f"({source}{f', auto-fetched via {auto_source}' if auto_source else ''}): "
         f"P&L {result['pnl']:+.2f} "
-        f"({result['itm_contracts']} ITM contract(s), ${result['assignment_fees']:.2f} assignment fees)"
+        f"({result['itm_legs']} ITM leg(s), ${result['assignment_fees']:.2f} assignment fees)"
         + (
             " — confirm with: python src/live_loop.py --settle --price <official print>"
             if source == "last_trade_provisional"

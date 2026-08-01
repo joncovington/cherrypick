@@ -108,7 +108,7 @@ def test_pre_close_exit_closes_a_completed_fly_with_an_itm_leg(conn):
     result = bookmod.process_snapshot(closing, config, conn, "control")
     closed = {a["position_id"]: a for a in result["actions"] if a["action"] == "closed_before_expiry"}
     assert fly_id in closed
-    assert closed[fly_id]["assignment_fee_avoided"] == 15.0
+    assert closed[fly_id]["assignment_fee_avoided"] == 10.0  # 2 ITM strikes, not 3 contracts
     assert len(closed) == 2  # the fly, plus the forest's second (still-open) vertical
 
     row = next(r for r in dbmod.book_positions(conn, book_id) if r["position_id"] == fly_id)
