@@ -11,16 +11,31 @@
       "path": "../meic",
       "_keyring_note": "The module's OS-keyring service name, used by `cherrypick account`/`connect` to read/select the module's live-trading account (ACCOUNT_NUMBER) via the shared CredentialStore. Optional 'keyring_legacy_services' lists read-only fallbacks (MEIC keeps 'tastytrade-mcp' for pre-rename creds). Omit to disable account selection for this module.",
       "keyring_service": "meicagent",
-      "keyring_legacy_services": ["tastytrade-mcp"],
+      "keyring_legacy_services": [
+        "tastytrade-mcp"
+      ],
       "_live_db_note": "Phase-5 seam: the module's LIVE-trades ledger, read ONLY by the explicitly live-tagged surfaces (`cherrypick report --live`). Deliberately a separate key from paper.paper_db — calibrate and every promotion reading go through the paper path and can never see this file. Same resolution rules as paper_db (absolute / ~-expanded / module-root relative).",
       "live_db": "~/.cherrypick/data/meic/meic_trades.db",
       "paper": {
         "kind": "self_healing",
         "task_name": "cherrypick-meic-paper-loop",
-        "install_argv": ["src/paper_loop.py", "--install-task"],
-        "uninstall_argv": ["src/paper_loop.py", "--uninstall-task"],
-        "status_argv": ["src/paper_loop.py", "--status"],
-        "once_argv": ["src/paper_loop.py", "--once", "--force"],
+        "install_argv": [
+          "src/paper_loop.py",
+          "--install-task"
+        ],
+        "uninstall_argv": [
+          "src/paper_loop.py",
+          "--uninstall-task"
+        ],
+        "status_argv": [
+          "src/paper_loop.py",
+          "--status"
+        ],
+        "once_argv": [
+          "src/paper_loop.py",
+          "--once",
+          "--force"
+        ],
         "_paper_db_note": "Path to the module's paper-trades SQLite DB — MUST point at the file the module actually WRITES (a mismatch silently blinds the orchestrator's report/reconcile/dashboard and the watchdog freshness check). Relative resolves against the module checkout; a leading '~' or env var expands (use e.g. '~/.cherrypick/data/meic/paper_trades.db' when the module keeps its data in the managed home); an absolute path is used as-is.",
         "paper_db": "data/paper_trades.db",
         "notify_trades": true,
@@ -31,19 +46,38 @@
       "streamer": {
         "_note": "MEIC's own in-module streamer — DISABLED since the 2026-07-21 producer cutover: the standalone streamer (top-level `streamer` block below) is the suite's sole producer, and exactly ONE producer ever runs. Kept only as the rollback path: to revert, set enabled=true here AND streamer.enabled=false below.",
         "enabled": false,
-        "status_argv": ["src/streamer.py", "--status"],
-        "start_argv": ["src/streamer.py"],
+        "status_argv": [
+          "src/streamer.py",
+          "--status"
+        ],
+        "start_argv": [
+          "src/streamer.py"
+        ],
         "_stop_argv_note": "Optional. Used to stop a STALLED streamer before relaunching it — the daemon is single-instance guarded, so relaunching without stopping is a silent no-op. Defaults to the status command with --stop.",
-        "stop_argv": ["src/streamer.py", "--stop"],
+        "stop_argv": [
+          "src/streamer.py",
+          "--stop"
+        ],
         "auto_restart": true,
         "_stale_restart_note": "Restart the streamer when it is CONNECTED but has received no market events for this many seconds during RTH. A process check cannot see this: observed 2026-07-20, the streamer reconnected then went silent for 8 minutes while still reporting running=true and its own stale_warning=false (that flag only trips at 600s), so nothing restarted it — MEIC degraded to REST and the flies module refused every iteration on stale quotes. 240s is well inside the 600s self-report and well outside a normal quiet tick. Restarts are skipped while a connection is younger than this, so a just-restarted streamer is not judged before it has resubscribed.",
         "stale_restart_seconds": 240
       },
       "calibration": {
         "_comment": "Optional. `cherrypick calibrate` reads paper P&L per risk profile and advises promotion up this ladder (advisory only; never switches live risk). Omit 'ladder' to get readings without recommendations. 'deliberate_only' rungs are never auto-recommended; 'rule' overrides the default {min_days:14, min_win_rate:0.6, min_sample:20}.",
-        "ladder": ["conservative", "moderate", "aggressive", "very-aggressive"],
-        "deliberate_only": ["very-aggressive"],
-        "rule": { "min_days": 14, "min_win_rate": 0.6, "min_sample": 20 }
+        "ladder": [
+          "conservative",
+          "moderate",
+          "aggressive",
+          "very-aggressive"
+        ],
+        "deliberate_only": [
+          "very-aggressive"
+        ],
+        "rule": {
+          "min_days": 14,
+          "min_win_rate": 0.6,
+          "min_sample": 20
+        }
       }
     },
     "flies": {
@@ -52,12 +86,17 @@
       "path": "../flies",
       "_broker_note": "Live-scaffold onboarding (docs/live-trading-plan.md in the module): flies has no tt.py, so its config-declared broker/credential CLI is broker_cli.py; `cherrypick connect/account --module flies` drive it exactly like MEIC's tt.py. keyring service fliesagent; live_db is the SEPARATE live ledger read only by `report --live` (never by calibrate/promotion).",
       "keyring_service": "fliesagent",
-      "broker_tool": ["src/broker_cli.py"],
+      "broker_tool": [
+        "src/broker_cli.py"
+      ],
       "live_db": "~/.cherrypick/data/flies/live_trades.db",
       "_live_note": "Watchdog + notification wiring for the module's LIVE loop (the module itself owns arming/trading; this block only tells the orchestrator how to WATCH it). task_name is the module's self-registered live task; the loop self-disarms at the module's live.disarm_time (arming is per-day) and disarm_time/disarm_grace_minutes here are the watchdog's BACKSTOP window — past it, a still-registered live task means self-disarm failed, so the watchdog sets the suite halt flag (risk-reducing only; it never touches the task) and raises CRITICAL. notify_trades pushes live entries/completions/settlements from live_db with a hard-to-miss LIVE prefix + desktop toast, from the notifier path (never the trading loop).",
       "live": {
         "task_name": "cherrypick-flies-live-loop",
-        "status_argv": ["src/live_loop.py", "--status"],
+        "status_argv": [
+          "src/live_loop.py",
+          "--status"
+        ],
         "log": "flies_live.log",
         "freshness_minutes": 5,
         "notify_trades": true,
@@ -70,11 +109,23 @@
         "kind": "self_healing",
         "task_name": "cherrypick-flies-paper-loop",
         "_timing_note": "The module registers its own recurring task (every 1 min — the scheduler floor; the completing spread can cheapen transiently between ticks, and paper_loop.py explains why the cadence is load-bearing) and `--once` carries all the session logic: out of RTH it is a clean no-op, after the settle time it settles the day and writes the EOD reports exactly once. One task, so there is no second schedule to drift out of sync with the first.",
-        "install_argv": ["src/paper_loop.py", "--install-task"],
-        "uninstall_argv": ["src/paper_loop.py", "--uninstall-task"],
-        "status_argv": ["src/paper_loop.py", "--status"],
+        "install_argv": [
+          "src/paper_loop.py",
+          "--install-task"
+        ],
+        "uninstall_argv": [
+          "src/paper_loop.py",
+          "--uninstall-task"
+        ],
+        "status_argv": [
+          "src/paper_loop.py",
+          "--status"
+        ],
         "_once_note": "No --force. --force bypasses the RTH gate AND the trading-day gate, the second of which exists to stop a Saturday tick from 'settling' a session that never happened and emitting a paper-eod-<saturday>.md the suite digest would ingest as real. The module's own --install-task registers plain `--once`, so --force here would also mean the orchestrator drives the loop differently from its own scheduled task.",
-        "once_argv": ["src/paper_loop.py", "--once"],
+        "once_argv": [
+          "src/paper_loop.py",
+          "--once"
+        ],
         "paper_db": "~/.cherrypick/data/flies/paper_trades.db",
         "notify_trades": true,
         "trade_schema": "fly_book",
@@ -86,7 +137,16 @@
       },
       "calibration": {
         "_comment": "The 'ladder' here is not a risk ladder — it is the experiment arms, and there is nothing to promote between them. Listing them gives per-arm P&L readings without recommendations, which is exactly what this module wants: the comparison is the output. width-2..width-5 are the wing-width sweep (control at the default width is its 1-increment rung); wide_wing is the retired SPX-era single-point width arm, listed so its historical books stay readable.",
-        "ladder": ["control", "time_window", "gex", "width-2", "width-3", "width-4", "width-5", "wide_wing"]
+        "ladder": [
+          "control",
+          "time_window",
+          "gex",
+          "width-2",
+          "width-3",
+          "width-4",
+          "width-5",
+          "wide_wing"
+        ]
       }
     },
     "earnings": {
@@ -99,8 +159,16 @@
         "exit_task_name": "cherrypick-earnings-paper-exit",
         "entry_time": "15:45",
         "exit_time": "09:45",
-        "entry_argv": ["src/strategy_test_runner.py", "run_entries", "--date", "{today}"],
-        "exit_argv": ["src/strategy_test_runner.py", "run_closes"],
+        "entry_argv": [
+          "src/strategy_test_runner.py",
+          "run_entries",
+          "--date",
+          "{today}"
+        ],
+        "exit_argv": [
+          "src/strategy_test_runner.py",
+          "run_closes"
+        ],
         "log": "earnings_paper.log",
         "paper_db": "~/.cherrypick/data/earnings/paper_trades.db",
         "notify_trades": true,
@@ -110,7 +178,11 @@
         "dolt_port": 3306,
         "dolt_user": "root",
         "_dolt_databases_note": "Databases the runner needs served on dolt_host:dolt_port. doctor verifies each is present (not just that the port answers) when a MySQL client is available, catching a Dolt server rooted at the wrong data dir. Omit to check port reachability only.",
-        "dolt_databases": ["earnings", "options", "stocks"],
+        "dolt_databases": [
+          "earnings",
+          "options",
+          "stocks"
+        ],
         "_dolt_service_note": "Optional cherrypick-managed keep-alive. `install` registers a MINUTE task that runs `ensure-dolt` (starts `dolt sql-server` from data_dir only when nothing is on the port); `uninstall` removes it; `status`/`doctor` surface it. data_dir is portable: `~` expands, a relative path resolves against the cherrypick runtime ROOT. Omit this block to manage Dolt yourself.",
         "dolt_service": {
           "task_name": "cherrypick-earnings-dolt",
@@ -156,7 +228,13 @@
         "title": "GEX",
         "enabled": false,
         "path": "../gex",
-        "fetch_argv": ["run.py", "section", "--symbol", "{symbol}", "--json"],
+        "fetch_argv": [
+          "run.py",
+          "section",
+          "--symbol",
+          "{symbol}",
+          "--json"
+        ],
         "default_symbol": "SPX",
         "refresh_seconds": 15
       },
@@ -166,7 +244,11 @@
         "title": "Flies",
         "enabled": true,
         "path": "../flies",
-        "fetch_argv": ["run.py", "section", "--json"],
+        "fetch_argv": [
+          "run.py",
+          "section",
+          "--json"
+        ],
         "refresh_seconds": 30
       },
       {
@@ -175,7 +257,12 @@
         "title": "MEIC",
         "enabled": false,
         "path": "../meic",
-        "fetch_argv": ["src/section.py", "--mode", "paper", "--json"],
+        "fetch_argv": [
+          "src/section.py",
+          "--mode",
+          "paper",
+          "--json"
+        ],
         "refresh_seconds": 30
       },
       {
@@ -184,7 +271,12 @@
         "title": "Earnings",
         "enabled": false,
         "path": "../earnings",
-        "fetch_argv": ["src/strategy_section.py", "--mode", "paper", "--json"],
+        "fetch_argv": [
+          "src/strategy_section.py",
+          "--mode",
+          "paper",
+          "--json"
+        ],
         "refresh_seconds": 60
       }
     ],
@@ -196,7 +288,13 @@
         "enabled": false,
         "kind": "server",
         "path": "../meic",
-        "serve_argv": ["src/dashboard.py", "--mode", "paper", "--port", "{port}"],
+        "serve_argv": [
+          "src/dashboard.py",
+          "--mode",
+          "paper",
+          "--port",
+          "{port}"
+        ],
         "port": 8801
       },
       {
@@ -205,7 +303,11 @@
         "enabled": false,
         "kind": "static",
         "path": "../earnings",
-        "build_argv": ["src/strategy_dashboard.py", "--mode", "paper"],
+        "build_argv": [
+          "src/strategy_dashboard.py",
+          "--mode",
+          "paper"
+        ],
         "output": "~/.cherrypick/data/earnings/reports/strategy_dashboard.html",
         "refresh_seconds": 30
       },
@@ -216,7 +318,13 @@
         "enabled": false,
         "kind": "server",
         "path": "../gex",
-        "serve_argv": ["run.py", "dashboard", "--serve", "--port", "{port}"],
+        "serve_argv": [
+          "run.py",
+          "dashboard",
+          "--serve",
+          "--port",
+          "{port}"
+        ],
         "port": 8802
       },
       {
@@ -226,7 +334,11 @@
         "enabled": true,
         "kind": "server",
         "path": "../flies",
-        "serve_argv": ["src/dashboard.py", "--port", "{port}"],
+        "serve_argv": [
+          "src/dashboard.py",
+          "--port",
+          "{port}"
+        ],
         "port": 8803
       }
     ]
@@ -244,9 +356,17 @@
     "_comment": "The suite's standalone market-data producer (packages/streamer) — the single streamer that writes the shared cache ~/.cherrypick/data/marketdata/stream_cache.db, which every module reads. THE sole producer since the 2026-07-21 cutover (modules.meic.streamer is the disabled rollback path; exactly ONE producer runs at a time). Session-gated and silence-restarted by the watchdog. Located by 'path' (relative to this file). Modules declare which symbols they need via ~/.cherrypick/state/stream_requests/<module>.json — every module regenerates its own file on each run — and the streamer streams the union.",
     "enabled": true,
     "path": "../streamer",
-    "status_argv": ["run.py", "--status"],
-    "start_argv": ["run.py"],
-    "stop_argv": ["run.py", "--stop"],
+    "status_argv": [
+      "run.py",
+      "--status"
+    ],
+    "start_argv": [
+      "run.py"
+    ],
+    "stop_argv": [
+      "run.py",
+      "--stop"
+    ],
     "auto_restart": true,
     "stale_restart_seconds": 240
   },
@@ -256,9 +376,20 @@
       "id": "gex-recorder",
       "enabled": false,
       "path": "../gex",
-      "status_argv": ["run.py", "record", "--status"],
-      "start_argv": ["run.py", "record"],
-      "stop_argv": ["run.py", "record", "--stop"],
+      "status_argv": [
+        "run.py",
+        "record",
+        "--status"
+      ],
+      "start_argv": [
+        "run.py",
+        "record"
+      ],
+      "stop_argv": [
+        "run.py",
+        "record",
+        "--stop"
+      ],
       "auto_restart": true
     },
     {
@@ -266,9 +397,20 @@
       "id": "meic-sidecar",
       "enabled": false,
       "path": "../meic",
-      "status_argv": ["src/streamer.py", "--sidecar", "--status"],
-      "start_argv": ["src/streamer.py", "--sidecar"],
-      "stop_argv": ["src/streamer.py", "--sidecar", "--stop"],
+      "status_argv": [
+        "src/streamer.py",
+        "--sidecar",
+        "--status"
+      ],
+      "start_argv": [
+        "src/streamer.py",
+        "--sidecar"
+      ],
+      "stop_argv": [
+        "src/streamer.py",
+        "--sidecar",
+        "--stop"
+      ],
       "auto_restart": true
     }
   ],
@@ -280,12 +422,25 @@
   },
   "notify": {
     "_channels_note": "push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord), never in this file or env vars.",
-    "channels": ["log", "desktop"],
-    "trade_channels": ["log", "discord"],
+    "channels": [
+      "log",
+      "desktop"
+    ],
+    "trade_channels": [
+      "log",
+      "discord"
+    ],
     "desktop_app_name": "cherrypick",
     "trade_summary": {
       "_comment": "MEIC risk_profile prefixes routed to a periodic per-symbol digest instead of a per-trade push (the width study's ~150-200 trades/day would otherwise spam every entry/exit individually). Rows whose risk_profile starts with one of these prefixes are excluded from the normal per-trade lines; ladder profiles (conservative/moderate/aggressive/very-aggressive) are unaffected either way.",
-      "profile_prefixes": ["width-"],
+      "profile_prefixes": [
+        "width-",
+        "gex-",
+        "conservative",
+        "moderate",
+        "aggressive",
+        "very-aggressive"
+      ],
       "interval_minutes": 15
     }
   },
@@ -327,9 +482,23 @@
       "meic": {
         "enabled": false,
         "advice_bounds": {
-          "stop_trigger_ratio": { "min": 0.85, "max": 0.95 },
-          "daily_ic_trade_target": { "min": 0, "max": 3 },
-          "entry_price_strategy": { "choices": ["mid", "natural_bid", "ioc_step", "day_improve", "auto"] }
+          "stop_trigger_ratio": {
+            "min": 0.85,
+            "max": 0.95
+          },
+          "daily_ic_trade_target": {
+            "min": 0,
+            "max": 3
+          },
+          "entry_price_strategy": {
+            "choices": [
+              "mid",
+              "natural_bid",
+              "ioc_step",
+              "day_improve",
+              "auto"
+            ]
+          }
         }
       }
     }

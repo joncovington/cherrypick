@@ -19,9 +19,12 @@
       "regime_vix_pause_threshold": 25,
       "regime_atr_pause_threshold_pct": 0.015,
       "regime_vix1d_ratio_pause_threshold": 1.3,
-      "max_concurrent_ics": 4,
+      "max_concurrent_ics": 99,
       "stop_trigger_ratio": 0.95,
-      "daily_ic_trade_target": 2
+      "daily_ic_trade_target": 200,
+      "overlap_scope": "shorts",
+      "stagger_entries": true,
+      "min_minutes_between_entries": 0
     },
     "moderate": {
       "_note": "Tier 1: Relax IV-rank (0.22) and credit floors (0.12), enter earlier (11:00 AM), tighten stop to 0.93 to offset. ~1 more trade/day vs conservative, thinner per-trade credit margin but paired with tighter stop. Use after 2–4 weeks on conservative if entry rejections are high.",
@@ -37,9 +40,12 @@
       "regime_vix_pause_threshold": 25,
       "regime_atr_pause_threshold_pct": 0.015,
       "regime_vix1d_ratio_pause_threshold": 1.3,
-      "max_concurrent_ics": 4,
+      "max_concurrent_ics": 99,
       "stop_trigger_ratio": 0.93,
-      "daily_ic_trade_target": 2
+      "daily_ic_trade_target": 200,
+      "overlap_scope": "shorts",
+      "stagger_entries": true,
+      "min_minutes_between_entries": 0
     },
     "aggressive": {
       "_note": "Tier 2: Tier 1 + accept tighter OTM strikes (delta 0.22, calls 0.30% OTM, puts 0.25% OTM); offset with max_concurrent_ics=3 (25% fewer positions) and stop_trigger_ratio=0.90 (5% tighter than conservative). ~2–3 more trades/week, each one riskier but total exposure capped. Requires active stop management. Use after 2+ weeks on moderate with 60%+ win rate.",
@@ -57,9 +63,12 @@
       "regime_vix_pause_threshold": 25,
       "regime_atr_pause_threshold_pct": 0.015,
       "regime_vix1d_ratio_pause_threshold": 1.3,
-      "max_concurrent_ics": 3,
+      "max_concurrent_ics": 99,
       "stop_trigger_ratio": 0.9,
-      "daily_ic_trade_target": 2
+      "daily_ic_trade_target": 200,
+      "overlap_scope": "shorts",
+      "stagger_entries": true,
+      "min_minutes_between_entries": 0
     },
     "very-aggressive": {
       "_note": "Tier 3: Tier 2 + regime gates relaxed (VIX pause at 30, ATR pause at 40); trade through higher-vol/trending conditions. Tightest offsets: max_concurrent_ics=2 (50% fewer), stop_trigger_ratio=0.85 (10% tighter than conservative). Highest activity (~3–5 more trades/week on active weeks), highest per-trade risk. FOR DELIBERATE SHORT EXPERIMENTS ONLY — test high-VIX/ATR tactics for 1 week with explicit drawdown limits. Not a permanent trading mode.",
@@ -77,9 +86,12 @@
       "regime_vix_pause_threshold": 30,
       "regime_atr_pause_threshold_pct": 0.02,
       "regime_vix1d_ratio_pause_threshold": 1.4,
-      "max_concurrent_ics": 2,
+      "max_concurrent_ics": 99,
       "stop_trigger_ratio": 0.85,
-      "daily_ic_trade_target": 2
+      "daily_ic_trade_target": 200,
+      "overlap_scope": "shorts",
+      "stagger_entries": true,
+      "min_minutes_between_entries": 0
     },
     "width-2": {
       "_note": "Width study, fixed arm: every entry is pinned to a 2-wide IC regardless of what the floor would otherwise pick. Forced-sampling: 15-minute spacing, no concurrency cap (99), each structure lives and dies on its own -- a sample stream, not a book. Paired against width-5/width-10/width-adaptive on the same tick.",
@@ -92,9 +104,10 @@
       },
       "wing_selection": "fixed",
       "stagger_entries": true,
-      "min_minutes_between_entries": 15,
+      "min_minutes_between_entries": 0,
       "max_concurrent_ics": 99,
-      "daily_ic_trade_target": 24
+      "daily_ic_trade_target": 200,
+      "overlap_scope": "shorts"
     },
     "width-5": {
       "_note": "Width study, fixed arm: every entry is pinned to a 5-wide IC regardless of what the floor would otherwise pick. Forced-sampling: 15-minute spacing, no concurrency cap (99), each structure lives and dies on its own -- a sample stream, not a book. Paired against width-2/width-10/width-adaptive on the same tick.",
@@ -107,9 +120,10 @@
       },
       "wing_selection": "fixed",
       "stagger_entries": true,
-      "min_minutes_between_entries": 15,
+      "min_minutes_between_entries": 0,
       "max_concurrent_ics": 99,
-      "daily_ic_trade_target": 24
+      "daily_ic_trade_target": 200,
+      "overlap_scope": "shorts"
     },
     "width-10": {
       "_note": "Width study, fixed arm: every entry is pinned to a 10-wide IC regardless of what the floor would otherwise pick. Forced-sampling: 15-minute spacing, no concurrency cap (99), each structure lives and dies on its own -- a sample stream, not a book. Paired against width-2/width-5/width-adaptive on the same tick.",
@@ -122,9 +136,10 @@
       },
       "wing_selection": "fixed",
       "stagger_entries": true,
-      "min_minutes_between_entries": 15,
+      "min_minutes_between_entries": 0,
       "max_concurrent_ics": 99,
-      "daily_ic_trade_target": 24
+      "daily_ic_trade_target": 200,
+      "overlap_scope": "shorts"
     },
     "width-adaptive": {
       "_note": "Width study, policy arm: offers 2/5/10 and picks the WIDEST that clears the credit floor (the fee-drag-bias policy), same forced-sampling cadence as the fixed arms. The paired policy-vs-fixed comparison -- same gates, same spacing, dynamic width per tick instead of a pin.",
@@ -139,9 +154,10 @@
       },
       "wing_selection": "widest",
       "stagger_entries": true,
-      "min_minutes_between_entries": 15,
+      "min_minutes_between_entries": 0,
       "max_concurrent_ics": 99,
-      "daily_ic_trade_target": 24
+      "daily_ic_trade_target": 200,
+      "overlap_scope": "shorts"
     },
     "gex-open": {
       "_note": "GEX study (2026-08-01), CONTROL (ungated) arm. Identical to gex-blocked in EVERY key except regime_gex_block_negative -- that one difference is the whole experiment, and test_risk_profiles pins it. Takes negative-GEX entries the live policy refuses, which is what creates the counterfactual. Forced-sampling like the width arms so the gate is the only binding constraint, and symbol-agnostic like them too -- the (profile x symbol) grain supplies that axis, so the arms follow whatever the base config trades without needing an edit. Gate thresholds copied from conservative (the only rung that never lost money) purely to fix the non-test parameters at a defensible point. Read results per docs/paper-experiments.md: the PRIMARY read is within gex-open alone -- split its own trades by the recorded gex_positive_at_entry to see what the gate would have blocked, on the same days, every trade informative; the gex-open vs gex-blocked P&L comparison is secondary and only it can see the path-dependent portfolio effect.",
@@ -160,9 +176,9 @@
       "regime_vix1d_ratio_pause_threshold": 1.3,
       "stop_trigger_ratio": 0.95,
       "stagger_entries": true,
-      "min_minutes_between_entries": 15,
+      "min_minutes_between_entries": 0,
       "max_concurrent_ics": 99,
-      "daily_ic_trade_target": 24,
+      "daily_ic_trade_target": 200,
       "wing_widths_by_symbol": {
         "SPX": [
           5,
@@ -173,7 +189,8 @@
           10
         ]
       },
-      "regime_gex_block_negative": false
+      "regime_gex_block_negative": false,
+      "overlap_scope": "shorts"
     },
     "gex-blocked": {
       "_note": "GEX study (2026-08-01), TREATMENT (gated) arm. Identical to gex-open in EVERY key except regime_gex_block_negative -- that one difference is the whole experiment, and test_risk_profiles pins it. Runs the live policy: refuses whenever net GEX is confirmed negative. Forced-sampling like the width arms so the gate is the only binding constraint, and symbol-agnostic like them too -- the (profile x symbol) grain supplies that axis, so the arms follow whatever the base config trades without needing an edit. Gate thresholds copied from conservative (the only rung that never lost money) purely to fix the non-test parameters at a defensible point. Read results per docs/paper-experiments.md: the PRIMARY read is within gex-open alone -- split its own trades by the recorded gex_positive_at_entry to see what the gate would have blocked, on the same days, every trade informative; the gex-open vs gex-blocked P&L comparison is secondary and only it can see the path-dependent portfolio effect.",
@@ -192,9 +209,9 @@
       "regime_vix1d_ratio_pause_threshold": 1.3,
       "stop_trigger_ratio": 0.95,
       "stagger_entries": true,
-      "min_minutes_between_entries": 15,
+      "min_minutes_between_entries": 0,
       "max_concurrent_ics": 99,
-      "daily_ic_trade_target": 24,
+      "daily_ic_trade_target": 200,
       "wing_widths_by_symbol": {
         "SPX": [
           5,
@@ -205,7 +222,8 @@
           10
         ]
       },
-      "regime_gex_block_negative": true
+      "regime_gex_block_negative": true,
+      "overlap_scope": "shorts"
     }
   },
   "_gex_study_note": "GEX STUDY (2026-08-01): gex-open / gex-blocked are a control-treatment pair differing in exactly one key, regime_gex_block_negative. The question: MEIC's default GEX gate refuses ~40% of samples (it blocked 400 in-window iterations over 2026-07-29..31 and is currently the module's single biggest brake), and nothing establishes the trades it cuts would have been worse than the ones it keeps. Both arms stamp gex_net/gex_positive/gamma_flip/gex_spot at entry, so all three GEX gate variants (block_negative, require_positive, min_flip_distance_pct) are evaluable from gex-open's rows alone -- they are pure entry filters. Decide at >=14 sessions (PROMOTION_RULE.min_days); same-day trades are clustered, so the effective N is the DAY count."

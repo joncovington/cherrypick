@@ -115,9 +115,9 @@
   "entry_window_end": "14:30",
   "force_close_time": "15:45",
   "_force_close_time_note": "Backstop force-close time (ET) for NON-cash-settled symbols (they primarily close at the earlier physical_settlement_force_close_time). Cash-settled symbols are NOT force-closed here — they are left to expire (see expiration_settlement_time). Event force-closes (FOMC 13:30, triple-witching/quarterly 14:00) still apply to all symbols.",
-  "daily_ic_trade_target": 2,
+  "daily_ic_trade_target": 200,
   "_daily_ic_trade_target_note": "Target number of IC entries per day. This is a guidance heuristic, not a hard cap — buying power, max_concurrent_ics, and regime gates remain the binding constraints. The agent uses this target to calibrate position sizing and entry selectivity (e.g., if target is 2 and 1 is already open, remaining slots are reserved for only high-conviction setups). Set to 0 to disable IC entries and run ORB only.",
-  "max_concurrent_ics": 4,
+  "max_concurrent_ics": 99,
   "_risk_profiles_note": "Rather than hand-editing config keys, use /set-risk-profile to switch between named presets: conservative (default, safest), moderate (recommended after 2–4 weeks), aggressive (after 2+ weeks at moderate with 60%+ win rate), very-aggressive (deliberate short experiments only). Each profile bundles related gate thresholds with offsetting position-cap and stop-management constraints. See config.risk.json and docs/risk-profiles.md for full rationale.",
   "entry_price_strategy_header": "===== Entry Price Strategy =====",
   "entry_price_strategy": "auto",
@@ -219,5 +219,9 @@
   "fomc_blackout_end": "14:30",
   "fomc_post_blackout_min_iv_rank": 0.4,
   "fomc_post_blackout_max_intraday_range_pct": 0.005,
-  "_fomc_post_blackout_note": "Post-blackout entries on FOMC days require normalized volatility: IV rank still >= fomc_post_blackout_min_iv_rank AND the session's intraday range (high-low) as a fraction of price <= fomc_post_blackout_max_intraday_range_pct (0.005 = 0.5%). Percentage-based so one threshold means the same thing across symbols; replaces the old hardcoded 3.5-point literal, which was symbol-agnostic and inert (nothing populated the range). The range feed is the streamer's stream_summary day rows (tt.py get_intraday_range); while the streamer is down or the feed is warming up the range clause stays inactive."
+  "_fomc_post_blackout_note": "Post-blackout entries on FOMC days require normalized volatility: IV rank still >= fomc_post_blackout_min_iv_rank AND the session's intraday range (high-low) as a fraction of price <= fomc_post_blackout_max_intraday_range_pct (0.005 = 0.5%). Percentage-based so one threshold means the same thing across symbols; replaces the old hardcoded 3.5-point literal, which was symbol-agnostic and inert (nothing populated the range). The range feed is the streamer's stream_summary day rows (tt.py get_intraday_range); while the streamer is down or the feed is warming up the range clause stays inactive.",
+  "overlap_scope": "shorts",
+  "stagger_entries": true,
+  "min_minutes_between_entries": 0,
+  "_independent_sampling_note": "INDEPENDENT SAMPLING (2026-08-01). Every profile now runs as a SAMPLE STREAM rather than a book: uncapped concurrency, no entry spacing, and overlap_scope 'shorts' so only an exact short-PAIR repeat is refused. Pacing is therefore the market's own strike movement -- the model flies uses (one structure per centre, no clock). Two consequences to keep in view. (a) max_concurrent_ics is no longer the risk ladder's offset axis; the rungs now differ ONLY in entry quality (IV floor, credit floor, delta, OTM distance, stop), which is a cleaner comparison but a real change of meaning. (b) Paper models no buying power, so an uncapped stream is only honest as a SAMPLE stream -- its P&L is not a book's P&L and must not be read as one. Rows before this date are book-semantics and are not comparable."
 }

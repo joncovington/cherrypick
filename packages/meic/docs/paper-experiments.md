@@ -4,6 +4,43 @@ a how-to guide — see [paper-trading.md](paper-trading.md) for the general pape
 and [risk-profiles.md](risk-profiles.md) for the risk-profile ladder it's built on. Part of the
 [MEIC module](../README.md) in the cherrypick suite.
 
+## Independent sampling (2026-08-01) — every profile is a sample stream
+
+**What changed.** All profiles now run uncapped (`max_concurrent_ics: 99`), with no entry spacing
+(`min_minutes_between_entries: 0`) and `overlap_scope: "shorts"` — only an exact **short-pair**
+repeat is refused. The short pair is the profit zone, exactly as a butterfly's centre is, and flies
+enforces the same one-structure-per-centre rule for the same reason: a second structure on the same
+zone doubles the bet without adding a zone.
+
+**Pacing is now the market's, not a clock's.** Entries are limited by how many distinct short pairs
+the underlying's path makes available during the window — the model flies uses. Measured on a
+simulated SPX session, samples per profile went **4 → 13**, and the two changes compound: the overlap
+rule alone gives 4→8, dropping the clock alone gives 4→5, because overlap was the binding constraint.
+
+**`stagger_entries` stays on** even with zero spacing. It is what keeps `daily_ic_trade_target` a
+HARD cap and, more importantly, skips the over-target credit-floor tightening — without it, later
+entries in a session would face a stricter floor than earlier ones and every comparison would
+silently measure floor drift.
+
+**Two consequences to keep in view.**
+
+1. **The risk ladder lost its offset axis.** `max_concurrent_ics` used to fall as rungs got riskier
+   (4/4/3/2), bounding book risk. With no book there is nothing to bound, so the rungs now differ
+   **only** in entry quality — IV floor, credit floor, delta ceiling, OTM distance, stop. That is a
+   cleaner comparison than before, but it is a real change of meaning, and `conservative` is no
+   longer "the config defaults as a book".
+2. **Paper models no buying power.** An uncapped stream is only honest as a *sample* stream: its P&L
+   is a sum of independent samples, **not a book's P&L**, and must not be read as one. Rows before
+   2026-08-01 are book-semantics and are not comparable across the switch.
+
+**What this does and does not buy.** More samples per session improve coverage of time-of-day,
+moneyness and strike space, and reduce the influence of any single entry's luck. They do **not**
+proportionally raise the effective N: same-day trades share a regime, so sessions remain the unit of
+independence. For the GEX study specifically the gain is smaller still — net-GEX sign was one-sided
+on 3 of the 4 sessions measured (2.3%, 98.3% and 100% positive; only 07-30 saw both states), so the
+blocked-vs-allowed contrast is mostly a between-day comparison regardless of intraday sample count.
+
+
 ## GEX study (2026-08-01) — does the GEX gate earn what it cuts?
 
 **The question.** `regime_gex_block_negative` refuses entry whenever net GEX is confirmed negative.
