@@ -10,6 +10,17 @@ A **risk profile** is a named preset of entry-gate thresholds that you select ba
 
 Each profile bundles gate-threshold changes with offsetting position-sizing and stop-management adjustments, following a core principle: **every relaxed gate is paired with a compensating constraint** (fewer concurrent positions or tighter stops), so you're reallocating risk, not just adding it.
 
+> **2026-08-01 — the concurrency half of that principle no longer applies.** Every profile now runs
+> as an uncapped independent-sampling stream (`max_concurrent_ics: 99`, `daily_ic_trade_target: 200`,
+> `overlap_scope: "shorts"`, no entry spacing) rather than a capped book — the same one-structure-
+> per-zone model flies uses, adopted so a session tests as many independent samples as the market
+> offers. There is no longer a position count to offset against, so **the tighter stop is the ladder's
+> only remaining offset**; the rungs differ solely in entry quality now. The per-tier tables below
+> still show the *historical* `max_concurrent_ics`/`daily_ic_trade_target` values and the reasoning
+> that shaped them (worth keeping — it explains why the stop tightens the way it does), each flagged
+> where it no longer reflects the live config. Full rationale for the switch:
+> `docs/paper-experiments.md`'s "Independent sampling" section.
+
 ---
 
 # Design rationale
@@ -23,12 +34,19 @@ than assumed — where a decision is still open, it says so and says what eviden
 This is the single most important design decision, because everything else follows from it.
 
 Climbing a rung **loosens entry quality** — IV-rank floor, credit floor, short-call delta, OTM
-distance — and is **offset by fewer concurrent positions and a tighter stop**. Total dollar exposure
-therefore *falls* as you climb (conservative 4 × ~$1,000 = ~$4k; very-aggressive 2 × ~$1,000 = ~$2k).
-"Aggressive" means *each trade is a worse bet taken deliberately*, not *more bets*.
+distance — and, historically, was **offset by fewer concurrent positions and a tighter stop**. Total
+dollar exposure therefore *fell* as you climbed (conservative 4 × ~$1,000 = ~$4k; very-aggressive 2 ×
+~$1,000 = ~$2k). "Aggressive" meant *each trade is a worse bet taken deliberately*, not *more bets*.
 
-**Trade count is therefore not a ladder dimension at all.** `daily_ic_trade_target` is flat at **2**
-on every rung.
+> **Since 2026-08-01, the position-count half of that offset is gone** (see the note at the top of
+> this doc) — every rung runs uncapped as an independent-sampling stream, so climbing the ladder no
+> longer shrinks total exposure the way the paragraph above describes. The **tighter stop is now the
+> only offset**, and the invariant below no longer holds (200 > 99 at every rung) or is enforced by
+> any test. The reasoning for *why trade count isn't a ladder axis* is unaffected — that argument
+> never depended on the concurrency cap — it just no longer needs the cap to be true.
+
+**Trade count is therefore not a ladder dimension at all.** `daily_ic_trade_target` was flat at **2**
+on every rung under book semantics; it is flat at **200** (a never-binding backstop) now.
 
 Previously it climbed 2 → 3 → 4 → 5 while `max_concurrent_ics` fell 4 → 4 → 3 → 2, which made the
 ladder move **three signals in three directions**: selectivity loosening, position count shrinking,
@@ -36,7 +54,9 @@ and daily target growing. At best two of those can be coherent simultaneously. T
 *arithmetically unreachable* at the top: with `max_concurrent_ics` of 2 and 0DTE positions held to
 settlement, slots essentially never free up intraday, so very-aggressive could never open 5.
 
-**Invariant:** `daily_ic_trade_target ≤ max_concurrent_ics` at every rung (enforced by test).
+**Former invariant (book semantics, pre-2026-08-01):** `daily_ic_trade_target ≤ max_concurrent_ics`
+at every rung. Retired along with the concurrency cap itself — there is no longer a position count
+for the target to sit inside.
 
 ## 2. Two axes, not one: **risk appetite × instrument**
 
@@ -155,9 +175,9 @@ Guessing would encode an assumption as if it were a finding.
 | `late_entry_bias_start_time` | 12:00 | Don't enter before noon on borderline-IV days |
 | `regime_vix_pause_threshold` | 25 | Pause ICs when VIX > 25 |
 | `regime_atr_pause_threshold_pct` | 0.015 | Pause ICs when 5-day ATR > 1.5% of underlying |
-| `max_concurrent_ics` | 4 | Allow up to 4 simultaneous ICs |
+| `max_concurrent_ics` | ~~4~~ **99** since 2026-08-01 | Was 4 simultaneous ICs; now uncapped — see the note above |
 | `stop_trigger_ratio` | 0.95 | Stop at 95% of credit received (loose stop) |
-| `daily_ic_trade_target` | 2 | Target 2 ICs/day |
+| `daily_ic_trade_target` | ~~2~~ **200** since 2026-08-01 | Was a 2/day target; now a never-binding backstop — see the note above |
 
 **Trade-off**: Fewest entries (~1–2/day on quiet days), highest per-trade safety margin. Best for: learning, uncertain markets, or after a losing streak.
 
@@ -173,7 +193,7 @@ Guessing would encode an assumption as if it were a finding.
 | `min_credit_pct_of_width` | 0.15 → **0.12** | Accept thinner credit — 20% haircut, but gates that fell just short of conservative now qualify. The low-IV relief floor scales with it (`× low_iv_credit_relief_multiple`), so the ladder stays monotonic at every IV level |
 | `late_entry_bias_start_time` | 12:00 → **11:00** | Start entering at 11 AM instead of noon — capture an extra hour of morning premium (theta is still accelerating) |
 | `stop_trigger_ratio` | 0.95 → **0.93** | Tighten stop slightly — 0.93 = stop at 93% of credit (2% tighter) to offset lower entry bars |
-| `daily_ic_trade_target` | 2 (unchanged) | Trade **count is not a ladder axis** — the ladder's axis is riskier trades, not more of them. Flat at 2 on every rung, and always ≤ `max_concurrent_ics` |
+| `daily_ic_trade_target` | ~~2~~ **200**, still flat across every rung | Trade **count is not a ladder axis** — was true when the flat value was a book's target of 2; still true now that the flat value is a never-binding sample-stream backstop |
 | Other gates | (unchanged) | VIX/ATR/delta/OTM thresholds stay the same |
 
 **Trade-off**: ~1–2 additional entries/week on normal weeks, slightly thinner per-trade credit margin but matched by tighter stop management. **Start here if conservative is leaving money on the table.**
@@ -193,9 +213,9 @@ Guessing would encode an assumption as if it were a finding.
 | `min_call_otm_pct` | 0.35% → **0.30%** | Calls only 0.30% OTM instead of 0.35% — much tighter |
 | `min_put_otm_pct` | 0.30% → **0.25%** | Puts only 0.25% OTM instead of 0.30% — much tighter |
 | `late_entry_bias_start_time` | 12:00 → **11:00** | Same as moderate |
-| `max_concurrent_ics` | 4 → **3** | **Offset #1**: cap at 3 simultaneous ICs instead of 4 (25% fewer positions) to limit total gamma exposure when each strike is closer to money |
+| `max_concurrent_ics` | ~~4 → 3~~ **99, same as every rung** since 2026-08-01 | This offset is gone — every rung runs uncapped now, so the stop below is the only thing left absorbing the closer-to-money delta |
 | `stop_trigger_ratio` | 0.95 → **0.90** | **Offset #2**: stop at 90% of credit (5% tighter than conservative) — increased stop cost paired with reduced position count keeps total risk budget similar |
-| `daily_ic_trade_target` | 2 (unchanged) | Count is not a ladder axis — see moderate. The position cap does the tightening |
+| `daily_ic_trade_target` | ~~2~~ **200** (unchanged across rungs) | Count is not a ladder axis — see moderate. The position cap no longer exists to do any tightening (see the `max_concurrent_ics` row above) |
 | Regime gates | (unchanged) | VIX/ATR pause thresholds unchanged — still skip in volatile regimes |
 
 **Trade-off**: ~2–3 additional entries/week on normal weeks; each one trades tighter strikes (higher per-trade risk), but fewer concurrent positions and tighter stops cap total exposure. Requires disciplined stop management and comfort with smaller win/loss swings. **Use when you want 2–3× more activity and accept tighter daily P&L ranges.**
@@ -217,9 +237,9 @@ Guessing would encode an assumption as if it were a finding.
 | `min_put_otm_pct` | 0.25% → **0.20%** | Puts only 0.20% OTM |
 | `min_credit_pct_of_width` | 0.10 → **0.08** | Thinnest credit accepted. Previously identical to aggressive (0.10), which left the ladder's credit axis with only three distinct values and let a stricter tier's low-IV relief undercut this one |
 | `late_entry_bias_start_time` | 11:00 → **10:00** | Start entering at 10 AM (market open) — no bias gate; accept directional exposure in the first hour |
-| `max_concurrent_ics` | 3 → **2** | **Offset #1**: cap at 2 simultaneous ICs (50% fewer than conservative) — regime relaxation requires extreme position discipline |
+| `max_concurrent_ics` | ~~3 → 2~~ **99, same as every rung** since 2026-08-01 | This offset is gone (see the note at the top of this doc) — the stop below now carries the full weight of the regime relaxation |
 | `stop_trigger_ratio` | 0.90 → **0.85** | **Offset #2**: stop at 85% of credit (10% tighter than conservative) — each stop is deeper, accepted risk is extreme |
-| `daily_ic_trade_target` | 2 (unchanged) | Count is not a ladder axis. Previously 5 here, which was unreachable anyway: with `max_concurrent_ics` = 2 and 0DTE positions held to settlement, slots rarely free up |
+| `daily_ic_trade_target` | ~~2~~ **200** (unchanged across rungs) | Count is not a ladder axis. Previously 5 here, which was unreachable anyway under the old `max_concurrent_ics` = 2 cap — moot now that there is no cap |
 
 **Trade-off**: Maximum activity (~3–5 additional ICs/week vs conservative on normal weeks); each trade is **riskiest** (closest-to-money strikes, highest gamma, widest daily swings); offsetting with smallest position count and tightest stops. **Only for experienced traders who can emotionally handle stops 10% deeper per position, or who deliberately want to test unfamiliar regimes. Not recommended for first month of operation.**
 

@@ -149,7 +149,7 @@ def _task_views(cfg: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _modules_installed_views(cfg: dict[str, Any]) -> list[dict[str, Any]]:
-    """What's configured/installed per module: location, source, paper kind, streamer, ladder.
+    """What's configured/installed per module: location, source, paper kind, streamer, champion.
     Filesystem + local `git` only — never the broker."""
     out = []
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
@@ -165,7 +165,7 @@ def _modules_installed_views(cfg: dict[str, Any]) -> list[dict[str, Any]]:
                 "git_ref": _git_ref(root) if root.exists() else None,
                 "paper_kind": paper.get("kind", "—"),
                 "streamer_enabled": bool(mcfg.get("streamer", {}).get("enabled")),
-                "ladder": mcfg.get("calibration", {}).get("ladder") or [],
+                "champion": mcfg.get("calibration", {}).get("champion"),
             }
         )
     return out
@@ -181,7 +181,7 @@ def _config_summary(cfg: dict[str, Any]) -> dict[str, Any]:
             "enabled": bool(mcfg.get("enabled")),
             "kind": mcfg.get("paper", {}).get("kind", "—"),
             "streamer_enabled": bool(mcfg.get("streamer", {}).get("enabled")),
-            "ladder": mcfg.get("calibration", {}).get("ladder") or [],
+            "champion": mcfg.get("calibration", {}).get("champion"),
         }
         for name, mcfg in cfg.get("modules", {}).items()
     }
@@ -620,30 +620,6 @@ def _sla_html(sla: dict[str, Any]) -> str:
     return f'<div class="sla">{"".join(bits)}</div>' if bits else ""
 
 
-def _calibration_html(cal: dict[str, Any]) -> str:
-    """Advisory promotion recommendations per ladder profile (from calibrate.run). Omitted if none."""
-    profiles = (cal or {}).get("profiles", {})
-    rows = []
-    for tag, p in profiles.items():
-        rec = p.get("recommendation")
-        if not rec:  # off-ladder profiles carry a reading but no recommendation
-            continue
-        r = p.get("reading", {})
-        graduate = rec.get("recommendation", "hold").startswith("graduate")
-        wr = r.get("win_rate")
-        wr_str = f"{wr * 100:.0f}%" if isinstance(wr, (int, float)) else "—"
-        rows.append(
-            "<li>"
-            + _pill("eligible" if graduate else "hold", "OK" if graduate else "WARN")
-            + f" <b>{html.escape(str(tag))}</b> "
-            f'<span class="muted">n={int(r.get("sample", 0))} win {html.escape(wr_str)} '
-            f"days {int(r.get('days', 0))} — {html.escape(str(rec.get('reason', '')))}</span></li>"
-        )
-    if not rows:
-        return ""
-    return f'<h3 class="sub">calibration</h3><ul class="findings">{"".join(rows)}</ul>'
-
-
 def _tasks_table(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return '<div class="muted">no tasks registered</div>'
@@ -673,7 +649,7 @@ def _modules_table(rows: list[dict[str, Any]]) -> str:
         return '<div class="muted">no modules enabled</div>'
     trs = []
     for r in rows:
-        ladder = ", ".join(r["ladder"]) if r["ladder"] else "—"
+        champion = r["champion"] or "—"
         trs.append(
             "<tr>"
             f"<td><b>{html.escape(r['name'])}</b></td>"
@@ -681,12 +657,12 @@ def _modules_table(rows: list[dict[str, Any]]) -> str:
             f'<td class="num">{html.escape(r["git_ref"] or "—")}</td>'
             f"<td>{html.escape(str(r['paper_kind']))}</td>"
             f"<td>{_pill('on', 'OK') if r['streamer_enabled'] else _pill('off', 'UNKNOWN')}</td>"
-            f"<td>{html.escape(ladder)}</td>"
+            f"<td>{html.escape(champion)}</td>"
             "</tr>"
         )
     return (
         '<table class="sys"><thead><tr><th>module</th><th>source</th><th>ref</th>'
-        "<th>paper kind</th><th>streamer</th><th>ladder</th></tr></thead><tbody>"
+        "<th>paper kind</th><th>streamer</th><th>champion</th></tr></thead><tbody>"
         + "".join(trs)
         + "</tbody></table>"
     )
@@ -697,11 +673,11 @@ def _config_summary_html(cs: dict[str, Any]) -> str:
         return '<div class="muted">no config</div>'
     bits = [f'<div><span class="muted">timezone</span> {html.escape(str(cs.get("timezone")))}</div>']
     for name, m in cs.get("modules", {}).items():
-        ladder = f" · ladder {html.escape(', '.join(m['ladder']))}" if m.get("ladder") else ""
+        champion = f" · champion {html.escape(m['champion'])}" if m.get("champion") else ""
         bits.append(
             f'<div><span class="muted">{html.escape(name)}</span> '
             f"{'enabled' if m.get('enabled') else 'disabled'} · {html.escape(str(m.get('kind')))} · "
-            f"streamer {'on' if m.get('streamer_enabled') else 'off'}{ladder}</div>"
+            f"streamer {'on' if m.get('streamer_enabled') else 'off'}{champion}</div>"
         )
     wd = cs.get("watchdog", {})
     bits.append(
@@ -803,7 +779,6 @@ def _module_card(mv: dict[str, Any]) -> str:
             + _by_profile_table(rep.get("by_profile", {}))
             + _findings_html(mv.get("findings", []), "no health findings")
             + _sla_html(mv.get("sla", {}))
-            + _calibration_html(mv.get("calibration", {}))
         )
     # data-rkey is a stable per-module id so the client-side drag-reorder (persisted in
     # localStorage) keys off the module, not its position — order survives every regen.
@@ -1121,6 +1096,8 @@ _CAL_CSS = (
     ".cpg-v{opacity:.75;text-align:right}"
     ".cpg-chip{display:inline-block;padding:0 6px;border-radius:8px;font-size:10px;font-weight:650}"
     ".cpg-chip.ok{color:var(--pos,#1a7f37)}.cpg-chip.no{color:var(--neg,#cf222e)}"
+    ".cpg-callout{margin:4px 0 10px;padding:6px 8px;border-radius:6px;font-size:12px;"
+    "background:rgba(154,103,0,.12);border:1px solid var(--warn,#9a6700)}"
 )
 
 
@@ -1132,25 +1109,49 @@ def _fmt_check_val(v: Any) -> str:
     return str(int(v)) if isinstance(v, (int, float)) else str(v)
 
 
-def _calibration_progress_html(module_views: list[dict[str, Any]]) -> str:
-    """Each ladder rung's march toward its promotion thresholds, as progress bars — the
-    calibrate output made visible (the audit: readings were point-in-time list items,
-    never a progression). Renders every check recommend_promotion evaluated, so the
-    hardened checks (return-on-capital, slippage survival) appear automatically the day
-    a module's rule enables them. Empty string when no module has a ladder."""
+def _role_pill(tag: str, entry: dict[str, Any]) -> str:
+    """The badge for one tag's row: champion, or a challenger's qualified/beats/vetoed state, or
+    (readings-only modules, `role` is None) plain qualified/not-qualified. One function so the
+    consolidated card never has two places that could disagree about what a given state is called."""
+    role = entry.get("role")
+    if role == "champion":
+        return _pill("champion", "OK")
+    qualified = bool(entry.get("qualified"))
+    if role == "challenger":
+        beats = bool(entry.get("beats_champion"))
+        if entry.get("deliberate_only") and qualified and beats:
+            return _pill("deliberate-only", "UNKNOWN")
+        if qualified and beats:
+            return _pill("beats champion", "OK")
+        if qualified:
+            return _pill("qualified", "WARN")
+        return _pill("not qualified", "UNKNOWN")
+    # role is None: readings-only mode (qualify_readings) — no champion to compare against.
+    return _pill("qualified", "OK") if qualified else _pill("not qualified", "UNKNOWN")
+
+
+def _champions_html(module_views: list[dict[str, Any]]) -> str:
+    """Champion/challenger status and each tag's march toward the qualification bar, in one
+    consolidated card (calibrate.run made visible). Replaces the old two-renderer split
+    (`_calibration_html` inline per module card, `_calibration_progress_html` as a separate
+    suite-wide section) 2026-08-01 — that split put the same information in two disconnected
+    places on the page for no reason once neither renderer still assumes an ordered ladder.
+
+    Shows a block for EVERY module with any profiles readings at all, champion-mode or
+    readings-only — the old per-tag renderer hid a module entirely once nothing was "on the
+    ladder", which is exactly the bug that made flies' arms invisible here despite the module's
+    own config comment saying the comparison itself IS the output. Renders every check
+    `recommend_champion`/`qualify_readings` evaluated, so the hardened checks (return-on-capital,
+    slippage survival) appear automatically the day a module's rule enables them."""
     blocks = []
     for mv in module_views:
         cal = mv.get("calibration") or {}
-        if not cal.get("ok") or not cal.get("ladder"):
+        profiles = cal.get("profiles") or {}
+        if not cal.get("ok") or not profiles:
             continue
-        profiles = cal.get("profiles", {})
         rows = []
-        for tag in cal["ladder"]:
-            entry = profiles.get(tag)
-            rec = (entry or {}).get("recommendation") or {}
-            checks = rec.get("checks") or {}
-            if not checks:
-                continue
+        for tag, entry in profiles.items():
+            checks = entry.get("checks") or {}
             bars = []
             for cname, c in checks.items():
                 value, threshold = c.get("value"), c.get("threshold")
@@ -1171,21 +1172,26 @@ def _calibration_progress_html(module_views: list[dict[str, Any]]) -> str:
                         f"{'PASS' if passed else 'FAIL'}</span>"
                         f'<span class="cpg-v">{html.escape(_fmt_check_val(value))}</span></div>'
                     )
-            verdict = rec.get("recommendation") or "—"
-            tone = "OK" if rec.get("eligible") else "UNKNOWN"
             rows.append(
-                f'<div class="cpg-row"><div class="cpg-head">{html.escape(tag)} '
-                f"{_pill(verdict, tone)}</div>{''.join(bars)}</div>"
+                f'<div class="cpg-row"><div class="cpg-head">{html.escape(str(tag))} '
+                f"{_role_pill(tag, entry)}</div>{''.join(bars)}</div>"
             )
-        if rows:
-            blocks.append(f'<div class="cpg-mod"><h3>{html.escape(mv["name"])}</h3>{"".join(rows)}</div>')
+        if not rows:
+            continue
+        rec = cal.get("recommendation")
+        callout = (
+            f'<div class="cpg-callout">{html.escape(str(rec["reason"]))}</div>'
+            if rec and rec.get("eligible")
+            else ""
+        )
+        champion_pill = f" {_pill('champion: ' + cal['champion'], 'OK')}" if cal.get("champion") else ""
+        blocks.append(
+            f'<div class="cpg-mod"><h3>{html.escape(mv["name"])}{champion_pill}</h3>'
+            f"{callout}{''.join(rows)}</div>"
+        )
     if not blocks:
         return ""
-    return (
-        '<section class="card"><h2>calibration — progress toward promotion</h2>'
-        + "".join(blocks)
-        + "</section>"
-    )
+    return '<section class="card"><h2>champions &amp; challengers</h2>' + "".join(blocks) + "</section>"
 
 
 def _render_html(model: dict[str, Any], serve: bool = False) -> str:
@@ -1255,7 +1261,7 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     equity_card = ""
     if model.get("equity_card"):
         equity_card = viz.card_inline_html("suite-equity", "suite equity — paper", model["equity_card"])
-    calibration_card = _calibration_progress_html(model.get("modules", []))
+    calibration_card = _champions_html(model.get("modules", []))
     extra_style = viz.SECTION_STYLE + _CAL_CSS
     extra_script = (
         viz.SECTION_JS + viz.REORDER_JS + (_DOCTOR_JS + _LIVEOPS_JS + _RECONCILE_JS if serve else "")

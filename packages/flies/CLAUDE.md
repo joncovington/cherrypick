@@ -1,8 +1,21 @@
 # cherrypick-flies
 
-0DTE net-credit butterflies on XSP (SPX through 2026-07-28; both books remain in the ledger) — the
-"profit forest". A **paper module**: it measures whether the strategy makes money net of costs, and it
-is built so that a negative answer is a usable result rather than something to tune away.
+0DTE net-credit butterflies on SPX (XSP 2026-07-29…07-31, SPX through 07-28; every era's books remain
+in the ledger under their own symbol and widths) — the "profit forest". A **paper module** with a
+narrow live pilot: it measures whether the strategy makes money net of costs, and it is built so that
+a negative answer is a usable result rather than something to tune away.
+
+**The 2026-08-01 SPX switch, and what it cost.** XSP fees were eating the result: on the 1-wide XSP
+book the median completed fly collected **$12.00 against $4.97 of fees — 41.4% drag** — while the
+5-wide SPX book collected **$63.12 against $6.89, or 10.9%**. Credit scales with the structure; the
+flat $5-per-ITM-strike assignment fee does not. But SPX 0DTE strikes are **5 points apart** (measured:
+302 of 479 gaps), so 5-wide is the *tightest structure SPX offers* and per-contract risk rose
+**$100 → $500, a 5× increase that is unavoidable rather than chosen**. Credit scaled with it (12.6% of
+width vs XSP's 12.0%), so this is close to the same trade five times larger. Two caveats kept
+deliberately visible: measured *per dollar of risk* the two are within noise (1.41% vs 1.49% per
+trade), and the two samples come from different weeks — so the fee argument is solid while the
+risk-adjusted case is not yet established. The width-sweep arms are disabled: 2/3/4 are not multiples
+of 5 and cannot be built on SPX at all.
 
 ## What the strategy actually is
 

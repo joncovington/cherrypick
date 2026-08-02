@@ -218,7 +218,7 @@ _BANKROLL_BASE = 100000
 # Width-study chart draws them: the three pinned widths, then the paired adaptive-policy arm.
 # conservative is deliberately excluded here — it's a reference curve, not part of the controlled
 # comparison (see docs/paper-experiments.md).
-WIDTH_STUDY_ARMS = ["width-2", "width-5", "width-10", "width-adaptive"]
+WIDTH_STUDY_ARMS = ["width-2", "width-5", "width-10", "width-adaptive", "gex-open", "gex-blocked"]
 
 
 def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
