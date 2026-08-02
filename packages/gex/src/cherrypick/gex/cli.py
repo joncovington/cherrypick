@@ -12,12 +12,12 @@ import argparse
 import json
 import sys
 
-import config as _config
-import section as _section
-import serve as _serve
-import service as _service
-import stream_request as _stream_request
-import streamer as _streamer
+from cherrypick.gex import config as _config
+from cherrypick.gex import section as _section
+from cherrypick.gex import serve as _serve
+from cherrypick.gex import service as _service
+from cherrypick.gex import stream_request as _stream_request
+from cherrypick.gex import streamer as _streamer
 
 
 def _cmd_gex(cfg: dict, args: argparse.Namespace) -> int:

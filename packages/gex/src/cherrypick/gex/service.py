@@ -23,7 +23,7 @@ from cherrypick.core.gex import (
     volume_totals,
 )
 
-import provider as _provider
+from cherrypick.gex import provider as _provider
 
 _ET = ZoneInfo("America/New_York")
 
@@ -247,7 +247,7 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
         print(f"recorder already running (pid {_running_recorder_pid(cfg)})")
         return 0
 
-    import config as _config  # local — config bootstraps nothing
+    from cherrypick.gex import config as _config  # local — config bootstraps nothing
 
     def _on_term(*_):  # POSIX: SIGTERM -> graceful stop (Windows kills forcefully; pid cleaned lazily)
         raise KeyboardInterrupt
@@ -364,7 +364,7 @@ def build_gex(cfg: dict, symbol: str | None = None) -> dict:
     ``{ok, symbol, expiration, underlying_price, source, series, spot_history, market_open_ts,
     market_close_ts, totals}`` — or ``{ok: False, error}`` when the cache isn't populated yet.
     """
-    from config import default_symbol  # local import; config bootstraps nothing
+    from cherrypick.gex.config import default_symbol  # local import; config bootstraps nothing
 
     symbol = (symbol or default_symbol(cfg)).strip().upper()
     snap = _provider.snapshot_from_stream_cache(cfg["stream_cache_db"], symbol)

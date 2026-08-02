@@ -13,7 +13,7 @@ writes `data/meic/stream_cache.db`, and everyone else reads that file **read-onl
   ([`paper_loop.py:334`](../packages/flies/src/paper_loop.py#L334): *"no streamer of its own, so when the
   upstream one stalls we go blind"*).
 - **gex** — in piggyback mode reads the same MEIC cache; in standalone mode runs its own thin wrapper
-  ([`gex/src/streamer.py`](../packages/gex/src/streamer.py)) over the shared engine.
+  ([`gex/src/cherrypick/gex/streamer.py`](../packages/gex/src/cherrypick/gex/streamer.py)) over the shared engine.
 
 The cache is therefore owned by a **trading module**, not by **infrastructure**. Uninstall MEIC and the
 producer vanishes — flies-only or gex-only installs have no data source. That breaks the goal of a

@@ -28,5 +28,8 @@ target-version = "py311"
 ignore = ["E501"]
 
 [tool.hatch.build.targets.wheel]
-only-include = ["src"]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py, so cherrypick.gex composes with
+# cherrypick.core (and every other module) under one cherrypick.* root. `sources = ["src"]` maps the
+# src/ prefix away, so src/cherrypick/gex/... installs as cherrypick/gex/... .
+only-include = ["src/cherrypick"]
 sources = ["src"]

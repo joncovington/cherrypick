@@ -16,7 +16,11 @@ from pathlib import Path
 
 from cherrypick.core import home as _home
 
-ROOT = Path(__file__).resolve().parent.parent  # repo root (holds config.json / run.py)
+# Package root (holds config.json / config.example.json / run.py). This file sits at
+# src/cherrypick/gex/config.py, so that is four parents up. It was parent.parent when the modules
+# lived flat in src/ -- getting this wrong is quiet rather than loud, because _config_source() falls
+# back to config.example.json and the module would just run on defaults.
+ROOT = Path(__file__).resolve().parents[3]
 CONFIG_PATH = ROOT / "config.json"
 EXAMPLE_PATH = ROOT / "config.example.json"
 

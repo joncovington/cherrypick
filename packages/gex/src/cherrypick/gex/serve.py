@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlparse
 
 from cherrypick.core import viz
 
-import service as _service
+from cherrypick.gex import service as _service
 
 _PAGE = r"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -561,7 +561,7 @@ def _render_page(symbol: str, refresh: int, symbols: list[str], ws_port_num: int
 
 
 def make_handler(cfg: dict, default_sym: str):
-    from config import ws_port
+    from cherrypick.gex.config import ws_port
 
     refresh = int(cfg["serve"].get("refresh_seconds", 15))
     symbols = [str(s).upper() for s in (cfg.get("symbols") or [default_sym])]
@@ -621,7 +621,7 @@ def serve(
     open_browser: bool = True,
 ) -> None:
     """Run the live GEX dashboard until interrupted (localhost-only)."""
-    from config import default_symbol
+    from cherrypick.gex.config import default_symbol
 
     sym = (symbol or default_symbol(cfg)).strip().upper()
     host = host or cfg["serve"].get("host", "127.0.0.1")
@@ -660,8 +660,8 @@ def serve(
 
     threading.Thread(target=_record_loop, name="gex-spot-recorder", daemon=True).start()
 
-    from config import ws_port as _ws_port
-    from push import GexPushServer
+    from cherrypick.gex.config import ws_port as _ws_port
+    from cherrypick.gex.push import GexPushServer
 
     push_srv = GexPushServer(cfg)
     threading.Thread(target=push_srv.start, args=(host,), name="gex-push", daemon=True).start()
