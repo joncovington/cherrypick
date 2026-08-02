@@ -9,16 +9,6 @@ stored before the rename keep working (never written to going forward).
 
 from __future__ import annotations
 
-# Make the cherrypick-core submodule (src/_core) importable without an install, so a fresh
-# `git clone --recursive` works out of the box. credentials.py is imported before any other code
-# needs `cherrypick.core` (session.py imports it first), so this one bootstrap covers the whole process.
-import sys as _sys
-from pathlib import Path as _Path
-
-_CORE = _Path(__file__).resolve().parent / "_core"
-if _CORE.is_dir() and str(_CORE) not in _sys.path:
-    _sys.path.insert(0, str(_CORE))
-
 from cherrypick.core.auth import (
     ACCOUNT_NUMBER,
     ALL_SECRETS,

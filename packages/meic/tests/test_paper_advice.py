@@ -18,12 +18,6 @@ import pytest
 
 _SRC = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(_SRC))
-# Bootstrap src/_core BEFORE the core import: unlike the sibling tests (which import a module file that
-# bootstraps it), this file imports cherrypick.core directly, so on its own it failed collection unless
-# another test module happened to run first.
-_CORE = _SRC / "_core"
-if _CORE.is_dir() and str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
 from cherrypick.core import advice as core_advice  # noqa: E402
 
 import paper  # noqa: E402

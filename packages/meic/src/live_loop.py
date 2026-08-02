@@ -39,10 +39,8 @@ from datetime import datetime
 from pathlib import Path
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_CORE = os.path.join(_HERE, "_core")
-for _p in (_HERE, _CORE):
-    if os.path.isdir(_p) and _p not in sys.path:
-        sys.path.insert(0, _p)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
 import credentials as _creds  # noqa: E402
 import live_orders  # noqa: E402

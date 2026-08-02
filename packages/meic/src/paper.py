@@ -40,17 +40,10 @@ _REPO_ROOT = os.path.join(_HERE, "..")
 _RISK_PROFILES_PATH = os.path.join(_REPO_ROOT, "config.risk.json")
 _DB_PY = os.path.join(_HERE, "db.py")
 
-# Shared market calendar from the cherrypick-core submodule (src/_core). Bootstrap it onto sys.path so
-# this pure engine is importable standalone (tests, subprocess) with no install — mirrors the
-# credentials.py bootstrap. The calendar computes NYSE holidays / quarterly + triple-witching expiries
-# from rules (no hand-maintained per-year config lists, and no drift like the old 2026-06-18 bug).
 if _HERE not in sys.path:
     sys.path.insert(
         0, _HERE
     )  # so `import paths` resolves when imported (tests, paper_loop), not just as a script
-_CORE = os.path.join(_HERE, "_core")
-if os.path.isdir(_CORE) and _CORE not in sys.path:
-    sys.path.insert(0, _CORE)
 from datetime import date as _date  # noqa: E402
 
 from cherrypick.core import calendar as _cal  # noqa: E402

@@ -28,9 +28,6 @@ import sys
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-_CORE = _HERE / "_core"
-if _CORE.is_dir() and str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 

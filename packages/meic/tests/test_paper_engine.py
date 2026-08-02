@@ -1411,9 +1411,7 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
     # Symbol and strike scale come from the configured set (see _traded_snapshot) rather than being
     # named here: this test has chased the traded set three times now. A single well-credited 5-wide
     # candidate so the fill is unambiguous.
-    snapshot = _traded_snapshot(
-        wing=5, sp_bid=0.80, sc_bid=0.75, now_et="13:00", date="2026-07-09"
-    )
+    snapshot = _traded_snapshot(wing=5, sp_bid=0.80, sc_bid=0.75, now_et="13:00", date="2026-07-09")
     result = subprocess.run(
         [
             sys.executable,

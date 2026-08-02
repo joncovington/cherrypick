@@ -32,9 +32,6 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
-_CORE = _HERE / "_core"
-if _CORE.is_dir() and str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
 
 from cherrypick.core.metrics import calibration_reading  # noqa: E402
 
@@ -167,10 +164,7 @@ def flip_distance_sweep(records: list[dict], steps=(0.001, 0.002, 0.003, 0.005, 
 def compare_arms(conn, start: str | None = None) -> dict:
     """gex-open vs gex-blocked. Secondary to `counterfactual`, and the only read that can see the
     path-dependent portfolio effect the within-arm split cannot."""
-    return {
-        arm: _reading(_records(conn, arm, start))
-        for arm in (CONTROL_ARM, TREATMENT_ARM)
-    }
+    return {arm: _reading(_records(conn, arm, start)) for arm in (CONTROL_ARM, TREATMENT_ARM)}
 
 
 def bootstrap_difference(group_a: list[dict], group_b: list[dict], iterations=2000, seed=0) -> dict | None:

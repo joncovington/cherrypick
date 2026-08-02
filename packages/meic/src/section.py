@@ -25,9 +25,8 @@ import sys
 from pathlib import Path
 
 _SRC = Path(__file__).resolve().parent
-for _p in (str(_SRC), str(_SRC / "_core")):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
 from cherrypick.core import viz  # noqa: E402
 

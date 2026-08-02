@@ -12,16 +12,11 @@ import urllib.parse
 import webbrowser
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
 from socketserver import ThreadingMixIn
 
-_CORE = str(Path(__file__).resolve().parent / "_core")
-if os.path.isdir(_CORE) and _CORE not in sys.path:
-    sys.path.insert(0, _CORE)
+from cherrypick.core import viz
 
-from cherrypick.core import viz  # noqa: E402
-
-import paths as _paths  # noqa: E402
+import paths as _paths
 
 # ── Timezone helpers ─────────────────────────────────────────────────────────
 

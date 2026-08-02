@@ -7,10 +7,9 @@ import sqlite3
 import sys
 from datetime import datetime
 
-# Make the cherrypick-core submodule (src/_core) importable before the cherrypick.core import below,
-# mirroring credentials.py's bootstrap so this module works even when imported before credentials.
+# Make `import paths` resolve when this file is imported (not run as the __main__ script, which
+# gets its own directory on sys.path automatically) -- mirrors credentials.py's self-insert.
 sys.path.insert(0, os.path.dirname(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
 from cherrypick.core import db as _db
 from cherrypick.core import profiles as _profiles
@@ -541,11 +540,8 @@ def _rows_dicts(conn: sqlite3.Connection, where: list[str], params: list) -> lis
 
 def _ic_open_fee_fallback(symbol: str):
     """Computed per-symbol IC open-fee from the shared tastytrade schedule (cherrypick.core.fees), replacing
-    MEIC's hand-maintained fee_estimate_fallback_per_contract constants. Returns None if the core
-    submodule isn't present."""
-    core = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_core")
-    if os.path.isdir(core) and core not in sys.path:
-        sys.path.insert(0, core)
+    MEIC's hand-maintained fee_estimate_fallback_per_contract constants. Returns None if cherrypick-core
+    isn't installed."""
     try:
         from cherrypick.core.fees import ic_open_fee
     except Exception:
