@@ -12,7 +12,7 @@ from datetime import datetime
 
 import pytest
 
-from cherrypick.orchestrator import logrotate
+from cherrypick.orchestrator import logrotate, util
 
 pytestmark = pytest.mark.unit
 
@@ -83,6 +83,29 @@ def test_rotated_log_backup_archived_by_mtime(tmp_path):
     with zipfile.ZipFile(z) as zf:
         assert "paper_loop.log.1" in zf.namelist()
     assert not (root / "meic" / "paper_loop.log.1").exists()
+
+
+def test_watchdog_log_rotation_is_archived_under_the_suite_scope(tmp_path):
+    """End-to-end: watchdog.log lives at the suite root (not a module subdir), so it needs its own
+    check that the "suite" scope -- the logs root's own top-level files, not a per-module dir --
+    picks up its rotated backups the same way a module's do. rotate_if_large is the only thing that
+    ever rotates it (logrotate itself refuses an active .log)."""
+    root = tmp_path / "logs"
+    root.mkdir()
+    watchdog_log = root / "watchdog.log"
+    watchdog_log.write_text("x" * 100, encoding="utf-8")
+    assert util.rotate_if_large(watchdog_log, max_bytes=50, keep=3) is True
+    rotated = root / "watchdog.log.1"
+    assert rotated.exists()
+    _set_mtime(rotated, datetime(2026, 6, 20))
+
+    logrotate.run(logs_root=root, now=datetime(2026, 7, 15))
+
+    z = root / "archive" / "2026-06" / "suite.zip"
+    with zipfile.ZipFile(z) as zf:
+        assert "watchdog.log.1" in zf.namelist()
+        assert zf.testzip() is None
+    assert not rotated.exists()
 
 
 def test_dry_run_writes_nothing(tmp_path):
