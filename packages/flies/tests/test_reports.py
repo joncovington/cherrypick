@@ -5,11 +5,9 @@ import json
 import pytest
 from test_analytics import position
 
-import analytics
-import dashboard
-import db as dbmod
-import eod as eodmod
-import section
+from cherrypick.flies import analytics, dashboard, section
+from cherrypick.flies import db as dbmod
+from cherrypick.flies import eod as eodmod
 
 
 @pytest.fixture()

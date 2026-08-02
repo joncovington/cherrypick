@@ -13,7 +13,7 @@ current calibration, not a separate toy implementation.
 
 Two distinct paper-testing *programs* build on this same paper/live split, and can run
 concurrently since they write to isolated books — see [Strategy Testing Plan](./strategy-testing-plan.md)
-for `/paper-start`'s forced-sampling program (`src/strategy_test_runner.py`, per-strategy `strat_test` books)
+for `/paper-start`'s forced-sampling program (`cherrypick/earnings/strategy_test_runner.py`, per-strategy `strat_test` books)
 versus `/paper-trading-start`'s one-shot production-ranking analysis (`rank_strategies.py`, no
 persistence at all). What follows describes the underlying mechanism both rely on.
 
@@ -21,8 +21,8 @@ persistence at all). What follows describes the underlying mechanism both rely o
 
 Paper trades are stored in `paper_trades.db`, a **separate SQLite file** from
 `earnings_trades.db` — both in the shared cherrypick data home (`~/.cherrypick/data/earnings` by
-default, or `$EARNINGS_DATA_DIR`; resolved by `src/paths.py`) — written and read exclusively through `src/db_paper.py` — a separate
-CLI module from `src/db.py`, not a `--paper` flag on the same one. There is no code path, table,
+default, or `$EARNINGS_DATA_DIR`; resolved by `cherrypick/earnings/paths.py`) — written and read exclusively through `cherrypick/earnings/db_paper.py` — a separate
+CLI module from `cherrypick/earnings/db.py`, not a `--paper` flag on the same one. There is no code path, table,
 or flag that can query both databases through one connection. This was a deliberate design
 choice (a shared table with an `is_paper` column was considered and rejected) specifically so a
 future live-trading bug can never accidentally blend simulated and real P&L by a forgotten
@@ -67,7 +67,7 @@ to whatever happens to be sitting in the connected account.
 
 ## Position Sizing
 
-Sized the same way a real order would be — via `src/sizing.py`'s `compute_position_size`,
+Sized the same way a real order would be — via `cherrypick/earnings/sizing.py`'s `compute_position_size`,
 scaling contract quantity to keep max loss within `max_risk_per_trade_pct` of the paper-mode
 capital basis (`available_capital_paper_mode`), capped by `max_contracts_per_leg`. This is not a
 fixed 1-contract simulation; paper-mode sizing exercises the exact same risk-cap logic live
@@ -76,7 +76,7 @@ that size would actually risk.
 
 ## Cost-Adjusted P&L
 
-Every paper trade also records `entry_cost`/`exit_cost` from `src/costs.py`'s tastytrade fee
+Every paper trade also records `entry_cost`/`exit_cost` from `cherrypick/earnings/costs.py`'s tastytrade fee
 model (commission, clearing, regulatory pass-throughs, and a slippage haircut off the quoted
 bid-ask width) — kept separate from the raw `pnl` column, which always stays gross. Cost-adjusted
 expectancy is computed downstream by `strategy_metrics.py`, not baked into `pnl` itself. See
@@ -113,12 +113,12 @@ submits real orders via `tt.py execute_trade --live` instead.
 ## Reporting
 
 ```bash
-python src/db_paper.py get_pnl_summary [--strategy iron_fly] [--profile strat_test]
+python -m cherrypick.earnings.db_paper get_pnl_summary [--strategy iron_fly] [--profile strat_test]
 ```
 
 Returns `total_trades`, `total_pnl`, `avg_pnl`, `win_count`/`loss_count`/`win_rate`,
 `avg_win`/`avg_loss`, a `by_strategy`/`by_profile` breakdown, and the full closed-trade list —
 run it any time to check cumulative raw P&L. For cost-adjusted expectancy, win rate, profit
 factor, Sharpe, drawdown, and IV-crush metrics, use
-`python src/strategy_report.py` or `python src/strategy_dashboard.py` instead, which read the
+`python -m cherrypick.earnings.strategy_report` or `python -m cherrypick.earnings.strategy_dashboard` instead, which read the
 richer `strategy_metrics.py` computations on top of the same database.

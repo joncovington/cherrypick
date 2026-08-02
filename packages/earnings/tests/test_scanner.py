@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-import scanner
+from cherrypick.earnings import scanner
 
 # --- has_weekly_options -----------------------------------------------------
 

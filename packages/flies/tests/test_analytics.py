@@ -2,9 +2,8 @@
 
 import pytest
 
-import analytics
-import db as dbmod
-import fly
+from cherrypick.flies import analytics, fly
+from cherrypick.flies import db as dbmod
 
 
 @pytest.fixture()

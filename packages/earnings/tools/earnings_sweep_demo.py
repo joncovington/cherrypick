@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-import scanner  # noqa: E402  # intentional: after the sys.path bootstrap above
+from cherrypick.earnings import scanner  # noqa: E402  # intentional: after the sys.path bootstrap above
 
 
 def get_next_market_days(start_date_str: str, num_days: int = 10) -> list[str]:

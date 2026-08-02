@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-import db as dbmod
-import fee_reconcile
+from cherrypick.flies import db as dbmod
+from cherrypick.flies import fee_reconcile
 
 TRADE_DATE = "2026-07-30"
 SYMBOL = "XSP"
@@ -144,7 +144,9 @@ def test_reconcile_date_is_idempotent(live_conn):
 
 
 def test_reconcile_date_leaves_unmatched_position_untouched(live_conn):
-    row = _save_744_position(live_conn, position_id="orphan-fly", entry_order_id="999999", completion_order_id="888888")
+    row = _save_744_position(
+        live_conn, position_id="orphan-fly", entry_order_id="999999", completion_order_id="888888"
+    )
     result = fee_reconcile.reconcile_date(live_conn, TRADE_DATE, SYMBOL, _744_TRANSACTIONS)
 
     assert result["reconciled"] == []
@@ -186,14 +188,13 @@ def test_a_fee_that_stops_matching_the_model_is_flagged_per_symbol(live_conn):
     exact bug was live."""
     _save_744_position(live_conn, trade_date="2026-07-30")
     txns = [
-        t if t.get("symbol") != "XSP   260730P00744000" or not t.get("clearing_fees")
+        t
+        if t.get("symbol") != "XSP   260730P00744000" or not t.get("clearing_fees")
         else {**t, "clearing_fees": -10.0}
         for t in _744_TRANSACTIONS
     ]
     logged = []
-    result = fee_reconcile.reconcile_date(
-        live_conn, "2026-07-30", SYMBOL, txns, log=logged.append
-    )
+    result = fee_reconcile.reconcile_date(live_conn, "2026-07-30", SYMBOL, txns, log=logged.append)
     assert len(result["fee_variance"]) == 1
     v = result["fee_variance"][0]
     assert v["symbol"] == "XSP   260730P00744000"

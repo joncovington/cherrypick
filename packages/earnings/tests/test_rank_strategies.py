@@ -1,6 +1,6 @@
 from datetime import date
 
-import rank_strategies
+from cherrypick.earnings import rank_strategies
 
 
 def _make_entry(name, accepted=True, score_criteria=None):

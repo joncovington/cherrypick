@@ -30,7 +30,7 @@ symbols (QQQ/IWM) are force-closed before the bell to avoid assignment.
 negative net GEX / zero-gamma proximity blocks or tightens). A complementary **ORB** (opening-range
 breakout) debit spread runs alongside and *is* allowed in the trending regimes that pause condors.
 
-**How it runs.** Unattended paper is a codified daemon (`src/paper_loop.py`, self-healing OS task
+**How it runs.** Unattended paper is a codified daemon (`cherrypick/meic/paper_loop.py`, self-healing OS task
 `cherrypick-meic-paper-loop`) — the same decisions as the agent loop, in code, writing to
 `~/.cherrypick/data/meic/paper_trades.db`. Live/interactive trading is agent-driven and gated behind
 `enable_live_trading`; the orchestrator never runs that path.
@@ -52,7 +52,7 @@ a historical win-rate backtest live from tastytrade chains + DoltHub datasets (v
 only its own thresholds and strike/order construction. **Always check win-rate `sample_size`** — historical
 coverage is limited for less-liquid names.
 
-**How it runs.** The orchestrator runs the forced-sampling paper harness `src/strategy_test_runner.py`
+**How it runs.** The orchestrator runs the forced-sampling paper harness `cherrypick/earnings/strategy_test_runner.py`
 on daily entry (~15:45 ET) and exit (~09:45 ET) tasks it registers and watchdogs — this module has no
 scheduler of its own. The harness opens the isolated `strat_test` book (every Tier 1/2 strategy on every
 viable name) so each strategy accumulates a statistically useful sample fast; it's always paper-only.

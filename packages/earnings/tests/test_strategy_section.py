@@ -6,8 +6,8 @@ from datetime import datetime
 
 import pytest
 
-import strategy_metrics as sm
-import strategy_section as ss
+from cherrypick.earnings import strategy_metrics as sm
+from cherrypick.earnings import strategy_section as ss
 
 DAY1 = datetime(2026, 7, 20, 9, 50).timestamp()
 DAY2 = datetime(2026, 7, 21, 9, 50).timestamp()

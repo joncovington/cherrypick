@@ -3,7 +3,7 @@
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
 Everything here is a real command you can run today — no placeholder scripts. All operations go
-through `python src/tt.py <command>` (broker), `python src/scanner.py <command>` (shared engine),
+through `python -m cherrypick.earnings.tt <command>` (broker), `python -m cherrypick.earnings.scanner <command>` (shared engine),
 or `python src/strategies/<name>.py <command>` (strategy-specific). Every command prints JSON to
 stdout, so pipe through `python -m json.tool` or `jq` if you want it pretty-printed.
 
@@ -14,7 +14,7 @@ stdout, so pipe through `python -m json.tool` or `jq` if you want it pretty-prin
 ### Morning: what's on the calendar
 
 ```bash
-python src/scanner.py get_calendar --date MM/DD/YYYY
+python -m cherrypick.earnings.scanner get_calendar --date MM/DD/YYYY
 ```
 
 Returns tickers reporting earnings on that date. Cross-reference against timing (`Before market
@@ -24,7 +24,7 @@ tomorrow's.
 ### Afternoon: full accept/reject scan for one strategy
 
 ```bash
-python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
+python -m cherrypick.earnings.strategies.iron_fly get_candidates --date MM/DD/YYYY
 ```
 
 Same command shape for any strategy (`iron_condor`, `directional_credit_spread`,
@@ -35,7 +35,7 @@ ones survived the account-wide cap/correlation filter.
 ### Cross-strategy: which strategy wins for each symbol tonight
 
 ```bash
-python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
+python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY
 ```
 
 Evaluates every enabled strategy against every candidate on the merged today-AMC/tomorrow-BMO
@@ -45,7 +45,7 @@ calendar and picks each symbol's single best-ranked strategy. This is what the l
 ### Building a concrete order
 
 ```bash
-python src/strategies/iron_fly.py get_order --symbol AAPL --earnings_date 2026-07-15 --earnings_timing "After market close"
+python -m cherrypick.earnings.strategies.iron_fly get_order --symbol AAPL --earnings_date 2026-07-15 --earnings_timing "After market close"
 ```
 
 Returns strikes, legs, credit/debit, quantity, and max loss — a real order spec priced off the
@@ -55,7 +55,7 @@ live chain, not a simulation.
 
 ## Strategy Selection at a Glance
 
-The actual routing logic lives in `src/rank_strategies.py` and each strategy's own accept/reject
+The actual routing logic lives in `cherrypick/earnings/rank_strategies.py` and each strategy's own accept/reject
 screen (`apply_tiering` in `src/strategies/<name>.py`), not a fixed lookup table — but as a rough
 mental model:
 
@@ -91,7 +91,7 @@ afternoon before it). See `CLAUDE.md`'s Loop Steps for the full mechanics.
 
 ## Position Sizing
 
-Sizing is code-enforced in `src/sizing.py`, not a spreadsheet calc — `compute_position_size`
+Sizing is code-enforced in `cherrypick/earnings/sizing.py`, not a spreadsheet calc — `compute_position_size`
 scales quantity to keep max loss within `max_risk_per_trade_pct` of NLV (real account balance in
 live mode, `available_capital_paper_mode` in paper mode), capped by `max_contracts_per_leg`
 regardless of the risk budget. To see what it would do for a real candidate, just read the
@@ -173,7 +173,7 @@ All six strategies are defined-risk — max loss is known at entry for every one
 
 ### "No candidates found"
 Check the date and confirm it's actually an earnings date via
-`python src/scanner.py get_calendar --date MM/DD/YYYY`. A day with genuinely no reporting
+`python -m cherrypick.earnings.scanner get_calendar --date MM/DD/YYYY`. A day with genuinely no reporting
 tickers in your universe isn't a bug.
 
 ### "Everything rejected"
@@ -182,21 +182,21 @@ quiet, illiquid, or low-IV/RV night produces a lot of legitimate rejections. See
 `docs/screening-criteria.md` for what each hard filter checks.
 
 ### "Strategy selection looks wrong"
-Re-run `python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY` and check the
+Re-run `python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY` and check the
 per-strategy scores in the output — the ranking is logged to `scan_log` (`strategy = "_ranked"`)
 so you can also query the database directly for the full evaluation trail.
 
 ### "Order rejected" / margin errors in dry-run
-`python src/tt.py execute_trade --order '<JSON>'` without `--live` still performs a real margin
+`python -m cherrypick.earnings.tt execute_trade --order '<JSON>'` without `--live` still performs a real margin
 check against your account — read the response body for the specific rejection reason before
 assuming it's a code bug.
 
 ### "Connection failed"
 ```bash
-python src/tt.py get_connection_status
-python src/tt.py secrets_status
+python -m cherrypick.earnings.tt get_connection_status
+python -m cherrypick.earnings.tt secrets_status
 ```
-If credentials aren't there or are stale, `python src/tt.py secrets_set` to re-enter them.
+If credentials aren't there or are stale, `python -m cherrypick.earnings.tt secrets_set` to re-enter them.
 
 ---
 
@@ -204,8 +204,8 @@ If credentials aren't there or are stale, `python src/tt.py secrets_set` to re-e
 
 ```bash
 pytest                                  # unit tests
-python src/strategy_report.py           # per-strategy expectancy, win rate, IV crush
-python src/strategy_dashboard.py        # writes reports/strategy_dashboard.html
+python -m cherrypick.earnings.strategy_report           # per-strategy expectancy, win rate, IV crush
+python -m cherrypick.earnings.strategy_dashboard        # writes reports/strategy_dashboard.html
 ```
 
 For accumulating a real sample across all 6 strategies before trusting any of the above, use

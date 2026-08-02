@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import paper_practice as pp
+from cherrypick.meic import paper_practice as pp
 
 # ── OCC / date formatting ────────────────────────────────────────────────────
 
@@ -106,9 +106,13 @@ def _ic():
             "sc_k": 7540.0,
         },
         "net_credit": 1.40,
+        "wing": 10,
         "call": "open",
         "put": "open",
         "retry": {"call": 0, "put": 0},
+        "exit": {"call": None, "put": None},
+        "exit_fee": {"call": 0.0, "put": 0.0},
+        "exit_reason": {"call": None, "put": None},
     }
 
 
@@ -191,6 +195,133 @@ def test_stop_triggers_when_side_cost_reaches_ratio():
     assert call_cost >= stop_trigger * ic["net_credit"]  # 1.30 >= 0.90*1.40=1.26 -> stop
     put_cost = pp.side_cost(ic, "put", marks)  # 0.50
     assert not (put_cost >= stop_trigger * ic["net_credit"])
+
+
+# ── Entry order placement / fill confirmation ────────────────────────────────
+# 0DTESPX practice orders never fill synchronously: the POST response always comes back
+# status="pending" with no fill_price -- the platform fills them ~2s later on the session's own
+# simulated clock. These tests pin that _place_ic polls for the fill via order status.
+
+
+def _chosen():
+    return {
+        "short_put": {"strike": 7405.0},
+        "long_put": {"strike": 7395.0},
+        "short_call": {"strike": 7485.0},
+        "long_call": {"strike": 7495.0},
+        "wing_width": 10,
+        "ic_natural_bid": 2.15,
+    }
+
+
+class _FakeClient:
+    """Injectable stand-in mirroring Client's public interface -- no network."""
+
+    def __init__(self, order_sequence):
+        # order_sequence: list of dicts, each what .order() returns on successive polls
+        self.placed = None
+        self._order_sequence = list(order_sequence)
+        self.clocks_set = []
+
+    def place(self, sid, order):
+        self.placed = order
+        return 201, {"id": "order-1", "status": "pending", "price": order["price"], "fees": "6.88"}
+
+    def set_clock(self, sid, utc_iso_z):
+        self.clocks_set.append(utc_iso_z)
+
+    def order(self, sid, order_id):
+        return self._order_sequence.pop(0) if self._order_sequence else None
+
+
+def test_place_ic_confirms_fill_via_polling_when_pending_response_has_no_fill_price():
+    # first poll still pending, second poll filled -- matches the real API's ~2s delay
+    client = _FakeClient(
+        [
+            {"status": "pending"},
+            {"status": "filled", "fill_price": "2.20", "fees": "6.88"},
+        ]
+    )
+    ic = pp._place_ic(client, "sid-1", _chosen(), "260731", 660, "2026-07-31T15:00:00Z", 7448.82)
+    assert ic is not None
+    assert ic["net_credit"] == 2.20
+    assert ic["open_fee"] == 6.88
+    assert len(client.clocks_set) == 2  # nudged forward once per poll attempt until filled
+
+
+def test_place_ic_returns_none_when_never_fills():
+    client = _FakeClient([{"status": "pending"}] * len(pp._FILL_POLL_DELAYS_S))
+    ic = pp._place_ic(client, "sid-1", _chosen(), "260731", 660, "2026-07-31T15:00:00Z", 7448.82)
+    assert ic is None
+    assert len(client.clocks_set) == len(pp._FILL_POLL_DELAYS_S)  # exhausts every poll before giving up
+
+
+def test_place_ic_accepts_a_synchronous_fill_without_polling():
+    class _SyncFillClient(_FakeClient):
+        def place(self, sid, order):
+            self.placed = order
+            return 201, {"fill_price": "2.20", "fees": "6.88"}
+
+    client = _SyncFillClient([])
+    ic = pp._place_ic(client, "sid-1", _chosen(), "260731", 660, "2026-07-31T15:00:00Z", 7448.82)
+    assert ic is not None
+    assert ic["net_credit"] == 2.20
+    assert client.clocks_set == []  # no polling needed when the response already carries a fill
+
+
+# ── Close order placement / shared-leg reconciliation ────────────────────────
+# Independent sampling (overlap_scope="shorts") only blocks a new entry on an exact short-PAIR
+# repeat, so two ICs in the same book can share one leg (e.g. identical short+long call, different
+# puts) while 0DTESPX pools them into one instrument-level position. Once a sibling IC's stop
+# closes its share, this IC's own close request for the same instrument gets a 400 "insufficient
+# quantity to close" -- proof the leg is already gone, not a rejected order.
+
+
+class _CloseFakeClient:
+    def __init__(self, place_result):
+        self._place_result = place_result
+        self.placed = None
+
+    def place(self, sid, order):
+        self.placed = order
+        return self._place_result
+
+
+def test_place_close_treats_insufficient_quantity_as_already_closed():
+    # the real API's 400 body is a raw JSON string, not a parsed dict (see Client._request)
+    client = _CloseFakeClient((400, '{"message":"insufficient quantity to close"}'))
+    ic = _ic()
+    pp._place_close(client, "sid-1", ic, "call", cost=1.30, log=lambda *_: None, tag="10:27 conservative")
+    assert ic["call"] == "closed"
+    assert ic["exit"]["call"] == 1.30
+    assert ic["exit_reason"]["call"] == "leg_closed_by_sibling"
+
+
+def test_place_close_does_not_overwrite_an_already_recorded_exit():
+    client = _CloseFakeClient((400, '{"message":"insufficient quantity to close"}'))
+    ic = _ic()
+    ic["exit"]["call"] = 0.75  # a real fill already recorded earlier
+    ic["exit_reason"]["call"] = "per_side_stop"
+    pp._place_close(client, "sid-1", ic, "call", cost=1.30, log=lambda *_: None, tag="tag")
+    assert ic["exit"]["call"] == 0.75
+    assert ic["exit_reason"]["call"] == "per_side_stop"
+
+
+def test_place_close_still_retries_on_an_unrelated_rejection():
+    client = _CloseFakeClient((400, '{"message":"some other validation error"}'))
+    ic = _ic()
+    pp._place_close(client, "sid-1", ic, "call", cost=1.30, log=lambda *_: None, tag="tag")
+    assert ic["call"] == "pending_close"  # unchanged behavior -- eligible for the normal retry loop
+
+
+def test_place_close_records_a_confirmed_fill_normally():
+    client = _CloseFakeClient((201, {"fill_price": "1.35", "fees": "1.72"}))
+    ic = _ic()
+    pp._place_close(client, "sid-1", ic, "call", cost=1.30, log=lambda *_: None, tag="tag")
+    assert ic["call"] == "pending_close"
+    assert ic["exit"]["call"] == 1.35
+    assert ic["exit_fee"]["call"] == 1.72
+    assert ic["exit_reason"]["call"] == "per_side_stop"
 
 
 # ── SPX-eligible profile selection ───────────────────────────────────────────

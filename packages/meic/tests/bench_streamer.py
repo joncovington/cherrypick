@@ -20,7 +20,7 @@ import urllib.request
 from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
-_TT = [sys.executable, str(_ROOT / "src" / "tt.py")]
+_TT = [sys.executable, "-m", "cherrypick.meic.tt"]
 _STREAMER_PORT = 7699
 
 # Latency thresholds (ms). Tests fail if any command exceeds its limit.

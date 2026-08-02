@@ -11,8 +11,9 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   deliberately built to make a negative result usable: floors are measured after fees, and a
   book-level floor always carries the price band over which it holds.
 
-The shared library `cherrypick.core` is the **`cherrypick-core`** submodule, vendored per package at
-`packages/<pkg>/src/_core` (one URL, pinned SHA). Fresh clone: `git submodule update --init --recursive`.
+The shared library `cherrypick.core` is **`packages/core`**, a sibling package in this same monorepo,
+installed as an editable dependency by every other package. Fresh clone: `pip install -e packages/core`
+first (or run `scripts/dev-install.ps1`/`.sh` from the repo root, which installs it and every package).
 
 Suite-wide guardrails apply across every package (each package's CLAUDE.md states them): instruction
 files hold no code; account numbers masked to `****1234`; portable paths only; human-voice docs/commits

@@ -65,7 +65,14 @@ def test_connect_delegates_secrets_and_sets_account(env, monkeypatch):
     out = connect.run(cfg, "meic", prompt_fn=lambda _p: "1")
     assert out["ok"] is True and out["connected"] is True and out["account"] == "****4222"
     # bearer-secret step: the module's own tool, tty inherited (NOT captured)
-    assert calls["argv"][1:] == ["src/tt.py", "secrets_set", "--keys", "client_secret", "refresh_token"]
+    assert calls["argv"][1:] == [
+        "-m",
+        "cherrypick.meic.tt",
+        "secrets_set",
+        "--keys",
+        "client_secret",
+        "refresh_token",
+    ]
     assert "capture_output" not in calls["kwargs"] and "stdout" not in calls["kwargs"]
     # account step drove set_account with the chosen index
     assert set_calls["sel"] == "1"

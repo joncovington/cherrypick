@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-import scanner
-import strategy_test_runner as runner
+from cherrypick.earnings import scanner
+from cherrypick.earnings import strategy_test_runner as runner
 
 # --- the R1 seam: leg scaling must preserve structure ratios ---------------------
 
@@ -67,7 +67,7 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
     the real order->size->cost->save pipeline and closes it on UNCHANGED zero-spread
     quotes: the round-trip P&L must be exactly zero (the body bought back twice), entry
     costs must charge 4 contracts, and the slippage columns must be recorded."""
-    import db_paper
+    from cherrypick.earnings import db_paper
 
     monkeypatch.setattr(db_paper, "DB_PATH", tmp_path / "paper_trades.db")
     db_paper.cmd_init_db(argparse.Namespace())
@@ -155,7 +155,7 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
 
 def _close_sweep_env(tmp_path, monkeypatch, quotes_by_symbol, config=None):
     """Common harness for cmd_run_closes tests: isolated DB, no network, canned quotes."""
-    import db_paper
+    from cherrypick.earnings import db_paper
 
     monkeypatch.setattr(db_paper, "DB_PATH", tmp_path / "paper_trades.db")
     db_paper.cmd_init_db(argparse.Namespace())
@@ -295,7 +295,7 @@ def test_run_closes_records_attempts_and_reports_stranded(tmp_path, monkeypatch)
     yet. Second failed sweep: attempts=2 and the position surfaces in `stranded`, which
     the orchestrator's exit heartbeat turns into a WARNING. The position itself stays
     open — closing it blind would be worse — but it can no longer disappear silently."""
-    import db_paper
+    from cherrypick.earnings import db_paper
 
     monkeypatch.setattr(db_paper, "DB_PATH", tmp_path / "paper_trades.db")
     db_paper.cmd_init_db(argparse.Namespace())

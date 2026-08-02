@@ -13,9 +13,9 @@ import time
 
 import pytest
 
-import db_paper
-import strategy_metrics as metrics
-import strategy_test_runner as runner
+from cherrypick.earnings import db_paper
+from cherrypick.earnings import strategy_metrics as metrics
+from cherrypick.earnings import strategy_test_runner as runner
 
 
 def _ns(**kwargs):

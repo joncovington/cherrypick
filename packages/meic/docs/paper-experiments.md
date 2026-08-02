@@ -61,7 +61,7 @@ binds**, and both face an identical credit floor on identical ticks — `stagger
 daily target a hard cap, which also skips the over-target floor tightening that would otherwise drift
 between them. Symbol-agnostic, so the `(profile × symbol)` grain supplies that axis.
 
-**Read order** — `python src/experiment.py`:
+**Read order** — `python -m cherrypick.meic.experiment`:
 
 1. **The within-arm counterfactual, on `gex-open` alone.** This is the primary read. All three GEX
    gates are pure entry filters and every fill stamps the GEX state it saw, so splitting the ungated
@@ -158,7 +158,7 @@ over-target floor-tightening) — so a paired comparison across widths on the sa
    per cell.
 
 **Surfaces:**
-- `python src/db.py get_range_summary` — `by_profile["width-2"…]` pools each width across symbols
+- `python -m cherrypick.meic.db get_range_summary` — `by_profile["width-2"…]` pools each width across symbols
   (convenient, but mixes cash/physical settlement mechanics — read with that caveat); portfolios
   `width-2:XSP`, `width-2:QQQ`, … via `compare_profiles`.
 - The dashboard's Performance view carries a **Width Study** frame: one cumulative-P&L line chart
@@ -174,7 +174,7 @@ over-target floor-tightening) — so a paired comparison across widths on the sa
   read both gross and net of that modeled cost rather than treating a width "result" there as free of
   the two uncalibrated settlement-friction constants.
 
-The parallel-shadow paper engine (`src/paper.py`, driven unattended by `src/paper_loop.py`)
+The parallel-shadow paper engine (`cherrypick/meic/paper.py`, driven unattended by `cherrypick/meic/paper_loop.py`)
 evaluates **every** profile in `config.risk.json` against each iteration's market snapshot, per
 symbol, writing all books to `~/.cherrypick/data/meic/paper_trades.db`. Beyond the four-tier risk
 ladder (conservative → very-aggressive), the registry *used to* hold **experiment cells** whose
@@ -232,7 +232,7 @@ day a cell simply holds its four cohorts; on a choppy day it rotates through mor
 Every book is tagged with its profile name in `ic_trades.risk_profile`, and the whole read side is
 profile-name-agnostic:
 
-- `python src/db.py get_range_summary --start <d> --end <d>` groups metrics by profile.
+- `python -m cherrypick.meic.db get_range_summary --start <d> --end <d>` groups metrics by profile.
 - The daemon's deterministic EOD report (`logs/paper-eod-<day>.md`) tables every profile that
   traded, with a **Symbol** column — so each cell reads directly as an account-size / wing / credit
   comparison — and notes which configured profiles were idle.
@@ -244,7 +244,7 @@ All cells are validated **forward** by the automated paper engine (`paper_loop.p
 tastytrade data — the cells accumulate real, tagged trades day to day and surface in
 `get_range_summary` / the EOD report / the dashboard.
 
-> ⚠️ The SPX historical replay tool (`src/paper_replay.py`) is **not** used: its bulk-extraction
+> ⚠️ The SPX historical replay tool (`cherrypick/meic/paper_replay.py`) is **not** used: its bulk-extraction
 > design is incompatible with 0DTESPX's terms of service (confirmed 2026-07-13). See
 > [0dtespx-api.md](0dtespx-api.md) and the warning in [paper-trading.md](paper-trading.md). Historical
 > backtesting is therefore out of scope here; the sanctioned server-side alternatives (0DTESPX
