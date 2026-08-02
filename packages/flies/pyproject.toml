@@ -39,5 +39,8 @@ ignore = ["E501"]
 "src/paper_loop.py" = ["E402"]
 
 [tool.hatch.build.targets.wheel]
-only-include = ["src"]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py, so cherrypick.flies composes with
+# cherrypick.core (and every other module) under one cherrypick.* root. `sources = ["src"]` maps the
+# src/ prefix away, so src/cherrypick/flies/... installs as cherrypick/flies/... .
+only-include = ["src/cherrypick"]
 sources = ["src"]

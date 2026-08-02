@@ -15,16 +15,11 @@ AI pass is the orchestrator's `eod_insight`, which reads these files.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
 
 from cherrypick.core import viz  # noqa: E402
 
-import analytics  # noqa: E402
+from cherrypick.flies import analytics  # noqa: E402
 
 
 def logs_dir() -> Path:
@@ -419,7 +414,7 @@ def build_live_eod(live_conn, paper_conn, day: str) -> str:
     settlement line names its source (last_trade_provisional vs official), and the live-vs-paper
     section carries the plan doc's abort rule so the pilot's central measurement is on paper
     (the kind you read), not a manual chore."""
-    import analytics
+    from cherrypick.flies import analytics
 
     books = analytics.books_for_day(live_conn, day)
     positions = analytics.positions_for_day(live_conn, day)

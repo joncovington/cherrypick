@@ -23,17 +23,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import sys
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
 
 from cherrypick.core import broker as _broker  # noqa: E402
 
-import credentials as creds  # noqa: E402
-from cli import load_config  # noqa: E402
+from cherrypick.flies import credentials as creds  # noqa: E402
+from cherrypick.flies.cli import load_config  # noqa: E402
 
 
 def _serialize(obj):

@@ -13,13 +13,8 @@ import argparse
 import json
 import os
 import sqlite3
-import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
-import clock  # noqa: E402
+from cherrypick.flies import clock  # noqa: E402
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS fly_positions (

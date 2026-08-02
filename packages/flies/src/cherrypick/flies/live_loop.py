@@ -67,26 +67,24 @@ import time
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
 from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import home as _home  # noqa: E402
 
-import alerts_db  # noqa: E402
-import book as bookmod  # noqa: E402
-import clock  # noqa: E402
-import db as dbmod  # noqa: E402
-import engine  # noqa: E402
-import fee_reconcile  # noqa: E402
-import fly  # noqa: E402
-import live_orders  # noqa: E402
-import paper_loop as _pl  # noqa: E402
-import provider  # noqa: E402
-import stream_request  # noqa: E402
-import stream_window  # noqa: E402
-from cli import load_config  # noqa: E402
+from cherrypick.flies import (
+    alerts_db,  # noqa: E402
+    clock,  # noqa: E402
+    engine,  # noqa: E402
+    fee_reconcile,  # noqa: E402
+    fly,  # noqa: E402
+    live_orders,  # noqa: E402
+    provider,  # noqa: E402
+    stream_request,  # noqa: E402
+    stream_window,  # noqa: E402
+)
+from cherrypick.flies import book as bookmod  # noqa: E402
+from cherrypick.flies import db as dbmod  # noqa: E402
+from cherrypick.flies import paper_loop as _pl  # noqa: E402
+from cherrypick.flies.cli import load_config  # noqa: E402
 
 DEFAULT_ARM = "gex"
 _TERMINAL_UNFILLED = {"cancelled", "rejected", "expired"}
@@ -132,7 +130,7 @@ _logger = logging.getLogger("flies_live_loop")
 
 def log_file():
     """Resolved on every call, never at import — same test-isolation lesson as paper_loop."""
-    from eod import logs_dir
+    from cherrypick.flies.eod import logs_dir
 
     return logs_dir() / "flies_live.log"
 
@@ -1025,7 +1023,7 @@ def run_settle_live(
     # a report hiccup must never fail the settlement itself.
     report = None
     try:
-        import eod as eodmod
+        from cherrypick.flies import eod as eodmod
 
         paper_conn = dbmod.connect(dbmod.default_db_path())
         try:
@@ -1249,7 +1247,7 @@ def run_watch(
 
 def _spawn_watcher(live: bool) -> None:
     """Fire the detached burst watcher (headless — the suite's CREATE_NO_WINDOW invariant)."""
-    args = [_pl._pythonw(), os.path.abspath(__file__), "--watch-fills"]
+    args = [_pl._pythonw(), "-m", "cherrypick.flies.live_loop", "--watch-fills"]
     if live:
         args.append("--live")
     flags = _NO_WINDOW | (0x00000008 if os.name == "nt" else 0)  # DETACHED_PROCESS on Windows
@@ -1285,7 +1283,7 @@ class BrokerAdapter:
         if self._session is None:
             from cherrypick.core import broker as _broker
 
-            import credentials as creds
+            from cherrypick.flies import credentials as creds
 
             self._session = creds.get_session()
             self._account = self._run(_broker.resolve_account(self._session, creds.designated_account()))
@@ -1297,7 +1295,7 @@ class BrokerAdapter:
     def place(self, spec: dict, live: bool) -> dict:
         from cherrypick.core import broker as _broker
 
-        import broker_cli
+        from cherrypick.flies import broker_cli
 
         if live:
             unmet = broker_cli.live_gates(self._config)
@@ -1334,7 +1332,7 @@ class BrokerAdapter:
         immediately before submission (see run_once). Fails closed: any error returns `{}`, which
         the caller treats identically to 'nothing came back' — never a reason to fall back to a
         stale cached price for a live order."""
-        import broker_cli
+        from cherrypick.flies import broker_cli
 
         try:
             self._ensure()
@@ -1348,7 +1346,7 @@ class BrokerAdapter:
         Barchart, see `broker_cli.official_settlement_price`). Fails closed: any error returns
         `(None, "fetch_failed")`, which `run_settle_live` treats the same as every source coming
         up empty — falling back to the existing last-trade-provisional path, never a guess."""
-        import broker_cli
+        from cherrypick.flies import broker_cli
 
         try:
             self._ensure()
@@ -1466,7 +1464,7 @@ def install_task() -> dict:
     The stamp is what makes arming per-day — a tick that finds a stale stamp disarms itself."""
     if os.name != "nt":
         return {"ok": False, "error": "scheduled-task install is Windows-only"}
-    tr = f'"{_pl._pythonw()}" "{os.path.abspath(__file__)}" --once --live'
+    tr = f'"{_pl._pythonw()}" -m cherrypick.flies.live_loop --once --live'
     r = subprocess.run(
         [
             "schtasks",
@@ -1604,7 +1602,7 @@ def _alert_daemon_status_safe():
     """Best-effort: `--status` must never fail because the optional daemon module or its files
     aren't there (it's an accelerator, and status is a read-only diagnostic)."""
     try:
-        import alert_daemon
+        from cherrypick.flies import alert_daemon
 
         return alert_daemon.status()
     except Exception as exc:  # noqa: BLE001
@@ -1612,7 +1610,7 @@ def _alert_daemon_status_safe():
 
 
 def _live_vs_paper_safe(live_conn, arm: str):
-    import analytics
+    from cherrypick.flies import analytics
 
     try:
         paper_conn = dbmod.connect(dbmod.default_db_path())
@@ -1713,7 +1711,7 @@ def main() -> int:
             print(json.dumps({"ok": False, "error": "choose --once, --watch-fills, --status or --settle"}))
             return 2
 
-        import credentials as creds
+        from cherrypick.flies import credentials as creds
 
         designated = creds.designated_account()
         unmet = readiness(config, halt_present=os.path.exists(halt_flag_path()), designated=designated)

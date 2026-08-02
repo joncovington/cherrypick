@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import pytest
 
-import db as dbmod
-import stream_window
+from cherrypick.flies import db as dbmod
+from cherrypick.flies import stream_window
 
 SYMBOL = "XSP"
 DAY = "2026-07-31"

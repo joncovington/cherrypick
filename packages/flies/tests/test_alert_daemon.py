@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-import alert_daemon
-import alerts_db
+from cherrypick.flies import alert_daemon, alerts_db
 
 
 @pytest.fixture()
@@ -157,7 +156,7 @@ def test_daemon_survives_an_inbox_write_failure(inbox, monkeypatch):
 
 def test_daemon_stops_at_the_disarm_deadline(inbox, monkeypatch):
     """A missed explicit stop must not leave an authenticated session connected overnight."""
-    import clock as clockmod
+    from cherrypick.flies import clock as clockmod
 
     # Pretend it's one minute before disarm: the deadline should bound the run to ~60s. A real
     # datetime, not a stub -- clock.now_iso() calls now_et() too (for the prune cutoff and each

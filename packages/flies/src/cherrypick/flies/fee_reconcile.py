@@ -30,17 +30,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
-import sys
 from datetime import date, timedelta
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
-import clock  # noqa: E402
-import db as dbmod  # noqa: E402
-import fly  # noqa: E402
+from cherrypick.flies import (
+    clock,  # noqa: E402
+    fly,  # noqa: E402
+)
+from cherrypick.flies import db as dbmod  # noqa: E402
 
 # A position's fee is the sum of these fields' magnitudes across every matched transaction —
 # tastytrade reports each as a signed (negative) charge or, on some rows, absent entirely.
@@ -277,7 +273,7 @@ async def _fetch_transactions(account, session, trade_date: str, symbol: str) ->
 async def _reconcile_all(conn, symbol: str, dates: list[str], *, log=print) -> list[dict]:
     from cherrypick.core import broker as _broker
 
-    import credentials as creds
+    from cherrypick.flies import credentials as creds
 
     session = creds.get_session()
     account = await _broker.resolve_account(session, creds.designated_account())

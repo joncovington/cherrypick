@@ -23,8 +23,8 @@ reject the increment.
 
 from __future__ import annotations
 
-import fly
-from engine import PUT
+from cherrypick.flies import fly
+from cherrypick.flies.engine import PUT
 
 TICK = 0.05  # SPX/XSP index options tick in nickels at these price levels
 
@@ -35,7 +35,7 @@ def tick_floor(price: float, tick: float = TICK) -> float:
 
 
 def _leg_quote(snapshot: dict, side: str, strike: float) -> dict:
-    from engine import quote
+    from cherrypick.flies.engine import quote
 
     q = quote(snapshot, side, strike)
     if q is None:

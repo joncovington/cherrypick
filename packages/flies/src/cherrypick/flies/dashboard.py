@@ -31,20 +31,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
 from cherrypick.core import viz  # noqa: E402
 
-import analytics  # noqa: E402
-import db as dbmod  # noqa: E402
+from cherrypick.flies import analytics  # noqa: E402
+from cherrypick.flies import db as dbmod  # noqa: E402
 
 # 8801 is MEIC's embed and 8802 is the gex dashboard's, so flies takes the next one. Keep this in
 # step with the `dashboard.embeds` entry in the orchestrator's config.example.json.

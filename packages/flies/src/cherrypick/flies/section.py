@@ -11,17 +11,10 @@ rendering code anywhere; the existing contract already says everything this stra
 
 from __future__ import annotations
 
-import os
-import sys
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
 from cherrypick.core import viz  # noqa: E402
 
-import analytics  # noqa: E402
-import db as dbmod  # noqa: E402
+from cherrypick.flies import analytics  # noqa: E402
+from cherrypick.flies import db as dbmod  # noqa: E402
 
 _NOTE = (
     "payoff at expiry across price · green = book profits · a legged fly's floor is its own "

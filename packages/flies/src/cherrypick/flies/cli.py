@@ -14,15 +14,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
+# Package root (holds config.json / config.example.json): src/cherrypick/flies/cli.py -> four
+# parents up. Was _HERE/".." when the modules lived flat in src/. This one fails LOUDLY if wrong
+# (SystemExit "no config found"), unlike gex's equivalent, but fix it for the same reason.
+_PKG_ROOT = str(pathlib.Path(__file__).resolve().parents[3])
 
-import book as bookmod  # noqa: E402
-import db as dbmod  # noqa: E402
-import engine  # noqa: E402
+from cherrypick.flies import book as bookmod  # noqa: E402
+from cherrypick.flies import db as dbmod  # noqa: E402
+from cherrypick.flies import engine  # noqa: E402
 
 
 def load_config(path: str | None = None) -> dict:
@@ -38,8 +40,8 @@ def load_config(path: str | None = None) -> dict:
         path,
         os.environ.get("FLIES_CONFIG"),
         os.path.join(home, "config", "flies.json"),
-        os.path.join(_HERE, "..", "config.json"),
-        os.path.join(_HERE, "..", "config.example.json"),
+        os.path.join(_PKG_ROOT, "config.json"),
+        os.path.join(_PKG_ROOT, "config.example.json"),
     ]
     for c in candidates:
         if c and os.path.isfile(c):
@@ -94,13 +96,13 @@ def cmd_status(args) -> int:
 
 
 def cmd_dashboard(args) -> int:
-    import dashboard
+    from cherrypick.flies import dashboard
 
     return dashboard.serve(dashboard.resolve_port(args.port), args.db, open_browser=not args.no_browser)
 
 
 def cmd_section(args) -> int:
-    import section
+    from cherrypick.flies import section
 
     print(json.dumps(section.build_section(args.db, args.date, args.arm), indent=2, default=str))
     return 0
@@ -108,7 +110,7 @@ def cmd_section(args) -> int:
 
 def cmd_regime(args) -> int:
     """Regime-conditioned outcomes, plus the coverage guard that says whether to believe them."""
-    import analytics
+    from cherrypick.flies import analytics
 
     conn = dbmod.connect(args.db)
     edges = [float(e) for e in args.bucket_edges.split(",")] if args.bucket_edges else None

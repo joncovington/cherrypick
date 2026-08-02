@@ -13,14 +13,11 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import db as dbmod
-import engine
-import fly
-import live_loop
-import live_orders
-import provider as _provider
-from broker_cli import live_gates
-from engine import PUT
+from cherrypick.flies import db as dbmod
+from cherrypick.flies import engine, fly, live_loop, live_orders
+from cherrypick.flies import provider as _provider
+from cherrypick.flies.broker_cli import live_gates
+from cherrypick.flies.engine import PUT
 
 # Today, not a literal: run_watch and run_settle_live resolve "today" internally via
 # provider.now_et(), so fixture rows pinned to a past date would be invisible to them.
@@ -150,7 +147,7 @@ def test_broker_cli_live_gates_are_the_same_posture():
 
 
 def test_broker_cli_serialize_flattens_sdk_objects_and_leaves_plain_values_alone():
-    from broker_cli import _serialize
+    from cherrypick.flies.broker_cli import _serialize
 
     class FakeSdkOrder:
         def model_dump(self, mode="json"):
@@ -207,7 +204,7 @@ def test_broker_cli_fresh_option_quotes_shapes_and_filters_rest_rows(monkeypatch
     crossed, or non-positive) rather than handing entry_fresh_reprice a nonsense quote."""
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     class Row:
         def __init__(self, symbol, bid, ask, mid=None, updated_at=None):
@@ -233,7 +230,7 @@ def test_broker_cli_fresh_option_quotes_shapes_and_filters_rest_rows(monkeypatch
 def test_broker_cli_fresh_option_quotes_empty_symbols_skips_the_call(monkeypatch):
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     async def boom(*a, **kw):
         raise AssertionError("must not call the SDK for an empty symbol list")
@@ -243,7 +240,7 @@ def test_broker_cli_fresh_option_quotes_empty_symbols_skips_the_call(monkeypatch
 
 
 def test_broker_adapter_fresh_quotes_delegates_and_fails_closed(monkeypatch):
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     calls = []
 
@@ -270,7 +267,7 @@ def test_broker_adapter_fresh_quotes_delegates_and_fails_closed(monkeypatch):
 def test_official_settlement_price_prefers_tastytrade(monkeypatch):
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     class Row:
         def __init__(self, close=None, last=None, mark=None):
@@ -293,7 +290,7 @@ def test_official_settlement_price_prefers_tastytrade(monkeypatch):
 def test_official_settlement_price_falls_back_to_last_or_mark_when_close_is_unset(monkeypatch):
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     class Row:
         def __init__(self, close=None, last=None, mark=None):
@@ -316,7 +313,7 @@ def test_official_settlement_price_marks_an_intraday_tick_provisional(monkeypatc
     the loop keeps retrying. Before 2026-07-31 this was stamped 'official' and stopped the retry."""
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     class Row:
         def __init__(self, close=None, last=None, mark=None):
@@ -337,7 +334,7 @@ def test_official_settlement_price_marks_an_intraday_tick_provisional(monkeypatc
 def test_official_settlement_price_falls_back_to_yahoo_then_barchart(monkeypatch):
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     async def empty(session, indices=None, **kw):
         return []
@@ -357,7 +354,7 @@ def test_official_settlement_price_falls_back_to_yahoo_then_barchart(monkeypatch
 def test_official_settlement_price_reports_no_source_when_every_source_fails(monkeypatch):
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     async def boom(session, indices=None, **kw):
         raise RuntimeError("network blip")
@@ -370,7 +367,7 @@ def test_official_settlement_price_reports_no_source_when_every_source_fails(mon
 
 
 def test_broker_adapter_official_settlement_price_delegates_and_fails_closed(monkeypatch):
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     calls = []
 
@@ -398,7 +395,7 @@ def test_entry_fresh_reprice_matches_vertical_credit_on_the_same_quotes():
     for the cached path (engine.py:248) -- apples-to-apples, not a second pricing model. Note
     ENTRY_PLAN's own "credit": 1.07 is a fixture literal for the tick-floor tests above and is NOT
     what _snapshot()'s real put quotes at these strikes imply -- don't compare against it here."""
-    import fly
+    from cherrypick.flies import fly
 
     spec = live_orders.entry_spec(_snapshot(), ENTRY_PLAN)
     fresh = _quote_table(_snapshot())
@@ -543,7 +540,7 @@ def test_dry_run_places_nothing_live_but_records_nothing_either(live_conn):
 
 
 def test_live_mode_records_the_entry_with_its_order_id(live_conn):
-    import fly
+    from cherrypick.flies import fly
 
     broker = FakeBroker()
     summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
@@ -584,7 +581,7 @@ def test_dry_run_never_calls_fresh_quotes(live_conn):
 def test_live_entry_recorded_at_the_fresh_repriced_value(live_conn):
     """When live, the recorded position's net/credit must be the fresh (submitted) price, not the
     stale cached one -- the ledger's economics must match what actually went to the broker."""
-    import fly
+    from cherrypick.flies import fly
 
     broker = FakeBroker()
     live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
@@ -725,7 +722,7 @@ def test_dry_run_still_journals_snapshot_and_iteration_but_not_a_position(live_c
 
 
 def test_working_completion_is_cancelled_at_the_cutoff(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
@@ -761,7 +758,7 @@ def test_working_completion_is_cancelled_at_the_cutoff(live_conn):
 
 
 def test_daily_loss_breaker(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
@@ -841,7 +838,7 @@ def test_blocking_positions_ignores_closed_rows():
 
 
 def test_entry_refused_while_a_spread_is_still_open(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
@@ -877,7 +874,7 @@ def test_entry_refused_while_a_spread_is_still_open(live_conn):
 
 
 def test_entry_allowed_once_completed_fly_is_risk_free(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
@@ -908,7 +905,7 @@ def test_entry_allowed_once_completed_fly_is_risk_free(live_conn):
 
 
 def test_entry_refused_when_completed_fly_has_negative_floor(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
@@ -946,7 +943,7 @@ def test_entry_refused_when_completed_fly_has_negative_floor(live_conn):
 
 # --------------------------------------------------------------------------- fill confirmation
 def _open_entry_row(order_id="ORD-E1", entry_fill_status="pending"):
-    import clock
+    from cherrypick.flies import clock
 
     return {
         "position_id": "E1",
@@ -1000,7 +997,7 @@ def test_completion_not_evaluated_until_entry_confirmed_filled(live_conn):
 
 
 def test_completion_fill_confirmation_flips_kind_and_records_actual_debit(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
@@ -1258,7 +1255,7 @@ def _watch_cfg():
 
 
 def _fake_cache(monkeypatch, snapshot):
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     monkeypatch.setattr(providermod, "build_snapshot", lambda *a, **k: snapshot)
 
@@ -1372,7 +1369,7 @@ def test_watcher_confirms_from_the_daemon_inbox_without_opening_a_websocket(live
     """Daemon mode: a row the alert daemon already wrote to the WAL inbox is treated exactly like
     a cache touch -- the watcher must confirm from it WITHOUT opening its own websocket, and (as
     always) still confirm through the ordinary .status() call, never a second write path."""
-    import alerts_db
+    from cherrypick.flies import alerts_db
 
     far = _open_entry_row()  # market far from the limit: cache-gating alone would never poll
     far["net"] = 5.00
@@ -1548,7 +1545,7 @@ def _settle_cfg():
 
 
 def test_provisional_settle_marks_source_and_official_overwrites(live_conn, monkeypatch):
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1581,7 +1578,7 @@ def test_provisional_settle_marks_source_and_official_overwrites(live_conn, monk
 def test_settle_auto_fetches_official_price_and_skips_provisional_entirely(live_conn, monkeypatch):
     """When a broker is given and it can answer, the settlement goes straight to 'official' --
     the provisional (last-trade) path is never even consulted."""
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1608,7 +1605,7 @@ def test_settle_keeps_retrying_when_only_an_intraday_tick_is_available(live_conn
     """The 2026-07-31 case: tastytrade's `close` never posted, so the fetch could only offer an
     intraday `last`. That settles the book (better than nothing) but must NOT be called official,
     and must leave `session_officially_settled` False so the next tick tries again."""
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1623,7 +1620,7 @@ def test_settle_keeps_retrying_when_only_an_intraday_tick_is_available(live_conn
 
 
 def test_settle_falls_back_to_provisional_when_broker_fetch_is_unavailable(live_conn, monkeypatch):
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1640,7 +1637,7 @@ def test_settle_retries_broker_fetch_on_a_still_provisional_book_and_upgrades(li
     """A settle call with no broker (or one that can't answer yet) leaves the book provisional;
     a LATER call with a broker that now has an answer upgrades it to official -- the mechanism
     the tick relies on to keep retrying every minute until the print is out."""
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1665,7 +1662,7 @@ def test_settle_never_calls_broker_once_already_official(live_conn, monkeypatch)
     """Once a book is officially settled, a subsequent settle attempt must short-circuit on the
     already-official guard before ever touching the broker -- no repeated network calls on a tick
     that keeps firing after the print already landed."""
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1684,7 +1681,7 @@ def test_settle_never_calls_broker_once_already_official(live_conn, monkeypatch)
 
 
 def test_session_officially_settled_requires_the_official_print_not_just_settled(live_conn, monkeypatch):
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1706,7 +1703,7 @@ def test_settle_targets_an_explicit_past_date(live_conn, monkeypatch):
     run_settle_live rather than being pinned to wall-clock today."""
     from datetime import datetime as _dt
 
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: None)  # explicit price only
     dbmod.save_position(
@@ -1721,7 +1718,7 @@ def test_settle_targets_an_explicit_past_date(live_conn, monkeypatch):
 
 
 def test_settle_refuses_without_fresh_spot_and_retries(live_conn, monkeypatch):
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(live_conn, {**_open_entry_row(entry_fill_status="filled")})
     monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: None)
@@ -1742,7 +1739,7 @@ def test_live_book_rollup_written_by_tick(live_conn):
 
 # --------------------------------------------------------------------------- per-day structure cap
 def test_max_structures_per_day_blocks_even_after_risk_free_completion(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     # A completed, RISK-FREE fly frees the concurrency slot -- but with the day cap at 1 it
     # still spends the day's whole structure budget, so no second entry may follow.
@@ -1796,7 +1793,7 @@ def _paper_conn():
 
 
 def _legged_row(conn, pid, *, kind, latency=None, credit=1.0, debit=None, day=None):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         conn,
@@ -1825,7 +1822,7 @@ def _legged_row(conn, pid, *, kind, latency=None, credit=1.0, debit=None, day=No
 
 
 def test_live_vs_paper_restricts_paper_to_live_sessions(live_conn):
-    import analytics
+    from cherrypick.flies import analytics
 
     paper = _paper_conn()
     # Live traded only DAY; paper has DAY plus another session that must NOT count.
@@ -1843,7 +1840,7 @@ def test_live_vs_paper_restricts_paper_to_live_sessions(live_conn):
 
 
 def test_abort_rule_arms_and_triggers(live_conn):
-    import analytics
+    from cherrypick.flies import analytics
 
     paper = _paper_conn()
     # 30 live entries, 10 completed (33%); paper 10 entries, 9 completed (90%) -> gap 57pts.
@@ -1858,7 +1855,7 @@ def test_abort_rule_arms_and_triggers(live_conn):
 
 
 def test_live_eod_report_written_on_settle(live_conn, monkeypatch):
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1952,7 +1949,7 @@ def test_stale_lock_is_stolen(tmp_path, monkeypatch):
 def test_should_disarm(tmp_path, monkeypatch):
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
     cfg = {"live": {"disarm_time": "17:00"}}
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     today = providermod.now_et().date().isoformat()
     # No stamp at all -> disarm (arming didn't go through the command path).
@@ -1967,7 +1964,7 @@ def test_should_disarm(tmp_path, monkeypatch):
 
 
 def test_completion_cancel_failure_is_logged_not_silently_dropped(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
