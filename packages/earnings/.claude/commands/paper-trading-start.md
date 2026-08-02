@@ -1,10 +1,14 @@
+---
+description: One-shot scan of tonight's AMC / tomorrow's BMO earnings candidates, ranked by composite score with a concrete order built for each selection — analysis only, places nothing
+---
+
 # /paper-trading-start
 
 Runs the real earnings-candidate scan for tonight's/tomorrow-morning's entry window and ranks candidates by composite score.
 
 ## Description
 
-Calls `rank_strategies.py get_ranked_symbols`, the production cross-strategy ranking engine (see CLAUDE.md's Loop Step 4b): fetches today's real AMC + tomorrow's real BMO earnings calendar from DoltHub, evaluates every registered strategy against live tastytrade/DoltHub data per symbol, and picks each symbol's single best-ranked viable strategy. For each selected symbol, builds a concrete tradeable order via that strategy's own `get_order`.
+Runs `cherrypick.earnings.late_day_earnings_ranked`, a thin CLI over `rank_strategies get_ranked_symbols` — the production cross-strategy ranking engine (see CLAUDE.md's Loop Step 4b): fetches today's real AMC + tomorrow's real BMO earnings calendar from DoltHub, evaluates every registered strategy against live tastytrade/DoltHub data per symbol, and picks each symbol's single best-ranked viable strategy. For each selected symbol, builds a concrete tradeable order via that strategy's own `get_order`.
 
 This is a **one-shot analysis**, not the trading loop — it does not check today's account status, does not submit orders, and does not schedule any wakeup. Use `/earnings-start` to start the actual continuous loop.
 
@@ -14,6 +18,15 @@ This is a **one-shot analysis**, not the trading loop — it does not check toda
 /paper-trading-start
 /paper-trading-start --count 2
 ```
+
+Underneath, that runs:
+
+```bash
+python -m cherrypick.earnings.late_day_earnings_ranked [--count N]
+```
+
+Naming the module here is deliberate: it is the only thing that invokes it, so with the module
+unnamed this tool reads as orphaned to any grep or dead-code sweep, and a reader has nothing to run.
 
 ## Options
 
