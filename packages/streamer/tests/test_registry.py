@@ -4,17 +4,12 @@ that union into the engine. No broker required."""
 
 import json
 import sqlite3
-import sys
 from pathlib import Path
 
 import pytest
 
-_SRC = Path(__file__).resolve().parent.parent / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
-
-import daemon as _daemon  # noqa: E402
-import registry as _registry  # noqa: E402
+from cherrypick.streamer import daemon as _daemon
+from cherrypick.streamer import registry as _registry
 
 
 @pytest.fixture()

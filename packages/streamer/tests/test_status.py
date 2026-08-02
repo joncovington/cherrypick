@@ -5,17 +5,11 @@ reads) and the not-running paths, against a temp $CHERRYPICK_HOME so nothing tou
 """
 
 import json
-import sys
-from pathlib import Path
 
 import pytest
 
-_SRC = Path(__file__).resolve().parent.parent / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
-
-import config as _config  # noqa: E402
-import daemon as _daemon  # noqa: E402
+from cherrypick.streamer import config as _config
+from cherrypick.streamer import daemon as _daemon
 
 
 @pytest.fixture()
@@ -144,7 +138,7 @@ def fake_keyring(monkeypatch):
 
 
 def test_secrets_status_and_set(fake_keyring):
-    import credentials as _credentials
+    from cherrypick.streamer import credentials as _credentials
 
     assert _credentials.status() == {"client_secret": False, "refresh_token": False}
     written = _credentials.set_secrets(prompt_fn=lambda p: "value-for-" + p)
@@ -155,7 +149,7 @@ def test_secrets_status_and_set(fake_keyring):
 
 
 def test_secrets_set_empty_input_skips(fake_keyring):
-    import credentials as _credentials
+    from cherrypick.streamer import credentials as _credentials
 
     assert _credentials.set_secrets(prompt_fn=lambda p: "") == []
     assert _credentials.status() == {"client_secret": False, "refresh_token": False}

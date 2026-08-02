@@ -20,7 +20,10 @@ from cherrypick.core import home as _home
 CACHE_SCOPE = "marketdata"
 PKG = "streamer"
 
-_ROOT = Path(__file__).resolve().parent.parent  # packages/streamer
+# packages/streamer -- this file sits at src/cherrypick/streamer/config.py, so the package root is
+# four parents up. Only used for the in-repo config.json fallback below; everything else resolves
+# through cherrypick.core.home. (Was parent.parent when modules lived flat in src/.)
+_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _expand(value: str) -> Path:

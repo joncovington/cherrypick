@@ -7,15 +7,8 @@ one consumer missed when the module stores gained the shared fallback — it rec
 "Missing credentials" while every module authenticated fine.
 """
 
-import sys
-from pathlib import Path
-
-_SRC = Path(__file__).resolve().parent.parent / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
-
-import credentials as _credentials  # noqa: E402
-import daemon as _daemon  # noqa: E402
+from cherrypick.streamer import credentials as _credentials
+from cherrypick.streamer import daemon as _daemon
 
 
 def _shared_service() -> str:

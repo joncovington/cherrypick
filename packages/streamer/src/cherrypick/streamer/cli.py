@@ -13,9 +13,9 @@ from __future__ import annotations
 import argparse
 import json
 
-import config as _config
-import credentials as _credentials
-import daemon as _daemon
+from cherrypick.streamer import config as _config
+from cherrypick.streamer import credentials as _credentials
+from cherrypick.streamer import daemon as _daemon
 
 
 def main(argv: list[str] | None = None) -> int:

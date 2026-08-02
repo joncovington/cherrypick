@@ -27,5 +27,8 @@ target-version = "py311"
 ignore = ["E501"]
 
 [tool.hatch.build.targets.wheel]
-only-include = ["src"]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py, so cherrypick.streamer composes
+# with cherrypick.core (and every other module) under one cherrypick.* root. `sources = ["src"]` maps
+# the src/ prefix away, so src/cherrypick/streamer/... installs as cherrypick/streamer/... .
+only-include = ["src/cherrypick"]
 sources = ["src"]
