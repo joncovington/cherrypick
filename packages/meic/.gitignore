@@ -58,3 +58,5 @@ coordination/
 # Research reports
 research/
 graphify-out/
+.pytest_cache/
+.ruff_cache/
