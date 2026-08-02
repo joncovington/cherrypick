@@ -15,6 +15,8 @@ Both are pinned here because both were silent — the card rendered happily, jus
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from cherrypick.orchestrator import dashboard
@@ -86,14 +88,25 @@ def test_module_log_resolves_to_the_suite_root_when_the_orchestrator_writes_it(t
 
 def test_timestamps_are_comparable_across_sources():
     """Raw string sort is wrong twice over: the sources use different separators (a space sorts
-    before "T", so every meic line landed before every watchdog line) and different zones (meic
-    writes naive local, the JSON sources write UTC — 15:42 and 21:42 are the same instant)."""
-    meic_local = "2026-08-02 15:42:02"
-    watchdog_utc = "2026-08-02T21:42:02.449287+00:00"
-    assert meic_local < watchdog_utc, "the naive string comparison this replaces"
+    before "T") and different zones (meic writes naive local, the JSON sources write UTC).
 
-    k_meic, k_wd = dashboard._ts_key(meic_local), dashboard._ts_key(watchdog_utc)
-    assert abs(k_meic[1] - k_wd[1]) < 60, "same instant once the zone is applied"
+    Derived from a real instant rather than hardcoded strings -- an earlier version of this test
+    baked in the author's UTC-6 offset and failed in CI, which runs UTC. The rule under test is
+    "naive means local", so the fixture has to be built the same way on whatever machine runs it.
+    """
+    instant = datetime(2026, 8, 2, 21, 42, 2, tzinfo=timezone.utc)
+    utc_text = instant.isoformat()  # what watchdog/notify write
+    local_naive = instant.astimezone().strftime("%Y-%m-%d %H:%M:%S")  # what meic writes
+
+    assert local_naive.replace(" ", "T") != utc_text, "fixtures should differ in text"
+    assert abs(dashboard._ts_key(local_naive)[1] - dashboard._ts_key(utc_text)[1]) < 2, (
+        "the same instant must compare equal once the zone is applied"
+    )
+
+
+def test_a_space_separator_would_sort_before_a_T_separator():
+    """The text-level defect the instant comparison removes, stated without any zone dependency."""
+    assert "2026-08-02 15:42:02" < "2026-08-02T15:42:02"
 
 
 def test_undated_and_unparseable_stamps_sort_last():
@@ -103,6 +116,7 @@ def test_undated_and_unparseable_stamps_sort_last():
 
 
 def test_ordering_is_by_instant_not_by_text():
-    later_local = "2026-08-02 16:00:00"  # 22:00 UTC
-    earlier_utc = "2026-08-02T21:00:00+00:00"
-    assert dashboard._ts_key(later_local) > dashboard._ts_key(earlier_utc)
+    earlier = datetime(2026, 8, 2, 21, 0, 0, tzinfo=timezone.utc)
+    later = earlier + timedelta(hours=1)
+    later_local_naive = later.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    assert dashboard._ts_key(later_local_naive) > dashboard._ts_key(earlier.isoformat())
