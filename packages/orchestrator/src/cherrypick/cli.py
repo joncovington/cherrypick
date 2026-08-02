@@ -295,6 +295,31 @@ def _ensure_daemon(root: Path, spec: dict) -> dict:
     return {"ok": started, "detail": "started" if started else "start failed"}
 
 
+def _format_uninstall_report(results: dict[str, dict]) -> tuple[str, int]:
+    """Render `cmd_uninstall`'s per-task results the way `doctor.format_report` renders checks --
+    `[ OK ]`/`[FAIL]` lines a walk-away user can scan, not a JSON blob they have to parse to learn
+    whether every task actually went away. Also names what uninstall deliberately leaves running,
+    since that's exactly the ambiguity a user reaching for "stopped and confirmed stopped" needs
+    resolved without having to already know the /uninstall doc by heart."""
+    lines = ["cherrypick uninstall", "=" * 60]
+    worst = 0
+    for name, r in results.items():
+        ok = r.get("ok", True)
+        worst = max(worst, 0 if ok else 1)
+        lines.append(f"{'[ OK ]' if ok else '[FAIL]'} {name:<24} {r.get('detail', '')}")
+    lines += [
+        "-" * 60,
+        "Left running by design (uninstall does not touch these):",
+        "  - streamer (packages/streamer) -- the suite's shared market-data producer",
+        "  - any dashboard server you started with --serve",
+        "  - Dolt sql-server on :3306, if something outside cherrypick started it",
+        "  Stop these yourself for a full stop -- see docs/operations.md.",
+        "=" * 60,
+        f"Result: {'ALL REMOVED' if worst == 0 else 'FAILURES -- action needed'}",
+    ]
+    return "\n".join(lines), worst
+
+
 def cmd_uninstall(cfg) -> None:
     results = {}
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
@@ -308,9 +333,13 @@ def cmd_uninstall(cfg) -> None:
                 text=True,
                 creationflags=CREATE_NO_WINDOW,
             )
+            out = (r.stdout or r.stderr).strip()
+            parsed = first_json(out)
             results[f"{name}.paper_task"] = {
                 "ok": r.returncode == 0,
-                "detail": (r.stdout or r.stderr).strip(),
+                # Modules print their own {"ok":..., "detail":...} JSON (possibly pretty-printed);
+                # flatten it to one line instead of embedding the raw multi-line blob.
+                "detail": parsed.get("detail", out) if parsed else out,
             }
         for tkey in ("entry_task_name", "exit_task_name"):
             if paper.get(tkey):
@@ -348,7 +377,9 @@ def cmd_uninstall(cfg) -> None:
                 }
             except Exception as exc:
                 results[f"service.{svc['id']}"] = {"ok": False, "detail": str(exc)}
-    _emit({"ok": True, "removed": results, "note": "streamer (if running) left untouched; services stopped"})
+    report, worst = _format_uninstall_report(results)
+    print(report)
+    sys.exit(0 if worst == 0 else 1)
 
 
 # --------------------------------------------------------------------------- status

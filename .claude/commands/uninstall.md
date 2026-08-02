@@ -14,14 +14,16 @@ Do this:
 
 1. **Remove the scheduled tasks and stop the managed services** (idempotent):
    `python packages/orchestrator/run.py uninstall`
-   Confirm from its JSON that every registered task was removed — the module paper loops
-   (`cherrypick-meic-paper-loop`, `cherrypick-flies-paper-loop`, each removed via the module's own
-   `--uninstall-task`), `cherrypick-earnings-paper-entry` / `-exit`, `cherrypick-earnings-dolt`,
-   `cherrypick-watchdog`, `cherrypick-trade-notify`, `cherrypick-log-archive`, and (attempted by name
-   even when unregistered, which reports as a no-op) `cherrypick-eod-digest`, `cherrypick-eod-insight`,
-   `cherrypick-reconcile` — and that `service.gex-recorder` (and any other `services` entry) reports
-   stopped. **The one thing it deliberately leaves running is the streamer** — that's what the next
-   step is for.
+   It prints a doctor-style `[ OK ]`/`[FAIL]` line per task, ending in `Result: ALL REMOVED` or
+   `Result: FAILURES -- action needed` (exit code follows). Confirm every registered task shows
+   `[ OK ]` — the module paper loops (`cherrypick-meic-paper-loop`, `cherrypick-flies-paper-loop`,
+   each removed via the module's own `--uninstall-task`), `cherrypick-earnings-paper-entry` / `-exit`,
+   `cherrypick-earnings-dolt`, `cherrypick-watchdog`, `cherrypick-trade-notify`,
+   `cherrypick-log-archive`, and (attempted by name even when unregistered, which reports `[ OK ]` as
+   a no-op) `cherrypick-eod-digest`, `cherrypick-eod-insight`, `cherrypick-reconcile` — and that
+   `service.gex-recorder` (and any other `services` entry) reports stopped. Its own "Left running by
+   design" section names the streamer, any dashboard server, and Dolt — **the streamer is why the
+   next step exists.**
 
 2. **Stop what uninstall leaves behind** (each is best-effort — "not running" is a fine result):
    - **Streamer** (the standalone producer, `packages/streamer` — the suite's single market-data
