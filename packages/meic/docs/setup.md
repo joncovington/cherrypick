@@ -7,7 +7,7 @@ first time — the one-time setup you do before running any paper or live sessio
 ## Requirements
 
 - **Python 3.11+**
-- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — Anthropic's CLI coding assistant. The agent's decision loop and all the `/`-commands in this guide (`/setup`, `/meic-start`, `/paper-start`, `/dashboard`, etc.) run inside Claude Code, driven by the operating instructions in `CLAUDE.md` and the skills in `.claude/commands/`. Install it with `npm install -g @anthropic-ai/claude-code`, then start it from the project directory by running `claude`.
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — Anthropic's CLI coding assistant. The agent's decision loop and all the `/`-commands in this guide (`/setup`, `/meic-start`, `/paper-start`, `/serve-dashboard`, etc.) run inside Claude Code, driven by the operating instructions in `CLAUDE.md` and the skills in `.claude/commands/`. Install it with `npm install -g @anthropic-ai/claude-code`, then start it from the project directory by running `claude`.
 - **tastytrade account** — live account or developer sandbox (tastytrade does not offer paper trading; the developer sandbox is a separate environment for testing without real capital)
 
 There is no separate MCP server to install — `cherrypick/meic/tt.py` talks to tastytrade directly via the official Python SDK (OAuth2).
