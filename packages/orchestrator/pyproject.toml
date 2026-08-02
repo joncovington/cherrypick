@@ -46,7 +46,7 @@ dev = ["pytest>=8", "ruff>=0.6", "keyrings.alt>=5"]
 cherrypick = "cherrypick.cli:main"
 
 [project.urls]
-Repository = "https://github.com/joncovington/cherrypick-next"
+Repository = "https://github.com/joncovington/cherrypick"
 
 [tool.hatch.build.targets.wheel]
 # src layout + PEP 420 native namespace: `src/cherrypick/` has NO __init__.py, so it composes with the

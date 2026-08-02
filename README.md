@@ -8,7 +8,7 @@ testing**: it runs many parameter variations of the same strategy at once, so yo
 rules add edge before committing real capital. It monitors its own data feed during market hours and
 notifies you (desktop, Discord, or Slack) if anything stalls.
 
-![CI](https://img.shields.io/github/actions/workflow/status/joncovington/cherrypick-next/ci.yml?branch=main)
+![CI](https://img.shields.io/github/actions/workflow/status/joncovington/cherrypick/ci.yml?branch=main)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -119,8 +119,8 @@ Then run `claude` from the project directory to use the suite's slash commands (
 
 ```bash
 # 1. Get the project
-git clone https://github.com/joncovington/cherrypick-next.git
-cd cherrypick-next
+git clone https://github.com/joncovington/cherrypick.git
+cd cherrypick
 pip install -e packages/core       # shared cherrypick.core library — install this first
 cd packages/orchestrator
 pip install -e ".[dev]"

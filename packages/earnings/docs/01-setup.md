@@ -20,12 +20,12 @@ Complete setup from a fresh checkout to your first paper trading cycle.
 
 ## Step 1: Clone the suite and enter this package
 
-`cherrypick-earnings` is the earnings module of the [cherrypick-next](../../../README.md) monorepo.
+`cherrypick-earnings` is the earnings module of the [cherrypick](../../../README.md) monorepo.
 Clone the suite, then work from `packages/earnings`:
 
 ```bash
-git clone https://github.com/joncovington/cherrypick-next.git
-cd cherrypick-next/packages/earnings
+git clone https://github.com/joncovington/cherrypick.git
+cd cherrypick/packages/earnings
 
 python -m venv venv
 source venv/bin/activate      # macOS/Linux

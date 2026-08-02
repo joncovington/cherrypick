@@ -3,7 +3,7 @@
 Guides for the cherrypick **Earnings** engine — automated overnight, defined-risk earnings options plays
 built on a multi-strategy decision framework.
 
-> **Part of the [cherrypick-next](../../../README.md) suite.** This is the `cherrypick-earnings` module
+> **Part of the [cherrypick](../../../README.md) suite.** This is the `cherrypick-earnings` module
 > (`packages/earnings`). It runs standalone from this folder for live / interactive trading, and is driven
 > unattended by the [orchestrator](../../orchestrator) for paper collection (by subprocess, never by
 > import). Shared logic (`cherrypick.core`) lives in `packages/core`, a sibling in-repo package. See the
@@ -119,10 +119,10 @@ Calendar:    Defined risk, term structure edge, time decay
 
 ## Project Structure
 
-This package lives at `packages/earnings/` inside the [cherrypick-next](../../../README.md) monorepo:
+This package lives at `packages/earnings/` inside the [cherrypick](../../../README.md) monorepo:
 
 ```
-cherrypick-next/
+cherrypick/
 ├── packages/core/                # Shared cherrypick.core library (in-repo package: calendar, fees)
 └── packages/earnings/           # ← this package (cherrypick-earnings)
     ├── src/

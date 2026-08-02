@@ -20,12 +20,12 @@ There is no separate MCP server to install — `cherrypick/meic/tt.py` talks to 
 
 ### 1. Clone the suite and enter this package
 
-`cherrypick-meic` is the MEIC module of the [cherrypick-next](../../../README.md) monorepo. Clone the
+`cherrypick-meic` is the MEIC module of the [cherrypick](../../../README.md) monorepo. Clone the
 suite, then work from `packages/meic`:
 
 ```bash
-git clone https://github.com/joncovington/cherrypick-next.git
-cd cherrypick-next/packages/meic
+git clone https://github.com/joncovington/cherrypick.git
+cd cherrypick/packages/meic
 ```
 
 ### 2. Install Python dependencies
