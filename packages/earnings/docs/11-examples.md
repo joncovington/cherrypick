@@ -16,7 +16,7 @@ today's close) and BMO-timed `BNKX` (before tomorrow's open). `available_capital
 $100,000, `max_concurrent_earnings_positions` is 3.
 
 ```bash
-python src/rank_strategies.py get_ranked_symbols --date 07/08/2026
+python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date 07/08/2026
 ```
 
 ### What Each Symbol's Evaluation Looked Like
@@ -58,8 +58,8 @@ Both clear `max_concurrent_earnings_positions` (only 2 of 3 slots used) and neit
 ### Building the Orders
 
 ```bash
-python src/strategies/iron_fly.py get_order --symbol BNKX --earnings_date 2026-07-09 --earnings_timing "Before market open"
-python src/strategies/iron_condor.py get_order --symbol NVEX --earnings_date 2026-07-08 --earnings_timing "After market close"
+python -m cherrypick.earnings.strategies.iron_fly get_order --symbol BNKX --earnings_date 2026-07-09 --earnings_timing "Before market open"
+python -m cherrypick.earnings.strategies.iron_condor get_order --symbol NVEX --earnings_date 2026-07-08 --earnings_timing "After market close"
 ```
 
 ```
@@ -130,7 +130,7 @@ A quiet night where nothing entered — this is the more common outcome on any g
 and the point of this example is showing it's diagnosable, not mysterious:
 
 ```bash
-python src/rank_strategies.py get_ranked_symbols --date 07/10/2026
+python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date 07/10/2026
 ```
 
 ```json
@@ -166,7 +166,7 @@ On the same night, `/paper-start`'s forced-sampling program and the production
 difference is intentional:
 
 ```bash
-python src/strategy_test_runner.py run_entries --date 07/08/2026
+python -m cherrypick.earnings.strategy_test_runner run_entries --date 07/08/2026
 ```
 
 If `NVEX` is accepted under both `iron_condor` and `directional_credit_spread`,
@@ -186,7 +186,7 @@ instead of starving whichever one rarely wins the head-to-head comparison.
 Once a few weeks of `/paper-start` cycles have run:
 
 ```bash
-python src/strategy_report.py --mode paper --profile strat_test --strategy iron_condor
+python -m cherrypick.earnings.strategy_report --mode paper --profile strat_test --strategy iron_condor
 ```
 
 ```
@@ -200,7 +200,7 @@ iron_condor (paper, profile=strat_test)
   IV crush (entry_iv - exit_iv, avg): 0.087
 ```
 
-`python src/strategy_dashboard.py --mode paper --profile strat_test` writes the same numbers as
+`python -m cherrypick.earnings.strategy_dashboard --mode paper --profile strat_test` writes the same numbers as
 an HTML dashboard with equity curves and a regime heatmap. See
 `docs/strategy-testing-plan.md` for what sample sizes actually mean here and
 `docs/strategy-optimization.md` for the specific hypotheses these numbers get checked against

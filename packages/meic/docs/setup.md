@@ -10,7 +10,7 @@ first time — the one-time setup you do before running any paper or live sessio
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — Anthropic's CLI coding assistant. The agent's decision loop and all the `/`-commands in this guide (`/setup`, `/meic-start`, `/paper-start`, `/dashboard`, etc.) run inside Claude Code, driven by the operating instructions in `CLAUDE.md` and the skills in `.claude/commands/`. Install it with `npm install -g @anthropic-ai/claude-code`, then start it from the project directory by running `claude`.
 - **tastytrade account** — live account or developer sandbox (tastytrade does not offer paper trading; the developer sandbox is a separate environment for testing without real capital)
 
-There is no separate MCP server to install — `src/tt.py` talks to tastytrade directly via the official Python SDK (OAuth2).
+There is no separate MCP server to install — `cherrypick/meic/tt.py` talks to tastytrade directly via the official Python SDK (OAuth2).
 
 > **How you run it:** the plain `python …` commands below run in a normal terminal. The `/`-prefixed commands (like `/meic-start`) are Claude Code skills — type them at the Claude Code prompt after running `claude` in the project folder. Everything Claude Code does is also doable by hand with the underlying `python src/*.py` commands; the skills just orchestrate them.
 
@@ -42,7 +42,7 @@ pip install pytest pytest-asyncio   # optional — only needed to run the test s
 Store OAuth2 credentials (`client_secret`, `refresh_token`) in the OS keyring — never in files or environment variables:
 
 ```bash
-python src/tt.py secrets_set
+python -m cherrypick.meic.tt secrets_set
 ```
 
 This prompts for each credential with hidden input and preserves existing values if you press Enter without typing. `account_number` is optional; the SDK discovers accounts automatically if omitted. See `/setup` for a guided walkthrough, including connection verification.
@@ -59,7 +59,7 @@ A server or VPS with no desktop session has no Secret Service running, so `secre
 pip install keyrings.cryptfile
 # Select it as the active backend (persists in keyring's config):
 python -c "import keyring, keyrings.cryptfile.cryptfile as c; keyring.set_keyring(c.CryptFileKeyring())"
-python src/tt.py secrets_set          # prompts for the encryption passphrase, then each secret
+python -m cherrypick.meic.tt secrets_set          # prompts for the encryption passphrase, then each secret
 ```
 
 You'll be prompted for the passphrase again the first time the agent reads a secret in a new session. To avoid an interactive prompt in a fully unattended daemon, supply it via the backend's `KEYRING_CRYPTFILE_PASSWORD` environment variable set only in the daemon's own environment (not in a committed file) — this keeps the passphrase out of the repo and off disk while accepting that it lives in the process environment for the session.
@@ -76,7 +76,7 @@ cp config.example.json config.json
 
 > **Config location.** This in-repo `config.json` is the standalone-checkout path. Under the orchestrated
 > cherrypick suite the config resolves **home-first** to `~/.cherrypick/config/meic.json` (see
-> [`src/paths.py`](../src/paths.py)); `cherrypick migrate-home` moves an in-repo config up to the home. The
+> [`cherrypick/meic/paths.py`](../src/cherrypick/meic/paths.py)); `cherrypick migrate-home` moves an in-repo config up to the home. The
 > keys are identical either way — edit whichever `paths.config_path()` resolves to.
 
 Key fields to update in your config:
@@ -99,13 +99,13 @@ Key fields to update in your config:
 ### 5. Initialize the database
 
 ```bash
-python src/db.py init_db
+python -m cherrypick.meic.db init_db
 ```
 
 This creates `meic_trades.db` (SQLite, WAL mode) in the **data home** — `~/.cherrypick/data/meic/` by
 default, shared with the orchestrator so both read the same files. Override the location with the
 `MEIC_DATA_DIR` environment variable (tests point it at a tmp path). The path is resolved centrally by
-[`src/paths.py`](../src/paths.py), which also resolves the **logs home** — `~/.cherrypick/logs/meic/` by
+[`cherrypick/meic/paths.py`](../src/cherrypick/meic/paths.py), which also resolves the **logs home** — `~/.cherrypick/logs/meic/` by
 default (override with `MEIC_LOGS_DIR`, or `CHERRYPICK_HOME` for the whole suite) and the **config home**
 — `~/.cherrypick/config/meic.json` (home-first, else the in-repo `config.json`). Nothing runtime stays in
 the package. Safe to run multiple times.
@@ -113,7 +113,7 @@ the package. Safe to run multiple times.
 ### 6. Start the streamer daemon (recommended)
 
 ```bash
-python src/streamer.py
+python -m cherrypick.meic.streamer
 ```
 
 Maintains a persistent DXLink WebSocket so quote/greeks/chain reads are served from cache instead of a cold connection each time. `/meic-start` launches this automatically alongside the dashboard and loop.

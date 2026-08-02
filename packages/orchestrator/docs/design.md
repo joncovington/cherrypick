@@ -122,8 +122,8 @@ like where these projects are modules?* This document is the research report plu
 | Concern | MEIC | Earnings | MCP | Note |
 |---|---|---|---|---|
 | `credentials.py` (keyring) | ✓ | ✓ | ✓ | **~95% identical, triplicated**; only `SERVICE_NAME` (+ MEIC legacy fallback) differs |
-| `session.py` | thread-local | process-global | ✓ | ~90% identical; the difference is one flag (streamer needs per-thread; [MEIC session.py:14-36](../../meic/src/session.py) vs [Earnings session.py:18-30](../../earnings/src/session.py)) |
-| DXLink collectors (`_collect_events/greeks/quotes/…`) | ✓ | ✓ (+OI/volume) | — | Near-identical, already drifting ([MEIC tt.py:449-492](../../meic/src/tt.py), [Earnings tt.py:133-192](../../earnings/src/tt.py)) |
+| `session.py` | thread-local | process-global | ✓ | ~90% identical; the difference is one flag (streamer needs per-thread; [MEIC session.py:14-36](../../meic/src/cherrypick/meic/session.py) vs [Earnings session.py:18-30](../../earnings/src/cherrypick/earnings/session.py)) |
+| DXLink collectors (`_collect_events/greeks/quotes/…`) | ✓ | ✓ (+OI/volume) | — | Near-identical, already drifting ([MEIC tt.py:449-492](../../meic/src/cherrypick/meic/tt.py), [Earnings tt.py:133-192](../../earnings/src/cherrypick/earnings/tt.py)) |
 | Broker commands (`get_quote`/`get_option_chain`/`get_account_info`/`execute_trade`/`list_accounts`/`secrets_*`/`get_connection_status`) | ✓ | ✓ | ✓ | 8 commands overlap verbatim in intent |
 | `db.py` engine (WAL connect, upsert, argparse CLI, `daily_summary`) | ✓ | ✓ | — | Engine duplicated; **schema is domain-specific** (`ic_trades` vs `trades`, `loop_log` vs `scan_log`) |
 | Fee/cost model (tastytrade schedule) | in `config.json` + `db.py get_fee_estimate` | clean `costs.py` | — | Same pricing model, two representations |
@@ -291,14 +291,14 @@ HTTP route + `tt.py` subcommand. **Zero trading authority; advisory-only; never 
 **Yes — there is a strong benefit, and the codebase already proves the pattern on one side only.**
 
 ### What exists today
-- **Paper loop:** a self-healing **Windows Task Scheduler** job ([paper_loop.py:639-667](../../meic/src/paper_loop.py))
+- **Paper loop:** a self-healing **Windows Task Scheduler** job ([paper_loop.py:639-667](../../meic/src/cherrypick/meic/paper_loop.py))
   runs each iteration to completion, self-heals on failure, no-ops outside market hours, and survives
   process death. This is a genuine OS-level liveness watchdog.
 - **Live loop:** agent-driven via `ScheduleWakeup` — **no OS-level backstop.** If the Claude session
   dies or a wakeup is missed, nothing re-fires it. That's the highest-stakes gap: a missed
   `physical_settlement_force_close_time` (15:30) / `force_close_time` (15:45) on a non-cash-settled
   position is a **critical assignment risk** by CLAUDE.md's own escalation rules.
-- **Streamer:** `stale_warning`/`stale_reason` ([tt.py:1371-1374](../../meic/src/tt.py)) + the SDK
+- **Streamer:** `stale_warning`/`stale_reason` ([tt.py:1371-1374](../../meic/src/cherrypick/meic/tt.py)) + the SDK
   keepalive detect staleness, but nothing *actively restarts* a dead streamer — the agent must notice.
   This is what caused the 34h stall (2026-07-01).
 - No cross-process supervisor; no heartbeat contract between modules.
@@ -403,14 +403,14 @@ suite needs standards in three buckets:
 *definitions* per module.** Both repos already implement the same abstraction, differently:
 
 - **MEIC** — profiles in a separate `config.risk.json`; `_merged_params()` flat-overrides base config,
-  skipping `_`-prefixed keys ([paper.py:105-121](../../meic/src/paper.py)); the paper loop runs **all
+  skipping `_`-prefixed keys ([paper.py:105-121](../../meic/src/cherrypick/meic/paper.py)); the paper loop runs **all
   profiles in parallel-shadow** as virtual accounts and tags every fill with `risk_profile`
-  ([paper.py:291-332](../../meic/src/paper.py)); `/set-risk-profile` flips the single **live** active
+  ([paper.py:291-332](../../meic/src/cherrypick/meic/paper.py)); `/set-risk-profile` flips the single **live** active
   profile.
 - **EarningsAgent** — profiles inline under `config["profiles"]`; `_load_config(profile)` layers
   `strategy_defaults → per-strategy → profile`, with `strategy_overrides` deep-merge + `risk_pct_
   multiplier`/`tier_floor` specials, recording `config["_active_profile"]`
-  ([scanner.py:31-77](../../earnings/src/scanner.py)).
+  ([scanner.py:31-77](../../earnings/src/cherrypick/earnings/scanner.py)).
 
 Same four moving parts underneath → the shared module provides them once:
 
@@ -581,7 +581,7 @@ implementations onto one harness is real migration work; and isolation must surv
 **paper** trade with minimal friction — live trading only behind an explicit, deliberate gate.
 
 ### Where the friction actually is today (grounded)
-- **OAuth acquisition is the #1 wall.** `secrets_set` ([tt.py:1131-1150](../../meic/src/tt.py)) prompts
+- **OAuth acquisition is the #1 wall.** `secrets_set` ([tt.py:1131-1150](../../meic/src/cherrypick/meic/tt.py)) prompts
   for a `client_secret` + `refresh_token` the trader **must already possess** — obtaining them from
   tastytrade (register an OAuth app, run an auth-code flow) is beyond a common trader.
 - **Developer-grade prereqs:** Python 3.11+, **Claude Code** (npm + Anthropic account), and — for the

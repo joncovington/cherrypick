@@ -9,7 +9,7 @@ Research notes on the [0DTESPX.com](https://www.0dtespx.com) API, sourced from t
 (`/openapi.yaml`), the [walkthrough](https://www.0dtespx.com/docs/api/walkthrough),
 [`/llms.txt`](https://www.0dtespx.com/llms.txt), and the
 [rate-limits](https://www.0dtespx.com/docs/api/rate-limits) / [access](https://www.0dtespx.com/docs/access)
-pages, cross-checked against live probing. Relevant because `src/paper_replay.py` drives our paper
+pages, cross-checked against live probing. Relevant because `cherrypick/meic/paper_replay.py` drives our paper
 engine from this API. **Read the Acceptable-use verdict first — it changes what we should build.**
 
 ## Acceptable-use verdict (decision-critical)
@@ -22,7 +22,7 @@ engine from this API. **Read the Acceptable-use verdict first — it changes wha
 > the terms even when paced under the credit budget — the budget bounds burst load, it is not a data
 > license; offending accounts may be suspended and their networks may lose access."
 
-`src/paper_replay.py` does exactly the prohibited thing: it walks each session 09:30–16:00 at a 120s
+`cherrypick/meic/paper_replay.py` does exactly the prohibited thing: it walks each session 09:30–16:00 at a 120s
 cadence, **caches every day to `replay_cache/<date>.json`**, and derives a local `paper_trades.db`.
 That is "systematically walking the archive … to build a local copy or a derivative dataset." Pacing
 under the credit budget does not make it permitted. **Conclusion: do not rewrite the replay adapter
@@ -47,7 +47,7 @@ engine, so neither is a drop-in for our local paper engine. The compliant path t
   **bare** value of the `Authorization` header — **no `Bearer` prefix**.
   - ⚠️ Spec discrepancy: `openapi.yaml` declares an HTTP `bearerToken` scheme (which implies
     `Authorization: Bearer <token>`), but the walkthrough and live probing both confirm the **bare**
-    token is what works. `src/paper_replay.py` sends it bare — correct.
+    token is what works. `cherrypick/meic/paper_replay.py` sends it bare — correct.
 - **Cloudflare:** the API is behind Cloudflare, which rejects the default Python `urllib`
   User-Agent with HTTP 403 "error code: 1010". Send a browser-shaped `User-Agent` (handled in
   `paper_replay._USER_AGENT`).
@@ -139,13 +139,13 @@ disallowed regardless of pacing** (see verdict above).
 schedule is `open 1.72/leg`, `close 0.72/leg`, `exercise 5` — which **matches cherrypick.core.fees to
 the cent** (open 4×1.72 = 6.88 vs 6.8866; close/side 1.44 vs 1.4433). `PATCH /user` accepts
 `fee_schedule`/`slippage` (204), so they are tunable, but that mutates the account **globally** (web
-app included). The practice backtester (`src/paper_practice.py`) therefore runs on 0DTESPX's basis
+app included). The practice backtester (`cherrypick/meic/paper_practice.py`) therefore runs on 0DTESPX's basis
 without alignment (it already ≈ ours); the only residual vs. tastytrade forward paper is the 0.05
 slippage baked into fills. See docs/paper-practice-plan.md § Fee & slippage.
 
 ## Bottom line for cherrypick-meic
 
-`src/paper_replay.py` cannot be used against this API without violating its terms. The Cloudflare/UA
+`cherrypick/meic/paper_replay.py` cannot be used against this API without violating its terms. The Cloudflare/UA
 fix and the `login`/`request_code` helpers stay useful only if we pivot to the **sanctioned**
 practice-session / backtest API (a separate, server-side integration). Otherwise, historical
 validation of the paper experiment cells should come from **forward paper on tastytrade**, and this

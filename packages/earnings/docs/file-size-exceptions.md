@@ -8,7 +8,7 @@ This project has documented exceptions where file size exceeds the guideline due
 
 ## Core Infrastructure Files (High Refactoring Risk)
 
-### `src/scanner.py` (1,072 lines)
+### `cherrypick/earnings/scanner.py` (1,072 lines)
 **Justification:** Strategy-agnostic shared engine used by all strategy modules. Contains interdependent functions for earnings calendar, IV/RV calculations, winrate backtesting, liquidity gates, and candidate ranking. Refactoring to split functionality would require:
 - Circular import resolution
 - Database connection pooling across modules
@@ -17,7 +17,7 @@ This project has documented exceptions where file size exceeds the guideline due
 
 **Current state:** Stable, fully tested, used by all 6 strategy modules. Refactoring carries high risk of introducing bugs in the live trading loop. **Acceptable exception.**
 
-### `src/tt.py` (607 lines)
+### `cherrypick/earnings/tt.py` (607 lines)
 **Justification:** Broker-specific API wrapper (tastytrade). Contains tightly coupled methods for:
 - Session management and authentication
 - Quote fetching and option chain retrieval

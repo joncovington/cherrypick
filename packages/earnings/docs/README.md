@@ -158,13 +158,13 @@ cherrypick-next/
 
 ### Afternoon, Before the Close
 ```bash
-python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
+python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY
 # Evaluates all 6 strategies against tonight's/tomorrow's calendar, picks each symbol's best
 ```
 
 ### Entry Window (default 15:30-15:55 ET)
 ```bash
-python src/strategies/iron_fly.py get_order --symbol AAPL --earnings_date 2026-07-15 --earnings_timing "After market close"
+python -m cherrypick.earnings.strategies.iron_fly get_order --symbol AAPL --earnings_date 2026-07-15 --earnings_timing "After market close"
 # Returns a concrete order spec, priced off the live chain
 ```
 

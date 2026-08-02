@@ -87,7 +87,7 @@ an **estimate** to be refined once real paper fills accumulate.
 
 ## Reading the books side by side
 
-Compare strategies by running `python src/strategy_report.py` (or `strategy_dashboard.py`) and
+Compare strategies by running `python -m cherrypick.earnings.strategy_report` (or `strategy_dashboard.py`) and
 reading the per-strategy numbers — the cross-strategy comparison grid in the dashboard already
 puts every book's equity curve, drawdown, and expectancy next to each other. There's no separate
 head-to-head report script; the per-strategy books plus the shared `strategy_metrics.py`

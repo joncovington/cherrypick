@@ -17,7 +17,7 @@ live trading.
 It is the generic daemon **lifecycle only** — PID guard, `--status`/`--stop`, logging — around the shared
 engine. It deliberately carries **none** of MEIC's trading policy: no ORB capture, no open-position leg
 subscriptions, no account REST poller, no `127.0.0.1:7699` HTTP API. Those stay in MEIC's wrapper
-(`../meic/src/streamer.py`); a live-trading module layers them onto the same engine.
+(`../meic/src/cherrypick/meic/streamer.py`); a live-trading module layers them onto the same engine.
 
 ## Commands
 

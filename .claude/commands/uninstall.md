@@ -28,7 +28,7 @@ Do this:
      daemon): `python packages/streamer/run.py --stop`, then confirm with
      `python packages/streamer/run.py --status` (`"running": false`).
      (Only if this box was rolled back to MEIC-as-producer — `modules.meic.streamer.enabled` true —
-     stop that one instead: `python packages/meic/src/streamer.py --stop`. Exactly one producer ever
+     stop that one instead: `python -m cherrypick.meic.streamer --stop`. Exactly one producer ever
      runs.)
    - **Dashboard servers** (only if any `--serve` is up): run the `/serve-dashboard --stop all`
      procedure, which covers the suite (8787) and every module dashboard (8801–8803, 5050/5051, 5055)
@@ -39,7 +39,7 @@ Do this:
      (This is the shared Dolt server — skip it if you use Dolt outside cherrypick and want it running.)
    - **MEIC sidecar** (optional, off by default — if `meic-sidecar` was enabled in `services` it was
      already stopped in step 1; a manually-started one stops with
-     `python packages/meic/src/streamer.py --sidecar --stop`).
+     `python -m cherrypick.meic.streamer --sidecar --stop`).
 
 3. **Verify a clean stop:**
    - No cherrypick tasks: `Get-ScheduledTask | Where-Object { $_.TaskName -like 'cherrypick*' }`
