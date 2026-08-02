@@ -399,7 +399,7 @@ def _num(value: Any) -> float | None:
 
 
 async def _get_account(account_number: str | None = None):
-    # Delegates to cherrypick.core.broker (src/_core). The stored account number is passed in as the
+    # Delegates to cherrypick.core.broker. The stored account number is passed in as the
     # default so the core stays decoupled from this module's credentials shim.
     return await _broker.resolve_account(
         get_session(),
@@ -451,13 +451,13 @@ async def _fetch_chain(symbol: str, expiration: str | None = None) -> dict:
     return await get_option_chain(session, symbol)
 
 
-# Thin re-exports of the shared option-chain helpers now implemented in cherrypick.core.broker (src/_core).
+# Thin re-exports of the shared option-chain helpers now implemented in cherrypick.core.broker.
 _strike = _broker.strike_of
 _nearest_expiration = _broker.nearest_expiration
 _atm_window = _broker.atm_window
 
 
-# On-demand DXLink collectors — thin shims over cherrypick.core.dxfeed (src/_core). The broker session is
+# On-demand DXLink collectors — thin shims over cherrypick.core.dxfeed. The broker session is
 # passed in explicitly, so a missing-credentials CredentialError surfaces to the caller here instead of
 # being swallowed inside the collector's broad except (the shared implementation never fetches it).
 async def _collect_events(
@@ -1009,7 +1009,7 @@ async def cmd_get_working_orders(args) -> dict:
 
 
 def _build_order(spec: dict):
-    # Delegates to cherrypick.core.broker (src/_core): pure order construction (dict spec -> NewOrder),
+    # Delegates to cherrypick.core.broker: pure order construction (dict spec -> NewOrder),
     # no submission. Handles the optional stop_trigger. cmd_execute_trade below still owns the
     # dry-run/live place_order call.
     return _broker.build_order(spec)
@@ -1026,7 +1026,7 @@ async def cmd_execute_trade(args) -> dict:
         account = await _get_account(getattr(args, "account_number", None))
         order = _build_order(spec)
         dry_run = getattr(args, "dry_run", True) or not _live_trading_enabled()
-        # cherrypick.core.broker owns the preflight-then-optionally-live submission core (src/_core); it
+        # cherrypick.core.broker owns the preflight-then-optionally-live submission core; it
         # places a live order only when live=True, the dry-run preflight had no errors, and (when
         # configured) the account deploy-limit governor allows it. account_deploy_limit_pct defaults
         # to 0/off; a positive value caps deployed buying power at that % of account capacity.

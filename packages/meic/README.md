@@ -20,7 +20,7 @@ a `/`-prefixed command on your behalf — no coding required.
 
 An autonomous options trading agent running the **Multiple Entry Iron Condor (MEIC)** strategy on 0DTE index options. Rather than a traditional rules-only trading-bot framework, the agent itself runs the decision loop every few minutes during market hours, reading live market data, checking a stack of risk gates, and deciding whether to enter, hold, or close positions. It runs inside **[Claude Code](https://docs.claude.com/en/docs/claude-code)** (Anthropic's agentic CLI), which executes the operating instructions in `CLAUDE.md` and the skills in `.claude/commands/`. It talks to tastytrade directly via their official Python SDK (OAuth2, no middleman broker API). Live trading is gated behind an explicit config flag and defaults to dry-run.
 
-Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`** library, vendored per package as the `src/_core` git submodule — so a fresh clone must pull submodules (`--recurse-submodules`, or `git submodule update --init --recursive`) before any `import cherrypick.core...` resolves.
+Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`** library, a sibling package (`packages/core`) in this same monorepo — install it once (`pip install -e ../core`, or `packages/core[dev]` from the repo root) before any `import cherrypick.core...` resolves in this package.
 
 **New in this release:** a full **paper-trading system** that shadow-trades all four risk profiles against live quotes with zero capital, a dedicated paper dashboard, an unattended self-healing daemon, corrected MEIC exit rules (cash-settled positions are now left to expire, not force-closed), and automated end-of-day reports. See [What's new](#whats-new).
 
@@ -37,19 +37,22 @@ Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`*
 - **macOS** — open **Terminal** (Applications → Utilities), or install Git via `xcode-select --install`.
 - **Linux** — open your terminal; install Git with your package manager (e.g. `sudo apt install git`).
 
-Then download the suite (with its shared-core submodules) and move into this package's folder:
+Then download the suite and move into this package's folder:
 
 ```bash
-# 1. Clone the cherrypick monorepo — --recurse-submodules pulls the shared cherrypick.core (src/_core)
-git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
-cd cherrypick/packages/meic
-# Already cloned without submodules? Run this once: git submodule update --init --recursive
+# 1. Clone the cherrypick-next monorepo
+git clone https://github.com/joncovington/cherrypick-next.git
+cd cherrypick-next/packages/meic
 ```
 
 Every command below is run from inside `packages/meic`. On macOS/Linux, if `python`/`pip` aren't found, use `python3`/`pip3` instead.
 
 ```bash
-# 2. Install dependencies (tastytrade, keyring, pytz, flask from pyproject.toml)
+# 2. Install dependencies -- packages/core FIRST (it's not on PyPI, so pip can only resolve
+# "cherrypick-core" from what's already installed), then this package's own (tastytrade, keyring,
+# pytz, flask from pyproject.toml). From the repo root, scripts/dev-install.ps1 (or .sh) does both
+# steps for every package at once.
+pip install -e ../core
 pip install -e .
 pip install pytest pytest-asyncio     # optional — only needed to run the test suite
 
@@ -107,8 +110,9 @@ cherrypick suite it plays two roles:
 
 You can run the paper daemon here directly too (`/paper-start`); letting the orchestrator manage it just adds
 the watchdog, notifications, and the cross-module read side (`cherrypick report` / `dashboard` /
-`calibrate`). The shared `cherrypick.core` code (calendar, fees) lives in the `src/_core` submodule — see
-[Orchestrator & shared core](CLAUDE.md#orchestrator--shared-core) in `CLAUDE.md` for the exact couplings.
+`calibrate`). The shared `cherrypick.core` code (calendar, fees) lives in `packages/core`, a sibling
+in-repo package — see [Orchestrator & shared core](CLAUDE.md#orchestrator--shared-core) in `CLAUDE.md`
+for the exact couplings.
 
 ---
 
@@ -214,14 +218,14 @@ Everything runs locally against your own tastytrade account — no cloud depende
 This package lives at `packages/meic/` inside the [cherrypick](../../README.md) monorepo:
 
 ```
-cherrypick/
+cherrypick-next/
+├── packages/core/                   # Shared cherrypick.core library (in-repo package: calendar, fees)
 └── packages/meic/                   # ← this package (cherrypick-meic)
     ├── CLAUDE.md                    # Agent operational brain (loaded every loop iteration)
     ├── GATES.md                     # Reference: the full entry-gate stack in evaluation order
     ├── config.example.json          # Config template — copy to config.json
     ├── config.risk.json             # Risk-profile presets (conservative → very-aggressive)
     ├── src/
-    │   ├── _core/                   # Shared cherrypick.core library (git submodule: calendar, fees)
     │   ├── tt.py                    # tastytrade CLI — get_quote, get_strategies, execute_trade, etc.
     │   ├── streamer.py              # Persistent DXLink streaming daemon (live quotes/greeks/OI/volume)
     │   ├── session.py               # OAuth2 session management

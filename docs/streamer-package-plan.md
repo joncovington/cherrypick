@@ -28,9 +28,9 @@ The reusable *engine* was already extracted into the shared core; only the *daem
 MEIC-bound.
 
 - `cherrypick.core.streamer.ChainStreamer` is generic — the WebSocket, listeners, cache writes, ATM
-  window, and reconnect all live there, with MEIC policy injected via `extra_subscriptions`,
-  `protected_symbols`, and `trade_hook`
-  ([`core/streamer/__init__.py:58-73`](../packages/meic/src/_core/cherrypick/core/streamer/__init__.py#L58-L73)).
+  window, and reconnect all live there, with MEIC policy injected via the `extra_subscriptions`,
+  `protected_symbols`, and `trade_hook` constructor params
+  ([`ChainStreamer.__init__`](../packages/core/cherrypick/core/streamer/__init__.py)).
   gex's 58-line wrapper reusing it — zero MEIC imports — is the existence proof.
 - Auth is centralized in `cherrypick.core.auth` under one keyring service (`"meicagent"`, legacy
   `"tastytrade-mcp"`). Any package can build a session with no dependency on MEIC's `session.py`.
@@ -176,7 +176,9 @@ drop-in for the orchestrator's existing streamer contract.
 - **Reader change (config only):** default `source.stream_cache_db` for flies and gex to the canonical
   path. Because it's one fixed path regardless of producer, readers never need per-install rewriting.
 - **Migration:** on first install after the cutover, the old `data/meic/stream_cache.db` is simply
-  abandoned (the streamer recreates its schema on start — [`core/streamer/__init__.py:351`](../packages/meic/src/_core/cherrypick/core/streamer/__init__.py#L351)). No data migration needed; the cache is ephemeral live state.
+  abandoned (the streamer recreates its schema on start, via
+  [`cherrypick.core.streamcache`](../packages/core/cherrypick/core/streamcache/__init__.py)'s `DDL`).
+  No data migration needed; the cache is ephemeral live state.
 
 ## Authentication & standalone credential bootstrap
 

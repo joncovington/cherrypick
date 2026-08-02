@@ -41,7 +41,7 @@ _DB_PATH = os.environ.get("MEIC_DB_PATH") or _DEFAULT_DB_PATH
 
 
 def _connect():
-    # cherrypick.core.db (src/_core) handles mkdir + row_factory=Row + pragmas. MEIC's additive/index/drop
+    # cherrypick.core.db handles mkdir + row_factory=Row + pragmas. MEIC's additive/index/drop
     # migrations in cmd_init_db stay module-local (they're not the plain additive-only form).
     return _db.connect(_DB_PATH, pragmas=("journal_mode=WAL", "foreign_keys=ON"))
 

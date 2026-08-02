@@ -22,9 +22,6 @@ subscriptions, no account REST poller, no `127.0.0.1:7699` HTTP API. Those stay 
 ## Commands
 
 ```bash
-# Fresh clone: pull the cherrypick-core submodule (src/_core) first — imports fail without it.
-git submodule update --init
-
 python run.py               # run the streamer daemon in the foreground (Ctrl-C / SIGTERM to stop)
 python run.py --status      # print one JSON health object (running, pid, oldest_event_age_s, ...) and exit
 python run.py --stop        # SIGTERM a running daemon
@@ -32,7 +29,7 @@ python run.py --symbol SPX --symbol XSP   # override the configured symbols for 
 python run.py --secrets-set    # store the shared tastytrade OAuth bearer secrets (hidden input) in the keyring
 python run.py --secrets-status # print which shared OAuth secrets are present (JSON)
 python -m pytest            # lifecycle tests; no broker/streamer required (temp $CHERRYPICK_HOME)
-ruff check . && ruff format .             # line-length 110; src/_core excluded
+ruff check . && ruff format .             # line-length 110
 ```
 
 Config: copy `config.example.json` → `config.json` (git-ignored, machine-local), or place
@@ -68,9 +65,9 @@ absolute paths.
 - **src/cli.py + run.py** — the CLI. Flat args (`--status` / `--stop` / `--symbol` / `--secrets-set` /
   `--secrets-status`, default = run) so the orchestrator drives it with the same start/status/stop argv
   contract it uses for MEIC's streamer.
-- **src/_core** — the shared `cherrypick-core` submodule (same URL + pinned SHA as every sibling); the
-  streaming engine (`core.streamer`), cache schema (`core.streamcache`), auth (`core.auth`), and home
-  resolver (`core.home`) all live there. Excluded from ruff and the wheel.
+- **`cherrypick.core`** — an installed dependency (`packages/core` in this monorepo, `pip install -e
+  packages/core`, same for every sibling); the streaming engine (`core.streamer`), cache schema
+  (`core.streamcache`), auth (`core.auth`), and home resolver (`core.home`) all live there.
 
 ## Invariants (do not violate)
 

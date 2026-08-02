@@ -10,7 +10,7 @@ understand *how* a part of the suite works or *why* it's built the way it is.
 |---|---|
 | [PROJECT.md](PROJECT.md) | **User Guide** — plain-language install, setup, daily use, troubleshooting. |
 | [operations.md](operations.md) | **Runbook** — the full task/daemon/port inventory, dependency order and time constants, the 09:00 ET checklist, normal-vs-real warnings, known gaps, and the 2026-07-29 cutover record. |
-| [architecture.md](architecture.md) | How the suite fits together: the orchestrator + strategy modules, the shared `cherrypick.core` submodule, the read/write halves, per-schema dispatch, and the managed `~/.cherrypick` home. |
+| [architecture.md](architecture.md) | How the suite fits together: the orchestrator + strategy modules, the shared `cherrypick.core` package, the read/write halves, per-schema dispatch, and the managed `~/.cherrypick` home. |
 | [orchestrator-cli.md](orchestrator-cli.md) | Every `cherrypick` / `run.py` command, what it does, and its flags — the operational surface. |
 | [reporting-and-dashboard.md](reporting-and-dashboard.md) | The read side: unified P&L report, calibration, the deterministic EOD reports (paper-eod + 7-section analysis), the AI EOD insight, the suite digest, the dashboard (static + live), and end-of-month log/report archiving. |
 | [strategy-engines.md](strategy-engines.md) | The MEIC, Earnings, Flies, and GEX engines at a suite level, plus risk-profile **variance testing** — with pointers into each module's own docs. |

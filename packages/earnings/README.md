@@ -27,20 +27,19 @@ Every strategy is **defined-risk**: max loss is known at entry. Undefined-risk/n
 (naked straddles, strangles, naked puts/calls) were deliberately excluded — a single-name
 earnings gap on a naked short can blow out arbitrarily overnight with nobody watching.
 
-Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`** library, vendored per
-package as the `src/_core` git submodule — so a fresh clone must pull submodules
-(`--recurse-submodules`, or `git submodule update --init --recursive`) before any
-`import cherrypick.core...` resolves.
+Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`** library, a sibling
+package (`packages/core`) in this same monorepo — `requirements.txt`'s first line (`-e ../core`)
+installs it, resolved relative to the working directory, so `pip install` must run from inside
+`packages/earnings` before any `import cherrypick.core...` resolves.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Clone the cherrypick monorepo — --recurse-submodules pulls the shared cherrypick.core (src/_core)
-git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
-cd cherrypick/packages/earnings
-# Already cloned without submodules? Run this once: git submodule update --init --recursive
+# Clone the cherrypick-next monorepo
+git clone https://github.com/joncovington/cherrypick-next.git
+cd cherrypick-next/packages/earnings
 
 python -m venv venv && source venv/bin/activate   # venv\Scripts\activate on Windows
 pip install -r requirements.txt
@@ -98,8 +97,9 @@ own. Inside the cherrypick suite it plays two roles:
 
 You can run the paper harness here directly too (`/paper-start`); letting the orchestrator manage it just
 adds the watchdog, notifications, and the cross-module read side (`cherrypick report` / `dashboard` /
-`calibrate`). The shared `cherrypick.core` code (calendar, fees) lives in the `src/_core` submodule — see
-[Orchestrator & shared core](CLAUDE.md#orchestrator--shared-core) in `CLAUDE.md` for the exact couplings.
+`calibrate`). The shared `cherrypick.core` code (calendar, fees) lives in `packages/core`, a sibling
+in-repo package — see [Orchestrator & shared core](CLAUDE.md#orchestrator--shared-core) in `CLAUDE.md`
+for the exact couplings.
 
 ---
 
@@ -134,9 +134,9 @@ sees it.
   merged today-AMC/tomorrow-BMO earnings calendar, and picks each symbol's single best strategy.
 - **`src/tt.py`** is the tastytrade broker interface — quotes, chains, greeks, account info, and
   (in live mode only) order execution.
-- **`src/_core/`** is the shared **`cherrypick.core`** library (git submodule), used here for the market
-  calendar and the tastytrade fee schedule (via `src/costs.py`). Module files self-bootstrap `src/_core`
-  onto `sys.path` at import, so no pip install is needed — but the submodule must be checked out.
+- **`packages/core`** is the shared **`cherrypick.core`** library, an in-repo sibling package, used here
+  for the market calendar and the tastytrade fee schedule (via `src/costs.py`). Installed via
+  `requirements.txt`'s own `-e ../core` line — no separate step needed.
 - **`src/paths.py`** resolves the **data home** — the trade ledgers (`earnings_trades.db`,
   `paper_trades.db`) live under `~/.cherrypick/data/earnings` by default (override with
   `EARNINGS_DATA_DIR`), the same managed location the orchestrator reads for cross-module reporting and

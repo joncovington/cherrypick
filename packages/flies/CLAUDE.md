@@ -149,9 +149,9 @@ logs and steps past. Refusals are ordinary and frequent; they are not errors. `q
 on every snapshot so a barren session can be read afterwards as "the data was thin" rather than
 mistaken for "the strategy found nothing".
 
-`src/_core` is the `cherrypick-core` submodule (same URL and pinned SHA as every other package).
-`cherrypick.core.fees` supplies the fee schedule and `cherrypick.core.gex.compute_gex` the per-strike
-GEX profile — neither is reimplemented here.
+`cherrypick.core` is an installed dependency (`packages/core` in this monorepo, `pip install -e
+packages/core`, same for every package). `cherrypick.core.fees` supplies the fee schedule and
+`cherrypick.core.gex.compute_gex` the per-strike GEX profile — neither is reimplemented here.
 
 ## The arms
 

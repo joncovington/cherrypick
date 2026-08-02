@@ -29,7 +29,7 @@ dependencies = ["keyring>=24", "tzdata>=2023"]
 
 [project.urls]
 Repository = "https://github.com/joncovington/cherrypick-core"
-Suite = "https://github.com/joncovington/cherrypick"
+Suite = "https://github.com/joncovington/cherrypick-next"
 
 # tastytrade is a runtime dependency of consumers, not of importing the library: auth.session
 # imports it lazily (only when building a real session), so cherrypick-core imports and unit-tests

@@ -27,7 +27,8 @@ idea itself, is what this module is really for.
 ## Quick start
 
 ```bash
-git submodule update --init --recursive     # pulls in the shared cherrypick-core library
+pip install -e ../core                       # the shared cherrypick.core library, install first
+pip install -e ".[dev]"
 cp config.example.json config.json
 python -m pytest                             # confirm everything checks out
 

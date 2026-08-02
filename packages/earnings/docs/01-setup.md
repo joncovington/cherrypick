@@ -20,13 +20,12 @@ Complete setup from a fresh checkout to your first paper trading cycle.
 
 ## Step 1: Clone the suite and enter this package
 
-`cherrypick-earnings` is the earnings module of the [cherrypick](../../../README.md) monorepo. Clone the
-whole suite with its shared-core submodules, then work from `packages/earnings`:
+`cherrypick-earnings` is the earnings module of the [cherrypick-next](../../../README.md) monorepo.
+Clone the suite, then work from `packages/earnings`:
 
 ```bash
-git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
-cd cherrypick/packages/earnings
-# Already cloned without --recurse-submodules? Run once: git submodule update --init --recursive
+git clone https://github.com/joncovington/cherrypick-next.git
+cd cherrypick-next/packages/earnings
 
 python -m venv venv
 source venv/bin/activate      # macOS/Linux
@@ -35,10 +34,11 @@ source venv/bin/activate      # macOS/Linux
 pip install -r requirements.txt
 ```
 
-The `--recurse-submodules` flag (or the follow-up `git submodule update`) pulls the shared
-`cherrypick.core` library into `src/_core`; without it every `import cherrypick.core...` — and therefore
-the calendar and fee lookups the scanner and cost model depend on — fails. All commands below run from
-`packages/earnings`.
+`requirements.txt`'s first line (`-e ../core`) installs the shared `cherrypick.core` library — a
+sibling package in this monorepo, resolved relative to the current working directory, so `pip install`
+must run from inside `packages/earnings` as shown above. Without it every `import cherrypick.core...`
+— and therefore the calendar and fee lookups the scanner and cost model depend on — fails. All commands
+below run from `packages/earnings`.
 
 For running tests or contributing, also install dev dependencies:
 
