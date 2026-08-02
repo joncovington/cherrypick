@@ -121,15 +121,21 @@ def portable_path(p: Any) -> str:
     """Render a filesystem path for display without leaking a drive letter, username, or absolute home
     prefix — the suite guardrail forbids absolute paths on any surface (dashboard, doctor, section cards).
     Collapse the user home to ``~``; else show it relative to the cherrypick source root (ROOT); else
-    just the final path component."""
+    just the final path component.
+
+    The ROOT-relative leg only applies when the path is actually *under* ROOT. `os.path.relpath` will
+    happily walk up out of ROOT and back down (`../../../tmp/...`), which keeps every original segment
+    and defeats the whole point of this function. That escape never fired on Windows — a different
+    drive raises ValueError — so it stayed invisible until orchestrator CI first ran on Linux.
+    """
     path = Path(p)
     try:
         return "~/" + path.relative_to(Path.home()).as_posix()
     except ValueError:
         pass
     try:
-        return Path(os.path.relpath(path, ROOT)).as_posix()
-    except (ValueError, OSError):
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
         return path.name
 
 
