@@ -20,8 +20,9 @@ whenever anything stalls. (Historical entries below may reference the pre-split 
 > - **NEVER** hardcode machine-specific details (username, hostname except `127.0.0.1`/`localhost`, drive letters)
 > - Before committing new path-construction code, verify it uses `Path(__file__)`, env var, or config value — never a literal machine path.
 
-> **Full design & phased roadmap:** `~/.claude/plans/cherrypick-plan.md` (Stages 0–8, the
-> `cherrypick-core` shared-library extraction, new modules, onboarding, standards). This file tracks
+> **Design rationale:** [`docs/design.md`](docs/design.md) — the 2026-07-11 research report behind
+> this suite (the `cherrypick-core` extraction, reliability model, standards, and specs for the parts
+> still unbuilt). It is a point-in-time document and is **not** updated as work ships; this file tracks
 > only what has actually been built.
 
 ## Prime directive
@@ -93,6 +94,8 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       Behavior unchanged (the mirrors were faithful; the existing tests are the regression guard). CI
       checks out submodules; `src/_core` is excluded from ruff + packaging. **Fresh clones:** run
       `git submodule update --init` (as the modules require).
+      *(Superseded 2026-08-01: no submodules remain — `pip install -e packages/core` instead. See the
+      section header above.)*
 - [x] **`dashboard --serve` live view + declarative section contract (shipped 2026-07-11).**
       `dashboard --serve` runs a localhost `ThreadingHTTPServer` (`orchestrator/serve.py`) that
       re-renders the suite page fresh per request. The `cherrypick.core.viz` `DashboardSection` contract
@@ -176,9 +179,12 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       as hooks), retiring ~500 lines of duplicate engine. Verified live end-to-end.
 
 ## Shipped since Stage 0 — cherrypick-core extraction + standards
-> Full design & running reconciliation live in `~/.claude/plans/cherrypick-plan.md` (see its
-> **Build Status** section). `cherrypick-core` is a public GitHub repo, submoduled into both suite
-> modules at `src/_core`; each consumer keeps a thin shim and cut its call sites over. All CI-green.
+> Design rationale: [`docs/design.md`](docs/design.md). At the time of these entries `cherrypick-core`
+> was a separate public GitHub repo, submoduled into each consumer at `src/_core`, with a thin shim per
+> module. **That is no longer how it works** — as of 2026-08-01 core is `packages/core` in this
+> monorepo, installed as an ordinary editable dependency, and every `src/_core` submodule and
+> `sys.path` bootstrap is gone. The entries below are kept verbatim as the record of what was built
+> at the time; read them as history, not as setup instructions.
 
 - [x] **`cherrypick-core` shared library (8 packages), consumed by MEICAgent & EarningsAgent:**
       `auth` (credentials + session), `calendar`, `dxfeed`, `fees` (cost-adjusted fills +
