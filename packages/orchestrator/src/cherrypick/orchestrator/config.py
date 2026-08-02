@@ -12,8 +12,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# The orchestrator package bootstraps src/_core onto sys.path in its __init__, which runs before this
-# submodule's body — so the shared home resolver is importable here.
 from cherrypick.core import home as _home
 
 # cherrypick runtime root — where config.json, logs/, and state/ live. In a source checkout that is the
