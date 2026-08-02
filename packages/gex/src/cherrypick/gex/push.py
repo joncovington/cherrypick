@@ -14,8 +14,8 @@ import logging
 
 import websockets
 
-import service as _service
-from config import default_symbol, push_min_interval, ws_port
+from cherrypick.gex import service as _service
+from cherrypick.gex.config import default_symbol, push_min_interval, ws_port
 
 log = logging.getLogger(__name__)
 

@@ -8,8 +8,7 @@ import http.client
 import threading
 from http.server import ThreadingHTTPServer
 
-import config
-import serve
+from cherrypick.gex import config, serve
 
 
 def test_render_page_has_all_three_tabs_and_charts():

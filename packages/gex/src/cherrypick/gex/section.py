@@ -8,7 +8,7 @@ module's own `dashboard --serve`; this is the compact card for the suite dashboa
 
 from __future__ import annotations
 
-import service as _service
+from cherrypick.gex import service as _service
 
 _NOTE = (
     "positioning = open interest · flow = traded volume · a simple self-hosted gexbot / SpotGamma / MenthorQ"
