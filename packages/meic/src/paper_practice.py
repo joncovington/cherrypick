@@ -132,6 +132,9 @@ class Client:
     def place(self, sid, order):
         return self._request("POST", f"/practice/sessions/{sid}/orders", order, idem=uuid.uuid4().hex)
 
+    def order(self, sid, order_id):
+        return self._request("GET", f"/practice/sessions/{sid}/orders/{order_id}")[1]
+
     # --- market data ---
     def snapshot(self, ts):  # METERED (10 credits) — entry decisions only
         return self._request("GET", f"/market-data/option-chain-snapshots/{ts}")[1]
@@ -362,6 +365,26 @@ class _Book:
 # Order placement
 # ---------------------------------------------------------------------------
 
+# 0DTESPX practice orders never fill synchronously in the POST response (it always comes back
+# status="pending" with no fill_price) -- the platform fills them ~2s later on the session's own
+# simulated clock. Nudging the clock forward and re-reading the order is how the fill actually
+# surfaces; these delays are cumulative offsets from the order's own placement time, not a real
+# wall-clock sleep, so retrying is free. A still-pending order after the last nudge is a real
+# no-fill (rejected/unmarketable), not a timing artifact.
+_FILL_POLL_DELAYS_S = (3, 5, 10)
+
+
+def _confirm_fill(client, sid, order_id, placed_at_iso):
+    placed_at = datetime.strptime(placed_at_iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    for delay in _FILL_POLL_DELAYS_S:
+        client.set_clock(sid, (placed_at + timedelta(seconds=delay)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        order = client.order(sid, order_id)
+        if isinstance(order, dict) and order.get("status") == "filled":
+            fill = order.get("fill_price") or order.get("execution_price")
+            if fill is not None:
+                return float(fill), float(order.get("fees") or 0)
+    return None, None
+
 
 def _place_ic(client, sid, chosen, yymmdd, now_min, entry_iso, spot):
     L = {
@@ -387,12 +410,15 @@ def _place_ic(client, sid, chosen, yymmdd, now_min, entry_iso, spot):
     if not isinstance(resp, dict):
         return None
     fill = resp.get("fill_price") or resp.get("execution_price")
+    fee = resp.get("fees")
+    if fill is None and resp.get("id"):
+        fill, fee = _confirm_fill(client, sid, resp["id"], entry_iso)
     if fill is None:
         return None
     return {
         "legs": L,
         "net_credit": float(fill),
-        "open_fee": float(resp.get("fees") or 0),
+        "open_fee": float(fee or 0),
         "entry_min": now_min,
         "entry_iso": entry_iso,
         "spot_entry": spot,

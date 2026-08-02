@@ -193,6 +193,78 @@ def test_stop_triggers_when_side_cost_reaches_ratio():
     assert not (put_cost >= stop_trigger * ic["net_credit"])
 
 
+# ── Entry order placement / fill confirmation ────────────────────────────────
+# 0DTESPX practice orders never fill synchronously: the POST response always comes back
+# status="pending" with no fill_price -- the platform fills them ~2s later on the session's own
+# simulated clock. These tests pin that _place_ic polls for the fill via order status.
+
+
+def _chosen():
+    return {
+        "short_put": {"strike": 7405.0},
+        "long_put": {"strike": 7395.0},
+        "short_call": {"strike": 7485.0},
+        "long_call": {"strike": 7495.0},
+        "wing_width": 10,
+        "ic_natural_bid": 2.15,
+    }
+
+
+class _FakeClient:
+    """Injectable stand-in mirroring Client's public interface -- no network."""
+
+    def __init__(self, order_sequence):
+        # order_sequence: list of dicts, each what .order() returns on successive polls
+        self.placed = None
+        self._order_sequence = list(order_sequence)
+        self.clocks_set = []
+
+    def place(self, sid, order):
+        self.placed = order
+        return 201, {"id": "order-1", "status": "pending", "price": order["price"], "fees": "6.88"}
+
+    def set_clock(self, sid, utc_iso_z):
+        self.clocks_set.append(utc_iso_z)
+
+    def order(self, sid, order_id):
+        return self._order_sequence.pop(0) if self._order_sequence else None
+
+
+def test_place_ic_confirms_fill_via_polling_when_pending_response_has_no_fill_price():
+    # first poll still pending, second poll filled -- matches the real API's ~2s delay
+    client = _FakeClient(
+        [
+            {"status": "pending"},
+            {"status": "filled", "fill_price": "2.20", "fees": "6.88"},
+        ]
+    )
+    ic = pp._place_ic(client, "sid-1", _chosen(), "260731", 660, "2026-07-31T15:00:00Z", 7448.82)
+    assert ic is not None
+    assert ic["net_credit"] == 2.20
+    assert ic["open_fee"] == 6.88
+    assert len(client.clocks_set) == 2  # nudged forward once per poll attempt until filled
+
+
+def test_place_ic_returns_none_when_never_fills():
+    client = _FakeClient([{"status": "pending"}] * len(pp._FILL_POLL_DELAYS_S))
+    ic = pp._place_ic(client, "sid-1", _chosen(), "260731", 660, "2026-07-31T15:00:00Z", 7448.82)
+    assert ic is None
+    assert len(client.clocks_set) == len(pp._FILL_POLL_DELAYS_S)  # exhausts every poll before giving up
+
+
+def test_place_ic_accepts_a_synchronous_fill_without_polling():
+    class _SyncFillClient(_FakeClient):
+        def place(self, sid, order):
+            self.placed = order
+            return 201, {"fill_price": "2.20", "fees": "6.88"}
+
+    client = _SyncFillClient([])
+    ic = pp._place_ic(client, "sid-1", _chosen(), "260731", 660, "2026-07-31T15:00:00Z", 7448.82)
+    assert ic is not None
+    assert ic["net_credit"] == 2.20
+    assert client.clocks_set == []  # no polling needed when the response already carries a fill
+
+
 # ── SPX-eligible profile selection ───────────────────────────────────────────
 
 
