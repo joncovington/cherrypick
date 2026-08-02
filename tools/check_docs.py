@@ -10,6 +10,13 @@ idea for the guardrails that live in every CLAUDE.md:
   3. No unmasked account numbers (the "mask to ****1234" guardrail).
   4. No out-of-repo pointers presented as authoritative (e.g. `~/.claude/plans/...`), which is how
      78KB of design ended up living on exactly one machine, untracked.
+  5. No stale paths in ASCII file-layout trees. These are hand-maintained and drift silently: the
+     namespace migration moved every module to src/cherrypick/<pkg>/ and both package READMEs still
+     drew a flat src/, while two deleted slash commands stayed listed for a whole cleanup pass. A
+     tree is a claim about the filesystem, so it can be checked like one.
+  6. No unclosed markdown links -- `](path` with no `)`. Rule 2's regex needs the closing paren to
+     match at all, so a truncated link is invisible to it: the link renders as literal text and the
+     broken-link check never fires. Exactly one existed, and it had survived several doc passes.
 
 Run: python tools/check_docs.py
 Exits non-zero on any finding, printing `path:line: message` so it reads like a linter.
@@ -35,6 +42,20 @@ _HOME_POINTER = re.compile(r"~[\\/]\.claude[\\/]")
 # 5+ consecutive digits adjacent to account wording, but not a masked ****1234 and not a year/port.
 _ACCOUNT = re.compile(r"account[^\n]{0,24}?\b(?<!\*)(\d{5,})\b", re.I)
 _MD_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+#: `](` that never closes on its line. Anchored on the same line deliberately -- a genuine multi-line
+#: link is not idiomatic here, and allowing them would hide the truncation this is meant to catch.
+_MD_LINK_OPEN = re.compile(r"\]\(([^)\n]*)$")
+_FENCE = re.compile(r"^\s*```")
+#: A tree row: leading indent (spaces plus the │ continuation bars), a branch marker, then the name.
+_TREE_ROW = re.compile(r"^(?P<indent>[\s│|]*)(?:├──|└──|\|--|`--)\s*(?P<name>\S+)")
+#: Placeholders (`eod-<date>.md`, `*.log`, `…`) name a shape, not a file. Nothing to resolve.
+_PLACEHOLDER = ("<", ">", "*", "?", "...", "…")
+#: A tree row may say outright that its entry is runtime-created and therefore absent from a fresh
+#: checkout ("logs/  # Created at first run (gitignored; all rotated)"). Believe the annotation --
+#: it is the author declaring the absence is intended, which is exactly what this check should not
+#: flag. git check-ignore cannot settle it: a directory-only pattern like `logs/` will not match a
+#: path that does not exist yet, because git cannot tell it is a directory.
+_RUNTIME_MARKERS = ("gitignored", "created at", "created on", "at first run", "runtime")
 
 TEXT_SUFFIXES = {".md", ".toml", ".ini", ".cfg", ".yml", ".yaml", ".json", ".ps1", ".sh", ".py"}
 DOC_SUFFIXES = {".md"}
@@ -72,6 +93,75 @@ def _is_test(rel: str) -> bool:
 #: exempt their own rule definitions for exactly this reason. Contorting the strings to dodge a
 #: self-match would make the code worse to read for no gain.
 SELF = "tools/check_docs.py"
+
+
+def _check_trees(rel: str, lines: list[str]) -> list[str]:
+    """Resolve every path drawn in a fenced ASCII file-layout tree, and report the ones that vanished.
+
+    Scoped tightly on purpose, because a tree diagram is a loose format and over-reach here would be
+    worse than no check at all:
+
+    * Only fenced blocks whose root line ends in `/` are treated as file layouts. `reporting-and-
+      dashboard.md` draws a *dataflow* with the same box characters (`report.run(session=day) ──►`);
+      its root is an expression, not a directory, so it is skipped rather than nonsensically resolved.
+    * Roots outside the repo (`~/.cherrypick/data/meic/`) are skipped -- runtime state, not the tree.
+    * A row is only judged when its parent directory actually exists. `logs/` is gitignored and absent
+      from a fresh checkout, so its children are unknowable, not wrong.
+    * Existence is checked on disk, not against git. `.claude/settings.json` is gitignored but real,
+      and a tree may legitimately draw it.
+    """
+    findings: list[str] = []
+    in_fence = False
+    stack: list[tuple[int, str]] = []  # (indent column, directory name)
+    base: Path | None = None
+    prefix = ""
+
+    for n, line in enumerate(lines, 1):
+        if _FENCE.match(line):
+            in_fence = not in_fence
+            stack, base, prefix = [], None, ""
+            continue
+        if not in_fence:
+            continue
+
+        row = _TREE_ROW.match(line)
+        if not row:
+            # The root line: the last non-empty line before the first branch, ending in a slash.
+            text = line.strip()
+            if text.endswith("/") and not text.startswith(("~", "/")) and "://" not in text:
+                root = text.rstrip("/")
+                # The root line usually names the repo itself ("cherrypick/"), which is not a
+                # directory *inside* the repo -- and need not match the checkout's folder name (this
+                # one is still cloned as "cherrypick-next"). Treat it as a prefix only when it really
+                # resolves to a directory; otherwise it denotes the repo root.
+                base, prefix = ROOT, root if (ROOT / root).is_dir() else ""
+                stack = []
+            continue
+
+        if base is None:  # a tree we chose not to interpret (e.g. the dataflow diagram)
+            continue
+
+        col, name = len(row.group("indent")), row.group("name")
+        while stack and stack[-1][0] >= col:
+            stack.pop()
+
+        if any(tok in name for tok in _PLACEHOLDER):
+            if name.endswith("/"):
+                stack.append((col, name.rstrip("/")))
+            continue
+
+        parts = [prefix] if prefix else []
+        parts += [d for _, d in stack] + [name.rstrip("/")]
+        target = base.joinpath(*parts)
+
+        if name.endswith("/"):
+            stack.append((col, name.rstrip("/")))
+        comment = line.split("#", 1)[1].lower() if "#" in line else ""
+        if any(mark in comment for mark in _RUNTIME_MARKERS):
+            continue
+        if target.parent.exists() and not target.exists():
+            findings.append(f"{rel}:{n}: file-layout tree lists {'/'.join(parts)!r}, which does not exist")
+    return findings
 
 
 def check(paths: list[Path]) -> list[str]:
@@ -114,6 +204,12 @@ def check(paths: list[Path]) -> list[str]:
                         continue
                     if not (path.parent / t).exists():
                         findings.append(f"{rel}:{n}: broken relative link -> {t}")
+                if m := _MD_LINK_OPEN.search(line):
+                    findings.append(
+                        f"{rel}:{n}: unclosed markdown link -> '({m.group(1)}' is missing its ')' "
+                        "(it renders as literal text, and the broken-link check cannot see it)"
+                    )
+            findings += _check_trees(rel, lines)
     return findings
 
 

@@ -125,7 +125,7 @@ This package lives at `packages/earnings/` inside the [cherrypick](../../../READ
 cherrypick/
 ├── packages/core/                # Shared cherrypick.core library (in-repo package: calendar, fees)
 └── packages/earnings/           # ← this package (cherrypick-earnings)
-    ├── src/
+    ├── src/cherrypick/earnings/  # the cherrypick.earnings namespace package
     │   ├── strategies/          # 6 defined-risk strategy modules
     │   │   ├── iron_fly.py
     │   │   ├── iron_condor.py
@@ -138,14 +138,14 @@ cherrypick/
     │   ├── sizing.py            # Code-enforced risk-cap sizing
     │   ├── costs.py             # Cost model over cherrypick.core.fees
     │   ├── tt.py                # tastytrade broker interface
-    │   ├── db.py / db_paper.py  # Persistence (live / paper, separate SQLite files)
+    │   ├── db.py                # Persistence, live ledger (db_paper.py is the paper twin)
     │   ├── paths.py             # Resolves the data home (~/.cherrypick/data/earnings)
     │   ├── strategy_test_runner.py  # Forced-sampling paper-testing program (orchestrator-driven)
-    │   ├── strategy_report.py / strategy_dashboard.py  # Per-strategy metrics & charts
+    │   ├── strategy_report.py   # Per-strategy metrics (strategy_dashboard.py draws the charts)
     │   └── ...
     ├── config/
     │   ├── config.example.json  # Template — copy to config.json
-    │   └── config.json          # Your actual settings (gitignored)
+    │   └── config.json          # Your actual settings (created on first setup; gitignored)
     ├── tests/                   # Unit tests
     ├── docs/                    # This documentation
     ├── CLAUDE.md                # Authoritative operational spec
