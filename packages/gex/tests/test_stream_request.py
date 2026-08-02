@@ -14,7 +14,12 @@ import stream_request  # noqa: E402
 def test_register_writes_deduped_upper_symbols(managed_home):
     stream_request.register({"symbols": ["spx", "qqq", "spx"]})
     path = managed_home / "state" / "stream_requests" / "gex.json"
-    assert json.loads(path.read_text()) == {"symbols": ["QQQ", "SPX"], "legs": [], "leg_sources": []}
+    assert json.loads(path.read_text()) == {
+        "symbols": ["QQQ", "SPX"],
+        "legs": [],
+        "leg_sources": [],
+        "window_hints": {},
+    }
 
 
 def test_register_empty_symbols(managed_home):

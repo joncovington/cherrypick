@@ -16,13 +16,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # account-size study, or symbol-agnostic width-study arms (width-*) — those are partial
 # overlays merged onto config.json, not full presets.
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
-EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore", "width"}
+EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore", "width", "gex"}
 # width-* arms are forced-sampling study cells: symbol-agnostic (no `symbols` pin — the
 # (profile x symbol) grain supplies that axis) and deliberately uncapped on concurrency
 # (each structure is an independent sample, not a book), so they're exempt from the
 # symbol-pinning and concurrency-range checks the old small-/medium-/large-/explore-
 # cells are held to below.
+# Study-arm prefixes: symbol-agnostic forced-sampling cells, exempt from the symbol-pinning
+# and concurrency-range checks the old small-/medium-/large-/explore- cells are held to.
 WIDTH_STUDY_PREFIX = "width-"
+STUDY_ARM_PREFIXES = ("width-", "gex-")
 
 
 @pytest.fixture
@@ -93,9 +96,10 @@ def test_moderate_profile_relaxes_gates_appropriately(sample_risk_profiles):
     assert moderate["stop_trigger_ratio"] < conservative["stop_trigger_ratio"]
     assert moderate["stop_trigger_ratio"] == 0.93
 
-    # Trade COUNT is deliberately not a ladder axis — the ladder's axis is riskier trades, not more
-    # of them — so the daily target is flat across rungs (and <= max_concurrent_ics everywhere).
-    assert moderate["daily_ic_trade_target"] == conservative["daily_ic_trade_target"] == 2
+    # Trade COUNT is still not a ladder axis — flat across rungs — but since 2026-08-01 the flat
+    # value is the sample-stream cap (200, deliberately never binding) rather than a book's target
+    # of 2. See config.json's _independent_sampling_note.
+    assert moderate["daily_ic_trade_target"] == conservative["daily_ic_trade_target"] == 200
 
 
 def test_aggressive_profile_relaxes_additional_gates(sample_risk_profiles):
@@ -118,16 +122,17 @@ def test_aggressive_profile_relaxes_additional_gates(sample_risk_profiles):
     assert aggressive["min_call_otm_pct"] < moderate["min_call_otm_pct"]
     assert aggressive["min_put_otm_pct"] < moderate["min_put_otm_pct"]
 
-    # Position cap should be lower (offset)
-    assert aggressive["max_concurrent_ics"] < moderate["max_concurrent_ics"]
-    assert aggressive["max_concurrent_ics"] == 3
+    # Position cap is NO LONGER a ladder offset (2026-08-01): every profile runs uncapped as a
+    # sample stream, so there is no book whose size needs offsetting. The rungs now differ only in
+    # entry quality, which is the axis the ladder was always described as having.
+    assert aggressive["max_concurrent_ics"] == moderate["max_concurrent_ics"] == 99
 
     # Stop should be tighter (offset)
     assert aggressive["stop_trigger_ratio"] < moderate["stop_trigger_ratio"]
     assert aggressive["stop_trigger_ratio"] == 0.90
 
-    # Count is not a ladder axis (see moderate test) — flat target, tightened by the position cap.
-    assert aggressive["daily_ic_trade_target"] == moderate["daily_ic_trade_target"] == 2
+    # Count is not a ladder axis (see moderate test) — flat, and now the sample-stream cap.
+    assert aggressive["daily_ic_trade_target"] == moderate["daily_ic_trade_target"] == 200
 
 
 def test_very_aggressive_profile_relaxes_regime_gates(sample_risk_profiles):
@@ -154,12 +159,13 @@ def test_very_aggressive_profile_relaxes_regime_gates(sample_risk_profiles):
     )
     assert very_aggressive["regime_vix1d_ratio_pause_threshold"] == 1.40
 
-    # Offsets should be extreme
-    assert very_aggressive["max_concurrent_ics"] == 2  # Smallest position cap
+    # The stop is now the ONLY offset left: concurrency stopped being a ladder axis on 2026-08-01
+    # when every profile became an uncapped sample stream.
+    assert very_aggressive["max_concurrent_ics"] == 99
     assert very_aggressive["stop_trigger_ratio"] == 0.85  # Tightest stop
 
-    # Count is not a ladder axis — flat target, held at/below the position cap.
-    assert very_aggressive["daily_ic_trade_target"] == 2
+    # Count is not a ladder axis — flat, and now the sample-stream cap.
+    assert very_aggressive["daily_ic_trade_target"] == 200
 
 
 def test_ladder_profiles_have_required_gate_keys(sample_risk_profiles):
@@ -218,8 +224,10 @@ def test_ladder_derived_thresholds_scale_with_each_tier():
         # Ceilings track the tier's own IV floor rather than a shared absolute.
         assert relief_max == pytest.approx(p["min_iv_rank"] + 0.05), tier
         assert paper._late_entry_bias_max(p) == pytest.approx(p["min_iv_rank"] + 0.15), tier
-        # Count is not a ladder axis: flat target, never above the hard position cap.
-        assert p["daily_ic_trade_target"] <= p["max_concurrent_ics"], tier
+        # Count is not a ladder axis: flat across every tier. The old "never above the position
+        # cap" relationship went away on 2026-08-01 -- with concurrency uncapped there is no book
+        # size for the target to sit inside; it is now a never-binding backstop on a sample stream.
+        assert p["daily_ic_trade_target"] == 200, tier
         if prev is not None:
             assert relief_max < prev, "relief ceiling must loosen down the ladder"
         prev = relief_max
@@ -264,8 +272,8 @@ def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):
     declared symbol, and — if they stagger — a daily target + spacing to spread entries."""
     profiles = sample_risk_profiles["profiles"]
     for name in set(profiles) - LADDER:
-        if name.startswith(WIDTH_STUDY_PREFIX):
-            continue  # symbol-agnostic by design — checked in test_width_study_arms below
+        if name.startswith(STUDY_ARM_PREFIXES):
+            continue  # symbol-agnostic by design — checked in the per-study tests below
         p = profiles[name]
         assert isinstance(p.get("symbols"), list) and p["symbols"], f"{name} must pin `symbols`"
         wbs = p.get("wing_widths_by_symbol")
@@ -279,8 +287,14 @@ def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):
 
 
 def test_width_study_arms(sample_risk_profiles):
-    """The four width-study arms exist, are enabled, are symbol-agnostic, and differ from each
-    other in exactly the one variable each is meant to isolate."""
+    """The four width-study arms exist, are symbol-agnostic, and differ from each other in exactly
+    the one variable each is meant to isolate.
+
+    Deliberately does NOT assert they are enabled. Whether an arm is currently running is an
+    operational choice (all four were stood down 2026-08-01, having never traded); whether its
+    DEFINITION is still a valid controlled comparison is the invariant worth pinning, and it is what
+    lets the study resume from these definitions rather than re-deriving them.
+    """
     profiles = sample_risk_profiles["profiles"]
     names = {"width-2", "width-5", "width-10", "width-adaptive"}
     assert names <= set(profiles)
@@ -295,18 +309,20 @@ def test_width_study_arms(sample_risk_profiles):
     reference_sampling = None
     for name in names:
         p = profiles[name]
-        assert p.get("enabled") is True, f"{name} must be enabled"
         assert "symbols" not in p, f"{name} must be symbol-agnostic (no `symbols` key)"
         sampling = {k: p[k] for k in sampling_keys}
         if reference_sampling is None:
             reference_sampling = sampling
         else:
             assert sampling == reference_sampling, f"{name} sampling keys diverge from siblings"
-        assert p["stagger_entries"] is True
-        assert p["min_minutes_between_entries"] == 15
+        assert p["stagger_entries"] is True  # keeps the daily cap HARD and skips over-target floor drift
+        # No metronome since 2026-08-01: entries are paced by strike movement (overlap_scope
+        # "shorts"), the model flies uses. stagger_entries stays on purely for the no-floor-drift
+        # guarantee, which is what keeps every sample facing an identical credit floor.
+        assert p["min_minutes_between_entries"] == 0
+        assert p["overlap_scope"] == "shorts"
         assert p["max_concurrent_ics"] == 99, f"{name} must run uncapped (each trade a sample)"
-        # 20 possible 15-min ticks across the 09:30-14:30 paper window; the cap must never bind.
-        assert p["daily_ic_trade_target"] > 20
+        assert p["daily_ic_trade_target"] >= 200, f"{name}'s cap must never bind"
 
     for name, width in fixed.items():
         p = profiles[name]
@@ -434,4 +450,46 @@ def test_config_json_stale_values_fixed(sample_config):
     assert sample_config["min_credit_pct_of_width"] == 0.15, (
         "min_credit_pct_of_width should be 0.15 (not 0.20 as docs said)"
     )
-    assert sample_config["max_concurrent_ics"] == 4, "max_concurrent_ics should be 4 (not 2 as docs said)"
+    # Was 4 (a book's concurrency cap) until 2026-08-01; now 99, because every profile runs as an
+    # uncapped sample stream. The stale-docs point this test was written to guard still holds --
+    # config.json and the docs must agree -- the agreed value simply changed.
+    assert sample_config["max_concurrent_ics"] == 99, "max_concurrent_ics should be 99 (sample stream)"
+
+
+# --------------------------------------------------------------------------- GEX study (2026-08-01)
+def test_gex_study_arms_differ_in_exactly_one_key(sample_risk_profiles):
+    """The invariant the whole GEX experiment rests on.
+
+    gex-open and gex-blocked exist to answer one question: does refusing entry on confirmed-negative
+    net GEX earn the ~40% of samples it cuts? That answer is only attributable if the two arms are
+    identical in every other respect. If anyone edits one arm and not the other, this fails loudly
+    rather than quietly turning the study into a comparison of two different strategies -- the
+    failure flies recorded twice, where an arm with a wider window out-earned control purely by
+    trading more often and the headline measured trade count instead of the variable under test.
+    """
+    profiles = sample_risk_profiles["profiles"]
+    assert {"gex-open", "gex-blocked"} <= set(profiles)
+    open_arm, blocked = profiles["gex-open"], profiles["gex-blocked"]
+
+    keys = {k for k in set(open_arm) | set(blocked) if not k.startswith("_")}
+    differing = {k for k in keys if open_arm.get(k) != blocked.get(k)}
+    assert differing == {"regime_gex_block_negative"}, f"arms diverge beyond the treatment: {differing}"
+
+    assert open_arm["regime_gex_block_negative"] is False  # control: takes negative-GEX entries
+    assert blocked["regime_gex_block_negative"] is True  # treatment: runs the live policy
+
+
+def test_gex_study_arms_are_forced_sampling(sample_risk_profiles):
+    """Both arms must face the GATE as their only binding constraint — the width study's rule.
+
+    stagger_entries makes daily_ic_trade_target a hard cap, which also skips the over-target
+    credit-floor tightening; without it the two arms would face different floors once one of them
+    ran ahead on entries, and the comparison would silently measure floor drift.
+    """
+    for name in ("gex-open", "gex-blocked"):
+        p = sample_risk_profiles["profiles"][name]
+        assert p["stagger_entries"] is True
+        assert p["min_minutes_between_entries"] == 0  # paced by strike movement, not a clock
+        assert p["overlap_scope"] == "shorts"
+        assert p["max_concurrent_ics"] == 99, f"{name} must run uncapped (each trade a sample)"
+        assert p["daily_ic_trade_target"] >= 200, f"{name}'s daily cap must never bind"

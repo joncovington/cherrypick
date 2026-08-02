@@ -572,11 +572,25 @@ def evaluate_entry(
             if iv_rank < params.get("fomc_post_blackout_min_iv_rank", 0.40) or range_blown:
                 return False, "fomc_post_blackout_insufficient_premium", None
 
+    # `put_strike`/`call_strike` are the SHORT strikes; the longs live in the *_symbol columns.
     open_strikes = set()
+    open_short_pairs = set()
     for ic in open_ics:
         for k in ("put_strike", "call_strike"):
             if ic.get(k) is not None:
                 open_strikes.add(float(ic[k]))
+        if ic.get("put_strike") is not None and ic.get("call_strike") is not None:
+            open_short_pairs.add((float(ic["put_strike"]), float(ic["call_strike"])))
+    # How much of an open IC blocks a new one (2026-08-01):
+    #   "all"    — legacy. Any of the candidate's four strikes touching an open SHORT blocks it,
+    #              which forces successive shorts at least two strikes apart and is the main
+    #              structural brake on samples per session.
+    #   "shorts" — only an exact SHORT-PAIR repeat blocks. The short pair IS the profit zone, the
+    #              way a butterfly's centre is (flies enforces exactly this, one structure per
+    #              centre, for the same reason: a second structure on the same zone doubles the bet
+    #              without adding a zone). Longs may overlap, so adjacent zones can share
+    #              protection and far more independent samples fit in a session.
+    overlap_scope = params.get("overlap_scope", "all")
 
     # Restrict to this profile's own wing shortlist for this symbol and order it per its
     # `wing_selection` (default: widest-first, the fee-drag bias). Taking the first candidate
@@ -601,11 +615,16 @@ def evaluate_entry(
         sp, lp, sc, lc = cand["short_put"], cand["long_put"], cand["short_call"], cand["long_call"]
         wing_width = cand["wing_width"]
 
-        # Strike overlap hard stop (this profile's own open ICs on this symbol)
-        cand_strikes = {sp["strike"], lp["strike"], sc["strike"], lc["strike"]}
-        if cand_strikes & open_strikes:
-            last_reason = "strike_overlap"
-            continue
+        # Overlap hard stop (this profile's own open ICs on this symbol) -- see `overlap_scope`.
+        if overlap_scope == "shorts":
+            if (float(sp["strike"]), float(sc["strike"])) in open_short_pairs:
+                last_reason = "short_pair_occupied"
+                continue
+        else:
+            cand_strikes = {sp["strike"], lp["strike"], sc["strike"], lc["strike"]}
+            if cand_strikes & open_strikes:
+                last_reason = "strike_overlap"
+                continue
 
         # Call delta hard stop
         if sc.get("delta") is None or abs(sc["delta"]) > delta_ceiling:
@@ -1153,14 +1172,31 @@ def process_symbol(
             if entered:
                 row = synthetic_entry_fill(snapshot, name, chosen, params, execution_mode)
                 save_result = _save_trade(row, db_path)
-                actions.append(
-                    {
-                        "entry": "filled",
-                        "ic_order_id": row["ic_order_id"],
-                        "net_credit": row["net_credit"],
-                        "save_result": save_result,
-                    }
-                )
+                # A fill that did not persist is NOT a fill. This check exists because its absence
+                # cost two full sessions: on 2026-07-30/31 the loop logged 186 fills while the
+                # INSERT was failing on five columns the live paper DB had never been migrated to
+                # have (the migration only runs from `db.py init_db`, which nothing calls
+                # automatically). `save_result` was recorded into the log and never inspected, so
+                # every one of those reads as "filled" in the iteration log with no row behind it.
+                # Silent data loss is the one failure mode a paper study cannot absorb.
+                if save_result.get("ok") is False:
+                    actions.append(
+                        {
+                            "entry": "save_failed",
+                            "ic_order_id": row["ic_order_id"],
+                            "net_credit": row["net_credit"],
+                            "error": save_result.get("error"),
+                        }
+                    )
+                else:
+                    actions.append(
+                        {
+                            "entry": "filled",
+                            "ic_order_id": row["ic_order_id"],
+                            "net_credit": row["net_credit"],
+                            "save_result": save_result,
+                        }
+                    )
             else:
                 actions.append({"entry": "skipped", "reason": reason})
         else:
@@ -1172,14 +1208,21 @@ def process_symbol(
     return {"ok": True, "symbol": symbol, "results": results}
 
 
+# Profile-name prefixes whose arms form a controlled study, and whose divergence is therefore
+# worth recording. Generalized from a bare "width-" literal on 2026-08-01 when the GEX study was
+# added -- an arm family with no divergence log loses the study's most informative datum, because a
+# refused entry is an OUTCOME, not missing data, and the iteration log condenses skipped profiles.
+STUDY_ARM_PREFIXES = ("width-", "gex-")
+
+
 def _log_width_divergence(snapshot: dict, results: dict, db_path: str) -> None:
-    """The width study's counterfactual: when one width-* arm entered this tick and a sibling arm
+    """A study's counterfactual: when one arm entered this tick and a sibling arm
     did not, record WHO sat out and WHY (floor / overlap / spacing ...). The iteration log condenses
     skipped profiles, so without this the divergence -- the study's most informative datum, per the
     flies fly_decisions lesson -- would be unrecoverable. Only divergent ticks are written (a tick
     where every arm entered, or every arm skipped, records nothing), so volume stays small.
     Best-effort: a logging hiccup must never disturb the engine."""
-    arms = {n: a for n, a in results.items() if n.startswith("width-")}
+    arms = {n: a for n, a in results.items() if n.startswith(STUDY_ARM_PREFIXES)}
     if not arms:
         return
     entered = [n for n, acts in arms.items() if any(x.get("entry") == "filled" for x in acts)]

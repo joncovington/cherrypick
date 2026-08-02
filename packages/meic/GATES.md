@@ -81,8 +81,10 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
   nothing yet establishes that the trades it cuts would have been worse than the ones it keeps.
   Only 20 trades carry `gex_net_at_entry` (all from 2026-07-28) and no backfill exists. The switch
   is there so a shadow profile with `regime_gex_block_negative: false` can run beside the gated one
-  — same days, one difference — and settle it. Until then the gate stays on by default, but treat
-  it as untested rather than validated.
+  — same days, one difference — and settle it. **That study is now running**: the `gex-open` /
+  `gex-blocked` arm pair, read with `python src/experiment.py` — see
+  [docs/paper-experiments.md](docs/paper-experiments.md#gex-study-2026-08-01--does-the-gex-gate-earn-what-it-cuts).
+  Until it reports, the gate stays on by default, but treat it as untested rather than validated.
 
 ### 8. Zero-Gamma Threat (Symbol-Specific, Non-Blocking)
 - **Trigger**: Price within 0.3% of gamma flip level; close to regime boundary
@@ -125,17 +127,23 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 - **ORB Impact**: Hard block
 
 ### 12. Max Concurrent ICs Gate (Global, Hard Stop)
-- **Trigger**: Already have `max_concurrent_ics` (4) open ICs
+- **Trigger**: Already have `max_concurrent_ics` open ICs
+- **Config**: `max_concurrent_ics` — **99 on every profile since 2026-08-01** (was 4/4/3/2 down the
+  ladder). Independent sampling removed the concurrency cap as a risk offset; see
+  `docs/risk-profiles.md`'s top-of-file note and `docs/paper-experiments.md`'s "Independent sampling"
+  section. Structurally never binds at 99 — kept as a config key, not a live constraint, unless a
+  profile is deliberately given a lower value back for a specific experiment.
 - **Effect**: Reject new IC entries
-- **Config**: `max_concurrent_ics` (4)
 - **Rationale**: Risk management; limits simultaneous directional exposure and stop management load
-- **IC Impact**: Hard block
+- **IC Impact**: Hard block (in practice, never — see above)
 - **ORB Impact**: May also block if position count includes ORB
 
 ### 13. Daily IC Trade Target (Guidance, Soft)
-- **Trigger**: Approaching `daily_ic_trade_target` (2)
+- **Trigger**: Approaching `daily_ic_trade_target`
+- **Config**: `daily_ic_trade_target` — **200 on every profile since 2026-08-01** (was 2). A
+  never-binding backstop now, not a target — a book-sized value of 2 has no meaning once there is no
+  book (see gate 12's note).
 - **Effect**: Do NOT hard-block; instead require higher conviction for additional entries
-- **Config**: `daily_ic_trade_target` (2)
 - **Rationale**: Heuristic guidance on daily activity; buying power is the binding constraint
 - **IC Impact**: Soft guidance (higher selectivity, not a hard stop)
 - **ORB Impact**: Not applicable
@@ -346,8 +354,8 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 | ATR pause | `regime_atr_pause_threshold_pct`, `regime_atr_lookback_days` | 0.015 (1.5% of spot), 5 days | Symbol-specific |
 | OPEX range halt | `quarterly_expiry_max_intraday_range_pct` | 0.005 (0.5% of price) | Symbol-specific, OPEX only |
 | FOMC post-blackout | `fomc_post_blackout_min_iv_rank`, `fomc_post_blackout_max_intraday_range_pct` | 0.40, 0.005 | Account-wide, FOMC only |
-| Max concurrent ICs | `max_concurrent_ics` | 4 | Hard stop |
-| Daily IC target | `daily_ic_trade_target` | 2 | Soft guidance |
+| Max concurrent ICs | `max_concurrent_ics` | 99 (was 4; see gate 12) | Hard stop, never binds |
+| Daily IC target | `daily_ic_trade_target` | 200 (was 2; see gate 13) | Soft guidance, never binds |
 | Delta (call) | `max_call_delta_entry`, `_open_volatile`, `_late` | 0.20, 0.19, 0.19 | Hard stop |
 | OTM (call, put) | `min_call_otm_pct`, `min_put_otm_pct` | 0.35%, 0.30% | Hard stop |
 | OPEX OTM override | `quarterly_expiry_min_call_otm_pct`, `quarterly_expiry_skip_open_volatile` | 0.67%, true | Tighter on OPEX |
