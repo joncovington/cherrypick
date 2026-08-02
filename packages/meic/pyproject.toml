@@ -29,9 +29,8 @@ pythonpath   = ["tests", "src"]
 [tool.ruff]
 line-length = 110
 target-version = "py311"
-# src/_core is the cherrypick-core submodule — it carries its own ruff config and CI; never lint it here.
 # .claude/commands is doc, not source — its fenced code blocks aren't meant to be reformatted.
-extend-exclude = ["src/_core", ".claude"]
+extend-exclude = [".claude"]
 
 [tool.ruff.lint]
 # E/W pycodestyle, F pyflakes, I import-sorting, UP pyupgrade, B bugbear.
@@ -39,15 +38,8 @@ select = ["E", "F", "I", "W", "UP", "B"]
 # E501 (line length) deferred: high churn, low value across existing live code.
 ignore = ["E501"]
 
-[tool.ruff.lint.per-file-ignores]
-# The _core sys.path bootstrap deliberately runs before `import cherrypick.core` (see CUTOVER.md), so the
-# imports below it are not at top of file by design.
-"src/credentials.py" = ["E402"]
-
 [tool.hatch.build.targets.wheel]
 # Flat modules live under src/ and are imported top-level (pytest adds src to pythonpath); map the
-# src/ prefix away so an editable install exposes them the same way. Exclude the _core submodule and
-# tests from the built package.
+# src/ prefix away so an editable install exposes them the same way. Exclude tests from the built package.
 only-include = ["src"]
 sources = ["src"]
-exclude = ["src/_core"]
