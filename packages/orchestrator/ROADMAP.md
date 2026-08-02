@@ -1,5 +1,13 @@
 # cherrypick — Roadmap & Stage 0 status
 
+> **⚠️ Deprecated 2026-08-02.** This file is frozen — a historical record of Stage 0, not a living
+> pointer for "what shipped" or current guardrails. It predates the monorepo, `packages/core`, and
+> the gex/flies/streamer modules, and nothing here is updated as work ships from here on. For current
+> state: guardrails and invariants live in [`CLAUDE.md`](CLAUDE.md) (and each package's own
+> `CLAUDE.md`); "what actually shipped" is git log / commit history, which is more detailed and
+> always accurate, unlike a hand-maintained status file. Its `- [x]` entries below are left as-is —
+> they record real history and rewriting them would be worse than leaving them.
+
 cherrypick is the orchestrator for a trading-tool suite. It drives sibling modules
 (**MEIC**, **Earnings**, and the **GEX** dashboard) in place for **unattended paper-trading data
 collection**, with a watchdog and notifications so a walk-away user is told — or at least has it logged —

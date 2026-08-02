@@ -7,14 +7,16 @@
 > **not** updated as work ships, and it long predates the monorepo, `packages/core`, and the
 > gex/flies/streamer modules.
 >
-> - **What actually shipped** → [`../ROADMAP.md`](../ROADMAP.md)
+> - **What actually shipped** → git log / commit history (`ROADMAP.md` is deprecated as of
+>   2026-08-02 — see its own header; it is frozen, not maintained going forward)
 > - **Current architecture** → [`../CLAUDE.md`](../CLAUDE.md) and the [suite docs](../../../docs/README.md)
 >
 > Sections that were purely point-in-time status (the original "Build Status", "What's next",
 > "Stages 0–8", and Parts 6, 7, 14, 15) are dropped rather than left to read as fact — their content
-> is superseded by ROADMAP.md. Two durable blocks buried inside them are preserved up front. Where a
-> surviving section contains a decision that has since been reversed, it is marked inline with
-> **[SUPERSEDED]** rather than deleted, so the reasoning stays legible.
+> was superseded by ROADMAP.md at the time this document was written. Two durable blocks buried
+> inside them are preserved up front. Where a surviving section contains a decision that has since
+> been reversed, it is marked inline with **[SUPERSEDED]** rather than deleted, so the reasoning
+> stays legible.
 
 ---
 
