@@ -419,13 +419,30 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
             # Module logs now live in the shared logs home (~/.cherrypick/logs/<name>); take just the
             # filename from the configured path so a stale "logs/…" prefix still resolves correctly.
             sources.append((name, cfgmod.module_logs_dir(name) / Path(log_rel).name))
-    log_entries: list[dict[str, Any]] = []
-    for src, path in sources:
-        for raw in _tail(path, tail_n):
-            log_entries.append(_parse_log_line(src, raw))
-    # Most recent last, by timestamp where available; undated lines keep their file order at the end.
-    log_entries.sort(key=lambda e: (e["ts"] is None, e["ts"] or ""))
-    log_entries = log_entries[-tail_n:]
+    # Live loops keep their own log, declared as `modules.<name>.live.log` (the same shape as
+    # paper.log; only flies has one today, since it is the only module with a live loop). It is
+    # tailed into a SEPARATE list and rendered as its own section -- never merged into the paper
+    # stream. Interleaving them would produce a single feed where a live fill and a paper fill are
+    # one scroll apart and distinguishable only by squinting at the module name, which is exactly
+    # the confusion the suite's paper/live separation exists to prevent. Reading the file is
+    # read-only and touches no broker, the same footing as `report --live`.
+    live_sources: list[tuple[str, Path]] = []
+    for name, mcfg in modules_cfg.items():
+        live_rel = (mcfg.get("live") or {}).get("log")
+        if live_rel:
+            live_sources.append((name, cfgmod.module_logs_dir(name) / Path(live_rel).name))
+
+    def _collect(srcs: list[tuple[str, Path]]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for src, path in srcs:
+            for raw in _tail(path, tail_n):
+                out.append(_parse_log_line(src, raw))
+        # Most recent last, by timestamp where available; undated lines keep their file order at the end.
+        out.sort(key=lambda e: (e["ts"] is None, e["ts"] or ""))
+        return out[-tail_n:]
+
+    log_entries = _collect(sources)
+    live_log_entries = _collect(live_sources)
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -441,6 +458,8 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         "eod": _eod_view(cfg, modules_cfg, tz),
         "modules": module_views,
         "logs": log_entries,
+        "live_logs": live_log_entries,
+        "live_logs_configured": bool(live_sources),
         "tasks": _task_views(cfg),
         "modules_installed": _modules_installed_views(cfg),
         "config_summary": _config_summary(cfg),
@@ -803,7 +822,16 @@ def _module_card(mv: dict[str, Any]) -> str:
     )
 
 
-def _log_html(entries: list[dict[str, Any]]) -> str:
+def _live_configured(model: dict[str, Any]) -> bool:
+    """Whether any module declares a live log, so "no lines yet" can be distinguished from
+    "this suite has no live loop at all" — the second should render nothing rather than an
+    empty LIVE-badged panel implying a live surface that does not exist."""
+    return bool(model.get("live_logs_configured"))
+
+
+def _log_html(entries: list[dict[str, Any]], group: str = "paper") -> str:
+    """One tail. `group` namespaces the level-filter buttons so the paper and live tails filter
+    independently — sharing an id would make clicking WARN on one silently retarget the other."""
     if not entries:
         return '<div class="muted">no log lines</div>'
     rows = []
@@ -816,10 +844,17 @@ def _log_html(entries: list[dict[str, Any]]) -> str:
             f'<span class="txt">{html.escape(e["text"])}</span></div>'
         )
     buttons = "".join(f'<button onclick="flt(this,\'{lv}\')" class="on">{lv}</button>' for lv in _LEVELS)
-    return f'<div class="logbar">{buttons}</div><div class="logs">{"".join(rows)}</div>'
+    cls = "logs logs-live" if group == "live" else "logs"
+    return f'<div class="logbar">{buttons}</div><div class="{cls}">{"".join(rows)}</div>'
 
 
 _CSS = """
+.badge-paper{font-size:10px;font-weight:700;letter-spacing:.5px;padding:2px 6px;border-radius:4px;
+ background:rgba(45,212,191,.15);color:var(--accent);vertical-align:middle;margin-left:6px}
+.badge-live{font-size:10px;font-weight:700;letter-spacing:.5px;padding:2px 6px;border-radius:4px;
+ background:rgba(234,57,67,.15);color:var(--neg);vertical-align:middle;margin-left:6px}
+.logs-live-heading{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.logs.logs-live{border-left:2px solid var(--neg)}
 :root{color-scheme:dark;
 --bg:#0a0e12;--panel:#12161c;--border:#232a33;--text:#e6edf3;--muted:#8a97a3;
 --accent:#2dd4bf;--pos:#16c784;--neg:#ea3943;--warn:#f0b429;
@@ -910,9 +945,15 @@ cursor:pointer;padding:0;margin-left:6px;display:none}
 """
 
 _JS = """
+// Scoped to the button's OWN tail (its .logbar's adjacent .logs box). There are two tails now --
+// paper and live -- and a document-wide query made one row of buttons silently retarget the other:
+// hiding WARN in paper also hid it in live while the live buttons still read as ON. Falls back to
+// document only if that structure ever changes, which keeps the single-tail behaviour intact.
 function flt(btn,lvl){btn.classList.toggle('off');btn.classList.toggle('on');
 var show=btn.classList.contains('on');
-document.querySelectorAll('.logline[data-level="'+lvl+'"]').forEach(function(r){r.style.display=show?'':'none'});}
+var box=btn.parentElement?btn.parentElement.nextElementSibling:null;
+var scope=(box&&box.classList&&box.classList.contains('logs'))?box:document;
+scope.querySelectorAll('.logline[data-level="'+lvl+'"]').forEach(function(r){r.style.display=show?'':'none'});}
 
 // Drag-to-reorder lives in cherrypick.core.viz.REORDER_JS now (the suite's one copy,
 // this page's 3-group version was the donor); groups are declared with data-cp-reorder
@@ -1242,9 +1283,37 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     liveops_card = _liveops_card_html() if serve else ""
     eod_card = _eod_card_html(model.get("eod"), serve)
     cards = "".join(_module_card(mv) for mv in model.get("modules", []))
-    logs = '<section class="card"><h2>recent logs</h2>' + _log_html(model.get("logs", [])) + "</section>"
+    # Paper first, then live as its own labelled block underneath. Two tails rather than one merged
+    # feed: a live line must never be one indistinguishable scroll away from a paper line.
+    live_entries = model.get("live_logs", [])
+    live_block = ""
+    if live_entries:
+        live_block = (
+            '<h2 class="logs-live-heading">live logs <span class="badge-live">LIVE</span></h2>'
+            + _log_html(live_entries, group="live")
+        )
+    elif _live_configured(model):
+        # Configured but silent. Say so explicitly — an empty area next to a LIVE badge reads as
+        # "nothing is happening live", which is the one thing this card must never imply by accident.
+        live_block = (
+            '<h2 class="logs-live-heading">live logs <span class="badge-live">LIVE</span></h2>'
+            '<div class="muted" style="padding:6px 2px">no live log lines yet '
+            "(the live loop is armed per-day; absent is normal)</div>"
+        )
+    logs = (
+        '<section class="card"><h2>recent logs <span class="badge-paper">PAPER</span></h2>'
+        + _log_html(model.get("logs", []))
+        + live_block
+        + "</section>"
+    )
+    # The mode tag is a safety label, so it has to describe what is actually on the page. It read a
+    # flat "paper" while a live log tail was rendered directly above it, which understates the page
+    # and trains the reader to stop believing the tag. "read-only" still carries the load-bearing
+    # claim -- the orchestrator drives only paper engines and never places an order; live appears
+    # here as log text and nothing else.
+    mode_tag = "paper + live logs" if live_entries else "paper"
     footer = (
-        '<div class="meta"><span class="muted">read-only · paper · generated '
+        f'<div class="meta"><span class="muted">read-only · {mode_tag} · generated '
         f"{html.escape(str(model.get('generated_at')))}</span>"
         '<button type="button" class="reset-layout" id="reset-layout" '
         'title="Restore the original card order">&#8635; reset layout</button></div>'
