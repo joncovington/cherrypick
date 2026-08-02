@@ -11,8 +11,20 @@ named risk profile (or parallel-shadow paper book) that opened it, and reporting
 tag. Phase C adds the calibration harness's *comparison engine* (`compare_profiles`): group tagged
 trade rows by their attribution tag and apply a module-injected summary per group — the metric math
 stays per-module (it is domain-divergent) while the grouping orchestration is shared. Phase D adds the
-*promotion advisor* (`recommend_promotion`): codify the documented risk-ladder progression into a
-pure, advisory, human-gated recommendation — it never mutates config or switches live risk.
+champion/challenger advisor (`recommend_champion`, `qualify_readings`): a pure, advisory, human-gated
+recommendation of which tag deserves to be live — it never mutates config or switches live risk.
+
+Phase D was originally a fixed-ladder "graduate one rung" model (`recommend_promotion`). Replaced
+2026-08-01: a ladder assumes every module's tags form one ordered, most-to-least-conservative
+sequence, which broke down the moment a module's tags are parallel, unordered experiment arms
+(flies' control/gex/time_window/width-N) rather than risk tiers. Forcing those through "graduate to
+the fixed next list entry" produced a real, reproducible, semantically meaningless recommendation
+(a synthetic fully-qualifying `control` reading returned `"graduate:time_window"`, with no basis for
+that direction — `control` isn't a riskier variant of `time_window`). The replacement drops the
+ordering assumption: a module either designates a `champion` (the tag currently live) and every other
+tag is a challenger judged against it (`recommend_champion`), or has no champion at all and every tag
+just gets a pass/fail qualification reading with no comparison (`qualify_readings`) — which is what
+flies' arms and earnings' profiles actually needed all along.
 """
 
 from __future__ import annotations
@@ -95,65 +107,39 @@ def compare_profiles(rows, *, tag_key: str, summarize, untagged: str = UNTAGGED)
     return {tag: summarize(group) for tag, group in groups.items()}
 
 
-# Documented promotion rule (MEICAgent docs/risk-profiles.md "Recommended progression"):
-# graduate one rung up the risk ladder only after a minimum observation window, a sustained win
-# rate, and a sufficient sample. Overridable per call; the top rung is a deliberate human-chosen
-# experiment ("only deliberately", "not a permanent mode"), so it is never auto-recommended.
-PROMOTION_RULE = {"min_days": 14, "min_win_rate": 0.60, "min_sample": 20}
+# The qualification bar a challenger's reading must clear before its metric is even compared to the
+# champion's (was PROMOTION_RULE — a rung-graduation bar; renamed because these thresholds now gate
+# entry into a COMPARISON, they don't by themselves promote anything anywhere). Overridable per call.
+QUALIFICATION_RULE = {"min_days": 14, "min_win_rate": 0.60, "min_sample": 20}
 
 
-def recommend_promotion(
-    reading: Mapping, current: str, ladder, *, rule: Mapping | None = None, deliberate_only=()
-) -> dict:
-    """Advisory-only: should `current` graduate one rung up `ladder`? (plan Part 10 Phase D)
+def _check(value, threshold) -> dict:
+    return {"value": value, "threshold": threshold, "pass": value is not None and value >= threshold}
 
-    Codifies the documented risk-ladder progression (MEICAgent docs/risk-profiles.md) as a pure
-    recommendation — it NEVER mutates config or switches the live profile. Auto-promoting live risk
-    from paper results is a capital-authority action, kept human-gated (consistent with the
-    governor/watchdog fail-closed philosophy); the caller/human applies the recommendation.
 
-    - `reading`: the current profile's calibration metrics (e.g. one entry from `compare_profiles`),
-      normalized by the caller to a mapping with `"sample"` (int), `"win_rate"` (0..1, or None if
-      too few trades), and `"days"` (distinct sessions observed). The caller extracts these because
-      metric shapes are module-specific (Part 10).
-    - `current`: the active profile tag; must be in `ladder`.
-    - `ladder`: the risk ladder, most→least conservative
-      (e.g. ["conservative", "moderate", "aggressive", "very-aggressive"]).
-    - `rule`: threshold overrides merged onto `PROMOTION_RULE`.
-    - `deliberate_only`: rung tags never auto-recommended (a human opts in explicitly); when the
-      next rung is one of these the verdict is "hold" with that reason.
+def _qualify_one(reading: Mapping, thresholds: Mapping) -> dict:
+    """The threshold checks shared by `recommend_champion` and `qualify_readings` — factored out so
+    the two public functions cannot drift on what "qualified" means. Same three base checks as the
+    old `recommend_promotion` (sample/win_rate/days) plus the two opt-in hardened checks, unchanged:
 
-    Returns `{current, next, eligible, checks, recommendation, reason}`: `checks` maps each threshold
-    name to `{"value", "threshold", "pass"}`; `recommendation` is `"hold"` or `"graduate:<next>"`;
-    `eligible` is True only when every check passes AND the next rung is auto-recommendable.
+    - `min_return_on_capital` — net P&L as a fraction of capital at risk must clear the bar. A
+      reading whose records carry no capital reads None and FAILS: unknown capital cannot certify a
+      capital-efficiency threshold.
+    - `require_slippage_survival` — the reading must stay profitable with the modeled slippage
+      fraction DOUBLED (`net_pnl_2x_slippage > 0`), and the recorded slippage must cover the whole
+      sample: a stress test over part of the evidence certifies nothing.
+
+    Returns `{"qualified": bool, "checks": {name: {value, threshold, pass}}}`.
     """
-    ladder = list(ladder)
-    if current not in ladder:
-        raise ValueError(f"current profile {current!r} not in ladder {ladder}")
-    thresholds = {**PROMOTION_RULE, **(rule or {})}
-    idx = ladder.index(current)
-    nxt = ladder[idx + 1] if idx + 1 < len(ladder) else None
-
-    def _check(value, threshold):
-        return {"value": value, "threshold": threshold, "pass": value is not None and value >= threshold}
-
     checks = {
         "sample": _check(reading.get("sample"), thresholds["min_sample"]),
         "win_rate": _check(reading.get("win_rate"), thresholds["min_win_rate"]),
         "days": _check(reading.get("days"), thresholds["min_days"]),
     }
-    # Hardened checks, opt-in via rule keys (absent keys change nothing for existing callers):
-    #
-    # min_return_on_capital — net P&L as a fraction of capital at risk must clear the bar.
-    # A reading whose records carry no capital reads None and FAILS the check: unknown
-    # capital cannot certify a capital-efficiency threshold.
     if "min_return_on_capital" in thresholds:
         checks["return_on_capital"] = _check(
             reading.get("return_on_capital"), thresholds["min_return_on_capital"]
         )
-    # require_slippage_survival — the reading must stay profitable with the modeled
-    # slippage fraction DOUBLED (net_pnl_2x_slippage > 0), and the recorded slippage must
-    # cover the whole sample: a stress test over part of the evidence certifies nothing.
     if thresholds.get("require_slippage_survival"):
         stressed = reading.get("net_pnl_2x_slippage")
         full_coverage = (reading.get("slippage_coverage") or 0) >= (reading.get("sample") or 0) > 0
@@ -162,35 +148,154 @@ def recommend_promotion(
             "threshold": "net > 0 at 2x slippage over the full sample",
             "pass": bool(full_coverage and stressed is not None and stressed > 0),
         }
+    return {"qualified": all(c["pass"] for c in checks.values()), "checks": checks}
 
-    def _verdict(eligible, recommendation, reason):
-        return {
-            "current": current,
-            "next": nxt,
-            "eligible": eligible,
-            "checks": checks,
-            "recommendation": recommendation,
-            "reason": reason,
+
+def qualify_readings(readings: Mapping[str, Mapping], *, rule: Mapping | None = None) -> dict:
+    """Per-tag qualification only — no champion, no comparison, no promotion verdict.
+
+    For a module whose tags are parallel, unordered experiments (flies' control/gex/time_window/
+    width-N arms; earnings' profiles) rather than a risk sequence with one currently-live reference
+    to compare against. Applies the exact same threshold checks `recommend_champion` uses to every
+    tag independently. `calibrate.py` selects this function over `recommend_champion` based on
+    whether a module's config declares a `champion` — this function doesn't know about that key,
+    callers choose it.
+
+    Returns `{tag: {"qualified": bool, "checks": {...}}}` — deliberately no `recommendation`, no
+    `eligible`, no cross-tag comparison anywhere in the shape. That absence is itself the fix for the
+    bug this replaces: a fully-qualifying reading fed through the old ladder model returned
+    `"graduate:<next>"` even when "next" was an unrelated parallel arm; fed through this function it
+    cannot produce anything resembling a promotion, because the shape has nowhere to put one.
+    """
+    thresholds = {**QUALIFICATION_RULE, **(rule or {})}
+    return {tag: _qualify_one(reading, thresholds) for tag, reading in readings.items()}
+
+
+def recommend_champion(
+    readings: Mapping[str, Mapping],
+    champion: str | None,
+    *,
+    rule: Mapping | None = None,
+    deliberate_only=(),
+    margin: float = 0.0,
+) -> dict:
+    """Advisory-only: does any challenger beat the current champion? (replaces the fixed-ladder
+    `recommend_promotion` — plan Part 10 Phase D, champion/challenger revision, 2026-08-01)
+
+    The ladder model assumed risk profiles form one conservative-to-aggressive sequence and a
+    profile only ever "graduates" to its fixed next rung. That is the wrong shape for the actual
+    question — *which currently-tested configuration has earned the right to replace what's live* —
+    which is a selection among competitors, not an ordinal climb. This function compares the tag
+    that is currently live (`champion`) against every OTHER tag in `readings` (`challengers`), not
+    just an adjacent one, so a challenger can win outright without first "graduating through"
+    whatever used to sit between it and the champion in a list. It NEVER mutates config or switches
+    the live profile — auto-promoting live risk from paper results is a capital-authority action,
+    kept human-gated (consistent with the governor/watchdog fail-closed philosophy); the
+    caller/human applies the recommendation.
+
+    - `readings`: `{tag: reading}` for every tag observed this epoch — typically `compare_profiles`'s
+      return value directly. The WHOLE table, not one profile's reading, because every non-champion
+      tag is a candidate challenger. A tag absent from `readings` (no closed trades yet) is simply
+      absent from `challengers`, not an error.
+    - `champion`: the tag currently live for this module. Champions with no reading at all
+      (`champion not in readings` — brand new, zero closed trades) degrade gracefully: every
+      qualified, non-`deliberate_only` challenger trivially beats a champion with nothing to lose to.
+      The champion's OWN reading is never required to itself clear `QUALIFICATION_RULE` — it is
+      already live; requiring it to re-qualify every reading period would make a freshly-promoted
+      champion briefly unbeatable by construction, re-introducing the rigidity this replaces.
+    - `rule`: threshold overrides merged onto `QUALIFICATION_RULE`.
+    - `deliberate_only`: tags never auto-recommended even when they qualify and beat the champion
+      outright (a human opts in explicitly) — e.g. an experimental arm allowed to run and be
+      measured, but never silently promoted to champion.
+    - `margin`: how much a challenger's ranking metric must exceed the champion's before it "beats"
+      the champion (default 0.0 — any positive edge counts).
+
+    Ranking metric, decided independently per champion/challenger pairing: `return_on_capital` when
+    BOTH sides carry a non-None value, else `net_pnl` (see `cherrypick.core.metrics.
+    calibration_reading`'s own docstring — "a 2-wide and a 10-wide IC must not weigh equally"; net
+    P&L alone rewards bigger size, not better risk-adjusted return). Never forces a missing value to
+    0 — that would be exactly the "misleadingly precise zero" `metrics.py` warns against.
+
+    Returns `{champion, champion_metric, challengers, eligible, recommendation, reason}`.
+    `challengers` maps every non-champion tag in `readings` to `{qualified, checks, metric,
+    beats_champion, deliberate_only}` — `checks` is the same `{name: {value, threshold, pass}}` shape
+    the old ladder model used, unchanged. `eligible` is True iff at least one qualified,
+    non-`deliberate_only` challenger beats the champion by >= `margin`; `recommendation` is
+    `"retain:<champion>"` or `"champion:<tag>"` for the single best such challenger (highest metric
+    value; first-seen order — matching `compare_profiles`'s own determinism — breaks an exact tie). A
+    challenger's own `beats_champion` is always reported even when it isn't the overall winner or is
+    vetoed by `deliberate_only`, so a caller can distinguish "qualified, ahead, but never
+    auto-recommended" from "qualified, not yet ahead."
+    """
+    thresholds = {**QUALIFICATION_RULE, **(rule or {})}
+    champion_reading = readings.get(champion) if champion is not None else None
+    champion_metric = _metric(champion_reading) if champion_reading is not None else None
+
+    challengers: dict[str, dict] = {}
+    for tag, reading in readings.items():
+        if tag == champion:
+            continue
+        q = _qualify_one(reading, thresholds)
+        metric = _metric(reading)
+        beats = _beats(metric, champion_metric, margin)
+        challengers[tag] = {
+            "qualified": q["qualified"],
+            "checks": q["checks"],
+            "metric": metric,
+            "beats_champion": bool(q["qualified"] and beats),
+            "deliberate_only": tag in deliberate_only,
         }
 
-    if nxt is None:
-        return _verdict(False, "hold", f"{current} is the top of the ladder; nothing to graduate to.")
-    if nxt in deliberate_only:
-        return _verdict(
-            False,
-            "hold",
-            f"graduating to {nxt} is a deliberate, human-chosen experiment -- never auto-recommended.",
+    winners = {
+        tag: c
+        for tag, c in challengers.items()
+        if c["beats_champion"] and not c["deliberate_only"]
+    }
+    if winners:
+        best = max(winners, key=lambda t: winners[t]["metric"]["value"])
+        eligible, recommendation = True, f"champion:{best}"
+        c = winners[best]
+        reason = (
+            f"{best} qualified and beats champion {champion} on {c['metric']['name']} "
+            f"({_fmt_metric(c['metric'])} vs {_fmt_metric(champion_metric)}); recommending promotion."
         )
-    if all(c["pass"] for c in checks.values()):
-        return _verdict(
-            True,
-            f"graduate:{nxt}",
-            f"{current} met every threshold over {reading.get('days')} sessions "
-            f"(win rate {reading.get('win_rate')}, {reading.get('sample')} trades); "
-            f"eligible to graduate to {nxt}.",
-        )
-    failed = [name for name, c in checks.items() if not c["pass"]]
-    return _verdict(False, "hold", f"hold {current}: {', '.join(failed)} below threshold.")
+    else:
+        eligible, recommendation = False, f"retain:{champion}"
+        reason = f"no qualified, non-deliberate-only challenger beats champion {champion}; retaining."
+
+    return {
+        "champion": champion,
+        "champion_metric": champion_metric,
+        "challengers": challengers,
+        "eligible": eligible,
+        "recommendation": recommendation,
+        "reason": reason,
+    }
+
+
+def _metric(reading: Mapping) -> dict:
+    """`{"name": "return_on_capital" | "net_pnl", "value": float}` for one reading. Prefers
+    return_on_capital (never forced from a missing value); net_pnl is always numeric on a
+    `calibration_reading`, so this never returns a None value."""
+    roc = reading.get("return_on_capital")
+    if roc is not None:
+        return {"name": "return_on_capital", "value": roc}
+    return {"name": "net_pnl", "value": reading.get("net_pnl", 0.0)}
+
+
+def _beats(challenger_metric: dict, champion_metric: dict | None, margin: float) -> bool:
+    """Does the challenger's metric exceed the champion's by at least `margin`? A champion with no
+    metric at all (no reading yet) has nothing to lose to -- any challenger trivially beats it."""
+    if champion_metric is None:
+        return True
+    return challenger_metric["value"] - champion_metric["value"] >= margin
+
+
+def _fmt_metric(metric: dict | None) -> str:
+    if metric is None:
+        return "n/a (no champion reading)"
+    value = metric["value"]
+    return f"{value * 100:.1f}%" if metric["name"] == "return_on_capital" else f"{value:.2f}"
 
 
 def merge_profile(
