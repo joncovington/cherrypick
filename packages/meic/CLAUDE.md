@@ -44,7 +44,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 ---
 
 > ⚠️ This file is strictly for build commands, tech-stack reference, and project guidelines:
-> - **No code here** — no Python, scripts, code snippets or fenced code blocks, and no scratchpad logic, changelogs, or task trackers. Scratch work goes in a `.tmp/` file you delete when done.
+> - **No code here** — no Python, no scripts, no logic, and no scratchpad content, changelogs, or task trackers. Scratch work goes in a `.tmp/` file you delete when done. A fenced block holding **build/run commands you'd type at a shell** (the Commands section above) is fine and is the point of this file; a fenced block holding *program logic* is not.
 > - **Mask account numbers** to the last 4 digits (`****1234`) anywhere they surface; never log or display a full one.
 > - **Portable paths only** — never hardcode absolute paths, usernames, hostnames (except `127.0.0.1`/`localhost`), or drive letters; derive from `Path(__file__)`, an env var, or config. Keep working files in `/src`, `/tests`, `/docs`, `/config`, not the repo root.
 > - **Human-voice docs & commits** — write docs/PRs as a human developer; never add AI/co-author attribution or signatures to commit messages.

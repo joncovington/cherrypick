@@ -10,6 +10,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Repo-wide documentation guardrails (portable paths, no out-of-repo pointers, masked accounts,
+  # no broken relative links). Separate from the package matrix because it is inherently cross-package
+  # -- a link in one package's docs routinely points at another's.
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Check docs guardrails
+        run: python tools/check_docs.py
+
   test:
     runs-on: ubuntu-latest
     strategy:
