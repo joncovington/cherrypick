@@ -68,9 +68,8 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-for _p in (_HERE, os.path.join(_HERE, "_core")):
-    if os.path.isdir(_p) and _p not in sys.path:
-        sys.path.insert(0, _p)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
 from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import home as _home  # noqa: E402

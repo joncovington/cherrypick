@@ -21,19 +21,12 @@ Precondition: MEIC's streamer must be running, and must be subscribed to the sym
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
-import sys
 import time
 from datetime import date, datetime
 from pathlib import Path
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_CORE = os.path.join(_HERE, "_core")
-if os.path.isdir(_CORE) and _CORE not in sys.path:
-    sys.path.insert(0, _CORE)
-
-from cherrypick.core.gex import compute_gex  # noqa: E402
+from cherrypick.core.gex import compute_gex
 
 try:
     from zoneinfo import ZoneInfo
@@ -155,9 +148,7 @@ def snapshot_kwargs(config: dict) -> dict:
     thing that goes wrong by being applied in three places out of four."""
     defaults = config.get("defaults", {}) or {}
     return {
-        "max_quote_age_seconds": defaults.get(
-            "max_quote_age_seconds", DEFAULT_MAX_QUOTE_AGE_SECONDS
-        ),
+        "max_quote_age_seconds": defaults.get("max_quote_age_seconds", DEFAULT_MAX_QUOTE_AGE_SECONDS),
         "max_gex_input_age_seconds": defaults.get(
             "max_gex_input_age_seconds", DEFAULT_MAX_GEX_INPUT_AGE_SECONDS
         ),

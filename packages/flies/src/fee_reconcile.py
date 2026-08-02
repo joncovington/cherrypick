@@ -35,9 +35,8 @@ import sys
 from datetime import date, timedelta
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-for _p in (_HERE, os.path.join(_HERE, "_core")):
-    if os.path.isdir(_p) and _p not in sys.path:
-        sys.path.insert(0, _p)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
 import clock  # noqa: E402
 import db as dbmod  # noqa: E402
@@ -75,9 +74,7 @@ def _position_leg_symbols(position: dict) -> list[str]:
 
 
 def _fee_total(txn: dict) -> float:
-    return sum(
-        abs(float(txn[field])) for field in _FEE_FIELDS if txn.get(field) not in (None, "")
-    )
+    return sum(abs(float(txn[field])) for field in _FEE_FIELDS if txn.get(field) not in (None, ""))
 
 
 def pending_reconciliation(conn, symbol: str, lookback_days: int = 5, today: str | None = None) -> list[str]:
@@ -118,9 +115,13 @@ def _update_book_rollup(conn, book_id: str) -> None:
         "UPDATE fly_books SET modeled_pnl = COALESCE(modeled_pnl, ?), modeled_fees = COALESCE(modeled_fees, ?), "
         "pnl = ?, fees = ?, broker_reconciled_at = ?, broker_reconciliation_status = ? WHERE book_id = ?",
         (
-            book["pnl"], book["fees"],
-            round(agg["pnl"] or 0.0, 2), round(agg["fees"] or 0.0, 2),
-            clock.now_iso(), status, book_id,
+            book["pnl"],
+            book["fees"],
+            round(agg["pnl"] or 0.0, 2),
+            round(agg["fees"] or 0.0, 2),
+            clock.now_iso(),
+            status,
+            book_id,
         ),
     )
     conn.commit()
@@ -139,8 +140,12 @@ def reconcile_date(conn, trade_date: str, symbol: str, transactions: list[dict],
         ).fetchall()
     ]
     result = {
-        "trade_date": trade_date, "symbol": symbol,
-        "reconciled": [], "unmatched": [], "variance": [], "fee_variance": [],
+        "trade_date": trade_date,
+        "symbol": symbol,
+        "reconciled": [],
+        "unmatched": [],
+        "variance": [],
+        "fee_variance": [],
     }
     if not positions:
         return result
@@ -149,15 +154,19 @@ def reconcile_date(conn, trade_date: str, symbol: str, transactions: list[dict],
     for position in positions:
         book_ids.add(position["book_id"])
         order_ids = {
-            str(position[k]) for k in ("entry_order_id", "completion_order_id", "close_order_id") if position.get(k)
+            str(position[k])
+            for k in ("entry_order_id", "completion_order_id", "close_order_id")
+            if position.get(k)
         }
         trade_txns = [
-            t for t in transactions
+            t
+            for t in transactions
             if t.get("transaction_type") == _TRADE_TRANSACTION_TYPE and str(t.get("order_id")) in order_ids
         ]
         leg_symbols = set(_position_leg_symbols(position))
         settlement_txns = [
-            t for t in transactions
+            t
+            for t in transactions
             if t.get("transaction_type") == _SETTLEMENT_TRANSACTION_TYPE
             and t.get("symbol") in leg_symbols
             and t.get("transaction_date") == trade_date
@@ -192,10 +201,18 @@ def reconcile_date(conn, trade_date: str, symbol: str, transactions: list[dict],
             "broker_reconciled_at = ?, broker_reconciliation_status = 'reconciled' "
             "WHERE position_id = ?",
             (
-                position.get("net"), position.get("fees"), position.get("gross_pnl"), position.get("pnl"),
+                position.get("net"),
+                position.get("fees"),
+                position.get("gross_pnl"),
+                position.get("pnl"),
                 position.get("expiry_payoff"),
-                round(real_net, 4), real_fees, real_gross, real_pnl, round(real_payoff, 4),
-                clock.now_iso(), position["position_id"],
+                round(real_net, 4),
+                real_fees,
+                real_gross,
+                real_pnl,
+                round(real_payoff, 4),
+                clock.now_iso(),
+                position["position_id"],
             ),
         )
         conn.commit()
@@ -233,10 +250,17 @@ def reconcile_date(conn, trade_date: str, symbol: str, transactions: list[dict],
         result["fee_variance"].extend(fee_variance)
 
         result["variance"].append(
-            {"position_id": position["position_id"], "modeled_pnl": modeled_pnl, "broker_pnl": real_pnl, "delta": delta}
+            {
+                "position_id": position["position_id"],
+                "modeled_pnl": modeled_pnl,
+                "broker_pnl": real_pnl,
+                "delta": delta,
+            }
         )
         if abs(delta) > 1.0:
-            log(f"fee_reconcile WARN: {position['position_id']} modeled {modeled_pnl} vs broker {real_pnl} (delta {delta})")
+            log(
+                f"fee_reconcile WARN: {position['position_id']} modeled {modeled_pnl} vs broker {real_pnl} (delta {delta})"
+            )
 
     for book_id in book_ids:
         _update_book_rollup(conn, book_id)
@@ -265,7 +289,9 @@ async def _reconcile_all(conn, symbol: str, dates: list[str], *, log=print) -> l
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Reconcile the flies LIVE ledger against actual broker cash flow.")
+    ap = argparse.ArgumentParser(
+        description="Reconcile the flies LIVE ledger against actual broker cash flow."
+    )
     ap.add_argument("--symbol", required=True)
     ap.add_argument("--date", help="A single trade_date (YYYY-MM-DD). Default: every pending date.")
     ap.add_argument("--lookback-days", type=int, default=5)
@@ -279,7 +305,11 @@ def main() -> int:
         return 0
 
     results = asyncio.run(_reconcile_all(conn, args.symbol, dates))
-    print(json.dumps({"ok": True, "symbol": args.symbol, "pending": dates, "results": results}, indent=2, default=str))
+    print(
+        json.dumps(
+            {"ok": True, "symbol": args.symbol, "pending": dates, "results": results}, indent=2, default=str
+        )
+    )
     return 0
 
 

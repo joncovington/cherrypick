@@ -21,9 +21,6 @@ from pathlib import Path
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
-_CORE = os.path.join(_HERE, "_core")
-if os.path.isdir(_CORE) and _CORE not in sys.path:
-    sys.path.insert(0, _CORE)
 
 from cherrypick.core import viz  # noqa: E402
 
@@ -293,7 +290,9 @@ def _regime_paragraph(coverage: dict, conn) -> str:
             thin.append(dim)
             continue
         spread = ", ".join(f"{b} {n}" for b, n in info["buckets"].items())
-        lines.append(f"- **{dim}** — {info['tagged']}/{total} tagged ({_drag(info['coverage_pct'])}): {spread}")
+        lines.append(
+            f"- **{dim}** — {info['tagged']}/{total} tagged ({_drag(info['coverage_pct'])}): {spread}"
+        )
         if info["degenerate"]:
             degenerate.append(dim)
 

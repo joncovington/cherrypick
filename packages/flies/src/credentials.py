@@ -15,15 +15,9 @@ from __future__ import annotations
 
 import getpass
 import json
-import os
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_CORE = os.path.join(_HERE, "_core")
-if os.path.isdir(_CORE) and _CORE not in sys.path:
-    sys.path.insert(0, _CORE)
-
-from cherrypick.core.auth import (  # noqa: E402
+from cherrypick.core.auth import (
     ACCOUNT_NUMBER,
     SHARED_SERVICE,
     CredentialError,

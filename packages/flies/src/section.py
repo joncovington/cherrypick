@@ -17,9 +17,6 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
-_CORE = os.path.join(_HERE, "_core")
-if os.path.isdir(_CORE) and _CORE not in sys.path:
-    sys.path.insert(0, _CORE)
 
 from cherrypick.core import viz  # noqa: E402
 
