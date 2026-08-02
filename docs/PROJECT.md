@@ -55,8 +55,8 @@ reconciliation check, and (for flies) a deliberately narrow, manually-armed live
 
 ```bash
 # Download the project
-git clone https://github.com/joncovington/cherrypick-next.git
-cd cherrypick-next
+git clone https://github.com/joncovington/cherrypick.git
+cd cherrypick
 
 # Install the shared core library first, then the orchestrator
 # (scripts/dev-install.ps1 or .sh does this step, and every package's, in one command)

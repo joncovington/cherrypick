@@ -36,9 +36,9 @@ package, or `import cherrypick.core...` can't resolve.
 ## Quick Start
 
 ```bash
-# Clone the cherrypick-next monorepo
-git clone https://github.com/joncovington/cherrypick-next.git
-cd cherrypick-next/packages/earnings
+# Clone the cherrypick monorepo
+git clone https://github.com/joncovington/cherrypick.git
+cd cherrypick/packages/earnings
 
 python -m venv venv && source venv/bin/activate   # venv\Scripts\activate on Windows
 pip install -e ../core                             # shared cherrypick.core library, install first

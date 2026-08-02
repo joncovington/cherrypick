@@ -40,9 +40,9 @@ Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`*
 Then download the suite and move into this package's folder:
 
 ```bash
-# 1. Clone the cherrypick-next monorepo
-git clone https://github.com/joncovington/cherrypick-next.git
-cd cherrypick-next/packages/meic
+# 1. Clone the cherrypick monorepo
+git clone https://github.com/joncovington/cherrypick.git
+cd cherrypick/packages/meic
 ```
 
 Every command below is run from inside `packages/meic`. On macOS/Linux, if `python`/`pip` aren't found, use `python3`/`pip3` instead.
@@ -218,7 +218,7 @@ Everything runs locally against your own tastytrade account — no cloud depende
 This package lives at `packages/meic/` inside the [cherrypick](../../README.md) monorepo:
 
 ```
-cherrypick-next/
+cherrypick/
 ├── packages/core/                   # Shared cherrypick.core library (in-repo package: calendar, fees)
 └── packages/meic/                   # ← this package (cherrypick-meic)
     ├── CLAUDE.md                    # Agent operational brain (loaded every loop iteration)

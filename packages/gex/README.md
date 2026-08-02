@@ -43,8 +43,8 @@ dashboard shows the last cached snapshot rather than live data.
 ## Setup
 
 ```bash
-git clone https://github.com/joncovington/cherrypick-next.git
-cd cherrypick-next
+git clone https://github.com/joncovington/cherrypick.git
+cd cherrypick
 pip install -e packages/core                    # shared cherrypick.core library, install first
 cd packages/gex
 pip install -e ".[dev]"
