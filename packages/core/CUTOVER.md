@@ -24,6 +24,7 @@ no edits to the many entry points (`tt.py`, `streamer.py`, `paper_loop.py`, …)
 # top of src/credentials.py, right after `from __future__ import annotations`
 import sys as _sys
 from pathlib import Path as _Path
+
 _CORE = _Path(__file__).resolve().parent / "_core"
 if _CORE.is_dir() and str(_CORE) not in _sys.path:
     _sys.path.insert(0, str(_CORE))
@@ -47,8 +48,13 @@ changes**.
 ```python
 # MEICAgent/src/credentials.py  (after cutover)
 from cherrypit.auth import (
-    CredentialStore, CredentialError,
-    CLIENT_SECRET, REFRESH_TOKEN, ACCOUNT_NUMBER, REQUIRED_SECRETS, ALL_SECRETS,
+    CredentialStore,
+    CredentialError,
+    CLIENT_SECRET,
+    REFRESH_TOKEN,
+    ACCOUNT_NUMBER,
+    REQUIRED_SECRETS,
+    ALL_SECRETS,
 )
 
 store = CredentialStore("meicagent", legacy_service_names=("tastytrade-mcp",))
