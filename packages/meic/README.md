@@ -225,7 +225,7 @@ cherrypick/
     ├── GATES.md                     # Reference: the full entry-gate stack in evaluation order
     ├── config.example.json          # Config template — copy to config.json
     ├── config.risk.json             # Risk-profile presets (conservative → very-aggressive)
-    ├── src/
+    ├── src/cherrypick/meic/         # the cherrypick.meic namespace package (run as -m cherrypick.meic.<mod>)
     │   ├── tt.py                    # tastytrade CLI — get_quote, get_strategies, execute_trade, etc.
     │   ├── streamer.py              # Persistent DXLink streaming daemon (live quotes/greeks/OI/volume)
     │   ├── session.py               # OAuth2 session management
@@ -269,7 +269,7 @@ cherrypick/
 ```
 
 Runtime **data** does not live in the package — it's kept in the shared cherrypick data home so the
-orchestrator and this module read the same files. Resolved by [`cherrypick/meic/paths.py`](src/cherrypick/meic/paths.py:
+orchestrator and this module read the same files. Resolved by [`cherrypick/meic/paths.py`](src/cherrypick/meic/paths.py):
 
 ```
 ~/.cherrypick/data/meic/             # default; override with the MEIC_DATA_DIR env var
