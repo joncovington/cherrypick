@@ -34,14 +34,9 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-import sys
 from pathlib import Path
 
-_CORE = Path(__file__).resolve().parent / "_core"
-if _CORE.is_dir() and str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
-
-from cherrypick.core import home as _home  # noqa: E402
+from cherrypick.core import home as _home
 
 # A leg-source query gets a short read-only window; a locked/slow trades DB must not stall the poll.
 _LEG_QUERY_TIMEOUT_S = 2.0

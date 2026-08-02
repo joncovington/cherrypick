@@ -23,18 +23,13 @@ import sqlite3
 import sys
 import time
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
-_CORE = Path(__file__).resolve().parent / "_core"
-if _CORE.is_dir() and str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
+from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
+from cherrypick.core.streamer import ChainStreamer
 
-from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager  # noqa: E402
-from cherrypick.core.streamer import ChainStreamer  # noqa: E402
-
-import config as _config  # noqa: E402
-import orb as _orb  # noqa: E402
-import registry as _registry  # noqa: E402
+import config as _config
+import orb as _orb
+import registry as _registry
 
 logger = logging.getLogger("cherrypick-streamer")
 

@@ -113,7 +113,9 @@ def test_status_surfaces_chain_fetch_errors(home):
     cache.parent.mkdir(parents=True, exist_ok=True)
     conn = streamcache.connect(cache)
     streamcache.upsert_symbol_health(conn, "XSP", chain_fetch_error="Couldn't parse response: <html>")
-    streamcache.upsert_symbol_health(conn, "QQQ", chain_loaded_at="2026-07-31T12:00:00+00:00", chain_fetch_error=None)
+    streamcache.upsert_symbol_health(
+        conn, "QQQ", chain_loaded_at="2026-07-31T12:00:00+00:00", chain_fetch_error=None
+    )
     conn.close()
 
     st = _daemon.status({})

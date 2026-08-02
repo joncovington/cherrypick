@@ -18,15 +18,9 @@ same way (see ``docs/streamer-package-plan.md``, Step 0).
 from __future__ import annotations
 
 import getpass
-import sys
 from collections.abc import Callable
-from pathlib import Path
 
-_CORE = Path(__file__).resolve().parent / "_core"
-if _CORE.is_dir() and str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
-
-from cherrypick.core.auth import (  # noqa: E402
+from cherrypick.core.auth import (
     CLIENT_SECRET,
     REFRESH_TOKEN,
     SHARED_SERVICE,

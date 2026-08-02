@@ -19,7 +19,6 @@ import daemon as _daemon  # noqa: E402
 
 
 def _shared_service() -> str:
-    # Importable only after the daemon/credentials imports above bootstrap src/_core onto sys.path.
     from cherrypick.core.auth import SHARED_SERVICE
 
     return SHARED_SERVICE
