@@ -80,8 +80,26 @@ def _tail(path: Path, n: int) -> list[str]:
         return []
 
 
+#: A leading timestamp, bracketed or bare, with an optional level word after it. Three plain-text
+#: shapes exist in the suite today and this matches all of them:
+#:   flies : "[2026-07-31T21:00:01] 2026-07-31 settled — idle…"
+#:   meic  : "2026-08-02 00:40:01 INFO outside trading window…"
+#:   (JSON lines from watchdog/notify/earnings are handled separately, above)
+_TS_PREFIX = re.compile(
+    r"^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\]?\s*"
+    r"(?:(CRITICAL|WARNING|WARN|ERROR|INFO|DEBUG|NOTIFY|OK)\b\s*)?"
+)
+
+
 def _parse_log_line(source: str, raw: str) -> dict[str, Any]:
-    """Normalize a log line to {source, level, ts, text}. Handles our JSON lines and plain text."""
+    """Normalize a log line to {source, level, ts, text}. Handles our JSON lines and plain text.
+
+    Both shapes must yield a `ts`, because the card merges every source into one tail sorted by time
+    and then keeps the newest N. Only JSON lines were dated, so meic's and flies' plain lines sorted
+    as "undated" — which the sort deliberately places last, and the newest-N slice then kept *only*
+    those. The result was a log card showing nothing but flies while the watchdog, notify and
+    earnings sources were pushed out entirely, however recent they were.
+    """
     level = "INFO"
     ts = None
     text = raw
@@ -89,6 +107,12 @@ def _parse_log_line(source: str, raw: str) -> dict[str, Any]:
         obj = json.loads(raw)
     except (ValueError, TypeError):
         obj = None
+    if obj is None and (m := _TS_PREFIX.match(raw)):
+        # Lift the stamp out of the text: it becomes the sort key, and _log_html renders it in its
+        # own column so every source shows a time the same way instead of only the ones that inline it.
+        ts, text = m.group(1), raw[m.end() :]
+        if m.group(2):
+            level = "WARN" if m.group(2) == "WARNING" else m.group(2)
     if isinstance(obj, dict):
         ts = obj.get("ts")
         raw_level = obj.get("level") or obj.get("overall") or obj.get("status")
@@ -216,6 +240,28 @@ def _config_summary(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- model
+def _resolve_module_log(name: str, log_rel: str) -> Path:
+    """Where a module's paper log actually is — its own logs dir, or the suite logs root.
+
+    Both shapes are real, because the modules are not all driven the same way. A `self_healing`
+    module (meic, flies) runs its own loop and writes into `~/.cherrypick/logs/<name>/`. A
+    `cherrypick_scheduled` module (earnings) has no loop at all: the orchestrator runs its entry/exit
+    passes and records them itself, via `_module_log("earnings_paper")` → the suite root
+    `~/.cherrypick/logs/earnings_paper.log`.
+
+    Resolving only against the module directory therefore made earnings permanently invisible in the
+    log card while a current 240KB log sat one directory up. The filename is still taken from the
+    configured value's basename so a legacy "logs/…" prefix keeps working; the fallback is only about
+    which directory, and the module's own directory keeps precedence so nothing else changes.
+    """
+    filename = Path(log_rel).name
+    module_log = cfgmod.module_logs_dir(name) / filename
+    if module_log.exists():
+        return module_log
+    suite_log = cfgmod.LOGS_DIR / filename
+    return suite_log if suite_log.exists() else module_log
+
+
 def _eod_view(cfg: dict[str, Any], modules_cfg: dict[str, Any], tz: str) -> dict[str, Any] | None:
     """Today's (ET) session roll-up for the EOD card. File-only (report reads paper DBs; the paper-eod
     pointers are file-existence checks) and best-effort — a hiccup returns None and the card is omitted.
@@ -416,9 +462,7 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     for name, mcfg in modules_cfg.items():
         log_rel = mcfg.get("paper", {}).get("log")
         if log_rel:
-            # Module logs now live in the shared logs home (~/.cherrypick/logs/<name>); take just the
-            # filename from the configured path so a stale "logs/…" prefix still resolves correctly.
-            sources.append((name, cfgmod.module_logs_dir(name) / Path(log_rel).name))
+            sources.append((name, _resolve_module_log(name, log_rel)))
     # Live loops keep their own log, declared as `modules.<name>.live.log` (the same shape as
     # paper.log; only flies has one today, since it is the only module with a live loop). It is
     # tailed into a SEPARATE list and rendered as its own section -- never merged into the paper
@@ -837,9 +881,14 @@ def _log_html(entries: list[dict[str, Any]], group: str = "paper") -> str:
     rows = []
     for e in entries:
         lvl = e["level"]
+        # Time to the second, dropping the date and any timezone suffix: every line in the tail is
+        # from roughly the same window, so the date is noise, and the sources disagree about whether
+        # they write an offset (JSON lines carry +00:00, the plain ones do not).
+        stamp = (e["ts"] or "").replace("T", " ")[:19][-8:]
         rows.append(
             f'<div class="logline" data-level="{lvl}">'
             f'<span class="lvl" style="color:{_color(lvl)}">{lvl:<8}</span>'
+            f'<span class="ts">{html.escape(stamp):<8}</span> '
             f'<span class="src">{html.escape(e["source"])}</span> '
             f'<span class="txt">{html.escape(e["text"])}</span></div>'
         )
@@ -849,6 +898,7 @@ def _log_html(entries: list[dict[str, Any]], group: str = "paper") -> str:
 
 
 _CSS = """
+.logline .ts{color:var(--muted);opacity:.75}
 .badge-paper{font-size:10px;font-weight:700;letter-spacing:.5px;padding:2px 6px;border-radius:4px;
  background:rgba(45,212,191,.15);color:var(--accent);vertical-align:middle;margin-left:6px}
 .badge-live{font-size:10px;font-weight:700;letter-spacing:.5px;padding:2px 6px;border-radius:4px;
