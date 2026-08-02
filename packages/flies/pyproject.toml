@@ -9,7 +9,11 @@ description = "0DTE net-credit butterfly paper module — measuring the 'profit 
 requires-python = ">=3.11"
 # cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
 # Not on PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
-dependencies = ["keyring>=24", "cherrypick-core"]
+# tastytrade: broker_cli.py imports it (deferred) for real order/quote calls, and the live-scaffold
+# tests exercise it directly -- undeclared until now (discovered via a from-scratch venv install; the
+# shared dev venv had it already, transitively, from meic/earnings, which masked the gap). Pinned to
+# match meic's floor, the suite's other live-trading module.
+dependencies = ["keyring>=24", "cherrypick-core", "tastytrade>=12.4.3"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
