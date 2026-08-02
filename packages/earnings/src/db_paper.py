@@ -47,10 +47,9 @@ import sqlite3
 import sys
 import time
 
-# Make the cherrypick-core submodule (src/_core) importable before the cherrypick.core import below,
-# mirroring credentials.py's bootstrap so this module works even when imported before credentials.
+# Make `import paths` resolve when this file is imported (not run as the __main__ script, which
+# gets its own directory on sys.path automatically) -- mirrors credentials.py's self-insert.
 sys.path.insert(0, os.path.dirname(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
 from cherrypick.core import db as _db
 from cherrypick.core import profiles as _profiles
