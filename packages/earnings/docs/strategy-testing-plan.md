@@ -41,7 +41,7 @@ book (`profile='strat_test:<strategy>'`), so the comparison isolates the strateg
 
 ## Cost model
 
-Paper fills are cost-adjusted using tastytrade's real fee schedule (`src/costs.py`,
+Paper fills are cost-adjusted using tastytrade's real fee schedule (`cherrypick/earnings/costs.py`,
 config's `tastytrade_costs` block) — not mid-price/zero-cost, the classic optimism bias,
 worst for options:
 - **Commission (open-only):** $1.00/contract to open, $0 to close, capped at $10/leg.
@@ -58,7 +58,7 @@ baked into `pnl` itself.
 
 **Entry window** (before close):
 ```
-python src/strategy_test_runner.py run_entries --date MM/DD/YYYY
+python -m cherrypick.earnings.strategy_test_runner run_entries --date MM/DD/YYYY
 ```
 Runs the shared live scan once (`rank_strategies.evaluate_symbol` per calendar entry),
 opens every (strategy, symbol) pair that clears the screen and builds/sizes successfully, logs
@@ -66,7 +66,7 @@ every candidate (selected or not) to `scan_log` tagged with its per-strategy boo
 
 **Close window** (next morning):
 ```
-python src/strategy_test_runner.py run_closes
+python -m cherrypick.earnings.strategy_test_runner run_closes
 ```
 Closes every open strat_test position via the same generic exit-debit mechanism the real
 loop uses (`scanner.compute_generic_exit_debit`), cost-adjusted.
@@ -74,8 +74,8 @@ loop uses (`scanner.compute_generic_exit_debit`), cost-adjusted.
 ## Weekly review
 
 ```
-python src/strategy_report.py --since YYYY-MM-DD
-python src/strategy_dashboard.py --since YYYY-MM-DD
+python -m cherrypick.earnings.strategy_report --since YYYY-MM-DD
+python -m cherrypick.earnings.strategy_dashboard --since YYYY-MM-DD
 ```
 `strategy_report.py` prints a per-strategy table (sample count vs targets, win rate, profit
 factor, expectancy, Sharpe, max drawdown, average IV crush, regime coverage) to stdout.
@@ -164,6 +164,6 @@ Promotion copies the validated strategy's exact parameters into the live config 
 ## See also
 
 - `docs/strat-test-portfolios.md` — the per-strategy paper-book model this test writes into
-- `src/sizing.py` — code-enforced risk-cap sizing
-- `src/costs.py` — the tastytrade fee model
-- `src/strategy_metrics.py` — the single source of truth for every number in the report/dashboard
+- `cherrypick/earnings/sizing.py` — code-enforced risk-cap sizing
+- `cherrypick/earnings/costs.py` — the tastytrade fee model
+- `cherrypick/earnings/strategy_metrics.py` — the single source of truth for every number in the report/dashboard

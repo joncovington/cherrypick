@@ -141,7 +141,7 @@ eligible for entry. (There is no longer a Tier 1/Tier 2/Near-Miss ladder — scr
 accept/reject bar.) See [Screening Criteria](./screening-criteria.md).
 
 **Position Sizing**
-Number of contracts per leg, computed by `src/sizing.py`'s `compute_position_size` to keep max
+Number of contracts per leg, computed by `cherrypick/earnings/sizing.py`'s `compute_position_size` to keep max
 loss within `max_risk_per_trade_pct` of NLV, capped by `max_contracts_per_leg` regardless of the
 risk budget.
 
@@ -167,7 +167,7 @@ head-to-head comparison. Writes to per-strategy strat_test books by default (`pr
 
 **Cost-Adjusted Expectancy**
 Expected P&L per trade after subtracting tastytrade's real commission/fee schedule (modeled in
-`src/costs.py`), computed downstream in `strategy_metrics.py` — kept separate from the raw
+`cherrypick/earnings/costs.py`), computed downstream in `strategy_metrics.py` — kept separate from the raw
 `pnl` column stored per trade, which always stays gross.
 
 **IV Crush (measured)**
@@ -199,23 +199,23 @@ A few worth calling out by name since they show up throughout the other docs:
 
 ## Commands
 
-**`python src/scanner.py get_calendar --date MM/DD/YYYY`**
+**`python -m cherrypick.earnings.scanner get_calendar --date MM/DD/YYYY`**
 Fetch tickers with earnings on a given date.
 
 **`python src/strategies/<name>.py get_candidates --date MM/DD/YYYY`**
 Full accept/reject scan for one strategy: accepted vs rejected, pass/skip reasons, ranked candidates, selected.
 
-**`python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY`**
+**`python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY`**
 Cross-strategy ranking — evaluates all six strategies against every symbol, picks each
 symbol's best.
 
 **`python src/strategies/<name>.py get_order --symbol X --earnings_date DATE --earnings_timing "..."`**
 Build a concrete tradeable order from live chain data.
 
-**`python src/tt.py execute_trade --order '<JSON>' [--live]`**
+**`python -m cherrypick.earnings.tt execute_trade --order '<JSON>' [--live]`**
 Dry-run validate (no `--live`, still performs a real margin check) or submit a live order.
 
-**`python src/strategy_report.py`** / **`python src/strategy_dashboard.py`**
+**`python -m cherrypick.earnings.strategy_report`** / **`python -m cherrypick.earnings.strategy_dashboard`**
 Per-strategy expectancy/win-rate/IV-crush text report or self-contained HTML dashboard.
 
 See `CLAUDE.md`'s Tool Reference for the complete command list.

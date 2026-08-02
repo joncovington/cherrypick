@@ -17,7 +17,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from cherrypick.core.auth import SessionManager
 
-import session
+from cherrypick.meic import session
 
 
 @pytest.fixture(autouse=True)

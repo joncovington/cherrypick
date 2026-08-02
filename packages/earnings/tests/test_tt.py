@@ -2,7 +2,7 @@ import asyncio
 import json
 from datetime import date
 
-import tt
+from cherrypick.earnings import tt
 
 # --- pure helpers ------------------------------------------------------------
 

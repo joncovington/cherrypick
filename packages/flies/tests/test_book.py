@@ -3,10 +3,9 @@
 import pytest
 from test_engine import BASE_CONFIG, cheap_fly_snapshot, q, snapshot
 
-import book as bookmod
-import db as dbmod
-import engine
-import fly
+from cherrypick.flies import book as bookmod
+from cherrypick.flies import db as dbmod
+from cherrypick.flies import engine, fly
 
 
 @pytest.fixture()

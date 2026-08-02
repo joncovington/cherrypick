@@ -1,0 +1,17 @@
+# Suite-wide ruff baseline. Every package's own config `extend`s this file and adds only its genuine
+# deltas -- target-version (which tracks that package's requires-python), any per-file-ignores, and
+# whichever packages defer E501.
+#
+# Deliberately NOT here:
+#   * target-version -- splits py310 (core, orchestrator, earnings) vs py311 (meic, gex, flies,
+#     streamer) along each package's own requires-python. Setting one here would silently lint a
+#     package against the wrong Python.
+#   * ignore = ["E501"] -- the four trading modules defer line length (high churn, low value across
+#     existing live code); core and orchestrator do enforce it. Hoisting it would quietly relax two
+#     packages that currently pass clean.
+
+line-length = 110
+
+[lint]
+# E/W pycodestyle, F pyflakes, I import-sorting, UP pyupgrade, B bugbear -- high-signal, low-noise.
+select = ["E", "F", "I", "W", "UP", "B"]

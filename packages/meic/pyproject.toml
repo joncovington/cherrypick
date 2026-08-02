@@ -13,6 +13,9 @@ dependencies = [
     "python-dotenv>=1.0",
     "pytz>=2024",
     "flask>=3",
+    # sibling in-repo package (packages/core), installed editable alongside this one. Not on
+    # PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
+    "cherrypick-core",
 ]
 
 [project.optional-dependencies]
@@ -24,27 +27,20 @@ testpaths    = ["tests"]
 pythonpath   = ["tests", "src"]
 
 [tool.ruff]
-line-length = 110
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
 target-version = "py311"
-# src/_core is the cherrypick-core submodule — it carries its own ruff config and CI; never lint it here.
 # .claude/commands is doc, not source — its fenced code blocks aren't meant to be reformatted.
-extend-exclude = ["src/_core", ".claude"]
+extend-exclude = [".claude"]
 
 [tool.ruff.lint]
-# E/W pycodestyle, F pyflakes, I import-sorting, UP pyupgrade, B bugbear.
-select = ["E", "F", "I", "W", "UP", "B"]
 # E501 (line length) deferred: high churn, low value across existing live code.
 ignore = ["E501"]
 
-[tool.ruff.lint.per-file-ignores]
-# The _core sys.path bootstrap deliberately runs before `import cherrypick.core` (see CUTOVER.md), so the
-# imports below it are not at top of file by design.
-"src/credentials.py" = ["E402"]
-
 [tool.hatch.build.targets.wheel]
-# Flat modules live under src/ and are imported top-level (pytest adds src to pythonpath); map the
-# src/ prefix away so an editable install exposes them the same way. Exclude the _core submodule and
-# tests from the built package.
-only-include = ["src"]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py, so cherrypick.meic composes with
+# cherrypick.core (and every other module) under one cherrypick.* root. `sources = ["src"]` maps the
+# src/ prefix away, so src/cherrypick/meic/... installs as cherrypick/meic/... . Note src/ also holds
+# live_smoke.ps1, which only-include deliberately leaves out of the wheel.
+only-include = ["src/cherrypick"]
 sources = ["src"]
-exclude = ["src/_core"]

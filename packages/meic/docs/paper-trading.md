@@ -15,7 +15,7 @@ tastytrade has no true paper-trading mode; its dev sandbox mis-selects strikes f
 strategy's delta-targeted scan and intermittently 502s on market-overview calls (see project
 memory `project_sandbox_get_strategies_issue`). `tt.py execute_trade`'s dry-run path only
 validates an order broker-side (`place_order(dry_run=True)`) — no fill, no price, no P&L,
-nothing persisted. So a synthetic-fill engine (`src/paper.py`) was built instead, reusing the
+nothing persisted. So a synthetic-fill engine (`cherrypick/meic/paper.py`) was built instead, reusing the
 exact entry/stop math from `execute-entry.md`/`stop-management.md` against **real, live market
 quotes**, and only stubbing the two broker-mutating calls (submit, close).
 
@@ -26,14 +26,14 @@ quotes**, and only stubbing the two broker-mutating calls (submit, close).
   sub-accounts with no shared capital constraint, so all four can hold positions on the same
   day. This removes market-regime confounding between profiles and needs far fewer calendar
   weeks than testing profiles sequentially.
-- **Deterministic, not agent-judged.** `src/paper.py`'s gate evaluator and fill/exit engine
+- **Deterministic, not agent-judged.** `cherrypick/meic/paper.py`'s gate evaluator and fill/exit engine
   encode a fixed policy: wing width = widest candidate ≤ `max_wing_width` that clears the
   profile's fee-aware credit floor; entry price = `ic_natural_bid`; no discretionary skips.
   This means paper results measure the **profile parameters**, reproducibly — not the live
   agent's session-by-session judgment, which sits on top of a graduated profile afterward.
 - **Isolated storage.** All paper (and replay) trades live in `paper_trades.db` in the data home
-  (`~/.cherrypick/data/meic/` by default; see [`src/paths.py`](../src/paths.py)), written via
-  `python src/db.py --db <that path> <command>` — the same schema and commands as the live DB, with a
+  (`~/.cherrypick/data/meic/` by default; see [`cherrypick/meic/paths.py`](../src/cherrypick/meic/paths.py)), written via
+  `python -m cherrypick.meic.db --db <that path> <command>` — the same schema and commands as the live DB, with a
   `risk_profile` and `execution_mode` (`paper` | `replay`) column added. The live loop and
   `meic_trades.db` are never touched by this system.
 - **$100,000 virtual bankroll per profile.** Anchors each profile's equity/drawdown curve
@@ -60,7 +60,7 @@ negative — net P&L instead of an optimistic flat-average estimate.
 ## SPX historical replay
 
 > ⚠️ **Disabled by policy — do not run against 0DTESPX (ToS-incompatible, confirmed 2026-07-13).**
-> `src/paper_replay.py`'s design (systematically walking past sessions, caching each day locally,
+> `cherrypick/meic/paper_replay.py`'s design (systematically walking past sessions, caching each day locally,
 > deriving a local dataset) is exactly what 0DTESPX's acceptable-use policy forbids — "bulk
 > extraction of the historical dataset is not permitted, at any pace … building a local copy or a
 > derivative dataset violates the terms even when paced under the credit budget; offending accounts
@@ -70,7 +70,7 @@ negative — net P&L instead of an optimistic flat-average estimate.
 > sanctioned server-side alternatives (practice sessions / strategy backtester, which run the sim
 > on their side and never extract the dataset). The section below is retained for reference only.
 
-`src/paper_replay.py` feeds the same deterministic engine from historical SPX 0DTE chains via
+`cherrypick/meic/paper_replay.py` feeds the same deterministic engine from historical SPX 0DTE chains via
 [0DTESPX.com](https://www.0dtespx.com/)'s API (`api.0dtespx.com`), so statistical significance
 is reached in days instead of weeks and the dashboard's timeframe charts are backfilled
 immediately. **SPX only** — the API doesn't cover XSP/NDX/RUT; those stay forward-paper-only
@@ -79,11 +79,11 @@ until a paid provider (ORATS 1-minute, or Databento OPRA) is justified.
 **Setup:** register at 0DTESPX.com, then store a bearer token in the OS keyring (Windows
 Credential Manager on Windows; same `keyring` mechanism as tastytrade credentials, distinct
 key — service `meicagent`, key `0dtespx:bearer_token`). Two ways:
-- `python src/paper_replay.py login --email <you@example.com>` — prompts for your 0DTESPX
+- `python -m cherrypick.meic.paper_replay login --email <you@example.com>` — prompts for your 0DTESPX
   password (never taken on the command line), calls `POST /auth/sessions`, and stores the
   returned token. Passwordless: `request_code --email <…>` emails a 6-digit code, then
   `login --email <…> --code <code>`.
-- `python src/paper_replay.py set_token --token <bearer token>` — if you already have a token
+- `python -m cherrypick.meic.paper_replay set_token --token <bearer token>` — if you already have a token
   (e.g. copied from an authenticated browser session), store it directly.
 
 **Known data limitation:** 0DTESPX provides bid/ask and **unsigned delta only** — no
@@ -120,7 +120,7 @@ exit behavior rather than treating every symbol identically:
 - **Earlier force-close.** Non-cash-settled positions force-close at
   `physical_settlement_force_close_time` (default 15:30 ET), ~15 min ahead of the general
   `force_close_time` (15:45), staying clear of the illiquid, pin-risk-heavy final minutes.
-  (`force_close_active` in `src/paper.py`.)
+  (`force_close_active` in `cherrypick/meic/paper.py`.)
 - **Full event force-close cascade.** Paper now also honors the FOMC-blackout (13:30 ET) and
   triple-witching/quarterly-expiry (14:00 ET) force-closes, which the earlier build omitted —
   these apply to all symbols, cash-settled or not.

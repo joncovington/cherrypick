@@ -42,23 +42,23 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 
 | file | role |
 |---|---|
-| `src/fly.py` | payoffs, quote pricing, fees, position and book floor math. Pure. |
-| `src/engine.py` | centre selection, entry gates, the completion gate, settlement. Pure. |
-| `src/provider.py` | builds snapshots from MEIC's stream cache, read-only. No decisions. |
-| `src/paper_loop.py` | session driver: fetch, run every arm, settle at the bell. |
-| `src/book.py` | wires engine decisions to the paper DB; one book per (date, arm, symbol). |
-| `src/db.py` | `fly_positions` (ledger) and `fly_books` (roll-up with the floor's price band). |
-| `src/analytics.py` | the one query layer every read surface goes through. Read-only. |
-| `src/dashboard.py` | loopback HTTP dashboard: Today / History / Performance. |
-| `src/section.py` | the compact `cherrypick.core.viz` card for the suite dashboard. |
-| `src/eod.py` | `paper-eod-<day>.md` and `eod-analysis-<day>.md`. |
-| `src/cli.py` | `once` / `settle` / `status` / `dashboard` / `section`. |
-| `src/live_loop.py` | The LIVE loop: 1-min self-healing tick (`--once --live`, per-day arming via `/live-flies-start`, self-disarms at `live.disarm_time`) + burst fill-watchers (`--watch-fills`). `--once` (dry-run default) is the rung-0 smoke; `--status`, `--settle --price` for the official print. |
-| `src/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. |
-| `src/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). |
-| `src/alert_daemon.py` | Optional order-alert daemon: one tastytrade account-alert websocket for the trading day, started on arm / stopped on disarm. Decides nothing — appends to the inbox below so fills are *noticed* sooner. |
-| `src/alerts_db.py` | The WAL-mode alert inbox (`live_alerts.db`), separate from the ledger on purpose — 1 writer (daemon), N readers (tick, watcher). |
-| `src/credentials.py` | `fliesagent` keyring store + hidden-input CLI (orchestrator `connect` delegates here). |
+| `cherrypick/flies/fly.py` | payoffs, quote pricing, fees, position and book floor math. Pure. |
+| `cherrypick/flies/engine.py` | centre selection, entry gates, the completion gate, settlement. Pure. |
+| `cherrypick/flies/provider.py` | builds snapshots from MEIC's stream cache, read-only. No decisions. |
+| `cherrypick/flies/paper_loop.py` | session driver: fetch, run every arm, settle at the bell. |
+| `cherrypick/flies/book.py` | wires engine decisions to the paper DB; one book per (date, arm, symbol). |
+| `cherrypick/flies/db.py` | `fly_positions` (ledger) and `fly_books` (roll-up with the floor's price band). |
+| `cherrypick/flies/analytics.py` | the one query layer every read surface goes through. Read-only. |
+| `cherrypick/flies/dashboard.py` | loopback HTTP dashboard: Today / History / Performance. |
+| `cherrypick/flies/section.py` | the compact `cherrypick.core.viz` card for the suite dashboard. |
+| `cherrypick/flies/eod.py` | `paper-eod-<day>.md` and `eod-analysis-<day>.md`. |
+| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `dashboard` / `section`. |
+| `cherrypick/flies/live_loop.py` | The LIVE loop: 1-min self-healing tick (`--once --live`, per-day arming via `/live-flies-start`, self-disarms at `live.disarm_time`) + burst fill-watchers (`--watch-fills`). `--once` (dry-run default) is the rung-0 smoke; `--status`, `--settle --price` for the official print. |
+| `cherrypick/flies/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. |
+| `cherrypick/flies/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). |
+| `cherrypick/flies/alert_daemon.py` | Optional order-alert daemon: one tastytrade account-alert websocket for the trading day, started on arm / stopped on disarm. Decides nothing — appends to the inbox below so fills are *noticed* sooner. |
+| `cherrypick/flies/alerts_db.py` | The WAL-mode alert inbox (`live_alerts.db`), separate from the ledger on purpose — 1 writer (daemon), N readers (tick, watcher). |
+| `cherrypick/flies/credentials.py` | `fliesagent` keyring store + hidden-input CLI (orchestrator `connect` delegates here). |
 | `tests/fixtures/books.json` | three real tastytrade order chains, transcribed. |
 
 ## The read side
@@ -149,9 +149,9 @@ logs and steps past. Refusals are ordinary and frequent; they are not errors. `q
 on every snapshot so a barren session can be read afterwards as "the data was thin" rather than
 mistaken for "the strategy found nothing".
 
-`src/_core` is the `cherrypick-core` submodule (same URL and pinned SHA as every other package).
-`cherrypick.core.fees` supplies the fee schedule and `cherrypick.core.gex.compute_gex` the per-strike
-GEX profile — neither is reimplemented here.
+`cherrypick.core` is an installed dependency (`packages/core` in this monorepo, `pip install -e
+packages/core`, same for every package). `cherrypick.core.fees` supplies the fee schedule and
+`cherrypick.core.gex.compute_gex` the per-strike GEX profile — neither is reimplemented here.
 
 ## The arms
 
@@ -367,8 +367,8 @@ These are the constraints the module exists to enforce. Breaking one makes the n
   exact same cache-gated poll behavior on any websocket/auth error. See `run_watch`'s docstring.
   **The daemon form of the same thing** (added 2026-07-31, `live.use_order_alert_daemon`, off by
   default, supersedes the per-burst flag when both are on): rather than the watcher opening a
-  websocket per cycle, `src/alert_daemon.py` holds ONE account-alert connection for the trading
-  day and appends alerts to a WAL-mode inbox (`src/alerts_db.py`,
+  websocket per cycle, `cherrypick/flies/alert_daemon.py` holds ONE account-alert connection for the trading
+  day and appends alerts to a WAL-mode inbox (`cherrypick/flies/alerts_db.py`,
   `data/flies/live_alerts.db`), which the watcher reads as a local query. Deliberately a
   **separate database** from `live_trades.db`: that ledger's concurrency was tuned for exactly two
   short-burst, file-locked writers (the tick and the watcher), and a third persistent writer would

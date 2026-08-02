@@ -9,8 +9,7 @@ decision.
 The closed-trade extraction is reused from `report` (its per-schema readers also emit a `session`
 date), so the net-of-cost SQL lives in one place. Grouping and the qualification rule come from the
 shared `cherrypick.core.profiles` engine (`compare_profiles`, `recommend_champion`,
-`qualify_readings`, `QUALIFICATION_RULE`) via the src/_core submodule — bootstrapped onto sys.path in
-this package's __init__.
+`qualify_readings`, `QUALIFICATION_RULE`).
 
 A module either declares `calibration.champion` (the tag currently live — every other tag observed
 is a challenger judged against it, `recommend_champion`) or declares no champion at all (its tags are

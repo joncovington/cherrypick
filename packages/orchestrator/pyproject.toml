@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "cherrypick"
@@ -19,19 +19,18 @@ classifiers = [
     "Intended Audience :: Financial and Insurance Industry",
     "Topic :: Office/Business :: Financial :: Investment",
 ]
-# cherrypick-core supplies the `cherrypick.core` namespace that report/calibrate/dashboard import.
-# In a source checkout it's the `src/_core` submodule (bootstrapped onto sys.path, and excluded from
-# the wheel); a real install (wheel / `pip install git+…` / pipx) has no submodule, so it's declared
-# here as a direct git reference — allowed because cherrypick-core is Private :: Do Not Upload (not on
-# PyPI). Editable/source installs still resolve core from the submodule, which is inserted at sys.path[0]
-# and wins over this copy.
+# cherrypick-core supplies the `cherrypick.core` namespace that report/calibrate/dashboard import. It
+# is a sibling in-repo package (packages/core) installed editable alongside this one -- a plain named
+# dependency, resolved the same way for every install shape (editable checkout, wheel, pipx). It is
+# NOT on PyPI (Private :: Do Not Upload); pip only ever satisfies it from what's already installed, so
+# packages/core must be installed before this package or `pip install -e .` here fails to resolve it.
 dependencies = [
     "keyring>=24",
     # zoneinfo needs an IANA tz database; Windows (this suite's target) ships none, so tzdata supplies
     # it for an installed copy. pytz remains a call-time fallback (see orchestrator/timeutil._tz).
     "tzdata>=2023",
     "pytz>=2023",
-    "cherrypick-core @ git+https://github.com/joncovington/cherrypick-core.git",
+    "cherrypick-core",
 ]
 
 [project.optional-dependencies]
@@ -47,24 +46,18 @@ dev = ["pytest>=8", "ruff>=0.6", "keyrings.alt>=5"]
 cherrypick = "cherrypick.cli:main"
 
 [project.urls]
-Repository = "https://github.com/joncovington/cherrypick"
+Repository = "https://github.com/joncovington/cherrypick-next"
 
-[tool.setuptools.packages.find]
-# src layout + PEP 420 native namespace: `cherrypick` has no __init__.py, so it composes with the
-# cherrypick.core distribution under one `cherrypick.*` import namespace. The cherrypick-core submodule
-# lives at src/_core and is bootstrapped onto sys.path at runtime — never packaged into this wheel.
-where = ["src"]
-include = ["cherrypick*"]
-exclude = ["_core*"]
-namespaces = true
+[tool.hatch.build.targets.wheel]
+# src layout + PEP 420 native namespace: `src/cherrypick/` has NO __init__.py, so it composes with the
+# cherrypick.core distribution (a separate installed package, packages/core) under one `cherrypick.*`
+# import namespace. `sources = ["src"]` maps the src/ prefix away, so src/cherrypick/... installs as
+# cherrypick/... -- same shape as every sibling package. Nothing here synthesizes an __init__.py, and
+# nothing should: adding one at the namespace root would break composition for the whole suite.
+only-include = ["src/cherrypick"]
+sources = ["src"]
 
 [tool.ruff]
-line-length = 110
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
 target-version = "py310"
-# src/_core is the cherrypick-core submodule — it carries its own ruff config and CI; never lint it here.
-extend-exclude = ["src/_core"]
-
-[tool.ruff.lint]
-# Match the suite's ruff profile (see cherrypick-core): E/W pycodestyle, F pyflakes, I import-sorting,
-# UP pyupgrade, B bugbear.
-select = ["E", "F", "I", "W", "UP", "B"]

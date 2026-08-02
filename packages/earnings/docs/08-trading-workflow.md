@@ -39,13 +39,13 @@ Sometime before the entry window (`entry_window_start`, default `15:30` ET), pul
 earnings calendar and see what's on it:
 
 ```bash
-python src/scanner.py get_calendar --date MM/DD/YYYY
+python -m cherrypick.earnings.scanner get_calendar --date MM/DD/YYYY
 ```
 
 Then run the cross-strategy ranking to see what the loop would actually pick tonight:
 
 ```bash
-python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
+python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY
 ```
 
 This evaluates all six strategies against every symbol on the merged today-AMC/tomorrow-BMO
@@ -66,7 +66,7 @@ Inside the entry window, for each selected symbol the loop:
 4. Builds a concrete order via that strategy's own `get_order`:
 
 ```bash
-python src/strategies/iron_fly.py get_order --symbol AAPL --earnings_date 2026-07-15 --earnings_timing "After market close"
+python -m cherrypick.earnings.strategies.iron_fly get_order --symbol AAPL --earnings_date 2026-07-15 --earnings_timing "After market close"
 ```
 
 5. In paper mode, records the order via `db_paper.py save_trade` and stops there — no order is
@@ -133,21 +133,21 @@ Regenerate today's or backfill a past day on demand (`eod_report` writes both; `
 the analysis):
 
 ```
-python src/strategy_test_runner.py eod_report [--date YYYY-MM-DD]
-python src/strategy_test_runner.py eod_analysis [--date YYYY-MM-DD]
+python -m cherrypick.earnings.strategy_test_runner eod_report [--date YYYY-MM-DD]
+python -m cherrypick.earnings.strategy_test_runner eod_analysis [--date YYYY-MM-DD]
 ```
 
 The orchestrator's suite digest and (opt-in) AI insight build on these files — see the suite
 [reporting docs](../../../docs/reporting-and-dashboard.md).
 
-For accumulated (multi-day) results across the whole sample, use `python src/strategy_report.py`
-or the HTML `python src/strategy_dashboard.py` instead.
+For accumulated (multi-day) results across the whole sample, use `python -m cherrypick.earnings.strategy_report`
+or the HTML `python -m cherrypick.earnings.strategy_dashboard` instead.
 
 To check accumulated results across many days:
 
 ```bash
-python src/strategy_report.py
-python src/strategy_dashboard.py   # writes reports/strategy_dashboard.html
+python -m cherrypick.earnings.strategy_report
+python -m cherrypick.earnings.strategy_dashboard   # writes reports/strategy_dashboard.html
 ```
 
 ---
@@ -156,10 +156,10 @@ python src/strategy_dashboard.py   # writes reports/strategy_dashboard.html
 
 **Afternoon (before 15:30 ET):**
 ```
-$ python src/scanner.py get_calendar --date 07/15/2026
+$ python -m cherrypick.earnings.scanner get_calendar --date 07/15/2026
 → AAPL (after close), JPM (before open next day), 6 others
 
-$ python src/rank_strategies.py get_ranked_symbols --date 07/15/2026
+$ python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date 07/15/2026
 → AAPL: selected iron_fly (accepted)
 → JPM: selected directional_credit_spread (accepted)
 → 6 others: rejected_no_viable_strategy

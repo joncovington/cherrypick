@@ -1,6 +1,6 @@
 import pytest
 
-import costs
+from cherrypick.earnings import costs
 
 CONFIG = {
     "tastytrade_costs": {

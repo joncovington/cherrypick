@@ -9,6 +9,7 @@ One workspace holds the whole trading-tool suite as separate packages under `pac
 
 | Package | Role |
 |---|---|
+| `packages/core` | The shared **`cherrypick.core`** library — calendar, fees, profiles, GEX math, the streaming engine, auth, broker, db, viz, home resolution. Every other package installs it as an editable dependency; see below. |
 | `packages/orchestrator` | The **orchestrator** (`cherrypick`): scheduler, watchdog, notifications, onboarding, and the entire read side (report / calibrate / dashboard / EOD reports / archive). Drives the modules **by subprocess**, never by import. |
 | `packages/meic` | The **MEIC** 0DTE multiple-entry iron-condor engine. |
 | `packages/earnings` | The **Earnings** defined-risk earnings-play engine. |
@@ -18,27 +19,33 @@ One workspace holds the whole trading-tool suite as separate packages under `pac
 
 Each package has its own `CLAUDE.md` with build commands, tech-stack reference, and invariants.
 
-## Shared library: `cherrypick.core` (a submodule)
+## Shared library: `cherrypick.core` (an in-repo package)
 
 Common logic — `cherrypick.core.calendar`, `.fees`, `.profiles`, `.gex`, `.streamer`, `.auth`, `.broker`,
-`.db`, `.viz`, `.home` — lives in the **`cherrypick-core`** git submodule, vendored per package at
-`packages/<pkg>/src/_core` (one URL, pinned SHA). This is why:
+`.db`, `.viz`, `.home` — lives in **`packages/core`**, a sibling package in this same monorepo,
+consumed by every other package as a normal editable-installed dependency. This is why:
 
-- A fresh clone must run `git submodule update --init --recursive`, or every `import cherrypick.core…`
-  fails.
-- Each package **self-bootstraps** `src/_core` onto `sys.path` at import time (in files like `paths.py`,
-  `db.py`, `credentials.py`) so imports resolve under `run.py`, pytest, and an editable install alike.
-  Those inserts look redundant but are load-bearing — don't remove them.
-- `src/_core` is excluded from ruff and from the packaged wheel.
+- A fresh clone needs one install step before anything else: `pip install -e packages/core` (or run
+  `scripts/dev-install.ps1`/`.sh` from the repo root, which does that plus every package). Skip it and
+  every `import cherrypick.core…` fails.
+- Every package declares `cherrypick-core` as a plain named dependency in its `pyproject.toml`. It is
+  **not** on PyPI (`Private :: Do Not Upload`) — pip only ever resolves the name from what's already
+  installed, so `packages/core` must be installed first.
+- There is no `sys.path` bootstrap for core anywhere in the suite — none should be reintroduced. The
+  orchestrator's `doctor` fails loudly (`cherrypick.core: not installed`) if the install step was
+  skipped, rather than surfacing as a confusing traceback deep in a detached subprocess.
 
 The shared core is what lets the orchestrator's `report`/`calibrate` and a module's own engine agree on
-fees, calendar dates, and profile attribution without copy-pasting logic.
+fees, calendar dates, and profile attribution without copy-pasting logic. It was landed here via
+`git subtree add` from the standalone `cherrypick-core` repo (full history preserved,
+`git subtree split --prefix=packages/core` reproduces it exactly) — that repo is now archived, and this
+monorepo is the source of truth.
 
 ## src-layout & the import namespace
 
 `packages/orchestrator/src/cherrypick/` has **no root `__init__.py`** — it's a PEP 420 namespace package,
-so it composes with the `cherrypick.core` package (from `src/_core`) under one `cherrypick.*` import
-root. `run.py` puts `src/` on `sys.path` and delegates to `cherrypick.cli:main`.
+so it composes with the `cherrypick.core` package (an installed dependency, `packages/core`) under one
+`cherrypick.*` import root. `run.py` puts `src/` on `sys.path` and delegates to `cherrypick.cli:main`.
 
 > **Gotcha:** the launcher is `run.py`, **not** `cherrypick.py`. A root module named `cherrypick.py`
 > would shadow the `src/cherrypick` namespace package (a regular module outranks a PEP 420 namespace on

@@ -211,7 +211,7 @@ def test_ladder_derived_thresholds_scale_with_each_tier():
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    import paper
+    from cherrypick.meic import paper
 
     base, profiles = paper.load_base_config(), paper.load_profiles()
     prev = None
@@ -242,7 +242,7 @@ def test_ladder_credit_floor_is_monotonic_at_every_iv_level():
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    import paper
+    from cherrypick.meic import paper
 
     base, profiles = paper.load_base_config(), paper.load_profiles()
     tiers = ["conservative", "moderate", "aggressive", "very-aggressive"]

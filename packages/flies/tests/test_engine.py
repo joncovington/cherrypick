@@ -2,8 +2,7 @@
 
 import pytest
 
-import engine
-import fly
+from cherrypick.flies import engine, fly
 
 BASE_CONFIG = {
     "defaults": {
@@ -567,7 +566,9 @@ def test_gex_concentration_is_windowed_to_near_spot():
     WHOLE chain -- 109-121 strikes on a real 0DTE surface -- made 'pinning' unreachable in practice:
     entry_gex_bucket came back 'thin' 60 times out of 60. A cluster pinning price at spot must not
     be diluted by gamma 300 points away that has no bearing on it."""
-    near_spot_cluster = [{"strike": 6000 + 5 * i, "call_gex": 500_000, "put_gex": 500_000} for i in (-1, 0, 1)]
+    near_spot_cluster = [
+        {"strike": 6000 + 5 * i, "call_gex": 500_000, "put_gex": 500_000} for i in (-1, 0, 1)
+    ]
     far_away = [{"strike": 5000 + 5 * i, "call_gex": 400_000, "put_gex": 400_000} for i in range(40)]
     gex = {"ok": True, "per_strike": near_spot_cluster + far_away}
 

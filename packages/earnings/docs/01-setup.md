@@ -20,33 +20,33 @@ Complete setup from a fresh checkout to your first paper trading cycle.
 
 ## Step 1: Clone the suite and enter this package
 
-`cherrypick-earnings` is the earnings module of the [cherrypick](../../../README.md) monorepo. Clone the
-whole suite with its shared-core submodules, then work from `packages/earnings`:
+`cherrypick-earnings` is the earnings module of the [cherrypick-next](../../../README.md) monorepo.
+Clone the suite, then work from `packages/earnings`:
 
 ```bash
-git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
-cd cherrypick/packages/earnings
-# Already cloned without --recurse-submodules? Run once: git submodule update --init --recursive
+git clone https://github.com/joncovington/cherrypick-next.git
+cd cherrypick-next/packages/earnings
 
 python -m venv venv
 source venv/bin/activate      # macOS/Linux
 # venv\Scripts\activate       # Windows
 
-pip install -r requirements.txt
+pip install -e ../core        # the shared cherrypick.core library — install this first
+pip install -e .
 ```
 
-The `--recurse-submodules` flag (or the follow-up `git submodule update`) pulls the shared
-`cherrypick.core` library into `src/_core`; without it every `import cherrypick.core...` — and therefore
-the calendar and fee lookups the scanner and cost model depend on — fails. All commands below run from
-`packages/earnings`.
+`packages/core` must go in first: it isn't on PyPI, so pip can only resolve this package's
+`cherrypick-core` dependency from what's already installed. Without it every
+`import cherrypick.core...` — and therefore the calendar and fee lookups the scanner and cost model
+depend on — fails. All commands below run from `packages/earnings`.
 
 For running tests or contributing, also install dev dependencies:
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -e ".[dev]"
 ```
 
-`requirements.txt` pulls in `tastytrade` (broker SDK), `keyring` (OS-native credential storage
+The install pulls in `tastytrade` (broker SDK), `keyring` (OS-native credential storage
 for OAuth secrets), and `mysql-connector-python` (talks to `dolt sql-server`, which speaks the
 MySQL wire protocol). `strategy_dashboard.py`'s charts are `cherrypick.core.viz` cards drawn
 client-side on a plain canvas, so the dashboard needs no charting dependency.
@@ -80,7 +80,7 @@ cp config/config.example.json config/config.json
 
 > **Config location.** This in-repo `config/config.json` is the standalone-checkout path. Under the
 > orchestrated cherrypick suite the config resolves **home-first** to `~/.cherrypick/config/earnings.json`
-> (see `src/paths.py`); `cherrypick migrate-home` moves an in-repo config up to the home. The keys are the
+> (see `cherrypick/earnings/paths.py`); `cherrypick migrate-home` moves an in-repo config up to the home. The keys are the
 > same either way — edit whichever `paths.config_path()` resolves to.
 
 The example ships with sane, documented defaults (`enable_live_trading: false`, i.e. paper mode,
@@ -102,15 +102,15 @@ See [Configuration Guide](./03-configuration.md) for every parameter, and
 Credentials are stored in your OS keyring (via the `keyring` package), never in a file:
 
 ```bash
-python src/tt.py secrets_set
+python -m cherrypick.earnings.tt secrets_set
 ```
 
 This interactively prompts for your tastytrade OAuth **client secret**, **refresh token**, and
 (optionally) a specific **account number**. Then verify:
 
 ```bash
-python src/tt.py secrets_status
-python src/tt.py get_connection_status
+python -m cherrypick.earnings.tt secrets_status
+python -m cherrypick.earnings.tt get_connection_status
 ```
 
 `get_connection_status` should report `"connected": true`. This step is required in both paper
@@ -140,13 +140,13 @@ pytest
 Pull today's earnings calendar and see what the scanner finds, without touching any account:
 
 ```bash
-python src/scanner.py get_calendar --date MM/DD/YYYY
+python -m cherrypick.earnings.scanner get_calendar --date MM/DD/YYYY
 ```
 
 Then run a full one-shot candidate scan for a single strategy (no orders submitted):
 
 ```bash
-python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
+python -m cherrypick.earnings.strategies.iron_fly get_candidates --date MM/DD/YYYY
 ```
 
 This prints accepted vs rejected candidates with pass/skip reasons per
@@ -170,15 +170,15 @@ strategy, without affecting the real paper/live trading book:
 Or run its underlying commands directly:
 
 ```bash
-python src/strategy_test_runner.py run_entries --date MM/DD/YYYY
-python src/strategy_test_runner.py run_closes
+python -m cherrypick.earnings.strategy_test_runner run_entries --date MM/DD/YYYY
+python -m cherrypick.earnings.strategy_test_runner run_closes
 ```
 
 Check progress at any time with:
 
 ```bash
-python src/strategy_report.py
-python src/strategy_dashboard.py   # writes reports/strategy_dashboard.html
+python -m cherrypick.earnings.strategy_report
+python -m cherrypick.earnings.strategy_dashboard   # writes reports/strategy_dashboard.html
 ```
 
 > **Inside the suite:** you don't have to run this by hand day to day. The [orchestrator](../../orchestrator)
@@ -212,7 +212,7 @@ Confirm the server from Step 2 is still running and reachable: `mysql-connector-
 to `dolthub_host`/`dolthub_port` from `config/config.json` (defaults `127.0.0.1:3306`).
 
 **`get_connection_status` reports `"connected": false`**
-Re-run `python src/tt.py secrets_set` to refresh credentials, then `secrets_status` to confirm
+Re-run `python -m cherrypick.earnings.tt secrets_set` to refresh credentials, then `secrets_status` to confirm
 they're stored, then `get_connection_status` again.
 
 **Everything comes back rejected**
