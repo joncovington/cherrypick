@@ -42,19 +42,16 @@ in strategy_metrics.py -- stored verbatim, never parsed by db_paper.py itself.
 
 import argparse
 import json
-import os
 import sqlite3
 import sys
 import time
 
 # Make `import paths` resolve when this file is imported (not run as the __main__ script, which
 # gets its own directory on sys.path automatically) -- mirrors credentials.py's self-insert.
-sys.path.insert(0, os.path.dirname(__file__))
-
 from cherrypick.core import db as _db
 from cherrypick.core import profiles as _profiles
 
-import paths as _paths
+from cherrypick.earnings import paths as _paths
 
 # Resolved from the shared cherrypick data home (~/.cherrypick/data/earnings by default, or
 # EARNINGS_DATA_DIR) so this checkout and the orchestrator read/write the same paper book. See paths.py.

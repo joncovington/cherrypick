@@ -53,7 +53,6 @@ Commands:
 import argparse
 import concurrent.futures as _cf
 import json
-import os
 import sys
 import threading
 import time
@@ -61,18 +60,11 @@ from datetime import date as _date
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-
 from cherrypick.core import viz
 
-import costs
-import db_paper
-import paths
-import rank_strategies
-import scanner
-import sizing
-import strategy_metrics as metrics
-from strategies import (
+from cherrypick.earnings import costs, db_paper, paths, rank_strategies, scanner, sizing
+from cherrypick.earnings import strategy_metrics as metrics
+from cherrypick.earnings.strategies import (
     atm_calendar,
     broken_wing_butterfly,
     directional_credit_spread,

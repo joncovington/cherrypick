@@ -21,16 +21,12 @@ Commands (see CLAUDE.md's Tool Reference):
 
 import argparse
 import json
-import os
 import sys
 import threading
 from datetime import date as _date
 from datetime import datetime, timedelta
-from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-
-import paths as _paths
+from cherrypick.earnings import paths as _paths
 
 
 def _load_config(profile: str | None = None) -> dict:
@@ -461,10 +457,12 @@ def call_tt(args_list: list[str]) -> dict:
     if key is not None and key in cache:
         return cache[key]
 
-    tt_path = Path(__file__).resolve().parent / "tt.py"
+    # `-m` rather than a __file__-relative script path: the module is importable as
+    # cherrypick.earnings.tt from the installed package, so this no longer depends on this file's
+    # depth on disk or on the child's working directory.
     try:
         result = subprocess.run(
-            [sys.executable, str(tt_path), *args_list],
+            [sys.executable, "-m", "cherrypick.earnings.tt", *args_list],
             capture_output=True,
             text=True,
             timeout=_TT_CALL_TIMEOUT,

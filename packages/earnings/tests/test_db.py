@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-import db
+from cherrypick.earnings import db
 
 
 @pytest.fixture(autouse=True)

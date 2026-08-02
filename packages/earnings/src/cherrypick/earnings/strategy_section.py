@@ -15,16 +15,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
-
-_SRC = Path(__file__).resolve().parent
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
 
 from cherrypick.core import viz  # noqa: E402
 
-import strategy_metrics as sm  # noqa: E402
+from cherrypick.earnings import strategy_metrics as sm  # noqa: E402
 
 _NOTE = (
     "net of modeled tastytrade fees + slippage haircut · forced-sampling paper book · "

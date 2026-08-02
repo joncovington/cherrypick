@@ -37,17 +37,13 @@ Commands (see CLAUDE.md's Tool Reference):
 """
 
 import json
-import os
 import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-
-import scanner
-from strategies import (
+from cherrypick.earnings import scanner
+from cherrypick.earnings.strategies import (
     atm_calendar,
     broken_wing_butterfly,
     directional_credit_spread,
@@ -133,8 +129,13 @@ def _ensure_dolt_running():
 def _verify_tastytrade_connection():
     """Verify tastytrade connection is active."""
     try:
+        # Was a hardcoded relative "src/tt.py", which only resolved when the caller's working
+        # directory happened to be the package root. `-m` is CWD-independent.
         result = subprocess.run(
-            [sys.executable, "src/tt.py", "get_connection_status"], capture_output=True, text=True, timeout=10
+            [sys.executable, "-m", "cherrypick.earnings.tt", "get_connection_status"],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
@@ -192,16 +193,15 @@ def _call_db(args_list: list[str], paper_mode: bool) -> dict:
     either database module's own setup, same reasoning as scanner.py's
     relationship to tt.py.
     """
-    db_script = "db_paper.py" if paper_mode else "db.py"
-    db_path = Path(__file__).resolve().parent / db_script
+    db_module = "db_paper" if paper_mode else "db"
     result = subprocess.run(
-        [sys.executable, str(db_path), *args_list],
+        [sys.executable, "-m", f"cherrypick.earnings.{db_module}", *args_list],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"{db_script} {' '.join(args_list)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}"
+            f"{db_module} {' '.join(args_list)} failed: {result.stderr.strip().splitlines()[-1] if result.stderr else 'unknown error'}"
         )
     return json.loads(result.stdout)
 

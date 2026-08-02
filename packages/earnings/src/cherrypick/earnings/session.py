@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from cherrypick.core.auth import SessionManager
 
-import credentials
+from cherrypick.earnings import credentials
 
 _manager = SessionManager(credentials.store, thread_local=False)
 

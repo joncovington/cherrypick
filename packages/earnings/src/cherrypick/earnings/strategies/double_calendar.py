@@ -32,13 +32,9 @@ Commands (see CLAUDE.md's Tool Reference):
   get_order --symbol X --earnings_date YYYY-MM-DD --earnings_timing "..."
 """
 
-import os
-import sys
 from datetime import date, datetime
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-import scanner
+from cherrypick.earnings import scanner
 
 
 def _strategy_config(config: dict) -> dict:
