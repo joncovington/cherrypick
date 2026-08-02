@@ -111,7 +111,7 @@ def env(tmp_path, monkeypatch):
                     "task_name": "cherrypick-meic-paper-loop",
                 },
                 "streamer": {"enabled": True},
-                "calibration": {"ladder": ["conservative", "moderate", "aggressive"]},
+                "calibration": {"champion": "conservative"},
             },
             "earnings": {
                 "enabled": True,
@@ -150,52 +150,144 @@ def test_build_model_attaches_calibration_and_renders_panel(env):
     _, cfg = env
     m = dashboard.build_model(cfg)
     views = {mv["name"]: mv for mv in m["modules"]}
-    # meic has a ladder -> its closed profiles (conservative, aggressive) carry recommendations.
+    # meic has a champion -> conservative is the champion, aggressive is a challenger, and the
+    # module carries a module-level recommendation (was per-tag under the old ladder model).
     meic_cal = views["meic"]["calibration"]
     assert meic_cal["ok"] is True
-    assert "conservative" in meic_cal["profiles"]
-    assert meic_cal["profiles"]["conservative"]["recommendation"] is not None
-    # the rendered page shows the calibration section.
-    assert "calibration" in dashboard._render_html(m)
+    assert meic_cal["champion"] == "conservative"
+    assert meic_cal["profiles"]["conservative"]["role"] == "champion"
+    assert meic_cal["profiles"]["aggressive"]["role"] == "challenger"
+    assert meic_cal["recommendation"] is not None
+    # the rendered page shows the consolidated champions/challengers section.
+    assert "champions" in dashboard._render_html(m)
 
 
 def test_calibration_html_variants():
-    graduate = {
-        "profiles": {
-            "conservative": {
-                "reading": {"sample": 25, "win_rate": 0.7, "days": 20},
-                "recommendation": {"recommendation": "graduate:moderate", "reason": "eligible to graduate"},
-            }
+    beats = [
+        {
+            "name": "meic",
+            "calibration": {
+                "ok": True,
+                "champion": "conservative",
+                "recommendation": {
+                    "eligible": True,
+                    "recommendation": "champion:moderate",
+                    "reason": "moderate wins",
+                },
+                "profiles": {
+                    "conservative": {
+                        "reading": {},
+                        "role": "champion",
+                        "metric": {"name": "net_pnl", "value": 10.0},
+                    },
+                    "moderate": {
+                        "reading": {"sample": 25, "win_rate": 0.7, "days": 20},
+                        "role": "challenger",
+                        "qualified": True,
+                        "beats_champion": True,
+                        "deliberate_only": False,
+                        "checks": {"sample": {"value": 25, "threshold": 20, "pass": True}},
+                    },
+                },
+            },
         }
-    }
-    out = dashboard._calibration_html(graduate)
-    assert "eligible" in out and "graduate" in out and "conservative" in out
+    ]
+    out = dashboard._champions_html(beats)
+    assert "champion" in out and "beats champion" in out and "moderate" in out and "moderate wins" in out
 
-    hold = {
-        "profiles": {
-            "conservative": {
-                "reading": {"sample": 3, "win_rate": 0.5, "days": 1},
-                "recommendation": {"recommendation": "hold", "reason": "sample below threshold"},
-            }
+    not_qualified = [
+        {
+            "name": "meic",
+            "calibration": {
+                "ok": True,
+                "champion": "conservative",
+                "recommendation": {
+                    "eligible": False,
+                    "recommendation": "retain:conservative",
+                    "reason": "hold",
+                },
+                "profiles": {
+                    "conservative": {
+                        "reading": {},
+                        "role": "champion",
+                        "metric": {"name": "net_pnl", "value": 10.0},
+                    },
+                    "moderate": {
+                        "reading": {"sample": 3, "win_rate": 0.5, "days": 1},
+                        "role": "challenger",
+                        "qualified": False,
+                        "beats_champion": False,
+                        "deliberate_only": False,
+                        "checks": {"sample": {"value": 3, "threshold": 20, "pass": False}},
+                    },
+                },
+            },
         }
-    }
-    assert "hold" in dashboard._calibration_html(hold)
+    ]
+    out2 = dashboard._champions_html(not_qualified)
+    assert "not qualified" in out2
+    assert "beats champion" not in out2  # only the actually-beating variant renders that pill
 
-    # off-ladder (recommendation None) and empty -> panel omitted.
-    assert dashboard._calibration_html({"profiles": {"x": {"reading": {}, "recommendation": None}}}) == ""
-    assert dashboard._calibration_html({}) == ""
+    # readings-only mode (no champion) still renders -- this is the direct fix for the bug where a
+    # module with no champion-mode recommendation was hidden entirely.
+    readings_only = [
+        {
+            "name": "flies",
+            "calibration": {
+                "ok": True,
+                "champion": None,
+                "recommendation": None,
+                "profiles": {
+                    "control": {
+                        "reading": {"sample": 25, "win_rate": 0.7, "days": 20},
+                        "role": None,
+                        "qualified": True,
+                        "checks": {"sample": {"value": 25, "threshold": 20, "pass": True}},
+                    }
+                },
+            },
+        }
+    ]
+    out3 = dashboard._champions_html(readings_only)
+    assert "flies" in out3 and "control" in out3 and "qualified" in out3
+    assert "retain" not in out3 and "champion:" not in out3  # no comparison verdict in this mode
+
+    # no profiles at all -> panel omitted entirely.
+    assert dashboard._champions_html([{"name": "x", "calibration": {"ok": True, "profiles": {}}}]) == ""
+    assert dashboard._champions_html([]) == ""
 
 
 def test_calibration_html_escapes_untrusted_text():
-    cal = {
-        "profiles": {
-            "<b>c</b>": {
-                "reading": {"sample": 1, "win_rate": None, "days": 1},
-                "recommendation": {"recommendation": "hold", "reason": "<script>x</script>"},
-            }
+    module_views = [
+        {
+            "name": "meic",
+            "calibration": {
+                "ok": True,
+                "champion": "conservative",
+                "recommendation": {
+                    "eligible": True,
+                    "recommendation": "champion:<b>x</b>",
+                    "reason": "<script>x</script>",
+                },
+                "profiles": {
+                    "conservative": {
+                        "reading": {},
+                        "role": "champion",
+                        "metric": {"name": "net_pnl", "value": 1.0},
+                    },
+                    "<b>c</b>": {
+                        "reading": {"sample": 1, "win_rate": None, "days": 1},
+                        "role": "challenger",
+                        "qualified": True,
+                        "beats_champion": True,
+                        "deliberate_only": False,
+                        "checks": {},
+                    },
+                },
+            },
         }
-    }
-    out = dashboard._calibration_html(cal)
+    ]
+    out = dashboard._champions_html(module_views)
     assert "<script>x</script>" not in out and "&lt;script&gt;x" in out
     assert "<b>c</b>" not in out and "&lt;b&gt;c" in out
 
@@ -252,7 +344,7 @@ def test_build_model_includes_system_panel(env, monkeypatch, tmp_path):
 
     cs = m["config_summary"]
     assert cs["timezone"] == "America/New_York"
-    assert cs["modules"]["meic"]["ladder"] == ["conservative", "moderate", "aggressive"]
+    assert cs["modules"]["meic"]["champion"] == "conservative"
     assert cs["watchdog"]["interval_minutes"] == 10
     # discord is a supported push channel with no webhook stored -> reported as "not set", never a URL.
     assert cs["notify"]["webhooks"] == {"discord": "not set"}

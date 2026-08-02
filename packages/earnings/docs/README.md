@@ -3,10 +3,10 @@
 Guides for the cherrypick **Earnings** engine — automated overnight, defined-risk earnings options plays
 built on a multi-strategy decision framework.
 
-> **Part of the [cherrypick](../../../README.md) suite.** This is the `cherrypick-earnings` module
+> **Part of the [cherrypick-next](../../../README.md) suite.** This is the `cherrypick-earnings` module
 > (`packages/earnings`). It runs standalone from this folder for live / interactive trading, and is driven
 > unattended by the [orchestrator](../../orchestrator) for paper collection (by subprocess, never by
-> import). Shared logic (`cherrypick.core`) is vendored as the `src/_core` submodule. See the
+> import). Shared logic (`cherrypick.core`) lives in `packages/core`, a sibling in-repo package. See the
 > [package README](../README.md#how-this-fits-the-suite) for how the two roles fit together, and the
 > suite-wide [documentation index](../../../docs/README.md) for the big picture.
 
@@ -119,13 +119,13 @@ Calendar:    Defined risk, term structure edge, time decay
 
 ## Project Structure
 
-This package lives at `packages/earnings/` inside the [cherrypick](../../../README.md) monorepo:
+This package lives at `packages/earnings/` inside the [cherrypick-next](../../../README.md) monorepo:
 
 ```
-cherrypick/
+cherrypick-next/
+├── packages/core/                # Shared cherrypick.core library (in-repo package: calendar, fees)
 └── packages/earnings/           # ← this package (cherrypick-earnings)
     ├── src/
-    │   ├── _core/               # Shared cherrypick.core library (git submodule: calendar, fees)
     │   ├── strategies/          # 6 defined-risk strategy modules
     │   │   ├── iron_fly.py
     │   │   ├── iron_condor.py
@@ -158,13 +158,13 @@ cherrypick/
 
 ### Afternoon, Before the Close
 ```bash
-python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
+python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY
 # Evaluates all 6 strategies against tonight's/tomorrow's calendar, picks each symbol's best
 ```
 
 ### Entry Window (default 15:30-15:55 ET)
 ```bash
-python src/strategies/iron_fly.py get_order --symbol AAPL --earnings_date 2026-07-15 --earnings_timing "After market close"
+python -m cherrypick.earnings.strategies.iron_fly get_order --symbol AAPL --earnings_date 2026-07-15 --earnings_timing "After market close"
 # Returns a concrete order spec, priced off the live chain
 ```
 

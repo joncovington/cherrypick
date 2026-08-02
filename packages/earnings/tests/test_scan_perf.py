@@ -14,9 +14,9 @@ import threading
 import time
 import types
 
-import rank_strategies as rs
-import scanner
-import strategy_test_runner as r
+from cherrypick.earnings import rank_strategies as rs
+from cherrypick.earnings import scanner
+from cherrypick.earnings import strategy_test_runner as r
 
 
 # --------------------------------------------------------------------------- thread-local tt cache

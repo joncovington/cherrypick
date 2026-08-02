@@ -103,11 +103,11 @@ def test_find_stray_artifacts_flags_runtime_outputs(tmp_path):
     }
 
 
-def test_find_stray_artifacts_skips_vendored_and_cache_dirs(tmp_path):
-    for skip in ("_core", "__pycache__", ".git"):
+def test_find_stray_artifacts_skips_cache_and_vcs_dirs(tmp_path):
+    for skip in (".venv", "__pycache__", ".git"):
         d = tmp_path / skip
         d.mkdir()
-        (d / "leftover.db").write_text("")  # a db inside a vendored/cache dir is not a leak
+        (d / "leftover.db").write_text("")  # a db inside a cache/VCS dir is not a leak
     (tmp_path / "config.example.json").write_text("{}")  # non-runtime file, ignored
     assert doctor.find_stray_artifacts([tmp_path]) == []
 

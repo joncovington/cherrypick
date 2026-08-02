@@ -1,6 +1,6 @@
 """Adapter mapping: build_gex payload -> cherrypick.core.viz section schema (no cache needed)."""
 
-import section
+from cherrypick.gex import section
 
 _CANNED = {
     "ok": True,

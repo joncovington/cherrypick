@@ -1,3 +1,0 @@
-tastytrade
-keyring
-mysql-connector-python

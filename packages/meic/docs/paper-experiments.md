@@ -4,7 +4,100 @@ a how-to guide — see [paper-trading.md](paper-trading.md) for the general pape
 and [risk-profiles.md](risk-profiles.md) for the risk-profile ladder it's built on. Part of the
 [MEIC module](../README.md) in the cherrypick suite.
 
+## Independent sampling (2026-08-01) — every profile is a sample stream
+
+**What changed.** All profiles now run uncapped (`max_concurrent_ics: 99`), with no entry spacing
+(`min_minutes_between_entries: 0`) and `overlap_scope: "shorts"` — only an exact **short-pair**
+repeat is refused. The short pair is the profit zone, exactly as a butterfly's centre is, and flies
+enforces the same one-structure-per-centre rule for the same reason: a second structure on the same
+zone doubles the bet without adding a zone.
+
+**Pacing is now the market's, not a clock's.** Entries are limited by how many distinct short pairs
+the underlying's path makes available during the window — the model flies uses. Measured on a
+simulated SPX session, samples per profile went **4 → 13**, and the two changes compound: the overlap
+rule alone gives 4→8, dropping the clock alone gives 4→5, because overlap was the binding constraint.
+
+**`stagger_entries` stays on** even with zero spacing. It is what keeps `daily_ic_trade_target` a
+HARD cap and, more importantly, skips the over-target credit-floor tightening — without it, later
+entries in a session would face a stricter floor than earlier ones and every comparison would
+silently measure floor drift.
+
+**Two consequences to keep in view.**
+
+1. **The risk ladder lost its offset axis.** `max_concurrent_ics` used to fall as rungs got riskier
+   (4/4/3/2), bounding book risk. With no book there is nothing to bound, so the rungs now differ
+   **only** in entry quality — IV floor, credit floor, delta ceiling, OTM distance, stop. That is a
+   cleaner comparison than before, but it is a real change of meaning, and `conservative` is no
+   longer "the config defaults as a book".
+2. **Paper models no buying power.** An uncapped stream is only honest as a *sample* stream: its P&L
+   is a sum of independent samples, **not a book's P&L**, and must not be read as one. Rows before
+   2026-08-01 are book-semantics and are not comparable across the switch.
+
+**What this does and does not buy.** More samples per session improve coverage of time-of-day,
+moneyness and strike space, and reduce the influence of any single entry's luck. They do **not**
+proportionally raise the effective N: same-day trades share a regime, so sessions remain the unit of
+independence. For the GEX study specifically the gain is smaller still — net-GEX sign was one-sided
+on 3 of the 4 sessions measured (2.3%, 98.3% and 100% positive; only 07-30 saw both states), so the
+blocked-vs-allowed contrast is mostly a between-day comparison regardless of intraday sample count.
+
+
+## GEX study (2026-08-01) — does the GEX gate earn what it cuts?
+
+**The question.** `regime_gex_block_negative` refuses entry whenever net GEX is confirmed negative.
+It is on by default and it is the module's single biggest brake: across 2026-07-29…31 it blocked
+**400 in-window iterations** (234 QQQ, 166 XSP). Nothing establishes that the trades it removes would
+have been worse than the ones it keeps. Only 20 historical trades carry GEX at all, all from one
+session, and there is no backfill path — so this is forward-looking only.
+
+**The arms.** `gex-open` (control, ungated) and `gex-blocked` (treatment, runs the live policy),
+identical in **every** key except `regime_gex_block_negative`. `test_gex_study_arms_differ_in_exactly_one_key`
+pins that, because an arm edited on one side and not the other silently turns the study into a
+comparison of two different strategies — the failure flies recorded twice, where a wider window let
+one arm out-earn control purely by trading more often.
+
+Both are forced-sampling like the width arms (`stagger_entries`, 15-minute spacing,
+`max_concurrent_ics: 99`, `daily_ic_trade_target: 24`) so the **gate is the only thing that ever
+binds**, and both face an identical credit floor on identical ticks — `stagger_entries` makes the
+daily target a hard cap, which also skips the over-target floor tightening that would otherwise drift
+between them. Symbol-agnostic, so the `(profile × symbol)` grain supplies that axis.
+
+**Read order** — `python -m cherrypick.meic.experiment`:
+
+1. **The within-arm counterfactual, on `gex-open` alone.** This is the primary read. All three GEX
+   gates are pure entry filters and every fill stamps the GEX state it saw, so splitting the ungated
+   arm's own trades by `gex_positive_at_entry` shows exactly what each gate would have blocked, on the
+   same days, with every trade informative. `block_negative`, `require_positive` and a swept
+   `min_flip_distance_pct` all come out of the same rows — three answers from one arm.
+2. **`gex-open` vs `gex-blocked` P&L.** Secondary. The only read that sees the path-dependent
+   portfolio effect (a blocked entry frees a slot and changes what trades later), which the within-arm
+   split structurally cannot.
+3. **The divergence log** (`loop_log.action = 'width_arm_divergence'`, now written for `gex-` arms
+   too): who sat out and why. A refused entry is an outcome, not missing data.
+
+**Sessions are the sample, not trades.** Same-day trades share a regime. `experiment.py` reports
+`sessions` beside every trade count and refuses to quote a bootstrap interval below **14 sessions**
+(`PROMOTION_RULE.min_days`); the bootstrap resamples whole sessions rather than individual trades,
+because with fewer than ~30 clusters per-trade inference is badly optimistic. Read at 14, decide at
+20+.
+
+**The decision.** If the blocked trades are not meaningfully worse than the allowed ones, the gate is
+cutting ~40% of samples for nothing and `regime_gex_block_negative` should default to `false` — the
+same standard applied to flies' pre-close ITM exit. If they are worse, the flip-distance sweep says
+whether the stricter variants are worth enabling. Nothing changes the live loop automatically.
+
+
 # Paper-trading experiment cells (account-size study)
+
+> **2026-08-01 — symbols narrowed to SPX, registry narrowed to two rungs.** `symbols` is now
+> `["SPX"]`, dropping XSP and QQQ. That ends the deliberate cash-vs-physical settlement pairing
+> chosen on 2026-07-28 (QQQ was the physically-settled half) — accepted because no MEIC session has
+> recorded a trade since 07-28, so nothing was actually accumulating on that axis. The reason for the
+> move is fee drag: the flat $5-per-ITM-strike settlement fee and the per-contract commission stack
+> are near-constant in dollars while credit scales with the underlying, so a $7,500 index carries them
+> far better than a $750 one. `aggressive` and the four `width-*` arms were disabled the same day
+> (see `config.risk.json`); only `conservative` and `moderate` still run. Eight profiles across two
+> symbols was sixteen portfolios competing for the same ticks — more books than any of them was
+> answering a question about.
 
 > ## Retired 2026-07-18 — resumed 2026-07-28 as the wing-width study
 >
@@ -65,7 +158,7 @@ over-target floor-tightening) — so a paired comparison across widths on the sa
    per cell.
 
 **Surfaces:**
-- `python src/db.py get_range_summary` — `by_profile["width-2"…]` pools each width across symbols
+- `python -m cherrypick.meic.db get_range_summary` — `by_profile["width-2"…]` pools each width across symbols
   (convenient, but mixes cash/physical settlement mechanics — read with that caveat); portfolios
   `width-2:XSP`, `width-2:QQQ`, … via `compare_profiles`.
 - The dashboard's Performance view carries a **Width Study** frame: one cumulative-P&L line chart
@@ -81,7 +174,7 @@ over-target floor-tightening) — so a paired comparison across widths on the sa
   read both gross and net of that modeled cost rather than treating a width "result" there as free of
   the two uncalibrated settlement-friction constants.
 
-The parallel-shadow paper engine (`src/paper.py`, driven unattended by `src/paper_loop.py`)
+The parallel-shadow paper engine (`cherrypick/meic/paper.py`, driven unattended by `cherrypick/meic/paper_loop.py`)
 evaluates **every** profile in `config.risk.json` against each iteration's market snapshot, per
 symbol, writing all books to `~/.cherrypick/data/meic/paper_trades.db`. Beyond the four-tier risk
 ladder (conservative → very-aggressive), the registry *used to* hold **experiment cells** whose
@@ -139,7 +232,7 @@ day a cell simply holds its four cohorts; on a choppy day it rotates through mor
 Every book is tagged with its profile name in `ic_trades.risk_profile`, and the whole read side is
 profile-name-agnostic:
 
-- `python src/db.py get_range_summary --start <d> --end <d>` groups metrics by profile.
+- `python -m cherrypick.meic.db get_range_summary --start <d> --end <d>` groups metrics by profile.
 - The daemon's deterministic EOD report (`logs/paper-eod-<day>.md`) tables every profile that
   traded, with a **Symbol** column — so each cell reads directly as an account-size / wing / credit
   comparison — and notes which configured profiles were idle.
@@ -151,7 +244,7 @@ All cells are validated **forward** by the automated paper engine (`paper_loop.p
 tastytrade data — the cells accumulate real, tagged trades day to day and surface in
 `get_range_summary` / the EOD report / the dashboard.
 
-> ⚠️ The SPX historical replay tool (`src/paper_replay.py`) is **not** used: its bulk-extraction
+> ⚠️ The SPX historical replay tool (`cherrypick/meic/paper_replay.py`) is **not** used: its bulk-extraction
 > design is incompatible with 0DTESPX's terms of service (confirmed 2026-07-13). See
 > [0dtespx-api.md](0dtespx-api.md) and the warning in [paper-trading.md](paper-trading.md). Historical
 > backtesting is therefore out of scope here; the sanctioned server-side alternatives (0DTESPX

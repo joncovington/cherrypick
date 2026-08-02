@@ -3,7 +3,7 @@
   Run the MEIC core.broker DRY-RUN smoke (phase-5 gate) with pre-flight checks.
 
 .DESCRIPTION
-  Wrapper over src/live_smoke.py: warns if the market is closed or the deploy governor is off,
+  Wrapper over cherrypick.meic.live_smoke: warns if the market is closed or the deploy governor is off,
   then runs the supervised dry run. Nothing is ever placed -- the harness has no live code path,
   and enable_live_trading stays false throughout. You will be shown the exact order and must
   type DRY-RUN to send it to the broker's dry-run preflight.
@@ -59,7 +59,7 @@ if (Test-Path $cfgPath) {
 $py = Get-Command python -ErrorAction SilentlyContinue
 if ($null -eq $py) { Write-Host "ERROR: python not found on PATH." -ForegroundColor Red; exit 1 }
 
-$argv = @("src/live_smoke.py", "--symbol", $Symbol, "--quantity", $Quantity)
+$argv = @("-m", "cherrypick.meic.live_smoke", "--symbol", $Symbol, "--quantity", $Quantity)
 if ($WingWidth -gt 0) { $argv += @("--wing_width", $WingWidth) }
 if ($Yes) { $argv += "--yes" }
 

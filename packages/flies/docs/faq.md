@@ -37,7 +37,7 @@ walkthrough and current results, and `CLAUDE.md`'s "honesty rules" for the speci
 module is built to refuse to make (a per-position floor is not a book-level floor, an
 uncompleted credit spread is not risk-free, and so on).
 
-## Why not trade SPY, /ES, or /MES instead of SPX/XSP, now that the pre-close ITM exit closes ITM positions anyway?
+## Why not trade SPY, /ES, or /MES instead of SPX/XSP, to shrink the assignment fee's bite?
 
 A larger notional — SPY (~$550–600) or the E-mini/Micro E-mini S&P 500 futures (/ES ~$250k+,
 /MES ~$25k notional per contract, vs. XSP's ~$70–80) — would shrink the $5-per-strike
@@ -55,11 +55,12 @@ symbol would need the assignment machinery MEIC carries."*
 Two concrete things break once exercise isn't a cash-settlement event:
 
 - **Early assignment.** A cash-settled index option can only be exercised at expiration, so the
-  pre-close ITM exit (`engine.evaluate_pre_close_exit`) gets to *choose*, in the closing minutes,
-  whether buying a position back is cheaper than the assignment fee it would otherwise incur. An
+  cost is *scheduled*: the module knows the exact moment it can be charged, prices it in advance
+  (`fly.expire_fee`), and reserves it in every position's floor (`fly.WORST_CASE_ITM_LEGS`). An
   American-style option can be assigned at **any point** it's ITM, with no warning and no window
-  to react in first — the entire mechanism this module built to dodge the fee depends on
-  assignment being a scheduled, predictable, expiration-only event. Per CME Group's own FAQ,
+  to react in first — a position could be broken open mid-session, which turns a known, bounded,
+  reservable fee into an unbounded structural risk the floor could not honestly be computed
+  against at all. Per CME Group's own FAQ,
   E-mini S&P 500 options are explicitly American-style and exercisable "until 7:00 p.m. CT on
   any business day the option is traded," not just at expiration.
 - **The position doesn't resolve to cash.** The strategy's whole thesis — a long butterfly's

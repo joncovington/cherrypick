@@ -27,24 +27,31 @@ idea itself, is what this module is really for.
 ## Quick start
 
 ```bash
-git submodule update --init --recursive     # pulls in the shared cherrypick-core library
+pip install -e ../core                       # the shared cherrypick.core library, install first
+pip install -e ".[dev]"
 cp config.example.json config.json
 python -m pytest                             # confirm everything checks out
 
 # paper trading (simulated) — requires the suite's shared streamer to be running
-python src/paper_loop.py --once             # run one pass across every strategy variant
-python src/paper_loop.py --interval 300     # keep running until the market close
-python src/paper_loop.py --settle           # book the day's results after the closing bell
-python src/paper_loop.py --status           # what's open, what's settled, right now
+python -m cherrypick.flies.paper_loop --once             # run one pass across every strategy variant
+python -m cherrypick.flies.paper_loop --interval 300     # keep running until the market close
+python -m cherrypick.flies.paper_loop --settle           # book the day's results after the closing bell
+python -m cherrypick.flies.paper_loop --status           # what's open, what's settled, right now
 
 # or feed it a saved snapshot file instead of a live data feed
 python run.py once --snapshot snapshot.json
 
 # monitoring and review
-python src/dashboard.py --port 8803 --open   # opens a browser dashboard: Today / History / Performance
+python -m cherrypick.flies.dashboard --port 8803 --open   # opens a browser dashboard: Today / History / Performance
 python run.py section --json                 # the compact summary card shown on the suite-wide dashboard
-python src/paper_loop.py --eod-reports       # regenerates the day's end-of-day report
+python run.py regime                         # results grouped by the market regime each trade entered into
+python -m cherrypick.flies.paper_loop --eod-reports       # regenerates the day's end-of-day report
 ```
+
+`regime` reports coverage first — how much of the book carries each tag, and whether a tag ever took
+more than one value — because a table split on a tag that never varied looks like a result and isn't.
+Pass `--dimension gex|vol|skew|time` for one dimension, or `--bucket-edges 0.4,0.6` to re-cut the
+recorded measurement at different thresholds without re-running any sessions.
 
 The paper-trading database lives at `~/.cherrypick/data/flies/paper_trades.db` (override with
 the `FLIES_DB_PATH` environment variable if you need a different location).
@@ -116,7 +123,7 @@ and full defined-risk exposure, not a bounded floor.
 
 ## Monitoring dashboard
 
-Start it with `python src/dashboard.py --port 8803 --open`, or ask Claude to run
+Start it with `python -m cherrypick.flies.dashboard --port 8803 --open`, or ask Claude to run
 `/serve-dashboard --flies`. It's read-only and only reachable from your own computer (no
 outside network access), and has three views:
 

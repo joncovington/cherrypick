@@ -83,18 +83,24 @@ def test_vix_by_session_degrades_without_the_table(tmp_path):
     assert dashboard._vix_by_session(cfg) == {}
 
 
-# --------------------------------------------------------------------- calibration card
-def _module_view(checks, eligible=False, verdict="hold"):
+# --------------------------------------------------------------------- champions/challengers card
+def _module_view(checks, qualified=False, beats_champion=False):
     return {
         "name": "meic",
         "calibration": {
             "ok": True,
-            "ladder": ["conservative"],
+            "champion": "champ",
+            "recommendation": {"eligible": beats_champion, "recommendation": "hold", "reason": "r"},
             "profiles": {
+                "champ": {"reading": {}, "role": "champion", "metric": {"name": "net_pnl", "value": 1.0}},
                 "conservative": {
                     "reading": {},
-                    "recommendation": {"checks": checks, "eligible": eligible, "recommendation": verdict},
-                }
+                    "role": "challenger",
+                    "qualified": qualified,
+                    "beats_champion": beats_champion,
+                    "deliberate_only": False,
+                    "checks": checks,
+                },
             },
         },
     }
@@ -110,17 +116,17 @@ def test_calibration_card_renders_every_check_as_progress():
             "pass": True,
         },
     }
-    out = dashboard._calibration_progress_html([_module_view(checks)])
-    assert "progress toward promotion" in out
+    out = dashboard._champions_html([_module_view(checks)])
+    assert "champions" in out
     assert "sample" in out and "12 / 20" in out
     assert "win_rate" in out and "0.70 / 0.60" in out
     # Non-numeric threshold renders as a chip, not a fabricated bar.
     assert "slippage_survival" in out and "PASS" in out
 
 
-def test_calibration_card_empty_without_ladders():
-    views = [{"name": "flies", "calibration": {"ok": True, "ladder": []}}]
-    assert dashboard._calibration_progress_html(views) == ""
+def test_calibration_card_empty_without_any_profiles():
+    views = [{"name": "flies", "calibration": {"ok": True, "profiles": {}}}]
+    assert dashboard._champions_html(views) == ""
 
 
 def test_static_render_embeds_the_inline_equity_card():

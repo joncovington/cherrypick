@@ -71,11 +71,20 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 ### 7. GEX Negative Gate (Symbol-Specific)
 - **Trigger**: Net GEX < 0 (price below gamma flip); dealers short gamma
 - **Effect**: Pause IC entries for THIS symbol
-- **Config**: None (computed from streamer's GEX data)
+- **Config**: `regime_gex_block_negative` (default `true` — the gate is on unless a profile turns it off)
 - **Rationale**: Negative gamma = dealer amplification of moves, unstable for short premium
 - **IC Impact**: Blocks this symbol's IC entries
 - **ORB Impact**: NOT blocked
 - **Fallback**: If GEX data unavailable, proceed without GEX (do not block on missing data)
+- **Unproven** (noted 2026-08-01): this gate refuses roughly 40% of samples — SPX net-GEX sign runs
+  ~61% positive and swings hard by day (2.3% positive on 2026-07-29, 98.3% on 2026-07-31) — and
+  nothing yet establishes that the trades it cuts would have been worse than the ones it keeps.
+  Only 20 trades carry `gex_net_at_entry` (all from 2026-07-28) and no backfill exists. The switch
+  is there so a shadow profile with `regime_gex_block_negative: false` can run beside the gated one
+  — same days, one difference — and settle it. **That study is now running**: the `gex-open` /
+  `gex-blocked` arm pair, read with `python -m cherrypick.meic.experiment` — see
+  [docs/paper-experiments.md](docs/paper-experiments.md#gex-study-2026-08-01--does-the-gex-gate-earn-what-it-cuts).
+  Until it reports, the gate stays on by default, but treat it as untested rather than validated.
 
 ### 8. Zero-Gamma Threat (Symbol-Specific, Non-Blocking)
 - **Trigger**: Price within 0.3% of gamma flip level; close to regime boundary
@@ -118,17 +127,23 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 - **ORB Impact**: Hard block
 
 ### 12. Max Concurrent ICs Gate (Global, Hard Stop)
-- **Trigger**: Already have `max_concurrent_ics` (4) open ICs
+- **Trigger**: Already have `max_concurrent_ics` open ICs
+- **Config**: `max_concurrent_ics` — **99 on every profile since 2026-08-01** (was 4/4/3/2 down the
+  ladder). Independent sampling removed the concurrency cap as a risk offset; see
+  `docs/risk-profiles.md`'s top-of-file note and `docs/paper-experiments.md`'s "Independent sampling"
+  section. Structurally never binds at 99 — kept as a config key, not a live constraint, unless a
+  profile is deliberately given a lower value back for a specific experiment.
 - **Effect**: Reject new IC entries
-- **Config**: `max_concurrent_ics` (4)
 - **Rationale**: Risk management; limits simultaneous directional exposure and stop management load
-- **IC Impact**: Hard block
+- **IC Impact**: Hard block (in practice, never — see above)
 - **ORB Impact**: May also block if position count includes ORB
 
 ### 13. Daily IC Trade Target (Guidance, Soft)
-- **Trigger**: Approaching `daily_ic_trade_target` (2)
+- **Trigger**: Approaching `daily_ic_trade_target`
+- **Config**: `daily_ic_trade_target` — **200 on every profile since 2026-08-01** (was 2). A
+  never-binding backstop now, not a target — a book-sized value of 2 has no meaning once there is no
+  book (see gate 12's note).
 - **Effect**: Do NOT hard-block; instead require higher conviction for additional entries
-- **Config**: `daily_ic_trade_target` (2)
 - **Rationale**: Heuristic guidance on daily activity; buying power is the binding constraint
 - **IC Impact**: Soft guidance (higher selectivity, not a hard stop)
 - **ORB Impact**: Not applicable
@@ -196,7 +211,7 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 - **Config**: `fee_estimate_lookback_trades`, `fee_estimate_min_sample_size`, `fee_estimate_fallback_per_contract`
 - **Rationale**: Credit must clear estimated trading costs (opening); closing fees are typically waived on 0DTE expiration
 - **Estimation Logic**: 
-  - Call `python src/db.py get_fee_estimate --symbol <sym>` to retrieve historical average fee
+  - Call `python -m cherrypick.meic.db get_fee_estimate --symbol <sym>` to retrieve historical average fee
   - If `sample_size < fee_estimate_min_sample_size`, fall back to `fee_estimate_fallback_per_contract[symbol]`
 - **Example**: SPX: $0.45–$0.75 net credit (after fees) qualifies under this gate
 - **IC Impact**: Hard block (separate from gross floor check; entry must clear both)
@@ -339,8 +354,8 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 | ATR pause | `regime_atr_pause_threshold_pct`, `regime_atr_lookback_days` | 0.015 (1.5% of spot), 5 days | Symbol-specific |
 | OPEX range halt | `quarterly_expiry_max_intraday_range_pct` | 0.005 (0.5% of price) | Symbol-specific, OPEX only |
 | FOMC post-blackout | `fomc_post_blackout_min_iv_rank`, `fomc_post_blackout_max_intraday_range_pct` | 0.40, 0.005 | Account-wide, FOMC only |
-| Max concurrent ICs | `max_concurrent_ics` | 4 | Hard stop |
-| Daily IC target | `daily_ic_trade_target` | 2 | Soft guidance |
+| Max concurrent ICs | `max_concurrent_ics` | 99 (was 4; see gate 12) | Hard stop, never binds |
+| Daily IC target | `daily_ic_trade_target` | 200 (was 2; see gate 13) | Soft guidance, never binds |
 | Delta (call) | `max_call_delta_entry`, `_open_volatile`, `_late` | 0.20, 0.19, 0.19 | Hard stop |
 | OTM (call, put) | `min_call_otm_pct`, `min_put_otm_pct` | 0.35%, 0.30% | Hard stop |
 | OPEX OTM override | `quarterly_expiry_min_call_otm_pct`, `quarterly_expiry_skip_open_volatile` | 0.67%, true | Tighter on OPEX |

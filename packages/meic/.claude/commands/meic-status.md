@@ -2,9 +2,9 @@ Display the current MEIC session status as a clear, readable summary.
 
 Run the following in parallel:
 ```bash
-python src/db.py get_open_trades
-python src/db.py get_today_count
-python src/db.py get_today_pnl
+python -m cherrypick.meic.db get_open_trades
+python -m cherrypick.meic.db get_today_count
+python -m cherrypick.meic.db get_today_pnl
 ```
 
 Also query the last 5 loop log entries:

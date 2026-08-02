@@ -1,4 +1,4 @@
-from config import push_min_interval, ws_port
+from cherrypick.gex.config import push_min_interval, ws_port
 
 
 def test_ws_port_defaults_to_http_port_plus_one():

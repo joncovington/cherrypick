@@ -7,7 +7,7 @@ This is the paper-trading counterpart to `/meic-start` — it starts the same sh
 Check if the streamer is running:
 
 ```bash
-python src/streamer.py --status
+python -m cherrypick.meic.streamer --status
 ```
 
 If `running` is `false`: start it as a hidden background process.
@@ -25,12 +25,12 @@ Invoke the `/paper-dashboard` skill to launch (or confirm already running) the p
 Register the unattended paper loop as a Windows scheduled task and fire the first run immediately:
 
 ```bash
-python src/paper_loop.py --install-task
+python -m cherrypick.meic.paper_loop --install-task
 ```
 
-This creates the `cherrypick-meic-paper-loop` task, which runs `python src/paper_loop.py --once` every 2 minutes. Each run is a short-lived process that reliably completes, self-heals if one fails, no-ops outside market hours (it's time-gated), and persists across sessions — the robust way to run it unattended on Windows (a long-running detached daemon proved fragile against stray console events). Each `--once` runs the parallel-shadow engine across every configured symbol: marking/exiting open ICs (per-side stops, the settlement-aware force-close cascade with physical-settlement early close + friction, and cash-settled left-to-expire settlement — no profit target) and evaluating new entries per profile. All writes go to `~/.cherrypick/data/meic/paper_trades.db`; the live account and `~/.cherrypick/data/meic/meic_trades.db` are never touched.
+This creates the `cherrypick-meic-paper-loop` task, which runs `python -m cherrypick.meic.paper_loop --once` every 2 minutes. Each run is a short-lived process that reliably completes, self-heals if one fails, no-ops outside market hours (it's time-gated), and persists across sessions — the robust way to run it unattended on Windows (a long-running detached daemon proved fragile against stray console events). Each `--once` runs the parallel-shadow engine across every configured symbol: marking/exiting open ICs (per-side stops, the settlement-aware force-close cascade with physical-settlement early close + friction, and cash-settled left-to-expire settlement — no profit target) and evaluating new entries per profile. All writes go to `~/.cherrypick/data/meic/paper_trades.db`; the live account and `~/.cherrypick/data/meic/meic_trades.db` are never touched.
 
-(For a one-off manual iteration outside the task — e.g. a final force-close pass — run `python src/paper_loop.py --once`. On non-Windows hosts, run `python src/paper_loop.py` in a terminal or wire a cron job instead.)
+(For a one-off manual iteration outside the task — e.g. a final force-close pass — run `python -m cherrypick.meic.paper_loop --once`. On non-Windows hosts, run `python -m cherrypick.meic.paper_loop` in a terminal or wire a cron job instead.)
 
 Tell the user:
-"Paper-trading session started — the paper loop is registered as a scheduled task running every 2 minutes across all four risk profiles (conservative/moderate/aggressive/very-aggressive), self-healing and time-gated to market hours. It writes a deterministic end-of-day report to logs/paper-eod-<date>.md automatically at the 16:00 settlement pass. Writes go to ~/.cherrypick/data/meic/paper_trades.db only; the live account and ~/.cherrypick/data/meic/meic_trades.db are untouched. Dashboard: http://localhost:5051 (Paper Mode). Stop the session with `python src/paper_loop.py --uninstall-task`; run /paper-report for a synthesized write-up or `python src/paper_loop.py --eod-report` for the day's report on demand."
+"Paper-trading session started — the paper loop is registered as a scheduled task running every 2 minutes across all four risk profiles (conservative/moderate/aggressive/very-aggressive), self-healing and time-gated to market hours. It writes a deterministic end-of-day report to logs/paper-eod-<date>.md automatically at the 16:00 settlement pass. Writes go to ~/.cherrypick/data/meic/paper_trades.db only; the live account and ~/.cherrypick/data/meic/meic_trades.db are untouched. Dashboard: http://localhost:5051 (Paper Mode). Stop the session with `python -m cherrypick.meic.paper_loop --uninstall-task`; run /paper-report for a synthesized write-up or `python -m cherrypick.meic.paper_loop --eod-report` for the day's report on demand."
