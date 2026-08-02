@@ -10,8 +10,9 @@ packages (`../meic`, `../earnings`, `../gex`, `../flies`) and the standalone mar
 using paths from config — for unattended **paper**-trading data collection, with a watchdog +
 notifications so a walk-away user is told (or at least has it logged) whenever something stalls. It never edits a module's internals and
 **never places live trades** — the sole live-adjacent action is *onboarding config* (`connect`/`account`
-select a module's live-trading account; see the Invariants below), never order placement. `ROADMAP.md`
-tracks what has actually shipped; the design rationale behind it is [`docs/design.md`](docs/design.md)
+select a module's live-trading account; see the Invariants below), never order placement. What has
+actually shipped is tracked by git log / commit history (`ROADMAP.md` is deprecated — a frozen Stage 0
+record, see its own header); the design rationale behind it is [`docs/design.md`](docs/design.md)
 (a 2026-07-11 research report, deliberately not updated as work ships); and the suite-wide human
 documentation is the root [documentation index](../../docs/README.md) (architecture, CLI, reporting,
 configuration, guardrails).
@@ -211,7 +212,7 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   hides it. Enforced by `tests/test_headless.py` (a source scan), whose one exemption is `connect.py`:
   its delegated credential entry is interactive by design and must share the user's console.
 - **Account numbers are masked** to the last 4 digits (`****1234`) anywhere they surface in logs or
-  output — never emit a full account number (suite-wide rule from `ROADMAP.md`).
+  output — never emit a full account number (suite-wide rule).
 - **Best-effort side calls never break the reliability path.** The watchdog tick fires
   `trade_notifier.run`, `dashboard.render`, and the EOD digest/insight trigger inside `try/except`; a
   hiccup must not fail the health check. The EOD trigger only *launches* `notify-eod`/`eod-insight` as
@@ -233,7 +234,7 @@ repeated.
 
 - **Instruction files hold no code and no logs.** This `CLAUDE.md` is for build commands, tech-stack
   reference, and project guidelines only — never Python, scripts, code blocks, or scratchpad logic, and
-  never a changelog or task tracker (that is what `ROADMAP.md` and git history are for). Both modules
+  never a changelog or task tracker (that is what git history is for). Both modules
   mark this `CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE`.
 - **Scratch work lives in `.tmp/`.** Temporary scripts/tests go under a gitignored `.tmp/` (or the job
   temp dir) and are deleted when finished — never left in the tree, never written to the repo root.
@@ -276,5 +277,5 @@ repeated.
 - **Scheduler dispatches by platform.** `orchestrator/tasks.py` uses `schtasks` on Windows and a crontab
   backend on POSIX (cherrypick lines tagged `# cherrypick:<name>`). The cron logic is pure + unit-tested;
   cron *execution* on a real POSIX host is still unvalidated. launchd/systemd are future backends.
-- **Commit messages: no AI / co-author attribution or AI signatures** (a suite-wide rule from
-  `ROADMAP.md`). Write docs and PRs from a human developer's perspective.
+- **Commit messages: no AI / co-author attribution or AI signatures** (a suite-wide rule). Write docs
+  and PRs from a human developer's perspective.
