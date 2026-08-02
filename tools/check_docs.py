@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce the suite's documentation guardrails, instead of auditing for them by hand.
+r"""Enforce the suite's documentation guardrails, instead of auditing for them by hand.
 
 This suite already prefers executable invariants to prose -- orchestrator's `test_headless.py` is a
 source scan, and `test_schema_registry.py` enforces schema coverage "not prose". This is the same
@@ -17,6 +17,13 @@ idea for the guardrails that live in every CLAUDE.md:
   6. No unclosed markdown links -- `](path` with no `)`. Rule 2's regex needs the closing paren to
      match at all, so a truncated link is invisible to it: the link renders as literal text and the
      broken-link check never fires. Exactly one existed, and it had survived several doc passes.
+  7. No documented command that points at nothing -- a `-m cherrypick.…` naming a module that does
+     not exist, or a script path that resolves from nowhere a reader could plausibly be standing.
+     This is the class that outlived every hand sweep, because the path was hidden inside something
+     that did not look like a path: three commands ran `Start-Process python -ArgumentList
+     'src\streamer.py'` for weeks after the migration moved that file, while the sweeps were
+     matching `src/<mod>.py`. Prose can be stale and merely misleading; a command is either right
+     or it is broken, so it is worth checking mechanically.
 
 Run: python tools/check_docs.py
 Exits non-zero on any finding, printing `path:line: message` so it reads like a linter.
@@ -57,6 +64,15 @@ _PLACEHOLDER = ("<", ">", "*", "?", "...", "…")
 #: flag. git check-ignore cannot settle it: a directory-only pattern like `logs/` will not match a
 #: path that does not exist yet, because git cannot tell it is a directory.
 _RUNTIME_MARKERS = ("gitignored", "created at", "created on", "at first run", "runtime")
+#: A line inside a fence that actually invokes something, as opposed to sample output or a tree row.
+_CMD_LINE = re.compile(r"\b(?:python3?|pythonw|Start-Process)\b")
+#: A script path used as a command argument. The separator is required: a *bare* `run.py` or `tt.py`
+#: is context-dependent ("run this from packages/orchestrator") and is also what tree rows are made
+#: of, so demanding one keeps this rule off both. A separator is what the real bug class had --
+#: `src/streamer.py` and the backslashed `'src\streamer.py'` inside a PowerShell argument list.
+_CMD_PATH = re.compile(r"[\w.@-]*[/\\][\w./\\@-]*\.py\b")
+#: `-m some.dotted.module`, including the quoted/comma form PowerShell needs ('-m','cherrypick.x').
+_DASH_M = re.compile(r"-m[\s,'\"]+['\"]?(cherrypick\.[\w.]+)")
 
 TEXT_SUFFIXES = {".md", ".toml", ".ini", ".cfg", ".yml", ".yaml", ".json", ".ps1", ".sh", ".py"}
 DOC_SUFFIXES = {".md"}
@@ -124,6 +140,79 @@ def _exists_exact(p: Path) -> bool:
     except OSError:
         return False
     return True
+
+
+def _real_modules() -> set[str]:
+    """Every importable `cherrypick.*` dotted name, derived from the filesystem.
+
+    Deliberately not `importlib.util.find_spec`: the `docs` CI job is a bare checkout plus Python and
+    installs no packages, so an import-based check would report every module missing there. Walking the
+    tree also sidesteps per-package layout differences for free -- `packages/core` is flat while the
+    other six are src-layout, and `cherrypick.cli` sits a level above `cherrypick.orchestrator.*`.
+    """
+    names: set[str] = set()
+    roots = [ROOT / "packages/core/cherrypick"]
+    pkgs = ROOT / "packages"
+    if pkgs.is_dir():
+        roots += [p / "src/cherrypick" for p in pkgs.iterdir() if (p / "src/cherrypick").is_dir()]
+    for base in roots:
+        if not base.is_dir():
+            continue
+        for f in base.rglob("*.py"):
+            parts = list(f.relative_to(base.parent).with_suffix("").parts)
+            if parts[-1] == "__init__":
+                parts = parts[:-1]
+            if parts:
+                names.add(".".join(parts))
+    return names
+
+
+def _check_commands(rel: str, lines: list[str], modules: set[str]) -> list[str]:
+    """Verify that documented commands still point at something real.
+
+    This closes the class of bug that survived every earlier sweep: a module path embedded in
+    something that does not look like a path. Three commands launched
+    `Start-Process python -ArgumentList 'src\\streamer.py'` for weeks after the namespace migration
+    moved that file, because sweeps matched `src/<mod>.py` and not a backslashed bare filename inside
+    a PowerShell argument list. Two deleted slash commands had the same shape.
+
+    Two checks, both scoped to lines inside a fence that actually invoke something:
+
+    * `-m cherrypick.…` must name a real module. This is the form the whole suite now uses, so it is
+      the highest-value thing to keep honest.
+    * A script path *containing a separator* must resolve against the doc's own directory, its package
+      root, or the repo root -- whichever the reader would plausibly be sitting in. Bare filenames are
+      excluded on purpose; `python run.py` is meaningful only next to the prose telling you where to
+      run it, and would fire on every one of the 56 legitimate uses.
+    """
+    findings: list[str] = []
+    parts = rel.split("/")
+    pkg_root = ROOT / parts[0] / parts[1] if len(parts) > 2 and parts[0] == "packages" else ROOT
+    bases = [(ROOT / rel).parent, pkg_root, ROOT]
+
+    in_fence = False
+    for n, line in enumerate(lines, 1):
+        if _FENCE.match(line):
+            in_fence = not in_fence
+            continue
+        if not in_fence or not _CMD_LINE.search(line):
+            continue
+
+        for dotted in _DASH_M.findall(line):
+            if dotted.endswith(".") or any(t in dotted for t in _PLACEHOLDER):
+                continue  # `-m cherrypick.meic.<mod>` names a shape, not a module
+            if dotted not in modules:
+                findings.append(f"{rel}:{n}: `-m {dotted}` is not a real module")
+
+        for token in _CMD_PATH.findall(line):
+            if any(t in token for t in _PLACEHOLDER) or token.startswith(("http", "~")):
+                continue
+            if not any(_exists_exact(b / token) for b in bases):
+                findings.append(
+                    f"{rel}:{n}: command references {token!r}, which resolves from neither this "
+                    "file's directory, its package root, nor the repo root"
+                )
+    return findings
 
 
 def _check_trees(rel: str, lines: list[str]) -> list[str]:
@@ -197,6 +286,7 @@ def _check_trees(rel: str, lines: list[str]) -> list[str]:
 
 def check(paths: list[Path]) -> list[str]:
     findings: list[str] = []
+    modules = _real_modules()
     for path in paths:
         if path.suffix.lower() not in TEXT_SUFFIXES or not path.exists():
             continue
@@ -241,6 +331,7 @@ def check(paths: list[Path]) -> list[str]:
                         "(it renders as literal text, and the broken-link check cannot see it)"
                     )
             findings += _check_trees(rel, lines)
+            findings += _check_commands(rel, lines, modules)
     return findings
 
 
