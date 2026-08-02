@@ -72,7 +72,7 @@ from cherrypick.meic.session import get_session  # noqa: E402
 # src/cherrypick/meic/streamer.py -> package root is four parents up.
 _ROOT = Path(__file__).resolve().parents[3]
 _CACHE_DB = _paths.stream_cache_path()  # canonical shared cache ~/.cherrypick/data/marketdata/ (READ-ONLY here now — the standalone streamer owns it)
-_PID_FILE = _paths.data_path("cherrypick.meic.streamer.pid")
+_PID_FILE = _paths.data_path("streamer.pid")
 _REST_DB = _paths.data_path(
     "rest_cache.db"
 )  # MEIC-owned REST cache (account/positions/overview). The sidecar writes THIS, never the shared market-data cache.
@@ -80,7 +80,7 @@ _SIDECAR_PID = _paths.data_path(
     "sidecar.pid"
 )  # PID for the REST-poller + 7699 API sidecar (distinct from the streamer PID)
 _TRADES_DB = _paths.live_db_path()
-_LOG_FILE = _paths.log_path("cherrypick.meic.streamer.log")
+_LOG_FILE = _paths.log_path("streamer.log")
 
 # ---------------------------------------------------------------------------
 # Logging
