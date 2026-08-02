@@ -14,15 +14,9 @@ already has the suite's tastytrade OAuth stored.
 from __future__ import annotations
 
 import logging
-import sys
-from pathlib import Path
 
-_CORE = Path(__file__).resolve().parent / "_core"
-if _CORE.is_dir() and str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
-
-from cherrypick.core.auth import CredentialStore, SessionManager  # noqa: E402
-from cherrypick.core.streamer import ChainStreamer  # noqa: E402
+from cherrypick.core.auth import CredentialStore, SessionManager
+from cherrypick.core.streamer import ChainStreamer
 
 _SERVICE = "meicagent"
 _LEGACY = "tastytrade-mcp"

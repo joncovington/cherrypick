@@ -12,17 +12,13 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
+
+from cherrypick.core import home as _home
 
 ROOT = Path(__file__).resolve().parent.parent  # repo root (holds config.json / run.py)
 CONFIG_PATH = ROOT / "config.json"
 EXAMPLE_PATH = ROOT / "config.example.json"
-
-# Bootstrap the cherrypick-core submodule (src/_core) so the shared home resolver imports. Idempotent.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
-
-from cherrypick.core import home as _home  # noqa: E402
 
 _DEFAULTS = {
     "symbols": ["SPX"],

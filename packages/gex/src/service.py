@@ -8,30 +8,22 @@ MEIC's dashboard so the two render identically off the same cache.
 
 from __future__ import annotations
 
-# Bootstrap the cherrypick-core submodule (src/_core) onto sys.path without an install, so a fresh
-# `git clone --recursive` works out of the box (mirrors MEIC's credentials.py).
 import os
 import signal
-import sys as _sys
+import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-_CORE = Path(__file__).resolve().parent / "_core"
-if _CORE.is_dir() and str(_CORE) not in _sys.path:
-    _sys.path.insert(0, str(_CORE))
-
-import sqlite3  # noqa: E402
-
-from cherrypick.core.gex import (  # noqa: E402
+from cherrypick.core.gex import (
     compute_gex_profile,
     nearest_zero_gamma,
     net_walls,
     volume_totals,
 )
 
-import provider as _provider  # noqa: E402
+import provider as _provider
 
 _ET = ZoneInfo("America/New_York")
 
