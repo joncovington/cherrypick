@@ -13,7 +13,7 @@ python -m cherrypick.meic.streamer --status
 If `running` is `false`: start it as a hidden background process.
 
 ```bash
-Start-Process python -ArgumentList 'src\streamer.py' -WorkingDirectory $PWD -WindowStyle Hidden
+Start-Process python -ArgumentList '-m','cherrypick.meic.streamer' -WindowStyle Hidden
 ```
 
 ## Step 2 — Paper-trading dashboard

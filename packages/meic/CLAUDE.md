@@ -92,7 +92,7 @@ All tastytrade operations are called via `python -m cherrypick.meic.tt <command>
 python -m cherrypick.meic.streamer
 
 # Start hidden (Windows, alongside dashboard)
-Start-Process python -ArgumentList 'src\streamer.py' -WorkingDirectory $PWD -WindowStyle Hidden
+Start-Process python -ArgumentList '-m','cherrypick.meic.streamer' -WindowStyle Hidden
 
 # Check status
 python -m cherrypick.meic.streamer --status
