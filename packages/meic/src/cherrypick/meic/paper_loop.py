@@ -69,9 +69,16 @@ _ROOT = Path(__file__).resolve().parents[3]
 
 # Runtime data (DB, PID, lock) lives in the data home and logs in the logs home; only config stays
 # in the package.
-_PID_FILE = _paths.data_path("cherrypick.meic.paper_loop.pid")
-_LOCK_FILE = _paths.data_path("cherrypick.meic.paper_loop.once.lock")
-_LOG_FILE = _paths.log_path("cherrypick.meic.paper_loop.log")
+# These are on-disk runtime artifact names, deliberately NOT the dotted module path. The namespace
+# migration briefly renamed them to `cherrypick.meic.paper_loop.*`, which changed three things it had
+# no reason to touch: the log split in two (months of history under the old name, live writes under
+# the new, with the orchestrator's config still pointing at the dead one), and the PID and lock files
+# moved -- so a process started before the rename would have been invisible to the single-instance
+# guard, which is the one thing that guard exists to prevent. flies kept its own names through the
+# same migration; this matches it. Renaming these is a data migration, not a refactor.
+_PID_FILE = _paths.data_path("paper_loop.pid")
+_LOCK_FILE = _paths.data_path("paper_loop.once.lock")
+_LOG_FILE = _paths.log_path("paper_loop.log")
 _TASK_NAME = "cherrypick-meic-paper-loop"
 _PAPER_DB = str(_paths.paper_db_path())
 # `-m` rather than a path to the script: independent of this file's depth on disk and of the child's

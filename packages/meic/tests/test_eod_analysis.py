@@ -31,7 +31,7 @@ def _seed(tmp_path, monkeypatch):
 
     monkeypatch.setattr(db, "_DB_PATH", paper_db)
     monkeypatch.setattr(paper_loop, "_PAPER_DB", paper_db)
-    monkeypatch.setattr(paper_loop, "_LOG_FILE", logs / "cherrypick.meic.paper_loop.log")
+    monkeypatch.setattr(paper_loop, "_LOG_FILE", logs / "paper_loop.log")
     monkeypatch.setattr(
         paper_loop, "_load_config", lambda: {"cash_settled_symbols": ["SPX", "XSP", "NDX", "RUT"]}
     )
