@@ -80,13 +80,18 @@ def _tail(path: Path, n: int) -> list[str]:
         return []
 
 
-#: A leading timestamp, bracketed or bare, with an optional level word after it. Three plain-text
-#: shapes exist in the suite today and this matches all of them:
+#: A leading timestamp, bracketed or bare, optionally offset-aware, with an optional level word.
+#: Current shape, written by every module through `cherrypick.core.logs`:
+#:   "2026-08-02T15:54:21-06:00 INFO settled at 748.97"
+#: Legacy shapes, still present in months of existing history and still parsed:
 #:   flies : "[2026-07-31T21:00:01] 2026-07-31 settled — idle…"
 #:   meic  : "2026-08-02 00:40:01 INFO outside trading window…"
 #:   (JSON lines from watchdog/notify/earnings are handled separately, above)
+#: The offset group is load-bearing, not decorative: without it the offset is left stranded at the
+#: front of the message and the stamp reverts to naive, which is the exact ambiguity the shared
+#: writer was introduced to remove.
 _TS_PREFIX = re.compile(
-    r"^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\]?\s*"
+    r"^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)\]?\s*"
     r"(?:(CRITICAL|WARNING|WARN|ERROR|INFO|DEBUG|NOTIFY|OK)\b\s*)?"
 )
 

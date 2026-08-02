@@ -19,9 +19,9 @@ import os
 import subprocess
 import sys
 import time
-from logging.handlers import RotatingFileHandler
 
 from cherrypick.core import calendar as _cal  # noqa: E402
+from cherrypick.core import logs as _logs
 
 from cherrypick.flies import book as bookmod  # noqa: E402
 from cherrypick.flies import cli as climod  # noqa: E402
@@ -96,26 +96,18 @@ def _setup_logging() -> None:
     The file handler is rebuilt if the resolved path has moved since it was attached, so a redirected
     home takes effect even though the logger itself is process-global state.
     """
-    target = log_file()
-    attached = next((h for h in _logger.handlers if isinstance(h, RotatingFileHandler)), None)
-    if attached is not None:
-        if os.path.abspath(attached.baseFilename) == os.path.abspath(str(target)):
-            return
-        _logger.removeHandler(attached)
-        attached.close()
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    fmt = logging.Formatter("[%(asctime)s] %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
-    handler = RotatingFileHandler(target, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8")
-    handler.setFormatter(fmt)
-    _logger.addHandler(handler)
-    # RotatingFileHandler subclasses StreamHandler, so the check has to exclude it explicitly or the
-    # console handler is never added.
-    if not any(type(h) is logging.StreamHandler for h in _logger.handlers):
-        stream = logging.StreamHandler()
-        stream.setFormatter(fmt)
-        _logger.addHandler(stream)
-    _logger.setLevel(logging.INFO)
+    # The suite's one line format (cherrypick.core.logs). This used to write
+    # "[%(asctime)s] %(message)s" with a *naive* stamp and no level -- one of the three shapes the
+    # dashboard's log card had to reverse-engineer, and part of why it mis-ordered and then dropped
+    # whole sources. The shared writer emits an offset, so a line is an unambiguous instant, and
+    # carries the level so a reader is not guessing severity from prose.
+    #
+    # Two behaviours are inherited rather than re-implemented: the handler is rebuilt when the
+    # resolved path moves (this package's own idea, so a redirected home takes effect mid-process),
+    # and the console handler is attached only for a real TTY (meic's, because the scheduled task
+    # runs under pythonw.exe where writing to an invalid stdout can take the daemon down -- this
+    # package attached it unconditionally).
+    _logs.configure(_logger, log_file())
 
 
 def _log(message: str) -> None:
