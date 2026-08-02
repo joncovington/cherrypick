@@ -38,7 +38,7 @@ absolute paths.
 
 ## Architecture
 
-- **src/registry.py** — the **subscription registry**. Each consumer module writes one file,
+- **`cherrypick/streamer/registry.py`** — the **subscription registry**. Each consumer module writes one file,
   `~/.cherrypick/state/stream_requests/<module>.json`; the streamer reads the **union** and streams
   exactly that. `symbols` are underlyings (spot + ATM window + GEX + opening range). `leg_sources` are
   `{db, query}` specs — the streamer opens each DB **read-only** and runs the module's `SELECT` every
@@ -48,21 +48,21 @@ absolute paths.
   for a module that would rather name symbols than query.) The streamer only ever *reads* these files and
   opens the declared DBs read-only; a consumer writes only *its own* file. This is the coupling surface —
   data + the module's own SQL, not code — so no package imports another.
-- **src/config.py** — config loading + path resolution. Owns the **canonical cache** default
+- **`cherrypick/streamer/config.py`** — config loading + path resolution. Owns the **canonical cache** default
   (`data/marketdata/stream_cache.db`, a neutral scope owned by no trading module), the operator *base*
   symbols (a seed the registry union adds to), and the log/PID paths, all via `cherrypick.core.home`.
   `source.stream_cache_db` overrides the cache path.
-- **src/daemon.py** — the daemon: the keyring session factory, `build_streamer` (the `ChainStreamer`
+- **`cherrypick/streamer/daemon.py`** — the daemon: the keyring session factory, `build_streamer` (the `ChainStreamer`
   wiring driven by the registry union — underlyings at startup, dynamic legs via the engine's
   `extra_subscriptions`/`protected_symbols` hooks), the PID single-instance guard, logging with rotation,
   the `status()` / `stop()` helpers, and the foreground `run_daemon`. The one place this package
   authenticates / talks to the broker.
-- **src/credentials.py** — keyring entry for the suite's shared tastytrade OAuth **bearer** secrets
+- **`cherrypick/streamer/credentials.py`** — keyring entry for the suite's shared tastytrade OAuth **bearer** secrets
   (`client_secret`, `refresh_token`) under the shared `meicagent` service. The streamer needs only these
   two — it never makes an account-scoped call, so no `account_number`. `cherrypick connect` delegates
   bearer-secret entry here for a streamer-only (no-MEIC) install; writes only the keyring, never the
   broker.
-- **src/cli.py + run.py** — the CLI. Flat args (`--status` / `--stop` / `--symbol` / `--secrets-set` /
+- **`cherrypick/streamer/cli.py` + `run.py`** — the CLI. Flat args (`--status` / `--stop` / `--symbol` / `--secrets-set` /
   `--secrets-status`, default = run) so the orchestrator drives it with the same start/status/stop argv
   contract it uses for MEIC's streamer.
 - **`cherrypick.core`** — an installed dependency (`packages/core` in this monorepo, `pip install -e

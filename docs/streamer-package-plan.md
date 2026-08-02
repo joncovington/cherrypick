@@ -95,7 +95,7 @@ dependency safe; do not flip MEIC before both are in place.
 
 ## The subscription registry
 
-`packages/streamer/src/registry.py` ([done](../packages/streamer/src/registry.py)). Each consumer writes
+`packages/streamer/src/cherrypick/streamer/registry.py` ([done](../packages/streamer/src/cherrypick/streamer/registry.py)). Each consumer writes
 one file `~/.cherrypick/state/stream_requests/<module>.json`:
 
 ```json
@@ -187,7 +187,7 @@ daemon can authenticate. How auth works today:
 
 - The daemon builds its session from `cherrypick.core.auth`: `CredentialStore("meicagent",
   legacy=("tastytrade-mcp",))` → `SessionManager(store, thread_local=True).get_session`
-  ([daemon.py](../packages/streamer/src/daemon.py)). OAuth2 via the tastytrade SDK; tokens auto-refresh
+  ([daemon.py](../packages/streamer/src/cherrypick/streamer/daemon.py)). OAuth2 via the tastytrade SDK; tokens auto-refresh
   from the long-lived refresh token. Secrets live only in the OS keyring — never files/env/logs.
 - Two facts that shape the bootstrap:
   1. **The streamer needs only the two bearer secrets** (`client_secret`, `refresh_token`). It never
@@ -199,7 +199,7 @@ daemon can authenticate. How auth works today:
      own tool**, not that the orchestrator starts handling bearer secrets.
 
 **Done (streamer side, self-contained):** the streamer package has its own credential tool —
-`run.py --secrets-set` / `--secrets-status` ([credentials.py](../packages/streamer/src/credentials.py)),
+`run.py --secrets-set` / `--secrets-status` ([credentials.py](../packages/streamer/src/cherrypick/streamer/credentials.py)),
 a thin wrapper over `CredentialStore("meicagent", …)` that stores only the two bearer secrets under the
 shared service. So a streamer-only box can be onboarded directly, and the entry is interchangeable with
 MEIC/earnings/gex (same keyring entry).
@@ -323,7 +323,7 @@ MEIC stops being a producer and becomes a consumer + a thin sidecar:
    modules requesting SPX → one entry). MEIC's writer (`symbols` + its `ic_trades` `leg_sources` query,
    written once) lands with the sidecar refactor (step 8). Open: registry-file **lifecycle** — a stopped
    module's file lingers; handle via `uninstall` removal (step 9) and/or a streamer-side staleness guard.
-8. **ORB generalization** ✓ — `streamer/src/orb.py` (`OpeningRangeTracker`, lifted from MEIC's
+8. **ORB generalization** ✓ — `streamer/src/cherrypick/streamer/orb.py` (`OpeningRangeTracker`, lifted from MEIC's
    `_OrbTracker`) wired as the engine's `trade_hook`; writes the shared cache's existing `orb_ranges`
    table (already in `core.streamcache` DDL — no core change), which MEIC's `get_orb_range` reads
    unchanged. 25 streamer tests, ruff clean. Fully additive, zero MEIC risk.

@@ -76,7 +76,7 @@ All loopback-only. Sources: each module's own default, the orchestrator embed co
 ## Dependency order and the clock
 
 The one **hard pre-open deadline**: the streamer must be alive **before 09:30**, because
-`streamer/src/orb.py` accumulates the opening range strictly inside **09:30–09:35 ET** and silently
+`streamer/src/cherrypick/streamer/orb.py` accumulates the opening range strictly inside **09:30–09:35 ET** and silently
 persists nothing if it wasn't running through that window. Everything else self-gates or degrades.
 
 Order: keyring credentials + stream-request files (standing) → **streamer alive by ~09:20** →
@@ -89,7 +89,7 @@ Time constants, each with its source:
 |---|---|---|
 | 09:15 | `NEAR_OPEN` — watchdog begins streamer/freshness supervision | `orchestrator/timeutil.py` |
 | 09:30 | `MARKET_OPEN` | `orchestrator/timeutil.py` |
-| 09:30–09:35 | ORB window — streamer must be up throughout | `streamer/src/orb.py` |
+| 09:30–09:35 | ORB window — streamer must be up throughout | `streamer/src/cherrypick/streamer/orb.py` |
 | 09:30–16:05 | MEIC loop acts (the +5 min runs the 16:00 settlement pass) | `meic/src/paper_loop.py` |
 | 10:00–14:30 | MEIC paper IC entries (`entry_window_start/_end`; the 09:30 paper override was removed 2026-07-29 — 10:00 is the intended start) | `~/.cherrypick/config/meic.json` |
 | 09:30–16:00 | flies loop RTH; hard `no_entry_before: 10:00`; settle 16:20 | `flies/src/paper_loop.py`, flies config |
@@ -147,7 +147,7 @@ Real — act:
 
 - **Underlyings bind at streamer start.** The per-module stream-request writers keep the files
   current, but a *new* underlying only reaches the wire on one streamer restart
-  (`streamer/src/daemon.py`). A symbols change = one restart, stated here so it isn't rediscovered.
+  (`streamer/src/cherrypick/streamer/daemon.py`). A symbols change = one restart, stated here so it isn't rediscovered.
 - **MEIC's gates fail open when the streamer is down.** The paper loop does not crash: GEX, ATR, and
   intraday-range return unavailable and their gates silently deactivate (`meic/GATES.md`;
   `meic/src/tt.py`). It keeps trading with safety gates off. The ATR gate additionally needs **5

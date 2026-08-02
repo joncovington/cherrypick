@@ -27,9 +27,9 @@ from logging.handlers import RotatingFileHandler
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 from cherrypick.core.streamer import ChainStreamer
 
-import config as _config
-import orb as _orb
-import registry as _registry
+from cherrypick.streamer import config as _config
+from cherrypick.streamer import orb as _orb
+from cherrypick.streamer import registry as _registry
 
 logger = logging.getLogger("cherrypick-streamer")
 
