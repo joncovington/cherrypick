@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-import fly
+from cherrypick.flies import fly
 
 FIXTURES = json.loads((Path(__file__).parent / "fixtures" / "books.json").read_text(encoding="utf-8"))
 

@@ -7,9 +7,8 @@ import pytest
 from test_engine import BASE_CONFIG
 from test_provider import intrinsic_quotes, seed
 
-import db as dbmod
-import paper_loop
-import provider
+from cherrypick.flies import db as dbmod
+from cherrypick.flies import paper_loop, provider
 
 
 @pytest.fixture()
@@ -177,7 +176,7 @@ def test_fixture_sanity(cache_with_chain):
     reject everything and the tests above pass by never trading. Assert the chain actually offers a
     credit, not merely that a snapshot builds.
     """
-    import engine
+    from cherrypick.flies import engine
 
     snap = provider.build_snapshot(cache_with_chain, "SPX", when=at(12))
     assert snap["ok"] is True and snap["dte"] == 0
@@ -205,7 +204,7 @@ def test_the_managed_home_is_never_the_real_one(tmp_path):
     precisely what happened on 2026-07-20 and cost a live session its settlement. Assert the
     redirect rather than trusting it.
     """
-    import eod as eodmod
+    from cherrypick.flies import eod as eodmod
 
     assert tmp_path in eodmod.logs_dir().parents
     assert tmp_path in paper_loop.log_file().parents

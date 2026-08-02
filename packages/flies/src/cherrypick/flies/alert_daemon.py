@@ -34,18 +34,15 @@ import json
 import logging
 import os
 import signal
-import sys
 import time
 from logging.handlers import RotatingFileHandler
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
-import alerts_db  # noqa: E402
-import clock  # noqa: E402
-import db as dbmod  # noqa: E402
-from cli import load_config  # noqa: E402
+from cherrypick.flies import (
+    alerts_db,  # noqa: E402
+    clock,  # noqa: E402
+)
+from cherrypick.flies import db as dbmod  # noqa: E402
+from cherrypick.flies.cli import load_config  # noqa: E402
 
 _logger = logging.getLogger("flies.alert_daemon")
 # How long a single listen call blocks before the loop wakes to re-check the disarm clock and the
@@ -183,7 +180,7 @@ def stop() -> dict:
 def _disarm_deadline(config: dict) -> float | None:
     """Wall-clock monotonic deadline for `live.disarm_time` today, or None if unset/unparseable.
     Belt-and-braces against an authenticated session outliving the trading day."""
-    import engine
+    from cherrypick.flies import engine
 
     live_cfg = config.get("live") or {}
     raw = live_cfg.get("disarm_time")
@@ -219,7 +216,7 @@ def run_daemon(
     reconnects. That is the reconnect strategy: retry on the next slice, forever, because a failure
     here costs latency and nothing else."""
     _setup_logging()
-    import live_loop
+    from cherrypick.flies import live_loop
 
     live_cfg = config.get("live") or {}
     broker = broker or live_loop.BrokerAdapter(config)

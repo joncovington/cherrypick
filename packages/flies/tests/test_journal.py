@@ -8,9 +8,9 @@ exist to keep this side honest.
 import pytest
 from test_engine import BASE_CONFIG, q, snapshot
 
-import analytics
-import book as bookmod
-import db as dbmod
+from cherrypick.flies import analytics
+from cherrypick.flies import book as bookmod
+from cherrypick.flies import db as dbmod
 
 
 @pytest.fixture()

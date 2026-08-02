@@ -8,9 +8,9 @@ market hour was silently two hours out on this machine — and differently wrong
 
 from datetime import datetime
 
-import book as bookmod
-import clock
-import db as dbmod
+from cherrypick.flies import book as bookmod
+from cherrypick.flies import clock
+from cherrypick.flies import db as dbmod
 
 
 def test_clock_now_is_eastern_and_offset_aware():

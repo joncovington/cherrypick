@@ -7,18 +7,14 @@ this, that a cumulative book lets one lucky structure paper over a strategy that
 
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
-import clock  # noqa: E402
-import db as dbmod  # noqa: E402
-import engine  # noqa: E402
-import fly  # noqa: E402
+from cherrypick.flies import (
+    clock,  # noqa: E402
+    engine,  # noqa: E402
+    fly,  # noqa: E402
+)
+from cherrypick.flies import db as dbmod  # noqa: E402
 
 
 def book_id_for(trade_date: str, arm: str, symbol: str) -> str:

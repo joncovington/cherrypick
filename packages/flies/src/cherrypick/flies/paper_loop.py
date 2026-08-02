@@ -21,19 +21,17 @@ import sys
 import time
 from logging.handlers import RotatingFileHandler
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
 from cherrypick.core import calendar as _cal  # noqa: E402
 
-import book as bookmod  # noqa: E402
-import cli as climod  # noqa: E402
-import db as dbmod  # noqa: E402
-import eod as eodmod  # noqa: E402
-import provider  # noqa: E402
-import stream_request  # noqa: E402
-import stream_window  # noqa: E402
+from cherrypick.flies import book as bookmod  # noqa: E402
+from cherrypick.flies import cli as climod  # noqa: E402
+from cherrypick.flies import db as dbmod  # noqa: E402
+from cherrypick.flies import eod as eodmod  # noqa: E402
+from cherrypick.flies import (
+    provider,  # noqa: E402
+    stream_request,  # noqa: E402
+    stream_window,  # noqa: E402
+)
 
 # Regular trading hours, ET, as minutes of day. The engine's own entry windows sit inside this; the
 # session gate exists so an out-of-hours run is a clean no-op rather than an iteration against a
@@ -327,7 +325,9 @@ def install_task() -> dict:
             "error": "scheduled-task install is Windows-only; elsewhere run "
             "`python src/paper_loop.py --interval 120` or use cron",
         }
-    tr = f'"{_pythonw()}" "{os.path.abspath(__file__)}" --once'
+    # `-m` rather than an absolute script path: the registered task no longer bakes in this
+    # file's location. Requires cherrypick-flies installed in this interpreter (scripts/dev-install).
+    tr = f'"{_pythonw()}" -m cherrypick.flies.paper_loop --once'
     r = subprocess.run(
         [
             "schtasks",

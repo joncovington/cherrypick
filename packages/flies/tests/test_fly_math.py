@@ -2,7 +2,7 @@
 
 import pytest
 
-import fly
+from cherrypick.flies import fly
 
 
 def test_slippage_frac_is_cores_single_source_of_truth():

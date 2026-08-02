@@ -27,7 +27,7 @@ Three arms, differing only in WHERE and WHEN they centre a structure:
 
 from __future__ import annotations
 
-import fly
+from cherrypick.flies import fly
 
 PUT, CALL = fly.PUT, fly.CALL
 # `wide_wing` is control's twin — ATM, same window — differing only in `wing_width`, so the pair

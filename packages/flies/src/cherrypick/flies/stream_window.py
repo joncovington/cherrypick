@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import clock
+from cherrypick.flies import clock
 
 DEFAULT_INCREMENT = 30
 DEFAULT_MAX_WIDTH = 150

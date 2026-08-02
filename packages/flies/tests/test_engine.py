@@ -2,8 +2,7 @@
 
 import pytest
 
-import engine
-import fly
+from cherrypick.flies import engine, fly
 
 BASE_CONFIG = {
     "defaults": {

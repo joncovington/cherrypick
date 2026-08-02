@@ -12,7 +12,7 @@ from datetime import datetime
 import pytest
 from cherrypick.core.streamcache import DDL
 
-import provider
+from cherrypick.flies import provider
 
 
 @pytest.fixture()
@@ -125,7 +125,7 @@ def test_builds_an_engine_ready_snapshot(cache):
 def test_snapshot_feeds_the_engine_without_translation(cache):
     """The contract that matters: what the provider emits is what the engine consumes. A mismatch
     here would show up as an arm that silently never trades."""
-    import engine
+    from cherrypick.flies import engine
 
     seed(cache, bid_ask=(2.0, 2.4))
     snap = provider.build_snapshot(cache, "SPX")
@@ -157,7 +157,7 @@ def test_thin_gex_coverage_is_refused_not_reported_as_a_surface(cache):
     assert snap["gex"]["insufficient_coverage"] is True
     assert snap["gex_stats"]["refused"] == "insufficient_coverage"
     # The gex arm degrades rather than skipping the session.
-    import engine
+    from cherrypick.flies import engine
 
     center, reason = engine.select_center(snap, {"arm": "gex", "strike_increment": 5})
     assert center == 6000.0 and reason == "atm_gex_unavailable"
@@ -285,7 +285,7 @@ def test_spx_and_xsp_chains_are_never_blended(cache):
 def test_non_zero_dte_is_labelled_so_the_engine_can_refuse(cache):
     """The provider does not gate on 0DTE — it reports the DTE and lets the engine's own hard stop
     reject it, so there is exactly one place that decision lives."""
-    import engine
+    from cherrypick.flies import engine
 
     seed(cache, expiration="2099-01-15")
     snap = provider.build_snapshot(cache, "SPX")

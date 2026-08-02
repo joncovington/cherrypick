@@ -15,16 +15,12 @@ this into MEIC's leg-counting — it would be wrong for this instrument.
 
 from __future__ import annotations
 
-import os
-import sys
 from datetime import date, timedelta
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
-import clock  # noqa: E402
-import fly  # noqa: E402
+from cherrypick.flies import (
+    clock,  # noqa: E402
+    fly,  # noqa: E402
+)
 
 GRANULARITIES = ("daily", "weekly", "monthly")
 
