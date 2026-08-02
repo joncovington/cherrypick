@@ -19,7 +19,13 @@ classifiers = [
     "Intended Audience :: Financial and Insurance Industry",
     "Topic :: Office/Business :: Financial :: Investment",
 ]
-dependencies = ["keyring>=24"]
+# zoneinfo needs an IANA tz database; Windows (this suite's target platform) ships none, so tzdata
+# supplies it for an installed copy -- streamer/__init__.py's ZoneInfo("America/New_York") has no
+# fallback and hard-fails without it. This was previously masked entirely: core's own CI and the
+# monorepo's both run ubuntu-latest, which has a system tz database, so the gap only surfaces on an
+# actual Windows dev/production install (orchestrator's pyproject already carries this same line,
+# independently, for the same reason).
+dependencies = ["keyring>=24", "tzdata>=2023"]
 
 [project.urls]
 Repository = "https://github.com/joncovington/cherrypick-core"
@@ -30,7 +36,11 @@ Suite = "https://github.com/joncovington/cherrypick"
 # without it. Install the `broker` extra where a live Session is actually constructed.
 [project.optional-dependencies]
 broker = ["tastytrade>=12"]
-dev = ["pytest>=8", "ruff>=0.6"]
+# anyio is a dev-only test dependency of test_broker.py (its docstring is explicit: "No tastytrade,
+# no network" -- it drives async via asyncio.run() and only reaches for anyio.sleep_forever() in one
+# fake-streamer helper). It belongs here, not in `broker`, so testing broker's primitives never pulls
+# in tastytrade+httpx+pydantic+pandas-market-calendars just to satisfy one import.
+dev = ["pytest>=8", "ruff>=0.6", "anyio>=4"]
 
 [tool.setuptools.packages.find]
 # Native namespace package: `cherrypick` has no __init__.py; discovery must include namespaces so

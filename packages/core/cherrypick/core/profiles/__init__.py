@@ -246,11 +246,7 @@ def recommend_champion(
             "deliberate_only": tag in deliberate_only,
         }
 
-    winners = {
-        tag: c
-        for tag, c in challengers.items()
-        if c["beats_champion"] and not c["deliberate_only"]
-    }
+    winners = {tag: c for tag, c in challengers.items() if c["beats_champion"] and not c["deliberate_only"]}
     if winners:
         best = max(winners, key=lambda t: winners[t]["metric"]["value"])
         eligible, recommendation = True, f"champion:{best}"

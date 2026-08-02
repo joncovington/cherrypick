@@ -203,7 +203,11 @@ def test_recommend_champion_margin_requires_a_minimum_edge():
 def test_recommend_champion_uses_return_on_capital_when_both_sides_have_it_else_net_pnl():
     both_roc = {
         "conservative": {
-            "sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 900.0, "return_on_capital": 0.02
+            "sample": 40,
+            "win_rate": 0.65,
+            "days": 20,
+            "net_pnl": 900.0,
+            "return_on_capital": 0.02,
         },
         "moderate": {**_GOOD, "return_on_capital": 0.05},  # lower net_pnl-scale but higher RoC
     }
@@ -213,7 +217,11 @@ def test_recommend_champion_uses_return_on_capital_when_both_sides_have_it_else_
 
     one_missing_roc = {
         "conservative": {
-            "sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 900.0, "return_on_capital": 0.02
+            "sample": 40,
+            "win_rate": 0.65,
+            "days": 20,
+            "net_pnl": 900.0,
+            "return_on_capital": 0.02,
         },
         "moderate": _GOOD,  # no return_on_capital key at all
     }
