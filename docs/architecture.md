@@ -28,10 +28,9 @@ consumed by every other package as a normal editable-installed dependency. This 
 - A fresh clone needs one install step before anything else: `pip install -e packages/core` (or run
   `scripts/dev-install.ps1`/`.sh` from the repo root, which does that plus every package). Skip it and
   every `import cherrypick.core…` fails.
-- Every package declares `cherrypick-core` as a plain named dependency (`dependencies` in its
-  `pyproject.toml`, or `-e ../core` as the first line of `requirements.txt` for earnings, which has no
-  pyproject). It is **not** on PyPI (`Private :: Do Not Upload`) — pip only ever resolves the name from
-  what's already installed, so `packages/core` must be installed first.
+- Every package declares `cherrypick-core` as a plain named dependency in its `pyproject.toml`. It is
+  **not** on PyPI (`Private :: Do Not Upload`) — pip only ever resolves the name from what's already
+  installed, so `packages/core` must be installed first.
 - There is no `sys.path` bootstrap for core anywhere in the suite — none should be reintroduced. The
   orchestrator's `doctor` fails loudly (`cherrypick.core: not installed`) if the install step was
   skipped, rather than surfacing as a confusing traceback deep in a detached subprocess.

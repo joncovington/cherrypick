@@ -1,8 +1,0 @@
-# cherrypick-core: sibling in-repo package (../core), installed editable. pip resolves a relative
-# path relative to the CURRENT WORKING DIRECTORY, not this file's location -- run pip from
-# packages/earnings/ (which is what CI's working-directory and docs/01-setup.md already assume), or
-# this line resolves against the wrong ../core.
--e ../core
-tastytrade
-keyring
-mysql-connector-python

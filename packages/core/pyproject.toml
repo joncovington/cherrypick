@@ -54,12 +54,9 @@ testpaths = ["tests"]
 addopts = "-q"
 
 [tool.ruff]
-line-length = 110
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
 target-version = "py310"
-
-[tool.ruff.lint]
-# E/W pycodestyle, F pyflakes, I import-sorting, UP pyupgrade, B bugbear — high-signal, low-noise.
-select = ["E", "F", "I", "W", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
 # The streaming engine requires Python 3.11+ (asyncio.TaskGroup, structured concurrency). Under the

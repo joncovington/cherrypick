@@ -28,8 +28,8 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
 - **`cherrypick.core.*` is an installed dependency, `packages/core` in this monorepo.** Shared logic
   used here — `cherrypick.core.fees` (via `src/costs.py`), plus `cherrypick.core.auth`, `.broker`,
   `.db`, `.dxfeed`, and `.profiles` — resolves through a normal editable install (`pip install -e
-  packages/core`, then `-e .` here via `requirements.txt`'s own `-e ../core` line), the same way any
-  other Python dependency does. **No `sys.path` bootstrap for core exists anywhere in this package's
+  ../core`, then `-e .` here), the same way any other Python dependency does. **No `sys.path`
+  bootstrap for core exists anywhere in this package's
   source — do not reintroduce one.** If `import cherrypick.core` fails, the fix is `pip install -e
   packages/core` (see `scripts/dev-install.ps1`/`.sh` at the repo root), never a path insert. Add a
   symbol's fee by extending `cherrypick.core.fees`, not by hardcoding here.

@@ -28,9 +28,8 @@ Every strategy is **defined-risk**: max loss is known at entry. Undefined-risk/n
 earnings gap on a naked short can blow out arbitrarily overnight with nobody watching.
 
 Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`** library, a sibling
-package (`packages/core`) in this same monorepo — `requirements.txt`'s first line (`-e ../core`)
-installs it, resolved relative to the working directory, so `pip install` must run from inside
-`packages/earnings` before any `import cherrypick.core...` resolves.
+package (`packages/core`) in this same monorepo — install it (`pip install -e ../core`) before this
+package, or `import cherrypick.core...` can't resolve.
 
 ---
 
@@ -42,7 +41,8 @@ git clone https://github.com/joncovington/cherrypick-next.git
 cd cherrypick-next/packages/earnings
 
 python -m venv venv && source venv/bin/activate   # venv\Scripts\activate on Windows
-pip install -r requirements.txt
+pip install -e ../core                             # shared cherrypick.core library, install first
+pip install -e ".[dev]"
 
 cp config/config.example.json config/config.json
 python src/tt.py secrets_set                       # store tastytrade OAuth credentials
@@ -135,8 +135,8 @@ sees it.
 - **`src/tt.py`** is the tastytrade broker interface — quotes, chains, greeks, account info, and
   (in live mode only) order execution.
 - **`packages/core`** is the shared **`cherrypick.core`** library, an in-repo sibling package, used here
-  for the market calendar and the tastytrade fee schedule (via `src/costs.py`). Installed via
-  `requirements.txt`'s own `-e ../core` line — no separate step needed.
+  for the market calendar and the tastytrade fee schedule (via `src/costs.py`). Install it before this
+  package (`pip install -e ../core`).
 - **`src/paths.py`** resolves the **data home** — the trade ledgers (`earnings_trades.db`,
   `paper_trades.db`) live under `~/.cherrypick/data/earnings` by default (override with
   `EARNINGS_DATA_DIR`), the same managed location the orchestrator reads for cross-module reporting and

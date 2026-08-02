@@ -33,11 +33,9 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          # packages/core is not on PyPI (Private :: Do Not Upload); every pyproject-based consumer
-          # declares it as a plain named dependency, resolved only from what's already installed --
-          # so it must go in first. earnings (no pyproject) self-supplies via its own requirements.txt,
-          # which carries `-e ../core` as its first line, so it's excluded here to avoid a double install.
-          if [ "${{ matrix.package }}" != "core" ] && [ -f pyproject.toml ]; then
+          # packages/core is not on PyPI (Private :: Do Not Upload); every consumer declares it as a
+          # plain named dependency, resolved only from what's already installed -- so it must go first.
+          if [ "${{ matrix.package }}" != "core" ]; then
             pip install -e ../core
           fi
           if [ "${{ matrix.package }}" == "core" ]; then
@@ -46,10 +44,8 @@ jobs:
             # something auth.session's lazy-session-building invariant covers. Install the `broker`
             # extra too, so this is honest coverage rather than narrowed to fit a dev-only install.
             pip install -e ".[dev,broker]"
-          elif [ -f pyproject.toml ]; then
-            pip install -e ".[dev]"
           else
-            pip install -r requirements.txt -r requirements-dev.txt
+            pip install -e ".[dev]"
           fi
       - name: Lint (ruff)
         run: ruff check .

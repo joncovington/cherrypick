@@ -31,22 +31,22 @@ python -m venv venv
 source venv/bin/activate      # macOS/Linux
 # venv\Scripts\activate       # Windows
 
-pip install -r requirements.txt
+pip install -e ../core        # the shared cherrypick.core library — install this first
+pip install -e .
 ```
 
-`requirements.txt`'s first line (`-e ../core`) installs the shared `cherrypick.core` library — a
-sibling package in this monorepo, resolved relative to the current working directory, so `pip install`
-must run from inside `packages/earnings` as shown above. Without it every `import cherrypick.core...`
-— and therefore the calendar and fee lookups the scanner and cost model depend on — fails. All commands
-below run from `packages/earnings`.
+`packages/core` must go in first: it isn't on PyPI, so pip can only resolve this package's
+`cherrypick-core` dependency from what's already installed. Without it every
+`import cherrypick.core...` — and therefore the calendar and fee lookups the scanner and cost model
+depend on — fails. All commands below run from `packages/earnings`.
 
 For running tests or contributing, also install dev dependencies:
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -e ".[dev]"
 ```
 
-`requirements.txt` pulls in `tastytrade` (broker SDK), `keyring` (OS-native credential storage
+The install pulls in `tastytrade` (broker SDK), `keyring` (OS-native credential storage
 for OAuth secrets), and `mysql-connector-python` (talks to `dolt sql-server`, which speaks the
 MySQL wire protocol). `strategy_dashboard.py`'s charts are `cherrypick.core.viz` cards drawn
 client-side on a plain canvas, so the dashboard needs no charting dependency.
