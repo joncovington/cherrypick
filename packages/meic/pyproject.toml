@@ -13,6 +13,9 @@ dependencies = [
     "python-dotenv>=1.0",
     "pytz>=2024",
     "flask>=3",
+    # sibling in-repo package (packages/core), installed editable alongside this one. Not on
+    # PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
+    "cherrypick-core",
 ]
 
 [project.optional-dependencies]

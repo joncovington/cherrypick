@@ -7,7 +7,9 @@ name = "cherrypick-streamer"
 version = "0.1.0"
 description = "Standalone DXLink market-data streamer daemon — the suite's canonical stream-cache producer"
 requires-python = ">=3.11"
-dependencies = ["keyring>=24"]
+# cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
+# Not on PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
+dependencies = ["keyring>=24", "cherrypick-core"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
