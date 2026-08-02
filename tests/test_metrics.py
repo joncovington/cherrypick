@@ -4,7 +4,7 @@ checks that consume it. Unknowns must read as None/fail-closed, never as a passi
 import pytest
 
 from cherrypick.core import metrics
-from cherrypick.core.profiles import recommend_promotion
+from cherrypick.core.profiles import qualify_readings
 
 
 def _rec(net, capital=None, session="2026-07-21", slippage=None):
@@ -83,9 +83,11 @@ def test_calibration_reading_orders_by_session_for_the_drawdown_path():
     assert metrics.calibration_reading(records)["max_drawdown"] == 8.0
 
 
-# --- hardened promotion checks -------------------------------------------------
-
-_LADDER = ["conservative", "moderate"]
+# --- hardened qualification checks ---------------------------------------------
+# Ported from recommend_promotion to qualify_readings 2026-08-01 (champion/challenger revision):
+# these checks test the shared _qualify_one logic, which is exactly what qualify_readings exposes
+# directly -- no champion/challenger machinery needed to exercise sample/win_rate/days/RoC/slippage
+# threshold behavior.
 
 
 def _good_reading(**over):
@@ -103,37 +105,37 @@ def _good_reading(**over):
 
 
 def test_default_rule_is_unchanged_by_the_new_keys():
-    rec = recommend_promotion(_good_reading(), "conservative", _LADDER)
-    assert rec["eligible"] is True
-    assert set(rec["checks"]) == {"sample", "win_rate", "days"}
+    out = qualify_readings({"conservative": _good_reading()})
+    assert out["conservative"]["qualified"] is True
+    assert set(out["conservative"]["checks"]) == {"sample", "win_rate", "days"}
 
 
 def test_min_return_on_capital_gates_when_enabled():
     rule = {"min_return_on_capital": 0.10}
-    rec = recommend_promotion(_good_reading(), "conservative", _LADDER, rule=rule)
-    assert rec["eligible"] is False
-    assert rec["checks"]["return_on_capital"]["pass"] is False
-    rec2 = recommend_promotion(_good_reading(return_on_capital=0.12), "conservative", _LADDER, rule=rule)
-    assert rec2["eligible"] is True
+    out = qualify_readings({"conservative": _good_reading()}, rule=rule)
+    assert out["conservative"]["qualified"] is False
+    assert out["conservative"]["checks"]["return_on_capital"]["pass"] is False
+    out2 = qualify_readings({"conservative": _good_reading(return_on_capital=0.12)}, rule=rule)
+    assert out2["conservative"]["qualified"] is True
 
 
 def test_unknown_capital_fails_the_roc_check():
     rule = {"min_return_on_capital": 0.01}
-    rec = recommend_promotion(_good_reading(return_on_capital=None), "conservative", _LADDER, rule=rule)
-    assert rec["checks"]["return_on_capital"]["pass"] is False
+    out = qualify_readings({"conservative": _good_reading(return_on_capital=None)}, rule=rule)
+    assert out["conservative"]["checks"]["return_on_capital"]["pass"] is False
 
 
 def test_slippage_survival_requires_positive_stressed_net():
     rule = {"require_slippage_survival": True}
-    dead = recommend_promotion(_good_reading(net_pnl_2x_slippage=-5.0), "conservative", _LADDER, rule=rule)
-    assert dead["eligible"] is False
-    alive = recommend_promotion(_good_reading(), "conservative", _LADDER, rule=rule)
-    assert alive["eligible"] is True
+    dead = qualify_readings({"conservative": _good_reading(net_pnl_2x_slippage=-5.0)}, rule=rule)
+    assert dead["conservative"]["qualified"] is False
+    alive = qualify_readings({"conservative": _good_reading()}, rule=rule)
+    assert alive["conservative"]["qualified"] is True
 
 
 def test_slippage_survival_requires_full_coverage():
     """A stress test over part of the evidence certifies nothing: 20/25 rows carrying
     slippage must FAIL even with a positive stressed net."""
     rule = {"require_slippage_survival": True}
-    partial = recommend_promotion(_good_reading(slippage_coverage=20), "conservative", _LADDER, rule=rule)
-    assert partial["checks"]["slippage_survival"]["pass"] is False
+    partial = qualify_readings({"conservative": _good_reading(slippage_coverage=20)}, rule=rule)
+    assert partial["conservative"]["checks"]["slippage_survival"]["pass"] is False

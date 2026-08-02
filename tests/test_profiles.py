@@ -116,69 +116,168 @@ def test_compare_profiles_empty_rows():
     assert profiles.compare_profiles([], tag_key="risk_profile", summarize=_count) == {}
 
 
-# --------------------------------------------------------------------------- recommend_promotion
-_LADDER = ["conservative", "moderate", "aggressive", "very-aggressive"]
-_GOOD = {"sample": 40, "win_rate": 0.65, "days": 20}
+# --------------------------------------------------------------------------- recommend_champion
+_GOOD = {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 500.0}
+_THIN = {"sample": 3, "win_rate": 0.9, "days": 2, "net_pnl": 50.0}
 
 
-def test_recommend_promotion_eligible_when_all_thresholds_met():
-    v = profiles.recommend_promotion(_GOOD, "conservative", _LADDER)
+def test_recommend_champion_champion_need_not_itself_qualify():
+    # champion's own reading fails the qualification bar (3 trades) -- it's already live, so it is
+    # never held to QUALIFICATION_RULE. A qualified challenger can still be evaluated and win.
+    readings = {"conservative": _THIN, "moderate": _GOOD}
+    v = profiles.recommend_champion(readings, "conservative")
     assert v["eligible"] is True
-    assert v["next"] == "moderate"
-    assert v["recommendation"] == "graduate:moderate"
-    assert all(c["pass"] for c in v["checks"].values())
+    assert v["recommendation"] == "champion:moderate"
+    assert v["challengers"]["moderate"]["beats_champion"] is True
 
 
-def test_recommend_promotion_holds_when_win_rate_below_threshold():
-    v = profiles.recommend_promotion({"sample": 40, "win_rate": 0.55, "days": 20}, "conservative", _LADDER)
+def test_recommend_champion_qualified_challenger_beats_champion():
+    readings = {
+        "conservative": {"sample": 30, "win_rate": 0.55, "days": 20, "net_pnl": 100.0},
+        "moderate": _GOOD,
+    }
+    v = profiles.recommend_champion(readings, "conservative")
+    assert v["eligible"] is True
+    assert v["recommendation"] == "champion:moderate"
+    assert v["challengers"]["moderate"]["qualified"] is True
+    assert v["challengers"]["moderate"]["beats_champion"] is True
+
+
+def test_recommend_champion_no_challenger_qualifies_retains_champion():
+    readings = {"conservative": _GOOD, "moderate": _THIN, "aggressive": _THIN}
+    v = profiles.recommend_champion(readings, "conservative")
     assert v["eligible"] is False
-    assert v["recommendation"] == "hold"
-    assert v["checks"]["win_rate"]["pass"] is False
-    assert "win_rate" in v["reason"]
+    assert v["recommendation"] == "retain:conservative"
+    assert all(not c["beats_champion"] for c in v["challengers"].values())
 
 
-def test_recommend_promotion_holds_when_sample_or_days_short():
-    v = profiles.recommend_promotion({"sample": 5, "win_rate": 0.9, "days": 3}, "conservative", _LADDER)
+def test_recommend_champion_qualified_challenger_does_not_beat_retains_champion():
+    readings = {
+        "conservative": {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 900.0},
+        "moderate": _GOOD,  # qualifies, but net_pnl 500 < champion's 900
+    }
+    v = profiles.recommend_champion(readings, "conservative")
+    assert v["challengers"]["moderate"]["qualified"] is True
+    assert v["challengers"]["moderate"]["beats_champion"] is False
     assert v["eligible"] is False
-    assert v["checks"]["sample"]["pass"] is False
-    assert v["checks"]["days"]["pass"] is False
+    assert v["recommendation"] == "retain:conservative"
 
 
-def test_recommend_promotion_none_win_rate_fails_closed():
-    # too few trades for a win rate -> None must not count as passing
-    v = profiles.recommend_promotion({"sample": 40, "win_rate": None, "days": 20}, "conservative", _LADDER)
-    assert v["checks"]["win_rate"]["pass"] is False
+def test_recommend_champion_multiple_qualified_best_one_wins():
+    readings = {
+        "conservative": {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 100.0},
+        "moderate": {**_GOOD, "net_pnl": 500.0},
+        "aggressive": {**_GOOD, "net_pnl": 900.0},  # best of the two challengers
+    }
+    v = profiles.recommend_champion(readings, "conservative")
+    assert v["recommendation"] == "champion:aggressive"
+    assert v["challengers"]["moderate"]["beats_champion"] is True  # also beats, just not the best
+
+
+def test_recommend_champion_deliberate_only_challenger_never_wins_even_if_best():
+    readings = {
+        "conservative": {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 100.0},
+        "very-aggressive": {**_GOOD, "net_pnl": 9000.0},  # best metric by far
+    }
+    v = profiles.recommend_champion(readings, "conservative", deliberate_only=("very-aggressive",))
+    assert v["challengers"]["very-aggressive"]["qualified"] is True
+    assert v["challengers"]["very-aggressive"]["beats_champion"] is True
+    assert v["challengers"]["very-aggressive"]["deliberate_only"] is True
     assert v["eligible"] is False
+    assert v["recommendation"] == "retain:conservative"
 
 
-def test_recommend_promotion_top_rung_holds():
-    v = profiles.recommend_promotion(_GOOD, "very-aggressive", _LADDER)
-    assert v["next"] is None
+def test_recommend_champion_margin_requires_a_minimum_edge():
+    readings = {
+        "conservative": {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 100.0},
+        "moderate": {**_GOOD, "net_pnl": 100.5},  # ahead, but only by 0.5
+    }
+    v = profiles.recommend_champion(readings, "conservative", margin=1.0)
+    assert v["challengers"]["moderate"]["beats_champion"] is False
     assert v["eligible"] is False
-    assert v["recommendation"] == "hold"
-    assert "top of the ladder" in v["reason"]
+    # margin=0.0 (default) would have let the same 0.5 edge win
+    v_default = profiles.recommend_champion(readings, "conservative")
+    assert v_default["challengers"]["moderate"]["beats_champion"] is True
 
 
-def test_recommend_promotion_deliberate_only_next_never_auto_recommended():
-    # aggressive fully qualifies, but very-aggressive is opt-in-only -> hold, not graduate
-    v = profiles.recommend_promotion(_GOOD, "aggressive", _LADDER, deliberate_only=("very-aggressive",))
-    assert v["next"] == "very-aggressive"
-    assert v["eligible"] is False
-    assert v["recommendation"] == "hold"
-    assert "deliberate" in v["reason"]
+def test_recommend_champion_uses_return_on_capital_when_both_sides_have_it_else_net_pnl():
+    both_roc = {
+        "conservative": {
+            "sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 900.0, "return_on_capital": 0.02
+        },
+        "moderate": {**_GOOD, "return_on_capital": 0.05},  # lower net_pnl-scale but higher RoC
+    }
+    v = profiles.recommend_champion(both_roc, "conservative")
+    assert v["challengers"]["moderate"]["metric"]["name"] == "return_on_capital"
+    assert v["challengers"]["moderate"]["beats_champion"] is True  # 0.05 > 0.02
+
+    one_missing_roc = {
+        "conservative": {
+            "sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 900.0, "return_on_capital": 0.02
+        },
+        "moderate": _GOOD,  # no return_on_capital key at all
+    }
+    v2 = profiles.recommend_champion(one_missing_roc, "conservative")
+    assert v2["challengers"]["moderate"]["metric"]["name"] == "net_pnl"
+    assert v2["champion_metric"]["name"] == "return_on_capital"  # champion's own side unaffected
 
 
-def test_recommend_promotion_rule_override():
-    v = profiles.recommend_promotion(
-        {"sample": 40, "win_rate": 0.65, "days": 20}, "conservative", _LADDER, rule={"min_win_rate": 0.70}
-    )
-    assert v["checks"]["win_rate"]["threshold"] == 0.70
-    assert v["checks"]["win_rate"]["pass"] is False
+def test_recommend_champion_champion_absent_from_readings_still_produces_verdict():
+    # brand-new champion, zero closed trades yet -- must not KeyError, and any qualified,
+    # non-deliberate-only challenger trivially beats a champion with nothing to lose to.
+    readings = {"moderate": _GOOD}
+    v = profiles.recommend_champion(readings, "conservative")
+    assert v["champion_metric"] is None
+    assert v["challengers"]["moderate"]["beats_champion"] is True
+    assert v["eligible"] is True
+    assert v["recommendation"] == "champion:moderate"
 
 
-def test_recommend_promotion_unknown_current_raises():
-    with pytest.raises(ValueError, match="not in ladder"):
-        profiles.recommend_promotion(_GOOD, "ghost", _LADDER)
+def test_recommend_champion_deliberate_only_tag_absent_from_readings_is_a_noop():
+    readings = {"conservative": _GOOD, "moderate": _GOOD}
+    v = profiles.recommend_champion(readings, "conservative", deliberate_only=("ghost",))
+    assert "ghost" not in v["challengers"]
+    assert v["recommendation"] == "champion:moderate"  # unaffected by an absent deliberate_only tag
+
+
+# --------------------------------------------------------------------------- qualify_readings
+def test_qualify_readings_returns_per_tag_qualification_only():
+    # The direct regression test for the bug this replaces: a fully-qualifying reading must NOT
+    # produce anything resembling a promotion -- the shape has nowhere to put one.
+    out = profiles.qualify_readings({"control": _GOOD, "time_window": _THIN})
+    assert out == {
+        "control": {
+            "qualified": True,
+            "checks": {
+                "sample": {"value": 40, "threshold": 20, "pass": True},
+                "win_rate": {"value": 0.65, "threshold": 0.60, "pass": True},
+                "days": {"value": 20, "threshold": 14, "pass": True},
+            },
+        },
+        "time_window": {
+            "qualified": False,
+            "checks": {
+                "sample": {"value": 3, "threshold": 20, "pass": False},
+                "win_rate": {"value": 0.9, "threshold": 0.60, "pass": True},
+                "days": {"value": 2, "threshold": 14, "pass": False},
+            },
+        },
+    }
+    for entry in out.values():
+        assert "recommendation" not in entry
+        assert "eligible" not in entry
+        assert "beats_champion" not in entry
+
+
+def test_qualify_readings_rule_override_applies_per_tag():
+    out = profiles.qualify_readings({"control": _GOOD}, rule={"min_win_rate": 0.70})
+    assert out["control"]["checks"]["win_rate"]["threshold"] == 0.70
+    assert out["control"]["checks"]["win_rate"]["pass"] is False
+    assert out["control"]["qualified"] is False
+
+
+def test_qualify_readings_empty_readings_returns_empty_dict():
+    assert profiles.qualify_readings({}) == {}
 
 
 # --------------------------------------------------------------------------- merge_profile (flat / MEIC)
