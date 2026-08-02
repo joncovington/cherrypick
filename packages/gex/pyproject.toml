@@ -7,7 +7,9 @@ name = "cherrypick-gex"
 version = "0.1.0"
 description = "Live GEX (gamma exposure) dashboard — a simple self-hosted gexbot/SpotGamma/MenthorQ"
 requires-python = ">=3.11"
-dependencies = ["websockets>=13"]
+# cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
+# Not on PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
+dependencies = ["websockets>=13", "cherrypick-core"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6"]
