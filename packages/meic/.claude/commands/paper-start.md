@@ -18,7 +18,7 @@ Start-Process python -ArgumentList 'src\streamer.py' -WorkingDirectory $PWD -Win
 
 ## Step 2 — Paper-trading dashboard
 
-Invoke the `/paper-dashboard` skill to launch (or confirm already running) the paper-trading dashboard at http://localhost:5051, separate from the live dashboard's port 5050.
+Invoke `/serve-dashboard --meic --paper` to launch (or confirm already running) the paper-trading dashboard at http://localhost:5051, separate from the live dashboard's port 5050.
 
 ## Step 3 — Paper-trading loop (scheduled task)
 

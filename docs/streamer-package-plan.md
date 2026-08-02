@@ -1,6 +1,10 @@
 # Plan: a standalone streamer package (`packages/streamer`)
 
-Status: **proposed** — implementation plan for review, no code written yet.
+Status: **shipped** — `packages/streamer` exists and is the suite's single market-data producer; the
+cutover ran live on 2026-07-21 (see the cutover note further down). Kept as the design rationale for
+*why* the daemon was split out of MEIC, not as a to-do list. The plan text below is left in its
+original proposed-tense voice rather than rewritten into the past, so it stays an honest record of
+what was intended at the time — where intent and outcome diverged, the outcome is what shipped.
 
 ## Why
 

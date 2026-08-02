@@ -185,8 +185,8 @@ A pre-registered **graduation gate** (≥30 filled ICs, positive expectancy, ≥
 
 The same local web dashboard (auto-refreshing) runs in two modes:
 
-- **Live mode** (`/dashboard`, port 5050) — your real tastytrade account
-- **Paper mode** (`/paper-dashboard`, port 5051) — the paper account, visibly badged "Paper Mode — Simulated" so it can never be mistaken for real data
+- **Live mode** (`/serve-dashboard --meic`, port 5050) — your real tastytrade account
+- **Paper mode** (`/serve-dashboard --meic --paper`, port 5051) — the paper account, visibly badged "Paper Mode — Simulated" so it can never be mistaken for real data
 
 Both can run at once. Views:
 
@@ -253,8 +253,6 @@ cherrypick/
     │       ├── daily-check.md       # Daily broker-connection check (Step 3 of the loop)
     │       ├── execute-entry.md     # Entry execution (Step 7 of the loop)
     │       ├── stop-management.md   # Per-side stop management (Step 5 of the loop)
-    │       ├── dashboard.md         # /dashboard — live dashboard (port 5050)
-    │       ├── paper-dashboard.md   # /paper-dashboard — paper dashboard (port 5051)
     │       ├── paper-loop.md        # /paper-loop — one paper iteration
     │       ├── eod-report.md        # /eod-report — live and/or paper EOD report
     │       ├── paper-report.md      # /paper-report — multi-day profile comparison

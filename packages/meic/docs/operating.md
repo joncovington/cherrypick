@@ -116,7 +116,7 @@ The dashboard reads directly from `meic_trades.db` in the data home (`~/.cherryp
 For paper trading, run the same dashboard against the paper database on a separate port so both can be open at once:
 
 ```
-/paper-dashboard        # http://localhost:5051, badged "Paper Mode — Simulated"
+/serve-dashboard --meic --paper   # http://localhost:5051, badged "Paper Mode — Simulated"
 ```
 
 Or directly: `python -m cherrypick.meic.dashboard --mode paper` (drives both the `paper_trades.db` path in the data home and the 5051 port). In paper mode the Performance view can be filtered by risk profile as well as by symbol.
