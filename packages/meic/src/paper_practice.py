@@ -434,6 +434,17 @@ def _place_ic(client, sid, chosen, yymmdd, now_min, entry_iso, spot):
     }
 
 
+# 0DTESPX tracks positions per INSTRUMENT, not per IC. overlap_scope="shorts" (independent sampling)
+# only blocks a new entry on an exact short-PAIR repeat, so two ICs in the same book can end up
+# sharing one leg (identical short+long call, say, with different puts) while the account pools
+# them into one quantity. Once a sibling IC's own stop closes its share, this IC's close request
+# for the same instrument has nothing left and 0DTESPX answers 400 "insufficient quantity to
+# close" -- not a rejected order, but proof our share is already gone. Retrying that forever (the
+# pre-independent-sampling assumption, when legs could never be shared) just spins until the
+# session ends; treat it as closed instead, using the last-known cost as the exit-price estimate.
+_INSUFFICIENT_QTY = "insufficient quantity"
+
+
 def _place_close(client, sid, ic, side, cost, log, tag, retry=False):
     short_i, long_i = _sides(ic)[side]
     # A defined-risk spread never costs more than its wing to close, so bid the wing width as the
@@ -450,6 +461,23 @@ def _place_close(client, sid, ic, side, cost, log, tag, retry=False):
         ],
     }
     st, resp = client.place(sid, order)
+    if isinstance(resp, dict):
+        message = resp.get("message", "")
+    elif isinstance(resp, str):
+        try:
+            message = json.loads(resp).get("message", "")
+        except (json.JSONDecodeError, AttributeError):
+            message = resp
+    else:
+        message = ""
+    if _INSUFFICIENT_QTY in message.lower():
+        ic[side] = "closed"
+        if ic["exit"][side] is None:
+            ic["exit"][side] = cost
+            ic["exit_reason"][side] = "leg_closed_by_sibling"
+        log(f"{tag} {'STOP-retry' if retry else 'STOP'} {side} cost {cost:.2f} bid {price} "
+            f"http {st} leg already closed by a sibling IC -- treating as closed")
+        return
     ic[side] = "pending_close"
     fp = resp.get("fill_price") if isinstance(resp, dict) else None
     fee = resp.get("fees") if isinstance(resp, dict) else None

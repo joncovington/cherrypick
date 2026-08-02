@@ -106,9 +106,13 @@ def _ic():
             "sc_k": 7540.0,
         },
         "net_credit": 1.40,
+        "wing": 10,
         "call": "open",
         "put": "open",
         "retry": {"call": 0, "put": 0},
+        "exit": {"call": None, "put": None},
+        "exit_fee": {"call": 0.0, "put": 0.0},
+        "exit_reason": {"call": None, "put": None},
     }
 
 
@@ -263,6 +267,61 @@ def test_place_ic_accepts_a_synchronous_fill_without_polling():
     assert ic is not None
     assert ic["net_credit"] == 2.20
     assert client.clocks_set == []  # no polling needed when the response already carries a fill
+
+
+# ── Close order placement / shared-leg reconciliation ────────────────────────
+# Independent sampling (overlap_scope="shorts") only blocks a new entry on an exact short-PAIR
+# repeat, so two ICs in the same book can share one leg (e.g. identical short+long call, different
+# puts) while 0DTESPX pools them into one instrument-level position. Once a sibling IC's stop
+# closes its share, this IC's own close request for the same instrument gets a 400 "insufficient
+# quantity to close" -- proof the leg is already gone, not a rejected order.
+
+
+class _CloseFakeClient:
+    def __init__(self, place_result):
+        self._place_result = place_result
+        self.placed = None
+
+    def place(self, sid, order):
+        self.placed = order
+        return self._place_result
+
+
+def test_place_close_treats_insufficient_quantity_as_already_closed():
+    # the real API's 400 body is a raw JSON string, not a parsed dict (see Client._request)
+    client = _CloseFakeClient((400, '{"message":"insufficient quantity to close"}'))
+    ic = _ic()
+    pp._place_close(client, "sid-1", ic, "call", cost=1.30, log=lambda *_: None, tag="10:27 conservative")
+    assert ic["call"] == "closed"
+    assert ic["exit"]["call"] == 1.30
+    assert ic["exit_reason"]["call"] == "leg_closed_by_sibling"
+
+
+def test_place_close_does_not_overwrite_an_already_recorded_exit():
+    client = _CloseFakeClient((400, '{"message":"insufficient quantity to close"}'))
+    ic = _ic()
+    ic["exit"]["call"] = 0.75  # a real fill already recorded earlier
+    ic["exit_reason"]["call"] = "per_side_stop"
+    pp._place_close(client, "sid-1", ic, "call", cost=1.30, log=lambda *_: None, tag="tag")
+    assert ic["exit"]["call"] == 0.75
+    assert ic["exit_reason"]["call"] == "per_side_stop"
+
+
+def test_place_close_still_retries_on_an_unrelated_rejection():
+    client = _CloseFakeClient((400, '{"message":"some other validation error"}'))
+    ic = _ic()
+    pp._place_close(client, "sid-1", ic, "call", cost=1.30, log=lambda *_: None, tag="tag")
+    assert ic["call"] == "pending_close"  # unchanged behavior -- eligible for the normal retry loop
+
+
+def test_place_close_records_a_confirmed_fill_normally():
+    client = _CloseFakeClient((201, {"fill_price": "1.35", "fees": "1.72"}))
+    ic = _ic()
+    pp._place_close(client, "sid-1", ic, "call", cost=1.30, log=lambda *_: None, tag="tag")
+    assert ic["call"] == "pending_close"
+    assert ic["exit"]["call"] == 1.35
+    assert ic["exit_fee"]["call"] == 1.72
+    assert ic["exit_reason"]["call"] == "per_side_stop"
 
 
 # ── SPX-eligible profile selection ───────────────────────────────────────────
