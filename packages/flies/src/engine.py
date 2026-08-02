@@ -819,7 +819,10 @@ def evaluate_bwb_entry(snapshot: dict, params: dict, open_positions: list) -> tu
     # fly_debit prices the +1 lower / -2 centre / +1 upper combo as a debit (positive = cost);
     # a broken-wing entered for a net credit comes out NEGATIVE there, so credit is its negation.
     raw = fly.fly_debit(
-        quote(snapshot, side, lower_wing), quote(snapshot, side, center), quote(snapshot, side, upper_wing), slip
+        quote(snapshot, side, lower_wing),
+        quote(snapshot, side, center),
+        quote(snapshot, side, upper_wing),
+        slip,
     )
     credit = -raw
 

@@ -462,8 +462,15 @@ def _scan_floor(position, lo=5900, hi=6101, step=0.25):
     [
         pytest.param(legged_fly(1.05, fees=0.0), id="fly"),
         pytest.param(
-            {"kind": "short_vertical", "side": "put", "center": 6000, "wing_width": 5,
-             "net": 1.50, "quantity": 1, "fees": 0.0},
+            {
+                "kind": "short_vertical",
+                "side": "put",
+                "center": 6000,
+                "wing_width": 5,
+                "net": 1.50,
+                "quantity": 1,
+                "fees": 0.0,
+            },
             id="short_vertical",
         ),
         pytest.param(debit_vertical(debit=1.0, fees=0.0), id="long_vertical"),

@@ -1104,8 +1104,13 @@ def test_max_safe_completion_debit_reserves_exactly_what_position_floor_does():
     assignment reserve and this bound's ever diverge, a resting order could fill into a fly the
     floor gate would have refused, which is the one thing a resting limit must not be able to do."""
     pos = {
-        "side": PUT, "center": 7495.0, "wing_width": 5, "quantity": 1,
-        "net": 1.05, "fees": 3.44, "symbol": "SPX",
+        "side": PUT,
+        "center": 7495.0,
+        "wing_width": 5,
+        "quantity": 1,
+        "net": 1.05,
+        "fees": 3.44,
+        "symbol": "SPX",
     }
     min_floor = 10.0
     bound = live_orders.max_safe_completion_debit(pos, min_floor, 0.10)
@@ -1470,7 +1475,17 @@ def test_watcher_confirms_faster_via_a_push_alert_than_cache_gating_alone_would(
     _fake_cache(monkeypatch, _snapshot())
     broker = FakeBroker(
         order_statuses={"ORD-E1": {"status": "Filled", "price": "1.10", "filled": True}},
-        alerts=[[{"order_id": "ORD-E1", "status": "Filled", "cancellable": False, "price": "1.10", "filled": True}]],
+        alerts=[
+            [
+                {
+                    "order_id": "ORD-E1",
+                    "status": "Filled",
+                    "cancellable": False,
+                    "price": "1.10",
+                    "filled": True,
+                }
+            ]
+        ],
     )
     cfg = _watch_cfg()
     cfg["live"]["fill_heartbeat_seconds"] = 10_000

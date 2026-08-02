@@ -20,15 +20,7 @@ for a non-negative payoff would be arbitrage. The credit has to be manufactured,
 
 from __future__ import annotations
 
-import os
-import sys
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_CORE = os.path.join(_HERE, "_core")
-if os.path.isdir(_CORE) and _CORE not in sys.path:
-    sys.path.insert(0, _CORE)
-
-from cherrypick.core import fees as _fees  # noqa: E402
+from cherrypick.core import fees as _fees
 
 CONTRACT_MULTIPLIER = 100
 
