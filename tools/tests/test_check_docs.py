@@ -32,6 +32,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import check_docs as cd  # noqa: E402
 
 ROOT = cd.ROOT
+_CLI_SRC = cd._CLI_SOURCE
+_CLI_DOC = cd._CLI_DOC
 MEIC = "packages/meic/CLAUDE.md"
 ORCH = "packages/orchestrator/CLAUDE.md"
 
@@ -195,6 +197,31 @@ def test_exists_exact_resolves_relative_segments():
     """Links arrive unresolved. Collapsing them with Path.resolve() would re-canonicalize case on
     Windows and hide the mismatch above, so normpath does it textually instead."""
     assert cd._exists_exact(ROOT / "packages/meic/docs/../README.md")
+
+
+# ------------------------------------------------------------------- rule 8: CLI reference parity
+def test_cli_reference_documents_every_command():
+    """The live check: docs/orchestrator-cli.md claims to list every command, so it must."""
+    assert cd._check_cli_coverage() == []
+
+
+def test_cli_coverage_detects_drift_in_both_directions(tmp_path, monkeypatch):
+    """A command added without a doc row, and a doc row left behind after removal. Both are silent
+    today -- each file is individually valid and only their disagreement is the defect."""
+    src = tmp_path / _CLI_SRC
+    doc = tmp_path / _CLI_DOC
+    src.parent.mkdir(parents=True)
+    doc.parent.mkdir(parents=True)
+    monkeypatch.setattr(cd, "ROOT", tmp_path)
+
+    src.write_text('parser.add_argument("command", choices=["doctor", "status", "brandnew"])')
+    doc.write_text("| Command |\n|---|\n| `doctor` |\n| `status` |\n| `removed-cmd` |\n")
+
+    findings = cd._check_cli_coverage()
+    joined = " ".join(findings)
+    assert "brandnew" in joined, "an undocumented command should be reported"
+    assert "removed-cmd" in joined, "a stale doc row should be reported"
+    assert "doctor" not in joined and "status" not in joined, "matching commands must stay quiet"
 
 
 # ------------------------------------------------------------------------------------ end to end
