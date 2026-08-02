@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import paper_practice as pp
+from cherrypick.meic import paper_practice as pp
 
 # ── OCC / date formatting ────────────────────────────────────────────────────
 

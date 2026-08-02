@@ -48,9 +48,8 @@ from datetime import datetime, timedelta
 import keyring
 import keyring.errors
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import paper  # noqa: E402
-import paths as _paths  # noqa: E402
+from cherrypick.meic import paper  # noqa: E402
+from cherrypick.meic import paths as _paths  # noqa: E402
 
 _API_BASE = "https://api.0dtespx.com"
 # api.0dtespx.com sits behind Cloudflare, which rejects Python's default urllib User-Agent with

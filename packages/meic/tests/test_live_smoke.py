@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import live_smoke
+from cherrypick.meic import live_smoke
 
 STRATEGY = {
     "ok": True,

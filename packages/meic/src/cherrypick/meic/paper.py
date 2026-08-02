@@ -16,6 +16,7 @@ compared on identical, reproducible criteria. See docs/paper-trading.md.
 import argparse
 import json
 import os
+import pathlib
 import sqlite3
 import subprocess
 import sys
@@ -36,21 +37,21 @@ def _now_et():
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_REPO_ROOT = os.path.join(_HERE, "..")
+# Package root (holds config.risk.json): src/cherrypick/meic/paper.py -> four parents up. This was
+# _HERE/".." when the modules lived flat in src/; config.risk.json is the risk-profile registry the
+# paper engine loads, so a wrong root here silently loses every named profile.
+_REPO_ROOT = str(pathlib.Path(__file__).resolve().parents[3])
 _RISK_PROFILES_PATH = os.path.join(_REPO_ROOT, "config.risk.json")
-_DB_PY = os.path.join(_HERE, "db.py")
+# `-m` rather than a path to db.py -- location-independent.
+_DB_CMD = ["-m", "cherrypick.meic.db"]
 
-if _HERE not in sys.path:
-    sys.path.insert(
-        0, _HERE
-    )  # so `import paths` resolves when imported (tests, paper_loop), not just as a script
 from datetime import date as _date  # noqa: E402
 
 from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import fees as _fees  # noqa: E402
 from cherrypick.core import profiles as _profiles  # noqa: E402
 
-import paths as _paths  # noqa: E402
+from cherrypick.meic import paths as _paths  # noqa: E402
 
 
 def _is_event_day(today, predicate) -> bool:
@@ -1018,7 +1019,7 @@ def evaluate_open_trade(
 
 
 def _db(args_list: list, db_path: str) -> dict:
-    cmd = [sys.executable, _DB_PY, "--db", db_path] + args_list
+    cmd = [sys.executable, *_DB_CMD, "--db", db_path] + args_list
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         return {"ok": False, "error": result.stderr.strip() or f"db.py exited {result.returncode}"}

@@ -36,17 +36,16 @@ import json
 import os
 import sys
 from datetime import datetime
-from pathlib import Path
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
-import credentials as _creds  # noqa: E402
-import live_orders  # noqa: E402
-import paper  # noqa: E402  (the pure decision functions + paper-DB helpers this loop reuses)
-import paper_loop as _pl  # noqa: E402  (market-data fetch helpers -- reused, not duplicated)
-import paths as _paths  # noqa: E402
+from cherrypick.meic import credentials as _creds  # noqa: E402
+from cherrypick.meic import (
+    live_orders,  # noqa: E402
+    paper,  # noqa: E402  (the pure decision functions + paper-DB helpers this loop reuses)
+)
+from cherrypick.meic import (
+    paper_loop as _pl,  # noqa: E402  (market-data fetch helpers -- reused, not duplicated)
+)
+from cherrypick.meic import paths as _paths  # noqa: E402
 
 _TASK_NAME = "cherrypick-meic-live-loop"
 
@@ -298,7 +297,7 @@ class BrokerAdapter:
     def place(self, spec: dict, live: bool) -> dict:
         import subprocess
 
-        cmd = [sys.executable, str(Path(_HERE) / "tt.py"), "execute_trade", "--order", json.dumps(spec)]
+        cmd = [sys.executable, "-m", "cherrypick.meic.tt", "execute_trade", "--order", json.dumps(spec)]
         if self._account_number:
             cmd += ["--account_number", self._account_number]
         if live:

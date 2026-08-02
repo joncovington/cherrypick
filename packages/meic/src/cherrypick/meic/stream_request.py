@@ -33,7 +33,7 @@ if str(_HERE) not in sys.path:
 
 from cherrypick.core import streamrequests as _sr  # noqa: E402
 
-import paths as _paths  # noqa: E402
+from cherrypick.meic import paths as _paths  # noqa: E402
 
 _MODULE = "meic"
 _log = logging.getLogger("paper_loop")

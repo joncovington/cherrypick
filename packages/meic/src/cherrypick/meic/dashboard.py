@@ -16,7 +16,7 @@ from socketserver import ThreadingMixIn
 
 from cherrypick.core import viz
 
-import paths as _paths
+from cherrypick.meic import paths as _paths
 
 # ── Timezone helpers ─────────────────────────────────────────────────────────
 

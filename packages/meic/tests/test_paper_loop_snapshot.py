@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import paper_loop  # noqa: E402
+from cherrypick.meic import paper_loop  # noqa: E402
 
 
 @pytest.fixture

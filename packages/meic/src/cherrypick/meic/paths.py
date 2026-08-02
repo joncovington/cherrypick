@@ -64,7 +64,9 @@ def config_path() -> Path:
     home_cfg = _home.config_path("meic")
     if home_cfg.exists():
         return home_cfg
-    legacy = Path(__file__).resolve().parent.parent / "config.json"
+    # src/cherrypick/meic/paths.py -> package root is four parents up (was parent.parent when
+    # the modules lived flat in src/).
+    legacy = Path(__file__).resolve().parents[3] / "config.json"
     return legacy if legacy.exists() else home_cfg
 
 

@@ -62,16 +62,17 @@ except Exception:  # pragma: no cover - only where zoneinfo has no tz database
 from cherrypick.core import streamcache  # noqa: E402
 from cherrypick.core.streamer import ChainStreamer  # noqa: E402
 
-import paths as _paths  # noqa: E402
-from session import get_session  # noqa: E402
+from cherrypick.meic import paths as _paths  # noqa: E402
+from cherrypick.meic.session import get_session  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 
-_ROOT = Path(__file__).parent.parent
+# src/cherrypick/meic/streamer.py -> package root is four parents up.
+_ROOT = Path(__file__).resolve().parents[3]
 _CACHE_DB = _paths.stream_cache_path()  # canonical shared cache ~/.cherrypick/data/marketdata/ (READ-ONLY here now — the standalone streamer owns it)
-_PID_FILE = _paths.data_path("streamer.pid")
+_PID_FILE = _paths.data_path("cherrypick.meic.streamer.pid")
 _REST_DB = _paths.data_path(
     "rest_cache.db"
 )  # MEIC-owned REST cache (account/positions/overview). The sidecar writes THIS, never the shared market-data cache.
@@ -79,7 +80,7 @@ _SIDECAR_PID = _paths.data_path(
     "sidecar.pid"
 )  # PID for the REST-poller + 7699 API sidecar (distinct from the streamer PID)
 _TRADES_DB = _paths.live_db_path()
-_LOG_FILE = _paths.log_path("streamer.log")
+_LOG_FILE = _paths.log_path("cherrypick.meic.streamer.log")
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -318,7 +319,7 @@ async def _rest_poller(symbols: list[str]) -> None:
     which would silently kill the persistent connection with no client-side exception.
     A dedicated connection removes this cross-thread contention entirely.
     """
-    import tt
+    from cherrypick.meic import tt
 
     # Write the REST cache to MEIC's OWN db — never the shared market-data cache, which the standalone
     # streamer is the sole writer of. streamcache.connect creates the full schema; only stream_rest_cache
@@ -397,7 +398,7 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
     def _dispatch(self, command: str, args: dict) -> dict:
         # ── Tier 1: pure sync / stream-cache reads (no event loop) ──────────
         if command == "stream_status":
-            import tt
+            from cherrypick.meic import tt
 
             return tt.cmd_stream_status(argparse.Namespace())
 
@@ -457,7 +458,7 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
         if command not in _CMD_DEFAULTS:
             return {"ok": False, "error": f"unknown command: {command}"}
 
-        import tt
+        from cherrypick.meic import tt
 
         fn_map = {
             "get_connection_status": tt.cmd_get_connection_status,

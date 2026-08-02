@@ -33,7 +33,7 @@ import sys
 from pathlib import Path
 
 _SRC = Path(__file__).resolve().parent
-_TT = [sys.executable, str(_SRC / "tt.py")]
+_TT = [sys.executable, "-m", "cherrypick.meic.tt"]
 
 
 def _run_tt(args: list[str], timeout: int = 90) -> dict:
@@ -150,7 +150,7 @@ def _designated_account() -> str | None:
     try:
         from cherrypick.core.auth import ACCOUNT_NUMBER, CredentialError
 
-        from credentials import store
+        from cherrypick.meic.credentials import store
 
         try:
             return store.get_secret(ACCOUNT_NUMBER)
