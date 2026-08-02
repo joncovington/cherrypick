@@ -27,6 +27,7 @@ deliberately out of scope.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -95,6 +96,36 @@ def _is_test(rel: str) -> bool:
 SELF = "tools/check_docs.py"
 
 
+def _exists_exact(p: Path) -> bool:
+    """`Path.exists()`, but case-sensitive on every platform.
+
+    Plain `.exists()` makes this whole tool answer differently depending on who runs it. Windows and
+    macOS are case-insensitive by default, so a doc pointing at `meic-start.md` when the file is
+    `MEIC-start.md` resolves locally and 404s for a reader on a case-sensitive filesystem -- and on
+    GitHub, which serves blob paths case-sensitively regardless of the author's OS.
+
+    That is not hypothetical: it is exactly how this function came to exist. A stale tree entry passed
+    clean on Windows and failed in CI on Linux, so the local run was reporting OK over a real error.
+    Comparing against the actual directory listing removes the platform from the answer.
+    """
+    try:
+        if not p.exists():
+            return False
+        # Collapse `..` textually with normpath, NOT Path.resolve(). resolve() asks the filesystem for
+        # the canonical path, and on Windows that hands back the on-disk casing -- which would quietly
+        # re-mask the exact mismatch this function exists to find. Links arrive unresolved
+        # (`packages/meic/../../docs/README.md`), so without this the walk below compares a literal
+        # ".." against a directory listing and reports every relative link as broken.
+        cur = Path(os.path.normpath(p))
+        while cur != ROOT and cur.parent != cur:
+            if cur.name not in {c.name for c in cur.parent.iterdir()}:
+                return False
+            cur = cur.parent
+    except OSError:
+        return False
+    return True
+
+
 def _check_trees(rel: str, lines: list[str]) -> list[str]:
     """Resolve every path drawn in a fenced ASCII file-layout tree, and report the ones that vanished.
 
@@ -159,7 +190,7 @@ def _check_trees(rel: str, lines: list[str]) -> list[str]:
         comment = line.split("#", 1)[1].lower() if "#" in line else ""
         if any(mark in comment for mark in _RUNTIME_MARKERS):
             continue
-        if target.parent.exists() and not target.exists():
+        if target.parent.exists() and not _exists_exact(target):
             findings.append(f"{rel}:{n}: file-layout tree lists {'/'.join(parts)!r}, which does not exist")
     return findings
 
@@ -202,7 +233,7 @@ def check(paths: list[Path]) -> list[str]:
                     t = target.split("#", 1)[0].strip()
                     if not t or t.startswith(("http://", "https://", "mailto:", "<")):
                         continue
-                    if not (path.parent / t).exists():
+                    if not _exists_exact(path.parent / t):
                         findings.append(f"{rel}:{n}: broken relative link -> {t}")
                 if m := _MD_LINK_OPEN.search(line):
                     findings.append(

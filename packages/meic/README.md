@@ -246,7 +246,7 @@ cherrypick/
     ├── .claude/
     │   ├── settings.json            # Permissions and MCP environment overrides
     │   └── commands/
-    │       ├── meic-start.md        # /meic-start — launch full live session
+    │       ├── MEIC-start.md        # /meic-start — launch full live session
     │       ├── paper-start.md       # /paper-start — launch full paper session
     │       ├── setup.md             # /setup — credentials and initial config
     │       ├── set-risk-profile.md  # /set-risk-profile — switch entry-gate preset
