@@ -42,9 +42,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# A doc may legitimately *quote* a bad path as an example of what not to do. Those lines say so.
-_ALLOW_MARKERS = ("never", "not ", "no ", "don't", "do not", "avoid", "e.g.", "instead of", "wrong")
-
 _ABS_PATH = re.compile(r"(?:[A-Za-z]:[\\/]Users[\\/]|/Users/|/home/)[A-Za-z0-9._-]+", re.I)
 _HOME_POINTER = re.compile(r"~[\\/]\.claude[\\/]")
 # 5+ consecutive digits adjacent to account wording, but not a masked ****1234 and not a year/port.
@@ -85,9 +82,23 @@ def tracked_files() -> list[Path]:
     return [ROOT / p for p in out if p.strip()]
 
 
-def _is_example(line: str) -> bool:
-    low = line.lower()
-    return any(m in low for m in _ALLOW_MARKERS)
+def _is_quoted_example(line: str, pos: int) -> bool:
+    """True when the match at `pos` sits inside a backtick span -- the doc is *quoting* the bad
+    pattern rather than committing it.
+
+    This replaced a line-level heuristic that exempted the entire line whenever it contained "no",
+    "not ", "never", "avoid", ... anywhere in it. That fails open, and it did so on the two
+    security-adjacent rules: a line reading "there is no reason this ran from C:/Users/me/secret"
+    was silently exempt from both the absolute-path and unmasked-account checks, because it happens
+    to contain the word "no".
+
+    Requiring the match itself to be quoted is tighter and closer to the real intent -- every
+    legitimate counter-example in this repo writes the offending path in backticks
+    (``Never hardcode absolute paths (`C:\\Users\\...`)``), so nothing genuine depended on the
+    looser rule. Scoped per match rather than per line, so one quoted example cannot excuse a real
+    violation sitting further along the same line.
+    """
+    return line[:pos].count("`") % 2 == 1
 
 
 def _is_test(rel: str) -> bool:
@@ -300,22 +311,23 @@ def check(paths: list[Path]) -> list[str]:
 
         if not _is_test(rel):
             for n, line in enumerate(lines, 1):
-                if _is_example(line):
-                    continue
-                if _ABS_PATH.search(line):
+                if any(not _is_quoted_example(line, m.start()) for m in _ABS_PATH.finditer(line)):
                     findings.append(
                         f"{rel}:{n}: absolute machine path -- derive it from "
                         "Path(__file__), an env var, or config"
                     )
-                if _HOME_POINTER.search(line):
+                if any(not _is_quoted_example(line, m.start()) for m in _HOME_POINTER.finditer(line)):
                     findings.append(
                         f"{rel}:{n}: points outside the repo (~/.claude/) -- move it "
                         "in-repo, or mark it non-authoritative"
                     )
-                if m := _ACCOUNT.search(line):
+                for m in _ACCOUNT.finditer(line):
+                    if _is_quoted_example(line, m.start()):
+                        continue
                     findings.append(
                         f"{rel}:{n}: possible unmasked account number {m.group(1)!r} -- mask to ****1234"
                     )
+                    break
 
         if path.suffix.lower() in DOC_SUFFIXES:
             for n, line in enumerate(lines, 1):
