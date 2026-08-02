@@ -141,15 +141,7 @@ def _ensure_module_checkout(name: str, mcfg: dict) -> dict:
     r = subprocess.run(argv, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
     if r.returncode != 0:
         return {"ok": False, "detail": f"git clone failed: {(r.stderr or r.stdout).strip()[:200]}"}
-    sm = subprocess.run(
-        ["git", "submodule", "update", "--init"],
-        cwd=str(root),
-        capture_output=True,
-        text=True,
-        creationflags=CREATE_NO_WINDOW,
-    )
-    note = "" if sm.returncode == 0 else f"; submodule init warn: {(sm.stderr or '').strip()[:120]}"
-    return {"ok": True, "detail": f"cloned to {root}{note}"}
+    return {"ok": True, "detail": f"cloned to {root}"}
 
 
 def cmd_install(cfg) -> None:
