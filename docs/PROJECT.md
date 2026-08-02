@@ -67,9 +67,8 @@ pip install -e ".[dev]"
 
 The modules live under `packages/meic`, `packages/earnings`, `packages/flies`, and `packages/gex`
 (plus the standalone market-data streamer in `packages/streamer`). The trading engines are installed the
-same way if you plan to run them (`pip install -e ".[dev]"` in `packages/meic`; the earnings engine uses
-`pip install -r requirements.txt`; flies, gex, and the streamer need no install — the orchestrator runs
-them in place).
+same way if you plan to run them (`pip install -e ".[dev]"` in `packages/meic` or `packages/earnings`;
+flies, gex, and the streamer need no install — the orchestrator runs them in place).
 
 ---
 

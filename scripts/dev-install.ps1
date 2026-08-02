@@ -25,22 +25,9 @@ Install-Editable "packages\core[dev]" "packages/core (must be first)"
 
 Install-Editable "packages\orchestrator[dev]" "packages/orchestrator"
 Install-Editable "packages\meic[dev]"         "packages/meic"
+Install-Editable "packages\earnings[dev]"     "packages/earnings"
 Install-Editable "packages\gex[dev]"          "packages/gex"
 Install-Editable "packages\flies[dev]"        "packages/flies"
 Install-Editable "packages\streamer[dev]"     "packages/streamer"
-
-# earnings has no pyproject.toml yet (see the plan's Project B) -- its own requirements.txt carries
-# `-e ../core` as its first line, and pip resolves that relative path against the CURRENT WORKING
-# DIRECTORY, not the file's location, so this must run from inside packages/earnings.
-Write-Host "==> packages/earnings"
-Push-Location "$root\packages\earnings"
-try {
-    & $Python -m pip install -r requirements-dev.txt 2>&1 | Write-Host
-    if ($LASTEXITCODE -ne 0) {
-        throw "pip install failed for packages/earnings (exit $LASTEXITCODE)"
-    }
-} finally {
-    Pop-Location
-}
 
 Write-Host "==> done"

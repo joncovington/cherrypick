@@ -57,10 +57,6 @@ include = ["cherrypick*"]
 namespaces = true
 
 [tool.ruff]
-line-length = 110
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
 target-version = "py310"
-
-[tool.ruff.lint]
-# Match the suite's ruff profile (see cherrypick-core): E/W pycodestyle, F pyflakes, I import-sorting,
-# UP pyupgrade, B bugbear.
-select = ["E", "F", "I", "W", "UP", "B"]

@@ -23,11 +23,11 @@ testpaths  = ["tests"]
 pythonpath = ["tests", "src"]
 
 [tool.ruff]
-line-length = 110
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W", "UP", "B"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]

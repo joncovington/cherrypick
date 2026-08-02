@@ -38,7 +38,7 @@ cherrypick/core/
 
 ## How consumers use it
 Each consumer installs `cherrypick-core` as a sibling in-repo package (`pip install -e packages/core`,
-a plain named dependency in its own `dependencies`/`requirements.txt`) and keeps a *thin shim*
+a plain named dependency in its own `pyproject.toml`) and keeps a *thin shim*
 (`src/credentials.py`, `src/session.py`) that instantiates the core class with its own parameters and
 re-exports the module-level API it already imports — so the consumer refactor is minimal and the
 existing `from credentials import get_secret, ...` call sites are unchanged.
