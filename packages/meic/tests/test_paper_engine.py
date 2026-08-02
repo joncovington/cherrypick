@@ -17,8 +17,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import db
-import paper
+from cherrypick.meic import db, paper
 
 # ── Fee model ────────────────────────────────────────────────────────────────
 
@@ -1403,7 +1402,7 @@ def test_get_range_summary_excludes_cancelled_and_pending(paper_db_path, capsys)
 def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
     db_path = str(tmp_path / "paper_e2e.db")
     subprocess.run(
-        [sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"), "--db", db_path, "init_db"],
+        [sys.executable, "-m", "cherrypick.meic.db", "--db", db_path, "init_db"],
         check=True,
         capture_output=True,
     )
@@ -1415,7 +1414,8 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
     result = subprocess.run(
         [
             sys.executable,
-            str(Path(__file__).parent.parent / "src" / "paper.py"),
+            "-m",
+            "cherrypick.meic.paper",
             "--db",
             db_path,
             "process_symbol",
@@ -1438,7 +1438,8 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
     open_check = subprocess.run(
         [
             sys.executable,
-            str(Path(__file__).parent.parent / "src" / "db.py"),
+            "-m",
+            "cherrypick.meic.db",
             "--db",
             db_path,
             "get_open_trades",
@@ -1497,7 +1498,8 @@ def test_process_symbol_concurrency_budget_is_per_symbol(paper_db_path, two_symb
     result = subprocess.run(
         [
             sys.executable,
-            str(Path(__file__).parent.parent / "src" / "paper.py"),
+            "-m",
+            "cherrypick.meic.paper",
             "--db",
             paper_db_path,
             "process_symbol",
@@ -1543,7 +1545,8 @@ def test_process_symbol_daily_target_is_per_symbol(paper_db_path, two_symbol_env
     result = subprocess.run(
         [
             sys.executable,
-            str(Path(__file__).parent.parent / "src" / "paper.py"),
+            "-m",
+            "cherrypick.meic.paper",
             "--db",
             paper_db_path,
             "process_symbol",
@@ -1569,12 +1572,12 @@ def test_process_symbol_daily_target_is_per_symbol(paper_db_path, two_symbol_env
 
 # ── Stop persistence + stopped-vs-expired (regression for the P&L-accumulation bug) ──
 
-_DBPY = str(Path(__file__).parent.parent / "src" / "db.py")
+_DBPY = ["-m", "cherrypick.meic.db"]
 
 
 def _init_db(tmp_path):
     db_path = str(tmp_path / "stop.db")
-    subprocess.run([sys.executable, _DBPY, "--db", db_path, "init_db"], check=True, capture_output=True)
+    subprocess.run([sys.executable, *_DBPY, "--db", db_path, "init_db"], check=True, capture_output=True)
     return db_path
 
 
@@ -1596,7 +1599,7 @@ def test_update_trade_cli_accepts_stop_cost(tmp_path):
     subprocess.run(
         [
             sys.executable,
-            _DBPY,
+            *_DBPY,
             "--db",
             db_path,
             "save_trade",
@@ -1619,7 +1622,7 @@ def test_update_trade_cli_accepts_stop_cost(tmp_path):
     r = subprocess.run(
         [
             sys.executable,
-            _DBPY,
+            *_DBPY,
             "--db",
             db_path,
             "update_trade",
@@ -1643,7 +1646,7 @@ def test_stop_persists_then_settlement_stays_stopped_without_double_counting(tmp
     subprocess.run(
         [
             sys.executable,
-            _DBPY,
+            *_DBPY,
             "--db",
             db_path,
             "save_trade",
@@ -1886,7 +1889,7 @@ def test_process_symbol_skips_profile_not_trading_symbol(tmp_path, monkeypatch):
     # base set — so the registry is monkeypatched with a pinned pair to exercise the code path.
     db_path = str(tmp_path / "paper_pin.db")
     subprocess.run(
-        [sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"), "--db", db_path, "init_db"],
+        [sys.executable, "-m", "cherrypick.meic.db", "--db", db_path, "init_db"],
         check=True,
         capture_output=True,
     )
@@ -1921,7 +1924,7 @@ def test_process_symbol_reports_save_failed_not_filled_when_the_insert_fails(tmp
     """
     db_path = str(tmp_path / "paper_savefail.db")
     subprocess.run(
-        [sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"), "--db", db_path, "init_db"],
+        [sys.executable, "-m", "cherrypick.meic.db", "--db", db_path, "init_db"],
         check=True,
         capture_output=True,
     )

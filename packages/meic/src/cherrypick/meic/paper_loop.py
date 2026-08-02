@@ -47,32 +47,37 @@ except Exception:  # pragma: no cover - only where zoneinfo has no tz database
     _ET = pytz.timezone("America/New_York")
 
 
+from cherrypick.core import advice as _core_advice  # bounded-advice validator
+from cherrypick.core import calendar as _cal  # shared NYSE trading-day calendar
+from cherrypick.core import home as _core_home  # the shared state dir
+from cherrypick.core import viz as _viz  # the suite's one money formatter
+
+from cherrypick.meic import (
+    paper,
+    stream_request,  # declares symbols + open paper legs to the streamer
+)
+from cherrypick.meic import paths as _paths  # ~/.cherrypick/data/meic or MEIC_DATA_DIR
+
+
 def _now_et():
     return datetime.now(_ET)
 
 
-_ROOT = Path(__file__).resolve().parent.parent
-
-sys.path.insert(0, str(_ROOT / "src"))
-from cherrypick.core import advice as _core_advice  # noqa: E402  (bounded-advice validator)
-from cherrypick.core import calendar as _cal  # noqa: E402  (shared NYSE trading-day calendar)
-from cherrypick.core import home as _core_home  # noqa: E402  (the shared state dir)
-from cherrypick.core import viz as _viz  # noqa: E402  (the suite's one money formatter)
-
-import paths as _paths  # noqa: E402  (data-home resolution: ~/.cherrypick/data/meic or MEIC_DATA_DIR)
+# packages/meic -- this file sits at src/cherrypick/meic/paper_loop.py, so the package root is four
+# parents up. Only used as the `cwd` for the detached --_run child below.
+_ROOT = Path(__file__).resolve().parents[3]
 
 # Runtime data (DB, PID, lock) lives in the data home and logs in the logs home; only config stays
 # in the package.
-_PID_FILE = _paths.data_path("paper_loop.pid")
-_LOCK_FILE = _paths.data_path("paper_loop.once.lock")
-_LOG_FILE = _paths.log_path("paper_loop.log")
+_PID_FILE = _paths.data_path("cherrypick.meic.paper_loop.pid")
+_LOCK_FILE = _paths.data_path("cherrypick.meic.paper_loop.once.lock")
+_LOG_FILE = _paths.log_path("cherrypick.meic.paper_loop.log")
 _TASK_NAME = "cherrypick-meic-paper-loop"
 _PAPER_DB = str(_paths.paper_db_path())
-_TT = [sys.executable, str(_ROOT / "src" / "tt.py")]
-_DB = [sys.executable, str(_ROOT / "src" / "db.py"), "--db", _PAPER_DB]
-
-import paper  # noqa: E402
-import stream_request  # noqa: E402  (declares symbols + open paper legs to the standalone streamer)
+# `-m` rather than a path to the script: independent of this file's depth on disk and of the child's
+# working directory, which matters because the scheduled task runs from wherever schtasks starts it.
+_TT = [sys.executable, "-m", "cherrypick.meic.tt"]
+_DB = [sys.executable, "-m", "cherrypick.meic.db", "--db", _PAPER_DB]
 
 logger = logging.getLogger("paper_loop")
 _stop = False
@@ -1299,7 +1304,7 @@ def _spawn_detached():
     else:
         kwargs["start_new_session"] = True
     subprocess.Popen(
-        [sys.executable, os.path.abspath(__file__), "--_run"],
+        [sys.executable, "-m", "cherrypick.meic.paper_loop", "--_run"],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -1410,7 +1415,11 @@ def _install_task():
         )
         return
     # pythonw.exe = no console window, so the every-2-min --once run is truly headless.
-    tr = f'"{_pythonw()}" "{os.path.abspath(__file__)}" --once'
+    # `-m` rather than an absolute script path: the registered task string no longer bakes in this
+    # file's location, so moving/reinstalling the package doesn't strand the task pointing at a path
+    # that no longer exists. Requires cherrypick-meic to be installed in this interpreter, which is
+    # the documented setup (scripts/dev-install).
+    tr = f'"{_pythonw()}" -m cherrypick.meic.paper_loop --once'
     r = subprocess.run(
         ["schtasks", "/Create", "/TN", _TASK_NAME, "/TR", tr, "/SC", "MINUTE", "/MO", "2", "/F", "/IT"],
         capture_output=True,

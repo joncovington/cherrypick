@@ -38,10 +38,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx
 
-import credentials as _creds
-import gex_math
-import paths as _paths
-from session import get_session
+from cherrypick.meic import credentials as _creds
+from cherrypick.meic import gex_math
+from cherrypick.meic import paths as _paths
+from cherrypick.meic.session import get_session
 
 # ---------------------------------------------------------------------------
 # Logging — each invocation is a short-lived subprocess whose only normal
@@ -49,7 +49,7 @@ from session import get_session
 # fallback (see _try_streamer_http) would otherwise be invisible across
 # iterations. Append warnings to a file so degraded-mode calls are auditable.
 # ---------------------------------------------------------------------------
-_LOG_FILE = _paths.log_path("tt.log")
+_LOG_FILE = _paths.log_path("cherrypick.meic.tt.log")
 _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -1113,7 +1113,7 @@ def cmd_get_calendar(args) -> dict:
 
 
 def cmd_secrets_status(_args) -> dict:
-    from credentials import secrets_status
+    from cherrypick.meic.credentials import secrets_status
 
     status = secrets_status()
     return {
@@ -1127,7 +1127,7 @@ def cmd_secrets_set(args) -> dict:
     """Interactively prompt for and store credentials in the OS keyring."""
     import getpass
 
-    from credentials import ALL_SECRETS, REQUIRED_SECRETS, get_secret, set_secret
+    from cherrypick.meic.credentials import ALL_SECRETS, REQUIRED_SECRETS, get_secret, set_secret
 
     label = {
         "client_secret": "Client Secret",
@@ -1374,7 +1374,7 @@ def cmd_stream_status(_args) -> dict:
     # process states) — reuse streamer.py's cross-platform _running_pid(),
     # which already handles this via psutil/OpenProcess. streamer.py's
     # top-level imports are all stdlib, so this import is cheap.
-    import streamer as _streamer
+    from cherrypick.meic import streamer as _streamer
 
     pid = _streamer._running_pid()
     running = pid is not None

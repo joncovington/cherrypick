@@ -15,17 +15,15 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import live_loop
-import live_orders
-import paper
+from cherrypick.meic import live_loop, live_orders, paper
 
 DAY = "2026-07-08"  # ordinary Wednesday -- not a quarterly/FOMC/witching day (verified)
-_DBPY = str(Path(__file__).parent.parent / "src" / "db.py")
+_DBPY = ["-m", "cherrypick.meic.db"]
 
 
 def _init_db(tmp_path, name="live.db"):
     db_path = str(tmp_path / name)
-    subprocess.run([sys.executable, _DBPY, "--db", db_path, "init_db"], check=True, capture_output=True)
+    subprocess.run([sys.executable, *_DBPY, "--db", db_path, "init_db"], check=True, capture_output=True)
     return db_path
 
 
@@ -145,7 +143,7 @@ def test_daily_loss_breaker(tmp_path):
 
 
 def test_live_ledger_is_a_separate_file():
-    import paths as _paths
+    from cherrypick.meic import paths as _paths
 
     assert str(_paths.live_db_path()).endswith("meic_trades.db")
     assert str(_paths.paper_db_path()).endswith("paper_trades.db")
@@ -218,7 +216,7 @@ def _open_trades(db_path, symbol):
     import json
 
     result = subprocess.run(
-        [sys.executable, _DBPY, "--db", db_path, "get_open_trades", "--symbol", symbol, "--date", DAY],
+        [sys.executable, *_DBPY, "--db", db_path, "get_open_trades", "--symbol", symbol, "--date", DAY],
         capture_output=True,
         text=True,
     )

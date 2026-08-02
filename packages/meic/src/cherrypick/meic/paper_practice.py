@@ -36,7 +36,6 @@ CLI:
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 import time
@@ -46,12 +45,14 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import paper  # noqa: E402  (reused: evaluate_entry, profiles, merge, settlement value)
-import paper_replay as _replay  # noqa: E402  (reused: _API_BASE, _USER_AGENT, _token, login helpers)
-import paths as _paths  # noqa: E402  (practice_trades.db default path in the data home)
+from cherrypick.meic import paper  # noqa: E402  (reused: evaluate_entry, profiles, merge, settlement value)
+from cherrypick.meic import (
+    paper_replay as _replay,  # noqa: E402  (reused: _API_BASE, _USER_AGENT, _token, login helpers)
+)
+from cherrypick.meic import paths as _paths  # noqa: E402  (practice_trades.db default path in the data home)
 
-_DB_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "db.py")
+# `-m` rather than a path to db.py: location-independent, same reason as paper_loop's _DB.
+_DB_CMD = ["-m", "cherrypick.meic.db"]
 
 _ET = ZoneInfo("America/New_York")
 _TARGET_DELTA = 0.15
@@ -303,11 +304,11 @@ def spx_eligible_profiles(base=None, profiles=None) -> list:
 
 
 def _db(db_path, args):
-    subprocess.run([sys.executable, _DB_PY, "--db", db_path] + args, capture_output=True, text=True)
+    subprocess.run([sys.executable, *_DB_CMD, "--db", db_path] + args, capture_output=True, text=True)
 
 
 def _db_json(db_path, args):
-    r = subprocess.run([sys.executable, _DB_PY, "--db", db_path] + args, capture_output=True, text=True)
+    r = subprocess.run([sys.executable, *_DB_CMD, "--db", db_path] + args, capture_output=True, text=True)
     try:
         return json.loads(r.stdout.strip().splitlines()[-1])
     except (json.JSONDecodeError, IndexError):

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import paper  # noqa: E402
+from cherrypick.meic import paper  # noqa: E402
 
 
 def test_event_day_helper_handles_none_and_bad_input():

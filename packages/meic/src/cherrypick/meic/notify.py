@@ -7,7 +7,9 @@ import sys
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))  # so `import paths` resolves when run as a script
-import paths as _paths  # noqa: E402  (logs-home resolution: ~/.cherrypick/logs/meic or MEIC_LOGS_DIR)
+from cherrypick.meic import (
+    paths as _paths,  # noqa: E402  (logs-home resolution: ~/.cherrypick/logs/meic or MEIC_LOGS_DIR)
+)
 
 _LOG_DIR = str(_paths.logs_dir())
 _LOG_PATH = os.path.join(_LOG_DIR, "agent.log")

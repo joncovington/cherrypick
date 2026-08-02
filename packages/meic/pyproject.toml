@@ -38,7 +38,9 @@ extend-exclude = [".claude"]
 ignore = ["E501"]
 
 [tool.hatch.build.targets.wheel]
-# Flat modules live under src/ and are imported top-level (pytest adds src to pythonpath); map the
-# src/ prefix away so an editable install exposes them the same way. Exclude tests from the built package.
-only-include = ["src"]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py, so cherrypick.meic composes with
+# cherrypick.core (and every other module) under one cherrypick.* root. `sources = ["src"]` maps the
+# src/ prefix away, so src/cherrypick/meic/... installs as cherrypick/meic/... . Note src/ also holds
+# live_smoke.ps1, which only-include deliberately leaves out of the wheel.
+only-include = ["src/cherrypick"]
 sources = ["src"]

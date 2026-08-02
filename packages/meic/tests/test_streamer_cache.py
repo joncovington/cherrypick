@@ -17,8 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from cherrypick.core.streamcache import DDL as _DDL
 
-import streamer as _streamer
-from streamer import (
+from cherrypick.meic import streamer as _streamer
+from cherrypick.meic.streamer import (
     _REST_TTL,
     _read_rest_cache,
     _write_rest_cache,

@@ -15,13 +15,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from cherrypick.core import advice as core_advice
 
-_SRC = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(_SRC))
-from cherrypick.core import advice as core_advice  # noqa: E402
-
-import paper  # noqa: E402
-import paper_loop  # noqa: E402
+from cherrypick.meic import paper, paper_loop
 
 DAY = "2026-07-29"
 BOUNDS = {"stop_trigger_ratio": {"min": 0.85, "max": 0.95}}
@@ -36,7 +32,7 @@ def homes(tmp_path, monkeypatch):
     db = tmp_path / "meic" / "paper_trades.db"
     db.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        [sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"), "--db", str(db), "init_db"],
+        [sys.executable, "-m", "cherrypick.meic.db", "--db", str(db), "init_db"],
         check=True,
         capture_output=True,
     )

@@ -30,7 +30,7 @@ if str(_SRC) not in sys.path:
 
 from cherrypick.core import viz  # noqa: E402
 
-import dashboard as dash  # noqa: E402
+from cherrypick.meic import dashboard as dash  # noqa: E402
 
 _NOTE = (
     "net of fees · win = resolved trade with pnl − fees > 0 · "

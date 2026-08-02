@@ -35,7 +35,7 @@ if str(_HERE) not in sys.path:
 
 from cherrypick.core.metrics import calibration_reading  # noqa: E402
 
-import paths as _paths  # noqa: E402
+from cherrypick.meic import paths as _paths  # noqa: E402
 
 CONTROL_ARM = "gex-open"  # ungated: takes the entries the live policy refuses
 TREATMENT_ARM = "gex-blocked"  # gated: runs the live policy
