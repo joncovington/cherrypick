@@ -1,12 +1,12 @@
 """The onboarding redesign's orchestrator half: known-module defaults, the keyring-only
 status panel (own/shared/missing), the yellow doctor check, and the suite wizard's flow.
 
-No real keyring, no broker, no subprocess: stores are faked, children are stubbed.
+No real keyring, no broker: stores are faked, children are stubbed -- except
+test_core_auth_child_runs_under_the_ambient_env, which runs a real `python -m cherrypick.core.auth`
+subprocess deliberately, to prove that path resolves without help.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 from cherrypick.core.auth import ACCOUNT_NUMBER, CLIENT_SECRET, REFRESH_TOKEN
@@ -139,7 +139,6 @@ def test_wizard_migration_runs_per_service_on_yes(monkeypatch):
             return R()
 
     monkeypatch.setattr(connect, "subprocess", FakeSub)
-    monkeypatch.setattr(connect, "_core_env", lambda: {})
     out = connect._offer_migration(CFG, prompt_fn=lambda _: "y")
     assert len(out) == 2
     flat = [" ".join(map(str, a)) for a in launched]
@@ -148,18 +147,17 @@ def test_wizard_migration_runs_per_service_on_yes(monkeypatch):
     assert all("migrate" in f for f in flat)
 
 
-def test_core_env_pythonpath_actually_imports_the_core_package():
-    """The regression the wizard shipped with: the child's PYTHONPATH must point at the _core
-    ROOT (three levels above auth/__init__.py), not at the cherrypick dir inside it — the
-    stubbed-out wizard tests never exercised the real path computation."""
-    import os
+def test_core_auth_child_runs_under_the_ambient_env():
+    """The end-to-end proof of the submodule -> installed-package migration: a
+    `python -m cherrypick.core.auth` child must resolve on plain inherited env, with no PYTHONPATH
+    graft. cherrypick-core used to be a per-package submodule that a child process couldn't see
+    without `connect._core_env()` computing a PYTHONPATH by hand (three levels above
+    auth/__init__.py — a regression-prone piece of path arithmetic); now it's an installed
+    dependency (packages/core), so a bare subprocess call is the whole story."""
     import subprocess
     import sys
 
-    env = connect._core_env()
-    root = env["PYTHONPATH"].split(os.pathsep)[0]
-    assert (Path(root) / "cherrypick" / "core" / "auth" / "__init__.py").exists()
     r = subprocess.run(
-        [sys.executable, "-m", "cherrypick.core.auth", "status"], capture_output=True, text=True, env=env
+        [sys.executable, "-m", "cherrypick.core.auth", "status"], capture_output=True, text=True
     )
     assert r.returncode == 0 and '"service": "cherrypick-broker"' in r.stdout

@@ -15,7 +15,6 @@ account into the module's keyring. Account numbers are masked in everything it p
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
 from typing import Any
 
 from . import accounts, doctor
@@ -103,27 +102,13 @@ def run(cfg: dict[str, Any], module: str, prompt_fn=input) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- the suite wizard
-def _core_env() -> dict[str, str]:
-    """Environment for `python -m cherrypick.core.auth` children: the shared core package on
-    PYTHONPATH (resolved from the orchestrator's own import, so it works installed or in-place).
-    The sys.path root is THREE levels above auth/__init__.py (auth -> core -> cherrypick ->
-    the _core checkout root); counting from cherrypick.core landed one level short and the
-    child couldn't import `cherrypick` at all."""
-    import os
-
-    import cherrypick.core.auth as _auth
-
-    core_root = str(Path(_auth.__file__).resolve().parents[3])
-    env = dict(os.environ)
-    env["PYTHONPATH"] = core_root + os.pathsep + env.get("PYTHONPATH", "")
-    return env
-
-
 def _shared_setup() -> bool:
     """Hidden-input entry of the SHARED login, in a core child process with the tty inherited —
-    the orchestrator never sees the bearer secrets, same fencing as the per-module tools."""
+    the orchestrator never sees the bearer secrets, same fencing as the per-module tools.
+    `python -m cherrypick.core.auth` resolves on plain inherited env: cherrypick-core is an
+    installed dependency (packages/core), not a submodule needing a PYTHONPATH graft."""
     print("\n[1/5] tastytrade login (stored ONCE, shared by every module; input hidden)")
-    proc = subprocess.run([cfgmod.python_exe(), "-m", "cherrypick.core.auth", "setup"], env=_core_env())
+    proc = subprocess.run([cfgmod.python_exe(), "-m", "cherrypick.core.auth", "setup"])
     return proc.returncode == 0
 
 
@@ -155,7 +140,6 @@ def _offer_migration(cfg: dict[str, Any], prompt_fn=input) -> list[dict[str, Any
     for service in with_copies:
         r = subprocess.run(
             [cfgmod.python_exe(), "-m", "cherrypick.core.auth", "migrate", "--from-service", service],
-            env=_core_env(),
             capture_output=True,
             text=True,
         )
