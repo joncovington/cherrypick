@@ -17,13 +17,12 @@ import json
 import re
 import threading
 import webbrowser
-import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from . import config as cfgmod
-from . import dashboard, doctor, embeds, liveops, reconcile, sections
+from . import dashboard, doctor, embeds, liveops, logrotate, reconcile, sections
 
 _SESSION_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -118,20 +117,11 @@ def _md_to_html(md_text: str) -> str:
 def _archived_report_text(logs_root, scope: str, filename: str, session: str) -> str | None:
     """A rotated-away report's text out of its monthly archive zip, or None.
 
-    The archiver writes `logs/archive/<YYYY-MM>/<scope>.zip` with bare-filename arcnames
-    (scope = "suite" for the logs root's own files, else the module name), so the lookup
-    is fully derived from the already-validated session + the fixed filename — no client
-    input reaches the path. Best-effort: any zip problem reads as not-found."""
-    zpath = logs_root / "archive" / session[:7] / f"{scope}.zip"
-    if not zpath.exists():
-        return None
-    try:
-        with zipfile.ZipFile(zpath) as zf:
-            if filename in zf.namelist():
-                return zf.read(filename).decode("utf-8", errors="replace")
-    except Exception:
-        return None
-    return None
+    Delegates to `logrotate`, which owns the archive layout — the dashboard card needs the same
+    lookup to decide whether to render a link at all, and two copies of "where did the archiver put
+    it" is exactly how the card and this route came to disagree. The path is still fully derived from
+    the already-validated session plus a fixed filename; no client input reaches it."""
+    return logrotate.archived_report_text(logs_root, scope, filename, session)
 
 
 def _md_page(title: str, md_text: str) -> bytes:
