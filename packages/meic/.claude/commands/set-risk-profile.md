@@ -4,7 +4,7 @@ Switch to a named risk profile (conservative/moderate/aggressive/very-aggressive
 
 Risk profiles bundle entry-gate thresholds with offsetting position-cap and stop-management constraints. Running `/set-risk-profile moderate` (for example) reads the named profile from `config.risk.json`, backs up your current `config.json`, overwrites the relevant keys, and reports what changed — **without restarting the loop**. The new settings take effect on the next iteration.
 
-See [docs/risk-profiles.md](../docs/risk-profiles.md) for the full rationale, trade-offs, and when to use each profile.
+See [docs/risk-profiles.md](../../docs/risk-profiles.md) for the full rationale, trade-offs, and when to use each profile.
 
 ## Step 1 — Check valid profile names
 
@@ -132,6 +132,6 @@ Or to go back to `conservative` (the baseline):
 - **Keys changed**: See the table above
 - **When it takes effect**: Next loop iteration (~5 min)
 - **To revert**: Run `/set-risk-profile conservative` or restore from `config.json.bak`
-- **For details**: See [docs/risk-profiles.md](../docs/risk-profiles.md) for when to escalate, full trade-offs, and recommended progression
+- **For details**: See [docs/risk-profiles.md](../../docs/risk-profiles.md) for when to escalate, full trade-offs, and recommended progression
 
 **Tip**: Check your loop log after the next iteration to confirm the new thresholds are active. Search for "entry_skip" reasons to see which gates are now most active.
