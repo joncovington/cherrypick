@@ -63,13 +63,8 @@
         "stale_restart_seconds": 240
       },
       "calibration": {
-        "_comment": "Optional. `cherrypick calibrate` reads paper P&L per risk profile and advises promotion up this ladder (advisory only; never switches live risk). Omit 'ladder' to get readings without recommendations. 'deliberate_only' rungs are never auto-recommended; 'rule' overrides the default {min_days:14, min_win_rate:0.6, min_sample:20}.",
-        "ladder": [
-          "conservative",
-          "moderate",
-          "aggressive",
-          "very-aggressive"
-        ],
+        "_comment": "Optional. `cherrypick calibrate` reads paper P&L per profile and advises whether a qualified challenger should replace the live 'champion' (advisory only; never switches live risk). 'champion' names the currently-live profile -- every other tag observed is a challenger compared against it on return_on_capital (falling back to net_pnl). Omit 'champion' entirely to get per-tag qualification readings with NO champion/challenger comparison (for a module whose tags are parallel experiments rather than a risk sequence -- see flies below). 'deliberate_only' tags are never auto-recommended even if they qualify and beat the champion; 'rule' overrides the default {min_days:14, min_win_rate:0.6, min_sample:20} and may add 'margin' (default 0.0 -- any positive edge counts as beating the champion).",
+        "champion": "conservative",
         "deliberate_only": [
           "very-aggressive"
         ],
@@ -136,17 +131,12 @@
         "settlement_grace_minutes": 30
       },
       "calibration": {
-        "_comment": "The 'ladder' here is not a risk ladder — it is the experiment arms, and there is nothing to promote between them. Listing them gives per-arm P&L readings without recommendations, which is exactly what this module wants: the comparison is the output. width-2..width-5 are the wing-width sweep (control at the default width is its 1-increment rung); wide_wing is the retired SPX-era single-point width arm, listed so its historical books stay readable.",
-        "ladder": [
-          "control",
-          "time_window",
-          "gex",
-          "width-2",
-          "width-3",
-          "width-4",
-          "width-5",
-          "wide_wing"
-        ]
+        "_comment": "These tags are parallel experiment arms (control/gex/time_window/width-N), not a risk sequence -- there is no currently-live 'champion' among them, so no 'champion' key is set: cherrypick calibrate produces per-arm qualification readings with NO champion/challenger recommendation. width-2..width-5 are the wing-width sweep (control at the default width is its 1-increment rung); wide_wing is the retired SPX-era single-point width arm, listed so its historical books stay readable.",
+        "rule": {
+          "min_days": 14,
+          "min_win_rate": 0.6,
+          "min_sample": 20
+        }
       }
     },
     "earnings": {
@@ -191,10 +181,7 @@
         }
       },
       "_calibration_note": "Earnings retired its conservative/balanced/aggressive risk-profile ladder; the strat_test paper book is now split per strategy (profile tag strat_test:<strategy>). With an empty ladder, calibrate reports per-book readings only (no promotion recommendation) -- strategies don't graduate rungs the way a risk ladder does.",
-      "calibration": {
-        "ladder": [],
-        "deliberate_only": []
-      }
+      "calibration": {}
     }
   },
   "watchdog_header": "x",
