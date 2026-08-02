@@ -233,6 +233,8 @@ _BODY = """
   </label>
   <nav>
     <button data-view="today" class="active">Today</button>
+    <input type="date" id="today-date" style="display:none" title="View the profit forest for a previous session">
+    <button id="today-date-clear" class="f-clear" style="display:none">back to today</button>
     <button data-view="history">History</button>
     <button data-view="performance">Performance</button>
   </nav>
@@ -335,6 +337,10 @@ const fmtPct = v => v === null || v === undefined ? '–' : (v*100).toFixed(0) +
 const fmtNum = (v,d=2) => v === null || v === undefined ? '–' : Number(v).toFixed(d);
 const tone = v => v === null || v === undefined ? '' : (v >= 0 ? 'pos' : 'neg');
 let DATA = null, ARM = 'ALL', SYMBOL = 'ALL', XWIDTH = 'auto', YWIDTH = 'auto', SOURCE = 'paper';
+// null means "today" -- left for the server to resolve (analytics.today() is the ET session date,
+// not the browser's local date, which can already be tomorrow west of Eastern). Only the Today
+// view is date-scoped server-side; History/Performance always show the full range regardless.
+let DATE = null;
 // The day's settlement print once the session has settled, else null -- see the Today view's
 // spot handling for why settlement beats the last intraday tick as the headline price.
 let SETTLE_PX = null;
@@ -1143,6 +1149,9 @@ function renderAll(d) {
   badge.textContent = isLive ? 'LIVE — real money' : 'paper';
   badge.classList.toggle('live', isLive);
   $('#asof').textContent = `${d.date} · ${d.generated_at.slice(11,16)}`;
+  // Keep the picker showing whatever the server actually resolved -- including the DATE===null
+  // case, so the field displays today's real date without the user having to have touched it.
+  $('#today-date').value = d.date;
   const sel = $('#arm-select');
   if (sel.options.length - 1 !== d.arms.length) {
     sel.innerHTML = '<option value="ALL">all</option>' +
@@ -1160,19 +1169,41 @@ function renderAll(d) {
 
 async function refresh() {
   try {
-    const r = await fetch(`/api/data?source=${encodeURIComponent(SOURCE)}&arm=${encodeURIComponent(ARM)}&symbol=${encodeURIComponent(SYMBOL)}`);
+    const dateParam = DATE ? `&date=${encodeURIComponent(DATE)}` : '';
+    const r = await fetch(`/api/data?source=${encodeURIComponent(SOURCE)}&arm=${encodeURIComponent(ARM)}&symbol=${encodeURIComponent(SYMBOL)}${dateParam}`);
     const d = await r.json();
     if (d.ok) renderAll(d);
   } catch (e) { /* transient; the next tick retries */ }
 }
 
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('nav button').forEach(x => x.classList.remove('active'));
+document.querySelectorAll('nav button[data-view]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button[data-view]').forEach(x => x.classList.remove('active'));
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   b.classList.add('active');
   $('#view-' + b.dataset.view).classList.add('active');
+  // The date picker only means anything on the Today view (History/Performance always show the
+  // full range) -- surfacing it here, on the click that lands on Today, is what makes "view a
+  // previous day" discoverable without a dedicated always-on control cluttering the other tabs.
+  const onToday = b.dataset.view === 'today';
+  $('#today-date').style.display = onToday ? '' : 'none';
+  $('#today-date-clear').style.display = (onToday && DATE) ? '' : 'none';
   if (DATA) renderAll(DATA);   // canvases size wrongly while hidden
 });
+$('#today-date').max = new Date().toISOString().slice(0, 10);
+$('#today-date').onchange = e => {
+  DATE = e.target.value || null;
+  $('#today-date-clear').style.display = DATE ? '' : 'none';
+  refresh();
+};
+$('#today-date-clear').onclick = () => {
+  DATE = null;
+  // Clear the picker's own value too -- it drives DATE via onchange, so leaving the old date
+  // sitting there both looks like the click did nothing and would re-arm the same DATE if the
+  // browser re-fires onchange (e.g. re-selecting the same day after navigating away and back).
+  $('#today-date').value = '';
+  $('#today-date-clear').style.display = 'none';
+  refresh();
+};
 $('#source-select').onchange = e => {
   SOURCE = e.target.value;
   // arms/symbols can differ between ledgers (today: live is pinned to one arm) -- a stale
