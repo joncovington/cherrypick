@@ -154,7 +154,7 @@ def test_query_broker_checks_every_account_and_masks(env, monkeypatch):
     seen_position_accounts = []
 
     def fake_run(root, argv, timeout=30):
-        cmd = argv[1]  # ["src/tt.py", <cmd>, ...]
+        cmd = argv[2]  # ["-m", "cherrypick.<mod>.tt", <cmd>, ...]
         if cmd == "list_accounts":
             return _Proc(
                 '{"ok": true, "accounts": ['

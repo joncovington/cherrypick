@@ -50,10 +50,11 @@ def test_known_module_defaults_apply_and_config_wins():
     assert cfgmod.module_keyring_service({}, "meic") == "meicagent"
     assert cfgmod.module_keyring_service({"keyring_service": "custom"}, "meic") == "custom"
     assert cfgmod.module_keyring_service({}, "gex") is None
-    assert cfgmod.broker_tool({}, "flies") == ["src/broker_cli.py"]
-    assert cfgmod.broker_tool({}, "meic") == ["src/tt.py"]
+    assert cfgmod.broker_tool({}, "flies") == ["-m", "cherrypick.flies.broker_cli"]
+    assert cfgmod.broker_tool({}, "meic") == ["-m", "cherrypick.meic.tt"]
     assert cfgmod.broker_tool({"broker_tool": ["x.py"]}, "flies") == ["x.py"]
-    assert cfgmod.broker_tool({}, "unknown-module") == ["src/tt.py"]
+    # An unknown module falls back to the conventional -m <pkg>.tt rather than a stale script path.
+    assert cfgmod.broker_tool({}, "unknown-module") == ["-m", "cherrypick.unknown-module.tt"]
 
 
 # --------------------------------------------------------------------------- status panel
