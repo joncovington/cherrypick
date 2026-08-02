@@ -15,6 +15,8 @@ Both are pinned here because both were silent — the card rendered happily, jus
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from cherrypick.orchestrator import dashboard
@@ -82,3 +84,39 @@ def test_module_log_resolves_to_the_suite_root_when_the_orchestrator_writes_it(t
     assert dashboard._resolve_module_log("earnings", "logs/earnings_paper.log") == own, (
         "a module's own log directory must win when it has one"
     )
+
+
+def test_timestamps_are_comparable_across_sources():
+    """Raw string sort is wrong twice over: the sources use different separators (a space sorts
+    before "T") and different zones (meic writes naive local, the JSON sources write UTC).
+
+    Derived from a real instant rather than hardcoded strings -- an earlier version of this test
+    baked in the author's UTC-6 offset and failed in CI, which runs UTC. The rule under test is
+    "naive means local", so the fixture has to be built the same way on whatever machine runs it.
+    """
+    instant = datetime(2026, 8, 2, 21, 42, 2, tzinfo=timezone.utc)
+    utc_text = instant.isoformat()  # what watchdog/notify write
+    local_naive = instant.astimezone().strftime("%Y-%m-%d %H:%M:%S")  # what meic writes
+
+    assert local_naive.replace(" ", "T") != utc_text, "fixtures should differ in text"
+    assert abs(dashboard._ts_key(local_naive)[1] - dashboard._ts_key(utc_text)[1]) < 2, (
+        "the same instant must compare equal once the zone is applied"
+    )
+
+
+def test_a_space_separator_would_sort_before_a_T_separator():
+    """The text-level defect the instant comparison removes, stated without any zone dependency."""
+    assert "2026-08-02 15:42:02" < "2026-08-02T15:42:02"
+
+
+def test_undated_and_unparseable_stamps_sort_last():
+    assert dashboard._ts_key(None)[0] == 1
+    assert dashboard._ts_key("not a timestamp")[0] == 1
+    assert dashboard._ts_key("2026-08-02T21:42:02+00:00")[0] == 0
+
+
+def test_ordering_is_by_instant_not_by_text():
+    earlier = datetime(2026, 8, 2, 21, 0, 0, tzinfo=timezone.utc)
+    later = earlier + timedelta(hours=1)
+    later_local_naive = later.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    assert dashboard._ts_key(later_local_naive) > dashboard._ts_key(earlier.isoformat())
