@@ -32,12 +32,8 @@ import time
 from datetime import date, datetime
 from typing import Any
 
-# Allow running as `python src/tt.py` from any working directory, and make the cherrypick-core
-# submodule (src/_core) importable *before* the `from cherrypick.core import ...` lines below — mirroring
-# credentials.py's bootstrap, so a standalone CLI run doesn't depend on credentials being imported
-# first (import-sorting puts the cherrypick.core imports ahead of the local `import credentials`).
+# Allow running as `python src/tt.py` from any working directory.
 sys.path.insert(0, os.path.dirname(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
 from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx

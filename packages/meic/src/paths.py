@@ -20,16 +20,9 @@ never hardcode an absolute path — the home derives from ``Path.home()`` (or th
 
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
-# Make the cherrypick-core submodule (src/_core) importable before the cherrypick.core import below.
-# paths.py is imported very early (before credentials.py/db.py run their own bootstrap), so it must put
-# _core on sys.path itself. Idempotent — a duplicate entry is harmless.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
-
-from cherrypick.core import home as _home  # noqa: E402
+from cherrypick.core import home as _home
 
 
 def data_dir() -> Path:

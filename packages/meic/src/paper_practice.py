@@ -475,8 +475,10 @@ def _place_close(client, sid, ic, side, cost, log, tag, retry=False):
         if ic["exit"][side] is None:
             ic["exit"][side] = cost
             ic["exit_reason"][side] = "leg_closed_by_sibling"
-        log(f"{tag} {'STOP-retry' if retry else 'STOP'} {side} cost {cost:.2f} bid {price} "
-            f"http {st} leg already closed by a sibling IC -- treating as closed")
+        log(
+            f"{tag} {'STOP-retry' if retry else 'STOP'} {side} cost {cost:.2f} bid {price} "
+            f"http {st} leg already closed by a sibling IC -- treating as closed"
+        )
         return
     ic[side] = "pending_close"
     fp = resp.get("fill_price") if isinstance(resp, dict) else None

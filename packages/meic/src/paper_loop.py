@@ -54,12 +54,6 @@ def _now_et():
 _ROOT = Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(_ROOT / "src"))
-# Bootstrap the cherrypick-core submodule (src/_core) onto sys.path *before* importing cherrypick.core
-# — the calendar import below runs before `import paper` (which also bootstraps it), so this daemon
-# would otherwise ModuleNotFoundError standalone. Mirrors the paper.py / credentials.py bootstrap.
-_CORE = str(_ROOT / "src" / "_core")
-if os.path.isdir(_CORE) and _CORE not in sys.path:
-    sys.path.insert(0, _CORE)
 from cherrypick.core import advice as _core_advice  # noqa: E402  (bounded-advice validator)
 from cherrypick.core import calendar as _cal  # noqa: E402  (shared NYSE trading-day calendar)
 from cherrypick.core import home as _core_home  # noqa: E402  (the shared state dir)
@@ -77,7 +71,7 @@ _PAPER_DB = str(_paths.paper_db_path())
 _TT = [sys.executable, str(_ROOT / "src" / "tt.py")]
 _DB = [sys.executable, str(_ROOT / "src" / "db.py"), "--db", _PAPER_DB]
 
-import paper  # noqa: E402  (also bootstraps src/_core onto sys.path for cherrypick.core)
+import paper  # noqa: E402
 import stream_request  # noqa: E402  (declares symbols + open paper legs to the standalone streamer)
 
 logger = logging.getLogger("paper_loop")

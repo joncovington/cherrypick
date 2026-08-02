@@ -47,13 +47,8 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-# Allow running as `python src/streamer.py` from the project root, and put the cherrypick-core submodule
-# (src/_core) on sys.path so `import cherrypick.core...` resolves without an install — the persistent
-# DXLink engine and cache schema now live in the shared core.
+# Allow running as `python src/streamer.py` from the project root.
 sys.path.insert(0, os.path.dirname(__file__))
-_CORE = os.path.join(os.path.dirname(__file__), "_core")
-if os.path.isdir(_CORE) and _CORE not in sys.path:
-    sys.path.insert(0, _CORE)
 
 try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
     from zoneinfo import ZoneInfo

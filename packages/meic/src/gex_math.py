@@ -8,15 +8,7 @@ re-exports the API both call sites import. See cherrypick.core.gex for the imple
 
 from __future__ import annotations
 
-# Make the cherrypick-core submodule importable without an install (mirrors credentials.py).
-import sys as _sys
-from pathlib import Path as _Path
-
-_CORE = _Path(__file__).resolve().parent / "_core"
-if _CORE.is_dir() and str(_CORE) not in _sys.path:
-    _sys.path.insert(0, str(_CORE))
-
-from cherrypick.core.gex import (  # noqa: E402
+from cherrypick.core.gex import (
     compute_gex,
     compute_gex_profile,
     dollar_gamma,
