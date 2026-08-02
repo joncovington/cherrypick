@@ -947,6 +947,13 @@ def _parallel_scan(calendar, config, workers, symbol_timeout, budget_seconds):
     sequential phase so the paper DB keeps a single writer.
     """
     out: list = [None] * len(calendar)
+    # Check the budget BEFORE dispatching anything. Submitting first and relying on as_completed's
+    # timeout + cancel_futures does not hold: a worker begins executing the moment it is submitted,
+    # and cancel_futures only cancels futures that have not started -- so an already-exhausted budget
+    # still fired up to `workers` Dolt-heavy evaluations, decided by a thread race. That is the exact
+    # work this backstop exists to prevent.
+    if budget_seconds is not None and budget_seconds <= 0:
+        return [(e, None, "entry_scan_budget_exceeded") for e in calendar]
     pool = _cf.ThreadPoolExecutor(max_workers=max(1, workers))
     try:
         fut_to_idx = {
