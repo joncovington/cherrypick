@@ -21,7 +21,7 @@ procedures read this table, so no other part of this command needs to change.
 |---|---|---|---|---|---|
 | _(none)_ / `suite` | orchestrator suite | always (the repo itself) | `python packages/orchestrator/run.py dashboard --serve --port <port>` | `dashboard.serve.port` in `~/.cherrypick/config.json` (or in-repo `config.json`), else **8787** | opens by default; **suppress with `--no-browser`** |
 | `--gex` | gex | `packages/gex/run.py` exists | `python packages/gex/run.py dashboard --serve --port <port>` | `serve.port` in `~/.cherrypick/config/gex.json` (or `packages/gex/config.json`), else **5055** (WebSocket push on `serve.ws_port`, default `port + 1`, same process) | opens by default; **suppress with `--no-browser`** |
-| `--meic` | meic | `packages/meic/src/dashboard.py` exists | `python dashboard.py [--mode paper] --port <port>` — **must run with working dir `packages/meic/src`** (it does a bare `import paths`) | **5050** live / **5051** paper (`--paper` → `--mode paper`, paper_trades.db, "Paper Mode — Simulated") | opens by default; **suppress with `--no-browser`** |
+| `--meic` | meic | `packages/meic/src/cherrypick/meic/dashboard.py` exists | `python -m cherrypick.meic.dashboard [--mode paper] --port <port>` — runs from any working directory (no more bare `import paths`) | **5050** live / **5051** paper (`--paper` → `--mode paper`, paper_trades.db, "Paper Mode — Simulated") | opens by default; **suppress with `--no-browser`** |
 | `--flies` | flies | `packages/flies/run.py` exists | `python packages/flies/run.py dashboard --port <port>` | `FLIES_DASHBOARD_PORT` env, else **8803** | opens by default; **suppress with `--no-browser`** |
 | `--settings` | orchestrator suite | always (the repo itself) | `python packages/orchestrator/run.py settings --port <port>` | `settings.serve.port` in `~/.cherrypick/config.json` (or in-repo `config.example.json`), else **8804** — the next slot after the 88xx embeds | opens by default; **suppress with `--no-browser`** |
 
@@ -67,10 +67,9 @@ Using the chosen target's registry row:
    report `http://127.0.0.1:<port>/` and stop — do not launch a second one.
 
 4. **Start it in the background** (the server blocks with `serve_forever`, so it MUST run detached): run
-   the row's start command with `run_in_background: true` (for `--meic`, set the working directory to
-   `packages/meic/src`). It opens the browser by default; don't pass `--no-browser` unless I asked not to
-   open a tab. Wait ~2s, then confirm it responds (HTTP 200 on `/`, e.g.
-   `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:<port>/`).
+   the row's start command with `run_in_background: true`. It opens the browser by default; don't pass
+   `--no-browser` unless I asked not to open a tab. Wait ~2s, then confirm it responds (HTTP 200 on `/`,
+   e.g. `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:<port>/`).
 
 5. **Report** the URL `http://127.0.0.1:<port>/`. Mention it's read-only + loopback-only; for `--meic`
    `--paper` note "Paper Mode — simulated data only"; for `--gex`/`--flies` note live data needs the
@@ -126,8 +125,8 @@ nothing else in the suite (use `/uninstall` to fully stop everything).
 
 4. **Confirm it's the right process before killing.** Look up the owning process
    (`Get-Process -Id <OwningProcess>`) and confirm it's this module's Python dashboard server (the process
-   running the row's start command — e.g. `run.py dashboard --serve` for suite/gex, `dashboard.py` for
-   meic, `run.py dashboard` for flies), not some unrelated service on that port. If it's clearly not the
+   running the row's start command — e.g. `run.py dashboard --serve` for suite/gex, `cherrypick.meic.dashboard`
+   for meic, `run.py dashboard` for flies), not some unrelated service on that port. If it's clearly not the
    dashboard, report what's on the port and leave it alone.
 
 5. **Stop it.** Kill the owning process for each confirmed port, e.g.

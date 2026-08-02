@@ -5,12 +5,12 @@ Status: **proposed** — implementation plan for review, no code written yet.
 ## Why
 
 The suite has grown several consumers of live DXLink market data, but only one *producer*: MEIC's
-streamer daemon ([`packages/meic/src/streamer.py`](../packages/meic/src/streamer.py), 922 lines). It
+streamer daemon ([`packages/meic/src/streamer.py`](../packages/meic/src/cherrypick/meic/streamer.py), 922 lines). It
 writes `data/meic/stream_cache.db`, and everyone else reads that file **read-only**:
 
-- **flies** — [`provider.py`](../packages/flies/src/provider.py) opens MEIC's cache `?mode=ro` and turns
+- **flies** — [`provider.py`](../packages/flies/src/cherrypick/flies/provider.py) opens MEIC's cache `?mode=ro` and turns
   it into the snapshot every entry decision is priced from. It runs no streamer of its own
-  ([`paper_loop.py:334`](../packages/flies/src/paper_loop.py#L334): *"no streamer of its own, so when the
+  ([`paper_loop.py:334`](../packages/flies/src/cherrypick/flies/paper_loop.py#L334): *"no streamer of its own, so when the
   upstream one stalls we go blind"*).
 - **gex** — in piggyback mode reads the same MEIC cache; in standalone mode runs its own thin wrapper
   ([`gex/src/cherrypick/gex/streamer.py`](../packages/gex/src/cherrypick/gex/streamer.py)) over the shared engine.
@@ -37,7 +37,7 @@ MEIC-bound.
 - The cache schema lives in `cherrypick.core.streamcache`. The shared surface between producers and
   consumers is **the cache file + its schema**, both already in core.
 - Reader-side indirection already exists: flies
-  ([`paper_loop.py:61-68`](../packages/flies/src/paper_loop.py#L61-L68)) and gex both read
+  ([`paper_loop.py:61-68`](../packages/flies/src/cherrypick/flies/paper_loop.py#L61-L68)) and gex both read
   `source.stream_cache_db` from config and only *default* to MEIC's path.
 
 The only thing missing is a **package that owns the daemon lifecycle** — the generic machinery currently
@@ -152,12 +152,12 @@ already cleanly separable from MEIC policy:
 
 | Machinery to lift (generic) | Source in MEIC today |
 |---|---|
-| PID-file / single-instance guard | [`streamer.py:782-817`](../packages/meic/src/streamer.py#L782-L817) |
-| `--status` JSON (`running`, `pid`, `oldest_event_age_s`, `stale_age_s`, `connected_since`, `last_event_at`) | [`streamer.py:820-858`](../packages/meic/src/streamer.py#L820-L858) |
-| `--stop` (SIGTERM to PID) | [`streamer.py:861-870`](../packages/meic/src/streamer.py#L861-L870) |
-| Logging + rotation | [`streamer.py:73-93`](../packages/meic/src/streamer.py#L73-L93) |
-| Symbol resolution (CLI > `symbols` > default) | [`streamer.py:873-882`](../packages/meic/src/streamer.py#L873-L882) |
-| Main-loop skeleton (signal wiring, PID write/unlink, `await streamer.run_async()`) | [`streamer.py:738-775`](../packages/meic/src/streamer.py#L738-L775) (generic parts) |
+| PID-file / single-instance guard | [`streamer.py:782-817`](../packages/meic/src/cherrypick/meic/streamer.py#L782-L817) |
+| `--status` JSON (`running`, `pid`, `oldest_event_age_s`, `stale_age_s`, `connected_since`, `last_event_at`) | [`streamer.py:820-858`](../packages/meic/src/cherrypick/meic/streamer.py#L820-L858) |
+| `--stop` (SIGTERM to PID) | [`streamer.py:861-870`](../packages/meic/src/cherrypick/meic/streamer.py#L861-L870) |
+| Logging + rotation | [`streamer.py:73-93`](../packages/meic/src/cherrypick/meic/streamer.py#L73-L93) |
+| Symbol resolution (CLI > `symbols` > default) | [`streamer.py:873-882`](../packages/meic/src/cherrypick/meic/streamer.py#L873-L882) |
+| Main-loop skeleton (signal wiring, PID write/unlink, `await streamer.run_async()`) | [`streamer.py:738-775`](../packages/meic/src/cherrypick/meic/streamer.py#L738-L775) (generic parts) |
 
 **Explicitly NOT lifted** (stays in MEIC — it's live-trading policy flies/gex don't need): ORB capture
 (`_OrbTracker`, 227-267), open-position leg subscriptions reading `ic_trades` (146-181), the account REST
@@ -368,7 +368,7 @@ actions + rollback.
 - **Symbol-union staleness** — adding a module without re-running `install` leaves the producer streaming
   a stale symbol set. Mitigated by the `doctor` warning; consider whether the watchdog should also flag it.
 - **`stream_status` table columns** — MEIC's `--status` line 2 dumps the `stream_status` row plus computed
-  keys ([`streamer.py:834-856`](../packages/meic/src/streamer.py#L834-L856)); the lifted daemon must write
+  keys ([`streamer.py:834-856`](../packages/meic/src/cherrypick/meic/streamer.py#L834-L856)); the lifted daemon must write
   the same table via `core.streamcache` so both producers present an identical status contract to the
   watchdog.
 - **Install ordering** — `packages/streamer` should install as a dependency whenever any data-consuming

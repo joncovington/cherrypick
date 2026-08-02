@@ -57,7 +57,7 @@ pip install -e .
 pip install pytest pytest-asyncio     # optional — only needed to run the test suite
 
 # 3. Initialize the database
-python src/db.py init_db
+python -m cherrypick.meic.db init_db
 
 # 4. Launch Claude Code, then run the guided credential + config setup:
 claude
@@ -66,7 +66,7 @@ claude
 /setup                                # inside Claude Code — stores credentials, creates config
 ```
 
-(Prefer to configure by hand instead of `/setup`? Copy `config.example.json` to `config.json` and store credentials with `python src/tt.py secrets_set`.)
+(Prefer to configure by hand instead of `/setup`? Copy `config.example.json` to `config.json` and store credentials with `python -m cherrypick.meic.tt secrets_set`.)
 
 > **Running on a headless Linux server** (no desktop)? There's no OS keyring there, so credential storage needs an encrypted-file or cloud-secret-manager backend — see [Headless / server credentials](docs/setup.md#headless--server-credentials-linux-without-a-desktop) in the setup guide.
 
@@ -78,7 +78,7 @@ Then, inside Claude Code, pick a track:
 /paper-start
 ```
 
-Launches the market-data streamer, the paper dashboard at `http://localhost:5051`, and (on Windows) registers a self-healing scheduled task that evaluates every configured symbol every 2 minutes during market hours. On **macOS/Linux**, the scheduled task isn't available — instead keep the loop running in a terminal with `python src/paper_loop.py`, or wire a cron job to `python src/paper_loop.py --once` every 2 minutes.
+Launches the market-data streamer, the paper dashboard at `http://localhost:5051`, and (on Windows) registers a self-healing scheduled task that evaluates every configured symbol every 2 minutes during market hours. On **macOS/Linux**, the scheduled task isn't available — instead keep the loop running in a terminal with `python -m cherrypick.meic.paper_loop`, or wire a cron job to `python -m cherrypick.meic.paper_loop --once` every 2 minutes.
 
 **Live / dry-run trading** — the real agent loop (defaults to dry-run until `enable_live_trading: true`):
 
@@ -102,7 +102,7 @@ cherrypick suite it plays two roles:
   `enable_live_trading: true`. The orchestrator never touches it.
 - **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator) package registers and
   watchdogs the self-healing OS task `cherrypick-meic-paper-loop`, which runs this module's
-  `src/paper_loop.py` on a schedule for hands-off paper collection, and reads the resulting
+  `cherrypick/meic/paper_loop.py` on a schedule for hands-off paper collection, and reads the resulting
   `paper_trades.db` (in the shared data home) for cross-module reporting. The orchestrator drives this module **by subprocess only** —
   it never edits this code or config, never places or cancels an order, and never flips
   `enable_live_trading`. Its one live-config action is onboarding (`cherrypick connect`), which delegates to
@@ -172,9 +172,9 @@ Before risking capital, run the parallel-shadow paper engine to build a performa
 ```
 /paper-start                              # streamer + paper dashboard + unattended daemon
 /paper-report                             # weekly (or custom-range) profile comparison
-python src/paper_loop.py --eod-report     # deterministic end-of-day report on demand
-python src/paper_loop.py --status         # daemon/task status + open-position count
-python src/paper_loop.py --uninstall-task # stop the unattended session
+python -m cherrypick.meic.paper_loop --eod-report     # deterministic end-of-day report on demand
+python -m cherrypick.meic.paper_loop --status         # daemon/task status + open-position count
+python -m cherrypick.meic.paper_loop --uninstall-task # stop the unattended session
 ```
 
 Every 2 minutes during market hours, the engine takes one live-quote snapshot per symbol and runs all four risk profiles against it deterministically — synthetic fills at natural bid, each profile on its own $100,000 virtual bankroll, tastytrade's exact fee schedule applied per leg. Writes go only to `paper_trades.db` in the data home; the live account and `meic_trades.db` are never touched, and no live order is ever submitted (paper mode is not gated by `enable_live_trading`).
@@ -271,7 +271,7 @@ cherrypick-next/
 ```
 
 Runtime **data** does not live in the package — it's kept in the shared cherrypick data home so the
-orchestrator and this module read the same files. Resolved by [`src/paths.py`](src/paths.py):
+orchestrator and this module read the same files. Resolved by [`cherrypick/meic/paths.py`](src/cherrypick/meic/paths.py:
 
 ```
 ~/.cherrypick/data/meic/             # default; override with the MEIC_DATA_DIR env var

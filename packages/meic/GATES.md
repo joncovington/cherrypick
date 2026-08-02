@@ -82,7 +82,7 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
   Only 20 trades carry `gex_net_at_entry` (all from 2026-07-28) and no backfill exists. The switch
   is there so a shadow profile with `regime_gex_block_negative: false` can run beside the gated one
   — same days, one difference — and settle it. **That study is now running**: the `gex-open` /
-  `gex-blocked` arm pair, read with `python src/experiment.py` — see
+  `gex-blocked` arm pair, read with `python -m cherrypick.meic.experiment` — see
   [docs/paper-experiments.md](docs/paper-experiments.md#gex-study-2026-08-01--does-the-gex-gate-earn-what-it-cuts).
   Until it reports, the gate stays on by default, but treat it as untested rather than validated.
 
@@ -211,7 +211,7 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 - **Config**: `fee_estimate_lookback_trades`, `fee_estimate_min_sample_size`, `fee_estimate_fallback_per_contract`
 - **Rationale**: Credit must clear estimated trading costs (opening); closing fees are typically waived on 0DTE expiration
 - **Estimation Logic**: 
-  - Call `python src/db.py get_fee_estimate --symbol <sym>` to retrieve historical average fee
+  - Call `python -m cherrypick.meic.db get_fee_estimate --symbol <sym>` to retrieve historical average fee
   - If `sample_size < fee_estimate_min_sample_size`, fall back to `fee_estimate_fallback_per_contract[symbol]`
 - **Example**: SPX: $0.45–$0.75 net credit (after fees) qualifies under this gate
 - **IC Impact**: Hard block (separate from gross floor check; entry must clear both)
