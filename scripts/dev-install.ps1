@@ -15,7 +15,11 @@ $root = Split-Path -Parent $PSScriptRoot
 
 function Install-Editable($relativePath, $label) {
     Write-Host "==> $label"
-    & $Python -m pip install -e "$root\$relativePath" 2>&1 | Write-Host
+    # No `2>&1` here, deliberately. Redirecting a NATIVE command's stderr inside PowerShell wraps each
+    # stderr line in an ErrorRecord (NativeCommandError); with $ErrorActionPreference = "Stop" that
+    # aborts the script even when pip exited 0. pip writes progress/notices to stderr routinely, so
+    # this killed the run right after the first successful install. $LASTEXITCODE is the real signal.
+    & $Python -m pip install -e "$root\$relativePath"
     if ($LASTEXITCODE -ne 0) {
         throw "pip install failed for $label (exit $LASTEXITCODE)"
     }
