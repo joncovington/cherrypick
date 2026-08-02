@@ -1,6 +1,6 @@
 import pytest
 
-import sizing
+from cherrypick.earnings import sizing
 
 BASE_CONFIG = {
     "available_capital_paper_mode": 100000,

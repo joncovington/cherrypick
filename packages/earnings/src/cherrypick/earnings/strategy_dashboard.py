@@ -32,20 +32,14 @@ Usage:
 
 import argparse
 import sqlite3
-import sys
 from datetime import datetime, timedelta
-from pathlib import Path
-
-_SRC = Path(__file__).resolve().parent
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
 
 from cherrypick.core import viz  # noqa: E402
 
-import paths as _paths  # noqa: E402
-import scanner  # noqa: E402
-import strategy_metrics as sm  # noqa: E402
-from strategy_report import STRATEGY_NAMES  # noqa: E402
+from cherrypick.earnings import paths as _paths  # noqa: E402
+from cherrypick.earnings import scanner  # noqa: E402
+from cherrypick.earnings import strategy_metrics as sm  # noqa: E402
+from cherrypick.earnings.strategy_report import STRATEGY_NAMES  # noqa: E402
 
 try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
     from zoneinfo import ZoneInfo

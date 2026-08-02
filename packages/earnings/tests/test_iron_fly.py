@@ -1,6 +1,6 @@
 import json
 
-from strategies import iron_fly
+from cherrypick.earnings.strategies import iron_fly
 
 
 def test_apply_tiering_accepts_when_all_pass(base_strategy_config, good_criteria):

@@ -18,13 +18,9 @@ is scanned. Use scanner.py get_calendar directly for historical dates.
 """
 
 import json
-import os
 import subprocess
 import sys
 from datetime import datetime
-from pathlib import Path
-
-sys.path.insert(0, os.path.dirname(__file__))
 
 
 def _run_python(args: list[str]) -> dict:
@@ -45,14 +41,14 @@ class StrategyRanker:
 
     def __init__(self, config: dict):
         self.config = config
-        self.src_dir = Path(__file__).resolve().parent
 
     def get_ranked_candidates(self, date_str: str) -> dict:
         """Calls rank_strategies.py get_ranked_symbols for the real,
         live-scanned candidate universe."""
         return _run_python(
             [
-                str(self.src_dir / "rank_strategies.py"),
+                "-m",
+                "cherrypick.earnings.rank_strategies",
                 "get_ranked_symbols",
                 "--date",
                 date_str,
@@ -71,11 +67,11 @@ class StrategyRanker:
         trades = []
         for c in candidates[: self.config["max_positions_per_day"]]:
             strategy = c["best_strategy"]
-            order_script = self.src_dir / "strategies" / f"{strategy}.py"
             try:
                 order = _run_python(
                     [
-                        str(order_script),
+                        "-m",
+                        f"cherrypick.earnings.strategies.{strategy}",
                         "get_order",
                         "--symbol",
                         c["symbol"],

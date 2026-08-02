@@ -41,14 +41,10 @@ Commands (see CLAUDE.md's Tool Reference):
 """
 
 import json
-import os
-import sys
 import time
 from datetime import date
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-import scanner
+from cherrypick.earnings import scanner
 
 
 def _strategy_config(config: dict) -> dict:

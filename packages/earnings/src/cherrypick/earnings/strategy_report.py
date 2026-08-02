@@ -11,13 +11,9 @@ Usage:
 """
 
 import argparse
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import scanner
-import strategy_metrics as sm
+from cherrypick.earnings import scanner
+from cherrypick.earnings import strategy_metrics as sm
 
 STRATEGY_NAMES = [
     "iron_fly",

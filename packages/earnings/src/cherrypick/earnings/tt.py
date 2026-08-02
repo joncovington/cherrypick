@@ -34,19 +34,16 @@ import argparse
 import asyncio
 import json
 import os
-import sys
 from datetime import date
 from typing import Any
 
 # Allow running as `python src/tt.py` from any working directory.
-sys.path.insert(0, os.path.dirname(__file__))
-
 from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx
 
-import credentials as _creds
-import paths as _paths
-from session import get_session
+from cherrypick.earnings import credentials as _creds
+from cherrypick.earnings import paths as _paths
+from cherrypick.earnings.session import get_session
 
 
 def _load_config() -> dict:

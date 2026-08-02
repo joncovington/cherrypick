@@ -11,7 +11,7 @@ import threading
 import pytest
 from cherrypick.core.auth import SessionManager
 
-import session
+from cherrypick.earnings import session
 
 
 @pytest.fixture(autouse=True)
