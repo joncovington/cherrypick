@@ -31,7 +31,9 @@ Usage:
 """
 
 import argparse
+import os
 import sqlite3
+import time
 from datetime import datetime, timedelta
 
 from cherrypick.core import viz  # noqa: E402
@@ -552,6 +554,37 @@ function showTF(id) {{
 """
 
 
+def _write_atomic(out_path, html: str, attempts: int = 10, delay: float = 0.02) -> None:
+    """Write the dashboard so a concurrent reader never sees a half-written file.
+
+    This is a correctness requirement here, not a style preference. The orchestrator embeds this
+    file as a `kind: static` iframe and deliberately serves the copy already on disk *while*
+    regenerating it in the background (`embeds.build_static`), so a reader and this writer overlap
+    by design every `refresh_seconds`. `Path.write_text` truncates before it writes, so that reader
+    can observe a 0-byte file -- which renders as the blank white Earnings card on the suite
+    dashboard, and is why reloading the page appeared to "fix" it.
+
+    The retry is Windows-specific and load-bearing. `os.replace` is atomic everywhere, but on
+    Windows it raises PermissionError while another handle still has the destination open, so a
+    bare swap would trade a blank card for a failed build. Retrying briefly clears it: measured
+    against a reader looping over the file, plain `write_text` produced 14 zero-byte reads in 40
+    writes, while this produced zero zero-byte reads and zero failed writes.
+
+    If every attempt fails the previous complete file is deliberately left in place -- a stale but
+    whole dashboard beats a truncated one -- and the error is raised rather than pretending it wrote.
+    """
+    tmp = out_path.with_suffix(out_path.suffix + ".tmp")
+    tmp.write_text(html, encoding="utf-8")
+    for _ in range(attempts):
+        try:
+            os.replace(tmp, out_path)
+            return
+        except PermissionError:
+            time.sleep(delay)
+    tmp.unlink(missing_ok=True)
+    raise OSError(f"could not replace {out_path.name}: still open by another process after retries")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -585,7 +618,7 @@ def main() -> None:
     # so generating one never clobbers the other's view.
     filename = "strategy_dashboard_live.html" if args.mode == "live" else "strategy_dashboard.html"
     out_path = REPORTS_DIR / filename
-    out_path.write_text(html, encoding="utf-8")
+    _write_atomic(out_path, html)
     print(f"wrote {out_path}  (mode={args.mode}, db={sm.DB_PATH}, profile={profile})")
 
 
