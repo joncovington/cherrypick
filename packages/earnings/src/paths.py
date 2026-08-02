@@ -23,15 +23,9 @@ overrides).
 
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
-# Make the cherrypick-core submodule (src/_core) importable before the cherrypick.core import below,
-# mirroring db.py/credentials.py so paths.py works even when imported first. Idempotent.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
-
-from cherrypick.core import home as _home  # noqa: E402
+from cherrypick.core import home as _home
 
 
 def data_dir() -> Path:

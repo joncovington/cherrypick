@@ -8,15 +8,7 @@ cherrypick.core.fees for the implementation, source, and rationale.
 
 from __future__ import annotations
 
-# Make the cherrypick-core submodule importable without an install (mirrors credentials.py).
-import sys as _sys
-from pathlib import Path as _Path
-
-_CORE = _Path(__file__).resolve().parent / "_core"
-if _CORE.is_dir() and str(_CORE) not in _sys.path:
-    _sys.path.insert(0, str(_CORE))
-
-from cherrypick.core.fees import (  # noqa: E402
+from cherrypick.core.fees import (
     DEFAULT_COSTS,
     apply_entry_costs,
     apply_exit_costs,

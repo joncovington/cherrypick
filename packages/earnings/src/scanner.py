@@ -28,10 +28,7 @@ from datetime import date as _date
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Make the cherrypick-core submodule (src/_core) importable for any cherrypick.core import,
-# mirroring credentials.py's bootstrap so this module works even when imported before credentials.
 sys.path.insert(0, os.path.dirname(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_core"))
 
 import paths as _paths
 
