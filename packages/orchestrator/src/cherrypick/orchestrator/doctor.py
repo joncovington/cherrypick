@@ -140,7 +140,10 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         return [Check("config", FAIL, f"Could not load config.json: {exc}")]
 
     # interpreter
-    checks.append(Check("python", OK, f"{sys.version.split()[0]} @ {sys.executable}"))
+    # portable_path, like every other path this command prints. The interpreter lives under the user
+    # home on Windows, so the raw value carries the username onto the dashboard's System card — the
+    # one surface in the suite that renders doctor's details verbatim to a browser.
+    checks.append(Check("python", OK, f"{sys.version.split()[0]} @ {cfgmod.portable_path(sys.executable)}"))
 
     # cherrypick-core is a required, installed dependency (packages/core) -- not a submodule with a
     # graceful degrade path. Without it, every module and most of this orchestrator's own read
@@ -231,7 +234,10 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
             Check(
                 f"{name}.config",
                 OK if mc else WARN,
-                str(mc) if mc else "module config not found (home or in-repo)",
+                # `~/.cherrypick/config/<mod>.json`, not the resolved absolute path: the sibling
+                # `.path` and `.paper_db` checks already render portably, and this one was the
+                # outlier putting the username on screen.
+                cfgmod.portable_path(mc) if mc else "module config not found (home or in-repo)",
             )
         )
 
