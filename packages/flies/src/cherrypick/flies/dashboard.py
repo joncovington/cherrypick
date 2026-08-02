@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
@@ -1196,7 +1197,12 @@ $('#today-date-clear').onclick = () => {
   $('#today-date-clear').style.display = 'none';
   refresh();
 };
-$('#source-select').onchange = e => {
+// Guarded: a paper-only server (the orchestrator's embed) strips this control from the page, and an
+// unguarded `$('#source-select').onchange = ...` would throw on null and stop the whole script --
+// taking the arm/symbol handlers and refresh() down with it, leaving a dead dashboard rather than a
+// paper-only one.
+const sourceSel = $('#source-select');
+if (sourceSel) sourceSel.onchange = e => {
   SOURCE = e.target.value;
   // arms/symbols can differ between ledgers (today: live is pinned to one arm) -- a stale
   // selection from the other source would just render an empty page with no obvious reason.
@@ -1243,9 +1249,32 @@ class _ThreadingServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
-def _handler_for(paper_db: str | None, live_db: str | None = None):
+#: Matches the whole source-selector <label> block so a paper-only server can strip it from the page.
+#: A regex rather than an exact string: the markup carries an em dash and its own indentation, and
+#: pinning those byte-for-byte means the strip silently stops working the next time the template is
+#: reformatted -- failing open, which is the wrong direction for this particular control. Removing it
+#: is cosmetic on its own; the server-side refusal is what enforces the mode.
+_SOURCE_SELECT_RE = re.compile(
+    r'[ \t]*<label[^>]*>\s*source\s*<select id="source-select">.*?</select>\s*</label>\s*',
+    re.S,
+)
+
+
+def _handler_for(paper_db: str | None, live_db: str | None = None, allow_live: bool = True):
+    """Build the request handler. `allow_live=False` makes this server paper-only, refusing the live
+    ledger outright rather than merely hiding its selector.
+
+    This exists because the orchestrator embeds this dashboard in an iframe under a card badged
+    PAPER, and that badge was a promise this module could not keep: `--source` only ever affected
+    `--json`, so the served page always offered both ledgers and a viewer could switch the embedded
+    card to real-money data while the surrounding suite dashboard still read PAPER.
+
+    Hiding the dropdown alone would not fix it -- `/api/data?source=live` is a plain GET on a
+    loopback port, reachable from the iframe's own console or a stray bookmark. The server has to
+    refuse, so the guarantee holds regardless of what reaches the endpoint."""
     live_db = live_db or dbmod.live_db_path()
-    page = HTML.encode("utf-8")
+    html_text = HTML if allow_live else _SOURCE_SELECT_RE.sub("", HTML)
+    page = html_text.encode("utf-8")
 
     class _Handler(BaseHTTPRequestHandler):
         def _send(self, body: bytes, content_type: str, status: int = 200) -> None:
@@ -1266,8 +1295,12 @@ def _handler_for(paper_db: str | None, live_db: str | None = None):
             if parsed.path == "/api/data":
                 query = parse_qs(parsed.query)
                 # "live" is opt-in and exact-match only -- anything else (missing, typo'd,
-                # empty) falls back to paper, never the other way around.
+                # empty) falls back to paper, never the other way around. On a paper-only server
+                # it is refused outright: this is the half of the guarantee that holds when the
+                # request does not come from the page we served.
                 source = query.get("source", ["paper"])[0]
+                if source == "live" and not allow_live:
+                    source = "paper"
                 conn = dbmod.connect(live_db if source == "live" else paper_db)
                 try:
                     payload = build_api_data(
@@ -1292,17 +1325,20 @@ def _handler_for(paper_db: str | None, live_db: str | None = None):
 
 
 def serve(
-    port: int, db_path: str | None = None, open_browser: bool = True, live_db: str | None = None
+    port: int,
+    db_path: str | None = None,
+    open_browser: bool = True,
+    live_db: str | None = None,
+    allow_live: bool = True,
 ) -> int:
     if port_in_use(port):
         print(f"already serving on http://{HOST}:{port}")
         if open_browser:
             webbrowser.open(f"http://{HOST}:{port}/")
         return 0
-    server = _ThreadingServer((HOST, port), _handler_for(db_path, live_db))
-    print(
-        f"flies dashboard on http://{HOST}:{port}  (loopback only, read-only; paper + live source selector)"
-    )
+    server = _ThreadingServer((HOST, port), _handler_for(db_path, live_db, allow_live))
+    mode = "paper + live source selector" if allow_live else "PAPER ONLY (live ledger refused)"
+    print(f"flies dashboard on http://{HOST}:{port}  (loopback only, read-only; {mode})")
     if open_browser:
         webbrowser.open(f"http://{HOST}:{port}/")
     try:
@@ -1329,7 +1365,13 @@ def main(argv=None) -> int:
         "--source",
         choices=["paper", "live"],
         default="paper",
-        help="which ledger --json reads (the served dashboard always offers both via its selector)",
+        help="which ledger --json reads (the served dashboard offers both unless --paper-only)",
+    )
+    ap.add_argument(
+        "--paper-only",
+        action="store_true",
+        help="serve the paper ledger only: drop the source selector and refuse source=live. "
+        "Used by the orchestrator's embed, whose card is badged PAPER.",
     )
     args = ap.parse_args(argv)
 
@@ -1341,7 +1383,13 @@ def main(argv=None) -> int:
         finally:
             conn.close()
         return 0
-    return serve(resolve_port(args.port), args.db, open_browser=not args.no_browser, live_db=args.live_db)
+    return serve(
+        resolve_port(args.port),
+        args.db,
+        open_browser=not args.no_browser,
+        live_db=args.live_db,
+        allow_live=not args.paper_only,
+    )
 
 
 if __name__ == "__main__":
