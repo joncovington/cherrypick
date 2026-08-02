@@ -100,9 +100,9 @@ def _exists_exact(p: Path) -> bool:
     """`Path.exists()`, but case-sensitive on every platform.
 
     Plain `.exists()` makes this whole tool answer differently depending on who runs it. Windows and
-    macOS are case-insensitive by default, so a doc pointing at `meic-start.md` when the file is
-    `MEIC-start.md` resolves locally and 404s for a reader on a case-sensitive filesystem -- and on
-    GitHub, which serves blob paths case-sensitively regardless of the author's OS.
+    macOS are case-insensitive by default, so a doc whose casing does not match the file resolves
+    locally and 404s for a reader on a case-sensitive filesystem -- and on GitHub, which serves blob
+    paths case-sensitively regardless of the author's OS.
 
     That is not hypothetical: it is exactly how this function came to exist. A stale tree entry passed
     clean on Windows and failed in CI on Linux, so the local run was reporting OK over a real error.

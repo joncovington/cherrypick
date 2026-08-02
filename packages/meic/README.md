@@ -30,7 +30,7 @@ Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`*
 
 **Prerequisites:** Python 3.11+, a tastytrade account, and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — Anthropic's CLI coding assistant, which runs the agent's decision loop and every `/`-command below. Install it with `npm install -g @anthropic-ai/claude-code`, then launch it from the project folder with `claude`.
 
-> Two kinds of commands appear in this guide: plain `python …` commands run in a normal terminal, and `/`-prefixed commands (like `/meic-start`) are Claude Code skills you type at the `claude` prompt. The skills just orchestrate the same underlying `python src/*.py` calls.
+> Two kinds of commands appear in this guide: plain `python …` commands run in a normal terminal, and `/`-prefixed commands (like `/meic-start`) are Claude Code skills you type at the `claude` prompt. The skills just orchestrate the same underlying `python -m cherrypick.meic.<module>` calls.
 
 **New to this? First, open a terminal and get the code.** You'll need [Git](https://git-scm.com/downloads) installed. Open your terminal:
 - **Windows** — the Git installer includes "Git Bash"; use it for every command here.
@@ -246,7 +246,7 @@ cherrypick/
     ├── .claude/
     │   ├── settings.json            # Permissions and MCP environment overrides
     │   └── commands/
-    │       ├── MEIC-start.md        # /meic-start — launch full live session
+    │       ├── meic-start.md        # /meic-start — launch full live session
     │       ├── paper-start.md       # /paper-start — launch full paper session
     │       ├── setup.md             # /setup — credentials and initial config
     │       ├── set-risk-profile.md  # /set-risk-profile — switch entry-gate preset

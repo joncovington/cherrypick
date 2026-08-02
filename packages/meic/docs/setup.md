@@ -12,7 +12,7 @@ first time — the one-time setup you do before running any paper or live sessio
 
 There is no separate MCP server to install — `cherrypick/meic/tt.py` talks to tastytrade directly via the official Python SDK (OAuth2).
 
-> **How you run it:** the plain `python …` commands below run in a normal terminal. The `/`-prefixed commands (like `/meic-start`) are Claude Code skills — type them at the Claude Code prompt after running `claude` in the project folder. Everything Claude Code does is also doable by hand with the underlying `python src/*.py` commands; the skills just orchestrate them.
+> **How you run it:** the plain `python …` commands below run in a normal terminal. The `/`-prefixed commands (like `/meic-start`) are Claude Code skills — type them at the Claude Code prompt after running `claude` in the project folder. Everything Claude Code does is also doable by hand with the underlying `python -m cherrypick.meic.<module>` commands; the skills just orchestrate them.
 
 ---
 

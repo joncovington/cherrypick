@@ -61,7 +61,7 @@ python -m cherrypick.meic.streamer --status
 If `running` is false and market hours are active, start it:
 
 ```bash
-Start-Process python -ArgumentList 'src\streamer.py' -WorkingDirectory $PWD -WindowStyle Hidden
+Start-Process python -ArgumentList '-m','cherrypick.meic.streamer' -WindowStyle Hidden
 ```
 
 ## Summary
