@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "cherrypick"
@@ -48,13 +48,14 @@ cherrypick = "cherrypick.cli:main"
 [project.urls]
 Repository = "https://github.com/joncovington/cherrypick-next"
 
-[tool.setuptools.packages.find]
-# src layout + PEP 420 native namespace: `cherrypick` has no __init__.py, so it composes with the
+[tool.hatch.build.targets.wheel]
+# src layout + PEP 420 native namespace: `src/cherrypick/` has NO __init__.py, so it composes with the
 # cherrypick.core distribution (a separate installed package, packages/core) under one `cherrypick.*`
-# import namespace.
-where = ["src"]
-include = ["cherrypick*"]
-namespaces = true
+# import namespace. `sources = ["src"]` maps the src/ prefix away, so src/cherrypick/... installs as
+# cherrypick/... -- same shape as every sibling package. Nothing here synthesizes an __init__.py, and
+# nothing should: adding one at the namespace root would break composition for the whole suite.
+only-include = ["src/cherrypick"]
+sources = ["src"]
 
 [tool.ruff]
 # line-length + lint.select come from the suite-wide ../../ruff.toml.
