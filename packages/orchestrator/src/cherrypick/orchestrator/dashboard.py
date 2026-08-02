@@ -26,7 +26,7 @@ from cherrypick.core import viz
 
 from cherrypick.notify import secrets as notify_secrets
 
-from . import calibrate, embeds, report, sections, tasks, timeutil, util
+from . import calibrate, embeds, logrotate, report, sections, tasks, timeutil, util
 from . import config as cfgmod
 
 _STATUS_COLORS = {
@@ -234,18 +234,31 @@ def _eod_view(cfg: dict[str, Any], modules_cfg: dict[str, Any], tz: str) -> dict
                 session, rep = last, report.run(cfg, session=last)
     except Exception:
         return None
+
     # Reports are written under the per-user logs home (~/.cherrypick/logs/<name>/), not the package
     # checkout — resolve them there via module_logs_dir, or the existence check always misses.
     # Only existence is ever consumed downstream (the card links by module/session via /eod-report,
     # never by path) -- booleans, not absolute paths, so a model built for the served page never
     # carries a filesystem path further than it needs to.
+    # A report counts as available whether it is still on disk or has been rotated into its monthly
+    # archive. Checking only the live path made the card wrong on the first of every month: the last
+    # trading session is still in the month the archiver just zipped, so every module read
+    # "no files yet" while the reports sat intact in logs/archive/<YYYY-MM>/<scope>.zip — and the
+    # /eod-report route this card links to would have served them perfectly well, since it already
+    # knew to look there.
+    def _have(scope: str, filename: str) -> bool:
+        live = (cfgmod.module_logs_dir(scope) if scope != "suite" else cfgmod.LOGS_DIR) / filename
+        if live.exists():
+            return True
+        return logrotate.archived_report_exists(cfgmod.LOGS_DIR, scope, filename, session)
+
     files = {}
     analysis = {}
     for name in modules_cfg:
-        files[name] = (cfgmod.module_logs_dir(name) / f"paper-eod-{session}.md").exists()
-        analysis[name] = (cfgmod.module_logs_dir(name) / f"eod-analysis-{session}.md").exists()
-    digest = cfgmod.log_file(f"eod-digest-{session}.md").exists()
-    insight = cfgmod.log_file(f"eod-insight-{session}.md").exists()
+        files[name] = _have(name, f"paper-eod-{session}.md")
+        analysis[name] = _have(name, f"eod-analysis-{session}.md")
+    digest = _have("suite", f"eod-digest-{session}.md")
+    insight = _have("suite", f"eod-insight-{session}.md")
     return {
         "session": session,
         "is_today": session == today,

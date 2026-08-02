@@ -130,6 +130,53 @@ def run(
     return summary
 
 
+def archive_zip_for(logs_root: Path, scope: str, session: str) -> Path:
+    """The monthly archive a given session's reports would land in.
+
+    One definition of the layout, used by every reader. `session` is a `YYYY-MM-DD` day, so its first
+    seven characters are the month label the archiver writes under; `scope` is "suite" for the logs
+    root's own files, else the module name. Arcnames are bare filenames (see `_archive_into`)."""
+    return logs_root / "archive" / session[:7] / f"{scope}.zip"
+
+
+def archived_report_exists(logs_root: Path, scope: str, filename: str, session: str) -> bool:
+    """Whether a rotated-away report is still available inside its monthly archive.
+
+    This exists because the archiver removes the originals once a month closes, and readers that only
+    stat the live path conclude the report was never written. That is not hypothetical: the EOD card
+    checked `.exists()` on the live path alone, so on the first of every month -- when the last
+    trading session is still in the month just archived -- every module rendered "no files yet" while
+    the reports sat intact in `logs/archive/<YYYY-MM>/<scope>.zip`. The serve route had already
+    learned to look in the archive; the card had not, so the fix was only half-applied.
+
+    Only the namelist is read, never the member, so this stays cheap enough for a per-render check."""
+    zpath = archive_zip_for(logs_root, scope, session)
+    if not zpath.exists():
+        return False
+    try:
+        with zipfile.ZipFile(zpath) as zf:
+            return filename in zf.namelist()
+    except Exception:  # a corrupt or half-written zip reads as "not available", never as an error
+        return False
+
+
+def archived_report_text(logs_root: Path, scope: str, filename: str, session: str) -> str | None:
+    """A rotated-away report's text out of its monthly archive zip, or None if it isn't there.
+
+    Best-effort by design: any zip problem reads as not-found, so a damaged archive degrades to a 404
+    rather than taking down the page that asked for it."""
+    zpath = archive_zip_for(logs_root, scope, session)
+    if not zpath.exists():
+        return None
+    try:
+        with zipfile.ZipFile(zpath) as zf:
+            if filename in zf.namelist():
+                return zf.read(filename).decode("utf-8", errors="replace")
+    except Exception:
+        return None
+    return None
+
+
 def _archive_into(zpath: Path, files: list[Path]) -> None:
     """Append `files` to `zpath` (creating it), verify the archive, then delete the originals that made it
     in. Files already present in the zip are not re-added — so a re-run is idempotent."""
