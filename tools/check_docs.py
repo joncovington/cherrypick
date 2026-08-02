@@ -24,6 +24,10 @@ idea for the guardrails that live in every CLAUDE.md:
      'src\streamer.py'` for weeks after the migration moved that file, while the sweeps were
      matching `src/<mod>.py`. Prose can be stale and merely misleading; a command is either right
      or it is broken, so it is worth checking mechanically.
+  8. No drift between `cli.py`'s subcommands and the CLI reference that claims to list them all.
+     Both directions: an undocumented command is invisible to readers, a documented-but-removed one
+     sends them at something that exits non-zero, and neither file is individually wrong -- only
+     their disagreement is.
 
 Run: python tools/check_docs.py
 Exits non-zero on any finding, printing `path:line: message` so it reads like a linter.
@@ -151,6 +155,43 @@ def _exists_exact(p: Path) -> bool:
     except OSError:
         return False
     return True
+
+
+#: Where the orchestrator declares its subcommands, and the doc that claims to list all of them.
+_CLI_SOURCE = "packages/orchestrator/src/cherrypick/cli.py"
+_CLI_DOC = "docs/orchestrator-cli.md"
+_CLI_CHOICES = re.compile(r"choices=\[(.*?)\]", re.S)
+_CLI_NAME = re.compile(r'"([a-z][a-z-]*)"')
+#: A command row in the reference: `| `doctor` | what it does | flags |`.
+_CLI_DOC_ROW = re.compile(r"^\|\s*`([a-z][a-z-]*)", re.M)
+
+
+def _check_cli_coverage() -> list[str]:
+    """`docs/orchestrator-cli.md` claims to document *every* command. Hold it to that.
+
+    A one-directional check would be worth little; both directions fail in practice and for different
+    reasons. A command added to `cli.py` without a doc row is invisible to anyone reading the
+    reference, and a row left behind after a command is removed sends readers at something that now
+    exits non-zero. Neither shows up in any other check here: both files are individually valid, and
+    it is only the disagreement between them that is the defect.
+
+    Verified by hand during a docs review at 27/27. That is exactly the kind of result that is true
+    the day someone checks and quietly false a month later, which is the argument for automating it.
+    """
+    src, doc = ROOT / _CLI_SOURCE, ROOT / _CLI_DOC
+    if not (src.exists() and doc.exists()):
+        return []  # the layout moved; the tree/link rules will say so more usefully than this one
+    block = _CLI_CHOICES.search(src.read_text(encoding="utf-8"))
+    if not block:
+        return [f"{_CLI_SOURCE}: no argparse `choices=[...]` block -- cli coverage cannot be checked"]
+    real = set(_CLI_NAME.findall(block.group(1)))
+    documented = set(_CLI_DOC_ROW.findall(doc.read_text(encoding="utf-8")))
+    findings = []
+    for missing in sorted(real - documented):
+        findings.append(f"{_CLI_DOC}: command `{missing}` exists in cli.py but is not documented")
+    for extra in sorted(documented - real):
+        findings.append(f"{_CLI_DOC}: documents `{extra}`, which is not a cli.py command")
+    return findings
 
 
 def _real_modules() -> set[str]:
@@ -348,7 +389,7 @@ def check(paths: list[Path]) -> list[str]:
 
 
 def main() -> int:
-    findings = check(tracked_files())
+    findings = check(tracked_files()) + _check_cli_coverage()
     if not findings:
         print("check_docs: OK")
         return 0
