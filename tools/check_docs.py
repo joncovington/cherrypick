@@ -67,12 +67,21 @@ def _is_test(rel: str) -> bool:
     return "/tests/" in rel or rel.startswith("tests/")
 
 
+#: This file is necessarily full of examples of every pattern it detects -- the regexes themselves,
+#: the message strings, and the docstring explaining the two real false positives. Linters routinely
+#: exempt their own rule definitions for exactly this reason. Contorting the strings to dodge a
+#: self-match would make the code worse to read for no gain.
+SELF = "tools/check_docs.py"
+
+
 def check(paths: list[Path]) -> list[str]:
     findings: list[str] = []
     for path in paths:
         if path.suffix.lower() not in TEXT_SUFFIXES or not path.exists():
             continue
         rel = path.relative_to(ROOT).as_posix()
+        if rel == SELF:
+            continue
         try:
             lines = path.read_text(encoding="utf-8").splitlines()
         except UnicodeDecodeError:
