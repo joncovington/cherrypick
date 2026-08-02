@@ -120,3 +120,28 @@ def test_ordering_is_by_instant_not_by_text():
     later = earlier + timedelta(hours=1)
     later_local_naive = later.astimezone().strftime("%Y-%m-%d %H:%M:%S")
     assert dashboard._ts_key(later_local_naive) > dashboard._ts_key(earlier.isoformat())
+
+
+def test_the_shared_core_logs_format_keeps_its_offset():
+    """cherrypick.core.logs writes "<ISO with offset> LEVEL message". The offset must land in `ts`,
+    not stranded at the front of the message — that would revert the stamp to naive, which is the
+    ambiguity the shared writer exists to remove."""
+    e = dashboard._parse_log_line("flies", "2026-08-02T15:54:21-06:00 INFO settled at 748.97")
+    assert e["ts"] == "2026-08-02T15:54:21-06:00"
+    assert e["level"] == "INFO"
+    assert e["text"] == "settled at 748.97"
+    assert datetime.fromisoformat(e["ts"]).tzinfo is not None
+
+
+def test_legacy_shapes_still_parse():
+    """Months of history predate the shared writer and must stay readable."""
+    old_flies = dashboard._parse_log_line("flies", "[2026-07-31T21:00:01] settled - idle")
+    old_meic = dashboard._parse_log_line("meic", "2026-08-02 00:40:01 INFO outside trading window")
+    assert old_flies["ts"] and old_meic["ts"]
+    assert old_meic["text"] == "outside trading window"
+
+
+def test_a_utc_offset_line_is_ordered_against_a_local_offset_line_correctly():
+    earlier = dashboard._parse_log_line("a", "2026-08-02T15:54:21-06:00 INFO earlier")  # 21:54Z
+    later = dashboard._parse_log_line("b", "2026-08-02T22:00:00+00:00 INFO later")
+    assert dashboard._ts_key(earlier["ts"]) < dashboard._ts_key(later["ts"])

@@ -34,7 +34,6 @@ import subprocess
 import sys
 import time
 from datetime import datetime
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
@@ -50,6 +49,7 @@ except Exception:  # pragma: no cover - only where zoneinfo has no tz database
 from cherrypick.core import advice as _core_advice  # bounded-advice validator
 from cherrypick.core import calendar as _cal  # shared NYSE trading-day calendar
 from cherrypick.core import home as _core_home  # the shared state dir
+from cherrypick.core import logs as _logs
 from cherrypick.core import viz as _viz  # the suite's one money formatter
 
 from cherrypick.meic import (
@@ -108,20 +108,16 @@ def _emit(obj):
 
 
 def _setup_logging(console: bool = True):
-    _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    # Rotate so the log can't grow without bound (10 MB x 5 backups).
-    handlers = [RotatingFileHandler(_LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")]
-    # A detached, hidden-window process (Start-Process -WindowStyle Hidden) can have an
-    # invalid stdout; writing to it via a StreamHandler risks killing the daemon. Only attach
-    # the console handler for interactive/--once runs where stdout is real.
-    if console and sys.stdout is not None and sys.stdout.isatty():
-        handlers.append(logging.StreamHandler(sys.stdout))
-    logging.basicConfig(
-        level=logging.INFO,
-        handlers=handlers,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    """Configure this module's log through `cherrypick.core.logs`, the suite's one line format.
+
+    This used to set its own `%Y-%m-%d %H:%M:%S` format via `basicConfig`, which emitted a *naive*
+    stamp — indistinguishable from flies' bracketed shape and from the orchestrator's UTC JSON, and
+    the reason the dashboard's log card mis-ordered and then dropped whole sources. The shared writer
+    emits an offset, so a line is an unambiguous instant. Rotation and the TTY-only console rule (the
+    scheduled task runs under pythonw.exe, where writing to an invalid stdout can kill the daemon)
+    both moved into it unchanged.
+    """
+    _logs.configure(logging.getLogger(), _LOG_FILE, console=console)
 
 
 def _handle_signal(signum, frame):
