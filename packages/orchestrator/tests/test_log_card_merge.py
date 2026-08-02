@@ -82,3 +82,27 @@ def test_module_log_resolves_to_the_suite_root_when_the_orchestrator_writes_it(t
     assert dashboard._resolve_module_log("earnings", "logs/earnings_paper.log") == own, (
         "a module's own log directory must win when it has one"
     )
+
+
+def test_timestamps_are_comparable_across_sources():
+    """Raw string sort is wrong twice over: the sources use different separators (a space sorts
+    before "T", so every meic line landed before every watchdog line) and different zones (meic
+    writes naive local, the JSON sources write UTC — 15:42 and 21:42 are the same instant)."""
+    meic_local = "2026-08-02 15:42:02"
+    watchdog_utc = "2026-08-02T21:42:02.449287+00:00"
+    assert meic_local < watchdog_utc, "the naive string comparison this replaces"
+
+    k_meic, k_wd = dashboard._ts_key(meic_local), dashboard._ts_key(watchdog_utc)
+    assert abs(k_meic[1] - k_wd[1]) < 60, "same instant once the zone is applied"
+
+
+def test_undated_and_unparseable_stamps_sort_last():
+    assert dashboard._ts_key(None)[0] == 1
+    assert dashboard._ts_key("not a timestamp")[0] == 1
+    assert dashboard._ts_key("2026-08-02T21:42:02+00:00")[0] == 0
+
+
+def test_ordering_is_by_instant_not_by_text():
+    later_local = "2026-08-02 16:00:00"  # 22:00 UTC
+    earlier_utc = "2026-08-02T21:00:00+00:00"
+    assert dashboard._ts_key(later_local) > dashboard._ts_key(earlier_utc)

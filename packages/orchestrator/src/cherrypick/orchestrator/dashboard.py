@@ -240,6 +240,30 @@ def _config_summary(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- model
+def _ts_key(ts: str | None) -> tuple[int, float]:
+    """A sortable instant for a log timestamp, comparable across sources.
+
+    Sorting the raw strings does not work, because the sources disagree twice over. They use
+    different separators -- "2026-08-02 15:42:02" (meic) versus "2026-08-02T21:42:02+00:00"
+    (watchdog) -- and a space sorts before "T", so *every* meic line lands before *every* watchdog
+    line regardless of when either happened. They also disagree on zone: meic writes naive local
+    time while the JSON sources write UTC, so 15:42 and 21:42 there are the same instant.
+
+    Naive stamps are read as local time, which is what the modules writing them mean. Unparseable or
+    absent stamps sort last (the leading flag), keeping traceback bodies and continuations at the
+    end where the file order already put them.
+    """
+    if not ts:
+        return (1, 0.0)
+    try:
+        dt = datetime.fromisoformat(ts.strip().replace(" ", "T"))
+    except ValueError:
+        return (1, 0.0)
+    if dt.tzinfo is None:
+        dt = dt.astimezone()  # naive -> this machine's local zone, then to a real instant
+    return (0, dt.timestamp())
+
+
 def _resolve_module_log(name: str, log_rel: str) -> Path:
     """Where a module's paper log actually is — its own logs dir, or the suite logs root.
 
@@ -481,8 +505,8 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         for src, path in srcs:
             for raw in _tail(path, tail_n):
                 out.append(_parse_log_line(src, raw))
-        # Most recent last, by timestamp where available; undated lines keep their file order at the end.
-        out.sort(key=lambda e: (e["ts"] is None, e["ts"] or ""))
+        # Most recent last, by real instant; undated lines keep their file order at the end.
+        out.sort(key=lambda e: _ts_key(e["ts"]))
         return out[-tail_n:]
 
     log_entries = _collect(sources)

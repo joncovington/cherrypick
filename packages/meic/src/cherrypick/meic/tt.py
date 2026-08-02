@@ -49,7 +49,7 @@ from cherrypick.meic.session import get_session
 # fallback (see _try_streamer_http) would otherwise be invisible across
 # iterations. Append warnings to a file so degraded-mode calls are auditable.
 # ---------------------------------------------------------------------------
-_LOG_FILE = _paths.log_path("cherrypick.meic.tt.log")
+_LOG_FILE = _paths.log_path("tt.log")
 _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger(__name__)
 if not logger.handlers:
