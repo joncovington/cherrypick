@@ -80,3 +80,5 @@ config.yaml
 
 .vscode/
 graphify-out/
+.pytest_cache/
+.ruff_cache/
