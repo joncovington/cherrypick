@@ -11,9 +11,10 @@ using paths from config — for unattended **paper**-trading data collection, wi
 notifications so a walk-away user is told (or at least has it logged) whenever something stalls. It never edits a module's internals and
 **never places live trades** — the sole live-adjacent action is *onboarding config* (`connect`/`account`
 select a module's live-trading account; see the Invariants below), never order placement. `ROADMAP.md`
-tracks what has actually shipped; the full design lives in `~/.claude/plans/cherrypick-plan.md`; and the
-suite-wide human documentation is the root [documentation index](../../docs/README.md) (architecture, CLI,
-reporting, configuration, guardrails).
+tracks what has actually shipped; the design rationale behind it is [`docs/design.md`](docs/design.md)
+(a 2026-07-11 research report, deliberately not updated as work ships); and the suite-wide human
+documentation is the root [documentation index](../../docs/README.md) (architecture, CLI, reporting,
+configuration, guardrails).
 
 ## Commands
 
