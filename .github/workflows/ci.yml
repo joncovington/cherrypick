@@ -20,6 +20,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      # The linter's own tests run first: a broken check reports OK over real errors, which has
+      # already happened twice (a case-insensitive existence test passing on Windows while failing
+      # here, and a path-normalization bug that called all 186 relative links broken).
+      - name: Test the docs linter
+        run: |
+          pip install pytest
+          python -m pytest tools/tests -q
       - name: Check docs guardrails
         run: python tools/check_docs.py
 
