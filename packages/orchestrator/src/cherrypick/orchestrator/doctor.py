@@ -281,7 +281,7 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         # only authenticated broker round-trip, unsafe to poll on the live-checks cadence.
         if not broker_checked and not fast:
             try:
-                r = _run(root, ["src/tt.py", "get_connection_status"], timeout=35)
+                r = _run(root, [*cfgmod.broker_tool(mcfg, name), "get_connection_status"], timeout=35)
                 out = json.loads(r.stdout or "{}") if r.returncode == 0 else {}
                 ok = bool(out.get("ok") or out.get("connected") or out.get("authenticated"))
                 checks.append(

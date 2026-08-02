@@ -103,8 +103,10 @@ def test_reconcile_schedule_settings_overrides():
 
 
 def test_broker_tool_defaults_to_tt_and_is_overridable():
-    assert c.broker_tool({}) == ["src/tt.py"]
-    assert c.broker_tool({"broker_tool": ["src/broker_cli.py"]}) == ["src/broker_cli.py"]
+    # With no module name there is nothing to build a default from -> empty; the caller supplies argv.
+    assert c.broker_tool({}) == []
+    assert c.broker_tool({}, "meic") == ["-m", "cherrypick.meic.tt"]
+    assert c.broker_tool({"broker_tool": ["-m", "x"]}) == ["-m", "x"]
 
 
 def test_live_trading_enabled_top_level_convention():

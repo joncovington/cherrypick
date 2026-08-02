@@ -154,9 +154,9 @@ def paper_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path:
 # key, so an existing machine-local config needs ZERO broker keys for connect/account to work.
 # Config always wins when present; a genuinely new module still declares its keys in config.
 KNOWN_MODULE_DEFAULTS: dict[str, dict[str, Any]] = {
-    "meic": {"keyring_service": "meicagent", "broker_tool": ["src/tt.py"]},
-    "earnings": {"keyring_service": "earningsagent", "broker_tool": ["src/tt.py"]},
-    "flies": {"keyring_service": "fliesagent", "broker_tool": ["src/broker_cli.py"]},
+    "meic": {"keyring_service": "meicagent", "broker_tool": ["-m", "cherrypick.meic.tt"]},
+    "earnings": {"keyring_service": "earningsagent", "broker_tool": ["-m", "cherrypick.earnings.tt"]},
+    "flies": {"keyring_service": "fliesagent", "broker_tool": ["-m", "cherrypick.flies.broker_cli"]},
 }
 
 
@@ -166,10 +166,11 @@ def _module_default(name: str | None, key: str) -> Any:
 
 def broker_tool(module_cfg: dict[str, Any], name: str | None = None) -> list[str]:
     """The module's broker/credential CLI as an argv prefix, relative to its root. Resolution:
-    explicit config -> known-module default (by name) -> the historical `src/tt.py`. Used by
-    connect/account/reconcile so onboarding and the isolation guard drive every module through
-    config-declared argv, like everything else."""
-    return list(module_cfg.get("broker_tool") or _module_default(name, "broker_tool") or ["src/tt.py"])
+    explicit config -> known-module default (by name) -> a last-resort `-m cherrypick.<name>.tt`.
+    Used by connect/account/reconcile so onboarding and the isolation guard drive every module
+    through config-declared argv, like everything else."""
+    fallback = ["-m", f"cherrypick.{name}.tt"] if name else []
+    return list(module_cfg.get("broker_tool") or _module_default(name, "broker_tool") or fallback)
 
 
 def module_keyring_service(module_cfg: dict[str, Any], name: str | None = None) -> str | None:
