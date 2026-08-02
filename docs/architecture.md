@@ -43,9 +43,25 @@ monorepo is the source of truth.
 
 ## src-layout & the import namespace
 
-`packages/orchestrator/src/cherrypick/` has **no root `__init__.py`** — it's a PEP 420 namespace package,
-so it composes with the `cherrypick.core` package (an installed dependency, `packages/core`) under one
-`cherrypick.*` import root. `run.py` puts `src/` on `sys.path` and delegates to `cherrypick.cli:main`.
+**Every package shares one import root.** A module lives at `packages/<pkg>/src/cherrypick/<pkg>/<mod>.py`
+and imports as `cherrypick.<pkg>.<mod>` — `cherrypick.meic.tt`, `cherrypick.flies.engine`,
+`cherrypick.earnings.scanner`, and so on, alongside `cherrypick.core.*` and `cherrypick.orchestrator.*`.
+
+`src/cherrypick/` has **no `__init__.py`** in any package. That is what makes it a PEP 420 namespace, so
+all seven distributions compose under one `cherrypick.*` root instead of colliding. One level deeper,
+`src/cherrypick/<pkg>/__init__.py` **does** exist — that is an ordinary package.
+
+The packages were flat (`src/tt.py`, `src/db.py`, …) until this was unified. Fifteen top-level names
+collided across packages — `credentials` in four, `cli` / `section` / `stream_request` in three each,
+plus `db`, `paths`, `tt`, `streamer`, `dashboard`, `config`, `session` — so **two packages could never
+be imported into one process.** Subprocess isolation is still the right call (crash isolation,
+independent lifecycle, paper↔live fencing), but it is now a *decision* rather than something the
+layout forced.
+
+The practical consequence is how everything is invoked: **`-m cherrypick.<pkg>.<mod>`**, never a file
+path. Scheduled-task command lines used to bake in `os.path.abspath(__file__)`, so moving a file
+stranded a registered OS task; `-m` is location-independent. The orchestrator's config argv follows the
+same form (`["-m", "cherrypick.meic.paper_loop", "--once"]`).
 
 > **Gotcha:** the launcher is `run.py`, **not** `cherrypick.py`. A root module named `cherrypick.py`
 > would shadow the `src/cherrypick` namespace package (a regular module outranks a PEP 420 namespace on
