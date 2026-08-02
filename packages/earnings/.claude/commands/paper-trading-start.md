@@ -76,7 +76,7 @@ the forced-sampling close pass (`strategy_test_runner.py eod_report` → `logs/p
 ## Common Issues
 
 **"Total candidates: 0"**
-- No earnings tonight/tomorrow morning per DoltHub's calendar — check `python src/scanner.py get_calendar --date MM/DD/YYYY` directly to confirm
+- No earnings tonight/tomorrow morning per DoltHub's calendar — check `python -m cherrypick.earnings.scanner get_calendar --date MM/DD/YYYY` directly to confirm
 
 **"Selected for trading: 0" with all rejected**
 - Normal on a quiet night. Check the printed `reason` per symbol — usually a specific, real liquidity/signal hard-fail (see `docs/screening-criteria.md`), not a system error

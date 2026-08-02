@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from strategies import double_calendar
+from cherrypick.earnings.strategies import double_calendar
 
 
 def test_apply_tiering_accepts_when_all_pass(base_strategy_config, good_criteria):

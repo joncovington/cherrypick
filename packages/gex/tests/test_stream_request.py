@@ -1,20 +1,19 @@
 """gex declares its underlyings to the streamer via a stream-request file (best-effort, never fatal)."""
 
 import json
-import sys
-from pathlib import Path
 
-_SRC = Path(__file__).resolve().parent.parent / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
-
-import stream_request  # noqa: E402
+from cherrypick.gex import stream_request
 
 
 def test_register_writes_deduped_upper_symbols(managed_home):
     stream_request.register({"symbols": ["spx", "qqq", "spx"]})
     path = managed_home / "state" / "stream_requests" / "gex.json"
-    assert json.loads(path.read_text()) == {"symbols": ["QQQ", "SPX"], "legs": [], "leg_sources": []}
+    assert json.loads(path.read_text()) == {
+        "symbols": ["QQQ", "SPX"],
+        "legs": [],
+        "leg_sources": [],
+        "window_hints": {},
+    }
 
 
 def test_register_empty_symbols(managed_home):

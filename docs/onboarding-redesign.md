@@ -21,10 +21,10 @@ something an average user can complete in one sitting without knowing the packag
 
 Setting up broker access today for a three-module suite means:
 
-1. `cd packages/meic && python src/tt.py secrets_set` — enter client_secret + refresh_token.
-2. `cd packages/earnings && python src/tt.py secrets_set` — enter the **same two values again**
+1. `cd packages/meic && python -m cherrypick.meic.tt secrets_set` — enter client_secret + refresh_token.
+2. `cd packages/earnings && python -m cherrypick.earnings.tt secrets_set` — enter the **same two values again**
    (same brokerage login, different keyring service).
-3. `cd packages/flies && python src/credentials.py secrets_set` — the same two values a
+3. `cd packages/flies && python -m cherrypick.flies.credentials secrets_set` — the same two values a
    **third** time, via a third, differently-named tool.
 4. Hand-edit the machine-local `config.json` to add `keyring_service` / `broker_tool` keys
    the example config knows but an existing config doesn't.
@@ -122,9 +122,9 @@ The manual JSON edit exists because `keyring_service` / `broker_tool` were added
 `config.example.json` after real configs were created. Fix it at the resolver: `cfgmod`
 gains a small table of **known-module defaults** —
 
-    meic:     keyring_service meicagent,     broker_tool ["src/tt.py"]
-    earnings: keyring_service earningsagent, broker_tool ["src/tt.py"]
-    flies:    keyring_service fliesagent,    broker_tool ["src/broker_cli.py"]
+    meic:     keyring_service meicagent,     broker_tool ["-m", "cherrypick.meic.tt"]
+    earnings: keyring_service earningsagent, broker_tool ["-m", "cherrypick.earnings.tt"]
+    flies:    keyring_service fliesagent,    broker_tool ["-m", "cherrypick.flies.broker_cli"]
 
 — applied when a config omits the key, with the config always winning when present. An
 existing config then needs **zero** broker keys for onboarding to work. The table lives in

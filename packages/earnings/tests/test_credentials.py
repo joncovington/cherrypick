@@ -10,7 +10,7 @@ import keyring
 import keyring.errors
 import pytest
 
-import credentials
+from cherrypick.earnings import credentials
 
 
 class _FakeKeyring:

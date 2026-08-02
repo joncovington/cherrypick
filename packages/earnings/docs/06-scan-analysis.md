@@ -13,7 +13,7 @@ into each other, and how to tell a genuinely quiet night from something broken.
 that one strategy:
 
 ```bash
-python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
+python -m cherrypick.earnings.strategies.iron_fly get_candidates --date MM/DD/YYYY
 ```
 
 Works identically for any of the six (`iron_condor`, `directional_credit_spread`,
@@ -25,7 +25,7 @@ Works identically for any of the six (`iron_condor`, `directional_credit_spread`
 best:
 
 ```bash
-python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
+python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY
 ```
 
 This second command is what the live/paper loop calls at entry time (`CLAUDE.md`'s Step 4b) —
@@ -96,7 +96,7 @@ still worth eyeballing before you act on any single candidate's raw number.
 ## Reading `rank_strategies.py`'s Output
 
 ```bash
-python src/rank_strategies.py get_ranked_symbols --date 07/15/2026
+python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date 07/15/2026
 ```
 
 ```json
@@ -159,9 +159,9 @@ If a candidate's accept/reject result surprises you, pull the individual signals
 than trusting the scan's summary line alone:
 
 ```bash
-python src/scanner.py get_iv_rv --symbol AAPL
-python src/scanner.py get_winrate --symbol AAPL --lookback_quarters 8
-python src/tt.py get_option_chain --symbol AAPL --expiration 2026-07-17 --include_greeks --include_quotes --include_oi --include_volume
+python -m cherrypick.earnings.scanner get_iv_rv --symbol AAPL
+python -m cherrypick.earnings.scanner get_winrate --symbol AAPL --lookback_quarters 8
+python -m cherrypick.earnings.tt get_option_chain --symbol AAPL --expiration 2026-07-17 --include_greeks --include_quotes --include_oi --include_volume
 ```
 
 These are the exact live calls the scan itself makes — running them by hand reproduces the same

@@ -12,8 +12,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# The orchestrator package bootstraps src/_core onto sys.path in its __init__, which runs before this
-# submodule's body — so the shared home resolver is importable here.
 from cherrypick.core import home as _home
 
 # cherrypick runtime root — where config.json, logs/, and state/ live. In a source checkout that is the
@@ -123,15 +121,21 @@ def portable_path(p: Any) -> str:
     """Render a filesystem path for display without leaking a drive letter, username, or absolute home
     prefix — the suite guardrail forbids absolute paths on any surface (dashboard, doctor, section cards).
     Collapse the user home to ``~``; else show it relative to the cherrypick source root (ROOT); else
-    just the final path component."""
+    just the final path component.
+
+    The ROOT-relative leg only applies when the path is actually *under* ROOT. `os.path.relpath` will
+    happily walk up out of ROOT and back down (`../../../tmp/...`), which keeps every original segment
+    and defeats the whole point of this function. That escape never fired on Windows — a different
+    drive raises ValueError — so it stayed invisible until orchestrator CI first ran on Linux.
+    """
     path = Path(p)
     try:
         return "~/" + path.relative_to(Path.home()).as_posix()
     except ValueError:
         pass
     try:
-        return Path(os.path.relpath(path, ROOT)).as_posix()
-    except (ValueError, OSError):
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
         return path.name
 
 
@@ -156,9 +160,9 @@ def paper_db_path(module_cfg: dict[str, Any], name: str | None = None) -> Path:
 # key, so an existing machine-local config needs ZERO broker keys for connect/account to work.
 # Config always wins when present; a genuinely new module still declares its keys in config.
 KNOWN_MODULE_DEFAULTS: dict[str, dict[str, Any]] = {
-    "meic": {"keyring_service": "meicagent", "broker_tool": ["src/tt.py"]},
-    "earnings": {"keyring_service": "earningsagent", "broker_tool": ["src/tt.py"]},
-    "flies": {"keyring_service": "fliesagent", "broker_tool": ["src/broker_cli.py"]},
+    "meic": {"keyring_service": "meicagent", "broker_tool": ["-m", "cherrypick.meic.tt"]},
+    "earnings": {"keyring_service": "earningsagent", "broker_tool": ["-m", "cherrypick.earnings.tt"]},
+    "flies": {"keyring_service": "fliesagent", "broker_tool": ["-m", "cherrypick.flies.broker_cli"]},
 }
 
 
@@ -168,10 +172,11 @@ def _module_default(name: str | None, key: str) -> Any:
 
 def broker_tool(module_cfg: dict[str, Any], name: str | None = None) -> list[str]:
     """The module's broker/credential CLI as an argv prefix, relative to its root. Resolution:
-    explicit config -> known-module default (by name) -> the historical `src/tt.py`. Used by
-    connect/account/reconcile so onboarding and the isolation guard drive every module through
-    config-declared argv, like everything else."""
-    return list(module_cfg.get("broker_tool") or _module_default(name, "broker_tool") or ["src/tt.py"])
+    explicit config -> known-module default (by name) -> a last-resort `-m cherrypick.<name>.tt`.
+    Used by connect/account/reconcile so onboarding and the isolation guard drive every module
+    through config-declared argv, like everything else."""
+    fallback = ["-m", f"cherrypick.{name}.tt"] if name else []
+    return list(module_cfg.get("broker_tool") or _module_default(name, "broker_tool") or fallback)
 
 
 def module_keyring_service(module_cfg: dict[str, Any], name: str | None = None) -> str | None:

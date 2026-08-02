@@ -30,13 +30,13 @@ that then picks a bucket. Instead:
    more than one strategy at once — a name with rich IV/RV and negative term
    structure might legitimately qualify for `iron_fly`, `iron_condor`, and `directional_credit_spread`
    all on the same night. Opening more than one of those on the same underlying would just be
-   the same overnight gap risk twice, not diversification. `src/rank_strategies.py` resolves
+   the same overnight gap risk twice, not diversification. `cherrypick/earnings/rank_strategies.py` resolves
    this: it runs every registered strategy's `apply_tiering()` against every symbol on the
    merged today-AMC/tomorrow-BMO calendar, keeps only the accepted results, and picks each
    symbol's single highest-scoring strategy.
 
 ```bash
-python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
+python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY
 ```
 
 This is what the live/paper loop's Step 4b actually calls at entry time (see `CLAUDE.md`'s Loop
@@ -105,7 +105,7 @@ There's no separate "test the entry framework" script — the framework *is* the
 so running it against a real date is the test:
 
 ```bash
-python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
+python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY
 ```
 
 Read the `reason` field on each symbol in the output. A quiet night with mostly

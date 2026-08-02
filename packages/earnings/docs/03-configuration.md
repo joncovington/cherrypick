@@ -15,7 +15,7 @@ behind each default — read those inline notes alongside this guide rather than
 page as the only source. Where this guide and the example file ever disagree, trust the file;
 it's what the code actually reads.
 
-> **Where the config lives.** `src/paths.py` resolves the config **home-first**: the orchestrated
+> **Where the config lives.** `cherrypick/earnings/paths.py` resolves the config **home-first**: the orchestrated
 > suite reads `~/.cherrypick/config/earnings.json` when it exists, falling back to the in-repo
 > `config/config.json` for a standalone checkout (or until `cherrypick migrate-home` moves it up).
 > The keys below are identical either way — edit whichever file `paths.config_path()` resolves to on
@@ -30,7 +30,7 @@ it's what the code actually reads.
 | `enable_live_trading` | `false` = paper mode (default), `true` = live mode. See `CLAUDE.md`'s Loop Step 0 for the full paper/live split. Flip this only after you trust what paper mode has been finding. |
 | `available_capital_paper_mode` | Simulated NLV paper mode uses for `max_risk_per_trade_pct` sizing checks. Paper mode never looks at your real tastytrade balance — size this to whatever capital you'd actually intend to trade live, or every order will get sized off a number that has nothing to do with your real account. |
 | `available_capital_live_mode_source` | Always `"tastytrade"` — documents that live mode sources NLV/buying power from `tt.py get_account_info`, not this file. |
-| `max_contracts_per_leg` | Hard ceiling on contracts per leg, enforced in `src/sizing.py` regardless of what the risk budget would otherwise allow. A backstop against a sizing bug rather than a knob you'll usually touch. |
+| `max_contracts_per_leg` | Hard ceiling on contracts per leg, enforced in `cherrypick/earnings/sizing.py` regardless of what the risk budget would otherwise allow. A backstop against a sizing bug rather than a knob you'll usually touch. |
 | `max_concurrent_earnings_positions` | Account-wide cap on simultaneous overnight positions across every strategy. |
 | `earnings_calendar_source` | Currently only `"dolthub"` is implemented. |
 | `dolthub_host` / `dolthub_port` / `dolthub_user` / `dolthub_database` / `dolthub_options_database` / `dolthub_stocks_database` | Connection details for the local `dolt sql-server` from `docs/01-setup.md` Step 2. Defaults (`127.0.0.1:3306`, user `root`, databases `earnings`/`options`/`stocks`) match a stock local Dolt setup — only change these if you're serving the three datasets from somewhere else. |
@@ -50,7 +50,7 @@ it's what the code actually reads.
 ## `tastytrade_costs`
 
 Models tastytrade's real commission schedule so paper-mode P&L reflects live trading costs
-instead of a frictionless fantasy fill. Consumed by `src/costs.py`, kept separate from the raw
+instead of a frictionless fantasy fill. Consumed by `cherrypick/earnings/costs.py`, kept separate from the raw
 `pnl` column in the database (see `CLAUDE.md`'s Database section — `pnl` always stays gross,
 cost-adjusted expectancy is computed downstream in `strategy_metrics.py`).
 
@@ -466,7 +466,7 @@ python -c "import json; json.load(open('config/config.json')); print('Config OK'
 python -c "from src.rank_strategies import STRATEGY_REGISTRY; print(f'Found {len(STRATEGY_REGISTRY)} strategies')"
 
 # Run a dry-run scan to see the change reflected in candidate output
-python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
+python -m cherrypick.earnings.strategies.iron_fly get_candidates --date MM/DD/YYYY
 ```
 
 To reset a strategy block back to its documented default, just re-copy that section from

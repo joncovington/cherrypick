@@ -5,11 +5,9 @@ import json
 import pytest
 from test_analytics import position
 
-import analytics
-import dashboard
-import db as dbmod
-import eod as eodmod
-import section
+from cherrypick.flies import analytics, dashboard, section
+from cherrypick.flies import db as dbmod
+from cherrypick.flies import eod as eodmod
 
 
 @pytest.fixture()
@@ -386,3 +384,27 @@ def test_every_report_number_comes_from_analytics(conn):
     assert viz.fmt_money(stats["net_pnl"]) in text
     payload = dashboard.build_api_data(conn, DAY)
     assert payload["today"]["stats"]["net_pnl"] == stats["net_pnl"]
+
+
+# --------------------------------------------------------------------------- regime section
+def test_analysis_reports_regime_coverage_and_warns_on_a_degenerate_dimension(conn):
+    """The daily read has to say when a tag carries no information. `entry_gex_bucket` was 'thin'
+    60 times out of 60 for a month and nothing on any surface said so."""
+    position(conn, "A", day=DAY, pnl=10.0, regime={"gex_bucket": "thin", "skew_bucket": "put_skew"})
+    position(conn, "B", day=DAY, pnl=-20.0, regime={"gex_bucket": "thin", "skew_bucket": "flat"})
+    text = eodmod.build_eod_analysis(conn, DAY)
+
+    assert "## What regimes did we trade into?" in text
+    assert "cannot be backfilled" in text  # the coverage caveat is stated, not implied
+    assert "gex" in text and "landed every tagged row in a single bucket" in text
+    # A degenerate dimension must NOT get a P&L table -- that would read as a finding.
+    assert "**gex** split" not in text
+    # One that genuinely separates does.
+    assert "**skew** split" in text
+
+
+def test_analysis_regime_section_survives_a_book_with_no_tags(conn):
+    position(conn, "A", day=DAY, pnl=10.0)  # pre-tagging row, no regime at all
+    text = eodmod.build_eod_analysis(conn, DAY)
+    assert "## What regimes did we trade into?" in text
+    assert "No rows tagged yet for:" in text

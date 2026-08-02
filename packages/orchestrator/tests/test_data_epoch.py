@@ -1,6 +1,6 @@
 """The data-epoch marker: a correctness fix that restates what paper history means
 declares an epoch date, report says how much history predates it, and calibrate
-refuses to let pre-epoch sessions support a promotion reading."""
+refuses to let pre-epoch sessions support a champion/challenger recommendation."""
 
 import sqlite3
 
@@ -11,7 +11,7 @@ from cherrypick.orchestrator import config as cfgmod
 
 pytestmark = pytest.mark.unit
 
-_LADDER = ["conservative", "moderate", "aggressive"]
+_CHAMPION = "conservative"
 
 
 def _meic_db(path, rows):
@@ -36,7 +36,7 @@ def _cfg(tmp_path, epoch=None):
                 "enabled": True,
                 "path": str(tmp_path / "meic"),
                 "paper": {"paper_db": "p.db", "trade_schema": "meic_ic"},
-                "calibration": {"ladder": _LADDER},
+                "calibration": {"champion": _CHAMPION},
             }
         }
     }
@@ -59,16 +59,21 @@ def test_config_accessor_requires_a_date():
 
 
 def test_calibrate_excludes_pre_epoch_sessions_from_promotion(tmp_path):
-    """20 winning pre-epoch sessions would graduate the rung; with the epoch declared,
-    only the 3 post-epoch sessions count and the recommendation holds."""
+    """20 winning pre-epoch sessions would otherwise inflate the champion's own reading; with the
+    epoch declared, only the 3 post-epoch sessions count. conservative is both the champion and the
+    only tag with data here, so there is no challenger to recommend -- the module-level verdict
+    holds regardless; what the epoch actually gates is the READING's sample/days count."""
     cfg = _cfg(tmp_path, epoch={"date": "2026-07-01", "note": "phase-0 restatement"})
     _rows(tmp_path)
     out = calibrate.run(cfg)
-    prof = out["modules"]["meic"]["profiles"]["conservative"]
+    mod = out["modules"]["meic"]
+    prof = mod["profiles"][_CHAMPION]
     assert out["data_epoch"]["date"] == "2026-07-01"
+    assert prof["role"] == "champion"
     assert prof["reading"]["sample"] == 3
     assert prof["reading"]["days"] == 3
-    assert prof["recommendation"]["eligible"] is False
+    assert mod["recommendation"]["eligible"] is False
+    assert mod["recommendation"]["recommendation"] == f"retain:{_CHAMPION}"
 
 
 def test_calibrate_without_epoch_keeps_full_history(tmp_path):

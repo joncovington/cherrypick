@@ -3,7 +3,7 @@ Produce the weekly (or custom-range) paper-trading performance report, comparing
 ## 1. Gather the range summary
 
 ```bash
-python src/db.py --db ~/.cherrypick/data/meic/paper_trades.db get_range_summary --start <YYYY-MM-DD> --end <YYYY-MM-DD>
+python -m cherrypick.meic.db --db ~/.cherrypick/data/meic/paper_trades.db get_range_summary --start <YYYY-MM-DD> --end <YYYY-MM-DD>
 ```
 
 Default the range to the last 7 calendar days ending today (ET) unless the user specifies a different window (e.g. "since program start", "last month"). This returns `profiles: { "conservative": {...}, "moderate": {...}, "aggressive": {...}, "very-aggressive": {...} }`, each with `total_trades`, `win_count`/`loss_count`/`win_rate_pct`, `profit_factor`, `avg_win`/`avg_loss`, `expectancy_per_trade`, `max_consecutive_losses`, `max_drawdown`, `worst_day`, `net_pnl`, and a `daily_pnl` series (date, net_pnl, cumulative_pnl) per profile.

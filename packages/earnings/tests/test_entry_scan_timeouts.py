@@ -13,9 +13,8 @@ import types
 
 import pytest
 
-import rank_strategies
-import scanner
-import strategy_test_runner as r
+from cherrypick.earnings import rank_strategies, scanner
+from cherrypick.earnings import strategy_test_runner as r
 
 
 # --------------------------------------------------------------------------- _run_bounded unit tests

@@ -19,7 +19,7 @@ One combined report covering **every symbol traded today** — `get_eod_summary`
 
 1. Gather today's live trade data (all symbols):
 ```bash
-python src/db.py get_eod_summary
+python -m cherrypick.meic.db get_eod_summary
 ```
 
 2. Write a detailed plain-English analysis for the account owner — a genuine synthesis, not a data dump. Where trading spanned multiple symbols, call out per-symbol differences explicitly ("XSP performed well while SPX had two stop-outs"):
@@ -34,7 +34,7 @@ python src/db.py get_eod_summary
 
 3. Save and write the file:
 ```bash
-python src/db.py save_daily_summary --date="<YYYY-MM-DD>" --summary="<your full analysis>"
+python -m cherrypick.meic.db save_daily_summary --date="<YYYY-MM-DD>" --summary="<your full analysis>"
 ```
 Then write the analysis to the MEIC logs home as `eod-<YYYY-MM-DD>.md` (`~/.cherrypick/logs/meic/eod-<YYYY-MM-DD>.md` by default, or `$MEIC_LOGS_DIR`) — one file per day, analysis text only (no raw DB dumps).
 
@@ -45,12 +45,12 @@ Then write the analysis to the MEIC logs home as `eod-<YYYY-MM-DD>.md` (`~/.cher
 The paper report is **deterministic and code-generated** (no synthesis needed) — just run the generator, which reads `~/.cherrypick/data/meic/paper_trades.db` and writes the file:
 
 ```bash
-python src/paper_loop.py --eod-report [--date <YYYY-MM-DD>]
+python -m cherrypick.meic.paper_loop --eod-report [--date <YYYY-MM-DD>]
 ```
 
 It writes **two** files to the MEIC logs home (`~/.cherrypick/logs/meic/` by default, or `$MEIC_LOGS_DIR`):
 - `paper-eod-<date>.md` — the terse per-profile metrics table (trades, win rate, net P&L, expectancy, profit factor, max drawdown), exits-by-reason breakdown, and per-symbol P&L across all four risk profiles.
-- `eod-analysis-<date>.md` — a conversational 7-section read on the same session (executive snapshot, position-level detail, trade activity log, risk metrics, market context, tax/accounting notes, notes/journal). Still fully deterministic/code-generated (no agent), just written in plain-English analysis language. Regenerate only this one with `python src/paper_loop.py --eod-analysis [--date <YYYY-MM-DD>]`.
+- `eod-analysis-<date>.md` — a conversational 7-section read on the same session (executive snapshot, position-level detail, trade activity log, risk metrics, market context, tax/accounting notes, notes/journal). Still fully deterministic/code-generated (no agent), just written in plain-English analysis language. Regenerate only this one with `python -m cherrypick.meic.paper_loop --eod-analysis [--date <YYYY-MM-DD>]`.
 
 Report the paths it prints; optionally show the user the file contents. (Both are distinct from `/paper-report`, which is the agent-synthesized multi-day write-up.)
 

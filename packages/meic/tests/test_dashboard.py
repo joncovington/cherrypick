@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import dashboard
+from cherrypick.meic import dashboard
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -638,7 +638,10 @@ def test_width_study_has_every_configured_symbol_even_with_no_trades(db_path):
             assert ws["symbols"][sym][arm] == []
 
 
-def test_width_study_cell_matches_pnl_series_for_that_profile_and_symbol(db_path):
+def test_width_study_cell_matches_pnl_series_for_that_profile_and_symbol(db_path, monkeypatch, tmp_path):
+    # Pins its own symbol set -- the frame only builds cells for CONFIGURED symbols, so this must
+    # not depend on whatever the operator currently trades (see the sibling test below).
+    _write_config(monkeypatch, tmp_path, {"symbols": ["XSP", "QQQ"]})
     conn = dashboard._connect()
     _insert_trade(
         conn, ic_order_id="IC-1", symbol="XSP", status="expired", pnl=12.0, fees=1.0, risk_profile="width-2"
@@ -682,9 +685,14 @@ def test_width_study_cell_matches_pnl_series_for_that_profile_and_symbol(db_path
     assert xsp_w2_pnl == pytest.approx(12.0)
 
 
-def test_width_study_ignores_the_page_symbol_and_profile_filters(db_path):
+def test_width_study_ignores_the_page_symbol_and_profile_filters(db_path, monkeypatch, tmp_path):
     """Like by_profile above, the width-study cells always show every configured symbol's arms —
-    the page's symbol/profile selectors must not narrow this comparison view."""
+    the page's symbol/profile selectors must not narrow this comparison view.
+
+    Pins its own symbol set: the frame only builds cells for CONFIGURED symbols, so borrowing the
+    operator's config made this assert on an unrelated setting (it broke when the set narrowed to
+    SPX on 2026-08-01)."""
+    _write_config(monkeypatch, tmp_path, {"symbols": ["XSP", "QQQ"]})
     conn = dashboard._connect()
     _insert_trade(
         conn, ic_order_id="IC-1", symbol="XSP", status="expired", pnl=5.0, fees=0.0, risk_profile="width-2"

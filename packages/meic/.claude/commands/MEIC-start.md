@@ -3,8 +3,8 @@ Start the full MEIC session: verify the market-data producer, then the agent loo
 ## Step 1 — Market data (the standalone streamer)
 
 Since the 2026-07-21 producer cutover the **standalone streamer** (`packages/streamer`) is the suite's
-single writer of the shared stream cache; MEIC's own `src/streamer.py` is the disabled rollback path.
-**Never start `src/streamer.py` while the standalone streamer runs** — two producers means two DXLink
+single writer of the shared stream cache; MEIC's own `cherrypick/meic/streamer.py` is the disabled rollback path.
+**Never start `cherrypick/meic/streamer.py` while the standalone streamer runs** — two producers means two DXLink
 writers on one cache and one account.
 
 Check the producer (from the monorepo root):
@@ -22,7 +22,7 @@ python ../streamer/run.py    # blocks; run detached/hidden
 ```
 
 (Only if this box was deliberately rolled back to MEIC-as-producer — `modules.meic.streamer.enabled`
-true in the cherrypick config — use `python src/streamer.py --status` / start instead. Exactly one
+true in the cherrypick config — use `python -m cherrypick.meic.streamer --status` / start instead. Exactly one
 producer ever runs.)
 
 ## Step 2 — Agent loop
