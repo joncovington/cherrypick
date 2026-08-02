@@ -85,7 +85,7 @@ def all_profile_names(profiles: dict | None = None) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# tastytrade fee schedule — one home in cherrypick.core.fees (src/_core). The schedule, constants, and
+# tastytrade fee schedule — one home in cherrypick.core.fees. The schedule, constants, and
 # per-symbol broad-based index exchange fee live in the shared module (also used by db.py's live
 # fee estimate and, in equity form, by EarningsAgent). These thin wrappers keep MEIC's paper call
 # sites + tests stable and pass ndigits=4 so paper fees keep their exact sub-cent precision (2dp
@@ -181,7 +181,7 @@ def load_base_config() -> dict:
 def _merged_params(base_config: dict, profile: dict) -> dict:
     """Profile keys override base config keys, matching /set-risk-profile's partial-override
     semantics — unspecified keys (force_close_time, max_wing_width, etc.) fall through. Flat overlay
-    via cherrypick.core.profiles (src/_core)."""
+    via cherrypick.core.profiles."""
     return _profiles.merge_profile(base_config, profile)
 
 

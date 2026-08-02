@@ -54,11 +54,13 @@ reconciliation check, and (for flies) a deliberately narrow, manually-armed live
 ## Installing it
 
 ```bash
-# Download the project (the --recurse-submodules part pulls a shared library it needs)
-git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
-cd cherrypick
+# Download the project
+git clone https://github.com/joncovington/cherrypick-next.git
+cd cherrypick-next
 
-# Install the orchestrator
+# Install the shared core library first, then the orchestrator
+# (scripts/dev-install.ps1 or .sh does this step, and every package's, in one command)
+pip install -e packages/core
 cd packages/orchestrator
 pip install -e ".[dev]"
 ```

@@ -20,22 +20,19 @@ There is no separate MCP server to install — `src/tt.py` talks to tastytrade d
 
 ### 1. Clone the suite and enter this package
 
-`cherrypick-meic` is the MEIC module of the [cherrypick](../../../README.md) monorepo. Clone the whole
-suite with its shared-core submodules, then work from `packages/meic`:
+`cherrypick-meic` is the MEIC module of the [cherrypick-next](../../../README.md) monorepo. Clone the
+suite, then work from `packages/meic`:
 
 ```bash
-git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
-cd cherrypick/packages/meic
-# Already cloned without --recurse-submodules? Run once: git submodule update --init --recursive
+git clone https://github.com/joncovington/cherrypick-next.git
+cd cherrypick-next/packages/meic
 ```
-
-The `--recurse-submodules` flag (or the follow-up `git submodule update`) pulls the shared
-`cherrypick.core` library into `src/_core`; without it every `import cherrypick.core...` — and therefore
-the calendar and fee lookups the loop depends on — fails. All commands below run from `packages/meic`.
 
 ### 2. Install Python dependencies
 
 ```bash
+pip install -e ../core              # the shared cherrypick.core library — install this first, or
+                                     # every import cherrypick.core... fails (calendar, fee lookups)
 pip install -e .                    # installs tastytrade, keyring, pytz, flask (from pyproject.toml)
 pip install pytest pytest-asyncio   # optional — only needed to run the test suite
 ```

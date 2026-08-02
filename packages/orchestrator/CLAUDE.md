@@ -18,8 +18,8 @@ reporting, configuration, guardrails).
 ## Commands
 
 ```bash
-# Fresh clone: pull the cherrypick-core submodule (src/_core) first — imports fail without it.
-git submodule update --init
+# Fresh clone: install packages/core first, or import cherrypick.core fails everywhere.
+# From the repo root: scripts\dev-install.ps1 (or scripts/dev-install.sh) installs it and every package.
 
 # Run the CLI from a source checkout (do NOT create a root cherrypick.py — see Gotchas):
 python run.py <cmd>          # or, if pip-installed: `cherrypick <cmd>` / `python -m cherrypick`
@@ -44,7 +44,7 @@ python -m pytest                                   # default: `-m "not live" -q`
 python -m pytest tests/test_dashboard.py           # one file
 python -m pytest tests/test_report.py::test_report_unifies_pnl_net_of_costs_across_modules  # one test
 
-# Lint / format (line-length 110; src/_core is excluded)
+# Lint / format (line-length 110)
 ruff check .
 ruff format .
 ```
@@ -55,8 +55,9 @@ resolved **relative to the config file's directory** — never hardcode absolute
 ## Architecture
 
 **src-layout PEP 420 namespace.** `src/cherrypick/` has no root `__init__.py`, so it composes with the
-`cherrypick.core` package (from the `src/_core` submodule) under one `cherrypick.*` import namespace.
-`run.py` puts `src/` on `sys.path` and delegates to `cherrypick.cli:main`.
+`cherrypick.core` package (an installed dependency, `packages/core` in this monorepo) under one
+`cherrypick.*` import namespace. `run.py` puts `src/` on `sys.path` and delegates to
+`cherrypick.cli:main`.
 
 **Two halves, one config.** Everything hangs off `config.json` (`orchestrator/config.py`):
 - **Write side (the reliability guarantee):** `orchestrator/watchdog.py` runs on a schedule
@@ -113,10 +114,12 @@ filename. They were hardcoded to `earnings_*.last.json`, which was harmless whil
 module's SLA under another's name and the watchdog raised a CRITICAL titled for the wrong module. Use
 `paper.sla_state_prefix` to override for a module whose heartbeat files are named differently.
 
-**cherrypick-core is a submodule.** Shared logic (`cherrypick.core.profiles`, `.fees`, etc.) lives in
-`src/_core` and is put on `sys.path` by a bootstrap in `orchestrator/__init__.py` — so `import
-cherrypick.core...` resolves under `run.py`, pytest, and the editable console script alike. `src/_core`
-is excluded from ruff and from the packaged wheel.
+**cherrypick-core is an installed dependency.** Shared logic (`cherrypick.core.profiles`, `.fees`,
+etc.) lives in `packages/core` in this monorepo and is a normal editable-installed Python package —
+`pip install -e packages/core` before this one, or `import cherrypick.core...` fails under `run.py`,
+pytest, and the installed console script alike. There is no `sys.path` bootstrap for it anywhere in
+this package's source, and none should be reintroduced — `doctor` fails loudly
+(`cherrypick.core: not installed`) if the install step was skipped.
 
 ## Invariants (do not violate — the reasons are load-bearing)
 

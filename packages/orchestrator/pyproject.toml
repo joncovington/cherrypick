@@ -46,7 +46,7 @@ dev = ["pytest>=8", "ruff>=0.6", "keyrings.alt>=5"]
 cherrypick = "cherrypick.cli:main"
 
 [project.urls]
-Repository = "https://github.com/joncovington/cherrypick"
+Repository = "https://github.com/joncovington/cherrypick-next"
 
 [tool.setuptools.packages.find]
 # src layout + PEP 420 native namespace: `cherrypick` has no __init__.py, so it composes with the

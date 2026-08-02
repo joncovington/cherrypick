@@ -1,4 +1,4 @@
-"""Shared GEX math — thin shim over cherrypick.core.gex (src/_core submodule).
+"""Shared GEX math — thin shim over cherrypick.core.gex.
 
 The dollar-gamma / cumulative zero-gamma math and the compute_gex orchestration now live in the shared
 core, so tt.py's get_gex and dashboard.py's GEX chart use one implementation (the reason this math was

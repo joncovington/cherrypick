@@ -21,13 +21,12 @@ Suite-wide context lives in the root [documentation index](../../docs/README.md)
 ## Commands
 
 ```bash
-git submodule update --init          # pull the cherrypick-core submodule (src/_core); imports fail without it
 python run.py stream --symbol SPX    # run the streamer -> own data/stream_cache.db (standalone mode)
 python run.py record                 # always-on spot-trail recorder (run alongside the streamer; --once/--interval)
 python run.py dashboard --serve      # localhost live GEX view (default 127.0.0.1:5055)
 python run.py gex --symbol SPX --json # one-shot payload (what the orchestrator consumes)
 python -m pytest                     # tests seed a temp cache; no streamer required
-ruff check . && ruff format .        # line-length 110; src/_core excluded
+ruff check . && ruff format .        # line-length 110
 ```
 
 Config: copy `config.example.json` → `config.json` (git-ignored). Paths in it resolve relative to the
@@ -45,7 +44,6 @@ config file's directory — never hardcode absolute paths.
   → chart payload (reads the spot trail **read-only**). The pure, HTTP-free seam. `record_spots(cfg)`
   samples **every** offered symbol's spot into this module's **own** SQLite (`history_db`) so a trail has
   no gap when the viewer switches symbols; `run_recorder(cfg)` is the always-on loop (`run.py record`).
-  Bootstraps `src/_core` onto `sys.path`.
 - **src/serve.py** — stdlib `ThreadingHTTPServer`, loopback-only, one self-contained page polling
   `/api/gex`, with three tabs (GEX net-by-strike + spot trail, IV Skew, Volume) and a traded-symbol
   selector — full parity with MEIC's former in-dashboard GEX view. Spawns a background `record_spots`
@@ -54,9 +52,9 @@ config file's directory — never hardcode absolute paths.
 - **src/section.py** — maps `build_gex` output onto the `cherrypick.core.viz` section schema (metrics
   tiles + a signed net-GEX-by-strike bar series). This is what the orchestrator's generic dashboard renders.
 - **src/cli.py + run.py** — the CLI; `section --json` is the orchestrator's integration point.
-- **src/_core** — the shared `cherrypick-core` submodule; the GEX math (`core.gex`), the streaming engine
-  (`core.streamer`), and the cache schema (`core.streamcache`) live there so this module and
-  cherrypick-meic compute/stream identically. Excluded from ruff and the wheel.
+- **`cherrypick.core`** — an installed dependency (`packages/core` in this monorepo, `pip install -e
+  packages/core`); the GEX math (`core.gex`), the streaming engine (`core.streamer`), and the cache
+  schema (`core.streamcache`) live there so this module and cherrypick-meic compute/stream identically.
 
 ## Invariants (do not violate)
 
