@@ -23,10 +23,12 @@ async function mountBuilderView(view) {
 
   view.querySelector("#builder-chain").innerHTML = '<p class="loading">Loading option chain…</p>';
 
-  let stats, expirations;
+  let quote, expirations;
   try {
-    [stats, expirations] = await Promise.all([
-      fetch(`/api/symbol/${_builder.symbol}/stats`).then((r) => r.json()),
+    // /quote, not /stats -- the builder only needs spot + IV, and /stats is candle-history-backed
+    // (week52 range, avg volume) which means a cold DXLink backfill on every symbol selection.
+    [quote, expirations] = await Promise.all([
+      fetch(`/api/symbol/${_builder.symbol}/quote`).then((r) => r.json()),
       fetch(`/api/symbol/${_builder.symbol}/expirations`).then((r) => r.json()),
     ]);
   } catch {
@@ -34,8 +36,8 @@ async function mountBuilderView(view) {
       "Could not reach the scout server -- is it still running?";
     return;
   }
-  _builder.spot = stats.last_close ?? 100;
-  _builder.iv = stats.iv_30d ?? 0.3;
+  _builder.spot = quote.last ?? 100;
+  _builder.iv = quote.iv_30d ?? 0.3;
   spotInput.value = _builder.spot;
   ivInput.value = _builder.iv;
 

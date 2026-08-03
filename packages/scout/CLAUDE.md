@@ -83,7 +83,12 @@ Config: copy `config.example.json` → `config.json` (git-ignored), or omit it e
   symbol was ever going to survive the filter. `sse.py`'s `QuotePoller` (`/api/stream`) applies the
   same discipline to a live surface: one batched `quote_service.get_quotes` call per tick, and the
   poll loop itself exists only while at least one SSE client is connected — a closed browser tab
-  costs zero broker calls, not merely a throttled few.
+  costs zero broker calls, not merely a throttled few. `GET /api/symbol/{sym}/quote` (the builder's
+  symbol-selection prefill) is the same idea applied to route *choice*, not batching: it deliberately
+  bypasses `candle_service` (a cold DXLink backfill, measured at 38.8s for one symbol) for spot/IV,
+  since `quote_service`/`metrics_service` already answer that in a fraction of the time and the
+  builder never reads the candle-derived fields `/stats` exists for. Don't route a fast consumer
+  through a slow service's endpoint just because the data happens to be a superset of what it needs.
 - **Credentials in the OS keyring only**, via `services/session.py`'s `BrokerSession` (one
   process-wide `cherrypick.core.auth.session.SessionManager` over the shared `cherrypick-broker`
   keyring service, behind an `asyncio.Lock`, one retry on a 401-shaped failure). Never files, env

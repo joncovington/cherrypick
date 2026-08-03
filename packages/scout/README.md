@@ -259,6 +259,24 @@ uncached chain) reads as "still working" rather than a blank or frozen page. An 
 table stays visible during a strategy-switch refresh rather than being wiped, so only the very first
 load shows the indicator.
 
+### `GET /api/symbol/{sym}/quote` -- decoupling the builder from candle backfill
+
+Measured, not assumed: cold chain + quote fetches (`chain_service`) were never the bottleneck --
+1.66 s for a full multi-expiration chain structure, 0.14 s for a batched 66-leg quote snapshot,
+against a symbol touched for the first time all session. The actual latency the builder felt on
+every symbol selection was `GET /api/symbol/{sym}/stats`, which calls `candle_service.get_candles`
+*first* (for week52-range/avg-volume) before metrics -- and that call's cold-cache DXLink backfill
+took **38.8 s** for one live symbol in testing. The builder never even reads those two fields; it
+only ever used `stats.last_close` and `stats.iv_30d`.
+
+`GET /api/symbol/{sym}/quote` answers exactly that -- `quote_service` (stream-cache-first, REST
+fallback, **no DXLink at all**) for spot, `metrics_service` for IV -- and `static/js/payoff.js`'s
+`mountBuilderView` now calls it instead of `/stats`. Measured end to end against the real broker for
+a symbol untouched all session: **38.9 s -> 5.9 s**, a 6.6x reduction, with `/stats` left unchanged
+for the Symbol view (which genuinely needs the candle-derived fields `/quote` deliberately omits).
+`test_symbol_routes.py::test_api_symbol_quote_never_touches_candle_service` pins this as a
+regression guard, not just a one-time measurement.
+
 ## Verification (M8)
 
 All five surfaces (calendar, screener, symbol, builder, staged) were exercised end to end against a

@@ -93,3 +93,73 @@ def test_partial_symbol_renders_the_shell_with_the_symbol(app_and_client):
     assert "text/html" in resp.headers["content-type"]
     assert 'data-symbol="AAPL"' in resp.text
     assert "AAPL" in resp.text
+
+
+# --------------------------------------------------------------------------- /quote (builder prefill)
+
+
+def test_api_symbol_quote_combines_quote_and_metrics(app_and_client, monkeypatch):
+    app, client = app_and_client
+
+    async def fake_get_quotes(_session, symbols, **_kwargs):
+        return {s.upper(): {"last": 307.35, "change_pct": 0.01} for s in symbols}
+
+    async def fake_get_metrics(_conn, _session, symbols, _ttl):
+        return {s.upper(): {"iv_rank": "55", "iv_30d": 0.27} for s in symbols}
+
+    monkeypatch.setattr(_symbol_api.quote_service, "get_quotes", fake_get_quotes)
+    monkeypatch.setattr(_symbol_api.metrics_service, "get_metrics", fake_get_metrics)
+
+    resp = client.get("/api/symbol/aapl/quote", headers=_headers(app))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["symbol"] == "AAPL"
+    assert body["last"] == 307.35
+    assert body["iv_30d"] == 0.27
+    assert body["iv_rank"] == "55"
+    assert body["stale"] is False
+
+
+def test_api_symbol_quote_never_touches_candle_service(app_and_client, monkeypatch):
+    """The whole point of this route: it must never route through the candle-history-backed path
+    (candle_service's DXLink backfill), which is what made builder symbol selection slow."""
+    app, client = app_and_client
+
+    async def fail_get_candles(*_a, **_kw):
+        raise AssertionError("the /quote route must never call candle_service")
+
+    async def fake_get_quotes(_session, symbols, **_kwargs):
+        return {s.upper(): {"last": 100.0} for s in symbols}
+
+    async def fake_get_metrics(_conn, _session, symbols, _ttl):
+        return {s.upper(): {"iv_30d": 0.3} for s in symbols}
+
+    monkeypatch.setattr(_symbol_api.candle_service, "get_candles", fail_get_candles)
+    monkeypatch.setattr(_symbol_api.quote_service, "get_quotes", fake_get_quotes)
+    monkeypatch.setattr(_symbol_api.metrics_service, "get_metrics", fake_get_metrics)
+
+    resp = client.get("/api/symbol/aapl/quote", headers=_headers(app))
+    assert resp.status_code == 200
+    assert resp.json()["last"] == 100.0
+
+
+def test_api_symbol_quote_degrades_gracefully_with_no_data(app_and_client, monkeypatch):
+    app, client = app_and_client
+
+    async def empty_quotes(_session, _symbols, **_kwargs):
+        return {}
+
+    async def empty_metrics(_conn, _session, _symbols, _ttl):
+        return {}
+
+    monkeypatch.setattr(_symbol_api.quote_service, "get_quotes", empty_quotes)
+    monkeypatch.setattr(_symbol_api.metrics_service, "get_metrics", empty_metrics)
+
+    resp = client.get("/api/symbol/aapl/quote", headers=_headers(app))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["last"] is None
+    assert body["iv_30d"] is None
+    assert body["stale"] is True
