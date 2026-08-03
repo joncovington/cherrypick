@@ -313,6 +313,36 @@ def test_template_route_reports_unsupported_shapes_softly(template_route, monkey
     assert "reason" in body
 
 
+def test_suggestions_route_builds_three_cards_per_sentiment(template_route):
+    app, client = template_route
+    resp = client.get(
+        "/api/symbol/aapl/suggestions",
+        params={"expiration": "2026-09-18", "spot": 100.0, "sentiment": "high_iv", "iv": 0.3, "dte": 46},
+        headers=_headers(app),
+    )
+    body = resp.json()
+    assert body["ok"] is True
+    names = [c["name"] for c in body["cards"]]
+    assert names == ["put_vertical_credit", "short_strangle", "call_vertical_credit"]
+    for card in body["cards"]:
+        assert card["legs"]
+        assert card["pop"] is not None
+        assert 0.0 <= card["pop"] <= 1.0
+    strangle = body["cards"][1]
+    assert strangle["max_risk"]["unbounded"] is True  # honesty: a strangle's risk is unlimited
+    assert strangle["annualized_return"] is None  # no max_risk denominator -> no return claim
+
+
+def test_suggestions_route_rejects_unknown_sentiment(template_route):
+    app, client = template_route
+    resp = client.get(
+        "/api/symbol/aapl/suggestions",
+        params={"expiration": "2026-09-18", "spot": 100.0, "sentiment": "confused"},
+        headers=_headers(app),
+    )
+    assert resp.status_code == 400
+
+
 # --------------------------------------------------------------------------- /quote (builder prefill)
 
 
