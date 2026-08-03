@@ -144,6 +144,13 @@ async function mountBuilderView(view) {
   };
   view.querySelector("#add-call").onclick = () => addOption("call");
   view.querySelector("#add-put").onclick = () => addOption("put");
+  view.querySelectorAll(".chip.sentiment").forEach((chip) => {
+    chip.onclick = () => {
+      view.querySelectorAll(".chip.sentiment").forEach((c) => c.classList.remove("on"));
+      chip.classList.add("on");
+      loadSuggestions(view, chip.dataset.sentiment);
+    };
+  });
   view.querySelector("#add-stock").onclick = () => {
     _builder.legs.push({
       kind: "stock", strike: null, quantity: 1, price: _builder.spot,
@@ -157,6 +164,79 @@ async function mountBuilderView(view) {
   renderLegs(view);
   computePayoff(view);
   loadIncomeGrid(view); // fire-and-forget; the grid arrives when greeks do
+}
+
+const _TEMPLATE_LABELS = {
+  long_call: "Long Call",
+  long_put: "Long Put",
+  short_put: "Short Put",
+  covered_call: "Covered Call",
+  put_vertical_credit: "Put Vertical (credit)",
+  put_vertical_debit: "Put Vertical (debit)",
+  call_vertical_credit: "Call Vertical (credit)",
+  call_vertical_debit: "Call Vertical (debit)",
+  short_straddle: "Short Straddle",
+  short_strangle: "Short Strangle",
+  iron_condor: "Iron Condor",
+};
+
+function _miniPayoffSvg(curve, spot) {
+  if (!curve || !curve.length) return "";
+  const W = 150, H = 60, PAD = 6;
+  const spots = curve.map((p) => p.spot).concat([spot]);
+  const pnls = curve.map((p) => p.pnl).concat([0]);
+  const xMin = Math.min(...spots), xMax = Math.max(...spots);
+  const yAbsMax = Math.max(1, ...pnls.map(Math.abs));
+  const x = (v) => PAD + ((v - xMin) / (xMax - xMin || 1)) * (W - 2 * PAD);
+  const y = (v) => H / 2 - (v / yAbsMax) * (H / 2 - PAD);
+  const points = curve.map((p) => `${x(p.spot)},${y(p.pnl)}`).join(" ");
+  return `<svg viewBox="0 0 ${W} ${H}" class="mini-payoff">
+    <line x1="0" y1="${y(0)}" x2="${W}" y2="${y(0)}" stroke="#3a4652" stroke-width="1"/>
+    <polyline points="${points}" fill="none" stroke="#7fd1a8" stroke-width="1.5"/>
+  </svg>`;
+}
+
+async function loadSuggestions(view, sentiment) {
+  const el = view.querySelector("#suggestion-cards");
+  if (!el || !_builder.expiration) return;
+  el.innerHTML = '<p class="loading">Building suggestions…</p>';
+  const dte = _daysToExpiration(_builder.expiration);
+  const params = new URLSearchParams({
+    expiration: _builder.expiration,
+    spot: String(_builder.spot),
+    sentiment,
+  });
+  if (_builder.iv) params.set("iv", String(_builder.iv));
+  if (dte) params.set("dte", String(dte));
+  let res;
+  try {
+    res = await fetch(`/api/symbol/${_builder.symbol}/suggestions?${params.toString()}`).then((r) =>
+      r.json()
+    );
+  } catch {
+    el.innerHTML = "";
+    return;
+  }
+  const fmt = (v) => (typeof v === "number" ? v.toFixed(0) : "--");
+  const pct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(0)}%` : "--");
+  el.innerHTML = (res.cards || [])
+    .map(
+      (card, i) => `<button type="button" class="suggestion-card" data-i="${i}">
+        <b>${_TEMPLATE_LABELS[card.name] || card.name}</b>
+        ${_miniPayoffSvg(card.curve, _builder.spot)}
+        <span class="note">${card.cost < 0 ? "Credit" : "Cost"} $${fmt(Math.abs(card.cost))} ·
+          Risk ${card.max_risk.unbounded ? "∞" : "$" + fmt(Math.abs(card.max_risk.value))} ·
+          POP ${pct(card.pop)}</span>
+      </button>`
+    )
+    .join("");
+  el.querySelectorAll(".suggestion-card").forEach((btn) => {
+    btn.onclick = () => {
+      const card = res.cards[parseInt(btn.dataset.i, 10)];
+      view.querySelector("#template-select").value = "";
+      _setLegs(view, card.legs);
+    };
+  });
 }
 
 const _TIER_LABELS = { conservative: "Conservative", optimal: "Optimal", aggressive: "Aggressive" };

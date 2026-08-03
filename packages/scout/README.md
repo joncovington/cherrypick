@@ -384,6 +384,17 @@ A **Price by** toggle switches every non-manually-priced leg between mid and the
 changes. Changing strike/type re-pulls the leg's quote and live greeks from the chain, so the
 payoff, checklist, and greeks panels stay honest as the basket is edited.
 
+## Three-suggestion cards by sentiment
+
+Sentiment chips (Bullish / Bearish / High Implied Volatility) above the builder fetch
+`GET /api/symbol/{sym}/suggestions`: three candidate structures per sentiment, each card carrying
+the payoff engine's own numbers (cost/credit, max reward/risk with unbounded flagged honestly, POP,
+annualized when a defined-risk credit) and a mini payoff thumbnail; clicking a card loads its legs
+into the editor. The sentiment -> template mapping follows the reference platform's own three-card
+sets -- single option / debit vertical / credit vertical for the directional sentiments -- with one
+deliberate deviation: High IV suggests the ~16-delta short strangle rather than the ATM straddle
+(the user's call; OTM strikes leave room to be wrong where ATM ones don't).
+
 ## Income grid (short-put candidates by risk tier)
 
 `GET /api/symbol/{sym}/income-grid?spot=&kind=put` serves the risk-tolerance x DTE-bucket strike

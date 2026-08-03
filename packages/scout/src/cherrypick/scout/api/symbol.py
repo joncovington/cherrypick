@@ -202,6 +202,80 @@ async def get_income_grid(
     )
 
 
+_SENTIMENT_TEMPLATES = {
+    # Read from the reference platform's own three-card sets: directional sentiments offer a
+    # single option, a debit vertical, and a credit vertical on the supporting side; High IV
+    # offers premium selling around the expected range (short strangle rather than straddle,
+    # per the user's call -- OTM strikes leave room to be wrong where ATM ones don't).
+    "bullish": ("long_call", "call_vertical_debit", "put_vertical_credit"),
+    "bearish": ("long_put", "put_vertical_debit", "call_vertical_credit"),
+    "high_iv": ("put_vertical_credit", "short_strangle", "call_vertical_credit"),
+}
+
+
+@router.get("/api/symbol/{sym}/suggestions")
+async def get_suggestions(
+    request: Request,
+    sym: str,
+    expiration: str = Query(...),
+    spot: float = Query(...),
+    sentiment: str = Query("bullish"),
+    iv: float | None = Query(None),
+    dte: float | None = Query(None),
+) -> dict:
+    """Three candidate structures for a sentiment, each with the payoff engine's own numbers
+    (cost/credit, max reward/risk, POP, breakevens) and its legs ready to load into the editor."""
+    from ..analytics import describe as _describe
+    from ..analytics import payoff as _payoff_mod
+    from ..analytics import templates as _templates
+    from ..analytics.pop import pop as _pop_fn
+
+    if sentiment not in _SENTIMENT_TEMPLATES:
+        raise HTTPException(400, f"unknown sentiment {sentiment!r}")
+    app = request.app
+    _expirations, options = await _chain_with_quotes_and_greeks(app, sym, expiration)
+    if not options:
+        return {"ok": True, "symbol": sym.strip().upper(), "sentiment": sentiment, "cards": []}
+
+    try:
+        rate = await metrics_service.get_risk_free_rate(app.state.cache_db, app.state.broker_session)
+    except Exception:
+        rate = 0.0
+
+    cards = []
+    for name in _SENTIMENT_TEMPLATES[sentiment]:
+        legs = _templates.build(name, options, spot)
+        if not legs:
+            continue
+        parsed = [
+            _payoff_mod.Leg(
+                kind=lg["kind"], quantity=lg["quantity"], price=lg["price"], strike=lg.get("strike")
+            )
+            for lg in legs
+        ]
+        profit = _payoff_mod.max_profit(parsed)
+        loss = _payoff_mod.max_loss(parsed)
+        card = {
+            "name": name,
+            "legs": legs,
+            "curve": _payoff_mod.payoff_curve(parsed),
+            "breakevens": _payoff_mod.breakevens(parsed),
+            "max_reward": profit,
+            "max_risk": loss,
+            "cost": round(sum(lg["quantity"] * lg["price"] for lg in legs if lg["kind"] != "stock") * 100, 2),
+            "pop": None,
+        }
+        if iv and dte and iv > 0 and dte > 0:
+            card["pop"] = _pop_fn(parsed, spot, iv, dte / 365.0, rate)
+        credit = -card["cost"]
+        if credit > 0 and not loss["unbounded"] and loss["value"] is not None and dte:
+            card["annualized_return"] = _describe.annualized_return(credit, abs(loss["value"]), dte)
+        else:
+            card["annualized_return"] = None
+        cards.append(card)
+    return {"ok": True, "symbol": sym.strip().upper(), "sentiment": sentiment, "cards": cards}
+
+
 @router.get("/api/symbol/{sym}/warnings")
 async def get_warnings(request: Request, sym: str, expiration: str = Query(...)) -> dict:
     """Builder-facing event warnings for a chosen expiration: earnings reports and ex-dividend
