@@ -1,0 +1,20 @@
+{
+  "serve": { "host": "127.0.0.1", "port": 5057 },
+  "refresh": {
+    "quotes_seconds": 5,
+    "metrics_ttl_seconds": 900,
+    "chain_ttl_seconds": 300,
+    "candles_ttl_seconds": 3600,
+    "calendar_ttl_seconds": 3600,
+    "meta_ttl_days": 30
+  },
+  "screener": {
+    "target_dte_min": 30,
+    "target_dte_max": 45,
+    "short_delta": 0.30,
+    "wing_width_pct": 0.05,
+    "min_iv_rank": 25,
+    "min_liquidity_rank": 3
+  },
+  "dolt": { "host": "127.0.0.1", "port": 3306 }
+}

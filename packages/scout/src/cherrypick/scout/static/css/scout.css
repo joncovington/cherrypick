@@ -1,0 +1,96 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 14px/1.5 system-ui, sans-serif;
+  background: #12161a;
+  color: #d7dee5;
+}
+header {
+  padding: 12px 20px;
+  background: #181e24;
+  border-bottom: 1px solid #232c34;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+header b { font-size: 16px; }
+header .tag { color: #7a8794; font-size: 12px; }
+nav {
+  display: flex;
+  gap: 4px;
+  padding: 8px 20px 0;
+  background: #181e24;
+  border-bottom: 1px solid #232c34;
+}
+nav a {
+  padding: 8px 14px;
+  color: #9fb0bf;
+  text-decoration: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+nav a.on, nav a:hover { color: #fff; border-bottom-color: #4d9de0; }
+main {
+  display: flex;
+  gap: 0;
+  min-height: calc(100vh - 110px);
+}
+#content { flex: 1; padding: 18px 24px; max-width: 1100px; }
+aside#watchlist {
+  width: 220px;
+  border-left: 1px solid #232c34;
+  padding: 14px 18px;
+  flex-shrink: 0;
+}
+aside#watchlist h3 { font-size: 13px; color: #9fb0bf; margin: 0 0 8px; }
+aside#watchlist ul { list-style: none; margin: 0 0 10px; padding: 0; }
+aside#watchlist li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 0;
+  font-family: ui-monospace, monospace;
+}
+aside#watchlist li button {
+  background: none;
+  border: none;
+  color: #77848f;
+  cursor: pointer;
+  font-size: 14px;
+}
+aside#watchlist li button:hover { color: #e08b8b; }
+aside#watchlist form { display: flex; gap: 6px; }
+aside#watchlist input {
+  flex: 1;
+  min-width: 0;
+  background: #10151a;
+  color: #e6edf3;
+  border: 1px solid #2a343d;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+aside#watchlist button[type="submit"] {
+  background: #24303a;
+  color: #cfe3f5;
+  border: 1px solid #33414d;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.card {
+  background: #181e24;
+  border: 1px solid #232c34;
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+}
+.card h2 { font-size: 15px; margin: 0 0 8px; }
+.note { color: #77848f; font-size: 12px; }
+footer {
+  padding: 10px 20px;
+  font-size: 11px;
+  color: #5c6b78;
+  border-top: 1px solid #232c34;
+}
+footer a { color: #7fa8d1; }
