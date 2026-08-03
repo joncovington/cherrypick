@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [core, orchestrator, meic, earnings, gex, flies, streamer]
+        package: [core, orchestrator, meic, earnings, gex, flies, streamer, scout]
     defaults:
       run:
         working-directory: packages/${{ matrix.package }}
