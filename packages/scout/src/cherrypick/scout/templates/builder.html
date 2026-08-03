@@ -14,4 +14,12 @@
     <div id="builder-metrics" class="builder-metrics"></div>
   </div>
   <svg id="builder-svg" class="builder-svg" viewBox="0 0 640 280" preserveAspectRatio="none"></svg>
+  <div class="builder-row">
+    <label>Note <input id="builder-note" type="text" placeholder="optional"></label>
+    <div class="builder-actions">
+      <button id="builder-validate" type="button">Validate with broker</button>
+      <button id="builder-stage" type="button">Stage ticket</button>
+    </div>
+  </div>
+  <p id="builder-validation" class="note">Staging only -- no order is ever submitted.</p>
 </div>

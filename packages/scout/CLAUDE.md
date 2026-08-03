@@ -95,10 +95,10 @@ See README.md's file tree for what currently exists. Two things worth knowing up
 - `src/cherrypick/scout/` has an `__init__.py` (an ordinary package marker); its parent
   `src/cherrypick/` deliberately does not, so this composes with `cherrypick.core` and every sibling
   module under one `cherrypick.*` namespace root.
-- `services/cache.py`'s schema already declares tables the still-pending milestones will use
-  (`symbol_meta`, `staged_orders`) alongside the generic `kv_cache` TTL store and the
-  `candles`/`candle_meta` tables `candle_service` (M3) exercises — declared once so the schema
-  doesn't need a migration step per milestone.
+- `services/cache.py`'s schema declares every table up front rather than migrating per milestone:
+  the generic `kv_cache` TTL store, `candles`/`candle_meta` (`candle_service`, M3), `staged_orders`
+  (`services/staging.py`, M6), and `symbol_meta`, still unused — reserved for an optional future
+  sector/industry enrichment service, not load-bearing for anything today.
 - `analytics/` (`levels.py`, `payoff.py`, `pop.py`, `strategies.py`) is stdlib + dataclasses only, no
   I/O, so a future promotion to `cherrypick.core` is a file move once stable. Don't reach for a broker
   call or a cache read inside this package — that belongs in a `services/` module (`screener_service`

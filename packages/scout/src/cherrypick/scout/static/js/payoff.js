@@ -3,7 +3,7 @@
 /* ---------------- the leg-basket builder: chain picker + SVG payoff diagram ---------------- */
 
 function _builderState() {
-  return { symbol: null, expiration: null, legs: [], spot: null, iv: null };
+  return { symbol: null, expiration: null, legs: [], spot: null, iv: null, lastResult: null };
 }
 
 let _builder = _builderState();
@@ -47,6 +47,8 @@ async function mountBuilderView(view) {
     _builder.iv = parseFloat(ivInput.value) || _builder.iv;
     computePayoff(view);
   };
+  view.querySelector("#builder-validate").onclick = () => validateOrder(view);
+  view.querySelector("#builder-stage").onclick = () => stageTicket(view);
 
   renderLegs(view);
   computePayoff(view);
@@ -96,6 +98,8 @@ function addLeg(view, data) {
     strike: parseFloat(data.strike),
     quantity: parseInt(data.dir, 10),
     price: parseFloat(data.price) || 0,
+    symbol: data.symbol,
+    expiration: _builder.expiration,
   });
   renderLegs(view);
   computePayoff(view);
@@ -136,8 +140,69 @@ async function computePayoff(view) {
   if (_builder.iv != null) params.set("iv", String(_builder.iv));
 
   const result = await fetch(`/api/payoff?${params.toString()}`).then((r) => r.json());
+  _builder.lastResult = result;
   renderPayoffSvg(svg, result, _builder.spot);
   renderMetrics(metricsEl, result);
+}
+
+/* ---------------- order staging: validate (dry-run) and stage a leg basket ---------------- */
+
+function _orderLegs() {
+  return _builder.legs.map((leg) => ({ symbol: leg.symbol, quantity: leg.quantity, price: leg.price }));
+}
+
+function _netCredit() {
+  // Total dollar credit (positive) or debit (negative) across the basket at 1x -- the same *100
+  // convention the screener's `credit` column uses, not the per-share order price.
+  return -_builder.legs.reduce((sum, leg) => sum + leg.quantity * leg.price, 0) * 100;
+}
+
+function renderDryRunSummary(result) {
+  if (!result) return '<span class="note">not validated</span>';
+  if (!result.ok) {
+    const problems = (result.problems || []).join("; ");
+    return `<span class="notice">${result.error || "validation failed"}${problems ? ": " + problems : ""}</span>`;
+  }
+  const bp = result.buying_power || {};
+  const warnCount = (bp.warnings || []).length;
+  return `<span>Account ${result.account_number || "—"} · BP change ${bp.change_in_buying_power ?? "—"}${
+    warnCount ? ` · ${warnCount} warning(s)` : ""
+  }</span>`;
+}
+
+async function validateOrder(view) {
+  const el = view.querySelector("#builder-validation");
+  if (!_builder.legs.length) {
+    el.textContent = "Add a leg first.";
+    return;
+  }
+  el.textContent = "Validating…";
+  const result = await postJson("/api/order/dry-run", { legs: _orderLegs() });
+  el.innerHTML = renderDryRunSummary(result);
+}
+
+async function stageTicket(view) {
+  const el = view.querySelector("#builder-validation");
+  if (!_builder.legs.length) {
+    el.textContent = "Add a leg first.";
+    return;
+  }
+  const note = view.querySelector("#builder-note").value.trim() || null;
+  const result = _builder.lastResult;
+  const maxRisk =
+    result && result.max_loss && !result.max_loss.unbounded ? Math.abs(result.max_loss.value) : null;
+  el.textContent = "Staging…";
+  const res = await postJson("/api/staged", {
+    symbol: _builder.symbol,
+    strategy: "custom",
+    legs: _orderLegs(),
+    credit: _netCredit(),
+    max_risk: maxRisk,
+    note,
+  });
+  el.innerHTML = res.ok
+    ? `Staged. ${renderDryRunSummary(res.ticket.dry_run)}`
+    : `<span class="notice">${res.error || "stage failed"}</span>`;
 }
 
 function renderMetrics(el, result) {

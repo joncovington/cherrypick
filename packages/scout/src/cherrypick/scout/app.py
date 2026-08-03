@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from . import config as _config
 from .api import builder as _builder_api
 from .api import calendar as _calendar_api
+from .api import orders as _orders_api
 from .api import payoff as _payoff_api
 from .api import screener as _screener_api
 from .api import symbol as _symbol_api
@@ -65,6 +66,7 @@ def create_app(cfg: dict | None = None) -> FastAPI:
     app.include_router(_payoff_api.router)
     app.include_router(_builder_api.router)
     app.include_router(_screener_api.router)
+    app.include_router(_orders_api.router)
 
     app.mount("/static/vendor", StaticFiles(directory=str(STATIC_DIR / "vendor")), name="vendor")
     app.mount("/static/css", StaticFiles(directory=str(STATIC_DIR / "css")), name="css")
