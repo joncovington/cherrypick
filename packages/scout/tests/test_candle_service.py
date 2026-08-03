@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -28,87 +29,72 @@ def _bars(*, start_t=1_700_000_000, n=3):
 
 
 @pytest.mark.asyncio
-async def test_cold_cache_seeds_from_dolt_once(conn, monkeypatch):
+async def test_cold_cache_seeds_the_full_backfill_window_from_dxlink(conn, monkeypatch):
     calls = []
 
-    async def fake_dolt(_cfg, symbol):
-        calls.append(symbol)
+    async def fake_dxlink(_session, symbol, start):
+        calls.append((symbol, start))
         return _bars(n=3)
 
-    async def fake_dxlink(*_a, **_kw):
-        return None
-
-    async def fake_synth(*_a, **_kw):
-        return None
-
-    monkeypatch.setattr(candle_service, "_fetch_dolt_ohlcv", fake_dolt)
     monkeypatch.setattr(candle_service, "_dxlink_tail", fake_dxlink)
-    monkeypatch.setattr(candle_service, "_synth_from_snapshot", fake_synth)
 
-    cfg = {"refresh": {"candles_ttl_seconds": 3600}}
-    now = 1_700_000_000 + 2 * 86400  # right at the last Dolt bar -- not stale yet
+    now = 1_700_000_000 + 2 * 86400
+    cfg = {"refresh": {"candles_ttl_seconds": 3600, "candles_backfill_days": 365}}
     result = await candle_service.get_candles(conn, object(), cfg, "aapl", now=now)
 
-    assert calls == ["AAPL"]
+    assert len(calls) == 1
+    symbol, start = calls[0]
+    assert symbol == "AAPL"
+    # The seed must request the whole configured window, not a few-week tail.
+    expected_start = datetime.now(tz=UTC).date() - timedelta(days=365)
+    assert start == expected_start
     assert result["ok"] is True
-    assert result["symbol"] == "AAPL"
     assert len(result["bars"]) == 3
-    assert result["stale"] is False
 
 
 @pytest.mark.asyncio
-async def test_a_warm_cache_within_ttl_never_touches_dolt_or_dxlink(conn, monkeypatch):
-    dolt_calls, dxlink_calls = [], []
+async def test_a_warm_cache_within_ttl_never_touches_dxlink(conn, monkeypatch):
+    dxlink_calls = []
 
-    async def fake_dolt(_cfg, symbol):
-        dolt_calls.append(symbol)
+    async def fake_dxlink(_session, symbol, start):
+        dxlink_calls.append(symbol)
         return _bars(n=1, start_t=1000)
 
-    async def fake_dxlink(*_a, **_kw):
-        dxlink_calls.append(1)
-        return None
-
-    monkeypatch.setattr(candle_service, "_fetch_dolt_ohlcv", fake_dolt)
     monkeypatch.setattr(candle_service, "_dxlink_tail", fake_dxlink)
 
     cfg = {"refresh": {"candles_ttl_seconds": 3600}}
     await candle_service.get_candles(conn, object(), cfg, "AAPL", now=1000.0)
     await candle_service.get_candles(conn, object(), cfg, "AAPL", now=1500.0)
 
-    assert dolt_calls == ["AAPL"]  # only the initial seed
-    assert dxlink_calls == []
+    assert dxlink_calls == ["AAPL"]  # only the initial seed
 
 
 @pytest.mark.asyncio
-async def test_a_stale_cache_tops_up_via_dxlink(conn, monkeypatch):
-    async def fake_dolt(_cfg, symbol):
-        return _bars(n=1, start_t=1000)
-
-    tail_calls = []
+async def test_a_stale_cache_tops_up_incrementally_from_the_last_real_bar(conn, monkeypatch):
+    calls = []
 
     async def fake_dxlink(_session, symbol, start):
-        tail_calls.append((symbol, start))
+        calls.append(start)
+        if len(calls) == 1:
+            return _bars(n=1, start_t=1000)
         return _bars(n=1, start_t=100000)
 
-    monkeypatch.setattr(candle_service, "_fetch_dolt_ohlcv", fake_dolt)
     monkeypatch.setattr(candle_service, "_dxlink_tail", fake_dxlink)
 
     cfg = {"refresh": {"candles_ttl_seconds": 10}}
     await candle_service.get_candles(conn, object(), cfg, "AAPL", now=1000.0)
     result = await candle_service.get_candles(conn, object(), cfg, "AAPL", now=200000.0)
 
-    assert len(tail_calls) == 1
+    assert len(calls) == 2
+    # The top-up asks for the day after the last cached bar, never the whole window again.
+    assert calls[1] == datetime.fromtimestamp(1000, tz=UTC).date() + timedelta(days=1)
     # Honest: this response IS the just-topped-up read, and the flag reflects the staleness check.
     assert result["stale"] is True
-    bars_t = [b["t"] for b in result["bars"]]
-    assert 100000 in bars_t
+    assert 100000 in [b["t"] for b in result["bars"]]
 
 
 @pytest.mark.asyncio
 async def test_a_failed_dxlink_falls_back_to_snapshot_synthesis(conn, monkeypatch):
-    async def fake_dolt(_cfg, symbol):
-        return _bars(n=1, start_t=1000)
-
     async def fake_dxlink(*_a, **_kw):
         return None
 
@@ -118,12 +104,10 @@ async def test_a_failed_dxlink_falls_back_to_snapshot_synthesis(conn, monkeypatc
         synth_calls.append(symbol)
         return [{"t": 500000, "o": 9, "h": 9, "l": 9, "c": 9, "v": None}]
 
-    monkeypatch.setattr(candle_service, "_fetch_dolt_ohlcv", fake_dolt)
     monkeypatch.setattr(candle_service, "_dxlink_tail", fake_dxlink)
     monkeypatch.setattr(candle_service, "_synth_from_snapshot", fake_synth)
 
     cfg = {"refresh": {"candles_ttl_seconds": 10}}
-    await candle_service.get_candles(conn, object(), cfg, "AAPL", now=1000.0)
     result = await candle_service.get_candles(conn, object(), cfg, "AAPL", now=500000.0)
 
     assert synth_calls == ["AAPL"]
@@ -132,9 +116,6 @@ async def test_a_failed_dxlink_falls_back_to_snapshot_synthesis(conn, monkeypatc
 
 @pytest.mark.asyncio
 async def test_a_failed_attempt_is_floored_and_not_retried_immediately(conn, monkeypatch):
-    async def fake_dolt(_cfg, symbol):
-        return _bars(n=1, start_t=1000)
-
     attempt_calls = []
 
     async def fake_dxlink(*_a, **_kw):
@@ -144,49 +125,25 @@ async def test_a_failed_attempt_is_floored_and_not_retried_immediately(conn, mon
     async def fake_synth(*_a, **_kw):
         return None
 
-    monkeypatch.setattr(candle_service, "_fetch_dolt_ohlcv", fake_dolt)
     monkeypatch.setattr(candle_service, "_dxlink_tail", fake_dxlink)
     monkeypatch.setattr(candle_service, "_synth_from_snapshot", fake_synth)
 
     cfg = {"refresh": {"candles_ttl_seconds": 10}}
-    await candle_service.get_candles(conn, object(), cfg, "AAPL", now=1000.0)  # seeds
-    await candle_service.get_candles(conn, object(), cfg, "AAPL", now=100000.0)  # stale, attempts, fails
-    await candle_service.get_candles(conn, object(), cfg, "AAPL", now=100005.0)  # still within retry floor
+    await candle_service.get_candles(conn, object(), cfg, "AAPL", now=100000.0)  # attempts, fails
+    await candle_service.get_candles(conn, object(), cfg, "AAPL", now=100005.0)  # within retry floor
 
     assert len(attempt_calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_dolt_unreachable_falls_through_to_dxlink(conn, monkeypatch):
-    async def fake_dolt(_cfg, symbol):
-        return None  # Dolt down
+async def test_concurrent_requests_for_the_same_symbol_seed_only_once(conn, monkeypatch):
+    calls = []
 
     async def fake_dxlink(_session, symbol, start):
-        return _bars(n=1, start_t=42)
-
-    monkeypatch.setattr(candle_service, "_fetch_dolt_ohlcv", fake_dolt)
-    monkeypatch.setattr(candle_service, "_dxlink_tail", fake_dxlink)
-
-    cfg = {"refresh": {"candles_ttl_seconds": 3600}}
-    result = await candle_service.get_candles(conn, object(), cfg, "AAPL", now=1000.0)
-    assert any(b["t"] == 42 for b in result["bars"])
-
-
-@pytest.mark.asyncio
-async def test_concurrent_requests_for_the_same_symbol_seed_dolt_only_once(conn, monkeypatch):
-    calls = []
-    started = asyncio.Event()
-
-    async def fake_dolt(_cfg, symbol):
         calls.append(symbol)
-        started.set()
         await asyncio.sleep(0.02)
         return _bars(n=1, start_t=1000)
 
-    async def fake_dxlink(*_a, **_kw):
-        return None
-
-    monkeypatch.setattr(candle_service, "_fetch_dolt_ohlcv", fake_dolt)
     monkeypatch.setattr(candle_service, "_dxlink_tail", fake_dxlink)
 
     cfg = {"refresh": {"candles_ttl_seconds": 3600}}

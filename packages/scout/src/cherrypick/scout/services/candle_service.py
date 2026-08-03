@@ -1,21 +1,28 @@
-"""Symbol candle history: a one-time Dolt seed plus a short-lived DXLink tail top-up.
+"""Symbol candle history, sourced entirely from tastytrade: a one-time DXLink history seed plus
+incremental top-ups over the same mechanism.
 
-**Dolt seed** -- `stocks.ohlcv` (`act_symbol`, `date`, `open`, `high`, `low`, `close`, `volume`) gives
-years of daily history essentially for free, no websocket, no rate limit. Fetched once per symbol
-(when `candle_meta` has no row yet); after that, this module never re-reads Dolt for that symbol.
+DXLink's ``Candle`` feed with a ``start_time`` serves full daily history, not just recent bars --
+so the first-ever fetch for a symbol seeds ``refresh.candles_backfill_days`` (default 12 months)
+in one short-lived connection, and every later fetch asks only for the gap since
+``candle_meta.last_backfill``. The connection is **short-lived and
+bounded** (an idle timeout with no new event, and a hard wall-clock cap regardless), opened on
+demand and never held resident -- consistent with the suite's "only the streamer talks to the
+broker" rule being a *streaming-path* rule; this is the one narrow, bounded exception, documented
+in the package CLAUDE.md.
 
-**DXLink tail** -- Dolt is a periodic snapshot, so it lags real time by however long since the last
-sync. The gap from Dolt's last row to now is filled by a **short-lived** `DXLinkStreamer` (bounded:
-an idle timeout with no new event, and a hard wall-clock cap regardless), opened on demand and never
-held resident -- consistent with the suite's "only the streamer talks to the broker" rule being a
-*streaming-path* rule; this is the one narrow, bounded exception, documented in the package CLAUDE.md.
+History note: the original design seeded deep history from the shared Dolt ``stocks.ohlcv`` table
+with DXLink as a 3-week tail top-up. That table's primary key is date-led, so the per-symbol seed
+query full-scans 28.5M rows (~2 minutes, measured live) and timed out on every symbol, every time
+-- leaving each symbol stuck at a DXLink-tail-only ~15 bars. Rather than index a shared database
+this package treats as read-only, the seed moved to the broker's own history feed; Dolt remains
+only on the calendar path (``calendar_service``), where its query is keyed sanely.
 
-Retries are floored independently of the candle TTL itself: a failed tail fetch (no credentials,
-DXLink misbehaving, a network hiccup) does not advance `candle_meta.last_backfill` -- that column
-stays truthful to the newest *real* bar in the cache -- but a short separate "last attempt" marker
-stops every page load from retrying the broker while a real gap is still open. On total DXLink
-failure the fallback is a single synthesized daily-close bar from a snapshot equity quote, so the
-chart still shows *today* rather than nothing.
+Retries are floored independently of the candle TTL itself: a failed fetch (no credentials, DXLink
+misbehaving, a network hiccup) does not advance ``candle_meta.last_backfill`` -- that column stays
+truthful to the newest *real* bar in the cache -- but a short separate "last attempt" marker stops
+every page load from retrying the broker while a real gap is still open. On total DXLink failure
+the fallback is a single synthesized daily-close bar from a snapshot equity quote, so the chart
+still shows *today* rather than nothing.
 """
 
 from __future__ import annotations
@@ -30,12 +37,13 @@ from . import cache as _cache
 from .session import BrokerSession
 
 PERIOD = "1d"
-_DOLT_DATABASE = "stocks"
-_DOLT_CONNECT_TIMEOUT_SECONDS = 5
-_DOLT_QUERY_TIMEOUT_SECONDS = 30
 _DXLINK_IDLE_TIMEOUT_SECONDS = 3.0
-_DXLINK_HARD_TIMEOUT_SECONDS = 20.0
-_INITIAL_TAIL_LOOKBACK_DAYS = 21
+_DXLINK_HARD_TIMEOUT_SECONDS = 30.0
+# 12 months ≈ 252 trading bars (user's call): covers SMA200, the 52-week range, and every 1M trend
+# candidate. Known tradeoff: TEMA(126)'s 4x-period warmup needs ~504 bars, so the 6M TEMA trend
+# candidate abstains (None) at this window -- raise `refresh.candles_backfill_days` if the
+# label-fitting experiment ends up favoring TEMA at the 6M horizon.
+_DEFAULT_BACKFILL_DAYS = 365
 _ATTEMPT_BUCKET = "candle_attempt"
 
 # One lock per (symbol, period) so two concurrent requests for the same symbol never double-backfill.
@@ -50,50 +58,6 @@ def _lock_for(symbol: str, period: str) -> asyncio.Lock:
 
 def _day_epoch(d: date) -> int:
     return int(datetime.combine(d, datetime.min.time(), tzinfo=UTC).timestamp())
-
-
-def _fetch_dolt_ohlcv_sync(cfg: dict, symbol: str) -> list[dict]:
-    import mysql.connector
-
-    dolt_cfg = cfg.get("dolt", {}) or {}
-    conn = mysql.connector.connect(
-        host=dolt_cfg.get("host", "127.0.0.1"),
-        port=int(dolt_cfg.get("port", 3306)),
-        user=dolt_cfg.get("user", "root"),
-        database=_DOLT_DATABASE,
-        connection_timeout=dolt_cfg.get("connect_timeout_seconds", _DOLT_CONNECT_TIMEOUT_SECONDS),
-    )
-    try:
-        cur = conn.cursor(dictionary=True)
-        cur.execute(
-            "SELECT `date`, open, high, low, close, volume FROM ohlcv WHERE act_symbol = %s ORDER BY `date`",
-            (symbol,),
-        )
-        rows = cur.fetchall()
-    finally:
-        conn.close()
-    return [
-        {
-            "t": _day_epoch(row["date"]),
-            "o": float(row["open"]),
-            "h": float(row["high"]),
-            "l": float(row["low"]),
-            "c": float(row["close"]),
-            "v": float(row["volume"]) if row["volume"] is not None else None,
-        }
-        for row in rows
-    ]
-
-
-async def _fetch_dolt_ohlcv(cfg: dict, symbol: str) -> list[dict] | None:
-    """`None` means Dolt is unreachable -- the caller degrades to DXLink/synthesis alone."""
-    try:
-        return await asyncio.wait_for(
-            asyncio.to_thread(_fetch_dolt_ohlcv_sync, cfg, symbol),
-            timeout=_DOLT_CONNECT_TIMEOUT_SECONDS + _DOLT_QUERY_TIMEOUT_SECONDS,
-        )
-    except Exception:
-        return None
 
 
 async def _dxlink_tail(session: BrokerSession, symbol: str, start: date) -> list[dict] | None:
@@ -172,18 +136,13 @@ async def get_candles(
 ) -> dict[str, Any]:
     now = time.time() if now is None else now
     symbol = symbol.strip().upper()
-    ttl = cfg.get("refresh", {}).get("candles_ttl_seconds", 3600)
+    refresh_cfg = cfg.get("refresh", {})
+    ttl = refresh_cfg.get("candles_ttl_seconds", 3600)
+    backfill_days = refresh_cfg.get("candles_backfill_days", _DEFAULT_BACKFILL_DAYS)
     retry_floor = min(ttl, 60.0)
 
     async with _lock_for(symbol, period):
         last_backfill = _cache.get_candle_meta(conn, symbol, period)
-
-        if last_backfill is None:
-            dolt_bars = await _fetch_dolt_ohlcv(cfg, symbol)
-            if dolt_bars:
-                _cache.write_candles(conn, symbol, period, dolt_bars)
-                last_backfill = dolt_bars[-1]["t"]
-                _cache.set_candle_meta(conn, symbol, period, last_backfill)
 
         stale = last_backfill is None or (now - last_backfill) > ttl
         if stale:
@@ -194,7 +153,7 @@ async def get_candles(
                 start = (
                     datetime.fromtimestamp(last_backfill, tz=UTC).date() + timedelta(days=1)
                     if last_backfill
-                    else datetime.now(tz=UTC).date() - timedelta(days=_INITIAL_TAIL_LOOKBACK_DAYS)
+                    else datetime.now(tz=UTC).date() - timedelta(days=backfill_days)
                 )
                 tail_bars = await _dxlink_tail(session, symbol, start)
                 if not tail_bars:

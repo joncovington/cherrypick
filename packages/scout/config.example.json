@@ -5,6 +5,7 @@
     "metrics_ttl_seconds": 900,
     "chain_ttl_seconds": 300,
     "candles_ttl_seconds": 3600,
+    "candles_backfill_days": 365,
     "calendar_ttl_seconds": 3600,
     "meta_ttl_days": 30,
     "stream_cache_max_age_seconds": 10
