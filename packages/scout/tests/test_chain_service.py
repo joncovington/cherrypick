@@ -186,6 +186,66 @@ async def test_get_greeks_falls_back_to_dxlink_and_caches(conn, monkeypatch, tmp
 
 
 @pytest.mark.asyncio
+async def test_income_grid_picks_nearest_delta_strike_per_tier(conn, monkeypatch, tmp_path):
+    """Buckets choose the nearest in-window expiration; tiers choose the strike whose |delta| is
+    nearest 15/25/35 -- the reverse-engineered rule the module documents."""
+    import time as _time
+    from datetime import UTC, datetime, timedelta
+
+    monkeypatch.setattr(chain_service._streamcache, "cache_path", lambda: tmp_path / "absent.db")
+    now = _time.time()
+    today = datetime.fromtimestamp(now, tz=UTC).date()
+    exp_short = (today + timedelta(days=25)).isoformat()
+    exp_far = (today + timedelta(days=200)).isoformat()  # outside every bucket
+
+    strikes = [70, 80, 90, 95, 100]
+    deltas = {70: -0.08, 80: -0.16, 90: -0.27, 95: -0.36, 100: -0.50}
+
+    def _opt(strike):
+        return {
+            "symbol": f"OPT P{strike}",
+            "streamer_symbol": f".OPT{strike}",
+            "strike": float(strike),
+            "expiration": exp_short,
+            "option_type": "P",
+        }
+
+    async def fake_get_expirations(_conn, _session, _cfg, symbol):
+        return {
+            "ok": True,
+            "symbol": symbol,
+            "as_of": now,
+            "stale": False,
+            "expirations": {exp_short: [_opt(s) for s in strikes], exp_far: [_opt(100)]},
+        }
+
+    async def fake_get_greeks(_conn, _session, streamer_symbols, **_kw):
+        return {
+            s: {"delta": deltas[int(s.replace(".OPT", ""))], "gamma": 0, "theta": 0, "vega": 0,
+                "iv": 0.30, "price": 1.0}
+            for s in streamer_symbols
+        }
+
+    async def fake_get_quotes(_conn, _session, symbols, **_kw):
+        return {s: {"bid": 1.9, "ask": 2.1, "mid": 2.0, "mark": 2.0} for s in symbols}
+
+    monkeypatch.setattr(chain_service, "get_expirations", fake_get_expirations)
+    monkeypatch.setattr(chain_service, "get_greeks", fake_get_greeks)
+    monkeypatch.setattr(chain_service, "get_quotes", fake_get_quotes)
+
+    result = await chain_service.income_grid(conn, object(), {}, "OPT", spot=100.0, now=now)
+    assert set(result["grid"]) == {"short"}  # the 200-day expiration fits no bucket
+    tiers = result["grid"]["short"]["tiers"]
+    assert tiers["conservative"]["strike"] == 80.0  # |Δ|=.16, nearest .15
+    assert tiers["optimal"]["strike"] == 90.0  # .27 nearest .25
+    assert tiers["aggressive"]["strike"] == 95.0  # .36 nearest .35
+    cell = tiers["conservative"]
+    assert cell["credit"] == pytest.approx(200.0)
+    assert cell["annualized_return"] > cell["raw_return"]
+    assert 0.0 < cell["pow"] < 1.0
+
+
+@pytest.mark.asyncio
 async def test_get_greeks_missing_symbols_are_absent_not_errors(conn, monkeypatch, tmp_path):
     monkeypatch.setattr(chain_service._streamcache, "cache_path", lambda: tmp_path / "absent.db")
 

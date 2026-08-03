@@ -67,6 +67,71 @@ async function mountBuilderView(view) {
 
   renderLegs(view);
   computePayoff(view);
+  loadIncomeGrid(view); // fire-and-forget; the grid arrives when greeks do
+}
+
+const _TIER_LABELS = { conservative: "Conservative", optimal: "Optimal", aggressive: "Aggressive" };
+const _BUCKET_LABELS = { short: "20–39d", medium: "40–70d", long: "71–180d" };
+
+async function loadIncomeGrid(view) {
+  const el = view.querySelector("#income-grid");
+  if (!el || !_builder.spot) return;
+  el.innerHTML = '<p class="loading">Loading income grid…</p>';
+  let res;
+  try {
+    res = await fetch(
+      `/api/symbol/${_builder.symbol}/income-grid?spot=${_builder.spot}&kind=put`
+    ).then((r) => r.json());
+  } catch {
+    el.innerHTML = "";
+    return;
+  }
+  const buckets = ["short", "medium", "long"].filter((b) => res.grid && res.grid[b]);
+  if (!buckets.length) {
+    el.innerHTML = "";
+    return;
+  }
+  const pct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(0)}%` : "--");
+  let html = `<p><b>Short put grid</b> <span class="note">strikes at ~15/25/35 delta (live greeks); click to load as a leg</span></p>`;
+  html += `<table class="income-grid"><thead><tr><th></th>${buckets
+    .map((b) => `<th>${_BUCKET_LABELS[b]}<br><span class="note">${res.grid[b].expiration}</span></th>`)
+    .join("")}</tr></thead><tbody>`;
+  for (const tier of ["conservative", "optimal", "aggressive"]) {
+    html += `<tr><td class="chip-label">${_TIER_LABELS[tier]}</td>`;
+    for (const b of buckets) {
+      const cell = res.grid[b].tiers[tier];
+      if (!cell) {
+        html += "<td>--</td>";
+        continue;
+      }
+      html += `<td><button type="button" class="grid-cell" data-cell='${JSON.stringify(cell)}'>
+        ${cell.strike}p <span class="note">Δ${cell.delta.toFixed(2)}</span><br>
+        <span class="note">POW ${pct(cell.pow)} · ${pct(cell.annualized_return)}/yr*</span>
+      </button></td>`;
+    }
+    html += "</tr>";
+  }
+  html += "</tbody></table>";
+  el.innerHTML = html;
+  el.querySelectorAll(".grid-cell").forEach((btn) => {
+    btn.onclick = () => {
+      const cell = JSON.parse(btn.dataset.cell);
+      _builder.legs = [
+        {
+          kind: "put",
+          strike: cell.strike,
+          quantity: -1,
+          price: cell.mid || 0,
+          symbol: cell.symbol,
+          expiration: cell.expiration,
+        },
+      ];
+      _builder.expiration = cell.expiration;
+      renderLegs(view);
+      computePayoff(view);
+      loadWarnings(view);
+    };
+  });
 }
 
 async function loadWarnings(view) {
