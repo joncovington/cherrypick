@@ -9,7 +9,27 @@
         <option value="covered_call">Covered call</option>
       </select>
     </label>
+    <div class="chip-group" data-filter="iv">
+      <span class="chip-label">IV Rank</span>
+      <button type="button" class="chip" data-bucket="lt50">&lt;50</button>
+      <button type="button" class="chip" data-bucket="gte50">&ge;50</button>
+    </div>
+    <div class="chip-group" data-filter="liquidity">
+      <span class="chip-label">Liquidity</span>
+      <button type="button" class="chip" data-bucket="not">Not liquid</button>
+      <button type="button" class="chip" data-bucket="somewhat">Somewhat</button>
+      <button type="button" class="chip" data-bucket="very">Very</button>
+    </div>
+    <div class="chip-group" data-filter="cap">
+      <span class="chip-label">Cap size</span>
+      <button type="button" class="chip" data-bucket="small">Small</button>
+      <button type="button" class="chip" data-bucket="medium">Medium</button>
+      <button type="button" class="chip" data-bucket="large">Large</button>
+      <button type="button" class="chip" data-bucket="mega">Mega</button>
+    </div>
   </div>
+  <p class="note">No chips selected in a group = that group's default gate (config thresholds) applies;
+    selecting chips replaces the default for that dimension.</p>
   <div id="screener-table"></div>
   <p id="screener-skipped" class="note"></p>
 </div>

@@ -170,6 +170,24 @@ function _fmtNum(v) {
   return typeof v === "number" ? v.toFixed(2) : "—";
 }
 
+function _chipFilterParams(view) {
+  // Selected chips per group -> comma-separated query params. An empty group sends nothing, which
+  // the API treats as "apply the config default gate for that dimension".
+  const params = new URLSearchParams();
+  view.querySelectorAll(".chip-group").forEach((group) => {
+    const selected = [...group.querySelectorAll(".chip.on")].map((c) => c.dataset.bucket);
+    if (selected.length) params.set(group.dataset.filter, selected.join(","));
+  });
+  return params;
+}
+
+function _fmtCap(v) {
+  if (typeof v !== "number") return "—";
+  if (v >= 1e12) return `${(v / 1e12).toFixed(1)}T`;
+  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
+  return `${(v / 1e6).toFixed(0)}M`;
+}
+
 async function mountScreenerView(view) {
   const select = view.querySelector("#screener-strategy");
   const tableEl = view.querySelector("#screener-table");
@@ -180,9 +198,11 @@ async function mountScreenerView(view) {
     // A fresh cache can take a while to warm (cold candle/chain/quote fetches); an existing table
     // stays visible during a refresh rather than being wiped, so only the first-ever load shows this.
     if (!_screenerTable) tableEl.innerHTML = '<p class="loading">Scanning the watchlist…</p>';
+    const params = _chipFilterParams(view);
+    params.set("strategy", select.value);
     let result;
     try {
-      result = await fetch(`/api/screener?strategy=${select.value}`).then((r) => r.json());
+      result = await fetch(`/api/screener?${params.toString()}`).then((r) => r.json());
     } catch {
       tableEl.textContent = "Could not reach the scout server -- is it still running?";
       return;
@@ -196,6 +216,7 @@ async function mountScreenerView(view) {
       spot: c.spot,
       iv_rank: c.iv_rank,
       liquidity: c.liquidity_rating,
+      market_cap: c.market_cap,
       skew_edge: c.skew_edge,
       strikes: c.legs.map((l) => l.strike).join(" / "),
       dte: c.dte,
@@ -229,6 +250,7 @@ async function mountScreenerView(view) {
           { title: "Spot", field: "spot", formatter: (c) => _fmtNum(c.getValue()) },
           { title: "IV rank", field: "iv_rank", formatter: (c) => _fmtPct(c.getValue()) },
           { title: "Liquidity", field: "liquidity" },
+          { title: "Mkt cap", field: "market_cap", formatter: (c) => _fmtCap(c.getValue()) },
           { title: "Skew edge", field: "skew_edge", formatter: (c) => _fmtNum(c.getValue()) },
           { title: "Strikes", field: "strikes" },
           { title: "DTE", field: "dte" },
@@ -252,6 +274,12 @@ async function mountScreenerView(view) {
   }
 
   select.onchange = load;
+  view.querySelectorAll(".chip").forEach((chip) => {
+    chip.onclick = () => {
+      chip.classList.toggle("on");
+      load();
+    };
+  });
   await load();
 }
 

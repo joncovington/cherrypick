@@ -34,6 +34,55 @@ def test_passes_prefilter_gates_on_iv_rank_and_liquidity():
     assert screener_service._passes_prefilter(None, cfg) is False
 
 
+# --------------------------------------------------------------------------- chip filters
+
+
+def test_chip_buckets():
+    assert screener_service._iv_bucket(0.30) == "lt50"
+    assert screener_service._iv_bucket(0.50) == "gte50"
+    assert screener_service._liquidity_bucket(4) == "very"
+    assert screener_service._liquidity_bucket(3) == "somewhat"
+    assert screener_service._liquidity_bucket(1) == "not"
+    assert screener_service._cap_bucket(1e9) == "small"
+    assert screener_service._cap_bucket(5e9) == "medium"
+    assert screener_service._cap_bucket(5e10) == "large"
+    assert screener_service._cap_bucket(3e12) == "mega"
+
+
+def test_an_explicit_iv_filter_replaces_the_config_gate():
+    """Selecting the <50 chip must show a 10%-IVR name the default min_iv_rank=25 gate would veto."""
+    cfg = {"screener": {"min_iv_rank": 25, "min_liquidity_rank": 3}}
+    info = {"iv_rank": "0.10", "liquidity_rating": 4}
+    assert screener_service._passes_prefilter(info, cfg, {"iv": {"lt50"}}) is True
+    assert screener_service._passes_prefilter(info, cfg, {"iv": {"gte50"}}) is False
+
+
+def test_an_explicit_liquidity_filter_replaces_the_config_gate():
+    cfg = {"screener": {"min_iv_rank": 25, "min_liquidity_rank": 3}}
+    info = {"iv_rank": "0.60", "liquidity_rating": 2}
+    assert screener_service._passes_prefilter(info, cfg, {"liquidity": {"not"}}) is True
+    assert screener_service._passes_prefilter(info, cfg, {"liquidity": {"very"}}) is False
+
+
+def test_a_cap_filter_gates_on_market_cap_and_excludes_missing():
+    cfg = {"screener": {}}
+    large = {"iv_rank": "0.60", "liquidity_rating": 4, "market_cap": 5e10}
+    no_cap = {"iv_rank": "0.60", "liquidity_rating": 4}
+    assert screener_service._passes_prefilter(large, cfg, {"cap": {"large", "mega"}}) is True
+    assert screener_service._passes_prefilter(large, cfg, {"cap": {"small"}}) is False
+    # a missing market cap can't prove membership -- excluded while the filter is active
+    assert screener_service._passes_prefilter(no_cap, cfg, {"cap": {"large"}}) is False
+    # ...but with no cap filter, a missing market cap is not a gate at all
+    assert screener_service._passes_prefilter(no_cap, cfg, {}) is True
+
+
+def test_unfiltered_dimensions_keep_their_config_gates():
+    """A cap-only chip selection must not disable the IV/liquidity defaults."""
+    cfg = {"screener": {"min_iv_rank": 25, "min_liquidity_rank": 3}}
+    low_iv = {"iv_rank": "0.10", "liquidity_rating": 4, "market_cap": 5e10}
+    assert screener_service._passes_prefilter(low_iv, cfg, {"cap": {"large"}}) is False
+
+
 def test_pick_expiration_prefers_a_monthly_within_the_window():
     # From 2027-02-05: 2027-03-12 is 35 days out (a weekly Friday), 2027-03-19 is 42 days out (the
     # 3rd Friday, i.e. the standard monthly) -- both land in [30, 45], so the monthly must win.
