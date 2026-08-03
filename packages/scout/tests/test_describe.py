@@ -73,6 +73,39 @@ def test_score_matches_the_apd_same_underlying_vertical_fit():
     assert _describe.score(0.2949, call_vertical_wide, max_reward, max_loss) == pytest.approx(144, abs=1)
 
 
+def test_score_matches_the_avgo_iron_condors_and_verticals():
+    """AVGO, 2026-08-05: three put verticals of increasing width plus two iron condors of very
+    different wingspan (POP 12%-48%), all landing within 0.5 points of the closed form -- the
+    same formula generalizes past 2-leg verticals to a 4-leg iron condor."""
+    put_vertical_390_300 = [
+        Leg(kind="put", quantity=1, price=0.0, strike=390.0),
+        Leg(kind="put", quantity=-1, price=0.0, strike=300.0),
+    ]
+    max_reward = {"value": 6078.0, "unbounded": False}
+    max_loss = {"value": -2922.0, "unbounded": False}
+    assert _describe.score(0.4243, put_vertical_390_300, max_reward, max_loss) == pytest.approx(131, abs=1)
+
+    iron_condor_narrow = [
+        Leg(kind="put", quantity=1, price=0.0, strike=370.0),
+        Leg(kind="put", quantity=-1, price=0.0, strike=380.0),
+        Leg(kind="call", quantity=-1, price=0.0, strike=390.0),
+        Leg(kind="call", quantity=1, price=0.0, strike=400.0),
+    ]
+    max_reward = {"value": 905.0, "unbounded": False}
+    max_loss = {"value": -95.0, "unbounded": False}
+    assert _describe.score(0.1223, iron_condor_narrow, max_reward, max_loss) == pytest.approx(129, abs=1)
+
+    iron_condor_wide = [
+        Leg(kind="put", quantity=1, price=0.0, strike=340.0),
+        Leg(kind="put", quantity=-1, price=0.0, strike=380.0),
+        Leg(kind="call", quantity=-1, price=0.0, strike=390.0),
+        Leg(kind="call", quantity=1, price=0.0, strike=430.0),
+    ]
+    max_reward = {"value": 3083.0, "unbounded": False}
+    max_loss = {"value": -917.0, "unbounded": False}
+    assert _describe.score(0.3062, iron_condor_wide, max_reward, max_loss) == pytest.approx(134, abs=1)
+
+
 def test_score_is_none_for_a_naked_long_option():
     """The one shape the fit is known to fail on (module docstring): a single long option's
     theoretical max reward (near stock-to-zero) makes reward/risk huge and the formula unusable."""
