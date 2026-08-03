@@ -68,6 +68,30 @@ def test_skew_bucket_dead_zones_noise_level_skew():
     assert screener_service._skew_bucket(1.0, 0.0) is None
 
 
+def test_sector_bucket_slugifies_the_display_name():
+    assert screener_service._sector_bucket("Technology") == "technology"
+    assert screener_service._sector_bucket("Basic Materials") == "basic_materials"
+    assert screener_service._sector_bucket(None) is None
+
+
+def test_sector_buckets_match_every_slugified_sector_name():
+    from cherrypick.scout.services import sector_service as _sector_service
+
+    for name in _sector_service.SECTORS:
+        assert screener_service._sector_bucket(name) in screener_service.SECTOR_BUCKETS
+
+
+def test_an_explicit_sector_filter_replaces_the_config_gate():
+    cfg = {"screener": {"min_iv_rank": 25, "min_liquidity_rank": 3}}
+    info = {"iv_rank": "0.30", "liquidity_rating": 4}
+    assert screener_service._passes_prefilter(info, cfg, {"sector": {"technology"}}, "Technology") is True
+    assert screener_service._passes_prefilter(info, cfg, {"sector": {"energy"}}, "Technology") is False
+    # A symbol with no known sector can't prove membership -- excluded while the filter is active.
+    assert screener_service._passes_prefilter(info, cfg, {"sector": {"technology"}}, None) is False
+    # No sector filter -- unaffected either way.
+    assert screener_service._passes_prefilter(info, cfg, {}, None) is True
+
+
 def test_an_explicit_iv_filter_replaces_the_config_gate():
     """Selecting the <50 chip must show a 10%-IVR name the default min_iv_rank=25 gate would veto."""
     cfg = {"screener": {"min_iv_rank": 25, "min_liquidity_rank": 3}}
@@ -331,6 +355,65 @@ async def test_run_screener_sentiment_filter_skips_non_matching_skew(conn, monke
     )
     assert bearish["candidates"] == []
     assert bearish["skipped"][0]["reason"] == "sentiment chip filtered"
+
+
+@pytest.mark.asyncio
+async def test_run_screener_sector_filter_skips_non_matching_sector(conn, monkeypatch):
+    today = date(2027, 2, 5)
+    monthly = date(2027, 3, 19)
+
+    async def fake_get_metrics(_conn, _session, _symbols, _ttl, now=None):
+        return {"AAPL": {"iv_rank": "0.50", "liquidity_rating": 4, "iv_30d": 0.3}}
+
+    async def fake_get_rate(_conn, _session, now=None):
+        return 0.05
+
+    async def fake_get_candles(_conn, _session, _cfg, symbol, now=None):
+        bar = {"t": 0, "o": 100, "h": 101, "l": 99, "c": 100.0, "v": 1}
+        return {"ok": True, "symbol": symbol, "bars": [bar]}
+
+    async def fake_get_sector_map(_conn, _session, now=None):
+        return {"AAPL": "Technology"}
+
+    chain_options = [
+        _opt(85, "P", 0.50), _opt(90, "P", 1.00), _opt(95, "P", 2.00),
+        _opt(105, "C", 2.00), _opt(110, "C", 1.00),
+    ]
+    quotes_by_symbol = {o["symbol"]: o["quote"] for o in chain_options}
+
+    async def fake_get_expirations(_conn, _session, _cfg, symbol):
+        return {
+            "ok": True, "symbol": symbol, "as_of": 0, "stale": False,
+            "expirations": {monthly.isoformat(): chain_options},
+        }
+
+    async def fake_get_quotes(_conn, _session, symbols):
+        return {sym: quotes_by_symbol[sym] for sym in symbols if sym in quotes_by_symbol}
+
+    monkeypatch.setattr(screener_service.metrics_service, "get_metrics", fake_get_metrics)
+    monkeypatch.setattr(screener_service.metrics_service, "get_risk_free_rate", fake_get_rate)
+    monkeypatch.setattr(screener_service.candle_service, "get_candles", fake_get_candles)
+    monkeypatch.setattr(screener_service.sector_service, "get_sector_map", fake_get_sector_map)
+    monkeypatch.setattr(screener_service.chain_service, "get_expirations", fake_get_expirations)
+    monkeypatch.setattr(screener_service.chain_service, "get_quotes", fake_get_quotes)
+
+    import datetime as _dt
+
+    now = _dt.datetime.combine(today, _dt.time(hour=12)).timestamp()
+    cfg = {"screener": {}, "refresh": {}}
+
+    matching = await screener_service.run_screener(
+        conn, _FakeSession(), cfg, ["aapl"], "put_credit_spread",
+        filters={"sector": {"technology"}}, now=now,
+    )
+    assert len(matching["candidates"]) == 1
+    assert matching["candidates"][0]["sector"] == "Technology"
+
+    non_matching = await screener_service.run_screener(
+        conn, _FakeSession(), cfg, ["aapl"], "put_credit_spread",
+        filters={"sector": {"energy"}}, now=now,
+    )
+    assert non_matching["candidates"] == []
 
 
 @pytest.mark.asyncio

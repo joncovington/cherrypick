@@ -12,6 +12,11 @@ right after candles are fetched -- before the expiration/chain/quote calls a non
 would otherwise trigger -- and Sentiment (`_skew_bucket`, on `strategies.directional_edge`'s
 chain-implied skew) checks after the candidate's strikes are windowed, since it needs real option
 quotes to exist first.
+
+The Sector chip DOES filter in the zero-broker-call pre-filter, alongside IV/liquidity/cap --
+`sector_service.get_sector_map` is one cached-daily call (tastytrade's own public "Sectors"
+watchlists, not a third-party source) independent of the watchlist size, so there's no per-symbol
+cost to folding it in early.
 """
 
 from __future__ import annotations
@@ -25,7 +30,7 @@ from ..analytics import strategies as _strategies
 from ..analytics import trend as _trend
 from ..analytics.payoff import Leg
 from ..analytics.pop import pop as _pop
-from . import candle_service, chain_service, metrics_service
+from . import candle_service, chain_service, metrics_service, sector_service
 from .session import BrokerSession
 
 _STRIKE_WINDOW = 15
@@ -81,6 +86,9 @@ LIQUIDITY_BUCKETS = {"not", "somewhat", "very"}
 CAP_BUCKETS = {"small", "medium", "large", "mega"}
 TREND_BUCKETS = {"bullish", "neutral", "bearish"}
 SENTIMENT_BUCKETS = {"bullish", "neutral", "bearish"}
+# Slugs of tastytrade's own 11 public "Sectors" watchlist names (sector_service.SECTORS) --
+# lowercase/underscored so they're plain URL-safe query values like every other bucket name.
+SECTOR_BUCKETS = {name.lower().replace(" ", "_") for name in sector_service.SECTORS}
 
 # The skew-edge "neutral" dead zone: scout's own choice, not reverse-engineered from any observed
 # reference-platform threshold -- there's no screenshot evidence for a skew-sentiment chip, so this
@@ -138,7 +146,15 @@ def _skew_bucket(skew_edge: float | None, spot: float) -> str | None:
     return "neutral"
 
 
-def _passes_prefilter(info: dict | None, cfg: dict, filters: dict | None = None) -> bool:
+def _sector_bucket(sector_name: str | None) -> str | None:
+    """The display name from `sector_service` (e.g. "Basic Materials") -> its URL-safe bucket slug
+    (e.g. "basic_materials")."""
+    return sector_name.lower().replace(" ", "_") if sector_name else None
+
+
+def _passes_prefilter(
+    info: dict | None, cfg: dict, filters: dict | None = None, sector: str | None = None
+) -> bool:
     screener_cfg = cfg.get("screener", {})
     filters = filters or {}
 
@@ -165,6 +181,14 @@ def _passes_prefilter(info: dict | None, cfg: dict, filters: dict | None = None)
         # never guessed. (Metrics rows cached before market_cap was serialized lack it until their
         # TTL expires; that reads as "excluded", not an error.)
         if market_cap is None or _cap_bucket(float(market_cap)) not in cap_filter:
+            return False
+
+    sector_filter = filters.get("sector")
+    if sector_filter:
+        # A symbol absent from every tastytrade sector watchlist (an ETF, an index, an
+        # unclassified name) can't prove membership -- excluded while the filter is active,
+        # same posture as a missing market_cap under an active cap filter.
+        if _sector_bucket(sector) not in sector_filter:
             return False
 
     return True
@@ -223,9 +247,15 @@ async def run_screener(
         risk_free_rate = await metrics_service.get_risk_free_rate(conn, session, now=now)
     except Exception:
         risk_free_rate = 0.0
+    try:
+        sector_map = await sector_service.get_sector_map(conn, session, now=now)
+    except Exception:
+        sector_map = {}
 
     survivors = [
-        s.upper() for s in watchlist_symbols if _passes_prefilter(metrics.get(s.upper()), cfg, filters)
+        s.upper()
+        for s in watchlist_symbols
+        if _passes_prefilter(metrics.get(s.upper()), cfg, filters, sector_map.get(s.upper()))
     ]
 
     candidates: list[dict] = []
@@ -284,6 +314,7 @@ async def run_screener(
             "iv_rank": iv_frac,
             "liquidity_rating": info.get("liquidity_rating"),
             "market_cap": info.get("market_cap"),
+            "sector": sector_map.get(symbol),
             "trend_1m": trend_1m,
             "skew_edge": skew_edge,
             **candidate,
