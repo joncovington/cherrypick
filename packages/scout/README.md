@@ -46,7 +46,7 @@ ruff check . && ruff format .                     # lint/format
 `config.json` (git-ignored, machine-local; falls back to `~/.cherrypick/config/scout.json`, then
 `config.example.json`, then built-in defaults). See `config.example.json` for the full shape:
 `serve.{host,port}`, `refresh.*` (per-service cache TTLs), `screener.*` (screening thresholds used
-from M5 onward), `dolt.{host,port}` (used from M2 onward for the earnings-calendar/history reads).
+from M5 onward), `dolt.{host,port,user,connect_timeout_seconds}` (the earnings-calendar Dolt read).
 
 Runtime data lives under the shared suite home (`cherrypick.core.home`, relocatable via
 `$CHERRYPICK_HOME`): `~/.cherrypick/data/scout/` (`cache.db`, `watchlist.json`) and
@@ -59,21 +59,43 @@ packages/scout/
   CLAUDE.md  README.md  config.example.json  pyproject.toml  run.py
   src/cherrypick/
     scout/
-      __init__.py  cli.py  config.py  app.py  serve.py  security.py
-      api/          __init__.py  watchlist.py
-      services/     __init__.py  cache.py  watchlist.py
+      __init__.py  cli.py  config.py  app.py  serve.py  security.py  templates.py
+      api/          __init__.py  watchlist.py  calendar.py
+      services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
+                     calendar_service.py
       static/       index.html  css/scout.css  js/scout.js
         vendor/     lightweight-charts.standalone.production.js  tabulator.min.js
                      tabulator_midnight.min.css  htmx.min.js  alpine.min.js
                      LICENSE-lightweight-charts.txt  LICENSE-tabulator.txt  LICENSE-htmx.txt
                      LICENSE-alpinejs.txt  LICENSES.md
+      templates/    calendar.html
   tests/            conftest.py  test_config.py  test_cache_ttl.py  test_watchlist.py
                     test_security.py  test_self_contained.py  test_api_routes.py
+                    test_session.py  test_metrics_service.py  test_calendar_service.py
+                    test_calendar_routes.py
 ```
 
-The calendar, screener, symbol, and builder surfaces (with their own `api/`/`services/`/`analytics/`
-modules and `templates/` htmx partials) land in later milestones on this branch — the nav nodes for
-them already render in `static/index.html` but their routes don't exist yet.
+The screener, symbol, and builder surfaces (with their own `api/`/`services/`/`analytics/` modules)
+land in later milestones on this branch — their nav nodes already render in `static/index.html` but
+the routes don't exist yet.
+
+## The earnings calendar (M2)
+
+`GET /api/calendar?days=14` / `GET /partial/calendar` union two sources with different honesty
+profiles: **metrics** (fresh, watchlist-scoped — `tastytrade.metrics.get_market_metrics`'s earnings
+date/consensus-EPS/IV-rank fields, refreshed on `refresh.metrics_ttl_seconds`) and **Dolt** (broad,
+stale-labeled — the `earnings` Dolt database's `earnings_calendar` table, a periodic snapshot rather
+than a live feed, covering every symbol Dolt knows about, not just the watchlist). When both name the
+same symbol/date the metrics row wins; a row from Dolt alone is always `stale: true`. If Dolt is
+unreachable the calendar quietly degrades to metrics-only with a notice, rather than erroring. Expected
+move (`0.85 x front straddle`) is fetched only for metrics-sourced (watchlist) rows, via a single
+narrow ATM chain snapshot cached under `refresh.calendar_ttl_seconds` — not a full chain fetch, and
+never for the broad Dolt rows, which could number in the hundreds.
+
+This is also the first milestone that talks to the broker: `services/session.py`'s `BrokerSession`
+holds one process-wide `cherrypick.core.auth.session.SessionManager` over the shared
+`cherrypick-broker` keyring service. Missing credentials or a broker hiccup degrade the metrics side
+of the calendar to empty rather than raising — the page always renders.
 
 ## Security
 

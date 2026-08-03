@@ -86,7 +86,25 @@ aside#watchlist button[type="submit"] {
   margin-bottom: 16px;
 }
 .card h2 { font-size: 15px; margin: 0 0 8px; }
+.card h2 .note { display: inline; margin-left: 8px; }
 .note { color: #77848f; font-size: 12px; }
+.notice {
+  color: #e0b453;
+  font-size: 12px;
+  background: #241d10;
+  border: 1px solid #4a3a1a;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 0 0 10px;
+}
+table.calendar { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.calendar th, table.calendar td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid #232c34;
+}
+table.calendar th { color: #9fb0bf; font-weight: 600; }
+table.calendar tr.stale td { color: #9fb0bf; }
 footer {
   padding: 10px 20px;
   font-size: 11px;

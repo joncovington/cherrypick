@@ -81,6 +81,18 @@ def open_db(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def peek(conn: sqlite3.Connection, bucket: str, key: str) -> tuple[Any, float] | None:
+    """Read-only lookup, no fetch -- for services that refill several keys in one batched call
+    (e.g. `metrics_service`, where one `get_market_metrics` covers every stale symbol at once) and so
+    can't express their refresh as a single `get_or_fetch` per key."""
+    return _read(conn, bucket, key)
+
+
+def put(conn: sqlite3.Connection, bucket: str, key: str, payload: Any, fetched_at: float) -> None:
+    """Write-only store, paired with `peek` for the same batched-refill case."""
+    _write(conn, bucket, key, payload, fetched_at)
+
+
 def _read(conn: sqlite3.Connection, bucket: str, key: str) -> tuple[Any, float] | None:
     row = conn.execute(
         "SELECT payload, fetched_at FROM kv_cache WHERE bucket = ? AND key = ?", (bucket, key)

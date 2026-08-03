@@ -17,9 +17,11 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config as _config
+from .api import calendar as _calendar_api
 from .api import watchlist as _watchlist_api
 from .security import SecurityMiddleware, new_csrf_token
 from .services import cache as _cache
+from .services.session import BrokerSession
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -49,10 +51,12 @@ def create_app(cfg: dict | None = None) -> FastAPI:
     app.state.cfg = cfg
     app.state.csrf_token = new_csrf_token()
     app.state.watchlist_path = _config.watchlist_path()
+    app.state.broker_session = BrokerSession()
 
     app.add_middleware(SecurityMiddleware, port=port, csrf_token=app.state.csrf_token)
 
     app.include_router(_watchlist_api.router)
+    app.include_router(_calendar_api.router)
 
     app.mount("/static/vendor", StaticFiles(directory=str(STATIC_DIR / "vendor")), name="vendor")
     app.mount("/static/css", StaticFiles(directory=str(STATIC_DIR / "css")), name="css")

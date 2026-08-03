@@ -40,7 +40,7 @@ _DEFAULTS: dict = {
         "min_iv_rank": 25,
         "min_liquidity_rank": 3,
     },
-    "dolt": {"host": "127.0.0.1", "port": 3306},
+    "dolt": {"host": "127.0.0.1", "port": 3306, "user": "root", "connect_timeout_seconds": 5},
 }
 
 

@@ -47,19 +47,24 @@ Config: copy `config.example.json` → `config.json` (git-ignored), or omit it e
   `application/json` content type, and a matching local `Origin` when one is present. See
   `security.py`; do not add a mutating route that bypasses `SecurityMiddleware`.
 - **Never write a cache this module doesn't own.** `services/cache.py` opens only this module's own
-  `~/.cherrypick/data/scout/cache.db`. When later milestones read a Dolt database or the shared stream
-  cache, they read read-only and never write it.
+  `~/.cherrypick/data/scout/cache.db`. `calendar_service`'s Dolt read (`earnings.earnings_calendar`)
+  and, later, any shared stream-cache read are read-only and never write their source.
 - **The streamer comes before API calls, whenever practical.** Once chain/quote services exist
   (M4/M5/M7), prefer the cached/batched path over a fresh broker round trip; the broker API is for
   acting (dry-run) and for confirming what only it can know. `services/cache.py`'s `get_or_fetch` is
   the shared mechanism — TTL cache, stale-serve on fetch failure, honest `as_of`/`stale` on every
   payload.
-- **Rate-limit discipline.** One batched metrics call per screener refresh (M5); chains fetched only
-  for pre-filter survivors; a manual `?fresh=1` refresh is still floored (`cache.get_or_fetch`'s
-  `refresh_floor_seconds`) so a refresh button can't be used to hammer the broker.
-- **Credentials in the OS keyring only**, via a `cherrypick.core.auth.session.SessionManager` over the
-  shared `cherrypick-broker` keyring service (from M4 onward, when a broker session is first needed).
-  Never files, env vars, or logs.
+- **Rate-limit discipline.** `metrics_service` batches every stale/missing symbol into one
+  `get_market_metrics` call rather than one call per symbol (the calendar and, from M5, the screener
+  both go through it); chains fetched only for pre-filter survivors; a manual `?fresh=1` refresh is
+  still floored (`cache.get_or_fetch`'s `refresh_floor_seconds`) so a refresh button can't be used to
+  hammer the broker. `calendar_service`'s straddle-based expected move is fetched only for
+  watchlist/metrics rows, never for the broad Dolt rows -- those can number in the hundreds.
+- **Credentials in the OS keyring only**, via `services/session.py`'s `BrokerSession` (one
+  process-wide `cherrypick.core.auth.session.SessionManager` over the shared `cherrypick-broker`
+  keyring service, behind an `asyncio.Lock`, one retry on a 401-shaped failure). Never files, env
+  vars, or logs. Missing credentials must degrade a service to an empty/partial result, never a
+  hard error — `calendar_service` does this for its metrics side.
 - **Account numbers masked** to `****1234` anywhere they surface (dry-run responses, staged tickets).
 - **Portable paths only.** Runtime data/logs/config resolve through `cherrypick.core.home`
   (`data_dir("scout")`, `logs_dir("scout")`, `config_path("scout")`), relocatable in one move via
