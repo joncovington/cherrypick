@@ -64,6 +64,7 @@ def create_app(cfg: dict | None = None) -> FastAPI:
         app.state.broker_session,
         app.state.watchlist_path,
         interval=cfg.get("refresh", {}).get("quotes_seconds", 5),
+        stream_cache_max_age_seconds=cfg.get("refresh", {}).get("stream_cache_max_age_seconds", 10),
     )
 
     app.add_middleware(SecurityMiddleware, port=port, csrf_token=app.state.csrf_token)

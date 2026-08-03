@@ -21,6 +21,8 @@ async function mountBuilderView(view) {
   const spotInput = view.querySelector("#builder-spot");
   const ivInput = view.querySelector("#builder-iv");
 
+  view.querySelector("#builder-chain").innerHTML = '<p class="loading">Loading option chain…</p>';
+
   let stats, expirations;
   try {
     [stats, expirations] = await Promise.all([
@@ -69,6 +71,7 @@ async function loadChain(view) {
   const chainEl = view.querySelector("#builder-chain");
   const expSelect = view.querySelector("#builder-expiration");
   expSelect.value = _builder.expiration;
+  chainEl.innerHTML = '<p class="loading">Loading option chain…</p>';
   let data;
   try {
     data = await fetch(
