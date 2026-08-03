@@ -96,7 +96,11 @@ async function mountBuilderView(view) {
   const templateSel = view.querySelector("#template-select");
   templateSel.onchange = async () => {
     if (!templateSel.value) return;
-    const legs = await _templateCall(view, { action: "build", name: templateSel.value });
+    const params = { action: "build", name: templateSel.value };
+    if (_builder.iv) params.iv = String(_builder.iv);
+    const dte = _builder.expiration ? _daysToExpiration(_builder.expiration) : null;
+    if (dte) params.template_dte = String(dte);
+    const legs = await _templateCall(view, params);
     if (legs) _setLegs(view, legs);
   };
   view.querySelector("#price-by").onchange = (e) => {

@@ -9,6 +9,12 @@ own published mechanics where known: credit verticals sell ~50 delta and buy ~25
 credit-spread methodology), covered calls sell 15-20 delta (its income guidance), strangles sell
 ~16 delta (the 1-sigma practitioner standard recorded in docs/strategy-screening-parameters.md).
 
+DEBIT verticals follow a rule measured from nine observed reference suggestion cards
+(2026-08-03): the LONG leg snaps to the nearest at/just-in-the-money strike, and the SHORT leg
+sits ~one expected move (spot * iv * sqrt(dte/365)) from spot -- the sold strikes clustered at
+0.84-1.05x EM across both sides and multiple tenors when recomputed from each card's own
+simulator IV. When iv/dte aren't supplied, the old delta targets remain the fallback.
+
 Every builder returns a list of leg dicts or ``None`` when the chain can't support the shape --
 callers show "not available for this expiration", never a half-built basket.
 """
@@ -79,15 +85,34 @@ def _distinct(*options: dict | None) -> bool:
     return len({(o["strike"], o["option_type"]) for o in picked}) == len(picked)
 
 
-def build(name: str, chain: list[dict], spot: float) -> list[dict] | None:
-    """Legs for the named template, or None when the chain can't support it."""
+def _nearest_itm(options: list[dict], spot: float, side: str) -> dict | None:
+    """The nearest at/just-in-the-money strike -- the observed long-leg rule for debit spreads
+    and long options (e.g. the 135 call suggested at a 138.88 spot)."""
+    if side == "call":
+        itm = [o for o in options if o["strike"] <= spot]
+        return max(itm, key=lambda o: o["strike"]) if itm else (options[0] if options else None)
+    itm = [o for o in options if o["strike"] >= spot]
+    return min(itm, key=lambda o: o["strike"]) if itm else (options[-1] if options else None)
+
+
+def _expected_move(spot: float, iv: float | None, dte: float | None) -> float | None:
+    if not iv or not dte or iv <= 0 or dte <= 0:
+        return None
+    return spot * iv * (dte / 365.0) ** 0.5
+
+
+def build(
+    name: str, chain: list[dict], spot: float, iv: float | None = None, dte: float | None = None
+) -> list[dict] | None:
+    """Legs for the named template, or None when the chain can't support it. `iv`/`dte` enable the
+    expected-move short-strike rule for debit verticals (see module docstring)."""
     calls, puts = _typed(chain, "C"), _typed(chain, "P")
 
     if name == "long_call":
-        option = _pick(calls, spot, 0.50, "call")
+        option = _nearest_itm(calls, spot, "call")  # observed rule: nearest at/just-ITM strike
         return [_leg(option, 1)] if option else None
     if name == "long_put":
-        option = _pick(puts, spot, 0.50, "put")
+        option = _nearest_itm(puts, spot, "put")
         return [_leg(option, 1)] if option else None
     if name == "short_put":
         option = _pick(puts, spot, 0.25, "put")
@@ -103,21 +128,39 @@ def build(name: str, chain: list[dict], spot: float) -> list[dict] | None:
             _leg(option, -1),
         ]
     if name in ("put_vertical_credit", "put_vertical_debit"):
-        short_delta, long_delta = (0.50, 0.25) if name.endswith("credit") else (0.25, 0.50)
-        near = _pick(puts, spot, short_delta, "put")
-        far = _pick(puts, spot, long_delta, "put")
+        if name.endswith("debit"):
+            buy = _nearest_itm(puts, spot, "put")
+            em = _expected_move(spot, iv, dte)
+            if em is not None:
+                below = [o for o in puts if o["strike"] < (buy["strike"] if buy else spot)]
+                sell = min(below, key=lambda o: abs(o["strike"] - (spot - em))) if below else None
+            else:
+                sell = _pick(puts, spot, 0.25, "put")
+            if not _distinct(buy, sell):
+                return None
+            return [_leg(buy, 1), _leg(sell, -1)]
+        near = _pick(puts, spot, 0.50, "put")
+        far = _pick(puts, spot, 0.25, "put")
         if not _distinct(near, far):
             return None
-        sell, buy = (near, far) if name.endswith("credit") else (far, near)
-        return [_leg(sell, -1), _leg(buy, 1)]
+        return [_leg(near, -1), _leg(far, 1)]
     if name in ("call_vertical_credit", "call_vertical_debit"):
-        short_delta, long_delta = (0.50, 0.25) if name.endswith("credit") else (0.25, 0.50)
-        near = _pick(calls, spot, short_delta, "call")
-        far = _pick(calls, spot, long_delta, "call")
+        if name.endswith("debit"):
+            buy = _nearest_itm(calls, spot, "call")
+            em = _expected_move(spot, iv, dte)
+            if em is not None:
+                above = [o for o in calls if o["strike"] > (buy["strike"] if buy else spot)]
+                sell = min(above, key=lambda o: abs(o["strike"] - (spot + em))) if above else None
+            else:
+                sell = _pick(calls, spot, 0.25, "call")
+            if not _distinct(buy, sell):
+                return None
+            return [_leg(buy, 1), _leg(sell, -1)]
+        near = _pick(calls, spot, 0.50, "call")
+        far = _pick(calls, spot, 0.25, "call")
         if not _distinct(near, far):
             return None
-        sell, buy = (near, far) if name.endswith("credit") else (far, near)
-        return [_leg(sell, -1), _leg(buy, 1)]
+        return [_leg(near, -1), _leg(far, 1)]
     if name == "short_straddle":
         call, put = _pick(calls, spot, 0.50, "call"), _pick(puts, spot, 0.50, "put")
         return [_leg(call, -1), _leg(put, -1)] if call and put else None
