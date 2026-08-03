@@ -768,11 +768,30 @@ function drawTimeline(cv, tl, selected) {
                      .filter(p => p.v != null);
     if (!pts.length) return;
     if (shown.length === 1) {
-      g.beginPath(); g.moveTo(X(pts[0].m), VY(0));
-      pts.forEach(p => g.lineTo(X(p.m), VY(p.v)));
-      g.lineTo(X(pts[pts.length-1].m), VY(0)); g.closePath();
-      g.fillStyle = pts[pts.length-1].v >= 0 ? 'rgba(63,185,80,.22)' : 'rgba(248,81,73,.2)';
-      g.fill();
+      // One fill per zero-crossing run, not one fill for the whole day coloured by however it
+      // happened to end -- a session that dipped negative at midday and recovered by the close
+      // must show that dip in red, not paint the whole area green because the last tick was positive.
+      let run = [], runSign = null;
+      const flushRun = () => {
+        if (!run.length) return;
+        g.beginPath(); g.moveTo(X(run[0].m), VY(0));
+        run.forEach(p => g.lineTo(X(p.m), VY(p.v)));
+        g.lineTo(X(run[run.length-1].m), VY(0)); g.closePath();
+        g.fillStyle = runSign >= 0 ? 'rgba(63,185,80,.22)' : 'rgba(248,81,73,.2)';
+        g.fill();
+        run = [];
+      };
+      pts.forEach((p,i) => {
+        const sign = p.v >= 0 ? 1 : -1;
+        if (runSign === null) { runSign = sign; run.push(p); return; }
+        if (sign === runSign) { run.push(p); return; }
+        const prev = pts[i-1];
+        const t = prev.v / (prev.v - p.v);
+        const cross = {m: prev.m + (p.m - prev.m) * t, v: 0};
+        run.push(cross); flushRun();
+        runSign = sign; run.push(cross); run.push(p);
+      });
+      flushRun();
     }
     g.beginPath();
     pts.forEach((p,i) => (i && !p.gap) ? g.lineTo(X(p.m), VY(p.v)) : g.moveTo(X(p.m), VY(p.v)));
