@@ -44,6 +44,56 @@ def test_projected_yield_12m_equals_annualized_when_dividend_is_zero():
     assert _describe.projected_yield_12m(0.1648, 0.0) == pytest.approx(0.1648, abs=1e-6)
 
 
+def test_score_matches_the_apd_same_underlying_vertical_fit():
+    """APD, 2026-08-04: three defined-risk verticals on the same underlying/expiration, varying
+    only strike width. `score()` == 100*pop*(reward+risk)/risk, the closed form regressed from
+    this set plus a second day/underlying's verticals (module docstring, R^2 = 0.9997)."""
+    put_vertical = [
+        Leg(kind="put", quantity=-1, price=0.0, strike=290.0),
+        Leg(kind="put", quantity=1, price=0.0, strike=280.0),
+    ]
+    call_vertical_narrow = [
+        Leg(kind="call", quantity=-1, price=0.0, strike=290.0),
+        Leg(kind="call", quantity=1, price=0.0, strike=300.0),
+    ]
+    call_vertical_wide = [
+        Leg(kind="call", quantity=-1, price=0.0, strike=270.0),
+        Leg(kind="call", quantity=1, price=0.0, strike=280.0),
+    ]
+    max_reward = {"value": 310.0, "unbounded": False}
+    max_loss = {"value": -690.0, "unbounded": False}
+    assert _describe.score(0.5824, put_vertical, max_reward, max_loss) == pytest.approx(84, abs=1)
+
+    max_reward = {"value": 480.0, "unbounded": False}
+    max_loss = {"value": -520.0, "unbounded": False}
+    assert _describe.score(0.5303, call_vertical_narrow, max_reward, max_loss) == pytest.approx(102, abs=1)
+
+    max_reward = {"value": 795.0, "unbounded": False}
+    max_loss = {"value": -205.0, "unbounded": False}
+    assert _describe.score(0.2949, call_vertical_wide, max_reward, max_loss) == pytest.approx(144, abs=1)
+
+
+def test_score_is_none_for_a_naked_long_option():
+    """The one shape the fit is known to fail on (module docstring): a single long option's
+    theoretical max reward (near stock-to-zero) makes reward/risk huge and the formula unusable."""
+    long_put = [Leg(kind="put", quantity=1, price=10.5, strike=95.0)]
+    max_reward = {"value": 11050.0, "unbounded": False}
+    max_loss = {"value": -1050.0, "unbounded": False}
+    assert _describe.score(0.3878, long_put, max_reward, max_loss) is None
+
+
+def test_score_is_none_for_unbounded_risk():
+    """Short straddle/strangle scored much higher than reward/risk (collapsing to ~0 when risk is
+    "Unlimited") would predict -- the real denominator is a margin figure this package can't see."""
+    straddle = [
+        Leg(kind="call", quantity=-1, price=13.30, strike=290.0),
+        Leg(kind="put", quantity=-1, price=9.25, strike=290.0),
+    ]
+    max_reward = {"value": 2255.0, "unbounded": False}
+    max_loss = {"value": None, "unbounded": True}
+    assert _describe.score(0.5809, straddle, max_reward, max_loss) is None
+
+
 _SHORT_PUT = [Leg(kind="put", quantity=-1, price=1.5, strike=95.0)]
 
 

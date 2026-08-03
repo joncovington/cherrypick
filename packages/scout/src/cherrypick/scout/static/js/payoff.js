@@ -649,6 +649,7 @@ function renderMetrics(el, result) {
         ? `<span>12M projected yield ${pct(result.projected_yield_12m)} (option + ${pct(result.dividend_yield)} div)*</span>`
         : ""
     }
+    ${result.score != null ? `<span>Score ${result.score.toFixed(0)}</span>` : ""}
     <span>${greeksTag} Δ ${fmt(greeks.delta)} · Θ ${fmt(greeks.theta)} · Vega ${fmt(greeks.vega)}</span>
   `;
   const cardEl = document.getElementById("builder-strategy-card");
