@@ -101,6 +101,9 @@ async function mountSymbolView(view) {
   const statsEl = view.querySelector("#stats-panel");
   if (!chartEl) return;
 
+  chartEl.innerHTML = '<p class="loading">Loading candles…</p>';
+  if (statsEl) statsEl.innerHTML = '<span class="loading">Loading…</span>';
+
   let candles, stats;
   try {
     [candles, stats] = await Promise.all([
@@ -174,6 +177,9 @@ async function mountScreenerView(view) {
   select.value = view.dataset.strategy || "put_credit_spread";
 
   async function load() {
+    // A fresh cache can take a while to warm (cold candle/chain/quote fetches); an existing table
+    // stays visible during a refresh rather than being wiped, so only the first-ever load shows this.
+    if (!_screenerTable) tableEl.innerHTML = '<p class="loading">Scanning the watchlist…</p>';
     let result;
     try {
       result = await fetch(`/api/screener?strategy=${select.value}`).then((r) => r.json());
@@ -277,6 +283,7 @@ async function mountStagedView(view) {
   const listEl = view.querySelector("#staged-list");
 
   async function load() {
+    listEl.innerHTML = '<p class="loading">Loading staged tickets…</p>';
     let result;
     try {
       result = await fetch("/api/staged").then((r) => r.json());

@@ -65,7 +65,7 @@ packages/scout/
                      screener.py  orders.py
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
                      calendar_service.py  candle_service.py  chain_service.py
-                     screener_service.py  staging.py  quote_service.py
+                     screener_service.py  staging.py  quote_service.py  streamcache.py
       analytics/    __init__.py  levels.py  payoff.py  pop.py  strategies.py
       static/       index.html  css/scout.css  js/scout.js  js/payoff.js
         vendor/     lightweight-charts.standalone.production.js  tabulator.min.js
@@ -81,7 +81,7 @@ packages/scout/
                     test_pop.py  test_payoff_routes.py  test_builder_routes.py
                     test_strategies.py  test_screener_service.py  test_screener_routes.py
                     test_staging.py  test_order_routes.py  test_dry_run_only.py
-                    test_quote_service.py  test_sse.py
+                    test_quote_service.py  test_sse.py  test_streamcache.py
 ```
 
 ## The earnings calendar (M2)
@@ -226,6 +226,38 @@ the watchlist sidebar (an Alpine-reactive `quotes` map, colored by `change_pct`)
 Symbol view is open for the ticking symbol, the chart's still-forming last daily bar (`close`
 updated in place, `high`/`low` extended if the tick breaks the bar's current range) via
 `Lightweight Charts`' `series.update()` -- no full re-fetch needed for a live tick.
+
+## Stream-cache-first quotes + loading states (latency pass)
+
+`services/streamcache.py` is a read-only client for the suite's **shared** stream cache
+(`cherrypick.core.streamcache`, `~/.cherrypick/data/marketdata/stream_cache.db`) -- the standalone
+streamer daemon's output, when that daemon happens to be running. `quote_service.get_quotes` checks
+it first for every requested symbol and only falls back to a direct `get_market_data_by_type` call
+for symbols missing there or older than `refresh.stream_cache_max_age_seconds` (default 10 s). This
+had been an open gap: scout already registered its watchlist with the streamer
+(`services/watchlist.py`'s `write_request` call, present since M1) so the shared cache would warm
+for scout's symbols if the daemon were running, but nothing in scout's own read path ever checked
+that cache -- every quote request still went straight to the broker regardless. Verified against the
+real, live-maintained shared cache (not a mock): `services/streamcache.read_equity_quotes` correctly
+serves real SPX/XSP/QQQ spot rows written by the actually-running streamer daemon on this machine,
+and a direct `QuotePoller` integration test against that same data published a tick without ever
+touching a broker session.
+
+One coverage caveat, documented in CLAUDE.md: the streamer's subscription registry promises each
+requested underlying a spot **and an ATM option window**, sized for near-term/0DTE-style consumers
+like MEIC -- not necessarily the 30-45 DTE monthly expirations this package's screener targets. So
+today only equity/underlying spot (`quote_service`, the SSE feed) has a reliable win; option-level
+quotes/greeks (`chain_service`, which would also fix the still-open "no live greeks" gap via the
+shared cache's `stream_greeks` table) would need resolving each OCC symbol to its DXLink
+streamer-symbol via `stream_chain` and confirming actual coverage first, rather than assuming the
+ATM window lines up -- left as a deliberate follow-up, not done speculatively.
+
+Also added: lightweight loading states (a small pulsing `.loading` indicator, not a blocking overlay)
+on every view with a real fetch in flight -- symbol chart/stats, the screener's first-ever scan, the
+builder's chain load, and the staged-ticket list -- so a slow cold fetch (DXLink candle backfill, an
+uncached chain) reads as "still working" rather than a blank or frozen page. An existing screener
+table stays visible during a strategy-switch refresh rather than being wiped, so only the very first
+load shows the indicator.
 
 ## Verification (M8)
 

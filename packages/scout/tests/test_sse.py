@@ -32,7 +32,7 @@ async def test_subscribe_starts_the_poll_loop_and_publishes_changes(tmp_path, mo
 
     calls = []
 
-    async def fake_get_quotes(_session, symbols):
+    async def fake_get_quotes(_session, symbols, **_kwargs):
         calls.append(list(symbols))
         return {"AAPL": {"last": 105.0}}
 
@@ -54,7 +54,7 @@ async def test_unchanged_quotes_are_not_republished(tmp_path, monkeypatch):
     wl_path = tmp_path / "watchlist.json"
     _watchlist.save(wl_path, ["AAPL"])
 
-    async def fake_get_quotes(_session, symbols):
+    async def fake_get_quotes(_session, symbols, **_kwargs):
         return {"AAPL": {"last": 105.0}}  # identical on every tick
 
     monkeypatch.setattr(_sse.quote_service, "get_quotes", fake_get_quotes)

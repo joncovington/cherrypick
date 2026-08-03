@@ -100,6 +100,15 @@ aside#watchlist button[type="submit"] {
   padding: 6px 10px;
   margin: 0 0 10px;
 }
+.loading {
+  color: #77848f;
+  font-size: 12px;
+  animation: scout-pulse 1.4s ease-in-out infinite;
+}
+@keyframes scout-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
 table.calendar { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.calendar th, table.calendar td {
   text-align: left;

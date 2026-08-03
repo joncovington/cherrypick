@@ -31,6 +31,7 @@ _DEFAULTS: dict = {
         "candles_ttl_seconds": 3600,
         "calendar_ttl_seconds": 3600,
         "meta_ttl_days": 30,
+        "stream_cache_max_age_seconds": 10,
     },
     "screener": {
         "target_dte_min": 30,

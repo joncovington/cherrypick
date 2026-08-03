@@ -35,10 +35,18 @@ class QuotePoller:
     """Fan-out to N connected SSE clients from one shared polling loop, started/stopped by
     subscriber count rather than app lifespan -- see the module docstring."""
 
-    def __init__(self, broker_session: BrokerSession, watchlist_path: Path, interval: float = 5.0):
+    def __init__(
+        self,
+        broker_session: BrokerSession,
+        watchlist_path: Path,
+        interval: float = 5.0,
+        *,
+        stream_cache_max_age_seconds: float = 10.0,
+    ):
         self._broker_session = broker_session
         self._watchlist_path = watchlist_path
         self._interval = interval
+        self._stream_cache_max_age_seconds = stream_cache_max_age_seconds
         self._subscribers: set[asyncio.Queue] = set()
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
@@ -77,7 +85,11 @@ class QuotePoller:
                 symbols = _watchlist.load(self._watchlist_path)
                 if symbols:
                     try:
-                        quotes = await quote_service.get_quotes(self._broker_session, symbols)
+                        quotes = await quote_service.get_quotes(
+                            self._broker_session,
+                            symbols,
+                            stream_cache_max_age_seconds=self._stream_cache_max_age_seconds,
+                        )
                     except Exception:
                         quotes = {}
                     changed = {s: q for s, q in quotes.items() if self._last.get(s) != q}

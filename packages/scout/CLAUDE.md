@@ -53,13 +53,23 @@ Config: copy `config.example.json` → `config.json` (git-ignored), or omit it e
 - **The streamer comes before API calls, whenever practical.** Prefer the cached/batched path over a
   fresh broker round trip; the broker API is for acting (dry-run) and for confirming what only it can
   know. `services/cache.py`'s `get_or_fetch`/`async_get_or_fetch` are the shared mechanism — TTL
-  cache, stale-serve on fetch failure, honest `as_of`/`stale` on every payload. **One narrow,
-  deliberate exception** to "only the streamer talks to the broker" (a streaming-path rule):
-  `candle_service`'s DXLink tail top-up opens its own short-lived `DXLinkStreamer` (bounded by an
-  idle timeout and a hard wall-clock cap, opened on demand, never resident) to fill the gap between
-  Dolt's last row and now. It never informs a decision — this package makes none — only fills in
-  recent chart history; a DXLink failure falls back to a single synthesized bar from a snapshot quote
-  rather than blocking the page.
+  cache, stale-serve on fetch failure, honest `as_of`/`stale` on every payload. As of the latency pass
+  that added `services/streamcache.py`, this is literal, not just aspirational: `quote_service`
+  checks the suite's **shared** stream cache (`~/.cherrypick/data/marketdata/stream_cache.db`,
+  written by the standalone streamer daemon when it's running) for each symbol first, and only
+  reaches the broker for a symbol that's missing there or older than
+  `refresh.stream_cache_max_age_seconds`. Read-only, never writes that cache — scout is a reader,
+  never the producer. Coverage caveat worth remembering: the streamer's registry only promises a
+  spot + ATM option window per requested underlying, so option-level quotes/greeks for a screener's
+  30-45 DTE monthly (far from the ATM window a 0DTE-focused consumer like MEIC requests) will
+  typically miss the shared cache and fall through to REST regardless — only equity/underlying spot
+  (`quote_service`, the SSE feed) has a reliably-covered win today. **One narrow, deliberate
+  exception** to "only the streamer talks to the broker" (a streaming-path rule): `candle_service`'s
+  DXLink tail top-up opens its own short-lived `DXLinkStreamer` (bounded by an idle timeout and a
+  hard wall-clock cap, opened on demand, never resident) to fill the gap between Dolt's last row and
+  now. It never informs a decision — this package makes none — only fills in recent chart history; a
+  DXLink failure falls back to a single synthesized bar from a snapshot quote rather than blocking
+  the page.
 - **Rate-limit discipline.** `metrics_service` batches every stale/missing symbol into one
   `get_market_metrics` call rather than one call per symbol (the calendar and the screener both go
   through it); `chain_service.get_quotes` batches into ~100-symbol `get_market_data_by_type` chunks
@@ -107,13 +117,18 @@ See README.md's file tree for what currently exists. Two things worth knowing up
   I/O, so a future promotion to `cherrypick.core` is a file move once stable. Don't reach for a broker
   call or a cache read inside this package — that belongs in a `services/` module (`screener_service`
   for `strategies.py`) that calls into `analytics/`, not the other way around.
-- Live per-option greeks (delta/gamma/theta/vega) have no source yet — `chain_service`'s quotes come
-  from `get_market_data_by_type`, which doesn't carry them, and the SDK's option-chain call doesn't
-  either. `payoff.Leg`/`net_greeks` already treat greeks as optional per leg; don't invent a greeks
-  source by guessing at one (e.g. backing into delta from historical Dolt data) without deciding it
-  deliberately — a wrong greek is worse than an honestly missing one. This is also why
-  `strategies.py`'s short-strike selection uses nearest-OTM-by-expected-move rather than a delta
-  target, and why the screener's skew column is a price-based proxy, not a true delta-matched IV skew.
+- Live per-option greeks (delta/gamma/theta/vega) have no source **wired up** yet — `chain_service`'s
+  quotes come from `get_market_data_by_type`, which doesn't carry them, and the SDK's option-chain
+  call doesn't either. The shared stream cache's `stream_greeks` table *does* carry them, in
+  principle, but `chain_service` doesn't read it (see `services/streamcache.py`'s CLAUDE.md
+  invariant entry on ATM-window coverage) — wiring that up would need resolving each OCC option
+  symbol to its DXLink streamer-symbol via `stream_chain` first, and verifying actual coverage for
+  the expirations this package targets, not just assuming it. `payoff.Leg`/`net_greeks` already
+  treat greeks as optional per leg; don't invent a greeks source by guessing at one (e.g. backing
+  into delta from historical Dolt data) without deciding it deliberately — a wrong greek is worse
+  than an honestly missing one. This is also why `strategies.py`'s short-strike selection uses
+  nearest-OTM-by-expected-move rather than a delta target, and why the screener's skew column is a
+  price-based proxy, not a true delta-matched IV skew.
 - **A real value can still be zero or degenerate — validate it, don't just check for `None`.**
   `candle_service` originally accepted any DXLink candle whose `open` wasn't `None`, which let a
   zero-filled placeholder for the still-forming current-day bar through as genuine data (a live
