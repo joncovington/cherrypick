@@ -111,6 +111,41 @@ def _write(conn: sqlite3.Connection, bucket: str, key: str, payload: Any, fetche
     conn.commit()
 
 
+def read_candles(conn: sqlite3.Connection, symbol: str, period: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT ts, o, h, l, c, v FROM candles WHERE symbol = ? AND period = ? ORDER BY ts",
+        (symbol, period),
+    ).fetchall()
+    return [{"t": r[0], "o": r[1], "h": r[2], "l": r[3], "c": r[4], "v": r[5]} for r in rows]
+
+
+def write_candles(conn: sqlite3.Connection, symbol: str, period: str, bars: list[dict]) -> None:
+    """Upsert a batch of bars (each ``{"t","o","h","l","c","v"}``, ``t`` an integer epoch second)."""
+    conn.executemany(
+        "INSERT INTO candles (symbol, period, ts, o, h, l, c, v) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(symbol, period, ts) DO UPDATE SET "
+        "o = excluded.o, h = excluded.h, l = excluded.l, c = excluded.c, v = excluded.v",
+        [(symbol, period, int(b["t"]), b["o"], b["h"], b["l"], b["c"], b["v"]) for b in bars],
+    )
+    conn.commit()
+
+
+def get_candle_meta(conn: sqlite3.Connection, symbol: str, period: str) -> float | None:
+    row = conn.execute(
+        "SELECT last_backfill FROM candle_meta WHERE symbol = ? AND period = ?", (symbol, period)
+    ).fetchone()
+    return float(row[0]) if row and row[0] is not None else None
+
+
+def set_candle_meta(conn: sqlite3.Connection, symbol: str, period: str, last_backfill: float) -> None:
+    conn.execute(
+        "INSERT INTO candle_meta (symbol, period, last_backfill) VALUES (?, ?, ?) "
+        "ON CONFLICT(symbol, period) DO UPDATE SET last_backfill = excluded.last_backfill",
+        (symbol, period, last_backfill),
+    )
+    conn.commit()
+
+
 def get_or_fetch(
     conn: sqlite3.Connection,
     bucket: str,

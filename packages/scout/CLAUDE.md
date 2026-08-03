@@ -48,12 +48,17 @@ Config: copy `config.example.json` → `config.json` (git-ignored), or omit it e
   `security.py`; do not add a mutating route that bypasses `SecurityMiddleware`.
 - **Never write a cache this module doesn't own.** `services/cache.py` opens only this module's own
   `~/.cherrypick/data/scout/cache.db`. `calendar_service`'s Dolt read (`earnings.earnings_calendar`)
-  and, later, any shared stream-cache read are read-only and never write their source.
+  and `candle_service`'s (`stocks.ohlcv`) are read-only and never write their source.
 - **The streamer comes before API calls, whenever practical.** Once chain/quote services exist
-  (M4/M5/M7), prefer the cached/batched path over a fresh broker round trip; the broker API is for
+  (M5/M7), prefer the cached/batched path over a fresh broker round trip; the broker API is for
   acting (dry-run) and for confirming what only it can know. `services/cache.py`'s `get_or_fetch` is
   the shared mechanism — TTL cache, stale-serve on fetch failure, honest `as_of`/`stale` on every
-  payload.
+  payload. **One narrow, deliberate exception** to "only the streamer talks to the broker" (a
+  streaming-path rule): `candle_service`'s DXLink tail top-up opens its own short-lived
+  `DXLinkStreamer` (bounded by an idle timeout and a hard wall-clock cap, opened on demand, never
+  resident) to fill the gap between Dolt's last row and now. It never informs a decision — this
+  package makes none — only fills in recent chart history; a DXLink failure falls back to a single
+  synthesized bar from a snapshot quote rather than blocking the page.
 - **Rate-limit discipline.** `metrics_service` batches every stale/missing symbol into one
   `get_market_metrics` call rather than one call per symbol (the calendar and, from M5, the screener
   both go through it); chains fetched only for pre-filter survivors; a manual `?fresh=1` refresh is
@@ -85,6 +90,9 @@ See README.md's file tree for what currently exists. Two things worth knowing up
 - `src/cherrypick/scout/` has an `__init__.py` (an ordinary package marker); its parent
   `src/cherrypick/` deliberately does not, so this composes with `cherrypick.core` and every sibling
   module under one `cherrypick.*` namespace root.
-- `services/cache.py`'s schema already declares tables later milestones will use (`candles`,
-  `candle_meta`, `symbol_meta`, `staged_orders`) alongside the generic `kv_cache` TTL store M1 actually
-  exercises — declared once so the schema doesn't need a migration step per milestone.
+- `services/cache.py`'s schema already declares tables later milestones will use (`symbol_meta`,
+  `staged_orders`) alongside the generic `kv_cache` TTL store and the `candles`/`candle_meta` tables
+  `candle_service` (M3) now actually exercises — declared once so the schema doesn't need a migration
+  step per milestone.
+- `analytics/` (new in M3, `levels.py`) is stdlib-only, no I/O -- same posture `payoff.py`/`pop.py`
+  will follow in M4, so a future promotion to `cherrypick.core` is a file move once stable.

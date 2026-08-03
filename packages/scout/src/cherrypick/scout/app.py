@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config as _config
 from .api import calendar as _calendar_api
+from .api import symbol as _symbol_api
 from .api import watchlist as _watchlist_api
 from .security import SecurityMiddleware, new_csrf_token
 from .services import cache as _cache
@@ -57,6 +58,7 @@ def create_app(cfg: dict | None = None) -> FastAPI:
 
     app.include_router(_watchlist_api.router)
     app.include_router(_calendar_api.router)
+    app.include_router(_symbol_api.router)
 
     app.mount("/static/vendor", StaticFiles(directory=str(STATIC_DIR / "vendor")), name="vendor")
     app.mount("/static/css", StaticFiles(directory=str(STATIC_DIR / "css")), name="css")
