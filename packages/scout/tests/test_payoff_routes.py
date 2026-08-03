@@ -161,6 +161,60 @@ def test_payoff_route_income_checklist_for_a_lone_short_put(app_and_client, monk
     assert by_name["Spread & liquidity"] == "warn"  # 0.10 spread on a 1.50 mid = 6.7% -> warn band
 
 
+def test_payoff_route_projected_yield_for_a_covered_call(app_and_client, monkeypatch):
+    app, client = app_and_client
+
+    async def fake_rate(_conn, _session):
+        return 0.05
+
+    async def fake_metrics(_conn, _session, symbols, _ttl):
+        return {s.upper(): {"earnings": None, "dividend_yield": 0.0736} for s in symbols}
+
+    monkeypatch.setattr(_payoff_api.metrics_service, "get_risk_free_rate", fake_rate)
+    monkeypatch.setattr(_payoff_api.metrics_service, "get_metrics", fake_metrics)
+    legs = [
+        {"kind": "stock", "quantity": 1, "price": 28.63, "strike": None},  # 1 contract = 100 shares
+        {"kind": "call", "quantity": -1, "price": 0.735, "strike": 30, "bid": 0.70, "ask": 0.77},
+    ]
+    resp = client.get(
+        "/api/payoff",
+        params={
+            "legs": json.dumps(legs), "spot": 28.63, "dte": 46, "iv": 0.30,
+            "symbol": "KWEB", "expiration": "2026-09-18",
+        },
+        headers=_headers(app),
+    )
+    body = resp.json()
+    assert body["dividend_yield"] == pytest.approx(0.0736)
+    assert body["projected_yield_12m"] == pytest.approx(
+        body["annualized_return"] + 0.0736, abs=1e-6
+    )
+
+
+def test_payoff_route_projected_yield_omitted_for_a_lone_short_put(app_and_client, monkeypatch):
+    app, client = app_and_client
+
+    async def fake_rate(_conn, _session):
+        return 0.05
+
+    async def fake_metrics(_conn, _session, symbols, _ttl):
+        return {s.upper(): {"earnings": None, "dividend_yield": 0.0736} for s in symbols}
+
+    monkeypatch.setattr(_payoff_api.metrics_service, "get_risk_free_rate", fake_rate)
+    monkeypatch.setattr(_payoff_api.metrics_service, "get_metrics", fake_metrics)
+    legs = [{"kind": "put", "quantity": -1, "price": 1.50, "strike": 95, "bid": 1.45, "ask": 1.55}]
+    resp = client.get(
+        "/api/payoff",
+        params={
+            "legs": json.dumps(legs), "spot": 100, "dte": 25, "iv": 0.30,
+            "symbol": "AAPL", "expiration": "2026-08-28",
+        },
+        headers=_headers(app),
+    )
+    body = resp.json()
+    assert body["projected_yield_12m"] is None  # not a covered-call shape
+
+
 def test_payoff_route_directional_checklist_for_a_vertical(app_and_client, monkeypatch):
     app, client = app_and_client
 

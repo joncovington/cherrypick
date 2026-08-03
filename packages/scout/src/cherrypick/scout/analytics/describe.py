@@ -31,6 +31,16 @@ screenshots, five cards spanning the full range), not published numbers:
     warn <= 15% -- exactly the bands guessed from the earnings module's liquidity gate, now
     empirically confirmed.
   - Earnings inside the expiration warns; "no earnings before expiration" passes (observed).
+
+The covered-call card additionally shows a "12M Projected Yield" distinct from the annualized
+option return -- reverse-engineered from a KWEB covered-call card (2026-08-03): option annualized
+22.93% + trailing dividend yield 7.36% = 30.29%, matching the displayed projected yield exactly.
+It's simple addition, not compounded -- the option side is already its own compounding
+assumption, and the dividend side is a trailing yield, not a forecast either; stacking two
+already-labeled estimates needs no further modeling. `dividend_yield` from
+`metrics_service`/`MarketMetricInfo` arrives as a plain fraction already (KWEB live-verified at
+0.0736 == 7.36%), unlike `iv_30d`/`hv_30d` which need the /100 -- confirmed against the real
+account the same day, not assumed from the SDK's naming convention.
 """
 
 from __future__ import annotations
@@ -55,6 +65,16 @@ def annualized_return(credit: float, max_risk: float, dte: float) -> float | Non
     if raw is None or raw <= -1 or not dte or dte <= 0:
         return None
     return (1.0 + raw) ** (DAYS_PER_YEAR / dte) - 1.0
+
+
+def projected_yield_12m(annualized: float | None, dividend_yield: float | None) -> float | None:
+    """Covered-call "12M Projected Yield": the annualized option return plus the position's
+    trailing dividend yield (simple addition -- see module docstring for the KWEB evidence).
+    None when either side is unknown, since a partial total would understate the real figure
+    without saying so."""
+    if annualized is None or dividend_yield is None:
+        return None
+    return annualized + dividend_yield
 
 
 def prob_worthless(legs: list[Leg], spot: float, sigma: float, t: float, r: float) -> float | None:

@@ -644,6 +644,11 @@ function renderMetrics(el, result) {
     <span>Breakevens ${result.breakevens.map(fmt).join(", ") || "--"}</span>
     <span>POP ${pct(result.pop)} · POW ${pct(result.pow)}</span>
     <span>Return ${pct(result.raw_return)} raw · ${pct(result.annualized_return)} annualized*</span>
+    ${
+      result.projected_yield_12m != null
+        ? `<span>12M projected yield ${pct(result.projected_yield_12m)} (option + ${pct(result.dividend_yield)} div)*</span>`
+        : ""
+    }
     <span>${greeksTag} Δ ${fmt(greeks.delta)} · Θ ${fmt(greeks.theta)} · Vega ${fmt(greeks.vega)}</span>
   `;
   const cardEl = document.getElementById("builder-strategy-card");
