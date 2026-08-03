@@ -130,18 +130,19 @@ See README.md's file tree for what currently exists. Two things worth knowing up
   I/O, so a future promotion to `cherrypick.core` is a file move once stable. Don't reach for a broker
   call or a cache read inside this package — that belongs in a `services/` module (`screener_service`
   for `strategies.py`) that calls into `analytics/`, not the other way around.
-- Live per-option greeks (delta/gamma/theta/vega) have no source **wired up** yet — `chain_service`'s
-  quotes come from `get_market_data_by_type`, which doesn't carry them, and the SDK's option-chain
-  call doesn't either. The shared stream cache's `stream_greeks` table *does* carry them, in
-  principle, but `chain_service` doesn't read it (see `services/streamcache.py`'s CLAUDE.md
-  invariant entry on ATM-window coverage) — wiring that up would need resolving each OCC option
-  symbol to its DXLink streamer-symbol via `stream_chain` first, and verifying actual coverage for
-  the expirations this package targets, not just assuming it. `payoff.Leg`/`net_greeks` already
-  treat greeks as optional per leg; don't invent a greeks source by guessing at one (e.g. backing
-  into delta from historical Dolt data) without deciding it deliberately — a wrong greek is worse
-  than an honestly missing one. This is also why `strategies.py`'s short-strike selection uses
-  nearest-OTM-by-expected-move rather than a delta target, and why the screener's skew column is a
-  price-based proxy, not a true delta-matched IV skew.
+- Live per-option greeks come from DXLink `Greeks` events via `chain_service.get_greeks` — scout's
+  own TTL cache first, then the shared stream cache's `stream_greeks` (keyed by the
+  `streamer_symbol` the chain fetch now serializes), then one short-lived, bounded `DXLinkStreamer`
+  subscription for the remainder (the second instance of `candle_service`'s opened-on-demand /
+  never-resident exception). An earlier version of this file claimed "no live greeks source
+  exists"; that was an over-generalization from the REST quote endpoint (`get_market_data_by_type`
+  genuinely carries none) — corrected by the user, since the dxfeed feed serves greeks per option
+  and the suite's shared streamer had always demonstrated it. The builder's chain rows attach them
+  to legs so `net_greeks` is real; `analytics/describe.py`'s Black-Scholes model greeks remain as
+  the clearly-labeled fallback when a leg has none. `strategies.py`'s
+  nearest-OTM-by-expected-move short-strike selection and the screener's price-based skew proxy
+  predate this source and are now upgradeable to true delta targeting — a deliberate follow-up,
+  not an accident to preserve.
 - **A real value can still be zero or degenerate — validate it, don't just check for `None`.**
   `candle_service` originally accepted any DXLink candle whose `open` wasn't `None`, which let a
   zero-filled placeholder for the still-forming current-day bar through as genuine data (a live

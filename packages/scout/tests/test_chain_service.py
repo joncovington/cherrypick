@@ -130,3 +130,68 @@ async def test_get_quotes_on_empty_list_is_empty(conn):
 
     result = await chain_service.get_quotes(conn, _FakeSession(), [], now=1000.0)
     assert result == {}
+
+
+# --------------------------------------------------------------------------- greeks
+
+
+_GREEKS = {"delta": -0.32, "gamma": 0.02, "theta": -0.05, "vega": 0.11, "iv": 0.31, "price": 2.1}
+
+
+@pytest.mark.asyncio
+async def test_get_greeks_prefers_the_shared_stream_cache(conn, monkeypatch, tmp_path):
+    from cherrypick.core import streamcache as _core_streamcache
+
+    shared = _core_streamcache.connect(tmp_path / "stream_cache.db")
+    import time as _time
+
+    shared.execute(
+        "INSERT INTO stream_greeks (symbol, delta, gamma, theta, vega, rho, iv, price, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)",
+        (".AAPL260828P95", -0.32, 0.02, -0.05, 0.11, 0.31, 2.1, _time.time()),
+    )
+    shared.commit()
+    shared.close()
+
+    monkeypatch.setattr(
+        chain_service._streamcache, "cache_path", lambda: tmp_path / "stream_cache.db"
+    )
+
+    async def fail_dxlink(*_a, **_kw):
+        raise AssertionError("must not open DXLink when the shared cache covers the symbol")
+
+    monkeypatch.setattr(chain_service, "_dxlink_greeks", fail_dxlink)
+
+    result = await chain_service.get_greeks(conn, object(), [".AAPL260828P95"])
+    assert result[".AAPL260828P95"]["delta"] == pytest.approx(-0.32)
+
+
+@pytest.mark.asyncio
+async def test_get_greeks_falls_back_to_dxlink_and_caches(conn, monkeypatch, tmp_path):
+    monkeypatch.setattr(chain_service._streamcache, "cache_path", lambda: tmp_path / "absent.db")
+    calls = []
+
+    async def fake_dxlink(_session, symbols):
+        calls.append(sorted(symbols))
+        return {sym: dict(_GREEKS) for sym in symbols}
+
+    monkeypatch.setattr(chain_service, "_dxlink_greeks", fake_dxlink)
+
+    first = await chain_service.get_greeks(conn, object(), [".X1", ".X2"], now=1000.0)
+    assert set(first) == {".X1", ".X2"}
+    # Within TTL: served from scout's own cache, no second subscription.
+    second = await chain_service.get_greeks(conn, object(), [".X1", ".X2"], now=1030.0)
+    assert second == first
+    assert calls == [[".X1", ".X2"]]
+
+
+@pytest.mark.asyncio
+async def test_get_greeks_missing_symbols_are_absent_not_errors(conn, monkeypatch, tmp_path):
+    monkeypatch.setattr(chain_service._streamcache, "cache_path", lambda: tmp_path / "absent.db")
+
+    async def empty_dxlink(*_a, **_kw):
+        return {}
+
+    monkeypatch.setattr(chain_service, "_dxlink_greeks", empty_dxlink)
+    result = await chain_service.get_greeks(conn, object(), [".NOPE"], now=1000.0)
+    assert result == {}
