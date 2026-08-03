@@ -105,6 +105,27 @@ def test_checklist_reproduces_the_observed_reference_gradings():
     assert [i["status"] for i in items] == ["warn", "pass", "pass", "pass"]
 
 
+def test_checklist_directional_replays_the_observed_spread_cards():
+    """Fixtures from four observed reference credit-spread cards (2026-08-03)."""
+    # CSX: bullish put vertical, stock 1M Bullish, SPX 1M bullish, no earnings, combo spread huge.
+    items = _describe.checklist_directional("bullish", "bullish", "bullish", False, 2.0)
+    assert [i["status"] for i in items] == ["pass", "pass", "pass", "fail"]
+    # SHOP: bullish put vertical against a Mildly Bearish 1M stock trend; earnings Aug 5 inside.
+    items = _describe.checklist_directional("bullish", "mildly_bearish", "bullish", True, 0.90)
+    assert [i["status"] for i in items] == ["fail", "pass", "warn", "fail"]
+    # TEL: bearish call vertical against Mildly Bullish stock AND bullish market; no earnings.
+    items = _describe.checklist_directional("bearish", "mildly_bullish", "bullish", False, 0.37)
+    assert [i["status"] for i in items] == ["fail", "fail", "pass", "fail"]
+    # DIS: bearish vertical with Bearish 1M stock trend, against the bullish market.
+    items = _describe.checklist_directional("bearish", "bearish", "bullish", None, None)
+    assert [i["status"] for i in items] == ["pass", "fail", "warn", "warn"]
+
+
+def test_checklist_directional_neutral_trend_warns():
+    items = _describe.checklist_directional("bullish", "neutral", None, False, 0.02)
+    assert [i["status"] for i in items] == ["warn", "warn", "pass", "pass"]
+
+
 def test_checklist_unknowns_warn_rather_than_pass():
     items = _describe.checklist(pow_value=None, annualized=None, earnings_inside=None, spread_pct=None)
     assert all(i["status"] == "warn" for i in items)
