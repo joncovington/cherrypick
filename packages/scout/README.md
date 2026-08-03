@@ -107,11 +107,15 @@ of the calendar to empty rather than raising — the page always renders.
 
 `GET /api/symbol/{sym}/candles`, `GET /api/symbol/{sym}/stats`, `GET /partial/symbol/{sym}` (click a
 watchlist name, or the Symbol nav tab, which opens the first watchlist symbol). Candle history is
-seeded once per symbol from the `stocks` Dolt database's `ohlcv` table (years of daily bars, no
-websocket), then topped up from Dolt's cutoff to now via a **short-lived** `DXLinkStreamer` — bounded
-by an idle timeout and a hard wall-clock cap, opened on demand and never held resident. If DXLink
+seeded once per symbol from DXLink's own `Candle` history feed (`refresh.candles_backfill_days`,
+default 12 months) via a **short-lived** `DXLinkStreamer` — bounded by an idle timeout and a hard
+wall-clock cap, opened on demand and never held resident — then topped up incrementally from the
+last cached bar on later fetches. (Originally the deep seed came from the `stocks` Dolt database's
+`ohlcv` table; its date-led primary key made the per-symbol query full-scan 28.5M rows, ~2 minutes
+measured, timing out on every symbol — so the seed moved to the broker's own feed, per the
+suite-wide prefer-tastytrade-sources rule. Dolt remains only on the calendar path.) If DXLink
 can't be reached at all, a single daily bar is synthesized from a snapshot equity quote so the chart
-still shows today rather than nothing. A failed top-up attempt is retry-floored independently of the
+still shows today rather than nothing. A failed attempt is retry-floored independently of the
 candle TTL so a stalled DXLink/broker never turns a page load into a retry storm.
 `analytics/levels.py` (stdlib-only, no I/O) computes SMA 20/50/200 and support/resistance levels
 from swing highs/lows over the cached bars; the stats panel adds `metrics_service`'s IV rank,

@@ -47,9 +47,16 @@ Config: copy `config.example.json` → `config.json` (git-ignored), or omit it e
   loopback `Host` header; every mutating request additionally needs the per-process CSRF token, an
   `application/json` content type, and a matching local `Origin` when one is present. See
   `security.py`; do not add a mutating route that bypasses `SecurityMiddleware`.
+- **Prefer tastytrade-owned data sources over third-party ones** (user rule, suite-wide). Broker
+  metrics, DXLink feeds, and REST snapshots come first; a third-party source (the shared Dolt DBs)
+  is acceptable only where tastytrade has no equivalent (the broad multi-symbol earnings calendar).
+  This is why `candle_service` seeds from DXLink history rather than `stocks.ohlcv` — the Dolt
+  table's date-led primary key made per-symbol reads full-scan 28.5M rows (~2 min, measured, past
+  every sane timeout), and the fix was switching to the broker's own history feed, not indexing a
+  shared database this package treats as read-only.
 - **Never write a cache this module doesn't own.** `services/cache.py` opens only this module's own
   `~/.cherrypick/data/scout/cache.db`. `calendar_service`'s Dolt read (`earnings.earnings_calendar`)
-  and `candle_service`'s (`stocks.ohlcv`) are read-only and never write their source.
+  is read-only and never writes its source.
 - **The streamer comes before API calls, whenever practical.** Prefer the cached/batched path over a
   fresh broker round trip; the broker API is for acting (dry-run) and for confirming what only it can
   know. `services/cache.py`'s `get_or_fetch`/`async_get_or_fetch` are the shared mechanism — TTL
@@ -64,12 +71,13 @@ Config: copy `config.example.json` → `config.json` (git-ignored), or omit it e
   30-45 DTE monthly (far from the ATM window a 0DTE-focused consumer like MEIC requests) will
   typically miss the shared cache and fall through to REST regardless — only equity/underlying spot
   (`quote_service`, the SSE feed) has a reliably-covered win today. **One narrow, deliberate
-  exception** to "only the streamer talks to the broker" (a streaming-path rule): `candle_service`'s
-  DXLink tail top-up opens its own short-lived `DXLinkStreamer` (bounded by an idle timeout and a
-  hard wall-clock cap, opened on demand, never resident) to fill the gap between Dolt's last row and
-  now. It never informs a decision — this package makes none — only fills in recent chart history; a
-  DXLink failure falls back to a single synthesized bar from a snapshot quote rather than blocking
-  the page.
+  exception** to "only the streamer talks to the broker" (a streaming-path rule): `candle_service`
+  opens its own short-lived `DXLinkStreamer` (bounded by an idle timeout and a hard wall-clock cap,
+  opened on demand, never resident) to seed a symbol's daily-candle history
+  (`refresh.candles_backfill_days`, default 12 months) and to top up the gap since the last cached
+  bar. It never informs a decision — this package makes none — only fills chart history; a DXLink
+  failure falls back to a single synthesized bar from a snapshot quote rather than blocking the
+  page.
 - **Rate-limit discipline.** `metrics_service` batches every stale/missing symbol into one
   `get_market_metrics` call rather than one call per symbol (the calendar and the screener both go
   through it); `chain_service.get_quotes` batches into ~100-symbol `get_market_data_by_type` chunks
