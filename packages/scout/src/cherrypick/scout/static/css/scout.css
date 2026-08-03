@@ -52,6 +52,9 @@ aside#watchlist li {
   padding: 3px 0;
   font-family: ui-monospace, monospace;
 }
+aside#watchlist li .quote { font-size: 12px; color: #9fb0bf; }
+aside#watchlist li .quote.up { color: #7fd1a8; }
+aside#watchlist li .quote.down { color: #e08b8b; }
 aside#watchlist li button {
   background: none;
   border: none;

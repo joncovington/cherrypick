@@ -25,6 +25,7 @@ function watchlistStore() {
   return {
     symbols: [],
     draft: "",
+    quotes: {},
     async load() {
       const res = await fetch("/api/watchlist").then((r) => r.json());
       if (res.ok) this.symbols = res.symbols;
@@ -77,6 +78,8 @@ document.getElementById("nav-builder").addEventListener("click", (evt) => {
 /* ---------------- symbol view: candlestick chart + stats panel ---------------- */
 
 let _symbolChart = null;
+let _symbolCandleSeries = null;
+let _symbolLastBar = null;
 
 function renderStats(el, stats) {
   const pct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(2)}%` : "—");
@@ -107,6 +110,8 @@ async function mountSymbolView(view) {
   if (_symbolChart) {
     _symbolChart.remove();
     _symbolChart = null;
+    _symbolCandleSeries = null;
+    _symbolLastBar = null;
   }
   if (!candles.ok || !candles.bars.length) {
     chartEl.textContent = "No candle data available.";
@@ -130,6 +135,8 @@ async function mountSymbolView(view) {
   candleSeries.setData(
     candles.bars.map((b) => ({ time: b.t, open: b.o, high: b.h, low: b.l, close: b.c }))
   );
+  _symbolCandleSeries = candleSeries;
+  _symbolLastBar = { ...candles.bars[candles.bars.length - 1] };
 
   const volumeSeries = chart.addSeries(LightweightCharts.HistogramSeries, {
     priceFormat: { type: "volume" },
@@ -306,3 +313,46 @@ document.body.addEventListener("htmx:afterSwap", (evt) => {
   const stagedView = evt.detail.target.querySelector("#staged-view");
   if (stagedView) mountStagedView(stagedView);
 });
+
+/* ---------------- live quotes: one SSE connection per session ---------------- */
+
+function applyQuotes(changed) {
+  const watchlistEl = document.getElementById("watchlist");
+  if (watchlistEl) {
+    const store = Alpine.$data(watchlistEl);
+    store.quotes = { ...store.quotes, ...changed };
+  }
+
+  const view = document.getElementById("symbol-view");
+  if (view && _symbolCandleSeries && _symbolLastBar) {
+    const quote = changed[view.dataset.symbol];
+    if (quote && quote.last != null) {
+      _symbolLastBar = {
+        ..._symbolLastBar,
+        c: quote.last,
+        h: Math.max(_symbolLastBar.h, quote.last),
+        l: Math.min(_symbolLastBar.l, quote.last),
+      };
+      _symbolCandleSeries.update({
+        time: _symbolLastBar.t,
+        open: _symbolLastBar.o,
+        high: _symbolLastBar.h,
+        low: _symbolLastBar.l,
+        close: _symbolLastBar.c,
+      });
+    }
+  }
+}
+
+let _quoteStream = null;
+
+function initQuoteStream() {
+  if (_quoteStream) return;
+  _quoteStream = new EventSource("/api/stream");
+  _quoteStream.addEventListener("quotes", (evt) => {
+    const payload = JSON.parse(evt.data);
+    applyQuotes(payload.symbols || {});
+  });
+}
+
+initQuoteStream();

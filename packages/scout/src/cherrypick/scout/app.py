@@ -27,6 +27,8 @@ from .api import watchlist as _watchlist_api
 from .security import SecurityMiddleware, new_csrf_token
 from .services import cache as _cache
 from .services.session import BrokerSession
+from .sse import QuotePoller
+from .sse import router as _sse_router
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -42,6 +44,7 @@ def _make_lifespan(cfg: dict):
         try:
             yield
         finally:
+            await app.state.quote_poller.stop()
             app.state.cache_db.close()
             logger.info("scout stopped")
 
@@ -57,6 +60,11 @@ def create_app(cfg: dict | None = None) -> FastAPI:
     app.state.csrf_token = new_csrf_token()
     app.state.watchlist_path = _config.watchlist_path()
     app.state.broker_session = BrokerSession()
+    app.state.quote_poller = QuotePoller(
+        app.state.broker_session,
+        app.state.watchlist_path,
+        interval=cfg.get("refresh", {}).get("quotes_seconds", 5),
+    )
 
     app.add_middleware(SecurityMiddleware, port=port, csrf_token=app.state.csrf_token)
 
@@ -67,6 +75,7 @@ def create_app(cfg: dict | None = None) -> FastAPI:
     app.include_router(_builder_api.router)
     app.include_router(_screener_api.router)
     app.include_router(_orders_api.router)
+    app.include_router(_sse_router)
 
     app.mount("/static/vendor", StaticFiles(directory=str(STATIC_DIR / "vendor")), name="vendor")
     app.mount("/static/css", StaticFiles(directory=str(STATIC_DIR / "css")), name="css")

@@ -59,12 +59,12 @@ packages/scout/
   CLAUDE.md  README.md  config.example.json  pyproject.toml  run.py
   src/cherrypick/
     scout/
-      __init__.py  cli.py  config.py  app.py  serve.py  security.py  templates.py
+      __init__.py  cli.py  config.py  app.py  serve.py  security.py  sse.py  templates.py
       api/          __init__.py  watchlist.py  calendar.py  symbol.py  payoff.py  builder.py
                      screener.py  orders.py
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
                      calendar_service.py  candle_service.py  chain_service.py
-                     screener_service.py  staging.py
+                     screener_service.py  staging.py  quote_service.py
       analytics/    __init__.py  levels.py  payoff.py  pop.py  strategies.py
       static/       index.html  css/scout.css  js/scout.js  js/payoff.js
         vendor/     lightweight-charts.standalone.production.js  tabulator.min.js
@@ -80,6 +80,7 @@ packages/scout/
                     test_pop.py  test_payoff_routes.py  test_builder_routes.py
                     test_strategies.py  test_screener_service.py  test_screener_routes.py
                     test_staging.py  test_order_routes.py  test_dry_run_only.py
+                    test_quote_service.py  test_sse.py
 ```
 
 ## The earnings calendar (M2)
@@ -204,6 +205,26 @@ the save, so a broker hiccup never costs a research session its work. Account nu
 (M4) now carries each leg's OCC option symbol through to "Validate with broker" and "Stage ticket";
 every staged leg is an opening trade (buy/sell to open) -- the builder has no closing-order or
 stock-leg picker. The Staged nav view lists tickets with a copyable order description and delete.
+
+## Live quotes (M7)
+
+`GET /api/stream` is a Server-Sent Events endpoint pushing live watchlist quote ticks, backed by
+`sse.py`'s `QuotePoller`. The poller runs one shared background task per app lifespan, but that task
+only exists **while at least one browser tab has the page open**: the first SSE subscriber starts it,
+the last one disconnecting cancels it -- zero clients means zero broker calls, the same
+connect-gated posture the plan calls for. Each tick is one batched `quote_service.get_quotes` call
+(chunked ~100 symbols/call, same discipline as `chain_service`) diffed against the last-sent
+snapshot, so only symbols whose quote actually changed get pushed; a quiet tick sends a heartbeat
+comment instead, keeping the connection alive through proxies without spamming an idle tab. This is
+poll-and-push REST, deliberately not a resident DXLink connection -- the plan's call, since this
+surface only needs to exist while a human has the page open, unlike `candle_service`'s bounded DXLink
+top-up which fills in chart history regardless of who's watching.
+
+`static/js/scout.js` opens one `EventSource` per page load and fans live ticks out to two places:
+the watchlist sidebar (an Alpine-reactive `quotes` map, colored by `change_pct`) and, when the
+Symbol view is open for the ticking symbol, the chart's still-forming last daily bar (`close`
+updated in place, `high`/`low` extended if the tick breaks the bar's current range) via
+`Lightweight Charts`' `series.update()` -- no full re-fetch needed for a live tick.
 
 ## Security
 
