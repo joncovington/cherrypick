@@ -34,6 +34,7 @@ from __future__ import annotations
 
 BULLISH = "bullish"
 MILDLY_BULLISH = "mildly_bullish"
+NEUTRAL = "neutral"  # only the 5-grade candidate emits this; observed labels include it
 MILDLY_BEARISH = "mildly_bearish"
 BEARISH = "bearish"
 
@@ -89,6 +90,41 @@ def triple_ma_alignment(closes: list[float], fast: int, mid: int, slow: int) -> 
     f, m, s = (e[-1] for e in emas)
     score = int(f > m) + int(m > s) + int(f > s)
     return {3: BULLISH, 2: MILDLY_BULLISH, 1: MILDLY_BEARISH, 0: BEARISH}[score]
+
+
+def triple_ma_price_alignment(closes: list[float], fast: int, mid: int, slow: int) -> str | None:
+    """The 5-grade variant, added after label collection showed the reference indicator emits
+    *five* states (Bullish / Mildly Bullish / Neutral / Mildly Bearish / Bearish) -- a four-state
+    model can never say Neutral. Same triple-MA machinery plus one more structural boolean,
+    price > fast EMA: the 0-4 bullish count maps onto the five grades with no thresholds."""
+    emas = [ema_series(closes, p) for p in (fast, mid, slow)]
+    if any(e is None for e in emas):
+        return None
+    f, m, s = (e[-1] for e in emas)
+    score = int(closes[-1] > f) + int(f > m) + int(m > s) + int(f > s)
+    return {4: BULLISH, 3: MILDLY_BULLISH, 2: NEUTRAL, 1: MILDLY_BEARISH, 0: BEARISH}[score]
+
+
+def sma_last(closes: list[float], period: int) -> float | None:
+    if period <= 0 or len(closes) < period:
+        return None
+    return sum(closes[-period:]) / period
+
+
+def price_ma_count(closes: list[float], fast: int, mid: int, slow: int) -> str | None:
+    """The current best-fitting candidate (17/25 = 68% exact at BOTH horizons against the observed
+    labels, vs <=36% for every other family): price vs each of three SMAs plus one ordering check
+    (fast > slow), 0-4 bullish count -> the five grades. Fitted on 25 hand-collected rows dated
+    2026-08-02/03 with every 1M miss exactly one grade adjacent -- promising, but a 25-row fit is a
+    hypothesis, not a finding; re-validate against a fresh same-day label batch before this ever
+    drives a user-facing surface."""
+    vals = [sma_last(closes, p) for p in (fast, mid, slow)]
+    if any(v is None for v in vals):
+        return None
+    f, m, s = vals
+    price = closes[-1]
+    score = int(price > f) + int(price > m) + int(price > s) + int(f > s)
+    return {4: BULLISH, 3: MILDLY_BULLISH, 2: NEUTRAL, 1: MILDLY_BEARISH, 0: BEARISH}[score]
 
 
 # --------------------------------------------------------------------- candidate 2: MACD state
@@ -174,6 +210,11 @@ def trix_trend(closes: list[float], period: int = 15, signal: int = 9) -> str | 
 #: standard month-scale parameters on weekly closes instead of stretching the EMA lengths.
 DEFAULT_PARAMS = {
     "alignment": {"1m": (5, 10, 21), "6m": (21, 63, 126)},
+    # The reference platform's Price Action commentary references the 50-day MA by name, so the
+    # 5-grade candidate's guesses lean on conventional 10/20/50 (1M) and 20/50/200 (6M) sets.
+    "alignment_px": {"1m": (10, 20, 50), "6m": (20, 50, 200)},
+    # Sweep winners on the 25-row label set (2026-08-03) -- provisional until re-validated.
+    "price_ma_count": {"1m": (20, 26, 30), "6m": (15, 21, 50)},
     "tema": {"1m": 21, "6m": 126},
     "macd": {"1m": (12, 26, 9), "6m": (12, 26, 9)},  # 6m runs on weekly closes
     "trix": {"1m": (15, 9), "6m": (15, 9)},  # 6m runs on weekly closes
@@ -190,6 +231,14 @@ def classify_all(bars: list[dict]) -> dict[str, dict[str, str | None]]:
         "alignment": {
             "1m": triple_ma_alignment(closes, *p["alignment"]["1m"]),
             "6m": triple_ma_alignment(closes, *p["alignment"]["6m"]),
+        },
+        "alignment_px": {
+            "1m": triple_ma_price_alignment(closes, *p["alignment_px"]["1m"]),
+            "6m": triple_ma_price_alignment(closes, *p["alignment_px"]["6m"]),
+        },
+        "price_ma_count": {
+            "1m": price_ma_count(closes, *p["price_ma_count"]["1m"]),
+            "6m": price_ma_count(closes, *p["price_ma_count"]["6m"]),
         },
         "macd": {
             "1m": macd_state(closes, *p["macd"]["1m"]),
