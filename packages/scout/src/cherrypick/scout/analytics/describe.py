@@ -63,6 +63,20 @@ strangle scored 152-250 despite reward/risk collapsing to ~0 when risk is "Unlim
 almost certainly use the platform's real margin requirement as the risk denominator, a dollar
 figure this package has no visibility into; `score()` returns None rather than guess at it.
 
+The reference platform's own "Risk And Investment Calculator" tab states its methodology in
+plain text (GOOG, 2026-08-05): for an unlimited-risk basket, its "probable risk" is "based on a
+wide (2 SD) move against you" -- i.e. the position's P&L at spot +/- 2 standard deviations,
+worse side. This turned out to be a GENUINELY SEPARATE calculation from Score, not the missing
+risk denominator: independently computing that 2-SD P&L for three GOOG short strangles (solving
+IV from each strangle's own quoted premium) gives ~$6,900-7,100, corroborated by the calculator's
+own contract-sizing behavior (entering a $30,000/$10,000 "invest" amount for an unlimited-risk
+strangle sized it to 3 and 1 contracts respectively, implying a per-contract figure in
+$7,500-$10,000 -- close to the independent computation, the small gap plausibly the real
+platform's IV skew our flat-vol solve doesn't model). But inverting Score itself for those same
+three strangles implies a "risk" of only ~$1,200-1,300 -- five to six times smaller. Score and
+the Risk Calculator are evidently unrelated internal numbers; the 2-SD move is real and useful in
+its own right (see `probable_risk_2sd()` below) but does not unlock undefined-risk Score.
+
 A second batch (AVGO, 2026-08-05) reconfirms the formula on five more defined-risk points and
 extends it to a 4-leg iron condor, not just 2-leg verticals: three put verticals of increasing
 width (POP 42-48%) and two iron condors of very different wingspan (POP 12% and 31%) all land
@@ -78,7 +92,7 @@ import math
 from datetime import date
 
 from .payoff import Leg, breakevens, max_loss, max_profit, payoff_at
-from .pop import norm_cdf, prob_below
+from .pop import expected_move, norm_cdf, prob_below
 
 DAYS_PER_YEAR = 365.0
 
@@ -124,6 +138,26 @@ def score(pop_value: float | None, legs: list[Leg], max_reward: dict, max_loss: 
     if max_risk <= 0:
         return None
     return 100.0 * pop_value * (reward_value + max_risk) / max_risk
+
+
+def probable_risk_2sd(legs: list[Leg], spot: float, sigma: float, t: float) -> float | None:
+    """The reference platform's own disclosed "Risk And Investment Calculator" methodology for an
+    unlimited-risk basket (its exact text, GOOG 2026-08-05): "probable risk based on a wide (2 SD)
+    move against you." Computed directly -- the position's dollar loss (0 if actually profitable)
+    at spot -/+ 2 standard deviations, whichever side is worse -- rather than guessed at; this is
+    a genuinely different number from `score()`'s undefined-risk denominator (see module
+    docstring: independently computed for three same-day GOOG strangles at ~$6,900-7,100,
+    corroborated by the calculator's own contract-sizing behavior, while Score implies a risk
+    figure 5-6x smaller for the same positions -- two unrelated calculations). Returns None when
+    the basket is actually defined-risk (max_loss already gives the exact figure there) or inputs
+    are missing."""
+    if sigma is None or t is None or sigma <= 0 or t <= 0:
+        return None
+    em = expected_move(spot, sigma, t)
+    down = payoff_at(legs, max(0.0, spot - 2 * em))
+    up = payoff_at(legs, spot + 2 * em)
+    worst = min(down, up)
+    return -worst if worst < 0 else 0.0
 
 
 def prob_worthless(legs: list[Leg], spot: float, sigma: float, t: float, r: float) -> float | None:
