@@ -333,6 +333,41 @@ def test_suggestions_route_builds_three_cards_per_sentiment(template_route):
     assert strangle["annualized_return"] is None  # no max_risk denominator -> no return claim
 
 
+def test_suggestions_route_defaults_to_the_next_monthly_30_plus_days_out(template_route, monkeypatch):
+    """User's rule: with no expiration pinned, suggestions target the next standard monthly cycle
+    at least 30 days out -- preferred over a NEARER weekly that also clears 30 days."""
+    from datetime import UTC, datetime, timedelta
+
+    today = datetime.now(tz=UTC).date()
+    probe = today + timedelta(days=30)
+    while not (probe.weekday() == 4 and 15 <= probe.day <= 21):
+        probe += timedelta(days=1)
+    monthly = probe.isoformat()
+    weekly = (today + timedelta(days=31)).isoformat()
+    if weekly == monthly:
+        weekly = (today + timedelta(days=32)).isoformat()
+
+    app, client = template_route
+    strikes = [80, 85, 90, 95, 100, 105, 110, 115, 120]
+
+    async def fake_get_expirations(_conn, _session, _cfg, symbol):
+        both = _fake_chain_expirations(strikes, expiration=monthly)["expirations"][monthly]
+        weekly_opts = _fake_chain_expirations(strikes, expiration=weekly)["expirations"][weekly]
+        return {"ok": True, "symbol": "AAPL", "as_of": 0, "stale": False,
+                "expirations": {weekly: weekly_opts, monthly: both}}
+
+    monkeypatch.setattr(_symbol_api.chain_service, "get_expirations", fake_get_expirations)
+    resp = client.get(
+        "/api/symbol/aapl/suggestions",
+        params={"spot": 100.0, "sentiment": "bullish"},
+        headers=_headers(app),
+    )
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["expiration"] == monthly  # the monthly wins even though the weekly is nearer
+    assert body["cards"]
+
+
 def test_suggestions_route_rejects_unknown_sentiment(template_route):
     app, client = template_route
     resp = client.get(

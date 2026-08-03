@@ -236,6 +236,7 @@ table.income-grid th, table.income-grid td { padding: 4px 8px; text-align: cente
 #leg-table button:hover { color: #e08b8b; }
 .leg-controls { margin: 6px 0; align-items: center; }
 .suggestion-cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.suggestion-cards p { width: 100%; margin: 0; }
 .suggestion-card {
   background: #10151a;
   border: 1px solid #2a343d;

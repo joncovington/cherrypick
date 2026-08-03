@@ -213,18 +213,45 @@ _SENTIMENT_TEMPLATES = {
 }
 
 
+def _is_monthly(exp) -> bool:
+    """The 3rd Friday of the month -- the standard monthly expiration (same rule as the
+    screener's)."""
+    return exp.weekday() == 4 and 15 <= exp.day <= 21
+
+
+def _default_suggestion_expiration(expirations_map: dict) -> str | None:
+    """The next standard monthly cycle at least 30 days out (user's default for sentiment
+    suggestions -- monthlies carry the liquidity); falls back to the nearest expiration >= 30 DTE,
+    then to the farthest listed."""
+    from datetime import UTC, date, datetime
+
+    today = datetime.now(tz=UTC).date()
+    dated = sorted((date.fromisoformat(iso), iso) for iso in expirations_map)
+    if not dated:
+        return None
+    monthlies = [(d, iso) for d, iso in dated if _is_monthly(d) and (d - today).days >= 30]
+    if monthlies:
+        return monthlies[0][1]
+    far_enough = [(d, iso) for d, iso in dated if (d - today).days >= 30]
+    return far_enough[0][1] if far_enough else dated[-1][1]
+
+
 @router.get("/api/symbol/{sym}/suggestions")
 async def get_suggestions(
     request: Request,
     sym: str,
-    expiration: str = Query(...),
     spot: float = Query(...),
     sentiment: str = Query("bullish"),
+    expiration: str | None = Query(None, description="omit to default to the next monthly >=30 DTE"),
     iv: float | None = Query(None),
     dte: float | None = Query(None),
 ) -> dict:
     """Three candidate structures for a sentiment, each with the payoff engine's own numbers
-    (cost/credit, max reward/risk, POP, breakevens) and its legs ready to load into the editor."""
+    (cost/credit, max reward/risk, POP, breakevens) and its legs ready to load into the editor.
+    Defaults to the next standard monthly cycle at least 30 days out when no expiration is
+    pinned."""
+    from datetime import UTC, date, datetime
+
     from ..analytics import describe as _describe
     from ..analytics import payoff as _payoff_mod
     from ..analytics import templates as _templates
@@ -233,9 +260,22 @@ async def get_suggestions(
     if sentiment not in _SENTIMENT_TEMPLATES:
         raise HTTPException(400, f"unknown sentiment {sentiment!r}")
     app = request.app
+
+    if expiration is None:
+        all_expirations = await chain_service.get_expirations(
+            app.state.cache_db, app.state.broker_session, app.state.cfg, sym
+        )
+        expiration = _default_suggestion_expiration(all_expirations["expirations"])
+        if expiration is None:
+            return {"ok": True, "symbol": sym.strip().upper(), "sentiment": sentiment,
+                    "expiration": None, "cards": []}
+        if dte is None:
+            dte = (date.fromisoformat(expiration) - datetime.now(tz=UTC).date()).days
+
     _expirations, options = await _chain_with_quotes_and_greeks(app, sym, expiration)
     if not options:
-        return {"ok": True, "symbol": sym.strip().upper(), "sentiment": sentiment, "cards": []}
+        return {"ok": True, "symbol": sym.strip().upper(), "sentiment": sentiment,
+                "expiration": expiration, "cards": []}
 
     try:
         rate = await metrics_service.get_risk_free_rate(app.state.cache_db, app.state.broker_session)
@@ -273,7 +313,13 @@ async def get_suggestions(
         else:
             card["annualized_return"] = None
         cards.append(card)
-    return {"ok": True, "symbol": sym.strip().upper(), "sentiment": sentiment, "cards": cards}
+    return {
+        "ok": True,
+        "symbol": sym.strip().upper(),
+        "sentiment": sentiment,
+        "expiration": expiration,
+        "cards": cards,
+    }
 
 
 @router.get("/api/symbol/{sym}/warnings")

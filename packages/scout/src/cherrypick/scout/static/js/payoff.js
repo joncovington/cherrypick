@@ -198,16 +198,11 @@ function _miniPayoffSvg(curve, spot) {
 
 async function loadSuggestions(view, sentiment) {
   const el = view.querySelector("#suggestion-cards");
-  if (!el || !_builder.expiration) return;
+  if (!el) return;
   el.innerHTML = '<p class="loading">Building suggestions…</p>';
-  const dte = _daysToExpiration(_builder.expiration);
-  const params = new URLSearchParams({
-    expiration: _builder.expiration,
-    spot: String(_builder.spot),
-    sentiment,
-  });
+  // No expiration pinned: the server defaults to the next monthly cycle at least 30 days out.
+  const params = new URLSearchParams({ spot: String(_builder.spot), sentiment });
   if (_builder.iv) params.set("iv", String(_builder.iv));
-  if (dte) params.set("dte", String(dte));
   let res;
   try {
     res = await fetch(`/api/symbol/${_builder.symbol}/suggestions?${params.toString()}`).then((r) =>
@@ -219,21 +214,30 @@ async function loadSuggestions(view, sentiment) {
   }
   const fmt = (v) => (typeof v === "number" ? v.toFixed(0) : "--");
   const pct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(0)}%` : "--");
-  el.innerHTML = (res.cards || [])
-    .map(
-      (card, i) => `<button type="button" class="suggestion-card" data-i="${i}">
+  const header = res.expiration
+    ? `<p class="note">Suggestions target the ${res.expiration} monthly cycle.</p>`
+    : "";
+  el.innerHTML =
+    header +
+    (res.cards || [])
+      .map(
+        (card, i) => `<button type="button" class="suggestion-card" data-i="${i}">
         <b>${_TEMPLATE_LABELS[card.name] || card.name}</b>
         ${_miniPayoffSvg(card.curve, _builder.spot)}
         <span class="note">${card.cost < 0 ? "Credit" : "Cost"} $${fmt(Math.abs(card.cost))} ·
           Risk ${card.max_risk.unbounded ? "∞" : "$" + fmt(Math.abs(card.max_risk.value))} ·
           POP ${pct(card.pop)}</span>
       </button>`
-    )
-    .join("");
+      )
+      .join("");
   el.querySelectorAll(".suggestion-card").forEach((btn) => {
-    btn.onclick = () => {
+    btn.onclick = async () => {
       const card = res.cards[parseInt(btn.dataset.i, 10)];
       view.querySelector("#template-select").value = "";
+      if (res.expiration && res.expiration !== _builder.expiration) {
+        _builder.expiration = res.expiration;
+        await loadChain(view); // keep the chain table and leg dropdowns on the card's expiration
+      }
       _setLegs(view, card.legs);
     };
   });
