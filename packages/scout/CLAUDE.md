@@ -9,8 +9,9 @@ calendar, a credit-spread/iron-condor screener, per-symbol candlestick charts, a
 builder — content ideas borrowed from OptionsPlay-style research tools, built on the suite's own data
 sources (`tastytrade.metrics.get_market_metrics`, the shared Dolt DBs, a new candle/chain cache). It is
 **standalone**: its own port (5057), no orchestrator section card or dashboard-embed registration, and
-not on any reliability path. It is being built milestone-by-milestone on the long-lived `feature/scout`
-branch (see git history for what has actually landed) and merges to `main` only when feature-complete.
+not on any reliability path. It was built milestone-by-milestone on the long-lived `feature/scout`
+branch (see git history) and merges to `main` only when feature-complete — the merge itself is a
+separate, deliberate step, not implied by the branch reaching M8.
 
 ## Commands
 

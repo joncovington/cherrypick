@@ -21,18 +21,29 @@ async function mountBuilderView(view) {
   const spotInput = view.querySelector("#builder-spot");
   const ivInput = view.querySelector("#builder-iv");
 
-  const stats = await fetch(`/api/symbol/${_builder.symbol}/stats`).then((r) => r.json());
+  let stats, expirations;
+  try {
+    [stats, expirations] = await Promise.all([
+      fetch(`/api/symbol/${_builder.symbol}/stats`).then((r) => r.json()),
+      fetch(`/api/symbol/${_builder.symbol}/expirations`).then((r) => r.json()),
+    ]);
+  } catch {
+    view.querySelector("#builder-chain").textContent =
+      "Could not reach the scout server -- is it still running?";
+    return;
+  }
   _builder.spot = stats.last_close ?? 100;
   _builder.iv = stats.iv_30d ?? 0.3;
   spotInput.value = _builder.spot;
   ivInput.value = _builder.iv;
 
-  const expirations = await fetch(`/api/symbol/${_builder.symbol}/expirations`).then((r) => r.json());
   const dates = Object.keys(expirations.expirations || {}).sort();
   expSelect.innerHTML = dates.map((d) => `<option value="${d}">${d}</option>`).join("");
   if (dates.length) {
     _builder.expiration = dates[0];
     await loadChain(view);
+  } else {
+    view.querySelector("#builder-chain").textContent = "No option chain available for this symbol.";
   }
 
   expSelect.onchange = () => {
@@ -58,9 +69,19 @@ async function loadChain(view) {
   const chainEl = view.querySelector("#builder-chain");
   const expSelect = view.querySelector("#builder-expiration");
   expSelect.value = _builder.expiration;
-  const data = await fetch(
-    `/api/symbol/${_builder.symbol}/chain?expiration=${encodeURIComponent(_builder.expiration)}`
-  ).then((r) => r.json());
+  let data;
+  try {
+    data = await fetch(
+      `/api/symbol/${_builder.symbol}/chain?expiration=${encodeURIComponent(_builder.expiration)}`
+    ).then((r) => r.json());
+  } catch {
+    chainEl.textContent = "Could not reach the scout server -- is it still running?";
+    return;
+  }
+  if (!data.options || !data.options.length) {
+    chainEl.textContent = "No strikes available for this expiration.";
+    return;
+  }
 
   const byStrike = {};
   for (const opt of data.options || []) {
@@ -139,7 +160,14 @@ async function computePayoff(view) {
   if (dte != null) params.set("dte", String(dte));
   if (_builder.iv != null) params.set("iv", String(_builder.iv));
 
-  const result = await fetch(`/api/payoff?${params.toString()}`).then((r) => r.json());
+  let result;
+  try {
+    result = await fetch(`/api/payoff?${params.toString()}`).then((r) => r.json());
+  } catch {
+    svg.innerHTML = "";
+    metricsEl.innerHTML = '<span class="notice">Could not reach the scout server -- is it still running?</span>';
+    return;
+  }
   _builder.lastResult = result;
   renderPayoffSvg(svg, result, _builder.spot);
   renderMetrics(metricsEl, result);
@@ -177,8 +205,12 @@ async function validateOrder(view) {
     return;
   }
   el.textContent = "Validating…";
-  const result = await postJson("/api/order/dry-run", { legs: _orderLegs() });
-  el.innerHTML = renderDryRunSummary(result);
+  try {
+    const result = await postJson("/api/order/dry-run", { legs: _orderLegs() });
+    el.innerHTML = renderDryRunSummary(result);
+  } catch {
+    el.innerHTML = '<span class="notice">Could not reach the scout server -- is it still running?</span>';
+  }
 }
 
 async function stageTicket(view) {
@@ -192,17 +224,21 @@ async function stageTicket(view) {
   const maxRisk =
     result && result.max_loss && !result.max_loss.unbounded ? Math.abs(result.max_loss.value) : null;
   el.textContent = "Staging…";
-  const res = await postJson("/api/staged", {
-    symbol: _builder.symbol,
-    strategy: "custom",
-    legs: _orderLegs(),
-    credit: _netCredit(),
-    max_risk: maxRisk,
-    note,
-  });
-  el.innerHTML = res.ok
-    ? `Staged. ${renderDryRunSummary(res.ticket.dry_run)}`
-    : `<span class="notice">${res.error || "stage failed"}</span>`;
+  try {
+    const res = await postJson("/api/staged", {
+      symbol: _builder.symbol,
+      strategy: "custom",
+      legs: _orderLegs(),
+      credit: _netCredit(),
+      max_risk: maxRisk,
+      note,
+    });
+    el.innerHTML = res.ok
+      ? `Staged. ${renderDryRunSummary(res.ticket.dry_run)}`
+      : `<span class="notice">${res.error || "stage failed"}</span>`;
+  } catch {
+    el.innerHTML = '<span class="notice">Could not reach the scout server -- is it still running?</span>';
+  }
 }
 
 function renderMetrics(el, result) {

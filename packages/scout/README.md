@@ -12,9 +12,10 @@ fully standalone package — its own port, no orchestrator section/embed registr
 reliability path.
 
 Part of the **cherrypick** trading-tool suite; see the suite's [documentation index](../../docs/README.md)
-for the big picture. This package is being built milestone-by-milestone on `feature/scout` (see git
-history) — the file tree and CLI table below describe **what exists on this branch today**, not the
-eventual full surface.
+for the big picture. This package was built milestone-by-milestone on `feature/scout` (see git
+history); M1 through M8 (skeleton, calendar, symbol view, payoff/builder, screener, order staging,
+live quotes, and this polish pass) are all landed on the branch. The file tree below describes what
+actually exists.
 
 ## Setup
 
@@ -225,6 +226,31 @@ the watchlist sidebar (an Alpine-reactive `quotes` map, colored by `change_pct`)
 Symbol view is open for the ticking symbol, the chart's still-forming last daily bar (`close`
 updated in place, `high`/`low` extended if the tick breaks the bar's current range) via
 `Lightweight Charts`' `series.update()` -- no full re-fetch needed for a live tick.
+
+## Verification (M8)
+
+All five surfaces (calendar, screener, symbol, builder, staged) were exercised end to end against a
+live broker session and the real local Dolt server, not just green pytest output -- the same posture
+the M5 screener verification set. Watchlisted `AAPL MSFT NVDA AMD TSLA`: sidebar quotes ticked over
+SSE within one poll interval; the calendar returned 2800+ Dolt rows plus fresh metrics rows for the
+watchlist; the symbol view rendered real candles/stats; a builder leg basket priced a real put credit
+spread (`/api/payoff` returned correct max profit/loss/breakeven/POP for the actual quoted strikes);
+"Validate with broker" returned a real preflight (buying-power effect, fees, one `tif` warning, masked
+account) with **no order created** (confirmed both by the preflight response itself -- id `-1`, never
+a live order id -- and by `test_dry_run_only.py`'s source-scan guarantee that no live path exists to
+create one); a staged ticket saved with that dry-run result attached, listed, and deleted cleanly.
+
+One honest finding from that run, worth recording rather than smoothing over: the plan's `<30 s cold`
+screener estimate undersold real DXLink latency for a multi-symbol watchlist. A screener request
+against a fully cold cache (candle backfill via DXLink for all 5 symbols, an uncached options chain,
+metrics, and quotes) took **~2.5 minutes**, not 30 seconds -- `candle_service`'s bounded DXLink tail
+top-up is single-flight and timeout-capped per symbol (see its own CLAUDE.md entry), so a five-symbol
+cold start pays that cost five times serially. A **warm** request (candle/metrics/chain all cached,
+quotes past their 60 s TTL) returned in ~17 seconds; a **fully warm** request (nothing past any TTL)
+returned in under 200 ms. This is real broker/DXLink round-trip latency, not a call storm or a
+correctness bug -- the log showed exactly the batched, TTL-respecting call pattern the plan calls for,
+and every cache layer behaved as designed. Anyone hitting a slow first screener load after adding new
+watchlist symbols is seeing this, not a hang.
 
 ## Security
 
