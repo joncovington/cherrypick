@@ -318,17 +318,26 @@ picks a winner.
 
 ## Plain-language symbol analysis
 
-`GET /api/symbol/{sym}/analysis` generates the two-paragraph narrative the symbol view shows under
-the chart: an optional trend-following **scan headline** ("has recently pulled back within a
-longer-term bullish trend...") when that setup actually exists, and a **Price Action** line -- one
-concrete, checkable observation picked by priority from detected conditions: 200-day MA cross today
-> 50-day MA cross > gap on ≥1.5x average volume > S/R level break (with role reversal: "broke above
-its 102.00 resistance, which now becomes support") > ≥5% three-session move > trading at a nearby
-level > a trend + support/resistance fallback. An earnings-timing suffix ("and reports earnings
-tomorrow before the open") rides on any of them when the metrics earnings date is today/tomorrow.
-Everything is generated from data scout already computes (`analytics/narrative.py`, pure/stdlib, no
-free-written text -- every sentence carries its numbers); the trend wording uses scout's own
-provisional `price_ma_count` classifier and is labeled as such in the UI.
+`GET /api/symbol/{sym}/analysis` generates the narrative the symbol view shows under the chart: an
+optional **scan headline** (CCI dip/rally within a trend when CCI(20) crosses ±100 -- the more
+specific setup, checked first -- else bullish/bearish trend-following when the horizons disagree),
+and **Price Action** as up to three bullets. Bullet one is the priority-picked concrete event:
+200-day MA cross today > 50-day MA cross > gap on ≥1.5x average volume > S/R level break (with role
+reversal: "broke above its 102.00 resistance, which now becomes support") > ≥5% three-session move
+> trading at a nearby level > a trend + support/resistance fallback, with an earnings-timing suffix
+when the report is today/tomorrow. Bullets two and three add the strongest **options context** (IV
+vs realized ratio at ≥1.25x/≤0.8x, IV-rank extremes, skew lean -- the layer a price-only narrative
+lacks) and **technical/market context** (golden/death cross, 52-week proximity or a new closing
+high/low, ≥5-session streaks, tightest-20-day-range squeeze, ≥12% extension from the 50-day, and
+true relative strength vs cached SPX closes over 3 months -- computed, not the reference platform's
+same-named trend composite). `GET /api/symbol/{sym}/warnings?expiration=` serves the builder's
+event warnings: an earnings report or ex-dividend date landing inside the chosen expiration
+(early-assignment note included), rendered above the chain and refreshed on every expiration
+change. All of it is generated from data scout already computes (`analytics/narrative.py`,
+pure/stdlib, no free-written text -- every sentence carries its numbers); metrics fields that were
+previously fetched-and-discarded (`historical_volatility_30_day`, `corr_spy_3month`, dividend
+dates/rate) are now kept for exactly this. Trend wording uses scout's own provisional
+`price_ma_count` classifier and is labeled as such in the UI.
 
 ## Verification (M8)
 

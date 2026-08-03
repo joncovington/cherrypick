@@ -65,9 +65,15 @@ def _serialize(info: Any) -> dict:
         "liquidity_rank": _jsonable(getattr(info, "liquidity_rank", None)),
         "market_cap": _jsonable(getattr(info, "market_cap", None)),
         "beta": _jsonable(getattr(info, "beta", None)),
+        "corr_spy_3month": _jsonable(getattr(info, "corr_spy_3month", None)),
         "price_earnings_ratio": _jsonable(getattr(info, "price_earnings_ratio", None)),
         "dividend_yield": _jsonable(getattr(info, "dividend_yield", None)),
+        "dividend_ex_date": _jsonable(getattr(info, "dividend_ex_date", None)),
+        "dividend_next_date": _jsonable(getattr(info, "dividend_next_date", None)),
+        "dividend_rate_per_share": _jsonable(getattr(info, "dividend_rate_per_share", None)),
         "iv_30d": _iv_30d_frac(getattr(info, "implied_volatility_30_day", None)),
+        # Same percentage-point convention as implied_volatility_30_day (see _iv_30d_frac).
+        "hv_30d": _iv_30d_frac(getattr(info, "historical_volatility_30_day", None)),
         "earnings": earnings_dict,
         "updated_at": _jsonable(getattr(info, "updated_at", None)),
     }
