@@ -95,6 +95,57 @@ def test_partial_symbol_renders_the_shell_with_the_symbol(app_and_client):
     assert "AAPL" in resp.text
 
 
+# --------------------------------------------------------------------------- /levels (S/R + SMAs)
+
+
+def test_api_symbol_levels_finds_swings_and_nearest_labels(app_and_client, monkeypatch):
+    # 15 flat-ish bars with one clear swing low (90 @ i=5) and one swing high (110 @ i=9);
+    # last close 100 sits between them, so both nearest labels must resolve.
+    bars = []
+    for i in range(15):
+        bars.append(
+            {
+                "t": 1000 + i * 86400,
+                "o": 100,
+                "h": 110 if i == 9 else 105,
+                "l": 90 if i == 5 else 95,
+                "c": 100.0,
+                "v": 10,
+            }
+        )
+
+    async def fake_get_candles(_conn, _session, _cfg, symbol):
+        return {"ok": True, "symbol": symbol.upper(), "as_of": 1000.0, "stale": False, "bars": bars}
+
+    monkeypatch.setattr(_symbol_api.candle_service, "get_candles", fake_get_candles)
+    app, client = app_and_client
+    resp = client.get("/api/symbol/aapl/levels", headers=_headers(app))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    kinds = {(lv["kind"], lv["price"]) for lv in body["levels"]}
+    assert ("support", 90.0) in kinds
+    assert ("resistance", 110.0) in kinds
+    assert body["nearest_support"]["price"] == 90.0
+    assert body["nearest_resistance"]["price"] == 110.0
+    assert set(body["smas"]) == {"sma20", "sma50", "sma200"}
+    assert body["smas"]["sma20"] == []  # only 15 bars -- warmup Nones are omitted, never zero-filled
+
+
+def test_api_symbol_levels_with_no_bars_degrades_to_empty(app_and_client, monkeypatch):
+    async def empty_candles(_conn, _session, _cfg, symbol):
+        return {"ok": True, "symbol": symbol.upper(), "as_of": 1000.0, "stale": True, "bars": []}
+
+    monkeypatch.setattr(_symbol_api.candle_service, "get_candles", empty_candles)
+    app, client = app_and_client
+    resp = client.get("/api/symbol/aapl/levels", headers=_headers(app))
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["levels"] == []
+    assert body["nearest_support"] is None
+    assert body["nearest_resistance"] is None
+
+
 # --------------------------------------------------------------------------- /quote (builder prefill)
 
 

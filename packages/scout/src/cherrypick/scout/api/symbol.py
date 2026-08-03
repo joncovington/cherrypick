@@ -1,4 +1,5 @@
-"""``GET /api/symbol/{sym}/{candles|stats|quote|expirations|chain}``, ``GET /partial/symbol/{sym}``."""
+"""``GET /api/symbol/{sym}/{candles|stats|quote|levels|expirations|chain}``,
+``GET /partial/symbol/{sym}``."""
 
 from __future__ import annotations
 
@@ -8,6 +9,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 
 from .. import templates as _templates
+from ..analytics import levels as _levels
 from ..services import candle_service, chain_service, metrics_service, quote_service
 
 router = APIRouter()
@@ -65,6 +67,47 @@ async def get_stats(request: Request, sym: str) -> dict:
         "iv_30d": info.get("iv_30d"),
         "liquidity_rating": info.get("liquidity_rating"),
         "beta": info.get("beta"),
+    }
+
+
+@router.get("/api/symbol/{sym}/levels")
+async def get_levels(request: Request, sym: str) -> dict:
+    """Support/resistance levels + SMA overlay series from the cached daily bars -- the wiring
+    `analytics/levels.py` was built for in M3 but never got (computed, tested, and then never
+    called by any route until now). `nearest_support`/`nearest_resistance` are the two label
+    values the symbol view surfaces: the closest clustered level on each side of the last
+    close."""
+    candles = await _candles(request, sym)
+    bars = candles["bars"]
+    levels = _levels.support_resistance(bars) if bars else []
+    smas = _levels.moving_averages(bars) if bars else {}
+    last_close = bars[-1]["c"] if bars else None
+
+    nearest_support = None
+    nearest_resistance = None
+    if last_close is not None:
+        below = [lv for lv in levels if lv["kind"] == "support" and lv["price"] < last_close]
+        above = [lv for lv in levels if lv["kind"] == "resistance" and lv["price"] > last_close]
+        nearest_support = max(below, key=lambda lv: lv["price"]) if below else None
+        nearest_resistance = min(above, key=lambda lv: lv["price"]) if above else None
+
+    return {
+        "ok": True,
+        "symbol": candles["symbol"],
+        "as_of": candles["as_of"],
+        "stale": candles["stale"],
+        "levels": levels,
+        "nearest_support": nearest_support,
+        "nearest_resistance": nearest_resistance,
+        # LWC-ready line-series points, Nones (warmup) omitted.
+        "smas": {
+            name: [
+                {"time": bar["t"], "value": value}
+                for bar, value in zip(bars, series, strict=True)
+                if value is not None
+            ]
+            for name, series in smas.items()
+        },
     }
 
 
