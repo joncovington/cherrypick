@@ -60,6 +60,34 @@ def test_covered_call_holds_stock_and_a_conservative_call():
     assert abs(call["delta"]) < 0.30  # the 15-20 delta conservative guidance
 
 
+def test_debit_verticals_use_the_observed_expected_move_rule():
+    """Measured from nine reference suggestion cards: long leg = nearest at/just-ITM strike,
+    short leg ~= one expected move from spot. iv=0.4, dte=91 -> EM ~= 20 on a 100 spot."""
+    chain = _chain()
+    call_debit = _templates.build("call_vertical_debit", chain, 100.0, iv=0.4, dte=91)
+    buy = next(lg for lg in call_debit if lg["quantity"] > 0)
+    sell = next(lg for lg in call_debit if lg["quantity"] < 0)
+    assert buy["strike"] == 100.0  # nearest at/just-ITM
+    assert sell["strike"] == 120.0  # nearest listed to spot + EM (~119.97)
+
+    put_debit = _templates.build("put_vertical_debit", chain, 100.0, iv=0.4, dte=91)
+    buy = next(lg for lg in put_debit if lg["quantity"] > 0)
+    sell = next(lg for lg in put_debit if lg["quantity"] < 0)
+    assert buy["strike"] == 100.0
+    assert sell["strike"] == 80.0  # nearest listed to spot - EM
+
+    # Without iv/dte the delta-target fallback still builds something sane.
+    fallback = _templates.build("call_vertical_debit", chain, 100.0)
+    assert fallback is not None
+
+
+def test_long_call_snaps_to_the_nearest_itm_strike():
+    legs = _templates.build("long_call", _chain(), 102.0)
+    assert legs[0]["strike"] == 100.0  # just in the money, per the observed cards
+    legs = _templates.build("long_put", _chain(), 98.0)
+    assert legs[0]["strike"] == 100.0
+
+
 def test_build_returns_none_when_the_chain_cannot_support_the_shape():
     thin = _chain(strikes=[100])  # one strike: verticals/condors can't exist
     assert _templates.build("put_vertical_credit", thin, 100.0) is None

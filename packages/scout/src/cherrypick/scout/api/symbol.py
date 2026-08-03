@@ -284,7 +284,7 @@ async def get_suggestions(
 
     cards = []
     for name in _SENTIMENT_TEMPLATES[sentiment]:
-        legs = _templates.build(name, options, spot)
+        legs = _templates.build(name, options, spot, iv=iv, dte=dte)
         if not legs:
             continue
         parsed = [
@@ -425,6 +425,8 @@ async def get_template(
     spot: float = Query(...),
     action: str = Query("build"),
     name: str | None = Query(None, description="template name, for action=build"),
+    iv: float | None = Query(None, description="for the debit-vertical expected-move rule"),
+    template_dte: float | None = Query(None),
     legs: str | None = Query(None, description="current legs JSON, for action=flip|width"),
     step: int = Query(1, description="+1 widen / -1 narrow, for action=width"),
 ) -> dict:
@@ -442,7 +444,7 @@ async def get_template(
     if action == "build":
         if name not in _templates.TEMPLATES:
             raise HTTPException(400, f"unknown template {name!r}")
-        built = _templates.build(name, options, spot)
+        built = _templates.build(name, options, spot, iv=iv, dte=template_dte)
     elif action in ("flip", "width"):
         try:
             current = _json.loads(legs or "")
