@@ -69,10 +69,24 @@ async function mountBuilderView(view) {
   computePayoff(view);
 }
 
+async function loadWarnings(view) {
+  const el = view.querySelector("#builder-warnings");
+  if (!el || !_builder.expiration) return;
+  try {
+    const res = await fetch(
+      `/api/symbol/${_builder.symbol}/warnings?expiration=${encodeURIComponent(_builder.expiration)}`
+    ).then((r) => r.json());
+    el.innerHTML = (res.warnings || []).map((w) => `<p class="notice">${w}</p>`).join("");
+  } catch {
+    el.innerHTML = ""; // warnings are best-effort; their absence must not block the builder
+  }
+}
+
 async function loadChain(view) {
   const chainEl = view.querySelector("#builder-chain");
   const expSelect = view.querySelector("#builder-expiration");
   expSelect.value = _builder.expiration;
+  loadWarnings(view); // fire-and-forget alongside the chain fetch
   chainEl.innerHTML = '<p class="loading">Loading option chain…</p>';
   let data;
   try {

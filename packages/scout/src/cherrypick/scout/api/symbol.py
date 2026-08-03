@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import html
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from .. import templates as _templates
@@ -137,9 +137,24 @@ async def get_analysis(request: Request, sym: str) -> dict:
     metrics = await metrics_service.get_metrics(
         app.state.cache_db, app.state.broker_session, [symbol], metrics_ttl
     )
-    earnings = (metrics.get(symbol) or {}).get("earnings")
+    info = metrics.get(symbol) or {}
+    earnings = info.get("earnings")
+
+    # Benchmark closes for the relative-strength bullet: cached-only read (peeking the candle
+    # store directly, never triggering a broker fetch for SPX on another symbol's page load).
+    spx_closes = [b["c"] for b in _cache_read_candles(app, "SPX")] if symbol != "SPX" else None
 
     name = symbol  # a display-name source (instrument description) is a possible later refinement
+    closes = [b["c"] for b in bars]
+    bullets = [_narrative.price_action(name, bars, levels, trend_6m, earnings)]
+    for extra in (
+        _narrative.options_bullet(name, info),
+        _narrative.technical_bullet(name, bars),
+        _narrative.relative_strength_bullet(name, closes, spx_closes),
+    ):
+        if extra and len(bullets) < 3:
+            bullets.append(extra)
+
     return {
         "ok": True,
         "symbol": symbol,
@@ -147,9 +162,42 @@ async def get_analysis(request: Request, sym: str) -> dict:
         "stale": candles["stale"],
         "trend_1m": trend_1m,
         "trend_6m": trend_6m,
-        "headline": _narrative.scan_headline(name, trend_1m, trend_6m),
-        "price_action": _narrative.price_action(name, bars, levels, trend_6m, earnings),
+        "headline": _narrative.scan_headline(name, trend_1m, trend_6m, bars),
+        "price_action": bullets[0],
+        "bullets": bullets,
     }
+
+
+def _cache_read_candles(app, symbol: str) -> list[dict]:
+    from ..services import cache as _cache_mod
+
+    try:
+        return _cache_mod.read_candles(app.state.cache_db, symbol, "1d")
+    except Exception:
+        return []
+
+
+@router.get("/api/symbol/{sym}/warnings")
+async def get_warnings(request: Request, sym: str, expiration: str = Query(...)) -> dict:
+    """Builder-facing event warnings for a chosen expiration: earnings reports and ex-dividend
+    dates landing inside it. Empty list = nothing detected, which is itself a claim -- see
+    `narrative.event_warnings`."""
+    from datetime import date as _date
+
+    app = request.app
+    symbol = sym.strip().upper()
+    try:
+        exp = _date.fromisoformat(expiration)
+    except ValueError as exc:
+        raise HTTPException(400, f"bad expiration date: {expiration!r}") from exc
+
+    metrics_ttl = app.state.cfg.get("refresh", {}).get("metrics_ttl_seconds", 900)
+    metrics = await metrics_service.get_metrics(
+        app.state.cache_db, app.state.broker_session, [symbol], metrics_ttl
+    )
+    info = metrics.get(symbol) or {}
+    warnings = _narrative.event_warnings(exp, info.get("earnings"), info)
+    return {"ok": True, "symbol": symbol, "expiration": expiration, "warnings": warnings}
 
 
 @router.get("/api/symbol/{sym}/quote")

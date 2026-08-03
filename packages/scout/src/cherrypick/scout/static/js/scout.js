@@ -114,11 +114,13 @@ function renderAnalysis(el, analysis) {
   const headline = analysis.headline
     ? `<p><b>${analysis.headline.scan}:</b> ${analysis.headline.text}</p>`
     : "";
+  const bullets = (analysis.bullets || [analysis.price_action]).filter(Boolean);
   el.innerHTML = `
     <p>Trend (scout's own read, provisional): 1M ${_trendChip(analysis.trend_1m)} ·
       6M ${_trendChip(analysis.trend_6m)}</p>
     ${headline}
-    <p><b>Price Action:</b> ${analysis.price_action}</p>
+    <p><b>Price Action:</b></p>
+    <ul>${bullets.map((b) => `<li>${b}</li>`).join("")}</ul>
   `;
 }
 
