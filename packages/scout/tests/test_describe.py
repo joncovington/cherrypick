@@ -88,10 +88,25 @@ def test_short_put_suggestion_discount_math():
     assert "10.6% discount" in text  # (31.71 - 28.36) / 31.71
 
 
-def test_checklist_grades_and_unknowns_warn():
-    items = _describe.checklist(pow_value=0.75, annualized=0.60, earnings_inside=False, spread_pct=0.03)
-    assert all(i["status"] == "pass" for i in items)
-    items = _describe.checklist(pow_value=0.45, annualized=0.10, earnings_inside=True, spread_pct=0.30)
-    assert [i["status"] for i in items] == ["fail", "fail", "warn", "fail"]
+def test_checklist_reproduces_the_observed_reference_gradings():
+    """Five observed cards calibrated these thresholds (see the module docstring); each row here is
+    one of those observations."""
+    # HYG-like: POW 81.39% green, annualized 6.30% green -- but a ~100%-of-mid spread red.
+    items = _describe.checklist(pow_value=0.8139, annualized=0.063, earnings_inside=False, spread_pct=1.0)
+    assert [i["status"] for i in items] == ["pass", "pass", "pass", "fail"]
+    # SAP-like: POW 53.54% red ("very low"), 20% spread red.
+    items = _describe.checklist(pow_value=0.5354, annualized=0.7845, earnings_inside=False, spread_pct=0.20)
+    assert [i["status"] for i in items] == ["fail", "pass", "pass", "fail"]
+    # DIA-like: POW 58.28% yellow ("lower than optimal"), 7.5% spread yellow ("sizable").
+    items = _describe.checklist(pow_value=0.5828, annualized=0.161, earnings_inside=False, spread_pct=0.075)
+    assert [i["status"] for i in items] == ["warn", "pass", "pass", "warn"]
+    # SPY-like covered call: POW 65.66% still yellow, 1% spread green.
+    items = _describe.checklist(pow_value=0.6566, annualized=0.0865, earnings_inside=False, spread_pct=0.0103)
+    assert [i["status"] for i in items] == ["warn", "pass", "pass", "pass"]
+
+
+def test_checklist_unknowns_warn_rather_than_pass():
     items = _describe.checklist(pow_value=None, annualized=None, earnings_inside=None, spread_pct=None)
     assert all(i["status"] == "warn" for i in items)
+    items = _describe.checklist(pow_value=0.45, annualized=0.01, earnings_inside=True, spread_pct=0.30)
+    assert [i["status"] for i in items] == ["fail", "fail", "warn", "fail"]
