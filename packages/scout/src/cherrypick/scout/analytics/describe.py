@@ -12,9 +12,10 @@ rounding. The compounding assumption (that the same trade could be repeated back
 at the same return) is optimistic by construction -- the number is a comparison metric, not a
 forecast, and the UI should keep the asterisk.
 
-Model greeks are Black-Scholes analytics computed from strike/spot/IV/T/r -- scout has no live
-per-option greeks feed (see the package CLAUDE.md), and a clearly-labeled model greek beats a
-silently absent one for the builder's explanation panel. They assume one flat IV across legs.
+Model greeks are Black-Scholes analytics computed from strike/spot/IV/T/r. Scout DOES have a live
+greeks source (`chain_service.get_greeks`, DXLink `Greeks` events -- see the package CLAUDE.md);
+these model greeks are the clearly-labeled FALLBACK for legs that arrived without live values,
+because a labeled model greek beats a silently absent one. They assume one flat IV across legs.
 
 Checklist thresholds are calibrated against observed reference-platform gradings (2026-08-03
 screenshots, five cards spanning the full range), not published numbers:
