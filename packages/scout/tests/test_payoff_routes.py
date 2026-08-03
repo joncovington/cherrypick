@@ -86,6 +86,53 @@ def test_payoff_route_rejects_a_malformed_leg(app_and_client):
     assert resp.status_code == 400
 
 
+def test_payoff_route_returns_annualized_and_pow_and_texts(app_and_client, monkeypatch):
+    app, client = app_and_client
+
+    async def fake_rate(_conn, _session):
+        return 0.05
+
+    monkeypatch.setattr(_payoff_api.metrics_service, "get_risk_free_rate", fake_rate)
+    single_short_put = [{"kind": "put", "quantity": -1, "price": 1.50, "strike": 95}]
+    resp = client.get(
+        "/api/payoff",
+        params={
+            "legs": json.dumps(single_short_put),
+            "spot": 100,
+            "dte": 25,
+            "iv": 0.30,
+            "symbol": "aapl",
+            "expiration": "2026-08-28",
+        },
+        headers=_headers(app),
+    )
+    body = resp.json()
+    assert body["raw_return"] == pytest.approx(150 / 9350, rel=1e-3)
+    assert body["annualized_return"] > body["raw_return"]  # compounded over 25 days
+    assert 0.5 < body["pow"] < 1.0
+    assert body["model_greeks"]["delta"] > 0  # short put is long delta
+    assert "bullish strategy" in body["explanation"]
+    assert "put on AAPL" in body["suggestion"]
+    assert "Model greeks" in body["greeks_text"]
+
+
+def test_payoff_route_omits_suggestion_for_multi_leg_positions(app_and_client):
+    app, client = app_and_client
+    resp = client.get(
+        "/api/payoff",
+        params={
+            "legs": json.dumps(_PUT_CREDIT_SPREAD),
+            "spot": 100,
+            "symbol": "AAPL",
+            "expiration": "2026-08-28",
+        },
+        headers=_headers(app),
+    )
+    body = resp.json()
+    assert body["suggestion"] is None  # the wheel framing only fits a lone short put
+    assert body["explanation"]  # but the generic explanation is always present
+
+
 def test_payoff_route_pop_degrades_gracefully_without_a_risk_free_rate(app_and_client, monkeypatch):
     app, client = app_and_client
 
