@@ -53,6 +53,7 @@ def _serialize(info: Any) -> dict:
         "beta": _jsonable(getattr(info, "beta", None)),
         "price_earnings_ratio": _jsonable(getattr(info, "price_earnings_ratio", None)),
         "dividend_yield": _jsonable(getattr(info, "dividend_yield", None)),
+        "iv_30d": _jsonable(getattr(info, "implied_volatility_30_day", None)),
         "earnings": earnings_dict,
         "updated_at": _jsonable(getattr(info, "updated_at", None)),
     }
@@ -105,3 +106,25 @@ async def get_metrics(
                 result[sym] = payload
 
     return result
+
+
+_RATE_BUCKET = "risk_free_rate"
+_RATE_KEY = "r"
+_RATE_TTL_SECONDS = 86400.0  # cached daily -- it moves on the order of Fed meetings, not requests
+
+
+async def get_risk_free_rate(
+    conn: sqlite3.Connection, session: BrokerSession, *, now: float | None = None
+) -> float:
+    """`tastytrade.metrics.get_risk_free_rate`, cached once a day -- POP's Black-Scholes drift term."""
+    from .cache import async_get_or_fetch
+
+    async def _fetch() -> float:
+        from tastytrade import metrics as _metrics
+
+        return float(await session.call(_metrics.get_risk_free_rate))
+
+    rate, _fetched_at, _stale = await async_get_or_fetch(
+        conn, _RATE_BUCKET, _RATE_KEY, _RATE_TTL_SECONDS, _fetch, now=now
+    )
+    return rate

@@ -45,14 +45,27 @@ function watchlistStore() {
     openSymbol(sym) {
       htmx.ajax("GET", `/partial/symbol/${sym}`, { target: "#content", pushUrl: true });
     },
+    openBuilder(sym) {
+      htmx.ajax("GET", `/partial/builder/${sym}`, { target: "#content", pushUrl: true });
+    },
   };
+}
+
+function _firstWatchlistSymbolOrDefault() {
+  const store = Alpine.$data(document.getElementById("watchlist"));
+  return store.symbols[0] || "SPY";
 }
 
 document.getElementById("nav-symbol").addEventListener("click", (evt) => {
   evt.preventDefault();
   const store = Alpine.$data(document.getElementById("watchlist"));
-  const sym = store.symbols[0] || "SPY";
-  store.openSymbol(sym);
+  store.openSymbol(_firstWatchlistSymbolOrDefault());
+});
+
+document.getElementById("nav-builder").addEventListener("click", (evt) => {
+  evt.preventDefault();
+  const store = Alpine.$data(document.getElementById("watchlist"));
+  store.openBuilder(_firstWatchlistSymbolOrDefault());
 });
 
 /* ---------------- symbol view: candlestick chart + stats panel ---------------- */

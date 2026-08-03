@@ -184,3 +184,39 @@ def get_or_fetch(
 
     _write(conn, bucket, key, fresh_payload, now)
     return fresh_payload, now, False
+
+
+async def async_get_or_fetch(
+    conn: sqlite3.Connection,
+    bucket: str,
+    key: str,
+    ttl: float,
+    fetch_fn: Callable[[], Any],
+    *,
+    force: bool = False,
+    refresh_floor_seconds: float = 60.0,
+    now: float | None = None,
+) -> tuple[Any, float, bool]:
+    """`get_or_fetch`'s async twin, for services whose fetch is an awaited broker call
+    (`chain_service`, and any future service in the same shape) rather than a plain sync callable.
+    Same contract: `(payload, fetched_at, stale)`, TTL/force/refresh-floor semantics identical."""
+    now = time.time() if now is None else now
+    cached = _read(conn, bucket, key)
+    if cached is not None:
+        payload, fetched_at = cached
+        age = now - fetched_at
+        if not force and age < ttl:
+            return payload, fetched_at, False
+        if force and age < refresh_floor_seconds:
+            return payload, fetched_at, False
+
+    try:
+        fresh_payload = await fetch_fn()
+    except Exception:
+        if cached is not None:
+            payload, fetched_at = cached
+            return payload, fetched_at, True
+        raise
+
+    _write(conn, bucket, key, fresh_payload, now)
+    return fresh_payload, now, False

@@ -60,26 +60,27 @@ packages/scout/
   src/cherrypick/
     scout/
       __init__.py  cli.py  config.py  app.py  serve.py  security.py  templates.py
-      api/          __init__.py  watchlist.py  calendar.py  symbol.py
+      api/          __init__.py  watchlist.py  calendar.py  symbol.py  payoff.py  builder.py
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
-                     calendar_service.py  candle_service.py
-      analytics/    __init__.py  levels.py
-      static/       index.html  css/scout.css  js/scout.js
+                     calendar_service.py  candle_service.py  chain_service.py
+      analytics/    __init__.py  levels.py  payoff.py  pop.py
+      static/       index.html  css/scout.css  js/scout.js  js/payoff.js
         vendor/     lightweight-charts.standalone.production.js  tabulator.min.js
                      tabulator_midnight.min.css  htmx.min.js  alpine.min.js
                      LICENSE-lightweight-charts.txt  LICENSE-tabulator.txt  LICENSE-htmx.txt
                      LICENSE-alpinejs.txt  LICENSES.md
-      templates/    calendar.html  symbol.html
+      templates/    calendar.html  symbol.html  builder.html
   tests/            conftest.py  test_config.py  test_cache_ttl.py  test_cache_candles.py
                     test_watchlist.py  test_security.py  test_self_contained.py
                     test_api_routes.py  test_session.py  test_metrics_service.py
                     test_calendar_service.py  test_calendar_routes.py  test_candle_service.py
-                    test_levels.py  test_symbol_routes.py
+                    test_levels.py  test_symbol_routes.py  test_chain_service.py  test_payoff.py
+                    test_pop.py  test_payoff_routes.py  test_builder_routes.py
 ```
 
-The screener and builder surfaces (with their own `api/`/`services/` modules) land in later
-milestones on this branch — their nav nodes already render in `static/index.html` but the routes
-don't exist yet.
+The screener surface (its own `api/`/`services/` module, `strategies.py`) lands in M5 — its nav node
+already renders in `static/index.html` but the route doesn't exist yet. "Staged" (order dry-run/
+staging) lands in M6.
 
 ## The earnings calendar (M2)
 
@@ -114,6 +115,32 @@ from swing highs/lows over the cached bars; the stats panel adds `metrics_servic
 liquidity rating, and beta alongside the candle-derived 52-week range and 30-day average volume.
 Rendering is Lightweight Charts v5 (`chart.addSeries(CandlestickSeries, ...)` +
 `HistogramSeries` for volume), mounted in `static/js/scout.js` on `htmx:afterSwap`.
+
+## Payoff engine + builder (M4)
+
+`analytics/payoff.py` and `analytics/pop.py` (stdlib + dataclasses only, no I/O -- same posture as
+`levels.py`) are the analytical core: a `Leg(kind, quantity, price, strike?, expiration?, greeks?)`
+list in, `payoff_at`/`payoff_curve`/`breakevens`/`max_profit`/`max_loss`/`net_greeks` out. An option
+payoff is *exactly* piecewise-linear with kinks only at strikes, so the curve is evaluated only at
+the strikes (exact, not a dense approximation) and breakevens/extrema follow from those points plus
+the two analytic tail slopes -- which is also how an unbounded position (naked short call, long call)
+is detected rather than guessed at. `pop.py` is a lognormal probability-of-profit (`N(-d2)` via
+`math.erf`, no scipy), integrated over the same breakeven-bounded intervals.
+
+`services/chain_service.py` adds the multi-expiration chain cache (`get_option_chain`, TTL
+`chain_ttl_seconds`) and batched option-quote snapshots (`get_market_data_by_type`, chunked
+~100 symbols/call, TTL 60 s) -- `services/cache.py` gained `async_get_or_fetch` (the sync
+`get_or_fetch` primitive's async twin) to back both without hand-rolling the same TTL logic a third
+time. Live per-option greeks aren't wired up yet (the SDK's quote/chain calls don't carry them); a
+leg without greeks still prices and plots correctly, it just won't show up in the net-greeks panel.
+
+`GET /api/payoff?legs=<json>&spot=&dte=&iv=` is pure computation -- no broker call at all unless
+`dte`/`iv` are both given, in which case POP additionally needs `metrics_service.get_risk_free_rate`
+(cached once a day); a missing rate falls back to `r=0` rather than failing the whole payoff. Legs are
+built interactively at `GET /partial/builder/{sym}` (the Builder nav tab, or "send to builder" from
+elsewhere): click a strike in the chain table to add a leg, and `static/js/payoff.js` recomputes and
+redraws a hand-rolled SVG payoff curve (no charting library -- a P/L polyline plus a zero line and a
+spot marker) on every change.
 
 ## Security
 

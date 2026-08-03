@@ -1,19 +1,14 @@
-"""``GET /api/symbol/{sym}/candles``, ``GET /api/symbol/{sym}/stats``, ``GET /partial/symbol/{sym}``.
-
-`expirations`/`chain` (the plan's other two symbol sub-routes) land with `chain_service` in M4 --
-adding them now would mean either a broker call this milestone doesn't otherwise need or a stub that
-always 404s, neither of which is better than just not routing them yet.
-"""
+"""``GET /api/symbol/{sym}/{candles|stats|expirations|chain}``, ``GET /partial/symbol/{sym}``."""
 
 from __future__ import annotations
 
 import html
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 
 from .. import templates as _templates
-from ..services import candle_service, metrics_service
+from ..services import candle_service, chain_service, metrics_service
 
 router = APIRouter()
 
@@ -67,8 +62,38 @@ async def get_stats(request: Request, sym: str) -> dict:
         "stale": candles["stale"] or not info,
         **_compute_stats(candles["bars"]),
         "iv_rank": info.get("iv_rank"),
+        "iv_30d": info.get("iv_30d"),
         "liquidity_rating": info.get("liquidity_rating"),
         "beta": info.get("beta"),
+    }
+
+
+@router.get("/api/symbol/{sym}/expirations")
+async def get_expirations(request: Request, sym: str) -> dict:
+    app = request.app
+    return await chain_service.get_expirations(
+        app.state.cache_db, app.state.broker_session, app.state.cfg, sym
+    )
+
+
+@router.get("/api/symbol/{sym}/chain")
+async def get_chain(request: Request, sym: str, expiration: str = Query(...)) -> dict:
+    app = request.app
+    expirations = await chain_service.get_expirations(
+        app.state.cache_db, app.state.broker_session, app.state.cfg, sym
+    )
+    options = expirations["expirations"].get(expiration, [])
+    option_symbols = [o["symbol"] for o in options]
+    quotes = await chain_service.get_quotes(app.state.cache_db, app.state.broker_session, option_symbols)
+    for option in options:
+        option["quote"] = quotes.get(option["symbol"])
+    return {
+        "ok": True,
+        "symbol": expirations["symbol"],
+        "expiration": expiration,
+        "as_of": expirations["as_of"],
+        "stale": expirations["stale"],
+        "options": options,
     }
 
 
