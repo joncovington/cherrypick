@@ -3,7 +3,35 @@
 /* ---------------- the leg-basket builder: chain picker + SVG payoff diagram ---------------- */
 
 function _builderState() {
-  return { symbol: null, expiration: null, legs: [], spot: null, iv: null, lastResult: null };
+  return {
+    symbol: null,
+    expiration: null,
+    legs: [],
+    spot: null,
+    iv: null,
+    lastResult: null,
+    priceBy: "mid",
+    chainGreeks: {},
+    chainQuotes: {},
+    chainByKey: {},
+    strikes: [],
+  };
+}
+
+function _legKey(kind, strike) {
+  return `${kind}:${strike}`;
+}
+
+// Fill price under the current price-by mode: mid, or the "natural" side (sell at bid, buy at ask).
+function _fillPrice(leg) {
+  const quote = _builder.chainQuotes[leg.symbol];
+  if (!quote) return leg.price;
+  if (_builder.priceBy === "mid") return quote.mid ?? leg.price;
+  return (leg.quantity < 0 ? quote.bid : quote.ask) ?? leg.price;
+}
+
+function _reprice(leg) {
+  if (!leg.manualPrice && leg.kind !== "stock") leg.price = _fillPrice(leg) ?? leg.price;
 }
 
 let _builder = _builderState();
@@ -64,6 +92,67 @@ async function mountBuilderView(view) {
   };
   view.querySelector("#builder-validate").onclick = () => validateOrder(view);
   view.querySelector("#builder-stage").onclick = () => stageTicket(view);
+
+  const templateSel = view.querySelector("#template-select");
+  templateSel.onchange = async () => {
+    if (!templateSel.value) return;
+    const legs = await _templateCall(view, { action: "build", name: templateSel.value });
+    if (legs) _setLegs(view, legs);
+  };
+  view.querySelector("#price-by").onchange = (e) => {
+    _builder.priceBy = e.target.value;
+    _builder.legs.forEach((leg) => {
+      leg.manualPrice = false;
+      _reprice(leg);
+    });
+    renderLegs(view);
+    computePayoff(view);
+  };
+  view.querySelector("#flip-strategy").onclick = async () => {
+    if (!_builder.legs.length) return;
+    const legs = await _templateCall(view, { action: "flip", legs: JSON.stringify(_builder.legs) });
+    if (legs) {
+      templateSel.value = "";
+      _setLegs(view, legs);
+    }
+  };
+  const width = async (step) => {
+    if (!_builder.legs.length) return;
+    const legs = await _templateCall(view, {
+      action: "width",
+      step: String(step),
+      legs: JSON.stringify(_builder.legs),
+    });
+    if (legs) _setLegs(view, legs);
+  };
+  view.querySelector("#width-widen").onclick = () => width(1);
+  view.querySelector("#width-narrow").onclick = () => width(-1);
+  view.querySelector("#reset-legs").onclick = () => {
+    templateSel.value = "";
+    _setLegs(view, []);
+  };
+  const addOption = (kind) => {
+    if (!_builder.strikes.length) return;
+    const atm = _builder.strikes.reduce((a, b) =>
+      Math.abs(b - _builder.spot) < Math.abs(a - _builder.spot) ? b : a
+    );
+    const leg = { kind, strike: atm, quantity: 1, price: 0 };
+    _applyChainOption(leg, kind, atm);
+    _builder.legs.push(leg);
+    renderLegs(view);
+    computePayoff(view);
+  };
+  view.querySelector("#add-call").onclick = () => addOption("call");
+  view.querySelector("#add-put").onclick = () => addOption("put");
+  view.querySelector("#add-stock").onclick = () => {
+    _builder.legs.push({
+      kind: "stock", strike: null, quantity: 1, price: _builder.spot,
+      symbol: null, expiration: null, bid: null, ask: null,
+      delta: null, gamma: null, theta: null, vega: null,
+    });
+    renderLegs(view);
+    computePayoff(view);
+  };
 
   renderLegs(view);
   computePayoff(view);
@@ -172,12 +261,15 @@ async function loadChain(view) {
   const byStrike = {};
   _builder.chainGreeks = {};
   _builder.chainQuotes = {};
+  _builder.chainByKey = {};
   for (const opt of data.options || []) {
     byStrike[opt.strike] ??= {};
     byStrike[opt.strike][opt.option_type] = opt;
     if (opt.greeks) _builder.chainGreeks[opt.symbol] = opt.greeks;
     if (opt.quote) _builder.chainQuotes[opt.symbol] = opt.quote;
+    _builder.chainByKey[_legKey(opt.option_type === "C" ? "call" : "put", opt.strike)] = opt;
   }
+  _builder.strikes = Object.keys(byStrike).map(Number).sort((a, b) => a - b);
   const strikes = Object.keys(byStrike)
     .map(Number)
     .sort((a, b) => a - b);
@@ -224,22 +316,132 @@ function addLeg(view, data) {
   computePayoff(view);
 }
 
+function _applyChainOption(leg, kind, strike) {
+  // Point a leg at a different listed option: refresh symbol/quote/greeks and (unless the user
+  // typed a manual premium) its fill price.
+  const opt = _builder.chainByKey[_legKey(kind, strike)];
+  leg.kind = kind;
+  leg.strike = strike;
+  leg.symbol = opt ? opt.symbol : null;
+  leg.expiration = _builder.expiration;
+  const quote = opt && opt.quote ? opt.quote : {};
+  const greeks = opt && opt.greeks ? opt.greeks : {};
+  leg.bid = quote.bid ?? null;
+  leg.ask = quote.ask ?? null;
+  leg.delta = greeks.delta ?? null;
+  leg.gamma = greeks.gamma ?? null;
+  leg.theta = greeks.theta ?? null;
+  leg.vega = greeks.vega ?? null;
+  leg.manualPrice = false;
+  _reprice(leg);
+}
+
 function renderLegs(view) {
-  const el = view.querySelector("#builder-legs");
-  el.innerHTML = _builder.legs
-    .map(
-      (leg, i) =>
-        `<li>${leg.quantity > 0 ? "Buy" : "Sell"} ${leg.kind} ${leg.strike} @ ${leg.price.toFixed(2)}
-          <button data-i="${i}" title="remove">&times;</button></li>`
-    )
+  const tbody = view.querySelector("#leg-table tbody");
+  if (!tbody) return;
+  const strikeOptions = (selected) =>
+    _builder.strikes
+      .map((s) => `<option value="${s}" ${s === selected ? "selected" : ""}>${s}</option>`)
+      .join("");
+  tbody.innerHTML = _builder.legs
+    .map((leg, i) => {
+      if (leg.kind === "stock") {
+        return `<tr data-i="${i}">
+          <td><select data-f="action"><option value="1" ${leg.quantity > 0 ? "selected" : ""}>Buy</option>
+            <option value="-1" ${leg.quantity < 0 ? "selected" : ""}>Sell</option></select></td>
+          <td><input data-f="qty" type="number" min="1" value="${Math.abs(leg.quantity)}"></td>
+          <td class="note">--</td><td class="note">--</td><td class="note">Stock</td>
+          <td><input data-f="price" type="number" step="0.01" value="${leg.price.toFixed(2)}"></td>
+          <td><button data-f="del" title="remove">&times;</button></td>
+        </tr>`;
+      }
+      return `<tr data-i="${i}">
+        <td><select data-f="action"><option value="1" ${leg.quantity > 0 ? "selected" : ""}>Buy</option>
+          <option value="-1" ${leg.quantity < 0 ? "selected" : ""}>Sell</option></select></td>
+        <td><input data-f="qty" type="number" min="1" value="${Math.abs(leg.quantity)}"></td>
+        <td class="note">${leg.expiration || _builder.expiration || "--"}</td>
+        <td><select data-f="strike">${strikeOptions(leg.strike)}</select></td>
+        <td><select data-f="kind"><option value="call" ${leg.kind === "call" ? "selected" : ""}>Call</option>
+          <option value="put" ${leg.kind === "put" ? "selected" : ""}>Put</option></select></td>
+        <td><input data-f="price" type="number" step="0.01" value="${leg.price.toFixed(2)}"></td>
+        <td><button data-f="del" title="remove">&times;</button></td>
+      </tr>`;
+    })
     .join("");
-  el.querySelectorAll("button[data-i]").forEach((btn) => {
-    btn.onclick = () => {
-      _builder.legs.splice(parseInt(btn.dataset.i, 10), 1);
+  if (_builder.legs.length) {
+    tbody.innerHTML =
+      `<tr class="leg-head"><th>Action</th><th>Qty</th><th>Expiry</th><th>Strike</th>` +
+      `<th>Type</th><th>Premium</th><th></th></tr>` + tbody.innerHTML;
+  }
+
+  tbody.querySelectorAll("tr[data-i]").forEach((row) => {
+    const leg = _builder.legs[parseInt(row.dataset.i, 10)];
+    const refresh = () => {
       renderLegs(view);
       computePayoff(view);
     };
+    row.querySelector('[data-f="action"]').onchange = (e) => {
+      leg.quantity = Math.abs(leg.quantity) * parseInt(e.target.value, 10);
+      leg.manualPrice = false;
+      _reprice(leg);
+      refresh();
+    };
+    row.querySelector('[data-f="qty"]').onchange = (e) => {
+      const magnitude = Math.max(1, parseInt(e.target.value, 10) || 1);
+      leg.quantity = magnitude * Math.sign(leg.quantity || 1);
+      refresh();
+    };
+    const strikeSel = row.querySelector('[data-f="strike"]');
+    if (strikeSel)
+      strikeSel.onchange = (e) => {
+        _applyChainOption(leg, leg.kind, parseFloat(e.target.value));
+        refresh();
+      };
+    const kindSel = row.querySelector('[data-f="kind"]');
+    if (kindSel)
+      kindSel.onchange = (e) => {
+        _applyChainOption(leg, e.target.value, leg.strike);
+        refresh();
+      };
+    row.querySelector('[data-f="price"]').onchange = (e) => {
+      leg.price = parseFloat(e.target.value) || leg.price;
+      leg.manualPrice = true;
+      refresh();
+    };
+    row.querySelector('[data-f="del"]').onclick = () => {
+      _builder.legs.splice(parseInt(row.dataset.i, 10), 1);
+      refresh();
+    };
   });
+}
+
+async function _templateCall(view, params) {
+  const el = view.querySelector("#builder-validation");
+  const query = new URLSearchParams({
+    expiration: _builder.expiration || "",
+    spot: String(_builder.spot),
+    ...params,
+  });
+  try {
+    const res = await fetch(
+      `/api/symbol/${_builder.symbol}/template?${query.toString()}`
+    ).then((r) => r.json());
+    if (!res.ok) {
+      el.textContent = res.reason || "template unavailable here";
+      return null;
+    }
+    return res.legs;
+  } catch {
+    el.textContent = "Could not reach the scout server -- is it still running?";
+    return null;
+  }
+}
+
+function _setLegs(view, legs) {
+  _builder.legs = legs.map((leg) => ({ ...leg, manualPrice: false }));
+  _builder.legs.forEach(_reprice);
+  renderLegs(view);
+  computePayoff(view);
 }
 
 async function computePayoff(view) {

@@ -190,6 +190,129 @@ def test_api_symbol_analysis_with_no_bars_degrades(app_and_client, monkeypatch):
     assert body["headline"] is None
 
 
+# --------------------------------------------------------------------------- /template (order editor)
+
+
+def _fake_chain_expirations(strikes, expiration="2026-09-18"):
+    options = []
+    for strike in strikes:
+        for option_type in ("C", "P"):
+            options.append(
+                {
+                    "symbol": f"X {option_type}{strike}",
+                    "streamer_symbol": f".X{option_type}{strike}",
+                    "strike": float(strike),
+                    "expiration": expiration,
+                    "option_type": option_type,
+                }
+            )
+    return {"ok": True, "symbol": "AAPL", "as_of": 0, "stale": False, "expirations": {expiration: options}}
+
+
+@pytest.fixture()
+def template_route(app_and_client, monkeypatch):
+    app, client = app_and_client
+    strikes = [80, 85, 90, 95, 100, 105, 110, 115, 120]
+
+    async def fake_get_expirations(_conn, _session, _cfg, symbol):
+        return _fake_chain_expirations(strikes)
+
+    import re
+
+    def _parse(sym):
+        m = re.search(r"([CP])(\d+(?:\.\d+)?)$", sym)
+        return m.group(1), float(m.group(2))
+
+    async def fake_get_quotes(_conn, _session, symbols, **_kw):
+        out = {}
+        for s in symbols:
+            _t, strike = _parse(s)
+            mid = max(0.10, 5.0 - abs(strike - 100.0) * 0.2)
+            out[s] = {"bid": mid - 0.05, "ask": mid + 0.05, "mid": mid, "mark": mid}
+        return out
+
+    async def fake_get_greeks(_conn, _session, streamer_symbols, **_kw):
+        out = {}
+        for s in streamer_symbols:
+            option_type, strike = _parse(s)
+            call_delta = max(0.02, min(0.98, 0.5 + (100.0 - strike) / 40))
+            delta = call_delta if option_type == "C" else -(1 - call_delta)
+            out[s] = {"delta": delta, "gamma": 0.01, "theta": -0.02, "vega": 0.05, "iv": 0.3, "price": 1.0}
+        return out
+
+    monkeypatch.setattr(_symbol_api.chain_service, "get_expirations", fake_get_expirations)
+    monkeypatch.setattr(_symbol_api.chain_service, "get_quotes", fake_get_quotes)
+    monkeypatch.setattr(_symbol_api.chain_service, "get_greeks", fake_get_greeks)
+    return app, client
+
+
+def test_template_route_builds_an_iron_condor(template_route):
+    app, client = template_route
+    resp = client.get(
+        "/api/symbol/aapl/template",
+        params={"expiration": "2026-09-18", "spot": 100.0, "action": "build", "name": "iron_condor"},
+        headers=_headers(app),
+    )
+    body = resp.json()
+    assert body["ok"] is True
+    assert len(body["legs"]) == 4
+    assert {lg["kind"] for lg in body["legs"]} == {"call", "put"}
+
+
+def test_template_route_flips_a_vertical(template_route):
+    import json as _json
+
+    app, client = template_route
+    built = client.get(
+        "/api/symbol/aapl/template",
+        params={"expiration": "2026-09-18", "spot": 100.0, "action": "build", "name": "call_vertical_credit"},
+        headers=_headers(app),
+    ).json()["legs"]
+    flipped = client.get(
+        "/api/symbol/aapl/template",
+        params={
+            "expiration": "2026-09-18", "spot": 100.0, "action": "flip", "legs": _json.dumps(built),
+        },
+        headers=_headers(app),
+    ).json()
+    assert flipped["ok"] is True
+    assert all(lg["kind"] == "put" for lg in flipped["legs"])
+
+
+def test_template_route_rejects_unknown_names_and_actions(template_route):
+    app, client = template_route
+    resp = client.get(
+        "/api/symbol/aapl/template",
+        params={"expiration": "2026-09-18", "spot": 100.0, "action": "build", "name": "nope"},
+        headers=_headers(app),
+    )
+    assert resp.status_code == 400
+    resp = client.get(
+        "/api/symbol/aapl/template",
+        params={"expiration": "2026-09-18", "spot": 100.0, "action": "explode"},
+        headers=_headers(app),
+    )
+    assert resp.status_code == 400
+
+
+def test_template_route_reports_unsupported_shapes_softly(template_route, monkeypatch):
+    app, client = template_route
+
+    async def thin_expirations(_conn, _session, _cfg, symbol):
+        return _fake_chain_expirations([100])
+
+    monkeypatch.setattr(_symbol_api.chain_service, "get_expirations", thin_expirations)
+    resp = client.get(
+        "/api/symbol/aapl/template",
+        params={"expiration": "2026-09-18", "spot": 100.0, "action": "build", "name": "iron_condor"},
+        headers=_headers(app),
+    )
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["legs"] is None
+    assert "reason" in body
+
+
 # --------------------------------------------------------------------------- /quote (builder prefill)
 
 
