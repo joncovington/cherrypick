@@ -195,3 +195,74 @@ async def test_concurrent_requests_for_the_same_symbol_seed_dolt_only_once(conn,
         candle_service.get_candles(conn, object(), cfg, "AAPL", now=1000.0),
     )
     assert calls == ["AAPL"]  # the second request found the lock held and just read the seeded cache
+
+
+class _FakeCandleEvent:
+    def __init__(self, time, open_, high, low, close, volume=None):
+        self.time = time
+        self.open = open_
+        self.high = high
+        self.low = low
+        self.close = close
+        self.volume = volume
+
+
+class _FakeStreamer:
+    """Minimal stand-in for `DXLinkStreamer`: yields a fixed event queue, then blocks (simulating an
+    idle feed) until the caller's idle timeout fires."""
+
+    def __init__(self, events):
+        self._events = list(events)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc):
+        return False
+
+    async def subscribe_candle(self, _symbols, interval, start_time=None):
+        pass
+
+    async def unsubscribe_candle(self, _symbol, interval=None):
+        pass
+
+    async def get_event(self, _event_class):
+        if self._events:
+            return self._events.pop(0)
+        await asyncio.sleep(10)  # simulate an idle feed -- the caller's own timeout cuts this short
+
+
+@pytest.mark.asyncio
+async def test_dxlink_tail_discards_a_zero_filled_placeholder_candle(monkeypatch):
+    """DXLink pushes a zero-filled placeholder for the still-forming current-day candle before any
+    real trade has printed. This is a regression test for a real bug caught in a live smoke test: the
+    placeholder was accepted as a genuine bar, writing a spot of 0.0 into the cache and breaking every
+    downstream strike-selection calculation that assumed a positive price."""
+    monkeypatch.setattr(candle_service, "_DXLINK_IDLE_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(candle_service, "_DXLINK_HARD_TIMEOUT_SECONDS", 0.2)
+
+    events = [
+        _FakeCandleEvent(time=1_700_000_000_000, open_=0, high=0, low=0, close=0, volume=0),
+        _FakeCandleEvent(time=1_700_086_400_000, open_=100.0, high=101.0, low=99.0, close=100.5, volume=1000),
+    ]
+
+    import sys
+    import types
+
+    fake_tastytrade = types.ModuleType("tastytrade")
+    fake_tastytrade.DXLinkStreamer = lambda _session: _FakeStreamer(events)
+    fake_dxfeed = types.ModuleType("tastytrade.dxfeed")
+    fake_dxfeed.Candle = object
+    monkeypatch.setitem(sys.modules, "tastytrade", fake_tastytrade)
+    monkeypatch.setitem(sys.modules, "tastytrade.dxfeed", fake_dxfeed)
+
+    class _FakeSession:
+        def get_raw_session(self):
+            return object()
+
+    from datetime import date
+
+    bars = await candle_service._dxlink_tail(_FakeSession(), "AAPL", date(2027, 1, 1))
+    assert bars is not None
+    assert len(bars) == 1
+    assert bars[0]["c"] == 100.5

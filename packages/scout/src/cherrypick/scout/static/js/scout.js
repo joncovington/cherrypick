@@ -56,6 +56,12 @@ function _firstWatchlistSymbolOrDefault() {
   return store.symbols[0] || "SPY";
 }
 
+// A plain top-level equivalent of watchlistStore().openBuilder, for callers outside Alpine's scope
+// (e.g. a Tabulator cell formatter's click handler in the screener).
+function openBuilderFor(sym) {
+  htmx.ajax("GET", `/partial/builder/${sym}`, { target: "#content", pushUrl: true });
+}
+
 document.getElementById("nav-symbol").addEventListener("click", (evt) => {
   evt.preventDefault();
   const store = Alpine.$data(document.getElementById("watchlist"));
@@ -137,7 +143,95 @@ async function mountSymbolView(view) {
   chart.timeScale().fitContent();
 }
 
+/* ---------------- screener: ranked candidate table ---------------- */
+
+let _screenerTable = null;
+
+function _fmtPct(v) {
+  return typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—";
+}
+function _fmtNum(v) {
+  return typeof v === "number" ? v.toFixed(2) : "—";
+}
+
+async function mountScreenerView(view) {
+  const select = view.querySelector("#screener-strategy");
+  const tableEl = view.querySelector("#screener-table");
+  const skippedEl = view.querySelector("#screener-skipped");
+  select.value = view.dataset.strategy || "put_credit_spread";
+
+  async function load() {
+    const result = await fetch(`/api/screener?strategy=${select.value}`).then((r) => r.json());
+    if (!result.ok) {
+      tableEl.textContent = result.error || "screener failed";
+      return;
+    }
+    const rows = result.candidates.map((c) => ({
+      symbol: c.symbol,
+      spot: c.spot,
+      iv_rank: c.iv_rank,
+      liquidity: c.liquidity_rating,
+      skew_edge: c.skew_edge,
+      strikes: c.legs.map((l) => l.strike).join(" / "),
+      dte: c.dte,
+      credit: c.credit,
+      max_risk: c.max_risk,
+      pop: c.pop,
+      pop_heuristic: c.pop_heuristic,
+      breakevens: (c.breakevens || []).map((b) => b.toFixed(2)).join(", "),
+      return_on_risk: c.return_on_risk,
+      composite_score: c.composite_score,
+    }));
+
+    if (_screenerTable) {
+      _screenerTable.setData(rows);
+    } else {
+      _screenerTable = new Tabulator(tableEl, {
+        data: rows,
+        layout: "fitColumns",
+        persistence: true,
+        persistenceID: "scout-screener",
+        initialSort: [{ column: "composite_score", dir: "desc" }],
+        columns: [
+          {
+            title: "Symbol",
+            field: "symbol",
+            formatter: (cell) =>
+              `<a href="#" data-sym="${cell.getValue()}" class="builder-link">${cell.getValue()}</a>`,
+            cellClick: (_e, cell) => openBuilderFor(cell.getValue()),
+          },
+          { title: "Spot", field: "spot", formatter: (c) => _fmtNum(c.getValue()) },
+          { title: "IV rank", field: "iv_rank", formatter: (c) => _fmtPct(c.getValue()) },
+          { title: "Liquidity", field: "liquidity" },
+          { title: "Skew edge", field: "skew_edge", formatter: (c) => _fmtNum(c.getValue()) },
+          { title: "Strikes", field: "strikes" },
+          { title: "DTE", field: "dte" },
+          { title: "Credit", field: "credit", formatter: (c) => _fmtNum(c.getValue()) },
+          { title: "Max risk", field: "max_risk", formatter: (c) => _fmtNum(c.getValue()) },
+          { title: "POP (model)", field: "pop", formatter: (c) => _fmtPct(c.getValue()) },
+          { title: "POP (1-2d)", field: "pop_heuristic", formatter: (c) => _fmtPct(c.getValue()) },
+          { title: "Breakevens", field: "breakevens" },
+          {
+            title: "Return/risk",
+            field: "return_on_risk",
+            formatter: (c) => _fmtPct(c.getValue()),
+          },
+          { title: "Score", field: "composite_score", formatter: (c) => _fmtNum(c.getValue()) },
+        ],
+      });
+    }
+    skippedEl.textContent = result.skipped.length
+      ? `Skipped: ${result.skipped.map((s) => `${s.symbol} (${s.reason})`).join("; ")}`
+      : "";
+  }
+
+  select.onchange = load;
+  await load();
+}
+
 document.body.addEventListener("htmx:afterSwap", (evt) => {
-  const view = evt.detail.target.querySelector("#symbol-view");
-  if (view) mountSymbolView(view);
+  const symbolView = evt.detail.target.querySelector("#symbol-view");
+  if (symbolView) mountSymbolView(symbolView);
+  const screenerView = evt.detail.target.querySelector("#screener-view");
+  if (screenerView) mountScreenerView(screenerView);
 });
