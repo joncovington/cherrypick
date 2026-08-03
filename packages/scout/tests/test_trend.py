@@ -118,7 +118,7 @@ def test_trix_trend_extremes():
 def test_classify_all_labels_every_model_at_both_horizons():
     bars = _bars_portable(_accel_up(700))
     result = _trend.classify_all(bars)
-    assert set(result) == {"alignment", "macd", "tema", "trix"}
+    assert set(result) == {"alignment", "alignment_px", "price_ma_count", "macd", "tema", "trix"}
     for model, horizons in result.items():
         assert set(horizons) == {"1m", "6m"}
         for horizon, label in horizons.items():
@@ -138,3 +138,9 @@ def test_classify_all_with_thin_history_degrades_to_none_not_an_error():
     result = _trend.classify_all(bars)
     assert result["alignment"]["6m"] is None
     assert result["tema"]["6m"] is None
+
+
+def test_price_ma_count_extremes_and_neutral_midpoint():
+    assert _trend.price_ma_count(_accel_up(), 20, 26, 30) == _trend.BULLISH
+    assert _trend.price_ma_count(_accel_down(), 20, 26, 30) == _trend.BEARISH
+    assert _trend.price_ma_count([100.0] * 10, 20, 26, 30) is None
