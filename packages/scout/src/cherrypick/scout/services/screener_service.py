@@ -62,7 +62,7 @@ def _iv_rank_frac(info: dict | None) -> float | None:
         return None
 
 
-# Chip-filter buckets (the OptionsPlay-style filter panel). Each maps a metrics field to named
+# Chip-filter buckets (the screener's toggle-chip filter panel). Each maps a metrics field to named
 # buckets; an explicit chip selection REPLACES the corresponding config gate rather than stacking on
 # top of it -- picking the "Not Liquid" chip must actually show not-liquid names, which the default
 # min_liquidity_rank gate would otherwise silently veto. Cap-size breakpoints follow the common

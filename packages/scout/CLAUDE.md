@@ -6,7 +6,7 @@ Guidance for Claude Code when working in this repository.
 
 cherrypick-scout is a **self-hosted options research surface** for the cherrypick suite: an earnings
 calendar, a credit-spread/iron-condor screener, per-symbol candlestick charts, and a leg-list payoff
-builder — content ideas borrowed from OptionsPlay-style research tools, built on the suite's own data
+builder — content ideas borrowed from commercial options-research platforms, built on the suite's own data
 sources (`tastytrade.metrics.get_market_metrics`, the shared Dolt DBs, a new candle/chain cache). It is
 **standalone**: its own port (5057), no orchestrator section card or dashboard-embed registration, and
 not on any reliability path. It was built milestone-by-milestone on the long-lived `feature/scout`

@@ -81,9 +81,11 @@ let _symbolChart = null;
 let _symbolCandleSeries = null;
 let _symbolLastBar = null;
 
-function renderStats(el, stats) {
+function renderStats(el, stats, levels) {
   const pct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(2)}%` : "—");
   const num = (v) => (typeof v === "number" ? v.toFixed(2) : "—");
+  const support = levels?.nearest_support;
+  const resistance = levels?.nearest_resistance;
   el.innerHTML = `
     <span>Last <b>${num(stats.last_close)}</b></span>
     <span>Chg <b>${pct(stats.change_pct)}</b></span>
@@ -91,8 +93,53 @@ function renderStats(el, stats) {
     <span>Avg vol (30d) ${stats.avg_volume_30d ? Math.round(stats.avg_volume_30d).toLocaleString() : "—"}</span>
     <span>IV rank ${stats.iv_rank ?? "—"}</span>
     <span>Liquidity ${stats.liquidity_rating ?? "—"}</span>
+    <span>Support <b>${support ? num(support.price) : "—"}</b></span>
+    <span>Resistance <b>${resistance ? num(resistance.price) : "—"}</b></span>
     ${stats.stale ? '<span class="notice">stale</span>' : ""}
   `;
+}
+
+const _SMA_COLORS = { sma20: "#e0b453", sma50: "#b57fd1", sma200: "#7a8794" };
+
+function renderLevelOverlays(chart, candleSeries, levels, lastClose) {
+  for (const [name, points] of Object.entries(levels.smas || {})) {
+    if (!points.length) continue;
+    const line = chart.addSeries(LightweightCharts.LineSeries, {
+      color: _SMA_COLORS[name] || "#7a8794",
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    line.setData(points);
+  }
+
+  // Price lines for the strongest few levels on each side of spot -- every clustered swing at
+  // once would wallpaper the chart. Strongest = most touches, nearest price as the tiebreak.
+  const byStrength = (side) =>
+    (levels.levels || [])
+      .filter((lv) => (side === "support" ? lv.price < lastClose : lv.price > lastClose))
+      .filter((lv) => lv.kind === side)
+      .sort((a, b) => b.touches - a.touches || (side === "support" ? b.price - a.price : a.price - b.price))
+      .slice(0, 3);
+  for (const lv of byStrength("support")) {
+    candleSeries.createPriceLine({
+      price: lv.price,
+      color: "#7fd1a8",
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed,
+      title: `S (${lv.touches})`,
+    });
+  }
+  for (const lv of byStrength("resistance")) {
+    candleSeries.createPriceLine({
+      price: lv.price,
+      color: "#e08b8b",
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed,
+      title: `R (${lv.touches})`,
+    });
+  }
 }
 
 async function mountSymbolView(view) {
@@ -104,17 +151,18 @@ async function mountSymbolView(view) {
   chartEl.innerHTML = '<p class="loading">Loading candles…</p>';
   if (statsEl) statsEl.innerHTML = '<span class="loading">Loading…</span>';
 
-  let candles, stats;
+  let candles, stats, levels;
   try {
-    [candles, stats] = await Promise.all([
+    [candles, stats, levels] = await Promise.all([
       fetch(`/api/symbol/${symbol}/candles`).then((r) => r.json()),
       fetch(`/api/symbol/${symbol}/stats`).then((r) => r.json()),
+      fetch(`/api/symbol/${symbol}/levels`).then((r) => r.json()),
     ]);
   } catch {
     chartEl.textContent = "Could not reach the scout server -- is it still running?";
     return;
   }
-  if (statsEl) renderStats(statsEl, stats);
+  if (statsEl) renderStats(statsEl, stats, levels);
 
   if (_symbolChart) {
     _symbolChart.remove();
@@ -155,6 +203,10 @@ async function mountSymbolView(view) {
   volumeSeries.setData(
     candles.bars.filter((b) => b.v != null).map((b) => ({ time: b.t, value: b.v }))
   );
+
+  if (levels && levels.ok) {
+    renderLevelOverlays(chart, candleSeries, levels, candles.bars[candles.bars.length - 1].c);
+  }
 
   chart.timeScale().fitContent();
 }

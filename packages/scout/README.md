@@ -67,7 +67,7 @@ packages/scout/
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
                      calendar_service.py  candle_service.py  chain_service.py
                      screener_service.py  staging.py  quote_service.py  streamcache.py
-      analytics/    __init__.py  levels.py  payoff.py  pop.py  strategies.py
+      analytics/    __init__.py  levels.py  payoff.py  pop.py  strategies.py  trend.py
       static/       index.html  css/scout.css  js/scout.js  js/payoff.js
         vendor/     lightweight-charts.standalone.production.js  tabulator.min.js
                      tabulator_midnight.min.css  htmx.min.js  alpine.min.js
@@ -82,7 +82,7 @@ packages/scout/
                     test_pop.py  test_payoff_routes.py  test_builder_routes.py
                     test_strategies.py  test_screener_service.py  test_screener_routes.py
                     test_staging.py  test_order_routes.py  test_dry_run_only.py
-                    test_quote_service.py  test_sse.py  test_streamcache.py
+                    test_quote_service.py  test_sse.py  test_streamcache.py  test_trend.py
 ```
 
 ## The earnings calendar (M2)
@@ -168,7 +168,7 @@ The table (Tabulator, `persistence: "local"` so layout/sort/filter survive a rel
 model POP alongside MEIC's `1 - 2*short_delta` heuristic as a cross-check column, and every symbol
 row opens the builder (pre-loaded with that symbol, not yet with the exact screened legs).
 
-A chip-filter panel (OptionsPlay-style) sits above the table: **IV Rank** (`<50`/`>=50`),
+A chip-filter panel sits above the table: **IV Rank** (`<50`/`>=50`),
 **Liquidity** (not/somewhat/very, mapped from the 1-4 `liquidity_rating`), and **Cap size**
 (small/medium/large/mega at the conventional $2B/$10B/$200B breakpoints, from the metrics call's
 `market_cap`). All three filter in the zero-broker-call pre-filter step -- no chain is fetched for a
@@ -287,6 +287,28 @@ a symbol untouched all session: **38.9 s -> 5.9 s**, a 6.6x reduction, with `/st
 for the Symbol view (which genuinely needs the candle-derived fields `/quote` deliberately omits).
 `test_symbol_routes.py::test_api_symbol_quote_never_touches_candle_service` pins this as a
 regression guard, not just a one-time measurement.
+
+## S/R levels on the chart + candidate trend models
+
+`GET /api/symbol/{sym}/levels` finally wires up `analytics/levels.py` -- computed and tested since
+M3, but never actually called by any route until this pass. It returns the clustered swing-extrema
+support/resistance levels, the nearest level on each side of the last close (the two label values
+the stats panel now shows as **Support** / **Resistance**), and SMA 20/50/200 as chart-ready line
+series. The symbol view draws the SMAs as overlays and the strongest three levels per side (most
+touches first) as dashed price lines -- every clustered swing at once would wallpaper the chart.
+
+`analytics/trend.py` holds four rival implementations of a "triple moving average" trend
+classifier -- alignment-ordering, MACD-state, TEMA, and TRIX -- each emitting the same four-grade
+scale (`bullish`/`mildly_bullish`/`mildly_bearish`/`bearish`) at a 1M and a 6M horizon. They exist
+to be **fitted against observed labels** from a reference platform's proprietary trend indicator,
+not shipped as truth: `classify_all(bars)` produces every candidate's labels for one symbol, the
+row a label-matching experiment scores. Two modeling decisions are pinned by tests because the
+first draft got them wrong: MACD's zero-line is primary (a decelerating decline must read
+mildly_bearish, not mildly_bullish), and TEMA requires `4 * period` bars of warmup (a
+barely-long-enough series leaves the triple-smoothed stage seed-dominated -- a synthetic 400-bar
+monotonic downtrend classified as *bullish* under TEMA(126) before the floor existed). No route
+serves these yet; they graduate to the screener's Scan chips only after the fitting experiment
+picks a winner.
 
 ## Verification (M8)
 
