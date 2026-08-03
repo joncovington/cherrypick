@@ -264,9 +264,9 @@ async def get_expirations(request: Request, sym: str) -> dict:
     )
 
 
-@router.get("/api/symbol/{sym}/chain")
-async def get_chain(request: Request, sym: str, expiration: str = Query(...)) -> dict:
-    app = request.app
+async def _chain_with_quotes_and_greeks(app, sym: str, expiration: str) -> tuple[dict, list[dict]]:
+    """One expiration's options with quotes and live greeks attached -- shared by the chain route
+    and the template-engine route."""
     expirations = await chain_service.get_expirations(
         app.state.cache_db, app.state.broker_session, app.state.cfg, sym
     )
@@ -281,6 +281,12 @@ async def get_chain(request: Request, sym: str, expiration: str = Query(...)) ->
     for option in options:
         option["quote"] = quotes.get(option["symbol"])
         option["greeks"] = greeks.get(option.get("streamer_symbol"))
+    return expirations, options
+
+
+@router.get("/api/symbol/{sym}/chain")
+async def get_chain(request: Request, sym: str, expiration: str = Query(...)) -> dict:
+    expirations, options = await _chain_with_quotes_and_greeks(request.app, sym, expiration)
     return {
         "ok": True,
         "symbol": expirations["symbol"],
@@ -289,6 +295,49 @@ async def get_chain(request: Request, sym: str, expiration: str = Query(...)) ->
         "stale": expirations["stale"],
         "options": options,
     }
+
+
+@router.get("/api/symbol/{sym}/template")
+async def get_template(
+    request: Request,
+    sym: str,
+    expiration: str = Query(...),
+    spot: float = Query(...),
+    action: str = Query("build"),
+    name: str | None = Query(None, description="template name, for action=build"),
+    legs: str | None = Query(None, description="current legs JSON, for action=flip|width"),
+    step: int = Query(1, description="+1 widen / -1 narrow, for action=width"),
+) -> dict:
+    """The order editor's engine calls: build a named strategy template from the live chain, flip a
+    basket, or adjust its width -- all server-side against `analytics/templates.py` so the strike
+    snapping and delta targeting stay in one tested place."""
+    import json as _json
+
+    from ..analytics import templates as _templates
+
+    _expirations, options = await _chain_with_quotes_and_greeks(request.app, sym, expiration)
+    if not options:
+        return {"ok": False, "reason": "no options for this expiration", "legs": None}
+
+    if action == "build":
+        if name not in _templates.TEMPLATES:
+            raise HTTPException(400, f"unknown template {name!r}")
+        built = _templates.build(name, options, spot)
+    elif action in ("flip", "width"):
+        try:
+            current = _json.loads(legs or "")
+        except (TypeError, _json.JSONDecodeError) as exc:
+            raise HTTPException(400, f"legs is not valid JSON: {exc}") from exc
+        if action == "flip":
+            built = _templates.flip(current, options, spot)
+        else:
+            built = _templates.adjust_width(current, options, step)
+    else:
+        raise HTTPException(400, f"unknown action {action!r}")
+
+    if built is None:
+        return {"ok": False, "reason": "the chain can't support that shape here", "legs": None}
+    return {"ok": True, "legs": built}
 
 
 @router.get("/partial/symbol/{sym}", response_class=HTMLResponse)

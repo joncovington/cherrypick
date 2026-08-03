@@ -370,6 +370,20 @@ docstring. The direction read probes the +/-40% tails -- a live-caught bug fix, 
 regression test, after +/-10% probes landed both inside an OTM put spread's max-profit plateau and
 called a bullish vertical "neutral".
 
+## Order editor (strategy templates, leg table, flip/width)
+
+The builder's leg list is now an **editor**: a per-leg table (Buy/Sell, quantity, expiry, strike
+and type dropdowns snapped to the loaded chain, editable premium), quick add-leg buttons
+(+Call/+Put at the nearest ATM strike, +Stock), a **strategy dropdown** applying any of eleven
+templates (`analytics/templates.py` -- long call/put, short put, covered call, credit/debit
+verticals, short straddle/strangle, iron condor) built server-side via
+`GET /api/symbol/{sym}/template` against the live chain with delta-targeted strikes, plus
+**Flip Strategy** (mirror around spot, snapped to listed strikes), **-/+ Width**, and **Reset**.
+A **Price by** toggle switches every non-manually-priced leg between mid and the natural side
+(sell at bid / buy at ask); editing a premium by hand pins it until that leg's strike or type
+changes. Changing strike/type re-pulls the leg's quote and live greeks from the chain, so the
+payoff, checklist, and greeks panels stay honest as the basket is edited.
+
 ## Income grid (short-put candidates by risk tier)
 
 `GET /api/symbol/{sym}/income-grid?spot=&kind=put` serves the risk-tolerance x DTE-bucket strike

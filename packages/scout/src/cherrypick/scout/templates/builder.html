@@ -4,13 +4,47 @@
     <label>Expiration <select id="builder-expiration"></select></label>
     <label>Spot <input id="builder-spot" type="number" step="0.01"></label>
     <label>IV <input id="builder-iv" type="number" step="0.01"></label>
+    <label>Strategy
+      <select id="template-select">
+        <option value="">Custom</option>
+        <option value="long_call">Long Call</option>
+        <option value="long_put">Long Put</option>
+        <option value="short_put">Short Put</option>
+        <option value="covered_call">Covered Call</option>
+        <option value="put_vertical_credit">Put Vertical (credit)</option>
+        <option value="put_vertical_debit">Put Vertical (debit)</option>
+        <option value="call_vertical_credit">Call Vertical (credit)</option>
+        <option value="call_vertical_debit">Call Vertical (debit)</option>
+        <option value="short_straddle">Short Straddle</option>
+        <option value="short_strangle">Short Strangle</option>
+        <option value="iron_condor">Iron Condor</option>
+      </select>
+    </label>
+    <label>Price by
+      <select id="price-by">
+        <option value="mid">Mid</option>
+        <option value="natural">Bid/Ask</option>
+      </select>
+    </label>
   </div>
   <div id="builder-warnings"></div>
   <div id="builder-chain" class="builder-chain"></div>
   <div class="builder-row">
     <div id="builder-basket" class="builder-basket">
       <h3>Legs</h3>
-      <ul id="builder-legs"></ul>
+      <table id="leg-table"><tbody></tbody></table>
+      <div class="builder-actions leg-controls">
+        <span class="note">Add leg:</span>
+        <button id="add-call" type="button">+ Call</button>
+        <button id="add-put" type="button">+ Put</button>
+        <button id="add-stock" type="button">+ Stock</button>
+      </div>
+      <div class="builder-actions leg-controls">
+        <button id="flip-strategy" type="button">Flip Strategy</button>
+        <button id="width-narrow" type="button">&minus; Width</button>
+        <button id="width-widen" type="button">Width +</button>
+        <button id="reset-legs" type="button">Reset Legs</button>
+      </div>
     </div>
     <div id="builder-metrics" class="builder-metrics"></div>
   </div>
