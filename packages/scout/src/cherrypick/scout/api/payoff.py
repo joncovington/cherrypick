@@ -118,12 +118,19 @@ async def get_payoff(
         "greeks_text": None,
         "suggestion": None,
         "checklist": None,
+        "projected_yield_12m": None,
+        "dividend_yield": None,
     }
     app_sym = request.app
     symbol_up = symbol.strip().upper() if symbol else None
 
-    # Credit and the return metrics need only the payoff engine's own numbers.
-    credit = -sum(leg.quantity * leg.price for leg in parsed) * 100
+    # Credit and the return metrics need only the payoff engine's own numbers. Option legs only --
+    # a covered call's stock leg is a debit (buying/holding 100 shares) that would otherwise swamp
+    # the option premium and zero out the return metrics; the reference platform's own "Static
+    # Yield" is the option income relative to the position's max risk, not the whole basket's net
+    # cash flow (KWEB 2026-08-03: $73.50 option credit / $2,789.50 max risk = 2.64%, matching the
+    # displayed static yield -- the stock leg only ever affects max_risk, never this numerator).
+    credit = -sum(leg.quantity * leg.price for leg in parsed if leg.kind != "stock") * 100
     loss = result["max_loss"]
     if credit > 0 and not loss["unbounded"] and loss["value"] is not None and dte:
         max_risk = abs(loss["value"])
@@ -179,7 +186,23 @@ async def get_payoff(
         except Exception:
             has_weeklies = None
     option_legs = [lg for lg in parsed if lg.kind != "stock"]
+    stock_legs = [lg for lg in parsed if lg.kind == "stock"]
     is_income = len(option_legs) == 1 and option_legs[0].quantity < 0
+    is_covered_call = (
+        is_income and option_legs[0].kind == "call" and len(stock_legs) == 1 and stock_legs[0].quantity > 0
+    )
+    if is_covered_call and symbol_up and result["annualized_return"] is not None:
+        try:
+            metrics_ttl = app_sym.state.cfg.get("refresh", {}).get("metrics_ttl_seconds", 900)
+            metrics = await metrics_service.get_metrics(
+                app_sym.state.cache_db, app_sym.state.broker_session, [symbol_up], metrics_ttl
+            )
+            result["dividend_yield"] = (metrics.get(symbol_up) or {}).get("dividend_yield")
+        except Exception:
+            result["dividend_yield"] = None
+        result["projected_yield_12m"] = _describe.projected_yield_12m(
+            result["annualized_return"], result["dividend_yield"]
+        )
     if is_income:
         result["checklist"] = {
             "kind": "income",

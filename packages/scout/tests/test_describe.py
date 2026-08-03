@@ -17,12 +17,22 @@ def test_annualized_return_matches_the_three_reverse_engineered_reference_pairs(
     assert _describe.annualized_return(113, 987, 25) == pytest.approx(3.8675, abs=0.02)  # 386.75%
     # HPE 2026-08-03 (live): $123.50 credit / $3,476.50 risk / 46 DTE -> displayed 31.91%.
     assert _describe.annualized_return(123.50, 3476.50, 46) == pytest.approx(0.3191, abs=0.002)
+    # KWEB covered call 2026-08-03: $73.50 credit / $2,789.50 risk / 46 DTE -> displayed 22.93%.
+    assert _describe.annualized_return(73.50, 2789.50, 46) == pytest.approx(0.2293, abs=0.002)
 
 
 def test_annualized_return_degrades_on_bad_inputs():
     assert _describe.annualized_return(100, 0, 25) is None
     assert _describe.annualized_return(100, 500, 0) is None
     assert _describe.raw_return(None, 500) is None
+
+
+def test_projected_yield_12m_matches_the_kweb_covered_call_card():
+    """KWEB covered call, 2026-08-03: 22.93% annualized option return + 7.36% trailing dividend
+    yield displayed as a 30.29% "12M Projected Yield" -- simple addition, not compounded."""
+    assert _describe.projected_yield_12m(0.2293, 0.0736) == pytest.approx(0.3029, abs=1e-4)
+    assert _describe.projected_yield_12m(None, 0.0736) is None
+    assert _describe.projected_yield_12m(0.2293, None) is None
 
 
 _SHORT_PUT = [Leg(kind="put", quantity=-1, price=1.5, strike=95.0)]
