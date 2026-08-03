@@ -62,6 +62,14 @@ spread with finite max_risk. It also does not hold for undefined-risk baskets (s
 strangle scored 152-250 despite reward/risk collapsing to ~0 when risk is "Unlimited") -- those
 almost certainly use the platform's real margin requirement as the risk denominator, a dollar
 figure this package has no visibility into; `score()` returns None rather than guess at it.
+
+A second batch (AVGO, 2026-08-05) reconfirms the formula on five more defined-risk points and
+extends it to a 4-leg iron condor, not just 2-leg verticals: three put verticals of increasing
+width (POP 42-48%) and two iron condors of very different wingspan (POP 12% and 31%) all land
+within 0.5 points of the closed form -- eleven defined-risk points total now, across two
+underlyings/days, typical error under half a point on a scale spanning 84-144. The same batch's
+naked long put again fails badly (predicted ~431 against an actual 102), the same single-leg
+exclusion as before.
 """
 
 from __future__ import annotations
