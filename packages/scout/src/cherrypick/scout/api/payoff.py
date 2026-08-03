@@ -120,6 +120,7 @@ async def get_payoff(
         "checklist": None,
         "projected_yield_12m": None,
         "dividend_yield": None,
+        "score": None,
     }
     app_sym = request.app
     symbol_up = symbol.strip().upper() if symbol else None
@@ -159,6 +160,9 @@ async def get_payoff(
             result["greeks_text"] = _describe.greeks_explanation(
                 symbol.strip().upper(), result["model_greeks"]
             )
+        result["score"] = _describe.score(
+            result["pop"], parsed, result["max_profit"], result["max_loss"]
+        )
 
     result["explanation"] = _describe.strategy_explanation(parsed, spot, result["pop"], exp_date)
 

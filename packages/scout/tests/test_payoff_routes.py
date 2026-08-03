@@ -215,6 +215,28 @@ def test_payoff_route_projected_yield_omitted_for_a_lone_short_put(app_and_clien
     assert body["projected_yield_12m"] is None  # not a covered-call shape
 
 
+def test_payoff_route_includes_score_for_a_defined_risk_vertical(app_and_client, monkeypatch):
+    app, client = app_and_client
+
+    async def fake_rate(_conn, _session):
+        return 0.05
+
+    monkeypatch.setattr(_payoff_api.metrics_service, "get_risk_free_rate", fake_rate)
+    # APD 290/280 put vertical, 2026-08-04: reward $310 / risk $690 / pop 58.24% -> score ~84.
+    legs = [
+        {"kind": "put", "quantity": -1, "price": 4.30, "strike": 290},
+        {"kind": "put", "quantity": 1, "price": 1.20, "strike": 280},
+    ]
+    resp = client.get(
+        "/api/payoff",
+        params={"legs": json.dumps(legs), "spot": 292.38, "dte": 46, "iv": 0.30},
+        headers=_headers(app),
+    )
+    body = resp.json()
+    assert body["score"] is not None
+    assert 0 < body["score"] < 300
+
+
 def test_payoff_route_directional_checklist_for_a_vertical(app_and_client, monkeypatch):
     app, client = app_and_client
 

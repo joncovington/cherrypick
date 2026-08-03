@@ -44,6 +44,24 @@ account the same day, not assumed from the SDK's naming convention. A second ref
 same day) reconfirms the annualized-return formula at a third independent (credit, max_risk, dte)
 and shows the zero-dividend edge case: a commodity ETF's 0% trailing yield makes the projected
 yield identical to the annualized option return (16.48% both), not a formula difference.
+
+The reference platform's "Score" badge (an overall-attractiveness number on roughly a 0-250+
+scale) reduces, for DEFINED-RISK spreads, to a strikingly simple closed form fit from six
+independent data points across two underlyings/days (APD 2026-08-04, three same-underlying/
+same-expiration verticals varying only strike width; plus KWEB/HYG-day put and call verticals
+from 2026-08-03) via least-squares regression, R^2 = 0.9997:
+    score = 100 * pop * (max_reward + max_risk) / max_risk
+          = 100 * pop * (1 + max_reward / max_risk)
+Equivalently, 100 * pop is the score of a risk-free (reward == 0) trade, and every dollar of
+reward relative to risk scales it up proportionally. All six fitted points landed within ~1
+point of the regression line on a scale spanning 84-144. It does NOT hold for a naked long
+option (a seventh point, reward/risk 10.5, predicted ~450 against an actual 99) -- an
+undefined-both-sides position's theoretical max reward (near stock-to-zero) makes the ratio
+huge and unusable; scout does not attempt a score for anything but a two-strikes-both-sides
+spread with finite max_risk. It also does not hold for undefined-risk baskets (short straddle/
+strangle scored 152-250 despite reward/risk collapsing to ~0 when risk is "Unlimited") -- those
+almost certainly use the platform's real margin requirement as the risk denominator, a dollar
+figure this package has no visibility into; `score()` returns None rather than guess at it.
 """
 
 from __future__ import annotations
@@ -78,6 +96,26 @@ def projected_yield_12m(annualized: float | None, dividend_yield: float | None) 
     if annualized is None or dividend_yield is None:
         return None
     return annualized + dividend_yield
+
+
+def score(pop_value: float | None, legs: list[Leg], max_reward: dict, max_loss: dict) -> float | None:
+    """The reference platform's "Score" badge, for a DEFINED-RISK spread only (see module
+    docstring for the six-point fit and why naked long options and unbounded-risk baskets are
+    excluded): 100 * pop * (max_reward + max_risk) / max_risk. Requires >= 2 option legs (a
+    naked single option is the one shape the fit is known to fail) and a finite max_risk/
+    max_reward; returns None otherwise -- an inapplicable score should be absent, not wrong."""
+    option_legs = [lg for lg in legs if lg.kind != "stock"]
+    if len(option_legs) < 2 or pop_value is None:
+        return None
+    if max_loss.get("unbounded") or max_reward.get("unbounded"):
+        return None
+    risk_value, reward_value = max_loss.get("value"), max_reward.get("value")
+    if risk_value is None or reward_value is None:
+        return None
+    max_risk = abs(risk_value)
+    if max_risk <= 0:
+        return None
+    return 100.0 * pop_value * (reward_value + max_risk) / max_risk
 
 
 def prob_worthless(legs: list[Leg], spot: float, sigma: float, t: float, r: float) -> float | None:
