@@ -69,7 +69,10 @@ Config: copy `config.example.json` → `config.json` (git-ignored), or omit it e
   request if that call is unavailable. `screener_service` follows the plan's five-step compute flow
   precisely because skipping a step (e.g. fetching chains before the IV-rank/liquidity pre-filter)
   would turn a watchlist-sized request into a whole-chain-per-symbol one regardless of whether the
-  symbol was ever going to survive the filter.
+  symbol was ever going to survive the filter. `sse.py`'s `QuotePoller` (`/api/stream`) applies the
+  same discipline to a live surface: one batched `quote_service.get_quotes` call per tick, and the
+  poll loop itself exists only while at least one SSE client is connected — a closed browser tab
+  costs zero broker calls, not merely a throttled few.
 - **Credentials in the OS keyring only**, via `services/session.py`'s `BrokerSession` (one
   process-wide `cherrypick.core.auth.session.SessionManager` over the shared `cherrypick-broker`
   keyring service, behind an `asyncio.Lock`, one retry on a 401-shaped failure). Never files, env

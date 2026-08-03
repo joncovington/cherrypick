@@ -40,6 +40,9 @@
       <template x-for="sym in symbols" :key="sym">
         <li>
           <a href="#" x-text="sym" @click.prevent="openSymbol(sym)"></a>
+          <span class="quote"
+                :class="quotes[sym] && quotes[sym].change_pct < 0 ? 'down' : quotes[sym] && quotes[sym].change_pct > 0 ? 'up' : ''"
+                x-text="quotes[sym] && quotes[sym].last != null ? quotes[sym].last.toFixed(2) : ''"></span>
           <button @click="remove(sym)" title="remove">&times;</button>
         </li>
       </template>
