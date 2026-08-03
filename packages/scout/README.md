@@ -58,6 +58,7 @@ Runtime data lives under the shared suite home (`cherrypick.core.home`, relocata
 ```
 packages/scout/
   CLAUDE.md  README.md  config.example.json  pyproject.toml  run.py
+  docs/             strategy-screening-parameters.md
   src/cherrypick/
     scout/
       __init__.py  cli.py  config.py  app.py  serve.py  security.py  sse.py  templates.py
