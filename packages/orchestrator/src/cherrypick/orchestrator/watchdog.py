@@ -307,14 +307,37 @@ def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
     under `modules.meic.streamer` and this returns nothing. Exactly one producer is ever enabled at a
     time (enabling this + `modules.meic.streamer.enabled=false` is the flip). Session-gated + silence
     restart, the same contract MEIC's streamer has via `_check_streamer_health`.
+
+    Off-session it still emits one informational OK finding (liveness only — `--status` reads files and
+    the PID, never the broker) so the log and dashboard always say what the producer is doing; without
+    it, "overall OK" on a weekend is indistinguishable from the streamer never being checked at all.
+    Never WARN and never restart off-session: there is nothing to stream, staleness is meaningless, and
+    the first in-session tick (from NEAR_OPEN, 9:15 ET) auto-starts it before the bell.
     """
     spec = cfg.get("streamer") or {}
-    if not spec.get("enabled") or not in_session:
+    if not spec.get("enabled"):
         return []
     root = cfgmod.module_root(spec, "streamer")
     if not root.exists():
         msg = f"not found at {cfgmod.portable_path(root)}"
+        if not in_session:
+            return [Finding("streamer", OK, "streamer", f"off-hours; checkout {msg}")]
         return [Finding("streamer", WARN, "streamer checkout missing", msg)]
+    if not in_session:
+        running = None
+        try:
+            r = _run_module(root, spec["status_argv"], timeout=15)
+            if r.returncode == 0:
+                running = bool((first_json(r.stdout) or {}).get("running"))
+        except Exception:
+            running = None
+        if running is None:
+            msg = "off-hours; status unreadable — will be checked at the next in-session tick"
+        elif running:
+            msg = "running (off-hours; staleness not checked)"
+        else:
+            msg = "not running (off-hours; auto-start at the first in-session tick, 9:15 ET)"
+        return [Finding("streamer", OK, "Streamer", msg)]
     return _check_streamer_health("streamer", root, spec)
 
 
