@@ -11,6 +11,7 @@
 <script src="/static/vendor/tabulator.min.js" defer></script>
 <script src="/static/vendor/lightweight-charts.standalone.production.js" defer></script>
 <script src="/static/js/scout.js" defer></script>
+<script src="/static/js/payoff.js" defer></script>
 <script src="/static/vendor/alpine.min.js" defer></script>
 </head>
 <body>
@@ -22,7 +23,7 @@
   <a hx-get="/partial/calendar" hx-target="#content" hx-push-url="true" hx-trigger="load, click" class="on">Calendar</a>
   <a hx-get="/partial/screener" hx-target="#content" hx-push-url="true">Screener</a>
   <a id="nav-symbol" href="#" hx-target="#content" hx-push-url="true">Symbol</a>
-  <a hx-get="/partial/builder" hx-target="#content" hx-push-url="true">Builder</a>
+  <a id="nav-builder" href="#" hx-target="#content" hx-push-url="true">Builder</a>
   <a hx-get="/partial/staged" hx-target="#content" hx-push-url="true">Staged</a>
 </nav>
 <main>

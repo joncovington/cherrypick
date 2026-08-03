@@ -49,22 +49,24 @@ Config: copy `config.example.json` → `config.json` (git-ignored), or omit it e
 - **Never write a cache this module doesn't own.** `services/cache.py` opens only this module's own
   `~/.cherrypick/data/scout/cache.db`. `calendar_service`'s Dolt read (`earnings.earnings_calendar`)
   and `candle_service`'s (`stocks.ohlcv`) are read-only and never write their source.
-- **The streamer comes before API calls, whenever practical.** Once chain/quote services exist
-  (M5/M7), prefer the cached/batched path over a fresh broker round trip; the broker API is for
-  acting (dry-run) and for confirming what only it can know. `services/cache.py`'s `get_or_fetch` is
-  the shared mechanism — TTL cache, stale-serve on fetch failure, honest `as_of`/`stale` on every
-  payload. **One narrow, deliberate exception** to "only the streamer talks to the broker" (a
-  streaming-path rule): `candle_service`'s DXLink tail top-up opens its own short-lived
-  `DXLinkStreamer` (bounded by an idle timeout and a hard wall-clock cap, opened on demand, never
-  resident) to fill the gap between Dolt's last row and now. It never informs a decision — this
-  package makes none — only fills in recent chart history; a DXLink failure falls back to a single
-  synthesized bar from a snapshot quote rather than blocking the page.
+- **The streamer comes before API calls, whenever practical.** Prefer the cached/batched path over a
+  fresh broker round trip; the broker API is for acting (dry-run) and for confirming what only it can
+  know. `services/cache.py`'s `get_or_fetch`/`async_get_or_fetch` are the shared mechanism — TTL
+  cache, stale-serve on fetch failure, honest `as_of`/`stale` on every payload. **One narrow,
+  deliberate exception** to "only the streamer talks to the broker" (a streaming-path rule):
+  `candle_service`'s DXLink tail top-up opens its own short-lived `DXLinkStreamer` (bounded by an
+  idle timeout and a hard wall-clock cap, opened on demand, never resident) to fill the gap between
+  Dolt's last row and now. It never informs a decision — this package makes none — only fills in
+  recent chart history; a DXLink failure falls back to a single synthesized bar from a snapshot quote
+  rather than blocking the page.
 - **Rate-limit discipline.** `metrics_service` batches every stale/missing symbol into one
   `get_market_metrics` call rather than one call per symbol (the calendar and, from M5, the screener
-  both go through it); chains fetched only for pre-filter survivors; a manual `?fresh=1` refresh is
-  still floored (`cache.get_or_fetch`'s `refresh_floor_seconds`) so a refresh button can't be used to
-  hammer the broker. `calendar_service`'s straddle-based expected move is fetched only for
-  watchlist/metrics rows, never for the broad Dolt rows -- those can number in the hundreds.
+  both go through it); `chain_service.get_quotes` batches into ~100-symbol `get_market_data_by_type`
+  chunks the same way; a manual `?fresh=1` refresh is still floored (`refresh_floor_seconds`) so a
+  refresh button can't be used to hammer the broker. `calendar_service`'s straddle-based expected move
+  and `/api/payoff`'s POP calculation are the two places a single narrow broker call rides on an
+  otherwise pure-computation route — both degrade to omitting the number rather than failing the
+  request if that call is unavailable.
 - **Credentials in the OS keyring only**, via `services/session.py`'s `BrokerSession` (one
   process-wide `cherrypick.core.auth.session.SessionManager` over the shared `cherrypick-broker`
   keyring service, behind an `asyncio.Lock`, one retry on a 401-shaped failure). Never files, env
@@ -90,9 +92,16 @@ See README.md's file tree for what currently exists. Two things worth knowing up
 - `src/cherrypick/scout/` has an `__init__.py` (an ordinary package marker); its parent
   `src/cherrypick/` deliberately does not, so this composes with `cherrypick.core` and every sibling
   module under one `cherrypick.*` namespace root.
-- `services/cache.py`'s schema already declares tables later milestones will use (`symbol_meta`,
-  `staged_orders`) alongside the generic `kv_cache` TTL store and the `candles`/`candle_meta` tables
-  `candle_service` (M3) now actually exercises — declared once so the schema doesn't need a migration
-  step per milestone.
-- `analytics/` (new in M3, `levels.py`) is stdlib-only, no I/O -- same posture `payoff.py`/`pop.py`
-  will follow in M4, so a future promotion to `cherrypick.core` is a file move once stable.
+- `services/cache.py`'s schema already declares tables the still-pending milestones will use
+  (`symbol_meta`, `staged_orders`) alongside the generic `kv_cache` TTL store and the
+  `candles`/`candle_meta` tables `candle_service` (M3) exercises — declared once so the schema
+  doesn't need a migration step per milestone.
+- `analytics/` (`levels.py`, `payoff.py`, `pop.py`) is stdlib + dataclasses only, no I/O, so a future
+  promotion to `cherrypick.core` is a file move once stable. Don't reach for a broker call or a cache
+  read inside this package — that belongs in a `services/` module that calls into `analytics/`, not
+  the other way around.
+- Live per-option greeks (delta/gamma/theta/vega) have no source yet — `chain_service`'s quotes come
+  from `get_market_data_by_type`, which doesn't carry them, and the SDK's option-chain call doesn't
+  either. `payoff.Leg`/`net_greeks` already treat greeks as optional per leg; don't invent a greeks
+  source by guessing at one (e.g. backing into delta from historical Dolt data) without deciding it
+  deliberately — a wrong greek is worse than an honestly missing one.
