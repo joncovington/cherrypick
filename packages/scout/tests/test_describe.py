@@ -127,6 +127,35 @@ def test_score_is_none_for_unbounded_risk():
     assert _describe.score(0.5809, straddle, max_reward, max_loss) is None
 
 
+def test_probable_risk_2sd_matches_the_googl_strangle_ballpark():
+    """GOOG short strangle 360/385, 2026-08-05: reference platform's own disclosed methodology
+    ("probable risk based on a wide (2 SD) move against you"). Solving IV from the strangle's own
+    quoted premium (put $15.20 + call $18.95, spot 370.91, 74 DTE) and evaluating this position's
+    P&L at spot -/+ 2 SD lands at ~$6,924 -- in the same neighborhood as the reference platform's
+    own contract-sizing behavior for this exact position ($30k/$10k "invest" amounts sized to 3
+    and 1 contracts, implying ~$7,500-$10,000/contract; the gap is plausibly real IV skew this
+    flat-vol solve doesn't model). This is NOT the same number Score implies for this position
+    (~$1,200) -- see module docstring for why those are ruled out as the same calculation."""
+    legs = [
+        Leg(kind="put", quantity=-1, price=15.20, strike=360.0),
+        Leg(kind="call", quantity=-1, price=18.95, strike=385.0),
+    ]
+    risk = _describe.probable_risk_2sd(legs, spot=370.91, sigma=0.3422, t=74 / 365)
+    assert risk == pytest.approx(6923.96, abs=1.0)
+
+
+def test_probable_risk_2sd_is_zero_when_the_2sd_move_would_still_profit():
+    legs = [Leg(kind="put", quantity=-1, price=1.0, strike=50.0)]
+    risk = _describe.probable_risk_2sd(legs, spot=100.0, sigma=0.2, t=30 / 365)
+    assert risk == 0.0
+
+
+def test_probable_risk_2sd_degrades_on_missing_inputs():
+    legs = [Leg(kind="put", quantity=-1, price=1.0, strike=95.0)]
+    assert _describe.probable_risk_2sd(legs, 100.0, None, 30 / 365) is None
+    assert _describe.probable_risk_2sd(legs, 100.0, 0.3, 0.0) is None
+
+
 _SHORT_PUT = [Leg(kind="put", quantity=-1, price=1.5, strike=95.0)]
 
 

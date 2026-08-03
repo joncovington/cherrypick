@@ -641,6 +641,11 @@ function renderMetrics(el, result) {
   el.innerHTML = `
     <span>Max profit ${result.max_profit.unbounded ? "unbounded" : fmt(result.max_profit.value)}</span>
     <span>Max loss ${result.max_loss.unbounded ? "unbounded" : fmt(result.max_loss.value)}</span>
+    ${
+      result.probable_risk_2sd != null
+        ? `<span>Probable risk (2 SD move) ${fmt(result.probable_risk_2sd)}</span>`
+        : ""
+    }
     <span>Breakevens ${result.breakevens.map(fmt).join(", ") || "--"}</span>
     <span>POP ${pct(result.pop)} · POW ${pct(result.pow)}</span>
     <span>Return ${pct(result.raw_return)} raw · ${pct(result.annualized_return)} annualized*</span>

@@ -237,6 +237,44 @@ def test_payoff_route_includes_score_for_a_defined_risk_vertical(app_and_client,
     assert 0 < body["score"] < 300
 
 
+def test_payoff_route_probable_risk_2sd_for_an_unbounded_short_strangle(app_and_client, monkeypatch):
+    app, client = app_and_client
+
+    async def fake_rate(_conn, _session):
+        return 0.05
+
+    monkeypatch.setattr(_payoff_api.metrics_service, "get_risk_free_rate", fake_rate)
+    legs = [
+        {"kind": "put", "quantity": -1, "price": 15.20, "strike": 360},
+        {"kind": "call", "quantity": -1, "price": 18.95, "strike": 385},
+    ]
+    resp = client.get(
+        "/api/payoff",
+        params={"legs": json.dumps(legs), "spot": 370.91, "dte": 74, "iv": 0.3422},
+        headers=_headers(app),
+    )
+    body = resp.json()
+    assert body["max_loss"]["unbounded"] is True
+    assert body["probable_risk_2sd"] == pytest.approx(6923.96, abs=1.0)
+    assert body["score"] is None  # undefined-risk basket -- Score doesn't apply
+
+
+def test_payoff_route_probable_risk_2sd_omitted_for_defined_risk(app_and_client, monkeypatch):
+    app, client = app_and_client
+
+    async def fake_rate(_conn, _session):
+        return 0.05
+
+    monkeypatch.setattr(_payoff_api.metrics_service, "get_risk_free_rate", fake_rate)
+    resp = client.get(
+        "/api/payoff",
+        params={"legs": json.dumps(_PUT_CREDIT_SPREAD), "spot": 100, "dte": 30, "iv": 0.25},
+        headers=_headers(app),
+    )
+    body = resp.json()
+    assert body["probable_risk_2sd"] is None
+
+
 def test_payoff_route_directional_checklist_for_a_vertical(app_and_client, monkeypatch):
     app, client = app_and_client
 

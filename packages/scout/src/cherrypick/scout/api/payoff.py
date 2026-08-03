@@ -121,6 +121,7 @@ async def get_payoff(
         "projected_yield_12m": None,
         "dividend_yield": None,
         "score": None,
+        "probable_risk_2sd": None,
     }
     app_sym = request.app
     symbol_up = symbol.strip().upper() if symbol else None
@@ -163,6 +164,8 @@ async def get_payoff(
         result["score"] = _describe.score(
             result["pop"], parsed, result["max_profit"], result["max_loss"]
         )
+        if result["max_loss"].get("unbounded"):
+            result["probable_risk_2sd"] = _describe.probable_risk_2sd(parsed, spot, iv, t)
 
     result["explanation"] = _describe.strategy_explanation(parsed, spot, result["pop"], exp_date)
 
