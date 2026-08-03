@@ -45,6 +45,13 @@ class BrokerSession:
             await asyncio.sleep(wait)
         self._last_call = time.monotonic()
 
+    def get_raw_session(self) -> Any:
+        """The underlying tastytrade `Session`, unwrapped -- for callers that need to construct
+        something like a `DXLinkStreamer` themselves (a streaming connection isn't a single
+        awaited request/response, so it doesn't fit `call()`'s throttle-and-retry shape). Still
+        raises `CredentialError` the same way `call()` would if credentials are missing."""
+        return self._manager.get_session()
+
     async def call(self, fn: Callable[..., Awaitable[T]], *args: Any, **kwargs: Any) -> T:
         """Run an async tastytrade SDK call against the shared session: ``await fn(session, *args,
         **kwargs)``. Retries once, after resetting the cached session, on a 401-shaped failure."""

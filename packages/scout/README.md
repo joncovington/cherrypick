@@ -60,24 +60,26 @@ packages/scout/
   src/cherrypick/
     scout/
       __init__.py  cli.py  config.py  app.py  serve.py  security.py  templates.py
-      api/          __init__.py  watchlist.py  calendar.py
+      api/          __init__.py  watchlist.py  calendar.py  symbol.py
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
-                     calendar_service.py
+                     calendar_service.py  candle_service.py
+      analytics/    __init__.py  levels.py
       static/       index.html  css/scout.css  js/scout.js
         vendor/     lightweight-charts.standalone.production.js  tabulator.min.js
                      tabulator_midnight.min.css  htmx.min.js  alpine.min.js
                      LICENSE-lightweight-charts.txt  LICENSE-tabulator.txt  LICENSE-htmx.txt
                      LICENSE-alpinejs.txt  LICENSES.md
-      templates/    calendar.html
-  tests/            conftest.py  test_config.py  test_cache_ttl.py  test_watchlist.py
-                    test_security.py  test_self_contained.py  test_api_routes.py
-                    test_session.py  test_metrics_service.py  test_calendar_service.py
-                    test_calendar_routes.py
+      templates/    calendar.html  symbol.html
+  tests/            conftest.py  test_config.py  test_cache_ttl.py  test_cache_candles.py
+                    test_watchlist.py  test_security.py  test_self_contained.py
+                    test_api_routes.py  test_session.py  test_metrics_service.py
+                    test_calendar_service.py  test_calendar_routes.py  test_candle_service.py
+                    test_levels.py  test_symbol_routes.py
 ```
 
-The screener, symbol, and builder surfaces (with their own `api/`/`services/`/`analytics/` modules)
-land in later milestones on this branch — their nav nodes already render in `static/index.html` but
-the routes don't exist yet.
+The screener and builder surfaces (with their own `api/`/`services/` modules) land in later
+milestones on this branch — their nav nodes already render in `static/index.html` but the routes
+don't exist yet.
 
 ## The earnings calendar (M2)
 
@@ -96,6 +98,22 @@ This is also the first milestone that talks to the broker: `services/session.py`
 holds one process-wide `cherrypick.core.auth.session.SessionManager` over the shared
 `cherrypick-broker` keyring service. Missing credentials or a broker hiccup degrade the metrics side
 of the calendar to empty rather than raising — the page always renders.
+
+## The symbol view (M3)
+
+`GET /api/symbol/{sym}/candles`, `GET /api/symbol/{sym}/stats`, `GET /partial/symbol/{sym}` (click a
+watchlist name, or the Symbol nav tab, which opens the first watchlist symbol). Candle history is
+seeded once per symbol from the `stocks` Dolt database's `ohlcv` table (years of daily bars, no
+websocket), then topped up from Dolt's cutoff to now via a **short-lived** `DXLinkStreamer` — bounded
+by an idle timeout and a hard wall-clock cap, opened on demand and never held resident. If DXLink
+can't be reached at all, a single daily bar is synthesized from a snapshot equity quote so the chart
+still shows today rather than nothing. A failed top-up attempt is retry-floored independently of the
+candle TTL so a stalled DXLink/broker never turns a page load into a retry storm.
+`analytics/levels.py` (stdlib-only, no I/O) computes SMA 20/50/200 and support/resistance levels
+from swing highs/lows over the cached bars; the stats panel adds `metrics_service`'s IV rank,
+liquidity rating, and beta alongside the candle-derived 52-week range and 30-day average volume.
+Rendering is Lightweight Charts v5 (`chart.addSeries(CandlestickSeries, ...)` +
+`HistogramSeries` for volume), mounted in `static/js/scout.js` on `htmx:afterSwap`.
 
 ## Security
 
