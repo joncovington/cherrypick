@@ -229,9 +229,80 @@ async function mountScreenerView(view) {
   await load();
 }
 
+/* ---------------- staged tickets: list, copy, delete ---------------- */
+
+function _fmtDateTime(ts) {
+  return ts ? new Date(ts * 1000).toLocaleString() : "—";
+}
+
+function _ticketDryRunSummary(dryRun) {
+  if (!dryRun) return "not validated";
+  if (!dryRun.ok) return `validation failed: ${dryRun.error || "unknown error"}`;
+  const bp = dryRun.buying_power || {};
+  return `account ${dryRun.account_number || "—"} · BP change ${bp.change_in_buying_power ?? "—"}`;
+}
+
+function _ticketLegLine(leg) {
+  return `${leg.quantity > 0 ? "Buy" : "Sell"} ${Math.abs(leg.quantity)} ${leg.symbol} @ ${leg.price.toFixed(2)}`;
+}
+
+function _ticketDescription(ticket) {
+  const lines = [`${ticket.symbol} ${ticket.strategy}`, ...ticket.legs.map(_ticketLegLine)];
+  if (ticket.credit != null) lines.push(`Net credit: ${ticket.credit.toFixed(2)}`);
+  if (ticket.note) lines.push(`Note: ${ticket.note}`);
+  return lines.join("\n");
+}
+
+async function mountStagedView(view) {
+  const listEl = view.querySelector("#staged-list");
+
+  async function load() {
+    const result = await fetch("/api/staged").then((r) => r.json());
+    const tickets = result.tickets || [];
+    if (!tickets.length) {
+      listEl.innerHTML = '<p class="note">No staged tickets.</p>';
+      return;
+    }
+    listEl.innerHTML = tickets
+      .map(
+        (t) => `
+      <div class="staged-ticket" data-id="${t.id}">
+        <div class="staged-head">
+          <b>${t.symbol}</b> <span class="note">${t.strategy}</span>
+          <span class="note">${_fmtDateTime(t.created_at)}</span>
+        </div>
+        <div class="staged-legs">${t.legs.map(_ticketLegLine).join("<br>")}</div>
+        <div class="note">Credit ${t.credit != null ? t.credit.toFixed(2) : "—"} ·
+          Max risk ${t.max_risk != null ? t.max_risk.toFixed(2) : "—"}</div>
+        <div class="note">${_ticketDryRunSummary(t.dry_run)}</div>
+        <div class="staged-actions">
+          <button data-act="copy">Copy</button>
+          <button data-act="delete">Delete</button>
+        </div>
+      </div>`
+      )
+      .join("");
+    listEl.querySelectorAll(".staged-ticket").forEach((row) => {
+      const id = row.dataset.id;
+      const ticket = tickets.find((t) => t.id === id);
+      row.querySelector('[data-act="copy"]').onclick = () => {
+        navigator.clipboard?.writeText(_ticketDescription(ticket));
+      };
+      row.querySelector('[data-act="delete"]').onclick = async () => {
+        await postJson("/api/staged/delete", { id });
+        load();
+      };
+    });
+  }
+
+  await load();
+}
+
 document.body.addEventListener("htmx:afterSwap", (evt) => {
   const symbolView = evt.detail.target.querySelector("#symbol-view");
   if (symbolView) mountSymbolView(symbolView);
   const screenerView = evt.detail.target.querySelector("#screener-view");
   if (screenerView) mountScreenerView(screenerView);
+  const stagedView = evt.detail.target.querySelector("#staged-view");
+  if (stagedView) mountStagedView(stagedView);
 });

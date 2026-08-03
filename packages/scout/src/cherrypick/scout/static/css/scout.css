@@ -170,6 +170,28 @@ table.calendar tr.stale td { color: #9fb0bf; }
 #screener-table { margin-top: 8px; }
 .builder-link { color: #7fa8d1; text-decoration: underline; }
 #screener-skipped { margin-top: 8px; }
+.builder-actions { display: flex; gap: 8px; align-self: flex-end; }
+.builder-actions button, .staged-actions button {
+  background: #24303a;
+  color: #cfe3f5;
+  border: 1px solid #33414d;
+  border-radius: 4px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.builder-actions button:hover, .staged-actions button:hover { background: #2d3c48; }
+#builder-validation { margin-top: 8px; }
+.staged-ticket {
+  border: 1px solid #232c34;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.staged-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 4px; }
+.staged-legs { font-family: ui-monospace, monospace; font-size: 12px; margin-bottom: 4px; }
+.staged-actions { display: flex; gap: 8px; margin-top: 6px; }
 footer {
   padding: 10px 20px;
   font-size: 11px;

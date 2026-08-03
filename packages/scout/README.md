@@ -61,17 +61,17 @@ packages/scout/
     scout/
       __init__.py  cli.py  config.py  app.py  serve.py  security.py  templates.py
       api/          __init__.py  watchlist.py  calendar.py  symbol.py  payoff.py  builder.py
-                     screener.py
+                     screener.py  orders.py
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
                      calendar_service.py  candle_service.py  chain_service.py
-                     screener_service.py
+                     screener_service.py  staging.py
       analytics/    __init__.py  levels.py  payoff.py  pop.py  strategies.py
       static/       index.html  css/scout.css  js/scout.js  js/payoff.js
         vendor/     lightweight-charts.standalone.production.js  tabulator.min.js
                      tabulator_midnight.min.css  htmx.min.js  alpine.min.js
                      LICENSE-lightweight-charts.txt  LICENSE-tabulator.txt  LICENSE-htmx.txt
                      LICENSE-alpinejs.txt  LICENSES.md
-      templates/    calendar.html  symbol.html  builder.html  screener.html
+      templates/    calendar.html  symbol.html  builder.html  screener.html  staged.html
   tests/            conftest.py  test_config.py  test_cache_ttl.py  test_cache_candles.py
                     test_watchlist.py  test_security.py  test_self_contained.py
                     test_api_routes.py  test_session.py  test_metrics_service.py
@@ -79,9 +79,8 @@ packages/scout/
                     test_levels.py  test_symbol_routes.py  test_chain_service.py  test_payoff.py
                     test_pop.py  test_payoff_routes.py  test_builder_routes.py
                     test_strategies.py  test_screener_service.py  test_screener_routes.py
+                    test_staging.py  test_order_routes.py  test_dry_run_only.py
 ```
-
-"Staged" (order dry-run/staging) is the last surface, landing in M6.
 
 ## The earnings calendar (M2)
 
@@ -185,10 +184,31 @@ Neither bug was visible from mocked tests alone -- both only showed up once a re
 DXLink response was in the loop, which is why this milestone's verification ran the screener against
 the real local Dolt server and a live broker session rather than stopping at green pytest output.
 
+## Order staging (M6)
+
+`POST /api/order/dry-run` validates a leg basket against the broker's own preflight -- buying-power
+effect, fees, warnings, **no order created** -- and `GET`/`POST /api/staged` +
+`POST /api/staged/delete` persist tickets to the `staged_orders` table for manual execution in the
+tastytrade platform. `services/staging.py` is the **single call site in the whole package** that
+reaches `cherrypick.core.broker.place_order`, and it passes `live=False` as a hardcoded literal --
+never a variable, config value, or request field -- so no path anywhere in this package can submit a
+real order. `test_dry_run_only.py` enforces this as a source scan (one `place_order` call site, in
+`staging.py`, with `live=False` as an AST-verified literal constant) rather than trusting a comment to
+stay true, the same pattern `orchestrator`'s `test_headless.py` uses for its own call-site invariant.
+
+Staging never depends on validation succeeding: `stage_ticket` always saves the ticket, even when the
+dry-run call itself fails (missing credentials, a network hiccup, a preflight rejection, an SDK
+response-shape change) -- the failure is recorded as the ticket's `dry_run` field rather than blocking
+the save, so a broker hiccup never costs a research session its work. Account numbers are masked
+(`****1234`) before a dry-run result is ever returned or stored. The builder's leg-basket click-picker
+(M4) now carries each leg's OCC option symbol through to "Validate with broker" and "Stage ticket";
+every staged leg is an opening trade (buy/sell to open) -- the builder has no closing-order or
+stock-leg picker. The Staged nav view lists tickets with a copyable order description and delete.
+
 ## Security
 
-Scout carries a handful of narrow mutating routes (watchlist save; later, order dry-run and staged-
-ticket save/delete), so — like `cherrypick.orchestrator`'s settings surface — it is gated beyond plain
+Scout carries a handful of narrow mutating routes (watchlist save; order dry-run; staged-ticket
+save/delete), so — like `cherrypick.orchestrator`'s settings surface — it is gated beyond plain
 loopback binding: every request must carry a loopback `Host` header naming the bound port (else 403),
 and every mutating request must additionally carry the per-process CSRF token baked into the page, an
 `application/json` content type, and, when present, a matching local `Origin`. See
