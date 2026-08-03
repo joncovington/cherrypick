@@ -164,6 +164,105 @@ async def get_greeks(
     return result
 
 
+# Income-grid tiers, reverse-engineered from a reference platform's displayed grids: live deltas
+# for its Conservative/Optimal/Aggressive strike picks clustered at ~0.12-0.15 / 0.24-0.28 /
+# 0.33-0.38 across two symbols and all three tenors (verified with this module's own get_greeks),
+# and its published covered-call guidance independently names 15-20 delta as conservative.
+INCOME_TIERS = {"conservative": 0.15, "optimal": 0.25, "aggressive": 0.35}
+INCOME_BUCKETS = (("short", 20, 39), ("medium", 40, 70), ("long", 71, 180))
+
+
+async def income_grid(
+    conn: sqlite3.Connection,
+    session: BrokerSession,
+    cfg: dict,
+    symbol: str,
+    spot: float,
+    *,
+    kind: str = "put",
+    risk_free_rate: float = 0.0,
+    now: float | None = None,
+) -> dict:
+    """Risk-tier x DTE-bucket candidate strikes: for each bucket the nearest expiration inside its
+    window, and per tier the strike whose live |delta| lands nearest the tier target. Cells carry
+    credit (mid), raw/annualized return, POW, and delta so the UI needs no further calls. A bucket
+    with no expiration, or a tier with no greeks coverage, is simply absent."""
+    from datetime import UTC, date, datetime
+
+    from ..analytics import describe as _describe
+    from ..analytics.pop import prob_below
+
+    now = time.time() if now is None else now
+    today = datetime.fromtimestamp(now, tz=UTC).date()
+    option_type = "P" if kind == "put" else "C"
+
+    expirations = await get_expirations(conn, session, cfg, symbol)
+    chosen: list[tuple[str, date, int, list[dict]]] = []
+    for name, lo, hi in INCOME_BUCKETS:
+        in_window = []
+        for iso, options in expirations["expirations"].items():
+            dte = (date.fromisoformat(iso) - today).days
+            if lo <= dte <= hi:
+                in_window.append((dte, iso, options))
+        if in_window:
+            dte, iso, options = min(in_window)
+            chosen.append((name, date.fromisoformat(iso), dte, options))
+
+    # One greeks pass across every candidate strike of every chosen expiration. Candidates are
+    # pre-narrowed to the OTM-side band the <=0.35-delta tiers can actually land in.
+    def _candidates(options: list[dict]) -> list[dict]:
+        lo, hi = (0.5 * spot, 1.02 * spot) if option_type == "P" else (0.98 * spot, 1.5 * spot)
+        keep = [o for o in options if o["option_type"] == option_type and lo <= o["strike"] <= hi]
+        return [o for o in keep if o.get("streamer_symbol")]
+
+    all_streamers = [o["streamer_symbol"] for _n, _e, _d, options in chosen for o in _candidates(options)]
+    greeks = await get_greeks(conn, session, all_streamers, now=now)
+
+    grid: dict[str, dict] = {}
+    picked_symbols: list[str] = []
+    for name, exp, dte, options in chosen:
+        cells = {}
+        candidates = [
+            (o, abs(greeks[o["streamer_symbol"]]["delta"]))
+            for o in _candidates(options)
+            if greeks.get(o["streamer_symbol"], {}).get("delta") is not None
+        ]
+        for tier, target in INCOME_TIERS.items():
+            if not candidates:
+                continue
+            option, delta = min(candidates, key=lambda c: abs(c[1] - target))
+            iv = greeks[option["streamer_symbol"]].get("iv")
+            t = dte / 365.0
+            pow_ = None
+            if iv:
+                below = prob_below(spot, option["strike"], iv, t, risk_free_rate)
+                pow_ = (1.0 - below) if option_type == "P" else below
+            cells[tier] = {
+                "symbol": option["symbol"],
+                "strike": option["strike"],
+                "expiration": exp.isoformat(),
+                "dte": dte,
+                "delta": round(delta, 3),
+                "pow": pow_,
+            }
+            picked_symbols.append(option["symbol"])
+        grid[name] = {"expiration": exp.isoformat(), "dte": dte, "tiers": cells}
+
+    quotes = await get_quotes(conn, session, picked_symbols, now=now)
+    for bucket in grid.values():
+        for cell in bucket["tiers"].values():
+            quote = quotes.get(cell["symbol"]) or {}
+            mid = quote.get("mid")
+            cell["mid"] = mid
+            if mid and kind == "put":
+                credit = mid * 100
+                max_risk = (cell["strike"] - mid) * 100
+                cell["credit"] = credit
+                cell["raw_return"] = _describe.raw_return(credit, max_risk)
+                cell["annualized_return"] = _describe.annualized_return(credit, max_risk, cell["dte"])
+    return {"ok": True, "symbol": expirations["symbol"], "kind": kind, "as_of": now, "grid": grid}
+
+
 async def get_quotes(
     conn: sqlite3.Connection,
     session: BrokerSession,

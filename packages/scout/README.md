@@ -357,6 +357,19 @@ the module docstring). `/api/payoff` now returns all of it (suggestion only for 
 with `symbol`/`expiration` params), the builder renders the card under the payoff SVG, and the
 screener gains an `Annualized*` column on every credit candidate.
 
+## Income grid (short-put candidates by risk tier)
+
+`GET /api/symbol/{sym}/income-grid?spot=&kind=put` serves the risk-tolerance x DTE-bucket strike
+grid the builder renders below the strategy card: for each bucket (20-39 / 40-70 / 71-180 days) the
+nearest expiration inside the window, and per tier the strike whose **live delta** lands nearest
+~15 (conservative) / ~25 (optimal) / ~35 (aggressive) -- a rule reverse-engineered from a reference
+platform's displayed grids (its picks' live deltas clustered tightly at those targets across
+symbols and tenors, and its published covered-call guidance independently names 15-20 delta as
+conservative; evidence recorded at `chain_service.INCOME_TIERS`). Cells carry mid, credit,
+raw/annualized return, POW, and delta; clicking one loads it as the builder's leg. Verified live:
+scout's grid reproduced 7 of 9 of the reference's own STM cells exactly, the other two one strike
+adjacent (one-bar-stale greeks).
+
 ## Verification (M8)
 
 All five surfaces (calendar, screener, symbol, builder, staged) were exercised end to end against a

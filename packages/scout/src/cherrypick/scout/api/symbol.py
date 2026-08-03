@@ -177,6 +177,31 @@ def _cache_read_candles(app, symbol: str) -> list[dict]:
         return []
 
 
+@router.get("/api/symbol/{sym}/income-grid")
+async def get_income_grid(
+    request: Request, sym: str, spot: float = Query(...), kind: str = Query("put")
+) -> dict:
+    """Risk-tolerance x DTE-bucket candidate strikes (the reference platform's Options Grid,
+    reverse-engineered: nearest expiration per 20-39/40-70/71-180-day bucket, strikes at ~15/25/35
+    delta via live DXLink greeks -- see chain_service.INCOME_TIERS for the evidence)."""
+    if kind not in ("put", "call"):
+        raise HTTPException(400, f"kind must be put or call, not {kind!r}")
+    app = request.app
+    try:
+        rate = await metrics_service.get_risk_free_rate(app.state.cache_db, app.state.broker_session)
+    except Exception:
+        rate = 0.0
+    return await chain_service.income_grid(
+        app.state.cache_db,
+        app.state.broker_session,
+        app.state.cfg,
+        sym.strip().upper(),
+        spot,
+        kind=kind,
+        risk_free_rate=rate,
+    )
+
+
 @router.get("/api/symbol/{sym}/warnings")
 async def get_warnings(request: Request, sym: str, expiration: str = Query(...)) -> dict:
     """Builder-facing event warnings for a chosen expiration: earnings reports and ex-dividend

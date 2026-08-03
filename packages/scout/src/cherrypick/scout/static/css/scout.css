@@ -190,6 +190,18 @@ table.calendar tr.stale td { color: #9fb0bf; }
 .trend-chip.up { background: #15311f; color: #7fd1a8; }
 .trend-chip.down { background: #351b1b; color: #e08b8b; }
 .trend-chip.flat { background: #24303a; color: #9fb0bf; }
+table.income-grid { border-collapse: collapse; margin-top: 6px; }
+table.income-grid th, table.income-grid td { padding: 4px 8px; text-align: center; font-size: 12px; }
+.grid-cell {
+  background: #10151a;
+  color: #cfe3f5;
+  border: 1px solid #2a343d;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.grid-cell:hover { border-color: #4d9de0; }
 #screener-table { margin-top: 8px; }
 .chip-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .chip-label { font-size: 12px; color: #9fb0bf; margin-right: 2px; }
