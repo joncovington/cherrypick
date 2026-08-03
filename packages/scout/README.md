@@ -184,6 +184,15 @@ otherwise silently veto); an empty chip group leaves the config default in force
 names in the query are a 400, never silently ignored. The parameter conventions behind the buckets
 are catalogued in [docs/strategy-screening-parameters.md](docs/strategy-screening-parameters.md).
 
+Two more chips filter after the pre-filter, since neither is available from the batched metrics
+call: **Scan** (bullish/neutral/bearish, the symbol's own 1M `price_ma_count` trend label,
+mildly-bullish/mildly-bearish collapsed into their base direction -- filtered right after candles
+are fetched, so a non-matching symbol never reaches a chain fetch) and **Sentiment**
+(bullish/neutral/bearish, `strategies.directional_edge`'s chain-implied skew tilt, dead-zoned at
+0.25% of spot -- filtered after the candidate's strikes are windowed, since it needs real option
+quotes). Sentiment's bucket thresholds are scout's own choice, not reverse-engineered from any
+observed reference-platform value -- there's no screenshot evidence for a skew-sentiment chip.
+
 **Two regressions caught by live smoke tests against real data, both worth remembering:**
 
 1. DXLink pushes a zero-filled placeholder for the still-forming current-day candle before any real
@@ -303,18 +312,20 @@ the stats panel now shows as **Support** / **Resistance**), and SMA 20/50/200 as
 series. The symbol view draws the SMAs as overlays and the strongest three levels per side (most
 touches first) as dashed price lines -- every clustered swing at once would wallpaper the chart.
 
-`analytics/trend.py` holds four rival implementations of a "triple moving average" trend
-classifier -- alignment-ordering, MACD-state, TEMA, and TRIX -- each emitting the same four-grade
-scale (`bullish`/`mildly_bullish`/`mildly_bearish`/`bearish`) at a 1M and a 6M horizon. They exist
-to be **fitted against observed labels** from a reference platform's proprietary trend indicator,
-not shipped as truth: `classify_all(bars)` produces every candidate's labels for one symbol, the
-row a label-matching experiment scores. Two modeling decisions are pinned by tests because the
-first draft got them wrong: MACD's zero-line is primary (a decelerating decline must read
-mildly_bearish, not mildly_bullish), and TEMA requires `4 * period` bars of warmup (a
-barely-long-enough series leaves the triple-smoothed stage seed-dominated -- a synthetic 400-bar
-monotonic downtrend classified as *bullish* under TEMA(126) before the floor existed). No route
-serves these yet; they graduate to the screener's Scan chips only after the fitting experiment
-picks a winner.
+`analytics/trend.py` holds five rival implementations of a "triple moving average" trend
+classifier -- alignment-ordering, MACD-state, TEMA, TRIX, and `price_ma_count` -- fitted against
+observed labels from a reference platform's proprietary trend indicator, not shipped as truth:
+`classify_all(bars)` produces every candidate's labels for one symbol, the row a label-matching
+experiment scores. Two modeling decisions are pinned by tests because the first draft got them
+wrong: MACD's zero-line is primary (a decelerating decline must read mildly_bearish, not
+mildly_bullish), and TEMA requires `4 * period` bars of warmup (a barely-long-enough series leaves
+the triple-smoothed stage seed-dominated -- a synthetic 400-bar monotonic downtrend classified as
+*bullish* under TEMA(126) before the floor existed). `price_ma_count` is the current best-fitting
+candidate (68% exact match on 25 labeled rows at both horizons) and is what `GET
+/api/symbol/{sym}/analysis` and the screener's **Scan** chip both use today -- clearly provisional
+(one 25-row fit, pending re-validation against a fresh same-day-close label batch), not a graduated
+winner. The Scan chip collapses the five-grade label to bullish/neutral/bearish, mildly-* joining
+its base direction.
 
 ## Plain-language symbol analysis
 

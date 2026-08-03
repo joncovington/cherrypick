@@ -49,6 +49,25 @@ def test_chip_buckets():
     assert screener_service._cap_bucket(3e12) == "mega"
 
 
+def test_trend_bucket_collapses_mildly_grades_into_their_base_direction():
+    from cherrypick.scout.analytics import trend as _trend
+
+    assert screener_service._trend_bucket(_trend.BULLISH) == "bullish"
+    assert screener_service._trend_bucket(_trend.MILDLY_BULLISH) == "bullish"
+    assert screener_service._trend_bucket(_trend.NEUTRAL) == "neutral"
+    assert screener_service._trend_bucket(_trend.MILDLY_BEARISH) == "bearish"
+    assert screener_service._trend_bucket(_trend.BEARISH) == "bearish"
+    assert screener_service._trend_bucket(None) is None
+
+
+def test_skew_bucket_dead_zones_noise_level_skew():
+    assert screener_service._skew_bucket(1.0, 100.0) == "bullish"  # 1% of spot
+    assert screener_service._skew_bucket(-1.0, 100.0) == "bearish"
+    assert screener_service._skew_bucket(0.1, 100.0) == "neutral"  # 0.1%, inside the dead zone
+    assert screener_service._skew_bucket(None, 100.0) is None
+    assert screener_service._skew_bucket(1.0, 0.0) is None
+
+
 def test_an_explicit_iv_filter_replaces_the_config_gate():
     """Selecting the <50 chip must show a 10%-IVR name the default min_iv_rank=25 gate would veto."""
     cfg = {"screener": {"min_iv_rank": 25, "min_liquidity_rank": 3}}
@@ -194,6 +213,124 @@ async def test_run_screener_end_to_end_with_a_single_survivor(conn, monkeypatch)
     assert candidate["pop"] is not None
     assert 0.0 <= candidate["pop"] <= 1.0
     assert candidate["composite_score"] > 0
+
+
+def _rising_bars(n=35, start=100.0):
+    return [
+        {"t": i, "o": start + i, "h": start + i + 1, "l": start + i - 1, "c": start + i, "v": 1}
+        for i in range(n)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_screener_trend_filter_skips_non_matching_trend(conn, monkeypatch):
+    today = date(2027, 2, 5)
+    monthly = date(2027, 3, 19)
+
+    async def fake_get_metrics(_conn, _session, _symbols, _ttl, now=None):
+        return {"AAPL": {"iv_rank": "0.50", "liquidity_rating": 4, "iv_30d": 0.3}}
+
+    async def fake_get_rate(_conn, _session, now=None):
+        return 0.05
+
+    async def fake_get_candles(_conn, _session, _cfg, symbol, now=None):
+        return {"ok": True, "symbol": symbol, "bars": _rising_bars()}  # a clean uptrend -> bullish
+
+    chain_options = [
+        _opt(85, "P", 0.50), _opt(90, "P", 1.00), _opt(95, "P", 2.00),
+        _opt(105, "C", 2.00), _opt(110, "C", 1.00),
+    ]
+    quotes_by_symbol = {o["symbol"]: o["quote"] for o in chain_options}
+
+    async def fake_get_expirations(_conn, _session, _cfg, symbol):
+        return {
+            "ok": True, "symbol": symbol, "as_of": 0, "stale": False,
+            "expirations": {monthly.isoformat(): chain_options},
+        }
+
+    async def fake_get_quotes(_conn, _session, symbols):
+        return {sym: quotes_by_symbol[sym] for sym in symbols if sym in quotes_by_symbol}
+
+    monkeypatch.setattr(screener_service.metrics_service, "get_metrics", fake_get_metrics)
+    monkeypatch.setattr(screener_service.metrics_service, "get_risk_free_rate", fake_get_rate)
+    monkeypatch.setattr(screener_service.candle_service, "get_candles", fake_get_candles)
+    monkeypatch.setattr(screener_service.chain_service, "get_expirations", fake_get_expirations)
+    monkeypatch.setattr(screener_service.chain_service, "get_quotes", fake_get_quotes)
+
+    import datetime as _dt
+
+    now = _dt.datetime.combine(today, _dt.time(hour=12)).timestamp()
+    cfg = {"screener": {}, "refresh": {}}
+
+    bullish = await screener_service.run_screener(
+        conn, _FakeSession(), cfg, ["aapl"], "put_credit_spread", filters={"trend": {"bullish"}}, now=now
+    )
+    assert [s["symbol"] for s in bullish["skipped"]] == []  # bullish chip keeps a bullish symbol
+
+    bearish = await screener_service.run_screener(
+        conn, _FakeSession(), cfg, ["aapl"], "put_credit_spread", filters={"trend": {"bearish"}}, now=now
+    )
+    assert bearish["candidates"] == []
+    assert bearish["skipped"][0]["reason"] == "trend chip filtered"
+
+
+@pytest.mark.asyncio
+async def test_run_screener_sentiment_filter_skips_non_matching_skew(conn, monkeypatch):
+    today = date(2027, 2, 5)
+    monthly = date(2027, 3, 19)
+
+    async def fake_get_metrics(_conn, _session, _symbols, _ttl, now=None):
+        return {"AAPL": {"iv_rank": "0.50", "liquidity_rating": 4, "iv_30d": 0.3}}
+
+    async def fake_get_rate(_conn, _session, now=None):
+        return 0.05
+
+    async def fake_get_candles(_conn, _session, _cfg, symbol, now=None):
+        bar = {"t": 0, "o": 100, "h": 101, "l": 99, "c": 100.0, "v": 1}
+        return {"ok": True, "symbol": symbol, "bars": [bar]}
+
+    # OTM call priced far richer than the matching OTM put -- a clear bullish skew tilt.
+    chain_options = [
+        _opt(85, "P", 0.20),
+        _opt(90, "P", 0.50),
+        _opt(95, "P", 1.00),
+        _opt(105, "C", 5.00),
+        _opt(110, "C", 3.00),
+    ]
+    quotes_by_symbol = {o["symbol"]: o["quote"] for o in chain_options}
+
+    async def fake_get_expirations(_conn, _session, _cfg, symbol):
+        return {
+            "ok": True, "symbol": symbol, "as_of": 0, "stale": False,
+            "expirations": {monthly.isoformat(): chain_options},
+        }
+
+    async def fake_get_quotes(_conn, _session, symbols):
+        return {sym: quotes_by_symbol[sym] for sym in symbols if sym in quotes_by_symbol}
+
+    monkeypatch.setattr(screener_service.metrics_service, "get_metrics", fake_get_metrics)
+    monkeypatch.setattr(screener_service.metrics_service, "get_risk_free_rate", fake_get_rate)
+    monkeypatch.setattr(screener_service.candle_service, "get_candles", fake_get_candles)
+    monkeypatch.setattr(screener_service.chain_service, "get_expirations", fake_get_expirations)
+    monkeypatch.setattr(screener_service.chain_service, "get_quotes", fake_get_quotes)
+
+    import datetime as _dt
+
+    now = _dt.datetime.combine(today, _dt.time(hour=12)).timestamp()
+    cfg = {"screener": {}, "refresh": {}}
+
+    bullish = await screener_service.run_screener(
+        conn, _FakeSession(), cfg, ["aapl"], "put_credit_spread",
+        filters={"sentiment": {"bullish"}}, now=now,
+    )
+    assert len(bullish["candidates"]) == 1
+
+    bearish = await screener_service.run_screener(
+        conn, _FakeSession(), cfg, ["aapl"], "put_credit_spread",
+        filters={"sentiment": {"bearish"}}, now=now,
+    )
+    assert bearish["candidates"] == []
+    assert bearish["skipped"][0]["reason"] == "sentiment chip filtered"
 
 
 @pytest.mark.asyncio

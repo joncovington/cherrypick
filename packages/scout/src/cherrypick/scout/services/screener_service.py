@@ -5,6 +5,13 @@ broker calls), and a weighted composite rank.
 
 Spot is read from `candle_service`'s already-cached daily bars rather than a fresh equity quote --
 one more reuse of an existing TTL-cached path instead of a new broker round trip.
+
+Two chips filter AFTER the pre-filter rather than in it, since neither is available from the
+batched metrics call: Scan (`_trend_bucket`, on the symbol's own 1M `price_ma_count` label) checks
+right after candles are fetched -- before the expiration/chain/quote calls a non-matching symbol
+would otherwise trigger -- and Sentiment (`_skew_bucket`, on `strategies.directional_edge`'s
+chain-implied skew) checks after the candidate's strikes are windowed, since it needs real option
+quotes to exist first.
 """
 
 from __future__ import annotations
@@ -15,6 +22,7 @@ from datetime import date, datetime, timedelta
 
 from ..analytics import describe as _describe
 from ..analytics import strategies as _strategies
+from ..analytics import trend as _trend
 from ..analytics.payoff import Leg
 from ..analytics.pop import pop as _pop
 from . import candle_service, chain_service, metrics_service
@@ -71,6 +79,15 @@ def _iv_rank_frac(info: dict | None) -> float | None:
 IV_BUCKETS = {"lt50", "gte50"}
 LIQUIDITY_BUCKETS = {"not", "somewhat", "very"}
 CAP_BUCKETS = {"small", "medium", "large", "mega"}
+TREND_BUCKETS = {"bullish", "neutral", "bearish"}
+SENTIMENT_BUCKETS = {"bullish", "neutral", "bearish"}
+
+# The skew-edge "neutral" dead zone: scout's own choice, not reverse-engineered from any observed
+# reference-platform threshold -- there's no screenshot evidence for a skew-sentiment chip, so this
+# is a plain, documented heuristic rather than a calibrated fact. `skew_edge` is a raw dollar
+# difference (call mid - put mid) that scales with the underlying's price, so the dead zone is
+# expressed as a fraction of spot rather than a fixed dollar amount.
+_SKEW_NEUTRAL_FRAC = 0.0025
 
 
 def _iv_bucket(iv_frac: float) -> str:
@@ -93,6 +110,32 @@ def _cap_bucket(market_cap: float) -> str:
     if market_cap < 2e11:
         return "large"
     return "mega"
+
+
+def _trend_bucket(label: str | None) -> str | None:
+    """Collapse the 5-grade `price_ma_count` label to the 3-bucket Scan chip -- "mildly" grades
+    join their base direction, since the chip is a coarse setup filter, not the symbol view's
+    finer-grained trend display."""
+    if label is None:
+        return None
+    if label in (_trend.BULLISH, _trend.MILDLY_BULLISH):
+        return "bullish"
+    if label in (_trend.BEARISH, _trend.MILDLY_BEARISH):
+        return "bearish"
+    return "neutral"
+
+
+def _skew_bucket(skew_edge: float | None, spot: float) -> str | None:
+    """Bucket `strategies.directional_edge`'s raw dollar skew into the Sentiment chip's 3 buckets,
+    dead-zoned by `_SKEW_NEUTRAL_FRAC` of spot so noise-level skew doesn't read as a tilt."""
+    if skew_edge is None or not spot:
+        return None
+    frac = skew_edge / spot
+    if frac > _SKEW_NEUTRAL_FRAC:
+        return "bullish"
+    if frac < -_SKEW_NEUTRAL_FRAC:
+        return "bearish"
+    return "neutral"
 
 
 def _passes_prefilter(info: dict | None, cfg: dict, filters: dict | None = None) -> bool:
@@ -196,6 +239,14 @@ async def run_screener(
             continue
         spot = candles["bars"][-1]["c"]
 
+        closes = [b["c"] for b in candles["bars"]]
+        p = _trend.DEFAULT_PARAMS["price_ma_count"]
+        trend_1m = _trend.price_ma_count(closes, *p["1m"])
+        trend_filter = filters.get("trend") if filters else None
+        if trend_filter and _trend_bucket(trend_1m) not in trend_filter:
+            skipped.append({"symbol": symbol, "reason": "trend chip filtered"})
+            continue
+
         expirations_payload = await chain_service.get_expirations(conn, session, cfg, symbol)
         picked = _pick_expiration(expirations_payload["expirations"], today, dte_min, dte_max)
         if picked is None:
@@ -214,6 +265,12 @@ async def run_screener(
             skipped.append({"symbol": symbol, "reason": "could not price a candidate"})
             continue
 
+        skew_edge = _strategies.directional_edge(windowed, spot, expected_move)
+        sentiment_filter = filters.get("sentiment") if filters else None
+        if sentiment_filter and _skew_bucket(skew_edge, spot) not in sentiment_filter:
+            skipped.append({"symbol": symbol, "reason": "sentiment chip filtered"})
+            continue
+
         legs = [
             Leg(kind=leg["kind"], quantity=leg["quantity"], price=leg["price"], strike=leg["strike"])
             for leg in candidate["legs"]
@@ -227,7 +284,8 @@ async def run_screener(
             "iv_rank": iv_frac,
             "liquidity_rating": info.get("liquidity_rating"),
             "market_cap": info.get("market_cap"),
-            "skew_edge": _strategies.directional_edge(windowed, spot, expected_move),
+            "trend_1m": trend_1m,
+            "skew_edge": skew_edge,
             **candidate,
             "pop": candidate_pop,
             "pop_heuristic": max(0.0, 1 - 2 * short_delta),

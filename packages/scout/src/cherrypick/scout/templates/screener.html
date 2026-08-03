@@ -27,8 +27,21 @@
       <button type="button" class="chip" data-bucket="large">Large</button>
       <button type="button" class="chip" data-bucket="mega">Mega</button>
     </div>
+    <div class="chip-group" data-filter="trend">
+      <span class="chip-label">Scan (1M trend)</span>
+      <button type="button" class="chip" data-bucket="bullish">Bullish</button>
+      <button type="button" class="chip" data-bucket="neutral">Neutral</button>
+      <button type="button" class="chip" data-bucket="bearish">Bearish</button>
+    </div>
+    <div class="chip-group" data-filter="sentiment">
+      <span class="chip-label">Sentiment (skew edge)</span>
+      <button type="button" class="chip" data-bucket="bullish">Bullish</button>
+      <button type="button" class="chip" data-bucket="neutral">Neutral</button>
+      <button type="button" class="chip" data-bucket="bearish">Bearish</button>
+    </div>
   </div>
-  <p class="note">No chips selected in a group = that group's default gate (config thresholds) applies;
+  <p class="note">No chips selected in a group = that group's default gate (config thresholds for IV/
+    liquidity/cap; no filtering at all for Scan/Sentiment, which have no config default) applies;
     selecting chips replaces the default for that dimension.</p>
   <div id="screener-table"></div>
   <p id="screener-skipped" class="note"></p>
