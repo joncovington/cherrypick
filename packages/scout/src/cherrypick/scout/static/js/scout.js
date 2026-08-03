@@ -101,10 +101,16 @@ async function mountSymbolView(view) {
   const statsEl = view.querySelector("#stats-panel");
   if (!chartEl) return;
 
-  const [candles, stats] = await Promise.all([
-    fetch(`/api/symbol/${symbol}/candles`).then((r) => r.json()),
-    fetch(`/api/symbol/${symbol}/stats`).then((r) => r.json()),
-  ]);
+  let candles, stats;
+  try {
+    [candles, stats] = await Promise.all([
+      fetch(`/api/symbol/${symbol}/candles`).then((r) => r.json()),
+      fetch(`/api/symbol/${symbol}/stats`).then((r) => r.json()),
+    ]);
+  } catch {
+    chartEl.textContent = "Could not reach the scout server -- is it still running?";
+    return;
+  }
   if (statsEl) renderStats(statsEl, stats);
 
   if (_symbolChart) {
@@ -168,7 +174,13 @@ async function mountScreenerView(view) {
   select.value = view.dataset.strategy || "put_credit_spread";
 
   async function load() {
-    const result = await fetch(`/api/screener?strategy=${select.value}`).then((r) => r.json());
+    let result;
+    try {
+      result = await fetch(`/api/screener?strategy=${select.value}`).then((r) => r.json());
+    } catch {
+      tableEl.textContent = "Could not reach the scout server -- is it still running?";
+      return;
+    }
     if (!result.ok) {
       tableEl.textContent = result.error || "screener failed";
       return;
@@ -198,6 +210,7 @@ async function mountScreenerView(view) {
         layout: "fitColumns",
         persistence: true,
         persistenceID: "scout-screener",
+        placeholder: "No candidates matched -- try a different strategy or widen the watchlist.",
         initialSort: [{ column: "composite_score", dir: "desc" }],
         columns: [
           {
@@ -264,7 +277,13 @@ async function mountStagedView(view) {
   const listEl = view.querySelector("#staged-list");
 
   async function load() {
-    const result = await fetch("/api/staged").then((r) => r.json());
+    let result;
+    try {
+      result = await fetch("/api/staged").then((r) => r.json());
+    } catch {
+      listEl.innerHTML = '<p class="notice">Could not reach the scout server -- is it still running?</p>';
+      return;
+    }
     const tickets = result.tickets || [];
     if (!tickets.length) {
       listEl.innerHTML = '<p class="note">No staged tickets.</p>';
