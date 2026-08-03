@@ -113,14 +113,47 @@ def bs_greeks(legs: list[Leg], spot: float, sigma: float, t: float, r: float) ->
     return {k: round(v, 2) for k, v in totals.items()}
 
 
-def _direction(legs: list[Leg], spot: float) -> str:
-    up = payoff_at(legs, spot * 1.10)
-    down = payoff_at(legs, spot * 0.90)
+def direction(legs: list[Leg], spot: float) -> str:
+    """"bullish"/"bearish"/"neutral" from the payoff engine's own numbers: which tail the position
+    prefers. Probes at +/-40% -- wide enough to reach past the strikes of a normal OTM structure.
+    (A first draft probed +/-10%, which landed BOTH probes inside an OTM put spread's max-profit
+    plateau and called the spread "neutral" -- caught live when a bullish vertical's market-trend
+    checklist row warned instead of passing against a bullish S&P read.)"""
+    up = payoff_at(legs, spot * 1.40)
+    down = payoff_at(legs, spot * 0.60)
     if up > down:
         return "bullish"
     if down > up:
         return "bearish"
     return "neutral"
+
+
+_direction = direction  # internal alias kept for existing callers
+
+
+def combo_spread_pct(quoted_legs: list[dict]) -> float | None:
+    """Bid/ask spread of the NET strategy price as a fraction of its mid -- what the reference
+    platform's Spread & Liquidity row actually grades (per the observed CSX card: combo bid $0.00 /
+    ask $1.30, not per-leg widths). Each leg: {"quantity" (signed), "bid", "ask"}. Conservative
+    fill = sell legs at bid / buy at ask; generous = the reverse; spread = the gap between them.
+    None when any leg lacks a two-sided quote -- an ungraded spread must warn, not pass."""
+    conservative = 0.0
+    generous = 0.0
+    for leg in quoted_legs:
+        qty, bid, ask = leg.get("quantity"), leg.get("bid"), leg.get("ask")
+        if qty is None or bid is None or ask is None:
+            return None
+        if qty < 0:  # short: collect bid conservatively, ask generously
+            conservative += -qty * bid
+            generous += -qty * ask
+        else:  # long: pay ask conservatively, bid generously
+            conservative -= qty * ask
+            generous -= qty * bid
+    spread = abs(generous - conservative)
+    mid = (generous + conservative) / 2.0
+    if mid == 0:
+        return None
+    return spread / abs(mid)
 
 
 def strategy_explanation(

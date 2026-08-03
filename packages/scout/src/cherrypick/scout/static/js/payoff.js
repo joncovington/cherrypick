@@ -124,6 +124,8 @@ async function loadIncomeGrid(view) {
           price: cell.mid || 0,
           symbol: cell.symbol,
           expiration: cell.expiration,
+          bid: cell.bid ?? null,
+          ask: cell.ask ?? null,
         },
       ];
       _builder.expiration = cell.expiration;
@@ -169,10 +171,12 @@ async function loadChain(view) {
 
   const byStrike = {};
   _builder.chainGreeks = {};
+  _builder.chainQuotes = {};
   for (const opt of data.options || []) {
     byStrike[opt.strike] ??= {};
     byStrike[opt.strike][opt.option_type] = opt;
     if (opt.greeks) _builder.chainGreeks[opt.symbol] = opt.greeks;
+    if (opt.quote) _builder.chainQuotes[opt.symbol] = opt.quote;
   }
   const strikes = Object.keys(byStrike)
     .map(Number)
@@ -201,6 +205,7 @@ async function loadChain(view) {
 
 function addLeg(view, data) {
   const greeks = (_builder.chainGreeks || {})[data.symbol] || {};
+  const quote = (_builder.chainQuotes || {})[data.symbol] || {};
   _builder.legs.push({
     kind: data.kind,
     strike: parseFloat(data.strike),
@@ -208,6 +213,8 @@ function addLeg(view, data) {
     price: parseFloat(data.price) || 0,
     symbol: data.symbol,
     expiration: _builder.expiration,
+    bid: quote.bid ?? null,
+    ask: quote.ask ?? null,
     delta: greeks.delta ?? null,
     gamma: greeks.gamma ?? null,
     theta: greeks.theta ?? null,
@@ -355,6 +362,7 @@ function renderMetrics(el, result) {
     if (result.explanation) parts.push(`<p><b>Strategy:</b> ${result.explanation}</p>`);
     if (result.suggestion) parts.push(`<p>${result.suggestion}</p>`);
     if (result.greeks_text) parts.push(`<p class="note">${result.greeks_text}</p>`);
+    if (result.checklist) parts.push(renderChecklist(result.checklist));
     if (result.annualized_return != null) {
       parts.push(
         '<p class="note">* Annualized assumes the same return could be repeated back-to-back all year -- a comparison metric, not a forecast.</p>'
@@ -362,6 +370,24 @@ function renderMetrics(el, result) {
     }
     cardEl.innerHTML = parts.join("");
   }
+}
+
+const _CHECK_ICONS = { pass: "✓", warn: "!", fail: "✕" };
+
+function renderChecklist(checklist) {
+  const dots = checklist.items
+    .map((i) => `<span class="check-dot ${i.status}"></span>`)
+    .join("");
+  const rows = checklist.items
+    .map(
+      (i) =>
+        `<li><span class="check-icon ${i.status}">${_CHECK_ICONS[i.status]}</span> ${i.name}</li>`
+    )
+    .join("");
+  return `<div class="checklist">
+    <p><b>Strategy checklist</b> <span class="note">(${checklist.kind})</span> ${dots}</p>
+    <ul>${rows}</ul>
+  </div>`;
 }
 
 function renderPayoffSvg(svg, result, spot) {

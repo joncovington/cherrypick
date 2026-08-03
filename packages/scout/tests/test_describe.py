@@ -121,6 +121,22 @@ def test_checklist_directional_replays_the_observed_spread_cards():
     assert [i["status"] for i in items] == ["pass", "fail", "warn", "warn"]
 
 
+def test_direction_classifies_an_otm_put_spread_as_bullish():
+    """Regression for the live-caught probe bug: an OTM put credit spread's max-profit plateau
+    covers +/-10% of spot, but the position is directionally bullish -- probes must reach the
+    tails."""
+    legs = [
+        Leg(kind="put", quantity=-1, price=2.0, strike=47.0),
+        Leg(kind="put", quantity=1, price=1.0, strike=42.0),
+    ]
+    assert _describe.direction(legs, spot=52.39) == "bullish"
+    call_vertical = [
+        Leg(kind="call", quantity=-1, price=2.0, strike=97.0),
+        Leg(kind="call", quantity=1, price=1.0, strike=104.0),
+    ]
+    assert _describe.direction(call_vertical, spot=96.19) == "bearish"
+
+
 def test_checklist_directional_neutral_trend_warns():
     items = _describe.checklist_directional("bullish", "neutral", None, False, 0.02)
     assert [i["status"] for i in items] == ["warn", "warn", "pass", "pass"]

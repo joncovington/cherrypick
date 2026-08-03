@@ -133,6 +133,61 @@ def test_payoff_route_omits_suggestion_for_multi_leg_positions(app_and_client):
     assert body["explanation"]  # but the generic explanation is always present
 
 
+def test_payoff_route_income_checklist_for_a_lone_short_put(app_and_client, monkeypatch):
+    app, client = app_and_client
+
+    async def fake_rate(_conn, _session):
+        return 0.05
+
+    async def fake_metrics(_conn, _session, symbols, _ttl):
+        return {s.upper(): {"earnings": None} for s in symbols}
+
+    monkeypatch.setattr(_payoff_api.metrics_service, "get_risk_free_rate", fake_rate)
+    monkeypatch.setattr(_payoff_api.metrics_service, "get_metrics", fake_metrics)
+    legs = [{"kind": "put", "quantity": -1, "price": 1.50, "strike": 95, "bid": 1.45, "ask": 1.55}]
+    resp = client.get(
+        "/api/payoff",
+        params={
+            "legs": json.dumps(legs), "spot": 100, "dte": 25, "iv": 0.30,
+            "symbol": "AAPL", "expiration": "2026-08-28",
+        },
+        headers=_headers(app),
+    )
+    checklist = resp.json()["checklist"]
+    assert checklist["kind"] == "income"
+    names = [i["name"] for i in checklist["items"]]
+    assert names == ["Probability of worthless", "Annualized return", "Earnings date", "Spread & liquidity"]
+    by_name = {i["name"]: i["status"] for i in checklist["items"]}
+    assert by_name["Spread & liquidity"] == "warn"  # 0.10 spread on a 1.50 mid = 6.7% -> warn band
+
+
+def test_payoff_route_directional_checklist_for_a_vertical(app_and_client, monkeypatch):
+    app, client = app_and_client
+
+    async def fake_metrics(_conn, _session, symbols, _ttl):
+        return {s.upper(): {"earnings": {"expected_report_date": "2026-08-20"}} for s in symbols}
+
+    monkeypatch.setattr(_payoff_api.metrics_service, "get_metrics", fake_metrics)
+    legs = [
+        {"kind": "put", "quantity": -1, "price": 2.0, "strike": 100, "bid": 1.9, "ask": 2.1},
+        {"kind": "put", "quantity": 1, "price": 1.0, "strike": 95, "bid": 0.9, "ask": 1.1},
+    ]
+    resp = client.get(
+        "/api/payoff",
+        params={"legs": json.dumps(legs), "spot": 100, "symbol": "AAPL", "expiration": "2026-08-28"},
+        headers=_headers(app),
+    )
+    checklist = resp.json()["checklist"]
+    assert checklist["kind"] == "directional"
+    by_name = {i["name"]: i["status"] for i in checklist["items"]}
+    assert by_name["Earnings date"] == "warn"  # Aug 20 report lands inside the Aug 28 expiration
+    # No cached candles for AAPL/SPX in this test home -> trend rows warn rather than guess.
+    assert by_name["Stock trend"] == "warn"
+    assert by_name["Market trend"] == "warn"
+    # Combo: conservative credit = 1.9 - 1.1 = 0.8; generous = 2.1 - 0.9 = 1.2; spread 40% -> fail.
+    assert by_name["Spread & liquidity"] == "fail"
+
+
 def test_payoff_route_pop_degrades_gracefully_without_a_risk_free_rate(app_and_client, monkeypatch):
     app, client = app_and_client
 

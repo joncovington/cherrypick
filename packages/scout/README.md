@@ -357,6 +357,19 @@ the module docstring). `/api/payoff` now returns all of it (suggestion only for 
 with `symbol`/`expiration` params), the builder renders the card under the payoff SVG, and the
 screener gains an `Annualized*` column on every credit candidate.
 
+## Strategy checklist (both variants, in the builder)
+
+The builder's strategy card now grades every basket through `/api/payoff`'s checklist: the
+**income** variant (POW / annualized / earnings / spread) for a lone short option, the
+**directional** variant (stock-trend and market-trend alignment / earnings / spread) for
+everything else, auto-selected by shape. Spread is graded on the **net combo** bid/ask
+(`describe.combo_spread_pct`) per the observed reference behavior; trend rows are cache-only reads
+of the provisional 1M classifier for the symbol and for SPX (a symbol with no cached candles warns
+rather than guessing); every threshold is the calibrated set recorded in `describe.py`'s
+docstring. The direction read probes the +/-40% tails -- a live-caught bug fix, pinned by a
+regression test, after +/-10% probes landed both inside an OTM put spread's max-profit plateau and
+called a bullish vertical "neutral".
+
 ## Income grid (short-put candidates by risk tier)
 
 `GET /api/symbol/{sym}/income-grid?spot=&kind=put` serves the risk-tolerance x DTE-bucket strike

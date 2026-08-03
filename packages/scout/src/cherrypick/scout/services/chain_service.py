@@ -254,6 +254,8 @@ async def income_grid(
             quote = quotes.get(cell["symbol"]) or {}
             mid = quote.get("mid")
             cell["mid"] = mid
+            cell["bid"] = quote.get("bid")
+            cell["ask"] = quote.get("ask")
             if mid and kind == "put":
                 credit = mid * 100
                 max_risk = (cell["strike"] - mid) * 100

@@ -15,12 +15,16 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from ..analytics import describe as _describe
 from ..analytics import payoff as _payoff
 from ..analytics import pop as _pop
+from ..analytics import trend as _trend
+from ..services import cache as _cache_mod
 from ..services import metrics_service
 
 router = APIRouter()
 
 
-def _parse_legs(raw: str) -> list[_payoff.Leg]:
+def _parse_legs(raw: str) -> tuple[list[_payoff.Leg], list[dict]]:
+    """Parsed `Leg` objects plus the raw dicts (which may carry per-leg bid/ask for the combo
+    spread check -- fields `Leg` itself has no reason to hold)."""
     try:
         items = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -45,7 +49,45 @@ def _parse_legs(raw: str) -> list[_payoff.Leg]:
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise HTTPException(400, f"invalid leg {item!r}: {exc}") from exc
-    return legs
+    return legs, items
+
+
+def _trend_1m_from_cache(app, symbol: str) -> str | None:
+    """The provisional 1M trend label from already-cached candles -- a cache-only read, so a
+    symbol with no candle history (or a fresh install without SPX cached) degrades to None/warn
+    rather than triggering a broker fetch from inside the payoff route."""
+    try:
+        bars = _cache_mod.read_candles(app.state.cache_db, symbol, "1d")
+    except Exception:
+        return None
+    if not bars:
+        return None
+    closes = [b["c"] for b in bars]
+    return _trend.price_ma_count(closes, *_trend.DEFAULT_PARAMS["price_ma_count"]["1m"])
+
+
+async def _earnings_inside(app, symbol: str, exp_date) -> bool | None:
+    """Whether an earnings report lands inside the expiration; None (-> warn) when unknowable."""
+    if exp_date is None:
+        return None
+    try:
+        metrics_ttl = app.state.cfg.get("refresh", {}).get("metrics_ttl_seconds", 900)
+        metrics = await metrics_service.get_metrics(
+            app.state.cache_db, app.state.broker_session, [symbol], metrics_ttl
+        )
+    except Exception:
+        return None
+    earnings = (metrics.get(symbol) or {}).get("earnings") or {}
+    raw = earnings.get("expected_report_date")
+    if not raw:
+        return None
+    try:
+        report = _date.fromisoformat(str(raw))
+    except ValueError:
+        return None
+    from datetime import UTC, datetime
+
+    return datetime.now(tz=UTC).date() <= report <= exp_date
 
 
 @router.get("/api/payoff")
@@ -58,7 +100,7 @@ async def get_payoff(
     symbol: str | None = Query(None, description="underlying symbol, for strategy text"),
     expiration: str | None = Query(None, description="ISO expiration date, for strategy text"),
 ) -> dict:
-    parsed = _parse_legs(legs)
+    parsed, raw_items = _parse_legs(legs)
     result = {
         "ok": True,
         "curve": _payoff.payoff_curve(parsed),
@@ -75,7 +117,10 @@ async def get_payoff(
         "explanation": None,
         "greeks_text": None,
         "suggestion": None,
+        "checklist": None,
     }
+    app_sym = request.app
+    symbol_up = symbol.strip().upper() if symbol else None
 
     # Credit and the return metrics need only the payoff engine's own numbers.
     credit = -sum(leg.quantity * leg.price for leg in parsed) * 100
@@ -115,4 +160,28 @@ async def get_payoff(
         result["suggestion"] = _describe.short_put_suggestion(
             symbol.strip().upper(), short_puts[0].strike, exp_date, credit, spot
         )
+
+    # The strategy checklist: the income variant for a lone short option (plus optional stock --
+    # the covered-call shape), the directional variant otherwise. Trend rows are cache-only reads.
+    spread_pct = _describe.combo_spread_pct(raw_items)
+    earnings_inside = await _earnings_inside(app_sym, symbol_up, exp_date) if symbol else None
+    option_legs = [lg for lg in parsed if lg.kind != "stock"]
+    is_income = len(option_legs) == 1 and option_legs[0].quantity < 0
+    if is_income:
+        result["checklist"] = {
+            "kind": "income",
+            "items": _describe.checklist(
+                result["pow"], result["annualized_return"], earnings_inside, spread_pct
+            ),
+        }
+    else:
+        strategy_dir = _describe.direction(parsed, spot)
+        stock_trend = _trend_1m_from_cache(app_sym, symbol_up) if symbol else None
+        market_trend = _trend_1m_from_cache(app_sym, "SPX")
+        result["checklist"] = {
+            "kind": "directional",
+            "items": _describe.checklist_directional(
+                strategy_dir, stock_trend, market_trend, earnings_inside, spread_pct
+            ),
+        }
     return result
