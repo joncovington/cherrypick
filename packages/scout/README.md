@@ -68,7 +68,7 @@ packages/scout/
                      calendar_service.py  candle_service.py  chain_service.py
                      screener_service.py  staging.py  quote_service.py  streamcache.py
       analytics/    __init__.py  describe.py  levels.py  narrative.py  payoff.py  pop.py
-                     strategies.py  trend.py
+                     strategies.py  templates.py  trend.py
       static/       index.html  css/scout.css  js/scout.js  js/payoff.js
         vendor/     lightweight-charts.standalone.production.js  tabulator.min.js
                      tabulator_midnight.min.css  htmx.min.js  alpine.min.js
@@ -84,7 +84,7 @@ packages/scout/
                     test_strategies.py  test_screener_service.py  test_screener_routes.py
                     test_staging.py  test_order_routes.py  test_dry_run_only.py
                     test_quote_service.py  test_sse.py  test_streamcache.py  test_trend.py
-                    test_narrative.py  test_describe.py
+                    test_narrative.py  test_describe.py  test_templates.py
 ```
 
 ## The earnings calendar (M2)
