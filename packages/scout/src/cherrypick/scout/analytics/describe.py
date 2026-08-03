@@ -16,10 +16,18 @@ Model greeks are Black-Scholes analytics computed from strike/spot/IV/T/r -- sco
 per-option greeks feed (see the package CLAUDE.md), and a clearly-labeled model greek beats a
 silently absent one for the builder's explanation panel. They assume one flat IV across legs.
 
-Checklist thresholds are documented guesses in the reference platform's spirit, not its numbers
-(it doesn't publish them): POW pass >= 70% / warn >= 50%; annualized pass >= 50% / warn >= 20%;
-spread pass <= 5% of mid / warn <= 15% (the 15% bar matching the earnings module's liquidity gate);
-earnings inside the expiration warns.
+Checklist thresholds are calibrated against observed reference-platform gradings (2026-08-03
+screenshots, five cards spanning the full range), not published numbers:
+  - POW: 53.54% graded red ("very low"), 55.55/58.28/65.66% yellow ("lower than optimal"),
+    81.39% green ("very good") -> warn >= 55%, pass >= 70% (the pass bound is the one remaining
+    interpolation, consistent with the platform's 15-20-delta conservative guidance).
+  - Annualized return: 6.30% already graded green ("very good") -> pass >= 5% (roughly
+    beats-risk-free), warn >= 2%. No yellow/red example has been observed; the fail zone is
+    extrapolated.
+  - Spread: 1.0% of mid green, 7.5% yellow ("sizable"), 19.7%+ red ("very large") -> pass <= 5%,
+    warn <= 15% -- exactly the bands guessed from the earnings module's liquidity gate, now
+    empirically confirmed.
+  - Earnings inside the expiration warns; "no earnings before expiration" passes (observed).
 """
 
 from __future__ import annotations
@@ -200,10 +208,10 @@ def checklist(
 
     grade("Probability of worthless", pow_value,
           pow_value is not None and pow_value >= 0.70,
-          pow_value is not None and pow_value >= 0.50)
+          pow_value is not None and pow_value >= 0.55)
     grade("Annualized return", annualized,
-          annualized is not None and annualized >= 0.50,
-          annualized is not None and annualized >= 0.20)
+          annualized is not None and annualized >= 0.05,
+          annualized is not None and annualized >= 0.02)
     if earnings_inside is None:
         items.append({"name": "Earnings date", "status": "warn"})
     else:
