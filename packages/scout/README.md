@@ -67,7 +67,8 @@ packages/scout/
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
                      calendar_service.py  candle_service.py  chain_service.py
                      screener_service.py  staging.py  quote_service.py  streamcache.py
-      analytics/    __init__.py  levels.py  payoff.py  pop.py  strategies.py  trend.py
+      analytics/    __init__.py  levels.py  narrative.py  payoff.py  pop.py  strategies.py
+                     trend.py
       static/       index.html  css/scout.css  js/scout.js  js/payoff.js
         vendor/     lightweight-charts.standalone.production.js  tabulator.min.js
                      tabulator_midnight.min.css  htmx.min.js  alpine.min.js
@@ -83,6 +84,7 @@ packages/scout/
                     test_strategies.py  test_screener_service.py  test_screener_routes.py
                     test_staging.py  test_order_routes.py  test_dry_run_only.py
                     test_quote_service.py  test_sse.py  test_streamcache.py  test_trend.py
+                    test_narrative.py
 ```
 
 ## The earnings calendar (M2)
@@ -313,6 +315,20 @@ barely-long-enough series leaves the triple-smoothed stage seed-dominated -- a s
 monotonic downtrend classified as *bullish* under TEMA(126) before the floor existed). No route
 serves these yet; they graduate to the screener's Scan chips only after the fitting experiment
 picks a winner.
+
+## Plain-language symbol analysis
+
+`GET /api/symbol/{sym}/analysis` generates the two-paragraph narrative the symbol view shows under
+the chart: an optional trend-following **scan headline** ("has recently pulled back within a
+longer-term bullish trend...") when that setup actually exists, and a **Price Action** line -- one
+concrete, checkable observation picked by priority from detected conditions: 200-day MA cross today
+> 50-day MA cross > gap on ≥1.5x average volume > S/R level break (with role reversal: "broke above
+its 102.00 resistance, which now becomes support") > ≥5% three-session move > trading at a nearby
+level > a trend + support/resistance fallback. An earnings-timing suffix ("and reports earnings
+tomorrow before the open") rides on any of them when the metrics earnings date is today/tomorrow.
+Everything is generated from data scout already computes (`analytics/narrative.py`, pure/stdlib, no
+free-written text -- every sentence carries its numbers); the trend wording uses scout's own
+provisional `price_ma_count` classifier and is labeled as such in the UI.
 
 ## Verification (M8)
 

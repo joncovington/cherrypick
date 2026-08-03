@@ -146,6 +146,50 @@ def test_api_symbol_levels_with_no_bars_degrades_to_empty(app_and_client, monkey
     assert body["nearest_resistance"] is None
 
 
+# --------------------------------------------------------------------------- /analysis (narrative)
+
+
+def test_api_symbol_analysis_returns_trend_and_price_action(app_and_client, monkeypatch):
+    # 60 flat bars then a 3-session surge: enough for the 1m trend params (20/26/30 SMAs) and a
+    # big-move Price Action detection; 6m trend abstains (needs a 50-bar SMA -- present -- fine).
+    closes = [100.0] * 60 + [100.0, 104.0, 107.0]
+    bars = [
+        {"t": 1000 + i * 86400, "o": c, "h": c + 1, "l": c - 1, "c": c, "v": 10}
+        for i, c in enumerate(closes)
+    ]
+
+    async def fake_get_candles(_conn, _session, _cfg, symbol):
+        return {"ok": True, "symbol": symbol.upper(), "as_of": 1000.0, "stale": False, "bars": bars}
+
+    async def fake_get_metrics(_conn, _session, symbols, _ttl):
+        return {s.upper(): {"earnings": None} for s in symbols}
+
+    monkeypatch.setattr(_symbol_api.candle_service, "get_candles", fake_get_candles)
+    monkeypatch.setattr(_symbol_api.metrics_service, "get_metrics", fake_get_metrics)
+
+    app, client = app_and_client
+    resp = client.get("/api/symbol/aapl/analysis", headers=_headers(app))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["trend_1m"] is not None
+    assert body["price_action"]  # always present when bars exist
+    assert "AAPL" in body["price_action"]
+
+
+def test_api_symbol_analysis_with_no_bars_degrades(app_and_client, monkeypatch):
+    async def empty_candles(_conn, _session, _cfg, symbol):
+        return {"ok": True, "symbol": symbol.upper(), "as_of": 1000.0, "stale": True, "bars": []}
+
+    monkeypatch.setattr(_symbol_api.candle_service, "get_candles", empty_candles)
+    app, client = app_and_client
+    resp = client.get("/api/symbol/aapl/analysis", headers=_headers(app))
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["price_action"] is None
+    assert body["headline"] is None
+
+
 # --------------------------------------------------------------------------- /quote (builder prefill)
 
 

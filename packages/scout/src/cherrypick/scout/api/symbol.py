@@ -1,4 +1,4 @@
-"""``GET /api/symbol/{sym}/{candles|stats|quote|levels|expirations|chain}``,
+"""``GET /api/symbol/{sym}/{candles|stats|quote|levels|analysis|expirations|chain}``,
 ``GET /partial/symbol/{sym}``."""
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ from fastapi.responses import HTMLResponse
 
 from .. import templates as _templates
 from ..analytics import levels as _levels
+from ..analytics import narrative as _narrative
+from ..analytics import trend as _trend
 from ..services import candle_service, chain_service, metrics_service, quote_service
 
 router = APIRouter()
@@ -108,6 +110,45 @@ async def get_levels(request: Request, sym: str) -> dict:
             ]
             for name, series in smas.items()
         },
+    }
+
+
+@router.get("/api/symbol/{sym}/analysis")
+async def get_analysis(request: Request, sym: str) -> dict:
+    """Plain-language analysis for the symbol view: a trend-following scan headline (when the
+    setup exists) plus one concrete Price Action observation -- all generated from data scout
+    already computes (candles, clustered levels, the provisional trend classifier, metrics
+    earnings dates). See `analytics/narrative.py` for the priority order and honesty posture."""
+    app = request.app
+    symbol = sym.strip().upper()
+    candles = await _candles(request, sym)
+    bars = candles["bars"]
+    if not bars:
+        return {"ok": True, "symbol": symbol, "as_of": candles["as_of"], "stale": True,
+                "headline": None, "price_action": None, "trend_1m": None, "trend_6m": None}
+
+    levels = _levels.support_resistance(bars)
+    closes = [b["c"] for b in bars]
+    p = _trend.DEFAULT_PARAMS["price_ma_count"]
+    trend_1m = _trend.price_ma_count(closes, *p["1m"])
+    trend_6m = _trend.price_ma_count(closes, *p["6m"])
+
+    metrics_ttl = app.state.cfg.get("refresh", {}).get("metrics_ttl_seconds", 900)
+    metrics = await metrics_service.get_metrics(
+        app.state.cache_db, app.state.broker_session, [symbol], metrics_ttl
+    )
+    earnings = (metrics.get(symbol) or {}).get("earnings")
+
+    name = symbol  # a display-name source (instrument description) is a possible later refinement
+    return {
+        "ok": True,
+        "symbol": symbol,
+        "as_of": candles["as_of"],
+        "stale": candles["stale"],
+        "trend_1m": trend_1m,
+        "trend_6m": trend_6m,
+        "headline": _narrative.scan_headline(name, trend_1m, trend_6m),
+        "price_action": _narrative.price_action(name, bars, levels, trend_6m, earnings),
     }
 
 

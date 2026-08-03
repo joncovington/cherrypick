@@ -99,6 +99,29 @@ function renderStats(el, stats, levels) {
   `;
 }
 
+function _trendChip(label) {
+  if (!label) return "—";
+  const text = label.replace("_", " ");
+  const side = label.includes("bullish") ? "up" : label.includes("bearish") ? "down" : "flat";
+  return `<span class="trend-chip ${side}">${text}</span>`;
+}
+
+function renderAnalysis(el, analysis) {
+  if (!analysis || !analysis.ok || (!analysis.price_action && !analysis.headline)) {
+    el.innerHTML = "";
+    return;
+  }
+  const headline = analysis.headline
+    ? `<p><b>${analysis.headline.scan}:</b> ${analysis.headline.text}</p>`
+    : "";
+  el.innerHTML = `
+    <p>Trend (scout's own read, provisional): 1M ${_trendChip(analysis.trend_1m)} ·
+      6M ${_trendChip(analysis.trend_6m)}</p>
+    ${headline}
+    <p><b>Price Action:</b> ${analysis.price_action}</p>
+  `;
+}
+
 const _SMA_COLORS = { sma20: "#e0b453", sma50: "#b57fd1", sma200: "#7a8794" };
 
 function renderLevelOverlays(chart, candleSeries, levels, lastClose) {
@@ -151,18 +174,21 @@ async function mountSymbolView(view) {
   chartEl.innerHTML = '<p class="loading">Loading candles…</p>';
   if (statsEl) statsEl.innerHTML = '<span class="loading">Loading…</span>';
 
-  let candles, stats, levels;
+  let candles, stats, levels, analysis;
   try {
-    [candles, stats, levels] = await Promise.all([
+    [candles, stats, levels, analysis] = await Promise.all([
       fetch(`/api/symbol/${symbol}/candles`).then((r) => r.json()),
       fetch(`/api/symbol/${symbol}/stats`).then((r) => r.json()),
       fetch(`/api/symbol/${symbol}/levels`).then((r) => r.json()),
+      fetch(`/api/symbol/${symbol}/analysis`).then((r) => r.json()),
     ]);
   } catch {
     chartEl.textContent = "Could not reach the scout server -- is it still running?";
     return;
   }
   if (statsEl) renderStats(statsEl, stats, levels);
+  const analysisEl = view.querySelector("#analysis-panel");
+  if (analysisEl) renderAnalysis(analysisEl, analysis);
 
   if (_symbolChart) {
     _symbolChart.remove();
