@@ -89,7 +89,7 @@ def test_api_screener_parses_chip_filter_params(app_and_client, monkeypatch):
     monkeypatch.setattr(_screener_api.screener_service, "run_screener", capture_run_screener)
     resp = client.get(
         "/api/screener?strategy=short_put&iv=gte50&liquidity=somewhat,very&cap=large,mega"
-        "&trend=bullish,neutral&sentiment=bearish",
+        "&trend=bullish,neutral&sentiment=bearish&sector=technology,healthcare",
         headers=_headers(app),
     )
     assert resp.status_code == 200
@@ -99,6 +99,7 @@ def test_api_screener_parses_chip_filter_params(app_and_client, monkeypatch):
         "cap": {"large", "mega"},
         "trend": {"bullish", "neutral"},
         "sentiment": {"bearish"},
+        "sector": {"technology", "healthcare"},
     }
 
 
@@ -130,3 +131,6 @@ def test_api_screener_rejects_an_unknown_trend_or_sentiment_bucket(app_and_clien
     resp = client.get("/api/screener?sentiment=euphoric", headers=_headers(app))
     assert resp.status_code == 400
     assert "euphoric" in resp.json()["detail"]
+    resp = client.get("/api/screener?sector=crypto", headers=_headers(app))
+    assert resp.status_code == 400
+    assert "crypto" in resp.json()["detail"]

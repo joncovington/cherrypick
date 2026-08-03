@@ -53,7 +53,10 @@ Config: copy `config.example.json` → `config.json` (git-ignored), or omit it e
   This is why `candle_service` seeds from DXLink history rather than `stocks.ohlcv` — the Dolt
   table's date-led primary key made per-symbol reads full-scan 28.5M rows (~2 min, measured, past
   every sane timeout), and the fix was switching to the broker's own history feed, not indexing a
-  shared database this package treats as read-only.
+  shared database this package treats as read-only. Same reasoning behind `sector_service`: the
+  screener's Sector chip reads `tastytrade.watchlists.PublicWatchlist`'s own public "Sectors"
+  groupings (one call, cached daily) rather than reaching for a third-party sector/industry
+  classification source.
 - **Never write a cache this module doesn't own.** `services/cache.py` opens only this module's own
   `~/.cherrypick/data/scout/cache.db`. `calendar_service`'s Dolt read (`earnings.earnings_calendar`)
   is read-only and never writes its source.

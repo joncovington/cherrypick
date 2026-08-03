@@ -66,7 +66,8 @@ packages/scout/
                      screener.py  orders.py
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
                      calendar_service.py  candle_service.py  chain_service.py
-                     screener_service.py  staging.py  quote_service.py  streamcache.py
+                     screener_service.py  sector_service.py  staging.py  quote_service.py
+                     streamcache.py
       analytics/    __init__.py  describe.py  levels.py  narrative.py  payoff.py  pop.py
                      strategies.py  templates.py  trend.py
       static/       index.html  css/scout.css  js/scout.js  js/payoff.js
@@ -84,7 +85,7 @@ packages/scout/
                     test_strategies.py  test_screener_service.py  test_screener_routes.py
                     test_staging.py  test_order_routes.py  test_dry_run_only.py
                     test_quote_service.py  test_sse.py  test_streamcache.py  test_trend.py
-                    test_narrative.py  test_describe.py  test_templates.py
+                    test_narrative.py  test_describe.py  test_templates.py  test_sector_service.py
 ```
 
 ## The earnings calendar (M2)
@@ -192,6 +193,16 @@ are fetched, so a non-matching symbol never reaches a chain fetch) and **Sentime
 0.25% of spot -- filtered after the candidate's strikes are windowed, since it needs real option
 quotes). Sentiment's bucket thresholds are scout's own choice, not reverse-engineered from any
 observed reference-platform value -- there's no screenshot evidence for a skew-sentiment chip.
+
+A **Sector** chip filters in the zero-broker-call pre-filter, alongside IV/liquidity/cap:
+`sector_service.get_sector_map` is a tastytrade-owned source (the suite's prefer-tastytrade-sources
+rule), not a third-party one -- `PublicWatchlist.get(session)` (one call, live-verified 2026-08-05)
+returns every public watchlist tastytrade publishes, and filtering `group_name == "Sectors"` gives
+the eleven standard sector groupings (Technology, Healthcare, Energy, ...) with their member
+symbols. Cached as a single daily blob rather than per-symbol, since it's one fetch regardless of
+watchlist size and sector membership doesn't move within a session. A symbol absent from every
+sector watchlist (an ETF, an index, an unclassified name) is excluded while the Sector filter is
+active -- the same "missing can't prove membership" posture the Cap chip already follows.
 
 **Two regressions caught by live smoke tests against real data, both worth remembering:**
 
