@@ -6,14 +6,17 @@ from cherrypick.scout.analytics import describe as _describe
 from cherrypick.scout.analytics.payoff import Leg
 
 
-def test_annualized_return_matches_the_two_reverse_engineered_reference_pairs():
-    """The formula was reverse-engineered from a reference platform's displayed numbers; these two
-    observed (credit, max_risk, dte) -> (raw, annualized) pairs are the evidence. If this test
-    breaks, the formula no longer reproduces the observations that justified it."""
+def test_annualized_return_matches_the_three_reverse_engineered_reference_pairs():
+    """The formula was reverse-engineered from a reference platform's displayed numbers; these
+    observed (credit, max_risk, dte) -> (raw, annualized) pairs are the evidence -- including one
+    at a different DTE (46d), which a linear-annualization formula could not reproduce. If this
+    test breaks, the formula no longer reproduces the observations that justified it."""
     assert _describe.raw_return(150, 900) == pytest.approx(0.1667, abs=1e-4)
     assert _describe.annualized_return(150, 900, 25) == pytest.approx(8.4934, abs=0.02)  # 849.34%
     assert _describe.raw_return(113, 987) == pytest.approx(0.1145, abs=1e-4)
     assert _describe.annualized_return(113, 987, 25) == pytest.approx(3.8675, abs=0.02)  # 386.75%
+    # HPE 2026-08-03 (live): $123.50 credit / $3,476.50 risk / 46 DTE -> displayed 31.91%.
+    assert _describe.annualized_return(123.50, 3476.50, 46) == pytest.approx(0.3191, abs=0.002)
 
 
 def test_annualized_return_degrades_on_bad_inputs():
@@ -103,6 +106,10 @@ def test_checklist_reproduces_the_observed_reference_gradings():
     # SPY-like covered call: POW 65.66% still yellow, 1% spread green.
     items = _describe.checklist(pow_value=0.6566, annualized=0.0865, earnings_inside=False, spread_pct=0.0103)
     assert [i["status"] for i in items] == ["warn", "pass", "pass", "pass"]
+    # HPE (live, 2026-08-03): POW 75.69% green -- pass boundary now bounded in (65.66, 75.69];
+    # annualized 31.91% green; earnings Sep 3 inside the Sep 18 expiry warns; 48%-of-mid spread red.
+    items = _describe.checklist(pow_value=0.7569, annualized=0.3191, earnings_inside=True, spread_pct=0.48)
+    assert [i["status"] for i in items] == ["pass", "pass", "warn", "fail"]
 
 
 def test_checklist_directional_replays_the_observed_spread_cards():

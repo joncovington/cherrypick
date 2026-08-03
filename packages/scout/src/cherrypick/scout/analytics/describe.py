@@ -19,8 +19,10 @@ silently absent one for the builder's explanation panel. They assume one flat IV
 Checklist thresholds are calibrated against observed reference-platform gradings (2026-08-03
 screenshots, five cards spanning the full range), not published numbers:
   - POW: 53.54% graded red ("very low"), 55.55/58.28/65.66% yellow ("lower than optimal"),
-    81.39% green ("very good") -> warn >= 55%, pass >= 70% (the pass bound is the one remaining
-    interpolation, consistent with the platform's 15-20-delta conservative guidance).
+    75.69% and 81.39% green ("very good") -> warn >= 55%, pass >= 70%. The pass bound is bracketed
+    to (65.66, 75.69]; 70 is used (the round number consistent with the platform's 15-20-delta
+    conservative guidance), with 75 not yet excluded -- one observed card in the 67-74% band
+    would settle it.
   - Annualized return: 6.30% already graded green ("very good") -> pass >= 5% (roughly
     beats-risk-free), warn >= 2%. No yellow/red example has been observed; the fail zone is
     extrapolated.
