@@ -13,6 +13,7 @@ import sqlite3
 import time
 from datetime import date, datetime, timedelta
 
+from ..analytics import describe as _describe
 from ..analytics import strategies as _strategies
 from ..analytics.payoff import Leg
 from ..analytics.pop import pop as _pop
@@ -231,6 +232,11 @@ async def run_screener(
             "pop": candidate_pop,
             "pop_heuristic": max(0.0, 1 - 2 * short_delta),
             "return_on_risk": return_on_risk,
+            "annualized_return": (
+                _describe.annualized_return(candidate["credit"], candidate["max_risk"], dte)
+                if candidate.get("max_risk")
+                else None
+            ),
         }
         row["composite_score"] = _strategies.composite_score(
             return_on_risk or 0.0, candidate_pop, iv_frac, info.get("liquidity_rating")

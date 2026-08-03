@@ -67,8 +67,8 @@ packages/scout/
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
                      calendar_service.py  candle_service.py  chain_service.py
                      screener_service.py  staging.py  quote_service.py  streamcache.py
-      analytics/    __init__.py  levels.py  narrative.py  payoff.py  pop.py  strategies.py
-                     trend.py
+      analytics/    __init__.py  describe.py  levels.py  narrative.py  payoff.py  pop.py
+                     strategies.py  trend.py
       static/       index.html  css/scout.css  js/scout.js  js/payoff.js
         vendor/     lightweight-charts.standalone.production.js  tabulator.min.js
                      tabulator_midnight.min.css  htmx.min.js  alpine.min.js
@@ -84,7 +84,7 @@ packages/scout/
                     test_strategies.py  test_screener_service.py  test_screener_routes.py
                     test_staging.py  test_order_routes.py  test_dry_run_only.py
                     test_quote_service.py  test_sse.py  test_streamcache.py  test_trend.py
-                    test_narrative.py
+                    test_narrative.py  test_describe.py
 ```
 
 ## The earnings calendar (M2)
@@ -338,6 +338,24 @@ pure/stdlib, no free-written text -- every sentence carries its numbers); metric
 previously fetched-and-discarded (`historical_volatility_30_day`, `corr_spy_3month`, dividend
 dates/rate) are now kept for exactly this. Trend wording uses scout's own provisional
 `price_ma_count` classifier and is labeled as such in the UI.
+
+## Strategy cards (returns, POW, model greeks, checklist, plain-language text)
+
+`analytics/describe.py` adds the strategy-card math and text: **raw and annualized return**
+(annualized is *compounded*, `(1 + credit/max_risk)^(365/dte) - 1` -- reverse-engineered from a
+reference platform's own displayed pairs and pinned by two observed fixtures in `test_describe.py`;
+the UI keeps the asterisk because compounding assumes the same trade repeats all year),
+**probability of worthless** (the premium-seller's POW: every short option expiring OTM, an
+interval probability under the same lognormal as `pop.py`), **model greeks** (Black-Scholes
+delta/gamma/theta-per-day/vega from strike/spot/IV/T/r -- scout has no live greeks feed, and a
+clearly-labeled model greek beats a silently absent one), a **strategy explanation** ("This is a
+bullish strategy with limited risk of $X... profits if the stock closes above $Y... Z% model
+probability"), the wheel-style **short-put suggestion** ("Consider selling the ... put to
+potentially acquire the stock at a N% discount..."), and a pass/warn/fail **checklist** (POW,
+annualized return, earnings-inside-expiration, spread width -- thresholds documented as guesses in
+the module docstring). `/api/payoff` now returns all of it (suggestion only for a lone short put
+with `symbol`/`expiration` params), the builder renders the card under the payoff SVG, and the
+screener gains an `Annualized*` column on every credit candidate.
 
 ## Verification (M8)
 

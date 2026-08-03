@@ -306,6 +306,7 @@ async function mountScreenerView(view) {
       pop_heuristic: c.pop_heuristic,
       breakevens: (c.breakevens || []).map((b) => b.toFixed(2)).join(", "),
       return_on_risk: c.return_on_risk,
+      annualized_return: c.annualized_return,
       composite_score: c.composite_score,
     }));
 
@@ -342,6 +343,11 @@ async function mountScreenerView(view) {
           {
             title: "Return/risk",
             field: "return_on_risk",
+            formatter: (c) => _fmtPct(c.getValue()),
+          },
+          {
+            title: "Annualized*",
+            field: "annualized_return",
             formatter: (c) => _fmtPct(c.getValue()),
           },
           { title: "Score", field: "composite_score", formatter: (c) => _fmtNum(c.getValue()) },

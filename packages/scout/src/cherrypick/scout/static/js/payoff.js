@@ -178,6 +178,8 @@ async function computePayoff(view) {
   });
   if (dte != null) params.set("dte", String(dte));
   if (_builder.iv != null) params.set("iv", String(_builder.iv));
+  if (_builder.symbol) params.set("symbol", _builder.symbol);
+  if (_builder.expiration) params.set("expiration", _builder.expiration);
 
   let result;
   try {
@@ -263,13 +265,28 @@ async function stageTicket(view) {
 function renderMetrics(el, result) {
   const fmt = (v) => (typeof v === "number" ? v.toFixed(2) : "--");
   const pct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "--");
+  const greeks = result.model_greeks || result.net_greeks || {};
   el.innerHTML = `
     <span>Max profit ${result.max_profit.unbounded ? "unbounded" : fmt(result.max_profit.value)}</span>
     <span>Max loss ${result.max_loss.unbounded ? "unbounded" : fmt(result.max_loss.value)}</span>
     <span>Breakevens ${result.breakevens.map(fmt).join(", ") || "--"}</span>
-    <span>POP ${pct(result.pop)}</span>
-    <span>Net delta ${fmt(result.net_greeks.delta)}</span>
+    <span>POP ${pct(result.pop)} · POW ${pct(result.pow)}</span>
+    <span>Return ${pct(result.raw_return)} raw · ${pct(result.annualized_return)} annualized*</span>
+    <span>Model Δ ${fmt(greeks.delta)} · Θ/day ${fmt(greeks.theta)} · Vega ${fmt(greeks.vega)}</span>
   `;
+  const cardEl = document.getElementById("builder-strategy-card");
+  if (cardEl) {
+    const parts = [];
+    if (result.explanation) parts.push(`<p><b>Strategy:</b> ${result.explanation}</p>`);
+    if (result.suggestion) parts.push(`<p>${result.suggestion}</p>`);
+    if (result.greeks_text) parts.push(`<p class="note">${result.greeks_text}</p>`);
+    if (result.annualized_return != null) {
+      parts.push(
+        '<p class="note">* Annualized assumes the same return could be repeated back-to-back all year -- a comparison metric, not a forecast.</p>'
+      );
+    }
+    cardEl.innerHTML = parts.join("");
+  }
 }
 
 function renderPayoffSvg(svg, result, spot) {
