@@ -122,7 +122,10 @@ async def _dxlink_tail(session: BrokerSession, symbol: str, start: date) -> list
                     event = await asyncio.wait_for(streamer.get_event(Candle), timeout=wait_for)
                 except TimeoutError:
                     break
-                if event.open is None:
+                if event.open is None or event.close is None or float(event.close) <= 0:
+                    # DXLink pushes a zero-filled placeholder for the still-forming current-day
+                    # candle before any real trades have printed -- not a genuine bar, and a real
+                    # equity price is never zero or negative.
                     continue
                 bars[event.time] = {
                     "t": int(event.time / 1000),
@@ -152,6 +155,8 @@ async def _synth_from_snapshot(session: BrokerSession, symbol: str) -> list[dict
     if not quotes or quotes[0].mark is None:
         return None
     mark = float(quotes[0].mark)
+    if mark <= 0:
+        return None
     today = datetime.now(tz=UTC).date()
     return [{"t": _day_epoch(today), "o": mark, "h": mark, "l": mark, "c": mark, "v": None}]
 

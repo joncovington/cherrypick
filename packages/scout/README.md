@@ -61,26 +61,27 @@ packages/scout/
     scout/
       __init__.py  cli.py  config.py  app.py  serve.py  security.py  templates.py
       api/          __init__.py  watchlist.py  calendar.py  symbol.py  payoff.py  builder.py
+                     screener.py
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
                      calendar_service.py  candle_service.py  chain_service.py
-      analytics/    __init__.py  levels.py  payoff.py  pop.py
+                     screener_service.py
+      analytics/    __init__.py  levels.py  payoff.py  pop.py  strategies.py
       static/       index.html  css/scout.css  js/scout.js  js/payoff.js
         vendor/     lightweight-charts.standalone.production.js  tabulator.min.js
                      tabulator_midnight.min.css  htmx.min.js  alpine.min.js
                      LICENSE-lightweight-charts.txt  LICENSE-tabulator.txt  LICENSE-htmx.txt
                      LICENSE-alpinejs.txt  LICENSES.md
-      templates/    calendar.html  symbol.html  builder.html
+      templates/    calendar.html  symbol.html  builder.html  screener.html
   tests/            conftest.py  test_config.py  test_cache_ttl.py  test_cache_candles.py
                     test_watchlist.py  test_security.py  test_self_contained.py
                     test_api_routes.py  test_session.py  test_metrics_service.py
                     test_calendar_service.py  test_calendar_routes.py  test_candle_service.py
                     test_levels.py  test_symbol_routes.py  test_chain_service.py  test_payoff.py
                     test_pop.py  test_payoff_routes.py  test_builder_routes.py
+                    test_strategies.py  test_screener_service.py  test_screener_routes.py
 ```
 
-The screener surface (its own `api/`/`services/` module, `strategies.py`) lands in M5 — its nav node
-already renders in `static/index.html` but the route doesn't exist yet. "Staged" (order dry-run/
-staging) lands in M6.
+"Staged" (order dry-run/staging) is the last surface, landing in M6.
 
 ## The earnings calendar (M2)
 
@@ -141,6 +142,48 @@ built interactively at `GET /partial/builder/{sym}` (the Builder nav tab, or "se
 elsewhere): click a strike in the chain table to add a leg, and `static/js/payoff.js` recomputes and
 redraws a hand-rolled SVG payoff curve (no charting library -- a P/L polyline plus a zero line and a
 spot marker) on every change.
+
+## The screener (M5)
+
+`GET /api/screener?strategy=put_credit_spread|call_credit_spread|short_put|covered_call` and
+`GET /partial/screener` run the plan's five-step compute flow: one batched metrics call across the
+whole watchlist; a zero-broker-call pre-filter on IV rank and liquidity; a chain fetch (nearest
+30-45 DTE expiration, preferring a standard monthly) and a +/-15-strike quote snapshot, both only for
+survivors; candidate construction (0 further calls); and a weighted composite rank. Spot is read from
+`candle_service`'s already-cached daily bars rather than a fresh equity quote -- one more reuse of an
+existing TTL-cached path instead of a new broker round trip.
+
+`analytics/strategies.py` (stdlib only, no I/O -- same posture as the rest of `analytics/`) generates
+each strategy's legs and hands them to `payoff.py`/`pop.py` for pricing. **Short-strike selection has
+no live delta to key off** (see the M4 gap on live greeks), so every generator uses the plan's
+documented fallback: nearest-OTM-strike to one expected move from spot, not a ~0.30-delta strike.
+The directional-edge ("skew") column is a price-based proxy for the same reason -- OTM call mid minus
+OTM put mid at matched dollar-distance from spot, mirroring `cherrypick.flies`' `skew_bucket` rather
+than a true delta-matched IV skew. Credit is priced at the mid quote with a haircut standing in for a
+`cherrypick.core.fees`-style fill-slippage adjustment.
+
+The table (Tabulator, `persistence: "local"` so layout/sort/filter survive a reload) shows the
+model POP alongside MEIC's `1 - 2*short_delta` heuristic as a cross-check column, and every symbol
+row opens the builder (pre-loaded with that symbol, not yet with the exact screened legs).
+
+**Two regressions caught by live smoke tests against real data, both worth remembering:**
+
+1. DXLink pushes a zero-filled placeholder for the still-forming current-day candle before any real
+   trade has printed. `candle_service._dxlink_tail` originally accepted it (only checking for `None`,
+   not zero), which wrote a spot of `0.0` into the cache and broke every downstream OTM-strike
+   calculation. Fixed by rejecting non-positive OHLC values from DXLink and from the
+   snapshot-synthesis fallback; `test_candle_service.py` has a regression test for it.
+2. `implied_volatility_30_day` arrives from the SDK as a percentage-point number (e.g. `27.16`
+   meaning 27.16%) -- unlike `implied_volatility_index_rank`, which despite its name is already a
+   0..1 fraction. Feeding the un-normalized value straight into Black-Scholes sigma inflated the
+   expected move ~100x, which pushed every strike-selection target off the far end of the chain and
+   silently failed every candidate. Fixed at the boundary in `metrics_service._serialize` (so every
+   consumer -- the screener's sigma, the builder's IV pre-fill -- gets an already-correct fraction);
+   `test_metrics_service.py` has a regression test for it.
+
+Neither bug was visible from mocked tests alone -- both only showed up once a real `get_market_metrics`/
+DXLink response was in the loop, which is why this milestone's verification ran the screener against
+the real local Dolt server and a live broker session rather than stopping at green pytest output.
 
 ## Security
 

@@ -31,6 +31,19 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+def _iv_30d_frac(value: Any) -> float | None:
+    """`implied_volatility_30_day` arrives from the SDK as a percentage-point number (e.g. `27.16`
+    meaning 27.16%, verified against a real account) -- unlike `implied_volatility_index_rank`, which
+    is already a 0..1 fraction despite its name. Normalized to a fraction once here, at the boundary,
+    so nothing downstream (the screener's Black-Scholes sigma, the builder's IV pre-fill) has to
+    remember which of the two fields needs the /100. A live smoke test caught this the hard way: an
+    un-normalized 27.16 fed straight into sigma inflated the expected move ~100x and silently failed
+    every screener candidate."""
+    if value is None:
+        return None
+    return float(value) / 100.0
+
+
 def _serialize(info: Any) -> dict:
     """Pull the fields scout's calendar/screener actually use out of a `MarketMetricInfo`, converting
     `Decimal`/`date`/`datetime` fields to JSON-safe values (the cache stores plain JSON)."""
@@ -53,7 +66,7 @@ def _serialize(info: Any) -> dict:
         "beta": _jsonable(getattr(info, "beta", None)),
         "price_earnings_ratio": _jsonable(getattr(info, "price_earnings_ratio", None)),
         "dividend_yield": _jsonable(getattr(info, "dividend_yield", None)),
-        "iv_30d": _jsonable(getattr(info, "implied_volatility_30_day", None)),
+        "iv_30d": _iv_30d_frac(getattr(info, "implied_volatility_30_day", None)),
         "earnings": earnings_dict,
         "updated_at": _jsonable(getattr(info, "updated_at", None)),
     }
