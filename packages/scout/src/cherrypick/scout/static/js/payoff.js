@@ -103,9 +103,11 @@ async function loadChain(view) {
   }
 
   const byStrike = {};
+  _builder.chainGreeks = {};
   for (const opt of data.options || []) {
     byStrike[opt.strike] ??= {};
     byStrike[opt.strike][opt.option_type] = opt;
+    if (opt.greeks) _builder.chainGreeks[opt.symbol] = opt.greeks;
   }
   const strikes = Object.keys(byStrike)
     .map(Number)
@@ -133,6 +135,7 @@ async function loadChain(view) {
 }
 
 function addLeg(view, data) {
+  const greeks = (_builder.chainGreeks || {})[data.symbol] || {};
   _builder.legs.push({
     kind: data.kind,
     strike: parseFloat(data.strike),
@@ -140,6 +143,10 @@ function addLeg(view, data) {
     price: parseFloat(data.price) || 0,
     symbol: data.symbol,
     expiration: _builder.expiration,
+    delta: greeks.delta ?? null,
+    gamma: greeks.gamma ?? null,
+    theta: greeks.theta ?? null,
+    vega: greeks.vega ?? null,
   });
   renderLegs(view);
   computePayoff(view);
@@ -265,14 +272,17 @@ async function stageTicket(view) {
 function renderMetrics(el, result) {
   const fmt = (v) => (typeof v === "number" ? v.toFixed(2) : "--");
   const pct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "--");
-  const greeks = result.model_greeks || result.net_greeks || {};
+  // Live DXLink greeks (attached per leg from the chain) beat model greeks when present.
+  const live = result.net_greeks && result.net_greeks.delta != null;
+  const greeks = (live ? result.net_greeks : result.model_greeks) || {};
+  const greeksTag = live ? "Live" : "Model";
   el.innerHTML = `
     <span>Max profit ${result.max_profit.unbounded ? "unbounded" : fmt(result.max_profit.value)}</span>
     <span>Max loss ${result.max_loss.unbounded ? "unbounded" : fmt(result.max_loss.value)}</span>
     <span>Breakevens ${result.breakevens.map(fmt).join(", ") || "--"}</span>
     <span>POP ${pct(result.pop)} · POW ${pct(result.pow)}</span>
     <span>Return ${pct(result.raw_return)} raw · ${pct(result.annualized_return)} annualized*</span>
-    <span>Model Δ ${fmt(greeks.delta)} · Θ/day ${fmt(greeks.theta)} · Vega ${fmt(greeks.vega)}</span>
+    <span>${greeksTag} Δ ${fmt(greeks.delta)} · Θ ${fmt(greeks.theta)} · Vega ${fmt(greeks.vega)}</span>
   `;
   const cardEl = document.getElementById("builder-strategy-card");
   if (cardEl) {

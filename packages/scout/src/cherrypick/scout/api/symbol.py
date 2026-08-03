@@ -248,8 +248,14 @@ async def get_chain(request: Request, sym: str, expiration: str = Query(...)) ->
     options = expirations["expirations"].get(expiration, [])
     option_symbols = [o["symbol"] for o in options]
     quotes = await chain_service.get_quotes(app.state.cache_db, app.state.broker_session, option_symbols)
+    greeks = await chain_service.get_greeks(
+        app.state.cache_db,
+        app.state.broker_session,
+        [o.get("streamer_symbol") for o in options if o.get("streamer_symbol")],
+    )
     for option in options:
         option["quote"] = quotes.get(option["symbol"])
+        option["greeks"] = greeks.get(option.get("streamer_symbol"))
     return {
         "ok": True,
         "symbol": expirations["symbol"],

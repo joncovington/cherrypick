@@ -41,6 +41,39 @@ def open_ro(path: Path | None = None) -> sqlite3.Connection | None:
         return None
 
 
+def read_greeks(
+    conn: sqlite3.Connection, streamer_symbols: list[str], max_age_seconds: float, *, now: float | None = None
+) -> dict[str, dict]:
+    """`{streamer_symbol: {"delta","gamma","theta","vega","iv","price"}}` for every requested
+    dxfeed streamer symbol with a fresh `stream_greeks` row. Same absent-when-missing contract as
+    `read_equity_quotes` -- the caller fetches the remainder itself."""
+    now = time.time() if now is None else now
+    wanted = sorted({s for s in streamer_symbols if s})
+    if not wanted:
+        return {}
+    placeholders = ",".join("?" for _ in wanted)
+    try:
+        rows = conn.execute(
+            f"SELECT symbol, delta, gamma, theta, vega, iv, price, updated_at FROM stream_greeks "
+            f"WHERE symbol IN ({placeholders})",
+            wanted,
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    return {
+        row["symbol"]: {
+            "delta": row["delta"],
+            "gamma": row["gamma"],
+            "theta": row["theta"],
+            "vega": row["vega"],
+            "iv": row["iv"],
+            "price": row["price"],
+        }
+        for row in rows
+        if (now - row["updated_at"]) <= max_age_seconds
+    }
+
+
 def read_equity_quotes(
     conn: sqlite3.Connection, symbols: list[str], max_age_seconds: float, *, now: float | None = None
 ) -> dict[str, dict]:
