@@ -40,7 +40,10 @@ assumption, and the dividend side is a trailing yield, not a forecast either; st
 already-labeled estimates needs no further modeling. `dividend_yield` from
 `metrics_service`/`MarketMetricInfo` arrives as a plain fraction already (KWEB live-verified at
 0.0736 == 7.36%), unlike `iv_30d`/`hv_30d` which need the /100 -- confirmed against the real
-account the same day, not assumed from the SDK's naming convention.
+account the same day, not assumed from the SDK's naming convention. A second reference card (USO,
+same day) reconfirms the annualized-return formula at a third independent (credit, max_risk, dte)
+and shows the zero-dividend edge case: a commodity ETF's 0% trailing yield makes the projected
+yield identical to the annualized option return (16.48% both), not a formula difference.
 """
 
 from __future__ import annotations
