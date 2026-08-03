@@ -192,6 +192,49 @@ def short_put_suggestion(
     )
 
 
+def checklist_directional(
+    strategy_direction: str,
+    stock_trend_1m: str | None,
+    market_trend_1m: str | None,
+    earnings_inside: bool | None,
+    spread_pct: float | None,
+) -> list[dict]:
+    """The credit-spread (directional-strategy) checklist variant, calibrated from four observed
+    reference cards: Stock Trend and Market Trend grade the strategy's direction against the
+    stock's / the S&P 500's 1M trend (aligned = pass, opposed = fail, neutral or unknown = warn);
+    earnings and spread behave as in `checklist` (spread graded on the NET combo bid/ask, per the
+    observed CSX card: combo bid $0.00 / ask $1.30 = red). The reference's own Score row is
+    omitted here until scout has a score analog -- a missing row beats a fabricated one."""
+    from .trend import BEARISH, BULLISH, MILDLY_BEARISH, MILDLY_BULLISH
+
+    side = {BULLISH: 1, MILDLY_BULLISH: 1, MILDLY_BEARISH: -1, BEARISH: -1}
+    want = 1 if strategy_direction == "bullish" else (-1 if strategy_direction == "bearish" else 0)
+
+    def trend_status(label):
+        if want == 0 or label is None or side.get(label) is None:
+            return "warn"
+        return "pass" if side[label] == want else "fail"
+
+    items = [
+        {"name": "Stock trend", "status": trend_status(stock_trend_1m)},
+        {"name": "Market trend", "status": trend_status(market_trend_1m)},
+    ]
+    if earnings_inside is None:
+        items.append({"name": "Earnings date", "status": "warn"})
+    else:
+        items.append({"name": "Earnings date", "status": "warn" if earnings_inside else "pass"})
+    if spread_pct is None:
+        spread_status = "warn"
+    elif spread_pct <= 0.05:
+        spread_status = "pass"
+    elif spread_pct <= 0.15:
+        spread_status = "warn"
+    else:
+        spread_status = "fail"
+    items.append({"name": "Spread & liquidity", "status": spread_status})
+    return items
+
+
 def checklist(
     pow_value: float | None,
     annualized: float | None,
