@@ -142,6 +142,30 @@ def test_checklist_directional_neutral_trend_warns():
     assert [i["status"] for i in items] == ["warn", "warn", "pass", "pass"]
 
 
+def test_has_weekly_cadence_requires_a_real_weekly_gap():
+    weeklies = ["2026-08-28", "2026-09-04", "2026-09-18", "2026-10-16"]
+    monthlies_only = ["2026-08-21", "2026-09-18", "2026-10-16", "2027-01-15"]
+    assert _describe.has_weekly_cadence(weeklies) is True
+    assert _describe.has_weekly_cadence(monthlies_only) is False
+    assert _describe.has_weekly_cadence([]) is False
+    assert _describe.has_weekly_cadence(["garbage"]) is False
+
+
+def test_tight_spread_without_weeklies_caps_at_warn():
+    """User rule: high liquidity must always have weekly expirations available -- a tight spread
+    on a monthly-only chain must not grade as high liquidity."""
+    tight = _describe.checklist(0.80, 0.10, False, spread_pct=0.02, has_weeklies=False)
+    assert {i["name"]: i["status"] for i in tight}["Spread & liquidity"] == "warn"
+    tight_weekly = _describe.checklist(0.80, 0.10, False, spread_pct=0.02, has_weeklies=True)
+    assert {i["name"]: i["status"] for i in tight_weekly}["Spread & liquidity"] == "pass"
+    # Cadence unknown (pure-function default): the spread grade stands alone.
+    tight_unknown = _describe.checklist(0.80, 0.10, False, spread_pct=0.02)
+    assert {i["name"]: i["status"] for i in tight_unknown}["Spread & liquidity"] == "pass"
+    # A wide spread stays failed regardless of cadence.
+    wide = _describe.checklist_directional("bullish", None, None, False, 0.30, True)
+    assert {i["name"]: i["status"] for i in wide}["Spread & liquidity"] == "fail"
+
+
 def test_checklist_unknowns_warn_rather_than_pass():
     items = _describe.checklist(pow_value=None, annualized=None, earnings_inside=None, spread_pct=None)
     assert all(i["status"] == "warn" for i in items)

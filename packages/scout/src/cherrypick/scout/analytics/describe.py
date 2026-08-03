@@ -225,12 +225,41 @@ def short_put_suggestion(
     )
 
 
+def has_weekly_cadence(expiration_isos: list[str]) -> bool:
+    """True when the chain has a genuine weekly expiration cadence -- a gap of <= 10 days between
+    two consecutive expirations somewhere in the chain (the earnings module's own
+    `has_weekly_options` rule). A monthly-only name can coincidentally have a near expiration
+    without actually running weeklies; cadence is the honest check."""
+    from datetime import date
+
+    try:
+        dates = sorted(date.fromisoformat(iso) for iso in expiration_isos)
+    except ValueError:
+        return False
+    return any((b - a).days <= 10 for a, b in zip(dates, dates[1:], strict=False))
+
+
+def _spread_status(spread_pct: float | None, has_weeklies: bool | None) -> str:
+    """Spread & Liquidity grade. User rule: HIGH liquidity must always have weekly expirations
+    available -- so a pass requires both a tight spread AND confirmed weekly cadence; a tight
+    spread on a monthly-only chain caps at warn. `has_weeklies=None` means the caller didn't
+    evaluate cadence (pure-function default); the spread grade then stands alone."""
+    if spread_pct is None:
+        return "warn"
+    if spread_pct <= 0.05:
+        return "warn" if has_weeklies is False else "pass"
+    if spread_pct <= 0.15:
+        return "warn"
+    return "fail"
+
+
 def checklist_directional(
     strategy_direction: str,
     stock_trend_1m: str | None,
     market_trend_1m: str | None,
     earnings_inside: bool | None,
     spread_pct: float | None,
+    has_weeklies: bool | None = None,
 ) -> list[dict]:
     """The credit-spread (directional-strategy) checklist variant, calibrated from four observed
     reference cards: Stock Trend and Market Trend grade the strategy's direction against the
@@ -256,15 +285,7 @@ def checklist_directional(
         items.append({"name": "Earnings date", "status": "warn"})
     else:
         items.append({"name": "Earnings date", "status": "warn" if earnings_inside else "pass"})
-    if spread_pct is None:
-        spread_status = "warn"
-    elif spread_pct <= 0.05:
-        spread_status = "pass"
-    elif spread_pct <= 0.15:
-        spread_status = "warn"
-    else:
-        spread_status = "fail"
-    items.append({"name": "Spread & liquidity", "status": spread_status})
+    items.append({"name": "Spread & liquidity", "status": _spread_status(spread_pct, has_weeklies)})
     return items
 
 
@@ -273,6 +294,7 @@ def checklist(
     annualized: float | None,
     earnings_inside: bool | None,
     spread_pct: float | None,
+    has_weeklies: bool | None = None,
 ) -> list[dict]:
     """Pass/warn/fail per criterion (thresholds documented in the module docstring as guesses).
     An unknowable input warns rather than passing -- absence of data is not a green light."""
@@ -292,7 +314,5 @@ def checklist(
         items.append({"name": "Earnings date", "status": "warn"})
     else:
         items.append({"name": "Earnings date", "status": "warn" if earnings_inside else "pass"})
-    grade("Spread & liquidity", spread_pct,
-          spread_pct is not None and spread_pct <= 0.05,
-          spread_pct is not None and spread_pct <= 0.15)
+    items.append({"name": "Spread & liquidity", "status": _spread_status(spread_pct, has_weeklies)})
     return items

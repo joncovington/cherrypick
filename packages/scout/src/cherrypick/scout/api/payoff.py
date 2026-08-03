@@ -165,13 +165,26 @@ async def get_payoff(
     # the covered-call shape), the directional variant otherwise. Trend rows are cache-only reads.
     spread_pct = _describe.combo_spread_pct(raw_items)
     earnings_inside = await _earnings_inside(app_sym, symbol_up, exp_date) if symbol else None
+    has_weeklies = None
+    if symbol:
+        # Weekly-cadence check for the liquidity grade (user rule: high liquidity must always
+        # have weekly expirations). The expirations map is TTL-cached, so this is cheap.
+        try:
+            from ..services import chain_service as _chain_service
+
+            expirations = await _chain_service.get_expirations(
+                app_sym.state.cache_db, app_sym.state.broker_session, app_sym.state.cfg, symbol_up
+            )
+            has_weeklies = _describe.has_weekly_cadence(list(expirations["expirations"]))
+        except Exception:
+            has_weeklies = None
     option_legs = [lg for lg in parsed if lg.kind != "stock"]
     is_income = len(option_legs) == 1 and option_legs[0].quantity < 0
     if is_income:
         result["checklist"] = {
             "kind": "income",
             "items": _describe.checklist(
-                result["pow"], result["annualized_return"], earnings_inside, spread_pct
+                result["pow"], result["annualized_return"], earnings_inside, spread_pct, has_weeklies
             ),
         }
     else:
@@ -181,7 +194,7 @@ async def get_payoff(
         result["checklist"] = {
             "kind": "directional",
             "items": _describe.checklist_directional(
-                strategy_dir, stock_trend, market_trend, earnings_inside, spread_pct
+                strategy_dir, stock_trend, market_trend, earnings_inside, spread_pct, has_weeklies
             ),
         }
     return result
