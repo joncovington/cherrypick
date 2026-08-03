@@ -75,3 +75,45 @@ def test_partial_screener_renders_the_shell(app_and_client):
     assert "text/html" in resp.headers["content-type"]
     assert 'id="screener-table"' in resp.text
     assert 'data-strategy="put_credit_spread"' in resp.text
+    assert 'data-filter="iv"' in resp.text  # the chip panel is present in the shell
+
+
+def test_api_screener_parses_chip_filter_params(app_and_client, monkeypatch):
+    app, client = app_and_client
+    seen = {}
+
+    async def capture_run_screener(_conn, _session, _cfg, _symbols, strategy, *, filters=None, **_kw):
+        seen["filters"] = filters
+        return {"ok": True, "as_of": 0, "strategy": strategy, "candidates": [], "skipped": []}
+
+    monkeypatch.setattr(_screener_api.screener_service, "run_screener", capture_run_screener)
+    resp = client.get(
+        "/api/screener?strategy=short_put&iv=gte50&liquidity=somewhat,very&cap=large,mega",
+        headers=_headers(app),
+    )
+    assert resp.status_code == 200
+    assert seen["filters"] == {
+        "iv": {"gte50"},
+        "liquidity": {"somewhat", "very"},
+        "cap": {"large", "mega"},
+    }
+
+
+def test_api_screener_with_no_filter_params_passes_empty_filters(app_and_client, monkeypatch):
+    app, client = app_and_client
+    seen = {}
+
+    async def capture_run_screener(_conn, _session, _cfg, _symbols, strategy, *, filters=None, **_kw):
+        seen["filters"] = filters
+        return {"ok": True, "as_of": 0, "strategy": strategy, "candidates": [], "skipped": []}
+
+    monkeypatch.setattr(_screener_api.screener_service, "run_screener", capture_run_screener)
+    client.get("/api/screener", headers=_headers(app))
+    assert seen["filters"] == {}
+
+
+def test_api_screener_rejects_an_unknown_bucket(app_and_client):
+    app, client = app_and_client
+    resp = client.get("/api/screener?cap=gigantic", headers=_headers(app))
+    assert resp.status_code == 400
+    assert "gigantic" in resp.json()["detail"]

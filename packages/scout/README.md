@@ -168,6 +168,16 @@ The table (Tabulator, `persistence: "local"` so layout/sort/filter survive a rel
 model POP alongside MEIC's `1 - 2*short_delta` heuristic as a cross-check column, and every symbol
 row opens the builder (pre-loaded with that symbol, not yet with the exact screened legs).
 
+A chip-filter panel (OptionsPlay-style) sits above the table: **IV Rank** (`<50`/`>=50`),
+**Liquidity** (not/somewhat/very, mapped from the 1-4 `liquidity_rating`), and **Cap size**
+(small/medium/large/mega at the conventional $2B/$10B/$200B breakpoints, from the metrics call's
+`market_cap`). All three filter in the zero-broker-call pre-filter step -- no chain is fetched for a
+name a chip excludes. An explicit chip selection *replaces* that dimension's config default gate
+(picking "Not liquid" must actually show not-liquid names, which `min_liquidity_rank` would
+otherwise silently veto); an empty chip group leaves the config default in force. Unknown bucket
+names in the query are a 400, never silently ignored. The parameter conventions behind the buckets
+are catalogued in [docs/strategy-screening-parameters.md](docs/strategy-screening-parameters.md).
+
 **Two regressions caught by live smoke tests against real data, both worth remembering:**
 
 1. DXLink pushes a zero-filled placeholder for the still-forming current-day candle before any real

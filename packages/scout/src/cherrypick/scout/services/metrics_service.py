@@ -63,6 +63,7 @@ def _serialize(info: Any) -> dict:
         "iv_percentile": _jsonable(getattr(info, "implied_volatility_percentile", None)),
         "liquidity_rating": getattr(info, "liquidity_rating", None),
         "liquidity_rank": _jsonable(getattr(info, "liquidity_rank", None)),
+        "market_cap": _jsonable(getattr(info, "market_cap", None)),
         "beta": _jsonable(getattr(info, "beta", None)),
         "price_earnings_ratio": _jsonable(getattr(info, "price_earnings_ratio", None)),
         "dividend_yield": _jsonable(getattr(info, "dividend_yield", None)),

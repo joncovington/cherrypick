@@ -62,14 +62,67 @@ def _iv_rank_frac(info: dict | None) -> float | None:
         return None
 
 
-def _passes_prefilter(info: dict | None, cfg: dict) -> bool:
+# Chip-filter buckets (the OptionsPlay-style filter panel). Each maps a metrics field to named
+# buckets; an explicit chip selection REPLACES the corresponding config gate rather than stacking on
+# top of it -- picking the "Not Liquid" chip must actually show not-liquid names, which the default
+# min_liquidity_rank gate would otherwise silently veto. Cap-size breakpoints follow the common
+# small/mid/large/mega convention ($2B / $10B / $200B).
+IV_BUCKETS = {"lt50", "gte50"}
+LIQUIDITY_BUCKETS = {"not", "somewhat", "very"}
+CAP_BUCKETS = {"small", "medium", "large", "mega"}
+
+
+def _iv_bucket(iv_frac: float) -> str:
+    return "lt50" if iv_frac * 100 < 50 else "gte50"
+
+
+def _liquidity_bucket(rating: int) -> str:
+    if rating >= 4:
+        return "very"
+    if rating == 3:
+        return "somewhat"
+    return "not"
+
+
+def _cap_bucket(market_cap: float) -> str:
+    if market_cap < 2e9:
+        return "small"
+    if market_cap < 1e10:
+        return "medium"
+    if market_cap < 2e11:
+        return "large"
+    return "mega"
+
+
+def _passes_prefilter(info: dict | None, cfg: dict, filters: dict | None = None) -> bool:
     screener_cfg = cfg.get("screener", {})
+    filters = filters or {}
+
     iv_frac = _iv_rank_frac(info)
-    if iv_frac is None or iv_frac * 100 < screener_cfg.get("min_iv_rank", 25):
+    iv_filter = filters.get("iv")
+    if iv_filter:
+        if iv_frac is None or _iv_bucket(iv_frac) not in iv_filter:
+            return False
+    elif iv_frac is None or iv_frac * 100 < screener_cfg.get("min_iv_rank", 25):
         return False
+
     liquidity = info.get("liquidity_rating") if info else None
-    if liquidity is None or liquidity < screener_cfg.get("min_liquidity_rank", 3):
+    liquidity_filter = filters.get("liquidity")
+    if liquidity_filter:
+        if liquidity is None or _liquidity_bucket(liquidity) not in liquidity_filter:
+            return False
+    elif liquidity is None or liquidity < screener_cfg.get("min_liquidity_rank", 3):
         return False
+
+    cap_filter = filters.get("cap")
+    if cap_filter:
+        market_cap = info.get("market_cap") if info else None
+        # A missing market cap can't prove bucket membership -- excluded while the filter is active,
+        # never guessed. (Metrics rows cached before market_cap was serialized lack it until their
+        # TTL expires; that reads as "excluded", not an error.)
+        if market_cap is None or _cap_bucket(float(market_cap)) not in cap_filter:
+            return False
+
     return True
 
 
@@ -108,6 +161,7 @@ async def run_screener(
     watchlist_symbols: list[str],
     strategy: str,
     *,
+    filters: dict | None = None,
     now: float | None = None,
 ) -> dict:
     if strategy not in _strategies.STRATEGIES:
@@ -126,7 +180,9 @@ async def run_screener(
     except Exception:
         risk_free_rate = 0.0
 
-    survivors = [s.upper() for s in watchlist_symbols if _passes_prefilter(metrics.get(s.upper()), cfg)]
+    survivors = [
+        s.upper() for s in watchlist_symbols if _passes_prefilter(metrics.get(s.upper()), cfg, filters)
+    ]
 
     candidates: list[dict] = []
     skipped: list[dict] = []
@@ -169,6 +225,7 @@ async def run_screener(
             "spot": spot,
             "iv_rank": iv_frac,
             "liquidity_rating": info.get("liquidity_rating"),
+            "market_cap": info.get("market_cap"),
             "skew_edge": _strategies.directional_edge(windowed, spot, expected_move),
             **candidate,
             "pop": candidate_pop,
