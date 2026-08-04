@@ -161,8 +161,9 @@
       ]
     },
     "iron": {
-      "enabled": true,
-      "_note": "Control's twin isolating the COMPLETION CHOICE: entry is identical to control (sell a credit spread first), but completion_modes allows selling the opposite-type credit spread (an iron butterfly) alongside the usual debit completion, taking whichever clears its gates with the higher post-fee floor. Unlike a same-type fly, an iron completion's floor can be genuinely negative -- the two credits summed are not guaranteed to clear wing_width plus fees, so this arm measures whether that condition is actually met in practice, not just in theory. See docs/faq.md for the full construction.",
+      "enabled": false,
+      "_note": "RETIRED 2026-08-03 before it ever traded, and left disabled deliberately -- do NOT re-enable without reading docs/iron-completion.md first. It was meant to isolate the COMPLETION CHOICE (complete a legged credit spread by buying the same-type debit spread, or by selling the opposite-type credit spread into an iron butterfly). It cannot isolate anything: both completions use the IDENTICAL strike pair, so put-call parity pins D + C2 = wing_width exactly, for any skew. The two gates are the same inequality, they fire on the same tick, and the completed positions have the same net at every settlement price. What is left is fees and execution, both against the iron: +$3.46/position in assignment fees measured over 143 real completions (an iron always has one side ITM; a same-type fly settles clean in exactly the drift regime this book gets), plus a wider crossing cost that slippage_frac's flat fraction cannot even see. This arm was never in the deployed config, so it produced zero ledger rows -- nothing was lost.",
+      "_revival_note": "book.py's dispatch picks the higher post-fee floor, which is WRONG across kinds: iron_fly reserves 2 ITM strikes and fly reserves 3 (fly.WORST_CASE_ITM_LEGS), evaluated at different worst-case prices, so iron's floor reads exactly $5.00 higher at every spot. Had this run it would have taken iron ~100% of the time on that artifact. Fix the tiebreak (score both at a COMMON settlement price) before any revival.",
       "completion_modes": [
         "debit",
         "iron"
