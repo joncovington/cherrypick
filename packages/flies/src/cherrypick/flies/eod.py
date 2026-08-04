@@ -72,6 +72,31 @@ def build_paper_eod(conn, day: str) -> str:
         f"- Median completion latency: {_num(completion['median_latency_min'], 1)} min",
         f"- Median spot move to completion: {_num(completion['median_spot_move'], 2)}",
         "",
+    ]
+
+    # Post-completion counterfactual (book.py step 1d): what waiting past the first qualifying
+    # tick would have captured. Reported only once a mode has tracked completions — an empty
+    # section would read as "measured, nothing found", which is the opposite of "not yet measured".
+    for mode, label in (("debit_first", "debit-first"), ("legged", "legged")):
+        lot = analytics.left_on_table(conn, day, day, entry_mode=mode)
+        if lot["n"] == 0:
+            continue
+        L += [
+            f"## Completion credit left on table — {label}",
+            f"- Tracked completions: {lot['n']} ({lot['improved']} saw a better price later)",
+            f"- Median improvement: {_num(lot['median_improvement_pts'], 2)} pts "
+            f"({_money(lot['median_improvement_dollars'])})",
+            f"- Best case: {_num(lot['max_improvement_pts'], 2)} pts; "
+            f"total across positions: {_money(lot['total_improvement_dollars'])}",
+        ]
+        for bucket, s in lot["by_gex_bucket"].items():
+            L.append(
+                f"- GEX {bucket}: {s['improved']}/{s['n']} improved, "
+                f"median {_num(s['median_improvement_pts'], 2)} pts"
+            )
+        L.append("")
+
+    L += [
         "## Session P&L",
         f"- Trades settled: {stats['trades']}",
         f"- Net: {_money(stats['net_pnl'])} "

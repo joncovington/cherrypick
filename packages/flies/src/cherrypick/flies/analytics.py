@@ -488,6 +488,87 @@ def completion_stats(conn, start=None, end=None, symbol=None, arm=None, entry_mo
     }
 
 
+def left_on_table(conn, start=None, end=None, symbol=None, arm=None, entry_mode="debit_first") -> dict:
+    """How much better the completing price got AFTER the first qualifying tick was taken —
+    the counterfactual behind any wait-for-better completion rule, measured from the
+    post_best_completing_* columns book.py's step-1d telemetry keeps updating until settlement.
+
+    For `debit_first` the improvement is `post_best_completing_credit - credit` (how much richer
+    the completing sale would have paid); for `legged` it is `debit - post_best_completing_debit`
+    (how much cheaper the completing purchase would have gotten). Both are floored at 0 per
+    position — the completion tick itself seeds the tracker, so a negative difference just means
+    the price never improved, which is recorded as 0 improvement, not a loss.
+
+    Split by `completion_gex_bucket` because that is the drift-regime hypothesis under test: dealer
+    pinning (positive-gamma pull toward the centre) is the regime where waiting should have paid
+    for debit_first, and thin/negative gamma the regime where first-tick should already be best.
+    If the split shows no conditional difference, first-tick stays and that is the finding (rule 6).
+
+    Improvements are in PRICE POINTS; `*_dollars` figures multiply by the contract multiplier and
+    quantity. NULL-tracker rows (pre-2026-08-03 completions, iron/bwb completions) are excluded and
+    counted in `untracked`.
+    """
+    clause, params = ["entry_mode = ?", "kind = 'fly'"], [entry_mode]
+    if start:
+        clause.append("trade_date >= ?")
+        params.append(start)
+    if end:
+        clause.append("trade_date <= ?")
+        params.append(end)
+    if symbol and symbol != "ALL":
+        clause.append("symbol = ?")
+        params.append(symbol)
+    if arm and arm != "ALL":
+        clause.append("arm = ?")
+        params.append(arm)
+    rows = conn.execute(
+        f"SELECT credit, debit, quantity, completion_gex_bucket, "
+        f"post_best_completing_debit, post_best_completing_credit "
+        f"FROM fly_positions WHERE {' AND '.join(clause)}",
+        params,
+    ).fetchall()
+
+    def improvement(r):
+        if entry_mode == "debit_first":
+            if r["post_best_completing_credit"] is None or r["credit"] is None:
+                return None
+            return max(0.0, r["post_best_completing_credit"] - r["credit"])
+        if r["post_best_completing_debit"] is None or r["debit"] is None:
+            return None
+        return max(0.0, r["debit"] - r["post_best_completing_debit"])
+
+    tracked, by_bucket = [], {}
+    untracked = 0
+    for r in rows:
+        imp = improvement(r)
+        if imp is None:
+            untracked += 1
+            continue
+        dollars = imp * 100 * (r["quantity"] or 1)
+        tracked.append((imp, dollars))
+        bucket = r["completion_gex_bucket"] or "untagged"
+        by_bucket.setdefault(bucket, []).append((imp, dollars))
+
+    def summarize(pairs):
+        pts = [p[0] for p in pairs]
+        dollars = [p[1] for p in pairs]
+        return {
+            "n": len(pairs),
+            "improved": sum(1 for p in pts if p > 0),
+            "median_improvement_pts": _round(_median(pts), 4),
+            "max_improvement_pts": _round(max(pts), 4) if pts else None,
+            "median_improvement_dollars": _round(_median(dollars)),
+            "total_improvement_dollars": _round(sum(dollars)),
+        }
+
+    return {
+        "entry_mode": entry_mode,
+        "untracked": untracked,
+        **summarize(tracked),
+        "by_gex_bucket": {bucket: summarize(pairs) for bucket, pairs in sorted(by_bucket.items())},
+    }
+
+
 def completion_trend(conn, start=None, end=None, symbol=None, entry_mode="legged") -> list[dict]:
     """completion_stats' headline number on a date axis: one row per session with entries of
     `entry_mode` — how many, how many became flies, and the rate. Rule 4 says completion rate is

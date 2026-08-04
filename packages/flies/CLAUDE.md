@@ -85,7 +85,7 @@ each of its gaps accordingly ("no data · 100m · loop silent" vs "· no_fresh_q
 `paper_loop.run_once` on both the built and the refused path; it is pure telemetry and touches no
 decision.
 
-**Four measurements this strategy needs and generic P&L reporting cannot give:**
+**Five measurements this strategy needs and generic P&L reporting cannot give:**
 
 - **Completion rate** — how often a leg-in actually became a fly. If this is near zero the strategy is
   short verticals wearing a costume, and no P&L on the completed ones changes that. Besides the
@@ -102,6 +102,17 @@ decision.
   recomputed, so it cannot drift from the gate as configured.
 - **Completion latency** — a fly that took 40 minutes and 8 points of drift is far likelier to fill live
   than one that appeared for seconds. This is the paper-vs-live gap, measured.
+- **The post-completion counterfactual** (`post_best_completing_debit`/`post_best_completing_credit`,
+  added 2026-08-03) — for *completions*, how much better the completing price got AFTER the first
+  qualifying tick was taken. The `best_completing_*` trackers stop at the completion tick by
+  construction, so before this the module could diagnose a miss but never say whether waiting past
+  a completion would have paid — and the stream cache keeps no quote history, so the number is
+  recorded live (`book.py` step 1d, pure telemetry, no gate reads it) or lost.
+  `analytics.left_on_table` reports it split by `completion_gex_bucket`, because dealer-gamma
+  pinning is the favorable-drift regime where waiting *should* have paid for `debit_first` — the
+  measured answer to "lock in the win vs let the credit richen." Decision record, the ledger
+  evidence for first-qualifying-tick, and the bar a wait-for-better rule must clear:
+  [docs/completion-timing.md](docs/completion-timing.md).
 - **Arm divergence** — how often the arms picked different centres. High agreement means the experiment
   cannot separate them, which is a finding to surface in week one, not month three. **Centre divergence
   is only meaningful against an arm that centres differently** — i.e. `gex`. `control`, `time_window`,
@@ -111,7 +122,7 @@ decision.
   arms vs `control` on wing width. Reading a structural identity as a finding is how the redundancy
   went unnoticed.
 
-**The last three of those live on a time axis, so the dashboard has one.** `analytics.session_timeline`
+**Everything past the completion rate lives on a time axis, so the dashboard has one.** `analytics.session_timeline`
 assembles the day from rows already written — spot and every arm's wanted centre on each iteration,
 entries and completions, and each leg-in as a span running to its completion, so latency is a length
 beside the drift that bought it. `settle_now` replays the book at each tick: what it would have been

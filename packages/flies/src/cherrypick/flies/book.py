@@ -107,6 +107,48 @@ def _record_best_roll_debit(conn, position: dict, roll_debit: float, when: str) 
     )
 
 
+def _record_post_best_debit(conn, position: dict, debit: float, when: str) -> None:
+    """Keep the running minimum completing debit seen AFTER a legged fly completed.
+
+    `_record_best_debit` stops at the completion tick by construction — a completed position leaves
+    the completion loop — so it can say "the market never offered it" for a miss but not "how much
+    cheaper did the completing debit get after we took the first qualifying one". That second number
+    is what a wait-for-better completion rule would be built from, and the stream cache keeps no
+    quote history, so it is recorded here or lost. Telemetry only: nothing reads this on a decision
+    path.
+    """
+    best = position.get("post_best_completing_debit")
+    if best is not None and debit >= best:
+        return
+    position["post_best_completing_debit"] = debit
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "post_best_completing_debit": round(debit, 4),
+            "post_best_debit_at": when,
+        },
+    )
+
+
+def _record_post_best_credit(conn, position: dict, credit: float, when: str) -> None:
+    """Running MAXIMUM completing credit seen AFTER a debit_first fly completed — the mirror of
+    `_record_post_best_debit`, and the direct measurement behind "we locked in the win; how much
+    richer would waiting have been?". Telemetry only."""
+    best = position.get("post_best_completing_credit")
+    if best is not None and credit <= best:
+        return
+    position["post_best_completing_credit"] = credit
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "post_best_completing_credit": round(credit, 4),
+            "post_best_credit_at": when,
+        },
+    )
+
+
 def _to_position(row: dict) -> dict:
     """Database row -> the plain dict the pure math in fly.py consumes."""
     return {
@@ -127,6 +169,8 @@ def _to_position(row: dict) -> dict:
         # both are cumulative over a session, not per-iteration.
         "best_completing_debit": row["best_completing_debit"],
         "best_completing_credit": row["best_completing_credit"],
+        "post_best_completing_debit": row["post_best_completing_debit"],
+        "post_best_completing_credit": row["post_best_completing_credit"],
         "entry_time": row["entry_time"],
         # Carried so `max_positions_per_window` can count what this window has already spent. Without
         # it the cap would read every position as window-less and never bind.
@@ -439,6 +483,28 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "latency_min": latency,
             }
         )
+
+    # --- 1d. post-completion counterfactual telemetry: for every completed (not yet settled) fly,
+    # keep pricing the spread that completed it. The best-price trackers in steps 1/1b stop at the
+    # completion tick by construction, so without this the module can never say how much richer the
+    # completing price became after the first qualifying tick was taken — the one number a
+    # wait-for-better completion rule needs, and one the stream cache (latest-value-only) cannot
+    # reconstruct offline. Records, never gates: rule 5 is untouched, and positions completed
+    # earlier THIS tick get their completion-tick price as the baseline. Skips iron/bwb completions
+    # (different geometry) and skips silently on a missing leg quote, like the trackers it extends.
+    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    for pos in [p for p in positions if p["kind"] == "fly" and p["status"] == "open"]:
+        side, center, width = pos["side"], pos["center"], pos["wing_width"]
+        if pos["entry_mode"] == "legged":
+            long_strike = center + width if side == fly.PUT else center - width
+            far_q, center_q = engine.quote(snapshot, side, long_strike), engine.quote(snapshot, side, center)
+            if far_q is not None and center_q is not None:
+                _record_post_best_debit(conn, pos, fly.vertical_debit(far_q, center_q, slip), now)
+        elif pos["entry_mode"] == "debit_first":
+            wing_strike = center - width if side == fly.PUT else center + width
+            center_q, wing_q = engine.quote(snapshot, side, center), engine.quote(snapshot, side, wing_strike)
+            if center_q is not None and wing_q is not None:
+                _record_post_best_credit(conn, pos, fly.vertical_credit(center_q, wing_q, slip), now)
 
     open_positions = [p for p in positions if p["status"] == "open"]
 

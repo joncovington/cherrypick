@@ -275,6 +275,19 @@ _ADDED_POSITION_COLUMNS = {
     # too tight" call for opposite remedies.
     "best_roll_debit": "REAL",
     "best_roll_debit_at": "TEXT",
+    # Post-completion counterfactual (added 2026-08-03): the trackers above stop at the completion
+    # tick by construction (a completed position leaves the completion loops), so they can answer
+    # "did the market ever offer it" for a MISS but not "how much better did the completing price
+    # get after we took the first qualifying one" for a completion. These keep the same running
+    # min/max going AFTER completion, until settlement, for completed flies only. Pure telemetry:
+    # nothing reads them on a decision path — they exist so a wait-for-better completion rule can
+    # be evaluated against recorded reality (split by completion_gex_bucket) instead of theory.
+    # The stream cache keeps no quote history, so this cannot be reconstructed offline; it must be
+    # recorded live or not at all. NULL for misses, iron/bwb completions, and pre-2026-08-03 rows.
+    "post_best_completing_debit": "REAL",
+    "post_best_debit_at": "TEXT",
+    "post_best_completing_credit": "REAL",
+    "post_best_credit_at": "TEXT",
     # Broker-cash reconciliation (fee_reconcile.py): a settled live position's net/fees/gross_pnl/
     # pnl/expiry_payoff are modeled at settlement time (quoted fill-price approximation + a flat
     # $5/ITM-contract assignment fee estimate). These columns hold that ORIGINAL modeled snapshot,

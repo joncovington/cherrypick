@@ -3,9 +3,9 @@
 import pytest
 from test_engine import BASE_CONFIG, cheap_fly_snapshot, q, snapshot
 
+from cherrypick.flies import analytics, engine, fly
 from cherrypick.flies import book as bookmod
 from cherrypick.flies import db as dbmod
-from cherrypick.flies import engine, fly
 
 
 @pytest.fixture()
@@ -240,6 +240,77 @@ def test_freshly_opened_debit_vertical_records_its_worst_case_floor(conn):
     assert row["kind"] == "long_vertical"
     assert row["floor_dollars"] is not None
     assert row["floor_dollars"] < 0
+
+
+# --------------------------------------------------------------------------- post-completion counterfactual (step 1d)
+def test_completed_debit_first_fly_keeps_tracking_the_completing_credit(conn):
+    """The wait-for-better counterfactual: after a debit_first completion, the completing credit
+    keeps being priced and its running MAX recorded. The completion tick seeds the tracker at the
+    credit actually taken, a richer later quote raises it, a poorer one leaves it alone."""
+    config = one_arm_config(entry_modes=["debit_first"])
+    book_id = bookmod.book_id_for("2026-07-20", "control", "SPX")
+
+    bookmod.process_snapshot(snapshot(calls={5995: q(2.0, 2.4), 6000: q(1.0, 1.2)}), config, conn, "control")
+    second = bookmod.process_snapshot(
+        snapshot(calls={6000: q(3.0, 3.2), 6005: q(0.5, 0.6)}), config, conn, "control"
+    )
+    completed = next(a for a in second["actions"] if a["action"] == "debit_completed")
+
+    row = dbmod.book_positions(conn, book_id)[0]
+    assert row["post_best_completing_credit"] == pytest.approx(completed["credit"], abs=1e-6)
+    assert row["post_best_credit_at"] is not None
+
+    bookmod.process_snapshot(snapshot(calls={6000: q(4.0, 4.2), 6005: q(0.5, 0.6)}), config, conn, "control")
+    row = dbmod.book_positions(conn, book_id)[0]
+    assert row["post_best_completing_credit"] > completed["credit"]
+    richer = row["post_best_completing_credit"]
+
+    bookmod.process_snapshot(snapshot(calls={6000: q(2.0, 2.2), 6005: q(0.5, 0.6)}), config, conn, "control")
+    row = dbmod.book_positions(conn, book_id)[0]
+    assert row["post_best_completing_credit"] == richer, "a poorer quote must not lower the running max"
+
+
+def test_completed_legged_fly_keeps_tracking_the_completing_debit(conn):
+    """Mirror for legged: after completion the completing debit keeps being priced and its running
+    MIN recorded — 'how much cheaper would waiting have been' for the direction we already trade."""
+    config = one_arm_config(entry_modes=["legged"])
+    book_id = bookmod.book_id_for("2026-07-20", "control", "SPX")
+
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+    later = snapshot(underlying_price=6004.0, puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)})
+    second = bookmod.process_snapshot(later, config, conn, "control")
+    completed = next(a for a in second["actions"] if a["action"] == "completed")
+
+    row = next(r for r in dbmod.book_positions(conn, book_id) if r["kind"] == "fly")
+    assert row["post_best_completing_debit"] == pytest.approx(completed["debit"], abs=1e-6)
+
+    cheaper = snapshot(underlying_price=6004.0, puts={6000: q(0.4, 0.5), 6005: q(0.9, 1.0)})
+    bookmod.process_snapshot(cheaper, config, conn, "control")
+    row = next(r for r in dbmod.book_positions(conn, book_id) if r["kind"] == "fly")
+    assert row["post_best_completing_debit"] < completed["debit"]
+
+
+def test_left_on_table_reports_the_post_completion_improvement(conn):
+    """analytics.left_on_table turns the recorded running max into the headline counterfactual:
+    credit taken 2.5125, best seen later 3.5125 -> 1.0 pt / $100 left on the table."""
+    config = one_arm_config(entry_modes=["debit_first"])
+    bookmod.process_snapshot(snapshot(calls={5995: q(2.0, 2.4), 6000: q(1.0, 1.2)}), config, conn, "control")
+    second = bookmod.process_snapshot(
+        snapshot(calls={6000: q(3.0, 3.2), 6005: q(0.5, 0.6)}), config, conn, "control"
+    )
+    completed = next(a for a in second["actions"] if a["action"] == "debit_completed")
+    bookmod.process_snapshot(snapshot(calls={6000: q(4.0, 4.2), 6005: q(0.5, 0.6)}), config, conn, "control")
+
+    lot = analytics.left_on_table(conn, entry_mode="debit_first")
+    assert lot["n"] == 1
+    assert lot["improved"] == 1
+    assert lot["median_improvement_pts"] == pytest.approx(1.0, abs=1e-6)
+    assert lot["median_improvement_dollars"] == pytest.approx(100.0, abs=1e-2)
+    assert lot["total_improvement_dollars"] == pytest.approx(100.0, abs=1e-2)
+    # The GEX-regime split is the drift hypothesis under test — every tracked completion lands in
+    # exactly one bucket, whatever the bucket's name is on this snapshot (no OI cache -> unknown).
+    assert sum(s["n"] for s in lot["by_gex_bucket"].values()) == 1
+    assert completed["credit"] == pytest.approx(2.5125, abs=1e-4)
 
 
 # --------------------------------------------------------------------------- iron completion (Phase 1b)
