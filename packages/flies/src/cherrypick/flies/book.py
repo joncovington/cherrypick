@@ -189,6 +189,13 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
     # buying the completing debit spread (kind -> fly) or, if this arm's completion_modes allows
     # it, by selling the OPPOSITE-type credit spread instead (kind -> iron_fly). When both are
     # possible on the same iteration, take whichever leaves the higher post-fee floor.
+    #
+    # The iron branch is RETIRED and unreachable in config (completion_modes is ["debit"]
+    # everywhere; the `iron` arm is disabled) -- see docs/iron-completion.md. Put-call parity makes
+    # the two completions the same trade, so both gates fire on the same tick and the completed
+    # positions have the same net at every price; the iron just pays more in assignment fees. The
+    # code stays because it is correct and tested, but note the floor tiebreak below is NOT valid
+    # across kinds and must be fixed before anything re-enables this.
     for pos in [p for p in positions if p["kind"] == "short_vertical" and p["status"] == "open"]:
         debit_done, debit_reason, debit_plan = engine.evaluate_completion(snapshot, pos, params)
         if debit_plan is not None:
@@ -198,6 +205,10 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
         if "iron" in params.get("completion_modes", ["debit"]):
             iron_done, _iron_reason, iron_plan = engine.evaluate_iron_completion(snapshot, pos, params)
 
+        # NOT a valid comparison across kinds: each floor reserves its own kind's worst-case
+        # assignment fee (fly 3 strikes, iron_fly 2) at its own worst-case settlement PRICE, so
+        # iron's floor reads exactly $5.00 high at every spot. Retired-path only; see the note
+        # above and docs/iron-completion.md before reviving.
         take_iron = iron_done and (not debit_done or iron_plan["floor"] > debit_plan["floor"])
 
         if not debit_done and not (iron_done and take_iron):

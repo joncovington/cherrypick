@@ -190,22 +190,39 @@ comparison measures one variable rather than a bundle of confounded changes.
   regime at the same centre. Its uncompleted branch is structurally different too: a long
   vertical's worst case at expiry is the debit already paid (bounded, floor never below `-debit`),
   never the `-W` full-defined-risk tail an uncompleted credit spread carries.
-- `iron` — control's twin isolating the **completion choice**, added 2026-07-31
-  (`completion_modes: ["debit", "iron"]`, `fly.iron_fly_payoff`/`engine.evaluate_iron_completion`).
-  `legged`'s completion always buys the same-type debit spread; this arm may instead complete by
-  *selling* the opposite-type credit spread (put held -> sell call, or vice versa), producing an
-  **iron butterfly** — the same geometry regardless of which side was legged first. Payoff-
-  equivalent to a same-type fly shifted down by `wing_width`, so it is **not** automatically
-  risk-free the way a completed fly is: the floor is genuinely `(credit1 + credit2 - wing_width) *
-  100 * qty - fees`, which can land negative even after both gates pass their price check, and
-  `position_floor`'s `iron_fly` branch never assumes otherwise. When both completion paths clear
-  their gates on the same iteration, the position takes whichever leaves the higher post-fee
-  floor. `completion_modes` defaults to `["debit"]` everywhere else, so no other arm's behavior
-  changes.
-- `bwb` — control's twin isolating the **entry construction**, added 2026-07-31 (`entry_modes:
-  ["bwb_roll"]`, kind `bwb`, `fly.bwb_payoff`/`fly.bwb_strikes`/`engine.evaluate_bwb_entry`/
-  `evaluate_roll`). Instead of legging in over two ticks, enters a broken-wing butterfly WHOLE for
-  a net credit: a near/protected wing at the usual `wing_width` and a far/wide wing at
+  **Re-centred onto GEX 2026-08-03** (`center_rule: "gex"`, `engine.select_center`): paying a real
+  debit up front to bet on convergence only makes sense with some evidence spot is likely to move
+  toward the strikes bought, not on pure chance, so this arm now reuses the `gex` arm's own
+  centring logic instead of ATM — a `center_rule` override lets an arm opt into GEX centring
+  without being named `gex` itself. That gives up a clean ATM-vs-ATM control pairing (control
+  already gets that against `gex`'s own legged entries) in exchange for isolating BOTH centring
+  and legging order at once — read it against `control` (both differ) and against `gex` (legging
+  order only) rather than as a single-variable arm on its own.
+- `iron` — **RETIRED 2026-08-03, before it ever traded. Keep the negative result (rule 6):
+  [docs/iron-completion.md](docs/iron-completion.md).** It was control's twin isolating the
+  **completion choice** — complete a legged credit spread by buying the same-type debit spread, or
+  by *selling* the opposite-type credit spread into an **iron butterfly**. It cannot isolate
+  anything. Both completions use the **identical strike pair** (`center` and `center ± wing_width`),
+  so put-call parity pins `D + credit2 = wing_width` exactly — every IV term cancels, **for any
+  skew**, since skew is IV across strikes while parity is an arbitrage at a strike. So the two
+  gates are the same inequality, they fire on the same tick, and `iron net − W ≡ fly net` at every
+  settlement price: the iron's larger credit is not extra money, it buys exactly `W` of extra
+  liability. Verified on a real SPX 1DTE chain (18 strikes, implied forward 7617.69 ± 0.25;
+  `D + C2 = 5.00` on a 5-wide). What is left is cost, all adverse: an iron always has one side ITM
+  where a same-type fly settles clean in exactly the drift regime this book gets — **+$3.46 per
+  position, $495 over the 143 completions in the ledger** — plus a wider crossing cost that a flat
+  `slippage_frac` structurally cannot see, which is the deeper problem (an arm whose only real
+  variable is invisible to the experiment measuring it cannot produce a finding). It was never in
+  the deployed config, so it produced **zero** ledger rows. Code kept and still tested; disabled in
+  config and `completion_modes` stays `["debit"]` everywhere, so the path is unreachable.
+  **`book.py`'s "take the higher floor" dispatch is wrong and must be fixed before any revival** —
+  `fly` reserves 3 ITM strikes and `iron_fly` 2 (`fly.WORST_CASE_ITM_LEGS`) at *different*
+  worst-case prices, so iron's floor reads exactly $5.00 high at every spot and would have won
+  ~100% of the time on that artifact.
+- `bwb` — added 2026-07-31 (`entry_modes: ["bwb_roll"]`, kind `bwb`,
+  `fly.bwb_payoff`/`fly.bwb_strikes`/`engine.evaluate_bwb_entry`/`evaluate_roll`), isolating the
+  **entry construction**: instead of legging in over two ticks, enters a broken-wing butterfly
+  WHOLE for a net credit: a near/protected wing at the usual `wing_width` and a far/wide wing at
   `wing_width * bwb_far_width_ratio` (a ratio, not an absolute point value, so it scales
   automatically with whatever `wing_width` an arm or symbol is already using — the common
   real-world near:far rule of thumb is roughly 1:2). Until rolled, this carries REAL, negative
@@ -227,8 +244,11 @@ exists yet, same honest degrade as the `gex` arm's own centring), `time_bucket` 
 whether the chain itself is pricing in a direction). This is deliberately inert: nothing here gates a
 decision. It exists because the eventual goal is a live/paper mode that evaluates every eligible
 entry candidate (`legged`/`debit_first`/`bwb_roll`) and completion candidate (`debit`/`iron`) each
-tick and executes whichever wins *for the current regime* — Phase 1b's iron-vs-debit "take the
-higher floor" dispatch in `book.py` is already a working prototype of that pattern, generalized. That
+tick and executes whichever wins *for the current regime* — `book.py`'s iron-vs-debit "take the
+higher floor" dispatch was meant to be a working prototype of that pattern, and is instead a
+cautionary one: comparing two kinds by each one's own worst-case floor is not a valid comparison
+when those worst cases sit at different settlement prices (see the `iron` arm above). **A regime
+selector must score its candidates at a common price.** That
 selector needs regime-labelled real outcomes to be built from, not guessed at, and the tag definition
 is expensive to change retroactively once data is accumulating — so it ships now, before `bwb_roll`
 adds a third entry mode to tag. Deliberately excludes trend/chop: that needs a reference point in

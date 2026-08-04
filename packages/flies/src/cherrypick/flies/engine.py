@@ -699,12 +699,26 @@ def evaluate_iron_completion(snapshot: dict, position: dict, params: dict) -> tu
     """Should this open credit spread be completed into an IRON butterfly now, by selling the
     OPPOSITE-type credit spread at the same centre? Returns (complete, reason, plan).
 
+    RETIRED 2026-08-03 and unreachable in config — `completion_modes` is `["debit"]` everywhere and
+    the `iron` arm is disabled. Kept because it is correct and tested, and because deleting it would
+    delete the ability to re-derive why. Read docs/iron-completion.md before re-enabling anything.
+
     Put held -> sell the call spread; call held -> sell the put spread -- the final geometry
     (long (center-w) put, short center put, short center call, long (center+w) call) is the same
     regardless of which side was legged first. Payoff-equivalent to a same-type fly shifted down
     by `wing_width`, so risk-free iff the two credits summed clear `wing_width` plus fees -- NOT
     assumed; the floor gate is what actually enforces it (`fly.iron_fly_payoff`,
     `fly.position_floor`'s iron_fly branch).
+
+    Why it is retired: this completion and `evaluate_completion`'s use the SAME strike pair (center,
+    center +/- wing_width), so put-call parity pins `D + credit2 = wing_width` exactly -- every
+    implied-vol term cancels, for any skew. Hence `credit1 + credit2 > W + buffer` below is
+    algebraically the same inequality as `evaluate_completion`'s `D < credit1 - buffer`: both fire on
+    the same tick or neither does, and the completed positions have the same net at every settlement
+    price. The iron's larger credit is not extra money; it buys exactly `W` of extra liability. What
+    remains is cost, all of it adverse: an iron always has one side ITM where a same-type fly can
+    settle clean (+$3.46/position in assignment fees over 143 measured completions), plus a wider
+    crossing cost that a flat `slippage_frac` cannot represent.
     """
     if position.get("kind") != "short_vertical":
         return False, "not_a_credit_spread", None
