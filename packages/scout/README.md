@@ -77,6 +77,7 @@ packages/scout/
                      LICENSE-alpinejs.txt  LICENSES.md
       templates/    calendar.html  symbol.html  builder.html  screener.html  staged.html
   tests/            conftest.py  test_config.py  test_cache_ttl.py  test_cache_candles.py
+                    test_cache_symbol_meta.py
                     test_watchlist.py  test_security.py  test_self_contained.py
                     test_api_routes.py  test_session.py  test_metrics_service.py
                     test_calendar_service.py  test_calendar_routes.py  test_candle_service.py
@@ -199,10 +200,12 @@ A **Sector** chip filters in the zero-broker-call pre-filter, alongside IV/liqui
 rule), not a third-party one -- `PublicWatchlist.get(session)` (one call, live-verified 2026-08-05)
 returns every public watchlist tastytrade publishes, and filtering `group_name == "Sectors"` gives
 the eleven standard sector groupings (Technology, Healthcare, Energy, ...) with their member
-symbols. Cached as a single daily blob rather than per-symbol, since it's one fetch regardless of
-watchlist size and sector membership doesn't move within a session. A symbol absent from every
-sector watchlist (an ETF, an index, an unclassified name) is excluded while the Sector filter is
-active -- the same "missing can't prove membership" posture the Cap chip already follows.
+symbols. Stored in the `symbol_meta` table `cache.py`'s schema reserved for exactly this since M3
+(previously unused) rather than a generic cache blob -- one bulk fetch upserts every row together,
+and staleness is checked via a table-wide MAX(`fetched_at`) rather than a per-symbol TTL, since
+every row is refreshed in the same call. A symbol absent from every sector watchlist (an ETF, an
+index, an unclassified name) is excluded while the Sector filter is active -- the same "missing
+can't prove membership" posture the Cap chip already follows.
 
 **Two regressions caught by live smoke tests against real data, both worth remembering:**
 

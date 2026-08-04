@@ -146,6 +146,36 @@ def set_candle_meta(conn: sqlite3.Connection, symbol: str, period: str, last_bac
     conn.commit()
 
 
+def symbol_meta_freshness(conn: sqlite3.Connection) -> float | None:
+    """The most recent `fetched_at` across every `symbol_meta` row, or None if the table is empty.
+    `sector_service` populates every row in one bulk fetch (a single `PublicWatchlist.get` call
+    covers every symbol), so every row shares the same `fetched_at` -- MAX is just "when was this
+    last refreshed" for the table as a whole, not a per-symbol staleness check."""
+    row = conn.execute("SELECT MAX(fetched_at) FROM symbol_meta").fetchone()
+    return float(row[0]) if row and row[0] is not None else None
+
+
+def read_sector_map(conn: sqlite3.Connection) -> dict[str, str]:
+    """`{SYMBOL: sector}` for every `symbol_meta` row that has a sector -- the schema also has
+    `industry` reserved for a finer-grained future enrichment, unused today."""
+    rows = conn.execute("SELECT symbol, sector FROM symbol_meta WHERE sector IS NOT NULL").fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
+def write_sector_map(
+    conn: sqlite3.Connection, symbol_to_sector: dict[str, str], fetched_at: float, source: str
+) -> None:
+    """Upsert every `(symbol, sector)` pair from one bulk fetch, sharing one `fetched_at`."""
+    conn.executemany(
+        "INSERT INTO symbol_meta (symbol, sector, industry, source, fetched_at) "
+        "VALUES (?, ?, NULL, ?, ?) "
+        "ON CONFLICT(symbol) DO UPDATE SET "
+        "sector = excluded.sector, source = excluded.source, fetched_at = excluded.fetched_at",
+        [(symbol, sector, source, fetched_at) for symbol, sector in symbol_to_sector.items()],
+    )
+    conn.commit()
+
+
 def get_or_fetch(
     conn: sqlite3.Connection,
     bucket: str,

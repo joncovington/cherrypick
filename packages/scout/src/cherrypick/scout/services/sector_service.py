@@ -2,9 +2,11 @@
 source, and not a symbol-by-symbol lookup: ``PublicWatchlist.get(session)`` (one call) returns
 every public watchlist tastytrade publishes; filtering ``group_name == "Sectors"`` gives the
 eleven standard sector groupings (Technology, Healthcare, Energy, ...), each carrying its member
-symbols. Cached as one blob (`get_risk_free_rate`'s shape, not `metrics_service`'s per-symbol
-one) since sector membership is a single fetch regardless of how many symbols the caller asks
-about, and changes on the order of index-rebalance events, not per request.
+symbols. Stored in `services/cache.py`'s ``symbol_meta`` table -- reserved since M3 for exactly
+this (``symbol``/``sector``/``industry``/``source``/``fetched_at`` columns) and unused until now,
+rather than reinventing per-symbol storage in the generic ``kv_cache`` blob table. Every row is
+written together from one bulk fetch, so `cache.symbol_meta_freshness` (a table-wide MAX, not a
+per-symbol TTL) is the right staleness check.
 """
 
 from __future__ import annotations
@@ -12,11 +14,10 @@ from __future__ import annotations
 import sqlite3
 import time
 
-from .cache import async_get_or_fetch
+from .cache import read_sector_map, symbol_meta_freshness, write_sector_map
 from .session import BrokerSession
 
-_BUCKET = "sectors"
-_KEY = "map"
+_SOURCE = "tastytrade_public_watchlist"
 _DEFAULT_TTL_SECONDS = 86400.0  # a day -- sector membership doesn't move within a session
 
 SECTORS = (
@@ -60,11 +61,22 @@ async def get_sector_map(
     """``{SYMBOL: sector_name}`` for every symbol tastytrade's Sectors watchlists carry. A symbol
     absent from the result (an ETF, an index, a name not in any tastytrade sector watchlist) has
     no known sector -- the screener's Sector chip excludes it while the chip is active, the same
-    "missing can't prove membership" posture `_cap_bucket` already follows for market cap."""
+    "missing can't prove membership" posture `_cap_bucket` already follows for market cap.
+
+    On a fetch failure: the existing table contents are returned (however stale) rather than
+    raising, as long as any rows exist -- a symbol_meta table is shared across every caller of
+    this function, and one broker hiccup shouldn't blank the Sector chip for the rest of the
+    session. Only an empty table on a failed first-ever fetch propagates the exception."""
     now = time.time() if now is None else now
+    fetched_at = symbol_meta_freshness(conn)
+    if fetched_at is not None and (now - fetched_at) < ttl:
+        return read_sector_map(conn)
 
-    async def _fetch() -> dict[str, str]:
-        return await fetch_fn(session)
-
-    sector_map, _fetched_at, _stale = await async_get_or_fetch(conn, _BUCKET, _KEY, ttl, _fetch, now=now)
-    return sector_map or {}
+    try:
+        fresh = await fetch_fn(session)
+    except Exception:
+        if fetched_at is not None:
+            return read_sector_map(conn)
+        raise
+    write_sector_map(conn, fresh, now, _SOURCE)
+    return fresh
