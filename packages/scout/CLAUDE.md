@@ -127,8 +127,11 @@ See README.md's file tree for what currently exists. Two things worth knowing up
   module under one `cherrypick.*` namespace root.
 - `services/cache.py`'s schema declares every table up front rather than migrating per milestone:
   the generic `kv_cache` TTL store, `candles`/`candle_meta` (`candle_service`, M3), `staged_orders`
-  (`services/staging.py`, M6), and `symbol_meta`, still unused — reserved for an optional future
-  sector/industry enrichment service, not load-bearing for anything today.
+  (`services/staging.py`, M6), and `symbol_meta` (reserved since M3 for a future sector/industry
+  enrichment service) — now used by `sector_service` (the screener's Sector chip), one bulk
+  `tastytrade.watchlists.PublicWatchlist.get` fetch upserting every row together, staleness
+  checked via `cache.symbol_meta_freshness`'s table-wide MAX rather than a per-symbol TTL. The
+  `industry` column remains genuinely unused — no source populates it yet.
 - `analytics/` (`levels.py`, `payoff.py`, `pop.py`, `strategies.py`) is stdlib + dataclasses only, no
   I/O, so a future promotion to `cherrypick.core` is a file move once stable. Don't reach for a broker
   call or a cache read inside this package — that belongs in a `services/` module (`screener_service`
