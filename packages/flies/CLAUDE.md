@@ -192,9 +192,9 @@ comparison measures one variable rather than a bundle of confounded changes.
 - `wide_wing` — the SPX-era single-point version of the width question (a 20-point wing bracketing
   the observed drift). **Disabled** since the sweep; kept in `ARMS` so its books' attribution stays
   readable. On XSP its scaled equivalent (~2 points) is exactly `width-2`.
-- `debit-first` — control's twin isolating the **legging order**, added 2026-07-31 (`entry_modes:
-  ["debit_first"]`, `fly.debit_vertical_payoff`/`engine.evaluate_debit_vertical_entry`/
-  `evaluate_debit_completion`). `legged` sells the credit spread first and buys the completing
+- `debit-first` — added 2026-07-31 (`entry_modes: ["debit_first"]`,
+  `fly.debit_vertical_payoff`/`engine.evaluate_debit_vertical_entry`/`evaluate_debit_completion`),
+  isolating the **legging order**: `legged` sells the credit spread first and buys the completing
   debit spread cheaper once spot drifts *away* from the short strike; this arm buys the debit
   vertical first and completes by *selling* the credit spread once spot drifts back *toward* the
   centre — literally `legged`'s two trades in the opposite order, monetizing the opposite drift
@@ -246,6 +246,12 @@ comparison measures one variable rather than a bundle of confounded changes.
   the drift that makes the position profitable, and balloons past the credit precisely when the
   tail is threatened — this arm measures whether that trade-off is actually survivable, not just
   theoretically credit-positive.
+  **Enabled and GEX-centred 2026-08-03** (`center_rule: "gex"`), not turned on ATM first — the far
+  wing is where this structure's real, uncapped-until-rolled tail sits, and `center_rule` also
+  decides which side `choose_side` sells (spot above centre → calls, tail risk sits above spot;
+  spot below → puts, tail below spot), so a GEX-selected centre argues for both a richer entry
+  credit and reduced odds of spot running past the far wing into the tail before a roll is
+  reachable — same rationale as `debit-first`'s centring change the same day.
 
 **Regime tagging (`engine.classify_regime`, added 2026-07-31).** Every entry and completion, across
 every arm, is tagged along four dimensions read purely from the snapshot in hand — `vol_bucket`

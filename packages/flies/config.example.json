@@ -149,7 +149,9 @@
     },
     "debit-first": {
       "enabled": true,
-      "_note": "Control's twin, isolating the LEGGING ORDER: buy the debit vertical first, complete by SELLING the credit spread second (entry_modes: [\"debit_first\"]) -- the exact reverse of legged's two trades. Completion drift direction is INVERTED from every other arm: legged needs spot to drift AWAY from the short strike; this arm needs spot to drift TOWARD the centre (reversion), so it and legged monetize opposite path regimes at the same centre. See docs/faq.md for the full construction.",
+      "_note": "GEX arm's twin, isolating the LEGGING ORDER: buy the debit vertical first, complete by SELLING the credit spread second (entry_modes: [\"debit_first\"]) -- the exact reverse of legged's two trades. Completion drift direction is INVERTED from every other arm: legged needs spot to drift AWAY from the short strike; this arm needs spot to drift TOWARD the centre (reversion), so it and legged monetize opposite path regimes at the same centre. See docs/faq.md for the full construction.",
+      "_center_rule_note": "Changed 2026-08-03 from ATM to center_rule: gex. Paying a real debit up front only makes sense with some evidence spot is likely to move toward the strikes bought, not on pure chance -- the same directional-pull rationale the `gex` arm already uses to pick its centre. Reuses the `gex` arm's own centring code (engine.select_center) via this override rather than needing to be named 'gex' itself, and shares its max_center_distance_pct/degrade-to-ATM-when-GEX-unavailable behavior. This gives up the direct ATM-vs-ATM control comparison against `control` (that pairing already exists via `legged` GEX-centred entries); it isolates the SAME two variables `gex` isolates (centring) while ALSO isolating the legging order, so it should be read against both `control` (centring + legging both differ) and `gex` (legging order only differs) rather than treated as its own clean single-variable arm.",
+      "center_rule": "gex",
       "entry_modes": [
         "debit_first"
       ],
@@ -177,7 +179,9 @@
     },
     "bwb": {
       "enabled": true,
-      "_note": "Control's twin isolating the ENTRY CONSTRUCTION: instead of legging in over two ticks, enter a broken-wing butterfly whole for a net credit (entry_modes: [\"bwb_roll\"]), then roll the far wide wing in to the near strike once the roll cheapens enough, converting to a symmetric fly. Until rolled this carries REAL tail risk (wing_width - far_width, negative) that fly.position_floor never reports as bounded -- this arm exists to measure whether the roll actually converts often enough, and cheaply enough, to be worth the tail carried while waiting. See docs/faq.md for the full construction and the researched trap (the roll cheapens under exactly the drift that makes the position profitable, and balloons past the credit precisely when the tail is threatened).",
+      "_note": "Isolates the ENTRY CONSTRUCTION: instead of legging in over two ticks, enter a broken-wing butterfly whole for a net credit (entry_modes: [\"bwb_roll\"]), then roll the far wide wing in to the near strike once the roll cheapens enough, converting to a symmetric fly. Until rolled this carries REAL tail risk (wing_width - far_width, negative) that fly.position_floor never reports as bounded -- this arm exists to measure whether the roll actually converts often enough, and cheaply enough, to be worth the tail carried while waiting. See docs/faq.md for the full construction and the researched trap (the roll cheapens under exactly the drift that makes the position profitable, and balloons past the credit precisely when the tail is threatened).",
+      "_center_rule_note": "GEX-centred from the start (2026-08-03), not ATM: the far wing is where this structure's real, uncapped-until-rolled tail risk sits, and center_rule also decides which side choose_side sells (spot above center -> calls, i.e. the tail risk sits above spot; spot below center -> puts, tail below spot). A centre GEX suggests price will be pulled toward, rather than a blind ATM strike, argues both for a richer entry credit and for reduced odds of spot running past the far wing into the tail before a roll is possible.",
+      "center_rule": "gex",
       "entry_modes": [
         "bwb_roll"
       ],
