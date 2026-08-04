@@ -7,8 +7,9 @@ One workspace for the trading-tool suite. Work in the package for your area — 
 - **packages/meic** — MEIC 0DTE multiple-entry iron-condor trading module.
 - **packages/earnings** — earnings-play trading module (defined-risk strategies).
 - **packages/gex** — live GEX (gamma exposure) dashboard; a self-hosted read-only surface.
-- **packages/flies** — 0DTE net-credit butterfly ("profit forest") paper module. Paper only, and
-  deliberately built to make a negative result usable: floors are measured after fees, and a
+- **packages/flies** — 0DTE net-credit butterfly ("profit forest") module. Paper by default, with a
+  deliberately narrow, per-day-armed live pilot (one arm, one symbol, one incomplete position at a
+  time); deliberately built to make a negative result usable: floors are measured after fees, and a
   book-level floor always carries the price band over which it holds.
 
 The shared library `cherrypick.core` is **`packages/core`**, a sibling package in this same monorepo,
