@@ -114,7 +114,14 @@ def atm_strike(spot: float, increment: float) -> float:
 def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
     """Pick the fly's centre strike for this arm. Returns (centre, reason).
 
-    The `gex` arm degrades to ATM rather than skipping when GEX is unavailable, so a streamer that
+    Centring is chosen by `center_rule` if the arm sets one, falling back to the arm's own name
+    otherwise (so the original `gex` arm needs no config change). This split exists so a
+    non-`gex`-named arm can still opt into GEX centring — e.g. `debit-first` uses it to require the
+    same directional evidence (a strike GEX suggests price will be pulled toward) that justifies
+    entering a debit vertical: buying the cheap side and betting on convergence only makes sense if
+    something besides chance suggests spot moves that way.
+
+    The `gex` rule degrades to ATM rather than skipping when GEX is unavailable, so a streamer that
     hasn't cached open interest yet costs us a signal, not a whole session of samples. The degrade is
     recorded in the reason string so those trades can be excluded from the arm's headline later.
     """
@@ -123,7 +130,7 @@ def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
     if spot is None:
         return None, "no_underlying_price"
 
-    if params.get("arm") != "gex":
+    if params.get("center_rule", params.get("arm")) != "gex":
         return atm_strike(spot, increment), "atm"
 
     gex = snapshot.get("gex") or {}
