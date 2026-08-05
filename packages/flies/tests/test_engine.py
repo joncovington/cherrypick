@@ -528,6 +528,76 @@ def test_classify_regime_baseline_snapshot():
     assert regime["net_gex"] is None and regime["gex_strikes"] is None
 
 
+def test_trend_bucket_reads_the_session_open():
+    p = params()  # default band 5.0 points
+    up = snapshot(underlying_price=6106.0, session={"day_open": 6000.0})
+    assert engine._classify_trend(up, p) == ("up_from_open", 106.0)
+    down = snapshot(underlying_price=5940.0, session={"day_open": 6000.0})
+    assert engine._classify_trend(down, p) == ("down_from_open", -60.0)
+    # Inside the band the day has not committed; 'flat' rather than rounding noise into a trend.
+    flat = snapshot(underlying_price=6003.0, session={"day_open": 6000.0})
+    assert engine._classify_trend(flat, p) == ("flat", 3.0)
+
+
+def test_trend_bucket_unknown_without_a_session_open():
+    """Sessions before 2026-07-29 have no summary row, and a missing open is never substituted --
+    prev_day_close measures the overnight gap, a different question."""
+    p = params()
+    assert engine._classify_trend(snapshot(), p) == ("unknown", None)
+    assert engine._classify_trend(snapshot(session={"prev_day_close": 5900.0}), p) == (
+        "unknown",
+        None,
+    )
+    regime = engine.classify_regime(snapshot(), p)
+    assert regime["trend_bucket"] == "unknown" and regime["trend_value"] is None
+
+
+def test_trend_and_center_offset_flag_the_same_2026_08_04_entry():
+    """The session's worked example, pinned so the two dimensions stay comparable: the 14:01 gex
+    entry centred 7730 with spot 7736.65 on a day that opened 7630.62. Its centre was behind spot
+    AND the day was 106 points up from the open, and it legged into calls needing a DOWN move. A
+    trailing-window trend read called that same moment a pullback (-7.8 over 20 minutes), which is
+    why this dimension measures against the open instead."""
+    p = params()
+    snap = snapshot(underlying_price=7736.65, session={"day_open": 7630.62})
+    assert engine._classify_trend(snap, p)[0] == "up_from_open"
+    assert engine._classify_center_offset(snap, p, 7730.0)[0] == "below_spot"
+    assert engine.choose_side(snap, 7730.0) == fly.CALL
+    assert fly.completing_side_direction(fly.CALL) == "down"  # opposed the day's direction
+
+
+def test_center_offset_bucket_tracks_the_side_leg_in_will_take():
+    """The offset bucket must agree with `choose_side`/`completing_side_direction`, because that
+    agreement is the entire reason the dimension exists: a centre below spot legs into CALLS and
+    needs a DOWN move, and the whole 2026-08-04 finding is that this is what decides completion.
+    If these two ever disagree the tag is describing a trade we did not take."""
+    p = params()  # strike_increment 5, so the default offset threshold is one strike
+    below = snapshot(underlying_price=6012.0)
+    assert engine._classify_center_offset(below, p, 6000.0) == ("below_spot", -12.0)
+    assert engine.choose_side(below, 6000.0) == fly.CALL
+    assert fly.completing_side_direction(fly.CALL) == "down"
+
+    above = snapshot(underlying_price=5988.0)
+    assert engine._classify_center_offset(above, p, 6000.0) == ("above_spot", 12.0)
+    assert engine.choose_side(above, 6000.0) == fly.PUT
+    assert fly.completing_side_direction(fly.PUT) == "up"
+
+
+def test_center_offset_at_spot_inside_one_strike_and_unknown_without_a_center():
+    p = params()
+    # Exactly one strike out is still "at spot" -- the bucket is for a centre the rule could
+    # plainly have picked closer, not for ordinary ATM rounding.
+    assert engine._classify_center_offset(snapshot(underlying_price=6005.0), p, 6000.0) == (
+        "at_spot",
+        -5.0,
+    )
+    # No centre in hand degrades honestly rather than fabricating an offset of zero.
+    assert engine._classify_center_offset(snapshot(), p, None) == ("unknown", None)
+    regime = engine.classify_regime(snapshot(), p)
+    assert regime["center_offset_bucket"] == "unknown"
+    assert regime["center_offset_value"] is None
+
+
 def test_vol_bucket_low_and_high():
     cheap = snapshot(puts={6000: q(0.1, 0.1)}, calls={6000: q(0.1, 0.1)})
     bucket, value = engine._classify_vol(cheap, params())
