@@ -203,6 +203,10 @@ table.calendar tr.stale td { color: #9fb0bf; }
   gap: 4px;
   font-size: 13px;
 }
+.builder-top-row { flex-wrap: nowrap; }
+.builder-suggestions-col { flex: 0 0 auto; width: 100%; max-width: 480px; }
+.builder-suggestions-col #sentiment-row { margin-bottom: 8px; }
+#builder-warnings { max-width: 480px; }
 .builder-chart-row { margin-top: 12px; flex-wrap: nowrap; }
 .builder-svg {
   display: block;
