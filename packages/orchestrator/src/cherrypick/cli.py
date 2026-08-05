@@ -44,6 +44,7 @@ Subcommands:
   ensure-dolt          Start any module's declared Dolt server if down (invoked by its keep-alive task).
   notify-test          Fire a test notification through all configured channels.
   notify-trades        Push new paper entries/exits to the trade channels (also runs on each watchdog tick).
+  notify-follow        Push new tastylive Follow Feed orders to their own channel (own task, network call).
   secrets-set          Store a slack/discord webhook URL in the OS keyring (--channel; --url or prompt).
   secrets-status       Show which push-channel webhooks are configured (secret-free).
   secrets-delete       Remove a stored webhook (--channel).
@@ -72,6 +73,7 @@ from cherrypick.orchestrator import (
     doctor,
     eod_digest,
     eod_insight,
+    follow_notifier,
     init,
     logrotate,
     migrate,
@@ -218,6 +220,17 @@ def cmd_install(cfg) -> None:
             tn["task_name"], tn_tr, tn.get("interval_minutes", 2)
         )
 
+    # Follow Feed notifier: its OWN recurring task, never a watchdog-tick call -- it is the one
+    # notifier that makes a network request, and the reliability path stays network-free.
+    ff = cfgmod.follow_feed_settings(cfg)
+    if ff["enabled"]:
+        ff_tr = tasks.build_tr(pyw, str(_LAUNCHER), "notify-follow")
+        results["follow_notify_task"] = tasks.create_minute_task(
+            ff["task_name"], ff_tr, ff["interval_minutes"]
+        )
+    else:
+        results["follow_notify_task"] = tasks.delete(ff["task_name"])
+
     # The suite end-of-day digest + AI insight are no longer fixed-time tasks — the watchdog fires them
     # once every installed module has written its paper-eod file (or at the deadline backstop), so the
     # digest can't race a module that settles a few minutes late. Remove any stale fixed-time task a
@@ -357,6 +370,7 @@ def cmd_uninstall(cfg) -> None:
     results["log_archive_task"] = tasks.delete(cfgmod.archive_settings(cfg)["task_name"])
     results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
     results["reconcile_task"] = tasks.delete(cfgmod.reconcile_schedule_settings(cfg)["task_name"])
+    results["follow_notify_task"] = tasks.delete(cfgmod.follow_feed_settings(cfg)["task_name"])
     # Stop generic background services (e.g. the gex recorder) — unlike the streamer, these are the
     # orchestrator's own daemons, so a full uninstall stops them.
     for svc in cfgmod.enabled_services(cfg):
@@ -666,6 +680,10 @@ def cmd_notify_trades(cfg) -> None:
     _emit(trade_notifier.run(cfg))
 
 
+def cmd_notify_follow(cfg) -> None:
+    _emit(follow_notifier.run(cfg))
+
+
 def _resolve_session(args) -> str | None:
     """The session an EOD-scoped command targets: an explicit --date wins, else --eod means today
     (ET), else None (the all-time cumulative view)."""
@@ -901,6 +919,7 @@ def main() -> None:
             "ensure-dolt",
             "notify-test",
             "notify-trades",
+            "notify-follow",
             "secrets-set",
             "secrets-status",
             "secrets-delete",
@@ -1016,6 +1035,7 @@ def main() -> None:
         "migrate-home": lambda: cmd_migrate_home(cfg, args.apply),
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),
+        "notify-follow": lambda: cmd_notify_follow(cfg),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
         "ensure-dolt": lambda: _ensure_dolt(cfg),
