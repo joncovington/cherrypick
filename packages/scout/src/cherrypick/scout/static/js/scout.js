@@ -44,10 +44,10 @@ function watchlistStore() {
       if (res.ok) this.symbols = res.symbols;
     },
     openSymbol(sym) {
-      htmx.ajax("GET", `/partial/symbol/${sym}`, { target: "#content", pushUrl: true });
+      htmx.ajax("GET", `/partial/symbol/${sym}`, { target: "#content" });
     },
     openBuilder(sym) {
-      htmx.ajax("GET", `/partial/builder/${sym}`, { target: "#content", pushUrl: true });
+      htmx.ajax("GET", `/partial/builder/${sym}`, { target: "#content" });
     },
   };
 }
@@ -60,7 +60,7 @@ function _firstWatchlistSymbolOrDefault() {
 // A plain top-level equivalent of watchlistStore().openBuilder, for callers outside Alpine's scope
 // (e.g. a Tabulator cell formatter's click handler in the screener).
 function openBuilderFor(sym) {
-  htmx.ajax("GET", `/partial/builder/${sym}`, { target: "#content", pushUrl: true });
+  htmx.ajax("GET", `/partial/builder/${sym}`, { target: "#content" });
 }
 
 // Delegated, since the calendar table is re-rendered by htmx on every swap -- one listener here

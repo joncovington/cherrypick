@@ -205,6 +205,8 @@ table.calendar tr.stale td { color: #9fb0bf; }
 }
 .builder-svg { width: 100%; height: 220px; background: #10151a; border-radius: 6px; margin-top: 12px; }
 .analysis { margin-top: 12px; font-size: 13px; color: #cfd8e0; }
+.builder-income-grid { flex: 1.5; min-width: 320px; margin-top: 0; }
+.builder-income-grid table.income-grid { width: 100%; }
 .analysis p { margin: 6px 0; }
 .trend-chip {
   padding: 1px 8px;
