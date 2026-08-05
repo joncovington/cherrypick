@@ -739,6 +739,19 @@ function renderChecklist(checklist) {
   </div>`;
 }
 
+// Round tick step (1/2/2.5/5/10 x a power of ten), same shape as flies' dashboard.py ticksFor --
+// an axis of raw endpoints-only doesn't read as a scale, and matching that chart's tick
+// algorithm here is exactly what "look more like the flies viz" asked for.
+function _niceTicks(min, max, count) {
+  const span = max - min || 1;
+  const raw = span / Math.max(1, count);
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || 10 * mag;
+  const out = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push({ v, step });
+  return out;
+}
+
 function renderPayoffSvg(svg, result, spot) {
   const curve = result.curve;
   if (!curve.length) {
@@ -746,24 +759,54 @@ function renderPayoffSvg(svg, result, spot) {
     return;
   }
   const W = 640,
-    H = 280,
-    PAD = 30;
+    H = 280;
+  const pad = { l: 54, r: 10, t: 14, b: 22 };
   const spots = curve.map((p) => p.spot).concat([spot]);
   const pnls = curve.map((p) => p.pnl).concat([0]);
   const xMin = Math.min(...spots),
     xMax = Math.max(...spots);
-  const yAbsMax = Math.max(1, ...pnls.map(Math.abs));
-  const xScale = (x) => PAD + ((x - xMin) / (xMax - xMin || 1)) * (W - 2 * PAD);
-  const yScale = (y) => H / 2 - (y / yAbsMax) * (H / 2 - PAD);
+  const yAbsMax = Math.max(1, ...pnls.map(Math.abs)) * 1.1;
 
-  const points = curve.map((p) => `${xScale(p.spot)},${yScale(p.pnl)}`).join(" ");
-  const zeroY = yScale(0);
-  const spotX = xScale(spot);
+  const X = (v) => pad.l + ((v - xMin) / (xMax - xMin || 1)) * (W - pad.l - pad.r);
+  const Y = (v) => H - pad.b - ((v + yAbsMax) / (2 * yAbsMax || 1)) * (H - pad.t - pad.b);
+  const zeroY = Y(0);
+
+  let grid = "";
+  let labels = "";
+  _niceTicks(-yAbsMax, yAbsMax, 5).forEach(({ v }) => {
+    const y = Y(v);
+    grid += `<line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="${Math.abs(v) < 1e-9 ? "#3d4653" : "#1c222b"}"/>`;
+    labels += `<text x="4" y="${y + 3}" fill="#8b949e" font-size="10">${v < 0 ? "-" : ""}$${Math.abs(v).toFixed(0)}</text>`;
+  });
+  _niceTicks(xMin, xMax, 6).forEach(({ v, step }) => {
+    const x = X(v);
+    grid += `<line x1="${x}" y1="${pad.t}" x2="${x}" y2="${H - pad.b}" stroke="#1c222b"/>`;
+    const text = Number.isInteger(step) ? v.toFixed(0) : v.toFixed(2);
+    labels += `<text x="${x - text.length * 3}" y="${H - 6}" fill="#8b949e" font-size="10">${text}</text>`;
+  });
+
+  // Green fill above zero, red below -- the curve clamped to each side and closed back to the
+  // zero line at both ends, same construction flies' drawPayoff uses.
+  const above = curve.map((p) => `${X(p.spot)},${Y(Math.max(p.pnl, 0))}`).join(" ");
+  const below = curve.map((p) => `${X(p.spot)},${Y(Math.min(p.pnl, 0))}`).join(" ");
+  const firstX = X(curve[0].spot),
+    lastX = X(curve[curve.length - 1].spot);
+
+  const points = curve.map((p) => `${X(p.spot)},${Y(p.pnl)}`).join(" ");
+  const spotX = X(spot);
+  const spotLabel = `spot ${spot.toFixed(2)}`;
+  const labelW = spotLabel.length * 5.5 + 10;
+  const labelX = Math.min(Math.max(spotX - labelW / 2, pad.l), W - pad.r - labelW);
 
   svg.innerHTML = `
-    <line x1="0" y1="${zeroY}" x2="${W}" y2="${zeroY}" stroke="#3a4652" stroke-width="1"/>
-    <line x1="${spotX}" y1="0" x2="${spotX}" y2="${H}" stroke="#4d9de0" stroke-width="1" stroke-dasharray="4,3"/>
-    <polyline points="${points}" fill="none" stroke="#7fd1a8" stroke-width="2"/>
+    ${grid}
+    <polygon points="${firstX},${zeroY} ${above} ${lastX},${zeroY}" fill="rgba(63,185,80,.28)"/>
+    <polygon points="${firstX},${zeroY} ${below} ${lastX},${zeroY}" fill="rgba(248,81,73,.24)"/>
+    <line x1="${spotX}" y1="${pad.t}" x2="${spotX}" y2="${H - pad.b}" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.85"/>
+    <polyline points="${points}" fill="none" stroke="#7fd1a8" stroke-width="1.8"/>
+    ${labels}
+    <rect x="${labelX}" y="${pad.t}" width="${labelW}" height="15" rx="3" fill="rgba(13,17,23,.92)" stroke="#3d4653"/>
+    <text x="${labelX + 5}" y="${pad.t + 11}" fill="#e3b341" font-size="10">${spotLabel}</text>
   `;
 }
 
