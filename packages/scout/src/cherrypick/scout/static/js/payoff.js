@@ -392,12 +392,31 @@ async function loadChain(view) {
 }
 
 function addLeg(view, data) {
+  const dir = parseInt(data.dir, 10);
+  // Same strike/type already in the basket (matched by the exact option contract, not just
+  // strike+kind, since that's what a Sell/Buy click on the chain actually refers to) -- net the
+  // click into that leg's quantity instead of adding a duplicate row. A Buy against an existing
+  // short (or vice versa) nets down; if that nets exactly to zero, the position is flat and the
+  // leg is removed rather than left sitting at quantity 0.
+  const existing = _builder.legs.find((lg) => lg.symbol === data.symbol);
+  if (existing) {
+    existing.quantity += dir;
+    if (existing.quantity === 0) {
+      _builder.legs = _builder.legs.filter((lg) => lg !== existing);
+    } else {
+      _reprice(existing);
+    }
+    renderLegs(view);
+    computePayoff(view);
+    return;
+  }
+
   const greeks = (_builder.chainGreeks || {})[data.symbol] || {};
   const quote = (_builder.chainQuotes || {})[data.symbol] || {};
   _builder.legs.push({
     kind: data.kind,
     strike: parseFloat(data.strike),
-    quantity: parseInt(data.dir, 10),
+    quantity: dir,
     price: parseFloat(data.price) || 0,
     symbol: data.symbol,
     expiration: _builder.expiration,
