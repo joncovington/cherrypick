@@ -29,13 +29,14 @@
   </div>
   <div class="builder-row" id="sentiment-row">
     <span class="chip-label">Suggestions</span>
-    <button type="button" class="chip sentiment" data-sentiment="bullish">Bullish</button>
+    <button type="button" class="chip sentiment on" data-sentiment="bullish">Bullish</button>
     <button type="button" class="chip sentiment" data-sentiment="bearish">Bearish</button>
     <button type="button" class="chip sentiment" data-sentiment="high_iv">High Implied Volatility</button>
   </div>
   <div id="suggestion-cards" class="suggestion-cards"></div>
   <div id="builder-warnings"></div>
-  <div id="builder-chain" class="builder-chain"></div>
+  <button type="button" id="builder-chain-toggle" class="builder-chain-toggle">&#9656; Option chain</button>
+  <div id="builder-chain" class="builder-chain collapsed"></div>
   <div class="builder-row">
     <div id="builder-basket" class="builder-basket">
       <h3>Legs</h3>
