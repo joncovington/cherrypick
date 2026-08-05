@@ -431,8 +431,27 @@
     "task_name": "cherrypick-trade-notify",
     "interval_minutes": 2
   },
+  "follow_feed": {
+    "_comment": "Push tastylive Follow Feed orders (other traders' fills, as shown on the platform's Follow page) to their own Discord channel. Reads two undocumented public GETs on https://follow.tastylive.com - no auth, no broker, read-only. UNLIKE every other notifier this one makes a NETWORK call, so it is its own scheduled task and is never called from the watchdog tick (the reliability path stays stdlib + OS shell only). A feed outage degrades to 'no notifications', never a failed tick. OFF by default; set enabled=true, store the webhook (cherrypick secrets-set --channel discord_follow), then re-run `install`.",
+    "_filters_note": "All filters are optional and applied server-side by the feed itself; omit or leave empty for the whole feed. 'traders' are display names as they appear in /api/traders ('Jim Schultz', 'Katie'); 'underlying_symbols' an equity symbol list; 'earnings_only' true limits to earnings plays; 'open_close' is 'O' (opening orders only) or 'C' (closing only); 'strategy' matches one strategy name ('Vertical', 'Butterfly', 'Strangle').",
+    "enabled": false,
+    "task_name": "cherrypick-follow-notify",
+    "interval_minutes": 5,
+    "channels": [
+      "log",
+      "discord_follow"
+    ],
+    "max_per_run": 8,
+    "filters": {
+      "traders": [],
+      "underlying_symbols": [],
+      "earnings_only": false,
+      "open_close": null,
+      "strategy": null
+    }
+  },
   "notify": {
-    "_channels_note": "push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord), never in this file or env vars.",
+    "_channels_note": "push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord', 'discord_follow'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord|discord_follow), never in this file or env vars. 'discord_follow' is a SECOND Discord webhook with its own keyring entry so the Follow Feed can post to its own channel instead of sharing the trade channel.",
     "channels": [
       "log",
       "desktop"
