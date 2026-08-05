@@ -104,6 +104,14 @@ async def get_payoff(
     result = {
         "ok": True,
         "curve": _payoff.payoff_curve(parsed),
+        # The two tail slopes -- payoff_curve only returns the exact kink points (at each strike),
+        # so a chart drawing just those points draws a naked diagonal across the whole visible
+        # window instead of the true flat-or-sloped tail beyond the outermost strike. These let a
+        # renderer extrapolate correctly (flat for a defined-risk spread, genuinely sloped for an
+        # uncapped naked leg) rather than guessing "flat" always, which breakevens() already
+        # relies on internally for its own tail-crossing math.
+        "slope_below": _payoff.slope_below(parsed),
+        "slope_above": _payoff.slope_above(parsed),
         "breakevens": _payoff.breakevens(parsed),
         "max_profit": _payoff.max_profit(parsed),
         "max_loss": _payoff.max_loss(parsed),

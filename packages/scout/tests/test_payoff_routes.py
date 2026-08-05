@@ -44,6 +44,21 @@ def test_payoff_route_computes_curve_and_breakevens(app_and_client):
     assert body["breakevens"] == pytest.approx([99.0])
     assert body["max_profit"]["value"] == pytest.approx(100.0)
     assert body["pop"] is None  # no dte/iv supplied
+    # A defined-risk put credit spread is flat on both tails -- lets the chart extrapolate past
+    # the outermost strike instead of drawing a naked diagonal across the whole visible window.
+    assert body["slope_below"] == 0
+    assert body["slope_above"] == 0
+
+
+def test_payoff_route_slopes_are_nonzero_for_an_uncapped_naked_leg(app_and_client):
+    app, client = app_and_client
+    naked_call = [{"kind": "call", "quantity": -1, "price": 2.0, "strike": 100}]
+    resp = client.get(
+        "/api/payoff", params={"legs": json.dumps(naked_call), "spot": 100}, headers=_headers(app)
+    )
+    body = resp.json()
+    assert body["slope_below"] == 0  # put/call... a naked short call is worthless below its strike
+    assert body["slope_above"] == -100  # short 1 contract -- loses $100 per $1 the stock rises
 
 
 def test_payoff_route_includes_pop_when_dte_and_iv_given(app_and_client, monkeypatch):
