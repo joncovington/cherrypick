@@ -379,9 +379,14 @@ async def get_quote(request: Request, sym: str) -> dict:
 @router.get("/api/symbol/{sym}/expirations")
 async def get_expirations(request: Request, sym: str) -> dict:
     app = request.app
-    return await chain_service.get_expirations(
+    result = await chain_service.get_expirations(
         app.state.cache_db, app.state.broker_session, app.state.cfg, sym
     )
+    # Same rule the sentiment suggestions default to (next standard monthly >= 30 DTE, else
+    # nearest >= 30 DTE, else farthest listed) -- one source of truth so the builder's own
+    # Expiration <select> and the suggestion cards never default to two different dates.
+    result["default_expiration"] = _default_suggestion_expiration(result.get("expirations", {}))
+    return result
 
 
 async def _chain_with_quotes_and_greeks(app, sym: str, expiration: str) -> tuple[dict, list[dict]]:

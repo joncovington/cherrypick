@@ -368,6 +368,37 @@ def test_suggestions_route_defaults_to_the_next_monthly_30_plus_days_out(templat
     assert body["cards"]
 
 
+def test_expirations_route_includes_the_same_default_suggestions_use(template_route, monkeypatch):
+    """The builder's Expiration <select> and the sentiment suggestion cards must never disagree
+    on the default -- one function (_default_suggestion_expiration), read from this route too."""
+    from datetime import UTC, datetime, timedelta
+
+    today = datetime.now(tz=UTC).date()
+    probe = today + timedelta(days=30)
+    while not (probe.weekday() == 4 and 15 <= probe.day <= 21):
+        probe += timedelta(days=1)
+    monthly = probe.isoformat()
+    weekly = (today + timedelta(days=31)).isoformat()
+    if weekly == monthly:
+        weekly = (today + timedelta(days=32)).isoformat()
+
+    app, client = template_route
+    strikes = [80, 85, 90, 95, 100, 105, 110, 115, 120]
+
+    async def fake_get_expirations(_conn, _session, _cfg, symbol):
+        both = _fake_chain_expirations(strikes, expiration=monthly)["expirations"][monthly]
+        weekly_opts = _fake_chain_expirations(strikes, expiration=weekly)["expirations"][weekly]
+        return {"ok": True, "symbol": "AAPL", "as_of": 0, "stale": False,
+                "expirations": {weekly: weekly_opts, monthly: both}}
+
+    monkeypatch.setattr(_symbol_api.chain_service, "get_expirations", fake_get_expirations)
+    resp = client.get("/api/symbol/aapl/expirations", headers=_headers(app))
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["default_expiration"] == monthly  # the monthly wins even though weekly is nearer
+    assert set(body["expirations"]) == {monthly, weekly}
+
+
 def test_suggestions_route_rejects_unknown_sentiment(template_route):
     app, client = template_route
     resp = client.get(
