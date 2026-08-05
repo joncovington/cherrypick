@@ -70,6 +70,23 @@ def test_partial_calendar_renders_html_with_the_row(app_and_client):
     assert "text/html" in resp.headers["content-type"]
     assert "AAPL" in resp.text
     assert "8.0%" in resp.text
+    # Symbol is a builder-link, not plain text -- clicking it opens the builder for that symbol
+    # (scout.js's delegated click handler on a.builder-link[data-sym]).
+    assert 'class="builder-link" data-sym="AAPL"' in resp.text
+
+
+def test_partial_calendar_notes_when_the_liquidity_filter_is_unavailable(app_and_client, monkeypatch):
+    app, client = app_and_client
+
+    async def fake_get_calendar(*_a, **_kw):
+        return {
+            "ok": True, "as_of": 1000.0, "stale": False, "dolt_available": True, "days": 14,
+            "liquid_only": True, "liquidity_filter_available": False, "entries": [],
+        }
+
+    monkeypatch.setattr(_calendar_api.calendar_service, "get_calendar", fake_get_calendar)
+    resp = client.get("/partial/calendar", headers=_headers(app))
+    assert "Liquid Symbols watchlist" in resp.text
 
 
 def test_partial_calendar_notes_when_dolt_is_unreachable(app_and_client, monkeypatch):

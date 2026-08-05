@@ -66,6 +66,7 @@ packages/scout/
                      screener.py  orders.py
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
                      calendar_service.py  candle_service.py  chain_service.py
+                     earnings_watchlist_service.py  liquidity_service.py
                      screener_service.py  sector_service.py  staging.py  quote_service.py
                      streamcache.py
       analytics/    __init__.py  describe.py  levels.py  narrative.py  payoff.py  pop.py
@@ -87,6 +88,7 @@ packages/scout/
                     test_staging.py  test_order_routes.py  test_dry_run_only.py
                     test_quote_service.py  test_sse.py  test_streamcache.py  test_trend.py
                     test_narrative.py  test_describe.py  test_templates.py  test_sector_service.py
+                    test_liquidity_service.py  test_earnings_watchlist_service.py
 ```
 
 ## The earnings calendar (M2)
@@ -106,6 +108,21 @@ This is also the first milestone that talks to the broker: `services/session.py`
 holds one process-wide `cherrypick.core.auth.session.SessionManager` over the shared
 `cherrypick-broker` keyring service. Missing credentials or a broker hiccup degrade the metrics side
 of the calendar to empty rather than raising — the page always renders.
+
+**Two tastytrade-sourced refinements, both defaulting on** (`config.calendar`):
+`use_tastytrade_earnings_watchlist` unions tastytrade's own public "All Earnings" watchlist
+(`earnings_watchlist_service`, 85 symbols live-verified 2026-08-06) into the metrics call, so
+names beyond the user's own watchlist get real dates from live metrics instead of falling through
+to Dolt's third-party snapshot -- the module's original premise ("a third-party source is
+acceptable only where tastytrade has no equivalent") turned out to be wrong once this watchlist
+was found. Deliberately NOT unioned into the expected-move loop, which stays scoped to the user's
+own watchlist -- that loop is a per-symbol chain+quote broker call each, and widening it by up to
+85 names would reintroduce the exact "call storm" risk the module was built to avoid for Dolt.
+`liquid_only` pre-filters every row (both sources) to tastytrade's own "Liquid Symbols" watchlist
+(`liquidity_service`, 198 symbols) -- covers Dolt rows too, which carry no `liquidity_rating` of
+their own. A fetch failure with nothing cached degrades to skipping the filter (a notice explains
+why), never to emptying the whole calendar. Symbol cells are links (`a.builder-link`) that open
+the builder for that symbol, same click handler the screener's Tabulator cells already use.
 
 ## The symbol view (M3)
 

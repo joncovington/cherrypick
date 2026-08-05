@@ -10,6 +10,7 @@
     "meta_ttl_days": 30,
     "stream_cache_max_age_seconds": 10
   },
+  "calendar": { "liquid_only": true, "use_tastytrade_earnings_watchlist": true },
   "screener": {
     "target_dte_min": 30,
     "target_dte_max": 45,

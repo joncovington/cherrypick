@@ -18,6 +18,11 @@ Expected move (`0.85 * front straddle`, `earnings.scanner.compute_expected_move_
 heuristic) is fetched -- one narrow ATM chain snapshot, not `chain_service`'s full multi-expiration
 cache -- **only** for watchlist/metrics-sourced rows inside the requested window, since a broad Dolt
 row can number in the hundreds and would turn a calendar page load into a call storm.
+
+`config.calendar.liquid_only` (default True) pre-filters the combined rows to
+`liquidity_service.get_liquid_symbols`'s tastytrade-sourced "Liquid Symbols" watchlist membership
+-- a zero-per-symbol-broker-call liquidity signal that covers the broad Dolt rows too, which have
+no `liquidity_rating` of their own (that field only exists on metrics/watchlist rows).
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ import time
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from . import metrics_service
+from . import earnings_watchlist_service, liquidity_service, metrics_service
 from .cache import peek, put
 from .session import BrokerSession
 
@@ -208,17 +213,52 @@ async def get_calendar(
     metrics_ttl = cfg.get("refresh", {}).get("metrics_ttl_seconds", 900)
     calendar_ttl = cfg.get("refresh", {}).get("calendar_ttl_seconds", 3600)
 
-    metrics = await metrics_service.get_metrics(conn, session, watchlist_symbols, metrics_ttl, now=now)
+    # Broad coverage beyond the user's own watchlist prefers tastytrade's own "All Earnings" public
+    # watchlist over Dolt where the two overlap -- fetched once (a cached watchlist membership
+    # call, not a per-symbol one), then unioned into the SAME batched metrics call the user's own
+    # watchlist already makes, so these symbols get real dates from live metrics instead of Dolt's
+    # third-party periodic snapshot. Deliberately NOT unioned into the expected-move loop below --
+    # that's a per-symbol chain+quote broker call each, and the whole reason this module bounds it
+    # to metrics-sourced rows is to avoid a "call storm" from a wide symbol set (see module
+    # docstring); up to 85 more names in the window would reintroduce exactly that risk.
+    use_earnings_watchlist = cfg.get("calendar", {}).get("use_tastytrade_earnings_watchlist", True)
+    earnings_watchlist_symbols: set[str] = set()
+    if use_earnings_watchlist:
+        earnings_watchlist_symbols = await earnings_watchlist_service.get_earnings_watchlist_symbols(
+            conn, session, now=now
+        )
+    metrics_symbols = sorted({s.strip().upper() for s in watchlist_symbols if s} | earnings_watchlist_symbols)
+
+    metrics = await metrics_service.get_metrics(conn, session, metrics_symbols, metrics_ttl, now=now)
     metrics_rows = _metrics_rows(metrics, today, end)
 
+    own_watchlist = {s.strip().upper() for s in watchlist_symbols if s}
     for (symbol, _report_date), row in metrics_rows.items():
-        row["expected_move_pct"] = await _expected_move_pct(conn, session, symbol, calendar_ttl, now)
+        row["expected_move_pct"] = (
+            await _expected_move_pct(conn, session, symbol, calendar_ttl, now)
+            if symbol in own_watchlist
+            else None
+        )
 
     raw_dolt = await _fetch_dolt_calendar(cfg, today, end)
     dolt_available = raw_dolt is not None
     dolt_rows = _dolt_rows(raw_dolt or [], covered=set(metrics_rows.keys()))
 
     all_rows = list(metrics_rows.values()) + list(dolt_rows.values())
+
+    # Pre-filter to tastytrade's own "Liquid Symbols" watchlist -- covers Dolt-sourced rows too,
+    # which carry no `liquidity_rating` of their own (that only exists on metrics rows), unlike
+    # the screener's chip which can lean on a per-symbol metrics field. An empty result (a fetch
+    # failure with nothing cached yet) means "couldn't determine liquidity", not "nothing is
+    # liquid" -- the filter is skipped rather than emptying the whole calendar on one hiccup.
+    liquid_only = cfg.get("calendar", {}).get("liquid_only", True)
+    liquidity_filter_available = False
+    if liquid_only:
+        liquid_symbols = await liquidity_service.get_liquid_symbols(conn, session, now=now)
+        if liquid_symbols:
+            liquidity_filter_available = True
+            all_rows = [r for r in all_rows if r["symbol"] in liquid_symbols]
+
     all_rows.sort(key=lambda r: (r["date"], r["symbol"]))
 
     return {
@@ -227,5 +267,7 @@ async def get_calendar(
         "stale": not dolt_available,
         "dolt_available": dolt_available,
         "days": days,
+        "liquid_only": liquid_only,
+        "liquidity_filter_available": liquidity_filter_available,
         "entries": all_rows,
     }
