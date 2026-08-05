@@ -433,6 +433,28 @@ raw/annualized return, POW, and delta; clicking one loads it as the builder's le
 scout's grid reproduced 7 of 9 of the reference's own STM cells exactly, the other two one strike
 adjacent (one-bar-stale greeks).
 
+## Score (defined-risk) and probable_risk_2sd (undefined-risk estimate)
+
+`GET /api/payoff` returns a `score` field on the strategy card: `100 * pop * (reward + risk) /
+risk`, a POP-weighted reward/risk metric on the reference platform's own display scale.
+Reverse-engineered from eleven independent defined-risk spreads (verticals and iron condors) on
+two underlyings/days -- confirmed to within ~0.5 point of the closed form, R^2 = 0.9997 across
+the fit set (`analytics/describe.py`'s `score()` docstring has the full evidence). It does NOT
+apply to a naked single option (the theoretical stock-to-zero max reward makes the ratio
+unusable -- a 3rd data point predicted ~450 against an actual 99).
+
+For an undefined-risk basket (short straddle/strangle, naked short stock), the reference
+platform's own Score resisted extensive reverse engineering -- roughly twenty data points across
+spot $14-$1,121 and IV Rank 3-86 never isolated a consistent driver, and the platform's own
+disclosed "2 SD move" risk methodology (see below) turned out to answer a different question
+(5-6x mismatch when tested against known Score values). Rather than keep guessing, scout instead
+extends the SAME formula using `probable_risk_2sd` -- the position's P&L at spot +/- 2 standard
+deviations, the platform's own disclosed methodology for its Risk And Investment Calculator tab,
+computed directly rather than guessed at. This is deliberately labeled as an ESTIMATE
+(`score_is_estimated` in the response, "(est.)" in the builder), not a claim to replicate the
+reference platform's own undefined-risk number -- a defined-risk Score (externally validated)
+should never be visually confused with scout's own undefined-risk estimate.
+
 ## Verification (M8)
 
 All five surfaces (calendar, screener, symbol, builder, staged) were exercised end to end against a
