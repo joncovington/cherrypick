@@ -93,6 +93,14 @@ async function mountBuilderView(view) {
   view.querySelector("#builder-validate").onclick = () => validateOrder(view);
   view.querySelector("#builder-stage").onclick = () => stageTicket(view);
 
+  const chainToggle = view.querySelector("#builder-chain-toggle");
+  const chainEl = view.querySelector("#builder-chain");
+  chainToggle.onclick = () => {
+    const collapsed = chainEl.classList.toggle("collapsed");
+    chainToggle.innerHTML = `${collapsed ? "&#9656;" : "&#9662;"} Option chain`;
+    if (!collapsed) chainEl.querySelector("tr.builder-atm-row")?.scrollIntoView({ block: "center" });
+  };
+
   const templateSel = view.querySelector("#template-select");
   templateSel.onchange = async () => {
     if (!templateSel.value) return;
@@ -168,6 +176,7 @@ async function mountBuilderView(view) {
   renderLegs(view);
   computePayoff(view);
   loadIncomeGrid(view); // fire-and-forget; the grid arrives when greeks do
+  loadSuggestions(view, "bullish"); // Bullish chip starts selected -- load its cards immediately
 }
 
 const _TEMPLATE_LABELS = {

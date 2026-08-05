@@ -143,6 +143,16 @@ table.calendar tr.stale td { color: #9fb0bf; }
   border-radius: 4px;
   padding: 4px 8px;
 }
+.builder-chain-toggle {
+  background: none;
+  border: none;
+  color: #9fb0bf;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px 0;
+  margin-bottom: 4px;
+}
+.builder-chain-toggle:hover { color: #e6edf3; }
 .builder-chain {
   max-height: 420px;
   overflow-y: auto;
@@ -150,6 +160,7 @@ table.calendar tr.stale td { color: #9fb0bf; }
   border-radius: 6px;
   margin-bottom: 12px;
 }
+.builder-chain.collapsed { display: none; }
 .builder-chain table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .builder-chain th, .builder-chain td {
   text-align: center;
