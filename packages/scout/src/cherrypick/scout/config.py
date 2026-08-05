@@ -34,6 +34,7 @@ _DEFAULTS: dict = {
         "meta_ttl_days": 30,
         "stream_cache_max_age_seconds": 10,
     },
+    "calendar": {"liquid_only": True, "use_tastytrade_earnings_watchlist": True},
     "screener": {
         "target_dte_min": 30,
         "target_dte_max": 45,

@@ -63,6 +63,16 @@ function openBuilderFor(sym) {
   htmx.ajax("GET", `/partial/builder/${sym}`, { target: "#content", pushUrl: true });
 }
 
+// Delegated, since the calendar table is re-rendered by htmx on every swap -- one listener here
+// covers every current and future ".builder-link", not a per-row binding that goes stale.
+document.body.addEventListener("click", (evt) => {
+  const link = evt.target.closest("a.builder-link[data-sym]");
+  if (link) {
+    evt.preventDefault();
+    openBuilderFor(link.dataset.sym);
+  }
+});
+
 document.getElementById("nav-symbol").addEventListener("click", (evt) => {
   evt.preventDefault();
   const store = Alpine.$data(document.getElementById("watchlist"));
