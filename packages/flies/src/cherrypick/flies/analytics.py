@@ -215,18 +215,27 @@ REGIME_DIMENSIONS = {
 }
 
 # `trend` and `center_offset` describe the same event from opposite sides -- a centre left behind by
-# a moving market -- so they are NOT two independent confirmations, and a report showing both should
-# say so. Cross-tabulated over the 210 entries with session coverage, `center_offset` never fired
-# outside `trend` (0 trades), which on that sample makes `trend` strictly the wider net. They are
-# kept apart anyway because they imply OPPOSITE remedies: `trend` is a property of the market and
-# argues for skipping the trade, `center_offset` is a property of our own centring rule and argues
-# for fixing it. Muting the gex arm and repairing it are not the same decision, and only the second
-# one keeps the arm worth running.
+# a moving market -- so a report showing both should say so rather than presenting them as two
+# independent confirmations. They are kept apart because they imply OPPOSITE remedies: `trend` is a
+# property of the market and argues for skipping the trade, `center_offset` is a property of our own
+# centring rule and argues for fixing it. Muting the gex arm and repairing it are not the same
+# decision, and only the second one keeps the arm worth running.
 #
-# Retirement condition for `center_offset`, so this stays falsifiable rather than a judgement call:
-# if after ~30 further GEX-centred entries it still never fires outside `trend`, it is redundant and
-# should go -- keeping the negative result (rule 6). The cross-tab that decides it is one query,
-# and today's version of it rests on 2 qualifying trades, which settles nothing either way.
+# **`center_offset` was put on a retirement condition on 2026-08-04 and cleared it on 2026-08-05.**
+# The condition was: if it never fires outside `trend`, it is redundant and should go. On 08-04's
+# cross-tab it never had (0 trades) -- but that rested on 2 qualifying rows and settled nothing. One
+# session later the cell is populated, and the two rules caught DIFFERENT entries on the same day:
+# `center_offset` flagged the 10:01 gex miss (centre +14.7 above spot) that `trend` waved through as
+# 'flat', and `trend` flagged the 11:50 and 12:54 misses whose centres sat inside one strike. Kept,
+# and the condition is considered answered rather than still pending.
+#
+#   trend ok, offset ok      n=50  comp 88%  avg  +$40
+#   trend ok, offset FAILS   n= 5  comp 80%  avg  -$29
+#   trend FAILS, offset ok   n=19  comp 37%  avg -$133
+#   both fail                n= 2  comp  0%  avg -$222
+#
+# (SPX only, the 3 sessions with day_open coverage, n=76. Earlier versions of this table blended the
+# XSP era, which the module's own symbol rules say not to do.)
 
 
 def _edge_label(edges: list[float], value: float | None) -> str:

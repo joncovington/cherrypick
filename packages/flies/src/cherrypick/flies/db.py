@@ -356,6 +356,44 @@ def _migrate(conn: sqlite3.Connection) -> list[str]:
     return added
 
 
+def stale_writer_columns(conn: sqlite3.Connection) -> list[str]:
+    """Regime columns the LEDGER has but the RUNNING CODE will never write. Empty is healthy.
+
+    Detects one specific, silent failure, observed on 2026-08-05: the loop imports from the working
+    tree, so whichever branch happens to be checked out decides what gets recorded. That session ran
+    from a checkout predating the `trend`/`center_offset` dimensions and wrote NULL to all four of
+    their columns for the entire day. Nothing errored. The four older dimensions populated normally,
+    which is exactly what made it look fine at a glance -- and regime data has no backfill path in
+    general, so a day lost this way is usually lost for good.
+
+    It works by comparing the code against the DATABASE FILE rather than against itself, which is the
+    only comparison that can catch this. Migration is additive and permanent, so once a newer
+    checkout has opened a ledger the columns stay; an older checkout then has a schema it does not
+    know how to fill, and that gap is the signal. Comparing `_ADDED_POSITION_COLUMNS` to
+    `classify_regime`'s keys would detect nothing at all -- on a stale checkout both are stale
+    together and agree perfectly.
+
+    Reports rather than repairs: a stale checkout cannot be fixed from inside itself, and refusing to
+    trade over it would turn a telemetry gap into an outage. The caller logs it loudly.
+    """
+    from cherrypick.flies import engine
+
+    written = {
+        f"{phase}_{key}" for key in engine.classify_regime({}, {}) for phase in ("entry", "completion")
+    }
+    present = {r["name"] for r in conn.execute("PRAGMA table_info(fly_positions)")}
+    # Matched on the regime naming convention -- `<phase>_<dimension>_bucket` and `_value` -- rather
+    # than an exclusion list of everything else. Every dimension ships as that pair, so a new one
+    # cannot slip past, while ordinary phase-prefixed columns (entry_time, completion_latency_min,
+    # the order-id/fill-status family) are excluded by shape instead of by being remembered. An
+    # exclusion list would need editing every time an unrelated column is added, and the day it was
+    # forgotten this check would start crying wolf and get ignored.
+    regime = {
+        c for c in present if c.startswith(("entry_", "completion_")) and c.endswith(("_bucket", "_value"))
+    }
+    return sorted(regime - written)
+
+
 def connect(db_path: str | None = None) -> sqlite3.Connection:
     path = db_path or os.environ.get("FLIES_DB_PATH") or default_db_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)

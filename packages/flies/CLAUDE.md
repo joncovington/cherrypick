@@ -282,15 +282,30 @@ module refuses to keep. The premise was false: the shared cache has always carri
 carries it as `session` (`provider._session_bounds`). What blocked this was never the discipline,
 only an assumption about what a snapshot could contain, and the cost was real: on 2026-08-04 both
 losing `gex` entries legged into the side a 106-point up-from-open day was against, and no recorded
-tag could distinguish them. Measured over the 210 entries with session coverage, refusing an entry
-whose completing direction opposes a >5pt drift from the open splits completion **72% vs 15%** — the
-sharpest separation any dimension here has produced, and notably it is *completion* that moves
-(every other candidate gate shifted P&L while leaving completion flat, which for an 11:1 payoff
-asymmetry means it was not touching the mechanism). Tagged, not gated: 13 blocked trades across five
-sessions. **Unlike `center_offset` this cannot be backfilled** — no position row records where its
-session opened and the cache keeps no summary history — so it fills forward only. A chop/trend
-distinction is still deliberately absent: that needs the *path* between open and now, which really
-is cross-tick state. [docs/centre-lag.md](docs/centre-lag.md).
+tag could distinguish them. Across the SPX sessions with coverage, refusing an entry whose completing
+direction opposes a committed drift from the open splits completion **89% vs 7%** — the sharpest
+separation any dimension here has produced, and notably it is *completion* that moves (every other
+candidate gate shifted P&L while leaving completion flat, which means it was not touching the
+mechanism). Tagged, not gated: 15 opposing trades over 3 sessions.
+
+**The band is 20 points, and it was 5 for exactly one day (corrected 2026-08-05).** 5 was one SPX
+strike — the resolution the *centre* moves in, which says nothing about how far a session must
+travel before its direction carries information. Split by how committed the day was, the 5-point tag
+is not merely weak in the 10–25 range, it is **inverted**: entries opposing a 10–25 point drift
+completed 100% of the time (n=5), while past 25 points the read is nearly absolute (0% and 14%).
+Sweeping the band, the opposing bucket completes 33% at 5, 7% at 20, and degrades again by 30; 20
+and 25 are identical, so it is a plateau rather than one lucky cut. Chosen on the same 76 rows that
+measure it — a current best estimate, not a calibrated constant. This also names the dimension's own
+failure mode: 2026-08-05 10:01 sat at +13.6 from the open, inside the old dead zone, so a 5-point
+band approved an up-completion and the day then reversed to settle 48 points *below* its open.
+Trend-from-open lags too — slower than a trailing window, not immune.
+
+**Backfillable for now, contrary to what this said (corrected 2026-08-05).** No position row records
+its session's open, but `stream_summary` currently retains a row per (symbol, trade_date) back to
+2026-07-29, so those sessions can be reconstructed by joining on trade_date. The cache offers no
+retention guarantee, so treat that as a window that will close rather than a property to rely on.
+A chop/trend distinction is still deliberately absent: that needs the *path* between open and now,
+which really is cross-tick state. [docs/centre-lag.md](docs/centre-lag.md).
 
 **Store the measure, not just the bucket (2026-08-01).** Every threshold above is a placeholder, and
 a bucket alone cannot be recalibrated — re-deriving "would this have been `pinning` at a different
@@ -320,15 +335,37 @@ against the general rule below — `center` and `underlying_at_entry` were alway
 is an exact recomputation rather than a guess, and the 292 paper / 9 live historical rows were filled
 in. The **bucket** was left NULL on those rows, because `strike_increment` is not stored per row and
 the XSP era used a different one; re-cut the float with `bucket_edges` instead.
-**It overlaps `trend` and is kept anyway, with a retirement condition.** Cross-tabulated over the 210
-entries with session coverage, `center_offset` never fired outside `trend` — so on that sample
-`trend` is strictly the wider net, and `center_offset` only ever has content on the GEX-centred arms
-(`gex`, `debit-first`, `bwb`) since the ATM arms sit at offset ≈ 0 by construction. They are kept
-apart because they imply **opposite remedies**: `trend` is a property of the market and argues for
-skipping the trade, `center_offset` is a property of our own centring rule and argues for fixing it,
-and only the second leaves an arm worth running. The subsumption also rests on **2 qualifying
-trades**, which settles nothing. So: if after ~30 further GEX-centred entries `center_offset` still
-never fires outside `trend`, it is redundant and should go — keeping the negative result (rule 6).
+**It overlapped `trend`, was put on a retirement condition on 2026-08-04, and cleared it on
+2026-08-05.** The condition was: retire it if it never fires outside `trend`. On 08-04's cross-tab it
+never had — but that rested on **2 qualifying rows** and settled nothing. One session later the cell
+is populated, and the two rules caught *different* entries on the same day: `center_offset` flagged
+the 10:01 gex miss (centre +14.7 above spot) that `trend` read as `flat`, while `trend` flagged the
+11:50 and 12:54 misses whose centres sat inside one strike and which `center_offset` structurally
+cannot see. Kept; condition answered. They are kept apart because they imply **opposite remedies**:
+`trend` is a property of the market and argues for skipping the trade, `center_offset` is a property
+of our own centring rule and argues for fixing it, and only the second leaves an arm worth running.
+Note `center_offset` only ever has content on the GEX-centred arms (`gex`, `debit-first`, `bwb`),
+since the ATM arms sit at offset ≈ 0 by construction.
+
+**The 2026-08-05 falling session is what makes the centring finding more than one day's artefact.**
+It opened 7771.62 and settled 7723.55, and produced the exact mirror: all three `gex` misses were
+up-completions with the centre *above* spot, both completions were down-completions. gex −$744 at 40%
+against control's +$862 at 100%, same shape as 08-04 in the opposite direction. The sign flipped with
+the market rather than persisting. Note also the entry centred 22 points *below* spot that completed
+without trouble — lag alone is not the problem, lag **against the direction of travel** is.
+
+**A stale checkout silently costs a session's regime data, and there is now a guard for it
+(`db.stale_writer_columns`, 2026-08-05).** The loop imports from the working tree, so *whichever
+branch happens to be checked out decides what the ledger records*. On 2026-08-05 the repo sat on an
+unrelated branch and the whole session wrote NULL to both new dimensions' columns — no error, and
+the four older dimensions populated normally, which is exactly what made it look fine at a glance.
+Regime data generally has no backfill path, so a day lost this way is usually lost for good. The
+check compares the running code against the **database file** — migration is additive and permanent,
+so a ledger opened once by a newer checkout keeps columns an older checkout cannot fill, and that gap
+is the signal. Comparing the schema registry against `classify_regime` would catch nothing, since on
+a stale checkout both are stale together and agree. `paper_loop` logs it at session start and does
+not enforce: a stale checkout cannot fix itself, and refusing to trade would turn a telemetry gap
+into an outage.
 
 **Two dimensions were measured degenerate, and are documented rather than re-guessed.**
 `entry_gex_bucket` came back `thin` **60/60** because concentration was measured as one strike's
