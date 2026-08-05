@@ -36,11 +36,11 @@ main {
   gap: 0;
   min-height: calc(100vh - 110px);
 }
-#content { flex: 1; padding: 18px 24px; max-width: 1100px; }
+#content { flex: 1; padding: 18px 24px; min-width: 0; }
 aside#watchlist {
-  width: 160px;
+  width: 140px;
   border-left: 1px solid #232c34;
-  padding: 14px 16px;
+  padding: 14px 14px;
   flex-shrink: 0;
 }
 aside#watchlist h3 { font-size: 13px; color: #9fb0bf; margin: 0 0 8px; }
@@ -143,6 +143,7 @@ table.calendar tr.stale td { color: #9fb0bf; }
   border-radius: 4px;
   padding: 4px 8px;
 }
+.builder-row input[readonly] { background: #171d23; color: #9fb0bf; cursor: default; }
 .builder-chain-toggle {
   background: none;
   border: none;

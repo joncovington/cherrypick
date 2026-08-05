@@ -66,8 +66,13 @@ async function mountBuilderView(view) {
   }
   _builder.spot = quote.last ?? 100;
   _builder.iv = quote.iv_30d ?? 0.3;
-  spotInput.value = _builder.spot;
-  ivInput.value = _builder.iv;
+  spotInput.value = _builder.spot.toFixed(2);
+  // Spot/IVR are read-only, sourced live -- IVR (IV Rank) is a 0..100 percentile, shown in the
+  // "NN/100" form the reference platform's own info bar uses, not the raw IV decimal
+  // (_builder.iv, still used internally for POP/expected-move/template calcs -- a different
+  // number that just happens to share the "IV" name).
+  const ivRank = quote.iv_rank != null ? Math.round(parseFloat(quote.iv_rank) * 100) : null;
+  ivInput.value = ivRank != null ? `${ivRank}/100` : "--";
 
   const dates = Object.keys(expirations.expirations || {}).sort();
   expSelect.innerHTML = dates.map((d) => `<option value="${d}">${d}</option>`).join("");
@@ -81,14 +86,6 @@ async function mountBuilderView(view) {
   expSelect.onchange = () => {
     _builder.expiration = expSelect.value;
     loadChain(view);
-  };
-  spotInput.oninput = () => {
-    _builder.spot = parseFloat(spotInput.value) || _builder.spot;
-    computePayoff(view);
-  };
-  ivInput.oninput = () => {
-    _builder.iv = parseFloat(ivInput.value) || _builder.iv;
-    computePayoff(view);
   };
   view.querySelector("#builder-validate").onclick = () => validateOrder(view);
   view.querySelector("#builder-stage").onclick = () => stageTicket(view);
