@@ -8,6 +8,10 @@ gate worth watching, so a later decision has something to read rather than a mem
 
 ## Completion is nearly the whole P&L
 
+> ⚠️ **Both figures in this section are wrong — see corrections 1 and 2 in the second addendum.**
+> Breakeven completion is ≈76%, not 92%, and a miss is not automatically a loss (7 of 43 won). The
+> paragraph is left as written because the reasoning built on it below is still legible that way.
+
 A completed fly in the SPX 5-wide book nets about $18–22. A non-completion leaves an open short
 vertical that settles at -5.00 and costs $220–286. That is an 11:1 asymmetry, so **breakeven
 completion rate is about 92%**. Control at 95% barely clears it; gex at 60% is nowhere near. The
@@ -202,3 +206,119 @@ Deliberately **not** built: a chop/trend distinction. That needs the path betwee
 whether spot travelled 106 points once or crossed the open nine times — which really is cross-tick
 state this module does not keep. `day_high`/`day_low` are on the snapshot and could approximate it,
 but inventing that on the strength of one session is the mistake the honesty rules exist to prevent.
+
+---
+
+# Second addendum — 2026-08-05, the falling day
+
+The session this document asked for arrived the next day: opened 7771.62, settled 7723.55. It
+confirmed the mechanism and corrected four things stated above.
+
+## The mirror held
+
+The prediction was that on a falling day a lagging centre sits **above** spot, legs into puts, needs
+an up move, and fails — the exact inverse of 08-04. It did:
+
+| time | offset | needs | trend from open | completed | P&L |
+|---|---:|---|---:|---|---:|
+| 10:01 | **+14.7** | up | +13.6 | no | −$228 |
+| 10:23 | −1.4 | down | +4.8 | yes | +$29 |
+| 10:30 | −22.1 | down | +0.4 | yes | +$23 |
+| 11:50 | **+2.5** | up | −34.1 | no | −$286 |
+| 12:54 | **+1.3** | up | −27.9 | no | −$282 |
+
+All three misses were up-completions on a day that fell; both completions were down-completions.
+The arm result repeated too — gex −$744 at 40% against control's +$862 at 100%. Two sessions is not
+a base rate, but the sign of the effect **flipped with the market rather than persisting**, which is
+what separates a mechanism from an artefact of an up-trending sample.
+
+Note the 10:30 entry, centred **22 points below spot** — the largest lag of the day — completed
+without trouble. Lag alone is not the problem. Lag *against the direction of travel* is.
+
+## Correction 1 — the completion asymmetry was overstated
+
+Stated above as "a completed fly nets ~$20 and a miss costs ~$220-286, so breakeven completion is
+≈92%." That came from a single session's completions. Over all 137 SPX 5-wide legged entries:
+
+- completions average **+$59.87** (median $31.23) — some settle inside the wings for real payoffs
+- misses average **−$185.21**
+
+which puts breakeven completion at **≈76%, not 92%**. Still a punishing asymmetry and still the
+number the strategy turns on, but the earlier figure was wrong, and anything reasoned from it should
+be re-checked.
+
+## Correction 2 — a miss is not automatically a loss
+
+Described above as though every non-completion costs the full defined risk. **7 of 43 misses won**,
+averaging **+$213.88**: the short vertical finished on the right side of settlement and kept its
+whole credit. Two of 08-05's control misses made +$264 and +$262. A miss is *directional* — about
+−$263 when settlement goes through the short strike, the credit when it does not. Under rule 4 the
+uncompleted branch is bad on average, not bad by construction.
+
+## Correction 3 — `center_offset` cleared its retirement condition
+
+The condition was to retire it if it never fired outside `trend`. On 08-04 it never had, but that
+rested on 2 qualifying rows. One session later the cell is populated, and on 08-05 the two rules
+caught **different** entries:
+
+- `center_offset` flagged the 10:01 miss (centre +14.7 above spot) that `trend` read as `flat`
+- `trend` flagged the 11:50 and 12:54 misses, whose centres sat **inside one strike** and which
+  `center_offset` structurally cannot see
+
+Kept; condition answered rather than still pending. Current cross-tab, SPX-only across the three
+sessions with `day_open` coverage (n=76 — earlier versions blended the XSP era, which the symbol
+rules say not to do):
+
+| | n | completion | avg |
+|---|---:|---:|---:|
+| trend ok, offset ok | 50 | 88% | **+$40** |
+| trend ok, offset fails | 5 | 80% | −$29 |
+| trend fails, offset ok | 19 | 37% | −$133 |
+| both fail | 2 | 0% | −$222 |
+
+## The band was wrong, and the fix is measured
+
+`regime_trend_points` was 5 — one SPX strike — which was reaching for a familiar number instead of
+measuring one. A strike is the resolution the *centre* moves in; it says nothing about how far a
+session must travel before its direction carries information. Split by how far the day had
+committed, the 5-point tag is **inverted** in the middle:
+
+```
+|drift| 10-25 pts:  opposing entries completed 100%  (n= 5)   <- a gate here would be actively wrong
+|drift| 25-60 pts:  opposing entries completed   0%  (n= 8)
+|drift|   60+ pts:  opposing entries completed  14%  (n= 7)
+```
+
+Sweeping the band:
+
+```
+band  5:  kept 87% comp | opposing n=21  comp 33%  avg -$142
+band 20:  kept 89% comp | opposing n=15  comp  7%  avg -$209
+band 25:  identical to 20
+band 30:  kept 84% comp | opposing n=12  comp  8%  avg -$195
+```
+
+**Changed to 20.** 20 and 25 give identical splits, so this is a plateau rather than one lucky cut —
+but it is still chosen on the same 76 rows that measure it, so it is the current best estimate, not
+a calibrated constant.
+
+This also names the dimension's own failure mode. 08-05 10:01 sat at +13.6 from the open, inside the
+dead zone, so a 5-point band called it a trend, approved an up-completion, and the day then reversed
+to settle 48 points below its open. **Trend-from-open lags too** — slower than a trailing window,
+not immune — and no band value fixes a reversal.
+
+## Correction 4 — `trend` is backfillable after all, for now
+
+Stated above as un-backfillable. True in principle, since no position row records its session's open
+— but `stream_summary` currently retains a row per (symbol, trade_date) back to 2026-07-29, so those
+sessions can be reconstructed by joining on trade_date, which is how every number in this addendum
+was produced. The cache offers no retention guarantee, so this is a window that will close rather
+than a property to rely on. Anything wanted from those sessions should be computed while it is open.
+
+## Ops note: the tags did not record on 08-05
+
+Every figure here was reconstructed, because the session wrote NULL to both new columns. The repo
+was on another branch when the loop ran, and the paper loop imports from the working tree — so
+**whichever branch happens to be checked out silently determines what the ledger records.** The four
+older dimensions populated normally, which is exactly what made it look fine at a glance. This is a
+data-integrity failure that leaves no error behind, only absent columns, and it deserves a guard.

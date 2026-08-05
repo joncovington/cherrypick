@@ -481,6 +481,17 @@ def main(argv=None) -> int:
         return 0
     if args.interval:
         _log(f"loop starting, interval {args.interval}s, cache {cache_path}")
+        # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session run
+        # from an older branch writes NULL to any regime column that branch predates -- silently, all
+        # day, with no backfill path afterwards. Logged rather than enforced: a stale checkout cannot
+        # fix itself, and refusing to trade would turn a telemetry gap into an outage.
+        drift = dbmod.stale_writer_columns(conn)
+        if drift:
+            _log(
+                f"WARNING: {len(drift)} ledger column(s) this checkout will never write — "
+                f"{', '.join(drift)}. The running code is older than the database schema; "
+                "this session's rows will be missing that telemetry. Check the branch."
+            )
         while args.force or in_session(provider.minute_of_day(provider.now_et())):
             run_once(config, conn, cache_path=cache_path, force=args.force)
             time.sleep(args.interval)

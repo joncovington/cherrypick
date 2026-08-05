@@ -442,3 +442,35 @@ def test_freshly_opened_bwb_records_its_real_negative_tail_floor(conn):
     assert row["kind"] == "bwb"
     assert row["floor_dollars"] is not None
     assert row["floor_dollars"] < -400  # tail = -(10-5) * 100 = -500, less fees/reserve
+
+
+# --------------------------------------------------------------------------- stale-checkout guard
+def test_stale_writer_columns_is_clean_on_a_current_checkout(conn):
+    """The healthy case: every regime column the schema declares is one this code fills."""
+    assert dbmod.stale_writer_columns(conn) == []
+
+
+def test_stale_writer_columns_catches_the_2026_08_05_failure(conn):
+    """The real incident, reproduced: a ledger migrated by a NEWER checkout, then opened by an older
+    one that has no idea those columns exist. It wrote NULL all day and nothing errored.
+
+    Simulated by adding a regime column this code does not produce — which is exactly the state an
+    older checkout sees, since migration is additive and the columns outlive the branch that made
+    them. Note the check must compare code against the DATABASE; comparing the schema registry to
+    `classify_regime` would pass here, because on a stale checkout both are stale together.
+    """
+    conn.execute("ALTER TABLE fly_positions ADD COLUMN entry_futuredim_bucket TEXT")
+    conn.execute("ALTER TABLE fly_positions ADD COLUMN entry_futuredim_value REAL")
+    assert dbmod.stale_writer_columns(conn) == [
+        "entry_futuredim_bucket",
+        "entry_futuredim_value",
+    ]
+
+
+def test_stale_writer_guard_ignores_ordinary_phase_prefixed_columns(conn):
+    """Matched on the `_bucket`/`_value` regime convention rather than an exclusion list, so
+    unrelated entry_/completion_ columns never trip it. `completion_latency_min` is the one that
+    caught this out when the check was first written."""
+    conn.execute("ALTER TABLE fly_positions ADD COLUMN completion_something_min REAL")
+    conn.execute("ALTER TABLE fly_positions ADD COLUMN entry_some_id TEXT")
+    assert dbmod.stale_writer_columns(conn) == []

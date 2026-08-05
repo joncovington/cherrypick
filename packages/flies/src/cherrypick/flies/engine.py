@@ -192,10 +192,15 @@ def classify_regime(snapshot: dict, params: dict, center: float | None = None) -
     The cost of that assumption is the reason it is written up rather than quietly fixed. On
     2026-08-04 the `gex` book lost $386 at 60% completion; both misses legged into the side a
     106-point up-from-open day was against, and no recorded tag could distinguish them. Measured
-    afterwards over the 210 entries with session coverage, refusing an entry whose completing
-    direction opposes a >5pt drift from the open separates completion 72% vs **15%** -- the
-    sharpest split any dimension here has produced. It is 13 blocked trades, so it is tagged and
-    not gated, exactly like everything else in this function.
+    afterwards, refusing an entry whose completing direction opposes a committed drift from the
+    open separates completion 89% vs **7%** across the SPX sessions with session coverage -- the
+    sharpest split any dimension here has produced. It is 15 blocked trades over 3 sessions, so it
+    is tagged and not gated, exactly like everything else in this function.
+
+    2026-08-05 was the mirror test and it held: a session that opened 7771.62 and settled 7723.55,
+    where all three gex misses were up-completions on a falling day and both completions were
+    down-completions. The lagging centre sat ABOVE spot rather than below, exactly as the mechanism
+    predicts when the sign of the move flips.
 
     Returns a bucket per dimension -- independent values, not one collapsed string, so analytics
     can slice on any one dimension or their cross product -- AND the continuous measure each bucket
@@ -253,8 +258,27 @@ def _classify_trend(snapshot: dict, params: dict) -> tuple[str, float | None]:
     unambiguous up day. It never completed. A 0DTE position lives one session, so the session's own
     open is the reference point that matches the horizon being traded.
 
-    `regime_trend_points` (default 5, one SPX strike) is the flat band. Below it the day has not
-    committed to a direction and 'flat' is the honest tag, not a rounding of noise into a trend.
+    `regime_trend_points` (default 20) is the flat band. Below it the day has not committed to a
+    direction and 'flat' is the honest tag, not a rounding of noise into a trend.
+
+    **The band was 5 -- one SPX strike -- for exactly one day, and 5 was wrong (2026-08-05).** A
+    strike is the resolution the CENTRE moves in; it has nothing to do with how far a session must
+    travel before its direction means anything, and picking it was reaching for a familiar number
+    instead of measuring one. Split by how far the day had committed, the 5-point tag is not merely
+    weak in the 10-25 range, it is INVERTED: entries whose completing direction opposed a 10-25
+    point drift completed 100% of the time (n=5). Past 25 points the same read is nearly absolute
+    (0% and 14% completion in the two higher bands). Sweeping the band over the SPX sessions with
+    session coverage, the opposing bucket completes 33% at a band of 5, 7% at 20, and degrades
+    again by 30. 20 and 25 give identical splits, which is why 20 is used -- a plateau rather than
+    a single winning value, so it is a shape in the data rather than one lucky cut.
+
+    That dead zone is this dimension's own failure mode, and 2026-08-05 10:01 is the worked
+    example: the gex arm legged into an up-completion at +13.6 from the open, the tag read 'flat',
+    and the day then reversed to settle 48 points BELOW its open. Trend-from-open lags too -- it is
+    slower to lag than a trailing window, not immune to it.
+
+    Sized on 76 SPX entries across 3 sessions, and the band was chosen on the same rows that
+    measure it. Treat 20 as the current best estimate, not a calibrated constant.
 
     Deliberately NOT a chop/trend distinction. That would need the path between open and now --
     whether spot travelled 106 points once or crossed the open nine times -- which really is
@@ -273,7 +297,7 @@ def _classify_trend(snapshot: dict, params: dict) -> tuple[str, float | None]:
     if spot is None or day_open is None:
         return "unknown", None
     drift = spot - day_open
-    band = params.get("regime_trend_points", 5.0)
+    band = params.get("regime_trend_points", 20.0)
     if drift > band:
         return "up_from_open", drift
     if drift < -band:
