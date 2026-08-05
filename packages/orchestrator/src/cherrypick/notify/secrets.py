@@ -14,7 +14,11 @@ import keyring
 import keyring.errors
 
 SERVICE_NAME = "cherrypick-notify"
-SUPPORTED = ("slack", "discord")
+# "discord_follow" is a SECOND Discord webhook, not a second copy of the first: the tastylive Follow
+# Feed fires on other people's trades at a cadence nothing else here matches, so it gets its own
+# channel to point at its own Discord channel. Keeping it a separate keyring entry (rather than a
+# config-supplied URL for one shared webhook) keeps every webhook a keyring-only secret.
+SUPPORTED = ("slack", "discord", "discord_follow")
 
 
 def _entry(channel: str) -> str:
