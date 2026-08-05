@@ -57,25 +57,34 @@ reward relative to risk scales it up proportionally. All six fitted points lande
 point of the regression line on a scale spanning 84-144. It does NOT hold for a naked long
 option (a seventh point, reward/risk 10.5, predicted ~450 against an actual 99) -- an
 undefined-both-sides position's theoretical max reward (near stock-to-zero) makes the ratio
-huge and unusable; scout does not attempt a score for anything but a two-strikes-both-sides
-spread with finite max_risk. It also does not hold for undefined-risk baskets (short straddle/
-strangle scored 152-250 despite reward/risk collapsing to ~0 when risk is "Unlimited") -- those
-almost certainly use the platform's real margin requirement as the risk denominator, a dollar
-figure this package has no visibility into; `score()` returns None rather than guess at it.
+huge and unusable; scout does not attempt to REPLICATE the reference platform's number for
+anything but a two-strikes-both-sides spread with finite max_risk.
 
-The reference platform's own "Risk And Investment Calculator" tab states its methodology in
-plain text (GOOG, 2026-08-05): for an unlimited-risk basket, its "probable risk" is "based on a
-wide (2 SD) move against you" -- i.e. the position's P&L at spot +/- 2 standard deviations,
-worse side. This turned out to be a GENUINELY SEPARATE calculation from Score, not the missing
-risk denominator: independently computing that 2-SD P&L for three GOOG short strangles (solving
-IV from each strangle's own quoted premium) gives ~$6,900-7,100, corroborated by the calculator's
-own contract-sizing behavior (entering a $30,000/$10,000 "invest" amount for an unlimited-risk
-strangle sized it to 3 and 1 contracts respectively, implying a per-contract figure in
-$7,500-$10,000 -- close to the independent computation, the small gap plausibly the real
-platform's IV skew our flat-vol solve doesn't model). But inverting Score itself for those same
-three strangles implies a "risk" of only ~$1,200-1,300 -- five to six times smaller. Score and
-the Risk Calculator are evidently unrelated internal numbers; the 2-SD move is real and useful in
-its own right (see `probable_risk_2sd()` below) but does not unlock undefined-risk Score.
+The reference platform's own "Risk And Investment Calculator" tab states its undefined-risk
+methodology in plain text (GOOG, 2026-08-05): "probable risk" is "based on a wide (2 SD) move
+against you" -- i.e. the position's P&L at spot +/- 2 standard deviations, worse side. This
+turned out to be a GENUINELY SEPARATE calculation from Score, not its missing risk denominator:
+independently computing that 2-SD P&L for three GOOG short strangles (solving IV from each
+strangle's own quoted premium) gives ~$6,900-7,100, corroborated by the calculator's own
+contract-sizing behavior, but inverting Score itself for those same three strangles implies a
+risk of only ~$1,200-1,300 -- five to six times smaller. Chasing the real undefined-risk Score
+denominator further (2026-08-06: roughly twenty more data points -- F, MRVL, META, LLY, SOFI,
+UNH, V, NFLX, spanning spot $14-$1,121 and IV Rank 3-86) never isolated a consistent driver:
+price scale, IV Rank, and absolute IV_30d all appeared to matter without any single one (or an
+obvious two-variable combination) explaining the whole set -- e.g. SOFI (cheap, IV Rank 14)
+stayed mostly clean while F (also cheap, IV Rank 42) fully capped, ruling out "cheap stock always
+caps"; but UNH (IV Rank 13, even lower than SOFI's) fully capped anyway despite a high absolute
+IV_30d (~40%), and V and GOOG -- nearly identical spot/IV Rank -- landed on opposite sides
+(V fully capped, GOOG mostly clean) for reasons neither price nor IV Rank explains.
+
+Given that, scout stopped trying to reverse-engineer the reference platform's undefined-risk
+number and instead uses `probable_risk_2sd` (a real, honestly-computed figure, not a guess) as
+the risk denominator in the SAME POP-weighted formula shape -- see `score()`'s `probable_risk`
+parameter. This is deliberately NOT presented as a replica of the reference platform's Score for
+this shape; it is scout's own internally-consistent extension, using the best risk estimate this
+package can compute rather than an unmatched external number. The UI marks these values as
+estimated (see `api/payoff.py`'s `score_is_estimated`) so a defined-risk Score (externally
+validated) is never visually confused with an undefined-risk one (scout's own estimate).
 
 A second batch (AVGO, 2026-08-05) reconfirms the formula on five more defined-risk points and
 extends it to a 4-leg iron condor, not just 2-leg verticals: three put verticals of increasing
@@ -120,24 +129,62 @@ def projected_yield_12m(annualized: float | None, dividend_yield: float | None) 
     return annualized + dividend_yield
 
 
-def score(pop_value: float | None, legs: list[Leg], max_reward: dict, max_loss: dict) -> float | None:
-    """The reference platform's "Score" badge, for a DEFINED-RISK spread only (see module
-    docstring for the six-point fit and why naked long options and unbounded-risk baskets are
-    excluded): 100 * pop * (max_reward + max_risk) / max_risk. Requires >= 2 option legs (a
-    naked single option is the one shape the fit is known to fail) and a finite max_risk/
-    max_reward; returns None otherwise -- an inapplicable score should be absent, not wrong."""
+def score(
+    pop_value: float | None,
+    legs: list[Leg],
+    max_reward: dict,
+    max_loss: dict,
+    *,
+    probable_risk: float | None = None,
+) -> float | None:
+    """A POP-weighted reward/risk metric, on the reference platform's own scale:
+    100 * pop * (reward + risk) / risk. Requires >= 2 option legs (a naked single option is the
+    one shape the fit is known to fail, see module docstring) and a finite reward; returns None
+    otherwise -- an inapplicable score should be absent, not wrong.
+
+    Two regimes, and this function does NOT blur the line between them:
+
+    - DEFINED risk (max_loss bounded): `risk` = the exact max_risk. This branch reproduces the
+      reference platform's own displayed Score, confirmed to within ~0.5 point across eleven
+      independent verticals/iron condors on two underlyings/days (see module docstring for the
+      fit). This is the validated case.
+
+    - UNDEFINED risk (max_loss unbounded, e.g. a short straddle/strangle): the reference
+      platform's own number for this shape resisted extensive reverse engineering -- roughly
+      twenty data points across a wide spread of price/IV Rank/absolute-IV combinations (2026-08-
+      05/06) never isolated a consistent driver; price scale, IV Rank, and absolute IV all
+      appeared to matter without any single one (or a two-variable combination) explaining the
+      whole set, and the platform's own disclosed "2 SD move" methodology (which `probable_risk_
+      2sd` DOES faithfully reproduce) turned out to be answering a different question than Score
+      asks -- a 5-6x mismatch when tested directly against strangles with known Score values.
+      Rather than keep guessing at an opaque formula, this branch uses `probable_risk` (intended
+      to be `probable_risk_2sd`'s own output) as `risk` in the SAME formula shape -- scout's own
+      internally-consistent extension, using a risk figure it can compute honestly, not a
+      replica of the reference platform's number. Only used when the caller supplies
+      `probable_risk`; omitting it (the default) keeps this function returning None for
+      undefined-risk baskets, same as before this parameter existed."""
     option_legs = [lg for lg in legs if lg.kind != "stock"]
     if len(option_legs) < 2 or pop_value is None:
         return None
-    if max_loss.get("unbounded") or max_reward.get("unbounded"):
+    if max_reward.get("unbounded"):
         return None
-    risk_value, reward_value = max_loss.get("value"), max_reward.get("value")
-    if risk_value is None or reward_value is None:
+    reward_value = max_reward.get("value")
+    if reward_value is None:
         return None
-    max_risk = abs(risk_value)
-    if max_risk <= 0:
-        return None
-    return 100.0 * pop_value * (reward_value + max_risk) / max_risk
+
+    if max_loss.get("unbounded"):
+        if probable_risk is None or probable_risk <= 0:
+            return None
+        risk = probable_risk
+    else:
+        risk_value = max_loss.get("value")
+        if risk_value is None:
+            return None
+        risk = abs(risk_value)
+        if risk <= 0:
+            return None
+
+    return 100.0 * pop_value * (reward_value + risk) / risk
 
 
 def probable_risk_2sd(legs: list[Leg], spot: float, sigma: float, t: float) -> float | None:

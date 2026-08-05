@@ -127,6 +127,26 @@ def test_score_is_none_for_unbounded_risk():
     assert _describe.score(0.5809, straddle, max_reward, max_loss) is None
 
 
+def test_score_uses_probable_risk_as_an_estimated_denominator_for_undefined_risk():
+    """When the caller supplies `probable_risk` (intended to be probable_risk_2sd's own output),
+    score() extends the SAME formula shape to an undefined-risk basket rather than returning
+    None -- scout's own internally-consistent estimate, not a claim to replicate the reference
+    platform's (unresolved) undefined-risk number."""
+    strangle = [
+        Leg(kind="put", quantity=-1, price=15.20, strike=360.0),
+        Leg(kind="call", quantity=-1, price=18.95, strike=385.0),
+    ]
+    max_reward = {"value": 3415.0, "unbounded": False}
+    max_loss = {"value": None, "unbounded": True}
+    result = _describe.score(0.6364, strangle, max_reward, max_loss, probable_risk=6923.96)
+    expected = 100 * 0.6364 * (3415.0 + 6923.96) / 6923.96
+    assert result == pytest.approx(expected)
+
+    # probable_risk<=0 or missing still degrades to None rather than dividing by zero/nothing.
+    assert _describe.score(0.6364, strangle, max_reward, max_loss, probable_risk=0.0) is None
+    assert _describe.score(0.6364, strangle, max_reward, max_loss, probable_risk=None) is None
+
+
 def test_probable_risk_2sd_matches_the_googl_strangle_ballpark():
     """GOOG short strangle 360/385, 2026-08-05: reference platform's own disclosed methodology
     ("probable risk based on a wide (2 SD) move against you"). Solving IV from the strangle's own

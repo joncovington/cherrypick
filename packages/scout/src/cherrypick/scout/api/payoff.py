@@ -121,6 +121,7 @@ async def get_payoff(
         "projected_yield_12m": None,
         "dividend_yield": None,
         "score": None,
+        "score_is_estimated": False,
         "probable_risk_2sd": None,
     }
     app_sym = request.app
@@ -161,11 +162,16 @@ async def get_payoff(
             result["greeks_text"] = _describe.greeks_explanation(
                 symbol.strip().upper(), result["model_greeks"]
             )
-        result["score"] = _describe.score(
-            result["pop"], parsed, result["max_profit"], result["max_loss"]
-        )
         if result["max_loss"].get("unbounded"):
             result["probable_risk_2sd"] = _describe.probable_risk_2sd(parsed, spot, iv, t)
+        result["score"] = _describe.score(
+            result["pop"], parsed, result["max_profit"], result["max_loss"],
+            probable_risk=result["probable_risk_2sd"],
+        )
+        # A defined-risk score reproduces the reference platform's own number (externally
+        # validated); an undefined-risk one is scout's own estimate using probable_risk_2sd --
+        # never present the two as the same kind of number.
+        result["score_is_estimated"] = bool(result["max_loss"].get("unbounded"))
 
     result["explanation"] = _describe.strategy_explanation(parsed, spot, result["pop"], exp_date)
 

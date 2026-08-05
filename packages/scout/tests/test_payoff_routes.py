@@ -256,7 +256,14 @@ def test_payoff_route_probable_risk_2sd_for_an_unbounded_short_strangle(app_and_
     body = resp.json()
     assert body["max_loss"]["unbounded"] is True
     assert body["probable_risk_2sd"] == pytest.approx(6923.96, abs=1.0)
-    assert body["score"] is None  # undefined-risk basket -- Score doesn't apply
+    # An undefined-risk basket now gets an ESTIMATED score, using probable_risk_2sd as the risk
+    # figure in the same formula -- not a replica of the reference platform's own (unresolved)
+    # undefined-risk number, clearly marked as such.
+    assert body["score_is_estimated"] is True
+    reward = 3415.0  # (15.20 + 18.95) * 100, the credit collected
+    assert body["score"] == pytest.approx(
+        100 * body["pop"] * (reward + 6923.96) / 6923.96, abs=0.5
+    )
 
 
 def test_payoff_route_probable_risk_2sd_omitted_for_defined_risk(app_and_client, monkeypatch):

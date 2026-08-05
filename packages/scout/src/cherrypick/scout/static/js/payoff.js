@@ -654,7 +654,11 @@ function renderMetrics(el, result) {
         ? `<span>12M projected yield ${pct(result.projected_yield_12m)} (option + ${pct(result.dividend_yield)} div)*</span>`
         : ""
     }
-    ${result.score != null ? `<span>Score ${result.score.toFixed(0)}</span>` : ""}
+    ${
+      result.score != null
+        ? `<span>Score ${result.score.toFixed(0)}${result.score_is_estimated ? " (est.)" : ""}</span>`
+        : ""
+    }
     <span>${greeksTag} Δ ${fmt(greeks.delta)} · Θ ${fmt(greeks.theta)} · Vega ${fmt(greeks.vega)}</span>
   `;
   const cardEl = document.getElementById("builder-strategy-card");
@@ -667,6 +671,11 @@ function renderMetrics(el, result) {
     if (result.annualized_return != null) {
       parts.push(
         '<p class="note">* Annualized assumes the same return could be repeated back-to-back all year -- a comparison metric, not a forecast.</p>'
+      );
+    }
+    if (result.score_is_estimated) {
+      parts.push(
+        '<p class="note">(est.) Score uses scout\'s own risk estimate for unlimited-risk positions, not a reference-platform value.</p>'
       );
     }
     cardEl.innerHTML = parts.join("");
