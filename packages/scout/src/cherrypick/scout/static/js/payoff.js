@@ -77,7 +77,13 @@ async function mountBuilderView(view) {
   const dates = Object.keys(expirations.expirations || {}).sort();
   expSelect.innerHTML = dates.map((d) => `<option value="${d}">${d}</option>`).join("");
   if (dates.length) {
-    _builder.expiration = dates[0];
+    // Same default the sentiment suggestion cards use (next standard monthly >= 30 DTE, else
+    // nearest >= 30 DTE, else farthest listed) -- the API computes it once so both agree.
+    _builder.expiration =
+      expirations.default_expiration && dates.includes(expirations.default_expiration)
+        ? expirations.default_expiration
+        : dates[0];
+    expSelect.value = _builder.expiration;
     await loadChain(view);
   } else {
     view.querySelector("#builder-chain").textContent = "No option chain available for this symbol.";
