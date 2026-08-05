@@ -127,7 +127,11 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
 
 - **No network / service / AI dependency on the reliability path.** The watchdog → notify path uses only
   the stdlib + the OS shell (no MCP, no HTTP client, no AI tooling), so it has no new failure mode. A
-  34-hour silent stall is the reason this rule exists.
+  34-hour silent stall is the reason this rule exists. `follow_notifier.py` (the tastylive Follow Feed
+  push) is the one notifier that makes an HTTP call, and that is exactly why it is **its own scheduled
+  task and is never called from the watchdog tick** — unlike `trade_notifier`, which is files-only and
+  may ride the tick. Any future notifier that touches a network gets the same treatment: its own task,
+  every request wrapped, an outage degrading to "no notifications" rather than a failed tick.
 - **Read surfaces read files, never the broker.** `report`/`calibrate`/`dashboard` read paper DBs (SQLite
   read-only), watchdog state, and logs. In particular the **static** `dashboard.py` render reads the
   **watchdog heartbeat** (`state/watchdog.last.json`) for health rather than re-running `doctor` (which

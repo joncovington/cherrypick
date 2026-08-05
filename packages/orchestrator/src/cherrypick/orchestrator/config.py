@@ -326,6 +326,21 @@ def reconcile_schedule_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def follow_feed_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved Follow Feed notifier config. OFF by default. When enabled, `install` registers its
+    own recurring task -- deliberately NOT a watchdog-tick call like trade_notify, because this is
+    the one notifier that makes a network request and the reliability path stays network-free."""
+    ff = cfg.get("follow_feed", {}) or {}
+    return {
+        "enabled": ff.get("enabled", False),
+        "task_name": ff.get("task_name", "cherrypick-follow-notify"),
+        "interval_minutes": ff.get("interval_minutes", 5),
+        "channels": ff.get("channels") or ["log", "discord_follow"],
+        "max_per_run": ff.get("max_per_run", 8),
+        "filters": ff.get("filters", {}) or {},
+    }
+
+
 def insight_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved AI EOD-insight config. **OFF by default** — it needs Claude Code (`claude`) on PATH,
     an authenticated session, and a paid call, so it's opt-in (`"eod_insight": {"enabled": true}`). When
