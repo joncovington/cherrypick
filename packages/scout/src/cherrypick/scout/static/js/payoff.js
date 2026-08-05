@@ -769,7 +769,7 @@ function renderPayoffSvg(svg, result, spot) {
   // genuinely sloped for an uncapped naked leg) -- the same tail math breakevens() already
   // relies on internally, now drawn instead of only used to find a crossing.
   const strikeSpan = curve[curve.length - 1].spot - curve[0].spot || Math.max(1, curve[0].spot * 0.1);
-  const tailPad = Math.max(strikeSpan * 0.35, 1);
+  const tailPad = Math.max(strikeSpan * 0.15, 1);
   const first = curve[0],
     last = curve[curve.length - 1];
   const slopeBelow = result.slope_below ?? 0,
