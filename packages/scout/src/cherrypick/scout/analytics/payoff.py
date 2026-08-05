@@ -60,7 +60,7 @@ def payoff_curve(legs: list[Leg]) -> list[dict]:
     return [{"spot": k, "pnl": payoff_at(legs, k)} for k in _kinks(legs)]
 
 
-def _slope_below(legs: list[Leg]) -> float:
+def slope_below(legs: list[Leg]) -> float:
     """d(pnl)/d(spot) below every strike: puts are ITM (slope -1/share), calls worthless (slope 0),
     stock always contributes its full delta."""
     slope = 0.0
@@ -72,7 +72,7 @@ def _slope_below(legs: list[Leg]) -> float:
     return slope
 
 
-def _slope_above(legs: list[Leg]) -> float:
+def slope_above(legs: list[Leg]) -> float:
     """d(pnl)/d(spot) above every strike: calls are ITM (slope +1/share), puts worthless."""
     slope = 0.0
     for leg in legs:
@@ -104,14 +104,14 @@ def breakevens(legs: list[Leg]) -> list[float]:
         crossings.append(points[-1][0])
 
     x0, y0 = points[0]
-    slope = _slope_below(legs)
+    slope = slope_below(legs)
     if slope != 0:
         x_cross = x0 - y0 / slope
         if x_cross <= x0:
             crossings.append(x_cross)
 
     x1, y1 = points[-1]
-    slope = _slope_above(legs)
+    slope = slope_above(legs)
     if slope != 0:
         x_cross = x1 - y1 / slope
         if x_cross >= x1:
@@ -123,7 +123,7 @@ def breakevens(legs: list[Leg]) -> list[float]:
 def max_profit(legs: list[Leg]) -> dict:
     """`{"value": float|None, "unbounded": bool}`. `value` is `None` exactly when `unbounded` is
     True -- an uncapped upside (long call/stock beyond the last strike) has no finite maximum."""
-    if _slope_above(legs) > 0:
+    if slope_above(legs) > 0:
         return {"value": None, "unbounded": True}
     candidates = [payoff_at(legs, k) for k in _kinks(legs)] or [payoff_at(legs, 0.0)]
     candidates.append(payoff_at(legs, 0.0))
@@ -134,7 +134,7 @@ def max_loss(legs: list[Leg]) -> dict:
     """`{"value": float|None, "unbounded": bool}`. Downside is naturally bounded at `spot = 0`
     (already one of the evaluated candidates) -- only an uncapped upside loss (naked short call/stock)
     is truly unbounded."""
-    if _slope_above(legs) < 0:
+    if slope_above(legs) < 0:
         return {"value": None, "unbounded": True}
     candidates = [payoff_at(legs, k) for k in _kinks(legs)] or [payoff_at(legs, 0.0)]
     candidates.append(payoff_at(legs, 0.0))

@@ -761,8 +761,27 @@ function renderPayoffSvg(svg, result, spot) {
   const W = 640,
     H = 280;
   const pad = { l: 54, r: 10, t: 14, b: 22 };
-  const spots = curve.map((p) => p.spot).concat([spot]);
-  const pnls = curve.map((p) => p.pnl).concat([0]);
+
+  // payoff_curve only returns the exact kink points (one per strike) -- connecting just those
+  // draws a naked diagonal across the whole visible window instead of the true flat-or-sloped
+  // tail beyond the outermost strike. Widen the window a bit past the strikes and extrapolate
+  // both ends using the API's own analytic tail slopes (flat for a defined-risk spread,
+  // genuinely sloped for an uncapped naked leg) -- the same tail math breakevens() already
+  // relies on internally, now drawn instead of only used to find a crossing.
+  const strikeSpan = curve[curve.length - 1].spot - curve[0].spot || Math.max(1, curve[0].spot * 0.1);
+  const tailPad = Math.max(strikeSpan * 0.35, 1);
+  const first = curve[0],
+    last = curve[curve.length - 1];
+  const slopeBelow = result.slope_below ?? 0,
+    slopeAbove = result.slope_above ?? 0;
+  const extended = [
+    { spot: first.spot - tailPad, pnl: first.pnl - slopeBelow * tailPad },
+    ...curve,
+    { spot: last.spot + tailPad, pnl: last.pnl + slopeAbove * tailPad },
+  ];
+
+  const spots = extended.map((p) => p.spot).concat([spot]);
+  const pnls = extended.map((p) => p.pnl).concat([0]);
   const xMin = Math.min(...spots),
     xMax = Math.max(...spots);
   const yAbsMax = Math.max(1, ...pnls.map(Math.abs)) * 1.1;
@@ -785,14 +804,14 @@ function renderPayoffSvg(svg, result, spot) {
     labels += `<text x="${x - text.length * 3}" y="${H - 6}" fill="#8b949e" font-size="10">${text}</text>`;
   });
 
-  // Green fill above zero, red below -- the curve clamped to each side and closed back to the
-  // zero line at both ends, same construction flies' drawPayoff uses.
-  const above = curve.map((p) => `${X(p.spot)},${Y(Math.max(p.pnl, 0))}`).join(" ");
-  const below = curve.map((p) => `${X(p.spot)},${Y(Math.min(p.pnl, 0))}`).join(" ");
-  const firstX = X(curve[0].spot),
-    lastX = X(curve[curve.length - 1].spot);
+  // Green fill above zero, red below -- the (tail-extended) curve clamped to each side and
+  // closed back to the zero line at both ends, same construction flies' drawPayoff uses.
+  const above = extended.map((p) => `${X(p.spot)},${Y(Math.max(p.pnl, 0))}`).join(" ");
+  const below = extended.map((p) => `${X(p.spot)},${Y(Math.min(p.pnl, 0))}`).join(" ");
+  const firstX = X(extended[0].spot),
+    lastX = X(extended[extended.length - 1].spot);
 
-  const points = curve.map((p) => `${X(p.spot)},${Y(p.pnl)}`).join(" ");
+  const points = extended.map((p) => `${X(p.spot)},${Y(p.pnl)}`).join(" ");
   const spotX = X(spot);
   const spotLabel = `spot ${spot.toFixed(2)}`;
   const labelW = spotLabel.length * 5.5 + 10;
