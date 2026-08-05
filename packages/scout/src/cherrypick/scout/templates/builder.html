@@ -27,14 +27,19 @@
       </select>
     </label>
   </div>
-  <div class="builder-row" id="sentiment-row">
-    <span class="chip-label">Suggestions</span>
-    <button type="button" class="chip sentiment on" data-sentiment="bullish">Bullish</button>
-    <button type="button" class="chip sentiment" data-sentiment="bearish">Bearish</button>
-    <button type="button" class="chip sentiment" data-sentiment="high_iv">High Implied Volatility</button>
+  <div class="builder-row builder-top-row">
+    <div class="builder-suggestions-col">
+      <div class="builder-row" id="sentiment-row">
+        <span class="chip-label">Suggestions</span>
+        <button type="button" class="chip sentiment on" data-sentiment="bullish">Bullish</button>
+        <button type="button" class="chip sentiment" data-sentiment="bearish">Bearish</button>
+        <button type="button" class="chip sentiment" data-sentiment="high_iv">High Implied Volatility</button>
+      </div>
+      <div id="suggestion-cards" class="suggestion-cards"></div>
+      <div id="builder-warnings"></div>
+    </div>
+    <div id="income-grid" class="analysis builder-income-grid"></div>
   </div>
-  <div id="suggestion-cards" class="suggestion-cards"></div>
-  <div id="builder-warnings"></div>
   <button type="button" id="builder-chain-toggle" class="builder-chain-toggle">&#9656; Option chain</button>
   <div id="builder-chain" class="builder-chain collapsed"></div>
   <div class="builder-row">
@@ -55,7 +60,6 @@
       </div>
     </div>
     <div id="builder-metrics" class="builder-metrics"></div>
-    <div id="income-grid" class="analysis builder-income-grid"></div>
   </div>
   <div class="builder-row builder-chart-row">
     <svg id="builder-svg" class="builder-svg" viewBox="0 0 640 280" preserveAspectRatio="none"></svg>
