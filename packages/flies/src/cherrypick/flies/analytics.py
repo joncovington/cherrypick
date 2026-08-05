@@ -197,15 +197,36 @@ def arm_comparison_exclusions(
 
 
 # --------------------------------------------------------------------------- regime conditioning
-# The four dimensions `engine.classify_regime` tags, and the continuous measure recorded beside each
+# The dimensions `engine.classify_regime` tags, and the continuous measure recorded beside each
 # (2026-08-01). Bucketing on the stored string is the quick read; bucketing the float at analysis
 # time is what lets a threshold be re-derived from history instead of re-guessed and re-run.
+#
+# `center_offset` (2026-08-04) is the odd one out and worth flagging when reading a table of these
+# side by side: the other four describe the MARKET we entered into, while this one describes OUR OWN
+# choice of centre relative to spot. A market regime is something to condition on; this is something
+# to change. See engine._classify_center_offset and docs/centre-lag.md.
 REGIME_DIMENSIONS = {
     "vol": ("entry_vol_bucket", "entry_vol_value"),
     "gex": ("entry_gex_bucket", "entry_gex_concentration"),
     "time": ("entry_time_bucket", "entry_time_value"),
     "skew": ("entry_skew_bucket", "entry_skew_value"),
+    "center_offset": ("entry_center_offset_bucket", "entry_center_offset_value"),
+    "trend": ("entry_trend_bucket", "entry_trend_value"),
 }
+
+# `trend` and `center_offset` describe the same event from opposite sides -- a centre left behind by
+# a moving market -- so they are NOT two independent confirmations, and a report showing both should
+# say so. Cross-tabulated over the 210 entries with session coverage, `center_offset` never fired
+# outside `trend` (0 trades), which on that sample makes `trend` strictly the wider net. They are
+# kept apart anyway because they imply OPPOSITE remedies: `trend` is a property of the market and
+# argues for skipping the trade, `center_offset` is a property of our own centring rule and argues
+# for fixing it. Muting the gex arm and repairing it are not the same decision, and only the second
+# one keeps the arm worth running.
+#
+# Retirement condition for `center_offset`, so this stays falsifiable rather than a judgement call:
+# if after ~30 further GEX-centred entries it still never fires outside `trend`, it is redundant and
+# should go -- keeping the negative result (rule 6). The cross-tab that decides it is one query,
+# and today's version of it rests on 2 qualifying trades, which settles nothing either way.
 
 
 def _edge_label(edges: list[float], value: float | None) -> str:

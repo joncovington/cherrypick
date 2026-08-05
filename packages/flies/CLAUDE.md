@@ -254,11 +254,13 @@ comparison measures one variable rather than a bundle of confounded changes.
   reachable — same rationale as `debit-first`'s centring change the same day.
 
 **Regime tagging (`engine.classify_regime`, added 2026-07-31).** Every entry and completion, across
-every arm, is tagged along four dimensions read purely from the snapshot in hand — `vol_bucket`
+every arm, is tagged along six dimensions read purely from the snapshot in hand — `vol_bucket`
 (ATM straddle/spot), `gex_bucket` (per-strike gamma concentration, `"unknown"` when no OI cache
 exists yet, same honest degrade as the `gex` arm's own centring), `time_bucket` (open/midday/close),
 `skew_bucket` (OTM put vs. OTM call price at the exact strikes this module trades — a direct read of
-whether the chain itself is pricing in a direction). This is deliberately inert: nothing here gates a
+whether the chain itself is pricing in a direction), and `center_offset_bucket` (signed `centre −
+spot` in points, bucketed at one strike), and `trend_bucket` (`spot − day_open`, see below). This is
+deliberately inert: nothing here gates a
 decision. It exists because the eventual goal is a live/paper mode that evaluates every eligible
 entry candidate (`legged`/`debit_first`/`bwb_roll`) and completion candidate (`debit`/`iron`) each
 tick and executes whichever wins *for the current regime* — `book.py`'s iron-vs-debit "take the
@@ -272,6 +274,24 @@ adds a third entry mode to tag. Deliberately excludes trend/chop: that needs a r
 time no single snapshot carries, and guessing at that plumbing before there's a reason to would be
 the same mistake rule 6 warns against.
 
+**That last sentence was wrong for three weeks, and the correction is the point (2026-08-04).** The
+claim was that a trend read needs spot-now vs. spot-N-minutes-ago, which is cross-tick state this
+module refuses to keep. The premise was false: the shared cache has always carried `stream_summary`
+(`day_open`/`day_high`/`day_low`/`prev_day_close`) and `orb_ranges`, and `provider.py` read neither
+— so `spot − day_open` is a single-row lookup with no history and no state, and the snapshot now
+carries it as `session` (`provider._session_bounds`). What blocked this was never the discipline,
+only an assumption about what a snapshot could contain, and the cost was real: on 2026-08-04 both
+losing `gex` entries legged into the side a 106-point up-from-open day was against, and no recorded
+tag could distinguish them. Measured over the 210 entries with session coverage, refusing an entry
+whose completing direction opposes a >5pt drift from the open splits completion **72% vs 15%** — the
+sharpest separation any dimension here has produced, and notably it is *completion* that moves
+(every other candidate gate shifted P&L while leaving completion flat, which for an 11:1 payoff
+asymmetry means it was not touching the mechanism). Tagged, not gated: 13 blocked trades across five
+sessions. **Unlike `center_offset` this cannot be backfilled** — no position row records where its
+session opened and the cache keeps no summary history — so it fills forward only. A chop/trend
+distinction is still deliberately absent: that needs the *path* between open and now, which really
+is cross-tick state. [docs/centre-lag.md](docs/centre-lag.md).
+
 **Store the measure, not just the bucket (2026-08-01).** Every threshold above is a placeholder, and
 a bucket alone cannot be recalibrated — re-deriving "would this have been `pinning` at a different
 cut?" needs the number, and re-running the session to get it is impossible (regime data has no
@@ -280,6 +300,35 @@ the continuous measure behind each bucket plus the GEX surface's provenance (`ne
 `gamma_flip`, `gex_strikes`, `gex_input_age`), and both ledgers store them. `analytics.by_regime(...,
 bucket_edges=[...])` re-cuts the float at analysis time. MEIC learned this first — see the rationale
 on its `gex_net_at_entry` columns.
+
+**`center_offset` is the fifth dimension and the odd one out (2026-08-04, `docs/centre-lag.md`).**
+The other four describe the *market* we entered into; this one describes *our own* choice of centre
+relative to spot — a market regime is something to condition on, this is something to change. It is
+here because it turned out to decide the thing rule 4 says decides the strategy: `choose_side` sells
+PUTS when spot is at or below the centre and CALLS when above, and `completing_side_direction` then
+makes the put side complete on an UP move and the call side on a DOWN one — so this one signed
+number fixes which way spot must go for a leg-in to complete at all. On 2026-08-04 the `gex` book
+lost $386 at 60% completion against control's $613 at 95%, and both `gex` misses were centres behind
+spot: `max_total_gamma` centres on where open interest is, which is where price *has been*, so on a
+trending day it lags (measured that session: below spot 78% of 389 iterations, median −9.1 points,
+while the index ran +115). Deliberately **signed and side-neutral rather than a "lagging" boolean** —
+"lagging" is the trend-relative reading, and a single snapshot carries no trend (the same reason
+there is no trend dimension at all), so collapsing it here would bake in an up-day assumption and
+mislabel every down day. **Nothing gates on it**; 34 gex entries is a hypothesis, and the doc records
+what evidence would justify a gate. Note it is also the one dimension that *could* be backfilled,
+against the general rule below — `center` and `underlying_at_entry` were always stored, so the float
+is an exact recomputation rather than a guess, and the 292 paper / 9 live historical rows were filled
+in. The **bucket** was left NULL on those rows, because `strike_increment` is not stored per row and
+the XSP era used a different one; re-cut the float with `bucket_edges` instead.
+**It overlaps `trend` and is kept anyway, with a retirement condition.** Cross-tabulated over the 210
+entries with session coverage, `center_offset` never fired outside `trend` — so on that sample
+`trend` is strictly the wider net, and `center_offset` only ever has content on the GEX-centred arms
+(`gex`, `debit-first`, `bwb`) since the ATM arms sit at offset ≈ 0 by construction. They are kept
+apart because they imply **opposite remedies**: `trend` is a property of the market and argues for
+skipping the trade, `center_offset` is a property of our own centring rule and argues for fixing it,
+and only the second leaves an arm worth running. The subsumption also rests on **2 qualifying
+trades**, which settles nothing. So: if after ~30 further GEX-centred entries `center_offset` still
+never fires outside `trend`, it is redundant and should go — keeping the negative result (rule 6).
 
 **Two dimensions were measured degenerate, and are documented rather than re-guessed.**
 `entry_gex_bucket` came back `thin` **60/60** because concentration was measured as one strike's

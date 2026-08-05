@@ -838,7 +838,7 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                             "center_reason": plan.get("center_reason"),
                             "completing_direction": plan.get("completing_direction"),
                             "underlying_at_entry": snapshot.get("underlying_price"),
-                            **bookmod.regime_columns("entry", snapshot, params),
+                            **bookmod.regime_columns("entry", snapshot, params, center=plan.get("center")),
                             "entry_time": clock.now_iso(),
                             "entry_order_id": str(res["order_id"]),
                             "entry_fill_status": "pending",

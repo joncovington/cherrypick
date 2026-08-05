@@ -238,6 +238,18 @@ _ADDED_POSITION_COLUMNS = {
     "completion_gex_bucket": "TEXT",
     "completion_time_bucket": "TEXT",
     "completion_skew_bucket": "TEXT",
+    # Signed centre-vs-spot at entry/completion (2026-08-04; NULL for earlier rows). Unlike the four
+    # above this is a property of OUR choice, not of the market -- and it is the one that decides
+    # which side engine.choose_side legs into, hence which way spot must move to complete at all.
+    # See engine._classify_center_offset and docs/centre-lag.md. Descriptive; nothing gates on it.
+    "entry_center_offset_bucket": "TEXT",
+    "completion_center_offset_bucket": "TEXT",
+    # Session drift from the day's own open (2026-08-04; NULL for earlier rows and for any session
+    # the shared cache has no stream_summary row for -- coverage starts 2026-07-29). The dimension
+    # this module spent three weeks believing a single snapshot could not carry; see
+    # engine._classify_trend and provider._session_bounds. Descriptive; nothing gates on it.
+    "entry_trend_bucket": "TEXT",
+    "completion_trend_bucket": "TEXT",
     # The continuous measures the buckets above were derived from, plus the GEX surface's own
     # provenance (added 2026-08-01; NULL for earlier rows). Every regime threshold in this module
     # is a placeholder pending recalibration, and a bucket alone cannot be recalibrated: re-deriving
@@ -263,6 +275,17 @@ _ADDED_POSITION_COLUMNS = {
     "completion_gex_spot": "REAL",
     "completion_gex_strikes": "REAL",
     "completion_gex_input_age": "REAL",
+    # Signed `center - spot` in points, the measure behind the offset buckets above. Derived rather
+    # than new -- `center` and `underlying_at_entry` are both already on the row -- and stored anyway
+    # so the cut is one by_regime call instead of a bespoke query, and so the completion-phase
+    # version (which has no stored spot of its own to difference against) exists at all.
+    "entry_center_offset_value": "REAL",
+    "completion_center_offset_value": "REAL",
+    # Signed `spot - day_open` in points. Unlike the offset pair above this canNOT be backfilled:
+    # nothing on the row records where the session opened, and the cache keeps one summary row per
+    # (symbol, trade_date) rather than a history -- so these start empty and fill forward only.
+    "entry_trend_value": "REAL",
+    "completion_trend_value": "REAL",
     # bwb_roll: the far (skipped) wing's width, kept AFTER the roll for history/rewind (wing_width
     # stays the near/protected width, unchanged by the roll). NULL for every other kind.
     "far_width": "REAL",
