@@ -143,13 +143,22 @@ table.calendar tr.stale td { color: #9fb0bf; }
   border-radius: 4px;
   padding: 4px 8px;
 }
-.builder-chain table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 12px; }
+.builder-chain {
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid #232c34;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+.builder-chain table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .builder-chain th, .builder-chain td {
   text-align: center;
   padding: 4px 6px;
   border-bottom: 1px solid #232c34;
 }
+.builder-chain thead th { position: sticky; top: 0; background: #181e24; z-index: 1; }
 .builder-chain td.builder-strike { font-weight: 600; color: #cfe3f5; }
+.builder-chain tr.builder-atm-row { background: #1a232b; }
 .builder-chain button {
   background: #24303a;
   color: #cfe3f5;

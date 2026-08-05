@@ -362,11 +362,16 @@ async function loadChain(view) {
     .map(Number)
     .sort((a, b) => a - b);
 
+  const atmStrike = strikes.reduce(
+    (nearest, s) => (Math.abs(s - _builder.spot) < Math.abs(nearest - _builder.spot) ? s : nearest),
+    strikes[0]
+  );
+
   const rows = strikes.map((strike) => {
     const call = byStrike[strike].C;
     const put = byStrike[strike].P;
     const mid = (opt) => (opt && opt.quote && opt.quote.mid != null ? opt.quote.mid.toFixed(2) : "--");
-    return `<tr>
+    return `<tr${strike === atmStrike ? ' class="builder-atm-row"' : ""}>
       <td>${call ? mid(call) : "--"}</td>
       <td>${call ? `<button class="btn-sell" data-symbol="${call.symbol}" data-strike="${strike}" data-kind="call" data-price="${call.quote?.mid ?? 0}" data-dir="-1">Sell</button>
                     <button class="btn-buy" data-symbol="${call.symbol}" data-strike="${strike}" data-kind="call" data-price="${call.quote?.mid ?? 0}" data-dir="1">Buy</button>` : ""}</td>
@@ -381,6 +386,9 @@ async function loadChain(view) {
   chainEl.querySelectorAll("button[data-symbol]").forEach((btn) => {
     btn.onclick = () => addLeg(view, btn.dataset);
   });
+  // Chain is its own scrollable pane (see .builder-chain) -- land on the ATM row rather than
+  // making the user hunt for spot among a hundred-plus strikes.
+  chainEl.querySelector("tr.builder-atm-row")?.scrollIntoView({ block: "center" });
 }
 
 function addLeg(view, data) {
