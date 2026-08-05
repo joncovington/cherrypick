@@ -449,7 +449,28 @@ async function mountStagedView(view) {
   await load();
 }
 
+// Maps the swapped-in view's own wrapper id to its nav tab -- covers every way #content can be
+// replaced (a direct hx-get click, or the watchlist/screener's programmatic htmx.ajax calls),
+// since all of them route through this one afterSwap event regardless of trigger.
+const _VIEW_TO_NAV = {
+  "calendar-view": "nav-calendar",
+  "screener-view": "nav-screener",
+  "symbol-view": "nav-symbol",
+  "builder-view": "nav-builder",
+  "staged-view": "nav-staged",
+};
+
+function _setActiveNavTab(target) {
+  for (const [viewId, navId] of Object.entries(_VIEW_TO_NAV)) {
+    if (target.querySelector(`#${viewId}`)) {
+      document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("on", a.id === navId));
+      return;
+    }
+  }
+}
+
 document.body.addEventListener("htmx:afterSwap", (evt) => {
+  _setActiveNavTab(evt.detail.target);
   const symbolView = evt.detail.target.querySelector("#symbol-view");
   if (symbolView) mountSymbolView(symbolView);
   const screenerView = evt.detail.target.querySelector("#screener-view");

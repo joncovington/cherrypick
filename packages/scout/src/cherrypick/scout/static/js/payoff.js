@@ -368,11 +368,11 @@ async function loadChain(view) {
     const mid = (opt) => (opt && opt.quote && opt.quote.mid != null ? opt.quote.mid.toFixed(2) : "--");
     return `<tr>
       <td>${call ? mid(call) : "--"}</td>
-      <td>${call ? `<button data-symbol="${call.symbol}" data-strike="${strike}" data-kind="call" data-price="${call.quote?.mid ?? 0}" data-dir="1">Buy</button>
-                    <button data-symbol="${call.symbol}" data-strike="${strike}" data-kind="call" data-price="${call.quote?.mid ?? 0}" data-dir="-1">Sell</button>` : ""}</td>
+      <td>${call ? `<button class="btn-sell" data-symbol="${call.symbol}" data-strike="${strike}" data-kind="call" data-price="${call.quote?.mid ?? 0}" data-dir="-1">Sell</button>
+                    <button class="btn-buy" data-symbol="${call.symbol}" data-strike="${strike}" data-kind="call" data-price="${call.quote?.mid ?? 0}" data-dir="1">Buy</button>` : ""}</td>
       <td class="builder-strike">${strike}</td>
-      <td>${put ? `<button data-symbol="${put.symbol}" data-strike="${strike}" data-kind="put" data-price="${put.quote?.mid ?? 0}" data-dir="1">Buy</button>
-                   <button data-symbol="${put.symbol}" data-strike="${strike}" data-kind="put" data-price="${put.quote?.mid ?? 0}" data-dir="-1">Sell</button>` : ""}</td>
+      <td>${put ? `<button class="btn-sell" data-symbol="${put.symbol}" data-strike="${strike}" data-kind="put" data-price="${put.quote?.mid ?? 0}" data-dir="-1">Sell</button>
+                   <button class="btn-buy" data-symbol="${put.symbol}" data-strike="${strike}" data-kind="put" data-price="${put.quote?.mid ?? 0}" data-dir="1">Buy</button>` : ""}</td>
       <td>${put ? mid(put) : "--"}</td>
     </tr>`;
   });
