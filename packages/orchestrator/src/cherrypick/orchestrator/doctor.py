@@ -186,7 +186,7 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
 
     # clock / timezone
     tz = cfg.get("timezone", "America/New_York")
-    holidays = timeutil.load_holidays(cfg, cfgmod.module_root)
+    holidays = timeutil.load_holidays()
     now = timeutil.now_et(tz)
     checks.append(
         Check(

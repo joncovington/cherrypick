@@ -184,9 +184,12 @@ Real — act:
   `cherrypick-trade-notify`, `-log-archive`, or `-reconcile`; and nothing cross-checks that
   `stream_requests/*.json` cover the symbols the modules actually trade (mitigated since 2026-07-29
   by every module regenerating its own file).
-- **`holidays_loaded=0`.** The orchestrator's own holiday list is unpopulated (`doctor` shows it);
-  entry/exit gating trusts weekday logic plus each module's use of `cherrypick.core.calendar`. Load a
-  market-holiday source before the next exchange holiday.
+- ~~**`holidays_loaded=0`.**~~ **Fixed 2026-08-05.** `timeutil.load_holidays` was scanning MEIC's
+  config for `nyse_holidays_<year>` keys that had been retired when the calendar moved into
+  `cherrypick.core` — so the scan matched nothing and every caller, the watchdog included, ran with an
+  empty set and treated market holidays as ordinary sessions. It now reads
+  `cherrypick.core.calendar.nyse_holidays` (this year and next; `doctor` shows 20 rather than 0), and
+  degrades to weekday-only gating if that lookup ever fails.
 
 ## The 2026-07-29 cutover (record)
 

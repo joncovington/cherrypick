@@ -496,7 +496,7 @@ def _ensure_dolt(cfg) -> None:
 def _run_earnings(cfg, phase: str) -> None:
     """phase = 'entry' | 'exit'. Invoked by the daily scheduled task."""
     tz = cfg.get("timezone", "America/New_York")
-    holidays = timeutil.load_holidays(cfg, cfgmod.module_root)
+    holidays = timeutil.load_holidays()
     now = timeutil.now_et(tz)
     today = now.strftime("%Y-%m-%d")
     mcfg = cfg.get("modules", {}).get("earnings")

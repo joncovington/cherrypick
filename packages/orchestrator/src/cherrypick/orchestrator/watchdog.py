@@ -1090,7 +1090,7 @@ def _process_notifications(
 def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     tz = cfg.get("timezone", "America/New_York")
-    holidays = timeutil.load_holidays(cfg, cfgmod.module_root)
+    holidays = timeutil.load_holidays()
     now = timeutil.now_et(tz)
     in_session = timeutil.is_session_window(now, holidays)
     is_trading = timeutil.is_trading_day(now, holidays)
