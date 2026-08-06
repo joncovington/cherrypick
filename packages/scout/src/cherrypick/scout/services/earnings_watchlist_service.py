@@ -30,9 +30,7 @@ async def _default_fetch(session: BrokerSession) -> list[str]:
     from tastytrade.watchlists import PublicWatchlist
 
     watchlists = await session.call(PublicWatchlist.get)
-    wl = next(
-        (w for w in watchlists if w.group_name == "Earnings" and w.name == _WATCHLIST_NAME), None
-    )
+    wl = next((w for w in watchlists if w.group_name == "Earnings" and w.name == _WATCHLIST_NAME), None)
     if wl is None or not wl.watchlist_entries:
         return []
     return sorted({entry["symbol"].upper() for entry in wl.watchlist_entries if entry.get("symbol")})

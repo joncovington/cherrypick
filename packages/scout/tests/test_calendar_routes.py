@@ -80,8 +80,14 @@ def test_partial_calendar_notes_when_the_liquidity_filter_is_unavailable(app_and
 
     async def fake_get_calendar(*_a, **_kw):
         return {
-            "ok": True, "as_of": 1000.0, "stale": False, "dolt_available": True, "days": 14,
-            "liquid_only": True, "liquidity_filter_available": False, "entries": [],
+            "ok": True,
+            "as_of": 1000.0,
+            "stale": False,
+            "dolt_available": True,
+            "days": 14,
+            "liquid_only": True,
+            "liquidity_filter_available": False,
+            "entries": [],
         }
 
     monkeypatch.setattr(_calendar_api.calendar_service, "get_calendar", fake_get_calendar)

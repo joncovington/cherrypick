@@ -124,8 +124,16 @@ async def get_analysis(request: Request, sym: str) -> dict:
     candles = await _candles(request, sym)
     bars = candles["bars"]
     if not bars:
-        return {"ok": True, "symbol": symbol, "as_of": candles["as_of"], "stale": True,
-                "headline": None, "price_action": None, "trend_1m": None, "trend_6m": None}
+        return {
+            "ok": True,
+            "symbol": symbol,
+            "as_of": candles["as_of"],
+            "stale": True,
+            "headline": None,
+            "price_action": None,
+            "trend_1m": None,
+            "trend_6m": None,
+        }
 
     levels = _levels.support_resistance(bars)
     closes = [b["c"] for b in bars]
@@ -267,15 +275,25 @@ async def get_suggestions(
         )
         expiration = _default_suggestion_expiration(all_expirations["expirations"])
         if expiration is None:
-            return {"ok": True, "symbol": sym.strip().upper(), "sentiment": sentiment,
-                    "expiration": None, "cards": []}
+            return {
+                "ok": True,
+                "symbol": sym.strip().upper(),
+                "sentiment": sentiment,
+                "expiration": None,
+                "cards": [],
+            }
         if dte is None:
             dte = (date.fromisoformat(expiration) - datetime.now(tz=UTC).date()).days
 
     _expirations, options = await _chain_with_quotes_and_greeks(app, sym, expiration)
     if not options:
-        return {"ok": True, "symbol": sym.strip().upper(), "sentiment": sentiment,
-                "expiration": expiration, "cards": []}
+        return {
+            "ok": True,
+            "symbol": sym.strip().upper(),
+            "sentiment": sentiment,
+            "expiration": expiration,
+            "cards": [],
+        }
 
     try:
         rate = await metrics_service.get_risk_free_rate(app.state.cache_db, app.state.broker_session)

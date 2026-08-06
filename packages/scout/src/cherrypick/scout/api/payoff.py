@@ -173,7 +173,10 @@ async def get_payoff(
         if result["max_loss"].get("unbounded"):
             result["probable_risk_2sd"] = _describe.probable_risk_2sd(parsed, spot, iv, t)
         result["score"] = _describe.score(
-            result["pop"], parsed, result["max_profit"], result["max_loss"],
+            result["pop"],
+            parsed,
+            result["max_profit"],
+            result["max_loss"],
             probable_risk=result["probable_risk_2sd"],
         )
         # A defined-risk score reproduces the reference platform's own number (externally

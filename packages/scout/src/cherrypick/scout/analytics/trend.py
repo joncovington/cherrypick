@@ -161,9 +161,7 @@ def tema_series(closes: list[float], period: int) -> list[float] | None:
     if e3 is None:
         return None
     n = min(len(e1), len(e2), len(e3))
-    return [
-        3 * a - 3 * b + c for a, b, c in zip(e1[-n:], e2[-n:], e3[-n:], strict=True)
-    ]
+    return [3 * a - 3 * b + c for a, b, c in zip(e1[-n:], e2[-n:], e3[-n:], strict=True)]
 
 
 def tema_trend(closes: list[float], period: int) -> str | None:
@@ -194,10 +192,7 @@ def trix_trend(closes: list[float], period: int = 15, signal: int = 9) -> str | 
     e3 = ema_series(e2, period)
     if e3 is None or len(e3) < 2:
         return None
-    trix = [
-        (b - a) / a * 100 if a != 0 else 0.0
-        for a, b in zip(e3, e3[1:], strict=False)
-    ]
+    trix = [(b - a) / a * 100 if a != 0 else 0.0 for a, b in zip(e3, e3[1:], strict=False)]
     signal_line = ema_series(trix, signal)
     if signal_line is None:
         return None

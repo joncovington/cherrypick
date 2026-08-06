@@ -94,9 +94,7 @@ async def test_the_sdks_own_dry_run_kwarg_is_always_true(monkeypatch):
         {"symbol": "AAPL  260116P00150000", "quantity": -1, "price": 2.00},
         {"symbol": "AAPL  260116P00145000", "quantity": 1, "price": 1.00},
     ]
-    result = await _staging.dry_run_order(
-        BrokerSession(manager=_FakeManager(), politeness_seconds=0), legs
-    )
+    result = await _staging.dry_run_order(BrokerSession(manager=_FakeManager(), politeness_seconds=0), legs)
     assert result["ok"] is True
     assert result["dry_run"] is True
     assert account.calls == [True]

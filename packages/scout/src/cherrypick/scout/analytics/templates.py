@@ -122,9 +122,20 @@ def build(
         if not option:
             return None
         return [
-            {"kind": "stock", "strike": None, "quantity": 1, "price": spot, "symbol": None,
-             "expiration": None, "bid": None, "ask": None,
-             "delta": None, "gamma": None, "theta": None, "vega": None},
+            {
+                "kind": "stock",
+                "strike": None,
+                "quantity": 1,
+                "price": spot,
+                "symbol": None,
+                "expiration": None,
+                "bid": None,
+                "ask": None,
+                "delta": None,
+                "gamma": None,
+                "theta": None,
+                "vega": None,
+            },
             _leg(option, -1),
         ]
     if name in ("put_vertical_credit", "put_vertical_debit"):
@@ -180,10 +191,17 @@ def build(
 
 
 TEMPLATES = (
-    "long_call", "long_put", "short_put", "covered_call",
-    "put_vertical_credit", "put_vertical_debit",
-    "call_vertical_credit", "call_vertical_debit",
-    "short_straddle", "short_strangle", "iron_condor",
+    "long_call",
+    "long_put",
+    "short_put",
+    "covered_call",
+    "put_vertical_credit",
+    "put_vertical_debit",
+    "call_vertical_credit",
+    "call_vertical_debit",
+    "short_straddle",
+    "short_strangle",
+    "iron_condor",
 )
 
 

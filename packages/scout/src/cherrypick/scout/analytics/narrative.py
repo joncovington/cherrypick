@@ -130,9 +130,7 @@ def price_action(
     suffix = _earnings_suffix(earnings, today)
     last = closes[-1] if closes else None
     supports = [lv for lv in levels if lv["kind"] == "support" and lv["price"] < last] if closes else []
-    resistances = (
-        [lv for lv in levels if lv["kind"] == "resistance" and lv["price"] > last] if closes else []
-    )
+    resistances = [lv for lv in levels if lv["kind"] == "resistance" and lv["price"] > last] if closes else []
 
     for period in (200, 50):
         cross = _sma_cross_today(closes, period)
