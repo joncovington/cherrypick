@@ -1,0 +1,26 @@
+{
+  "_header": "===== cherrypick manual trading desk =====",
+  "_note": "Copy to ~/.cherrypick/config/desk.json. Every default is the SAFE one: an absent or empty file refuses every order. This config authorizes HUMAN-INITIATED orders only and is completely independent of every module's enable_live_trading — enabling the desk never enables an automated loop, and vice versa.",
+
+  "enabled": false,
+  "_enabled_note": "The desk's own master switch. Nothing is submitted while this is false. Deliberately separate from any module flag so the two can never be conflated.",
+
+  "allowed_accounts": [],
+  "_allowed_accounts_note": "Last-4 fragments of the accounts authorized for manual orders, e.g. [\"2375\"]. Full account numbers never appear here (suite-wide masking rule); matching is done against the last 4 of the account resolved at submit time. An empty list refuses everything.",
+
+  "require_defined_risk": true,
+  "_require_defined_risk_note": "Refuse any OPENING order whose loss is unbounded (net short the upside tail) or not computable (a calendar/diagonal, where a single-expiry payoff is the wrong model). Set false to permit them — the dollar cap below still applies, and an uncomputable worst case can never satisfy a finite cap, so you must also null the cap to allow one through. CLOSING orders are exempt: flattening a naked short is exactly what you never want to block.",
+
+  "max_order_risk_dollars": 500,
+  "_max_order_risk_dollars_note": "Worst case at expiry, in dollars, that a single OPENING order may risk. Computed from the payoff diagram, not from a strategy-name whitelist. Set to null to disable the cap entirely — an ABSENT key falls back to 500, so forgetting it can never disable it. Closing orders are exempt.",
+
+  "ticket_ttl_seconds": 180,
+  "_ticket_ttl_seconds_note": "How long a proposed order stays confirmable. Long enough to read the review and answer, short enough that an abandoned proposal cannot be revived later from scrollback.",
+
+  "max_orders_per_day": null,
+  "max_daily_risk_dollars": null,
+  "_daily_caps_note": "Optional brakes, OFF unless set. Counted from the audit journal's `submitted` events only — a refused or merely proposed order consumes no budget. Useful as a runaway backstop.",
+
+  "broker_keyring_service": "meicagent",
+  "_broker_keyring_service_note": "Which existing module's keyring service holds the broker OAuth credentials to trade through. The desk stores NO secrets of its own — duplicating them into a second keyring entry would double the leak surface for no added capability. Borrowing the credentials is not borrowing the permissions: the desk never reads that module's trading flags."
+}

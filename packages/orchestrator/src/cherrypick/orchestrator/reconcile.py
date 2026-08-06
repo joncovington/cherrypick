@@ -201,7 +201,7 @@ def _query_broker(cfg: dict[str, Any], forced_module: str | None) -> dict[str, A
 def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     """Reconcile the real broker account against the paper-only expectation (it should be flat).
     Broker-touching and read-only; never trades. Returns a structured result with a verdict."""
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     forced = cfg.get("reconcile", {}).get("broker_module")
     broker = _query_broker(cfg, forced)
     paper = _paper_open_positions(cfg)

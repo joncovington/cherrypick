@@ -59,14 +59,19 @@ def _record_best_debit(conn, position: dict, debit: float, when: str) -> None:
     )
 
 
-def regime_columns(prefix: str, snapshot: dict, params: dict) -> dict:
+def regime_columns(prefix: str, snapshot: dict, params: dict, center: float | None = None) -> dict:
     """The regime columns for `prefix` ('entry' or 'completion') -- buckets AND the continuous
     measures behind them -- ready to fold straight into a `save_position` call. See
     `engine.classify_regime`; descriptive telemetry only, nothing here gates a decision.
 
     Public because `live_loop` writes these too (since 2026-08-01): keeping paper and live on one
-    prefix convention is what lets `analytics.by_regime` read both ledgers with the same query."""
-    regime = engine.classify_regime(snapshot, params)
+    prefix convention is what lets `analytics.by_regime` read both ledgers with the same query.
+
+    `center` (2026-08-04) is the position's centre, needed only by the centre-offset dimension --
+    the one tag that is a property of our own choice rather than of the market alone. Optional so a
+    caller with no centre in hand still gets the other four dimensions instead of an error; that
+    path records the offset as 'unknown' rather than guessing one."""
+    regime = engine.classify_regime(snapshot, params, center=center)
     return {f"{prefix}_{key}": value for key, value in regime.items()}
 
 
@@ -107,6 +112,48 @@ def _record_best_roll_debit(conn, position: dict, roll_debit: float, when: str) 
     )
 
 
+def _record_post_best_debit(conn, position: dict, debit: float, when: str) -> None:
+    """Keep the running minimum completing debit seen AFTER a legged fly completed.
+
+    `_record_best_debit` stops at the completion tick by construction — a completed position leaves
+    the completion loop — so it can say "the market never offered it" for a miss but not "how much
+    cheaper did the completing debit get after we took the first qualifying one". That second number
+    is what a wait-for-better completion rule would be built from, and the stream cache keeps no
+    quote history, so it is recorded here or lost. Telemetry only: nothing reads this on a decision
+    path.
+    """
+    best = position.get("post_best_completing_debit")
+    if best is not None and debit >= best:
+        return
+    position["post_best_completing_debit"] = debit
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "post_best_completing_debit": round(debit, 4),
+            "post_best_debit_at": when,
+        },
+    )
+
+
+def _record_post_best_credit(conn, position: dict, credit: float, when: str) -> None:
+    """Running MAXIMUM completing credit seen AFTER a debit_first fly completed — the mirror of
+    `_record_post_best_debit`, and the direct measurement behind "we locked in the win; how much
+    richer would waiting have been?". Telemetry only."""
+    best = position.get("post_best_completing_credit")
+    if best is not None and credit <= best:
+        return
+    position["post_best_completing_credit"] = credit
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "post_best_completing_credit": round(credit, 4),
+            "post_best_credit_at": when,
+        },
+    )
+
+
 def _to_position(row: dict) -> dict:
     """Database row -> the plain dict the pure math in fly.py consumes."""
     return {
@@ -127,6 +174,8 @@ def _to_position(row: dict) -> dict:
         # both are cumulative over a session, not per-iteration.
         "best_completing_debit": row["best_completing_debit"],
         "best_completing_credit": row["best_completing_credit"],
+        "post_best_completing_debit": row["post_best_completing_debit"],
+        "post_best_completing_credit": row["post_best_completing_credit"],
         "entry_time": row["entry_time"],
         # Carried so `max_positions_per_window` can count what this window has already spent. Without
         # it the cap would read every position as window-less and never bind.
@@ -189,6 +238,13 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
     # buying the completing debit spread (kind -> fly) or, if this arm's completion_modes allows
     # it, by selling the OPPOSITE-type credit spread instead (kind -> iron_fly). When both are
     # possible on the same iteration, take whichever leaves the higher post-fee floor.
+    #
+    # The iron branch is RETIRED and unreachable in config (completion_modes is ["debit"]
+    # everywhere; the `iron` arm is disabled) -- see docs/iron-completion.md. Put-call parity makes
+    # the two completions the same trade, so both gates fire on the same tick and the completed
+    # positions have the same net at every price; the iron just pays more in assignment fees. The
+    # code stays because it is correct and tested, but note the floor tiebreak below is NOT valid
+    # across kinds and must be fixed before anything re-enables this.
     for pos in [p for p in positions if p["kind"] == "short_vertical" and p["status"] == "open"]:
         debit_done, debit_reason, debit_plan = engine.evaluate_completion(snapshot, pos, params)
         if debit_plan is not None:
@@ -198,6 +254,10 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
         if "iron" in params.get("completion_modes", ["debit"]):
             iron_done, _iron_reason, iron_plan = engine.evaluate_iron_completion(snapshot, pos, params)
 
+        # NOT a valid comparison across kinds: each floor reserves its own kind's worst-case
+        # assignment fee (fly 3 strikes, iron_fly 2) at its own worst-case settlement PRICE, so
+        # iron's floor reads exactly $5.00 high at every spot. Retired-path only; see the note
+        # above and docs/iron-completion.md before reviving.
         take_iron = iron_done and (not debit_done or iron_plan["floor"] > debit_plan["floor"])
 
         if not debit_done and not (iron_done and take_iron):
@@ -243,7 +303,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "completed_at": now,
                     "completion_latency_min": latency,
                     "spot_at_completion": snapshot.get("underlying_price"),
-                    **regime_columns("completion", snapshot, params),
+                    **regime_columns("completion", snapshot, params, center=pos.get("center")),
                 },
             )
             journal(
@@ -285,7 +345,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "completed_at": now,
                 "completion_latency_min": latency,
                 "spot_at_completion": snapshot.get("underlying_price"),
-                **regime_columns("completion", snapshot, params),
+                **regime_columns("completion", snapshot, params, center=pos.get("center")),
             },
         )
         journal(
@@ -344,7 +404,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "completed_at": now,
                 "completion_latency_min": latency,
                 "spot_at_completion": snapshot.get("underlying_price"),
-                **regime_columns("completion", snapshot, params),
+                **regime_columns("completion", snapshot, params, center=pos.get("center")),
             },
         )
         journal(
@@ -407,7 +467,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "roll_latency_min": latency,
                 "spot_at_completion": snapshot.get("underlying_price"),
                 "spot_at_roll": snapshot.get("underlying_price"),
-                **regime_columns("completion", snapshot, params),
+                **regime_columns("completion", snapshot, params, center=pos.get("center")),
             },
         )
         journal(
@@ -428,6 +488,28 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "latency_min": latency,
             }
         )
+
+    # --- 1d. post-completion counterfactual telemetry: for every completed (not yet settled) fly,
+    # keep pricing the spread that completed it. The best-price trackers in steps 1/1b stop at the
+    # completion tick by construction, so without this the module can never say how much richer the
+    # completing price became after the first qualifying tick was taken — the one number a
+    # wait-for-better completion rule needs, and one the stream cache (latest-value-only) cannot
+    # reconstruct offline. Records, never gates: rule 5 is untouched, and positions completed
+    # earlier THIS tick get their completion-tick price as the baseline. Skips iron/bwb completions
+    # (different geometry) and skips silently on a missing leg quote, like the trackers it extends.
+    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    for pos in [p for p in positions if p["kind"] == "fly" and p["status"] == "open"]:
+        side, center, width = pos["side"], pos["center"], pos["wing_width"]
+        if pos["entry_mode"] == "legged":
+            long_strike = center + width if side == fly.PUT else center - width
+            far_q, center_q = engine.quote(snapshot, side, long_strike), engine.quote(snapshot, side, center)
+            if far_q is not None and center_q is not None:
+                _record_post_best_debit(conn, pos, fly.vertical_debit(far_q, center_q, slip), now)
+        elif pos["entry_mode"] == "debit_first":
+            wing_strike = center - width if side == fly.PUT else center + width
+            center_q, wing_q = engine.quote(snapshot, side, center), engine.quote(snapshot, side, wing_strike)
+            if center_q is not None and wing_q is not None:
+                _record_post_best_credit(conn, pos, fly.vertical_credit(center_q, wing_q, slip), now)
 
     open_positions = [p for p in positions if p["status"] == "open"]
 
@@ -476,7 +558,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "center_reason": plan["center_reason"],
                     "completing_direction": plan["completing_direction"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
-                    **regime_columns("entry", snapshot, params),
+                    **regime_columns("entry", snapshot, params, center=plan["center"]),
                     # Full defined risk (-W) net of trading fees AND the worst-case exercise-
                     # assignment fee (both legs ITM) -- the uncompleted branch's honest worst case,
                     # not left blank until (if ever) it completes into a fly.
@@ -549,7 +631,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "center_reason": plan["center_reason"],
                     "completing_direction": plan["completing_direction"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
-                    **regime_columns("entry", snapshot, params),
+                    **regime_columns("entry", snapshot, params, center=plan["center"]),
                     # Bounded at 0, never a -W tail (a long vertical can't lose more than its
                     # debit) -- but negative, since the debit paid is a real cost with no credit
                     # collected yet. See fly.position_floor's long_vertical branch for the
@@ -624,7 +706,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "entry_window": plan["entry_window"],
                     "center_reason": plan["center_reason"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
-                    **regime_columns("entry", snapshot, params),
+                    **regime_columns("entry", snapshot, params, center=plan["center"]),
                     # The real, negative-capable tail -- (wing_width - far_width) -- net of fees
                     # and the full 4-contract assignment-fee reserve. Never reported as a fly's
                     # floor; see fly.position_floor's bwb branch.
@@ -705,7 +787,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "entry_window": plan["entry_window"],
                     "center_reason": plan["center_reason"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
-                    **regime_columns("entry", snapshot, params),
+                    **regime_columns("entry", snapshot, params, center=plan["center"]),
                     "floor_dollars": fly.position_floor(pos),
                     "risk_free": int(fly.is_risk_free(pos)),
                     "status": "open",

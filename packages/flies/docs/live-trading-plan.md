@@ -132,14 +132,21 @@ or real. Live trading only adds the parts that talk to the actual brokerage acco
   healthy during market hours — it can raise an alert or set the halt flag, but it never places
   or cancels an order itself.
 
-**Why XSP instead of SPX for the pilot.** Paper trading runs on SPX, where fees ate 82% of gross
-profit in the very first session. XSP is the same underlying index at 1/10th the size, so the
-dollar risk per trade is smaller — but because the trading fees are roughly fixed per contract
-regardless of size, fees actually take a *larger* percentage bite at the smaller XSP scale. The
-choice between the two comes down to which one the fee-adjusted math actually favors under the
-winning variant's settings, not a preference — and for this pilot, XSP is the one that still
-clears its costs. Both are settled in cash with no possibility of early assignment, so neither
-carries assignment risk. The two are never traded live at the same time.
+**SPX vs. XSP for the pilot — corrected 2026-08-01, was XSP.** The pilot originally ran on XSP:
+paper trading's first SPX session lost 82% of gross profit to fees, and XSP is the same
+underlying at 1/10th the size, so the reasoning was that the smaller dollar risk per trade would
+win out even though fees are roughly fixed per contract (and so take a *larger* percentage bite
+at XSP's scale). That measurement held through 2026-07-31, then flipped: on the 1-wide XSP book
+the median completed fly collected $12.00 against $4.97 of fees (41.4% drag), while the 5-wide
+SPX book collected $63.12 against $6.89 (10.9%). Credit scales with structure width; the flat
+$5-per-ITM-strike assignment fee does not — so the wider structure SPX's 5-point strike spacing
+forces (5-wide is the *tightest* SPX offers) absorbs the fee far better, at the cost of a 5×
+larger per-contract risk ($100 → $500) that is unavoidable rather than chosen. Two caveats stay
+visible: measured *per dollar of risk* the two are within noise (1.41% vs 1.49% per trade), and
+the two samples come from different weeks, so the fee case is solid but the risk-adjusted case
+isn't yet established. See `../CLAUDE.md`'s "The 2026-08-01 SPX switch" section for the full
+numbers. Both are settled in cash with no possibility of early assignment, so neither carries
+assignment risk. The two are never traded live at the same time.
 
 ## The rollout ladder — each step only starts once the one before it has been checked by a person
 

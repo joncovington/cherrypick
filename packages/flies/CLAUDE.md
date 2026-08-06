@@ -85,7 +85,7 @@ each of its gaps accordingly ("no data · 100m · loop silent" vs "· no_fresh_q
 `paper_loop.run_once` on both the built and the refused path; it is pure telemetry and touches no
 decision.
 
-**Four measurements this strategy needs and generic P&L reporting cannot give:**
+**Five measurements this strategy needs and generic P&L reporting cannot give:**
 
 - **Completion rate** — how often a leg-in actually became a fly. If this is near zero the strategy is
   short verticals wearing a costume, and no P&L on the completed ones changes that. Besides the
@@ -102,6 +102,17 @@ decision.
   recomputed, so it cannot drift from the gate as configured.
 - **Completion latency** — a fly that took 40 minutes and 8 points of drift is far likelier to fill live
   than one that appeared for seconds. This is the paper-vs-live gap, measured.
+- **The post-completion counterfactual** (`post_best_completing_debit`/`post_best_completing_credit`,
+  added 2026-08-03) — for *completions*, how much better the completing price got AFTER the first
+  qualifying tick was taken. The `best_completing_*` trackers stop at the completion tick by
+  construction, so before this the module could diagnose a miss but never say whether waiting past
+  a completion would have paid — and the stream cache keeps no quote history, so the number is
+  recorded live (`book.py` step 1d, pure telemetry, no gate reads it) or lost.
+  `analytics.left_on_table` reports it split by `completion_gex_bucket`, because dealer-gamma
+  pinning is the favorable-drift regime where waiting *should* have paid for `debit_first` — the
+  measured answer to "lock in the win vs let the credit richen." Decision record, the ledger
+  evidence for first-qualifying-tick, and the bar a wait-for-better rule must clear:
+  [docs/completion-timing.md](docs/completion-timing.md).
 - **Arm divergence** — how often the arms picked different centres. High agreement means the experiment
   cannot separate them, which is a finding to surface in week one, not month three. **Centre divergence
   is only meaningful against an arm that centres differently** — i.e. `gex`. `control`, `time_window`,
@@ -111,7 +122,7 @@ decision.
   arms vs `control` on wing width. Reading a structural identity as a finding is how the redundancy
   went unnoticed.
 
-**The last three of those live on a time axis, so the dashboard has one.** `analytics.session_timeline`
+**Everything past the completion rate lives on a time axis, so the dashboard has one.** `analytics.session_timeline`
 assembles the day from rows already written — spot and every arm's wanted centre on each iteration,
 entries and completions, and each leg-in as a span running to its completion, so latency is a length
 beside the drift that bought it. `settle_now` replays the book at each tick: what it would have been
@@ -181,31 +192,48 @@ comparison measures one variable rather than a bundle of confounded changes.
 - `wide_wing` — the SPX-era single-point version of the width question (a 20-point wing bracketing
   the observed drift). **Disabled** since the sweep; kept in `ARMS` so its books' attribution stays
   readable. On XSP its scaled equivalent (~2 points) is exactly `width-2`.
-- `debit-first` — control's twin isolating the **legging order**, added 2026-07-31 (`entry_modes:
-  ["debit_first"]`, `fly.debit_vertical_payoff`/`engine.evaluate_debit_vertical_entry`/
-  `evaluate_debit_completion`). `legged` sells the credit spread first and buys the completing
+- `debit-first` — added 2026-07-31 (`entry_modes: ["debit_first"]`,
+  `fly.debit_vertical_payoff`/`engine.evaluate_debit_vertical_entry`/`evaluate_debit_completion`),
+  isolating the **legging order**: `legged` sells the credit spread first and buys the completing
   debit spread cheaper once spot drifts *away* from the short strike; this arm buys the debit
   vertical first and completes by *selling* the credit spread once spot drifts back *toward* the
   centre — literally `legged`'s two trades in the opposite order, monetizing the opposite drift
   regime at the same centre. Its uncompleted branch is structurally different too: a long
   vertical's worst case at expiry is the debit already paid (bounded, floor never below `-debit`),
   never the `-W` full-defined-risk tail an uncompleted credit spread carries.
-- `iron` — control's twin isolating the **completion choice**, added 2026-07-31
-  (`completion_modes: ["debit", "iron"]`, `fly.iron_fly_payoff`/`engine.evaluate_iron_completion`).
-  `legged`'s completion always buys the same-type debit spread; this arm may instead complete by
-  *selling* the opposite-type credit spread (put held -> sell call, or vice versa), producing an
-  **iron butterfly** — the same geometry regardless of which side was legged first. Payoff-
-  equivalent to a same-type fly shifted down by `wing_width`, so it is **not** automatically
-  risk-free the way a completed fly is: the floor is genuinely `(credit1 + credit2 - wing_width) *
-  100 * qty - fees`, which can land negative even after both gates pass their price check, and
-  `position_floor`'s `iron_fly` branch never assumes otherwise. When both completion paths clear
-  their gates on the same iteration, the position takes whichever leaves the higher post-fee
-  floor. `completion_modes` defaults to `["debit"]` everywhere else, so no other arm's behavior
-  changes.
-- `bwb` — control's twin isolating the **entry construction**, added 2026-07-31 (`entry_modes:
-  ["bwb_roll"]`, kind `bwb`, `fly.bwb_payoff`/`fly.bwb_strikes`/`engine.evaluate_bwb_entry`/
-  `evaluate_roll`). Instead of legging in over two ticks, enters a broken-wing butterfly WHOLE for
-  a net credit: a near/protected wing at the usual `wing_width` and a far/wide wing at
+  **Re-centred onto GEX 2026-08-03** (`center_rule: "gex"`, `engine.select_center`): paying a real
+  debit up front to bet on convergence only makes sense with some evidence spot is likely to move
+  toward the strikes bought, not on pure chance, so this arm now reuses the `gex` arm's own
+  centring logic instead of ATM — a `center_rule` override lets an arm opt into GEX centring
+  without being named `gex` itself. That gives up a clean ATM-vs-ATM control pairing (control
+  already gets that against `gex`'s own legged entries) in exchange for isolating BOTH centring
+  and legging order at once — read it against `control` (both differ) and against `gex` (legging
+  order only) rather than as a single-variable arm on its own.
+- `iron` — **RETIRED 2026-08-03, before it ever traded. Keep the negative result (rule 6):
+  [docs/iron-completion.md](docs/iron-completion.md).** It was control's twin isolating the
+  **completion choice** — complete a legged credit spread by buying the same-type debit spread, or
+  by *selling* the opposite-type credit spread into an **iron butterfly**. It cannot isolate
+  anything. Both completions use the **identical strike pair** (`center` and `center ± wing_width`),
+  so put-call parity pins `D + credit2 = wing_width` exactly — every IV term cancels, **for any
+  skew**, since skew is IV across strikes while parity is an arbitrage at a strike. So the two
+  gates are the same inequality, they fire on the same tick, and `iron net − W ≡ fly net` at every
+  settlement price: the iron's larger credit is not extra money, it buys exactly `W` of extra
+  liability. Verified on a real SPX 1DTE chain (18 strikes, implied forward 7617.69 ± 0.25;
+  `D + C2 = 5.00` on a 5-wide). What is left is cost, all adverse: an iron always has one side ITM
+  where a same-type fly settles clean in exactly the drift regime this book gets — **+$3.46 per
+  position, $495 over the 143 completions in the ledger** — plus a wider crossing cost that a flat
+  `slippage_frac` structurally cannot see, which is the deeper problem (an arm whose only real
+  variable is invisible to the experiment measuring it cannot produce a finding). It was never in
+  the deployed config, so it produced **zero** ledger rows. Code kept and still tested; disabled in
+  config and `completion_modes` stays `["debit"]` everywhere, so the path is unreachable.
+  **`book.py`'s "take the higher floor" dispatch is wrong and must be fixed before any revival** —
+  `fly` reserves 3 ITM strikes and `iron_fly` 2 (`fly.WORST_CASE_ITM_LEGS`) at *different*
+  worst-case prices, so iron's floor reads exactly $5.00 high at every spot and would have won
+  ~100% of the time on that artifact.
+- `bwb` — added 2026-07-31 (`entry_modes: ["bwb_roll"]`, kind `bwb`,
+  `fly.bwb_payoff`/`fly.bwb_strikes`/`engine.evaluate_bwb_entry`/`evaluate_roll`), isolating the
+  **entry construction**: instead of legging in over two ticks, enters a broken-wing butterfly
+  WHOLE for a net credit: a near/protected wing at the usual `wing_width` and a far/wide wing at
   `wing_width * bwb_far_width_ratio` (a ratio, not an absolute point value, so it scales
   automatically with whatever `wing_width` an arm or symbol is already using — the common
   real-world near:far rule of thumb is roughly 1:2). Until rolled, this carries REAL, negative
@@ -218,22 +246,66 @@ comparison measures one variable rather than a bundle of confounded changes.
   the drift that makes the position profitable, and balloons past the credit precisely when the
   tail is threatened — this arm measures whether that trade-off is actually survivable, not just
   theoretically credit-positive.
+  **Enabled and GEX-centred 2026-08-03** (`center_rule: "gex"`), not turned on ATM first — the far
+  wing is where this structure's real, uncapped-until-rolled tail sits, and `center_rule` also
+  decides which side `choose_side` sells (spot above centre → calls, tail risk sits above spot;
+  spot below → puts, tail below spot), so a GEX-selected centre argues for both a richer entry
+  credit and reduced odds of spot running past the far wing into the tail before a roll is
+  reachable — same rationale as `debit-first`'s centring change the same day.
 
 **Regime tagging (`engine.classify_regime`, added 2026-07-31).** Every entry and completion, across
-every arm, is tagged along four dimensions read purely from the snapshot in hand — `vol_bucket`
+every arm, is tagged along six dimensions read purely from the snapshot in hand — `vol_bucket`
 (ATM straddle/spot), `gex_bucket` (per-strike gamma concentration, `"unknown"` when no OI cache
 exists yet, same honest degrade as the `gex` arm's own centring), `time_bucket` (open/midday/close),
 `skew_bucket` (OTM put vs. OTM call price at the exact strikes this module trades — a direct read of
-whether the chain itself is pricing in a direction). This is deliberately inert: nothing here gates a
+whether the chain itself is pricing in a direction), and `center_offset_bucket` (signed `centre −
+spot` in points, bucketed at one strike), and `trend_bucket` (`spot − day_open`, see below). This is
+deliberately inert: nothing here gates a
 decision. It exists because the eventual goal is a live/paper mode that evaluates every eligible
 entry candidate (`legged`/`debit_first`/`bwb_roll`) and completion candidate (`debit`/`iron`) each
-tick and executes whichever wins *for the current regime* — Phase 1b's iron-vs-debit "take the
-higher floor" dispatch in `book.py` is already a working prototype of that pattern, generalized. That
+tick and executes whichever wins *for the current regime* — `book.py`'s iron-vs-debit "take the
+higher floor" dispatch was meant to be a working prototype of that pattern, and is instead a
+cautionary one: comparing two kinds by each one's own worst-case floor is not a valid comparison
+when those worst cases sit at different settlement prices (see the `iron` arm above). **A regime
+selector must score its candidates at a common price.** That
 selector needs regime-labelled real outcomes to be built from, not guessed at, and the tag definition
 is expensive to change retroactively once data is accumulating — so it ships now, before `bwb_roll`
 adds a third entry mode to tag. Deliberately excludes trend/chop: that needs a reference point in
 time no single snapshot carries, and guessing at that plumbing before there's a reason to would be
 the same mistake rule 6 warns against.
+
+**That last sentence was wrong for three weeks, and the correction is the point (2026-08-04).** The
+claim was that a trend read needs spot-now vs. spot-N-minutes-ago, which is cross-tick state this
+module refuses to keep. The premise was false: the shared cache has always carried `stream_summary`
+(`day_open`/`day_high`/`day_low`/`prev_day_close`) and `orb_ranges`, and `provider.py` read neither
+— so `spot − day_open` is a single-row lookup with no history and no state, and the snapshot now
+carries it as `session` (`provider._session_bounds`). What blocked this was never the discipline,
+only an assumption about what a snapshot could contain, and the cost was real: on 2026-08-04 both
+losing `gex` entries legged into the side a 106-point up-from-open day was against, and no recorded
+tag could distinguish them. Across the SPX sessions with coverage, refusing an entry whose completing
+direction opposes a committed drift from the open splits completion **89% vs 7%** — the sharpest
+separation any dimension here has produced, and notably it is *completion* that moves (every other
+candidate gate shifted P&L while leaving completion flat, which means it was not touching the
+mechanism). Tagged, not gated: 15 opposing trades over 3 sessions.
+
+**The band is 20 points, and it was 5 for exactly one day (corrected 2026-08-05).** 5 was one SPX
+strike — the resolution the *centre* moves in, which says nothing about how far a session must
+travel before its direction carries information. Split by how committed the day was, the 5-point tag
+is not merely weak in the 10–25 range, it is **inverted**: entries opposing a 10–25 point drift
+completed 100% of the time (n=5), while past 25 points the read is nearly absolute (0% and 14%).
+Sweeping the band, the opposing bucket completes 33% at 5, 7% at 20, and degrades again by 30; 20
+and 25 are identical, so it is a plateau rather than one lucky cut. Chosen on the same 76 rows that
+measure it — a current best estimate, not a calibrated constant. This also names the dimension's own
+failure mode: 2026-08-05 10:01 sat at +13.6 from the open, inside the old dead zone, so a 5-point
+band approved an up-completion and the day then reversed to settle 48 points *below* its open.
+Trend-from-open lags too — slower than a trailing window, not immune.
+
+**Backfillable for now, contrary to what this said (corrected 2026-08-05).** No position row records
+its session's open, but `stream_summary` currently retains a row per (symbol, trade_date) back to
+2026-07-29, so those sessions can be reconstructed by joining on trade_date. The cache offers no
+retention guarantee, so treat that as a window that will close rather than a property to rely on.
+A chop/trend distinction is still deliberately absent: that needs the *path* between open and now,
+which really is cross-tick state. [docs/centre-lag.md](docs/centre-lag.md).
 
 **Store the measure, not just the bucket (2026-08-01).** Every threshold above is a placeholder, and
 a bucket alone cannot be recalibrated — re-deriving "would this have been `pinning` at a different
@@ -243,6 +315,57 @@ the continuous measure behind each bucket plus the GEX surface's provenance (`ne
 `gamma_flip`, `gex_strikes`, `gex_input_age`), and both ledgers store them. `analytics.by_regime(...,
 bucket_edges=[...])` re-cuts the float at analysis time. MEIC learned this first — see the rationale
 on its `gex_net_at_entry` columns.
+
+**`center_offset` is the fifth dimension and the odd one out (2026-08-04, `docs/centre-lag.md`).**
+The other four describe the *market* we entered into; this one describes *our own* choice of centre
+relative to spot — a market regime is something to condition on, this is something to change. It is
+here because it turned out to decide the thing rule 4 says decides the strategy: `choose_side` sells
+PUTS when spot is at or below the centre and CALLS when above, and `completing_side_direction` then
+makes the put side complete on an UP move and the call side on a DOWN one — so this one signed
+number fixes which way spot must go for a leg-in to complete at all. On 2026-08-04 the `gex` book
+lost $386 at 60% completion against control's $613 at 95%, and both `gex` misses were centres behind
+spot: `max_total_gamma` centres on where open interest is, which is where price *has been*, so on a
+trending day it lags (measured that session: below spot 78% of 389 iterations, median −9.1 points,
+while the index ran +115). Deliberately **signed and side-neutral rather than a "lagging" boolean** —
+"lagging" is the trend-relative reading, and a single snapshot carries no trend (the same reason
+there is no trend dimension at all), so collapsing it here would bake in an up-day assumption and
+mislabel every down day. **Nothing gates on it**; 34 gex entries is a hypothesis, and the doc records
+what evidence would justify a gate. Note it is also the one dimension that *could* be backfilled,
+against the general rule below — `center` and `underlying_at_entry` were always stored, so the float
+is an exact recomputation rather than a guess, and the 292 paper / 9 live historical rows were filled
+in. The **bucket** was left NULL on those rows, because `strike_increment` is not stored per row and
+the XSP era used a different one; re-cut the float with `bucket_edges` instead.
+**It overlapped `trend`, was put on a retirement condition on 2026-08-04, and cleared it on
+2026-08-05.** The condition was: retire it if it never fires outside `trend`. On 08-04's cross-tab it
+never had — but that rested on **2 qualifying rows** and settled nothing. One session later the cell
+is populated, and the two rules caught *different* entries on the same day: `center_offset` flagged
+the 10:01 gex miss (centre +14.7 above spot) that `trend` read as `flat`, while `trend` flagged the
+11:50 and 12:54 misses whose centres sat inside one strike and which `center_offset` structurally
+cannot see. Kept; condition answered. They are kept apart because they imply **opposite remedies**:
+`trend` is a property of the market and argues for skipping the trade, `center_offset` is a property
+of our own centring rule and argues for fixing it, and only the second leaves an arm worth running.
+Note `center_offset` only ever has content on the GEX-centred arms (`gex`, `debit-first`, `bwb`),
+since the ATM arms sit at offset ≈ 0 by construction.
+
+**The 2026-08-05 falling session is what makes the centring finding more than one day's artefact.**
+It opened 7771.62 and settled 7723.55, and produced the exact mirror: all three `gex` misses were
+up-completions with the centre *above* spot, both completions were down-completions. gex −$744 at 40%
+against control's +$862 at 100%, same shape as 08-04 in the opposite direction. The sign flipped with
+the market rather than persisting. Note also the entry centred 22 points *below* spot that completed
+without trouble — lag alone is not the problem, lag **against the direction of travel** is.
+
+**A stale checkout silently costs a session's regime data, and there is now a guard for it
+(`db.stale_writer_columns`, 2026-08-05).** The loop imports from the working tree, so *whichever
+branch happens to be checked out decides what the ledger records*. On 2026-08-05 the repo sat on an
+unrelated branch and the whole session wrote NULL to both new dimensions' columns — no error, and
+the four older dimensions populated normally, which is exactly what made it look fine at a glance.
+Regime data generally has no backfill path, so a day lost this way is usually lost for good. The
+check compares the running code against the **database file** — migration is additive and permanent,
+so a ledger opened once by a newer checkout keeps columns an older checkout cannot fill, and that gap
+is the signal. Comparing the schema registry against `classify_regime` would catch nothing, since on
+a stale checkout both are stale together and agree. `paper_loop` logs it at session start and does
+not enforce: a stale checkout cannot fix itself, and refusing to trade would turn a telemetry gap
+into an outage.
 
 **Two dimensions were measured degenerate, and are documented rather than re-guessed.**
 `entry_gex_bucket` came back `thin` **60/60** because concentration was measured as one strike's
