@@ -25,7 +25,7 @@ from typing import Any
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
-from . import eval_activity, tasks, timeutil, util
+from . import eval_activity, servicecfg, tasks, timeutil, util
 from .util import CREATE_NO_WINDOW, first_json
 
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
@@ -945,8 +945,59 @@ def _check_services(cfg: dict[str, Any]) -> list[Finding]:
                 Finding(f"service.{sid}", WARN, f"{sid} status unknown", "Could not read status_argv.")
             )
         else:
-            findings.append(Finding(f"service.{sid}", OK, sid, "running"))
+            findings.append(_recycle_if_stale(svc, root, sid))
     return findings
+
+
+def _recycle_if_stale(svc: dict[str, Any], root: Path, sid: str) -> Finding:
+    """A service that is UP but running config from before the last edit gets stopped and started so
+    it re-reads. See servicecfg: liveness cannot see this, because nothing is wrong with the process.
+
+    Gated on `auto_restart` — the same permission that lets the watchdog relaunch a service that is
+    down. A service the orchestrator may not restart is not one it may recycle either, so a service
+    with `auto_restart` off is only reported, never touched.
+    """
+    try:
+        state = servicecfg.staleness(svc, root)
+    except Exception:  # a stale-check hiccup must never fail the tick
+        return Finding(f"service.{sid}", OK, sid, "running")
+
+    if state["adopt"]:
+        # First sighting: record what it is running now so the NEXT change is catchable. Nothing is
+        # restarted — with no prior stamp there is no evidence of staleness, only the absence of it.
+        servicecfg.write_stamp(sid, state["hash"], state["source"])
+        return Finding(f"service.{sid}", OK, sid, "running")
+    if not state["stale"]:
+        return Finding(f"service.{sid}", OK, sid, "running")
+
+    where = state.get("source") or "service entry"
+    if not svc.get("auto_restart"):
+        return Finding(
+            f"service.{sid}",
+            WARN,
+            f"{sid} running stale config",
+            f"Config changed since launch ({where}); auto_restart is off, so restart it by hand.",
+        )
+
+    stopped = _stop_streamer(root, svc)
+    started = _start_streamer(root, svc["start_argv"]) if stopped else False
+    if started:
+        # Stamp only the config the NEW process actually launched with. Stamping a failed recycle
+        # would mark the stale process as current and never try again.
+        servicecfg.write_stamp(sid, state["hash"], state["source"])
+        return Finding(
+            f"service.{sid}",
+            WARN,
+            f"{sid} recycled onto new config",
+            f"Config changed since launch ({where}); stopped and restarted so it re-reads.",
+        )
+    return Finding(
+        f"service.{sid}",
+        WARN,
+        f"{sid} stale config — recycle failed",
+        f"Config changed since launch ({where}) but the {'restart' if stopped else 'stop'} failed; "
+        "it is still running the old config.",
+    )
 
 
 def _process_notifications(

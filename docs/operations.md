@@ -53,6 +53,20 @@ policed by the watchdog:
 `meic-sidecar` (the 127.0.0.1:7699 REST poller) is a declared-but-disabled third; enable only for
 MEIC's live/interactive loop fast-path.
 
+**Services are also recycled when their config changes.** A daemon reads config once, at launch, so
+an edit afterwards reaches the file and never the process — and no liveness check can see it, because
+nothing is wrong with the process. (A `gex-recorder` up since 07-19 kept writing a frozen spot into
+the trail for days after `source.stream_cache_db` moved off the retired meic cache.) `install` stamps
+a hash of each service's effective config — its own config file *and* its `services[]` entry — into
+`state/service-<id>.launch.json`, and every watchdog tick compares. A moved hash means stop-then-start
+so the process re-reads; the stamp only advances if the restart actually succeeded, so a failed
+recycle is retried rather than forgotten. Recycling is gated on `auto_restart`: a service the
+orchestrator may not restart is only reported as stale, never touched. A service with no stamp yet
+(started by hand, or predating this) is **adopted, not restarted** — with nothing to compare against,
+staleness is unknowable, and the first tick simply records what it is running so the *next* change is
+caught. Set `config_name` on a service whose config file is named for neither its checkout directory
+nor its id.
+
 Every module that consumes the stream declares its needs in `~/.cherrypick/state/stream_requests/`:
 flies and gex have always regenerated their files on every run, and MEIC gained its writer on
 2026-07-29 (`meic/src/cherrypick/meic/stream_request.py` — symbols plus a `leg_sources` query against the paper
