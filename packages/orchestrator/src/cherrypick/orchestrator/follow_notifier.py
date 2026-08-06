@@ -1,9 +1,13 @@
 """Notify tastylive Follow Feed fills (e.g. to Discord) as the traders post them.
 
-Polls the Follow Feed's public read endpoints and pushes one concise line per newly seen order.
-Same event contract as trade_notifier: a per-id watermark (one-shot, never re-notified), atomic
-state, a single-writer lock, and seed-don't-backfill on first activation so switching it on doesn't
-blast the last 50 orders in one burst.
+Polls the Follow Feed's public read endpoints and pushes one order per newly seen fill: a plain
+three-line message for the log floor and any non-Discord channel, and a colored Discord embed card
+for the channel this is actually read in (`format_order`/`build_embed` below — ported from the
+standalone follow-feed-notifier prototype this was extracted from, kept here so it shares this
+module's watermark/lock/task wiring rather than running as a second poller). Same event contract as
+trade_notifier: a per-id watermark (one-shot, never re-notified), atomic state, a single-writer lock,
+and seed-don't-backfill on first activation so switching it on doesn't blast the last 50 orders in
+one burst.
 
 Endpoints (undocumented, discovered in the tastytrade web platform's own bundle; no auth required
 for the two GETs used here):
@@ -28,6 +32,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from typing import Any
 
 from cherrypick.notify import Notifier
@@ -145,22 +150,41 @@ def fetch_orders(filters: dict) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- formatting
+# Ported from the standalone follow-feed-notifier (the same feed, refined independently into a card
+# style: open/close leads the line rather than Bought/Sold, size and spot give strikes context, and
+# the Discord push is a colored embed card rather than a plain text blob). Kept as one push per order
+# — the standalone runs its own poll loop, this module still owns the watermark/lock/task wiring.
+
+# Stripe colors for the Discord embed. Deliberately not green/red: the feed never tells us the P&L,
+# only the direction, and a red dot on a winning close would actively lie.
+COLOR_OPEN = 0x3B82F6  # blue — a position went on
+COLOR_CLOSE = 0xF59E0B  # amber — a position came off
+COLOR_MIXED = 0x8B5CF6  # violet — legs on both sides (a roll, usually)
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
 def _direction(order: dict) -> str:
     """The platform's own wording: a net-debit order reads "Bought", a net-credit one "Sold".
 
-    Single-leg orders (a lone option, or stock) carry order_type "limit" rather than either, so fall
-    back to the leg actions — "buytoclose"/"selltoopen" and friends. Without this the feed's own
-    "Sold Stock" rendered as the meaningless "Limit Stock"."""
-    order_type = str(order.get("order_type") or "")
-    if order_type == "net_debit":
-        return "Bought"
-    if order_type == "net_credit":
-        return "Sold"
+    The LEGS win when they all sit on one side, and order_type is the tiebreak for a genuine package
+    (a vertical's legs point both ways, so only the net says whether it was a debit or a credit).
+    Precedence matters: the feed ships single-leg orders whose order_type contradicts the leg — a
+    lone "selltoclose" call tagged net_debit — and taking order_type first printed that credit as
+    "$5.95 db". A one-sided order has no "net" to speak of; the action is the fact.
+
+    Single-leg orders also often carry order_type "limit" rather than either net_*, which is the
+    other reason the leg has to be readable on its own — it rendered as the meaningless "Limit Stock"."""
     actions = {str(leg.get("action") or "").lower() for leg in order.get("order_legs") or []}
     actions.discard("")
     if actions and all(a.startswith("buy") for a in actions):
         return "Bought"
     if actions and all(a.startswith("sell") for a in actions):
+        return "Sold"
+    order_type = str(order.get("order_type") or "")
+    if order_type == "net_debit":
+        return "Bought"
+    if order_type == "net_credit":
         return "Sold"
     return order_type.replace("_", " ").title() or "Traded"
 
@@ -177,44 +201,153 @@ def _open_close(order: dict) -> str:
     return ""
 
 
-def _underlyings(order: dict) -> str:
+def _lifecycle(order: dict) -> tuple[str, str, int]:
+    """(marker, headline word, embed color). Falls back to the Bought/Sold verb when the legs sit on
+    both sides — an honest "something happened" beats guessing at a roll."""
+    match _open_close(order):
+        case "OPEN":
+            return "➕", "OPEN", COLOR_OPEN
+        case "CLOSE":
+            return "➖", "CLOSE", COLOR_CLOSE
+        case _:
+            return "\U0001f501", _direction(order), COLOR_MIXED
+
+
+def _is_opening(order: dict) -> bool:
+    return _open_close(order) == "OPEN"
+
+
+def _underlying_symbols(order: dict) -> list[str]:
     seen = []
     for leg in order.get("order_legs") or []:
         sym = leg.get("underlying_symbol")
         if sym and sym not in seen:
             seen.append(str(sym))
-    return "/".join(seen)
+    return seen
 
 
-def _fmt_leg(leg: dict) -> str:
+def _underlyings(order: dict) -> str:
+    return "/".join(_underlying_symbols(order))
+
+
+def _num(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _trim(value) -> str:
+    """A number without trailing zeros: 122.0 -> '122', 457.5 -> '457.5'."""
+    n = _num(value)
+    return f"{n:g}" if n is not None else str(value)
+
+
+def _quantity(order: dict) -> str:
+    """Contract count as '2x'. The largest leg quantity, so a ratio spread reports its widest side
+    rather than understating the position. An all-equity order counts in shares, not contracts —
+    '100x' on a stock trade would read as a 100-lot, a 100x overstatement of the position."""
+    legs = order.get("order_legs") or []
+    sizes = [q for q in (_num(leg.get("quantity")) for leg in legs) if q]
+    if not sizes:
+        return ""
+    # The feed tags equity legs "S", not "E" — checking only "E" sent every stock trade down the
+    # contracts branch and printed the exact "100x" this guard exists to prevent. Both accepted so a
+    # future "E" doesn't silently regress it.
+    equity = bool(legs) and all(str(leg.get("asset_type") or "").upper() in ("E", "S") for leg in legs)
+    return f"{max(sizes):g} sh" if equity else f"{max(sizes):g}x"
+
+
+def _leg_body(leg: dict) -> str:
     """One leg as strike+right, e.g. '122P'. Falls back to the raw OCC symbol for anything that
     isn't a plain option leg (equity legs carry no strike)."""
     strike, right = leg.get("strike_price"), leg.get("call_or_put")
     if strike is None or not right:
         return str(leg.get("symbol") or leg.get("underlying_symbol") or "?")
-    try:
-        strike_str = f"{float(strike):g}"
-    except (TypeError, ValueError):
-        strike_str = str(strike)
-    return f"{strike_str}{right}"
+    return f"{_trim(strike)}{right}"
+
+
+def _leg_sign(leg: dict) -> str:
+    """'-' short, '+' long, '' when the feed didn't say — the most load-bearing character on the line.
+
+    Without it a vertical is unreadable: '122P/117P' is a CREDIT spread short the 122 and a DEBIT
+    spread long it, and the net db/cr can't settle it (buying back a credit spread is a debit). A
+    lone option has the same problem — "Option" says nothing about the side taken. The feed carries
+    the answer per leg in `action` ("selltoopen"/"buytoclose"/...); we were dropping it."""
+    action = str(leg.get("action") or "").lower()
+    if action.startswith("sell"):
+        return "-"
+    if action.startswith("buy"):
+        return "+"
+    return ""
+
+
+def _fmt_leg(leg: dict) -> str:
+    return f"{_leg_sign(leg)}{_leg_body(leg)}"
 
 
 def _legs_summary(order: dict, max_legs: int = 6) -> str:
     legs = order.get("order_legs") or []
     if not legs:
         return ""
-    # An equity leg's fallback token IS its underlying, which the line already carries — rendering
-    # both gave "NVTS NVTS". Nothing to add for a stock leg beyond the symbol already shown.
-    tokens = [t for t in (_fmt_leg(leg) for leg in legs[:max_legs]) if t not in _underlyings(order)]
+    # An equity leg's body IS its underlying, which the line already carries — rendering both gave
+    # "NVTS NVTS". Compare the BODY, not the signed token, or a sign defeats the check.
+    underlyings = _underlyings(order)
+    tokens = [_fmt_leg(leg) for leg in legs[:max_legs] if _leg_body(leg) not in underlyings]
     if not tokens:
         return ""
     shown = "/".join(tokens)
     if len(legs) > max_legs:
         shown += f"/+{len(legs) - max_legs}"
-    expiries = sorted({str(leg.get("expiration_date")) for leg in legs if leg.get("expiration_date")})
-    if expiries:
-        shown += " " + (expiries[0] if len(expiries) == 1 else f"{expiries[0]}..{expiries[-1]}")
     return shown
+
+
+def _structure(order: dict) -> str:
+    """Size and legs together: '2x 457.5P/485P/512.5P'. Either half alone is fine."""
+    return " ".join(p for p in (_quantity(order), _legs_summary(order)) if p)
+
+
+def _date_label(iso: str) -> str:
+    """'2026-08-07' -> 'Aug 7'. The year is dropped: everything in this feed is near-dated. Falls
+    back to the raw string on anything unparseable."""
+    try:
+        y, m, d = (int(part) for part in str(iso).split("-")[:3])
+        return f"{_MONTHS[m - 1]} {d}"
+    except (ValueError, IndexError):
+        return str(iso)
+
+
+def _expiries(order: dict) -> list[str]:
+    return sorted(
+        {str(leg["expiration_date"]) for leg in order.get("order_legs") or [] if leg.get("expiration_date")}
+    )
+
+
+def _expiry(order: dict) -> str:
+    """'Aug 7', or 'Aug 5-Aug 12' for a calendar. '0DTE' is called out because same-day expiry is a
+    different animal from anything else here."""
+    exps = _expiries(order)
+    if not exps:
+        return ""
+    label = _date_label(exps[0]) if len(exps) == 1 else f"{_date_label(exps[0])}-{_date_label(exps[-1])}"
+    filled = str(order.get("executed_at") or order.get("filled_at") or "")[:10]
+    if len(exps) == 1 and filled and exps[0] == filled:
+        label += " · 0DTE"
+    return label
+
+
+def _filled_at(order: dict) -> datetime | None:
+    """When the order actually filled, as an aware datetime. `executed_at` is the platform's own
+    fill time; `filled_at` is the backstop."""
+    for key in ("executed_at", "filled_at"):
+        raw = str(order.get(key) or "")
+        if not raw:
+            continue
+        try:  # fromisoformat only learned to parse a trailing 'Z' in 3.11
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+    return None
 
 
 def _price(order: dict) -> str:
@@ -227,6 +360,45 @@ def _price(order: dict) -> str:
     return f"${price} {suffix}".strip()
 
 
+def _spot(order: dict) -> str:
+    """Underlying price at the fill, e.g. 'PLTR 163.86'. Strikes mean nothing without it: a 122P
+    closed for a penny is only legible once you can see the stock at 163.86."""
+    value = order.get("underlying_price_string") or order.get("underlying_price")
+    syms = _underlying_symbols(order)
+    if value in (None, "") or not syms:
+        return ""
+    # Take the first underlying from the LIST, never by splitting the joined string on "/" — a
+    # futures symbol is itself slash-prefixed ("/MNQU6"), so that split yielded an empty symbol and
+    # every futures row printed a bare price with a doubled separator.
+    sym = syms[0]
+    n = _num(value)
+    return f"{sym} {n:.2f}" if n is not None else f"{sym} {value}"
+
+
+def _iv_rank(order: dict) -> str:
+    n = _num(order.get("tos_iv_rank"))
+    return f"{n:.0f}" if n is not None else ""
+
+
+def _pop(order: dict) -> str:
+    """Probability of profit — meaningful on an opening trade, noise on an exit, so it is only ever
+    shown on an open."""
+    n = _num(order.get("probability_of_profit"))
+    return f"{n:.0f}%" if n is not None and _is_opening(order) else ""
+
+
+def _tags(order: dict) -> list[str]:
+    return [
+        name
+        for name, on in (
+            ("Earnings", order.get("is_earnings_play")),
+            ("Hedge", order.get("is_hedge")),
+            ("Scalp", order.get("is_scalp_trade")),
+        )
+        if on
+    ]
+
+
 def _comment(order: dict, limit: int = 220) -> str:
     """The trader's own rationale, when they left one — the most useful part of the feed, and the
     reason this is worth a push rather than a dashboard panel."""
@@ -237,28 +409,85 @@ def _comment(order: dict, limit: int = 220) -> str:
     return ""
 
 
-def format_order(order: dict, trader_names: dict[int, str]) -> str:
-    """One feed order as a single push line."""
+def _trader_name(order: dict, trader_names: dict[int, str]) -> str:
     try:
         trader_id = int(order.get("trader_id"))
     except (TypeError, ValueError):
         trader_id = -1
-    trader = trader_names.get(trader_id, f"trader {order.get('trader_id', '?')}")
+    return trader_names.get(trader_id, f"trader {order.get('trader_id', '?')}")
+
+
+def format_order(order: dict, trader_names: dict[int, str]) -> str:
+    """One order as plain text — the log floor and any non-Discord channel read this.
+
+    Three lines: who and what, the numbers, the trader's comment. Kept UTC (plain text has no way to
+    render in the reader's timezone; the Discord embed does that properly)."""
+    marker, word, _ = _lifecycle(order)
     strategy = str(order.get("strategy") or "order")
-    head = f"\U0001f4e1 Follow — {trader} {_direction(order)} {strategy}"
+    head = f"{marker} {_trader_name(order, trader_names)} · {word} {_underlyings(order)} {strategy}".replace(
+        "  ", " "
+    )
 
-    parts = [p for p in (_underlyings(order), _legs_summary(order), _price(order)) if p]
-    tags = [t for t in (_open_close(order), "Earnings" if order.get("is_earnings_play") else "") if t]
-    if order.get("is_hedge"):
-        tags.append("Hedge")
-    if order.get("is_scalp_trade"):
-        tags.append("Scalp")
-    if tags:
-        parts.append("[" + " ".join(tags) + "]")
+    when = _filled_at(order)
+    detail = [
+        _structure(order),
+        f"exp {_expiry(order)}" if _expiry(order) else "",
+        _price(order),
+        _spot(order),
+        f"IVR {_iv_rank(order)}" if _iv_rank(order) else "",
+        f"POP {_pop(order)}" if _pop(order) else "",
+        *_tags(order),
+        when.astimezone(timezone.utc).strftime("%H:%M UTC") if when else "",
+    ]
+    lines = [head, " · ".join(p for p in detail if p)]
+    body = _comment(order)
+    if body:
+        lines.append(f"> {body}")
+    return "\n".join(ln for ln in lines if ln)
 
-    line = f"{head} — {' '.join(parts)}" if parts else head
-    comment = _comment(order)
-    return f"{line}\n“{comment}”" if comment else line
+
+def _embed_field(name: str, value: str) -> dict | None:
+    return {"name": name, "value": value, "inline": True} if value else None
+
+
+def build_embed(order: dict, trader_names: dict[int, str]) -> dict:
+    """One order as a Discord embed: a colored card with the comment as the body and the numbers as
+    labeled fields, three to a row.
+
+    `timestamp` is the fill time — Discord renders it in each reader's own timezone, which is the
+    honest way to show a time on a message that may arrive well after the fact."""
+    _, word, color = _lifecycle(order)
+    strategy = str(order.get("strategy") or "order")
+    title = " · ".join(p for p in (word, f"{_underlyings(order)} {strategy}".strip()) if p)
+
+    fields = [
+        f
+        for f in (
+            _embed_field("Trade", _structure(order)),
+            _embed_field("Price", _price(order)),
+            _embed_field("Expiry", _expiry(order)),
+            _embed_field("Spot", _spot(order)),
+            _embed_field("IV rank", _iv_rank(order)),
+            _embed_field("POP", _pop(order)),
+        )
+        if f
+    ]
+
+    embed: dict = {
+        "author": {"name": _trader_name(order, trader_names)},
+        "title": title[:256],
+        "color": color,
+        "fields": fields,
+    }
+    body = _comment(order)
+    if body:
+        embed["description"] = f"> {body}"[:4096]
+    if _tags(order):
+        embed["footer"] = {"text": " · ".join(_tags(order))}
+    when = _filled_at(order)
+    if when:
+        embed["timestamp"] = when.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return embed
 
 
 # --------------------------------------------------------------------------- entrypoint
@@ -269,7 +498,7 @@ def _sort_key(order: dict) -> tuple:
 
 
 def run(cfg: dict | None = None) -> dict:
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     settings = cfgmod.follow_feed_settings(cfg)
     if not settings["enabled"]:
         return {"ok": True, "skipped": "follow_feed not enabled"}
@@ -310,6 +539,7 @@ def run(cfg: dict | None = None) -> dict:
                 f"follow.order.{order['id']}",
                 "Follow feed",
                 format_order(order, trader_names),
+                embed=build_embed(order, trader_names),
             )
         for order in fresh:
             seen.add(int(order["id"]))
