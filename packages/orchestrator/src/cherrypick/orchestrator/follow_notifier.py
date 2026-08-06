@@ -286,6 +286,29 @@ def _fmt_leg(leg: dict) -> str:
     return f"{_leg_sign(leg)}{_leg_body(leg)}"
 
 
+def _common_sign(order: dict) -> str:
+    """The one sign shared by every leg, or '' if they disagree or the feed didn't say."""
+    signs = {_leg_sign(leg) for leg in order.get("order_legs") or []}
+    return signs.pop() if len(signs) == 1 else ""
+
+
+def _is_futures_leg(leg: dict) -> bool:
+    if str(leg.get("asset_type") or "") == "/":  # the feed's own tag, and the authority
+        return True
+    # Backstop for a leg the feed left untagged. It has to exclude options explicitly: a futures
+    # OPTION carries a slash-prefixed underlying too, and it quotes in cash like any other option,
+    # so a bare startswith("/") would strip the db/cr off a trade that had genuinely earned it.
+    if leg.get("strike_price") is not None or leg.get("call_or_put"):
+        return False
+    return str(leg.get("underlying_symbol") or "").startswith("/")
+
+
+def _is_futures(order: dict) -> bool:
+    """An outright futures order. Only when EVERY leg is one — anything mixed still quotes in cash."""
+    legs = order.get("order_legs") or []
+    return bool(legs) and all(_is_futures_leg(leg) for leg in legs)
+
+
 def _legs_summary(order: dict, max_legs: int = 6) -> str:
     legs = order.get("order_legs") or []
     if not legs:
@@ -303,8 +326,15 @@ def _legs_summary(order: dict, max_legs: int = 6) -> str:
 
 
 def _structure(order: dict) -> str:
-    """Size and legs together: '2x 457.5P/485P/512.5P'. Either half alone is fine."""
-    return " ".join(p for p in (_quantity(order), _legs_summary(order)) if p)
+    """Size and legs together: '2x -457.5P/+485P/-512.5P'. Either half alone is fine.
+
+    When no leg token survives — stock and futures, whose body is just the underlying the line
+    already carries — the size takes the sign instead, so '-1x' still says which way they went.
+    Without that a futures fill showed its side nowhere at all once the price suffix was dropped."""
+    qty, legs = _quantity(order), _legs_summary(order)
+    if qty and not legs:
+        qty = _common_sign(order) + qty
+    return " ".join(p for p in (qty, legs) if p)
 
 
 def _date_label(iso: str) -> str:
@@ -354,8 +384,14 @@ def _price(order: dict) -> str:
     price = order.get("price_string") or order.get("price")
     if price in (None, ""):
         return ""
-    # db/cr comes from the direction, not just order_type — a "limit" single-leg order has no net_*
-    # type but is still unambiguously a debit or a credit, and the feed's own UI labels it that way.
+    # A futures price is a quoted LEVEL, not cash changing hands — nobody pays $29,728.75 to buy one
+    # MNQ. Labelling it "cr" put a five-figure "credit" next to a $1.46 butterfly and read as a
+    # windfall. The side moves onto the size instead (see `_structure`), which is what db/cr was
+    # really conveying on those rows.
+    if _is_futures(order):
+        return f"${price}"
+    # Otherwise db/cr comes from the direction, not just order_type — a "limit" single-leg order has
+    # no net_* type but is still unambiguously a debit or a credit, and the feed's UI labels it so.
     suffix = {"Bought": "db", "Sold": "cr"}.get(_direction(order), "")
     return f"${price} {suffix}".strip()
 
