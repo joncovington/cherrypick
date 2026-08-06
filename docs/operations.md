@@ -208,5 +208,5 @@ plan (task prefixes, port offsets, side-by-side A/B) was superseded by direct in
   credential chain missing the shared `cherrypick-broker` fallback after the keyring migration
   (fixed; regression-tested).
 - The paper `drawdown` alert remains **deliberately disabled** in the home config (paper drawdown
-  noise is unwanted; live drawdown is the live module's concern) — note the width study's
-  forced-sampling volume would trip any floors sized for ladder volume anyway.
+  noise is unwanted; live drawdown is the live module's concern) — note a forced-sampling study arm's
+  volume would trip any floors sized for ladder volume anyway.

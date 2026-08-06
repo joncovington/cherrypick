@@ -286,52 +286,30 @@ def test_experiment_profiles_pin_symbol_and_wings(sample_risk_profiles):
             )
 
 
-def test_width_study_arms(sample_risk_profiles):
-    """The four width-study arms exist, are symbol-agnostic, and differ from each other in exactly
-    the one variable each is meant to isolate.
+def test_retired_width_study_arms_are_gone(sample_risk_profiles):
+    """The wing-width study is retired (2026-08-05) — its arms must not linger in the registry.
 
-    Deliberately does NOT assert they are enabled. Whether an arm is currently running is an
-    operational choice (all four were stood down 2026-08-01, having never traded); whether its
-    DEFINITION is still a valid controlled comparison is the invariant worth pinning, and it is what
-    lets the study resume from these definitions rather than re-deriving them.
+    They were added 2026-07-28, stood down 2026-08-01 without ever trading, and removed here. A
+    disabled definition nobody owns reads as pending work to the next person auditing this file,
+    and the registry's whole problem was that sixteen competing portfolios could not be read. The
+    definitions live in git history and docs/paper-experiments.md if wing width becomes the
+    question again.
     """
     profiles = sample_risk_profiles["profiles"]
-    names = {"width-2", "width-5", "width-10", "width-adaptive"}
-    assert names <= set(profiles)
+    assert not [n for n in profiles if n.startswith("width-")]
 
-    fixed = {"width-2": 2, "width-5": 5, "width-10": 10}
-    sampling_keys = {
-        "stagger_entries",
-        "min_minutes_between_entries",
-        "max_concurrent_ics",
-        "daily_ic_trade_target",
+
+def test_registry_is_the_ladder_plus_the_active_study(sample_risk_profiles):
+    """What the registry holds, pinned: the four ladder tiers plus whichever arm families are
+    actually running. Adding an arm family should be a deliberate edit here, not a silent one."""
+    assert set(sample_risk_profiles["profiles"]) == {
+        "conservative",
+        "moderate",
+        "aggressive",
+        "very-aggressive",
+        "gex-open",
+        "gex-blocked",
     }
-    reference_sampling = None
-    for name in names:
-        p = profiles[name]
-        assert "symbols" not in p, f"{name} must be symbol-agnostic (no `symbols` key)"
-        sampling = {k: p[k] for k in sampling_keys}
-        if reference_sampling is None:
-            reference_sampling = sampling
-        else:
-            assert sampling == reference_sampling, f"{name} sampling keys diverge from siblings"
-        assert p["stagger_entries"] is True  # keeps the daily cap HARD and skips over-target floor drift
-        # No metronome since 2026-08-01: entries are paced by strike movement (overlap_scope
-        # "shorts"), the model flies uses. stagger_entries stays on purely for the no-floor-drift
-        # guarantee, which is what keeps every sample facing an identical credit floor.
-        assert p["min_minutes_between_entries"] == 0
-        assert p["overlap_scope"] == "shorts"
-        assert p["max_concurrent_ics"] == 99, f"{name} must run uncapped (each trade a sample)"
-        assert p["daily_ic_trade_target"] >= 200, f"{name}'s cap must never bind"
-
-    for name, width in fixed.items():
-        p = profiles[name]
-        assert p["wing_selection"] == "fixed"
-        assert p["wing_widths_by_symbol"] == {"DEFAULT": [width]}
-
-    adaptive = profiles["width-adaptive"]
-    assert adaptive["wing_selection"] == "widest"
-    assert adaptive["wing_widths_by_symbol"] == {"DEFAULT": [2, 5, 10]}
 
 
 def test_all_profiles_have_description_note(sample_risk_profiles):
