@@ -295,8 +295,60 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
             )
         )
     else:
-        findings.append(Finding(label, OK, "Streamer", "running"))
+        findings.append(_recycle_streamer_if_stale(label, root, spec, settling))
     return findings
+
+
+def _recycle_streamer_if_stale(label: str, root: Path, spec: dict[str, Any], settling: bool) -> Finding:
+    """A streamer that is up and streaming, but on config from before the last edit.
+
+    Reached only from the healthy branch, so the stall path always wins: a streamer that is silent is
+    restarted for silence, and its config gets stamped by that restart anyway. `settling` is honoured
+    for the same reason it exists on the stall path — a streamer restarted seconds ago has not had
+    time to resubscribe, and recycling it again would be the start of a loop.
+
+    Producers are stamped under the finding label, so the standalone producer and a module's own
+    streamer keep separate stamps and cannot recycle each other during a cutover.
+    """
+    healthy = Finding(label, OK, "Streamer", "running")
+    if settling:
+        return healthy
+    try:
+        state = servicecfg.staleness(spec, root, label)
+    except Exception:  # never fail the tick over a stale check
+        return healthy
+
+    if state["adopt"]:
+        servicecfg.write_stamp(label, state["hash"], state["source"])
+        return healthy
+    if not state["stale"]:
+        return healthy
+
+    where = state.get("source") or "streamer config"
+    if not spec.get("auto_restart"):
+        return Finding(
+            label,
+            WARN,
+            "Streamer running stale config",
+            f"Config changed since launch ({where}); auto_restart is off, so restart it by hand.",
+        )
+    stopped = _stop_streamer(root, spec)
+    started = _start_streamer(root, spec["start_argv"]) if stopped else False
+    if started:
+        servicecfg.write_stamp(label, state["hash"], state["source"])
+        return Finding(
+            label,
+            WARN,
+            "Streamer recycled onto new config",
+            f"Config changed since launch ({where}); stopped and restarted so it re-reads.",
+        )
+    return Finding(
+        label,
+        WARN,
+        "Streamer stale config — recycle failed",
+        f"Config changed since launch ({where}) but the {'restart' if stopped else 'stop'} failed; "
+        "it is still producing on the old config.",
+    )
 
 
 def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
@@ -958,7 +1010,7 @@ def _recycle_if_stale(svc: dict[str, Any], root: Path, sid: str) -> Finding:
     with `auto_restart` off is only reported, never touched.
     """
     try:
-        state = servicecfg.staleness(svc, root)
+        state = servicecfg.staleness(svc, root, sid)
     except Exception:  # a stale-check hiccup must never fail the tick
         return Finding(f"service.{sid}", OK, sid, "running")
 

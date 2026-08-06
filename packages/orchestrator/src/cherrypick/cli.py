@@ -184,7 +184,7 @@ def cmd_install(cfg) -> None:
             # start streamer if down
             streamer = mcfg.get("streamer", {})
             if streamer.get("enabled"):
-                results[f"{name}.streamer"] = _ensure_daemon(root, streamer)
+                results[f"{name}.streamer"] = _ensure_daemon(root, streamer, f"{name}.streamer")
 
         elif kind == "cherrypick_scheduled":
             # cherrypick owns the earnings schedule (the module has none).
@@ -270,7 +270,7 @@ def cmd_install(cfg) -> None:
     if streamer_spec.get("enabled"):
         sroot = cfgmod.module_root(streamer_spec, "streamer")
         results["streamer"] = (
-            _ensure_daemon(sroot, streamer_spec)
+            _ensure_daemon(sroot, streamer_spec, "streamer")
             if sroot.exists()
             else {"ok": False, "detail": f"checkout not found at {sroot}"}
         )
@@ -288,7 +288,7 @@ def cmd_install(cfg) -> None:
     _emit({"ok": all(v.get("ok", True) for v in results.values()), "installed": results})
 
 
-def _ensure_daemon(root: Path, spec: dict) -> dict:
+def _ensure_daemon(root: Path, spec: dict, stamp_id: str | None = None) -> dict:
     """Ensure a detached background daemon is up: check `status_argv` (prints {"running": bool}) and
     launch `start_argv` detached if it is down. Shared by the streamer and the generic `services`.
 
@@ -309,18 +309,19 @@ def _ensure_daemon(root: Path, spec: dict) -> dict:
     except Exception:
         running = False
     if running:
-        _stamp_service_config(root, spec)
+        _stamp_service_config(root, spec, stamp_id)
         return {"ok": True, "detail": "already running"}
     started = watchdog._start_streamer(root, spec["start_argv"])
     if started:
-        _stamp_service_config(root, spec)
+        _stamp_service_config(root, spec, stamp_id)
     return {"ok": started, "detail": "started" if started else "start failed"}
 
 
-def _stamp_service_config(root: Path, spec: dict) -> None:
-    """Record what config a service was launched with. Only `services[]` entries carry an `id`; the
-    streamer block has none and is not stamped, so it is never recycled by config change."""
-    sid = spec.get("id")
+def _stamp_service_config(root: Path, spec: dict, stamp_id: str | None = None) -> None:
+    """Record what config a daemon was launched with. `services[]` entries name themselves with `id`;
+    the streamer blocks carry none, so their caller passes the same label the watchdog stamps under
+    ("streamer", "<module>.streamer") — the two must agree or every tick would see a missing stamp."""
+    sid = stamp_id or spec.get("id")
     if not sid:
         return
     try:
