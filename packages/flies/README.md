@@ -42,7 +42,7 @@ python -m cherrypick.flies.paper_loop --status           # what's open, what's s
 python run.py once --snapshot snapshot.json
 
 # monitoring and review
-python -m cherrypick.flies.dashboard --port 8803 --open   # opens a browser dashboard: Today / History / Performance
+python -m cherrypick.flies.dashboard --port 5052 --open   # opens a browser dashboard: Today / History / Performance
 python run.py section --json                 # the compact summary card shown on the suite-wide dashboard
 python run.py regime                         # results grouped by the market regime each trade entered into
 python -m cherrypick.flies.paper_loop --eod-reports       # regenerates the day's end-of-day report
@@ -123,7 +123,7 @@ and full defined-risk exposure, not a bounded floor.
 
 ## Monitoring dashboard
 
-Start it with `python -m cherrypick.flies.dashboard --port 8803 --open`, or ask Claude to run
+Start it with `python -m cherrypick.flies.dashboard --port 5052 --open`, or ask Claude to run
 `/serve-dashboard --flies`. It's read-only and only reachable from your own computer (no
 outside network access), and has three views:
 
