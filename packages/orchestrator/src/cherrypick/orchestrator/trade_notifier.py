@@ -120,8 +120,8 @@ def _meic_seed(conn) -> dict:
 
 def _meic_new_entries(conn, last_entry_id: int) -> list:
     return conn.execute(
-        "SELECT id, symbol, risk_profile, put_strike, call_strike, wing_width, net_credit, quantity "
-        "FROM ic_trades WHERE id > ? AND status NOT IN ('pending', 'cancelled', 'partial_entry') "
+        "SELECT id, symbol, risk_profile, put_strike, call_strike, wing_width, net_credit, quantity, "
+        "entry_time FROM ic_trades WHERE id > ? AND status NOT IN ('pending', 'cancelled', 'partial_entry') "
         "ORDER BY id",
         (last_entry_id,),
     ).fetchall()
@@ -129,7 +129,8 @@ def _meic_new_entries(conn, last_entry_id: int) -> list:
 
 def _meic_new_exits(conn, notified_ids: set) -> list:
     rows = conn.execute(
-        "SELECT id, symbol, risk_profile, exit_reason, pnl, fees FROM ic_trades WHERE exit_time IS NOT NULL"
+        "SELECT id, symbol, risk_profile, exit_reason, pnl, fees, entry_time, exit_time FROM ic_trades "
+        "WHERE exit_time IS NOT NULL"
     ).fetchall()
     return [r for r in rows if r["id"] not in notified_ids]
 
@@ -139,6 +140,84 @@ def _meic_new_stops(conn) -> list:
         "SELECT id, symbol, risk_profile, put_strike, call_strike, put_stop_cost, call_stop_cost "
         "FROM ic_trades WHERE put_stop_cost IS NOT NULL OR call_stop_cost IS NOT NULL ORDER BY id"
     ).fetchall()
+
+
+# --------------------------------------------------------------------------- Discord embed cards
+# Same card language as follow_notifier's Follow Feed push: a colored stripe carries the lifecycle at
+# a glance. Colors are deliberately not a pure green/red pair — a position going on isn't a win and a
+# stop isn't the same shape of event as a normal close, so each gets its own color rather than reusing
+# "good"/"bad".
+#
+# One field, not several: Discord's mobile client ignores the `inline` hint entirely and always stacks
+# fields one per row regardless of how many would fit, so an embed with four small inline fields (the
+# first version of this) rendered as four tall rows in one narrow column instead of a compact card.
+# Packing the numbers into a single "Details" line — the same content the plain-text message already
+# carries — reads the same on every client instead of gambling on inline layout.
+COLOR_ENTRY = 0x3B82F6  # blue — a position went on
+COLOR_EXIT = 0xF59E0B  # amber — a position came off
+COLOR_STOP = 0xEF4444  # red — one wing stopped out early
+COLOR_COMPLETE = 0x10B981  # emerald — flies: the floor just became a guarantee
+
+
+def _embed(color: int, title: str, details: str, footer: str | None = None) -> dict:
+    embed: dict = {"title": title[:256], "color": color, "fields": [{"name": "Details", "value": details}]}
+    if footer:
+        embed["footer"] = {"text": footer}
+    return embed
+
+
+def _hhmm_et(ts) -> str:
+    """'2026-08-05 09:46:01.123456-04:00' -> '09:46 ET'. MEIC/flies timestamps are `str()` of an
+    already-ET-aware datetime (see meic/paper.py, flies/book.py) — sliced rather than parsed, the
+    same convention meic's own dashboard table uses. Empty/malformed input drops out cleanly."""
+    s = str(ts or "")
+    return f"{s[11:16]} ET" if len(s) >= 16 else ""
+
+
+def _hhmm_epoch(ts) -> str:
+    """Earnings timestamps are epoch seconds (opened_at/closed_at), rendered in ET."""
+    if ts in (None, ""):
+        return ""
+    try:
+        return timeutil.et_from_epoch(float(ts)).strftime("%H:%M ET")
+    except (TypeError, ValueError, OSError):
+        return ""
+
+
+def _embed_meic_entry(r) -> dict:
+    entered = _hhmm_et(r["entry_time"])
+    details = (
+        f"{r['put_strike']:.0f}P/{r['call_strike']:.0f}C w{r['wing_width']:.0f} "
+        f"x{r['quantity']} · credit ${r['net_credit']:.2f}"
+    )
+    if entered:
+        details += f" · entered {entered}"
+    return _embed(COLOR_ENTRY, f"OPEN · {r['symbol']} iron condor", details, footer=r["risk_profile"])
+
+
+def _embed_meic_exit(r) -> dict:
+    pnl = r["pnl"]
+    pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
+    details = f"{r['exit_reason'] or 'closed'} · P&L {pnl_str}"
+    entered, exited = _hhmm_et(r["entry_time"]), _hhmm_et(r["exit_time"])
+    if entered or exited:
+        details += f" · {entered or '?'} → {exited or '?'}"
+    return _embed(COLOR_EXIT, f"CLOSE · {r['symbol']} iron condor", details, footer=r["risk_profile"])
+
+
+def _embed_meic_stop(r, wing: str) -> dict:
+    if wing == "put":
+        strike, cost, label = r["put_strike"], r["put_stop_cost"], "PUT"
+    else:
+        strike, cost, label = r["call_strike"], r["call_stop_cost"], "CALL"
+    strike_str = f"{strike:.0f}{label[0]}" if strike is not None else label.lower()
+    cost_str = f"${cost:.2f}" if cost is not None else "n/a"
+    return _embed(
+        COLOR_STOP,
+        f"STOP · {r['symbol']} {label} wing",
+        f"{strike_str} stopped @ {cost_str}",
+        footer=r["risk_profile"],
+    )
 
 
 def _fmt_meic_stop(r, wing: str) -> str:
@@ -241,7 +320,13 @@ def _meic_process(
         if _is_summary_profile(r["risk_profile"], summary_prefixes):
             pending.setdefault(r["symbol"], {"entries": [], "exits": []})["entries"].append(r["risk_profile"])
         else:
-            notifier.notify("INFO", f"trade.{name}.entry.{r['id']}", "Paper entry", _fmt_meic_entry(r))
+            notifier.notify(
+                "INFO",
+                f"trade.{name}.entry.{r['id']}",
+                "Paper entry",
+                _fmt_meic_entry(r),
+                embed=_embed_meic_entry(r),
+            )
         st["last_entry_id"] = max(st["last_entry_id"], r["id"])
 
     # Per-wing stops: a wing hitting its stop sets put/call_stop_cost but not exit_time, so it is a
@@ -263,7 +348,13 @@ def _meic_process(
                 if key in stopped:
                     continue
                 if not _is_summary_profile(r["risk_profile"], summary_prefixes):
-                    notifier.notify("INFO", f"trade.{name}.stop.{key}", "Paper stop", _fmt_meic_stop(r, wing))
+                    notifier.notify(
+                        "INFO",
+                        f"trade.{name}.stop.{key}",
+                        "Paper stop",
+                        _fmt_meic_stop(r, wing),
+                        embed=_embed_meic_stop(r, wing),
+                    )
                 stopped.add(key)
                 stops_notified += 1
         st["notified_stop_keys"] = list(stopped)[-_ID_CAP:]
@@ -275,7 +366,13 @@ def _meic_process(
             net = (r["pnl"] or 0.0) - (r["fees"] or 0.0)
             pending.setdefault(r["symbol"], {"entries": [], "exits": []})["exits"].append(net)
         else:
-            notifier.notify("INFO", f"trade.{name}.exit.{r['id']}", "Paper exit", _fmt_meic_exit(r))
+            notifier.notify(
+                "INFO",
+                f"trade.{name}.exit.{r['id']}",
+                "Paper exit",
+                _fmt_meic_exit(r),
+                embed=_embed_meic_exit(r),
+            )
         notified.add(r["id"])
     st["notified_exit_ids"] = sorted(notified)[-_ID_CAP:]
 
@@ -325,14 +422,14 @@ def _earnings_seed(conn) -> dict:
 def _earnings_new_entries(conn, notified_ids: set) -> list:
     rows = conn.execute(
         "SELECT order_id, strategy, symbol, short_strike, long_call_strike, long_put_strike, "
-        "entry_credit, quantity, profile FROM trades ORDER BY opened_at"
+        "entry_credit, quantity, profile, opened_at FROM trades ORDER BY opened_at"
     ).fetchall()
     return [r for r in rows if r["order_id"] not in notified_ids]
 
 
 def _earnings_new_exits(conn, notified_ids: set) -> list:
     rows = conn.execute(
-        "SELECT order_id, strategy, symbol, pnl, profile FROM trades "
+        "SELECT order_id, strategy, symbol, pnl, profile, opened_at, closed_at FROM trades "
         "WHERE closed_at IS NOT NULL ORDER BY closed_at"
     ).fetchall()
     return [r for r in rows if r["order_id"] not in notified_ids]
@@ -366,6 +463,30 @@ def _fmt_earnings_exit(r) -> str:
     pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
     strat = (r["strategy"] or "spread").replace("_", " ")
     return f"\U0001f534 Earnings paper EXIT — {r['symbol']} {strat} [{r['profile']}], P&L {pnl_str}"
+
+
+def _embed_earnings_entry(r) -> dict:
+    strat = (r["strategy"] or "spread").replace("_", " ")
+    credit = r["entry_credit"]
+    credit_str = f"${credit:.2f}" if credit is not None else "n/a"
+    strikes = _earnings_strikes(r)
+    strike_str = f"{strikes} " if strikes else ""
+    details = f"{strike_str}x{r['quantity'] or 1} · credit {credit_str}"
+    entered = _hhmm_epoch(r["opened_at"])
+    if entered:
+        details += f" · entered {entered}"
+    return _embed(COLOR_ENTRY, f"OPEN · {r['symbol']} {strat}", details, footer=r["profile"])
+
+
+def _embed_earnings_exit(r) -> dict:
+    pnl = r["pnl"]
+    pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
+    strat = (r["strategy"] or "spread").replace("_", " ")
+    details = f"P&L {pnl_str}"
+    entered, exited = _hhmm_epoch(r["opened_at"]), _hhmm_epoch(r["closed_at"])
+    if entered or exited:
+        details += f" · {entered or '?'} → {exited or '?'}"
+    return _embed(COLOR_EXIT, f"CLOSE · {r['symbol']} {strat}", details, footer=r["profile"])
 
 
 def _earnings_new_reviews(conn, notified_ids: set) -> list:
@@ -414,14 +535,26 @@ def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     entered = set(st.get("notified_entry_ids", []))
     entries = _earnings_new_entries(conn, entered)
     for r in entries:
-        notifier.notify("INFO", f"trade.{name}.entry.{r['order_id']}", "Paper entry", _fmt_earnings_entry(r))
+        notifier.notify(
+            "INFO",
+            f"trade.{name}.entry.{r['order_id']}",
+            "Paper entry",
+            _fmt_earnings_entry(r),
+            embed=_embed_earnings_entry(r),
+        )
         entered.add(r["order_id"])
     st["notified_entry_ids"] = list(entered)[-_ID_CAP:]
 
     notified = set(st.get("notified_exit_ids", []))
     exits = _earnings_new_exits(conn, notified)
     for r in exits:
-        notifier.notify("INFO", f"trade.{name}.exit.{r['order_id']}", "Paper exit", _fmt_earnings_exit(r))
+        notifier.notify(
+            "INFO",
+            f"trade.{name}.exit.{r['order_id']}",
+            "Paper exit",
+            _fmt_earnings_exit(r),
+            embed=_embed_earnings_exit(r),
+        )
         notified.add(r["order_id"])
     st["notified_exit_ids"] = list(notified)[-_ID_CAP:]
 
@@ -452,12 +585,33 @@ def _flies_seed(conn) -> dict:
 
 
 def _fmt_flies_entry(r) -> str:
-    if r["entry_mode"] == "outright":
+    # Four entry modes, not two: `outright` and `bwb_roll` buy the whole structure in one order
+    # (nothing left to complete); `legged` and `debit_first` are mirror-image two-stage entries —
+    # one sells a credit spread and waits for spot to move toward the far side, the other buys a
+    # debit spread and waits to SELL the credit side. Collapsing all non-`outright` modes into
+    # "short {side} spread ... credit $X" (the previous code) mislabeled `bwb_roll` as an
+    # incomplete short spread when it is already the finished butterfly, and got both the sign and
+    # the direction wrong for `debit_first` (a long spread paid for with a debit, not a credit).
+    mode = r["entry_mode"]
+    if mode == "outright":
         return (
             f"\U0001f7e2 Flies paper ENTRY — {r['symbol']} fly {r['center']:.0f} w{r['wing_width']:.0f} "
             f"bought for ${abs(r['net']):.2f} debit [{r['arm']}]"
         )
-    return (
+    if mode == "bwb_roll":
+        far = r["far_width"]
+        far_str = f"/{far:.0f}" if far is not None else ""
+        return (
+            f"\U0001f7e2 Flies paper ENTRY — {r['symbol']} broken-wing fly {r['center']:.0f} "
+            f"w{r['wing_width']:.0f}{far_str} bought for ${r['net']:.2f} credit [{r['arm']}]"
+        )
+    if mode == "debit_first":
+        return (
+            f"\U0001f7e2 Flies paper ENTRY — {r['symbol']} long {r['side']} spread {r['center']:.0f} "
+            f"w{r['wing_width']:.0f} bought for ${abs(r['net']):.2f} debit [{r['arm']}] — needs spot "
+            f"{r['completing_direction'] or '?'} to complete (sell the credit side)"
+        )
+    return (  # legged — the default two-stage entry
         f"\U0001f7e2 Flies paper ENTRY — {r['symbol']} short {r['side']} spread {r['center']:.0f} "
         f"w{r['wing_width']:.0f} credit ${r['net']:.2f} [{r['arm']}] — needs spot "
         f"{r['completing_direction'] or '?'} to complete"
@@ -465,8 +619,22 @@ def _fmt_flies_entry(r) -> str:
 
 
 def _fmt_flies_completion(r) -> str:
-    """The moment worth waking up for: a credit spread became a butterfly held for a net credit, so
-    its worst case at expiry is now a profit. The floor is stated after fees or it means nothing."""
+    """The moment worth waking up for: the position became a butterfly held for a net credit, so
+    its worst case at expiry is now a profit. The floor is stated after fees or it means nothing.
+
+    Two different roads get here. `legged`/`debit_first` complete by trading the OTHER side (buying
+    or selling a fresh spread against the one already held). `bwb_roll` completes differently — it
+    already holds the whole broken-wing butterfly, and completes by rolling its wide far wing IN to
+    match the near wing's width (book.py's "roll any open bwb": buy the near-width wing, sell the
+    held far wing), which is why `wing_width` here is the near width, not the original far_width."""
+    if r["entry_mode"] == "bwb_roll":
+        roll_debit = r["roll_debit"]
+        roll_str = f" for ${roll_debit:.2f} debit" if roll_debit is not None else ""
+        return (
+            f"\U0001f98b Flies COMPLETED — {r['symbol']} {r['side']} fly {r['center']:.0f} "
+            f"w{r['wing_width']:.0f} — rolled the wide wing in{roll_str}, now ${r['net']:.2f} "
+            f"net credit, floor ${r['floor_dollars']:.2f} after fees [{r['arm']}]"
+        )
     return (
         f"\U0001f98b Flies COMPLETED — {r['symbol']} {r['side']} fly {r['center']:.0f} "
         f"w{r['wing_width']:.0f} for ${r['net']:.2f} net credit, floor "
@@ -474,26 +642,120 @@ def _fmt_flies_completion(r) -> str:
     )
 
 
+def _flies_settled_what(r) -> str:
+    """What settled, by `kind` (not `entry_mode` — a bwb or a legged spread can each settle either
+    completed or not). `fly`/`bwb` never had a spread to name; `long_vertical`/`short_vertical` are
+    a `debit_first`/`legged` position that settled before ever completing."""
+    return {
+        "fly": "fly",
+        "bwb": "broken-wing fly",
+        "long_vertical": f"long {r['side']} spread",
+        "short_vertical": f"short {r['side']} spread",
+    }.get(r["kind"], f"short {r['side']} spread")
+
+
 def _fmt_flies_exit(r) -> str:
     pnl = r["pnl"]
     pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
-    what = "fly" if r["kind"] == "fly" else f"short {r['side']} spread"
     pinned = " (pinned)" if r["pinned"] else ""
     return (
-        f"\U0001f534 Flies paper SETTLED — {r['symbol']} {what} {r['center']:.0f}"
+        f"\U0001f534 Flies paper SETTLED — {r['symbol']} {_flies_settled_what(r)} {r['center']:.0f}"
         f"{pinned}, P&L {pnl_str} [{r['arm']}]"
     )
+
+
+def _embed_flies_entry(r) -> dict:
+    # See _fmt_flies_entry for why all four entry modes need distinct handling — `bwb_roll` and
+    # `outright` are already the finished structure at entry; `legged` and `debit_first` are the
+    # two mirror-image two-stage entries.
+    entered = _hhmm_et(r["entry_time"])
+    entered_suffix = f" · entered {entered}" if entered else ""
+    mode = r["entry_mode"]
+    if mode == "outright":
+        return _embed(
+            COLOR_ENTRY,
+            f"OPEN · {r['symbol']} fly",
+            f"{r['center']:.0f} w{r['wing_width']:.0f} · debit ${abs(r['net']):.2f}{entered_suffix}",
+            footer=r["arm"],
+        )
+    if mode == "bwb_roll":
+        far = r["far_width"]
+        far_str = f"/{far:.0f}" if far is not None else ""
+        return _embed(
+            COLOR_ENTRY,
+            f"OPEN · {r['symbol']} broken-wing fly",
+            f"{r['center']:.0f} w{r['wing_width']:.0f}{far_str} · credit ${r['net']:.2f}{entered_suffix}",
+            footer=r["arm"],
+        )
+    if mode == "debit_first":
+        return _embed(
+            COLOR_ENTRY,
+            f"OPEN · {r['symbol']} long {r['side']} spread",
+            f"{r['center']:.0f} w{r['wing_width']:.0f} · debit ${abs(r['net']):.2f} · "
+            f"completes {r['completing_direction'] or '?'} (sells credit side){entered_suffix}",
+            footer=r["arm"],
+        )
+    return _embed(  # legged — the default two-stage entry
+        COLOR_ENTRY,
+        f"OPEN · {r['symbol']} short {r['side']} spread",
+        f"{r['center']:.0f} w{r['wing_width']:.0f} · credit ${r['net']:.2f} · "
+        f"completes {r['completing_direction'] or '?'}{entered_suffix}",
+        footer=r["arm"],
+    )
+
+
+def _embed_flies_completion(r) -> dict:
+    if r["entry_mode"] == "bwb_roll":
+        roll_debit = r["roll_debit"]
+        roll_str = (
+            f"rolled wide wing in for ${roll_debit:.2f} debit"
+            if roll_debit is not None
+            else "rolled wide wing in"
+        )
+        details = (
+            f"{r['center']:.0f} w{r['wing_width']:.0f} · {roll_str} · net credit ${r['net']:.2f} · "
+            f"floor ${r['floor_dollars']:.2f} after fees"
+        )
+    else:
+        details = (
+            f"{r['center']:.0f} w{r['wing_width']:.0f} · net credit ${r['net']:.2f} · "
+            f"floor ${r['floor_dollars']:.2f} after fees"
+        )
+    entered, completed = _hhmm_et(r["entry_time"]), _hhmm_et(r["completed_at"])
+    if entered or completed:
+        details += f" · {entered or '?'} → {completed or '?'}"
+    return _embed(COLOR_COMPLETE, f"COMPLETED · {r['symbol']} {r['side']} fly", details, footer=r["arm"])
+
+
+def _embed_flies_exit(r) -> dict:
+    pnl = r["pnl"]
+    pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
+    pinned = " (pinned)" if r["pinned"] else ""
+    details = f"{r['center']:.0f}{pinned} · P&L {pnl_str}"
+    entered, exited = _hhmm_et(r["entry_time"]), _hhmm_et(r["exit_time"])
+    if entered or exited:
+        details += f" · {entered or '?'} → {exited or '?'}"
+    title = f"SETTLED · {r['symbol']} {_flies_settled_what(r)}"[:256]
+    return _embed(COLOR_EXIT, title, details, footer=r["arm"])
 
 
 def _flies_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     counts = {}
     stages = [
-        ("notified_entry_ids", "entry", "Paper entry", _fmt_flies_entry, "SELECT * FROM fly_positions"),
+        (
+            "notified_entry_ids",
+            "entry",
+            "Paper entry",
+            _fmt_flies_entry,
+            _embed_flies_entry,
+            "SELECT * FROM fly_positions",
+        ),
         (
             "notified_completion_ids",
             "completion",
             "Fly completed",
             _fmt_flies_completion,
+            _embed_flies_completion,
             "SELECT * FROM fly_positions WHERE kind = 'fly' AND completed_at IS NOT NULL",
         ),
         (
@@ -501,14 +763,17 @@ def _flies_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
             "exit",
             "Paper settled",
             _fmt_flies_exit,
+            _embed_flies_exit,
             "SELECT * FROM fly_positions WHERE status = 'settled'",
         ),
     ]
-    for key, event, title, fmt, query in stages:
+    for key, event, title, fmt, embed_fn, query in stages:
         notified = set(st.get(key, []))
         rows = [r for r in conn.execute(query).fetchall() if r["position_id"] not in notified]
         for r in rows:
-            notifier.notify("INFO", f"trade.{name}.{event}.{r['position_id']}", title, fmt(r))
+            notifier.notify(
+                "INFO", f"trade.{name}.{event}.{r['position_id']}", title, fmt(r), embed=embed_fn(r)
+            )
             notified.add(r["position_id"])
         st[key] = sorted(notified)[-_ID_CAP:]
         counts[f"{event}s_notified"] = len(rows)
@@ -535,13 +800,22 @@ class _LiveNotifier:
     real fill announced itself as "LIVE: Paper entry". Same gap would hit MEIC/Earnings the
     moment either goes live — this wrapper is shared across all three schemas."""
 
+    #: Every LIVE embed gets this color regardless of stage — real money warrants a look distinct
+    #: from any paper-ledger card, entry/exit/stop alike.
+    COLOR_LIVE = 0xDC2626
+
     def __init__(self, inner: Notifier):
         self._inner = inner
 
-    def notify(self, level: str, key: str, title: str, message: str):
+    def notify(self, level: str, key: str, title: str, message: str, embed: dict | None = None):
         title = title.replace("Paper ", "")
         message = message.replace(" paper ", " LIVE ")
-        return self._inner.notify(level, f"live.{key}", f"LIVE: {title}", f"\U0001f6a8 {message}")
+        live_embed = None
+        if embed is not None:
+            live_embed = {**embed, "title": f"LIVE — {embed['title']}"[:256], "color": self.COLOR_LIVE}
+        return self._inner.notify(
+            level, f"live.{key}", f"LIVE: {title}", f"\U0001f6a8 {message}", embed=live_embed
+        )
 
 
 # --------------------------------------------------------------------------- entrypoint
@@ -551,7 +825,7 @@ def run(cfg: dict | None = None) -> dict:
         # would replay its already-notified ids. Skip — the next tick covers us.
         return {"ok": True, "skipped": "another trade-notify run holds the lock"}
     try:
-        cfg = cfg or cfgmod.load_config()
+        cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
         notify_cfg = cfg.get("notify", {})
         channels = notify_cfg.get("trade_channels", ["log", "discord"])
         notifier = Notifier({**notify_cfg, "channels": channels})
