@@ -708,9 +708,11 @@ def test_cmd_stream_status_not_running_no_cache(tmp_path, monkeypatch):
     from cherrypick.meic import streamer
 
     monkeypatch.setattr(streamer, "_running_pid", lambda: None)
+    monkeypatch.setattr(streamer, "_standalone_producer_pid", lambda: None)
     monkeypatch.setattr(tt, "_CACHE_DB", tmp_path / "missing.db")
     result = tt.cmd_stream_status(None)
     assert result["running"] is False
+    assert result["producer"] is None
     assert result["cache"] == "no cache db"
 
 
@@ -718,18 +720,36 @@ def test_cmd_stream_status_running_with_fresh_data(cache_db, monkeypatch):
     from cherrypick.meic import streamer
 
     monkeypatch.setattr(streamer, "_running_pid", lambda: 4242)
+    monkeypatch.setattr(streamer, "_standalone_producer_pid", lambda: None)
     _insert(cache_db, "stream_trades", symbol="XSP", last=600.0, change=0, volume=10, updated_at=time.time())
     result = tt.cmd_stream_status(None)
     assert result["running"] is True
     assert result["pid"] == 4242
+    assert result["producer"] == "meic"
     assert result["trades_symbols"] == 1
     assert result["stale_warning"] is False
+
+
+def test_cmd_stream_status_reports_standalone_producer_when_it_is_the_one_running(cache_db, monkeypatch):
+    """Since the 2026-07-21 cutover the standalone streamer is normally the live producer; stream_status
+    must report running=true off ITS pid, not just this module's own (rollback-only) full-streamer pid —
+    the bug that made a healthy standalone producer look down."""
+    from cherrypick.meic import streamer
+
+    monkeypatch.setattr(streamer, "_running_pid", lambda: None)
+    monkeypatch.setattr(streamer, "_standalone_producer_pid", lambda: 9001)
+    _insert(cache_db, "stream_trades", symbol="XSP", last=600.0, change=0, volume=10, updated_at=time.time())
+    result = tt.cmd_stream_status(None)
+    assert result["running"] is True
+    assert result["pid"] == 9001
+    assert result["producer"] == "standalone"
 
 
 def test_cmd_stream_status_stale_when_running_but_old_data(cache_db, monkeypatch):
     from cherrypick.meic import streamer
 
     monkeypatch.setattr(streamer, "_running_pid", lambda: 4242)
+    monkeypatch.setattr(streamer, "_standalone_producer_pid", lambda: None)
     _insert(
         cache_db,
         "stream_trades",
