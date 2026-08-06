@@ -52,6 +52,28 @@ def _minute_schedule(interval_minutes: int) -> str:
     return f"*/{n} * * * *"
 
 
+def _windowed_minute_schedule(interval_minutes: int, start_hhmm: str, end_hhmm: str) -> str:
+    """A cron schedule firing every `interval_minutes` but only between two clock times.
+
+    For the pre-open supervision window, which is deliberately tight and short-lived: a global
+    `*/2` would multiply every tick's work all day to cover 35 minutes. Only supports a window
+    inside a single hour, which is all that case needs — spanning hours would need a second cron
+    line, and a caller wanting that should register two tasks rather than get a silently wrong one.
+    """
+    n = int(interval_minutes)
+    if not 1 <= n <= 59:
+        raise ValueError(f"cron minute interval must be 1..59, got {n}")
+    sh, sm = (int(x) for x in start_hhmm.split(":"))
+    eh, em = (int(x) for x in end_hhmm.split(":"))
+    if not (0 <= sh <= 23 and 0 <= sm <= 59 and 0 <= eh <= 23 and 0 <= em <= 59):
+        raise ValueError(f"invalid window {start_hhmm!r}..{end_hhmm!r}")
+    if sh != eh:
+        raise ValueError(f"window must stay inside one hour, got {start_hhmm}..{end_hhmm}")
+    if em <= sm:
+        raise ValueError(f"window end must follow its start, got {start_hhmm}..{end_hhmm}")
+    return f"{sm}-{em}/{n} {sh} * * *"
+
+
 def _daily_schedule(at_hhmm: str) -> str:
     """A cron schedule firing daily at HH:MM."""
     hh, mm = at_hhmm.split(":")
@@ -266,6 +288,51 @@ def create_minute_task(name: str, tr: str, interval_minutes: int, run_now: bool 
                 text=True,
                 creationflags=CREATE_NO_WINDOW,
             )
+    return {"ok": ok, "task": name, "detail": (r.stdout or r.stderr).strip()}
+
+
+def create_windowed_minute_task(
+    name: str, tr: str, interval_minutes: int, start_hhmm: str, end_hhmm: str
+) -> dict[str, Any]:
+    """Register a task firing every `interval_minutes` between two LOCAL clock times, daily.
+
+    Windows gets `/SC MINUTE /MO n /ST <start> /ET <end>`; POSIX gets a minute-range cron line. Not
+    day-of-week filtered on either backend: `schtasks /SC MINUTE` has no day filter, and every
+    command in this suite already self-gates on `is_trading_day`, so a weekend firing is a no-op
+    that costs a process start. Filtering on one platform only would make the two backends disagree
+    about something the command already handles.
+
+    Never `run_now`. Its whole purpose is to fire inside a window; running it at install time —
+    which is usually the middle of the afternoon — would just be a stray tick.
+    """
+    if not _IS_WINDOWS:
+        return _cron_create(name, _windowed_minute_schedule(interval_minutes, start_hhmm, end_hhmm), tr)
+    r = subprocess.run(
+        [
+            "schtasks",
+            "/Create",
+            "/TN",
+            name,
+            "/TR",
+            tr,
+            "/SC",
+            "MINUTE",
+            "/MO",
+            str(interval_minutes),
+            "/ST",
+            start_hhmm,
+            "/ET",
+            end_hhmm,
+            "/F",
+            "/IT",
+        ],
+        capture_output=True,
+        text=True,
+        creationflags=CREATE_NO_WINDOW,
+    )
+    ok = r.returncode == 0
+    if ok:
+        allow_on_battery(name)
     return {"ok": ok, "task": name, "detail": (r.stdout or r.stderr).strip()}
 
 
