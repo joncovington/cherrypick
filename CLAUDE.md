@@ -11,6 +11,11 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   deliberately narrow, per-day-armed live pilot (one arm, one symbol, one incomplete position at a
   time); deliberately built to make a negative result usable: floors are measured after fees, and a
   book-level floor always carries the price band over which it holds.
+- **packages/desk** — the **manual trading desk**: a foreground, human-initiated CLI for
+  discretionary live orders, authorized entirely on its own (own config, own keyring PIN, per-order
+  ticket) so it never touches a module's `enable_live_trading`. Not a strategy module — no loop, no
+  schedule, no ledger. It exists so placing one discretionary order never requires temporarily
+  flipping a guarded, plan-gated module flag. Never scheduled; no automated package may import it.
 
 The shared library `cherrypick.core` is **`packages/core`**, a sibling package in this same monorepo,
 installed as an editable dependency by every other package. Fresh clone: `pip install -e packages/core`
