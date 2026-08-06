@@ -183,7 +183,7 @@ def test_line_leads_with_lifecycle_then_carries_the_numbers():
     )
     head, detail, body = line.split("\n")
     assert head == "➕ Jim Schultz · OPEN PLTR Vertical"  # open/close leads, not Bought/Sold
-    assert "1x 122P/117P" in detail
+    assert "1× 122P/117P" in detail
     assert "exp Aug 7" in detail
     assert "$4.98 db" in detail  # debit/credit survives in the price suffix
     assert "PLTR 163.86" in detail  # spot at fill
@@ -244,7 +244,7 @@ def test_stock_leg_names_its_symbol_once():
         {},
     )
     assert line.count("NVTS") == 2  # once in the headline, once as the spot label — never as a leg
-    assert "100 sh" in line  # shares, not contracts — "100x" reads as a 100-lot
+    assert "100 sh" in line  # shares, not contracts — "100×" reads as a 100-lot
 
 
 def test_single_leg_limit_order_reads_as_bought_or_sold():
@@ -308,7 +308,7 @@ def test_embed_carries_the_numbers_as_fields():
     assert embed["description"] == "> LG!"
     assert embed["footer"]["text"] == "Earnings"
     assert _fields(embed) == {
-        "Trade": "1x 122P/117P",
+        "Trade": "1× 122P/117P",
         "Price": "$4.98 db",
         "Expiry": "Aug 7",
         "Spot": "PLTR 163.86",
@@ -489,7 +489,7 @@ def test_package_still_reads_its_net_when_legs_point_both_ways():
 
 def test_stock_counts_in_shares_not_contracts():
     """The feed tags equity legs "S", not "E". Checking only "E" printed a 100-share trade as
-    "100x" — read as a 100-lot, a 100x overstatement of the position."""
+    "100×" — read as a 100-lot, a 100x overstatement of the position."""
     legs = [
         {
             "underlying_symbol": "NVTS",
@@ -521,7 +521,7 @@ def test_futures_price_is_a_level_not_a_credit():
     assert " cr" not in line and " db" not in line
     # The side has to survive somewhere: the leg body is suppressed (it is just the underlying), so
     # the size carries it. Losing db/cr must not lose long-vs-short.
-    assert "-1x" in line
+    assert "-1×" in line
 
 
 def test_futures_options_still_quote_in_dollars():
