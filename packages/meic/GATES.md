@@ -76,6 +76,7 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 - **IC Impact**: Blocks this symbol's IC entries
 - **ORB Impact**: NOT blocked
 - **Fallback**: If GEX data unavailable, proceed without GEX (do not block on missing data)
+  - **Seeing when that happens:** `python -m cherrypick.meic.gate_health` reports which regime gates are armed right now and which have silently stood down, with the reason. Failing open is deliberate and unchanged — the report exists because it was previously invisible, and the ATR gate in particular stays disarmed for a further N sessions after an outage ends.
 - **Unproven** (noted 2026-08-01): this gate refuses roughly 40% of samples — SPX net-GEX sign runs
   ~61% positive and swings hard by day (2.3% positive on 2026-07-29, 98.3% on 2026-07-31) — and
   nothing yet establishes that the trades it cuts would have been worse than the ones it keeps.
