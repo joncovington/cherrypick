@@ -116,7 +116,25 @@ whether the stricter variants are worth enabling. Nothing changes the live loop 
 
 ---
 
-## The wing-width study (2026-07-28)
+> ## Retired 2026-08-05 — the wing-width study never traded
+>
+> **The four `width-*` arms have been removed from `config.risk.json`.** They were added 2026-07-28,
+> stood down 2026-08-01 with **zero rows** in `paper_trades.db`, and are now retired outright rather
+> than left disabled — a definition that has never produced a datum and has no owner reads as pending
+> work every time someone audits the registry, and the registry's own problem was that sixteen
+> competing portfolios (8 profiles × 2 symbols) is more than can be read.
+>
+> Nothing was lost, because nothing was collected. The design below stays as the record of what the
+> study *was*, exactly like the retired-cells section above it: if wing width becomes the question
+> being asked again, re-add these arms from this text (or from git history) rather than re-deriving
+> them. The symbol reduction to XSP/QQQ that this study motivated is a separate operational choice —
+> see `config.json`'s `symbols`, which now trades SPX.
+>
+> The infrastructure it introduced outlived it and is **not** retired: the `gex_net_vol_at_entry`
+> stamp, the `pin_risk_applied` flag, the arm-divergence log, the dashboard's study-arms frame, and
+> the orchestrator's 15-minute study digest all now serve the GEX arms (`gex-open`/`gex-blocked`).
+
+## The wing-width study (2026-07-28, retired 2026-08-05)
 
 Four forced-sampling arms in `config.risk.json` — `width-2`, `width-5`, `width-10`, `width-adaptive`
 — isolate wing width as its own variable, the question the retired account-size cells couldn't
@@ -161,7 +179,8 @@ over-target floor-tightening) — so a paired comparison across widths on the sa
 - `python -m cherrypick.meic.db get_range_summary` — `by_profile["width-2"…]` pools each width across symbols
   (convenient, but mixes cash/physical settlement mechanics — read with that caveat); portfolios
   `width-2:XSP`, `width-2:QQQ`, … via `compare_profiles`.
-- The dashboard's Performance view carries a **Width Study** frame: one cumulative-P&L line chart
+- The dashboard's Performance view carries a **Study Arms** frame (named *Width Study* while this
+  study ran): one cumulative-P&L line chart
   per symbol, one line per arm (`width_study` in the API payload, computed the same way as every
   other performance series — `_pnl_series` per (symbol, profile) cell).
 - Every fill also stamps `gex_net_vol_at_entry` (the flow/volume-weighted GEX series) beside the

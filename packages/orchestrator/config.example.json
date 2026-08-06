@@ -462,9 +462,8 @@
     ],
     "desktop_app_name": "cherrypick",
     "trade_summary": {
-      "_comment": "MEIC risk_profile prefixes routed to a periodic per-symbol digest instead of a per-trade push (the width study's ~150-200 trades/day would otherwise spam every entry/exit individually). Rows whose risk_profile starts with one of these prefixes are excluded from the normal per-trade lines; ladder profiles (conservative/moderate/aggressive/very-aggressive) are unaffected either way.",
+      "_comment": "MEIC risk_profile prefixes routed to a periodic per-symbol digest instead of a per-trade push (a forced-sampling study's ~150-200 trades/day would otherwise spam every entry/exit individually; built for the wing-width study, retired 2026-08-05, and kept for the arm families that came after it). Rows whose risk_profile starts with one of these prefixes are excluded from the normal per-trade lines; ladder profiles (conservative/moderate/aggressive/very-aggressive) are unaffected either way.",
       "profile_prefixes": [
-        "width-",
         "gex-",
         "conservative",
         "moderate",

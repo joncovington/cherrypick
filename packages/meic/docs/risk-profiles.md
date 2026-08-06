@@ -75,9 +75,10 @@ a list.
 
 It is also why the old symbol-pinned experiment cells (`large-spx`, `small-xsp`, …) were retired: a
 cell that bakes the symbol into its identity fuses the two axes, so "the same strategy on a different
-instrument" becomes inexpressible. See [paper-experiments.md](paper-experiments.md), whose resumed
-form is the symbol-agnostic wing-width study (`width-2`/`width-5`/`width-10`/`width-adaptive`) — one
-variable pinned per arm, the (profile × symbol) grain supplying XSP/QQQ automatically.
+instrument" becomes inexpressible. See [paper-experiments.md](paper-experiments.md). The
+symbol-agnostic form it prescribes is what every study arm has used since: the wing-width arms
+(retired 2026-08-05 without trading) and the GEX arms (`gex-open`/`gex-blocked`) running now — one
+variable pinned per arm, the (profile × symbol) grain supplying the instrument axis automatically.
 
 ## 3. Thresholds are **profile-relative**, never shared absolutes
 
