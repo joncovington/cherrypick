@@ -29,6 +29,7 @@ python run.py doctor         # green/red readiness (read-only)
 python run.py install        # register OS scheduled tasks + start the standalone streamer producer (Windows-only)
 python run.py status         # task registration + last heartbeats
 python run.py watchdog       # one watchdog pass (what the scheduled task runs)
+python run.py preopen-check  # streamer-liveness-only pass on the tight pre-open task (cherrypick-preopen, every 2 min 09:00-09:35 ET) so a producer that died overnight is caught before the unrecoverable 09:30-09:35 opening range
 python run.py report         # unified cross-module paper P&L (read-only); --eod / --date YYYY-MM-DD scopes to one session; --live reads the live-tagged ledgers (modules' live_db) instead — a separate view that never feeds calibrate/promotion
 python run.py eod-digest     # write logs/eod-digest-<day>.md: one session's cross-module P&L + module paper-eod links
 python run.py notify-eod     # write the digest + push a one-line summary (the watchdog fires this, detached, once every module has settled)
@@ -199,6 +200,15 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   module's live engine, and never edits a module's code/config files. Account writes are human-confirmed;
   account numbers are masked everywhere (only the write to keyring uses the full number). `reconcile`
   honors the designation — a designated live account is *expected* to hold positions (not drift).
+- **Pre-open supervision is its own task, not a faster watchdog.** `preopen-check`
+  (`watchdog.run_preopen`, task `cherrypick-preopen`) runs the streamer liveness check every 2
+  minutes between 09:00 and 09:35 ET, because the full tick's 10-minute interval plus a 09:15
+  supervision start could first land ~09:25 — minutes before the 09:30–09:35 opening range, which
+  cannot be reconstructed once missed. Shortening the global interval instead would multiply module
+  checks, dashboard renders and EOD triggers all day to cover 35 minutes. It **reuses**
+  `_check_streamer_health` (never a copy — that function carries the silence-restart lesson), writes
+  **no heartbeat** (the full tick owns that; a second writer makes "when did the watchdog last run"
+  ambiguous), and gates on `is_trading_day` because `schtasks /SC MINUTE` has no day filter.
 - **The watchdog's only trading-adjacent action is benign, non-trading remediation** (restart a dead or
   silently-stalled **market-data streamer** — the standalone producer, a top-level `streamer` config
   block, session-gated and restarted on *silence* not just death, since the 34-hour stall was a live-but-
