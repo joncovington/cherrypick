@@ -33,7 +33,7 @@ Do this:
      stop that one instead: `python -m cherrypick.meic.streamer --stop`. Exactly one producer ever
      runs.)
    - **Dashboard servers** (only if any `--serve` is up): run the `/serve-dashboard --stop all`
-     procedure, which covers the suite (8787) and every module dashboard (8801–8803, 5050/5051, 5055)
+     procedure, which covers the suite (8787) and every module dashboard (8801–8802, 5050–5052, 5055)
      with its confirm-before-kill guard.
    - **Dolt sql-server** (earnings' local market-data DB; its keep-alive task was removed in step 1):
      stop the process serving port **3306**:

@@ -1,0 +1,252 @@
+"""Scout's own SQLite cache — ``~/.cherrypick/data/scout/cache.db``. Never a cache another module
+owns (the streamer's ``stream_cache.db``, a Dolt database) — this file exists purely to memoize scout's
+own broker/Dolt reads under a TTL.
+
+``get_or_fetch`` is the one primitive every service builds on: read-through with a TTL, and on a
+fetch failure it serves the last-known payload with ``stale=True`` rather than raising — a rate-limit
+hiccup should degrade the page, not blank it. Every API payload built on top of this carries
+``as_of``/``stale`` so the UI can label freshness honestly instead of asserting a number is live when
+it is an hour old.
+
+Clock is injectable (``now=``) so tests can move time without sleeping.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import time
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS kv_cache (
+    bucket TEXT NOT NULL,
+    key TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    fetched_at REAL NOT NULL,
+    PRIMARY KEY (bucket, key)
+);
+
+CREATE TABLE IF NOT EXISTS candles (
+    symbol TEXT NOT NULL,
+    period TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    o REAL NOT NULL,
+    h REAL NOT NULL,
+    l REAL NOT NULL,
+    c REAL NOT NULL,
+    v REAL,
+    PRIMARY KEY (symbol, period, ts)
+);
+
+CREATE TABLE IF NOT EXISTS candle_meta (
+    symbol TEXT NOT NULL,
+    period TEXT NOT NULL,
+    last_backfill REAL,
+    PRIMARY KEY (symbol, period)
+);
+
+CREATE TABLE IF NOT EXISTS symbol_meta (
+    symbol TEXT PRIMARY KEY,
+    sector TEXT,
+    industry TEXT,
+    source TEXT,
+    fetched_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS staged_orders (
+    id TEXT PRIMARY KEY,
+    created_at REAL NOT NULL,
+    symbol TEXT NOT NULL,
+    strategy TEXT NOT NULL,
+    legs_json TEXT NOT NULL,
+    credit REAL,
+    max_risk REAL,
+    dry_run_json TEXT,
+    note TEXT,
+    status TEXT NOT NULL DEFAULT 'staged'
+);
+"""
+
+
+def open_db(path: Path) -> sqlite3.Connection:
+    """Open (creating if absent) the cache DB in WAL mode with the full schema present."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path), check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.executescript(_SCHEMA)
+    conn.commit()
+    return conn
+
+
+def peek(conn: sqlite3.Connection, bucket: str, key: str) -> tuple[Any, float] | None:
+    """Read-only lookup, no fetch -- for services that refill several keys in one batched call
+    (e.g. `metrics_service`, where one `get_market_metrics` covers every stale symbol at once) and so
+    can't express their refresh as a single `get_or_fetch` per key."""
+    return _read(conn, bucket, key)
+
+
+def put(conn: sqlite3.Connection, bucket: str, key: str, payload: Any, fetched_at: float) -> None:
+    """Write-only store, paired with `peek` for the same batched-refill case."""
+    _write(conn, bucket, key, payload, fetched_at)
+
+
+def _read(conn: sqlite3.Connection, bucket: str, key: str) -> tuple[Any, float] | None:
+    row = conn.execute(
+        "SELECT payload, fetched_at FROM kv_cache WHERE bucket = ? AND key = ?", (bucket, key)
+    ).fetchone()
+    if row is None:
+        return None
+    return json.loads(row[0]), float(row[1])
+
+
+def _write(conn: sqlite3.Connection, bucket: str, key: str, payload: Any, fetched_at: float) -> None:
+    conn.execute(
+        "INSERT INTO kv_cache (bucket, key, payload, fetched_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(bucket, key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at",
+        (bucket, key, json.dumps(payload), fetched_at),
+    )
+    conn.commit()
+
+
+def read_candles(conn: sqlite3.Connection, symbol: str, period: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT ts, o, h, l, c, v FROM candles WHERE symbol = ? AND period = ? ORDER BY ts",
+        (symbol, period),
+    ).fetchall()
+    return [{"t": r[0], "o": r[1], "h": r[2], "l": r[3], "c": r[4], "v": r[5]} for r in rows]
+
+
+def write_candles(conn: sqlite3.Connection, symbol: str, period: str, bars: list[dict]) -> None:
+    """Upsert a batch of bars (each ``{"t","o","h","l","c","v"}``, ``t`` an integer epoch second)."""
+    conn.executemany(
+        "INSERT INTO candles (symbol, period, ts, o, h, l, c, v) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(symbol, period, ts) DO UPDATE SET "
+        "o = excluded.o, h = excluded.h, l = excluded.l, c = excluded.c, v = excluded.v",
+        [(symbol, period, int(b["t"]), b["o"], b["h"], b["l"], b["c"], b["v"]) for b in bars],
+    )
+    conn.commit()
+
+
+def get_candle_meta(conn: sqlite3.Connection, symbol: str, period: str) -> float | None:
+    row = conn.execute(
+        "SELECT last_backfill FROM candle_meta WHERE symbol = ? AND period = ?", (symbol, period)
+    ).fetchone()
+    return float(row[0]) if row and row[0] is not None else None
+
+
+def set_candle_meta(conn: sqlite3.Connection, symbol: str, period: str, last_backfill: float) -> None:
+    conn.execute(
+        "INSERT INTO candle_meta (symbol, period, last_backfill) VALUES (?, ?, ?) "
+        "ON CONFLICT(symbol, period) DO UPDATE SET last_backfill = excluded.last_backfill",
+        (symbol, period, last_backfill),
+    )
+    conn.commit()
+
+
+def symbol_meta_freshness(conn: sqlite3.Connection) -> float | None:
+    """The most recent `fetched_at` across every `symbol_meta` row, or None if the table is empty.
+    `sector_service` populates every row in one bulk fetch (a single `PublicWatchlist.get` call
+    covers every symbol), so every row shares the same `fetched_at` -- MAX is just "when was this
+    last refreshed" for the table as a whole, not a per-symbol staleness check."""
+    row = conn.execute("SELECT MAX(fetched_at) FROM symbol_meta").fetchone()
+    return float(row[0]) if row and row[0] is not None else None
+
+
+def read_sector_map(conn: sqlite3.Connection) -> dict[str, str]:
+    """`{SYMBOL: sector}` for every `symbol_meta` row that has a sector -- the schema also has
+    `industry` reserved for a finer-grained future enrichment, unused today."""
+    rows = conn.execute("SELECT symbol, sector FROM symbol_meta WHERE sector IS NOT NULL").fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
+def write_sector_map(
+    conn: sqlite3.Connection, symbol_to_sector: dict[str, str], fetched_at: float, source: str
+) -> None:
+    """Upsert every `(symbol, sector)` pair from one bulk fetch, sharing one `fetched_at`."""
+    conn.executemany(
+        "INSERT INTO symbol_meta (symbol, sector, industry, source, fetched_at) "
+        "VALUES (?, ?, NULL, ?, ?) "
+        "ON CONFLICT(symbol) DO UPDATE SET "
+        "sector = excluded.sector, source = excluded.source, fetched_at = excluded.fetched_at",
+        [(symbol, sector, source, fetched_at) for symbol, sector in symbol_to_sector.items()],
+    )
+    conn.commit()
+
+
+def get_or_fetch(
+    conn: sqlite3.Connection,
+    bucket: str,
+    key: str,
+    ttl: float,
+    fetch_fn: Callable[[], Any],
+    *,
+    force: bool = False,
+    refresh_floor_seconds: float = 60.0,
+    now: float | None = None,
+) -> tuple[Any, float, bool]:
+    """Read-through cache with a TTL.
+
+    Returns ``(payload, fetched_at, stale)``. ``force=True`` (the API's ``?fresh=1``) bypasses the TTL
+    but is itself floored to ``refresh_floor_seconds`` since the last fetch, so a refresh button can't
+    be used to hammer the broker. On a fetch failure, the last cached payload is returned with
+    ``stale=True`` if one exists; otherwise the exception propagates (nothing to serve).
+    """
+    now = time.time() if now is None else now
+    cached = _read(conn, bucket, key)
+    if cached is not None:
+        payload, fetched_at = cached
+        age = now - fetched_at
+        if not force and age < ttl:
+            return payload, fetched_at, False
+        if force and age < refresh_floor_seconds:
+            return payload, fetched_at, False
+
+    try:
+        fresh_payload = fetch_fn()
+    except Exception:
+        if cached is not None:
+            payload, fetched_at = cached
+            return payload, fetched_at, True
+        raise
+
+    _write(conn, bucket, key, fresh_payload, now)
+    return fresh_payload, now, False
+
+
+async def async_get_or_fetch(
+    conn: sqlite3.Connection,
+    bucket: str,
+    key: str,
+    ttl: float,
+    fetch_fn: Callable[[], Any],
+    *,
+    force: bool = False,
+    refresh_floor_seconds: float = 60.0,
+    now: float | None = None,
+) -> tuple[Any, float, bool]:
+    """`get_or_fetch`'s async twin, for services whose fetch is an awaited broker call
+    (`chain_service`, and any future service in the same shape) rather than a plain sync callable.
+    Same contract: `(payload, fetched_at, stale)`, TTL/force/refresh-floor semantics identical."""
+    now = time.time() if now is None else now
+    cached = _read(conn, bucket, key)
+    if cached is not None:
+        payload, fetched_at = cached
+        age = now - fetched_at
+        if not force and age < ttl:
+            return payload, fetched_at, False
+        if force and age < refresh_floor_seconds:
+            return payload, fetched_at, False
+
+    try:
+        fresh_payload = await fetch_fn()
+    except Exception:
+        if cached is not None:
+            payload, fetched_at = cached
+            return payload, fetched_at, True
+        raise
+
+    _write(conn, bucket, key, fresh_payload, now)
+    return fresh_payload, now, False

@@ -1,0 +1,62 @@
+<div class="card" id="screener-view" data-strategy="$strategy">
+  <h2>Screener <span class="note">put credit spread / call credit spread / short put / covered call</span></h2>
+  <div class="builder-row">
+    <label>Strategy
+      <select id="screener-strategy">
+        <option value="put_credit_spread">Put credit spread</option>
+        <option value="call_credit_spread">Call credit spread</option>
+        <option value="short_put">Short put</option>
+        <option value="covered_call">Covered call</option>
+      </select>
+    </label>
+    <div class="chip-group" data-filter="iv">
+      <span class="chip-label">IV Rank</span>
+      <button type="button" class="chip" data-bucket="lt50">&lt;50</button>
+      <button type="button" class="chip" data-bucket="gte50">&ge;50</button>
+    </div>
+    <div class="chip-group" data-filter="liquidity">
+      <span class="chip-label">Liquidity</span>
+      <button type="button" class="chip" data-bucket="not">Not liquid</button>
+      <button type="button" class="chip" data-bucket="somewhat">Somewhat</button>
+      <button type="button" class="chip" data-bucket="very">Very</button>
+    </div>
+    <div class="chip-group" data-filter="cap">
+      <span class="chip-label">Cap size</span>
+      <button type="button" class="chip" data-bucket="small">Small</button>
+      <button type="button" class="chip" data-bucket="medium">Medium</button>
+      <button type="button" class="chip" data-bucket="large">Large</button>
+      <button type="button" class="chip" data-bucket="mega">Mega</button>
+    </div>
+    <div class="chip-group" data-filter="sector">
+      <span class="chip-label">Sector</span>
+      <button type="button" class="chip" data-bucket="basic_materials">Basic Materials</button>
+      <button type="button" class="chip" data-bucket="communication_services">Communication Services</button>
+      <button type="button" class="chip" data-bucket="consumer_defensive">Consumer Defensive</button>
+      <button type="button" class="chip" data-bucket="consumer_discretionary">Consumer Discretionary</button>
+      <button type="button" class="chip" data-bucket="energy">Energy</button>
+      <button type="button" class="chip" data-bucket="financial_services">Financial Services</button>
+      <button type="button" class="chip" data-bucket="healthcare">Healthcare</button>
+      <button type="button" class="chip" data-bucket="industrials">Industrials</button>
+      <button type="button" class="chip" data-bucket="real_estate">Real Estate</button>
+      <button type="button" class="chip" data-bucket="technology">Technology</button>
+      <button type="button" class="chip" data-bucket="utilities">Utilities</button>
+    </div>
+    <div class="chip-group" data-filter="trend">
+      <span class="chip-label">Scan (1M trend)</span>
+      <button type="button" class="chip" data-bucket="bullish">Bullish</button>
+      <button type="button" class="chip" data-bucket="neutral">Neutral</button>
+      <button type="button" class="chip" data-bucket="bearish">Bearish</button>
+    </div>
+    <div class="chip-group" data-filter="sentiment">
+      <span class="chip-label">Sentiment (skew edge)</span>
+      <button type="button" class="chip" data-bucket="bullish">Bullish</button>
+      <button type="button" class="chip" data-bucket="neutral">Neutral</button>
+      <button type="button" class="chip" data-bucket="bearish">Bearish</button>
+    </div>
+  </div>
+  <p class="note">No chips selected in a group = that group's default gate (config thresholds for IV/
+    liquidity/cap; no filtering at all for Scan/Sentiment, which have no config default) applies;
+    selecting chips replaces the default for that dimension.</p>
+  <div id="screener-table"></div>
+  <p id="screener-skipped" class="note"></p>
+</div>

@@ -44,7 +44,7 @@ from cherrypick.flies import db as dbmod  # noqa: E402
 
 # 8801 is MEIC's embed and 8802 is the gex dashboard's, so flies takes the next one. Keep this in
 # step with the `dashboard.embeds` entry in the orchestrator's config.example.json.
-DEFAULT_PORT = 8803
+DEFAULT_PORT = 5052
 HOST = "127.0.0.1"
 
 
