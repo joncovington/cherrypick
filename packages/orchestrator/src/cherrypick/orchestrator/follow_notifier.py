@@ -445,14 +445,34 @@ def _tags(order: dict) -> list[str]:
     ]
 
 
-def _comment(order: dict, limit: int = 220) -> str:
-    """The trader's own rationale, when they left one — the most useful part of the feed, and the
-    reason this is worth a push rather than a dashboard panel."""
+def _rationale(order: dict, limit: int = 220) -> list[str]:
+    """The trader's own words, when they left any — the most useful part of the feed, and the reason
+    this is worth a push rather than a dashboard panel.
+
+    Two independent fields carry it and neither subsumes the other: `comments` is a thread hung off
+    the order, `reason` is a single string attached to the order itself. Reading only `comments` — as
+    this did — dropped the rationale on roughly a third of the feed: measured on one live pull,
+    `reason` was populated on 23 of 50 orders against `comments`' 7. On a CLOSE it is usually the
+    whole point of the card ("Closed for 50% gain", "Cutting losses at ~20%"), so both are rendered
+    when both are present. An exact repeat is shown once; each is truncated on its own."""
+    out: list[str] = []
+    seen: set[str] = set()
+    candidates: list[str] = []
     for c in order.get("comments") or []:
         body = str(c.get("body") or "").strip()
-        if body:
-            return body if len(body) <= limit else body[: limit - 1] + "…"
-    return ""
+        if body:  # the first non-empty comment only — a long thread would drown the card
+            candidates.append(body)
+            break
+    candidates.append(str(order.get("reason") or "").strip())
+    for text in candidates:
+        if not text:
+            continue
+        key = " ".join(text.lower().split())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text if len(text) <= limit else text[: limit - 1] + "…")
+    return out
 
 
 def _trader_name(order: dict, trader_names: dict[int, str]) -> str:
@@ -486,9 +506,7 @@ def format_order(order: dict, trader_names: dict[int, str]) -> str:
         when.astimezone(timezone.utc).strftime("%H:%M UTC") if when else "",
     ]
     lines = [head, " · ".join(p for p in detail if p)]
-    body = _comment(order)
-    if body:
-        lines.append(f"> {body}")
+    lines.extend(f"> {note}" for note in _rationale(order))
     return "\n".join(ln for ln in lines if ln)
 
 
@@ -525,9 +543,9 @@ def build_embed(order: dict, trader_names: dict[int, str]) -> dict:
         "color": color,
         "fields": fields,
     }
-    body = _comment(order)
-    if body:
-        embed["description"] = f"> {body}"[:4096]
+    notes = _rationale(order)
+    if notes:
+        embed["description"] = "\n".join(f"> {n}" for n in notes)[:4096]
     if _tags(order):
         embed["footer"] = {"text": " · ".join(_tags(order))}
     when = _filled_at(order)
