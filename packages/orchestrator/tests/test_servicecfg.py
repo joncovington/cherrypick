@@ -203,3 +203,60 @@ def test_a_failed_recycle_does_not_advance_the_stamp(wired, monkeypatch):
 def test_a_stale_check_hiccup_never_fails_the_tick(wired, monkeypatch):
     monkeypatch.setattr(sc, "staleness", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
     assert wd._recycle_if_stale(SVC, wired, SVC["id"]).status == wd.OK
+
+
+# --------------------------------------------------------------------------- the streamer
+STREAMER = {
+    "enabled": True,
+    "path": "../streamer",
+    "status_argv": ["run.py", "--status"],
+    "start_argv": ["run.py"],
+    "stop_argv": ["run.py", "--stop"],
+    "auto_restart": True,
+}
+
+
+def test_a_stale_streamer_is_recycled(wired, spy):
+    """The producer every module reads from — the one worth catching most."""
+    digest, source = sc.effective_config(STREAMER, wired)
+    sc.write_stamp("streamer", digest, source)
+    _go_stale(wired)
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 1, "start": 1}
+    assert "recycled onto new config" in finding.title
+
+
+def test_a_settling_streamer_is_left_alone(wired, spy):
+    """A streamer restarted seconds ago has not resubscribed yet. Recycling it again starts a loop —
+    the same reason the stall path honours `settling`."""
+    digest, source = sc.effective_config(STREAMER, wired)
+    sc.write_stamp("streamer", digest, source)
+    _go_stale(wired)
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=True)
+    assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK
+
+
+def test_two_producers_keep_separate_stamps(wired, spy):
+    """During a cutover both the standalone producer and a module's own streamer may exist. One
+    stamp between them would have each recycling the other, forever."""
+    digest, source = sc.effective_config(STREAMER, wired)
+    sc.write_stamp("streamer", digest, source)
+
+    # meic.streamer has never been stamped, so it adopts rather than recycling on the other's stamp.
+    finding = wd._recycle_streamer_if_stale("meic.streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK
+    assert sc.read_stamp("meic.streamer")["config_hash"] == digest
+    assert sc.read_stamp("streamer")["config_hash"] == digest  # untouched
+
+
+def test_streamer_recycle_honours_auto_restart(wired, spy):
+    svc = {**STREAMER, "auto_restart": False}
+    digest, source = sc.effective_config(svc, wired)
+    sc.write_stamp("streamer", digest, source)
+    _go_stale(wired)
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, svc, settling=False)
+    assert spy == {"stop": 0, "start": 0}
+    assert finding.status == wd.WARN and "stale config" in finding.title
