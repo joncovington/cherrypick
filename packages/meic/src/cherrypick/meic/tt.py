@@ -82,13 +82,17 @@ _last_streamer_http_error: str | None = None
 
 
 def _try_streamer_http(command: str, args_dict: dict) -> dict | None:
-    """POST command to the streamer HTTP API. Returns parsed JSON or None on failure.
+    """POST command to the MEIC sidecar's HTTP API (127.0.0.1:7699 — the optional REST-poller fast-path,
+    `--sidecar` in streamer.py; disabled by default in config, distinct from the DXLink streamer/producer
+    itself). Returns parsed JSON or None on failure.
 
     Sets module-level `_last_streamer_http_error` so callers falling back to the
     slow (cold-import asyncio) path can surface *why* in the response JSON —
     a caller-invisible fallback here previously masked a 34+ hour streamer
     stall (silently-dead persistent connection) behind an unremarkable
-    per-call latency bump.
+    per-call latency bump. Named "sidecar", not "streamer", so it can't be misread as a report on the
+    DXLink producer's health — that not being reachable here is the sidecar's normal disabled-by-default
+    state, not a market-data outage; check `stream_status` for the producer.
     """
     global _last_streamer_http_error
     import urllib.error
@@ -107,18 +111,18 @@ def _try_streamer_http(command: str, args_dict: dict) -> dict | None:
         _last_streamer_http_error = None
         return result
     except (ConnectionRefusedError, urllib.error.URLError) as exc:
-        # Streamer daemon simply isn't running — normal/expected, not worth a warning.
-        _last_streamer_http_error = f"streamer not reachable: {exc}"
+        # Sidecar simply isn't running — normal/expected (it's disabled by default), not worth a warning.
+        _last_streamer_http_error = f"sidecar not reachable: {exc}"
         return None
     except TimeoutError as exc:
-        # Daemon is running but didn't respond within 5s — the interesting case:
+        # Sidecar is running but didn't respond within 5s — the interesting case:
         # the same failure shape as the 2026-07-01 session/event-loop stall.
-        _last_streamer_http_error = f"streamer HTTP timeout: {exc}"
-        logger.warning("streamer HTTP timeout on command=%s: %s", command, exc)
+        _last_streamer_http_error = f"sidecar HTTP timeout: {exc}"
+        logger.warning("sidecar HTTP timeout on command=%s: %s", command, exc)
         return None
     except Exception as exc:
-        _last_streamer_http_error = f"streamer HTTP error: {exc}"
-        logger.warning("streamer HTTP error on command=%s: %s", command, exc)
+        _last_streamer_http_error = f"sidecar HTTP error: {exc}"
+        logger.warning("sidecar HTTP error on command=%s: %s", command, exc)
         return None
 
 
@@ -1376,10 +1380,22 @@ def cmd_stream_status(_args) -> dict:
     # top-level imports are all stdlib, so this import is cheap.
     from cherrypick.meic import streamer as _streamer
 
-    pid = _streamer._running_pid()
+    # Since the 2026-07-21 cutover the actual producer of the shared cache is normally the standalone
+    # streamer (packages/streamer), not this module's own (rollback-only) full-streamer mode — but this
+    # command used to check only the latter's PID file, so it reported running=false whenever the
+    # standalone producer was the one actually alive and writing fresh data. Check both; the cache
+    # freshness numbers below already reflect whichever one is really producing.
+    meic_pid = _streamer._running_pid()
+    standalone_pid = _streamer._standalone_producer_pid()
+    if standalone_pid is not None:
+        producer, pid = "standalone", standalone_pid
+    elif meic_pid is not None:
+        producer, pid = "meic", meic_pid
+    else:
+        producer, pid = None, None
     running = pid is not None
 
-    result: dict = {"ok": True, "running": running, "pid": pid}
+    result: dict = {"ok": True, "running": running, "pid": pid, "producer": producer}
 
     conn = _cache_conn()
     if conn is None:
@@ -1668,7 +1684,7 @@ def main():
 
     result = asyncio.run(fn(args))
     if isinstance(result, dict) and _last_streamer_http_error is not None:
-        result.setdefault("streamer_http_fallback", _last_streamer_http_error)
+        result.setdefault("sidecar_http_fallback", _last_streamer_http_error)
     _out(result)
 
 
