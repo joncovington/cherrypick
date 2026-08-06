@@ -882,6 +882,17 @@ def _running_pid(pid_file: Path = _PID_FILE) -> int | None:
     return None
 
 
+def _standalone_producer_pid() -> int | None:
+    """Liveness of the standalone streamer producer (packages/streamer), the suite's producer since the
+    2026-07-21 cutover. It writes its PID file colocated with the shared cache it manages
+    (`cache_path().parent / "streamer.pid"`, see `cherrypick.streamer.config.pid_path`) — since this
+    module's `_CACHE_DB` points at that same canonical shared cache, checking the sibling PID file here
+    needs no import of the `streamer` package. One-producer enforcement for full-streamer mode: two
+    writers into the same cache means two DXLink connections into one account.
+    """
+    return _running_pid(_CACHE_DB.parent / "streamer.pid")
+
+
 def _cmd_status() -> None:
     pid = _running_pid()
     print(json.dumps({"running": pid is not None, "pid": pid}))
@@ -1051,6 +1062,23 @@ def main() -> None:
                     "ok": False,
                     "error": f"Streamer already running (pid {existing_pid}). "
                     f"Run 'python src/streamer.py --stop' first, or --status to inspect it.",
+                }
+            )
+        )
+        raise SystemExit(1)
+
+    standalone_pid = _standalone_producer_pid()
+    if standalone_pid is not None:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"Standalone streamer producer already running (pid {standalone_pid}) and "
+                    "writing the same shared cache. Exactly one producer may write it at a time — "
+                    "starting this full-streamer mode alongside it would open a second DXLink "
+                    "connection into the account. Stop the standalone producer first "
+                    "('python packages/streamer/run.py --stop'), or use 'python src/streamer.py "
+                    "--sidecar' instead, which only adds the REST/7699 fast-path and streams nothing.",
                 }
             )
         )
