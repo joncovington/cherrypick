@@ -150,9 +150,31 @@ def test_producer_dormant_without_config():
     assert wd._check_producer({"streamer": {"enabled": False}}, in_session=True) == []
 
 
-def test_producer_not_checked_off_hours(tmp_path):
+def test_producer_off_hours_emits_ok_liveness_finding_without_restart(monkeypatch, calls, tmp_path):
+    _status(monkeypatch, {"running": True})
     cfg = {"streamer": _spec(enabled=True, path=str(tmp_path))}
-    assert wd._check_producer(cfg, in_session=False) == []
+    findings = wd._check_producer(cfg, in_session=False)
+    assert len(findings) == 1
+    assert findings[0].status == wd.OK
+    assert findings[0].key == "streamer"
+    assert "off-hours" in findings[0].message
+    assert calls["start"] == [] and calls["stop"] == []
+
+
+def test_producer_off_hours_down_is_ok_not_warn(monkeypatch, calls, tmp_path):
+    _status(monkeypatch, {"running": False})
+    cfg = {"streamer": _spec(enabled=True, path=str(tmp_path))}
+    findings = wd._check_producer(cfg, in_session=False)
+    assert findings[0].status == wd.OK
+    assert "not running" in findings[0].message
+    assert calls["start"] == [] and calls["stop"] == []
+
+
+def test_producer_off_hours_missing_checkout_is_ok_not_warn(tmp_path):
+    cfg = {"streamer": _spec(enabled=True, path=str(tmp_path / "nope"))}
+    findings = wd._check_producer(cfg, in_session=False)
+    assert findings[0].status == wd.OK
+    assert str(tmp_path) not in findings[0].message
 
 
 def test_producer_active_when_enabled(monkeypatch, calls, tmp_path):
