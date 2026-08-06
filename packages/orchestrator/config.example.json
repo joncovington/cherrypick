@@ -380,7 +380,7 @@
   },
   "services": [
     {
-      "_comment": "Long-running background daemons the orchestrator keeps alive: started at `install`, restarted by the watchdog if down (single-instance guarded), stopped at `uninstall`. Located by 'path' (relative to this file) or 'repo'. status_argv must print {\"running\": bool}. The gex spot-trail recorder samples every symbol's spot continuously so the GEX dashboard's spot trail has no gaps and builds all session, independent of whether the dashboard is open. Disabled by default.",
+      "_comment": "Long-running background daemons the orchestrator keeps alive: started at `install`, restarted by the watchdog if down (single-instance guarded), stopped at `uninstall`. Located by 'path' (relative to this file) or 'repo'. status_argv must print {\"running\": bool}. A running service whose config changed since launch is recycled (stop then start) so it re-reads -- the orchestrator stamps a hash of this entry plus the service's own config file at launch and compares each tick; requires auto_restart, and set 'config_name' if that config file is named for neither the checkout directory nor the id. The gex spot-trail recorder samples every symbol's spot continuously so the GEX dashboard's spot trail has no gaps and builds all session, independent of whether the dashboard is open. Disabled by default.",
       "id": "gex-recorder",
       "enabled": false,
       "path": "../gex",

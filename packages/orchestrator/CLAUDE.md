@@ -205,7 +205,13 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   quiet socket — or a dead managed **service**: top-level `services`, background daemons like the gex
   spot-trail recorder that `install` starts, the watchdog keeps alive via `status_argv`/`start_argv`,
   and `uninstall` stops; single-instance guarded, located by `path`/`repo` like modules but with no
-  paper DB or schedule of their own). It never places, cancels, or closes an order.
+  paper DB or schedule of their own). It never places, cancels, or closes an order. The same
+  remediation also covers a service that is **up but running stale config** (`servicecfg.py`): a
+  daemon reads config once at launch, so a later edit reaches the file and never the process, and
+  liveness cannot see it. `install` stamps a hash of each service's effective config (its own config
+  file plus its `services[]` entry) and the watchdog recycles on a moved hash — gated on
+  `auto_restart`, stamping only a restart that succeeded, and *adopting* rather than restarting a
+  service it has no prior stamp for.
 - **Every spawned process is headless.** The scheduled tasks run under `pythonw.exe` (no console), so
   any console-subsystem child launched without `CREATE_NO_WINDOW` pops a visible terminal window on the
   user's screen — on every watchdog tick, daemon restart, and desktop toast. Daemons and `services`
