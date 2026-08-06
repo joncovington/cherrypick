@@ -53,7 +53,7 @@ policed by the watchdog:
 `meic-sidecar` (the 127.0.0.1:7699 REST poller) is a declared-but-disabled third; enable only for
 MEIC's live/interactive loop fast-path.
 
-**Services are also recycled when their config changes.** A daemon reads config once, at launch, so
+**Both are also recycled when their config changes.** A daemon reads config once, at launch, so
 an edit afterwards reaches the file and never the process — and no liveness check can see it, because
 nothing is wrong with the process. (A `gex-recorder` up since 07-19 kept writing a frozen spot into
 the trail for days after `source.stream_cache_db` moved off the retired meic cache.) `install` stamps
@@ -66,6 +66,14 @@ orchestrator may not restart is only reported as stale, never touched. A service
 staleness is unknowable, and the first tick simply records what it is running so the *next* change is
 caught. Set `config_name` on a service whose config file is named for neither its checkout directory
 nor its id.
+
+The streamer gets the same treatment, with two differences that follow from its restart path. The
+recycle is reached **only from the healthy branch**, so the stall path always wins — a silent streamer
+is restarted for silence, and that restart stamps the new config anyway. And it honours the same
+`settling` window the stall path uses: a streamer restarted seconds ago has not resubscribed yet, and
+recycling it again is how a restart loop starts. Producers stamp under their watchdog finding label
+(`streamer`, `<module>.streamer`), so during a cutover the standalone producer and a module's own
+streamer keep separate stamps instead of recycling each other every tick.
 
 Every module that consumes the stream declares its needs in `~/.cherrypick/state/stream_requests/`:
 flies and gex have always regenerated their files on every run, and MEIC gained its writer on
