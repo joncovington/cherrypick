@@ -111,6 +111,7 @@ def raw_return(credit: float, max_risk: float) -> float | None:
         return None
     return credit / max_risk
 
+
 def annualized_return(credit: float, max_risk: float, dte: float) -> float | None:
     """Compounded annualization of credit/max_risk over the trade's own holding period."""
     raw = raw_return(credit, max_risk)
@@ -267,7 +268,7 @@ def bs_greeks(legs: list[Leg], spot: float, sigma: float, t: float, r: float) ->
 
 
 def direction(legs: list[Leg], spot: float) -> str:
-    """"bullish"/"bearish"/"neutral" from the payoff engine's own numbers: which tail the position
+    """ "bullish"/"bearish"/"neutral" from the payoff engine's own numbers: which tail the position
     prefers. Probes at +/-40% -- wide enough to reach past the strikes of a normal OTM structure.
     (A first draft probed +/-10%, which landed BOTH probes inside an OTM put spread's max-profit
     plateau and called the spread "neutral" -- caught live when a bullish vertical's market-trend
@@ -353,13 +354,9 @@ def greeks_explanation(symbol: str, greeks: dict) -> str | None:
         else f"For every $1 {symbol} rises, this position loses about ${abs(delta):,.2f}"
     ]
     if theta is not None:
-        parts.append(
-            f"time decay {'adds' if theta >= 0 else 'costs'} about ${abs(theta):,.2f} per day"
-        )
+        parts.append(f"time decay {'adds' if theta >= 0 else 'costs'} about ${abs(theta):,.2f} per day")
     if vega is not None:
-        parts.append(
-            f"a one-point IV {'rise adds' if vega >= 0 else 'rise costs'} about ${abs(vega):,.2f}"
-        )
+        parts.append(f"a one-point IV {'rise adds' if vega >= 0 else 'rise costs'} about ${abs(vega):,.2f}")
     return "; ".join(parts) + ". Model greeks (Black-Scholes, flat IV), not a live feed."
 
 
@@ -457,12 +454,18 @@ def checklist(
         status = "warn" if value is None else ("pass" if passed else ("warn" if warned else "fail"))
         items.append({"name": name, "status": status})
 
-    grade("Probability of worthless", pow_value,
-          pow_value is not None and pow_value >= 0.70,
-          pow_value is not None and pow_value >= 0.55)
-    grade("Annualized return", annualized,
-          annualized is not None and annualized >= 0.05,
-          annualized is not None and annualized >= 0.02)
+    grade(
+        "Probability of worthless",
+        pow_value,
+        pow_value is not None and pow_value >= 0.70,
+        pow_value is not None and pow_value >= 0.55,
+    )
+    grade(
+        "Annualized return",
+        annualized,
+        annualized is not None and annualized >= 0.05,
+        annualized is not None and annualized >= 0.02,
+    )
     if earnings_inside is None:
         items.append({"name": "Earnings date", "status": "warn"})
     else:

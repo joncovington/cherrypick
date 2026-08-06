@@ -1,4 +1,3 @@
-
 from cherrypick.scout.analytics import templates as _templates
 
 

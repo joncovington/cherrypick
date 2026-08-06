@@ -123,9 +123,7 @@ def test_stage_save_list_delete_round_trips(app_and_client, monkeypatch):
 
 def test_delete_unknown_ticket_returns_404(app_and_client):
     app, client = app_and_client
-    resp = client.post(
-        "/api/staged/delete", headers=_headers(app, **_csrf_headers(app)), json={"id": "nope"}
-    )
+    resp = client.post("/api/staged/delete", headers=_headers(app, **_csrf_headers(app)), json={"id": "nope"})
     assert resp.status_code == 404
 
 

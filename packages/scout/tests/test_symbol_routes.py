@@ -154,8 +154,7 @@ def test_api_symbol_analysis_returns_trend_and_price_action(app_and_client, monk
     # big-move Price Action detection; 6m trend abstains (needs a 50-bar SMA -- present -- fine).
     closes = [100.0] * 60 + [100.0, 104.0, 107.0]
     bars = [
-        {"t": 1000 + i * 86400, "o": c, "h": c + 1, "l": c - 1, "c": c, "v": 10}
-        for i, c in enumerate(closes)
+        {"t": 1000 + i * 86400, "o": c, "h": c + 1, "l": c - 1, "c": c, "v": 10} for i, c in enumerate(closes)
     ]
 
     async def fake_get_candles(_conn, _session, _cfg, symbol):
@@ -271,7 +270,10 @@ def test_template_route_flips_a_vertical(template_route):
     flipped = client.get(
         "/api/symbol/aapl/template",
         params={
-            "expiration": "2026-09-18", "spot": 100.0, "action": "flip", "legs": _json.dumps(built),
+            "expiration": "2026-09-18",
+            "spot": 100.0,
+            "action": "flip",
+            "legs": _json.dumps(built),
         },
         headers=_headers(app),
     ).json()
@@ -353,8 +355,13 @@ def test_suggestions_route_defaults_to_the_next_monthly_30_plus_days_out(templat
     async def fake_get_expirations(_conn, _session, _cfg, symbol):
         both = _fake_chain_expirations(strikes, expiration=monthly)["expirations"][monthly]
         weekly_opts = _fake_chain_expirations(strikes, expiration=weekly)["expirations"][weekly]
-        return {"ok": True, "symbol": "AAPL", "as_of": 0, "stale": False,
-                "expirations": {weekly: weekly_opts, monthly: both}}
+        return {
+            "ok": True,
+            "symbol": "AAPL",
+            "as_of": 0,
+            "stale": False,
+            "expirations": {weekly: weekly_opts, monthly: both},
+        }
 
     monkeypatch.setattr(_symbol_api.chain_service, "get_expirations", fake_get_expirations)
     resp = client.get(
@@ -388,8 +395,13 @@ def test_expirations_route_includes_the_same_default_suggestions_use(template_ro
     async def fake_get_expirations(_conn, _session, _cfg, symbol):
         both = _fake_chain_expirations(strikes, expiration=monthly)["expirations"][monthly]
         weekly_opts = _fake_chain_expirations(strikes, expiration=weekly)["expirations"][weekly]
-        return {"ok": True, "symbol": "AAPL", "as_of": 0, "stale": False,
-                "expirations": {weekly: weekly_opts, monthly: both}}
+        return {
+            "ok": True,
+            "symbol": "AAPL",
+            "as_of": 0,
+            "stale": False,
+            "expirations": {weekly: weekly_opts, monthly: both},
+        }
 
     monkeypatch.setattr(_symbol_api.chain_service, "get_expirations", fake_get_expirations)
     resp = client.get("/api/symbol/aapl/expirations", headers=_headers(app))

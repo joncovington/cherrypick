@@ -163,8 +163,12 @@ def test_payoff_route_income_checklist_for_a_lone_short_put(app_and_client, monk
     resp = client.get(
         "/api/payoff",
         params={
-            "legs": json.dumps(legs), "spot": 100, "dte": 25, "iv": 0.30,
-            "symbol": "AAPL", "expiration": "2026-08-28",
+            "legs": json.dumps(legs),
+            "spot": 100,
+            "dte": 25,
+            "iv": 0.30,
+            "symbol": "AAPL",
+            "expiration": "2026-08-28",
         },
         headers=_headers(app),
     )
@@ -194,16 +198,18 @@ def test_payoff_route_projected_yield_for_a_covered_call(app_and_client, monkeyp
     resp = client.get(
         "/api/payoff",
         params={
-            "legs": json.dumps(legs), "spot": 28.63, "dte": 46, "iv": 0.30,
-            "symbol": "KWEB", "expiration": "2026-09-18",
+            "legs": json.dumps(legs),
+            "spot": 28.63,
+            "dte": 46,
+            "iv": 0.30,
+            "symbol": "KWEB",
+            "expiration": "2026-09-18",
         },
         headers=_headers(app),
     )
     body = resp.json()
     assert body["dividend_yield"] == pytest.approx(0.0736)
-    assert body["projected_yield_12m"] == pytest.approx(
-        body["annualized_return"] + 0.0736, abs=1e-6
-    )
+    assert body["projected_yield_12m"] == pytest.approx(body["annualized_return"] + 0.0736, abs=1e-6)
 
 
 def test_payoff_route_projected_yield_omitted_for_a_lone_short_put(app_and_client, monkeypatch):
@@ -221,8 +227,12 @@ def test_payoff_route_projected_yield_omitted_for_a_lone_short_put(app_and_clien
     resp = client.get(
         "/api/payoff",
         params={
-            "legs": json.dumps(legs), "spot": 100, "dte": 25, "iv": 0.30,
-            "symbol": "AAPL", "expiration": "2026-08-28",
+            "legs": json.dumps(legs),
+            "spot": 100,
+            "dte": 25,
+            "iv": 0.30,
+            "symbol": "AAPL",
+            "expiration": "2026-08-28",
         },
         headers=_headers(app),
     )
@@ -276,9 +286,7 @@ def test_payoff_route_probable_risk_2sd_for_an_unbounded_short_strangle(app_and_
     # undefined-risk number, clearly marked as such.
     assert body["score_is_estimated"] is True
     reward = 3415.0  # (15.20 + 18.95) * 100, the credit collected
-    assert body["score"] == pytest.approx(
-        100 * body["pop"] * (reward + 6923.96) / 6923.96, abs=0.5
-    )
+    assert body["score"] == pytest.approx(100 * body["pop"] * (reward + 6923.96) / 6923.96, abs=0.5)
 
 
 def test_payoff_route_probable_risk_2sd_omitted_for_defined_risk(app_and_client, monkeypatch):

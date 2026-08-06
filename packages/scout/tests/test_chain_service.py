@@ -153,9 +153,7 @@ async def test_get_greeks_prefers_the_shared_stream_cache(conn, monkeypatch, tmp
     shared.commit()
     shared.close()
 
-    monkeypatch.setattr(
-        chain_service._streamcache, "cache_path", lambda: tmp_path / "stream_cache.db"
-    )
+    monkeypatch.setattr(chain_service._streamcache, "cache_path", lambda: tmp_path / "stream_cache.db")
 
     async def fail_dxlink(*_a, **_kw):
         raise AssertionError("must not open DXLink when the shared cache covers the symbol")
@@ -221,8 +219,14 @@ async def test_income_grid_picks_nearest_delta_strike_per_tier(conn, monkeypatch
 
     async def fake_get_greeks(_conn, _session, streamer_symbols, **_kw):
         return {
-            s: {"delta": deltas[int(s.replace(".OPT", ""))], "gamma": 0, "theta": 0, "vega": 0,
-                "iv": 0.30, "price": 1.0}
+            s: {
+                "delta": deltas[int(s.replace(".OPT", ""))],
+                "gamma": 0,
+                "theta": 0,
+                "vega": 0,
+                "iv": 0.30,
+                "price": 1.0,
+            }
             for s in streamer_symbols
         }
 

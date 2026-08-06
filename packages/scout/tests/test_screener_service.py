@@ -261,14 +261,20 @@ async def test_run_screener_trend_filter_skips_non_matching_trend(conn, monkeypa
         return {"ok": True, "symbol": symbol, "bars": _rising_bars()}  # a clean uptrend -> bullish
 
     chain_options = [
-        _opt(85, "P", 0.50), _opt(90, "P", 1.00), _opt(95, "P", 2.00),
-        _opt(105, "C", 2.00), _opt(110, "C", 1.00),
+        _opt(85, "P", 0.50),
+        _opt(90, "P", 1.00),
+        _opt(95, "P", 2.00),
+        _opt(105, "C", 2.00),
+        _opt(110, "C", 1.00),
     ]
     quotes_by_symbol = {o["symbol"]: o["quote"] for o in chain_options}
 
     async def fake_get_expirations(_conn, _session, _cfg, symbol):
         return {
-            "ok": True, "symbol": symbol, "as_of": 0, "stale": False,
+            "ok": True,
+            "symbol": symbol,
+            "as_of": 0,
+            "stale": False,
             "expirations": {monthly.isoformat(): chain_options},
         }
 
@@ -325,7 +331,10 @@ async def test_run_screener_sentiment_filter_skips_non_matching_skew(conn, monke
 
     async def fake_get_expirations(_conn, _session, _cfg, symbol):
         return {
-            "ok": True, "symbol": symbol, "as_of": 0, "stale": False,
+            "ok": True,
+            "symbol": symbol,
+            "as_of": 0,
+            "stale": False,
             "expirations": {monthly.isoformat(): chain_options},
         }
 
@@ -344,14 +353,24 @@ async def test_run_screener_sentiment_filter_skips_non_matching_skew(conn, monke
     cfg = {"screener": {}, "refresh": {}}
 
     bullish = await screener_service.run_screener(
-        conn, _FakeSession(), cfg, ["aapl"], "put_credit_spread",
-        filters={"sentiment": {"bullish"}}, now=now,
+        conn,
+        _FakeSession(),
+        cfg,
+        ["aapl"],
+        "put_credit_spread",
+        filters={"sentiment": {"bullish"}},
+        now=now,
     )
     assert len(bullish["candidates"]) == 1
 
     bearish = await screener_service.run_screener(
-        conn, _FakeSession(), cfg, ["aapl"], "put_credit_spread",
-        filters={"sentiment": {"bearish"}}, now=now,
+        conn,
+        _FakeSession(),
+        cfg,
+        ["aapl"],
+        "put_credit_spread",
+        filters={"sentiment": {"bearish"}},
+        now=now,
     )
     assert bearish["candidates"] == []
     assert bearish["skipped"][0]["reason"] == "sentiment chip filtered"
@@ -376,14 +395,20 @@ async def test_run_screener_sector_filter_skips_non_matching_sector(conn, monkey
         return {"AAPL": "Technology"}
 
     chain_options = [
-        _opt(85, "P", 0.50), _opt(90, "P", 1.00), _opt(95, "P", 2.00),
-        _opt(105, "C", 2.00), _opt(110, "C", 1.00),
+        _opt(85, "P", 0.50),
+        _opt(90, "P", 1.00),
+        _opt(95, "P", 2.00),
+        _opt(105, "C", 2.00),
+        _opt(110, "C", 1.00),
     ]
     quotes_by_symbol = {o["symbol"]: o["quote"] for o in chain_options}
 
     async def fake_get_expirations(_conn, _session, _cfg, symbol):
         return {
-            "ok": True, "symbol": symbol, "as_of": 0, "stale": False,
+            "ok": True,
+            "symbol": symbol,
+            "as_of": 0,
+            "stale": False,
             "expirations": {monthly.isoformat(): chain_options},
         }
 
@@ -403,15 +428,25 @@ async def test_run_screener_sector_filter_skips_non_matching_sector(conn, monkey
     cfg = {"screener": {}, "refresh": {}}
 
     matching = await screener_service.run_screener(
-        conn, _FakeSession(), cfg, ["aapl"], "put_credit_spread",
-        filters={"sector": {"technology"}}, now=now,
+        conn,
+        _FakeSession(),
+        cfg,
+        ["aapl"],
+        "put_credit_spread",
+        filters={"sector": {"technology"}},
+        now=now,
     )
     assert len(matching["candidates"]) == 1
     assert matching["candidates"][0]["sector"] == "Technology"
 
     non_matching = await screener_service.run_screener(
-        conn, _FakeSession(), cfg, ["aapl"], "put_credit_spread",
-        filters={"sector": {"energy"}}, now=now,
+        conn,
+        _FakeSession(),
+        cfg,
+        ["aapl"],
+        "put_credit_spread",
+        filters={"sector": {"energy"}},
+        now=now,
     )
     assert non_matching["candidates"] == []
 
