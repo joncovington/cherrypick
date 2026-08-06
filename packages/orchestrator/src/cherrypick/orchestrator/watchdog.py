@@ -1087,6 +1087,69 @@ def _process_notifications(
 
 
 # --------------------------------------------------------------------------- entrypoint
+def run_preopen(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The pre-open producer check: streamer liveness only, on a tight interval, in a short window.
+
+    The full tick runs every 10 minutes and streamer supervision starts at 09:15, so the first
+    supervising tick of the day can land as late as ~09:25 — minutes before the 09:30–09:35 opening
+    range, which cannot be reconstructed once missed. A streamer that died overnight was therefore
+    unsupervised until then, and a restart is not instant: `_check_streamer_health`'s own `settling`
+    window is 240s, so a 09:25 relaunch is still resubscribing when the range starts.
+
+    This is a separate task rather than a shorter global interval on purpose. Dropping the watchdog
+    to 2 minutes would multiply every tick's work — module checks, dashboard render, EOD triggers —
+    all day, to fix a 35-minute window.
+
+    It reuses `_check_streamer_health` rather than copying it: that function carries the 2026-07-20
+    silence-restart lesson (a live-but-quiet socket reporting running=true), and a second copy would
+    drift from it. Findings go through the same notify path, so a failure here alerts exactly like
+    any other. Writes no heartbeat — the full tick owns that, and a second writer would make
+    "when did the watchdog last run" ambiguous.
+    """
+    cfg = cfgmod.load_config() if cfg is None else cfg
+    settings = cfgmod.preopen_settings(cfg)
+    if not settings["enabled"]:
+        return {"ok": True, "skipped": "preopen not enabled"}
+
+    tz = cfg.get("timezone", "America/New_York")
+    now = timeutil.now_et(tz)
+    if not timeutil.is_trading_day(now, timeutil.load_holidays()):
+        # The task has no day-of-week filter (see tasks.create_windowed_minute_task), so weekends
+        # and holidays reach here and stop here.
+        return {"ok": True, "skipped": "not a trading day"}
+
+    findings: list[Finding] = []
+    spec = cfg.get("streamer") or {}
+    if spec.get("enabled"):
+        root = cfgmod.module_root(spec, "streamer")
+        if root.exists():
+            findings += _check_streamer_health("streamer", root, spec)
+    else:
+        for name, mcfg in cfgmod.enabled_modules(cfg).items():
+            streamer = mcfg.get("streamer") or {}
+            if streamer.get("enabled"):
+                root = cfgmod.module_root(mcfg, name)
+                if root.exists():
+                    findings += _check_streamer_health(f"{name}.streamer", root, streamer)
+
+    if not findings:
+        return {"ok": True, "skipped": "no streamer configured"}
+
+    overall = OK
+    for f in findings:
+        if _RANK[f.status] > _RANK[overall]:
+            overall = f.status
+    _log_findings(findings, overall)
+    notifier = Notifier(cfg.get("notify"))
+    renotify = cfg.get("watchdog", {}).get("renotify_minutes", 60)
+    _process_notifications(findings, notifier, renotify)
+    return {
+        "ok": True,
+        "overall": overall,
+        "findings": [{"key": f.key, "status": f.status, "title": f.title} for f in findings],
+    }
+
+
 def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     tz = cfg.get("timezone", "America/New_York")

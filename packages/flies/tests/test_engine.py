@@ -1148,3 +1148,41 @@ def test_session_stats_report_the_three_numbers_that_matter():
     assert stats["risk_free_rate"] == 1.0
     assert stats["pin_rate"] == 1.0
     assert stats["uncompleted_verticals"] == 1
+
+
+# --------------------------------------------------------------------------- config discoverability
+def _example_defaults():
+    import json
+    import re
+    from pathlib import Path
+
+    example = Path(__file__).resolve().parents[1] / "config.example.json"
+    return json.loads(re.sub(r"^\s*//.*$", "", example.read_text(encoding="utf-8"), flags=re.M))["defaults"]
+
+
+def test_regime_trend_band_is_documented_and_unchanged():
+    """`regime_trend_points` was readable by the engine but documented nowhere outside engine.py
+    (audit 2026-08-06). It ships at the engine's own default, so copying the example cannot retune
+    the flat band — the value docs/centre-lag.md records as having been wrong at 5."""
+    from cherrypick.flies import engine
+
+    defaults = _example_defaults()
+    assert defaults["regime_trend_points"] == 20.0
+    snap = {"underlying_price": 6300.0, "session": {"day_open": 6280.0}}
+    without = {k: v for k, v in defaults.items() if k != "regime_trend_points"}
+    assert engine._classify_trend(snap, defaults) == engine._classify_trend(snap, without)
+
+
+def test_center_offset_threshold_is_deliberately_absent_from_the_example():
+    """It must NOT be listed as a key. Its fallback is `strike_increment`, and `params.get` returns a
+    present-but-null rather than the fallback — so writing it as null would hand the comparison a
+    None and raise on the decision path. Absence is the setting."""
+    from cherrypick.flies import engine
+
+    defaults = _example_defaults()
+    assert "regime_center_offset_points" not in defaults
+
+    snap = {"underlying_price": 6300.0, "session": {"day_open": 6280.0}}
+    assert engine._classify_center_offset(snap, defaults, 6305.0)[0] == "at_spot"
+    with pytest.raises(TypeError):  # the trap this test exists to document
+        engine._classify_center_offset(snap, {**defaults, "regime_center_offset_points": None}, 6305.0)

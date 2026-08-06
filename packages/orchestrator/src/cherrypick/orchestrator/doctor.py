@@ -127,6 +127,56 @@ def _writable(path: Path) -> bool:
         return False
 
 
+def _suite_task_checks(cfg: dict[str, Any]) -> list[Check]:
+    """The orchestrator's own recurring tasks — the ones `install` registers that are not a module's.
+
+    These were unchecked, so a green `doctor` meant "the paper pipeline is registered", not "the
+    suite is". The likely failure is not a task never created; it is one left registered against a
+    **stale checkout path** after a move, or silently absent after an `install` that partly failed.
+
+    Each task's name is resolved through the same `*_settings` helper `install`/`uninstall` use, so
+    a config-driven rename cannot desync the check from what was actually registered.
+
+    **Off-by-choice reads differently from missing.** `reconcile` and the Follow Feed notifier are
+    opt-in; "not registered because not enabled" is a healthy state, and reporting it as a warning
+    would train the operator to ignore this whole section — which is the failure mode that let
+    `holidays_loaded=0` sit in the docs as an accepted gap.
+    """
+    resolved = [
+        ("trade_notify", (cfg.get("trade_notify", {}) or {}).get("task_name"), True),
+        ("log_archive", cfgmod.archive_settings(cfg)["task_name"], cfgmod.archive_settings(cfg)["enabled"]),
+        (
+            "reconcile",
+            cfgmod.reconcile_schedule_settings(cfg)["task_name"],
+            cfgmod.reconcile_schedule_settings(cfg)["enabled"],
+        ),
+        (
+            "follow_notify",
+            cfgmod.follow_feed_settings(cfg)["task_name"],
+            cfgmod.follow_feed_settings(cfg)["enabled"],
+        ),
+        ("preopen", cfgmod.preopen_settings(cfg)["task_name"], cfgmod.preopen_settings(cfg)["enabled"]),
+    ]
+    checks: list[Check] = []
+    for label, name, enabled in resolved:
+        if not name:
+            continue
+        registered = tasks.exists(name)
+        if enabled and registered:
+            status, detail = OK, f"registered ({name})"
+        elif enabled:
+            status, detail = WARN, f"enabled but not registered (run: cherrypick install) [{name}]"
+        elif registered:
+            # A task still firing for a feature that has been switched off. Benign for these
+            # (each command re-reads config and no-ops), but it is drift worth seeing.
+            detail = f"disabled in config but still registered (run: cherrypick install) [{name}]"
+            status = WARN
+        else:
+            status, detail = OK, "disabled (not registered)"
+        checks.append(Check(f"task.{label}", status, detail))
+    return checks
+
+
 def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     """Run the readiness checks. `fast=True` skips the broker/keyring check — the only one that makes
     an authenticated broker round-trip (a 35s-timeout subprocess) — so it's safe to poll on a short
@@ -359,6 +409,8 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
                 "registered" if tasks.exists(wt) else "not registered (run: cherrypick install)",
             )
         )
+
+    checks.extend(_suite_task_checks(cfg))
 
     # notify reachability — can the walk-away user actually be told?
     channels = cfg.get("notify", {}).get("channels", ["log"])
