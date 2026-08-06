@@ -33,5 +33,6 @@ Install-Editable "packages\earnings[dev]"     "packages/earnings"
 Install-Editable "packages\gex[dev]"          "packages/gex"
 Install-Editable "packages\flies[dev]"        "packages/flies"
 Install-Editable "packages\streamer[dev]"     "packages/streamer"
+Install-Editable "packages\desk[dev]"         "packages/desk"
 
 Write-Host "==> done"
