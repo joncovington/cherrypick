@@ -197,7 +197,7 @@ def _parse_proposals(text: str) -> list | None:
 def run(cfg: dict[str, Any] | None = None, day: str | None = None) -> dict[str, Any]:
     """Generate, validate, and write advice artifacts for every advise-enabled module.
     Best-effort per module; returns a per-module result map."""
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     st = cfgmod.advise_settings(cfg)
     day = day or timeutil.now_et(cfg.get("timezone", "America/New_York")).strftime("%Y-%m-%d")
     if not st["enabled"]:

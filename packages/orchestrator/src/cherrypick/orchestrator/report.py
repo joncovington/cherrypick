@@ -304,7 +304,7 @@ def run(
         raise ValueError("pass session OR session_range, not both")
     lo, hi = (session, session) if session is not None else (session_range or (None, None))
 
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     epoch = cfgmod.data_epoch(cfg)
     modules_out: dict[str, dict] = {}
     all_records: list[dict] = []
@@ -415,7 +415,7 @@ def live_run(cfg: dict | None = None, session: str | None = None) -> dict:
     broker-truth live view is `reconcile`).
     """
     lo = hi = session
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     modules_out: dict[str, dict] = {}
     all_records: list[dict] = []
     all_open: list[dict] = []
@@ -484,7 +484,7 @@ def latest_session(cfg: dict | None = None) -> str | None:
     """Most recent settlement-session date (ISO) with any paper trade across enabled modules, or
     None if there are none. Lets the EOD view fall back off an empty current day (e.g. overnight,
     when the ET date has rolled to a session that hasn't traded yet) to the last real session."""
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     latest: str | None = None
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         schema = mcfg.get("paper", {}).get("trade_schema", "meic_ic")

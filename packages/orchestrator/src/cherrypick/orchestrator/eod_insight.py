@@ -261,7 +261,7 @@ def run(cfg: dict | None = None, day: str | None = None) -> dict:
     """Write `eod-insight-<day>.md` from a Claude synthesis of the day's deterministic reports. Opt-in and
     feature-detected; best-effort (never raises). Returns a summary dict — `skipped` when disabled / no
     claude / no reports, `error` on a failed call, else the path written."""
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     st = cfgmod.insight_settings(cfg)
     day = day or timeutil.now_et(cfg.get("timezone", "America/New_York")).strftime("%Y-%m-%d")
     if not st["enabled"]:

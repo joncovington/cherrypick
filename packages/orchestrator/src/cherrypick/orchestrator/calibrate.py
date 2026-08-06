@@ -53,7 +53,7 @@ def _group_readings(records: list[dict]) -> dict:
 # --------------------------------------------------------------------------- entrypoint
 def run(cfg: dict | None = None) -> dict:
     """Per-module, per-profile calibration readings + advisory champion/challenger verdicts. Read-only."""
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     epoch = cfgmod.data_epoch(cfg)
     modules_out: dict[str, dict] = {}
 
