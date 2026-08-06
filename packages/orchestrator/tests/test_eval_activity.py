@@ -5,14 +5,19 @@ regime_gex_negative), so assess() must NOT warn on a quiet gate-blocked day — 
 evaluating, evaluated nothing, is error-dominated, or won't enter for a reason that isn't a known gate.
 """
 
+import re
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
 from cherrypick.orchestrator import eval_activity as ea
 
 pytestmark = pytest.mark.unit
+
+# packages/orchestrator/tests -> packages/meic/src/cherrypick/meic/paper.py
+_MEIC_PAPER_PY = Path(__file__).resolve().parents[2] / "meic" / "src" / "cherrypick" / "meic" / "paper.py"
 
 
 def _assess(**over):
@@ -103,3 +108,24 @@ def test_flies_reader_counts_ok_vs_refused(tmp_path):
     act = ea._flies_activity(con, "2026-07-23", 30)
     assert act["evaluated"] == 2 and act["errors"] == 1 and act["top_reason"] == "no_fresh_quotes"
     con.close()
+
+
+# --------------------------------------------------------------------------- _BENIGN_REASON coverage
+def test_every_meic_reject_reason_is_a_known_gate():
+    """The regression this locks in (found 2026-08-05): MEIC's regime gates grew from one
+    (regime_gex_*) to four (regime_gex_*, regime_vix_elevated, regime_vix1d_ratio_elevated,
+    regime_atr_elevated) and _BENIGN_REASON's old prefix-guessing list was never updated, so three of
+    the four deliberately-designed regime pauses false-WARNed as "not a known gate" on any day they
+    were the dominant reject reason. Scanning paper.py directly means a fifth gate added later fails
+    this test instead of silently reintroducing the same drift."""
+    if not _MEIC_PAPER_PY.exists():  # a checkout without the meic package (e.g. a partial clone)
+        pytest.skip(f"meic source not found at {_MEIC_PAPER_PY}")
+    source = _MEIC_PAPER_PY.read_text(encoding="utf-8")
+    reasons = set(re.findall(r'return False, "([a-z0-9_]+)"', source))
+    assert reasons, "regex found nothing — paper.py's reject-reason shape changed, update the pattern"
+    missing = reasons - ea._BENIGN_REASON
+    assert not missing, (
+        f"paper.py can return reject reason(s) {sorted(missing)} that eval_activity doesn't "
+        "recognize as a known gate — add them to _BENIGN_REASON or eval_activity will false-WARN "
+        "on a day one of them is the dominant reason"
+    )
