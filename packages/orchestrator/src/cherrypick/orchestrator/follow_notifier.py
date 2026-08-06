@@ -2,12 +2,22 @@
 
 Polls the Follow Feed's public read endpoints and pushes one order per newly seen fill: a plain
 three-line message for the log floor and any non-Discord channel, and a colored Discord embed card
-for the channel this is actually read in (`format_order`/`build_embed` below — ported from the
-standalone follow-feed-notifier prototype this was extracted from, kept here so it shares this
-module's watermark/lock/task wiring rather than running as a second poller). Same event contract as
+for the channel this is actually read in (`format_order`/`build_embed` below). Same event contract as
 trade_notifier: a per-id watermark (one-shot, never re-notified), atomic state, a single-writer lock,
 and seed-don't-backfill on first activation so switching it on doesn't blast the last 50 orders in
 one burst.
+
+**The rendering half is shared with a sibling repo and must stay identical.** The repo
+`joncovington/follow-feed-notifier` is a standalone extraction of this feed reader that runs on
+GitHub Actions; it owns the same
+`_direction`/`_leg_sign`/`_quantity`/`_expiry`/`_spot`/`format_order`/`build_embed` logic. The
+formatting is where the bugs live — the feed is undocumented, so every awkward case (a single-leg
+order whose `order_type` contradicts its leg, equity legs tagged "S" not "E", slash-prefixed futures
+symbols, a futures price that is a level rather than a credit) was found by watching real orders, and
+each has now been fixed twice. Treat the two as one implementation in two places: when you change a
+formatter here, port it there in the same session, and vice versa. Verify by rendering the live feed
+through both and diffing — they should be byte-identical, glyphs included (`×`, not `x`; `–`, not
+`-`). Last verified identical across all 50 feed orders, text and embeds: 2026-08-06.
 
 Endpoints (undocumented, discovered in the tastytrade web platform's own bundle; no auth required
 for the two GETs used here):
@@ -244,18 +254,18 @@ def _trim(value) -> str:
 
 
 def _quantity(order: dict) -> str:
-    """Contract count as '2x'. The largest leg quantity, so a ratio spread reports its widest side
+    """Contract count as '2×'. The largest leg quantity, so a ratio spread reports its widest side
     rather than understating the position. An all-equity order counts in shares, not contracts —
-    '100x' on a stock trade would read as a 100-lot, a 100x overstatement of the position."""
+    '100×' on a stock trade would read as a 100-lot, a 100x overstatement of the position."""
     legs = order.get("order_legs") or []
     sizes = [q for q in (_num(leg.get("quantity")) for leg in legs) if q]
     if not sizes:
         return ""
     # The feed tags equity legs "S", not "E" — checking only "E" sent every stock trade down the
-    # contracts branch and printed the exact "100x" this guard exists to prevent. Both accepted so a
+    # contracts branch and printed the exact "100×" this guard exists to prevent. Both accepted so a
     # future "E" doesn't silently regress it.
     equity = bool(legs) and all(str(leg.get("asset_type") or "").upper() in ("E", "S") for leg in legs)
-    return f"{max(sizes):g} sh" if equity else f"{max(sizes):g}x"
+    return f"{max(sizes):g} sh" if equity else f"{max(sizes):g}×"
 
 
 def _leg_body(leg: dict) -> str:
@@ -326,10 +336,10 @@ def _legs_summary(order: dict, max_legs: int = 6) -> str:
 
 
 def _structure(order: dict) -> str:
-    """Size and legs together: '2x -457.5P/+485P/-512.5P'. Either half alone is fine.
+    """Size and legs together: '2× -457.5P/+485P/-512.5P'. Either half alone is fine.
 
     When no leg token survives — stock and futures, whose body is just the underlying the line
-    already carries — the size takes the sign instead, so '-1x' still says which way they went.
+    already carries — the size takes the sign instead, so '-1×' still says which way they went.
     Without that a futures fill showed its side nowhere at all once the price suffix was dropped."""
     qty, legs = _quantity(order), _legs_summary(order)
     if qty and not legs:
@@ -354,12 +364,12 @@ def _expiries(order: dict) -> list[str]:
 
 
 def _expiry(order: dict) -> str:
-    """'Aug 7', or 'Aug 5-Aug 12' for a calendar. '0DTE' is called out because same-day expiry is a
+    """'Aug 7', or 'Aug 5–Aug 12' for a calendar. '0DTE' is called out because same-day expiry is a
     different animal from anything else here."""
     exps = _expiries(order)
     if not exps:
         return ""
-    label = _date_label(exps[0]) if len(exps) == 1 else f"{_date_label(exps[0])}-{_date_label(exps[-1])}"
+    label = _date_label(exps[0]) if len(exps) == 1 else f"{_date_label(exps[0])}–{_date_label(exps[-1])}"
     filled = str(order.get("executed_at") or order.get("filled_at") or "")[:10]
     if len(exps) == 1 and filled and exps[0] == filled:
         label += " · 0DTE"
