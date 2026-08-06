@@ -30,6 +30,7 @@ module's `paper_loop.py --install-task`, and `schtasks /Query /V` on the live bo
 | `cherrypick-earnings-dolt` | every **5 min** | `pythonw <orch>/run.py ensure-dolt` (keep-alive: starts `dolt sql-server` only when 3306 is down) | orchestrator (`paper.dolt_service`) |
 | `cherrypick-watchdog` | every **10 min** | `pythonw <orch>/run.py watchdog` | orchestrator |
 | `cherrypick-trade-notify` | every **2 min** | `pythonw <orch>/run.py notify-trades` | orchestrator |
+| `cherrypick-follow-notify` | every **5 min** — **opt-in, off by default** (`follow_feed.enabled`) | `pythonw <orch>/run.py notify-follow` | orchestrator, only when enabled |
 | `cherrypick-log-archive` | monthly, day 1 @ **03:30** local | `pythonw <orch>/run.py archive` | orchestrator |
 | `cherrypick-reconcile` | daily 16:30 ET — **opt-in, off by default** (`reconcile.schedule.enabled`; a phase-5 posture for live operation) | `run.py reconcile --scheduled` | orchestrator, only when enabled |
 
