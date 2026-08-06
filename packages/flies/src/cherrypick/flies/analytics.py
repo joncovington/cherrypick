@@ -197,15 +197,45 @@ def arm_comparison_exclusions(
 
 
 # --------------------------------------------------------------------------- regime conditioning
-# The four dimensions `engine.classify_regime` tags, and the continuous measure recorded beside each
+# The dimensions `engine.classify_regime` tags, and the continuous measure recorded beside each
 # (2026-08-01). Bucketing on the stored string is the quick read; bucketing the float at analysis
 # time is what lets a threshold be re-derived from history instead of re-guessed and re-run.
+#
+# `center_offset` (2026-08-04) is the odd one out and worth flagging when reading a table of these
+# side by side: the other four describe the MARKET we entered into, while this one describes OUR OWN
+# choice of centre relative to spot. A market regime is something to condition on; this is something
+# to change. See engine._classify_center_offset and docs/centre-lag.md.
 REGIME_DIMENSIONS = {
     "vol": ("entry_vol_bucket", "entry_vol_value"),
     "gex": ("entry_gex_bucket", "entry_gex_concentration"),
     "time": ("entry_time_bucket", "entry_time_value"),
     "skew": ("entry_skew_bucket", "entry_skew_value"),
+    "center_offset": ("entry_center_offset_bucket", "entry_center_offset_value"),
+    "trend": ("entry_trend_bucket", "entry_trend_value"),
 }
+
+# `trend` and `center_offset` describe the same event from opposite sides -- a centre left behind by
+# a moving market -- so a report showing both should say so rather than presenting them as two
+# independent confirmations. They are kept apart because they imply OPPOSITE remedies: `trend` is a
+# property of the market and argues for skipping the trade, `center_offset` is a property of our own
+# centring rule and argues for fixing it. Muting the gex arm and repairing it are not the same
+# decision, and only the second one keeps the arm worth running.
+#
+# **`center_offset` was put on a retirement condition on 2026-08-04 and cleared it on 2026-08-05.**
+# The condition was: if it never fires outside `trend`, it is redundant and should go. On 08-04's
+# cross-tab it never had (0 trades) -- but that rested on 2 qualifying rows and settled nothing. One
+# session later the cell is populated, and the two rules caught DIFFERENT entries on the same day:
+# `center_offset` flagged the 10:01 gex miss (centre +14.7 above spot) that `trend` waved through as
+# 'flat', and `trend` flagged the 11:50 and 12:54 misses whose centres sat inside one strike. Kept,
+# and the condition is considered answered rather than still pending.
+#
+#   trend ok, offset ok      n=50  comp 88%  avg  +$40
+#   trend ok, offset FAILS   n= 5  comp 80%  avg  -$29
+#   trend FAILS, offset ok   n=19  comp 37%  avg -$133
+#   both fail                n= 2  comp  0%  avg -$222
+#
+# (SPX only, the 3 sessions with day_open coverage, n=76. Earlier versions of this table blended the
+# XSP era, which the module's own symbol rules say not to do.)
 
 
 def _edge_label(edges: list[float], value: float | None) -> str:
@@ -485,6 +515,87 @@ def completion_stats(conn, start=None, end=None, symbol=None, arm=None, entry_mo
         "min_latency_min": _round(min(latencies), 1) if latencies else None,
         "max_latency_min": _round(max(latencies), 1) if latencies else None,
         "median_spot_move": _round(_median(moves)),
+    }
+
+
+def left_on_table(conn, start=None, end=None, symbol=None, arm=None, entry_mode="debit_first") -> dict:
+    """How much better the completing price got AFTER the first qualifying tick was taken —
+    the counterfactual behind any wait-for-better completion rule, measured from the
+    post_best_completing_* columns book.py's step-1d telemetry keeps updating until settlement.
+
+    For `debit_first` the improvement is `post_best_completing_credit - credit` (how much richer
+    the completing sale would have paid); for `legged` it is `debit - post_best_completing_debit`
+    (how much cheaper the completing purchase would have gotten). Both are floored at 0 per
+    position — the completion tick itself seeds the tracker, so a negative difference just means
+    the price never improved, which is recorded as 0 improvement, not a loss.
+
+    Split by `completion_gex_bucket` because that is the drift-regime hypothesis under test: dealer
+    pinning (positive-gamma pull toward the centre) is the regime where waiting should have paid
+    for debit_first, and thin/negative gamma the regime where first-tick should already be best.
+    If the split shows no conditional difference, first-tick stays and that is the finding (rule 6).
+
+    Improvements are in PRICE POINTS; `*_dollars` figures multiply by the contract multiplier and
+    quantity. NULL-tracker rows (pre-2026-08-03 completions, iron/bwb completions) are excluded and
+    counted in `untracked`.
+    """
+    clause, params = ["entry_mode = ?", "kind = 'fly'"], [entry_mode]
+    if start:
+        clause.append("trade_date >= ?")
+        params.append(start)
+    if end:
+        clause.append("trade_date <= ?")
+        params.append(end)
+    if symbol and symbol != "ALL":
+        clause.append("symbol = ?")
+        params.append(symbol)
+    if arm and arm != "ALL":
+        clause.append("arm = ?")
+        params.append(arm)
+    rows = conn.execute(
+        f"SELECT credit, debit, quantity, completion_gex_bucket, "
+        f"post_best_completing_debit, post_best_completing_credit "
+        f"FROM fly_positions WHERE {' AND '.join(clause)}",
+        params,
+    ).fetchall()
+
+    def improvement(r):
+        if entry_mode == "debit_first":
+            if r["post_best_completing_credit"] is None or r["credit"] is None:
+                return None
+            return max(0.0, r["post_best_completing_credit"] - r["credit"])
+        if r["post_best_completing_debit"] is None or r["debit"] is None:
+            return None
+        return max(0.0, r["debit"] - r["post_best_completing_debit"])
+
+    tracked, by_bucket = [], {}
+    untracked = 0
+    for r in rows:
+        imp = improvement(r)
+        if imp is None:
+            untracked += 1
+            continue
+        dollars = imp * 100 * (r["quantity"] or 1)
+        tracked.append((imp, dollars))
+        bucket = r["completion_gex_bucket"] or "untagged"
+        by_bucket.setdefault(bucket, []).append((imp, dollars))
+
+    def summarize(pairs):
+        pts = [p[0] for p in pairs]
+        dollars = [p[1] for p in pairs]
+        return {
+            "n": len(pairs),
+            "improved": sum(1 for p in pts if p > 0),
+            "median_improvement_pts": _round(_median(pts), 4),
+            "max_improvement_pts": _round(max(pts), 4) if pts else None,
+            "median_improvement_dollars": _round(_median(dollars)),
+            "total_improvement_dollars": _round(sum(dollars)),
+        }
+
+    return {
+        "entry_mode": entry_mode,
+        "untracked": untracked,
+        **summarize(tracked),
+        "by_gex_bucket": {bucket: summarize(pairs) for bucket, pairs in sorted(by_bucket.items())},
     }
 
 

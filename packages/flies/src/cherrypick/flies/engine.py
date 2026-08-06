@@ -114,7 +114,14 @@ def atm_strike(spot: float, increment: float) -> float:
 def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
     """Pick the fly's centre strike for this arm. Returns (centre, reason).
 
-    The `gex` arm degrades to ATM rather than skipping when GEX is unavailable, so a streamer that
+    Centring is chosen by `center_rule` if the arm sets one, falling back to the arm's own name
+    otherwise (so the original `gex` arm needs no config change). This split exists so a
+    non-`gex`-named arm can still opt into GEX centring — e.g. `debit-first` uses it to require the
+    same directional evidence (a strike GEX suggests price will be pulled toward) that justifies
+    entering a debit vertical: buying the cheap side and betting on convergence only makes sense if
+    something besides chance suggests spot moves that way.
+
+    The `gex` rule degrades to ATM rather than skipping when GEX is unavailable, so a streamer that
     hasn't cached open interest yet costs us a signal, not a whole session of samples. The degrade is
     recorded in the reason string so those trades can be excluded from the arm's headline later.
     """
@@ -123,7 +130,7 @@ def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
     if spot is None:
         return None, "no_underlying_price"
 
-    if params.get("arm") != "gex":
+    if params.get("center_rule", params.get("arm")) != "gex":
         return atm_strike(spot, increment), "atm"
 
     gex = snapshot.get("gex") or {}
@@ -167,19 +174,37 @@ def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
 
 
 # --------------------------------------------------------------------------- regime tagging
-def classify_regime(snapshot: dict, params: dict) -> dict:
+def classify_regime(snapshot: dict, params: dict, center: float | None = None) -> dict:
     """Tag the current market state along four dimensions, each a pure read of the snapshot
     already in hand -- no cross-tick state, no new data source, same no-I/O discipline as every
     other function here. Recorded (not acted on) at entry and completion, so the eventual
     question this exists to answer -- "which entry/completion mode wins under which regime" --
     has real, regime-labelled outcomes to be answered from once enough sessions accumulate.
-    Deliberately does NOT include a trend/chop read: that needs a reference point in time (spot
-    now vs. spot N minutes ago) that no single snapshot carries, and guessing at that plumbing
-    before there is a reason to is the mistake this module's honesty rules exist to prevent.
+    **This used to say a trend read was impossible here, and that was wrong (corrected
+    2026-08-04).** The claim was that trend needs a reference point in time -- spot now vs. spot N
+    minutes ago -- that no single snapshot carries, so including one would mean cross-tick state
+    this module refuses to keep. The premise is false: the streamer already persists the session's
+    open in `stream_summary`, so `spot - day_open` is a plain read of one row, and the snapshot now
+    carries it as `session` (`provider._session_bounds`). No state, no history, no I/O on the
+    decision path -- the discipline was never what stood in the way, only the assumption about what
+    a snapshot could contain.
 
-    Returns a bucket per dimension -- four independent values, not one collapsed string, so
-    analytics can slice on any one dimension or their cross product -- AND the continuous measure
-    each bucket was derived from, plus the GEX surface's own provenance.
+    The cost of that assumption is the reason it is written up rather than quietly fixed. On
+    2026-08-04 the `gex` book lost $386 at 60% completion; both misses legged into the side a
+    106-point up-from-open day was against, and no recorded tag could distinguish them. Measured
+    afterwards, refusing an entry whose completing direction opposes a committed drift from the
+    open separates completion 89% vs **7%** across the SPX sessions with session coverage -- the
+    sharpest split any dimension here has produced. It is 15 blocked trades over 3 sessions, so it
+    is tagged and not gated, exactly like everything else in this function.
+
+    2026-08-05 was the mirror test and it held: a session that opened 7771.62 and settled 7723.55,
+    where all three gex misses were up-completions on a falling day and both completions were
+    down-completions. The lagging centre sat ABOVE spot rather than below, exactly as the mechanism
+    predicts when the sign of the move flips.
+
+    Returns a bucket per dimension -- independent values, not one collapsed string, so analytics
+    can slice on any one dimension or their cross product -- AND the continuous measure each bucket
+    was derived from, plus the GEX surface's own provenance.
 
     **Recording the raw measure alongside the bucket is the point** (added 2026-08-01). Every
     threshold here is a placeholder pending recalibration, and a bucket alone destroys the
@@ -192,6 +217,8 @@ def classify_regime(snapshot: dict, params: dict) -> dict:
     gex_bucket, gex_value = _classify_gex(snapshot, params)
     time_bucket, time_value = _classify_time(snapshot, params)
     skew_bucket, skew_value = _classify_skew(snapshot, params)
+    offset_bucket, offset_value = _classify_center_offset(snapshot, params, center)
+    trend_bucket, trend_value = _classify_trend(snapshot, params)
     gex = snapshot.get("gex") or {}
     gex_stats = snapshot.get("gex_stats") or {}
     return {
@@ -199,11 +226,15 @@ def classify_regime(snapshot: dict, params: dict) -> dict:
         "gex_bucket": gex_bucket,
         "time_bucket": time_bucket,
         "skew_bucket": skew_bucket,
+        "center_offset_bucket": offset_bucket,
+        "trend_bucket": trend_bucket,
         # The measures behind the buckets.
         "vol_value": vol_value,
         "gex_concentration": gex_value,
         "time_value": time_value,
         "skew_value": skew_value,
+        "center_offset_value": offset_value,
+        "trend_value": trend_value,
         # GEX surface provenance: what the number was, and how much data stood behind it. Without
         # the coverage/age pair, a regime tag from a healthy surface is indistinguishable from one
         # computed off four surviving stale strikes.
@@ -213,6 +244,105 @@ def classify_regime(snapshot: dict, params: dict) -> dict:
         "gex_strikes": gex_stats.get("strikes_with_data"),
         "gex_input_age": gex_stats.get("oldest_input_age_seconds"),
     }
+
+
+def _classify_trend(snapshot: dict, params: dict) -> tuple[str, float | None]:
+    """How far the session has travelled from its own open: `spot - day_open` in points.
+
+    Measured against the OPEN rather than a trailing window, and that choice is the finding rather
+    than a detail. A 20-minute trailing drift was tested on the same ledger and separated P&L but
+    NOT completion (64% vs 67%) -- it was picking up something incidental. Spot-vs-open separates
+    completion 72% vs 15% over the 210 entries with session coverage. The 2026-08-04 14:01 entry is
+    the worked example of the difference: its trailing 20-minute drift was -7.8 points, which reads
+    as a pullback and would have passed a trailing gate, while against the open it was +106.0 on an
+    unambiguous up day. It never completed. A 0DTE position lives one session, so the session's own
+    open is the reference point that matches the horizon being traded.
+
+    `regime_trend_points` (default 20) is the flat band. Below it the day has not committed to a
+    direction and 'flat' is the honest tag, not a rounding of noise into a trend.
+
+    **The band was 5 -- one SPX strike -- for exactly one day, and 5 was wrong (2026-08-05).** A
+    strike is the resolution the CENTRE moves in; it has nothing to do with how far a session must
+    travel before its direction means anything, and picking it was reaching for a familiar number
+    instead of measuring one. Split by how far the day had committed, the 5-point tag is not merely
+    weak in the 10-25 range, it is INVERTED: entries whose completing direction opposed a 10-25
+    point drift completed 100% of the time (n=5). Past 25 points the same read is nearly absolute
+    (0% and 14% completion in the two higher bands). Sweeping the band over the SPX sessions with
+    session coverage, the opposing bucket completes 33% at a band of 5, 7% at 20, and degrades
+    again by 30. 20 and 25 give identical splits, which is why 20 is used -- a plateau rather than
+    a single winning value, so it is a shape in the data rather than one lucky cut.
+
+    That dead zone is this dimension's own failure mode, and 2026-08-05 10:01 is the worked
+    example: the gex arm legged into an up-completion at +13.6 from the open, the tag read 'flat',
+    and the day then reversed to settle 48 points BELOW its open. Trend-from-open lags too -- it is
+    slower to lag than a trailing window, not immune to it.
+
+    Sized on 76 SPX entries across 3 sessions, and the band was chosen on the same rows that
+    measure it. Treat 20 as the current best estimate, not a calibrated constant.
+
+    Deliberately NOT a chop/trend distinction. That would need the path between open and now --
+    whether spot travelled 106 points once or crossed the open nine times -- which really is
+    cross-tick state this module does not keep. day_high/day_low are on the snapshot and could
+    approximate it, but the approximation is untested and inventing it now, on the strength of one
+    session, is exactly the mistake the honesty rules exist to prevent.
+
+    Returns ('unknown', None) whenever the session row is absent -- coverage starts 2026-07-29,
+    and a missing open is never replaced with prev_day_close or a guess, since the two answer
+    different questions (drift within the session vs. gap across it).
+
+    Descriptive only. Nothing gates on it.
+    """
+    spot = snapshot.get("underlying_price")
+    day_open = (snapshot.get("session") or {}).get("day_open")
+    if spot is None or day_open is None:
+        return "unknown", None
+    drift = spot - day_open
+    band = params.get("regime_trend_points", 20.0)
+    if drift > band:
+        return "up_from_open", drift
+    if drift < -band:
+        return "down_from_open", drift
+    return "flat", drift
+
+
+def _classify_center_offset(snapshot: dict, params: dict, center: float | None) -> tuple[str, float | None]:
+    """Where the chosen centre sits relative to spot, signed: `center - spot` in points.
+
+    This is the dimension that turned out to matter on 2026-08-04 (docs/centre-lag.md), and it is
+    here because centre-vs-spot silently decides something no other tag captures: `choose_side`
+    sells PUTS when spot is at or below the centre and CALLS when it is above, and
+    `fly.completing_side_direction` then makes the put side complete on an UP move and the call
+    side on a DOWN one. So this single number fixes which way spot must go for the position to
+    complete at all -- and a non-completion costs about eleven times what a completion earns.
+
+    **Deliberately signed and side-neutral, not a "lagging" boolean.** "The centre lags spot" is the
+    trend-relative reading of this number: on a rising day a lagging centre sits BELOW spot, on a
+    falling day it sits ABOVE. A single snapshot carries no trend (the reason `classify_regime` has
+    no trend dimension at all), so collapsing to "lagging" here would bake in an up-day assumption
+    and quietly mislabel every down day. Recording the sign leaves the trend reading to analysis
+    time, where the session's drift is actually known.
+
+    Buckets on `regime_center_offset_points`, defaulting to one strike -- the resolution the centre
+    can actually move in, so "behind spot by more than a strike" means the rule picked a strike it
+    genuinely could have picked closer. As everywhere else here, the float is stored beside the
+    bucket so the cut can be re-derived rather than re-run.
+
+    Note this is derived, not new information: `center` and `underlying_at_entry` are both already
+    on the row, so any past session can be re-cut without this column. It exists so the slice is one
+    `by_regime` call rather than a bespoke query every time.
+
+    Descriptive only. Nothing gates on it -- 34 gex entries is a hypothesis, not a threshold.
+    """
+    spot = snapshot.get("underlying_price")
+    if center is None or spot is None:
+        return "unknown", None
+    offset = center - spot
+    threshold = params.get("regime_center_offset_points", params.get("strike_increment", 5))
+    if offset < -threshold:
+        return "below_spot", offset  # sells calls, needs spot DOWN to complete
+    if offset > threshold:
+        return "above_spot", offset  # sells puts, needs spot UP to complete
+    return "at_spot", offset
 
 
 def _classify_vol(snapshot: dict, params: dict) -> tuple[str, float | None]:
@@ -699,12 +829,26 @@ def evaluate_iron_completion(snapshot: dict, position: dict, params: dict) -> tu
     """Should this open credit spread be completed into an IRON butterfly now, by selling the
     OPPOSITE-type credit spread at the same centre? Returns (complete, reason, plan).
 
+    RETIRED 2026-08-03 and unreachable in config — `completion_modes` is `["debit"]` everywhere and
+    the `iron` arm is disabled. Kept because it is correct and tested, and because deleting it would
+    delete the ability to re-derive why. Read docs/iron-completion.md before re-enabling anything.
+
     Put held -> sell the call spread; call held -> sell the put spread -- the final geometry
     (long (center-w) put, short center put, short center call, long (center+w) call) is the same
     regardless of which side was legged first. Payoff-equivalent to a same-type fly shifted down
     by `wing_width`, so risk-free iff the two credits summed clear `wing_width` plus fees -- NOT
     assumed; the floor gate is what actually enforces it (`fly.iron_fly_payoff`,
     `fly.position_floor`'s iron_fly branch).
+
+    Why it is retired: this completion and `evaluate_completion`'s use the SAME strike pair (center,
+    center +/- wing_width), so put-call parity pins `D + credit2 = wing_width` exactly -- every
+    implied-vol term cancels, for any skew. Hence `credit1 + credit2 > W + buffer` below is
+    algebraically the same inequality as `evaluate_completion`'s `D < credit1 - buffer`: both fire on
+    the same tick or neither does, and the completed positions have the same net at every settlement
+    price. The iron's larger credit is not extra money; it buys exactly `W` of extra liability. What
+    remains is cost, all of it adverse: an iron always has one side ITM where a same-type fly can
+    settle clean (+$3.46/position in assignment fees over 143 measured completions), plus a wider
+    crossing cost that a flat `slippage_frac` cannot represent.
     """
     if position.get("kind") != "short_vertical":
         return False, "not_a_credit_spread", None

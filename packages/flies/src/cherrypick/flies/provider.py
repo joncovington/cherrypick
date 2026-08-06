@@ -280,6 +280,9 @@ def build_snapshot(
             "puts": puts,
             "calls": calls,
             "gex": gex,
+            # The session's own open/high/low and prior close (2026-08-04). Descriptive input for
+            # the `trend` regime tag only -- no gate reads it. See `_session_bounds`.
+            "session": _session_bounds(conn, symbol, today.isoformat()),
             # Kept so a session's results can be audited against how good its data actually was —
             # a day that skipped every entry on stale quotes should be visible as that, not as a
             # day the strategy found nothing.
@@ -294,6 +297,39 @@ def build_snapshot(
         }
     finally:
         conn.close()
+
+
+def _session_bounds(conn, symbol: str, trade_date: str) -> dict:
+    """The day's own open/high/low and the prior close, straight off the shared cache's
+    `stream_summary` row for (symbol, trade_date). Empty dict when there is no row.
+
+    **This is the reference point in time that `classify_regime` spent three weeks asserting no
+    single snapshot carries.** It was wrong, and the cost was real: the trend dimension was never
+    built, so 2026-08-04's two losing gex entries -- both legging into the side a 106-point up day
+    was against -- carried no tag that could have flagged them. The reasoning had been that a trend
+    read needs spot now versus spot N minutes ago, which is cross-tick state this module refuses to
+    keep. It does not: the streamer already persists the session's open, so `spot - day_open` is a
+    plain read of one row, no history and no state. The rule that decisions come from one
+    pre-fetched snapshot is intact; only the belief about what a snapshot can contain has changed.
+
+    Scoped to `trade_date` deliberately. The row is keyed by (symbol, trade_date) and a stale row
+    from a previous session would silently supply a reference point from the wrong day -- which is
+    worse than having none, because it reads as a confident trend rather than a missing one.
+
+    `day_close` is not returned: SPX never publishes it through this path (NULL in every observed
+    row), so a caller reading it would get None for the one symbol this module actually trades.
+    """
+    row = conn.execute(
+        "SELECT day_open, day_high, day_low, prev_day_close FROM stream_summary "
+        "WHERE symbol = ? AND trade_date = ?",
+        (symbol, trade_date),
+    ).fetchone()
+    if row is None:
+        return {}
+    return {
+        key: (float(row[key]) if row[key] is not None else None)
+        for key in ("day_open", "day_high", "day_low", "prev_day_close")
+    }
 
 
 def _greeks_and_oi(
