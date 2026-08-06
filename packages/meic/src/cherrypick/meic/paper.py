@@ -1198,7 +1198,7 @@ def process_symbol(
 
         results[name] = actions
 
-    _log_width_divergence(snapshot, results, db_path)
+    _log_arm_divergence(snapshot, results, db_path)
     return {"ok": True, "symbol": symbol, "results": results}
 
 
@@ -1206,16 +1206,23 @@ def process_symbol(
 # worth recording. Generalized from a bare "width-" literal on 2026-08-01 when the GEX study was
 # added -- an arm family with no divergence log loses the study's most informative datum, because a
 # refused entry is an OUTCOME, not missing data, and the iteration log condenses skipped profiles.
-STUDY_ARM_PREFIXES = ("width-", "gex-")
+# "width-" came back out on 2026-08-05 when the wing-width study was retired; add a prefix here when
+# a new arm family is introduced, or its divergences go unrecorded.
+STUDY_ARM_PREFIXES = ("gex-",)
 
 
-def _log_width_divergence(snapshot: dict, results: dict, db_path: str) -> None:
+def _log_arm_divergence(snapshot: dict, results: dict, db_path: str) -> None:
     """A study's counterfactual: when one arm entered this tick and a sibling arm
     did not, record WHO sat out and WHY (floor / overlap / spacing ...). The iteration log condenses
     skipped profiles, so without this the divergence -- the study's most informative datum, per the
     flies fly_decisions lesson -- would be unrecoverable. Only divergent ticks are written (a tick
     where every arm entered, or every arm skipped, records nothing), so volume stays small.
-    Best-effort: a logging hiccup must never disturb the engine."""
+    Best-effort: a logging hiccup must never disturb the engine.
+
+    The row's `action` stays the literal 'width_arm_divergence' even though the wing-width study is
+    retired and these rows now come from the GEX arms. It was never width-specific in practice (the
+    GEX arms have written under it since 2026-08-01), and renaming it would split one series across
+    two action names -- making the existing rows harder to query for no gain."""
     arms = {n: a for n, a in results.items() if n.startswith(STUDY_ARM_PREFIXES)}
     if not arms:
         return

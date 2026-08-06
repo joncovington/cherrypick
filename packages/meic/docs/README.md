@@ -18,7 +18,7 @@ agent follows lives in [`../CLAUDE.md`](../CLAUDE.md); the full entry-gate catal
 | Doc | What it covers |
 |---|---|
 | [paper-trading.md](paper-trading.md) | The parallel-shadow paper engine: how it marks/exits every profile against live quotes with zero capital, the deterministic EOD reports, and the self-healing daemon. |
-| [paper-experiments.md](paper-experiments.md) | **Resumed 2026-07-28 as the wing-width study.** The symbol-pinned cells retired 07-18 stay retired (recoverable from git history), but the study now runs in the symbol-agnostic form this doc always prescribed: forced-sampling `width-2`/`width-5`/`width-10`/`width-adaptive` arms over the configured symbols (XSP/QQQ). |
+| [paper-experiments.md](paper-experiments.md) | **Design record for two retired studies.** The symbol-pinned cells retired 2026-07-18 and the wing-width arms retired 2026-08-05 (added 07-28, stood down 08-01, never traded) — both recoverable from git history, both kept here as the record of what they were and why. The registry now holds the four ladder tiers plus the GEX arms. |
 | [paper-practice-plan.md](paper-practice-plan.md) | A structured plan for building confidence in the paper workflow before any live consideration. |
 
 ## Reference

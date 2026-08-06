@@ -256,13 +256,12 @@ def _is_summary_profile(risk_profile: str | None, prefixes: tuple[str, ...]) -> 
 
 
 def _short_arm_label(risk_profile: str) -> str:
-    """Compress a width-study arm's name into the digest's compact per-entry tag: 'width-5' -> 'w5',
-    'width-adaptive' -> 'adpt'. Falls back to the raw name for anything that doesn't match the
-    width-study naming shape, so a future study-prefixed profile still renders (just less tersely)."""
-    if risk_profile == "width-adaptive":
-        return "adpt"
-    if risk_profile and risk_profile.startswith("width-") and risk_profile[6:].isdigit():
-        return f"w{risk_profile[6:]}"
+    """The digest's compact per-entry tag for a study arm.
+
+    The width-study special cases ('width-5' -> 'w5', 'width-adaptive' -> 'adpt') came out when that
+    study was retired 2026-08-05; the current arms (`gex-open`/`gex-blocked`) are short enough to
+    render as-is. Kept as the seam rather than inlined at the call site, so the next arm family with
+    unwieldy names has one obvious place to add its abbreviation."""
     return risk_profile or "?"
 
 

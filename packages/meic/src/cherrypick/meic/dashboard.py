@@ -209,11 +209,12 @@ def _stats_for_period(
 # figures read identically here and in the weekly paper report.
 _BANKROLL_BASE = 100000
 
-# The wing-width study's forced-sampling arms (config.risk.json), in the fixed display order the
-# Width-study chart draws them: the three pinned widths, then the paired adaptive-policy arm.
-# conservative is deliberately excluded here — it's a reference curve, not part of the controlled
-# comparison (see docs/paper-experiments.md).
-WIDTH_STUDY_ARMS = ["width-2", "width-5", "width-10", "width-adaptive", "gex-open", "gex-blocked"]
+# The forced-sampling study arms (config.risk.json), in the fixed display order the study chart
+# draws them. The four width-* arms were removed when the wing-width study was retired 2026-08-05
+# (they never traded); the GEX pair is what the frame carries now. The ladder tiers are deliberately
+# excluded — they are reference curves, not part of a controlled comparison
+# (see docs/paper-experiments.md).
+STUDY_ARMS = ["gex-open", "gex-blocked"]
 
 
 def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
@@ -931,10 +932,10 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
     # _pnl_series() the Performance view uses, just called once per cell rather than once for the
     # page's current symbol/profile selection. Ignores the page's symbol/profile filters by design
     # (like by_profile above) — the comparison view always shows every cell side by side.
-    width_study = {
-        "arms": WIDTH_STUDY_ARMS,
+    study_arms = {
+        "arms": STUDY_ARMS,
         "symbols": {
-            sym: {arm: _pnl_series(conn, "daily", symbol=sym, profile=arm) for arm in WIDTH_STUDY_ARMS}
+            sym: {arm: _pnl_series(conn, "daily", symbol=sym, profile=arm) for arm in STUDY_ARMS}
             for sym in _load_symbols()
         },
     }
@@ -952,7 +953,7 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         "last_loop": last_loop,
         "nlv_series": nlv_series,
         "performance": performance,
-        "width_study": width_study,
+        "study_arms": study_arms,
         "analytics": {
             "by_session": by_session,
             "by_exit": by_exit,
@@ -1459,11 +1460,11 @@ td.num,th.num{text-align:right}
       </div>
     </div>
 
-    <div class="frame" style="flex:0 0 210px" id="width-study-frame">
-      <div class="frame-hdr" style="padding-bottom:4px"><span class="frame-title">Width Study</span>
+    <div class="frame" style="flex:0 0 210px" id="study-arms-frame">
+      <div class="frame-hdr" style="padding-bottom:4px"><span class="frame-title">Study Arms</span>
         <span class="frame-sub">cumulative net P&amp;L &middot; forced-sampling arms, paired per symbol &middot; conservative excluded (reference curve only)</span></div>
-      <div class="ana-grid" id="width-study-grid"></div>
-      <div class="empty" id="width-study-empty" style="display:none;padding:18px 0">No width-study trades yet.</div>
+      <div class="ana-grid" id="study-arms-grid"></div>
+      <div class="empty" id="study-arms-empty" style="display:none;padding:18px 0">No study-arm trades yet.</div>
     </div>
 
     <div class="frame" style="flex:1;min-height:0;overflow:hidden">
@@ -1989,20 +1990,22 @@ function renderPerformance(d) {
     renderPerfWinLoss(series);
   }
   renderPerfTable(series);
-  renderWidthStudy(d.width_study || {});
+  renderStudyArms(d.study_arms || {});
 }
 
-// ── width study (wing-width forced-sampling arms) ──────────────────────────────
-let widthStudyCharts = {};   // symbol -> Chart instance, kept across renders (update in place)
-const WIDTH_STUDY_COLORS = {
-  'width-2': '#00c896', 'width-5': '#4a9eff', 'width-10': '#f5a623', 'width-adaptive': '#8b5cf6',
+// ── study arms (forced-sampling experiment arms) ───────────────────────────────
+let studyArmCharts = {};   // symbol -> Chart instance, kept across renders (update in place)
+// Colours are per arm NAME, so an arm family that is retired takes its colour with it and a new
+// one only needs an entry here. The width-* keys went when the wing-width study was retired.
+const STUDY_ARM_COLORS = {
+  'gex-open': '#00c896', 'gex-blocked': '#f5a623',
 };
 
-function renderWidthStudy(ws) {
+function renderStudyArms(ws) {
   const arms = ws.arms || [];
   const symbols = Object.keys(ws.symbols || {});
-  const grid = document.getElementById('width-study-grid');
-  const empty = document.getElementById('width-study-empty');
+  const grid = document.getElementById('study-arms-grid');
+  const empty = document.getElementById('study-arms-empty');
   const hasAnyData = symbols.some(sym => arms.some(arm => (ws.symbols[sym][arm] || []).length > 0));
   if (!grid) return;
   grid.style.display = hasAnyData ? '' : 'none';
@@ -2010,14 +2013,14 @@ function renderWidthStudy(ws) {
   if (!hasAnyData) return;
 
   symbols.forEach(sym => {
-    let canvas = document.getElementById('width-study-canvas-' + sym);
+    let canvas = document.getElementById('study-arms-canvas-' + sym);
     if (!canvas) {
       const panel = document.createElement('div');
       panel.className = 'apanel';
       panel.innerHTML = '<div class="ptitle">' + sym + '</div>' +
-        '<div class="chart-wrap" style="padding:6px 0"><canvas id="width-study-canvas-' + sym + '"></canvas></div>';
+        '<div class="chart-wrap" style="padding:6px 0"><canvas id="study-arms-canvas-' + sym + '"></canvas></div>';
       grid.appendChild(panel);
-      canvas = document.getElementById('width-study-canvas-' + sym);
+      canvas = document.getElementById('study-arms-canvas-' + sym);
     }
     const bySym = ws.symbols[sym] || {};
     // Union of periods across this symbol's arms (an arm can be missing a day another arm has,
@@ -2027,8 +2030,8 @@ function renderWidthStudy(ws) {
       const byPeriod = Object.fromEntries((bySym[arm] || []).map(b => [b.period, b.cumulative_pnl]));
       return {
         label: arm, data: periods.map(p => byPeriod[p] ?? null), spanGaps: true,
-        borderColor: WIDTH_STUDY_COLORS[arm] || '#6b7280',
-        backgroundColor: (WIDTH_STUDY_COLORS[arm] || '#6b7280') + '22',
+        borderColor: STUDY_ARM_COLORS[arm] || '#6b7280',
+        backgroundColor: (STUDY_ARM_COLORS[arm] || '#6b7280') + '22',
         borderWidth: 2, pointRadius: periods.length > 60 ? 0 : 2, pointHoverRadius: 5, tension: 0.2,
       };
     });
@@ -2037,12 +2040,12 @@ function renderWidthStudy(ws) {
     opts.plugins.tooltip.callbacks = { label: ctx => ctx.dataset.label + ': ' +
       (ctx.parsed.y == null ? '—' : '$' + ctx.parsed.y.toFixed(2)) };
     opts.scales.y.ticks.callback = v => '$' + v.toLocaleString();
-    if (widthStudyCharts[sym]) {
-      widthStudyCharts[sym].data.labels = periods;
-      widthStudyCharts[sym].data.datasets = datasets;
-      widthStudyCharts[sym].update();
+    if (studyArmCharts[sym]) {
+      studyArmCharts[sym].data.labels = periods;
+      studyArmCharts[sym].data.datasets = datasets;
+      studyArmCharts[sym].update();
     } else {
-      widthStudyCharts[sym] = new Chart(canvas, { type: 'line', data: { labels: periods, datasets }, options: opts });
+      studyArmCharts[sym] = new Chart(canvas, { type: 'line', data: { labels: periods, datasets }, options: opts });
     }
   });
 }
