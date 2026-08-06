@@ -201,3 +201,28 @@ def test_delete_present_task_propagates_a_real_failure(monkeypatch):
     result = tasks.delete(NAME)
     assert result["ok"] is False
     assert "Access is denied" in result["detail"]
+
+
+# --------------------------------------------------------------------------- windowed minute tasks
+def test_windowed_minute_schedule_stays_inside_its_window():
+    """The pre-open check runs 09:00-09:35 only. A global `*/2` would multiply every tick's work all
+    day to cover 35 minutes."""
+    assert tasks._windowed_minute_schedule(2, "09:00", "09:35") == "0-35/2 9 * * *"
+    assert tasks._windowed_minute_schedule(5, "15:30", "15:55") == "30-55/5 15 * * *"
+
+
+@pytest.mark.parametrize(
+    "interval,start,end",
+    [
+        (2, "09:00", "10:35"),  # spans hours — would need a second cron line
+        (2, "09:30", "09:30"),  # zero-length
+        (2, "09:35", "09:00"),  # backwards
+        (0, "09:00", "09:35"),  # interval out of range
+        (60, "09:00", "09:35"),
+    ],
+)
+def test_windowed_minute_schedule_refuses_what_it_cannot_express(interval, start, end):
+    """Raising beats emitting a cron line that silently fires at the wrong times — this schedule
+    guards a window that cannot be recovered once missed."""
+    with pytest.raises(ValueError):
+        tasks._windowed_minute_schedule(interval, start, end)

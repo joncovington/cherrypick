@@ -14,6 +14,9 @@ Subcommands:
   doctor               One green/red readiness check (read-only). --fast skips the authenticated
                        broker round-trip (local/offline checks only).
   watchdog             Run one watchdog pass (this is what the scheduled task invokes).
+  preopen-check        Streamer-only liveness check on a tight pre-open interval (own task,
+                       09:00-09:35 ET) so a producer that died overnight is caught before the
+                       unrecoverable 09:30-09:35 opening-range window.
   report               Unified cross-module paper P&L (read-only): totals + per-profile breakdown.
                        --eod (today ET) or --date YYYY-MM-DD restricts to one session; default all-time.
                        --live reads the live-tagged ledgers (modules' live_db) instead — a separate
@@ -213,6 +216,22 @@ def cmd_install(cfg) -> None:
             wd["task_name"], wd_tr, wd.get("interval_minutes", 10)
         )
 
+    # Pre-open supervision: a tight-interval task inside a short window, protecting the 09:30-09:35
+    # opening range that cannot be reconstructed once missed. Its own task rather than a shorter
+    # global interval -- see cfgmod.preopen_settings. Times are ET in config, local on the scheduler.
+    po = cfgmod.preopen_settings(cfg)
+    if po["enabled"]:
+        po_tr = tasks.build_tr(pyw, str(_LAUNCHER), "preopen-check")
+        results["preopen_task"] = tasks.create_windowed_minute_task(
+            po["task_name"],
+            po_tr,
+            po["interval_minutes"],
+            timeutil.to_local_hhmm(po["start"], tz),
+            timeutil.to_local_hhmm(po["end"], tz),
+        )
+    else:
+        results["preopen_task"] = tasks.delete(po["task_name"])
+
     # dedicated low-latency trade-notify task (polls paper DBs far more often than the watchdog)
     tn = cfg.get("trade_notify", {})
     if tn.get("task_name"):
@@ -394,6 +413,7 @@ def cmd_uninstall(cfg) -> None:
     results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
     results["reconcile_task"] = tasks.delete(cfgmod.reconcile_schedule_settings(cfg)["task_name"])
     results["follow_notify_task"] = tasks.delete(cfgmod.follow_feed_settings(cfg)["task_name"])
+    results["preopen_task"] = tasks.delete(cfgmod.preopen_settings(cfg)["task_name"])
     # Stop generic background services (e.g. the gex recorder) — unlike the streamer, these are the
     # orchestrator's own daemons, so a full uninstall stops them.
     for svc in cfgmod.enabled_services(cfg):
@@ -595,6 +615,10 @@ def cmd_doctor(cfg, fast: bool = False) -> None:
 
 def cmd_watchdog(cfg) -> None:
     _emit(watchdog.run(cfg))
+
+
+def cmd_preopen_check(cfg) -> None:
+    _emit(watchdog.run_preopen(cfg))
 
 
 def _account_table(listing: dict) -> None:
@@ -929,6 +953,7 @@ def main() -> None:
             "status",
             "doctor",
             "watchdog",
+            "preopen-check",
             "report",
             "eod-digest",
             "notify-eod",
@@ -1049,6 +1074,7 @@ def main() -> None:
         "status": lambda: cmd_status(cfg),
         "doctor": lambda: cmd_doctor(cfg, fast=args.fast),
         "watchdog": lambda: cmd_watchdog(cfg),
+        "preopen-check": lambda: cmd_preopen_check(cfg),
         "report": lambda: cmd_report(cfg, args),
         "eod-digest": lambda: cmd_eod_digest(cfg, args),
         "notify-eod": lambda: cmd_notify_eod(cfg, args),

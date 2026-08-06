@@ -29,6 +29,7 @@ module's `paper_loop.py --install-task`, and `schtasks /Query /V` on the live bo
 | `cherrypick-earnings-paper-exit` | daily **09:45 ET** | `pythonw <orch>/run.py run-earnings-exit` | orchestrator |
 | `cherrypick-earnings-dolt` | every **5 min** | `pythonw <orch>/run.py ensure-dolt` (keep-alive: starts `dolt sql-server` only when 3306 is down) | orchestrator (`paper.dolt_service`) |
 | `cherrypick-watchdog` | every **10 min** | `pythonw <orch>/run.py watchdog` | orchestrator |
+| `cherrypick-preopen` | every **2 min, 09:00–09:35 ET only** | `pythonw <orch>/run.py preopen-check` (streamer liveness only) | orchestrator |
 | `cherrypick-trade-notify` | every **2 min** | `pythonw <orch>/run.py notify-trades` | orchestrator |
 | `cherrypick-follow-notify` | every **5 min** — **opt-in, off by default** (`follow_feed.enabled`) | `pythonw <orch>/run.py notify-follow` | orchestrator, only when enabled |
 | `cherrypick-log-archive` | monthly, day 1 @ **03:30** local | `pythonw <orch>/run.py archive` | orchestrator |
@@ -178,14 +179,22 @@ Each open gap below is tracked as an issue — the entry here is the operator-fa
   `meic/src/cherrypick/meic/tt.py`). It keeps trading with safety gates off. The ATR gate additionally needs **5
   complete prior sessions** of `stream_summary`, so a multi-day outage disarms it for a week with no
   error surfaced.
-- **Thin pre-open margin.** ([#64](https://github.com/joncovington/cherrypick/issues/64)) Streamer supervision starts at 09:15 and the watchdog interval is 10
-  minutes, so the first supervising tick can land ~09:25 — as little as 5 minutes before the
-  unrecoverable ORB window. A streamer that died overnight is unsupervised until then. (Mitigation:
-  the 09:00 checklist above.)
-- **`doctor` coverage holes.** ([#65](https://github.com/joncovington/cherrypick/issues/65)) It verifies the watchdog and module paper tasks but not
-  `cherrypick-trade-notify`, `-log-archive`, or `-reconcile`; and nothing cross-checks that
-  `stream_requests/*.json` cover the symbols the modules actually trade (mitigated since 2026-07-29
-  by every module regenerating its own file).
+- ~~**Thin pre-open margin.**~~ **Fixed 2026-08-06** ([#64](https://github.com/joncovington/cherrypick/issues/64)).
+  Supervision started at 09:15 on a 10-minute tick, so the first supervising tick could land ~09:25 —
+  minutes before the unrecoverable 09:30–09:35 ORB window, and a restart still needs the 240s settling
+  window before quotes are trustworthy. A dedicated `cherrypick-preopen` task now runs the streamer
+  liveness check every 2 minutes from 09:00 to 09:35. Its own task rather than a shorter global
+  interval: dropping the full tick to 2 minutes would multiply module checks, dashboard renders and
+  EOD triggers all day to fix 35 minutes. It reuses `_check_streamer_health` (so the silence-restart
+  lesson can't drift), writes no heartbeat, and stops at the door on a non-trading day.
+- ~~**`doctor` coverage holes.**~~ **Mostly fixed 2026-08-06** ([#65](https://github.com/joncovington/cherrypick/issues/65)).
+  `doctor` now checks every orchestrator-owned task — `trade-notify`, `log-archive`, `reconcile`,
+  `follow-notify` and `preopen` — resolving each name through the same settings helper `install` uses,
+  so a config-driven rename can't desync the check. Opted-out-and-absent reports as healthy; enabled-
+  but-missing, and disabled-but-still-registered, both warn. **Still open:** nothing cross-checks that
+  `stream_requests/*.json` cover the symbols the modules actually trade — that half is better done
+  alongside [#62](https://github.com/joncovington/cherrypick/issues/62), which introduces the notion of
+  a request the producer has not served.
 - ~~**`holidays_loaded=0`.**~~ **Fixed 2026-08-05.** `timeutil.load_holidays` was scanning MEIC's
   config for `nyse_holidays_<year>` keys that had been retired when the calendar moved into
   `cherrypick.core` — so the scan matched nothing and every caller, the watchdog included, ran with an
