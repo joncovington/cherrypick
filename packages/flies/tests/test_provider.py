@@ -109,6 +109,55 @@ def seed(
     conn.close()
 
 
+def seed_session(cache_path, *, symbol="SPX", trade_date=None, day_open=5950.0, **bounds):
+    """A `stream_summary` row -- the session's own open/high/low, which is what makes a trend read
+    possible without any cross-tick state."""
+    conn = sqlite3.connect(cache_path)
+    conn.execute(
+        "INSERT OR REPLACE INTO stream_summary "
+        "(symbol, trade_date, day_open, day_high, day_low, prev_day_close, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            symbol,
+            trade_date or TODAY,
+            day_open,
+            bounds.get("day_high", 6010.0),
+            bounds.get("day_low", 5945.0),
+            bounds.get("prev_day_close", 5930.0),
+            time.time(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+# --------------------------------------------------------------------------- session bounds
+def test_snapshot_carries_the_session_open_for_the_trend_tag(cache):
+    seed(cache)
+    seed_session(cache, day_open=5950.0)
+    snap = provider.build_snapshot(cache, "SPX")
+    assert snap["session"]["day_open"] == 5950.0
+    assert snap["session"]["prev_day_close"] == 5930.0
+
+
+def test_session_bounds_absent_rather_than_guessed(cache):
+    """No summary row must leave `session` empty. The trend tag then reads 'unknown', which is the
+    honest answer -- substituting prev_day_close would answer a different question (the overnight
+    gap) while looking like the one asked."""
+    seed(cache)
+    snap = provider.build_snapshot(cache, "SPX")
+    assert snap["session"] == {}
+
+
+def test_session_bounds_ignore_a_previous_days_row(cache):
+    """A stale row is worse than a missing one: it supplies a reference point from the wrong
+    session and reads as a confident trend rather than an absent one."""
+    seed(cache)
+    seed_session(cache, trade_date="2020-01-02", day_open=1234.0)
+    snap = provider.build_snapshot(cache, "SPX")
+    assert snap["session"] == {}
+
+
 # --------------------------------------------------------------------------- happy path
 def test_builds_an_engine_ready_snapshot(cache):
     seed(cache)

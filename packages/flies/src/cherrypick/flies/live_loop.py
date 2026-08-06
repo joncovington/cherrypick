@@ -838,7 +838,7 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                             "center_reason": plan.get("center_reason"),
                             "completing_direction": plan.get("completing_direction"),
                             "underlying_at_entry": snapshot.get("underlying_price"),
-                            **bookmod.regime_columns("entry", snapshot, params),
+                            **bookmod.regime_columns("entry", snapshot, params, center=plan.get("center")),
                             "entry_time": clock.now_iso(),
                             "entry_order_id": str(res["order_id"]),
                             "entry_fill_status": "pending",
@@ -1265,28 +1265,59 @@ def _spawn_watcher(live: bool) -> None:
 class BrokerAdapter:
     """The real submission seam over core.broker, holding ONE session/account for its lifetime
     (a per-call session build was ~1 OAuth handshake per broker op). All calls run on one
-    private event loop so the SDK's async client stays bound to a single loop. On any broker
-    exception the session is dropped and rebuilt once on the next call."""
+    event loop so the SDK's async client stays bound to a single loop. On any broker
+    exception the session is dropped and rebuilt once on the next call.
+
+    **The loop is process-wide (`_shared_loop`), not per-instance.** `creds.get_session()` is a
+    process-global cached SessionManager, so every adapter in a tick gets the SAME session object
+    — and a tastytrade session's asyncio primitives bind to whichever loop first drives them. A
+    per-instance loop therefore broke the moment a tick built a second adapter (`main` builds up
+    to three: the reconcile adapter, the settle adapter, and `run_once`'s): adapter #2 would drive
+    adapter #1's cached session on a different loop and the SDK raised
+    `RuntimeError: <asyncio.locks.Event ...> is bound to a different event loop`. One cached
+    session must mean one loop. Measured on 2026-08-04: this fired on EVERY live tick and, via
+    the half-built state `_ensure` used to leave behind, silently disabled live order placement
+    for most of the session — 8 entries the engine wanted were never submitted, in three bursts
+    (10:00-10:01, 10:16-10:17, 10:36-10:39 ET). Paper's `gex` arm took the first two centres at
+    10:01 and 10:16 while live's book stayed empty, so the two ledgers diverged for that session
+    through a defect rather than through anything the pilot was measuring."""
+
+    _shared_loop = None
 
     def __init__(self, config: dict):
         self._config = config
-        self._loop = None
         self._session = None
         self._account = None
 
     def _run(self, coro):
-        if self._loop is None:
-            self._loop = asyncio.new_event_loop()
-        return self._loop.run_until_complete(coro)
+        cls = type(self)
+        if cls._shared_loop is None:
+            cls._shared_loop = asyncio.new_event_loop()
+        return cls._shared_loop.run_until_complete(coro)
 
     def _ensure(self):
-        if self._session is None:
-            from cherrypick.core import broker as _broker
+        """Build session+account, or raise having changed nothing.
 
-            from cherrypick.flies import credentials as creds
+        Atomic on purpose: the old form assigned `self._session` and then `self._account` on the
+        next line, so a raise in between left the adapter half-built — session set, account None.
+        Its guard was `if self._session is None`, so it then considered itself ready forever and
+        every later `place()` handed `None` to `core.broker.place_order`, which surfaced as
+        `AttributeError: 'NoneType' object has no attribute 'place_order'` rather than as the
+        broker error it really was. Locals first, `self` only once both succeed, and the guard
+        checks BOTH fields so a half-built adapter repairs itself on the next call."""
+        if self._session is not None and self._account is not None:
+            return
+        from cherrypick.core import broker as _broker
 
-            self._session = creds.get_session()
-            self._account = self._run(_broker.resolve_account(self._session, creds.designated_account()))
+        from cherrypick.flies import credentials as creds
+
+        try:
+            session = creds.get_session()
+            account = self._run(_broker.resolve_account(session, creds.designated_account()))
+        except Exception:
+            self._reset()
+            raise
+        self._session, self._account = session, account
 
     def _reset(self):
         self._session = None
@@ -1417,10 +1448,26 @@ class BrokerAdapter:
             return {"ok": False, "order_id": order_id, "error": f"{type(exc).__name__}: {exc}"}
 
     def working_orders(self) -> list[dict]:
+        """Drops the session on any error, then **re-raises** — deliberately not the `return []`
+        that every sibling here uses. This was the one method with no try/except at all, which
+        made it the leak that poisoned the adapter: the orphan sweep calls it first on every tick
+        and catches its own exceptions (`sweep_orphans`), so a raise here escaped without ever
+        running `_reset()`, and the half-built adapter it left behind is what broke `place()`
+        later in the SAME tick.
+
+        It re-raises rather than failing closed to `[]` because this caller's failure must stay
+        LOUD: `sweep_orphans` already logs `orphan sweep failed (...) — will retry next tick`, and
+        swallowing the error into an empty list would render that as a clean 'no orphans', which
+        is precisely the sweep reporting success on a check it never performed. `[]` is the one
+        return value this method must never invent."""
         from cherrypick.core import broker as _broker
 
-        self._ensure()
-        return self._run(_broker.working_orders(self._account, self._session))
+        try:
+            self._ensure()
+            return self._run(_broker.working_orders(self._account, self._session))
+        except Exception:
+            self._reset()
+            raise
 
 
 # --------------------------------------------------------------------------- scheduled task
