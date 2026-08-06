@@ -24,20 +24,50 @@ from . import config as cfgmod
 OK, WARN = "OK", "WARN"
 
 # Reject reasons that mean "the strategy looked and correctly abstained" — a quiet day, not a fault.
-_BENIGN_REASON = (
-    "regime_gex",
-    "below_near_miss",
-    "iv_rank",
-    "credit",
-    "delta",
-    "otm",
-    "skip",
-    "no_0dte",
-    "correlation",
-    "cap",
-    "window",
-    "no_fresh_quotes",
-    "no_spot_price",
+# Exact strings, not substring prefixes (the previous version's "regime_gex"/"cap"/"window"-style
+# guessing quietly missed every regime gate added after regime_gex — regime_atr_elevated,
+# regime_vix_elevated, regime_vix1d_ratio_elevated all fell through and false-WARNed as "not a known
+# gate" despite being just as deliberate). `top` is always one exact token captured by the "all X"
+# regex below, so an exact set is both correct and legible — no guessing what a prefix might collide
+# with. Source of truth is meic's `paper.py` (every `return False, "<reason>", None`) and GATES.md's
+# gate catalog; keep this in sync when either changes — test_eval_activity.py's coverage test fails
+# loudly if a reason paper.py can emit is missing here.
+_BENIGN_REASON = frozenset(
+    {
+        # --- process_symbol: the top-level per-symbol gate a whole iteration can be blocked on ---
+        "no_0dte_expiration",
+        "iv_rank_below_floor",
+        "regime_vix_elevated",
+        "regime_vix1d_ratio_elevated",
+        "regime_atr_elevated",
+        "regime_gex_negative",
+        "regime_gex_not_positive",
+        "regime_gex_flip_too_close",
+        "outside_entry_window",
+        "daily_target_reached",
+        "entry_spacing_wait",
+        "late_entry_bias_wait",
+        "max_concurrent_ics_reached",
+        "quarterly_open_volatile_skip",
+        "triple_witching_no_new_entries",
+        "quarterly_intraday_range_exceeded",
+        "fomc_blackout",
+        "fomc_post_blackout_insufficient_premium",
+        # --- per-candidate wing-width scan: every width cleared no gate, so the profile skips ---
+        "no_candidate_cleared_all_gates",
+        "short_pair_occupied",
+        "strike_overlap",
+        "call_delta_exceeds_ceiling",
+        "call_otm_below_floor",
+        "put_otm_below_floor",
+        "non_positive_credit",
+        "over_target_credit_below_floor",
+        "credit_below_floor",
+        "credit_below_fee_adjusted_floor",
+        # --- flies (fly_snapshots.status): a bad tick, not a fault ---
+        "no_fresh_quotes",
+        "no_spot_price",
+    }
 )
 
 
@@ -162,7 +192,7 @@ def assess(
     if total and err / total >= error_frac_warn:  # (2) evaluations erroring
         return WARN, f"evaluations erroring ({err}/{total}) — {top or 'error'}"
     if ent == 0:  # (4) never enters for an unusual (non-benign-gate) reason
-        if top and not any(b in top for b in _BENIGN_REASON):
+        if top and top not in _BENIGN_REASON:
             return WARN, f"no entries; dominant reason not a known gate: {top}"
         return OK, f"{ev} evals, 0 entries (all {top or 'rejected'})"
     return OK, f"{ev} evals, {ent} entries"
