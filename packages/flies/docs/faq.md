@@ -31,16 +31,16 @@ are comparable rather than a mix of confounded changes.
 
 What the module is actually *for* isn't the trade idea itself — it's measuring whether either
 way of building the credit survives real trading costs once a position actually settles:
-commissions, fees, bid/ask slippage, and (as of 2026-07-30) the $5/contract exercise-assignment
+commissions, fees, bid/ask slippage, and (as of 2026-07-30) the $5-per-ITM-strike exercise-assignment
 fee on any leg that finishes ITM. See the [module README](../README.md) for the full
 walkthrough and current results, and `CLAUDE.md`'s "honesty rules" for the specific claims this
 module is built to refuse to make (a per-position floor is not a book-level floor, an
 uncompleted credit spread is not risk-free, and so on).
 
-## Why not trade SPY, /ES, or /MES instead of SPX/XSP, now that the pre-close ITM exit closes ITM positions anyway?
+## Why not trade SPY, /ES, or /MES instead of SPX/XSP, to shrink the assignment fee's bite?
 
 A larger notional — SPY (~$550–600) or the E-mini/Micro E-mini S&P 500 futures (/ES ~$250k+,
-/MES ~$25k notional per contract, vs. XSP's ~$70–80) — would shrink the $5/contract
+/MES ~$25k notional per contract, vs. XSP's ~$70–80) — would shrink the $5-per-strike
 exercise-assignment fee's bite as a fraction of a structure's value. That's the same lever the
 width-arm sweep (`control` through `width-5`) is already testing, just applied to the underlying
 instead of the wing. It doesn't work for any of these three, and the reason has nothing to do
@@ -55,11 +55,12 @@ symbol would need the assignment machinery MEIC carries."*
 Two concrete things break once exercise isn't a cash-settlement event:
 
 - **Early assignment.** A cash-settled index option can only be exercised at expiration, so the
-  pre-close ITM exit (`engine.evaluate_pre_close_exit`) gets to *choose*, in the closing minutes,
-  whether buying a position back is cheaper than the assignment fee it would otherwise incur. An
+  cost is *scheduled*: the module knows the exact moment it can be charged, prices it in advance
+  (`fly.expire_fee`), and reserves it in every position's floor (`fly.WORST_CASE_ITM_LEGS`). An
   American-style option can be assigned at **any point** it's ITM, with no warning and no window
-  to react in first — the entire mechanism this module built to dodge the fee depends on
-  assignment being a scheduled, predictable, expiration-only event. Per CME Group's own FAQ,
+  to react in first — a position could be broken open mid-session, which turns a known, bounded,
+  reservable fee into an unbounded structural risk the floor could not honestly be computed
+  against at all. Per CME Group's own FAQ,
   E-mini S&P 500 options are explicitly American-style and exercisable "until 7:00 p.m. CT on
   any business day the option is traded," not just at expiration.
 - **The position doesn't resolve to cash.** The strategy's whole thesis — a long butterfly's
@@ -74,14 +75,14 @@ Two concrete things break once exercise isn't a cash-settlement event:
   for free and a physically-settled symbol would not.
 
 The fee-avoidance argument for switching doesn't hold up on its own terms either: tastytrade's
-equity/ETF assignment fee is **the same $5/contract** as the index-option exercise fee this
+equity/ETF assignment fee is **the same $5** as the index-option exercise fee this
 module already models (`cherrypick.core.fees.ic_expire_fee`). None of SPY, /ES, or /MES would
 save anything on the cost being escaped — each would only add early-assignment risk this module
 isn't built to hold. (SPX/XSP exist as separate Cboe products specifically to fill the gap
 CME's own futures-options complex on the S&P 500 doesn't: there is no European-style,
 cash-settled route through /ES or /MES options at all.)
 
-If the real question underneath is *"is XSP too small a notional for a flat $5/contract fee to
+If the real question underneath is *"is XSP too small a notional for a flat $5-per-strike fee to
 be survivable,"* that's exactly what the width-arm sweep is already measuring, and **SPX** — same
 cash-settled, no-early-exercise mechanics, ~10x XSP's notional — is the lever to pull if XSP
 proves too small. Not a physically-settled or futures-settled symbol.

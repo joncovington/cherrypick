@@ -1,19 +1,23 @@
 # Plan: a standalone streamer package (`packages/streamer`)
 
-Status: **proposed** — implementation plan for review, no code written yet.
+Status: **shipped** — `packages/streamer` exists and is the suite's single market-data producer; the
+cutover ran live on 2026-07-21 (see the cutover note further down). Kept as the design rationale for
+*why* the daemon was split out of MEIC, not as a to-do list. The plan text below is left in its
+original proposed-tense voice rather than rewritten into the past, so it stays an honest record of
+what was intended at the time — where intent and outcome diverged, the outcome is what shipped.
 
 ## Why
 
 The suite has grown several consumers of live DXLink market data, but only one *producer*: MEIC's
-streamer daemon ([`packages/meic/src/streamer.py`](../packages/meic/src/streamer.py), 922 lines). It
+streamer daemon ([`packages/meic/src/streamer.py`](../packages/meic/src/cherrypick/meic/streamer.py), 922 lines). It
 writes `data/meic/stream_cache.db`, and everyone else reads that file **read-only**:
 
-- **flies** — [`provider.py`](../packages/flies/src/provider.py) opens MEIC's cache `?mode=ro` and turns
+- **flies** — [`provider.py`](../packages/flies/src/cherrypick/flies/provider.py) opens MEIC's cache `?mode=ro` and turns
   it into the snapshot every entry decision is priced from. It runs no streamer of its own
-  ([`paper_loop.py:334`](../packages/flies/src/paper_loop.py#L334): *"no streamer of its own, so when the
+  ([`paper_loop.py:334`](../packages/flies/src/cherrypick/flies/paper_loop.py#L334): *"no streamer of its own, so when the
   upstream one stalls we go blind"*).
 - **gex** — in piggyback mode reads the same MEIC cache; in standalone mode runs its own thin wrapper
-  ([`gex/src/streamer.py`](../packages/gex/src/streamer.py)) over the shared engine.
+  ([`gex/src/cherrypick/gex/streamer.py`](../packages/gex/src/cherrypick/gex/streamer.py)) over the shared engine.
 
 The cache is therefore owned by a **trading module**, not by **infrastructure**. Uninstall MEIC and the
 producer vanishes — flies-only or gex-only installs have no data source. That breaks the goal of a
@@ -28,16 +32,16 @@ The reusable *engine* was already extracted into the shared core; only the *daem
 MEIC-bound.
 
 - `cherrypick.core.streamer.ChainStreamer` is generic — the WebSocket, listeners, cache writes, ATM
-  window, and reconnect all live there, with MEIC policy injected via `extra_subscriptions`,
-  `protected_symbols`, and `trade_hook`
-  ([`core/streamer/__init__.py:58-73`](../packages/meic/src/_core/cherrypick/core/streamer/__init__.py#L58-L73)).
+  window, and reconnect all live there, with MEIC policy injected via the `extra_subscriptions`,
+  `protected_symbols`, and `trade_hook` constructor params
+  ([`ChainStreamer.__init__`](../packages/core/cherrypick/core/streamer/__init__.py)).
   gex's 58-line wrapper reusing it — zero MEIC imports — is the existence proof.
 - Auth is centralized in `cherrypick.core.auth` under one keyring service (`"meicagent"`, legacy
   `"tastytrade-mcp"`). Any package can build a session with no dependency on MEIC's `session.py`.
 - The cache schema lives in `cherrypick.core.streamcache`. The shared surface between producers and
   consumers is **the cache file + its schema**, both already in core.
 - Reader-side indirection already exists: flies
-  ([`paper_loop.py:61-68`](../packages/flies/src/paper_loop.py#L61-L68)) and gex both read
+  ([`paper_loop.py:61-68`](../packages/flies/src/cherrypick/flies/paper_loop.py#L61-L68)) and gex both read
   `source.stream_cache_db` from config and only *default* to MEIC's path.
 
 The only thing missing is a **package that owns the daemon lifecycle** — the generic machinery currently
@@ -95,7 +99,7 @@ dependency safe; do not flip MEIC before both are in place.
 
 ## The subscription registry
 
-`packages/streamer/src/registry.py` ([done](../packages/streamer/src/registry.py)). Each consumer writes
+`packages/streamer/src/cherrypick/streamer/registry.py` ([done](../packages/streamer/src/cherrypick/streamer/registry.py)). Each consumer writes
 one file `~/.cherrypick/state/stream_requests/<module>.json`:
 
 ```json
@@ -152,12 +156,12 @@ already cleanly separable from MEIC policy:
 
 | Machinery to lift (generic) | Source in MEIC today |
 |---|---|
-| PID-file / single-instance guard | [`streamer.py:782-817`](../packages/meic/src/streamer.py#L782-L817) |
-| `--status` JSON (`running`, `pid`, `oldest_event_age_s`, `stale_age_s`, `connected_since`, `last_event_at`) | [`streamer.py:820-858`](../packages/meic/src/streamer.py#L820-L858) |
-| `--stop` (SIGTERM to PID) | [`streamer.py:861-870`](../packages/meic/src/streamer.py#L861-L870) |
-| Logging + rotation | [`streamer.py:73-93`](../packages/meic/src/streamer.py#L73-L93) |
-| Symbol resolution (CLI > `symbols` > default) | [`streamer.py:873-882`](../packages/meic/src/streamer.py#L873-L882) |
-| Main-loop skeleton (signal wiring, PID write/unlink, `await streamer.run_async()`) | [`streamer.py:738-775`](../packages/meic/src/streamer.py#L738-L775) (generic parts) |
+| PID-file / single-instance guard | [`streamer.py:782-817`](../packages/meic/src/cherrypick/meic/streamer.py#L782-L817) |
+| `--status` JSON (`running`, `pid`, `oldest_event_age_s`, `stale_age_s`, `connected_since`, `last_event_at`) | [`streamer.py:820-858`](../packages/meic/src/cherrypick/meic/streamer.py#L820-L858) |
+| `--stop` (SIGTERM to PID) | [`streamer.py:861-870`](../packages/meic/src/cherrypick/meic/streamer.py#L861-L870) |
+| Logging + rotation | [`streamer.py:73-93`](../packages/meic/src/cherrypick/meic/streamer.py#L73-L93) |
+| Symbol resolution (CLI > `symbols` > default) | [`streamer.py:873-882`](../packages/meic/src/cherrypick/meic/streamer.py#L873-L882) |
+| Main-loop skeleton (signal wiring, PID write/unlink, `await streamer.run_async()`) | [`streamer.py:738-775`](../packages/meic/src/cherrypick/meic/streamer.py#L738-L775) (generic parts) |
 
 **Explicitly NOT lifted** (stays in MEIC — it's live-trading policy flies/gex don't need): ORB capture
 (`_OrbTracker`, 227-267), open-position leg subscriptions reading `ic_trades` (146-181), the account REST
@@ -176,7 +180,9 @@ drop-in for the orchestrator's existing streamer contract.
 - **Reader change (config only):** default `source.stream_cache_db` for flies and gex to the canonical
   path. Because it's one fixed path regardless of producer, readers never need per-install rewriting.
 - **Migration:** on first install after the cutover, the old `data/meic/stream_cache.db` is simply
-  abandoned (the streamer recreates its schema on start — [`core/streamer/__init__.py:351`](../packages/meic/src/_core/cherrypick/core/streamer/__init__.py#L351)). No data migration needed; the cache is ephemeral live state.
+  abandoned (the streamer recreates its schema on start, via
+  [`cherrypick.core.streamcache`](../packages/core/cherrypick/core/streamcache/__init__.py)'s `DDL`).
+  No data migration needed; the cache is ephemeral live state.
 
 ## Authentication & standalone credential bootstrap
 
@@ -185,7 +191,7 @@ daemon can authenticate. How auth works today:
 
 - The daemon builds its session from `cherrypick.core.auth`: `CredentialStore("meicagent",
   legacy=("tastytrade-mcp",))` → `SessionManager(store, thread_local=True).get_session`
-  ([daemon.py](../packages/streamer/src/daemon.py)). OAuth2 via the tastytrade SDK; tokens auto-refresh
+  ([daemon.py](../packages/streamer/src/cherrypick/streamer/daemon.py)). OAuth2 via the tastytrade SDK; tokens auto-refresh
   from the long-lived refresh token. Secrets live only in the OS keyring — never files/env/logs.
 - Two facts that shape the bootstrap:
   1. **The streamer needs only the two bearer secrets** (`client_secret`, `refresh_token`). It never
@@ -197,7 +203,7 @@ daemon can authenticate. How auth works today:
      own tool**, not that the orchestrator starts handling bearer secrets.
 
 **Done (streamer side, self-contained):** the streamer package has its own credential tool —
-`run.py --secrets-set` / `--secrets-status` ([credentials.py](../packages/streamer/src/credentials.py)),
+`run.py --secrets-set` / `--secrets-status` ([credentials.py](../packages/streamer/src/cherrypick/streamer/credentials.py)),
 a thin wrapper over `CredentialStore("meicagent", …)` that stores only the two bearer secrets under the
 shared service. So a streamer-only box can be onboarded directly, and the entry is interchangeable with
 MEIC/earnings/gex (same keyring entry).
@@ -321,7 +327,7 @@ MEIC stops being a producer and becomes a consumer + a thin sidecar:
    modules requesting SPX → one entry). MEIC's writer (`symbols` + its `ic_trades` `leg_sources` query,
    written once) lands with the sidecar refactor (step 8). Open: registry-file **lifecycle** — a stopped
    module's file lingers; handle via `uninstall` removal (step 9) and/or a streamer-side staleness guard.
-8. **ORB generalization** ✓ — `streamer/src/orb.py` (`OpeningRangeTracker`, lifted from MEIC's
+8. **ORB generalization** ✓ — `streamer/src/cherrypick/streamer/orb.py` (`OpeningRangeTracker`, lifted from MEIC's
    `_OrbTracker`) wired as the engine's `trade_hook`; writes the shared cache's existing `orb_ranges`
    table (already in `core.streamcache` DDL — no core change), which MEIC's `get_orb_range` reads
    unchanged. 25 streamer tests, ruff clean. Fully additive, zero MEIC risk.
@@ -366,7 +372,7 @@ actions + rollback.
 - **Symbol-union staleness** — adding a module without re-running `install` leaves the producer streaming
   a stale symbol set. Mitigated by the `doctor` warning; consider whether the watchdog should also flag it.
 - **`stream_status` table columns** — MEIC's `--status` line 2 dumps the `stream_status` row plus computed
-  keys ([`streamer.py:834-856`](../packages/meic/src/streamer.py#L834-L856)); the lifted daemon must write
+  keys ([`streamer.py:834-856`](../packages/meic/src/cherrypick/meic/streamer.py#L834-L856)); the lifted daemon must write
   the same table via `core.streamcache` so both producers present an identical status contract to the
   watchdog.
 - **Install ordering** — `packages/streamer` should install as a dependency whenever any data-consuming

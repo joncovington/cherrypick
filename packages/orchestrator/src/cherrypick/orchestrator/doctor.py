@@ -8,6 +8,7 @@ Read-only: it never installs, restarts, or trades.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -35,14 +36,14 @@ class Check:
 
 _ARTIFACT_SUFFIXES = (".db", ".log")
 _ARTIFACT_NAMES = ("dashboard.html",)
-_SKIP_DIRS = {".git", "_core", "__pycache__", ".pytest_cache", ".ruff_cache", "node_modules", ".tmp", ".venv"}
+_SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", ".ruff_cache", "node_modules", ".tmp", ".venv"}
 
 
 def find_stray_artifacts(roots: list[Path], *, limit: int = 50) -> list[Path]:
     """Runtime files that leaked into a checkout — everything runtime now lives under the cherrypick
     home, so a `*.db`/`*.log` anywhere, a generated `dashboard.html`, a `state/*.json`, or a
-    `reports/*.html` inside a checkout root is a leak. Vendored/cache dirs (`_core`, `.git`,
-    `__pycache__`, …) are skipped. Pure filesystem read — the `no-leak` guard and its test share it."""
+    `reports/*.html` inside a checkout root is a leak. Cache/VCS dirs (`.git`, `__pycache__`, …) are
+    skipped. Pure filesystem read — the `no-leak` guard and its test share it."""
     found: list[Path] = []
     for root in roots:
         if not root.exists():
@@ -139,7 +140,21 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         return [Check("config", FAIL, f"Could not load config.json: {exc}")]
 
     # interpreter
-    checks.append(Check("python", OK, f"{sys.version.split()[0]} @ {sys.executable}"))
+    # portable_path, like every other path this command prints. The interpreter lives under the user
+    # home on Windows, so the raw value carries the username onto the dashboard's System card — the
+    # one surface in the suite that renders doctor's details verbatim to a browser.
+    checks.append(Check("python", OK, f"{sys.version.split()[0]} @ {cfgmod.portable_path(sys.executable)}"))
+
+    # cherrypick-core is a required, installed dependency (packages/core) -- not a submodule with a
+    # graceful degrade path. Without it, every module and most of this orchestrator's own read
+    # surfaces fail; catching it here turns a confusing ModuleNotFoundError deep in a detached
+    # subprocess (the streamer launches with output -> DEVNULL) into a visible doctor red instead.
+    if importlib.util.find_spec("cherrypick.core") is None:
+        checks.append(
+            Check("cherrypick.core", FAIL, "not installed -- run: pip install -e <repo>/packages/core")
+        )
+    else:
+        checks.append(Check("cherrypick.core", OK, "installed"))
 
     # onboarding: broker credentials per module, keyring-only (presence + source, never values).
     # WARN (yellow), never FAIL: a paper-only suite runs fine without broker credentials
@@ -219,7 +234,10 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
             Check(
                 f"{name}.config",
                 OK if mc else WARN,
-                str(mc) if mc else "module config not found (home or in-repo)",
+                # `~/.cherrypick/config/<mod>.json`, not the resolved absolute path: the sibling
+                # `.path` and `.paper_db` checks already render portably, and this one was the
+                # outlier putting the username on screen.
+                cfgmod.portable_path(mc) if mc else "module config not found (home or in-repo)",
             )
         )
 
@@ -269,7 +287,7 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         # only authenticated broker round-trip, unsafe to poll on the live-checks cadence.
         if not broker_checked and not fast:
             try:
-                r = _run(root, ["src/tt.py", "get_connection_status"], timeout=35)
+                r = _run(root, [*cfgmod.broker_tool(mcfg, name), "get_connection_status"], timeout=35)
                 out = json.loads(r.stdout or "{}") if r.returncode == 0 else {}
                 ok = bool(out.get("ok") or out.get("connected") or out.get("authenticated"))
                 checks.append(

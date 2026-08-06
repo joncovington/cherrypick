@@ -14,11 +14,11 @@ directory and adds a mode pre-check.
    can place **live orders** — stop and confirm with me before starting. If `false`/absent (paper),
    continue.
 
-3. **Follow the module's start flow** — `packages/meic/.claude/commands/MEIC-start.md`:
+3. **Follow the module's start flow** — `packages/meic/.claude/commands/meic-start.md`:
    - Ensure the **standalone streamer** — the suite's single producer since the 2026-07-21 cutover — is
      up (`python packages/streamer/run.py --status`: require `running: true` AND a small
      `oldest_event_age_s` in-session). If down, `python packages/orchestrator/run.py install` starts it.
-     **Never start MEIC's own `src/streamer.py`** while the standalone producer runs — it is the
+     **Never start MEIC's own `cherrypick.meic.streamer`** while the standalone producer runs — it is the
      disabled rollback path, and two producers means two DXLink writers on one cache and account. Then
    - read `packages/meic/CLAUDE.md` in full and run the MEIC agent loop — invoke the `/loop` skill with:
      *"Execute the next MEIC agent loop iteration following the operating instructions in

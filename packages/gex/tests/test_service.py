@@ -9,8 +9,7 @@ from datetime import date
 
 from cherrypick.core import gex
 
-import provider
-import service
+from cherrypick.gex import provider, service
 
 TODAY = date.today().isoformat()
 

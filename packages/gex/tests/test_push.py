@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from push import GexPushServer, broadcast_key
+from cherrypick.gex.push import GexPushServer, broadcast_key
 
 CFG = {"serve": {"port": 5055, "push_min_interval_seconds": 1.0}, "symbols": ["SPX"]}
 

@@ -43,8 +43,11 @@ dashboard shows the last cached snapshot rather than live data.
 ## Setup
 
 ```bash
-git clone --recursive <url> cherrypick-gex      # --recursive pulls the cherrypick-core submodule
-cd cherrypick-gex
+git clone https://github.com/joncovington/cherrypick.git
+cd cherrypick
+pip install -e packages/core                    # shared cherrypick.core library, install first
+cd packages/gex
+pip install -e ".[dev]"
 cp config.example.json config.json              # point source.stream_cache_db at the MEIC cache
 ```
 
@@ -59,7 +62,7 @@ python run.py gex --symbol SPX --json           # raw GEX payload
 python run.py section --symbol SPX --json        # cherrypick.core.viz section payload (umbrella embeds this)
 
 python -m pytest                                # tests (seed a temp cache; no streamer needed)
-ruff check . && ruff format .                   # lint/format (src/_core is excluded)
+ruff check . && ruff format .                   # lint/format
 ```
 
 ## Config

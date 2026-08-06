@@ -50,16 +50,16 @@ Start a full unattended paper session:
 /paper-start
 ```
 
-This starts the shared DXLink streamer, launches the paper dashboard at `http://localhost:5051` (badged "Paper Mode — Simulated"), and registers a Windows scheduled task (`cherrypick-meic-paper-loop`) that runs `python src/paper_loop.py --once` every 2 minutes — headless, time-gated to market hours, self-healing, and persistent across sessions. At the 16:00 ET settlement pass it writes both deterministic end-of-day files — `logs/meic/paper-eod-<date>.md` (metrics) and `logs/meic/eod-analysis-<date>.md` (the 7-section analysis).
+This starts the shared DXLink streamer, launches the paper dashboard at `http://localhost:5051` (badged "Paper Mode — Simulated"), and registers a Windows scheduled task (`cherrypick-meic-paper-loop`) that runs `python -m cherrypick.meic.paper_loop --once` every 2 minutes — headless, time-gated to market hours, self-healing, and persistent across sessions. At the 16:00 ET settlement pass it writes both deterministic end-of-day files — `logs/meic/paper-eod-<date>.md` (metrics) and `logs/meic/eod-analysis-<date>.md` (the 7-section analysis).
 
 Manage the session directly:
 
 ```bash
-python src/paper_loop.py --status          # task status + open-position count
-python src/paper_loop.py --once            # run a single manual iteration
-python src/paper_loop.py --eod-report      # regenerate both paper EOD files (metrics + analysis; --date to backfill)
-python src/paper_loop.py --eod-analysis    # regenerate just the 7-section analysis
-python src/paper_loop.py --uninstall-task  # stop the unattended session
+python -m cherrypick.meic.paper_loop --status          # task status + open-position count
+python -m cherrypick.meic.paper_loop --once            # run a single manual iteration
+python -m cherrypick.meic.paper_loop --eod-report      # regenerate both paper EOD files (metrics + analysis; --date to backfill)
+python -m cherrypick.meic.paper_loop --eod-analysis    # regenerate just the 7-section analysis
+python -m cherrypick.meic.paper_loop --uninstall-task  # stop the unattended session
 ```
 
 For a multi-day, profile-by-profile performance write-up (equity curves, risk-adjusted metrics, graduation-gate checklist):
@@ -68,7 +68,7 @@ For a multi-day, profile-by-profile performance write-up (equity curves, risk-ad
 /paper-report
 ```
 
-On non-Windows hosts, run `python src/paper_loop.py` in a terminal or wire a cron job to `--once`. See [paper-trading.md](paper-trading.md) for the engine design, fee model, historical-replay accelerator, and graduation criteria.
+On non-Windows hosts, run `python -m cherrypick.meic.paper_loop` in a terminal or wire a cron job to `--once`. See [paper-trading.md](paper-trading.md) for the engine design, fee model, historical-replay accelerator, and graduation criteria.
 
 > **Inside the suite:** you don't have to manage this task yourself. The [orchestrator](../../orchestrator) registers and watchdogs the same `cherrypick-meic-paper-loop` task (via `cherrypick install`), restarts a stalled streamer, sends notifications, and adds the cross-module read side (`cherrypick report` / `dashboard` / `calibrate`). It drives this module by subprocess only — it never places live orders or edits this config. Running `/paper-start` here is the standalone equivalent, minus the watchdog and notifications.
 
@@ -95,7 +95,7 @@ A local browser dashboard provides a live view of the trading session and histor
 Or start it directly:
 
 ```bash
-python src/dashboard.py
+python -m cherrypick.meic.dashboard
 ```
 
 Opens at `http://localhost:5050` and auto-refreshes every 30 seconds.
@@ -116,12 +116,12 @@ The dashboard reads directly from `meic_trades.db` in the data home (`~/.cherryp
 For paper trading, run the same dashboard against the paper database on a separate port so both can be open at once:
 
 ```
-/paper-dashboard        # http://localhost:5051, badged "Paper Mode — Simulated"
+/serve-dashboard --meic --paper   # http://localhost:5051, badged "Paper Mode — Simulated"
 ```
 
-Or directly: `python src/dashboard.py --mode paper` (drives both the `paper_trades.db` path in the data home and the 5051 port). In paper mode the Performance view can be filtered by risk profile as well as by symbol.
+Or directly: `python -m cherrypick.meic.dashboard --mode paper` (drives both the `paper_trades.db` path in the data home and the 5051 port). In paper mode the Performance view can be filtered by risk profile as well as by symbol.
 
-The suite dashboard renders a compact MEIC card without this server: `python src/section.py --json`
+The suite dashboard renders a compact MEIC card without this server: `python -m cherrypick.meic.section --json`
 emits a `cherrypick.core.viz` section payload (net-of-fees P&L tiles + the cumulative daily P&L
 curve; `--symbol`/`--profile` filters, paper book by default) that the orchestrator subprocesses
 and renders generically — the same pattern as the gex, flies, and earnings cards. It reads through
@@ -170,7 +170,7 @@ code-generated — two files per session in `~/.cherrypick/logs/meic/`:
   across all profiles).
 - `eod-analysis-<date>.md` — a conversational **7-section** read on the same session (executive snapshot,
   position detail, trade log, risk metrics, market context, tax notes, notes/journal). Still rule-based,
-  no agent; regenerate just this one with `python src/paper_loop.py --eod-analysis [--date <d>]`.
+  no agent; regenerate just this one with `python -m cherrypick.meic.paper_loop --eod-analysis [--date <d>]`.
 
 The orchestrator's suite digest and (opt-in) AI insight build on these files — see the suite
 [reporting docs](../../../docs/reporting-and-dashboard.md).
@@ -179,7 +179,7 @@ The orchestrator's suite digest and (opt-in) AI insight build on these files —
 
 ## Logs
 
-All loop actions are written to `logs/agent.log` as newline-delimited JSON via `python src/notify.py log_event --level <LEVEL>`. Each entry includes a timestamp, level (typically `INFO`, `WARN` for conflicts, or `CRITICAL` for escalated failures like a missed force-close on a non-cash-settled symbol), message, and optional structured data. Review `WARN`/`CRITICAL` entries after EOD to identify conflict patterns and refine agent behavior.
+All loop actions are written to `logs/agent.log` as newline-delimited JSON via `python -m cherrypick.meic.notify log_event --level <LEVEL>`. Each entry includes a timestamp, level (typically `INFO`, `WARN` for conflicts, or `CRITICAL` for escalated failures like a missed force-close on a non-cash-settled symbol), message, and optional structured data. Review `WARN`/`CRITICAL` entries after EOD to identify conflict patterns and refine agent behavior.
 
 Every log file is size-capped with rotation (10 MB per file, 5 backups), so `agent.log`, `streamer.log`, `paper_loop.log`, and `dashboard.log` never grow without bound. The paper daemon logs to `logs/paper_loop.log` in a human-readable one-line-per-iteration format.
 

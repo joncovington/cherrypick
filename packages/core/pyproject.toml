@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cherrypick-core"
+version = "0.1.0"
+description = "Shared core library for the Cherrypick trading suite (auth, dxfeed, fees, risk, calendar, paper, gex, ...). Imports as the cherrypick.core namespace package."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Jon Covington", email = "jon.covington@gmail.com" }]
+keywords = ["trading", "options", "tastytrade", "iron-condor", "cherrypick"]
+# License intentionally unset until the suite's licensing is decided (all rights reserved by default).
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+# zoneinfo needs an IANA tz database; Windows (this suite's target platform) ships none, so tzdata
+# supplies it for an installed copy -- streamer/__init__.py's ZoneInfo("America/New_York") has no
+# fallback and hard-fails without it. This was previously masked entirely: core's own CI and the
+# monorepo's both run ubuntu-latest, which has a system tz database, so the gap only surfaces on an
+# actual Windows dev/production install (orchestrator's pyproject already carries this same line,
+# independently, for the same reason).
+dependencies = ["keyring>=24", "tzdata>=2023"]
+
+[project.urls]
+Repository = "https://github.com/joncovington/cherrypick-core"
+Suite = "https://github.com/joncovington/cherrypick"
+
+# tastytrade is a runtime dependency of consumers, not of importing the library: auth.session
+# imports it lazily (only when building a real session), so cherrypick-core imports and unit-tests
+# without it. Install the `broker` extra where a live Session is actually constructed.
+[project.optional-dependencies]
+broker = ["tastytrade>=12"]
+# anyio is a dev-only test dependency of test_broker.py (its docstring is explicit: "No tastytrade,
+# no network" -- it drives async via asyncio.run() and only reaches for anyio.sleep_forever() in one
+# fake-streamer helper). It belongs here, not in `broker`, so testing broker's primitives never pulls
+# in tastytrade+httpx+pydantic+pandas-market-calendars just to satisfy one import.
+dev = ["pytest>=8", "ruff>=0.6", "anyio>=4"]
+
+[tool.setuptools.packages.find]
+# Native namespace package: `cherrypick` has no __init__.py; discovery must include namespaces so
+# `cherrypick.core` (and its subpackages) are found. Sibling distributions (cherrypick-meic, ...)
+# will contribute other subpackages under the same `cherrypick` namespace.
+include = ["cherrypick*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
+target-version = "py310"
+
+[tool.ruff.lint.per-file-ignores]
+# The streaming engine requires Python 3.11+ (asyncio.TaskGroup, structured concurrency). Under the
+# repo's broad py310 target ruff flags the 3.11 builtin BaseExceptionGroup as undefined (F821); it is
+# defined at runtime everywhere this module actually runs.
+"cherrypick/core/streamer/__init__.py" = ["F821"]

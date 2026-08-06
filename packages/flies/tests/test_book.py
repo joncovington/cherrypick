@@ -3,10 +3,9 @@
 import pytest
 from test_engine import BASE_CONFIG, cheap_fly_snapshot, q, snapshot
 
-import book as bookmod
-import db as dbmod
-import engine
-import fly
+from cherrypick.flies import book as bookmod
+from cherrypick.flies import db as dbmod
+from cherrypick.flies import engine, fly
 
 
 @pytest.fixture()
@@ -75,94 +74,6 @@ def test_freshly_opened_credit_spread_records_its_worst_case_floor(conn):
         )
     )
     assert row["floor_dollars"] < 0
-
-
-def test_pre_close_exit_closes_a_completed_fly_with_an_itm_leg(conn):
-    """The one deliberate exception to rule 5 ("no adjustments, hold to settlement"): inside the
-    closing window, a completed fly with an ITM leg is closed outright rather than held to real
-    cash settlement, whenever that's cheaper than the exercise-assignment fee it would otherwise
-    incur — see engine.evaluate_pre_close_exit. Applies to paper too (2026-07-30), so paper's
-    numbers stay representative of what live actually does now that assignment fees are modeled
-    in both."""
-    config = one_arm_config(entry_modes=["legged"])
-    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
-    bookmod.process_snapshot(
-        snapshot(underlying_price=6004.0, puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)}),
-        config,
-        conn,
-        "control",
-    )
-    book_id = bookmod.book_id_for("2026-07-20", "control", "SPX")
-    fly_id = next(r["position_id"] for r in dbmod.book_positions(conn, book_id) if r["kind"] == "fly")
-
-    # Inside the closing window, spot has drifted back between the fly's lower wing (5995) and
-    # its centre (6000) -- 3 of its 4 contracts are ITM (the doubled centre plus the upper wing).
-    # This also happens to put the SECOND position "the forest" test documents (a fresh vertical
-    # the second tick opened at 6005, since spot 6004 re-centres control there) into its own ITM
-    # zone -- both legitimately close this same tick, which is the generalization's whole point.
-    closing = snapshot(
-        now_min=955,
-        underlying_price=5998.0,
-        puts={5990: q(0.0, 0.0), 5995: q(0.0, 0.0), 6000: q(1.0, 1.0), 6005: q(5.0, 5.0), 6010: q(7.0, 7.0)},
-    )
-    result = bookmod.process_snapshot(closing, config, conn, "control")
-    closed = {a["position_id"]: a for a in result["actions"] if a["action"] == "closed_before_expiry"}
-    assert fly_id in closed
-    assert closed[fly_id]["assignment_fee_avoided"] == 15.0
-    assert len(closed) == 2  # the fly, plus the forest's second (still-open) vertical
-
-    row = next(r for r in dbmod.book_positions(conn, book_id) if r["position_id"] == fly_id)
-    assert row["status"] == "settled"
-    assert row["closed_before_expiry"] == 1
-    assert row["pnl"] == pytest.approx(closed[fly_id]["pnl"])
-    # Closing realized ~$3.00/contract of intrinsic value (the zero-spread quotes concede no
-    # slippage) at only the ~$0.48 closing-fee stack -- nowhere near the $15 assignment fee held
-    # to expiry would have cost on top of the same intrinsic value.
-    assert row["expiry_payoff"] == pytest.approx(3.0)
-
-
-def test_pre_close_exit_leaves_an_otm_fly_alone(conn):
-    """No ITM legs -> nothing to avoid, so an OTM fly is untouched even inside the window."""
-    config = one_arm_config(entry_modes=["legged"])
-    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
-    bookmod.process_snapshot(
-        snapshot(underlying_price=6004.0, puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)}),
-        config,
-        conn,
-        "control",
-    )
-    book_id = bookmod.book_id_for("2026-07-20", "control", "SPX")
-
-    late_but_otm = snapshot(now_min=955, underlying_price=6100.0)  # well above every strike
-    result = bookmod.process_snapshot(late_but_otm, config, conn, "control")
-    assert not [a for a in result["actions"] if a["action"] == "closed_before_expiry"]
-    row = next(r for r in dbmod.book_positions(conn, book_id) if r["kind"] == "fly")
-    assert row["status"] == "open"
-
-
-def test_pre_close_exit_closes_an_itm_short_vertical(conn):
-    """The extension (2026-07-30): an uncompleted credit spread that's already ITM (already
-    losing) gets the same treatment a fly's ITM leg does -- closing it stops the assignment fee
-    from stacking on top of a loss the book has already realized."""
-    config = one_arm_config(entry_modes=["legged"])
-    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
-    book_id = bookmod.book_id_for("2026-07-20", "control", "SPX")
-    vert_id = next(
-        r["position_id"] for r in dbmod.book_positions(conn, book_id) if r["kind"] == "short_vertical"
-    )
-
-    # Spot has drifted through the short strike (6000) but not past the protective long (5995) --
-    # only the short leg is ITM.
-    closing = snapshot(now_min=955, underlying_price=5998.0, puts={5995: q(0.0, 0.0), 6000: q(2.0, 2.0)})
-    result = bookmod.process_snapshot(closing, config, conn, "control")
-    closed = {a["position_id"]: a for a in result["actions"] if a["action"] == "closed_before_expiry"}
-    assert vert_id in closed
-    assert closed[vert_id]["assignment_fee_avoided"] == 5.0
-
-    row = next(r for r in dbmod.book_positions(conn, book_id) if r["position_id"] == vert_id)
-    assert row["status"] == "settled"
-    assert row["closed_before_expiry"] == 1
-    assert row["kind"] == "short_vertical"  # never flipped to fly -- it just closed as itself
 
 
 def test_the_forest_grows_alongside_a_completed_fly(conn):
@@ -286,3 +197,177 @@ def test_arms_differ_only_in_where_they_center(conn):
     gex_center, _ = engine.select_center(snap, engine.merged_params(BASE_CONFIG, "gex"))
     atm_center, _ = engine.select_center(snap, engine.merged_params(BASE_CONFIG, "control"))
     assert gex_center == 6005.0 and atm_center == 6000.0
+
+
+# --------------------------------------------------------------------------- debit_first (Phase 1)
+def test_debit_first_lifecycle_from_debit_vertical_to_risk_free_fly(conn):
+    """Mirror of the legged lifecycle test: buy a debit vertical, complete it by SELLING a credit
+    spread once spot has drifted toward the centre, end the session holding a fly for a net credit."""
+    config = one_arm_config(entry_modes=["debit_first"])
+
+    first_snap = snapshot(calls={5995: q(2.0, 2.4), 6000: q(1.0, 1.2)})
+    first = bookmod.process_snapshot(first_snap, config, conn, "control")
+    opened = [a for a in first["actions"] if a["action"] == "debit_vertical_opened"]
+    assert len(opened) == 1
+    assert first["stats"]["uncompleted_long_verticals"] == 1
+
+    # Later the completing credit spread has richened (spot drifted TOWARD the centre).
+    later = snapshot(calls={6000: q(3.0, 3.2), 6005: q(0.5, 0.6)})
+    second = bookmod.process_snapshot(later, config, conn, "control")
+    completed = [a for a in second["actions"] if a["action"] == "debit_completed"]
+    assert len(completed) == 1
+    assert completed[0]["net"] > 0
+    assert completed[0]["floor"] > 0
+
+    completed_id = completed[0]["position_id"]
+    rows = dbmod.book_positions(conn, bookmod.book_id_for("2026-07-20", "control", "SPX"))
+    row = next(r for r in rows if r["position_id"] == completed_id)
+    assert row["kind"] == "fly", "the completion must UPDATE the position in place, not add a row"
+    assert row["risk_free"] == 1
+    assert row["completed_at"] is not None
+    assert row["fees"] == pytest.approx(fly.vertical_open_fee("SPX", 1) * 2)
+
+
+def test_freshly_opened_debit_vertical_records_its_worst_case_floor(conn):
+    """The debit_first counterpart of test_freshly_opened_credit_spread_records_its_worst_case_floor
+    -- floor_dollars must never be left NULL for the uncompleted branch."""
+    config = one_arm_config(entry_modes=["debit_first"])
+    snap = snapshot(calls={5995: q(2.0, 2.4), 6000: q(1.0, 1.2)})
+    result = bookmod.process_snapshot(snap, config, conn, "control")
+    opened = next(a for a in result["actions"] if a["action"] == "debit_vertical_opened")
+    row = dbmod.book_positions(conn, result["book_id"])[0]
+    assert row["position_id"] == opened["position_id"]
+    assert row["kind"] == "long_vertical"
+    assert row["floor_dollars"] is not None
+    assert row["floor_dollars"] < 0
+
+
+# --------------------------------------------------------------------------- iron completion (Phase 1b)
+def test_iron_completion_lifecycle_from_credit_spread_to_iron_fly(conn):
+    """Mirror of the legged lifecycle test: sell a put spread, complete it into an IRON fly by
+    SELLING the call spread once it has richened past the width+buffer gate."""
+    config = one_arm_config(entry_modes=["legged"], completion_modes=["debit", "iron"])
+
+    first = bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+    opened = [a for a in first["actions"] if a["action"] == "credit_spread_opened"]
+    assert len(opened) == 1
+
+    rich_calls = snapshot(calls={6000: q(4.0, 4.2), 6005: q(0.5, 0.6)})
+    second = bookmod.process_snapshot(rich_calls, config, conn, "control")
+    completed = [a for a in second["actions"] if a["action"] == "iron_completed"]
+    assert len(completed) == 1
+    assert completed[0]["net"] > 0 and completed[0]["floor"] > 0
+
+    completed_id = completed[0]["position_id"]
+    rows = dbmod.book_positions(conn, bookmod.book_id_for("2026-07-20", "control", "SPX"))
+    row = next(r for r in rows if r["position_id"] == completed_id)
+    assert row["kind"] == "iron_fly"
+    assert row["completion_mode"] == "iron"
+    assert row["risk_free"] == 1
+    assert row["completed_at"] is not None
+
+
+def test_completion_prefers_whichever_candidate_leaves_the_higher_floor(conn):
+    """When both the debit completion and the iron completion clear their gates on the same
+    iteration, the position takes whichever leaves the higher post-fee floor -- here, the iron
+    completion's richer call spread beats the debit completion's modest one."""
+    config = one_arm_config(entry_modes=["legged"], completion_modes=["debit", "iron"])
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+
+    both_cheap = snapshot(
+        puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)},  # debit completion also clears its gate
+        calls={6000: q(4.8, 5.0), 6005: q(0.1, 0.2)},  # but the iron completion's floor is higher
+    )
+    result = bookmod.process_snapshot(both_cheap, config, conn, "control")
+    completed = [a for a in result["actions"] if a["action"] in ("completed", "iron_completed")]
+    assert len(completed) == 1
+    assert completed[0]["action"] == "iron_completed"
+
+
+def test_completion_modes_unset_behaves_exactly_like_before_iron_existed(conn):
+    """Regression: an arm that never sets completion_modes (i.e. every arm except "iron") must be
+    byte-identical to the pre-iron behaviour -- only the debit completion is ever evaluated."""
+    config = one_arm_config(entry_modes=["legged"])  # no completion_modes override
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+
+    # Quotes where BOTH completions would clear their gates if iron were even evaluated.
+    both_cheap = snapshot(
+        puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)},
+        calls={6000: q(4.8, 5.0), 6005: q(0.1, 0.2)},
+    )
+    result = bookmod.process_snapshot(both_cheap, config, conn, "control")
+    completed = [a for a in result["actions"] if a["action"] in ("completed", "iron_completed")]
+    assert len(completed) == 1
+    assert completed[0]["action"] == "completed"  # never iron -- completion_modes defaults to debit-only
+
+
+# --------------------------------------------------------------------------- regime tagging (Phase 1c)
+def test_regime_tags_recorded_at_entry_and_can_differ_at_completion(conn):
+    """Entry and completion happen in different market states, so the two sets of regime columns
+    must be recorded independently -- not copied from entry, not left blank at completion."""
+    config = one_arm_config(entry_modes=["legged"])
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+    row = dbmod.book_positions(conn, bookmod.book_id_for("2026-07-20", "control", "SPX"))[0]
+    assert row["entry_vol_bucket"] == "normal"
+    assert row["entry_time_bucket"] == "midday"
+    assert row["entry_skew_bucket"] == "flat"
+    assert row["entry_gex_bucket"] == "unknown"
+    assert row["completion_vol_bucket"] is None  # not completed yet
+
+    # Complete at a later, different now_min (still midday here, but a different skew reading).
+    later = snapshot(
+        underlying_price=6004.0,
+        now_min=13 * 60,
+        puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)},
+        calls={5995: q(0.5, 0.6), 6005: q(0.2, 0.3)},
+    )
+    bookmod.process_snapshot(later, config, conn, "control")
+    row = dbmod.book_positions(conn, bookmod.book_id_for("2026-07-20", "control", "SPX"))[0]
+    assert row["kind"] == "fly"
+    assert row["completion_vol_bucket"] is not None
+    assert row["completion_time_bucket"] == "midday"
+    # Entry-side columns are untouched by the completion write.
+    assert row["entry_vol_bucket"] == "normal"
+
+
+# --------------------------------------------------------------------------- bwb_roll (Phase 2)
+def test_bwb_lifecycle_from_broken_wing_to_rolled_symmetric_fly(conn):
+    """Enter a bwb for a net credit, then roll it once the roll cheapens enough -- ending the
+    session holding a symmetric fly at (credit - roll_debit), same shape as every other
+    completion lifecycle test in this file."""
+    config = one_arm_config(entry_modes=["bwb_roll"], max_bwb_tail_dollars=1000)
+
+    first_snap = snapshot(puts={5990: q(0.4, 0.6), 6000: q(1.9, 2.1), 6005: q(2.2, 2.4)})
+    first = bookmod.process_snapshot(first_snap, config, conn, "control")
+    opened = [a for a in first["actions"] if a["action"] == "bwb_opened"]
+    assert len(opened) == 1
+    assert first["stats"]["unrolled_bwbs"] == 1
+
+    cheap_roll = snapshot(puts={5990: q(4.8, 5.0), 6005: q(5.0, 5.2)})
+    second = bookmod.process_snapshot(cheap_roll, config, conn, "control")
+    rolled = [a for a in second["actions"] if a["action"] == "rolled"]
+    assert len(rolled) == 1
+    assert rolled[0]["net"] > 0 and rolled[0]["floor"] > 0
+
+    rolled_id = rolled[0]["position_id"]
+    rows = dbmod.book_positions(conn, bookmod.book_id_for("2026-07-20", "control", "SPX"))
+    row = next(r for r in rows if r["position_id"] == rolled_id)
+    assert row["kind"] == "fly", "the roll must UPDATE the position in place, not add a row"
+    assert row["risk_free"] == 1
+    assert row["rolled_at"] is not None
+    assert row["completed_at"] == row["rolled_at"]  # one finished-structure column for all readers
+    assert row["far_width"] == 10.0, "far_width is retained after the roll for history/rewind"
+
+
+def test_freshly_opened_bwb_records_its_real_negative_tail_floor(conn):
+    """Regression-shaped: a fresh bwb's floor_dollars must be the honest, possibly-large-negative
+    tail number -- never NULL, never a fly's bounded-at-zero floor."""
+    config = one_arm_config(entry_modes=["bwb_roll"], max_bwb_tail_dollars=1000)
+    snap = snapshot(puts={5990: q(0.4, 0.6), 6000: q(1.9, 2.1), 6005: q(2.2, 2.4)})
+    result = bookmod.process_snapshot(snap, config, conn, "control")
+    opened = next(a for a in result["actions"] if a["action"] == "bwb_opened")
+    row = dbmod.book_positions(conn, result["book_id"])[0]
+    assert row["position_id"] == opened["position_id"]
+    assert row["kind"] == "bwb"
+    assert row["floor_dollars"] is not None
+    assert row["floor_dollars"] < -400  # tail = -(10-5) * 100 = -500, less fees/reserve

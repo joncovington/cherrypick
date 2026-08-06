@@ -13,13 +13,11 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import db as dbmod
-import engine
-import live_loop
-import live_orders
-import provider as _provider
-from broker_cli import live_gates
-from engine import PUT
+from cherrypick.flies import db as dbmod
+from cherrypick.flies import engine, fly, live_loop, live_orders
+from cherrypick.flies import provider as _provider
+from cherrypick.flies.broker_cli import live_gates
+from cherrypick.flies.engine import PUT
 
 # Today, not a literal: run_watch and run_settle_live resolve "today" internally via
 # provider.now_et(), so fixture rows pinned to a past date would be invisible to them.
@@ -80,6 +78,23 @@ def test_entry_spec_sells_center_buys_wing_at_tick_floored_credit():
     assert actions["SPXW  260729P07490000"] == "buy to open"
 
 
+def test_entry_spec_refuses_a_debit_first_plan():
+    """Live v1 is legged-only. debit_first's plan has no 'credit' key (it has 'debit' instead) --
+    entry_spec must refuse it with a clear error, not a confusing KeyError two lines in."""
+    debit_first_plan = {**ENTRY_PLAN, "debit": 1.07}
+    del debit_first_plan["credit"]
+    with pytest.raises(ValueError, match="legged-only"):
+        live_orders.entry_spec(_snapshot(), debit_first_plan)
+
+
+def test_entry_spec_refuses_a_bwb_plan():
+    """bwb_roll's plan carries 'far_width', which no legged plan ever does -- refused even though
+    it (like legged) also carries 'credit'."""
+    bwb_plan = {**ENTRY_PLAN, "far_width": 10.0}
+    with pytest.raises(ValueError, match="legged-only"):
+        live_orders.entry_spec(_snapshot(), bwb_plan)
+
+
 def test_completion_spec_never_prices_past_the_engine_gate():
     pos = {"side": PUT, "center": 7495.0, "wing_width": 5, "quantity": 1}
     plan = {"debit": 0.93, "gate_debit": 0.87, "long_strike": 7500.0}
@@ -90,24 +105,6 @@ def test_completion_spec_never_prices_past_the_engine_gate():
     actions = {leg["symbol"]: leg["action"] for leg in spec["legs"]}
     assert actions["SPXW  260729P07500000"] == "buy to open"  # the far strike
     assert actions["SPXW  260729P07495000"] == "sell to open"  # the centre, doubled to -2
-
-
-def test_close_fly_spec_closes_both_wings_and_buys_back_the_doubled_center():
-    pos = {"side": PUT, "center": 7495.0, "wing_width": 5, "quantity": 1}
-    plan = {"close_credit": 3.07}
-    spec = live_orders.close_fly_spec(_snapshot(), pos, plan)
-    assert spec["price"] == 3.05 and spec["price_effect"] == "credit"  # 3.07 floors to a nickel
-    legs = {leg["symbol"]: leg for leg in spec["legs"]}
-    assert legs["SPXW  260729P07490000"]["action"] == "sell to close"
-    assert legs["SPXW  260729P07495000"]["action"] == "buy to close"
-    assert legs["SPXW  260729P07495000"]["quantity"] == 2  # the doubled centre, bought back at once
-    assert legs["SPXW  260729P07500000"]["action"] == "sell to close"
-
-
-def test_close_fly_spec_refuses_a_credit_that_floors_to_nothing():
-    pos = {"side": PUT, "center": 7495.0, "wing_width": 5, "quantity": 1}
-    with pytest.raises(ValueError, match="close credit"):
-        live_orders.close_fly_spec(_snapshot(), pos, {"close_credit": 0.01})
 
 
 def test_order_builders_refuse_quotes_without_occ_symbols():
@@ -150,7 +147,7 @@ def test_broker_cli_live_gates_are_the_same_posture():
 
 
 def test_broker_cli_serialize_flattens_sdk_objects_and_leaves_plain_values_alone():
-    from broker_cli import _serialize
+    from cherrypick.flies.broker_cli import _serialize
 
     class FakeSdkOrder:
         def model_dump(self, mode="json"):
@@ -207,7 +204,7 @@ def test_broker_cli_fresh_option_quotes_shapes_and_filters_rest_rows(monkeypatch
     crossed, or non-positive) rather than handing entry_fresh_reprice a nonsense quote."""
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     class Row:
         def __init__(self, symbol, bid, ask, mid=None, updated_at=None):
@@ -233,7 +230,7 @@ def test_broker_cli_fresh_option_quotes_shapes_and_filters_rest_rows(monkeypatch
 def test_broker_cli_fresh_option_quotes_empty_symbols_skips_the_call(monkeypatch):
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     async def boom(*a, **kw):
         raise AssertionError("must not call the SDK for an empty symbol list")
@@ -243,7 +240,7 @@ def test_broker_cli_fresh_option_quotes_empty_symbols_skips_the_call(monkeypatch
 
 
 def test_broker_adapter_fresh_quotes_delegates_and_fails_closed(monkeypatch):
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     calls = []
 
@@ -270,7 +267,7 @@ def test_broker_adapter_fresh_quotes_delegates_and_fails_closed(monkeypatch):
 def test_official_settlement_price_prefers_tastytrade(monkeypatch):
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     class Row:
         def __init__(self, close=None, last=None, mark=None):
@@ -285,13 +282,15 @@ def test_official_settlement_price_prefers_tastytrade(monkeypatch):
     monkeypatch.setattr(broker_cli, "_barchart_index_price", lambda s: (_ for _ in ()).throw(AssertionError))
 
     price, source = asyncio.run(broker_cli.official_settlement_price(object(), "XSP"))
-    assert price == 743.76 and source == "tastytrade"
+    # A posted CLOSE is the one genuinely-official reading -- tagged as such, and neither web
+    # fallback is consulted (both raise if touched).
+    assert price == 743.76 and source == "tastytrade_close"
 
 
 def test_official_settlement_price_falls_back_to_last_or_mark_when_close_is_unset(monkeypatch):
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     class Row:
         def __init__(self, close=None, last=None, mark=None):
@@ -301,14 +300,41 @@ def test_official_settlement_price_falls_back_to_last_or_mark_when_close_is_unse
         return [Row(close=None, last=None, mark=743.76)]  # close not posted yet
 
     monkeypatch.setattr(md, "get_market_data_by_type", fake_get_market_data_by_type)
+    # With no posted close, the web sources (whose post-close quote IS the closing print) are
+    # preferred over tastytrade's intraday mark...
+    monkeypatch.setattr(broker_cli, "_yahoo_index_price", lambda s: 744.10)
     price, source = asyncio.run(broker_cli.official_settlement_price(object(), "XSP"))
-    assert price == 743.76 and source == "tastytrade"
+    assert price == 744.10 and source == "yahoo"
+
+
+def test_official_settlement_price_marks_an_intraday_tick_provisional(monkeypatch):
+    """...and if NOTHING authoritative answers, the intraday mark is still returned (better than
+    no settlement at all) but tagged provisional, so `session_officially_settled` stays False and
+    the loop keeps retrying. Before 2026-07-31 this was stamped 'official' and stopped the retry."""
+    from tastytrade import market_data as md
+
+    from cherrypick.flies import broker_cli
+
+    class Row:
+        def __init__(self, close=None, last=None, mark=None):
+            self.close, self.last, self.mark = close, last, mark
+
+    async def fake_get_market_data_by_type(session, indices=None, **kw):
+        return [Row(close=None, last=750.46, mark=None)]
+
+    monkeypatch.setattr(md, "get_market_data_by_type", fake_get_market_data_by_type)
+    monkeypatch.setattr(broker_cli, "_yahoo_index_price", lambda s: None)
+    monkeypatch.setattr(broker_cli, "_barchart_index_price", lambda s: None)
+    price, source = asyncio.run(broker_cli.official_settlement_price(object(), "XSP"))
+    assert price == 750.46
+    assert source == "tastytrade_last_provisional"
+    assert not live_loop._is_official_source(source)
 
 
 def test_official_settlement_price_falls_back_to_yahoo_then_barchart(monkeypatch):
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     async def empty(session, indices=None, **kw):
         return []
@@ -328,7 +354,7 @@ def test_official_settlement_price_falls_back_to_yahoo_then_barchart(monkeypatch
 def test_official_settlement_price_reports_no_source_when_every_source_fails(monkeypatch):
     from tastytrade import market_data as md
 
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     async def boom(session, indices=None, **kw):
         raise RuntimeError("network blip")
@@ -341,7 +367,7 @@ def test_official_settlement_price_reports_no_source_when_every_source_fails(mon
 
 
 def test_broker_adapter_official_settlement_price_delegates_and_fails_closed(monkeypatch):
-    import broker_cli
+    from cherrypick.flies import broker_cli
 
     calls = []
 
@@ -369,7 +395,7 @@ def test_entry_fresh_reprice_matches_vertical_credit_on_the_same_quotes():
     for the cached path (engine.py:248) -- apples-to-apples, not a second pricing model. Note
     ENTRY_PLAN's own "credit": 1.07 is a fixture literal for the tick-floor tests above and is NOT
     what _snapshot()'s real put quotes at these strikes imply -- don't compare against it here."""
-    import fly
+    from cherrypick.flies import fly
 
     spec = live_orders.entry_spec(_snapshot(), ENTRY_PLAN)
     fresh = _quote_table(_snapshot())
@@ -423,12 +449,17 @@ class FakeBroker:
         snapshot=None,
         fresh=None,
         official_price=None,
+        alerts=None,
     ):
         self.placed = []
         self.cancelled = []
         self.status_calls = []
         self.fresh_quote_calls = []
         self.official_settlement_calls = []
+        self.alert_calls = []
+        # Queue of canned return values, one per wait_for_order_alerts() call; once exhausted,
+        # every further call returns [] (mirrors a real, always-fail-closed empty result).
+        self._alerts = list(alerts or [])
         # order_id -> {"status": ..., "price": ...} the next status() call for it returns
         self._statuses = dict(order_statuses or {})
         self._cancel_ok = cancel_ok
@@ -469,6 +500,10 @@ class FakeBroker:
         self.official_settlement_calls.append(symbol)
         return self._official_price
 
+    def wait_for_order_alerts(self, order_ids, timeout_seconds):
+        self.alert_calls.append((set(order_ids), timeout_seconds))
+        return self._alerts.pop(0) if self._alerts else []
+
 
 @pytest.fixture
 def live_conn(tmp_path, monkeypatch):
@@ -505,7 +540,7 @@ def test_dry_run_places_nothing_live_but_records_nothing_either(live_conn):
 
 
 def test_live_mode_records_the_entry_with_its_order_id(live_conn):
-    import fly
+    from cherrypick.flies import fly
 
     broker = FakeBroker()
     summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
@@ -546,7 +581,7 @@ def test_dry_run_never_calls_fresh_quotes(live_conn):
 def test_live_entry_recorded_at_the_fresh_repriced_value(live_conn):
     """When live, the recorded position's net/credit must be the fresh (submitted) price, not the
     stale cached one -- the ledger's economics must match what actually went to the broker."""
-    import fly
+    from cherrypick.flies import fly
 
     broker = FakeBroker()
     live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
@@ -687,7 +722,7 @@ def test_dry_run_still_journals_snapshot_and_iteration_but_not_a_position(live_c
 
 
 def test_working_completion_is_cancelled_at_the_cutoff(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
@@ -723,7 +758,7 @@ def test_working_completion_is_cancelled_at_the_cutoff(live_conn):
 
 
 def test_daily_loss_breaker(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
@@ -803,7 +838,7 @@ def test_blocking_positions_ignores_closed_rows():
 
 
 def test_entry_refused_while_a_spread_is_still_open(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
@@ -839,7 +874,7 @@ def test_entry_refused_while_a_spread_is_still_open(live_conn):
 
 
 def test_entry_allowed_once_completed_fly_is_risk_free(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
@@ -870,7 +905,7 @@ def test_entry_allowed_once_completed_fly_is_risk_free(live_conn):
 
 
 def test_entry_refused_when_completed_fly_has_negative_floor(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
@@ -908,7 +943,7 @@ def test_entry_refused_when_completed_fly_has_negative_floor(live_conn):
 
 # --------------------------------------------------------------------------- fill confirmation
 def _open_entry_row(order_id="ORD-E1", entry_fill_status="pending"):
-    import clock
+    from cherrypick.flies import clock
 
     return {
         "position_id": "E1",
@@ -962,7 +997,7 @@ def test_completion_not_evaluated_until_entry_confirmed_filled(live_conn):
 
 
 def test_completion_fill_confirmation_flips_kind_and_records_actual_debit(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,
@@ -1026,187 +1061,19 @@ def test_completion_terminal_unfilled_is_journaled_and_reverts_to_short_vertical
 
 
 # --------------------------------------------------------------------------- pre-close ITM exit (live)
-def test_pre_close_exit_places_a_closing_order_when_cheaper_than_the_assignment_fee(live_conn):
-    dbmod.save_position(
-        live_conn,
-        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
-    )
-
-    # Inside the closing window, spot between the lower wing (7490) and the centre (7495); quotes
-    # hand-picked so the fly's combo mid (~3.0) matches its intrinsic payoff there (also 3.0),
-    # keeping the closing slippage small next to the $15 assignment fee (3 of 4 contracts ITM).
-    def close_q(occ, mid):
-        return {
-            "bid": mid - 0.1,
-            "ask": mid + 0.1,
-            "mid": mid,
-            "occ_symbol": occ,
-            "instrument_type": "Equity Option",
-        }
-
-    snap = _snapshot(
-        now_min=955,
-        underlying_price=7493.0,
-        puts={
-            7490.0: close_q("SPXW  260729P07490000", 0.2),
-            7495.0: close_q("SPXW  260729P07495000", 1.1),
-            7500.0: close_q("SPXW  260729P07500000", 5.1),
-        },
-    )
-    broker = FakeBroker()
-    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
-    assert summary.get("pre_close_exits_placed") == 1
-    close_orders = [p for p in broker.placed if p["spec"]["price_effect"] == "credit"]
-    assert len(close_orders) == 1
-    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["close_order_id"] is not None
-    assert row["close_fill_status"] == "pending"
-    decision = live_conn.execute(
-        "SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit' AND reason = 'placed'"
-    ).fetchone()
-    assert decision is not None and decision["accepted"] == 1 and decision["position_id"] == "E1"
-
-
-def test_pre_close_exit_leaves_an_otm_fly_alone_before_the_window(live_conn):
-    dbmod.save_position(
-        live_conn,
-        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
-    )
-    broker = FakeBroker()
-    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
-    assert "pre_close_exits_placed" not in summary
-    row = live_conn.execute("SELECT close_order_id FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["close_order_id"] is None
-
-
-def test_close_fill_confirmation_settles_the_position_at_the_actual_close_credit(live_conn):
-    dbmod.save_position(
-        live_conn,
-        {
-            **_open_entry_row(entry_fill_status="filled"),
-            "kind": "fly",
-            "net": 0.25,
-            "debit": 0.80,
-            "close_order_id": "ORD-X1",
-            "close_fill_status": "pending",
-        },
-    )
-    broker = FakeBroker(order_statuses={"ORD-X1": {"status": "Filled", "price": "3.00", "filled": True}})
-    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
-    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["status"] == "settled"
-    assert row["close_fill_status"] == "filled"
-    assert row["closed_before_expiry"] == 1
-    assert row["gross_pnl"] == pytest.approx((0.25 + 3.00) * 100)
-    decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit'").fetchone()
-    assert decision["reason"] == "filled" and decision["accepted"] == 1
-
-
-def test_close_terminal_unfilled_falls_back_to_an_open_fly(live_conn):
-    """A rejected/cancelled closing order releases the position back to an ordinary open fly,
-    which falls through to the normal settlement path (and the real assignment fee) -- the one
-    tail risk fly.position_floor's docstring names explicitly."""
-    dbmod.save_position(
-        live_conn,
-        {
-            **_open_entry_row(entry_fill_status="filled"),
-            "kind": "fly",
-            "net": 0.25,
-            "debit": 0.80,
-            "close_order_id": "ORD-X1",
-            "close_fill_status": "pending",
-        },
-    )
-    broker = FakeBroker(order_statuses={"ORD-X1": {"status": "Rejected", "price": None, "filled": False}})
-    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
-    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["kind"] == "fly" and row["status"] == "open"
-    assert row["close_order_id"] is None and row["close_fill_status"] == "rejected"
-    decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit'").fetchone()
-    assert decision["reason"] == "close_rejected" and decision["accepted"] == 0
 
 
 # --------------------------------------------------------------------------- pre-close ITM exit: verticals
-def test_pre_close_exit_places_a_closing_order_for_an_itm_vertical(live_conn):
-    """The extension (2026-07-30): a still-open, already-ITM credit spread gets the same
-    fee-avoidance closing order a completed fly does. _open_entry_row()'s default kind IS
-    short_vertical (center 7495, wing 5, side PUT) -- no override needed."""
-    dbmod.save_position(live_conn, _open_entry_row(entry_fill_status="filled"))
-
-    def close_q(occ, mid):
-        return {"bid": mid, "ask": mid, "mid": mid, "occ_symbol": occ, "instrument_type": "Equity Option"}
-
-    # Spot between the protective long (7490) and the short centre (7495) -- only the short leg
-    # is ITM. No quote at 7500 (the completing strike), so evaluate_completion can't also fire
-    # and race this: this snapshot exercises the pre-close-exit path in isolation.
-    snap = _snapshot(
-        now_min=955,
-        underlying_price=7493.0,
-        puts={
-            7490.0: close_q("SPXW  260729P07490000", 0.0),
-            7495.0: close_q("SPXW  260729P07495000", 2.0),
-        },
-    )
-    broker = FakeBroker()
-    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
-    assert summary.get("pre_close_exits_placed") == 1
-    close_orders = [p for p in broker.placed if p["spec"]["price_effect"] == "debit"]
-    assert len(close_orders) == 1
-    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["kind"] == "short_vertical"  # never touched by completion
-    assert row["close_order_id"] is not None
-    assert row["close_fill_status"] == "pending"
-    decision = live_conn.execute(
-        "SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit' AND reason = 'placed'"
-    ).fetchone()
-    assert decision is not None and decision["accepted"] == 1 and decision["position_id"] == "E1"
-
-
-def test_pre_close_exit_skips_a_vertical_with_a_resting_completion_order(live_conn):
-    """The sequencing guard: a vertical with a completion order still working (not yet cancelled
-    by completion_cutoff) must never be raced by a pre-close-exit close order on the same tick."""
-    dbmod.save_position(
-        live_conn,
-        {**_open_entry_row(entry_fill_status="filled"), "completion_order_id": "ORD-C1"},
-    )
-    broker = FakeBroker(order_statuses={"ORD-C1": {"status": "Live", "price": None, "filled": False}})
-    snap = _snapshot(now_min=955, underlying_price=7493.0)  # inside the window
-    summary = live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
-    assert "pre_close_exits_placed" not in summary
-    row = live_conn.execute("SELECT close_order_id FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["close_order_id"] is None
-
-
-def test_close_fill_confirmation_settles_a_vertical_at_the_actual_close_debit(live_conn):
-    dbmod.save_position(
-        live_conn,
-        {
-            **_open_entry_row(entry_fill_status="filled"),
-            "close_order_id": "ORD-X2",
-            "close_fill_status": "pending",
-        },
-    )
-    broker = FakeBroker(order_statuses={"ORD-X2": {"status": "Filled", "price": "2.00", "filled": True}})
-    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
-    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert row["status"] == "settled"
-    assert row["kind"] == "short_vertical"
-    assert row["close_fill_status"] == "filled"
-    assert row["closed_before_expiry"] == 1
-    # net 1.05 credit collected at open, less the 2.00 debit paid to close: gross = (1.05-2.00)*100
-    assert row["gross_pnl"] == pytest.approx((1.05 - 2.00) * 100)
-    decision = live_conn.execute("SELECT * FROM fly_decisions WHERE mode = 'pre_close_exit'").fetchone()
-    assert decision["reason"] == "filled" and decision["accepted"] == 1
 
 
 # --------------------------------------------------------------------------- resting completion pricing
 def test_max_safe_completion_debit_is_min_of_both_gates():
-    # SPX entry: credit 1.05, fees 3.44 recorded; completion adds another 3.44. Not reserving the
-    # resulting fly's worst-case exercise-assignment fee (2026-07-30) -- see
-    # fly.position_floor's docstring: engine.evaluate_pre_close_exit bounds that cost going
-    # forward instead, so this bound matches fly.position_floor's own (unbuffered) formula.
+    # SPX entry: credit 1.05, fees 3.44 recorded; completion adds another 3.44, PLUS the resulting
+    # fly's $15 worst-case exercise-assignment reserve (2026-08-01, when the pre-close ITM exit
+    # that used to bound that cost was removed) -- this bound must reserve exactly what
+    # fly.position_floor reserves, or a resting order could fill into a fly the floor gate refuses.
     # buffer gate: 1.05 - 0.10 = 0.95
-    # floor bound at min_floor=10: 1.05 - (10 + 3.44 + 3.4433)/100 = 1.05 - 0.168833 = 0.881167
+    # floor bound at min_floor=10: 1.05 - (10 + 3.44 + 3.4433 + 15)/100 = 1.05 - 0.318833 = 0.731167
     pos = {
         "side": PUT,
         "center": 7495.0,
@@ -1217,10 +1084,40 @@ def test_max_safe_completion_debit_is_min_of_both_gates():
         "symbol": "SPX",
     }
     bound = live_orders.max_safe_completion_debit(pos, 10.0, 0.10)
-    assert bound == pytest.approx(0.881167, abs=1e-4)
-    # with a tiny floor requirement the buffer gate binds instead
-    bound2 = live_orders.max_safe_completion_debit(pos, 0.0, 0.10)
-    assert bound2 == pytest.approx(0.95)
+    assert bound == pytest.approx(0.731167, abs=1e-4)
+    # Even at min_floor=0 the floor gate binds rather than the 0.95 buffer gate, and no credit
+    # can change that: both gates sit a FIXED distance below the credit, so which one binds
+    # depends only on (fees + reserve) vs fee_buffer*100. At $6.88 of fees plus the $15 reserve
+    # against a $10 buffer, the floor gate wins outright -- one practical consequence of the
+    # 2026-08-01 reserve is that the default fee_buffer no longer binds on SPX flies at all.
+    assert live_orders.max_safe_completion_debit(pos, 0.0, 0.10) == pytest.approx(0.831167, abs=1e-4)
+    # A buffer wide enough to clear fees + reserve does still bind, so the min() is real.
+    assert live_orders.max_safe_completion_debit(pos, 0.0, 0.50) == pytest.approx(0.55)
+
+
+def test_max_safe_completion_debit_reserves_exactly_what_position_floor_does():
+    """The invariant the bound exists to hold: a completion filling AT the bound must produce a fly
+    whose fly.position_floor is exactly min_floor_dollars -- never a cent below. If position_floor's
+    assignment reserve and this bound's ever diverge, a resting order could fill into a fly the
+    floor gate would have refused, which is the one thing a resting limit must not be able to do."""
+    pos = {
+        "side": PUT,
+        "center": 7495.0,
+        "wing_width": 5,
+        "quantity": 1,
+        "net": 1.05,
+        "fees": 3.44,
+        "symbol": "SPX",
+    }
+    min_floor = 10.0
+    bound = live_orders.max_safe_completion_debit(pos, min_floor, 0.10)
+    completed = {
+        **pos,
+        "kind": "fly",
+        "net": pos["net"] - bound,
+        "fees": pos["fees"] + fly.vertical_open_fee(pos["symbol"], 1),
+    }
+    assert fly.position_floor(completed) == pytest.approx(min_floor, abs=1e-6)
 
 
 def test_resting_completion_spec_prices_at_the_bound_and_derives_legs():
@@ -1236,7 +1133,7 @@ def test_resting_completion_spec_prices_at_the_bound_and_derives_legs():
     spec = live_orders.resting_completion_spec(
         _snapshot(), pos, {"min_floor_dollars": 10, "fee_buffer": 0.10}
     )
-    assert spec["price"] == 0.85  # 0.881167 tick-floored
+    assert spec["price"] == 0.70  # 0.731167 tick-floored
     actions = {leg["symbol"]: leg["action"] for leg in spec["legs"]}
     assert actions["SPXW  260729P07500000"] == "buy to open"  # completing long = center + W for puts
     assert actions["SPXW  260729P07495000"] == "sell to open"
@@ -1358,7 +1255,7 @@ def _watch_cfg():
 
 
 def _fake_cache(monkeypatch, snapshot):
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     monkeypatch.setattr(providermod, "build_snapshot", lambda *a, **k: snapshot)
 
@@ -1468,6 +1365,149 @@ def test_watcher_cache_gates_status_polls(live_conn, monkeypatch):
     assert broker.status_calls == []  # cache said "not touchable", heartbeat never elapsed
 
 
+def test_watcher_confirms_from_the_daemon_inbox_without_opening_a_websocket(live_conn, monkeypatch):
+    """Daemon mode: a row the alert daemon already wrote to the WAL inbox is treated exactly like
+    a cache touch -- the watcher must confirm from it WITHOUT opening its own websocket, and (as
+    always) still confirm through the ordinary .status() call, never a second write path."""
+    from cherrypick.flies import alerts_db
+
+    far = _open_entry_row()  # market far from the limit: cache-gating alone would never poll
+    far["net"] = 5.00
+    far["credit"] = 5.00
+    dbmod.save_position(live_conn, far)
+    _fake_cache(monkeypatch, _snapshot())
+
+    inbox = alerts_db.connect()
+    alerts_db.record_alert(
+        inbox,
+        {"order_id": "ORD-E1", "status": "Filled", "price": "1.10", "filled": True, "cancellable": False},
+        "2026-07-31T10:00:00-04:00",
+    )
+    inbox.close()
+
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Filled", "price": "1.10", "filled": True}})
+    cfg = _watch_cfg()
+    cfg["live"]["fill_heartbeat_seconds"] = 10_000
+    cfg["live"]["use_order_alert_daemon"] = True
+    ticks = iter(range(0, 1000))
+    live_loop.run_watch(
+        cfg,
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+        clock_fn=lambda: next(ticks),
+    )
+    assert broker.alert_calls == []  # the daemon owns the websocket; the watcher never opens one
+    assert broker.status_calls  # but the fill is still confirmed through the broker, as always
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["entry_fill_status"] == "filled"
+
+
+def test_watcher_with_an_empty_inbox_falls_back_to_the_heartbeat_poll(live_conn, monkeypatch):
+    """A daemon that died, stalled, or was never started must cost latency and nothing else --
+    the ordinary heartbeat poll still confirms the fill."""
+    far = _open_entry_row()
+    far["net"] = 5.00
+    far["credit"] = 5.00
+    dbmod.save_position(live_conn, far)
+    _fake_cache(monkeypatch, _snapshot())
+
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Filled", "price": "1.10", "filled": True}})
+    cfg = _watch_cfg()
+    cfg["live"]["fill_heartbeat_seconds"] = 3  # elapses during the run
+    cfg["live"]["use_order_alert_daemon"] = True
+    t = {"now": 0.0}
+
+    def clock_fn():
+        t["now"] += 1.0
+        return t["now"]
+
+    live_loop.run_watch(
+        cfg,
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+        clock_fn=clock_fn,
+    )
+    assert broker.alert_calls == []
+    assert broker.status_calls  # the heartbeat carried it despite an empty inbox
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["entry_fill_status"] == "filled"
+
+
+def test_watcher_alert_stream_off_by_default_never_calls_it(live_conn, monkeypatch):
+    """Regression: use_order_alert_stream defaults to False, so an unmodified config must never
+    touch the new call at all -- byte-for-byte the pre-2026-07-31 polling loop."""
+    dbmod.save_position(live_conn, _open_entry_row())
+    _fake_cache(monkeypatch, _snapshot())
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Filled", "price": "1.10", "filled": True}})
+    ticks = iter(range(0, 1000))
+    live_loop.run_watch(
+        _watch_cfg(),
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+        clock_fn=lambda: next(ticks),
+    )
+    assert broker.alert_calls == []
+
+
+def test_watcher_confirms_faster_via_a_push_alert_than_cache_gating_alone_would(live_conn, monkeypatch):
+    """With the market far from the cached limit and a huge heartbeat, cache-gating alone would
+    never poll (see test_watcher_cache_gates_status_polls) -- but a push alert must still confirm
+    the fill THIS cycle regardless of what the cache says."""
+    far = _open_entry_row()
+    far["net"] = 5.00
+    far["credit"] = 5.00
+    dbmod.save_position(live_conn, far)
+    _fake_cache(monkeypatch, _snapshot())
+    broker = FakeBroker(
+        order_statuses={"ORD-E1": {"status": "Filled", "price": "1.10", "filled": True}},
+        alerts=[
+            [
+                {
+                    "order_id": "ORD-E1",
+                    "status": "Filled",
+                    "cancellable": False,
+                    "price": "1.10",
+                    "filled": True,
+                }
+            ]
+        ],
+    )
+    cfg = _watch_cfg()
+    cfg["live"]["fill_heartbeat_seconds"] = 10_000
+    cfg["live"]["use_order_alert_stream"] = True
+    t = {"now": 0.0}
+
+    def clock_fn():
+        t["now"] += 1.0
+        return t["now"]
+
+    live_loop.run_watch(
+        cfg,
+        live_conn,
+        broker,
+        cache_path="unused",
+        live=True,
+        log=lambda *_: None,
+        sleep=lambda s: None,
+        clock_fn=clock_fn,
+    )
+    assert broker.alert_calls and broker.alert_calls[0][0] == {"ORD-E1"}
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["entry_fill_status"] == "filled"
+
+
 def test_watcher_heartbeat_forces_a_poll(live_conn, monkeypatch):
     far = _open_entry_row()
     far["net"] = 5.00
@@ -1505,7 +1545,7 @@ def _settle_cfg():
 
 
 def test_provisional_settle_marks_source_and_official_overwrites(live_conn, monkeypatch):
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1538,7 +1578,7 @@ def test_provisional_settle_marks_source_and_official_overwrites(live_conn, monk
 def test_settle_auto_fetches_official_price_and_skips_provisional_entirely(live_conn, monkeypatch):
     """When a broker is given and it can answer, the settlement goes straight to 'official' --
     the provisional (last-trade) path is never even consulted."""
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1549,16 +1589,38 @@ def test_settle_auto_fetches_official_price_and_skips_provisional_entirely(live_
         raise AssertionError("must not read the stream cache when the broker already answered")
 
     monkeypatch.setattr(providermod, "read_spot", boom)
-    broker = FakeBroker(official_price=(7495.5, "tastytrade"))
+    broker = FakeBroker(official_price=(7495.5, "tastytrade_close"))
     out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", broker=broker)
-    assert out["ok"] and out["source"] == "official"
+    # The stored source keeps WHICH source answered, rather than flattening to a bare "official"
+    # -- it still counts as official (see live_loop._OFFICIAL_SOURCES), but the provenance is
+    # recoverable from the ledger afterwards.
+    assert out["ok"] and out["source"] == "tastytrade_close"
+    assert live_loop._is_official_source(out["source"])
     assert broker.official_settlement_calls == ["SPX"]
     pos = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert pos["settlement_source"] == "official"
+    assert pos["settlement_source"] == "tastytrade_close"
+
+
+def test_settle_keeps_retrying_when_only_an_intraday_tick_is_available(live_conn, monkeypatch):
+    """The 2026-07-31 case: tastytrade's `close` never posted, so the fetch could only offer an
+    intraday `last`. That settles the book (better than nothing) but must NOT be called official,
+    and must leave `session_officially_settled` False so the next tick tries again."""
+    from cherrypick.flies import provider as providermod
+
+    dbmod.save_position(
+        live_conn,
+        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
+    )
+    monkeypatch.setattr(providermod, "read_spot", lambda *a, **kw: None)
+    broker = FakeBroker(official_price=(7504.6, "tastytrade_last_provisional"))
+    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", broker=broker)
+    assert out["ok"] and out["source"] == "tastytrade_last_provisional"
+    assert not live_loop._is_official_source(out["source"])
+    assert not live_loop.session_officially_settled(live_conn, DAY)
 
 
 def test_settle_falls_back_to_provisional_when_broker_fetch_is_unavailable(live_conn, monkeypatch):
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1575,7 +1637,7 @@ def test_settle_retries_broker_fetch_on_a_still_provisional_book_and_upgrades(li
     """A settle call with no broker (or one that can't answer yet) leaves the book provisional;
     a LATER call with a broker that now has an answer upgrades it to official -- the mechanism
     the tick relies on to keep retrying every minute until the print is out."""
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1587,17 +1649,20 @@ def test_settle_retries_broker_fetch_on_a_still_provisional_book_and_upgrades(li
 
     broker2 = FakeBroker(official_price=(7494.0, "yahoo"))
     out2 = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused", broker=broker2)
-    assert out2["ok"] and out2["source"] == "official"
+    # Yahoo's post-close quote IS the closing print, so it upgrades the book to official -- and
+    # the stored source records that it was yahoo, not a generic "official".
+    assert out2["ok"] and out2["source"] == "yahoo"
+    assert live_loop._is_official_source(out2["source"])
     assert broker2.official_settlement_calls == ["SPX"]
     pos = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
-    assert pos["settlement_source"] == "official"
+    assert pos["settlement_source"] == "yahoo"
 
 
 def test_settle_never_calls_broker_once_already_official(live_conn, monkeypatch):
     """Once a book is officially settled, a subsequent settle attempt must short-circuit on the
     already-official guard before ever touching the broker -- no repeated network calls on a tick
     that keeps firing after the print already landed."""
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1616,7 +1681,7 @@ def test_settle_never_calls_broker_once_already_official(live_conn, monkeypatch)
 
 
 def test_session_officially_settled_requires_the_official_print_not_just_settled(live_conn, monkeypatch):
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1638,7 +1703,7 @@ def test_settle_targets_an_explicit_past_date(live_conn, monkeypatch):
     run_settle_live rather than being pinned to wall-clock today."""
     from datetime import datetime as _dt
 
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: None)  # explicit price only
     dbmod.save_position(
@@ -1653,7 +1718,7 @@ def test_settle_targets_an_explicit_past_date(live_conn, monkeypatch):
 
 
 def test_settle_refuses_without_fresh_spot_and_retries(live_conn, monkeypatch):
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(live_conn, {**_open_entry_row(entry_fill_status="filled")})
     monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: None)
@@ -1674,7 +1739,7 @@ def test_live_book_rollup_written_by_tick(live_conn):
 
 # --------------------------------------------------------------------------- per-day structure cap
 def test_max_structures_per_day_blocks_even_after_risk_free_completion(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     # A completed, RISK-FREE fly frees the concurrency slot -- but with the day cap at 1 it
     # still spends the day's whole structure budget, so no second entry may follow.
@@ -1728,7 +1793,7 @@ def _paper_conn():
 
 
 def _legged_row(conn, pid, *, kind, latency=None, credit=1.0, debit=None, day=None):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         conn,
@@ -1757,7 +1822,7 @@ def _legged_row(conn, pid, *, kind, latency=None, credit=1.0, debit=None, day=No
 
 
 def test_live_vs_paper_restricts_paper_to_live_sessions(live_conn):
-    import analytics
+    from cherrypick.flies import analytics
 
     paper = _paper_conn()
     # Live traded only DAY; paper has DAY plus another session that must NOT count.
@@ -1775,7 +1840,7 @@ def test_live_vs_paper_restricts_paper_to_live_sessions(live_conn):
 
 
 def test_abort_rule_arms_and_triggers(live_conn):
-    import analytics
+    from cherrypick.flies import analytics
 
     paper = _paper_conn()
     # 30 live entries, 10 completed (33%); paper 10 entries, 9 completed (90%) -> gap 57pts.
@@ -1790,7 +1855,7 @@ def test_abort_rule_arms_and_triggers(live_conn):
 
 
 def test_live_eod_report_written_on_settle(live_conn, monkeypatch):
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     dbmod.save_position(
         live_conn,
@@ -1811,8 +1876,8 @@ def test_orphan_sweep_flags_unknown_working_orders(live_conn):
     dbmod.save_position(live_conn, _open_entry_row(order_id="ORD-KNOWN"))
     broker = FakeBroker(
         working=[
-            {"order_id": "ORD-KNOWN", "status": "Live", "underlying_symbol": "XSP"},
-            {"order_id": "ORD-MYSTERY", "status": "Live", "underlying_symbol": "XSP"},
+            {"order_id": "ORD-KNOWN", "status": "Live", "underlying_symbol": "SPX"},
+            {"order_id": "ORD-MYSTERY", "status": "Live", "underlying_symbol": "SPX"},
         ]
     )
     logs = []
@@ -1824,7 +1889,23 @@ def test_orphan_sweep_flags_unknown_working_orders(live_conn):
 
 def test_orphan_sweep_clean_when_all_accounted_for(live_conn):
     dbmod.save_position(live_conn, _open_entry_row(order_id="ORD-KNOWN"))
-    broker = FakeBroker(working=[{"order_id": "ORD-KNOWN", "status": "Live", "underlying_symbol": "XSP"}])
+    broker = FakeBroker(working=[{"order_id": "ORD-KNOWN", "status": "Live", "underlying_symbol": "SPX"}])
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert summary["orphaned_orders"] == 0
+    assert live_loop.read_orphans() == []
+
+
+def test_orphan_sweep_ignores_working_orders_in_other_symbols(live_conn):
+    """The account isn't exclusive to this loop -- a resting order in a symbol this arm doesn't
+    trade (manual trading sharing the account, another module) is real and none of this sweep's
+    business. Confirmed 2026-07-30: a shared account's own manual trading across a dozen other
+    symbols was firing the CRITICAL orphan alert every tick."""
+    broker = FakeBroker(
+        working=[
+            {"order_id": "ORD-MANUAL-1", "status": "Live", "underlying_symbol": "AAPL"},
+            {"order_id": "ORD-MANUAL-2", "status": "Live", "underlying_symbol": "SOFI"},
+        ]
+    )
     summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
     assert summary["orphaned_orders"] == 0
     assert live_loop.read_orphans() == []
@@ -1868,7 +1949,7 @@ def test_stale_lock_is_stolen(tmp_path, monkeypatch):
 def test_should_disarm(tmp_path, monkeypatch):
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
     cfg = {"live": {"disarm_time": "17:00"}}
-    import provider as providermod
+    from cherrypick.flies import provider as providermod
 
     today = providermod.now_et().date().isoformat()
     # No stamp at all -> disarm (arming didn't go through the command path).
@@ -1883,7 +1964,7 @@ def test_should_disarm(tmp_path, monkeypatch):
 
 
 def test_completion_cancel_failure_is_logged_not_silently_dropped(live_conn):
-    import clock
+    from cherrypick.flies import clock
 
     dbmod.save_position(
         live_conn,

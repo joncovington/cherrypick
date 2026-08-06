@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import tt
+from cherrypick.meic import tt
 
 _CACHE_DDL = """
 CREATE TABLE IF NOT EXISTS stream_chain (
@@ -610,7 +610,7 @@ def test_cmd_execute_trade_deploy_governor_blocks_live_over_cap(monkeypatch):
 
 def test_cmd_secrets_status_reports_ready_when_required_set(monkeypatch):
     monkeypatch.setattr(
-        "credentials.secrets_status",
+        "cherrypick.meic.credentials.secrets_status",
         lambda: {"client_secret": True, "refresh_token": True, "account_number": False},
     )
     result = tt.cmd_secrets_status(None)
@@ -621,7 +621,7 @@ def test_cmd_secrets_status_reports_ready_when_required_set(monkeypatch):
 
 def test_cmd_secrets_status_not_ready_when_required_missing(monkeypatch):
     monkeypatch.setattr(
-        "credentials.secrets_status",
+        "cherrypick.meic.credentials.secrets_status",
         lambda: {"client_secret": True, "refresh_token": False, "account_number": False},
     )
     result = tt.cmd_secrets_status(None)
@@ -705,7 +705,7 @@ def test_cmd_get_orb_range_no_cache_db(tmp_path, monkeypatch):
 
 
 def test_cmd_stream_status_not_running_no_cache(tmp_path, monkeypatch):
-    import streamer
+    from cherrypick.meic import streamer
 
     monkeypatch.setattr(streamer, "_running_pid", lambda: None)
     monkeypatch.setattr(tt, "_CACHE_DB", tmp_path / "missing.db")
@@ -715,7 +715,7 @@ def test_cmd_stream_status_not_running_no_cache(tmp_path, monkeypatch):
 
 
 def test_cmd_stream_status_running_with_fresh_data(cache_db, monkeypatch):
-    import streamer
+    from cherrypick.meic import streamer
 
     monkeypatch.setattr(streamer, "_running_pid", lambda: 4242)
     _insert(cache_db, "stream_trades", symbol="XSP", last=600.0, change=0, volume=10, updated_at=time.time())
@@ -727,7 +727,7 @@ def test_cmd_stream_status_running_with_fresh_data(cache_db, monkeypatch):
 
 
 def test_cmd_stream_status_stale_when_running_but_old_data(cache_db, monkeypatch):
-    import streamer
+    from cherrypick.meic import streamer
 
     monkeypatch.setattr(streamer, "_running_pid", lambda: 4242)
     _insert(

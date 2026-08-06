@@ -15,8 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import db
-import paper_loop
+from cherrypick.meic import db, paper_loop
 
 
 def _ns(**kw):

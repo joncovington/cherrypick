@@ -14,6 +14,7 @@ cross-platform; only the thin `crontab -l` / `crontab -` I/O is platform-bound. 
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from typing import Any
@@ -164,6 +165,44 @@ def query_verbose(name: str) -> dict[str, Any]:
         if key in ("Status", "Last Result", "Last Run Time", "Next Run Time", "Scheduled Task State"):
             fields[key] = val
     return fields
+
+
+def last_run_info(name: str) -> dict[str, Any] | None:
+    """The scheduler's own record of when `name` last ran and whether it succeeded — an
+    authoritative liveness signal a caller never has to ask the task itself to produce (no log line,
+    no marker file: the OS already tracks this for every scheduled task). Returns
+    `{"last_run_time": <ISO 8601 with offset>, "last_task_result": <int>}`, or `None` if unavailable
+    (task doesn't exist, has never run, or the query failed) — a caller must fall back to some other
+    signal in that case.
+
+    Windows only. POSIX cron has no run-history concept at all (it just fires the command; there's
+    no built-in record of whether or when it last ran) — callers on that platform fall back to
+    whatever they used before this existed (e.g. a log-freshness check)."""
+    if not _IS_WINDOWS:
+        return None
+    ps = (
+        "$ErrorActionPreference='Stop';"
+        f"$i=Get-ScheduledTaskInfo -TaskName '{name}';"
+        "if ($null -eq $i.LastRunTime) { exit 1 };"
+        "[PSCustomObject]@{"
+        "LastRunTime=$i.LastRunTime.ToString('o');"
+        "LastTaskResult=$i.LastTaskResult"
+        "} | ConvertTo-Json -Compress"
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        if r.returncode != 0 or not r.stdout.strip():
+            return None
+        data = json.loads(r.stdout)
+        return {"last_run_time": data.get("LastRunTime"), "last_task_result": data.get("LastTaskResult")}
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return None
 
 
 def allow_on_battery(name: str) -> dict[str, Any]:
@@ -335,6 +374,9 @@ def registry_snapshot(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     ei = cfgmod.insight_settings(cfg)
     if ei["enabled"]:
         out[ei["task_name"]] = query_verbose(ei["task_name"])
+    ff = cfgmod.follow_feed_settings(cfg)
+    if ff["enabled"]:
+        out[ff["task_name"]] = query_verbose(ff["task_name"])
     return out
 
 

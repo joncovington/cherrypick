@@ -49,6 +49,52 @@ def test_query_verbose_missing_task_is_one_spawn_too(monkeypatch):
     assert len(calls) == 1
 
 
+# --------------------------------------------------------------------- last_run_info
+def test_last_run_info_parses_powershell_json(monkeypatch):
+    def fake_run(cmd, **kw):
+        class _R:
+            returncode = 0
+            stdout = json.dumps({"LastRunTime": "2026-07-31T09:52:01.0000000-06:00", "LastTaskResult": 0})
+
+        return _R()
+
+    monkeypatch.setattr(tasks, "_IS_WINDOWS", True)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    out = tasks.last_run_info("cherrypick-flies-live-loop")
+    assert out == {"last_run_time": "2026-07-31T09:52:01.0000000-06:00", "last_task_result": 0}
+
+
+def test_last_run_info_missing_task_returns_none(monkeypatch):
+    def fake_run(cmd, **kw):
+        class _R:
+            returncode = 1
+            stdout = ""
+
+        return _R()
+
+    monkeypatch.setattr(tasks, "_IS_WINDOWS", True)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert tasks.last_run_info("nope") is None
+
+
+def test_last_run_info_bad_json_returns_none(monkeypatch):
+    def fake_run(cmd, **kw):
+        class _R:
+            returncode = 0
+            stdout = "not json"
+
+        return _R()
+
+    monkeypatch.setattr(tasks, "_IS_WINDOWS", True)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert tasks.last_run_info("cherrypick-flies-live-loop") is None
+
+
+def test_last_run_info_none_on_posix(monkeypatch):
+    monkeypatch.setattr(tasks, "_IS_WINDOWS", False)
+    assert tasks.last_run_info("anything") is None
+
+
 # --------------------------------------------------------------------- _git_ref
 def _fake_repo(tmp_path, sha="0123456789abcdef", packed=False):
     git = tmp_path / ".git"

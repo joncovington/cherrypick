@@ -1,10 +1,4 @@
-import os
-import sys
-
-SRC = os.path.join(os.path.dirname(__file__), "..", "src")
-sys.path.insert(0, os.path.abspath(SRC))
-
-import pytest  # noqa: E402  # intentional: after the sys.path bootstrap above
+import pytest
 
 
 @pytest.fixture

@@ -5,7 +5,7 @@ argument-hint: [--stop]
 
 Arm the flies live loop for today — real money, real orders, against the real designated
 account. Arming registers the self-healing `cherrypick-flies-live-loop` OS task (one
-`live_loop.py --once --live` tick per minute, with burst fill-watchers spawned as needed). The
+`cherrypick.flies.live_loop --once --live` tick per minute, with burst fill-watchers spawned as needed). The
 loop **self-disarms at `live.disarm_time` (default 17:00 ET)** and any tick that finds a
 previous day's arm stamp disarms immediately — arming is per-day by design, and the
 orchestrator watchdog backstops with the suite halt flag. This command exists so nothing live
@@ -20,17 +20,17 @@ to stop.
    session's "YES" (in this conversation or any past one) covers nothing.
 
 2. **Pre-flight status readout** — gather and show all of this before asking, so the YES is
-   informed, not reflexive. Run from `packages/flies`:
+   informed, not reflexive.
    ```bash
-   python src/live_loop.py --status
+   python -m cherrypick.flies.live_loop --status
    ```
    and present, in plain language:
    - **Unmet readiness gates** — additionally run the readiness check:
      ```bash
      python -c "
-   import sys; sys.path.insert(0, 'src')
-   from cli import load_config
-   import live_loop, credentials as creds, os
+   from cherrypick.flies.cli import load_config
+   from cherrypick.flies import live_loop, credentials as creds
+   import os
    cfg = load_config()
    unmet = live_loop.readiness(cfg, halt_present=os.path.exists(live_loop.halt_flag_path()), designated=creds.designated_account())
    print('unmet gates:', unmet or 'NONE -- readiness passes')
@@ -48,6 +48,11 @@ to stop.
      resolved in the broker UI before arming anything.
    - **Market state**: whether it's currently a trading day inside RTH. Off-hours arming is
      allowed (the ticks no-op until the open) but say so plainly.
+   - **Order-alert daemon** (only when `live.use_order_alert_daemon` is true): `--status` carries
+     an `alert_daemon` block. Report it, but treat it as INFORMATIONAL — the daemon only makes
+     fills get *noticed* sooner; a dead or missing one costs latency and nothing else, and is
+     never a reason to refuse to arm. If it reports `running: true` with a stale `heartbeat_at`,
+     say so (that's the silently-dead-websocket tell) — arming will restart it anyway.
    - **The per-day contract**: state that this arms TODAY only — the loop self-disarms at the
      configured `disarm_time` and tomorrow needs a fresh `/live-flies-start`.
 
@@ -57,31 +62,44 @@ to stop.
    **"YES — arm live trading for today"** and **"No, cancel"**. Anything but the literal YES
    option stops here with no action taken.
 
-4. **Arm.** Once YES is confirmed, from `packages/flies`:
+4. **Arm.** Once YES is confirmed:
    - If the halt flag exists, delete it now (`~/.cherrypick/state/halt-live.flag`) — the YES
      covers this explicitly; say that it was cleared and why it existed if known.
    - ```bash
-     python src/live_loop.py --install-task
+     python -m cherrypick.flies.live_loop --install-task
      ```
      This registers the 1-minute task, stamps today's arm date, and fires the first tick.
+   - **Only if `live.use_order_alert_daemon` is true**, also start the order-alert daemon,
+     detached and headless, after first stopping any stale one:
+     ```bash
+     python -m cherrypick.flies.alert_daemon --stop
+     pythonw -m cherrypick.flies.alert_daemon
+     ```
+     It self-exits at `disarm_time`. If it fails to start, say so and CONTINUE — the loop
+     confirms fills without it (just later); a failed daemon never blocks arming.
 
 5. **Report**: the task name, the armed-for date, the self-disarm time, the log to watch
    (`tail -f ~/.cherrypick/logs/flies/flies_live.log`), the dashboard's live source
    (http://127.0.0.1:8803/ → source: live), and how to stop early: `/live-flies-start --stop`,
    or create the halt flag (`~/.cherrypick/state/halt-live.flag` — stops new entries within one
    tick; open positions still follow their normal hold-to-settlement rules), or
-   `python src/live_loop.py --uninstall-task` directly. Also mention settlement: the loop
+   `python -m cherrypick.flies.live_loop --uninstall-task` directly. Also mention settlement: the loop
    settles provisionally at 16:20 from the last streamed trade, and the official-print confirm
-   is `python src/live_loop.py --settle --price <official>`.
+   is `python -m cherrypick.flies.live_loop --settle --price <official>`.
 
 ## Stop / disarm (`--stop`)
 
-1. Show current state first: `python src/live_loop.py --status` (armed? open positions?
+1. Show current state first: `python -m cherrypick.flies.live_loop --status` (armed? open positions?
    pending orders?).
 2. Confirm the disarm (a plain question is fine — disarming only stops NEW ticks; it places
    no order and touches no open position).
 3. ```bash
-   python src/live_loop.py --uninstall-task
+   python -m cherrypick.flies.live_loop --uninstall-task
+   ```
+   Then, if `live.use_order_alert_daemon` is true, also stop the alert daemon (it holds an
+   authenticated broker session open; disarming should not leave one running):
+   ```bash
+   python -m cherrypick.flies.alert_daemon --stop
    ```
 4. Report what was disarmed and remind: open live positions are unaffected — they follow their
    normal hold-to-settlement rules, and the completion/cutoff/settlement handling for anything
@@ -92,9 +110,9 @@ to stop.
 
 A single manual live tick (no task, no watcher respawn beyond this tick's own) is:
 ```bash
-python src/live_loop.py --once --live
+python -m cherrypick.flies.live_loop --once --live
 ```
 The rung-0 dry-run smoke (preflights against the real account, places nothing) remains:
 ```bash
-python src/live_loop.py --once
+python -m cherrypick.flies.live_loop --once
 ```

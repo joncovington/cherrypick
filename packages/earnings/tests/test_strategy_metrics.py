@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-import strategy_metrics as sm
+from cherrypick.earnings import strategy_metrics as sm
 
 
 def test_db_path_for_mode_paper():

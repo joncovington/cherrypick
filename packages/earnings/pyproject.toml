@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick-earnings"
+version = "0.1.0"
+description = "Earnings-play trading module — defined-risk strategies held overnight around a company's earnings report"
+requires-python = ">=3.10"
+# cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
+# Not on PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
+# mysql-connector-python speaks the MySQL wire protocol to the local `dolt sql-server` that serves the
+# earnings/options/stocks datasets (see docs/01-setup.md).
+dependencies = [
+    "cherrypick-core",
+    "tastytrade",
+    "keyring",
+    "mysql-connector-python",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths  = ["tests"]
+# The other six packages all set this; earnings didn't, which is why tests/conftest.py had to insert
+# ../src onto sys.path by hand. With pythonpath set, that insert is redundant.
+pythonpath = ["tests", "src"]
+
+[tool.ruff]
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
+target-version = "py310"
+# .claude/commands is doc, not source — its fenced code blocks aren't meant to be reformatted.
+extend-exclude = [".claude"]
+
+[tool.ruff.lint]
+# E501 (line length) deferred: high churn, low value across existing live code.
+ignore = ["E501"]
+
+[tool.hatch.build.targets.wheel]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py, so cherrypick.earnings composes
+# with cherrypick.core (and every other module) under one cherrypick.* root. `sources = ["src"]` maps
+# the src/ prefix away, so src/cherrypick/earnings/... installs as cherrypick/earnings/... .
+only-include = ["src/cherrypick"]
+sources = ["src"]
