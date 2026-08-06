@@ -503,6 +503,64 @@ def test_stock_counts_in_shares_not_contracts():
     assert ff._quantity(_order(7, order_legs=legs)) == "100 sh"
 
 
+def test_futures_price_is_a_level_not_a_credit():
+    """Nobody pays $29,728.75 to buy one MNQ — that is a quoted level, not cash. Tagging it "cr"
+    put a five-figure credit next to a $1.46 butterfly and read as a windfall."""
+    legs = [
+        {
+            "underlying_symbol": "/MNQU6",
+            "symbol": "/MNQU6",
+            "asset_type": "/",
+            "action": "sell",
+            "quantity": "1.0",
+            "open_close": "O",
+        }
+    ]
+    line = ff.format_order(
+        _order(9, order_legs=legs, order_type="market", price_string="29,728.75"), {}
+    )
+    assert "$29,728.75" in line
+    assert " cr" not in line and " db" not in line
+    # The side has to survive somewhere: the leg body is suppressed (it is just the underlying), so
+    # the size carries it. Losing db/cr must not lose long-vs-short.
+    assert "-1x" in line
+
+
+def test_futures_options_still_quote_in_dollars():
+    """A futures OPTION is priced in cash like anything else — only an all-futures order is a level.
+    A bare startswith("/") on the underlying wrongly stripped its db/cr."""
+    legs = [
+        {
+            "underlying_symbol": "/MNQU6",
+            "symbol": "./MNQU6 P29000",
+            "asset_type": "O",
+            "strike_price": "29000.0",
+            "call_or_put": "P",
+            "action": "buytoopen",
+            "quantity": "1.0",
+            "open_close": "O",
+        }
+    ]
+    assert "$4.25 db" in ff.format_order(_order(10, order_legs=legs, price_string="4.25"), {})
+
+
+def test_stock_keeps_its_credit_and_gains_a_side():
+    """Selling stock really does credit the account, so db/cr stays. The sign on the size is new —
+    an equity leg's body is suppressed, so nothing else said which way it went."""
+    legs = [
+        {
+            "underlying_symbol": "ETHA",
+            "symbol": "ETHA",
+            "asset_type": "S",
+            "action": "selltoclose",
+            "quantity": "100.0",
+            "open_close": "C",
+        }
+    ]
+    line = ff.format_order(_order(11, order_legs=legs, order_type="limit", price_string="14.30"), {})
+    assert "-100 sh" in line and "$14.30 cr" in line
+
+
 def test_futures_spot_keeps_its_slash_prefixed_symbol():
     """A futures symbol is itself slash-prefixed, so splitting the joined underlyings on "/" gave an
     empty symbol and printed a bare price."""
