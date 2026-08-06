@@ -347,10 +347,16 @@ def test_regime_gex_block_negative_defaults_on_and_can_be_switched_off():
     running with this false, everything else identical."""
     snap = _base_snapshot(gex={"ok": True, "gex_positive": False})
 
-    # Absent key == blocked, so no existing config changes behaviour.
+    # Blocked whether the key is present or absent, so no config changes behaviour. This asserted
+    # the key's ABSENCE until 2026-08-06, when it was documented in config.example.json at its own
+    # default -- which promptly broke here, because `load_base_config` reads the machine's real
+    # config locally and falls back to the example in CI. Absence was never the property worth
+    # pinning; the verdict is.
     baseline = _params(CONSERVATIVE)
-    assert "regime_gex_block_negative" not in baseline
+    assert baseline.get("regime_gex_block_negative", True) is True
     assert paper.evaluate_entry(snap, baseline, [])[1] == "regime_gex_negative"
+    without = {k: v for k, v in baseline.items() if k != "regime_gex_block_negative"}
+    assert paper.evaluate_entry(snap, without, [])[1] == "regime_gex_negative"
 
     # Explicitly off: negative GEX no longer refuses, and the entry is judged on everything else.
     ungated = {**baseline, "regime_gex_block_negative": False}
