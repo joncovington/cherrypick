@@ -80,6 +80,7 @@ from cherrypick.orchestrator import (
     reconcile,
     report,
     serve,
+    servicecfg,
     settings_serve,
     tasks,
     timeutil,
@@ -289,7 +290,12 @@ def cmd_install(cfg) -> None:
 
 def _ensure_daemon(root: Path, spec: dict) -> dict:
     """Ensure a detached background daemon is up: check `status_argv` (prints {"running": bool}) and
-    launch `start_argv` detached if it is down. Shared by the streamer and the generic `services`."""
+    launch `start_argv` detached if it is down. Shared by the streamer and the generic `services`.
+
+    A launch here is also where the config stamp comes from — `install` is what usually FOLLOWS a
+    config edit, so stamping the freshly started process is what lets a later edit be detected as
+    stale (see servicecfg). An already-running daemon is stamped too, adopting whatever it has.
+    """
     try:
         r = subprocess.run(
             [cfgmod.python_exe(), *spec["status_argv"]],
@@ -303,9 +309,25 @@ def _ensure_daemon(root: Path, spec: dict) -> dict:
     except Exception:
         running = False
     if running:
+        _stamp_service_config(root, spec)
         return {"ok": True, "detail": "already running"}
     started = watchdog._start_streamer(root, spec["start_argv"])
+    if started:
+        _stamp_service_config(root, spec)
     return {"ok": started, "detail": "started" if started else "start failed"}
+
+
+def _stamp_service_config(root: Path, spec: dict) -> None:
+    """Record what config a service was launched with. Only `services[]` entries carry an `id`; the
+    streamer block has none and is not stamped, so it is never recycled by config change."""
+    sid = spec.get("id")
+    if not sid:
+        return
+    try:
+        digest, source = servicecfg.effective_config(spec, root)
+        servicecfg.write_stamp(sid, digest, source)
+    except Exception:  # stamping is a convenience, never a reason to fail an install
+        pass
 
 
 def _format_uninstall_report(results: dict[str, dict]) -> tuple[str, int]:
@@ -374,6 +396,10 @@ def cmd_uninstall(cfg) -> None:
     # Stop generic background services (e.g. the gex recorder) — unlike the streamer, these are the
     # orchestrator's own daemons, so a full uninstall stops them.
     for svc in cfgmod.enabled_services(cfg):
+        # Drop the launch stamp either way: a stopped service's stamp describes a process that no
+        # longer exists, and leaving it behind would make the next install's adopt look like a
+        # config change and recycle a freshly started daemon for nothing.
+        servicecfg.clear_stamp(svc["id"])
         if svc.get("stop_argv"):
             sroot = cfgmod.module_root(svc, svc["id"])
             try:
