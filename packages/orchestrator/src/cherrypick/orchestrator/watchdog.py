@@ -985,7 +985,7 @@ def _process_notifications(
 
 # --------------------------------------------------------------------------- entrypoint
 def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     tz = cfg.get("timezone", "America/New_York")
     holidays = timeutil.load_holidays(cfg, cfgmod.module_root)
     now = timeutil.now_et(tz)
