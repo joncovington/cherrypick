@@ -238,6 +238,18 @@ _ADDED_POSITION_COLUMNS = {
     "completion_gex_bucket": "TEXT",
     "completion_time_bucket": "TEXT",
     "completion_skew_bucket": "TEXT",
+    # Signed centre-vs-spot at entry/completion (2026-08-04; NULL for earlier rows). Unlike the four
+    # above this is a property of OUR choice, not of the market -- and it is the one that decides
+    # which side engine.choose_side legs into, hence which way spot must move to complete at all.
+    # See engine._classify_center_offset and docs/centre-lag.md. Descriptive; nothing gates on it.
+    "entry_center_offset_bucket": "TEXT",
+    "completion_center_offset_bucket": "TEXT",
+    # Session drift from the day's own open (2026-08-04; NULL for earlier rows and for any session
+    # the shared cache has no stream_summary row for -- coverage starts 2026-07-29). The dimension
+    # this module spent three weeks believing a single snapshot could not carry; see
+    # engine._classify_trend and provider._session_bounds. Descriptive; nothing gates on it.
+    "entry_trend_bucket": "TEXT",
+    "completion_trend_bucket": "TEXT",
     # The continuous measures the buckets above were derived from, plus the GEX surface's own
     # provenance (added 2026-08-01; NULL for earlier rows). Every regime threshold in this module
     # is a placeholder pending recalibration, and a bucket alone cannot be recalibrated: re-deriving
@@ -263,6 +275,17 @@ _ADDED_POSITION_COLUMNS = {
     "completion_gex_spot": "REAL",
     "completion_gex_strikes": "REAL",
     "completion_gex_input_age": "REAL",
+    # Signed `center - spot` in points, the measure behind the offset buckets above. Derived rather
+    # than new -- `center` and `underlying_at_entry` are both already on the row -- and stored anyway
+    # so the cut is one by_regime call instead of a bespoke query, and so the completion-phase
+    # version (which has no stored spot of its own to difference against) exists at all.
+    "entry_center_offset_value": "REAL",
+    "completion_center_offset_value": "REAL",
+    # Signed `spot - day_open` in points. Unlike the offset pair above this canNOT be backfilled:
+    # nothing on the row records where the session opened, and the cache keeps one summary row per
+    # (symbol, trade_date) rather than a history -- so these start empty and fill forward only.
+    "entry_trend_value": "REAL",
+    "completion_trend_value": "REAL",
     # bwb_roll: the far (skipped) wing's width, kept AFTER the roll for history/rewind (wing_width
     # stays the near/protected width, unchanged by the roll). NULL for every other kind.
     "far_width": "REAL",
@@ -275,6 +298,19 @@ _ADDED_POSITION_COLUMNS = {
     # too tight" call for opposite remedies.
     "best_roll_debit": "REAL",
     "best_roll_debit_at": "TEXT",
+    # Post-completion counterfactual (added 2026-08-03): the trackers above stop at the completion
+    # tick by construction (a completed position leaves the completion loops), so they can answer
+    # "did the market ever offer it" for a MISS but not "how much better did the completing price
+    # get after we took the first qualifying one" for a completion. These keep the same running
+    # min/max going AFTER completion, until settlement, for completed flies only. Pure telemetry:
+    # nothing reads them on a decision path — they exist so a wait-for-better completion rule can
+    # be evaluated against recorded reality (split by completion_gex_bucket) instead of theory.
+    # The stream cache keeps no quote history, so this cannot be reconstructed offline; it must be
+    # recorded live or not at all. NULL for misses, iron/bwb completions, and pre-2026-08-03 rows.
+    "post_best_completing_debit": "REAL",
+    "post_best_debit_at": "TEXT",
+    "post_best_completing_credit": "REAL",
+    "post_best_credit_at": "TEXT",
     # Broker-cash reconciliation (fee_reconcile.py): a settled live position's net/fees/gross_pnl/
     # pnl/expiry_payoff are modeled at settlement time (quoted fill-price approximation + a flat
     # $5/ITM-contract assignment fee estimate). These columns hold that ORIGINAL modeled snapshot,
@@ -318,6 +354,44 @@ def _migrate(conn: sqlite3.Connection) -> list[str]:
     if added:
         conn.commit()
     return added
+
+
+def stale_writer_columns(conn: sqlite3.Connection) -> list[str]:
+    """Regime columns the LEDGER has but the RUNNING CODE will never write. Empty is healthy.
+
+    Detects one specific, silent failure, observed on 2026-08-05: the loop imports from the working
+    tree, so whichever branch happens to be checked out decides what gets recorded. That session ran
+    from a checkout predating the `trend`/`center_offset` dimensions and wrote NULL to all four of
+    their columns for the entire day. Nothing errored. The four older dimensions populated normally,
+    which is exactly what made it look fine at a glance -- and regime data has no backfill path in
+    general, so a day lost this way is usually lost for good.
+
+    It works by comparing the code against the DATABASE FILE rather than against itself, which is the
+    only comparison that can catch this. Migration is additive and permanent, so once a newer
+    checkout has opened a ledger the columns stay; an older checkout then has a schema it does not
+    know how to fill, and that gap is the signal. Comparing `_ADDED_POSITION_COLUMNS` to
+    `classify_regime`'s keys would detect nothing at all -- on a stale checkout both are stale
+    together and agree perfectly.
+
+    Reports rather than repairs: a stale checkout cannot be fixed from inside itself, and refusing to
+    trade over it would turn a telemetry gap into an outage. The caller logs it loudly.
+    """
+    from cherrypick.flies import engine
+
+    written = {
+        f"{phase}_{key}" for key in engine.classify_regime({}, {}) for phase in ("entry", "completion")
+    }
+    present = {r["name"] for r in conn.execute("PRAGMA table_info(fly_positions)")}
+    # Matched on the regime naming convention -- `<phase>_<dimension>_bucket` and `_value` -- rather
+    # than an exclusion list of everything else. Every dimension ships as that pair, so a new one
+    # cannot slip past, while ordinary phase-prefixed columns (entry_time, completion_latency_min,
+    # the order-id/fill-status family) are excluded by shape instead of by being remembered. An
+    # exclusion list would need editing every time an unrelated column is added, and the day it was
+    # forgotten this check would start crying wolf and get ignored.
+    regime = {
+        c for c in present if c.startswith(("entry_", "completion_")) and c.endswith(("_bucket", "_value"))
+    }
+    return sorted(regime - written)
 
 
 def connect(db_path: str | None = None) -> sqlite3.Connection:

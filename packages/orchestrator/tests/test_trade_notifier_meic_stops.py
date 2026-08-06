@@ -26,6 +26,7 @@ _COLS = (
     "net_credit",
     "quantity",
     "status",
+    "entry_time",
     "exit_time",
     "exit_reason",
     "pnl",
@@ -41,7 +42,7 @@ class _Recorder:
     def __init__(self):
         self.sent = []
 
-    def notify(self, level, key, title, body):
+    def notify(self, level, key, title, body, embed=None):
         self.sent.append((key, body))
 
 
@@ -63,8 +64,8 @@ def _conn(rows):
     conn.execute(
         "CREATE TABLE ic_trades (id INTEGER PRIMARY KEY, symbol TEXT, risk_profile TEXT, "
         "put_strike REAL, call_strike REAL, wing_width REAL, net_credit REAL, quantity INTEGER, "
-        "status TEXT, exit_time TEXT, exit_reason TEXT, pnl REAL, fees REAL, put_stop_cost REAL, "
-        "call_stop_cost REAL)"
+        "status TEXT, entry_time TEXT, exit_time TEXT, exit_reason TEXT, pnl REAL, fees REAL, "
+        "put_stop_cost REAL, call_stop_cost REAL)"
     )
     conn.executemany(f"INSERT INTO ic_trades ({','.join(_COLS)}) VALUES ({','.join('?' * len(_COLS))})", rows)
     conn.commit()
