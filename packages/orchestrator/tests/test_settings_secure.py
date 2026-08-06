@@ -40,6 +40,9 @@ def server(tmp_path, monkeypatch):
     )
     cfg = {"modules": {"flies": {"enabled": True, "path": "../flies"}}}
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), settings_serve._make_handler(cfg, TOKEN, 0))
+    # Per-request threads must not outlive the test that made them: a handler still writing to a
+    # socket after teardown is one of the ways a later test meets a connection nobody is serving.
+    httpd.daemon_threads = True
     port = httpd.server_address[1]
     # the handler validates Host against the port it was built with — rebuild with the real one
     httpd.RequestHandlerClass = settings_serve._make_handler(cfg, TOKEN, port)
@@ -47,14 +50,29 @@ def server(tmp_path, monkeypatch):
     t.start()
     yield f"http://127.0.0.1:{port}"
     httpd.shutdown()
+    # Join before closing the listening socket. Without it `server_close()` can pull the socket out
+    # from under a serve_forever loop that has not finished unwinding, and the ephemeral port can be
+    # handed to the NEXT test's server while the old one is still tearing down — which presents as a
+    # connection error in a test that has nothing to do with the one that leaked it.
+    t.join(timeout=5)
     httpd.server_close()
 
 
 def _request(url, method="GET", body=None, headers=None):
-    # Windows occasionally aborts a fresh loopback connection to a just-started ThreadingHTTPServer
-    # (WinError 10053) under rapid create/shutdown cycles across tests — retry once, not a real bug.
+    """One request, retried past the transport flakiness of loopback servers on Windows.
+
+    A fresh connection to a just-started ThreadingHTTPServer is occasionally aborted or refused under
+    the rapid create/shutdown cycling these tests do (WinError 10053/10061). That is the test harness
+    failing, not the gate under test — and a transport flake that reads as "the CSRF check let a POST
+    through" is worse than a slow test, because it trains you to re-run reds instead of reading them.
+
+    Catch `OSError`, not a hand-listed pair: `ConnectionRefusedError` is neither of the two named
+    before, and `URLError` (which urllib wraps most of these in) is itself an OSError, so the broad
+    clause is both simpler and strictly wider. `HTTPError` is caught first and returned — an HTTP
+    status IS the answer here, never something to retry.
+    """
     last_exc = None
-    for attempt in range(3):
+    for attempt in range(5):
         req = urllib.request.Request(url, method=method, data=body)
         for k, v in (headers or {}).items():
             req.add_header(k, v)
@@ -63,9 +81,9 @@ def _request(url, method="GET", body=None, headers=None):
                 return resp.status, dict(resp.headers), resp.read()
         except urllib.error.HTTPError as exc:
             return exc.code, dict(exc.headers), exc.read()
-        except (ConnectionAbortedError, ConnectionResetError, urllib.error.URLError) as exc:
+        except OSError as exc:
             last_exc = exc
-            time.sleep(0.15 * (attempt + 1))
+            time.sleep(0.1 * 2**attempt)  # 0.1, 0.2, 0.4, 0.8 — ~1.5s total before giving up
     raise last_exc
 
 
