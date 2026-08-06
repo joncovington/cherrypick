@@ -151,9 +151,7 @@ def cmd_propose(args) -> dict:
         refusals.append("no desk PIN configured — run `cherrypick-desk pin-set`")
 
     if refusals:
-        journal.record(
-            "refused", phase="propose", account_number=account, refusals=refusals, **described
-        )
+        journal.record("refused", phase="propose", account_number=account, refusals=refusals, **described)
         return {"ok": False, "error": "refused by desk policy", "refusals": refusals, **described}
 
     preflight = _preflight(cfg, spec, account)
@@ -197,9 +195,7 @@ def _preflight(cfg: dict, spec: dict, account_number: str | None) -> dict:
         session = get_session(cfg)
         account = asyncio.run(_broker.resolve_account(session, account_number))
         order = _broker.build_order(spec)
-        return asyncio.run(
-            _broker.place_order(account, session, order, live=False, serialize=serialize)
-        )
+        return asyncio.run(_broker.place_order(account, session, order, live=False, serialize=serialize))
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
