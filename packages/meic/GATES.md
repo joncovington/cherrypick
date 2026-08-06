@@ -85,6 +85,24 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
   — same days, one difference — and settle it. **That study is now running**: the `gex-open` /
   `gex-blocked` arm pair, read with `python -m cherrypick.meic.experiment` — see
   [docs/paper-experiments.md](docs/paper-experiments.md#gex-study-2026-08-01--does-the-gex-gate-earn-what-it-cuts).
+
+#### 7b. The two stricter GEX variants (opt-in, both OFF by default)
+
+Readable by the engine since they were written, but documented in no config file until an audit on
+2026-08-06 — so they could only be found by reading `paper.py`. Both now appear in
+`config.example.json` at their shipped defaults, which changes nothing.
+
+- **`regime_gex_require_positive`** (default `false`) — refuses entry unless GEX is *confirmed
+  positive*, so it also blocks when GEX is unknown or unavailable. That is the meaningful difference
+  from gate 7: because the gates **fail open**, "unknown" currently means "allowed", and this is the
+  switch that makes it mean "wait". See `python -m cherrypick.meic.gate_health` for when unknown is
+  actually the state you are in.
+- **`regime_gex_min_flip_distance_pct`** (default `null` = off) — requires positive GEX *and* spot at
+  least this fraction away from the gamma-flip strike. Gate 7 only refuses below the flip; this
+  refuses the fragile zone just above it, where the regime can invert intraday.
+
+Both are per-profile, so a shadow arm can carry one without touching the live ladder — the same
+shape the `gex-open`/`gex-blocked` study uses.
   Until it reports, the gate stays on by default, but treat it as untested rather than validated.
 
 ### 8. Zero-Gamma Threat (Symbol-Specific, Non-Blocking)

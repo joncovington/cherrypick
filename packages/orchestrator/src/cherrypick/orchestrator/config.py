@@ -326,6 +326,25 @@ def reconcile_schedule_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def preopen_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved pre-open supervision config. ON by default — it exists to protect a window that
+    cannot be recovered once missed (the 09:30–09:35 opening range), so opting IN would put the
+    protection behind a step nobody takes until after it has already cost them a session.
+
+    Its own task on a tight interval rather than a shorter global watchdog interval: dropping the
+    full tick to every 2 minutes would multiply module checks, dashboard renders and EOD triggers
+    all day to cover 35 minutes. `start`/`end` are ET wall-clock like every other time in this
+    config; `install` converts to the host's local time when registering."""
+    po = (cfg.get("watchdog", {}) or {}).get("preopen", {}) or {}
+    return {
+        "enabled": po.get("enabled", True),
+        "task_name": po.get("task_name", "cherrypick-preopen"),
+        "interval_minutes": po.get("interval_minutes", 2),
+        "start": po.get("start", "09:00"),
+        "end": po.get("end", "09:35"),
+    }
+
+
 def follow_feed_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved Follow Feed notifier config. OFF by default. When enabled, `install` registers its
     own recurring task -- deliberately NOT a watchdog-tick call like trade_notify, because this is
