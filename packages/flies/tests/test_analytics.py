@@ -860,6 +860,29 @@ def test_timeline_rewinds_a_rolled_bwb_to_the_broken_wing_it_used_to_be(conn):
     assert after == pytest.approx((1.1 - 0.3) * 100 + 500 - open_fee - roll_fee - 5.00, abs=0.01)
 
 
+def test_timeline_prices_a_bwb_that_has_not_rolled_yet(conn):
+    """An un-rolled bwb keeps kind='bwb' on its own row, so the rewind's pre-roll branch never
+    fires and its state comes from the base dict — which has to carry `far_width` anyway, since
+    that is the width `fly.position_pnl`'s bwb branch reads.
+
+    Regression: it did not, so every tick holding an open bwb raised KeyError('far_width'), and
+    because one exception fails the whole /api/data payload a single un-rolled bwb blanked every
+    panel on the dashboard — including the arms that had nothing to do with it.
+    """
+    _bwb(conn, "P1", entry="T12:00:00")  # never rolled: still a broken wing, tail still live
+    _tick(conn, "T12:15:00", spot=6005.0)  # its near-wing strike -- payoff 0, nothing ITM
+    _tick(conn, "T12:45:00", spot=5980.0)  # past the far wing -- the negative tail, fully realized
+    open_fee = fly.fly_open_fee("SPX", 1)
+
+    ticks = analytics.session_timeline(conn, "2026-07-20")["ticks"]
+    at_wing, in_tail = ticks[0]["settle_now"]["gex"], ticks[1]["settle_now"]["gex"]
+    assert at_wing == pytest.approx(1.1 * 100 - open_fee, abs=0.01)
+    # tail = wing_width - far_width = -5, and all three put strikes finish strictly ITM down here.
+    assert in_tail == pytest.approx(1.1 * 100 - 500 - open_fee - 3 * 5.00, abs=0.01)
+    # The tail is the whole point of rule 3: this must not read as a bounded, floor-protected fly.
+    assert in_tail < 0
+
+
 # --------------------------------------------------------------------------- regime conditioning
 def test_by_regime_groups_on_the_stored_bucket(conn):
     position(conn, "P1", pnl=100.0, regime={"gex_bucket": "pinning", "gex_concentration": 0.75})
