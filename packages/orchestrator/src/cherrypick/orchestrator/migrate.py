@@ -92,5 +92,5 @@ def apply(plan_dict: dict[str, Any], *, dry_run: bool) -> dict[str, Any]:
 
 
 def run(cfg: dict[str, Any] | None = None, *, dry_run: bool = True) -> dict[str, Any]:
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     return apply(plan(cfg), dry_run=dry_run)

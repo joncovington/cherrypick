@@ -246,7 +246,7 @@ def run(cfg: dict | None = None, day: str | None = None) -> dict:
     """Write the suite EOD digest for `day` (default: today ET) to logs/eod-digest-<day>.md.
     Read-only over the paper DBs; returns the path written plus the suite total for a caller
     (e.g. the notifier) to summarize without re-reading anything."""
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     day = day or timeutil.now_et().strftime("%Y-%m-%d")
     rep = report.run(cfg, session=day)
     md = build_markdown(cfg, day, rep=rep)

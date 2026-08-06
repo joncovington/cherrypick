@@ -135,7 +135,7 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     streamer liveness, Dolt reachability, notify) is local/cheap and always runs."""
     checks: list[Check] = []
     try:
-        cfg = cfg or cfgmod.load_config()
+        cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     except Exception as exc:
         return [Check("config", FAIL, f"Could not load config.json: {exc}")]
 
