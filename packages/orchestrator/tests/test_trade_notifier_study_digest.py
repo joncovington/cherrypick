@@ -1,7 +1,10 @@
-"""The width-study digest: `meic_ic` rows tagged with a study profile (risk_profile prefix, e.g.
-`width-`) are excluded from the normal per-trade push and instead accumulate into a periodic
+"""The study-arm digest: `meic_ic` rows tagged with a study profile (risk_profile prefix, e.g.
+`gex-`) are excluded from the normal per-trade push and instead accumulate into a periodic
 per-symbol summary. Unit lane: an in-memory MEIC `ic_trades` DB, same shape as
 test_trade_notifier_meic_stops.py.
+
+Built for the wing-width study (retired 2026-08-05); the mechanism is prefix-driven and outlived it,
+so these exercise it through the GEX arms that use it now.
 """
 
 import sqlite3
@@ -49,7 +52,7 @@ class _Recorder:
 
 def _row(**kw):
     kw.setdefault("symbol", "XSP")
-    kw.setdefault("risk_profile", "width-2")
+    kw.setdefault("risk_profile", "gex-open")
     kw.setdefault("put_strike", 590)
     kw.setdefault("call_strike", 600)
     kw.setdefault("wing_width", 2)
@@ -73,7 +76,7 @@ def _conn(rows):
     return conn
 
 
-_PREFIXES = ("width-",)
+_PREFIXES = ("gex-",)
 
 
 def test_study_entry_lands_in_digest_not_per_trade():
@@ -84,7 +87,7 @@ def test_study_entry_lands_in_digest_not_per_trade():
 
     assert counts["entries_notified"] == 1
     assert n.sent == [], "a study entry must never fire a per-trade push"
-    assert state["pending_summary"]["XSP"]["entries"] == ["width-2"]
+    assert state["pending_summary"]["XSP"]["entries"] == ["gex-open"]
     assert state["last_entry_id"] == 1, "the watermark must advance even though it's digest-routed"
 
 
@@ -114,15 +117,15 @@ def test_no_flush_before_interval_elapses():
         conn, state, n2, "meic", summary_prefixes=_PREFIXES, summary_interval_minutes=15, now=1000.0 + 10 * 60
     )
     assert n2.sent == []
-    assert state["pending_summary"]["XSP"]["entries"] == ["width-2"]
+    assert state["pending_summary"]["XSP"]["entries"] == ["gex-open"]
 
 
 def test_flush_after_interval_emits_one_digest_and_clears_bucket():
     conn = _conn(
         [
-            _row(id=1, symbol="XSP", risk_profile="width-2", status="open"),
-            _row(id=2, symbol="XSP", risk_profile="width-5", status="open"),
-            _row(id=3, symbol="QQQ", risk_profile="width-adaptive", status="open"),
+            _row(id=1, symbol="XSP", risk_profile="gex-open", status="open"),
+            _row(id=2, symbol="XSP", risk_profile="gex-blocked", status="open"),
+            _row(id=3, symbol="QQQ", risk_profile="gex-blocked", status="open"),
         ]
     )
     state = tn._meic_seed(_conn([]))
@@ -136,15 +139,15 @@ def test_flush_after_interval_emits_one_digest_and_clears_bucket():
             _row(
                 id=1,
                 symbol="XSP",
-                risk_profile="width-2",
+                risk_profile="gex-open",
                 status="closed",
                 exit_time="2026-07-28T13:00",
                 exit_reason="expired",
                 pnl=25.0,
                 fees=1.5,
             ),
-            _row(id=2, symbol="XSP", risk_profile="width-5", status="open"),
-            _row(id=3, symbol="QQQ", risk_profile="width-adaptive", status="open"),
+            _row(id=2, symbol="XSP", risk_profile="gex-blocked", status="open"),
+            _row(id=3, symbol="QQQ", risk_profile="gex-blocked", status="open"),
         ]
     )
     n2 = _Recorder()
@@ -187,7 +190,7 @@ def test_watermark_advances_once_per_row_across_both_paths():
             _row(
                 id=1,
                 symbol="XSP",
-                risk_profile="width-2",
+                risk_profile="gex-open",
                 status="closed",
                 exit_time="2026-07-28T13:00",
                 pnl=10.0,
