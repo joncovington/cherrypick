@@ -107,3 +107,56 @@ def test_reviews_guarded_when_table_absent():
     conn.row_factory = sqlite3.Row
     assert tn._earnings_new_reviews(conn, set()) == []
     assert tn._all_review_ids(conn) == []
+
+
+# --------------------------------------------------------------------------- the card
+def test_chosen_review_card_matches_the_house_language():
+    """Same shape as the meic/flies cards: verb · subject title, numbers in one Details field, the
+    profile in the footer. The review was the one earnings push still going out as bare text."""
+    conn = _conn_with_reviews([_ISRG])
+    embed = tn._embed_earnings_review(tn._earnings_new_reviews(conn, set())[0])
+    assert embed["title"] == "CHOSEN · ISRG (AMC)"
+    assert embed["color"] == tn.COLOR_CHOSEN
+    assert embed["footer"]["text"] == "strat_test"
+    details = embed["fields"][0]["value"]
+    assert details.startswith("opened iron_fly, iron_condor")
+    assert "• Price: $402.05" in details
+    assert "• Winrate: 75.0% over last 12 earnings" in details
+
+
+def test_rejected_review_card_takes_its_own_color_and_verb():
+    conn = _conn_with_reviews([_NFLX])
+    embed = tn._embed_earnings_review(tn._earnings_new_reviews(conn, set())[0])
+    assert embed["title"] == "REJECTED · NFLX"  # no timing recorded -> no parenthetical
+    assert embed["color"] == tn.COLOR_REJECTED
+    assert "Price" not in embed["fields"][0]["value"]
+
+
+def test_review_card_never_reuses_the_entry_stripe():
+    """A chosen symbol is not yet a position — sharing entry-blue would make the review and the fill
+    that follows it read as the same event twice."""
+    assert tn.COLOR_CHOSEN != tn.COLOR_ENTRY
+    assert tn.COLOR_REJECTED not in (tn.COLOR_ENTRY, tn.COLOR_EXIT, tn.COLOR_STOP)
+
+
+def test_card_and_plain_line_report_the_same_figures():
+    """Both render from one bullet builder, so they cannot drift into disagreeing about a review."""
+    conn = _conn_with_reviews([_ISRG])
+    row = tn._earnings_new_reviews(conn, set())[0]
+    bullets = tn._earnings_review_bullets(row)
+    line, details = tn._fmt_earnings_review(row), tn._embed_earnings_review(row)["fields"][0]["value"]
+    assert bullets and all(b in line and b in details for b in bullets)
+
+
+def test_an_overlong_reason_is_truncated_rather_than_dropping_the_push():
+    """Discord rejects a field value past 1024 chars and the notifier swallows push failures, so an
+    untruncated free-text reason would lose the notification silently."""
+    conn = _conn_with_reviews([_row(symbol="AAPL", selected=0, reason="x" * 4000)])
+    details = tn._embed_earnings_review(tn._earnings_new_reviews(conn, set())[0])["fields"][0]["value"]
+    assert len(details) == tn._FIELD_MAX and details.endswith("…")
+
+
+def test_review_with_no_figures_still_produces_a_valid_card():
+    """Discord rejects an empty field value, so a review with nothing recorded needs a placeholder."""
+    conn = _conn_with_reviews([_row(symbol="AAPL", selected=0, reason=None)])
+    assert tn._embed_earnings_review(tn._earnings_new_reviews(conn, set())[0])["fields"][0]["value"]
