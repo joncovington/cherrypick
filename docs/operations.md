@@ -168,19 +168,21 @@ Real — act:
 
 ## Known gaps (documented, deliberately not fixed)
 
-- **Underlyings bind at streamer start.** The per-module stream-request writers keep the files
+Each open gap below is tracked as an issue — the entry here is the operator-facing description, the issue carries the anchors and the suggested direction. A gap with no issue is either fixed (struck through, with what it actually was) or has not been verified recently enough to file.
+
+- **Underlyings bind at streamer start.** ([#62](https://github.com/joncovington/cherrypick/issues/62)) The per-module stream-request writers keep the files
   current, but a *new* underlying only reaches the wire on one streamer restart
   (`streamer/src/cherrypick/streamer/daemon.py`). A symbols change = one restart, stated here so it isn't rediscovered.
-- **MEIC's gates fail open when the streamer is down.** The paper loop does not crash: GEX, ATR, and
+- **MEIC's gates fail open when the streamer is down.** ([#63](https://github.com/joncovington/cherrypick/issues/63)) The paper loop does not crash: GEX, ATR, and
   intraday-range return unavailable and their gates silently deactivate (`meic/GATES.md`;
   `meic/src/cherrypick/meic/tt.py`). It keeps trading with safety gates off. The ATR gate additionally needs **5
   complete prior sessions** of `stream_summary`, so a multi-day outage disarms it for a week with no
   error surfaced.
-- **Thin pre-open margin.** Streamer supervision starts at 09:15 and the watchdog interval is 10
+- **Thin pre-open margin.** ([#64](https://github.com/joncovington/cherrypick/issues/64)) Streamer supervision starts at 09:15 and the watchdog interval is 10
   minutes, so the first supervising tick can land ~09:25 — as little as 5 minutes before the
   unrecoverable ORB window. A streamer that died overnight is unsupervised until then. (Mitigation:
   the 09:00 checklist above.)
-- **`doctor` coverage holes.** It verifies the watchdog and module paper tasks but not
+- **`doctor` coverage holes.** ([#65](https://github.com/joncovington/cherrypick/issues/65)) It verifies the watchdog and module paper tasks but not
   `cherrypick-trade-notify`, `-log-archive`, or `-reconcile`; and nothing cross-checks that
   `stream_requests/*.json` cover the symbols the modules actually trade (mitigated since 2026-07-29
   by every module regenerating its own file).
