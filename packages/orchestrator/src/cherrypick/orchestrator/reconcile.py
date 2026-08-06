@@ -100,7 +100,7 @@ def _tt(root, *argv: str, tool: list[str] | None = None) -> dict[str, Any]:
     """Run a read-only broker-tool command in a module and return its parsed JSON ({} on any
     failure). `tool` is the module's config-declared argv prefix (cfgmod.broker_tool); the
     default stays the historical `src/tt.py` so existing callers are unchanged."""
-    return first_json(doctor._run(root, [*(tool or ["src/tt.py"]), *argv], timeout=35).stdout)
+    return first_json(doctor._run(root, [*(tool or []), *argv], timeout=35).stdout)
 
 
 def _designated_numbers(cfg: dict[str, Any]) -> set[str]:

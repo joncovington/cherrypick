@@ -2,24 +2,13 @@
 it to the shared cache's orb_ranges table (which MEIC's get_orb_range reads). No broker required."""
 
 import logging
-import sys
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
-
-_SRC = Path(__file__).resolve().parent.parent / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
-
-_CORE = _SRC / "_core"
-if str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
-
 from cherrypick.core import streamcache  # noqa: E402
 
-import orb as _orb  # noqa: E402
+from cherrypick.streamer import orb as _orb
 
 _ET = ZoneInfo("America/New_York")
 

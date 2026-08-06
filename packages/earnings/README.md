@@ -27,27 +27,26 @@ Every strategy is **defined-risk**: max loss is known at entry. Undefined-risk/n
 (naked straddles, strangles, naked puts/calls) were deliberately excluded — a single-name
 earnings gap on a naked short can blow out arbitrarily overnight with nobody watching.
 
-Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`** library, vendored per
-package as the `src/_core` git submodule — so a fresh clone must pull submodules
-(`--recurse-submodules`, or `git submodule update --init --recursive`) before any
-`import cherrypick.core...` resolves.
+Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`** library, a sibling
+package (`packages/core`) in this same monorepo — install it (`pip install -e ../core`) before this
+package, or `import cherrypick.core...` can't resolve.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Clone the cherrypick monorepo — --recurse-submodules pulls the shared cherrypick.core (src/_core)
-git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
+# Clone the cherrypick monorepo
+git clone https://github.com/joncovington/cherrypick.git
 cd cherrypick/packages/earnings
-# Already cloned without submodules? Run this once: git submodule update --init --recursive
 
 python -m venv venv && source venv/bin/activate   # venv\Scripts\activate on Windows
-pip install -r requirements.txt
+pip install -e ../core                             # shared cherrypick.core library, install first
+pip install -e ".[dev]"
 
 cp config/config.example.json config/config.json
-python src/tt.py secrets_set                       # store tastytrade OAuth credentials
-python src/tt.py get_connection_status              # confirm "connected": true
+python -m cherrypick.earnings.tt secrets_set                       # store tastytrade OAuth credentials
+python -m cherrypick.earnings.tt get_connection_status              # confirm "connected": true
 ```
 
 Every command below is run from inside `packages/earnings`. On macOS/Linux, if `python`/`pip` aren't
@@ -60,8 +59,8 @@ live earnings-calendar, IV/RV, and realized-move data from — see
 Once connected, try a no-risk read of tonight's candidates:
 
 ```bash
-python src/scanner.py get_calendar --date MM/DD/YYYY
-python src/strategies/iron_fly.py get_candidates --date MM/DD/YYYY
+python -m cherrypick.earnings.scanner get_calendar --date MM/DD/YYYY
+python -m cherrypick.earnings.strategies.iron_fly get_candidates --date MM/DD/YYYY
 ```
 
 Then run the forced-sampling paper-testing program to validate the whole pipeline end-to-end
@@ -87,7 +86,7 @@ own. Inside the cherrypick suite it plays two roles:
   `enable_live_trading: true`. The orchestrator never touches it.
 - **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator) package registers
   and watchdogs two self-healing daily OS tasks — an entry task (15:45 ET) and an exit task (09:45 ET) —
-  that run this module's forced-sampling paper harness (`src/strategy_test_runner.py`, `run_entries` /
+  that run this module's forced-sampling paper harness (`cherrypick/earnings/strategy_test_runner.py`, `run_entries` /
   `run_closes`) into the isolated strat_test books, and reads the resulting `paper_trades.db` — which
   lives in the shared cherrypick data home (`~/.cherrypick/data/earnings` by default) — for
   cross-module reporting. This module has no scheduler of its own. The orchestrator drives it **by
@@ -98,8 +97,9 @@ own. Inside the cherrypick suite it plays two roles:
 
 You can run the paper harness here directly too (`/paper-start`); letting the orchestrator manage it just
 adds the watchdog, notifications, and the cross-module read side (`cherrypick report` / `dashboard` /
-`calibrate`). The shared `cherrypick.core` code (calendar, fees) lives in the `src/_core` submodule — see
-[Orchestrator & shared core](CLAUDE.md#orchestrator--shared-core) in `CLAUDE.md` for the exact couplings.
+`calibrate`). The shared `cherrypick.core` code (calendar, fees) lives in `packages/core`, a sibling
+in-repo package — see [Orchestrator & shared core](CLAUDE.md#orchestrator--shared-core) in `CLAUDE.md`
+for the exact couplings.
 
 ---
 
@@ -125,19 +125,19 @@ sees it.
 
 ## How It Works
 
-- **`src/scanner.py`** is the strategy-agnostic engine: earnings calendar, IV/RV ratio, winrate
+- **`cherrypick/earnings/scanner.py`** is the strategy-agnostic engine: earnings calendar, IV/RV ratio, winrate
   backtest, liquidity gates, ranking, expiration selection.
 - **`src/strategies/<name>.py`** holds only strategy-specific logic: hard-filter thresholds,
   accept/reject screening, strike/order construction. New strategies can be added here without
   touching the shared engine.
-- **`src/rank_strategies.py`** evaluates every enabled strategy against every candidate on the
+- **`cherrypick/earnings/rank_strategies.py`** evaluates every enabled strategy against every candidate on the
   merged today-AMC/tomorrow-BMO earnings calendar, and picks each symbol's single best strategy.
-- **`src/tt.py`** is the tastytrade broker interface — quotes, chains, greeks, account info, and
+- **`cherrypick/earnings/tt.py`** is the tastytrade broker interface — quotes, chains, greeks, account info, and
   (in live mode only) order execution.
-- **`src/_core/`** is the shared **`cherrypick.core`** library (git submodule), used here for the market
-  calendar and the tastytrade fee schedule (via `src/costs.py`). Module files self-bootstrap `src/_core`
-  onto `sys.path` at import, so no pip install is needed — but the submodule must be checked out.
-- **`src/paths.py`** resolves the **data home** — the trade ledgers (`earnings_trades.db`,
+- **`packages/core`** is the shared **`cherrypick.core`** library, an in-repo sibling package, used here
+  for the market calendar and the tastytrade fee schedule (via `cherrypick/earnings/costs.py`). Install it before this
+  package (`pip install -e ../core`).
+- **`cherrypick/earnings/paths.py`** resolves the **data home** — the trade ledgers (`earnings_trades.db`,
   `paper_trades.db`) live under `~/.cherrypick/data/earnings` by default (override with
   `EARNINGS_DATA_DIR`), the same managed location the orchestrator reads for cross-module reporting and
   where the local `dolt sql-server` serves the earnings/options/stocks datasets. Data, logs, generated
@@ -153,16 +153,16 @@ the authoritative spec this system runs against.
 
 Controlled by `enable_live_trading` in `config/config.json` (`false` by default):
 
-- **Paper mode**: persistence via `src/db_paper.py`, order handling stops at building the order
+- **Paper mode**: persistence via `cherrypick/earnings/db_paper.py`, order handling stops at building the order
   spec — no order is ever submitted. Paper mode still sources live quotes/chains/greeks from the
   real tastytrade session (needed to size and price orders realistically); it just never trades.
-- **Live mode**: persistence via `src/db.py`, and entries submit real orders via
+- **Live mode**: persistence via `cherrypick/earnings/db.py`, and entries submit real orders via
   `tt.py execute_trade --live`.
 
 Two separate paper-testing programs exist, and can run concurrently since they write to
 isolated books:
 
-- **`/paper-start`** — forced-sampling strategy validation (`src/strategy_test_runner.py`):
+- **`/paper-start`** — forced-sampling strategy validation (`cherrypick/earnings/strategy_test_runner.py`):
   opens every strategy that clears the screen on every viable symbol, not just each symbol's
   single best, so every strategy accumulates a usable sample size quickly. Writes to per-strategy
   strat_test books (`profile='strat_test:<strategy>'`, per `strat_test_portfolio`).
@@ -173,8 +173,8 @@ isolated books:
 
 The forced-sampling close pass writes a deterministic end-of-day file automatically
 (`~/.cherrypick/logs/earnings/paper-eod-<date>.md` by default); regenerate or backfill one with
-`python src/strategy_test_runner.py eod_report [--date YYYY-MM-DD]`. Track accumulated (multi-day)
-results with `python src/strategy_report.py` (text) or `python src/strategy_dashboard.py`
+`python -m cherrypick.earnings.strategy_test_runner eod_report [--date YYYY-MM-DD]`. Track accumulated (multi-day)
+results with `python -m cherrypick.earnings.strategy_report` (text) or `python -m cherrypick.earnings.strategy_dashboard`
 (self-contained HTML dashboard, written to `reports/`).
 
 ---

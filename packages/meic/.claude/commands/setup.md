@@ -3,7 +3,7 @@ Set up MEIC credentials and verify the broker connection.
 ## Step 1 — Check current credential status
 
 ```bash
-python src/tt.py secrets_status
+python -m cherrypick.meic.tt secrets_status
 ```
 
 Report which secrets are set and which are missing. The two required secrets are `client_secret` and `refresh_token`. `account_number` is optional (the SDK discovers accounts automatically if omitted).
@@ -13,14 +13,14 @@ Report which secrets are set and which are missing. The two required secrets are
 If any required secrets are missing, instruct the user to run this command **in their own terminal** (not here — getpass requires interactive input):
 
 ```bash
-python src/tt.py secrets_set
+python -m cherrypick.meic.tt secrets_set
 ```
 
 This prompts for each credential with hidden input (no echo) and stores them in the OS keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service). Existing values are preserved if the user presses Enter without typing.
 
 To update a single key only:
 ```bash
-python src/tt.py secrets_set --keys refresh_token
+python -m cherrypick.meic.tt secrets_set --keys refresh_token
 ```
 
 Tell the user: credentials are stored under service name `meicagent` in the OS keyring. `secrets_set`/`get_secret` also fall back to reading the older `tastytrade-mcp` service name (read-only) so anyone with credentials already stored under it don't need to re-enter them — new writes always go to `meicagent`.
@@ -30,7 +30,7 @@ Tell the user: credentials are stored under service name `meicagent` in the OS k
 After the user confirms credentials are set, test the broker connection:
 
 ```bash
-python src/tt.py get_connection_status
+python -m cherrypick.meic.tt get_connection_status
 ```
 
 A successful response includes `"ok": true` and account details. If it fails:
@@ -41,13 +41,13 @@ A successful response includes `"ok": true` and account details. If it fails:
 ## Step 4 — Verify account access
 
 ```bash
-python src/tt.py get_account_info
+python -m cherrypick.meic.tt get_account_info
 ```
 
 Confirm buying power and NLV are visible. If the wrong account appears, set the explicit account number:
 
 ```bash
-python src/tt.py secrets_set --keys account_number
+python -m cherrypick.meic.tt secrets_set --keys account_number
 ```
 
 ## Step 5 — Check streamer (optional)
@@ -55,13 +55,13 @@ python src/tt.py secrets_set --keys account_number
 If the DXLink streamer is running, confirm it is healthy:
 
 ```bash
-python src/streamer.py --status
+python -m cherrypick.meic.streamer --status
 ```
 
 If `running` is false and market hours are active, start it:
 
 ```bash
-Start-Process python -ArgumentList 'src\streamer.py' -WorkingDirectory $PWD -WindowStyle Hidden
+Start-Process python -ArgumentList '-m','cherrypick.meic.streamer' -WindowStyle Hidden
 ```
 
 ## Summary

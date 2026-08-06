@@ -235,4 +235,4 @@ directional gate** (see `docs/strategy-testing-plan.md`):
 
 - `docs/strategy-testing-plan.md` — the paper program that validates every hypothesis here
 - `docs/05-strategies.md` — the 6 strategies' structures and current parameters
-- `src/strategy_metrics.py` — expectancy / IV-crush / regime metrics the tests are judged on
+- `cherrypick/earnings/strategy_metrics.py` — expectancy / IV-crush / regime metrics the tests are judged on

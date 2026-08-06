@@ -22,14 +22,15 @@ module's `paper_loop.py --install-task`, and `schtasks /Query /V` on the live bo
 
 | Task | Trigger | Runs | Registered by |
 |---|---|---|---|
-| `cherrypick-meic-paper-loop` | every **2 min** | `pythonw <meic>/src/paper_loop.py --once` | **the MEIC module itself** (`install` shells `src/paper_loop.py --install-task`; the cadence is a module constant, not config) |
-| `cherrypick-flies-paper-loop` | every **1 min** | `pythonw <flies>/src/paper_loop.py --once` | **the flies module itself** (same pattern; 2 → 1 min on 2026-07-29 — the completion gate's cadence sensitivity is documented at the constant in `flies/src/paper_loop.py`) |
-| `cherrypick-flies-live-loop` | every **1 min** — **per-day, usually absent** | `pythonw <flies>/src/live_loop.py --once --live` | **the flies module itself**, via `/live-flies-start` (fresh YES each day). SELF-DISARMS at `live.disarm_time` (17:00 ET) or on a stale arm stamp; the watchdog backstops by setting the halt flag if it survives. Absent = normal (disarmed); mid-session absence while `--status` says armed-for-today is the CRITICAL the watchdog raises. Spawns short-lived `--watch-fills` burst watchers while orders are pending. Settle: provisional at 16:20 from the last streamed trade; confirm with `live_loop.py --settle --price <official>`. Stop: `/live-flies-start --stop`, or the halt flag (`state/halt-live.flag`). |
+| `cherrypick-meic-paper-loop` | every **2 min** | `pythonw -m cherrypick.meic.paper_loop --once` | **the MEIC module itself** (`install` shells `-m cherrypick.meic.paper_loop --install-task`; the cadence is a module constant, not config) |
+| `cherrypick-flies-paper-loop` | every **1 min** | `pythonw -m cherrypick.flies.paper_loop --once` | **the flies module itself** (same pattern; 2 → 1 min on 2026-07-29 — the completion gate's cadence sensitivity is documented at the constant in `cherrypick/flies/paper_loop.py`) |
+| `cherrypick-flies-live-loop` | every **1 min** — **per-day, usually absent** | `pythonw -m cherrypick.flies.live_loop --once --live` | **the flies module itself**, via `/live-flies-start` (fresh YES each day). SELF-DISARMS at `live.disarm_time` (17:00 ET) or on a stale arm stamp; the watchdog backstops by setting the halt flag if it survives. Absent = normal (disarmed); mid-session absence while `--status` says armed-for-today is the CRITICAL the watchdog raises. Spawns short-lived `--watch-fills` burst watchers while orders are pending. Settle: provisional at 16:20 from the last streamed trade; confirm with `python -m cherrypick.flies.live_loop --settle --price <official>`. Stop: `/live-flies-start --stop`, or the halt flag (`state/halt-live.flag`). |
 | `cherrypick-earnings-paper-entry` | daily **15:45 ET** | `pythonw <orch>/run.py run-earnings-entry` | orchestrator |
 | `cherrypick-earnings-paper-exit` | daily **09:45 ET** | `pythonw <orch>/run.py run-earnings-exit` | orchestrator |
 | `cherrypick-earnings-dolt` | every **5 min** | `pythonw <orch>/run.py ensure-dolt` (keep-alive: starts `dolt sql-server` only when 3306 is down) | orchestrator (`paper.dolt_service`) |
 | `cherrypick-watchdog` | every **10 min** | `pythonw <orch>/run.py watchdog` | orchestrator |
 | `cherrypick-trade-notify` | every **2 min** | `pythonw <orch>/run.py notify-trades` | orchestrator |
+| `cherrypick-follow-notify` | every **5 min** — **opt-in, off by default** (`follow_feed.enabled`) | `pythonw <orch>/run.py notify-follow` | orchestrator, only when enabled |
 | `cherrypick-log-archive` | monthly, day 1 @ **03:30** local | `pythonw <orch>/run.py archive` | orchestrator |
 | `cherrypick-reconcile` | daily 16:30 ET — **opt-in, off by default** (`reconcile.schedule.enabled`; a phase-5 posture for live operation) | `run.py reconcile --scheduled` | orchestrator, only when enabled |
 
@@ -54,7 +55,7 @@ MEIC's live/interactive loop fast-path.
 
 Every module that consumes the stream declares its needs in `~/.cherrypick/state/stream_requests/`:
 flies and gex have always regenerated their files on every run, and MEIC gained its writer on
-2026-07-29 (`meic/src/stream_request.py` — symbols plus a `leg_sources` query against the paper
+2026-07-29 (`meic/src/cherrypick/meic/stream_request.py` — symbols plus a `leg_sources` query against the paper
 ledger, so open positions' option legs stay subscribed after spot walks the ATM window away).
 
 ## Inventory — ports
@@ -68,7 +69,7 @@ All loopback-only. Sources: each module's own default, the orchestrator embed co
 | 8801 | MEIC dashboard as a suite embed (`dashboard.embeds`, PAPER mode forced) |
 | 8802 | gex full dashboard as a suite embed |
 | 8803 | flies dashboard (both standalone default and as the suite embed) |
-| 5050 / 5051 | MEIC dashboard run directly: live / paper (`src/dashboard.py`) |
+| 5050 / 5051 | MEIC dashboard run directly: live / paper (`python -m cherrypick.meic.dashboard`) |
 | 5055 (+5056) | gex standalone serve (`serve.port`; WebSocket push defaults to port+1) |
 | 7699 | MEIC REST sidecar (optional, off) |
 | 3306 | Dolt SQL server (earnings data; `cherrypick-earnings-dolt` keeps it alive) |
@@ -76,7 +77,7 @@ All loopback-only. Sources: each module's own default, the orchestrator embed co
 ## Dependency order and the clock
 
 The one **hard pre-open deadline**: the streamer must be alive **before 09:30**, because
-`streamer/src/orb.py` accumulates the opening range strictly inside **09:30–09:35 ET** and silently
+`streamer/src/cherrypick/streamer/orb.py` accumulates the opening range strictly inside **09:30–09:35 ET** and silently
 persists nothing if it wasn't running through that window. Everything else self-gates or degrades.
 
 Order: keyring credentials + stream-request files (standing) → **streamer alive by ~09:20** →
@@ -89,10 +90,10 @@ Time constants, each with its source:
 |---|---|---|
 | 09:15 | `NEAR_OPEN` — watchdog begins streamer/freshness supervision | `orchestrator/timeutil.py` |
 | 09:30 | `MARKET_OPEN` | `orchestrator/timeutil.py` |
-| 09:30–09:35 | ORB window — streamer must be up throughout | `streamer/src/orb.py` |
-| 09:30–16:05 | MEIC loop acts (the +5 min runs the 16:00 settlement pass) | `meic/src/paper_loop.py` |
+| 09:30–09:35 | ORB window — streamer must be up throughout | `streamer/src/cherrypick/streamer/orb.py` |
+| 09:30–16:05 | MEIC loop acts (the +5 min runs the 16:00 settlement pass) | `meic/src/cherrypick/meic/paper_loop.py` |
 | 10:00–14:30 | MEIC paper IC entries (`entry_window_start/_end`; the 09:30 paper override was removed 2026-07-29 — 10:00 is the intended start) | `~/.cherrypick/config/meic.json` |
-| 09:30–16:00 | flies loop RTH; hard `no_entry_before: 10:00`; settle 16:20 | `flies/src/paper_loop.py`, flies config |
+| 09:30–16:00 | flies loop RTH; hard `no_entry_before: 10:00`; settle 16:20 | `flies/src/cherrypick/flies/paper_loop.py`, flies config |
 | 09:45 / 15:45 | earnings exit / entry runs; entry SLA goes CRITICAL if it hasn't run by 16:20 | orchestrator config + watchdog |
 | 16:00 | `MARKET_CLOSE`; cash-settled MEIC positions settle | `orchestrator/timeutil.py` |
 | 16:45 | EOD digest deadline backstop (event-fired earlier when every module's paper-eod exists) | `eod_digest.deadline` |
@@ -147,10 +148,10 @@ Real — act:
 
 - **Underlyings bind at streamer start.** The per-module stream-request writers keep the files
   current, but a *new* underlying only reaches the wire on one streamer restart
-  (`streamer/src/daemon.py`). A symbols change = one restart, stated here so it isn't rediscovered.
+  (`streamer/src/cherrypick/streamer/daemon.py`). A symbols change = one restart, stated here so it isn't rediscovered.
 - **MEIC's gates fail open when the streamer is down.** The paper loop does not crash: GEX, ATR, and
   intraday-range return unavailable and their gates silently deactivate (`meic/GATES.md`;
-  `meic/src/tt.py`). It keeps trading with safety gates off. The ATR gate additionally needs **5
+  `meic/src/cherrypick/meic/tt.py`). It keeps trading with safety gates off. The ATR gate additionally needs **5
   complete prior sessions** of `stream_summary`, so a multi-day outage disarms it for a week with no
   error surfaced.
 - **Thin pre-open margin.** Streamer supervision starts at 09:15 and the watchdog interval is 10

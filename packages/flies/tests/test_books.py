@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-import fly
+from cherrypick.flies import fly
 
 FIXTURES = json.loads((Path(__file__).parent / "fixtures" / "books.json").read_text(encoding="utf-8"))
 
@@ -42,11 +42,11 @@ def test_book_c_legged_flies_are_individually_risk_free():
     """The whole thesis, stated as a test: a legged fly's worst case at expiry is a profit.
 
     Checked at every price on a wide grid, not just at the strikes, and with a realistic SPX fee
-    stack charged for both legs of the leg-in. Compared against the TRUE unmanaged-expiry floor
-    (gross credit, less trading fees, less the worst-case $20 exercise-assignment fee) rather than
-    `position_floor` itself: that function no longer reserves the assignment fee for a fly
-    (2026-07-30 — `engine.evaluate_pre_close_exit` closes an ITM fly ahead of expiry whenever
-    that's cheaper), so it is a management-aware number, not a bound on an unmanaged hold.
+    stack charged for both legs of the leg-in. Compared against the TRUE unmanaged-expiry floor:
+    gross credit, less trading fees, less the worst-case $15 exercise-assignment fee (3 settlement
+    events -- one per distinct strike). Since 2026-08-01 `position_floor` reserves exactly that
+    same fee, so the two agree; the calculation is kept spelled out here deliberately, as an
+    independent check on `position_floor` rather than a restatement of it.
     """
     for chain in FIXTURES["book_c"]["chains"]:
         if chain["entry_mode"] != "legged":
@@ -62,7 +62,8 @@ def test_book_c_legged_flies_are_individually_risk_free():
             "fees": fees,
         }
         assert fly.is_risk_free(position), f"{chain['label']} floor did not survive fees"
-        unmanaged_worst_case = chain["expected_net"] * fly.CONTRACT_MULTIPLIER - fees - fly.expire_fee(4)
+        # 3 settlement events (distinct strikes), not 4 contracts -- corrected 2026-07-31.
+        unmanaged_worst_case = chain["expected_net"] * fly.CONTRACT_MULTIPLIER - fees - fly.expire_fee(3)
         for offset in range(-50, 51, 1):
             assert fly.position_pnl(position, chain["center"] + offset) >= unmanaged_worst_case - 1e-6
 

@@ -16,8 +16,7 @@ trade_notifier), each yielding a normalized closed-trade record `{profile, symbo
                  so `run.py status` remains the place to read them.
 
 The per-profile grouping uses cherrypick.core.profiles.compare_profiles (group closed trades by their
-attribution tag, summarize each group) via the src/_core submodule — bootstrapped onto sys.path in
-this package's __init__.
+attribution tag, summarize each group).
 
 Alongside the closed-trade P&L, each module also reports its **open** positions carried past the close
 (`_OPEN_READERS`): capital at risk, no realized P&L. Only the multi-day earnings module carries

@@ -10,16 +10,18 @@ packages (`../meic`, `../earnings`, `../gex`, `../flies`) and the standalone mar
 using paths from config — for unattended **paper**-trading data collection, with a watchdog +
 notifications so a walk-away user is told (or at least has it logged) whenever something stalls. It never edits a module's internals and
 **never places live trades** — the sole live-adjacent action is *onboarding config* (`connect`/`account`
-select a module's live-trading account; see the Invariants below), never order placement. `ROADMAP.md`
-tracks what has actually shipped; the full design lives in `~/.claude/plans/cherrypick-plan.md`; and the
-suite-wide human documentation is the root [documentation index](../../docs/README.md) (architecture, CLI,
-reporting, configuration, guardrails).
+select a module's live-trading account; see the Invariants below), never order placement. What has
+actually shipped is tracked by git log / commit history (`ROADMAP.md` is deprecated — a frozen Stage 0
+record, see its own header); the design rationale behind it is [`docs/design.md`](docs/design.md)
+(a 2026-07-11 research report, deliberately not updated as work ships); and the suite-wide human
+documentation is the root [documentation index](../../docs/README.md) (architecture, CLI, reporting,
+configuration, guardrails).
 
 ## Commands
 
 ```bash
-# Fresh clone: pull the cherrypick-core submodule (src/_core) first — imports fail without it.
-git submodule update --init
+# Fresh clone: install packages/core first, or import cherrypick.core fails everywhere.
+# From the repo root: scripts\dev-install.ps1 (or scripts/dev-install.sh) installs it and every package.
 
 # Run the CLI from a source checkout (do NOT create a root cherrypick.py — see Gotchas):
 python run.py <cmd>          # or, if pip-installed: `cherrypick <cmd>` / `python -m cherrypick`
@@ -44,7 +46,7 @@ python -m pytest                                   # default: `-m "not live" -q`
 python -m pytest tests/test_dashboard.py           # one file
 python -m pytest tests/test_report.py::test_report_unifies_pnl_net_of_costs_across_modules  # one test
 
-# Lint / format (line-length 110; src/_core is excluded)
+# Lint / format (line-length 110)
 ruff check .
 ruff format .
 ```
@@ -55,8 +57,9 @@ resolved **relative to the config file's directory** — never hardcode absolute
 ## Architecture
 
 **src-layout PEP 420 namespace.** `src/cherrypick/` has no root `__init__.py`, so it composes with the
-`cherrypick.core` package (from the `src/_core` submodule) under one `cherrypick.*` import namespace.
-`run.py` puts `src/` on `sys.path` and delegates to `cherrypick.cli:main`.
+`cherrypick.core` package (an installed dependency, `packages/core` in this monorepo) under one
+`cherrypick.*` import namespace. `run.py` puts `src/` on `sys.path` and delegates to
+`cherrypick.cli:main`.
 
 **Two halves, one config.** Everything hangs off `config.json` (`orchestrator/config.py`):
 - **Write side (the reliability guarantee):** `orchestrator/watchdog.py` runs on a schedule
@@ -113,16 +116,22 @@ filename. They were hardcoded to `earnings_*.last.json`, which was harmless whil
 module's SLA under another's name and the watchdog raised a CRITICAL titled for the wrong module. Use
 `paper.sla_state_prefix` to override for a module whose heartbeat files are named differently.
 
-**cherrypick-core is a submodule.** Shared logic (`cherrypick.core.profiles`, `.fees`, etc.) lives in
-`src/_core` and is put on `sys.path` by a bootstrap in `orchestrator/__init__.py` — so `import
-cherrypick.core...` resolves under `run.py`, pytest, and the editable console script alike. `src/_core`
-is excluded from ruff and from the packaged wheel.
+**cherrypick-core is an installed dependency.** Shared logic (`cherrypick.core.profiles`, `.fees`,
+etc.) lives in `packages/core` in this monorepo and is a normal editable-installed Python package —
+`pip install -e packages/core` before this one, or `import cherrypick.core...` fails under `run.py`,
+pytest, and the installed console script alike. There is no `sys.path` bootstrap for it anywhere in
+this package's source, and none should be reintroduced — `doctor` fails loudly
+(`cherrypick.core: not installed`) if the install step was skipped.
 
 ## Invariants (do not violate — the reasons are load-bearing)
 
 - **No network / service / AI dependency on the reliability path.** The watchdog → notify path uses only
   the stdlib + the OS shell (no MCP, no HTTP client, no AI tooling), so it has no new failure mode. A
-  34-hour silent stall is the reason this rule exists.
+  34-hour silent stall is the reason this rule exists. `follow_notifier.py` (the tastylive Follow Feed
+  push) is the one notifier that makes an HTTP call, and that is exactly why it is **its own scheduled
+  task and is never called from the watchdog tick** — unlike `trade_notifier`, which is files-only and
+  may ride the tick. Any future notifier that touches a network gets the same treatment: its own task,
+  every request wrapped, an outage degrading to "no notifications" rather than a failed tick.
 - **Read surfaces read files, never the broker.** `report`/`calibrate`/`dashboard` read paper DBs (SQLite
   read-only), watchdog state, and logs. In particular the **static** `dashboard.py` render reads the
   **watchdog heartbeat** (`state/watchdog.last.json`) for health rather than re-running `doctor` (which
@@ -207,7 +216,7 @@ is excluded from ruff and from the packaged wheel.
   hides it. Enforced by `tests/test_headless.py` (a source scan), whose one exemption is `connect.py`:
   its delegated credential entry is interactive by design and must share the user's console.
 - **Account numbers are masked** to the last 4 digits (`****1234`) anywhere they surface in logs or
-  output — never emit a full account number (suite-wide rule from `ROADMAP.md`).
+  output — never emit a full account number (suite-wide rule).
 - **Best-effort side calls never break the reliability path.** The watchdog tick fires
   `trade_notifier.run`, `dashboard.render`, and the EOD digest/insight trigger inside `try/except`; a
   hiccup must not fail the health check. The EOD trigger only *launches* `notify-eod`/`eod-insight` as
@@ -229,7 +238,7 @@ repeated.
 
 - **Instruction files hold no code and no logs.** This `CLAUDE.md` is for build commands, tech-stack
   reference, and project guidelines only — never Python, scripts, code blocks, or scratchpad logic, and
-  never a changelog or task tracker (that is what `ROADMAP.md` and git history are for). Both modules
+  never a changelog or task tracker (that is what git history is for). Both modules
   mark this `CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE`.
 - **Scratch work lives in `.tmp/`.** Temporary scripts/tests go under a gitignored `.tmp/` (or the job
   temp dir) and are deleted when finished — never left in the tree, never written to the repo root.
@@ -272,5 +281,5 @@ repeated.
 - **Scheduler dispatches by platform.** `orchestrator/tasks.py` uses `schtasks` on Windows and a crontab
   backend on POSIX (cherrypick lines tagged `# cherrypick:<name>`). The cron logic is pure + unit-tested;
   cron *execution* on a real POSIX host is still unvalidated. launchd/systemd are future backends.
-- **Commit messages: no AI / co-author attribution or AI signatures** (a suite-wide rule from
-  `ROADMAP.md`). Write docs and PRs from a human developer's perspective.
+- **Commit messages: no AI / co-author attribution or AI signatures** (a suite-wide rule). Write docs
+  and PRs from a human developer's perspective.

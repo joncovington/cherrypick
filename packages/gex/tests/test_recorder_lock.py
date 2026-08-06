@@ -8,7 +8,7 @@ before clearing the pid file (so a wedged process can't let the next start spawn
 
 import os
 
-import service
+from cherrypick.gex import service
 
 
 def _cfg(tmp_path):

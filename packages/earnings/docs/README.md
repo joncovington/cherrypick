@@ -6,7 +6,7 @@ built on a multi-strategy decision framework.
 > **Part of the [cherrypick](../../../README.md) suite.** This is the `cherrypick-earnings` module
 > (`packages/earnings`). It runs standalone from this folder for live / interactive trading, and is driven
 > unattended by the [orchestrator](../../orchestrator) for paper collection (by subprocess, never by
-> import). Shared logic (`cherrypick.core`) is vendored as the `src/_core` submodule. See the
+> import). Shared logic (`cherrypick.core`) lives in `packages/core`, a sibling in-repo package. See the
 > [package README](../README.md#how-this-fits-the-suite) for how the two roles fit together, and the
 > suite-wide [documentation index](../../../docs/README.md) for the big picture.
 
@@ -123,9 +123,9 @@ This package lives at `packages/earnings/` inside the [cherrypick](../../../READ
 
 ```
 cherrypick/
+├── packages/core/                # Shared cherrypick.core library (in-repo package: calendar, fees)
 └── packages/earnings/           # ← this package (cherrypick-earnings)
-    ├── src/
-    │   ├── _core/               # Shared cherrypick.core library (git submodule: calendar, fees)
+    ├── src/cherrypick/earnings/  # the cherrypick.earnings namespace package
     │   ├── strategies/          # 6 defined-risk strategy modules
     │   │   ├── iron_fly.py
     │   │   ├── iron_condor.py
@@ -138,14 +138,14 @@ cherrypick/
     │   ├── sizing.py            # Code-enforced risk-cap sizing
     │   ├── costs.py             # Cost model over cherrypick.core.fees
     │   ├── tt.py                # tastytrade broker interface
-    │   ├── db.py / db_paper.py  # Persistence (live / paper, separate SQLite files)
+    │   ├── db.py                # Persistence, live ledger (db_paper.py is the paper twin)
     │   ├── paths.py             # Resolves the data home (~/.cherrypick/data/earnings)
     │   ├── strategy_test_runner.py  # Forced-sampling paper-testing program (orchestrator-driven)
-    │   ├── strategy_report.py / strategy_dashboard.py  # Per-strategy metrics & charts
+    │   ├── strategy_report.py   # Per-strategy metrics (strategy_dashboard.py draws the charts)
     │   └── ...
     ├── config/
     │   ├── config.example.json  # Template — copy to config.json
-    │   └── config.json          # Your actual settings (gitignored)
+    │   └── config.json          # Your actual settings (created on first setup; gitignored)
     ├── tests/                   # Unit tests
     ├── docs/                    # This documentation
     ├── CLAUDE.md                # Authoritative operational spec
@@ -158,13 +158,13 @@ cherrypick/
 
 ### Afternoon, Before the Close
 ```bash
-python src/rank_strategies.py get_ranked_symbols --date MM/DD/YYYY
+python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY
 # Evaluates all 6 strategies against tonight's/tomorrow's calendar, picks each symbol's best
 ```
 
 ### Entry Window (default 15:30-15:55 ET)
 ```bash
-python src/strategies/iron_fly.py get_order --symbol AAPL --earnings_date 2026-07-15 --earnings_timing "After market close"
+python -m cherrypick.earnings.strategies.iron_fly get_order --symbol AAPL --earnings_date 2026-07-15 --earnings_timing "After market close"
 # Returns a concrete order spec, priced off the live chain
 ```
 

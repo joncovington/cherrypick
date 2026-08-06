@@ -17,7 +17,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | `connect --module <m>` | Guided per-module onboarding: runs the module's **own** hidden-input credential tool for the OAuth secrets (the orchestrator never sees `client_secret`/`refresh_token`) and selects the live-trading account. Never trades. | `--module meic\|earnings` |
 | `account --module <m>` | List, set, or clear a module's **designated** live-trading account (masked). Configuration only. | `--module`, `--set <last4\|index>`, `--clear`, `--yes` |
 | `migrate-home` | Move in-repo config into `~/.cherrypick` and sweep leftovers. Dry-run by default. | `--apply` (perform the move) |
-| `secrets-set` | Store a Slack/Discord webhook URL in the OS keyring (prompted without echo if `--url` omitted). | `--channel slack\|discord`, `--url` |
+| `secrets-set` | Store a Slack/Discord webhook URL in the OS keyring (prompted without echo if `--url` omitted). `discord_follow` is a **second** Discord webhook so the Follow Feed can post to its own channel. | `--channel slack\|discord\|discord_follow`, `--url` |
 | `secrets-status` | Show which push-channel webhooks are configured (secret-free). | — |
 | `secrets-delete` | Remove a stored webhook. | `--channel` |
 | `settings` | Local web editor for every config file + a keyring secrets manager (loopback `:8804`) — the suite's one mutating HTTP surface, run on demand, never watchdog-started. Live-trading gate fields render read-only. With `--organize` it instead reorders a live config into its example's sections and exits (no server). | `--host`, `--port` (def `8804`), `--no-browser`, `--organize [target]`, `--apply` |
@@ -39,6 +39,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | `reconcile` | Paper↔live isolation guard: enumerate **every** account on the login (read-only `list_accounts`/`get_positions`/`get_account_info`) and flag any open positions/BP a paper-only suite shouldn't hold. On-demand; never trades; accounts masked. `reconcile.schedule.enabled` promotes it to a daily `cherrypick-reconcile` task (`--scheduled` notifies on any non-FLAT verdict) — the phase-5 posture once anything trades live. | `--scheduled` |
 | `notify-test` | Fire a test notification through every configured channel. | — |
 | `notify-trades` | Push new paper entries/exits to the trade channels (also runs best-effort on each watchdog tick). | — |
+| `notify-follow` | Push new [tastylive Follow Feed](https://follow.tastylive.com) orders — other traders' fills, as shown on the platform's Follow page — to their own channel. **Off by default**; the only notifier that makes a network call, so it runs on its own task and *never* on the watchdog tick. Read-only, no auth, no broker. | — |
 
 ## Reporting & review (the read side)
 

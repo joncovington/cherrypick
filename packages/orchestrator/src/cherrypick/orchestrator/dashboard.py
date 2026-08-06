@@ -26,7 +26,7 @@ from cherrypick.core import viz
 
 from cherrypick.notify import secrets as notify_secrets
 
-from . import calibrate, embeds, report, sections, tasks, timeutil, util
+from . import calibrate, embeds, logrotate, report, sections, tasks, timeutil, util
 from . import config as cfgmod
 
 _STATUS_COLORS = {
@@ -80,8 +80,31 @@ def _tail(path: Path, n: int) -> list[str]:
         return []
 
 
+#: A leading timestamp, bracketed or bare, optionally offset-aware, with an optional level word.
+#: Current shape, written by every module through `cherrypick.core.logs`:
+#:   "2026-08-02T15:54:21-06:00 INFO settled at 748.97"
+#: Legacy shapes, still present in months of existing history and still parsed:
+#:   flies : "[2026-07-31T21:00:01] 2026-07-31 settled — idle…"
+#:   meic  : "2026-08-02 00:40:01 INFO outside trading window…"
+#:   (JSON lines from watchdog/notify/earnings are handled separately, above)
+#: The offset group is load-bearing, not decorative: without it the offset is left stranded at the
+#: front of the message and the stamp reverts to naive, which is the exact ambiguity the shared
+#: writer was introduced to remove.
+_TS_PREFIX = re.compile(
+    r"^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)\]?\s*"
+    r"(?:(CRITICAL|WARNING|WARN|ERROR|INFO|DEBUG|NOTIFY|OK)\b\s*)?"
+)
+
+
 def _parse_log_line(source: str, raw: str) -> dict[str, Any]:
-    """Normalize a log line to {source, level, ts, text}. Handles our JSON lines and plain text."""
+    """Normalize a log line to {source, level, ts, text}. Handles our JSON lines and plain text.
+
+    Both shapes must yield a `ts`, because the card merges every source into one tail sorted by time
+    and then keeps the newest N. Only JSON lines were dated, so meic's and flies' plain lines sorted
+    as "undated" — which the sort deliberately places last, and the newest-N slice then kept *only*
+    those. The result was a log card showing nothing but flies while the watchdog, notify and
+    earnings sources were pushed out entirely, however recent they were.
+    """
     level = "INFO"
     ts = None
     text = raw
@@ -89,6 +112,12 @@ def _parse_log_line(source: str, raw: str) -> dict[str, Any]:
         obj = json.loads(raw)
     except (ValueError, TypeError):
         obj = None
+    if obj is None and (m := _TS_PREFIX.match(raw)):
+        # Lift the stamp out of the text: it becomes the sort key, and _log_html renders it in its
+        # own column so every source shows a time the same way instead of only the ones that inline it.
+        ts, text = m.group(1), raw[m.end() :]
+        if m.group(2):
+            level = "WARN" if m.group(2) == "WARNING" else m.group(2)
     if isinstance(obj, dict):
         ts = obj.get("ts")
         raw_level = obj.get("level") or obj.get("overall") or obj.get("status")
@@ -149,7 +178,7 @@ def _task_views(cfg: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _modules_installed_views(cfg: dict[str, Any]) -> list[dict[str, Any]]:
-    """What's configured/installed per module: location, source, paper kind, streamer, ladder.
+    """What's configured/installed per module: location, source, paper kind, streamer, champion.
     Filesystem + local `git` only — never the broker."""
     out = []
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
@@ -165,7 +194,7 @@ def _modules_installed_views(cfg: dict[str, Any]) -> list[dict[str, Any]]:
                 "git_ref": _git_ref(root) if root.exists() else None,
                 "paper_kind": paper.get("kind", "—"),
                 "streamer_enabled": bool(mcfg.get("streamer", {}).get("enabled")),
-                "ladder": mcfg.get("calibration", {}).get("ladder") or [],
+                "champion": mcfg.get("calibration", {}).get("champion"),
             }
         )
     return out
@@ -181,7 +210,7 @@ def _config_summary(cfg: dict[str, Any]) -> dict[str, Any]:
             "enabled": bool(mcfg.get("enabled")),
             "kind": mcfg.get("paper", {}).get("kind", "—"),
             "streamer_enabled": bool(mcfg.get("streamer", {}).get("enabled")),
-            "ladder": mcfg.get("calibration", {}).get("ladder") or [],
+            "champion": mcfg.get("calibration", {}).get("champion"),
         }
         for name, mcfg in cfg.get("modules", {}).items()
     }
@@ -216,6 +245,52 @@ def _config_summary(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- model
+def _ts_key(ts: str | None) -> tuple[int, float]:
+    """A sortable instant for a log timestamp, comparable across sources.
+
+    Sorting the raw strings does not work, because the sources disagree twice over. They use
+    different separators -- "2026-08-02 15:42:02" (meic) versus "2026-08-02T21:42:02+00:00"
+    (watchdog) -- and a space sorts before "T", so *every* meic line lands before *every* watchdog
+    line regardless of when either happened. They also disagree on zone: meic writes naive local
+    time while the JSON sources write UTC, so 15:42 and 21:42 there are the same instant.
+
+    Naive stamps are read as local time, which is what the modules writing them mean. Unparseable or
+    absent stamps sort last (the leading flag), keeping traceback bodies and continuations at the
+    end where the file order already put them.
+    """
+    if not ts:
+        return (1, 0.0)
+    try:
+        dt = datetime.fromisoformat(ts.strip().replace(" ", "T"))
+    except ValueError:
+        return (1, 0.0)
+    if dt.tzinfo is None:
+        dt = dt.astimezone()  # naive -> this machine's local zone, then to a real instant
+    return (0, dt.timestamp())
+
+
+def _resolve_module_log(name: str, log_rel: str) -> Path:
+    """Where a module's paper log actually is — its own logs dir, or the suite logs root.
+
+    Both shapes are real, because the modules are not all driven the same way. A `self_healing`
+    module (meic, flies) runs its own loop and writes into `~/.cherrypick/logs/<name>/`. A
+    `cherrypick_scheduled` module (earnings) has no loop at all: the orchestrator runs its entry/exit
+    passes and records them itself, via `_module_log("earnings_paper")` → the suite root
+    `~/.cherrypick/logs/earnings_paper.log`.
+
+    Resolving only against the module directory therefore made earnings permanently invisible in the
+    log card while a current 240KB log sat one directory up. The filename is still taken from the
+    configured value's basename so a legacy "logs/…" prefix keeps working; the fallback is only about
+    which directory, and the module's own directory keeps precedence so nothing else changes.
+    """
+    filename = Path(log_rel).name
+    module_log = cfgmod.module_logs_dir(name) / filename
+    if module_log.exists():
+        return module_log
+    suite_log = cfgmod.LOGS_DIR / filename
+    return suite_log if suite_log.exists() else module_log
+
+
 def _eod_view(cfg: dict[str, Any], modules_cfg: dict[str, Any], tz: str) -> dict[str, Any] | None:
     """Today's (ET) session roll-up for the EOD card. File-only (report reads paper DBs; the paper-eod
     pointers are file-existence checks) and best-effort — a hiccup returns None and the card is omitted.
@@ -234,18 +309,31 @@ def _eod_view(cfg: dict[str, Any], modules_cfg: dict[str, Any], tz: str) -> dict
                 session, rep = last, report.run(cfg, session=last)
     except Exception:
         return None
+
     # Reports are written under the per-user logs home (~/.cherrypick/logs/<name>/), not the package
     # checkout — resolve them there via module_logs_dir, or the existence check always misses.
     # Only existence is ever consumed downstream (the card links by module/session via /eod-report,
     # never by path) -- booleans, not absolute paths, so a model built for the served page never
     # carries a filesystem path further than it needs to.
+    # A report counts as available whether it is still on disk or has been rotated into its monthly
+    # archive. Checking only the live path made the card wrong on the first of every month: the last
+    # trading session is still in the month the archiver just zipped, so every module read
+    # "no files yet" while the reports sat intact in logs/archive/<YYYY-MM>/<scope>.zip — and the
+    # /eod-report route this card links to would have served them perfectly well, since it already
+    # knew to look there.
+    def _have(scope: str, filename: str) -> bool:
+        live = (cfgmod.module_logs_dir(scope) if scope != "suite" else cfgmod.LOGS_DIR) / filename
+        if live.exists():
+            return True
+        return logrotate.archived_report_exists(cfgmod.LOGS_DIR, scope, filename, session)
+
     files = {}
     analysis = {}
     for name in modules_cfg:
-        files[name] = (cfgmod.module_logs_dir(name) / f"paper-eod-{session}.md").exists()
-        analysis[name] = (cfgmod.module_logs_dir(name) / f"eod-analysis-{session}.md").exists()
-    digest = cfgmod.log_file(f"eod-digest-{session}.md").exists()
-    insight = cfgmod.log_file(f"eod-insight-{session}.md").exists()
+        files[name] = _have(name, f"paper-eod-{session}.md")
+        analysis[name] = _have(name, f"eod-analysis-{session}.md")
+    digest = _have("suite", f"eod-digest-{session}.md")
+    insight = _have("suite", f"eod-insight-{session}.md")
     return {
         "session": session,
         "is_today": session == today,
@@ -403,16 +491,31 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     for name, mcfg in modules_cfg.items():
         log_rel = mcfg.get("paper", {}).get("log")
         if log_rel:
-            # Module logs now live in the shared logs home (~/.cherrypick/logs/<name>); take just the
-            # filename from the configured path so a stale "logs/…" prefix still resolves correctly.
-            sources.append((name, cfgmod.module_logs_dir(name) / Path(log_rel).name))
-    log_entries: list[dict[str, Any]] = []
-    for src, path in sources:
-        for raw in _tail(path, tail_n):
-            log_entries.append(_parse_log_line(src, raw))
-    # Most recent last, by timestamp where available; undated lines keep their file order at the end.
-    log_entries.sort(key=lambda e: (e["ts"] is None, e["ts"] or ""))
-    log_entries = log_entries[-tail_n:]
+            sources.append((name, _resolve_module_log(name, log_rel)))
+    # Live loops keep their own log, declared as `modules.<name>.live.log` (the same shape as
+    # paper.log; only flies has one today, since it is the only module with a live loop). It is
+    # tailed into a SEPARATE list and rendered as its own section -- never merged into the paper
+    # stream. Interleaving them would produce a single feed where a live fill and a paper fill are
+    # one scroll apart and distinguishable only by squinting at the module name, which is exactly
+    # the confusion the suite's paper/live separation exists to prevent. Reading the file is
+    # read-only and touches no broker, the same footing as `report --live`.
+    live_sources: list[tuple[str, Path]] = []
+    for name, mcfg in modules_cfg.items():
+        live_rel = (mcfg.get("live") or {}).get("log")
+        if live_rel:
+            live_sources.append((name, cfgmod.module_logs_dir(name) / Path(live_rel).name))
+
+    def _collect(srcs: list[tuple[str, Path]]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for src, path in srcs:
+            for raw in _tail(path, tail_n):
+                out.append(_parse_log_line(src, raw))
+        # Most recent last, by real instant; undated lines keep their file order at the end.
+        out.sort(key=lambda e: _ts_key(e["ts"]))
+        return out[-tail_n:]
+
+    log_entries = _collect(sources)
+    live_log_entries = _collect(live_sources)
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -428,6 +531,8 @@ def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         "eod": _eod_view(cfg, modules_cfg, tz),
         "modules": module_views,
         "logs": log_entries,
+        "live_logs": live_log_entries,
+        "live_logs_configured": bool(live_sources),
         "tasks": _task_views(cfg),
         "modules_installed": _modules_installed_views(cfg),
         "config_summary": _config_summary(cfg),
@@ -620,30 +725,6 @@ def _sla_html(sla: dict[str, Any]) -> str:
     return f'<div class="sla">{"".join(bits)}</div>' if bits else ""
 
 
-def _calibration_html(cal: dict[str, Any]) -> str:
-    """Advisory promotion recommendations per ladder profile (from calibrate.run). Omitted if none."""
-    profiles = (cal or {}).get("profiles", {})
-    rows = []
-    for tag, p in profiles.items():
-        rec = p.get("recommendation")
-        if not rec:  # off-ladder profiles carry a reading but no recommendation
-            continue
-        r = p.get("reading", {})
-        graduate = rec.get("recommendation", "hold").startswith("graduate")
-        wr = r.get("win_rate")
-        wr_str = f"{wr * 100:.0f}%" if isinstance(wr, (int, float)) else "—"
-        rows.append(
-            "<li>"
-            + _pill("eligible" if graduate else "hold", "OK" if graduate else "WARN")
-            + f" <b>{html.escape(str(tag))}</b> "
-            f'<span class="muted">n={int(r.get("sample", 0))} win {html.escape(wr_str)} '
-            f"days {int(r.get('days', 0))} — {html.escape(str(rec.get('reason', '')))}</span></li>"
-        )
-    if not rows:
-        return ""
-    return f'<h3 class="sub">calibration</h3><ul class="findings">{"".join(rows)}</ul>'
-
-
 def _tasks_table(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return '<div class="muted">no tasks registered</div>'
@@ -673,7 +754,7 @@ def _modules_table(rows: list[dict[str, Any]]) -> str:
         return '<div class="muted">no modules enabled</div>'
     trs = []
     for r in rows:
-        ladder = ", ".join(r["ladder"]) if r["ladder"] else "—"
+        champion = r["champion"] or "—"
         trs.append(
             "<tr>"
             f"<td><b>{html.escape(r['name'])}</b></td>"
@@ -681,12 +762,12 @@ def _modules_table(rows: list[dict[str, Any]]) -> str:
             f'<td class="num">{html.escape(r["git_ref"] or "—")}</td>'
             f"<td>{html.escape(str(r['paper_kind']))}</td>"
             f"<td>{_pill('on', 'OK') if r['streamer_enabled'] else _pill('off', 'UNKNOWN')}</td>"
-            f"<td>{html.escape(ladder)}</td>"
+            f"<td>{html.escape(champion)}</td>"
             "</tr>"
         )
     return (
         '<table class="sys"><thead><tr><th>module</th><th>source</th><th>ref</th>'
-        "<th>paper kind</th><th>streamer</th><th>ladder</th></tr></thead><tbody>"
+        "<th>paper kind</th><th>streamer</th><th>champion</th></tr></thead><tbody>"
         + "".join(trs)
         + "</tbody></table>"
     )
@@ -697,11 +778,11 @@ def _config_summary_html(cs: dict[str, Any]) -> str:
         return '<div class="muted">no config</div>'
     bits = [f'<div><span class="muted">timezone</span> {html.escape(str(cs.get("timezone")))}</div>']
     for name, m in cs.get("modules", {}).items():
-        ladder = f" · ladder {html.escape(', '.join(m['ladder']))}" if m.get("ladder") else ""
+        champion = f" · champion {html.escape(m['champion'])}" if m.get("champion") else ""
         bits.append(
             f'<div><span class="muted">{html.escape(name)}</span> '
             f"{'enabled' if m.get('enabled') else 'disabled'} · {html.escape(str(m.get('kind')))} · "
-            f"streamer {'on' if m.get('streamer_enabled') else 'off'}{ladder}</div>"
+            f"streamer {'on' if m.get('streamer_enabled') else 'off'}{champion}</div>"
         )
     wd = cs.get("watchdog", {})
     bits.append(
@@ -803,7 +884,6 @@ def _module_card(mv: dict[str, Any]) -> str:
             + _by_profile_table(rep.get("by_profile", {}))
             + _findings_html(mv.get("findings", []), "no health findings")
             + _sla_html(mv.get("sla", {}))
-            + _calibration_html(mv.get("calibration", {}))
         )
     # data-rkey is a stable per-module id so the client-side drag-reorder (persisted in
     # localStorage) keys off the module, not its position — order survives every regen.
@@ -815,23 +895,45 @@ def _module_card(mv: dict[str, Any]) -> str:
     )
 
 
-def _log_html(entries: list[dict[str, Any]]) -> str:
+def _live_configured(model: dict[str, Any]) -> bool:
+    """Whether any module declares a live log, so "no lines yet" can be distinguished from
+    "this suite has no live loop at all" — the second should render nothing rather than an
+    empty LIVE-badged panel implying a live surface that does not exist."""
+    return bool(model.get("live_logs_configured"))
+
+
+def _log_html(entries: list[dict[str, Any]], group: str = "paper") -> str:
+    """One tail. `group` namespaces the level-filter buttons so the paper and live tails filter
+    independently — sharing an id would make clicking WARN on one silently retarget the other."""
     if not entries:
         return '<div class="muted">no log lines</div>'
     rows = []
     for e in entries:
         lvl = e["level"]
+        # Time to the second, dropping the date and any timezone suffix: every line in the tail is
+        # from roughly the same window, so the date is noise, and the sources disagree about whether
+        # they write an offset (JSON lines carry +00:00, the plain ones do not).
+        stamp = (e["ts"] or "").replace("T", " ")[:19][-8:]
         rows.append(
             f'<div class="logline" data-level="{lvl}">'
             f'<span class="lvl" style="color:{_color(lvl)}">{lvl:<8}</span>'
+            f'<span class="ts">{html.escape(stamp):<8}</span> '
             f'<span class="src">{html.escape(e["source"])}</span> '
             f'<span class="txt">{html.escape(e["text"])}</span></div>'
         )
     buttons = "".join(f'<button onclick="flt(this,\'{lv}\')" class="on">{lv}</button>' for lv in _LEVELS)
-    return f'<div class="logbar">{buttons}</div><div class="logs">{"".join(rows)}</div>'
+    cls = "logs logs-live" if group == "live" else "logs"
+    return f'<div class="logbar">{buttons}</div><div class="{cls}">{"".join(rows)}</div>'
 
 
 _CSS = """
+.logline .ts{color:var(--muted);opacity:.75}
+.badge-paper{font-size:10px;font-weight:700;letter-spacing:.5px;padding:2px 6px;border-radius:4px;
+ background:rgba(45,212,191,.15);color:var(--accent);vertical-align:middle;margin-left:6px}
+.badge-live{font-size:10px;font-weight:700;letter-spacing:.5px;padding:2px 6px;border-radius:4px;
+ background:rgba(234,57,67,.15);color:var(--neg);vertical-align:middle;margin-left:6px}
+.logs-live-heading{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.logs.logs-live{border-left:2px solid var(--neg)}
 :root{color-scheme:dark;
 --bg:#0a0e12;--panel:#12161c;--border:#232a33;--text:#e6edf3;--muted:#8a97a3;
 --accent:#2dd4bf;--pos:#16c784;--neg:#ea3943;--warn:#f0b429;
@@ -922,9 +1024,15 @@ cursor:pointer;padding:0;margin-left:6px;display:none}
 """
 
 _JS = """
+// Scoped to the button's OWN tail (its .logbar's adjacent .logs box). There are two tails now --
+// paper and live -- and a document-wide query made one row of buttons silently retarget the other:
+// hiding WARN in paper also hid it in live while the live buttons still read as ON. Falls back to
+// document only if that structure ever changes, which keeps the single-tail behaviour intact.
 function flt(btn,lvl){btn.classList.toggle('off');btn.classList.toggle('on');
 var show=btn.classList.contains('on');
-document.querySelectorAll('.logline[data-level="'+lvl+'"]').forEach(function(r){r.style.display=show?'':'none'});}
+var box=btn.parentElement?btn.parentElement.nextElementSibling:null;
+var scope=(box&&box.classList&&box.classList.contains('logs'))?box:document;
+scope.querySelectorAll('.logline[data-level="'+lvl+'"]').forEach(function(r){r.style.display=show?'':'none'});}
 
 // Drag-to-reorder lives in cherrypick.core.viz.REORDER_JS now (the suite's one copy,
 // this page's 3-group version was the donor); groups are declared with data-cp-reorder
@@ -1121,6 +1229,8 @@ _CAL_CSS = (
     ".cpg-v{opacity:.75;text-align:right}"
     ".cpg-chip{display:inline-block;padding:0 6px;border-radius:8px;font-size:10px;font-weight:650}"
     ".cpg-chip.ok{color:var(--pos,#1a7f37)}.cpg-chip.no{color:var(--neg,#cf222e)}"
+    ".cpg-callout{margin:4px 0 10px;padding:6px 8px;border-radius:6px;font-size:12px;"
+    "background:rgba(154,103,0,.12);border:1px solid var(--warn,#9a6700)}"
 )
 
 
@@ -1132,25 +1242,49 @@ def _fmt_check_val(v: Any) -> str:
     return str(int(v)) if isinstance(v, (int, float)) else str(v)
 
 
-def _calibration_progress_html(module_views: list[dict[str, Any]]) -> str:
-    """Each ladder rung's march toward its promotion thresholds, as progress bars — the
-    calibrate output made visible (the audit: readings were point-in-time list items,
-    never a progression). Renders every check recommend_promotion evaluated, so the
-    hardened checks (return-on-capital, slippage survival) appear automatically the day
-    a module's rule enables them. Empty string when no module has a ladder."""
+def _role_pill(tag: str, entry: dict[str, Any]) -> str:
+    """The badge for one tag's row: champion, or a challenger's qualified/beats/vetoed state, or
+    (readings-only modules, `role` is None) plain qualified/not-qualified. One function so the
+    consolidated card never has two places that could disagree about what a given state is called."""
+    role = entry.get("role")
+    if role == "champion":
+        return _pill("champion", "OK")
+    qualified = bool(entry.get("qualified"))
+    if role == "challenger":
+        beats = bool(entry.get("beats_champion"))
+        if entry.get("deliberate_only") and qualified and beats:
+            return _pill("deliberate-only", "UNKNOWN")
+        if qualified and beats:
+            return _pill("beats champion", "OK")
+        if qualified:
+            return _pill("qualified", "WARN")
+        return _pill("not qualified", "UNKNOWN")
+    # role is None: readings-only mode (qualify_readings) — no champion to compare against.
+    return _pill("qualified", "OK") if qualified else _pill("not qualified", "UNKNOWN")
+
+
+def _champions_html(module_views: list[dict[str, Any]]) -> str:
+    """Champion/challenger status and each tag's march toward the qualification bar, in one
+    consolidated card (calibrate.run made visible). Replaces the old two-renderer split
+    (`_calibration_html` inline per module card, `_calibration_progress_html` as a separate
+    suite-wide section) 2026-08-01 — that split put the same information in two disconnected
+    places on the page for no reason once neither renderer still assumes an ordered ladder.
+
+    Shows a block for EVERY module with any profiles readings at all, champion-mode or
+    readings-only — the old per-tag renderer hid a module entirely once nothing was "on the
+    ladder", which is exactly the bug that made flies' arms invisible here despite the module's
+    own config comment saying the comparison itself IS the output. Renders every check
+    `recommend_champion`/`qualify_readings` evaluated, so the hardened checks (return-on-capital,
+    slippage survival) appear automatically the day a module's rule enables them."""
     blocks = []
     for mv in module_views:
         cal = mv.get("calibration") or {}
-        if not cal.get("ok") or not cal.get("ladder"):
+        profiles = cal.get("profiles") or {}
+        if not cal.get("ok") or not profiles:
             continue
-        profiles = cal.get("profiles", {})
         rows = []
-        for tag in cal["ladder"]:
-            entry = profiles.get(tag)
-            rec = (entry or {}).get("recommendation") or {}
-            checks = rec.get("checks") or {}
-            if not checks:
-                continue
+        for tag, entry in profiles.items():
+            checks = entry.get("checks") or {}
             bars = []
             for cname, c in checks.items():
                 value, threshold = c.get("value"), c.get("threshold")
@@ -1171,21 +1305,26 @@ def _calibration_progress_html(module_views: list[dict[str, Any]]) -> str:
                         f"{'PASS' if passed else 'FAIL'}</span>"
                         f'<span class="cpg-v">{html.escape(_fmt_check_val(value))}</span></div>'
                     )
-            verdict = rec.get("recommendation") or "—"
-            tone = "OK" if rec.get("eligible") else "UNKNOWN"
             rows.append(
-                f'<div class="cpg-row"><div class="cpg-head">{html.escape(tag)} '
-                f"{_pill(verdict, tone)}</div>{''.join(bars)}</div>"
+                f'<div class="cpg-row"><div class="cpg-head">{html.escape(str(tag))} '
+                f"{_role_pill(tag, entry)}</div>{''.join(bars)}</div>"
             )
-        if rows:
-            blocks.append(f'<div class="cpg-mod"><h3>{html.escape(mv["name"])}</h3>{"".join(rows)}</div>')
+        if not rows:
+            continue
+        rec = cal.get("recommendation")
+        callout = (
+            f'<div class="cpg-callout">{html.escape(str(rec["reason"]))}</div>'
+            if rec and rec.get("eligible")
+            else ""
+        )
+        champion_pill = f" {_pill('champion: ' + cal['champion'], 'OK')}" if cal.get("champion") else ""
+        blocks.append(
+            f'<div class="cpg-mod"><h3>{html.escape(mv["name"])}{champion_pill}</h3>'
+            f"{callout}{''.join(rows)}</div>"
+        )
     if not blocks:
         return ""
-    return (
-        '<section class="card"><h2>calibration — progress toward promotion</h2>'
-        + "".join(blocks)
-        + "</section>"
-    )
+    return '<section class="card"><h2>champions &amp; challengers</h2>' + "".join(blocks) + "</section>"
 
 
 def _render_html(model: dict[str, Any], serve: bool = False) -> str:
@@ -1223,9 +1362,37 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     liveops_card = _liveops_card_html() if serve else ""
     eod_card = _eod_card_html(model.get("eod"), serve)
     cards = "".join(_module_card(mv) for mv in model.get("modules", []))
-    logs = '<section class="card"><h2>recent logs</h2>' + _log_html(model.get("logs", [])) + "</section>"
+    # Paper first, then live as its own labelled block underneath. Two tails rather than one merged
+    # feed: a live line must never be one indistinguishable scroll away from a paper line.
+    live_entries = model.get("live_logs", [])
+    live_block = ""
+    if live_entries:
+        live_block = (
+            '<h2 class="logs-live-heading">live logs <span class="badge-live">LIVE</span></h2>'
+            + _log_html(live_entries, group="live")
+        )
+    elif _live_configured(model):
+        # Configured but silent. Say so explicitly — an empty area next to a LIVE badge reads as
+        # "nothing is happening live", which is the one thing this card must never imply by accident.
+        live_block = (
+            '<h2 class="logs-live-heading">live logs <span class="badge-live">LIVE</span></h2>'
+            '<div class="muted" style="padding:6px 2px">no live log lines yet '
+            "(the live loop is armed per-day; absent is normal)</div>"
+        )
+    logs = (
+        '<section class="card"><h2>recent logs <span class="badge-paper">PAPER</span></h2>'
+        + _log_html(model.get("logs", []))
+        + live_block
+        + "</section>"
+    )
+    # The mode tag is a safety label, so it has to describe what is actually on the page. It read a
+    # flat "paper" while a live log tail was rendered directly above it, which understates the page
+    # and trains the reader to stop believing the tag. "read-only" still carries the load-bearing
+    # claim -- the orchestrator drives only paper engines and never places an order; live appears
+    # here as log text and nothing else.
+    mode_tag = "paper + live logs" if live_entries else "paper"
     footer = (
-        '<div class="meta"><span class="muted">read-only · paper · generated '
+        f'<div class="meta"><span class="muted">read-only · {mode_tag} · generated '
         f"{html.escape(str(model.get('generated_at')))}</span>"
         '<button type="button" class="reset-layout" id="reset-layout" '
         'title="Restore the original card order">&#8635; reset layout</button></div>'
@@ -1255,7 +1422,7 @@ def _render_html(model: dict[str, Any], serve: bool = False) -> str:
     equity_card = ""
     if model.get("equity_card"):
         equity_card = viz.card_inline_html("suite-equity", "suite equity — paper", model["equity_card"])
-    calibration_card = _calibration_progress_html(model.get("modules", []))
+    calibration_card = _champions_html(model.get("modules", []))
     extra_style = viz.SECTION_STYLE + _CAL_CSS
     extra_script = (
         viz.SECTION_JS + viz.REORDER_JS + (_DOCTOR_JS + _LIVEOPS_JS + _RECONCILE_JS if serve else "")

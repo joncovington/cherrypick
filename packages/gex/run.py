@@ -8,9 +8,11 @@ The umbrella (Cherrypick) invokes `python run.py gex --symbol <sym> --json` to e
 import sys
 from pathlib import Path
 
+# Source-checkout convenience: put src/ on sys.path so `python run.py` works without an install.
+# An installed copy resolves cherrypick.gex from the environment and ignores this.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from cli import main  # noqa: E402
+from cherrypick.gex.cli import main  # noqa: E402
 
 if __name__ == "__main__":
     raise SystemExit(main())

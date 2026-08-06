@@ -2,9 +2,8 @@
 
 import pytest
 
-import analytics
-import db as dbmod
-import fly
+from cherrypick.flies import analytics, fly
+from cherrypick.flies import db as dbmod
 
 
 @pytest.fixture()
@@ -36,6 +35,7 @@ def position(
     underlying=6000.0,
     risk_free=1,
     floor_dollars=None,
+    regime=None,
 ):
     dbmod.save_position(
         conn,
@@ -65,6 +65,10 @@ def position(
             "risk_free": risk_free,
             "floor_dollars": floor_dollars,
             "entry_time": f"{day}T12:00:00",
+            # Regime tags, threaded the same way `window` is. Pass e.g.
+            # regime={"gex_bucket": "pinning", "gex_concentration": 0.71}; keys are prefixed
+            # "entry_" to match what book.regime_columns writes.
+            **{f"entry_{k}": v for k, v in (regime or {}).items()},
         },
     )
 
@@ -711,3 +715,208 @@ def test_timeline_carries_the_feed(conn):
 def test_data_quality_on_an_empty_day_is_not_an_error(conn):
     feed, summary = analytics.data_quality(conn, "2026-07-20")
     assert feed == [] and summary["ticks"] == 0 and summary["ok_rate"] is None
+
+
+def test_entry_structure_label_covers_known_modes_and_falls_back_for_unknown():
+    assert analytics._entry_structure_label("legged", "put") == "short put"
+    assert analytics._entry_structure_label("legged", "call") == "short call"
+    assert analytics._entry_structure_label("outright", "put") == "fly"
+    # An entry_mode this map wasn't written for must surface as itself, not be guessed at as a
+    # short vertical (the old ternary's default) or crash.
+    assert analytics._entry_structure_label("debit_first", "put") == "debit put"
+    assert analytics._entry_structure_label("bwb_roll", "put") == "bwb put"
+    # An entry_mode this map wasn't written for at all must surface as itself, never crash.
+    assert analytics._entry_structure_label("some_future_mode", "put") == "some_future_mode"
+
+
+def _debit_first(
+    conn,
+    position_id,
+    *,
+    day="2026-07-20",
+    arm="gex",
+    center=6000.0,
+    credit=2.55,
+    debit=1.50,
+    entry="T12:00:00",
+    completed=None,
+    latency=None,
+    spot_at_completion=None,
+    underlying=6000.0,
+):
+    """A debit_first position, optionally completed -- the mirror of _legged, side=call."""
+    open_fee = fly.vertical_open_fee("SPX", 1)
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position_id,
+            "book_id": f"{day}:{arm}:SPX",
+            "trade_date": day,
+            "arm": arm,
+            "entry_mode": "debit_first",
+            "symbol": "SPX",
+            "kind": "fly" if completed else "long_vertical",
+            "side": "call",
+            "center": center,
+            "wing_width": 5.0,
+            "quantity": 1,
+            "net": credit - debit if completed else -debit,
+            "credit": credit if completed else None,
+            "debit": debit,
+            "fees": open_fee * 2 if completed else open_fee,
+            "entry_time": f"{day}{entry}",
+            "completed_at": f"{day}{completed}" if completed else None,
+            "completion_latency_min": latency,
+            "spot_at_completion": spot_at_completion,
+            "underlying_at_entry": underlying,
+            "status": "open",
+        },
+    )
+
+
+def test_timeline_rewinds_a_completed_debit_first_fly_to_the_long_vertical_it_used_to_be(conn):
+    """debit_first's counterpart of test_timeline_rewinds_a_completed_fly_to_the_vertical_it_used_to_be
+    -- before completion the position was a LONG vertical (a paid-for debit spread), not a fly."""
+    _debit_first(
+        conn, "P1", entry="T12:00:00", completed="T12:30:00", latency=30.0, spot_at_completion=6000.0
+    )
+    _tick(conn, "T12:15:00", spot=5995.0)  # the long vertical's own strike -- payoff 0, mirrors legged's
+    _tick(conn, "T12:45:00", spot=6000.0)  # the completed fly at its centre -- full wing
+    open_fee = fly.vertical_open_fee("SPX", 1)
+
+    ticks = analytics.session_timeline(conn, "2026-07-20")["ticks"]
+    before, after = ticks[0]["settle_now"]["gex"], ticks[1]["settle_now"]["gex"]
+    # long vertical at its own (center - w) strike: no payoff yet, one fee stack, no ITM legs.
+    assert before == pytest.approx(-1.50 * 100 - open_fee, abs=0.01)
+    # a fly at its centre: full wing, two fee stacks, one ITM leg by the same boundary convention.
+    assert after == pytest.approx(1.05 * 100 + 500 - 2 * open_fee - 5.00, abs=0.01)
+
+
+def _bwb(
+    conn,
+    position_id,
+    *,
+    day="2026-07-20",
+    arm="gex",
+    center=6000.0,
+    credit=1.1,
+    far_width=10.0,
+    roll_debit=0.3,
+    entry="T12:00:00",
+    rolled=None,
+    latency=None,
+    spot_at_roll=None,
+    underlying=6000.0,
+):
+    """A bwb_roll position, optionally rolled -- the mirror of _legged/_debit_first, side=put."""
+    open_fee = fly.fly_open_fee("SPX", 1)
+    roll_fee = fly.vertical_open_fee("SPX", 1)
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position_id,
+            "book_id": f"{day}:{arm}:SPX",
+            "trade_date": day,
+            "arm": arm,
+            "entry_mode": "bwb_roll",
+            "symbol": "SPX",
+            "kind": "fly" if rolled else "bwb",
+            "side": "put",
+            "center": center,
+            "wing_width": 5.0,
+            "far_width": far_width,
+            "quantity": 1,
+            "net": credit - roll_debit if rolled else credit,
+            "credit": credit,
+            "roll_debit": roll_debit if rolled else None,
+            "fees": open_fee + roll_fee if rolled else open_fee,
+            "entry_time": f"{day}{entry}",
+            "completed_at": f"{day}{rolled}" if rolled else None,
+            "rolled_at": f"{day}{rolled}" if rolled else None,
+            "completion_latency_min": latency,
+            "roll_latency_min": latency,
+            "spot_at_completion": spot_at_roll,
+            "spot_at_roll": spot_at_roll,
+            "underlying_at_entry": underlying,
+            "status": "open",
+        },
+    )
+
+
+def test_timeline_rewinds_a_rolled_bwb_to_the_broken_wing_it_used_to_be(conn):
+    """bwb_roll's counterpart of the legged/debit_first rewind tests -- before the roll the
+    position was a genuine BWB with real tail risk, not the symmetric fly it becomes after."""
+    _bwb(conn, "P1", entry="T12:00:00", rolled="T12:30:00", latency=30.0, spot_at_roll=6000.0)
+    _tick(conn, "T12:15:00", spot=6005.0)  # the bwb's own near-wing strike -- payoff 0, no ITM legs
+    _tick(conn, "T12:45:00", spot=6000.0)  # the rolled fly at its centre -- full wing
+    open_fee = fly.fly_open_fee("SPX", 1)
+    roll_fee = fly.vertical_open_fee("SPX", 1)
+
+    ticks = analytics.session_timeline(conn, "2026-07-20")["ticks"]
+    before, after = ticks[0]["settle_now"]["gex"], ticks[1]["settle_now"]["gex"]
+    # bwb at its own near-wing strike: no payoff yet, one fee stack, no ITM legs.
+    assert before == pytest.approx(1.1 * 100 - open_fee, abs=0.01)
+    # the rolled fly at its centre: full wing, two fee stacks, one ITM leg by the same convention.
+    assert after == pytest.approx((1.1 - 0.3) * 100 + 500 - open_fee - roll_fee - 5.00, abs=0.01)
+
+
+# --------------------------------------------------------------------------- regime conditioning
+def test_by_regime_groups_on_the_stored_bucket(conn):
+    position(conn, "P1", pnl=100.0, regime={"gex_bucket": "pinning", "gex_concentration": 0.75})
+    position(conn, "P2", pnl=50.0, regime={"gex_bucket": "pinning", "gex_concentration": 0.68})
+    position(conn, "P3", pnl=-30.0, regime={"gex_bucket": "thin", "gex_concentration": 0.20})
+    rows = {r["bucket"]: r for r in analytics.by_regime(conn, "gex")}
+    assert rows["pinning"]["trades"] == 2 and rows["pinning"]["net_pnl"] == 150.0
+    assert rows["thin"]["trades"] == 1 and rows["thin"]["net_pnl"] == -30.0
+    # The measured range is carried so a threshold can be judged against what actually occurred.
+    assert rows["pinning"]["value_min"] == 0.68 and rows["pinning"]["value_max"] == 0.75
+
+
+def test_by_regime_rebuckets_the_recorded_float_at_analysis_time(conn):
+    """The whole reason the float is stored: re-cutting a threshold must not require re-running
+    sessions, which for regime data is impossible (there is no backfill path)."""
+    position(conn, "P1", pnl=100.0, regime={"gex_bucket": "thin", "gex_concentration": 0.35})
+    position(conn, "P2", pnl=-40.0, regime={"gex_bucket": "thin", "gex_concentration": 0.90})
+    # Both stored as "thin"; a 0.5 cut separates them without touching the ledger.
+    assert len(analytics.by_regime(conn, "gex")) == 1
+    rebucketed = {r["bucket"]: r for r in analytics.by_regime(conn, "gex", bucket_edges=[0.5])}
+    assert rebucketed["<0.5"]["net_pnl"] == 100.0
+    assert rebucketed[">=0.5"]["net_pnl"] == -40.0
+
+
+def test_by_regime_keeps_untagged_rows_visible(conn):
+    """Pre-2026-07-31 rows carry no regime and cannot be backfilled. Dropping them would make
+    coverage look better than it is; they get their own bucket instead."""
+    position(conn, "P1", pnl=10.0, regime={"gex_bucket": "thin", "gex_concentration": 0.2})
+    position(conn, "P2", pnl=20.0)  # no regime at all
+    buckets = {r["bucket"] for r in analytics.by_regime(conn, "gex")}
+    assert buckets == {"thin", "untagged"}
+
+
+def test_by_regime_rejects_an_unknown_dimension(conn):
+    with pytest.raises(ValueError, match="unknown dimension"):
+        analytics.by_regime(conn, "moon_phase")
+
+
+def test_regime_coverage_flags_a_degenerate_dimension(conn):
+    """The honesty guard. A dimension whose every tagged row lands in one bucket produces a table
+    that looks like a result and contains no contrast -- which is exactly what entry_gex_bucket was
+    ('thin' 60/60) before the classifier was windowed, with nothing in the read layer saying so."""
+    position(conn, "P1", pnl=10.0, regime={"gex_bucket": "thin", "skew_bucket": "put_skew"})
+    position(conn, "P2", pnl=20.0, regime={"gex_bucket": "thin", "skew_bucket": "flat"})
+    position(conn, "P3", pnl=30.0)  # untagged
+    cov = analytics.regime_coverage(conn)
+    assert cov["settled_trades"] == 3
+    assert cov["dimensions"]["gex"]["degenerate"] is True
+    assert cov["dimensions"]["gex"]["tagged"] == 2
+    assert cov["dimensions"]["gex"]["untagged"] == 1
+    assert cov["dimensions"]["skew"]["degenerate"] is False
+
+
+def test_by_regime_reads_the_completion_phase_too(conn):
+    """Entry and completion regimes can differ -- that difference is the point of storing both."""
+    position(conn, "P1", pnl=10.0, regime={"vol_bucket": "high"})
+    conn.execute("UPDATE fly_positions SET completion_vol_bucket = 'low' WHERE position_id = 'P1'")
+    conn.commit()
+    assert analytics.by_regime(conn, "vol", phase="entry")[0]["bucket"] == "high"
+    assert analytics.by_regime(conn, "vol", phase="completion")[0]["bucket"] == "low"

@@ -27,24 +27,31 @@ idea itself, is what this module is really for.
 ## Quick start
 
 ```bash
-git submodule update --init --recursive     # pulls in the shared cherrypick-core library
+pip install -e ../core                       # the shared cherrypick.core library, install first
+pip install -e ".[dev]"
 cp config.example.json config.json
 python -m pytest                             # confirm everything checks out
 
 # paper trading (simulated) — requires the suite's shared streamer to be running
-python src/paper_loop.py --once             # run one pass across every strategy variant
-python src/paper_loop.py --interval 300     # keep running until the market close
-python src/paper_loop.py --settle           # book the day's results after the closing bell
-python src/paper_loop.py --status           # what's open, what's settled, right now
+python -m cherrypick.flies.paper_loop --once             # run one pass across every strategy variant
+python -m cherrypick.flies.paper_loop --interval 300     # keep running until the market close
+python -m cherrypick.flies.paper_loop --settle           # book the day's results after the closing bell
+python -m cherrypick.flies.paper_loop --status           # what's open, what's settled, right now
 
 # or feed it a saved snapshot file instead of a live data feed
 python run.py once --snapshot snapshot.json
 
 # monitoring and review
-python src/dashboard.py --port 8803 --open   # opens a browser dashboard: Today / History / Performance
+python -m cherrypick.flies.dashboard --port 8803 --open   # opens a browser dashboard: Today / History / Performance
 python run.py section --json                 # the compact summary card shown on the suite-wide dashboard
-python src/paper_loop.py --eod-reports       # regenerates the day's end-of-day report
+python run.py regime                         # results grouped by the market regime each trade entered into
+python -m cherrypick.flies.paper_loop --eod-reports       # regenerates the day's end-of-day report
 ```
+
+`regime` reports coverage first — how much of the book carries each tag, and whether a tag ever took
+more than one value — because a table split on a tag that never varied looks like a result and isn't.
+Pass `--dimension gex|vol|skew|time` for one dimension, or `--bucket-edges 0.4,0.6` to re-cut the
+recorded measurement at different thresholds without re-running any sessions.
 
 The paper-trading database lives at `~/.cherrypick/data/flies/paper_trades.db` (override with
 the `FLIES_DB_PATH` environment variable if you need a different location).
@@ -85,17 +92,17 @@ whole day's book, not the individual position, and only holds up within the pric
 funding trades cover. *(As of the 2026-07-27 configuration update, this mode is switched off —
 see "Status" below.)*
 
-## The four strategy variants ("arms")
+## The strategy variants ("arms")
 
 The module runs several parallel copies of the strategy side by side, each changing exactly one
-variable, so results from one variant can be compared cleanly against a baseline rather than a
-mix of confounded changes:
-
-| Variant | Picks its center strike by... | What it's testing |
-|---|---|---|
-| `gex` | the strike with the strongest dealer positioning (net gamma exposure) near the current price | whether dealer hedging really does "pin" price near that strike |
-| `time_window` | the at-the-money strike, but only trades inside specific windows of the day | whether time-of-day matters |
-| `control` | the at-the-money strike, all day | the plain baseline every other variant is measured against |
+variable from the `control` baseline, so results from one variant can be compared cleanly rather
+than a mix of confounded changes. `gex` picks its centre by dealer gamma positioning, `time_window`
+by trading only inside specific windows, and `width-2`..`width-5` sweep the wing width — those
+change WHERE or WHEN a position is centred. `debit-first`, `iron`, and `bwb` instead change HOW the
+net credit is manufactured in the first place (buying the debit leg first, completing with an iron
+butterfly, or entering a broken-wing butterfly whole and rolling it in) — see
+[`CLAUDE.md`](CLAUDE.md)'s "The arms" section for the current, complete list and what each one is
+actually testing; it's the canonical source so this file doesn't drift out of sync with it.
 
 Each variant keeps a completely separate ledger, so one lucky trade in one variant can't make
 another variant look better than it is.
@@ -116,7 +123,7 @@ and full defined-risk exposure, not a bounded floor.
 
 ## Monitoring dashboard
 
-Start it with `python src/dashboard.py --port 8803 --open`, or ask Claude to run
+Start it with `python -m cherrypick.flies.dashboard --port 8803 --open`, or ask Claude to run
 `/serve-dashboard --flies`. It's read-only and only reachable from your own computer (no
 outside network access), and has three views:
 
@@ -145,7 +152,7 @@ sessions, raw P&L is mostly noise, and leading with it invites the wrong conclus
 Every number reported is already net of realistic commissions/fees plus a modeled slippage
 haircut (the same cost model MEIC and earnings use). A legged butterfly pays two full fee
 stacks against a credit that's often only $35–105, so costs here aren't a rounding error — they
-are a central part of what this module is measuring. That includes the $5/contract
+are a central part of what this module is measuring. That includes the $5-per-ITM-strike
 exercise-assignment fee tastytrade charges overnight on any leg that finishes ITM — see
 [docs/faq.md](docs/faq.md) for why that cost (not fee size on its own) rules out trading
 SPY, or futures options on /ES or /MES, instead of SPX/XSP.

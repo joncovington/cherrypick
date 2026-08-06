@@ -119,8 +119,10 @@ Then run `claude` from the project directory to use the suite's slash commands (
 
 ```bash
 # 1. Get the project
-git clone --recurse-submodules https://github.com/joncovington/cherrypick.git
-cd cherrypick/packages/orchestrator
+git clone https://github.com/joncovington/cherrypick.git
+cd cherrypick
+pip install -e packages/core       # shared cherrypick.core library — install this first
+cd packages/orchestrator
 pip install -e ".[dev]"
 
 # 2. Set your preferences (symbols, strategies, alert channels)

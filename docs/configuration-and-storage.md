@@ -59,6 +59,7 @@ tracked):
 |---|---|---|
 | `watchdog` | on, ~10 min | `cherrypick-watchdog` |
 | `trade_notify` | on, ~2 min | `cherrypick-trade-notify` |
+| `follow_feed` | **off**, ~5 min when enabled | `cherrypick-follow-notify` |
 | module `paper` (kind `self_healing`) | module constants: MEIC 2 min, flies 1 min | `cherrypick-meic-paper-loop`, `cherrypick-flies-paper-loop` — registered by the modules' own `--install-task` |
 | module `paper` (kind `cherrypick_scheduled`) | entry 15:45 / exit 09:45 ET | `cherrypick-earnings-paper-entry`, `-exit` |
 | `paper.dolt_service` | on, ~5 min | `cherrypick-earnings-dolt` (keep-alive) |

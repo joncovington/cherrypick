@@ -4,17 +4,12 @@ They exercise the daemon's status shape (a single merged object with the keys th
 reads) and the not-running paths, against a temp $CHERRYPICK_HOME so nothing touches a real cache.
 """
 
-import sys
-from pathlib import Path
+import json
 
 import pytest
 
-_SRC = Path(__file__).resolve().parent.parent / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
-
-import config as _config  # noqa: E402
-import daemon as _daemon  # noqa: E402
+from cherrypick.streamer import config as _config
+from cherrypick.streamer import daemon as _daemon
 
 
 @pytest.fixture()
@@ -53,7 +48,10 @@ def test_status_no_cache_reports_not_running(home):
 
 def test_status_empty_cache_reports_not_running(home):
     """An initialized-but-empty cache (schema present, no events) still reports not-running/no-age —
-    proves status() reads the cache without a live daemon and the merge keeps a single flat object."""
+    proves status() reads the cache without a live daemon and the merge keeps a single JSON object
+    (util.first_json needs exactly one top-level object on stdout — a plain json.loads handles
+    nested dict VALUES like symbol_health/chain_fetch_errors fine; the old, stricter "every value is
+    flat" assertion here was incidental, not load-bearing)."""
     from cherrypick.core import streamcache
 
     cache = _config.cache_path({})
@@ -64,8 +62,9 @@ def test_status_empty_cache_reports_not_running(home):
     st = _daemon.status({})
     assert st["running"] is False
     assert st["oldest_event_age_s"] is None
-    # A single flat dict (no nested status object) is what util.first_json needs.
-    assert all(not isinstance(v, dict) for v in st.values())
+    assert st["symbol_health"] == {}
+    assert st["chain_fetch_errors"] == {}
+    assert json.loads(json.dumps(st)) == st  # still exactly one JSON-serializable object
 
 
 def test_status_tracks_underlying_spot_freshness_separately(home):
@@ -98,6 +97,27 @@ def test_status_tracks_underlying_spot_freshness_separately(home):
     assert st["underlyings_stale_age_s"] >= 3500, "underlying spot age reflects the frozen SPX feed"
 
 
+def test_status_surfaces_chain_fetch_errors(home):
+    """A symbol whose chain fetch is currently failing (stream_symbol_health.chain_fetch_error set)
+    must show up in chain_fetch_errors even while every other symbol's aggregate ages look healthy
+    — this is the per-symbol signal the 2026-07-31 XSP incident needed and didn't have."""
+    from cherrypick.core import streamcache
+
+    cache = _config.cache_path({})
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    conn = streamcache.connect(cache)
+    streamcache.upsert_symbol_health(conn, "XSP", chain_fetch_error="Couldn't parse response: <html>")
+    streamcache.upsert_symbol_health(
+        conn, "QQQ", chain_loaded_at="2026-07-31T12:00:00+00:00", chain_fetch_error=None
+    )
+    conn.close()
+
+    st = _daemon.status({})
+    assert st["chain_fetch_errors"] == {"XSP": "Couldn't parse response: <html>"}
+    assert st["symbol_health"]["QQQ"]["chain_fetch_error"] is None
+    assert st["symbol_health"]["XSP"]["chain_fetch_error"] == "Couldn't parse response: <html>"
+
+
 def test_stop_when_not_running(home):
     result = _daemon.stop({})
     assert result == {"ok": False, "error": "Streamer not running"}
@@ -118,7 +138,7 @@ def fake_keyring(monkeypatch):
 
 
 def test_secrets_status_and_set(fake_keyring):
-    import credentials as _credentials
+    from cherrypick.streamer import credentials as _credentials
 
     assert _credentials.status() == {"client_secret": False, "refresh_token": False}
     written = _credentials.set_secrets(prompt_fn=lambda p: "value-for-" + p)
@@ -129,7 +149,7 @@ def test_secrets_status_and_set(fake_keyring):
 
 
 def test_secrets_set_empty_input_skips(fake_keyring):
-    import credentials as _credentials
+    from cherrypick.streamer import credentials as _credentials
 
     assert _credentials.set_secrets(prompt_fn=lambda p: "") == []
     assert _credentials.status() == {"client_secret": False, "refresh_token": False}

@@ -15,19 +15,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from cherrypick.core import advice as core_advice
 
-_SRC = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(_SRC))
-# Bootstrap src/_core BEFORE the core import: unlike the sibling tests (which import a module file that
-# bootstraps it), this file imports cherrypick.core directly, so on its own it failed collection unless
-# another test module happened to run first.
-_CORE = _SRC / "_core"
-if _CORE.is_dir() and str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
-from cherrypick.core import advice as core_advice  # noqa: E402
-
-import paper  # noqa: E402
-import paper_loop  # noqa: E402
+from cherrypick.meic import paper, paper_loop
 
 DAY = "2026-07-29"
 BOUNDS = {"stop_trigger_ratio": {"min": 0.85, "max": 0.95}}
@@ -42,7 +32,7 @@ def homes(tmp_path, monkeypatch):
     db = tmp_path / "meic" / "paper_trades.db"
     db.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        [sys.executable, str(Path(__file__).parent.parent / "src" / "db.py"), "--db", str(db), "init_db"],
+        [sys.executable, "-m", "cherrypick.meic.db", "--db", str(db), "init_db"],
         check=True,
         capture_output=True,
     )
@@ -129,10 +119,12 @@ def test_open_advised_positions_get_a_management_only_twin(homes):
 
 def test_process_symbol_evaluates_extra_profiles(homes):
     """The engine seam: a synthetic advised profile is evaluated beside the registry ones."""
-    # XSP — the head of the configured symbol set since the 2026-07-28 width-study reduction
-    # (a symbol outside the traded set gets no per-profile results at all).
+    # Read the traded symbol from config rather than naming one: a symbol outside the configured
+    # set gets no per-profile results at all, so a hardcoded name silently breaks this test every
+    # time the symbol set changes (XSP on 2026-07-28, SPX on 2026-08-01 — twice now).
+    symbol = (paper.load_base_config().get("symbols") or ["SPX"])[0]
     snapshot = {
-        "symbol": "XSP",
+        "symbol": symbol,
         "date": DAY,
         "now_et": "13:00",
         "expiration": DAY,

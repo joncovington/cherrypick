@@ -44,6 +44,7 @@ Subcommands:
   ensure-dolt          Start any module's declared Dolt server if down (invoked by its keep-alive task).
   notify-test          Fire a test notification through all configured channels.
   notify-trades        Push new paper entries/exits to the trade channels (also runs on each watchdog tick).
+  notify-follow        Push new tastylive Follow Feed orders to their own channel (own task, network call).
   secrets-set          Store a slack/discord webhook URL in the OS keyring (--channel; --url or prompt).
   secrets-status       Show which push-channel webhooks are configured (secret-free).
   secrets-delete       Remove a stored webhook (--channel).
@@ -72,6 +73,7 @@ from cherrypick.orchestrator import (
     doctor,
     eod_digest,
     eod_insight,
+    follow_notifier,
     init,
     logrotate,
     migrate,
@@ -141,15 +143,7 @@ def _ensure_module_checkout(name: str, mcfg: dict) -> dict:
     r = subprocess.run(argv, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
     if r.returncode != 0:
         return {"ok": False, "detail": f"git clone failed: {(r.stderr or r.stdout).strip()[:200]}"}
-    sm = subprocess.run(
-        ["git", "submodule", "update", "--init"],
-        cwd=str(root),
-        capture_output=True,
-        text=True,
-        creationflags=CREATE_NO_WINDOW,
-    )
-    note = "" if sm.returncode == 0 else f"; submodule init warn: {(sm.stderr or '').strip()[:120]}"
-    return {"ok": True, "detail": f"cloned to {root}{note}"}
+    return {"ok": True, "detail": f"cloned to {root}"}
 
 
 def cmd_install(cfg) -> None:
@@ -225,6 +219,17 @@ def cmd_install(cfg) -> None:
         results["trade_notify_task"] = tasks.create_minute_task(
             tn["task_name"], tn_tr, tn.get("interval_minutes", 2)
         )
+
+    # Follow Feed notifier: its OWN recurring task, never a watchdog-tick call -- it is the one
+    # notifier that makes a network request, and the reliability path stays network-free.
+    ff = cfgmod.follow_feed_settings(cfg)
+    if ff["enabled"]:
+        ff_tr = tasks.build_tr(pyw, str(_LAUNCHER), "notify-follow")
+        results["follow_notify_task"] = tasks.create_minute_task(
+            ff["task_name"], ff_tr, ff["interval_minutes"]
+        )
+    else:
+        results["follow_notify_task"] = tasks.delete(ff["task_name"])
 
     # The suite end-of-day digest + AI insight are no longer fixed-time tasks — the watchdog fires them
     # once every installed module has written its paper-eod file (or at the deadline backstop), so the
@@ -303,6 +308,31 @@ def _ensure_daemon(root: Path, spec: dict) -> dict:
     return {"ok": started, "detail": "started" if started else "start failed"}
 
 
+def _format_uninstall_report(results: dict[str, dict]) -> tuple[str, int]:
+    """Render `cmd_uninstall`'s per-task results the way `doctor.format_report` renders checks --
+    `[ OK ]`/`[FAIL]` lines a walk-away user can scan, not a JSON blob they have to parse to learn
+    whether every task actually went away. Also names what uninstall deliberately leaves running,
+    since that's exactly the ambiguity a user reaching for "stopped and confirmed stopped" needs
+    resolved without having to already know the /uninstall doc by heart."""
+    lines = ["cherrypick uninstall", "=" * 60]
+    worst = 0
+    for name, r in results.items():
+        ok = r.get("ok", True)
+        worst = max(worst, 0 if ok else 1)
+        lines.append(f"{'[ OK ]' if ok else '[FAIL]'} {name:<24} {r.get('detail', '')}")
+    lines += [
+        "-" * 60,
+        "Left running by design (uninstall does not touch these):",
+        "  - streamer (packages/streamer) -- the suite's shared market-data producer",
+        "  - any dashboard server you started with --serve",
+        "  - Dolt sql-server on :3306, if something outside cherrypick started it",
+        "  Stop these yourself for a full stop -- see docs/operations.md.",
+        "=" * 60,
+        f"Result: {'ALL REMOVED' if worst == 0 else 'FAILURES -- action needed'}",
+    ]
+    return "\n".join(lines), worst
+
+
 def cmd_uninstall(cfg) -> None:
     results = {}
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
@@ -316,9 +346,13 @@ def cmd_uninstall(cfg) -> None:
                 text=True,
                 creationflags=CREATE_NO_WINDOW,
             )
+            out = (r.stdout or r.stderr).strip()
+            parsed = first_json(out)
             results[f"{name}.paper_task"] = {
                 "ok": r.returncode == 0,
-                "detail": (r.stdout or r.stderr).strip(),
+                # Modules print their own {"ok":..., "detail":...} JSON (possibly pretty-printed);
+                # flatten it to one line instead of embedding the raw multi-line blob.
+                "detail": parsed.get("detail", out) if parsed else out,
             }
         for tkey in ("entry_task_name", "exit_task_name"):
             if paper.get(tkey):
@@ -336,6 +370,7 @@ def cmd_uninstall(cfg) -> None:
     results["log_archive_task"] = tasks.delete(cfgmod.archive_settings(cfg)["task_name"])
     results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
     results["reconcile_task"] = tasks.delete(cfgmod.reconcile_schedule_settings(cfg)["task_name"])
+    results["follow_notify_task"] = tasks.delete(cfgmod.follow_feed_settings(cfg)["task_name"])
     # Stop generic background services (e.g. the gex recorder) — unlike the streamer, these are the
     # orchestrator's own daemons, so a full uninstall stops them.
     for svc in cfgmod.enabled_services(cfg):
@@ -356,7 +391,9 @@ def cmd_uninstall(cfg) -> None:
                 }
             except Exception as exc:
                 results[f"service.{svc['id']}"] = {"ok": False, "detail": str(exc)}
-    _emit({"ok": True, "removed": results, "note": "streamer (if running) left untouched; services stopped"})
+    report, worst = _format_uninstall_report(results)
+    print(report)
+    sys.exit(0 if worst == 0 else 1)
 
 
 # --------------------------------------------------------------------------- status
@@ -643,6 +680,10 @@ def cmd_notify_trades(cfg) -> None:
     _emit(trade_notifier.run(cfg))
 
 
+def cmd_notify_follow(cfg) -> None:
+    _emit(follow_notifier.run(cfg))
+
+
 def _resolve_session(args) -> str | None:
     """The session an EOD-scoped command targets: an explicit --date wins, else --eod means today
     (ET), else None (the all-time cumulative view)."""
@@ -878,6 +919,7 @@ def main() -> None:
             "ensure-dolt",
             "notify-test",
             "notify-trades",
+            "notify-follow",
             "secrets-set",
             "secrets-status",
             "secrets-delete",
@@ -993,6 +1035,7 @@ def main() -> None:
         "migrate-home": lambda: cmd_migrate_home(cfg, args.apply),
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),
+        "notify-follow": lambda: cmd_notify_follow(cfg),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
         "ensure-dolt": lambda: _ensure_dolt(cfg),
