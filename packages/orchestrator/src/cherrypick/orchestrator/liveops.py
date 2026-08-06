@@ -39,7 +39,7 @@ def halt_status(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     """A light, file-only status for a halt toggle UI: the flag's presence plus which enabled
     modules currently have `enable_live_trading` on. No keyring/broker reads (unlike `run()`), so
     it's cheap enough to poll from a browser every few seconds."""
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     modules = []
     any_live = False
     for name in cfgmod.enabled_modules(cfg):
@@ -93,7 +93,7 @@ def _live_enabled(name: str, root: Path) -> tuple[bool | None, str | None]:
 
 def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     """The live-ops readiness snapshot. Fast and file/keyring-only — safe on a served route."""
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     modules = []
     for name in cfgmod.enabled_modules(cfg):
         mcfg = cfg.get("modules", {}).get(name) or {}

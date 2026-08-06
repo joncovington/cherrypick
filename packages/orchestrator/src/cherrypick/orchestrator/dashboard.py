@@ -439,7 +439,7 @@ def _equity_card_payload(cfg: dict[str, Any], pnl: dict[str, Any]) -> dict[str, 
 
 def build_model(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     """Assemble the dashboard render model from on-disk state only (no broker/network)."""
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
 
     hb = _read_json(cfgmod.STATE_DIR / "watchdog.last.json")
     overall = (hb.get("overall") or "UNKNOWN").upper()
@@ -1463,7 +1463,7 @@ def _output_path(cfg: dict[str, Any]) -> Path:
 
 def render(cfg: dict[str, Any] | None = None) -> Path:
     """Build the dashboard and write it atomically. Read-only w.r.t. all data sources."""
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     model = build_model(cfg)
     out = _output_path(cfg)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -1474,7 +1474,7 @@ def render(cfg: dict[str, Any] | None = None) -> Path:
 
 
 def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
-    cfg = cfg or cfgmod.load_config()
+    cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     path = render(cfg)
     model = build_model(cfg)
     return {
