@@ -122,15 +122,19 @@ def clear_stamp(service_id: str) -> None:
         pass
 
 
-def staleness(svc: dict[str, Any], root: Path) -> dict[str, Any]:
+def staleness(svc: dict[str, Any], root: Path, service_id: str | None = None) -> dict[str, Any]:
     """Whether a *running* service is on config older than what is on disk now.
 
     `stale` is True only when a stamp exists AND a current hash is readable AND they differ. Every
     other combination is "cannot tell", which reports `adopt` (record the hash, change nothing)
     rather than a restart nobody asked for.
+
+    `service_id` names the stamp. `services[]` entries carry their own `id`; the streamer blocks do
+    not, so their caller passes the watchdog's finding label ("streamer", "meic.streamer") — which
+    also keeps two producers from sharing one stamp and recycling each other.
     """
     current, source = effective_config(svc, root)
-    stamped = read_stamp(svc.get("id", "")).get("config_hash")
+    stamped = read_stamp(service_id or svc.get("id", "")).get("config_hash")
     base = {"stale": False, "adopt": False, "hash": current, "source": source}
     if current is None:
         return {**base, "reason": "config unreadable"}

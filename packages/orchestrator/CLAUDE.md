@@ -211,7 +211,10 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   liveness cannot see it. `install` stamps a hash of each service's effective config (its own config
   file plus its `services[]` entry) and the watchdog recycles on a moved hash — gated on
   `auto_restart`, stamping only a restart that succeeded, and *adopting* rather than restarting a
-  service it has no prior stamp for.
+  service it has no prior stamp for. The streamer is covered too, but only from its **healthy**
+  branch (the stall path always wins) and never inside the `settling` window, so a config recycle can
+  never become the restart loop that guard exists to prevent; producers stamp under their finding
+  label so two of them can coexist through a cutover.
 - **Every spawned process is headless.** The scheduled tasks run under `pythonw.exe` (no console), so
   any console-subsystem child launched without `CREATE_NO_WINDOW` pops a visible terminal window on the
   user's screen — on every watchdog tick, daemon restart, and desktop toast. Daemons and `services`

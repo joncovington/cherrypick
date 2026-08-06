@@ -63,6 +63,7 @@ def test_source_root_uses_repo_root_in_source_checkout(monkeypatch):
     assert (root / "run.py").exists() or (root / "pyproject.toml").exists()
 
 
+@pytest.mark.real_state  # this test asserts where the real paths land, so it opts out of the isolation
 def test_runtime_paths_resolve_under_home_not_repo():
     # config.json, state/, and logs/ live under ~/.cherrypick — never inside the checkout. ROOT is only
     # the source anchor for relative module paths now. (Skipped if a CHERRYPICK_HOME override was active
