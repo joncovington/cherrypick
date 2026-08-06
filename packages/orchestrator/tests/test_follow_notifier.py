@@ -516,9 +516,7 @@ def test_futures_price_is_a_level_not_a_credit():
             "open_close": "O",
         }
     ]
-    line = ff.format_order(
-        _order(9, order_legs=legs, order_type="market", price_string="29,728.75"), {}
-    )
+    line = ff.format_order(_order(9, order_legs=legs, order_type="market", price_string="29,728.75"), {})
     assert "$29,728.75" in line
     assert " cr" not in line and " db" not in line
     # The side has to survive somewhere: the leg body is suppressed (it is just the underlying), so
