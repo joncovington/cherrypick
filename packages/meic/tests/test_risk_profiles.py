@@ -471,3 +471,46 @@ def test_gex_study_arms_are_forced_sampling(sample_risk_profiles):
         assert p["overlap_scope"] == "shorts"
         assert p["max_concurrent_ics"] == 99, f"{name} must run uncapped (each trade a sample)"
         assert p["daily_ic_trade_target"] >= 200, f"{name}'s daily cap must never bind"
+
+
+def test_gex_gate_family_is_documented_in_the_example_config():
+    """The three GEX gates were readable by the engine but appeared in no config file, so they could
+    only be found by reading paper.py (audit 2026-08-06). A gate nobody can discover is a gate nobody
+    can tune — and these are the ones the gex-open/gex-blocked study toggles."""
+    import json
+    import re
+    from pathlib import Path
+
+    example = Path(__file__).resolve().parents[1] / "config.example.json"
+    cfg = json.loads(re.sub(r"^\s*//.*$", "", example.read_text(encoding="utf-8"), flags=re.M))
+    assert cfg["regime_gex_block_negative"] is True  # the live baseline
+    assert cfg["regime_gex_require_positive"] is False  # opt-in strict variant
+    assert cfg["regime_gex_min_flip_distance_pct"] is None  # opt-in magnitude variant, off
+
+
+def test_documenting_those_gates_did_not_change_what_they_do():
+    """The example ships the engine's own defaults, so copying it must leave behaviour untouched —
+    otherwise 'documenting' a gate silently retunes every fresh install."""
+    import json
+    import re
+    from pathlib import Path
+
+    from cherrypick.meic import paper
+
+    example = Path(__file__).resolve().parents[1] / "config.example.json"
+    documented = json.loads(re.sub(r"^\s*//.*$", "", example.read_text(encoding="utf-8"), flags=re.M))
+    stripped = {k: v for k, v in documented.items() if not k.startswith("regime_gex_")}
+    snapshot = {
+        "symbol": "SPX",
+        "iv_rank": 0.5,
+        "vix": 15,
+        "gex": {"ok": True, "gex_positive": False},
+        "underlying_price": 6300.0,
+        "atr_5day": 10.0,
+        "session": "prime",
+        "now_min": 660,
+        "date": "2026-08-06",
+        "time": "11:00",
+    }
+    assert paper.evaluate_entry(snapshot, documented, [], 0)[:2] == (False, "regime_gex_negative")
+    assert paper.evaluate_entry(snapshot, stripped, [], 0)[:2] == (False, "regime_gex_negative")
