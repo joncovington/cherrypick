@@ -97,7 +97,7 @@ def main() -> None:
         return
 
     tz = cfg.get("timezone", "America/New_York")
-    holidays = timeutil.load_holidays(cfg, cfgmod.module_root)
+    holidays = timeutil.load_holidays()
     now = timeutil.now_et(tz)
     # Gate: only during a live trading session. Cheap no-op on weekends/holidays/off-hours.
     if not (timeutil.is_trading_day(now, holidays) and timeutil.is_session_window(now, holidays)):
