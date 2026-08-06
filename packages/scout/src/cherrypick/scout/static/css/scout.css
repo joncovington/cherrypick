@@ -135,6 +135,15 @@ table.calendar tr.stale td { color: #9fb0bf; }
   margin-bottom: 12px;
 }
 .builder-row label { font-size: 12px; color: #9fb0bf; display: flex; flex-direction: column; gap: 4px; }
+.builder-panel {
+  background: #14191f;
+  border: 1px solid #202932;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.builder-panel.builder-row { margin-bottom: 14px; }
+.builder-panel:last-of-type { margin-bottom: 0; }
 .builder-row input {
   width: 90px;
   background: #10151a;
