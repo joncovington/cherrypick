@@ -2,19 +2,15 @@
 
 Freshness and deadline checks only make sense against the trading session, so these helpers
 answer: what's the ET time now, is today a trading day, is the market open right now. Holidays
-are read from the MEIC module's config when available (avoids a second hardcoded holiday list);
-absent that, we fall back to a weekday check and log the degradation to the caller.
+come from `cherrypick.core.calendar`, the suite's one calendar — never a second hardcoded list here;
+if that lookup fails we degrade to a weekday-only check rather than failing the caller.
 """
 
 from __future__ import annotations
 
-import json
+from collections.abc import Iterable
 from datetime import datetime
 from datetime import time as dtime
-from pathlib import Path
-from typing import Any
-
-from cherrypick.core import home as _home
 
 try:  # stdlib first (no third-party dep)
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -80,30 +76,32 @@ def to_local_hhmm(hhmm: str, tz_name: str = _DEFAULT_TZ) -> str:
     return aware.astimezone().strftime("%H:%M")
 
 
-def load_holidays(cfg: dict[str, Any], module_root_fn) -> set[str]:
-    """Read NYSE holiday ISO dates from the MEIC module config, if reachable. Best-effort."""
-    holidays: set[str] = set()
-    meic = cfg.get("modules", {}).get("meic")
-    if not meic:
-        return holidays
+def load_holidays(years: Iterable[int] | None = None) -> set[str]:
+    """NYSE holiday ISO dates from the shared calendar (`cherrypick.core.calendar`).
+
+    This used to scan MEIC's config for `nyse_holidays_<year>` list keys. Those lists were retired
+    when the calendar moved into `cherrypick.core`, so the scan matched nothing and **every caller
+    has been running with an empty holiday set ever since**. `doctor` reported it plainly as
+    `holidays_loaded=0` and it read as a known gap rather than a live fault.
+
+    It is not cosmetic. `is_trading_day()` is what consumes this, so an empty set makes a market
+    holiday look like an ordinary session: the watchdog then expects fresh module data on a day the
+    market never opened, and raises staleness findings against every module for it.
+
+    Defaults to this year and next, so a check on 31 December still knows about 1 January. Kept
+    best-effort — this sits on the watchdog's path, and a calendar hiccup should degrade to the
+    old empty-set behaviour rather than fail a tick.
+    """
     try:
-        # Prefer MEIC's home config (~/.cherrypick/config/meic.json); fall back to its legacy in-repo
-        # config until migrated. Same home-first/legacy order the module itself resolves with.
-        root = module_root_fn(meic)
-        mc_path = next(
-            (c for c in (_home.config_path("meic"), Path(root) / "config.json") if c.exists()),
-            None,
-        )
-        if mc_path is None:
-            return holidays
-        with mc_path.open("r", encoding="utf-8") as fh:
-            mc = json.load(fh)
-        for key, val in mc.items():
-            if key.startswith("nyse_holidays_") and isinstance(val, list):
-                holidays.update(str(d) for d in val)
-    except Exception:
+        from cherrypick.core import calendar as _cal
+
+        wanted = list(years) if years is not None else [now_et().year, now_et().year + 1]
+        holidays: set[str] = set()
+        for year in wanted:
+            holidays.update(str(d) for d in _cal.nyse_holidays(int(year)))
         return holidays
-    return holidays
+    except Exception:
+        return set()
 
 
 def is_trading_day(dt: datetime | None = None, holidays: set[str] | None = None) -> bool:
