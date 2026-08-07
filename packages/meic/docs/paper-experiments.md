@@ -1,8 +1,115 @@
-**What this covers:** the history and design of a specific paper-trading study comparing wing
-widths, including a naming scheme that was later retired. More of an internal design record than
-a how-to guide — see [paper-trading.md](paper-trading.md) for the general paper-trading system
-and [risk-profiles.md](risk-profiles.md) for the risk-profile ladder it's built on. Part of the
+**What this covers:** the history and design of MEIC's paper-trading studies — the current
+four-stream forward test (below), and the retired GEX and wing-width studies it supersedes. More
+of an internal design record than a how-to guide — see [paper-trading.md](paper-trading.md) for
+the general paper-trading system and [risk-profiles.md](risk-profiles.md) for the risk-profile
+ladder (now disabled, kept for history and for live `/set-risk-profile`). Part of the
 [MEIC module](../README.md) in the cherrypick suite.
+
+## The forward test (2026-08-07) — four streams, one breakeven identity
+
+**Why this exists.** MEIC is not broken by gates or throughput — it sits just below its own
+breakeven identity. Under the per-side buy-back design an IC has three outcomes: both sides expire
+(+credit), one side stops (a scratch, ≈ −fees), both stop (≈ −credit). Expected value is
+`credit × [P(clean) − P(double)] − fees`, so the strategy pays exactly when
+
+```
+P(both expire clean)  −  P(both stop)   >   fees / credit
+```
+
+Measured over 290 ICs / 11 sessions (2026-07-10 → 08-04, pre-cutover `era='book'` rows):
+`10.0% − 4.8% = 5.2% < 5.5%` — **margin −0.4%**. And it is worse than that headline number: the 29
+"clean" both-expired ICs averaged **−$2.80**, not the ~+$108 a clean win should pay, because ITM
+cash settlements were hiding inside the nominal "expired" bucket (see `analytics.expired_detail`,
+which now splits `expired` into `expired_otm`/`expired_itm`/`expired_unknown` everywhere).
+
+`analytics.breakeven_scorecard` computes this identity per arm, per period — reproduced this
+document's own manual finding exactly (`{'trades': 290, 'clean_pct': 10.0, 'double_stop_pct': 4.8,
+'breakeven_bar_pct': 5.5, 'margin_pct': -0.4}`) — and is the health line in every EOD report
+(`paper-eod-<day>.md`'s "Arm scorecard" section) and the dashboard's Performance view.
+
+**The stop is the canonical convention, not a bug.** Research confirms the per-side stop keyed to
+the *whole IC's* credit (not each side's own credit) is the published Chambless MEIC method,
+designed so a single-side stop scratches the trade. `stop_trigger_ratio: 0.95` is the documented
+"MEIC+" variant (stop $0.10 below breakeven) that turns scratch days slightly positive. But the
+stop's cost is real and unpriced by the convention: of stopped sides with a recorded settlement
+counterfactual, the large majority settled OTM — money paid to stop a side that would have expired
+worthless anyway. That gap is what the derived stop policies below are built to measure.
+
+### The four streams
+
+| stream | what it is | why it exists |
+|---|---|---|
+| `control` | today's deployed policy incl. its 0.95×net stop, `overlap_scope: "shorts"` | the reference book **and** the champion (`calibration.champion` in the orchestrator config) — validates every derivation below |
+| `open` | every study gate off, no per-side stop, `overlap_scope: "none"`, full per-side path recording (running max cost, settle values on every exit path, first strike-touch time) | the **permissive superset** — every gate variant and every stop policy is a read-side split of this one stream's own recorded rows, never a reason to run a sixth or seventh arm |
+| `width-5` | SPX wing pinned to 5, otherwise identical gates to `open`, but keeps `control`'s real 0.95×net stop | the one genuinely non-derivable structural variant — wing width isn't a float you can re-derive after the fact |
+| `width-10` | SPX wing pinned to 10, same design as `width-5` | paired against `width-5` on the same ticks; expected to near-duplicate `control`'s own book under `control`'s widest-first selection — `analytics.arm_divergence` reports how often the two streams actually realized different strikes, so that isn't assumed |
+
+All four write `risk_profile = <arm name>` (there is no separate `arm` column — every existing
+reader, from the orchestrator's `report`/`calibrate` to `dashboard.py`/`section.py`, already groups
+on `risk_profile`). Rows carry an `era` column: `'book'` for the pre-cutover ladder-era history
+above, `'sample'` for everything from the four-stream design onward — `analytics.py`'s functions
+default to `era='sample'` so the two selection intensities are never silently pooled.
+
+### Why entries and exits are both answered read-side
+
+**Entries.** With `overlap_scope: "none"` and no position interaction, every gate variant is a
+pure entry filter and a deterministic function of a float `open` already records per entry (IV
+rank, ATR/spot, GEX bucket and value, skew, center offset, trend — see `regime.py`'s 8 dimensions).
+So `atr-open`, `ivr-open`, `gex-mag`, and the retired `gex-open`/`gex-blocked` pair (see below) are
+all answerable via `analytics.by_regime(conn, dimension, arm="open")`, immediately, rather than
+after a dedicated arm collects its own 14 sessions.
+
+**Exits.** The same logic, more strongly: a fully-marked un-stopped position's path contains every
+stop policy's outcome. `open` records, per side, the running max cost, the settle value on every
+exit path (not just cash-settle), and the first tick the spot crossed the short strike. From those
+recorded fields, `stop_policies.derive()` computes what four policies *would have* paid, at **1×
+position cost** and with exact pairing (same entries, same strikes, same credit, same session):
+
+| policy | rule | why it's interesting |
+|---|---|---|
+| `stop-none` | hold to settlement | flagship candidate — external literature (Option Alpha's SPY/0DTE backtests) predicts no-stop beats every stop level tested; the tail risk is real, so its scorecard carries a held-through-ITM count and worst-loss line, not just an average |
+| `stop-0.75-net` | cost ≥ 0.75 × net_credit | a clean tightening of `control`'s own basis, zero censoring |
+| `stop-2.0-side` | cost ≥ 2.0 × that side's own credit | the "gave back its own premium" rule people mean when they say that — 1.0× side credit does NOT mean that (see the corrections below); for a balanced split this is ≈ `control` already, so it's a re-basing test more than a tightening |
+| `strike-touch` | stop only on an actual spot breach of the short strike | strongest per-dollar support in the tracked sample — most stops fired on sides that were never breached |
+
+This is only valid because paper has no market impact and positions are independent, and it is
+**validated, not assumed**: `analytics.validate_stop_derivation` reconstructs `control`'s real
+0.95×net mechanism from `open`'s recorded fields and must reproduce `control`'s realized P&L within
+fill noise (confirmed exact — zero discrepancy — against 17 real production `control` rows). If a
+future change makes that validation fail, every number under "Stop-policy table" in the EOD report
+is void until it's fixed.
+
+### Corrections this redesign made to earlier assumptions
+
+A few claims from the pre-2026-08-07 planning were checked against the real ledger and turned out
+wrong — recorded here so they aren't re-asserted:
+
+| earlier claim | verified truth |
+|---|---|
+| `gex_positive_at_entry` = 1 on all 290 book-era rows | 1 on 78 non-null rows; 212 NULL. The dominant defect was missing GEX instrumentation (73% untagged), not a gate that never fired |
+| `overlap_scope: "none"` was already a working config flip | only `"shorts"` had a branch; `"none"` fell through to the strictest path (`"all"`) — a silent throttle. Fixed by adding an explicit branch (`paper.py`) |
+| the per-side stop is "mis-based by construction" | it is the canonical Chambless MEIC convention (see above) — reframed as canonical-vs-variant, not a bug |
+| `1.0× side credit` giveback means "gave back its own premium" | giveback of 1.0 means **cost = 2.0× side credit** — at 1.0× the side exits at its entry price having given back nothing. `stop-2.0-side` above is the rule people actually mean |
+| the retired `width-*` arms "never traded a row" | they filled on 2026-07-30/31; the rows were destroyed by a missing-columns incident during a later schema change — the same failure class `stale_writer_columns()` (`db.py`) now exists to catch |
+| `per_side_stop_trigger` would be "wired" this phase | superseded by the read-side derivation above: rather than adding a fifth live-configurable trigger-basis mode, the four bases are answered from `open`'s recorded paths via `stop_policies.py`. The config key was unread by any code path — decorative — and was removed from `config.json`/`config.example.json` 2026-08-07 rather than left as a misleading no-op |
+
+### Retired-profile disposition
+
+| cell | disposition |
+|---|---|
+| `large-spx-holdtoexpiry` (2026-07-16 → 07-18, one zero-entry session) | revived in spirit — `stop-none` is now the flagship derived policy |
+| `large-spx-lateonly`, `large-spx-gexmag` (same window, both zero-entry) | subsumed by `open`'s widened window and read-side regime splits |
+| the 15 symbol/wing/credit cells (2026-07-13 → 07-18) | stay retired — each pinned a symbol into its identity; see the account-size study section below |
+| `width-2`/`width-5`/`width-10`/`width-adaptive` (2026-07-28 → 08-05, retired without visible rows) | revived as `width-5`/`width-10` above — the "never traded" framing was corrected (see the table above) |
+| `aggressive`, `very-aggressive` | disabled with the rest of the ladder 2026-08-07 (see `config.risk.json`'s `_disabled_note`s); kept for history and for a deliberate live experiment |
+| `gex-open`/`gex-blocked` (2026-08-01, one session, byte-identical) | disabled 2026-08-07 — subsumed by `open`'s regime tagging, see the GEX study section below |
+
+**The kill rule this document follows:** a stream is retired only by an explicit written verdict
+here, never by silent deletion — `config.risk.json` keeps every retired profile's exact key set
+with `enabled: false` and a `_disabled_note` explaining why, rather than deleting it. A stream that
+enters zero trades for 5 consecutive sessions is escalated in the EOD report, not quietly dropped.
+
+---
 
 ## Independent sampling (2026-08-01) — every profile is a sample stream
 
@@ -40,6 +147,19 @@ independence. For the GEX study specifically the gain is smaller still — net-G
 on 3 of the 4 sessions measured (2.3%, 98.3% and 100% positive; only 07-30 saw both states), so the
 blocked-vs-allowed contrast is mostly a between-day comparison regardless of intraday sample count.
 
+
+> ## Retired 2026-08-07 — subsumed by `open`'s regime tagging
+>
+> **The `gex-open`/`gex-blocked` arm pair below has been disabled in `config.risk.json`.** The two
+> arms went byte-identical over their one session of real data: `gex_positive_at_entry` never took
+> the value 0 among the 78 rows that carried it at all (73% of rows were untagged, not gated), so
+> the "control vs treatment" comparison never had an opportunity to diverge. The question this
+> study asked survives — it's now answered read-side from the `open` stream's own recorded
+> `entry_gex_bucket`/`entry_gex_value` (`regime.py`, `analytics.by_regime`), the same
+> supersets-not-parallel-books design the wing-width study below was rebuilt around. See "The
+> forward test (2026-08-07)" at the top of this document for the full design and
+> `GATES.md`'s gate 7 for the gate-level writeup. This section is kept as the historical record of
+> why a dedicated control/treatment pair was tried first and what it actually measured.
 
 ## GEX study (2026-08-01) — does the GEX gate earn what it cuts?
 
@@ -131,8 +251,16 @@ whether the stricter variants are worth enabling. Nothing changes the live loop 
 > see `config.json`'s `symbols`, which now trades SPX.
 >
 > The infrastructure it introduced outlived it and is **not** retired: the `gex_net_vol_at_entry`
-> stamp, the `pin_risk_applied` flag, the arm-divergence log, the dashboard's study-arms frame, and
-> the orchestrator's 15-minute study digest all now serve the GEX arms (`gex-open`/`gex-blocked`).
+> stamp, the `pin_risk_applied` flag, the arm-divergence log, and the dashboard's study-arms frame
+> now serve the current four-stream design (see the top of this document).
+>
+> **Correction, 2026-08-07: "zero rows" was wrong.** A later audit found these arms *did* fill on
+> 2026-07-30/31 — the rows were destroyed by a missing-columns incident in the same class of bug
+> `db.stale_writer_columns()` now exists to catch (see the corrections table at the top of this
+> document). The disposition stands regardless: the question is revived, not the specific rows,
+> as `width-5`/`width-10` — a paired two-arm design instead of four candidate widths behind one
+> profile, run under `overlap_scope: "none"` alongside `open` rather than the account-size study's
+> throughput caps.
 
 ## The wing-width study (2026-07-28, retired 2026-08-05)
 

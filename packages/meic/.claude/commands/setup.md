@@ -52,17 +52,27 @@ python -m cherrypick.meic.tt secrets_set --keys account_number
 
 ## Step 5 — Check streamer (optional)
 
-If the DXLink streamer is running, confirm it is healthy:
+Since the 2026-07-21 producer cutover the **standalone streamer** (`packages/streamer`) is the
+suite's single writer of the shared stream cache; MEIC's own `cherrypick/meic/streamer.py` is a
+disabled rollback path. **Never start `cherrypick/meic/streamer.py` while the standalone streamer
+runs** — two producers means two DXLink writers on one cache and one account. Check it (from the
+monorepo root):
 
 ```bash
-python -m cherrypick.meic.streamer --status
+python ../streamer/run.py --status
 ```
 
-If `running` is false and market hours are active, start it:
+If `running` is false and market hours are active, start it via the orchestrator (idempotent) or
+directly:
 
 ```bash
-Start-Process python -ArgumentList '-m','cherrypick.meic.streamer' -WindowStyle Hidden
+python ../orchestrator/run.py install
+# or, directly:
+python ../streamer/run.py    # blocks; run detached/hidden
 ```
+
+(Only if this box was deliberately rolled back to MEIC-as-producer — `modules.meic.streamer.enabled`
+true in the cherrypick config — use `python -m cherrypick.meic.streamer --status` / start instead.)
 
 ## Summary
 
