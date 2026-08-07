@@ -245,6 +245,35 @@ def test_live_entry_records_the_real_order_id(tmp_path):
     assert summary["entry"]["ic_order_id"] == "LIVE-XSP-ORD1"
 
 
+def test_live_ignores_a_paper_profile_overlap_scope_and_still_refuses_overlap(tmp_path):
+    """A paper stream can set overlap_scope: 'none' (config.risk.json, profile-level) to sample
+    every tick independently -- live must never inherit that. live_loop.run_once builds its
+    params as paper._merged_params(config, {}) — an EMPTY profile overlay — so no
+    config.risk.json key can reach it regardless of what any paper profile declares; only
+    config.json's own (unset) overlap_scope applies, which defaults to the strictest 'all'.
+    This proves the isolation both directions: paper accepts the overlap under 'none', live
+    refuses the identical candidate through the real run_once path."""
+    db_path = _init_db(tmp_path)
+    paper._save_trade(_open_trade_row(symbol="XSP"), db_path)  # occupies the 583/598 short pair
+    snap = _entry_snapshot()  # candidate is also 583 put / 598 call — an exact overlap
+
+    # Paper side: a stream with overlap_scope "none" accepts the exact same overlapping candidate.
+    paper_params = {**paper._merged_params(paper.load_base_config(), {}), "overlap_scope": "none"}
+    entered, reason, _ = paper.evaluate_entry(
+        snap, paper_params, open_ics=[_open_trade_row(symbol="XSP")], account_open_count=1
+    )
+    assert entered is True, reason
+
+    # Live side: config.risk.json is never consulted (params = _merged_params(config, {})), so
+    # only config.json's own top-level overlap_scope ("shorts", the independent-sampling
+    # default) applies -- still refuses an exact short-pair repeat, unlike paper's "none" stream.
+    broker = FakeBroker()
+    summary = live_loop.run_once(_config(), snap, db_path, broker, live=True, log=lambda *_: None)
+    assert summary["entry"]["entry"] == "skipped"
+    assert summary["entry"]["reason"] == "short_pair_occupied"
+    assert broker.placed == []  # nothing submitted
+
+
 def _open_trade_row(symbol="QQQ"):
     return {
         "ic_order_id": "OPEN1",

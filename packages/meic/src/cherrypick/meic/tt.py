@@ -1347,7 +1347,8 @@ def cmd_get_intraday_range(args) -> dict:
         return {"ok": False, "error": "stream cache not found — is the streamer running?"}
     try:
         row = conn.execute(
-            "SELECT day_high, day_low, day_close FROM stream_summary WHERE symbol = ? AND trade_date = ?",
+            "SELECT day_open, day_high, day_low, day_close FROM stream_summary "
+            "WHERE symbol = ? AND trade_date = ?",
             (symbol, _et_today()),
         ).fetchone()
         last = None
@@ -1366,6 +1367,11 @@ def cmd_get_intraday_range(args) -> dict:
     return {
         "ok": True,
         "symbol": symbol,
+        # day_open rides along on the same Summary row this command already reads, so the
+        # regime trend dimension (spot vs. today's open) costs no extra streamer round trip —
+        # see paper_loop._fetch_session_open, which reads this field off the same response
+        # cmd_get_intraday_range's caller already fetches for range_pct.
+        "day_open": row["day_open"],
         "day_high": row["day_high"],
         "day_low": row["day_low"],
         "range_points": round(rng, 4),

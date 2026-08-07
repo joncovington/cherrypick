@@ -71,8 +71,10 @@
       },
       "calibration": {
         "_comment": "Optional. `cherrypick calibrate` reads paper P&L per profile and advises whether a qualified challenger should replace the live 'champion' (advisory only; never switches live risk). 'champion' names the currently-live profile -- every other tag observed is a challenger compared against it on return_on_capital (falling back to net_pnl). Omit 'champion' entirely to get per-tag qualification readings with NO champion/challenger comparison (for a module whose tags are parallel experiments rather than a risk sequence -- see flies below). 'deliberate_only' tags are never auto-recommended even if they qualify and beat the champion; 'rule' overrides the default {min_days:14, min_win_rate:0.6, min_sample:20} and may add 'margin' (default 0.0 -- any positive edge counts as beating the champion).",
-        "champion": "conservative",
+        "_arms_cutover_note": "Updated 2026-08-07 for the arms cutover (config.risk.json's _arms_cutover_note): champion is now `control` (today's deployed policy, formerly `conservative` -- same values, new name). The retired ladder/GEX tags (conservative/moderate/aggressive/very-aggressive/gex-open/gex-blocked) never write a new row again, so they simply stop appearing as challengers going forward; their historical rows stay under their own tag and never blend into `control`'s reading, since the tag NAME itself is what segregates the eras here -- no data_epoch needed (that key is suite-wide and would also truncate flies/earnings' unrelated history). `open` is deliberate_only: it runs with per_side_stop_management OFF (held to settlement/force-close, no per-side stop at all), a materially different risk posture from control's canonical MEIC+ stop, not just a quality-gate relaxation -- qualifying on paper should not auto-promote a no-stop policy without a human decision, the same reasoning very-aggressive's deliberate_only carried.",
+        "champion": "control",
         "deliberate_only": [
+          "open",
           "very-aggressive"
         ],
         "rule": {
@@ -470,8 +472,11 @@
     ],
     "desktop_app_name": "cherrypick",
     "trade_summary": {
-      "_comment": "MEIC risk_profile prefixes routed to a periodic per-symbol digest instead of a per-trade push (a forced-sampling study's ~150-200 trades/day would otherwise spam every entry/exit individually; built for the wing-width study, retired 2026-08-05, and kept for the arm families that came after it). Rows whose risk_profile starts with one of these prefixes are excluded from the normal per-trade lines; ladder profiles (conservative/moderate/aggressive/very-aggressive) are unaffected either way.",
+      "_comment": "MEIC risk_profile prefixes routed to a periodic per-symbol digest instead of a per-trade push (an uncapped sampling stream's 100+ trades/day would otherwise spam every entry/exit individually; built for the wing-width study, retired 2026-08-05, kept for every arm family since). Rows whose risk_profile starts with one of these prefixes are excluded from the normal per-trade lines. Updated 2026-08-07 for the arms cutover: `open`/`width-5`/`width-10` are the uncapped-sampling streams this exists for; `control` runs at book-like volume (overlap_scope 'shorts', capped concurrency) but is included for consistency, same as the old ladder names were. The retired ladder/GEX prefixes (conservative/moderate/aggressive/very-aggressive/gex-) are kept too — they still match any historical row from before the cutover.",
       "profile_prefixes": [
+        "control",
+        "open",
+        "width-",
         "gex-",
         "conservative",
         "moderate",
