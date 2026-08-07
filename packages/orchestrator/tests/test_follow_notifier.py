@@ -564,3 +564,47 @@ def test_futures_spot_keeps_its_slash_prefixed_symbol():
     empty symbol and printed a bare price."""
     legs = [{"underlying_symbol": "/MNQU6", "action": "buytoopen", "quantity": "1.0", "open_close": "O"}]
     assert ff._spot(_order(8, order_legs=legs, underlying_price_string="29580.50")) == "/MNQU6 29580.50"
+
+
+# --------------------------------------------------------------------------- formatting: the rationale
+def test_reason_is_rendered_when_the_order_carries_no_comment_thread():
+    """`reason` is the order's own rationale field and is populated far more often than `comments`
+    (23 of 50 against 7 on one live pull), so reading only the thread dropped it on roughly a third
+    of the feed — and on a CLOSE it is the whole point of the card."""
+    line = ff.format_order(_order(1, comments=[], reason="Closed for 50% gain"), {})
+    assert line.endswith("> Closed for 50% gain")
+
+
+def test_comment_and_reason_both_render_when_they_differ():
+    """Neither field subsumes the other — a trader can leave a thread comment and an order reason
+    that say different things, so showing one and dropping the other loses real rationale."""
+    line = ff.format_order(
+        _order(1, comments=[{"body": "Taking it off early."}], reason="Closed for 50% gain"), {}
+    )
+    assert line.split("\n")[-2:] == ["> Taking it off early.", "> Closed for 50% gain"]
+
+
+def test_a_reason_repeating_the_comment_is_shown_once():
+    """The platform often copies the same text into both; whitespace and case shouldn't defeat that."""
+    line = ff.format_order(
+        _order(1, comments=[{"body": "Closed for 50% gain"}], reason="  closed for 50%   GAIN "), {}
+    )
+    assert line.count("> ") == 1
+
+
+def test_long_reason_is_truncated_on_its_own():
+    line = ff.format_order(_order(1, comments=[], reason="x" * 400), {})
+    note = line.split("\n")[-1]
+    assert note.endswith("…") and len(note) == 222  # "> " + 220
+
+
+def test_embed_description_carries_both_rationale_lines():
+    embed = ff.build_embed(
+        _order(1, comments=[{"body": "Taking it off early."}], reason="Closed for 50% gain"), {}
+    )
+    assert embed["description"] == "> Taking it off early.\n> Closed for 50% gain"
+
+
+def test_no_rationale_leaves_the_description_off_entirely():
+    embed = ff.build_embed(_order(1, comments=[], reason=None), {})
+    assert "description" not in embed
