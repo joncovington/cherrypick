@@ -291,3 +291,202 @@ def test_get_eod_summary_counts_wins_by_net_pnl(db_path, capsys):
     assert out["win_count"] == 1
     # 3 resolved trades (open excluded): 1 win / 3 = 33.3%
     assert out["win_rate_pct"] == 33.3
+
+
+# ── _migrate / stale_writer_columns / era backfill ──────────────────────────
+
+
+def test_migrate_adds_every_added_trade_column(db_path):
+    """db_path's fixture already ran cmd_init_db once; every _ADDED_TRADE_COLUMNS key must be
+    present on a freshly-created database, not just one migrated from an older file."""
+    conn = sqlite3.connect(db_path)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(ic_trades)")}
+    conn.close()
+    for column in db._ADDED_TRADE_COLUMNS:
+        assert column in cols, column
+
+
+def test_migrate_on_a_database_missing_every_added_column(tmp_path, monkeypatch):
+    """The realistic upgrade path: a pre-regime-tagging ic_trades table (only the columns from
+    the original CREATE TABLE, none of _ADDED_TRADE_COLUMNS) must gain all of them, including the
+    new regime/era/covariate columns, without erroring."""
+    path = str(tmp_path / "meic_trades.db")
+    conn = sqlite3.connect(path)
+    conn.execute("""
+        CREATE TABLE ic_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trade_date TEXT NOT NULL, symbol TEXT NOT NULL, status TEXT DEFAULT 'pending',
+            put_strike REAL, call_strike REAL, underlying_price_entry REAL,
+            net_credit REAL, wing_width REAL,
+            ic_order_id TEXT UNIQUE NOT NULL,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        )
+    """)
+    conn.execute(
+        "INSERT INTO ic_trades (trade_date, symbol, ic_order_id, created_at, updated_at) "
+        "VALUES ('2026-07-01', 'SPX', 'PRE-EXISTING-1', 'x', 'x')"
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(db, "_DB_PATH", path)
+    db.cmd_init_db(None)
+
+    conn = sqlite3.connect(path)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(ic_trades)")}
+    row = conn.execute("SELECT era FROM ic_trades WHERE ic_order_id = 'PRE-EXISTING-1'").fetchone()
+    conn.close()
+    for column in db._ADDED_TRADE_COLUMNS:
+        assert column in cols, column
+    assert row[0] == "book"  # pre-existing row backfilled, not left at the 'sample' SQL default
+
+
+def test_migrate_stamps_book_once_and_never_overwrites_a_later_value(db_path):
+    """The era backfill is a one-time correction guarded on the column having just been added
+    (mirrors flies' _VOID_BACKFILL guard) — a later deliberate change to a row's era must survive
+    a subsequent cmd_init_db call, not get silently reset."""
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO ic_trades (trade_date, symbol, ic_order_id, era, created_at, updated_at) "
+        "VALUES ('2026-08-07', 'SPX', 'IC-ERA-1', 'sample', 'x', 'x')"
+    )
+    conn.commit()
+    conn.close()
+
+    db.cmd_init_db(None)  # era column already exists -> the backfill branch must NOT re-run
+
+    conn = sqlite3.connect(db_path)
+    era = conn.execute("SELECT era FROM ic_trades WHERE ic_order_id = 'IC-ERA-1'").fetchone()[0]
+    conn.close()
+    assert era == "sample"
+
+
+def test_migrate_returns_added_columns(tmp_path, monkeypatch):
+    path = str(tmp_path / "meic_trades.db")
+    conn = sqlite3.connect(path)
+    conn.execute("""
+        CREATE TABLE ic_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, trade_date TEXT NOT NULL, symbol TEXT NOT NULL,
+            put_strike REAL, call_strike REAL, underlying_price_entry REAL,
+            net_credit REAL, wing_width REAL,
+            ic_order_id TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    added = db._migrate(conn)
+    conn.close()
+    assert "ic_trades.era" in added
+    assert "ic_trades.entry_trend_bucket" in added
+    assert len(added) == len(db._ADDED_TRADE_COLUMNS)
+
+
+def test_migrate_is_a_noop_on_an_already_migrated_table(db_path):
+    conn = sqlite3.connect(db_path)
+    added = db._migrate(conn)
+    conn.close()
+    assert added == []
+
+
+def test_stale_writer_columns_empty_on_a_fresh_database(db_path):
+    conn = sqlite3.connect(db_path)
+    stale = db.stale_writer_columns(conn)
+    conn.close()
+    assert stale == []
+
+
+def test_stale_writer_columns_flags_a_column_classify_regime_no_longer_writes(db_path):
+    """A regime dimension renamed or removed in code, but never migrated out of an existing
+    paper/live DB, must be flagged rather than silently ignored — the shape match
+    (entry_<dim>_{bucket,value}) is what catches it without an exclusion list to maintain."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("ALTER TABLE ic_trades ADD COLUMN entry_retired_dim_bucket TEXT")
+    conn.execute("ALTER TABLE ic_trades ADD COLUMN entry_retired_dim_value REAL")
+    stale = db.stale_writer_columns(conn)
+    conn.close()
+    assert stale == ["entry_retired_dim_bucket", "entry_retired_dim_value"]
+
+
+def test_stale_writer_columns_ignores_non_regime_entry_prefixed_columns(db_path):
+    """Only columns matching the entry_<dim>_{bucket,value} SHAPE are regime columns — an
+    unrelated entry_-prefixed column (e.g. a future entry_time-adjacent field) must not be
+    mistaken for a stale regime writer."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("ALTER TABLE ic_trades ADD COLUMN entry_time_zone TEXT")
+    stale = db.stale_writer_columns(conn)
+    conn.close()
+    assert stale == []
+
+
+# ── free-history backfill (center_offset, credit_richness) ─────────────────
+
+
+def test_migrate_backfills_center_offset_on_preexisting_rows(tmp_path, monkeypatch):
+    """center_offset is derivable from columns every pre-arms row already has — it must be
+    backfilled the one time the column is added, not left NULL until the row's next write."""
+    path = str(tmp_path / "meic_trades.db")
+    conn = sqlite3.connect(path)
+    conn.execute("""
+        CREATE TABLE ic_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trade_date TEXT NOT NULL, symbol TEXT NOT NULL, status TEXT DEFAULT 'pending',
+            put_strike REAL, call_strike REAL, underlying_price_entry REAL,
+            net_credit REAL, wing_width REAL,
+            ic_order_id TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        )
+    """)
+    conn.execute(
+        "INSERT INTO ic_trades (trade_date, symbol, put_strike, call_strike, underlying_price_entry, "
+        "net_credit, wing_width, ic_order_id, created_at, updated_at) "
+        "VALUES ('2026-07-01', 'SPX', 6990.0, 7060.0, 7000.0, 2.0, 10.0, 'PRE-1', 'x', 'x')"
+    )
+    # A row with no strikes/credit recorded (a cancelled entry attempt) must not error the backfill.
+    conn.execute(
+        "INSERT INTO ic_trades (trade_date, symbol, ic_order_id, created_at, updated_at) "
+        "VALUES ('2026-07-01', 'SPX', 'PRE-2', 'x', 'x')"
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(db, "_DB_PATH", path)
+    db.cmd_init_db(None)
+
+    conn = sqlite3.connect(path)
+    row = conn.execute(
+        "SELECT entry_center_offset_bucket, entry_center_offset_value, credit_richness "
+        "FROM ic_trades WHERE ic_order_id = 'PRE-1'"
+    ).fetchone()
+    row2 = conn.execute(
+        "SELECT entry_center_offset_bucket, credit_richness FROM ic_trades WHERE ic_order_id = 'PRE-2'"
+    ).fetchone()
+    conn.close()
+    # midpoint (6990+7060)/2 = 7025, spot 7000 -> offset (7025-7000)/7000 = 0.00357 > 0.001 default
+    assert row[0] == "above_spot"
+    assert abs(row[1] - 0.0035714285714285713) < 1e-9
+    assert row[2] == 0.2  # 2.0 / 10.0
+    # No strikes/credit at all -> the backfill's WHERE clause skips it entirely, leaving both
+    # columns NULL rather than a computed 'unknown' -- honestly "never derivable", not "tried and
+    # failed to classify".
+    assert row2 == (None, None)
+
+
+def test_migrate_does_not_reoverwrite_center_offset_on_a_later_call(db_path):
+    """The backfill runs only the migration that ADDS the column — a later cmd_init_db call
+    (already-migrated table) must not touch a row's regime tags again."""
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO ic_trades (trade_date, symbol, ic_order_id, entry_center_offset_bucket, "
+        "entry_center_offset_value, created_at, updated_at) "
+        "VALUES ('2026-08-07', 'SPX', 'IC-CO-1', 'above_spot', 0.0099, 'x', 'x')"
+    )
+    conn.commit()
+    conn.close()
+
+    db.cmd_init_db(None)  # columns already exist -> backfill branch must NOT re-run
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute(
+        "SELECT entry_center_offset_bucket, entry_center_offset_value FROM ic_trades "
+        "WHERE ic_order_id = 'IC-CO-1'"
+    ).fetchone()
+    conn.close()
+    assert row == ("above_spot", 0.0099)

@@ -480,6 +480,19 @@ def test_evaluate_entry_atr_gate_scales_with_price_level():
     assert reason != "regime_atr_elevated"
 
 
+def test_evaluate_entry_atr_gate_off_when_threshold_is_explicit_null():
+    """An arm that sets regime_atr_pause_threshold_pct to null (e.g. an 'open' sampling stream
+    that wants every study gate off) must disable the gate, not crash on `atr/underlying > None`
+    -- a TypeError in evaluate_entry would have refused every candidate for every profile sharing
+    this call, not just the arm that set the null."""
+    snap = _base_snapshot(
+        now_et="13:00", atr_5day=200.0, underlying_price=590.0
+    )  # would fire at any real pct
+    params = {**_params(CONSERVATIVE), "regime_atr_pause_threshold_pct": None}
+    entered, reason, _ = paper.evaluate_entry(snap, params, [])
+    assert reason != "regime_atr_elevated"
+
+
 def test_evaluate_entry_rejects_strike_overlap_and_tries_narrower_candidate():
     # Open IC holds the 583/598 strikes used by the 5-wide candidate; the 2-wide candidate
     # (same strikes in this fixture) also overlaps, so no candidate clears.
@@ -1116,6 +1129,130 @@ def test_evaluate_open_trade_does_not_restop_an_already_stopped_side():
     assert decision["action"] == "hold"
 
 
+_TOUCH_LEG_QUOTES = {
+    "SP": {"bid": 0.20, "ask": 0.26, "mid": 0.23},
+    "LP": {"bid": 0.05, "ask": 0.08, "mid": 0.065},
+    "SC": {"bid": 0.20, "ask": 0.26, "mid": 0.23},
+    "LC": {"bid": 0.05, "ask": 0.08, "mid": 0.065},
+}
+
+
+def _touch_trade(**overrides):
+    trade = {
+        "put_symbol": "SP",
+        "call_symbol": "SC",
+        "long_put_symbol": "LP",
+        "long_call_symbol": "LC",
+        "net_credit": 1.0,
+        "status": "open",
+        "put_credit": 0.5,
+        "call_credit": 0.5,
+        "put_strike": 583,
+        "call_strike": 598,
+        "wing_width": 5,
+        "stop_trigger_current": 0.95,
+        "stop_limit_current": 1.02,
+    }
+    trade.update(overrides)
+    return trade
+
+
+def test_first_touch_recorded_when_spot_crosses_put_strike():
+    decision = paper.evaluate_open_trade(
+        _touch_trade(), _TOUCH_LEG_QUOTES, _params(MODERATE), force_close=False, underlying_price=580.0
+    )
+    assert decision["put_touch_time"] is not None
+    assert decision["put_touch_spot"] == 580.0
+    assert "call_touch_time" not in decision
+
+
+def test_first_touch_recorded_when_spot_crosses_call_strike():
+    decision = paper.evaluate_open_trade(
+        _touch_trade(), _TOUCH_LEG_QUOTES, _params(MODERATE), force_close=False, underlying_price=601.0
+    )
+    assert decision["call_touch_time"] is not None
+    assert decision["call_touch_spot"] == 601.0
+    assert "put_touch_time" not in decision
+
+
+def test_first_touch_not_recorded_when_spot_between_strikes():
+    decision = paper.evaluate_open_trade(
+        _touch_trade(), _TOUCH_LEG_QUOTES, _params(MODERATE), force_close=False, underlying_price=590.0
+    )
+    assert "put_touch_time" not in decision
+    assert "call_touch_time" not in decision
+
+
+def test_first_touch_at_the_strike_exactly_counts_as_touched():
+    decision = paper.evaluate_open_trade(
+        _touch_trade(), _TOUCH_LEG_QUOTES, _params(MODERATE), force_close=False, underlying_price=598.0
+    )
+    assert decision["call_touch_time"] is not None
+    assert decision["call_touch_spot"] == 598.0
+
+
+def test_first_touch_write_once_not_recomputed_when_already_set():
+    trade = _touch_trade(put_touch_time="2026-08-07 10:00:00", put_touch_spot=582.5)
+    decision = paper.evaluate_open_trade(
+        trade, _TOUCH_LEG_QUOTES, _params(MODERATE), force_close=False, underlying_price=575.0
+    )
+    # Already recorded -> not present in this decision (nothing new to write), old value untouched.
+    assert "put_touch_time" not in decision
+
+
+def test_first_touch_carried_on_a_stop_decision_not_just_hold():
+    """touch_updates merges into `marks`, so a stop action carries it too — spot crossing a
+    strike and triggering a stop in the SAME iteration must not lose the touch instrumentation."""
+    trade = _touch_trade(net_credit=0.10)  # tiny credit -> the stop fires easily
+    decision = paper.evaluate_open_trade(
+        trade,
+        {
+            "SP": {"bid": 0.05, "ask": 0.08, "mid": 0.065},
+            "LP": {"bid": 0.01, "ask": 0.02, "mid": 0.015},
+            "SC": {"bid": 5.0, "ask": 5.2, "mid": 5.1},  # deep ITM -> stop_call fires
+            "LC": {"bid": 0.5, "ask": 0.6, "mid": 0.55},
+        },
+        _params(MODERATE),
+        force_close=False,
+        underlying_price=601.0,
+    )
+    assert decision["action"] == "stop_call"
+    assert decision["call_touch_time"] is not None
+    assert decision["call_touch_spot"] == 601.0
+
+
+def test_apply_exit_decision_persists_first_touch_on_hold(paper_db_path):
+    _insert_paper_trade(
+        paper_db_path,
+        ic_order_id="TOUCH-1",
+        symbol="SPX",
+        status="open",
+        put_strike=583,
+        call_strike=598,
+        wing_width=5,
+        net_credit=1.0,
+        put_credit=0.5,
+        call_credit=0.5,
+    )
+    trade = _touch_trade()
+    trade["ic_order_id"] = "TOUCH-1"
+    decision = paper.evaluate_open_trade(
+        trade, _TOUCH_LEG_QUOTES, _params(MODERATE), force_close=False, underlying_price=580.0
+    )
+    assert decision["action"] == "hold"
+    paper._apply_exit_decision(trade, decision, "SPX", paper_db_path)
+
+    import sqlite3
+
+    conn = sqlite3.connect(paper_db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM ic_trades WHERE ic_order_id = 'TOUCH-1'").fetchone()
+    conn.close()
+    assert row["put_touch_time"] is not None
+    assert row["put_touch_spot"] == 580.0
+    assert row["call_touch_time"] is None
+
+
 def test_evaluate_open_trade_force_close_overrides_hold():
     trade = {
         "put_symbol": "SP",
@@ -1248,6 +1385,224 @@ def test_pin_penalty_fires_when_short_strike_atm():
 def test_pin_penalty_zero_when_underlying_missing():
     assert paper._pin_penalty(598, None, 5, BASE_CONFIG) == 0.0
     assert paper._pin_penalty(None, 598, 5, BASE_CONFIG) == 0.0
+
+
+def test_force_close_records_settle_counterfactual_for_both_sides():
+    """Previously only the cash-settled 'left to expire' path computed put/call_settle_value —
+    a force-closed IC (FOMC/expiry-event, or any non-cash-settled symbol, which is ALWAYS
+    force-closed rather than settled) never got the stop-vs-hold counterfactual at all."""
+    decision = paper.evaluate_open_trade(
+        _force_close_trade(),
+        _FC_LEG_QUOTES,
+        _params(MODERATE),
+        force_close=True,
+        underlying_price=602.0,
+        is_cash_settled=True,
+    )
+    # put strike 583, call strike 598, wing_width 5, settle underlying 602.0: put OTM (0), call ITM by
+    # 4 (602 - 598), under wing_width 5.
+    assert decision["put_settle_value"] == 0.0
+    assert decision["call_settle_value"] == 4.0
+    assert decision["settle_underlying"] == 602.0
+
+
+def test_force_close_settle_counterfactual_computed_even_for_an_already_stopped_side():
+    """Settle values are recorded for BOTH sides regardless of open/closed — same convention as
+    the cash-settled expire branch — so a side that already stopped this session still gets its
+    counterfactual once the OTHER side force-closes."""
+    trade = dict(_force_close_trade())
+    trade["put_stop_cost"] = 0.55  # put already stopped; call still open
+    decision = paper.evaluate_open_trade(
+        trade,
+        _FC_LEG_QUOTES,
+        _params(MODERATE),
+        force_close=True,
+        underlying_price=602.0,
+        is_cash_settled=True,
+    )
+    assert decision["put_open"] is False
+    assert decision["put_settle_value"] == 0.0  # still computed despite put_open being False
+    assert decision["call_settle_value"] == 4.0
+
+
+def test_apply_exit_decision_force_close_persists_settle_fields(paper_db_path):
+    trade = dict(_force_close_trade())
+    trade["ic_order_id"] = "FC-SETTLE-1"
+    _insert_paper_trade(
+        paper_db_path,
+        ic_order_id="FC-SETTLE-1",
+        symbol="XSP",
+        status="open",
+        put_strike=583,
+        call_strike=598,
+        wing_width=5,
+        net_credit=0.58,
+        put_credit=0.30,
+        call_credit=0.28,
+    )
+    decision = paper.evaluate_open_trade(
+        trade,
+        _FC_LEG_QUOTES,
+        _params(MODERATE),
+        force_close=True,
+        underlying_price=602.0,
+        is_cash_settled=True,
+    )
+    paper._apply_exit_decision(trade, decision, "XSP", paper_db_path)
+
+    import sqlite3
+
+    conn = sqlite3.connect(paper_db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM ic_trades WHERE ic_order_id = 'FC-SETTLE-1'").fetchone()
+    conn.close()
+    assert row["put_settle_value"] == 0.0
+    assert row["call_settle_value"] == 4.0
+    assert row["settle_underlying"] == 602.0
+
+
+# ── virtual un-stopped path (_settle_stopped_trades) ────────────────────────
+
+
+def test_settle_stopped_trades_backfills_a_double_stopped_trade(paper_db_path):
+    _insert_paper_trade(
+        paper_db_path,
+        ic_order_id="STOPPED-1",
+        symbol="SPX",
+        trade_date="2026-08-07",
+        status="stopped",
+        put_strike=7480,
+        call_strike=7520,
+        wing_width=10,
+        settle_underlying=None,
+    )
+    paper._settle_stopped_trades("SPX", "2026-08-07", 7550.0, paper_db_path)
+
+    import sqlite3
+
+    conn = sqlite3.connect(paper_db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM ic_trades WHERE ic_order_id = 'STOPPED-1'").fetchone()
+    conn.close()
+    # call strike 7520, settle 7550 -> ITM by 30, capped at wing_width 10
+    assert row["call_settle_value"] == 10.0
+    assert row["put_settle_value"] == 0.0
+    assert row["settle_underlying"] == 7550.0
+    # the real recorded outcome must be untouched
+    assert row["status"] == "stopped"
+
+
+def test_settle_stopped_trades_never_touches_status_or_pnl(paper_db_path):
+    _insert_paper_trade(
+        paper_db_path,
+        ic_order_id="STOPPED-2",
+        symbol="SPX",
+        trade_date="2026-08-07",
+        status="stopped",
+        pnl=-123.45,
+        put_strike=7480,
+        call_strike=7520,
+        wing_width=10,
+    )
+    paper._settle_stopped_trades("SPX", "2026-08-07", 7500.0, paper_db_path)
+
+    import sqlite3
+
+    conn = sqlite3.connect(paper_db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT status, pnl FROM ic_trades WHERE ic_order_id = 'STOPPED-2'").fetchone()
+    conn.close()
+    assert row["status"] == "stopped"
+    assert row["pnl"] == -123.45
+
+
+def test_settle_stopped_trades_skips_already_settled_rows(paper_db_path):
+    """settle_underlying IS NOT NULL is the not-yet-backfilled guard on the db.py query side —
+    a row that already has a counterfactual must not be re-derived (and can't accidentally be
+    overwritten by a later pass with a different spot reading)."""
+    _insert_paper_trade(
+        paper_db_path,
+        ic_order_id="STOPPED-3",
+        symbol="SPX",
+        trade_date="2026-08-07",
+        status="stopped",
+        put_strike=7480,
+        call_strike=7520,
+        wing_width=10,
+        put_settle_value=0.0,
+        call_settle_value=3.0,
+        settle_underlying=7523.0,
+    )
+    paper._settle_stopped_trades("SPX", "2026-08-07", 9999.0, paper_db_path)
+
+    import sqlite3
+
+    conn = sqlite3.connect(paper_db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM ic_trades WHERE ic_order_id = 'STOPPED-3'").fetchone()
+    conn.close()
+    assert row["settle_underlying"] == 7523.0  # untouched, not overwritten to 9999.0
+
+
+def test_settle_stopped_trades_noop_without_underlying_price(paper_db_path):
+    _insert_paper_trade(
+        paper_db_path,
+        ic_order_id="STOPPED-4",
+        symbol="SPX",
+        trade_date="2026-08-07",
+        status="stopped",
+        put_strike=7480,
+        call_strike=7520,
+        wing_width=10,
+    )
+    paper._settle_stopped_trades("SPX", "2026-08-07", None, paper_db_path)  # must not raise
+
+    import sqlite3
+
+    conn = sqlite3.connect(paper_db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT settle_underlying FROM ic_trades WHERE ic_order_id = 'STOPPED-4'").fetchone()
+    conn.close()
+    assert row["settle_underlying"] is None
+
+
+def test_process_symbol_settles_stopped_trades_on_the_eod_adjacent_force_close(paper_db_path, monkeypatch):
+    """process_symbol itself must trigger the virtual un-stopped backfill at the moment a
+    non-cash-settled symbol force-closes near the bell — the only 'settlement-adjacent' moment
+    those symbols ever reach, since they are never left to expire."""
+    _insert_paper_trade(
+        paper_db_path,
+        ic_order_id="STOPPED-QQQ-1",
+        symbol="QQQ",
+        trade_date="2026-08-07",
+        risk_profile="conservative",
+        status="stopped",
+        put_strike=470,
+        call_strike=490,
+        wing_width=5,
+    )
+    snapshot = {
+        "symbol": "QQQ",
+        "date": "2026-08-07",
+        "now_et": "15:31",  # past physical_settlement_force_close_time (15:30)
+        "expiration": "2026-08-07",
+        "dte": 0,
+        "underlying_price": 493.0,
+        "iv_rank": 0.5,
+        "candidates": [],
+        "leg_quotes": {},
+    }
+    paper.process_symbol(snapshot, paper_db_path, "paper")
+
+    import sqlite3
+
+    conn = sqlite3.connect(paper_db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM ic_trades WHERE ic_order_id = 'STOPPED-QQQ-1'").fetchone()
+    conn.close()
+    assert row["settle_underlying"] == 493.0
+    assert row["call_settle_value"] == 3.0  # ITM by 3, wing_width 5
+    assert row["status"] == "stopped"
 
 
 def _snap(now_et, date="2026-07-15"):
@@ -1934,8 +2289,8 @@ def test_process_symbol_reports_save_failed_not_filled_when_the_insert_fails(tmp
         check=True,
         capture_output=True,
     )
-    only_conservative = {"conservative": paper.load_profiles()["conservative"]}
-    monkeypatch.setattr(paper, "load_profiles", lambda: only_conservative)
+    only_control = {"control": paper.load_profiles()["control"]}
+    monkeypatch.setattr(paper, "load_profiles", lambda: only_control)
     monkeypatch.setattr(
         paper, "_save_trade", lambda row, db: {"ok": False, "error": "table ic_trades has no column named x"}
     )
@@ -1982,6 +2337,25 @@ def test_overlap_scope_shorts_blocks_only_an_exact_short_pair_repeat():
     assert entered is False and reason == "strike_overlap"
 
 
+def test_overlap_scope_none_accepts_what_shorts_and_all_both_refuse():
+    """'none' skips the overlap check entirely -- every tick is evaluated independently of any
+    other open position on this symbol+profile. Before the explicit branch this fell through to
+    the 'all' else-branch (the STRICTEST scope), the opposite of the intent -- an unrecognized
+    overlap_scope value silently throttled the sampling stream instead of uncapping it."""
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+    params = {**_params(CONSERVATIVE), "overlap_scope": "none"}
+
+    # Exact same short pair already open -> "shorts" refuses this, "none" must not.
+    same_zone = [{"put_strike": 583.0, "call_strike": 598.0}]
+    entered, reason, _ = paper.evaluate_entry(snap, params, same_zone)
+    assert entered is True, reason
+
+    # Any strike overlap at all -> "all" refuses this, "none" must not.
+    full_overlap = [{"put_strike": 583.0, "call_strike": 598.0}, {"put_strike": 578.0, "call_strike": 603.0}]
+    entered, reason, _ = paper.evaluate_entry(snap, params, full_overlap)
+    assert entered is True, reason
+
+
 def test_overlap_scope_shorts_requires_both_shorts_to_match():
     """One shared short is not a repeated zone -- a 583/598 and a 583/601 condor have different
     profit zones and are different samples."""
@@ -1992,17 +2366,45 @@ def test_overlap_scope_shorts_requires_both_shorts_to_match():
     assert entered is True, reason
 
 
-def test_every_configured_profile_samples_independently():
-    """The registry-wide contract after 2026-08-01: no clock, no cap, zone-uniqueness only.
-
-    If a profile is ever given back a concurrency cap or an entry spacing, its P&L silently becomes
-    a book's P&L again while still being compared against sample-stream history.
+def test_every_configured_profile_has_no_clock_based_pacing():
+    """The registry-wide contract after 2026-08-01: no clock. Every profile — enabled or
+    disabled/historical — must never gate on a minimum spacing between entries, and must keep
+    stagger_entries on (so its daily target stays a hard cap, no floor drift). This is the one
+    invariant that survived the 2026-08-07 arms cutover unchanged; overlap_scope and
+    max_concurrent_ics now differ deliberately between the control/ladder family ("shorts", 99 —
+    a repeated-zone check still applies) and the uncapped-sampling family ("none", 999 — see
+    test_uncapped_sampling_streams_share_the_same_caps below).
     """
     profiles = paper.load_profiles()
     for name, spec in profiles.items():
         if name.startswith("_"):
             continue
-        assert spec.get("overlap_scope") == "shorts", name
         assert spec.get("min_minutes_between_entries") == 0, name
-        assert spec.get("max_concurrent_ics") == 99, name
         assert spec.get("stagger_entries") is True, name  # keeps the cap hard, no floor drift
+
+
+def test_uncapped_sampling_streams_share_the_same_caps():
+    """open/width-5/width-10 sample every tick independently (overlap_scope 'none') and must
+    share IDENTICAL max_concurrent_ics/daily_ic_trade_target — an identical cap that BINDS still
+    produces stream-dependent entry counts (exit speed feeds back into entry capacity), so the
+    caps must be non-binding and equal across the whole family, not just present."""
+    profiles = paper.load_profiles()
+    sampling = {"open", "width-5", "width-10"}
+    assert sampling <= set(profiles)
+    for name in sampling:
+        spec = profiles[name]
+        assert spec.get("overlap_scope") == "none", name
+        assert spec.get("max_concurrent_ics") == 999, name
+        assert spec.get("daily_ic_trade_target") == 999, name
+
+
+def test_control_keeps_todays_deployed_policy():
+    """control is the reference book/champion — its overlap_scope and concurrency cap must match
+    the pre-cutover deployed policy ('shorts', 99), not the uncapped sampling family, since it is
+    what the derived stop policies (Phase 3) and recommend_champion (Phase 4) both validate
+    against."""
+    control = paper.load_profiles()["control"]
+    assert control["overlap_scope"] == "shorts"
+    assert control["max_concurrent_ics"] == 99
+    assert control["per_side_stop_management"] is True
+    assert control["stop_trigger_ratio"] == 0.95

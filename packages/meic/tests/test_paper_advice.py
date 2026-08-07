@@ -21,7 +21,7 @@ from cherrypick.meic import paper, paper_loop
 
 DAY = "2026-07-29"
 BOUNDS = {"stop_trigger_ratio": {"min": 0.85, "max": 0.95}}
-CFG = {"advice": {"enabled": True, "base_profile": "conservative", "bounds": BOUNDS}}
+CFG = {"advice": {"enabled": True, "base_profile": "control", "bounds": BOUNDS}}
 
 
 @pytest.fixture
@@ -56,11 +56,11 @@ def _write_artifact(home: Path, proposals, session=DAY):
 def test_valid_advice_builds_the_advised_book(homes):
     _write_artifact(homes, [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "r"}])
     profiles, reason = paper_loop._advice_profiles(CFG, DAY)
-    assert "advised:conservative" in profiles
-    adv = profiles["advised:conservative"]
+    assert "advised:control" in profiles
+    adv = profiles["advised:control"]
     assert adv["stop_trigger_ratio"] == 0.9
-    # The rest of the def is the base profile's — the control differs in exactly the advice.
-    base = paper.load_profiles()["conservative"]
+    # The rest of the def is the base profile's — the advised twin differs in exactly the advice.
+    base = paper.load_profiles()["control"]
     assert {k: v for k, v in adv.items() if k != "stop_trigger_ratio"} == {
         k: v for k, v in base.items() if k != "stop_trigger_ratio"
     }
@@ -91,7 +91,7 @@ def test_decision_is_read_once_per_session(homes):
         homes, [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "r"}], session="2026-07-30"
     )
     profiles3, _ = paper_loop._advice_profiles(CFG, "2026-07-30")
-    assert "advised:conservative" in profiles3
+    assert "advised:control" in profiles3
 
 
 def test_disabled_config_is_baseline_and_recorded(homes):
@@ -105,15 +105,15 @@ def test_open_advised_positions_get_a_management_only_twin(homes):
     ts = f"{DAY}T13:00:00"
     conn.execute(
         "INSERT INTO ic_trades (ic_order_id, trade_date, symbol, risk_profile, status, "
-        "created_at, updated_at) VALUES ('A1', ?, 'SPX', 'advised:conservative', 'open', ?, ?)",
+        "created_at, updated_at) VALUES ('A1', ?, 'SPX', 'advised:control', 'open', ?, ?)",
         (DAY, ts, ts),
     )
     conn.commit()
     conn.close()
     profiles, _ = paper_loop._advice_profiles({"advice": {"enabled": False}}, DAY)
-    twin = profiles["advised:conservative"]
+    twin = profiles["advised:control"]
     assert twin["max_concurrent_ics"] == 0  # exits run; entries cannot
-    base = paper.load_profiles()["conservative"]
+    base = paper.load_profiles()["control"]
     assert twin["stop_trigger_ratio"] == base.get("stop_trigger_ratio", twin["stop_trigger_ratio"])
 
 
@@ -137,14 +137,14 @@ def test_process_symbol_evaluates_extra_profiles(homes):
         "candidates": [],
         "leg_quotes": {},
     }
-    base = paper.load_profiles()["conservative"]
+    base = paper.load_profiles()["control"]
     result = paper.process_symbol(
         snapshot,
         paper_loop._PAPER_DB,
         "paper",
-        extra_profiles={"advised:conservative": {**base, "stop_trigger_ratio": 0.9}},
+        extra_profiles={"advised:control": {**base, "stop_trigger_ratio": 0.9}},
     )
-    assert "advised:conservative" in result["results"]
+    assert "advised:control" in result["results"]
 
 
 def test_decision_file_lives_in_the_data_home(homes):

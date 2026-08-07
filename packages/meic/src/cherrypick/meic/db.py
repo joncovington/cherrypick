@@ -217,56 +217,188 @@ CREATE TABLE IF NOT EXISTS market_context (
 """
 
 
+# Columns added to ic_trades after the first release. CREATE TABLE IF NOT EXISTS silently does
+# nothing on an existing database, so a plain schema edit would leave older paper/live DBs missing
+# these and every write against them would fail at runtime rather than at startup. A flat
+# {column_name: sql_type} dict, mirroring packages/flies/src/cherrypick/flies/db.py's
+# _ADDED_POSITION_COLUMNS — single source of truth for both _migrate below and
+# stale_writer_columns' comparison against what regime.classify_regime actually writes.
+_ADDED_TRADE_COLUMNS = {
+    "long_put_delta_at_entry": "REAL",
+    "long_call_delta_at_entry": "REAL",
+    "iv_skew_signal": "TEXT",
+    "price_action_signal": "TEXT",
+    "put_spread_entry_order_id": "TEXT",
+    "call_spread_entry_order_id": "TEXT",
+    "dollar_multiplier": "REAL DEFAULT 100",
+    "risk_profile": "TEXT",
+    "execution_mode": "TEXT",
+    "iv_rank_source": "TEXT",
+    # GEX regime at entry (see the CREATE above for why). Additive only — the orchestrator reads
+    # this table through its `meic_ic` adapter, so columns may be appended but never renamed.
+    "gex_net_at_entry": "REAL",
+    "gex_positive_at_entry": "INTEGER",
+    "gamma_flip_at_entry": "REAL",
+    "gex_spot_at_entry": "REAL",
+    "gex_net_vol_at_entry": "REAL",
+    "pin_risk_applied": "INTEGER",
+    # Stop-rule instrumentation (see the CREATE above). Additive only — the orchestrator reads
+    # this table through its `meic_ic` adapter, so columns may be appended but never renamed.
+    "put_max_cost": "REAL",
+    "call_max_cost": "REAL",
+    "put_settle_value": "REAL",
+    "call_settle_value": "REAL",
+    "settle_underlying": "REAL",
+    # Feed-quality instrumentation: how many loop iterations this trade could not be
+    # marked (missing/crossed leg quotes) and when that last happened. Distinguishes
+    # a stalled streamer from a quiet market — the flies fly_snapshots lesson.
+    "unmarked_iterations": "INTEGER DEFAULT 0",
+    "last_unmarked_at": "TEXT",
+    # Cost-sensitivity instrumentation: cumulative modeled slippage dollars (entry +
+    # priced exits). Linear in the slippage fraction, so stressed-2x net reads off it.
+    "slippage_dollars": "REAL DEFAULT 0",
+    # Regime tags (regime.classify_regime, 'entry' phase — MEIC's ic_trades has no legging step,
+    # so there is no separate 'completion' snapshot the way flies' fly_positions has one). Bucket
+    # + the continuous float it was cut from, per dimension, so a threshold can be re-derived from
+    # history instead of re-run. Additive only, same orchestrator constraint as everything above.
+    "entry_vol_implied_bucket": "TEXT",
+    "entry_vol_implied_value": "REAL",
+    "entry_vol_event_bucket": "TEXT",
+    "entry_vol_event_value": "REAL",
+    "entry_vol_realized_bucket": "TEXT",
+    "entry_vol_realized_value": "REAL",
+    "entry_vol_intraday_bucket": "TEXT",
+    "entry_vol_intraday_value": "REAL",
+    "entry_gex_bucket": "TEXT",
+    "entry_gex_value": "REAL",
+    "entry_skew_bucket": "TEXT",
+    "entry_skew_value": "REAL",
+    "entry_center_offset_bucket": "TEXT",
+    "entry_center_offset_value": "REAL",
+    "entry_trend_bucket": "TEXT",
+    "entry_trend_value": "REAL",
+    # Float-only trade-economics covariates alongside the regime tags — not re-cuttable buckets,
+    # see regime.py's module docstring for why these are kept separate from the 8 dimensions above.
+    "credit_richness": "REAL",
+    "put_credit_fraction": "REAL",
+    "minutes_to_close": "INTEGER",
+    # First-touch instrumentation: the earliest time and spot level at which the underlying
+    # reached (crossed toward ITM) each short strike — write-once per side. Recorded, not acted
+    # on, same convention as the settle_* counterfactual fields; what a strike-touch stop policy
+    # (Phase 3) is computed from after the fact. See paper._first_touch_updates.
+    "put_touch_time": "TEXT",
+    "put_touch_spot": "REAL",
+    "call_touch_time": "TEXT",
+    "call_touch_spot": "REAL",
+    # Sampling era. 'book' for every row that predates the arms/uncapped-sampling cutover (the
+    # profile-ladder era, where max_concurrent_ics and entry spacing bounded each portfolio);
+    # 'sample' for every row after. The two eras differ in selection intensity by roughly an
+    # order of magnitude, so pooling them in one aggregate reads as one book when it is really two
+    # incomparable ones — analytics._period_clause defaults to the current era for exactly this
+    # reason. Stamped 'book' on every pre-existing row the ONE time this column is added (see
+    # _migrate below); the SQL default handles every row inserted after.
+    "era": "TEXT DEFAULT 'sample'",
+}
+
+
+def _migrate(conn: sqlite3.Connection) -> list[str]:
+    """Add any ic_trades columns missing from an older paper/live DB. Returns what it added (for
+    tests and logs). Deliberately NOT cherrypick.core.db.apply_additive_migrations' plain
+    additive-only form — cmd_init_db also drops a retired column (trend_signal), which that
+    helper does not support."""
+    added = []
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(ic_trades)")}
+    for column, sql_type in _ADDED_TRADE_COLUMNS.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE ic_trades ADD COLUMN {column} {sql_type}")
+            added.append(f"ic_trades.{column}")
+            if column == "era":
+                # SQLite's ADD COLUMN ... DEFAULT 'sample' just stamped EVERY existing row
+                # 'sample' as a side effect of the ALTER above — backwards, since every row
+                # already in the table at this exact point predates this migration by
+                # definition (the column did not exist for any of them to have written anything
+                # else). Correct them the one time this branch runs; a later INSERT that omits
+                # `era` keeps hitting the column's own default ('sample'), which is what a NEW
+                # arms-era row actually is.
+                conn.execute("UPDATE ic_trades SET era = 'book'")
+    if "ic_trades.entry_center_offset_value" in added:
+        _backfill_center_offset(conn)
+    if "ic_trades.credit_richness" in added:
+        _backfill_credit_richness(conn)
+    if added:
+        conn.commit()
+    return added
+
+
+def _backfill_center_offset(conn: sqlite3.Connection) -> None:
+    """Free history: entry_center_offset_{bucket,value} are derivable from columns every row
+    already has (underlying_price_entry, put_strike, call_strike), so this backfills all 290+
+    existing rows the one time the columns appear rather than waiting for new rows only. Goes
+    through regime._classify_center_offset itself (not a duplicated SQL threshold) so the
+    backfilled value can never drift from what a live entry would have tagged."""
+    from cherrypick.meic import regime as _regime
+
+    rows = conn.execute(
+        "SELECT ic_order_id, underlying_price_entry, put_strike, call_strike FROM ic_trades "
+        "WHERE put_strike IS NOT NULL AND call_strike IS NOT NULL AND underlying_price_entry IS NOT NULL"
+    ).fetchall()
+    for order_id, spot, put_strike, call_strike in rows:
+        bucket, value = _regime._classify_center_offset(
+            {"underlying_price": spot}, {}, put_strike, call_strike
+        )
+        conn.execute(
+            "UPDATE ic_trades SET entry_center_offset_bucket = ?, entry_center_offset_value = ? "
+            "WHERE ic_order_id = ?",
+            (bucket, value, order_id),
+        )
+
+
+def _backfill_credit_richness(conn: sqlite3.Connection) -> None:
+    """Free history: credit_richness (net_credit / wing_width) is derivable from columns every
+    row already has. Goes through regime.credit_richness itself so the backfilled value can
+    never drift from what a live entry would compute."""
+    from cherrypick.meic import regime as _regime
+
+    rows = conn.execute(
+        "SELECT ic_order_id, net_credit, wing_width FROM ic_trades "
+        "WHERE net_credit IS NOT NULL AND wing_width IS NOT NULL"
+    ).fetchall()
+    for order_id, net_credit, wing_width in rows:
+        value = _regime.credit_richness(net_credit, wing_width)
+        conn.execute("UPDATE ic_trades SET credit_richness = ? WHERE ic_order_id = ?", (value, order_id))
+
+
+def stale_writer_columns(conn: sqlite3.Connection) -> list[str]:
+    """Regime columns present in this DB file but not written by the running
+    regime.classify_regime — a dimension renamed or removed in code but never migrated out of an
+    existing paper/live DB. Diagnostic only; nothing calls this automatically, matching
+    packages/flies/src/cherrypick/flies/db.py's stale_writer_columns. Matches on the
+    entry_<dim>_{bucket,value} naming SHAPE rather than an exclusion list, so a new dimension
+    can't slip past unnoticed and unrelated entry_-prefixed columns are excluded structurally."""
+    from cherrypick.meic import regime as _regime
+
+    written = {f"entry_{key}" for key in _regime.classify_regime({}, {})}
+    # Positional index, not r["name"] -- PRAGMA table_info rows are read here with a plain
+    # connection (no guaranteed row_factory=Row), matching the same convention _migrate above and
+    # every other PRAGMA read in this module already uses.
+    present = {r[1] for r in conn.execute("PRAGMA table_info(ic_trades)")}
+    regime_cols = {c for c in present if c.startswith("entry_") and c.endswith(("_bucket", "_value"))}
+    return sorted(regime_cols - written)
+
+
 def cmd_init_db(_args):
     conn = _connect()
     for statement in _DDL.split(";"):
         stmt = statement.strip()
         if stmt:
             conn.execute(stmt)
-    # Migrations: add columns that may be absent in databases created before this version
-    existing = {row[1] for row in conn.execute("PRAGMA table_info(ic_trades)")}
-    for col, col_type in [
-        ("long_put_delta_at_entry", "REAL"),
-        ("long_call_delta_at_entry", "REAL"),
-        ("iv_skew_signal", "TEXT"),
-        ("price_action_signal", "TEXT"),
-        ("put_spread_entry_order_id", "TEXT"),
-        ("call_spread_entry_order_id", "TEXT"),
-        ("dollar_multiplier", "REAL DEFAULT 100"),
-        ("risk_profile", "TEXT"),
-        ("execution_mode", "TEXT"),
-        ("iv_rank_source", "TEXT"),
-        # GEX regime at entry (see the CREATE above for why). Additive only — the orchestrator reads
-        # this table through its `meic_ic` adapter, so columns may be appended but never renamed.
-        ("gex_net_at_entry", "REAL"),
-        ("gex_positive_at_entry", "INTEGER"),
-        ("gamma_flip_at_entry", "REAL"),
-        ("gex_spot_at_entry", "REAL"),
-        ("gex_net_vol_at_entry", "REAL"),
-        ("pin_risk_applied", "INTEGER"),
-        # Stop-rule instrumentation (see the CREATE above). Additive only — the orchestrator reads
-        # this table through its `meic_ic` adapter, so columns may be appended but never renamed.
-        ("put_max_cost", "REAL"),
-        ("call_max_cost", "REAL"),
-        ("put_settle_value", "REAL"),
-        ("call_settle_value", "REAL"),
-        ("settle_underlying", "REAL"),
-        # Feed-quality instrumentation: how many loop iterations this trade could not be
-        # marked (missing/crossed leg quotes) and when that last happened. Distinguishes
-        # a stalled streamer from a quiet market — the flies fly_snapshots lesson.
-        ("unmarked_iterations", "INTEGER DEFAULT 0"),
-        ("last_unmarked_at", "TEXT"),
-        # Cost-sensitivity instrumentation: cumulative modeled slippage dollars (entry +
-        # priced exits). Linear in the slippage fraction, so stressed-2x net reads off it.
-        ("slippage_dollars", "REAL DEFAULT 0"),
-    ]:
-        if col not in existing:
-            conn.execute(f"ALTER TABLE ic_trades ADD COLUMN {col} {col_type}")
+    existing_before = {row[1] for row in conn.execute("PRAGMA table_info(ic_trades)")}
+    _migrate(conn)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_ic_trades_profile_date ON ic_trades(risk_profile, trade_date, status)"
     )
     # Drop columns removed from the schema
-    if "trend_signal" in existing:
+    if "trend_signal" in existing_before:
         conn.execute("ALTER TABLE ic_trades DROP COLUMN trend_signal")
     existing_ds = {row[1] for row in conn.execute("PRAGMA table_info(daily_summary)")}
     for col, col_type in [("closing_nlv", "REAL"), ("session_init_at", "TEXT")]:
@@ -294,6 +426,27 @@ def cmd_get_open_trades(args):
     symbol = getattr(args, "symbol", None)
     conn = _connect()
     sql = "SELECT * FROM ic_trades WHERE status IN ('pending','open','partial','partial_entry') AND trade_date = ?"
+    params: list = [today]
+    if symbol:
+        sql += " AND symbol = ?"
+        params.append(symbol.upper())
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    _out({"ok": True, "open_trades": [dict(r) for r in rows]})
+
+
+def cmd_get_unsettled_stopped_trades(args):
+    """Trades whose BOTH sides already stopped for real (status='stopped') and so dropped out of
+    cmd_get_open_trades' status filter entirely — without a separate query they never reach the
+    settle counterfactual, which is exactly the trades a double-stop analysis needs most (see
+    paper._settle_stopped_trades, the virtual un-stopped path). settle_underlying IS NULL is the
+    not-yet-backfilled guard: once a trade's counterfactual is written this query stops returning
+    it, so a later real settlement/force-close pass for the same symbol+date doesn't re-derive
+    (and can't accidentally overwrite) a value that's already there."""
+    today = getattr(args, "date", None) or _today_et()
+    symbol = getattr(args, "symbol", None)
+    conn = _connect()
+    sql = "SELECT * FROM ic_trades WHERE status = 'stopped' AND settle_underlying IS NULL AND trade_date = ?"
     params: list = [today]
     if symbol:
         sql += " AND symbol = ?"
@@ -697,6 +850,13 @@ _UPDATABLE_TRADE_FIELDS = (
     # (`unrecognized arguments: --pin_risk_applied`), leaving the row stuck at status='open'
     # forever despite its legs having already been recorded closed.
     "pin_risk_applied",
+    # First-touch instrumentation — write-once, the first tick spot reached (crossed toward ITM)
+    # each short strike. See paper._first_touch_updates; what a strike-touch stop policy (Phase 3)
+    # is computed from after the fact.
+    "put_touch_time",
+    "put_touch_spot",
+    "call_touch_time",
+    "call_touch_spot",
 )
 
 
@@ -957,6 +1117,73 @@ def cmd_save_market_context(args):
 # CLI dispatch
 # ---------------------------------------------------------------------------
 
+# Single source of truth for command name -> handler, shared by main()'s CLI dispatch and call()'s
+# in-process dispatch below. Was two separately-maintained dicts (this one didn't exist; main() had
+# its own inline literal) -- the same failure class _UPDATABLE_TRADE_FIELDS's comment already warns
+# about elsewhere in this file: a command added to one and not the other silently 404s from the path
+# that was missed.
+_COMMANDS = {
+    "init_db": cmd_init_db,
+    "get_open_trades": cmd_get_open_trades,
+    "get_unsettled_stopped_trades": cmd_get_unsettled_stopped_trades,
+    "get_today_count": cmd_get_today_count,
+    "get_today_pnl": cmd_get_today_pnl,
+    "get_eod_summary": cmd_get_eod_summary,
+    "get_session_init": cmd_get_session_init,
+    "set_session_init": cmd_set_session_init,
+    "get_range_summary": cmd_get_range_summary,
+    "get_fee_estimate": cmd_get_fee_estimate,
+    "get_step_timing": cmd_get_step_timing,
+    "save_trade": cmd_save_trade,
+    "update_trade": cmd_update_trade,
+    "save_daily_summary": cmd_save_daily_summary,
+    "save_market_context": cmd_save_market_context,
+    "record_stop_adjustment": cmd_record_stop_adjustment,
+    "log_loop_action": cmd_log_loop_action,
+    "record_leg_exit": cmd_record_leg_exit,
+    "get_spread_legs": cmd_get_spread_legs,
+}
+
+
+def call(command: str, db_path: str, **kwargs) -> dict:
+    """In-process entry point for another module in this process (paper.py, and live_loop.py via
+    paper.py) to invoke a db.py command without spawning a subprocess.
+
+    Every cmd_* handler was written for CLI use: it reads its inputs off an argparse.Namespace and
+    prints its result via the module-level _out(). This bypasses argparse (kwargs go straight onto
+    a Namespace) and captures _out()'s payload instead of letting it print -- callers get back
+    exactly the dict a CLI invocation's stdout would have parsed to. kwargs values are expected to
+    be strings, mirroring what argparse would hand a handler from sys.argv (none of the commands
+    reachable from paper.py declare a non-string `type=`, so this is a lossless replacement of the
+    subprocess boundary, not an approximation of it).
+
+    _DB_PATH is a module global (set once from --db / MEIC_DB_PATH at CLI startup); every cmd_*
+    reads it indirectly via _connect(). Save/restore around the call so a caller can pass whichever
+    db_path it needs without disturbing any other in-process caller -- safe because this module is
+    only ever driven single-threaded (the paper loop's one iteration at a time; concurrent callers
+    from separate processes each get their own copy of this global, as today).
+    """
+    fn = _COMMANDS.get(command)
+    if fn is None:
+        return {"ok": False, "error": f"unknown command {command!r}"}
+    global _DB_PATH, _out
+    prev_path, prev_out = _DB_PATH, _out
+    captured: dict = {}
+
+    def _capture(data):
+        captured["result"] = data
+
+    _DB_PATH = db_path
+    _out = _capture
+    try:
+        fn(argparse.Namespace(**kwargs))
+    except Exception as exc:  # a CLI invocation's non-zero exit -> {"ok": False, "error": ...}
+        return {"ok": False, "error": str(exc)}
+    finally:
+        _DB_PATH = prev_path
+        _out = prev_out
+    return captured.get("result", {"ok": False, "error": f"{command!r} produced no output"})
+
 
 def main():
     global _DB_PATH
@@ -978,6 +1205,13 @@ def main():
         default=None,
         help="Override trade_date to query (YYYY-MM-DD); defaults to the real "
         "system today. Used by paper-trading replay to query a historical day.",
+    )
+    p_unsettled = sub.add_parser("get_unsettled_stopped_trades")
+    p_unsettled.add_argument("--symbol", default=None, help="Filter to one symbol; omit for all symbols")
+    p_unsettled.add_argument(
+        "--date",
+        default=None,
+        help="Override trade_date to query (YYYY-MM-DD); defaults to the real system today.",
     )
     p_cnt = sub.add_parser("get_today_count")
     p_cnt.add_argument("--symbol", default=None, help="Filter to one symbol; omit for all symbols")
@@ -1077,28 +1311,7 @@ def main():
     elif "MEIC_DB_PATH" in os.environ:
         _DB_PATH = os.environ["MEIC_DB_PATH"]
 
-    dispatch = {
-        "init_db": cmd_init_db,
-        "get_open_trades": cmd_get_open_trades,
-        "get_today_count": cmd_get_today_count,
-        "get_today_pnl": cmd_get_today_pnl,
-        "get_eod_summary": cmd_get_eod_summary,
-        "get_session_init": cmd_get_session_init,
-        "set_session_init": cmd_set_session_init,
-        "get_range_summary": cmd_get_range_summary,
-        "get_fee_estimate": cmd_get_fee_estimate,
-        "get_step_timing": cmd_get_step_timing,
-        "save_trade": cmd_save_trade,
-        "update_trade": cmd_update_trade,
-        "save_daily_summary": cmd_save_daily_summary,
-        "save_market_context": cmd_save_market_context,
-        "record_stop_adjustment": cmd_record_stop_adjustment,
-        "log_loop_action": cmd_log_loop_action,
-        "record_leg_exit": cmd_record_leg_exit,
-        "get_spread_legs": cmd_get_spread_legs,
-    }
-
-    fn = dispatch.get(args.command)
+    fn = _COMMANDS.get(args.command)
     if fn is None:
         parser.print_help()
         sys.exit(1)

@@ -644,7 +644,7 @@ def test_study_arms_cell_matches_pnl_series_for_that_profile_and_symbol(db_path,
     _write_config(monkeypatch, tmp_path, {"symbols": ["XSP", "QQQ"]})
     conn = dashboard._connect()
     _insert_trade(
-        conn, ic_order_id="IC-1", symbol="XSP", status="expired", pnl=12.0, fees=1.0, risk_profile="gex-open"
+        conn, ic_order_id="IC-1", symbol="XSP", status="expired", pnl=12.0, fees=1.0, risk_profile="open"
     )
     _insert_trade(
         conn,
@@ -653,7 +653,7 @@ def test_study_arms_cell_matches_pnl_series_for_that_profile_and_symbol(db_path,
         status="expired",
         pnl=-4.0,
         fees=1.0,
-        risk_profile="gex-blocked",
+        risk_profile="control",
     )
     _insert_trade(
         conn,
@@ -662,7 +662,7 @@ def test_study_arms_cell_matches_pnl_series_for_that_profile_and_symbol(db_path,
         status="expired",
         pnl=7.0,
         fees=1.0,
-        risk_profile="gex-open",
+        risk_profile="open",
     )
     # A ladder trade must never leak into a study-arms cell.
     _insert_trade(
@@ -680,13 +680,13 @@ def test_study_arms_cell_matches_pnl_series_for_that_profile_and_symbol(db_path,
     ws = result["study_arms"]["symbols"]
 
     conn = dashboard._connect()
-    for sym, arm in (("XSP", "gex-open"), ("XSP", "gex-blocked"), ("QQQ", "gex-open")):
+    for sym, arm in (("XSP", "open"), ("XSP", "control"), ("QQQ", "open")):
         expected = dashboard._pnl_series(conn, "daily", symbol=sym, profile=arm)
         assert ws[sym][arm] == expected
-    assert ws["QQQ"]["gex-blocked"] == []  # an arm with no trades on that symbol is an empty cell
+    assert ws["QQQ"]["control"] == []  # an arm with no trades on that symbol is an empty cell
     conn.close()
 
-    xsp_open_pnl = sum(b["net_pnl"] for b in ws["XSP"]["gex-open"])
+    xsp_open_pnl = sum(b["net_pnl"] for b in ws["XSP"]["open"])
     assert xsp_open_pnl == pytest.approx(12.0)
 
 
@@ -700,12 +700,158 @@ def test_study_arms_ignores_the_page_symbol_and_profile_filters(db_path, monkeyp
     _write_config(monkeypatch, tmp_path, {"symbols": ["XSP", "QQQ"]})
     conn = dashboard._connect()
     _insert_trade(
-        conn, ic_order_id="IC-1", symbol="XSP", status="expired", pnl=5.0, fees=0.0, risk_profile="gex-open"
+        conn, ic_order_id="IC-1", symbol="XSP", status="expired", pnl=5.0, fees=0.0, risk_profile="open"
     )
     conn.close()
 
     filtered = dashboard._build_api_data("QQQ", "conservative")
-    assert filtered["study_arms"]["symbols"]["XSP"]["gex-open"]
-    assert sum(b["net_pnl"] for b in filtered["study_arms"]["symbols"]["XSP"]["gex-open"]) == pytest.approx(
-        5.0
+    assert filtered["study_arms"]["symbols"]["XSP"]["open"]
+    assert sum(b["net_pnl"] for b in filtered["study_arms"]["symbols"]["XSP"]["open"]) == pytest.approx(5.0)
+
+
+# ── sessions beside trades ──────────────────────────────────────────────────────
+
+
+def test_by_profile_compare_reports_sessions_alongside_trades(db_path):
+    conn = dashboard._connect()
+    _insert_trade(conn, ic_order_id="IC-1", trade_date="2026-06-18", risk_profile="open", pnl=1.0)
+    _insert_trade(conn, ic_order_id="IC-2", trade_date="2026-06-18", risk_profile="open", pnl=2.0)
+    _insert_trade(conn, ic_order_id="IC-3", trade_date="2026-06-19", risk_profile="open", pnl=3.0)
+    conn.close()
+    rows = dashboard._by_profile_compare(dashboard._connect(), None)
+    row = next(r for r in rows if r["profile"] == "open")
+    assert row["trades"] == 3
+    assert row["sessions"] == 2
+
+
+def test_by_signal_buckets_report_sessions(db_path):
+    conn = dashboard._connect()
+    _insert_trade(conn, ic_order_id="IC-1", trade_date="2026-06-18", symbol="SPX", pnl=1.0, fees=0.1)
+    _insert_trade(conn, ic_order_id="IC-2", trade_date="2026-06-19", symbol="SPX", pnl=2.0, fees=0.1)
+    conn.close()
+    conn = dashboard._connect()
+    sig = dashboard._by_signal(conn, "", [])
+    conn.close()
+    row = next(r for r in sig["by_symbol"] if r["bucket"] == "SPX")
+    assert row["trades"] == 2
+    assert row["sessions"] == 2
+
+
+# ── arm scorecard / stop-policy card / regime coverage (paper-era read surfaces) ────
+# These panels are guarded behind the `era` column (see _arm_scorecard's docstring) — the
+# minimal DDL fixture above has no `era` column, so they must degrade gracefully there
+# (asserted below), and are otherwise exercised against the real schema via db.cmd_init_db,
+# matching how test_eod_supplement.py seeds a full paper DB.
+
+import argparse  # noqa: E402
+
+from cherrypick.meic import db as _db  # noqa: E402
+
+
+def _ns(**kw):
+    return argparse.Namespace(**kw)
+
+
+def test_arm_scorecard_and_stop_policy_card_are_empty_without_an_era_column(db_path):
+    result = dashboard._build_api_data()
+    assert result["performance"]["arm_scorecard"] == []
+    assert result["performance"]["stop_policy_card"] == []
+    assert result["analytics"]["regime"] == {"coverage": {}, "by_dimension": {}}
+
+
+@pytest.fixture
+def paper_db_path(monkeypatch, tmp_path):
+    """A temp DB built through db.py's own schema (era column, ic_spread_legs, regime
+    columns included) — the real shape _arm_scorecard/_stop_policy_card/_regime_coverage_panel
+    read against, unlike the minimal DDL fixture above."""
+    path = str(tmp_path / "paper_trades.db")
+    monkeypatch.setattr(_db, "_DB_PATH", path)
+    monkeypatch.setattr(dashboard, "_DB_PATH", path)
+    _db.cmd_init_db(_ns())
+    return path
+
+
+def _seed_arm_trade(order_id, arm, *, put_status, call_status, pnl=180.0, fees=6.89, **overrides):
+    data = {
+        "ic_order_id": order_id,
+        "trade_date": "2026-08-06",
+        "entry_time": "2026-08-06 11:00:00",
+        "symbol": "SPX",
+        "put_strike": 6000,
+        "call_strike": 6100,
+        "wing_width": 10,
+        "net_credit": 1.8,
+        "put_credit": 0.9,
+        "call_credit": 0.9,
+        "quantity": 1,
+        "underlying_price_entry": 6050.0,
+        "risk_profile": arm,
+        "status": "expired",
+        "exit_reason": "cash_settled_expiration",
+        "pnl": pnl,
+        "fees": fees,
+        "dollar_multiplier": 100,
+        "put_settle_value": 0.0,
+        "call_settle_value": 0.0,
+    }
+    data.update(overrides)
+    _db.cmd_save_trade(_ns(data=json.dumps(data)))
+    for side, status in (("put", put_status), ("call", call_status)):
+        _db.cmd_record_leg_exit(
+            _ns(
+                ic_order_id=order_id,
+                side=side,
+                status=status,
+                exit_time="2026-08-06 16:00:00",
+                exit_reason="cash_settled_expiration",
+                exit_price=0.0,
+                pnl=pnl / 2,
+            )
+        )
+
+
+def test_arm_scorecard_reports_breakeven_identity_per_arm(paper_db_path, capsys):
+    _seed_arm_trade("C-1", "control", put_status="expired", call_status="expired")
+    _seed_arm_trade(
+        "O-1",
+        "open",
+        put_status="expired",
+        call_status="expired",
+        put_max_cost=0.1,
+        call_max_cost=0.15,
     )
+    capsys.readouterr()
+    result = dashboard._build_api_data()
+    rows = {r["arm"]: r for r in result["performance"]["arm_scorecard"]}
+    assert "control" in rows and "open" in rows
+    assert rows["control"]["clean_pct"] == 100.0
+    assert rows["control"]["double_stop_pct"] == 0.0
+    assert rows["control"]["sessions"] == 1
+
+
+def test_stop_policy_card_covers_every_derived_policy(paper_db_path, capsys):
+    _seed_arm_trade(
+        "O-1", "open", put_status="expired", call_status="expired", put_max_cost=0.1, call_max_cost=0.15
+    )
+    capsys.readouterr()
+    result = dashboard._build_api_data()
+    names = {row["policy"] for row in result["performance"]["stop_policy_card"]}
+    assert names == {"stop-none", "stop-0.75-net", "stop-2.0-side", "strike-touch"}
+    assert all(row["arm"] == "open" for row in result["performance"]["stop_policy_card"])
+
+
+def test_regime_coverage_panel_withholds_degenerate_dimension_breakdowns(paper_db_path, capsys):
+    _seed_arm_trade(
+        "C-1",
+        "control",
+        put_status="expired",
+        call_status="expired",
+        entry_gex_bucket="positive",
+        entry_gex_value=0.4,
+    )
+    capsys.readouterr()
+    result = dashboard._build_api_data()
+    reg = result["analytics"]["regime"]
+    assert reg["coverage"]["dimensions"]["gex"]["tagged"] == 1
+    assert reg["coverage"]["dimensions"]["gex"]["degenerate"] is True
+    assert "gex" not in reg["by_dimension"]  # degenerate -> withheld, per the panel's docstring
