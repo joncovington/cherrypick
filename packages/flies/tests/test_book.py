@@ -1,7 +1,7 @@
 """End-to-end tests for a session book: engine decisions landing in the paper database."""
 
 import pytest
-from test_engine import BASE_CONFIG, cheap_fly_snapshot, q, snapshot
+from test_engine import BASE_CONFIG, bwb_snapshot, cheap_fly_snapshot, q, snapshot
 
 from cherrypick.flies import analytics, engine, fly
 from cherrypick.flies import book as bookmod
@@ -408,13 +408,15 @@ def test_bwb_lifecycle_from_broken_wing_to_rolled_symmetric_fly(conn):
     completion lifecycle test in this file."""
     config = one_arm_config(entry_modes=["bwb_roll"], max_bwb_tail_dollars=1000)
 
-    first_snap = snapshot(puts={5990: q(0.4, 0.6), 6000: q(1.9, 2.1), 6005: q(2.2, 2.4)})
-    first = bookmod.process_snapshot(first_snap, config, conn, "control")
+    first = bookmod.process_snapshot(bwb_snapshot(), config, conn, "control")
     opened = [a for a in first["actions"] if a["action"] == "bwb_opened"]
     assert len(opened) == 1
     assert first["stats"]["unrolled_bwbs"] == 1
 
-    cheap_roll = snapshot(puts={5990: q(4.8, 5.0), 6005: q(5.0, 5.2)})
+    # The call bwb sits +1C@5995 / -2C@6000 / +1C@6010, so the roll BUYS 6005 (the symmetric
+    # fly's own wing) and SELLS the held 6010. Both are quoted, and 5995 is too -- it is the near
+    # wing, already held, and the roll must not reach for it. It used to.
+    cheap_roll = snapshot(calls={5995: q(7.9, 8.1), 6005: q(0.5, 0.6), 6010: q(0.1, 0.2)})
     second = bookmod.process_snapshot(cheap_roll, config, conn, "control")
     rolled = [a for a in second["actions"] if a["action"] == "rolled"]
     assert len(rolled) == 1
@@ -434,8 +436,7 @@ def test_freshly_opened_bwb_records_its_real_negative_tail_floor(conn):
     """Regression-shaped: a fresh bwb's floor_dollars must be the honest, possibly-large-negative
     tail number -- never NULL, never a fly's bounded-at-zero floor."""
     config = one_arm_config(entry_modes=["bwb_roll"], max_bwb_tail_dollars=1000)
-    snap = snapshot(puts={5990: q(0.4, 0.6), 6000: q(1.9, 2.1), 6005: q(2.2, 2.4)})
-    result = bookmod.process_snapshot(snap, config, conn, "control")
+    result = bookmod.process_snapshot(bwb_snapshot(), config, conn, "control")
     opened = next(a for a in result["actions"] if a["action"] == "bwb_opened")
     row = dbmod.book_positions(conn, result["book_id"])[0]
     assert row["position_id"] == opened["position_id"]

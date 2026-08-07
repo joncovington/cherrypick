@@ -239,19 +239,65 @@ comparison measures one variable rather than a bundle of confounded changes.
   real-world near:far rule of thumb is roughly 1:2). Until rolled, this carries REAL, negative
   tail risk of `wing_width - far_width` that `fly.position_floor`'s `bwb` branch never reports as
   bounded — the entry credit is priced as rent for that tail, not against `wing_width` the way
-  `legged`'s credit gates are. The roll buys the near strike and sells the held far strike (a
-  2-leg debit vertical of width `far_width - wing_width`), converting the position to an ordinary
-  symmetric fly once it clears its own price and floor gates — bringing the far wing back to
-  exactly `1.0x wing_width`. Researched trap (see `docs/faq.md`): the roll cheapens under exactly
+  `legged`'s credit gates are. The roll buys **the symmetric fly's own wing on the risk side**
+  (`centre −/+ wing_width`) and sells the held far wing — a 2-leg debit vertical of width
+  `far_width - wing_width`, converting the position to an ordinary symmetric fly once it clears its
+  own price and floor gates, bringing the far wing back to exactly `1.0x wing_width`.
+
+  **That leg was wrong from the arm's first session until 2026-08-07, and it invalidated every bwb
+  row in the ledger. Keep the negative result.** `evaluate_roll` priced
+  `vertical_debit(near_wing, far_wing)` — but `bwb_strikes`' `near_wing` is on the *protected* side
+  and the position **already holds it**. So the roll priced a spread of width `far + wing` instead
+  of `far - wing` (**3x too wide** at the default 2.0 ratio), and `centre −/+ wing_width` — the leg
+  the fly actually needs — was never quoted, never checked by `_have`, never referenced. Worse, the
+  trade as specified does not produce a butterfly at all: buying a strike already held leaves
+  `+2 @ near / -2 @ centre`, two debit spreads, while the ledger recorded `kind='fly'` and computed
+  floor and payoff as a symmetric fly. The tests pinned the bug rather than caught it — the roll
+  fixture quoted only the two wrong strikes, so `near_wing` read as correct and the needed strike's
+  absence was invisible.
+  This is what produced the "roll is unreachable exactly when needed" reading: failing rolls priced
+  at 1.88–4.00x the credit (median **3.58x**) against a defect worth exactly 3x. **The 25 paper bwb
+  positions of 2026-08-04..08-06 are not recoverable** — the decisions were made on wrong prices and
+  the stream cache keeps no quote history, so 14 "rolls" and 11 refusals both rest on a spread that
+  was never the trade. Exclude every bwb row before 2026-08-07 from any reading of this arm.
+  Researched trap (see `docs/faq.md`), still untested for the same reason: the roll cheapens under exactly
   the drift that makes the position profitable, and balloons past the credit precisely when the
   tail is threatened — this arm measures whether that trade-off is actually survivable, not just
   theoretically credit-positive.
   **Enabled and GEX-centred 2026-08-03** (`center_rule: "gex"`), not turned on ATM first — the far
-  wing is where this structure's real, uncapped-until-rolled tail sits, and `center_rule` also
-  decides which side `choose_side` sells (spot above centre → calls, tail risk sits above spot;
-  spot below → puts, tail below spot), so a GEX-selected centre argues for both a richer entry
-  credit and reduced odds of spot running past the far wing into the tail before a roll is
-  reachable — same rationale as `debit-first`'s centring change the same day.
+  wing is where this structure's real, uncapped-until-rolled tail sits, so a GEX-selected centre
+  argues for a richer entry credit and for reduced odds of spot running past the far wing into the
+  tail before a roll is reachable — same rationale as `debit-first`'s centring change the same day.
+
+  **The side rule was the legged one, and it made the roll unreachable by construction (fixed
+  2026-08-07, `engine.choose_bwb_side`).** `evaluate_bwb_entry` reused `choose_side`, whose
+  docstring answers a *legged* question — sell the side spot is on the far end of, so the
+  **completing** spread cheapens as the drift continues. A bwb's roll has the opposite geometry: it
+  buys `centre −/+ wing_width` and sells the far wing, and **both sit on the risk side**. So the
+  legged rule placed the roll spread *in the money*, and an ITM vertical cannot be bought below its
+  intrinsic:
+
+  > spot 7000, centre 7010, wing 5, far 10 —
+  > legged rule → puts, holding +1 7015P / −2 7010P / +1 7000P, far wing **at spot**; roll = buy
+  > 7005P sell 7000P, **intrinsic floor 5.00**.
+  > Corrected → calls, holding +1 7005C / −2 7010C / +1 7020C, tail **20 points away**; roll = buy
+  > 7015C sell 7020C, both OTM, **intrinsic 0.00**.
+
+  A bwb credit runs ~1–3 points, so a roll with a 5.00 intrinsic floor can never satisfy
+  `roll_debit < credit − fee_buffer` — unreachable before a quote is read. The rule is now the
+  inverse (`centre ≥ spot → calls`), which also states the structure's intent: the butterfly sits
+  OUT of the money with the near wing closest to spot, so spot drifting *further away* carries the
+  roll further OTM and cheapens it. That is the drift this arm is built to monetize.
+
+  **The cost of the correction, stated up front:** a bwb's credit decomposes as
+  `(C(K+w) − C(K+f)) − butterfly(K−w, K, K+w)`, and that first gap collapses as the structure is
+  pushed further out of the money. **Safety and credit trade against each other directly here** —
+  moving the tail away from spot is exactly what shrinks the credit — so `min_bwb_credit_pct_of_tail`
+  (0.15 of tail), not the price gate, is now what binds. Whether the corrected orientation clears it
+  often enough to trade is an open empirical question: it cannot be answered from the ledger (every
+  bwb row predates both fixes) nor from the stream cache (no quote history, and the cached 0DTE
+  chain is a post-close snapshot where every OTM strike has decayed to zero). It needs live paper
+  sessions.
 
 **Regime tagging (`engine.classify_regime`, added 2026-07-31).** Every entry and completion, across
 every arm, is tagged along six dimensions read purely from the snapshot in hand — `vol_bucket`

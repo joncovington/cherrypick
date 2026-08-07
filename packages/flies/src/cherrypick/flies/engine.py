@@ -472,6 +472,33 @@ def choose_side(snapshot: dict, center: float) -> str:
     return PUT if spot <= center else CALL
 
 
+def choose_bwb_side(snapshot: dict, center: float) -> str:
+    """Which side to build a broken-wing butterfly on — deliberately the INVERSE of `choose_side`.
+
+    `choose_side` answers a *legged* question: sell the side spot is already on the far end of, so
+    the COMPLETING spread is the one that cheapens as the drift continues. A bwb's roll is a
+    different trade with the opposite geometry — it buys `centre -/+ wing_width` and sells the far
+    wing, and BOTH of those sit on the risk side. Reusing the legged rule therefore places the roll
+    spread IN THE MONEY, and an ITM vertical cannot be bought for less than its intrinsic:
+
+        spot 7000, centre 7010, wing 5, far 10
+          legged rule -> puts: hold +1 7015P / -2 7010P / +1 7000P, far wing AT spot
+                         roll = buy 7005P sell 7000P -> intrinsic floor 5.00
+          this rule   -> calls: hold +1 7005C / -2 7010C / +1 7020C, tail 20 points away
+                         roll = buy 7015C sell 7020C -> both OTM, intrinsic 0.00
+
+    A bwb entry credit runs ~1-3 points, so a roll with a 5.00 intrinsic floor can never satisfy
+    `roll_debit < credit - fee_buffer` — unreachable before a single quote is read, which is what
+    "the roll balloons exactly when the tail is threatened" was actually describing.
+
+    The rule also states the structure's intent: the whole butterfly sits OUT of the money with the
+    near wing closest to spot, so spot drifting further away carries the roll further OTM and
+    cheapens it. That is the drift the arm is built to monetize.
+    """
+    spot = snapshot.get("underlying_price", center)
+    return CALL if spot <= center else PUT
+
+
 def before_open_gate(params: dict, now_min: int | None) -> bool:
     """Is it still inside the post-open blackout? A floor that an arm's own windows cannot override.
 
@@ -914,7 +941,8 @@ def _bwb_lower_upper(side: str, near_wing: float, far_wing: float) -> tuple[floa
 def evaluate_bwb_entry(snapshot: dict, params: dict, open_positions: list) -> tuple:
     """Should this arm enter a broken-wing butterfly for a net credit? Returns (enter, reason, plan).
 
-    Side via `choose_side` (same heuristic legged uses). `far_width` (> wing_width) is the wide,
+    Side via `choose_bwb_side`, NOT `choose_side` — the legged heuristic is the wrong one here and
+    placed the roll spread in the money; see that function. `far_width` (> wing_width) is the wide,
     risk-carrying wing; the credit collected is rent for that tail, measured against it
     (`min_bwb_credit_pct_of_tail`/`max_bwb_credit_pct_of_tail`), not against wing_width the way
     legged's credit gates are -- there is no width-bounded ceiling here since the structure's own
@@ -953,7 +981,7 @@ def evaluate_bwb_entry(snapshot: dict, params: dict, open_positions: list) -> tu
     if far_width <= width:
         return False, "far_width_not_wider_than_wing", None
 
-    side = choose_side(snapshot, center)
+    side = choose_bwb_side(snapshot, center)
     near_wing, _, far_wing = fly.bwb_strikes(side, center, width, far_width)
     if not _have(snapshot, side, [near_wing, center, far_wing]):
         return False, "missing_leg_quotes", None
@@ -1023,20 +1051,29 @@ def evaluate_roll(snapshot: dict, position: dict, params: dict) -> tuple:
     symmetric fly needs, sell the wide wing currently held. Gated the same shape as every other
     completion in this module: price gate first (`roll_debit < credit - fee_buffer`), then the
     resulting fly's actual floor (`fly.position_floor`), never assumed from the price gate alone.
+
+    **The bought leg is `center -/+ wing_width`, NOT `bwb_strikes`' `near_wing`** — that one is on
+    the PROTECTED side and the position already holds it. Until 2026-08-07 this priced
+    `vertical_debit(near_wing, far_wing)`, a spread of width (far + wing) rather than (far - wing):
+    3x too wide at the default 2.0 ratio, and describing a trade that does not produce a butterfly
+    at all (buying a strike already held leaves two debit spreads, not a fly). See CLAUDE.md.
     """
     if position.get("kind") != "bwb":
         return False, "not_a_bwb", None
 
     side, center, width = position["side"], position["center"], position["wing_width"]
     far_width = position["far_width"]
-    near_wing, _, far_wing = fly.bwb_strikes(side, center, width, far_width)
-    if not _have(snapshot, side, [near_wing, far_wing]):
+    _, _, far_wing = fly.bwb_strikes(side, center, width, far_width)
+    # The symmetric fly's wing on the RISK side — near_wing mirrored across the centre. This is the
+    # leg the position lacks; `far_wing` is the one it must give up to get it.
+    roll_strike = center - width if side == PUT else center + width
+    if not _have(snapshot, side, [roll_strike, far_wing]):
         return False, "missing_leg_quotes", None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
-    # Buy the near wing (what the symmetric fly needs), sell the far wing (currently held) --
-    # a debit vertical, long near / short far.
-    roll_debit = fly.vertical_debit(quote(snapshot, side, near_wing), quote(snapshot, side, far_wing), slip)
+    # Long the strike the fly needs, short the wide wing currently held -- a debit vertical spanning
+    # exactly (far_width - wing_width), which is the tail being bought back.
+    roll_debit = fly.vertical_debit(quote(snapshot, side, roll_strike), quote(snapshot, side, far_wing), slip)
 
     symbol = snapshot["symbol"]
     qty = position.get("quantity", 1)
@@ -1062,7 +1099,9 @@ def evaluate_roll(snapshot: dict, position: dict, params: dict) -> tuple:
         "net": round(net, 4),
         "roll_fee": roll_fee,
         "floor": round(floor, 2),
-        "near_wing": near_wing,
+        "roll_strike": roll_strike,
+        "far_wing": far_wing,
+        "roll_span": round(far_width - width, 4),
         "gate_debit": round(credit - buffer_pts, 4),  # the roll debit this would have had to beat
     }
 
