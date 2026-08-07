@@ -157,6 +157,10 @@ COLOR_ENTRY = 0x3B82F6  # blue — a position went on
 COLOR_EXIT = 0xF59E0B  # amber — a position came off
 COLOR_STOP = 0xEF4444  # red — one wing stopped out early
 COLOR_COMPLETE = 0x10B981  # emerald — flies: the floor just became a guarantee
+COLOR_CHOSEN = 0x8B5CF6  # violet — earnings: a symbol cleared the screen (not yet a position)
+COLOR_REJECTED = 0x6B7280  # slate — earnings: a symbol was screened and passed over
+
+_FIELD_MAX = 1024  # Discord's per-field value limit; over it the whole message is rejected
 
 
 def _embed(color: int, title: str, details: str, footer: str | None = None) -> dict:
@@ -501,13 +505,10 @@ def _earnings_new_reviews(conn, notified_ids: set) -> list:
     return [r for r in rows if r["id"] not in notified_ids]
 
 
-def _fmt_earnings_review(r) -> str:
-    """Per-symbol review summary — the data reviewed for entry plus the chosen/rejected decision, in the
-    bullet layout the account owner asked for."""
-    icon = "\U0001f7e2" if r["selected"] else "⚪"  # green vs white circle
-    decision = "chosen" if r["selected"] else "rejected"
-    timing = f" ({r['timing']})" if r["timing"] else ""
-    lines = [f"{icon} Earnings review — {r['symbol']}{timing}: {decision} — {r['reason']} [{r['profile']}]"]
+def _earnings_review_bullets(r) -> list[str]:
+    """The screened figures, one bullet each, in the layout the account owner asked for. Shared by the
+    plain line and the card so the two can never drift into disagreeing about the same review."""
+    lines = []
     if r["price"] is not None:
         lines.append(f"• Price: ${r['price']:,.2f}")
     if r["volume"] is not None:
@@ -527,7 +528,41 @@ def _fmt_earnings_review(r) -> str:
         lines.append(f"• Expected Move: ${r['expected_move']:,.2f}")
     if r["best_tier"]:
         lines.append(f"• Screen: {r['best_tier']}")
-    return "\n".join(lines)
+    return lines
+
+
+def _fmt_earnings_review(r) -> str:
+    """Per-symbol review summary — the data reviewed for entry plus the chosen/rejected decision, in the
+    bullet layout the account owner asked for."""
+    icon = "\U0001f7e2" if r["selected"] else "⚪"  # green vs white circle
+    decision = "chosen" if r["selected"] else "rejected"
+    timing = f" ({r['timing']})" if r["timing"] else ""
+    head = f"{icon} Earnings review — {r['symbol']}{timing}: {decision} — {r['reason']} [{r['profile']}]"
+    return "\n".join([head, *_earnings_review_bullets(r)])
+
+
+def _embed_earnings_review(r) -> dict:
+    """The review as a card, in the same language as every other trade push: verb · subject in the
+    title, the numbers in one Details field, the profile in the footer.
+
+    A review is a screening decision rather than a lifecycle event, so it takes its own two colors
+    instead of borrowing entry-blue — a chosen symbol is not yet a position, and reusing the entry
+    stripe would make the review and the fill that follows it look like the same event twice."""
+    timing = f" ({r['timing']})" if r["timing"] else ""
+    verb, color = ("CHOSEN", COLOR_CHOSEN) if r["selected"] else ("REJECTED", COLOR_REJECTED)
+    details = "\n".join([str(r["reason"] or ""), *_earnings_review_bullets(r)]).strip()
+    # Every other card's Details is bounded numerics; this one leads with a free-text `reason`. Discord
+    # rejects the whole message when a field value passes 1024 chars, and the notifier swallows push
+    # failures by design — so an over-long reason would drop the notification silently rather than
+    # loudly. Truncate here instead.
+    if len(details) > _FIELD_MAX:
+        details = details[: _FIELD_MAX - 1] + "…"
+    return _embed(
+        color,
+        f"{verb} · {r['symbol']}{timing}",
+        details or "no figures recorded",
+        footer=r["profile"],
+    )
 
 
 def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
@@ -562,7 +597,13 @@ def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     reviewed = set(st.get("notified_review_ids", []))
     reviews = _earnings_new_reviews(conn, reviewed)
     for r in reviews:
-        notifier.notify("INFO", f"trade.{name}.review.{r['id']}", "Earnings review", _fmt_earnings_review(r))
+        notifier.notify(
+            "INFO",
+            f"trade.{name}.review.{r['id']}",
+            "Earnings review",
+            _fmt_earnings_review(r),
+            embed=_embed_earnings_review(r),
+        )
         reviewed.add(r["id"])
     st["notified_review_ids"] = list(reviewed)[-_ID_CAP:]
 
