@@ -24,10 +24,17 @@ doesn't trade — so the module manufactures the credit itself, two ways:
   manufacture a new floor of its own; it spends part of an existing one, so its safety only
   holds up at the book level, within the price range the funding trades cover.
 
-Several parallel variants ("arms" — `gex`, `time_window`, `control`, plus a wing-width sweep)
-run side by side every session, each changing exactly *one* variable (how the centre strike is
-picked, when it trades, how wide the wings are) against the same `control` baseline, so results
-are comparable rather than a mix of confounded changes.
+Two further entry constructions are also running, each with an ATM twin so the construction and
+the centring can be separated (see the arms question below): **`debit_first`**, which is `legged`'s
+two trades in the opposite order — buy the debit vertical first, complete by *selling* the credit
+spread once spot comes back — and **`bwb_roll`**, which enters a broken-wing butterfly whole for a
+credit and later rolls its wide wing in.
+
+Several parallel variants ("arms" — `gex`, `time_window`, `control`, `debit-first`, `bwb`, their
+ATM twins `debit-first-atm` and `bwb-atm`, plus a wing-width sweep) run side by side every session,
+each changing exactly *one* variable (how the centre strike is picked, when it trades, how wide the
+wings are, how the credit is constructed) against the same `control` baseline, so results are
+comparable rather than a mix of confounded changes.
 
 What the module is actually *for* isn't the trade idea itself — it's measuring whether either
 way of building the credit survives real trading costs once a position actually settles:
@@ -36,6 +43,48 @@ fee on any leg that finishes ITM. See the [module README](../README.md) for the 
 walkthrough and current results, and `CLAUDE.md`'s "honesty rules" for the specific claims this
 module is built to refuse to make (a per-position floor is not a book-level floor, an
 uncompleted credit spread is not risk-free, and so on).
+
+## What is the trade-off in the `bwb_roll` arm — and is it survivable?
+
+**Unknown, and deliberately not yet claimed either way.** `CLAUDE.md` pointed here for this answer
+before the section existed, so this is that answer, written to say what is actually established.
+
+A broken-wing butterfly is entered *whole* for a net credit: a near wing at the usual `wing_width`
+on the protected side, a far wing at `wing_width × bwb_far_width_ratio` on the risk side. The extra
+room bought with the wider wing is what manufactures the credit — and it is also a **real negative
+tail**. Unlike a symmetric fly, this position genuinely can lose: its payoff floor is
+`wing_width − far_width`, not zero, and `fly.position_floor`'s `bwb` branch reports that honestly
+rather than pretending it is bounded at zero.
+
+The position is meant to become an ordinary symmetric fly by **rolling**: sell the held far wing,
+buy the strike the symmetric fly needs (`centre ∓ wing_width`), which is a debit vertical spanning
+exactly `far_width − wing_width` — the tail being bought back.
+
+**The researched trap** is that this roll should cheapen under precisely the drift that makes the
+position profitable, and grow expensive precisely when the tail is threatened. Spot moving *away*
+from the structure carries the roll further out of the money and makes it cheap; spot running
+*toward* the far wing makes the roll dear at the exact moment you most want it. If that is how it
+behaves in practice, the arm's protection is unavailable whenever it matters, and the construction
+does not work.
+
+**What we do not yet know is whether that is true**, because the first three sessions of this arm
+measured two bugs rather than the market (both fixed 2026-08-07):
+
+- The roll priced the wrong legs — it bought the *near* wing, which the position already holds,
+  giving a spread of width `far + wing` instead of `far − wing`, **3× too wide** at the default
+  ratio. Failing rolls came in at a median 3.58× the credit against a defect worth exactly 3×.
+- The side rule was `legged`'s, which put the roll spread **in the money**. An ITM vertical cannot
+  be bought below its intrinsic, so the roll could never clear its price gate at all.
+
+All 25 positions from 2026-08-04..08-06 are void as a result. The trap remains a hypothesis with no
+clean measurement behind it.
+
+**One thing the corrections did establish**, by arithmetic rather than by sampling: a bwb credit
+decomposes as `(C(K+w) − C(K+f)) − butterfly(K−w, K, K+w)`, so it is capped by the gap between the
+two candidate far wings — and that gap collapses as the structure is pushed further out of the
+money. **Safety and credit trade against each other directly here.** Moving the tail away from spot
+is exactly what shrinks the credit, which is why `min_bwb_credit_pct_of_tail`, rather than the price
+gate, is now expected to be the binding constraint on entry.
 
 ## Why not trade SPY, /ES, or /MES instead of SPX/XSP, to shrink the assignment fee's bite?
 
