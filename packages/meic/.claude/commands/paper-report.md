@@ -1,4 +1,4 @@
-Produce the weekly (or custom-range) paper-trading performance report, comparing all four risk profiles side by side. Covers both `execution_mode='paper'` (forward, live-quote) and `execution_mode='replay'` (historical SPX) trades in one combined view, since both write to the same `~/.cherrypick/data/meic/paper_trades.db` schema.
+Produce the weekly (or custom-range) paper-trading performance report, comparing every enabled forward-test stream side by side (currently `control`/`open`/`width-5`/`width-10` — see `config.risk.json` and `docs/paper-experiments.md`). Covers both `execution_mode='paper'` (forward, live-quote) and `execution_mode='replay'` (historical SPX) trades in one combined view, since both write to the same `~/.cherrypick/data/meic/paper_trades.db` schema.
 
 ## 1. Gather the range summary
 
@@ -6,7 +6,7 @@ Produce the weekly (or custom-range) paper-trading performance report, comparing
 python -m cherrypick.meic.db --db ~/.cherrypick/data/meic/paper_trades.db get_range_summary --start <YYYY-MM-DD> --end <YYYY-MM-DD>
 ```
 
-Default the range to the last 7 calendar days ending today (ET) unless the user specifies a different window (e.g. "since program start", "last month"). This returns `profiles: { "conservative": {...}, "moderate": {...}, "aggressive": {...}, "very-aggressive": {...} }`, each with `total_trades`, `win_count`/`loss_count`/`win_rate_pct`, `profit_factor`, `avg_win`/`avg_loss`, `expectancy_per_trade`, `max_consecutive_losses`, `max_drawdown`, `worst_day`, `net_pnl`, and a `daily_pnl` series (date, net_pnl, cumulative_pnl) per profile.
+Default the range to the last 7 calendar days ending today (ET) unless the user specifies a different window (e.g. "since program start", "last month"). This returns `profiles: {...}` keyed dynamically by whichever `risk_profile` values actually traded in the range — currently `control`/`open`/`width-5`/`width-10` (the disabled ladder tiers and retired GEX arms won't appear unless someone manually re-enables and trades them; see `config.risk.json`'s `_disabled_note`s). Each key carries `total_trades`, `win_count`/`loss_count`/`win_rate_pct`, `profit_factor`, `avg_win`/`avg_loss`, `expectancy_per_trade`, `max_consecutive_losses`, `max_drawdown`, `worst_day`, `net_pnl`, and a `daily_pnl` series (date, net_pnl, cumulative_pnl) per profile.
 
 ## 2. Compute the risk-adjusted suite
 
@@ -45,6 +45,6 @@ Include the last ~15 trades across all profiles (from `get_range_summary`'s unde
 
 ## 6. Write the report
 
-Plain-English synthesis: which profile(s) are trending toward graduation and why, which are clearly lagging, and whether the sample is even large enough yet to say anything (be honest if it isn't — conservative in particular may accrue few trades on low-IV weeks, which is a valid, reportable outcome per CLAUDE.md's low-IV credit-floor discussion, not a bug).
+Plain-English synthesis: which stream(s) are trending toward graduation and why, which are clearly lagging, and whether the sample is even large enough yet to say anything (be honest if it isn't — `control` in particular may accrue few trades on low-IV weeks, which is a valid, reportable outcome per CLAUDE.md's low-IV credit-floor discussion, not a bug).
 
-Save to `logs/paper-week-<N>-<start>_<end>.md` (increment `<N>` from the highest existing `logs/paper-week-*.md` file, or use the date range alone if this is the first report). One combined report covering all four profiles — do not write separate per-profile files.
+Save to `logs/paper-week-<N>-<start>_<end>.md` (increment `<N>` from the highest existing `logs/paper-week-*.md` file, or use the date range alone if this is the first report). One combined report covering every enabled stream — do not write separate per-stream files.

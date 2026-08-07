@@ -85,11 +85,32 @@ Several strategies can attempt to capture price improvement above the natural bi
 Tastytrade does not support exchange-level multi-leg stop orders for combo ICs, so stops are **software-monitored** — the loop checks each open trade's put spread and call spread cost every iteration (120s cadence while positions are open) rather than relying on a resting exchange order. With `per_side_stop_management` enabled (default), the call spread and put spread are managed independently: a stopped side leaves the untouched side running.
 
 ```
-per-side stop fires when that side's cost reaches:  stop_trigger_ratio × net_credit   (default 0.95, i.e. per_side_stop_trigger = full_credit)
+per-side stop fires when that side's cost reaches:  stop_trigger_ratio × net_credit   (default 0.95)
 closing limit price:  (short_ask − long_bid) × stop_limit_ratio                        (default 1.02 — prices slightly past the crossing price so it stays marketable)
 ```
 
+**The trigger basis is the whole IC's `net_credit`, not that side's own credit** — this is the
+published Chambless MEIC convention (a per-side stop keyed to the *whole IC*), designed so that one
+side stopping scratches the trade (the other side's remaining credit roughly offsets the loss); the
+`0.95` default is the documented "MEIC+" variant, which stops $0.10 below exact breakeven so a
+scratch trends slightly positive. This basis is fixed in `paper.py`/the live loop, not a config
+choice — a `per_side_stop_trigger` key once existed to describe it in words but was removed
+2026-08-07, since it was never read by any code path. The actual "stop on that side's own
+credit" question — the rule people usually mean when they say a side "gave back its own premium" —
+is instead answered read-side, from the paper engine's `open` stream, as the derived
+`stop-2.0-side` policy; see [paper-experiments.md](paper-experiments.md)'s "The forward test"
+section for the full derivation and why it's computed after the fact rather than run as a fifth
+live-configurable mode.
+
 At these levels, closing the stopped spread costs approximately the full IC credit, leaving the other spread to continue toward expiration or its own stop. **MEIC has no profit target** — a spread is never closed simply for being profitable.
+
+**The stop's cost is real and separate from the convention's design intent.** A side that stops
+often would have expired worthless had it been held — the paper engine now records each side's full
+settlement counterfactual (`put_settle_value`/`call_settle_value`, and the first tick the spot
+crossed the short strike) precisely to measure this, not assume it. See
+[paper-experiments.md](paper-experiments.md) for the breakeven identity this strategy is measured
+against (`P(both sides expire clean) − P(both sides stop) > fees/credit`) and the derived
+`stop-none`/`stop-0.75-net`/`strike-touch` policies computed from that recorded path.
 
 Stops are tightened (never loosened) by the agent's judgment as conditions change. Triggers for tightening include:
 

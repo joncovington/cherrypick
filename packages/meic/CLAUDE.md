@@ -17,7 +17,12 @@ You are an autonomous quantitative options trading agent. Your objective is to m
   the background like the streamer, with no per-iteration agent. The **cherrypick** orchestrator owns its
   lifecycle: it registers the self-healing OS task `cherrypick-meic-paper-loop`, starts the streamer, and
   watchdogs both. All writes go to `~/.cherrypick/data/meic/paper_trades.db`; the live account and `~/.cherrypick/data/meic/meic_trades.db` are
-  never touched. This is what collects data day to day.
+  never touched. This is what collects data day to day. **Not a full re-implementation of the Loop
+  Steps below**: GEX-wall strike anchoring (Step 6's "GEX strike placement"), the ORB debit-spread
+  path, and judgment-based stop tightening (Step 5's manual triggers) are agent-loop-only — the
+  automated engine runs the simpler, fully-deterministic entry/stop mechanics `paper.py` codifies
+  (per-arm gate thresholds, the fixed `stop_trigger_ratio` mechanism, no discretionary tightening),
+  which is what makes its EOD report and every `analytics.py` read surface reproducible.
 - **Live / interactive (agent-driven).** The **Loop Steps** below are executed by you, the agent, for
   live trading and manual sessions; live-order tools require `enable_live_trading: true`. cherrypick
   never runs this path — it only ever drives paper, and never places live trades.
@@ -119,18 +124,32 @@ Instead of hand-editing `config.json` to change entry thresholds, use the **risk
 
 See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, trade-off tables per tier, and progression guidance.
 
-**The registry holds the ladder plus whichever study arms are actually running.** `config.risk.json`
-holds the four ladder tiers and the two symbol-agnostic GEX arms (`gex-open`/`gex-blocked`, added
-2026-08-01 — forced-sampling cells that isolate the GEX gate as its own variable). Two arm families
-have been retired out of it: the 15 symbol/wing/credit experiment cells on 2026-07-18, because each
-pinned a *symbol* into its identity and collided with the portfolio model below, and the four
-`width-*` wing-width arms on 2026-08-05, which were added 07-28, stood down 08-01, and never traded a
-single row. Both are recoverable from git history and described in
-[docs/paper-experiments.md](docs/paper-experiments.md). Keep retired arms *out* of this file rather
-than disabled in it — sixteen competing portfolios is what made the registry unreadable, and a
-disabled definition nobody owns reads as pending work. The per-profile mechanism the retired cells
-used — `symbols`, `wing_widths_by_symbol` + `wing_selection`, `stagger_entries`, `short_delta_target`
-— is what every study arm uses *without* the `symbols` pin.
+**The registry is a four-stream forward test, not a risk ladder, since 2026-08-07.**
+`config.risk.json`'s enabled profiles are `control` (today's deployed policy — the reference book
+and the champion/challenger surface's champion), `open` (every study gate off, no per-side stop,
+`overlap_scope: "none"`, full per-side path recording — the permissive superset every gate variant
+and every derived stop policy is answered from read-side, rather than by running a separate arm per
+question), and `width-5`/`width-10` (wing width pinned, the one genuinely non-derivable structural
+variant, paired against each other on the same ticks). All four write `risk_profile = <arm name>`
+— there is no separate `arm` column. See [docs/paper-experiments.md](docs/paper-experiments.md)
+for the full design, the breakeven identity the test is measuring against, and the derived stop
+policies (`stop-none`/`stop-0.75-net`/`stop-2.0-side`/`strike-touch`, computed from `open`'s
+recorded paths, never run as separate entry streams).
+
+**Retired arms stay in this file, disabled, with a written verdict — not deleted.** The four-tier
+risk ladder (`conservative`/`moderate`/`aggressive`/`very-aggressive`), the GEX study pair
+(`gex-open`/`gex-blocked`, superseded by `open`'s own regime tagging), and the original four-way
+wing-width study are all `enabled: false` with a `_disabled_note` explaining why, per
+`docs/paper-experiments.md`'s kill rule: a stream is retired only by an explicit written verdict,
+never by silent removal, because a defined-but-forgotten arm is worse than a documented-and-off
+one. (Older history — the 15 symbol/wing/credit cells retired 2026-07-18 for pinning a *symbol*
+into their identity, which collided with the portfolio model below — predates this convention and
+is recoverable from git history instead; see `docs/paper-experiments.md`.) The ladder is not dead
+weight: it is still what `/set-risk-profile` targets for **live** trading (see
+[docs/risk-profiles.md](docs/risk-profiles.md)) — the forward-test streams are paper-only and must
+never be applied to live config. The per-profile mechanism the retired symbol/wing/credit cells
+used — `symbols`, `wing_widths_by_symbol` + `wing_selection`, `stagger_entries`,
+`short_delta_target` — is what every study arm since has used *without* the `symbols` pin.
 
 **Paper portfolio model**: one portfolio per **(profile × symbol)** pair, each with its own `max_concurrent_ics` and daily-entry budget — risk appetite and instrument are separate axes. A single shared budget starved whichever symbol was processed last (IWM: 1,313 iterations, zero fills). `daily_ic_trade_target` is soft guidance, not a cap: past it the credit floor is scaled by `over_target_credit_multiple`, so favorable conditions permit more. Ladder thresholds that used to be shared absolutes are derived per profile from its own `min_iv_rank` / credit floor (`low_iv_credit_floor_iv_rank_offset`, `low_iv_credit_relief_multiple`, `late_entry_bias_iv_rank_offset`) — a shared absolute silently flattened the ladder. Full reasoning and the invariants any change must preserve: [docs/risk-profiles.md](docs/risk-profiles.md#design-rationale).
 
@@ -145,7 +164,8 @@ used — `symbols`, `wing_widths_by_symbol` + `wing_selection`, `stagger_entries
 | `max_wing_width` | `10` | Upper bound (points) on spread width; the agent decides the actual wing width per entry (any reasonable value up to this max, not a fixed enumerated list) based on credit floor requirements, buying power, and session conditions |
 | `wing_widths_by_symbol` | per-symbol lists | Per-symbol IC wing-width candidate shortlist (points), scanned widest-first. Wing width is dollar-denominated risk, so it must be set per instrument: 10 points is ~0.13% of SPX (~7500) but ~3.4% of IWM (~297). `DEFAULT` covers any symbol not listed. Supersedes a single shared width list for the multi-price-level symbol set (SPX/XSP/QQQ/IWM). |
 | `quantity` | `1` | Contracts per IC |
-| `daily_ic_trade_target` | `2` | Target number of IC entries per day. Guidance heuristic, not a hard cap — buying power, `max_concurrent_ics`, and regime gates remain binding constraints. Agent uses this to calibrate position sizing and entry selectivity (if target is 2 and 1 is open, remaining slots reserved for high-conviction setups only). Set to `0` to disable IC entries and run ORB-only mode |
+| `daily_ic_trade_target` | `200` | Target number of IC entries per day. Guidance heuristic, not a hard cap — buying power, `max_concurrent_ics`, and regime gates remain binding constraints. Raised from `2` on 2026-08-01 alongside `max_concurrent_ics`: a book-sized target of 2 has no meaning once there is no book, so this is now a never-binding backstop rather than daily guidance. Set to `0` to disable IC entries and run ORB-only mode |
+| `overlap_scope` | `"shorts"` | How strictly a new entry is checked against this profile's own already-open positions on the same symbol: `"all"` (strictest — any shared leg strike blocks), `"shorts"` (blocks only an exact repeat of the same short put/call pair — the profit zone), `"none"` (no check at all — every tick is an independent draw; paper-only, see below). Defaults to `"all"` if unset. **Live trading never sees a paper stream's `"none"`**: `live_loop.py` never applies a `config.risk.json` profile overlay, so only `config.json`'s own top-level value ever reaches live order placement |
 | `entry_window_start` | `10:00` | Earliest entry time (ET); avoid the first 30 min of open (high volatility, wide spreads) |
 | `entry_window_end` | `14:30` | Latest new IC entry (ET); no new positions after 2:30 PM — gamma risk too high |
 | `force_close_time` | `15:45` | Hard force-close time (ET); all open 0DTE positions must be closed by 3:45 PM regardless of P&L |
@@ -161,8 +181,7 @@ used — `symbols`, `wing_widths_by_symbol` + `wing_selection`, `stagger_entries
 | `stop_type` | `spread` | `spread` = software stop only (exchange multi-leg stops auto-cancel on tastytrade); monitors combined or per-side cost each iteration |
 | `stop_trigger_ratio` | `0.95` | Per-side stop fires when that side's cost reaches this fraction of `net_credit`; 0.95 = stop at near-breakeven; more conservative than the research baseline of 1.0× but protects against noisy stop-outs converting to real losses |
 | `stop_limit_ratio` | `1.02` | Cushion multiplier applied to the marketable closing debit when a per-side stop fires: `(short_ask − long_bid) × stop_limit_ratio`. >1.0 prices the Day limit slightly past the crossing price so it stays marketable (and fills fast) even if the quote ticks against you in the seconds between computing the price and the order reaching the exchange; the small extra cost is cheaper than staying exposed through another loop iteration |
-| `per_side_stop_management` | `true` | Manage call spread and put spread with independent stops; a stopped call side leaves the put spread running and vice versa |
-| `per_side_stop_trigger` | `full_credit` | Per-side trigger = `net_credit` (total IC credit); each side can lose up to the full collected credit before being stopped, preserving the other side's remaining value |
+| `per_side_stop_management` | `true` | Manage call spread and put spread with independent stops; a stopped call side leaves the put spread running and vice versa. The trigger basis is always the whole IC's `net_credit`, not that side's own credit — the canonical Chambless MEIC convention (see `docs/strategy.md`'s Stop management section) — fixed in code, not a config choice. The `per_side_stop_trigger` key some older docs mention was removed 2026-08-07: it was never read by any code path. The per-side-own-credit question is instead answered read-side as the derived `stop-2.0-side` policy; see [docs/paper-experiments.md](docs/paper-experiments.md) |
 | `max_stop_adjustments_per_ic` | `3` | Max times a stop can be tightened per IC |
 | `cash_settled_symbols` | `[SPX, XSP, NDX, RUT]` | Symbols that settle in cash at expiration (no physical assignment). Membership determines the **end-of-day exit path**: symbols on this list are **left to expire** (settled in cash at `expiration_settlement_time`) rather than force-closed — an OTM short expires worthless (full credit retained), an ITM short settles for its intrinsic value capped at the wing width. Symbols **not** on this list (QQQ/IWM/equities/futures) are physically settled and must be **force-closed before the bell** (`physical_settlement_force_close_time`) to avoid share assignment. Membership also drives: whether a missed non-cash force-close (Step 2) is a critical assignment-risk escalation; and, in paper trading, whether modeled assignment/pin friction is applied on the close. (Per-side stops and event force-closes below still apply to every symbol regardless.) Add any other cash-settled underlying you configure via `symbols`; leave equities and physically-settled ETFs (QQQ, IWM, SPY, etc.) out of this list. |
 | `expiration_settlement_time` | `16:00` | 0DTE PM-settlement time (ET). At/after this, cash-settled positions still open (not stopped) are left to expire and settled: OTM shorts keep full credit; an ITM short settles for its intrinsic value capped at the wing width. In paper trading the engine computes this settlement P&L from the close price; live trading reconciles the broker's realized cash settlement the next session. |
@@ -178,7 +197,7 @@ used — `symbols`, `wing_widths_by_symbol` + `wing_selection`, `stagger_entries
 | `fee_estimate_lookback_trades` | `20` | Number of most-recent closed trades per symbol used to compute the average fee-per-contract via `python -m cherrypick.meic.db get_fee_estimate --symbol <SYM>` |
 | `fee_estimate_min_sample_size` | `5` | Minimum closed-trade sample size required before trusting the DB-derived average fee; below this, use `fee_estimate_fallback_per_contract` instead |
 | _(fee fallback — computed)_ | via `get_fee_estimate` | The per-symbol bootstrap fee estimate (used when a symbol has fewer than `fee_estimate_min_sample_size` closed trades) is **computed from the shared tastytrade schedule**, no longer a hand-maintained config list: `python -m cherrypick.meic.db get_fee_estimate --symbol <SYM>` returns `fallback_per_contract` (SPX 6.89, XSP/DEFAULT 4.49, NDX 5.49, RUT 5.21) via `cherrypick.core.fees.ic_open_fee`. That schedule = open-only commission ($1.00/contract open, $0.00 close; $10/leg cap) + clearing $0.10 + ORF $0.02 + FINRA TAF $0.00329 on sell legs + the per-symbol Single-Listed Index exchange fee (SPX $0.60, XSP $0.00, NDX $0.25, RUT $0.18) that makes SPX pricier per IC than XSP; symbols off the index schedule use the equity/ETF schedule (no exchange fee). To add a symbol, extend `INDEX_EXCHANGE_FEE_PER_CONTRACT` in `cherrypick.core.fees`. |
-| `max_concurrent_ics` | `4` | Maximum simultaneously open ICs; do not enter a new IC if this many are already open |
+| `max_concurrent_ics` | `99` | Maximum simultaneously open ICs; do not enter a new IC if this many are already open. Raised from `4` on 2026-08-01 as part of the independent-sampling convention — every profile now runs as an uncapped sample stream rather than a capped book, so this structurally never binds (kept as a config key for a deliberate lower-cap experiment, not as a live constraint). See [docs/paper-experiments.md](docs/paper-experiments.md)'s "Independent sampling" section |
 | `min_iv_rank` | `0.30` | Minimum IV rank required to enter; skip if IV rank is below 0.30 (insufficient premium) |
 | `max_call_delta_entry` | `0.20` | Hard ceiling on actual short call delta at entry; reject if exceeded regardless of scan result. Raised from 0.17 to keep ~0.02 margin above the 0.18 `delta_target` |
 | `max_call_delta_entry_open_volatile` | `0.19` | Tighter ceiling applied during open_volatile and late sessions |

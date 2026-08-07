@@ -4,10 +4,14 @@
 engine instead of the broker's own sandbox, and the bar a risk profile has to clear before it's
 trusted with real capital. Part of the [MEIC module](../README.md) in the cherrypick suite.
 
-Capital-free evaluation of the four risk profiles (conservative / moderate / aggressive /
-very-aggressive) on identical market conditions, before graduating one to live trading via
-`/set-risk-profile`. This document is the operating reference; `.claude/commands/paper-loop.md`
-and `.claude/commands/paper-report.md` are the operational skills.
+Capital-free evaluation of every enabled forward-test stream (`control`/`open`/`width-5`/
+`width-10` — see `docs/paper-experiments.md` for what each one is and why) on identical market
+conditions, before graduating one to live trading via `/set-risk-profile`. The four-tier risk
+ladder this document originally evaluated (conservative / moderate / aggressive / very-aggressive)
+is disabled by default since 2026-08-07, superseded here by the forward-test streams — it remains
+what `/set-risk-profile` targets for **live** trading (see `docs/risk-profiles.md`). This document
+is the operating reference; `.claude/commands/paper-loop.md` and `.claude/commands/paper-report.md`
+are the operational skills.
 
 ## Why a custom engine, not the tastytrade sandbox
 
@@ -22,9 +26,9 @@ quotes**, and only stubbing the two broker-mutating calls (submit, close).
 ## Design
 
 - **Parallel shadow.** Each iteration fetches one market snapshot per symbol (chain, quotes,
-  VIX, GEX) and evaluates **all four profiles independently against it** — they're virtual
-  sub-accounts with no shared capital constraint, so all four can hold positions on the same
-  day. This removes market-regime confounding between profiles and needs far fewer calendar
+  VIX, GEX) and evaluates **every enabled arm independently against it** — they're virtual
+  sub-accounts with no shared capital constraint, so all of them can hold positions on the same
+  day. This removes market-regime confounding between streams and needs far fewer calendar
   weeks than testing profiles sequentially.
 - **Deterministic, not agent-judged.** `cherrypick/meic/paper.py`'s gate evaluator and fill/exit engine
   encode a fixed policy: wing width = widest candidate ≤ `max_wing_width` that clears the
@@ -33,17 +37,19 @@ quotes**, and only stubbing the two broker-mutating calls (submit, close).
   agent's session-by-session judgment, which sits on top of a graduated profile afterward.
 - **Isolated storage.** All paper (and replay) trades live in `paper_trades.db` in the data home
   (`~/.cherrypick/data/meic/` by default; see [`cherrypick/meic/paths.py`](../src/cherrypick/meic/paths.py)), written via
-  `python -m cherrypick.meic.db --db <that path> <command>` — the same schema and commands as the live DB, with a
-  `risk_profile` and `execution_mode` (`paper` | `replay`) column added. The live loop and
-  `meic_trades.db` are never touched by this system.
-- **$100,000 virtual bankroll per profile.** Anchors each profile's equity/drawdown curve
-  (and the dashboard's Performance view) on a common baseline so the four are visually and
+  `db.call()` (`cherrypick/meic/db.py`) — an in-process dispatcher, not a subprocess per write —
+  against the same schema and commands as the live DB, with a `risk_profile` and `execution_mode`
+  (`paper` | `replay`) column added (`python -m cherrypick.meic.db --db <that path> <command>` is
+  still valid for a human running it by hand from a terminal; it's just not how the engine itself
+  writes). The live loop and `meic_trades.db` are never touched by this system.
+- **$100,000 virtual bankroll per stream.** Anchors each stream's equity/drawdown curve
+  (and the dashboard's Performance view) on a common baseline so they're visually and
   numerically comparable.
 
 ## Fee model
 
-Paper P&L is net of the **exact tastytrade fee schedule** (`src/paper._tt_fees`), not a flat
-per-contract average:
+Paper P&L is net of the **exact tastytrade fee schedule** (`paper.open_fees`,
+`paper.close_fees_full_ic`, `paper.close_fees_one_side`), not a flat per-contract average:
 
 - **Open** (all 4 legs): $1.00 commission + $0.10 clearing + $0.02 ORF + the per-symbol
   exchange proprietary index fee (SPX $0.60, XSP $0.00 under 10 contracts/leg, NDX $0.25,
@@ -193,9 +199,9 @@ likely overfit), avg-win/avg-loss, max consecutive losses, realized-vs-unrealize
 
 ## Multi-week cadence
 
-Minimum 4 weeks of forward paper trading (~20 trading days), extended until the conservative
-profile reaches ≥30 filled ICs or a 6–8 week cap — shortened materially by SPX replay, which
-can front-load samples for SPX specifically. No mid-test parameter edits — changing thresholds
+Minimum 4 weeks of forward paper trading (~20 trading days), extended until the `control`
+stream (the current reference book) reaches ≥30 filled ICs or a 6–8 week cap — shortened
+materially by SPX replay, which can front-load samples for SPX specifically. No mid-test parameter edits — changing thresholds
 invalidates the sample. At window end, any profile clearing all six gates is eligible; switch
 the live account via `/set-risk-profile`, keep `quantity=1` initially, and consider a small
 tiny-live calibration run targeting **stop fills specifically**, since that's the most
