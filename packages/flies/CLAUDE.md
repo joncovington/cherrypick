@@ -372,11 +372,30 @@ into an outage.
 share of the *entire* chain (109–121 strikes on a real 0DTE surface); it is now windowed to near
 spot and measured over the top 3 strikes, since pinning is a property of a cluster. `time_bucket`
 came back `midday` **60/60** because entries only ever occur 09:45–15:00 while "midday" spans
-10:00–15:30 — constant by construction, and redundant with `entry_window`, which already records
-real timing with 6 distinct values and has its own analytics. Its boundaries were deliberately *not*
-re-guessed: the raw minute is recorded now, so `bucket_edges` can cut it against what actually
-happened. `analytics.regime_coverage` flags any single-bucket dimension, and the EOD report warns on
-it and withholds that dimension's P&L table — a one-bucket table reads as a finding and is not one.
+10:00–15:30 — constant by construction. Its boundaries were deliberately *not* re-guessed at the
+time: the raw minute is recorded now, so `bucket_edges` can cut it against what actually happened.
+`analytics.regime_coverage` flags any single-bucket dimension, and the EOD report warns on it and
+withholds that dimension's P&L table — a one-bucket table reads as a finding and is not one.
+
+**`time_bucket` was re-cut on 2026-08-06, and the redundancy hypothesis it carried is answered — it
+is kept.** Boundaries **10:00/15:30 → 11:00/13:00**, derived from the recorded minute with no session
+re-run (entries span 10:00–14:42, median 11:19). The dimension had gone degenerate a second time by
+then, 97/97 rows. Re-cut it splits **43/35/19**, and completion falls monotonically **72% → 63% →
+58%** through the day. The monotonicity is why this is kept rather than merely reported as
+non-degenerate: a legged entry completes only once spot drifts off the centre, so a later entry has
+less session left to drift in, and the decline is the mechanism rather than a boundary flattering
+itself. Net P&L splits the same direction under every cut tried; the sharpest is terciles
+(10:29/12:27), where the middle third is the only profitable bucket (+$12.46 avg against −$69.96 and
+−$35.80) — but that is 32/33/32 rows and the clock cut is the more honest one to ship. Chosen on the
+same 97 rows that measure it, the same standing as the trend band's 20 points.
+
+**It is not redundant with `entry_window`**, which was the standing alternative. That window's
+dominant `10:00-14:30` cell holds **74 of the 97** rows and splits **35/27/12** across the new
+buckets, so it structurally cannot see this variation; its own completion rates (62/70/38/57%) are
+non-monotone and rest on cells of 7–8. The narrow windows map 1:1 onto single buckets, so the two
+agree exactly where `entry_window` is already precise and diverge where it is not. **Read the sample
+before the conclusion**: 97 rows, SPX only — regime tagging began 2026-07-31, so the XSP era carries
+no minutes at all and the 65 pre-tagging rows sit in `unknown`.
 
 **GEX inputs are refused when stale or thin (2026-08-01).** `provider._greeks_and_oi` previously read
 gamma and OI with no age filter at all, so a dead feed produced a surface indistinguishable from a

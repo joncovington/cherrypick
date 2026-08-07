@@ -411,19 +411,33 @@ def _classify_gex(snapshot: dict, params: dict) -> tuple[str, float | None]:
 def _classify_time(snapshot: dict, params: dict) -> tuple[str, int | None]:
     """Session phase, and the raw minute-of-day behind it.
 
-    Known degenerate at the default boundaries (measured 2026-08-01): this module's entry windows
-    have only ever produced entries between 09:45 and 15:00, while "midday" spans 10:00-15:30, so
-    every one of the 60 tagged rows came back 'midday'. Deliberately NOT re-guessed here -- the raw
-    minute is now recorded alongside the bucket, so `analytics.by_regime(..., bucket_edges=[...])`
-    can cut it against what actually happened rather than against another guess. Note too that
-    `entry_window` already records real entry timing with genuine variety (6 distinct values), and
-    `analytics.by_entry_window` already reads it -- this dimension may simply be redundant.
+    Was degenerate at the old 10:00/15:30 boundaries (measured 2026-08-01, again 2026-08-06): entries
+    only ever occur between 10:00 and 14:42, so every tagged row came back 'midday' -- constant by
+    construction, first at 60/60 rows and then at 97/97. Deliberately not re-guessed at the time; the
+    raw minute is recorded alongside the bucket precisely so the cut could later be made against what
+    actually happened. It now has been: **11:00/13:00**, re-derived on 2026-08-06 from the recorded
+    minute with no session re-run.
+
+    The re-cut splits 43/35/19 with completion falling monotonically **72% -> 63% -> 58%** through the
+    day. That direction is what makes it worth keeping rather than merely non-degenerate: a legged
+    entry completes only once spot drifts off the centre, and a later entry has less session left to
+    drift in, so the decline is the mechanism showing up rather than a bucket boundary flattering
+    itself. Chosen on the same 97 rows that measure it -- a current best estimate, not a calibrated
+    constant.
+
+    **Not redundant with `entry_window`, which was the standing hypothesis and is now answered.**
+    `entry_window`'s dominant '10:00-14:30' window holds 74 of those 97 rows and splits 35/27/12
+    across these buckets, so it structurally cannot see this variation. The narrow windows do map 1:1
+    onto single buckets, so the two agree exactly where `entry_window` is already precise and diverge
+    where it is not -- which is the useful shape, not a reason to retire either.
     """
     now_min = snapshot.get("now_min")
     if now_min is None:
         return "unknown", None
-    open_end = time_to_minutes(params.get("regime_time_open_end", "10:00"))
-    close_start = time_to_minutes(params.get("regime_time_close_start", "15:30"))
+    # Defaults carry the 2026-08-06 re-cut, not the degenerate originals: no deployed config sets
+    # these keys, so the fallback IS the live tag definition rather than a placeholder behind one.
+    open_end = time_to_minutes(params.get("regime_time_open_end", "11:00"))
+    close_start = time_to_minutes(params.get("regime_time_close_start", "13:00"))
     if now_min < open_end:
         return "open", now_min
     if now_min >= close_start:

@@ -385,7 +385,10 @@ def test_regime_tags_recorded_at_entry_and_can_differ_at_completion(conn):
     assert row["entry_gex_bucket"] == "unknown"
     assert row["completion_vol_bucket"] is None  # not completed yet
 
-    # Complete at a later, different now_min (still midday here, but a different skew reading).
+    # Complete at a later now_min, in a different session phase and at a different skew reading.
+    # 13:00 is the `regime_time_close_start` edge, so this lands in `close` -- the bucket names here
+    # follow configurable boundaries (re-cut 2026-08-06), and this test is asserting that entry and
+    # completion are tagged INDEPENDENTLY, not that any particular minute maps to any given name.
     later = snapshot(
         underlying_price=6004.0,
         now_min=13 * 60,
@@ -396,7 +399,8 @@ def test_regime_tags_recorded_at_entry_and_can_differ_at_completion(conn):
     row = dbmod.book_positions(conn, bookmod.book_id_for("2026-07-20", "control", "SPX"))[0]
     assert row["kind"] == "fly"
     assert row["completion_vol_bucket"] is not None
-    assert row["completion_time_bucket"] == "midday"
+    assert row["completion_time_bucket"] == "close"
+    assert row["completion_time_bucket"] != row["entry_time_bucket"]  # independently tagged
     # Entry-side columns are untouched by the completion write.
     assert row["entry_vol_bucket"] == "normal"
 
