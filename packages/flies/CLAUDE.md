@@ -674,6 +674,37 @@ blocked by that gate alone at floors of $9.36–$39.36), `entry_modes` → **leg
 None of this separates the arms — 40 entries over 5 sessions, and the 50%/62%/62% spread is 2 trades
 wide. These are mechanism and accounting changes, not signal findings.
 
+**The arms DID separate on the 08-01.. SPX era, and reading them blended was hiding a working one
+(2026-08-06, `analytics.break_even`).** The blended figure said 66.0% completion against a 78.3%
+break-even — a book comfortably under water — and that reading shaped three issues before anyone
+split it. Per arm, on 97 settled legged positions:
+
+| arm | n | completion | break-even | margin | net |
+|---|---|---|---|---|---|
+| `control` | 56 | **78.6%** | 75.3% | **+3.2** | **+$409** |
+| `time_window` | 23 | 52.2% | 72.2% | −20.0 | −$1,154 |
+| `gex` | 18 | 44.4% | 91.8% | −47.3 | −$2,228 |
+
+**`control` clears its own bar; `gex` and `time_window` carry the entire −$2,973.** The blended
+number was not a summary of the arms, it was an average across a working one and two broken ones,
+and it pointed at the *construction* when the evidence points at the *centring and the timing*.
+That is exactly what `control` exists for (see the arms section: "without a naive baseline a
+profitable arm would prove nothing") — this is the first time it has actually paid for itself.
+
+Two things this does **not** license. The samples are small and four sessions long — control's +$409
+rests on 56 positions, `gex` on 18 — so this is a separation worth pursuing, not a validated result.
+And `gex` is worse on *both* branches, not just completion: its completions average $21.55 against
+control's $55.76 and its strandings −$240.06 against −$170.40, so "the centre lags" does not by
+itself explain it. On this slice `entry_center_offset_value` does **not** separate gex's own
+completions from its misses (medians +1.1 vs +1.9 points), so whatever is driving it is not captured
+by the dimension built for exactly that question.
+
+**And the misses are near misses, not absent markets.** Of the 26 that never saw a qualifying debit,
+the median best offer sat **+0.49 points** above the gate (1.16× the credit, worst 1.34×) — nothing
+like the 1.88–4.00× the bwb roll showed when it was genuinely unreachable. Eight were within 0.25
+points. So "the market never offered it" overstates: the completion was consistently close and the
+structure did not quite get there.
+
 **Settlement is marked in the database, not on disk.** `session_already_settled` asks whether every
 `fly_books` row for the day is `settled`. It used to ask whether `paper-eod-<day>.md` existed, which
 made the marker settable by anything that could write a file — on 2026-07-20 a test run against the

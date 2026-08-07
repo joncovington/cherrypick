@@ -1018,3 +1018,57 @@ def test_the_bwb_backfill_stamps_exactly_the_unrecoverable_rows(tmp_path):
     assert got["V1"] and got["V2"], "pre-fix bwb rows are not evidence"
     assert got["K1"] is None, "the corrected roll's rows must survive"
     assert got["K2"] is None, "only bwb was affected"
+
+
+# --------------------------------------------------------------------------- break-even per arm (#102)
+def test_break_even_is_per_arm_because_the_blend_hid_a_working_arm(conn):
+    """The finding this exists for. Blended, the 2026-08-01.. SPX era read 66.0% observed against
+    78.3% needed — a book under water, and the reading that shaped three issues. Split by arm,
+    `control` clears its own bar while the other two carry the loss. A blended rate is an average
+    across a working arm and broken ones, not a summary of them."""
+    for i in range(8):  # control: completes often, modest wins, survivable misses
+        position(
+            conn,
+            f"C{i}",
+            arm="control",
+            kind="fly" if i < 6 else "short_vertical",
+            pnl=50.0 if i < 6 else -100.0,
+        )
+    for i in range(8):  # gex: completes rarely, thin wins, brutal misses
+        position(
+            conn, f"G{i}", arm="gex", kind="fly" if i < 2 else "short_vertical", pnl=20.0 if i < 2 else -240.0
+        )
+
+    rows = {r["arm"]: r for r in analytics.break_even(conn)}
+    assert rows["control"]["completion_rate"] == 0.75
+    assert rows["control"]["margin_pts"] > 0, "control clears its own bar"
+    assert rows["gex"]["margin_pts"] < 0, "gex does not"
+    # Ordered best-margin-first, so the working arm is not buried under the broken ones.
+    assert [r["arm"] for r in analytics.break_even(conn)] == ["control", "gex"]
+
+
+def test_break_even_is_undefined_rather_than_invented_from_one_branch(conn):
+    """With no stranding yet there is no rate at which the branches cancel. Reporting one would
+    manufacture a bar out of a single branch — the shape of claim this module refuses to make."""
+    position(conn, "C1", arm="control", kind="fly", pnl=50.0)
+    row = analytics.break_even(conn)[0]
+    assert row["completion_rate"] == 1.0
+    assert row["break_even_rate"] is None and row["margin_pts"] is None
+
+
+def test_break_even_is_undefined_when_completing_does_not_pay(conn):
+    """If the completed branch is itself negative, no completion rate rescues the book and a
+    'break-even rate' would be arithmetic without meaning."""
+    position(conn, "C1", arm="control", kind="fly", pnl=-10.0)
+    position(conn, "C2", arm="control", kind="short_vertical", pnl=-100.0)
+    assert analytics.break_even(conn)[0]["break_even_rate"] is None
+
+
+def test_break_even_excludes_void_rows_like_every_other_surface(conn):
+    """It builds on `_period_clause`, so a row whose decisions rest on a defect cannot move a bar."""
+    position(conn, "C1", arm="control", kind="fly", pnl=50.0)
+    position(conn, "C2", arm="control", kind="short_vertical", pnl=-100.0)
+    position(conn, "V1", arm="control", kind="short_vertical", pnl=-9999.0)
+    conn.execute("UPDATE fly_positions SET void_reason = 'x' WHERE position_id = 'V1'")
+    row = analytics.break_even(conn)[0]
+    assert row["trades"] == 2 and row["avg_stranded"] == -100.0
