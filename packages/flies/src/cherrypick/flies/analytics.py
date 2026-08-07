@@ -899,6 +899,11 @@ def _state_at(row: dict, when: str) -> dict | None:
         "side": row["side"],
         "center": row["center"],
         "wing_width": row["wing_width"],
+        # Carried unconditionally, not just on the pre-roll branch below: an un-rolled bwb keeps
+        # kind='bwb' on its own row, so a state built without this reaches `fly.position_pnl`'s bwb
+        # branch missing the width it reads — and since one KeyError fails the whole /api/data
+        # payload, a single open bwb blanks every panel on the page.
+        "far_width": row.get("far_width"),
         "net": row["net"],
         "quantity": row["quantity"] or 1,
         "fees": row["fees"] or 0.0,
