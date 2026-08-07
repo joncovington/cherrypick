@@ -168,6 +168,20 @@
         ]
       ]
     },
+    "_debit-first-atm": "debit-first's ATM twin, added 2026-08-07, for the identical reason as bwb-atm: debit-first overrides entry_modes AND center_rule, a confound this module's own notes already acknowledged carrying ('gives up a clean ATM-vs-ATM control pairing'). debit-first-atm vs control isolates the LEGGING ORDER; debit-first-atm vs debit-first isolates the centring. Fixing one arm's confound and not the other would leave the comparison table inconsistent about what it is measuring.",
+    "debit-first-atm": {
+      "enabled": true,
+      "center_rule": "atm",
+      "entry_modes": [
+        "debit_first"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
     "iron": {
       "enabled": false,
       "_note": "RETIRED 2026-08-03 before it ever traded, and left disabled deliberately -- do NOT re-enable without reading docs/iron-completion.md first. It was meant to isolate the COMPLETION CHOICE (complete a legged credit spread by buying the same-type debit spread, or by selling the opposite-type credit spread into an iron butterfly). It cannot isolate anything: both completions use the IDENTICAL strike pair, so put-call parity pins D + C2 = wing_width exactly, for any skew. The two gates are the same inequality, they fire on the same tick, and the completed positions have the same net at every settlement price. What is left is fees and execution, both against the iron: +$3.46/position in assignment fees measured over 143 real completions (an iron always has one side ITM; a same-type fly settles clean in exactly the drift regime this book gets), plus a wider crossing cost that slippage_frac's flat fraction cannot even see. This arm was never in the deployed config, so it produced zero ledger rows -- nothing was lost.",
@@ -188,6 +202,20 @@
       "_note": "Isolates the ENTRY CONSTRUCTION: instead of legging in over two ticks, enter a broken-wing butterfly whole for a net credit (entry_modes: [\"bwb_roll\"]), then roll the far wide wing in to the near strike once the roll cheapens enough, converting to a symmetric fly. Until rolled this carries REAL tail risk (wing_width - far_width, negative) that fly.position_floor never reports as bounded -- this arm exists to measure whether the roll actually converts often enough, and cheaply enough, to be worth the tail carried while waiting. See docs/faq.md for the full construction and the researched trap (the roll cheapens under exactly the drift that makes the position profitable, and balloons past the credit precisely when the tail is threatened).",
       "_center_rule_note": "GEX-centred from the start (2026-08-03), not ATM: the far wing is where this structure's real, uncapped-until-rolled tail risk sits, and center_rule also decides which side choose_side sells (spot above center -> calls, i.e. the tail risk sits above spot; spot below center -> puts, tail below spot). A centre GEX suggests price will be pulled toward, rather than a blind ATM strike, argues both for a richer entry credit and for reduced odds of spot running past the far wing into the tail before a roll is possible.",
       "center_rule": "gex",
+      "entry_modes": [
+        "bwb_roll"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "_bwb-atm": "bwb's ATM twin, added 2026-08-07 -- the CONTROL the bwb arm never had. `bwb` overrides BOTH entry_modes and center_rule, so it differs from `control` in two things at once and cannot attribute a result to either, against this file's own one-variable rule above. This pins centring to ATM so the pair reads three ways: bwb-atm vs control isolates the CONSTRUCTION (bwb_roll vs legged), bwb-atm vs bwb isolates the CENTRING. Note ATM means the structure STRADDLES spot (the near wing lands ~1 strike the other side of it), which is not the fully-OTM placement -- but the roll span (centre +/- wing .. centre +/- far) is still OTM under choose_bwb_side either way, and a straddling structure clears min_bwb_credit_pct_of_tail MORE easily, since a bwb credit is capped by (C(K+w) - C(K+f)) and that gap collapses as the structure is pushed out. Keep max_positions equal to bwb's or the comparison measures opportunity count.",
+    "bwb-atm": {
+      "enabled": true,
+      "center_rule": "atm",
       "entry_modes": [
         "bwb_roll"
       ],
