@@ -568,7 +568,13 @@ These are the constraints the module exists to enforce. Breaking one makes the n
 
    The original wording — *"the answer is to stop, not to loosen `fee_buffer` until the numbers look
    better"* — stands verbatim for `fee_buffer`, for entries, and for every gate whose alternative
-   really is no position at all.
+   really is no position at all. **And `fee_buffer` is load-bearing in a way that was not obvious**:
+   the price gate caps the completing debit at `credit − fee_buffer`, so the worst floor a completion
+   can carry *while still passing it* is `fee_buffer × 100 − fees − reserve` — about **−$11.89** on
+   5-wide SPX, independent of the credit. `min_floor_dollars` therefore only has effect inside
+   `(−11.89, +∞)`; anything at or below that is inert because the price gate refuses first. So
+   `fee_buffer`, not the floor bar, is what actually bounds the downside here, and loosening *it*
+   moves a limit the floor bar cannot reach past.
 
    **The measurement this came from (2026-08-06, PAPER, SPX era, legged only — dated because it will
    go stale, and the second limit above says re-derive rather than inherit).** Completed +$54.12
