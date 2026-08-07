@@ -405,7 +405,9 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    reported as unconditionally safe.
 4. **The uncompleted branch is reported separately.** When a legged entry never completes, you are
    holding an ordinary credit spread with full defined risk. `completion_rate` is expected to be the
-   number that decides whether this strategy is real.
+   number that decides whether this strategy is real. **This branch is also what rule 6 compares
+   against** — refusing a completion does not free the slot, it leaves *this*, so the two rules
+   describe one moment from opposite sides and must be read together.
 5. **No adjustments after establishment.** No stops, no wing moves, no exceptions — hold to cash
    settlement. v1 is measuring a base rate, and an adjustment rule tuned before a single completion
    rate exists would be fitting noise.
@@ -442,8 +444,45 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    `closed_before_expiry = 1` closed at an intraday quote rather than a settlement price (`pinned =
    0`) — **exclude them when reading paper P&L**, they are not comparable to ordinary settled rows
    and are not representative of current behavior.
-6. **If the floor comes out negative after fees, that is the finding.** The answer is to stop, not to
-   loosen `fee_buffer` until the numbers look better.
+6. **A floor is judged against the alternative, and "negative after fees" is still the finding.**
+   Two claims, one sentence until 2026-08-06. Collapsing them made a gate argue against itself.
+
+   **The comparison.** A completion's floor is judged against *what happens if we refuse it*, never
+   against zero. On a legged entry the alternative is not "no position" — it is rule 4's open short
+   vertical at full defined risk, because refusing does not free the slot. So a completion with a
+   small negative floor can be the better of two positions we already hold, and refusing on the sign
+   alone is not conservatism. Same reasoning that correctly moved `min_floor_dollars` 50 → 10 on
+   2026-07-27.
+
+   **The finding, unchanged and load-bearing.** A book that needs negative floors to look viable is
+   telling you the strategy does not work. Admitting them improves a losing book without making it a
+   winning one — the completion rate rises, and the break-even it is measured against rises with it,
+   because thin completions dilute the completed average while removing the least-bad strandings
+   worsens what remains. Take the change *and* keep the result. **This rule is satisfied by refusing
+   to call that a fix, never by refusing to measure.**
+
+   Two limits, because this is the rule most easily read as a licence:
+   - It governs **completion of a position already open**. It never justifies an *entry*. Entering a
+     structure whose floor is negative manufactures the loss rather than choosing between two you
+     are already holding, and no alternative-branch argument applies.
+   - It is an argument from a **measured** alternative, not a standing permission. If the stranded
+     branch stops being the dominant loss, the comparison changes and the bar goes back up.
+     Re-derive it per symbol and against the current floor definition; never inherit it.
+
+   The original wording — *"the answer is to stop, not to loosen `fee_buffer` until the numbers look
+   better"* — stands verbatim for `fee_buffer`, for entries, and for every gate whose alternative
+   really is no position at all.
+
+   **The measurement this came from (2026-08-06, PAPER, SPX era, legged only — dated because it will
+   go stale, and the second limit above says re-derive rather than inherit).** Completed +$54.12
+   (n=64) against stranded −$195.05 (n=33): break-even 78.3% against 66.0% observed. Seven
+   completions cleared the fee buffer and were refused on the floor; the sharpest, 2026-08-06, had a
+   −$2.50 worst case and settled at −$288.44. Granting all seven is worth roughly +$1,286 and moves
+   the era −$2,973 → −$1,687 at 73.2% against a break-even risen to 80.2% — still 7 points short,
+   which is the finding half doing its job. **Treat that recovery as an upper bound**: the
+   counterfactual is computed from `best_completing_debit`, best-*ever* telemetry, while the gate
+   evaluated per tick, so not every one of the seven was necessarily transactable. **No live money
+   was involved** — the live pilot's ledger records no floor-gate refusal.
 
 ## Guardrails (suite-wide)
 
