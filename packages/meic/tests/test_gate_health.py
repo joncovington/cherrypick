@@ -153,6 +153,23 @@ def test_a_missing_cache_says_so_once(monkeypatch, tmp_path):
     assert all("streamer running" in g["reason"] for g in out["gates"])
 
 
+def test_an_injected_now_is_converted_to_et_not_just_formatted(cache):
+    """Regression (2026-08-07). `_et_today` used to format an injected `now` as handed over, so it
+    returned the caller's calendar date under a name promising ET. 02:00 UTC on the 7th is 22:00 ET
+    on the 6th, and the intraday-range gate asks for "today's row" — formatting rather than
+    converting looks past a row that is present and calls an armed gate degraded."""
+    _sessions(cache, "SPX", [TODAY])  # 2026-08-06, the ET date
+    late_utc = datetime(2026, 8, 7, 2, 0, tzinfo=UTC)  # still 2026-08-06 in ET
+    assert gh._et_today(late_utc) == TODAY
+    assert _gate(gh.for_symbol("SPX", {}, late_utc), "intraday_range")["status"] == gh.ARMED
+
+
+def test_a_naive_now_is_taken_to_be_et_already(cache):
+    """There is nothing else a naive datetime could be measured against, so it is used as-is —
+    which is what every other test here relies on."""
+    assert gh._et_today(datetime(2026, 8, 6, 22, 0)) == TODAY
+
+
 def test_it_never_writes_to_the_cache(cache):
     """A read surface. It opens the cache read-only, so a bug here cannot corrupt the file the
     entire suite prices from."""
