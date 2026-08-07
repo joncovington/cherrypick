@@ -943,3 +943,78 @@ def test_by_regime_reads_the_completion_phase_too(conn):
     conn.commit()
     assert analytics.by_regime(conn, "vol", phase="entry")[0]["bucket"] == "high"
     assert analytics.by_regime(conn, "vol", phase="completion")[0]["bucket"] == "low"
+
+
+# --------------------------------------------------------------------------- void rows (#108)
+def test_void_rows_are_excluded_from_every_read_surface(conn):
+    """A void row is one whose DECISIONS rest on a defect a later fix proved wrong -- not one that
+    merely lost money. Leaving it in a P&L or completion table states a result the ledger cannot
+    support, so `_period_clause` drops it and every surface built on that clause inherits it."""
+    position(conn, "P1", arm="control", pnl=100.0)
+    position(conn, "P2", arm="control", pnl=-500.0)
+    conn.execute(
+        "UPDATE fly_positions SET void_reason = ? WHERE position_id = ?", ("priced on a defect", "P2")
+    )
+
+    arms = analytics.by_arm(conn)
+    assert [a["trades"] for a in arms] == [1]
+    assert arms[0]["net_pnl"] == 100.0
+    assert sum(d["net_pnl"] for d in analytics.daily_pnl(conn)) == 100.0
+
+
+def test_the_exclusion_is_stated_not_inferred_from_a_gap(conn):
+    """The failure `arm_comparison_exclusions` exists to prevent: a table summing to less than the
+    book, with nothing on the page explaining the difference."""
+    position(conn, "P1", arm="control", pnl=100.0)
+    position(conn, "P2", arm="bwb", entry_mode="bwb_roll", pnl=-500.0)
+    conn.execute(
+        "UPDATE fly_positions SET void_reason = ? WHERE position_id = ?", ("priced on a defect", "P2")
+    )
+
+    out = analytics.voided(conn)
+    assert out["trades"] == 1 and out["net_pnl"] == -500.0
+    assert out["by_reason"][0]["void_reason"] == "priced on a defect"
+    assert out["by_reason"][0]["arms"] == ["bwb"]
+
+
+def test_a_losing_row_is_not_a_void_row(conn):
+    """The distinction the marker turns on. "We excluded these because they lost" is precisely the
+    claim this module refuses to make, so only an explicit void_reason removes a row."""
+    position(conn, "P1", arm="control", pnl=-999.0)
+    assert analytics.by_arm(conn)[0]["trades"] == 1
+    assert analytics.voided(conn)["trades"] == 0
+
+
+def test_the_bwb_backfill_stamps_exactly_the_unrecoverable_rows(tmp_path):
+    """The 25 bwb rows of 2026-08-04..08-06 were decided on a spread that was never the trade, and
+    the stream cache keeps no quote history to re-derive them from. Rows from 08-07 onward were
+    decided on the corrected roll and are evidence."""
+    import sqlite3
+
+    path = str(tmp_path / "paper_trades.db")
+    c = dbmod.connect(path)
+    rows = (
+        ("V1", "2026-08-05", "bwb_roll", "bwb"),
+        ("V2", "2026-08-06", "bwb_roll", "bwb"),
+        ("K1", "2026-08-07", "bwb_roll", "bwb"),
+        ("K2", "2026-08-05", "legged", "control"),
+    )
+    for pid, day, mode, arm in rows:
+        position(c, pid, day=day, entry_mode=mode, arm=arm)
+    c.commit()
+    c.close()
+
+    # Drop the column and re-open, so the migration runs its backfill exactly as it will in the wild.
+    raw = sqlite3.connect(path)
+    raw.execute("ALTER TABLE fly_positions DROP COLUMN void_reason")
+    raw.commit()
+    raw.close()
+
+    c = dbmod.connect(path)
+    got = {
+        r["position_id"]: r["void_reason"]
+        for r in c.execute("SELECT position_id, void_reason FROM fly_positions")
+    }
+    assert got["V1"] and got["V2"], "pre-fix bwb rows are not evidence"
+    assert got["K1"] is None, "the corrected roll's rows must survive"
+    assert got["K2"] is None, "only bwb was affected"
