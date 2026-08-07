@@ -38,8 +38,18 @@ def _rate(numerator, denominator, digits=4):
 
 
 # --------------------------------------------------------------------------- period stats
-def _period_clause(start=None, end=None, arm=None, symbol=None):
+def _period_clause(start=None, end=None, arm=None, symbol=None, include_void=False):
+    """The shared WHERE every read surface builds on.
+
+    Void rows are excluded by default. `void_reason` marks rows whose DECISIONS were made on
+    numbers a later fix proved wrong — not rows that merely lost money — so leaving them in a
+    P&L or completion table states a result the ledger cannot support. Callers that genuinely
+    want them (a raw dump, or `voided` below, which exists to account for what was held back)
+    pass `include_void=True`.
+    """
     clause, params = [_SETTLED], []
+    if not include_void:
+        clause.append("void_reason IS NULL")
     if start:
         clause.append("trade_date >= ?")
         params.append(start)
@@ -164,6 +174,38 @@ def by_arm(conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES, symbo
         grouped.setdefault(r["arm"] or "unassigned", []).append(r)
     out = [{"arm": arm, **_summarize(rs)} for arm, rs in grouped.items()]
     return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
+
+
+def voided(conn, start=None, end=None, symbol=None) -> dict:
+    """Rows held back as void, grouped by reason — so the exclusion is stated rather than inferred
+    from a gap, the same principle `arm_comparison_exclusions` exists for.
+
+    A void row is one whose decisions rest on a defect a later fix proved wrong. It is NOT a losing
+    row, and not one a caller filtered out: those stay in every table. The distinction matters
+    because "we excluded these because they lost" is exactly the claim this module refuses to make.
+    """
+    where, params = _period_clause(start, end, symbol=symbol, include_void=True)
+    rows = conn.execute(
+        f"SELECT arm, entry_mode, void_reason, gross_pnl, fees, pnl FROM fly_positions "
+        f"WHERE {where} AND void_reason IS NOT NULL",
+        params,
+    ).fetchall()
+    by_reason: dict[str, list] = {}
+    for r in rows:
+        by_reason.setdefault(r["void_reason"], []).append(r)
+    return {
+        "trades": len(rows),
+        "net_pnl": _round(sum((r["pnl"] or 0.0) for r in rows)),
+        "by_reason": [
+            {
+                "void_reason": reason,
+                "arms": sorted({r["arm"] for r in rs if r["arm"]}),
+                "entry_modes": sorted({r["entry_mode"] for r in rs if r["entry_mode"]}),
+                **_summarize(rs),
+            }
+            for reason, rs in sorted(by_reason.items())
+        ],
+    }
 
 
 def arm_comparison_exclusions(
