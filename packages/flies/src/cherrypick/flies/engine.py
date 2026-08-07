@@ -55,6 +55,16 @@ ARMS = (
     "debit-first",
     "iron",
     "bwb",
+    # ATM twins of the two GEX-centred construction arms (2026-08-07). `bwb` and `debit-first` each
+    # differ from `control` in TWO things -- entry construction AND centring -- so neither could
+    # attribute a result to either, against this module's own one-variable rule. These pin the
+    # centring to ATM so the construction is isolated, and are the hub of a three-way read:
+    # X-atm vs control isolates the construction, X-atm vs X isolates the centring.
+    # No `spot + N strikes` arm to go with them: `center_offset` is stored as a continuous float and
+    # the GEX arms already sweep it (-22..+23 points measured, against ATM's -2.5..+2.5), so the
+    # offset curve is re-cut with `by_regime(bucket_edges=...)` rather than pinned by a new arm.
+    "bwb-atm",
+    "debit-first-atm",
 )
 
 
