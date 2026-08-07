@@ -299,6 +299,31 @@ comparison measures one variable rather than a bundle of confounded changes.
   chain is a post-close snapshot where every OTM strike has decayed to zero). It needs live paper
   sessions.
 
+- `bwb-atm`, `debit-first-atm` — the ATM twins of the two GEX-centred construction arms, added
+  2026-08-07. **Both parents violated this section's own one-variable rule and nobody had noticed for
+  `bwb`**: each overrides `entry_modes` *and* `center_rule`, so each differs from `control` in
+  construction **and** centring at once and can attribute a result to neither. (`debit-first`'s notes
+  already acknowledged carrying the confound — *"gives up a clean ATM-vs-ATM control pairing"* — which
+  made it a known cost there and an unnoticed one on `bwb`.) Pinning the centring to ATM makes each a
+  three-way read: **X-atm vs `control`** isolates the construction (`bwb_roll`/`debit_first` vs
+  `legged`), **X-atm vs X** isolates the centring. Keep `max_positions` equal across the pair or the
+  comparison measures opportunity count instead of the variable — the failure this file already
+  records twice.
+  Note ATM means the structure **straddles** spot (the near wing lands ~1 strike the other side of
+  it), which is *not* the fully-OTM placement. That is deliberate and probably favourable: the roll
+  span stays OTM under `choose_bwb_side` either way, and a straddling structure clears
+  `min_bwb_credit_pct_of_tail` more easily, since a bwb credit is capped by `C(K+w) − C(K+f)` and that
+  gap collapses as the structure is pushed out.
+  **No `spot + N strikes` arm to go with them, deliberately.** That would pin one value of
+  `center_offset` — a dimension the GEX arms already sweep (measured **−22..+23** points, against the
+  ATM arms' **−2.5..+2.5**) and which is stored as a continuous float precisely so it can be re-cut
+  with `by_regime(bucket_edges=...)` rather than cost an arm. A fixed offset would also bake in a
+  direction, and this module's sharpest finding is that what matters is placement *relative to the
+  drift* (89% vs 7% completion on the opposing-drift cut), not raw distance — which is exactly why
+  `center_offset` is kept signed and side-neutral rather than collapsed to a "lagging" boolean. Read
+  the offset curve off the GEX arms first; build a placement arm only if it shows something, and make
+  it drift-aware.
+
 **Regime tagging (`engine.classify_regime`, added 2026-07-31).** Every entry and completion, across
 every arm, is tagged along six dimensions read purely from the snapshot in hand — `vol_bucket`
 (ATM straddle/spot), `gex_bucket` (per-strike gamma concentration, `"unknown"` when no OI cache

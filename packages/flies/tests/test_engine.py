@@ -243,6 +243,34 @@ def test_wide_wing_arm_centers_atm_like_control_but_uses_its_own_width():
     assert "wide_wing" in engine.ARMS
 
 
+def test_atm_twins_isolate_construction_from_centring():
+    """`bwb` and `debit-first` each override entry_modes AND center_rule, so each differs from
+    `control` in two things and cannot attribute a result to either. Their ATM twins pin the
+    centring so the construction is the only variable left against control."""
+    for twin, gex_arm, mode in (
+        ("bwb-atm", "bwb", "bwb_roll"),
+        ("debit-first-atm", "debit-first", "debit_first"),
+    ):
+        assert twin in engine.ARMS
+        cfg = dict(BASE_CONFIG)
+        cfg["arms"] = dict(BASE_CONFIG["arms"], **{twin: {"center_rule": "atm", "entry_modes": [mode]}})
+        p = engine.merged_params(cfg, twin)
+        # Same construction as its gex sibling...
+        assert p["entry_modes"] == [mode]
+        # ...but centred ATM, like control, so the pair differs in exactly one thing.
+        center, reason = engine.select_center(snapshot(underlying_price=6002.0), p)
+        assert (center, reason) == (6000.0, "atm"), f"{twin} must centre ATM, not like {gex_arm}"
+
+
+def test_no_fixed_offset_arm_the_gex_arms_already_sweep_that_dimension():
+    """A `spot + N strikes` arm would pin ONE value of `center_offset` — a dimension the GEX arms
+    already sweep (-22..+23 points measured, against ATM's -2.5..+2.5) and which is stored as a
+    continuous float precisely so it can be re-cut with `by_regime(bucket_edges=...)` instead of
+    costing an arm. A fixed offset would also bake in a direction, which is the assumption
+    `center_offset` was deliberately kept signed and side-neutral to avoid."""
+    assert not [a for a in engine.ARMS if "offset" in a or "spot+" in a]
+
+
 def test_width_arms_are_control_twins_sweeping_wing_width():
     """width-2..width-5 pin wing_width to N strike increments; control at the default width is the
     1-increment rung, so no width-1 arm exists (it would duplicate control's book under a new name)."""
