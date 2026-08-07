@@ -445,25 +445,21 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    0`) — **exclude them when reading paper P&L**, they are not comparable to ordinary settled rows
    and are not representative of current behavior.
 6. **A floor is judged against the alternative, and "negative after fees" is still the finding.**
-   Two claims. They were one sentence until 2026-08-06, and collapsing them cost real money.
+   Two claims, one sentence until 2026-08-06. Collapsing them made a gate argue against itself.
 
    **The comparison.** A completion's floor is judged against *what happens if we refuse it*, never
    against zero. On a legged entry the alternative is not "no position" — it is rule 4's open short
-   vertical, carrying full defined risk, and refusing does not free the slot. Measured over the SPX
-   era those branches run **+$54.12 completed against −$195.05 stranded**, so a completion with a
-   small negative floor can be the better of two options we already own, and refusing it on the sign
-   alone is not conservatism. This is the same reasoning that correctly moved `min_floor_dollars`
-   50 → 10 on 2026-07-27. Read against a real refusal: on 2026-08-06 the gate turned down a
-   completion whose worst case was **−$2.50** and the position settled at **−$288.44**; across the
-   era it did that 7 times, buying a −$1.87 worst case and delivering −$1,287.58.
+   vertical at full defined risk, because refusing does not free the slot. So a completion with a
+   small negative floor can be the better of two positions we already hold, and refusing on the sign
+   alone is not conservatism. Same reasoning that correctly moved `min_floor_dollars` 50 → 10 on
+   2026-07-27.
 
    **The finding, unchanged and load-bearing.** A book that needs negative floors to look viable is
    telling you the strategy does not work. Admitting them improves a losing book without making it a
-   winning one: granting every one of those 7 moves the era from **−$2,973 to −$1,687** and leaves
-   completion **7 points below its own break-even**, because thin completions dilute the completed
-   average while removing the least-bad strandings raises the severity of what remains. Take the
-   change *and* keep the result. **This rule is satisfied by refusing to call that a fix, never by
-   refusing to measure.**
+   winning one — the completion rate rises, and the break-even it is measured against rises with it,
+   because thin completions dilute the completed average while removing the least-bad strandings
+   worsens what remains. Take the change *and* keep the result. **This rule is satisfied by refusing
+   to call that a fix, never by refusing to measure.**
 
    Two limits, because this is the rule most easily read as a licence:
    - It governs **completion of a position already open**. It never justifies an *entry*. Entering a
@@ -476,6 +472,17 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    The original wording — *"the answer is to stop, not to loosen `fee_buffer` until the numbers look
    better"* — stands verbatim for `fee_buffer`, for entries, and for every gate whose alternative
    really is no position at all.
+
+   **The measurement this came from (2026-08-06, PAPER, SPX era, legged only — dated because it will
+   go stale, and the second limit above says re-derive rather than inherit).** Completed +$54.12
+   (n=64) against stranded −$195.05 (n=33): break-even 78.3% against 66.0% observed. Seven
+   completions cleared the fee buffer and were refused on the floor; the sharpest, 2026-08-06, had a
+   −$2.50 worst case and settled at −$288.44. Granting all seven is worth roughly +$1,286 and moves
+   the era −$2,973 → −$1,687 at 73.2% against a break-even risen to 80.2% — still 7 points short,
+   which is the finding half doing its job. **Treat that recovery as an upper bound**: the
+   counterfactual is computed from `best_completing_debit`, best-*ever* telemetry, while the gate
+   evaluated per tick, so not every one of the seven was necessarily transactable. **No live money
+   was involved** — the live pilot's ledger records no floor-gate refusal.
 
 ## Guardrails (suite-wide)
 
