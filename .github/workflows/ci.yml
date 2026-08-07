@@ -16,8 +16,8 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       # The linter's own tests run first: a broken check reports OK over real errors, which has
@@ -46,8 +46,8 @@ jobs:
       # No-op for every other package's job -- keyring reads OS-native backends unless this is set.
       PYTHON_KEYRING_BACKEND: ${{ matrix.package == 'orchestrator' && 'keyrings.alt.file.PlaintextKeyring' || '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Install
