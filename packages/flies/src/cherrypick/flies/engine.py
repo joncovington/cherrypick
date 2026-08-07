@@ -1023,20 +1023,29 @@ def evaluate_roll(snapshot: dict, position: dict, params: dict) -> tuple:
     symmetric fly needs, sell the wide wing currently held. Gated the same shape as every other
     completion in this module: price gate first (`roll_debit < credit - fee_buffer`), then the
     resulting fly's actual floor (`fly.position_floor`), never assumed from the price gate alone.
+
+    **The bought leg is `center -/+ wing_width`, NOT `bwb_strikes`' `near_wing`** — that one is on
+    the PROTECTED side and the position already holds it. Until 2026-08-07 this priced
+    `vertical_debit(near_wing, far_wing)`, a spread of width (far + wing) rather than (far - wing):
+    3x too wide at the default 2.0 ratio, and describing a trade that does not produce a butterfly
+    at all (buying a strike already held leaves two debit spreads, not a fly). See CLAUDE.md.
     """
     if position.get("kind") != "bwb":
         return False, "not_a_bwb", None
 
     side, center, width = position["side"], position["center"], position["wing_width"]
     far_width = position["far_width"]
-    near_wing, _, far_wing = fly.bwb_strikes(side, center, width, far_width)
-    if not _have(snapshot, side, [near_wing, far_wing]):
+    _, _, far_wing = fly.bwb_strikes(side, center, width, far_width)
+    # The symmetric fly's wing on the RISK side — near_wing mirrored across the centre. This is the
+    # leg the position lacks; `far_wing` is the one it must give up to get it.
+    roll_strike = center - width if side == PUT else center + width
+    if not _have(snapshot, side, [roll_strike, far_wing]):
         return False, "missing_leg_quotes", None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
-    # Buy the near wing (what the symmetric fly needs), sell the far wing (currently held) --
-    # a debit vertical, long near / short far.
-    roll_debit = fly.vertical_debit(quote(snapshot, side, near_wing), quote(snapshot, side, far_wing), slip)
+    # Long the strike the fly needs, short the wide wing currently held -- a debit vertical spanning
+    # exactly (far_width - wing_width), which is the tail being bought back.
+    roll_debit = fly.vertical_debit(quote(snapshot, side, roll_strike), quote(snapshot, side, far_wing), slip)
 
     symbol = snapshot["symbol"]
     qty = position.get("quantity", 1)
@@ -1062,7 +1071,9 @@ def evaluate_roll(snapshot: dict, position: dict, params: dict) -> tuple:
         "net": round(net, 4),
         "roll_fee": roll_fee,
         "floor": round(floor, 2),
-        "near_wing": near_wing,
+        "roll_strike": roll_strike,
+        "far_wing": far_wing,
+        "roll_span": round(far_width - width, 4),
         "gate_debit": round(credit - buffer_pts, 4),  # the roll debit this would have had to beat
     }
 

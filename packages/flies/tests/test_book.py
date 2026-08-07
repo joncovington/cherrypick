@@ -414,7 +414,10 @@ def test_bwb_lifecycle_from_broken_wing_to_rolled_symmetric_fly(conn):
     assert len(opened) == 1
     assert first["stats"]["unrolled_bwbs"] == 1
 
-    cheap_roll = snapshot(puts={5990: q(4.8, 5.0), 6005: q(5.0, 5.2)})
+    # 5995 is the strike the symmetric fly needs (centre 6000, wing 5) and is what the roll buys;
+    # 6005 is the near wing, already held. Quoting both keeps the fixture honest about which leg
+    # the roll actually reaches for -- it used to price off 6005 and 5995 was never in the chain.
+    cheap_roll = snapshot(puts={5990: q(4.8, 5.0), 5995: q(5.0, 5.2), 6005: q(9.0, 9.2)})
     second = bookmod.process_snapshot(cheap_roll, config, conn, "control")
     rolled = [a for a in second["actions"] if a["action"] == "rolled"]
     assert len(rolled) == 1
