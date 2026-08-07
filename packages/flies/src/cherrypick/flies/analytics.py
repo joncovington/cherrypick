@@ -176,6 +176,63 @@ def by_arm(conn, start=None, end=None, entry_modes=COMPARISON_ENTRY_MODES, symbo
     return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
 
 
+def break_even(conn, start=None, end=None, symbol=None, entry_modes=COMPARISON_ENTRY_MODES) -> list[dict]:
+    """Each arm's completion rate against the completion rate it would need to break even.
+
+    Rule 4 says completion rate is the number that decides this strategy; that is only true against
+    a bar, and the bar is set by the two branches' own averages. A miss costs `|avg stranded|` and a
+    completion earns `avg completed`, so the rate at which they cancel is
+    `|avg stranded| / (|avg stranded| + avg completed)`.
+
+    **Per arm, never blended, and that is the whole point.** On the 2026-08-01.. SPX era the blended
+    figure was 66.0% observed against 78.3% needed — a book comfortably under water, and the reading
+    that shaped three issues. Split by arm, `control` sits at 78.6% against 75.3% and is PROFITABLE,
+    while `gex` (44.4% against 91.8%) and `time_window` (52.2% against 72.2%) carry the entire loss.
+    The blended number was not a summary of the arms, it was an average across a working one and two
+    broken ones, and it pointed at the construction when the evidence pointed at the centring.
+
+    `margin_pts` is observed minus needed: positive clears its own bar. Read `trades` first — an arm
+    with a handful of positions produces a bar as noisy as the rate it is compared against.
+    """
+    where, params = _period_clause(start, end, symbol=symbol)
+    if entry_modes:
+        where += f" AND entry_mode IN ({','.join('?' * len(entry_modes))})"
+        params = [*params, *entry_modes]
+    rows = conn.execute(f"SELECT arm, kind, pnl FROM fly_positions WHERE {where}", params).fetchall()
+
+    by_arm_: dict[str, list] = {}
+    for r in rows:
+        by_arm_.setdefault(r["arm"] or "unassigned", []).append(r)
+
+    out = []
+    for arm, rs in by_arm_.items():
+        completed = [(r["pnl"] or 0.0) for r in rs if r["kind"] == "fly"]
+        stranded = [(r["pnl"] or 0.0) for r in rs if r["kind"] != "fly"]
+        avg_c = sum(completed) / len(completed) if completed else None
+        avg_s = sum(stranded) / len(stranded) if stranded else None
+        rate = _rate(len(completed), len(rs))
+        # Undefined unless both branches have occurred AND a completion actually pays: with no
+        # stranding yet, or a completed average that is itself negative, there is no rate at which
+        # the two cancel and reporting one would invent a bar out of a single branch.
+        needed = None
+        if avg_c is not None and avg_s is not None and avg_s < 0 < avg_c:
+            needed = _rate(-avg_s, -avg_s + avg_c)
+        out.append(
+            {
+                "arm": arm,
+                "trades": len(rs),
+                "completed": len(completed),
+                "completion_rate": rate,
+                "avg_completed": _round(avg_c) if avg_c is not None else None,
+                "avg_stranded": _round(avg_s) if avg_s is not None else None,
+                "break_even_rate": needed,
+                "margin_pts": _round((rate - needed) * 100, 1) if rate is not None and needed else None,
+                "net_pnl": _round(sum(completed) + sum(stranded)),
+            }
+        )
+    return sorted(out, key=lambda x: (x["margin_pts"] is None, -(x["margin_pts"] or 0)))
+
+
 def voided(conn, start=None, end=None, symbol=None) -> dict:
     """Rows held back as void, grouped by reason — so the exclusion is stated rather than inferred
     from a gap, the same principle `arm_comparison_exclusions` exists for.
