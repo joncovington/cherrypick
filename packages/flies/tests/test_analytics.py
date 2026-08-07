@@ -1072,3 +1072,83 @@ def test_break_even_excludes_void_rows_like_every_other_surface(conn):
     conn.execute("UPDATE fly_positions SET void_reason = 'x' WHERE position_id = 'V1'")
     row = analytics.break_even(conn)[0]
     assert row["trades"] == 2 and row["avg_stranded"] == -100.0
+
+
+# --------------------------------------------------------------------------- drift alignment
+def _drift(conn, pid, *, side, drift, completed, pnl, arm="control", underlying=7710.0, symbol="SPX"):
+    position(
+        conn,
+        pid,
+        arm=arm,
+        symbol=symbol,
+        underlying=underlying,
+        kind="fly" if completed else "short_vertical",
+        pnl=pnl,
+        regime={"trend_value": drift, "trend_bucket": "up_from_open" if drift > 0 else "down_from_open"},
+    )
+    conn.execute("UPDATE fly_positions SET side = ? WHERE position_id = ?", (side, pid))
+
+
+def test_drift_alignment_uses_the_completing_direction_not_the_side(conn):
+    """A put completes on an UP move and a call on a DOWN one (`fly.completing_side_direction`) —
+    the easiest thing in this module to code backwards, so the split is pinned against it rather
+    than against `side` directly. A put on an up-day AGREES; a call on an up-day opposes."""
+    _drift(conn, "P1", side="put", drift=+50.0, completed=True, pnl=60.0)
+    _drift(conn, "C1", side="call", drift=+50.0, completed=False, pnl=-200.0)
+
+    rows = {r["alignment"]: r for r in analytics.by_drift_alignment(conn)}
+    assert rows["with"]["trades"] == 1 and rows["with"]["completed"] == 1
+    assert rows["against"]["trades"] == 1 and rows["against"]["completed"] == 0
+
+
+def test_drift_inside_the_band_is_flat_not_opposing(conn):
+    """An uncommitted day is not a direction. Bucketing a 5-point drift as `against` would
+    manufacture opposition out of noise — the failure the band exists to prevent."""
+    _drift(conn, "C1", side="call", drift=+5.0, completed=True, pnl=60.0)  # 0.06% of spot
+    rows = {r["alignment"]: r for r in analytics.by_drift_alignment(conn)}
+    assert list(rows) == ["flat"]
+
+    # ...and the band is a parameter, because it was chosen on the rows that measure it.
+    tight = {r["alignment"]: r for r in analytics.by_drift_alignment(conn, band=0.0001)}
+    assert list(tight) == ["against"]
+
+
+def test_rows_without_a_recorded_open_are_omitted_not_called_flat(conn):
+    """A session whose open was never captured is not a flat day. Bucketing it as one would invent
+    coverage the ledger does not have — the same honesty the `unknown` regime bucket exists for."""
+    position(conn, "N1", arm="control", kind="fly", pnl=60.0)  # no trend value at all
+    assert analytics.by_drift_alignment(conn) == []
+
+
+def test_drift_alignment_is_reported_per_arm(conn):
+    """The revealing cut: opposing entries are concentrated by arm (control 4%, gex 28%,
+    time_window 35% as measured), which is what connects this to why two arms lose."""
+    _drift(conn, "A1", side="call", drift=+50.0, completed=False, pnl=-200.0, arm="gex")
+    _drift(conn, "A2", side="put", drift=+50.0, completed=True, pnl=60.0, arm="control")
+
+    gex = {r["alignment"]: r for r in analytics.by_drift_alignment(conn, arm="gex")}
+    assert list(gex) == ["against"]
+    control = {r["alignment"]: r for r in analytics.by_drift_alignment(conn, arm="control")}
+    assert list(control) == ["with"]
+
+
+def test_the_band_is_a_fraction_of_spot_so_it_means_the_same_on_every_symbol(conn):
+    """Regression caught while wiring this into EOD. The band was absolute points, and the EOD writer
+    reports across every book — so a 20-point band silently called all 158 XSP rows `flat`, because a
+    20-point move is impossible on a ~750 underlying. Same shape as `min_floor_dollars` carrying XSP
+    scaling into an SPX era, and the same fix MEIC's ATR and range thresholds already took."""
+    # Proportionally identical drifts on two very differently priced underlyings.
+    _drift(conn, "S1", side="call", drift=+50.0, completed=False, pnl=-200.0, underlying=7710.0)
+    _drift(conn, "X1", side="call", drift=+5.0, completed=False, pnl=-20.0, underlying=750.0, symbol="XSP")
+
+    for symbol in ("SPX", "XSP"):
+        rows = analytics.by_drift_alignment(conn, symbol=symbol)
+        assert [r["alignment"] for r in rows] == ["against"], f"{symbol} must read the same shape"
+
+
+def test_rows_without_a_recorded_spot_are_omitted(conn):
+    """The band is relative, so a row with no `underlying_at_entry` cannot be placed at all. Omitted
+    rather than bucketed, for the same reason a missing session open is not a flat day."""
+    _drift(conn, "S1", side="call", drift=+50.0, completed=False, pnl=-200.0)
+    conn.execute("UPDATE fly_positions SET underlying_at_entry = NULL WHERE position_id = 'S1'")
+    assert analytics.by_drift_alignment(conn) == []
