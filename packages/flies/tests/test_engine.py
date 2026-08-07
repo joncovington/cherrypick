@@ -1293,3 +1293,48 @@ def test_center_offset_threshold_is_deliberately_absent_from_the_example():
     assert engine._classify_center_offset(snap, defaults, 6305.0)[0] == "at_spot"
     with pytest.raises(TypeError):  # the trap this test exists to document
         engine._classify_center_offset(snap, {**defaults, "regime_center_offset_points": None}, 6305.0)
+
+
+def test_the_completion_gate_admits_a_thin_negative_floor(conn=None):
+    """Rule 6, derived (#97). The bar is judged against what refusing LEAVES — an open short vertical
+    realising about -$195 — so a guaranteed small negative worst case is the better of two positions
+    already held. Pinned because the gate's sign handling is the change: `floor < min_floor_dollars`
+    must compare against a NEGATIVE bar rather than treat it as a floor of zero."""
+    snap = snapshot(underlying_price=6004.0, puts={6000: q(0.06, 0.10), 6005: q(2.40, 2.45)})
+
+    refused, reason, plan = engine.evaluate_completion(snap, open_spread(), params(min_floor_dollars=0.0))
+    assert not refused and reason == "floor_below_minimum_after_fees"
+    assert plan["floor"] == pytest.approx(-2.51, abs=0.01)
+
+    admitted, reason2, plan2 = engine.evaluate_completion(
+        snap, open_spread(), params(min_floor_dollars=-10.0)
+    )
+    assert admitted and reason2 == "ok"
+    assert plan2["floor"] == plan["floor"], "same floor; only the bar it is judged against changed"
+
+
+def test_a_floor_below_the_derived_bar_is_still_refused():
+    """The bar is a measured comparison, not an open door — rule 6's own second limit. This floor
+    (-$11.64) still passes the price gate, so it is the bar and only the bar that refuses it."""
+    snap = snapshot(underlying_price=6004.0, puts={6000: q(0.00, 0.01), 6005: q(2.42, 2.47)})
+    done, reason, plan = engine.evaluate_completion(snap, open_spread(), params(min_floor_dollars=-10.0))
+    assert not done and reason == "floor_below_minimum_after_fees"
+    assert plan["floor"] == pytest.approx(-11.64, abs=0.01)
+
+
+def test_the_price_gate_bounds_the_floor_before_min_floor_dollars_can(conn=None):
+    """The fact that sets the bar's value. `fee_buffer` caps the completing debit, so the worst floor
+    a completion can carry while still passing the PRICE gate is
+    `fee_buffer * 100 - fees - reserve` — about -$11.89 on 5-wide SPX, independent of the credit.
+
+    A bar at or below that is inert, because the price gate refuses first: the same mistake 1.0 made
+    from the other side. The useful band is (-11.89, +inf), and `fee_buffer` — not this bar — is what
+    actually bounds the downside."""
+    fees = fly.vertical_open_fee("SPX", 1) * 2
+    bound = 0.10 * fly.CONTRACT_MULTIPLIER - fees - fly.expire_fee(fly.WORST_CASE_ITM_LEGS["fly"])
+    assert bound == pytest.approx(-11.89, abs=0.01)
+
+    # A bar below the bound cannot refuse anything the price gate has already allowed.
+    snap = snapshot(underlying_price=6004.0, puts={6000: q(0.00, 0.01), 6005: q(2.42, 2.47)})
+    done, _, plan = engine.evaluate_completion(snap, open_spread(), params(min_floor_dollars=bound - 1))
+    assert done and plan["floor"] > bound
