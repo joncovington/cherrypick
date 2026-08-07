@@ -34,10 +34,14 @@ def cache(tmp_path, monkeypatch):
     return path
 
 
-def _sessions(path, symbol, dates):
+def _sessions(path, symbol, dates, high=6400.0, low=6300.0):
+    """Rows as the gates require them: both high and low present. `high`/`low` are parameterized so
+    a test can write the half-populated row the streamer itself can produce (its guard is
+    `high is not None or low is not None`, while every consumer needs both)."""
     con = sqlite3.connect(path)
     con.executemany(
-        "INSERT INTO stream_summary (symbol, trade_date) VALUES (?, ?)", [(symbol, d) for d in dates]
+        "INSERT INTO stream_summary (symbol, trade_date, day_high, day_low) VALUES (?, ?, ?, ?)",
+        [(symbol, d, high, low) for d in dates],
     )
     con.commit()
     con.close()
@@ -80,6 +84,24 @@ def test_atr_excludes_todays_partial_session(cache):
     _sessions(cache, "SPX", ["2026-08-03", "2026-08-04", "2026-08-05", TODAY])
     atr = _gate(gh.for_symbol("SPX", {"regime_atr_lookback_days": 5}, NOW), "atr")
     assert atr["sessions_available"] == 3
+
+
+def test_a_half_written_row_is_not_a_session(cache):
+    """The streamer writes a row as soon as *either* high or low arrives; `_true_ranges` skips any
+    row missing either. Counting rows instead of usable rows reported 5/5 ARMED against a cache
+    `tt.cmd_get_atr` read as 0/5 — a false ARMED, the exact failure this surface exists to catch."""
+    _sessions(cache, "SPX", ["2026-08-03", "2026-08-04", "2026-08-05"], low=None)
+    _sessions(cache, "SPX", ["2026-07-31", "2026-08-01"])
+    atr = _gate(gh.for_symbol("SPX", {"regime_atr_lookback_days": 5}, NOW), "atr")
+    assert atr["status"] == gh.DEGRADED
+    assert atr["sessions_available"] == 2 and atr["sessions_missing"] == 3
+
+
+def test_intraday_range_rejects_a_half_written_row_for_today(cache):
+    """`tt.cmd_get_intraday_range` fails on a NULL high or low, so a row that merely exists must not
+    read as ARMED here either."""
+    _sessions(cache, "SPX", [TODAY], low=None)
+    assert _gate(gh.for_symbol("SPX", {}, NOW), "intraday_range")["status"] == gh.DEGRADED
 
 
 # --------------------------------------------------------------------------- GEX
