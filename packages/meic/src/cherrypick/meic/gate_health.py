@@ -58,11 +58,19 @@ def _et_today(now: datetime | None = None) -> str:
 
 def _completed_sessions(conn: sqlite3.Connection, symbol: str, today: str, needed: int) -> int:
     """Completed `stream_summary` day-rows available to the ATR gate — today's partial row excluded,
-    the same way `tt.cmd_get_atr` counts them, so this can never disagree with the gate itself."""
+    the same way `tt.cmd_get_atr` counts them, so this can never disagree with the gate itself.
+
+    A row existing is not the same as a row being usable. The streamer writes one as soon as
+    *either* high or low arrives (`if high is not None or low is not None`), while `_true_ranges`
+    skips any row missing either — so a half-written row is a row the ATR gate will not count.
+    Counting rows rather than usable rows reported 5/5 ARMED against a cache the gate itself read
+    as 0/5: a false ARMED, which is the precise failure this surface exists to prevent."""
     try:
         rows = conn.execute(
             "SELECT COUNT(*) FROM (SELECT trade_date FROM stream_summary "
-            "WHERE symbol = ? AND trade_date < ? ORDER BY trade_date DESC LIMIT ?)",
+            "WHERE symbol = ? AND trade_date < ? "
+            "AND day_high IS NOT NULL AND day_low IS NOT NULL "
+            "ORDER BY trade_date DESC LIMIT ?)",
             (symbol, today, needed),
         ).fetchone()
         return int(rows[0]) if rows else 0
@@ -74,8 +82,9 @@ def _open_interest(conn: sqlite3.Connection, symbol: str) -> tuple[int, float | 
     """`(row count, newest updated_at)` for a symbol's cached open interest.
 
     GEX is computed from `stream_oi`, populated by the streamer's Summary events; with no rows,
-    `get_gex` returns ok=False and every GEX gate quietly stands down. Matching is by OCC symbol
-    prefix (`.SPXW260806P6300`) because that table has only `symbol`/`open_interest`/`updated_at` —
+    `get_gex` returns ok=False and every GEX gate quietly stands down. Matching is by substring
+    against the OCC symbol (`.SPXW260806P6300`) because that table holds only
+    `symbol`/`open_interest`/`updated_at` —
     there is no underlying column, and assuming one made this report a false DEGRADED for a cache
     holding 2,007 SPX rows."""
     try:
@@ -89,9 +98,14 @@ def _open_interest(conn: sqlite3.Connection, symbol: str) -> tuple[int, float | 
 
 
 def _todays_range_row(conn: sqlite3.Connection, symbol: str, today: str) -> bool:
+    """Today's row, counted the way `tt.cmd_get_intraday_range` counts it — which rejects a row
+    whose high or low is still NULL rather than merely checking that one exists. Same half-written
+    row as the ATR gate above: present in the table, useless to the gate."""
     try:
         row = conn.execute(
-            "SELECT 1 FROM stream_summary WHERE symbol = ? AND trade_date = ?", (symbol, today)
+            "SELECT 1 FROM stream_summary WHERE symbol = ? AND trade_date = ? "
+            "AND day_high IS NOT NULL AND day_low IS NOT NULL",
+            (symbol, today),
         ).fetchone()
         return bool(row)
     except sqlite3.Error:
@@ -145,6 +159,7 @@ def for_symbol(
         today = _et_today(now)
         have = _completed_sessions(conn, symbol, today, needed)
         oi_rows, oi_at = _open_interest(conn, symbol)
+        have_range = _todays_range_row(conn, symbol, today)
         gates = [
             _gate(
                 "atr",
@@ -158,10 +173,8 @@ def for_symbol(
             _gate("gex", oi_rows > 0, _oi_reason(oi_rows, oi_at, now)),
             _gate(
                 "intraday_range",
-                _todays_range_row(conn, symbol, today),
-                "today's session row present"
-                if _todays_range_row(conn, symbol, today)
-                else "no session row for today",
+                have_range,
+                "today's session row present" if have_range else "no usable session row for today",
             ),
         ]
     finally:
