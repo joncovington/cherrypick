@@ -293,6 +293,66 @@ def _cost_paragraph(stats: dict, arms: list[dict]) -> str:
     return " ".join(parts)
 
 
+def _drift_alignment_paragraph(conn) -> str:
+    """Whether the completing direction agreed with the day's committed drift.
+
+    Cumulative, like the regime paragraph: one session's opposing entries are a handful of rows, and
+    the point is to read each new session against a STATED prior rather than rediscover the split
+    every time. Reported and not gated — see `analytics.by_drift_alignment`.
+
+    **Split per symbol, because the eras do not agree.** On SPX the opposing bucket completes 7%;
+    blended with the XSP era it reads 53%, which would present a real signal as a weak one. Every
+    other cross-symbol read in this module is separated for the same reason (fee schedules and wing
+    scale both differ), and this one has the sharper motive: the band is a fraction of spot, so the
+    buckets are comparable in shape but the underlying regimes are not.
+    """
+    symbols = [
+        r["symbol"]
+        for r in conn.execute(
+            "SELECT DISTINCT symbol FROM fly_positions WHERE status = 'settled' "
+            "AND symbol IS NOT NULL ORDER BY symbol"
+        )
+    ]
+    sections = []
+    for symbol in symbols:
+        rows = analytics.by_drift_alignment(conn, symbol=symbol)
+        if not rows:
+            continue
+        by = {r["alignment"]: r for r in rows}
+        band = rows[0]["band_pct"]
+        lines = [
+            f"**{symbol}** — completing direction against the session's drift "
+            f"(committed past ±{band * 100:.2f}% of spot):",
+            "",
+            "| drift vs completing direction | n | completed | rate | net |",
+            "|---|---|---|---|---|",
+        ]
+        for key, label in (("with", "with"), ("flat", "flat"), ("against", "**against**")):
+            r = by.get(key)
+            if not r:
+                continue
+            rate = f"{r['completion_rate'] * 100:.0f}%" if r["completion_rate"] is not None else "n/a"
+            lines.append(f"| {label} | {r['trades']} | {r['completed']} | {rate} | ${r['net_pnl']:,.2f} |")
+        sections.append("\n".join(lines))
+
+    if not sections:
+        return (
+            "No settled position carries a recorded session open yet, so there is nothing to say "
+            "about drift. Rows without one are omitted rather than counted flat — a session whose "
+            "open was never captured is not an uncommitted day."
+        )
+
+    tail = (
+        "An entry in the **against** bucket needs spot to reverse a drift the session has already "
+        "committed to, in the hours it has left. `choose_side` is what produces these: on a trending "
+        "day spot moves away from the centre, so it sells the side that then needs a reversal to "
+        "complete. **Nothing gates on this** — the band and the rule were both chosen on the rows "
+        "that measure them, so the case rests on the next clearly down-trending session reproducing "
+        "it out of sample."
+    )
+    return "\n\n".join([*sections, tail])
+
+
 def _regime_paragraph(coverage: dict, conn) -> str:
     """Regime coverage across the WHOLE book (not just today) plus any dimension that separates.
 
@@ -392,6 +452,10 @@ def build_eod_analysis(conn, day: str) -> str:
         "## What regimes did we trade into?",
         "",
         _regime_paragraph(analytics.regime_coverage(conn), conn),
+        "",
+        "## Did we bet against the day?",
+        "",
+        _drift_alignment_paragraph(conn),
         "",
         "## What stopped us trading",
         "",

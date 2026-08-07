@@ -705,6 +705,36 @@ itself explain it. On this slice `entry_center_offset_value` does **not** separa
 completions from its misses (medians +1.1 vs +1.9 points), so whatever is driving it is not captured
 by the dimension built for exactly that question.
 
+**Betting against the day's drift is the sharpest split in the data, and it does not survive the era
+change (2026-08-07, `analytics.by_drift_alignment`).** A legged entry completes only when spot moves
+the way `fly.completing_side_direction` requires. Split by whether that agreed with the session's
+committed drift (past ±0.26% of spot), across 97 SPX positions:
+
+| drift vs completing direction | n | completed | rate | net |
+|---|---|---|---|---|
+| with | 51 | 42 | **82%** | +$1,136 |
+| flat | 31 | 21 | 68% | −$980 |
+| **against** | **15** | **1** | **7%** | **−$3,129** |
+
+**Fifteen entries lost more than the entire era.** It holds in both trend directions (12 opposing on
+up days, 3 on down), and it is concentrated by arm — `control` 4%, `gex` 28%, `time_window` 35%.
+Strip the opposing entries and `time_window` flips −$1,154 → **+$210** while `gex` still loses
+(−$940), which is most of why those two arms fail and is now the live half of that question.
+
+**The XSP era inverts it**: `against` completed **94%** there (16 of 17). Blended the two read 53%,
+which is why this is reported per symbol and never pooled. The likeliest reading is scale, not
+contradiction — XSP ran 1-wide wings on a ~750 underlying, so a completion needs a point or two of
+drift and arrives almost regardless of direction, while 5-wide on ~7710 needs proportionally far
+more. If that is right the signal is entangled with **wing width** and is a statement about the SPX
+structure rather than about drift as such.
+
+**Nothing gates on it.** `choose_side` is what generates these — on a trending day spot moves away
+from the centre, so it sells the side that then needs a reversal — so a fix belongs there, not in a
+bolt-on filter. But the band and the rule were both chosen on the rows that measure them, the
+down-day cell is n=3, and the era inversion above is unexplained. `docs/centre-lag.md` already sets
+the bar at a second clearly down-trending session; this is a stated prior to read the next one
+against, not a result.
+
 **And the misses are near misses, not absent markets.** Of the 26 that never saw a qualifying debit,
 the median best offer sat **+0.49 points** above the gate (1.16× the credit, worst 1.34×) — nothing
 like the 1.88–4.00× the bwb roll showed when it was genuinely unreachable. Eight were within 0.25
