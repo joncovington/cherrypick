@@ -239,10 +239,28 @@ comparison measures one variable rather than a bundle of confounded changes.
   real-world near:far rule of thumb is roughly 1:2). Until rolled, this carries REAL, negative
   tail risk of `wing_width - far_width` that `fly.position_floor`'s `bwb` branch never reports as
   bounded — the entry credit is priced as rent for that tail, not against `wing_width` the way
-  `legged`'s credit gates are. The roll buys the near strike and sells the held far strike (a
-  2-leg debit vertical of width `far_width - wing_width`), converting the position to an ordinary
-  symmetric fly once it clears its own price and floor gates — bringing the far wing back to
-  exactly `1.0x wing_width`. Researched trap (see `docs/faq.md`): the roll cheapens under exactly
+  `legged`'s credit gates are. The roll buys **the symmetric fly's own wing on the risk side**
+  (`centre −/+ wing_width`) and sells the held far wing — a 2-leg debit vertical of width
+  `far_width - wing_width`, converting the position to an ordinary symmetric fly once it clears its
+  own price and floor gates, bringing the far wing back to exactly `1.0x wing_width`.
+
+  **That leg was wrong from the arm's first session until 2026-08-07, and it invalidated every bwb
+  row in the ledger. Keep the negative result.** `evaluate_roll` priced
+  `vertical_debit(near_wing, far_wing)` — but `bwb_strikes`' `near_wing` is on the *protected* side
+  and the position **already holds it**. So the roll priced a spread of width `far + wing` instead
+  of `far - wing` (**3x too wide** at the default 2.0 ratio), and `centre −/+ wing_width` — the leg
+  the fly actually needs — was never quoted, never checked by `_have`, never referenced. Worse, the
+  trade as specified does not produce a butterfly at all: buying a strike already held leaves
+  `+2 @ near / -2 @ centre`, two debit spreads, while the ledger recorded `kind='fly'` and computed
+  floor and payoff as a symmetric fly. The tests pinned the bug rather than caught it — the roll
+  fixture quoted only the two wrong strikes, so `near_wing` read as correct and the needed strike's
+  absence was invisible.
+  This is what produced the "roll is unreachable exactly when needed" reading: failing rolls priced
+  at 1.88–4.00x the credit (median **3.58x**) against a defect worth exactly 3x. **The 25 paper bwb
+  positions of 2026-08-04..08-06 are not recoverable** — the decisions were made on wrong prices and
+  the stream cache keeps no quote history, so 14 "rolls" and 11 refusals both rest on a spread that
+  was never the trade. Exclude every bwb row before 2026-08-07 from any reading of this arm.
+  Researched trap (see `docs/faq.md`), still untested for the same reason: the roll cheapens under exactly
   the drift that makes the position profitable, and balloons past the credit precisely when the
   tail is threatened — this arm measures whether that trade-off is actually survivable, not just
   theoretically credit-positive.
