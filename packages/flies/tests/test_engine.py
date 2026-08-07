@@ -247,7 +247,10 @@ def test_atm_twins_isolate_construction_from_centring():
     """`bwb` and `debit-first` each override entry_modes AND center_rule, so each differs from
     `control` in two things and cannot attribute a result to either. Their ATM twins pin the
     centring so the construction is the only variable left against control."""
-    for twin, gex_arm, mode in (("bwb-atm", "bwb", "bwb_roll"), ("debit-first-atm", "debit-first", "debit_first")):
+    for twin, gex_arm, mode in (
+        ("bwb-atm", "bwb", "bwb_roll"),
+        ("debit-first-atm", "debit-first", "debit_first"),
+    ):
         assert twin in engine.ARMS
         cfg = dict(BASE_CONFIG)
         cfg["arms"] = dict(BASE_CONFIG["arms"], **{twin: {"center_rule": "atm", "entry_modes": [mode]}})
