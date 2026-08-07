@@ -327,7 +327,28 @@ _ADDED_POSITION_COLUMNS = {
     # transactions couldn't be confidently tied to this position -- canonical columns left
     # untouched, per the module's own honesty rule: don't silently guess). NULL = not attempted yet.
     "broker_reconciliation_status": "TEXT",
+    # Why this row is not evidence; NULL when it is. For rows whose DECISIONS were made on numbers a
+    # later fix proved wrong -- not rows that merely lost money, and not rows a caller chose to
+    # filter. `closed_before_expiry` is the same idea done narrowly for one episode; this is the
+    # general form, because the alternative used the second time was a date cutoff written in prose,
+    # which `analytics.py` cannot see and a reader who skipped the doc cannot apply. Read surfaces
+    # exclude these by default (`analytics._period_clause`) and account for them explicitly
+    # (`analytics.voided`), so the exclusion is stated rather than inferred from a gap in a total.
+    "void_reason": "TEXT",
 }
+
+# Rows whose decisions rest on a defect, stamped once when `void_reason` is first added. Keyed on
+# what is identifiable in the ledger rather than by position_id, since these predate any marker.
+# The bwb entry: `evaluate_roll` priced the wrong legs (a `far + wing` span instead of `far - wing`,
+# 3x too wide at the default ratio) and `evaluate_bwb_entry` inherited the legged side rule, which
+# put the roll spread in the money -- so the 14 rolls and the 11 refusals alike rest on a spread
+# that was never the trade. The stream cache keeps no quote history, so they cannot be re-derived.
+_VOID_BACKFILL = (
+    (
+        "entry_mode = 'bwb_roll' AND trade_date < '2026-08-07'",
+        "bwb roll priced the wrong legs and the wrong side (fixed 2026-08-07); not re-derivable",
+    ),
+)
 
 _ADDED_BOOK_COLUMNS = {
     "settlement_source": "TEXT",
@@ -351,6 +372,12 @@ def _migrate(conn: sqlite3.Connection) -> list[str]:
             if column not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
                 added.append(f"{table}.{column}")
+                # Stamp the known-void rows the ONE time the column appears. Guarded on the column
+                # having just been added rather than run every open, so a later deliberate un-void
+                # (or a correction to the reason text) is not silently overwritten on next startup.
+                if column == "void_reason":
+                    for predicate, reason in _VOID_BACKFILL:
+                        conn.execute(f"UPDATE fly_positions SET void_reason = ? WHERE {predicate}", (reason,))
     if added:
         conn.commit()
     return added

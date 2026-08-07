@@ -259,7 +259,11 @@ comparison measures one variable rather than a bundle of confounded changes.
   at 1.88–4.00x the credit (median **3.58x**) against a defect worth exactly 3x. **The 25 paper bwb
   positions of 2026-08-04..08-06 are not recoverable** — the decisions were made on wrong prices and
   the stream cache keeps no quote history, so 14 "rolls" and 11 refusals both rest on a spread that
-  was never the trade. Exclude every bwb row before 2026-08-07 from any reading of this arm.
+  was never the trade. **They carry `void_reason` and every read surface drops them automatically**
+  — this was a prose cutoff for one day, which `analytics.py` could not see and a reader who skipped
+  this file could not apply; `db._VOID_BACKFILL` stamps them once when the column appears, and
+  `analytics.voided` accounts for what was held back so the exclusion is stated rather than inferred
+  from a gap in a total.
   Researched trap (see `docs/faq.md`), still untested for the same reason: the roll cheapens under exactly
   the drift that makes the position profitable, and balloons past the credit precisely when the
   tail is threatened — this arm measures whether that trade-off is actually survivable, not just
@@ -533,7 +537,10 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    `live_orders.max_safe_completion_debit` with it. And the 34 paper rows carrying
    `closed_before_expiry = 1` closed at an intraday quote rather than a settlement price (`pinned =
    0`) — **exclude them when reading paper P&L**, they are not comparable to ordinary settled rows
-   and are not representative of current behavior.
+   and are not representative of current behavior. That flag is the narrow, one-episode ancestor of
+   `void_reason` (2026-08-07), which is the general form: these rows are *not* void — the mechanism
+   ran and the numbers are real, they simply measure a behaviour that no longer exists — so they are
+   deliberately left unstamped and still require a caller to exclude them knowingly.
 6. **A floor is judged against the alternative, and "negative after fees" is still the finding.**
    Two claims, one sentence until 2026-08-06. Collapsing them made a gate argue against itself.
 
