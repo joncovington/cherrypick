@@ -51,9 +51,32 @@ def _conn() -> sqlite3.Connection | None:
 
 
 def _et_today(now: datetime | None = None) -> str:
+    """Today's date in ET, as `stream_summary.trade_date` stores it.
+
+    An injected `now` is CONVERTED, not just formatted. It used to be formatted as handed over,
+    so this returned the caller's own calendar date under a name promising ET — agreeing by luck
+    whenever the two lined up (10:00 UTC and 06:00 ET share a date) and silently disagreeing when
+    they did not (02:00 UTC is the previous day in ET). A naive `now` is taken to be ET already,
+    since there is nothing else it could be measured against.
+    """
     from .tt import _et_today as _tt_today  # one definition of "today in ET" for the whole module
 
-    return now.strftime("%Y-%m-%d") if now else _tt_today()
+    if now is None:
+        return _tt_today()
+    if now.tzinfo is None:
+        return now.strftime("%Y-%m-%d")
+    return now.astimezone(_et_zone()).strftime("%Y-%m-%d")
+
+
+def _et_zone():
+    try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo("America/New_York")
+    except Exception:  # pragma: no cover - only where zoneinfo has no tz database
+        import pytz
+
+        return pytz.timezone("America/New_York")
 
 
 def _completed_sessions(conn: sqlite3.Connection, symbol: str, today: str, needed: int) -> int:
