@@ -538,6 +538,25 @@ blocked by that gate alone at floors of $9.36–$39.36), `entry_modes` → **leg
 None of this separates the arms — 40 entries over 5 sessions, and the 50%/62%/62% spread is 2 trades
 wide. These are mechanism and accounting changes, not signal findings.
 
+**That bar then drifted through a symbol change, and the drift is the lesson (2026-08-06).** The XSP
+move scaled `min_floor_dollars` 10 → **1.0** on 2026-07-29 — correct at the time, premiums run ~1/10
+of SPX and the bar is meant to be proportional to premium. The 08-01 move **back to SPX did not bring
+it back**, so for five sessions a 5-wide SPX book collecting a median $63.12 against $6.89 of fees was
+gating completions at a one-dollar floor: a refusal at that bar means a post-fee floor under a dollar,
+so the gate was enforcing almost nothing. It also quietly loosened `live_orders.max_safe_completion_debit`,
+whose resting completion price is `min(credit - fee_buffer, the min_floor_dollars bound)` — at 1.0 the
+floor side of that `min` effectively never bound, leaving `fee_buffer` alone to set the price. Restored
+to **10.0**; both SPX eras are 5-wide, so this is a restore against identical fee economics rather than
+a fresh guess.
+
+Two things worth keeping from it. First, a paper-tuning pass read the resulting refusals and proposed
+lowering the bar *further* — four of five gate-refused misses died on the floor minimum rather than the
+fee buffer — which against a drifted bar would have admitted floors at or below zero, straight into
+rule 6. A threshold that has silently stopped meaning what it says produces analysis that argues for
+making it worse. Second, this value is **symbol-scaled but stored as a bare scalar**, unlike
+`wing_widths_by_symbol` and `orb_wing_width_by_symbol` which are keyed per symbol and cannot drift this
+way. Until that changes, a `symbols` change must be treated as a change to this value too.
+
 **Settlement is marked in the database, not on disk.** `session_already_settled` asks whether every
 `fly_books` row for the day is `settled`. It used to ask whether `paper-eod-<day>.md` existed, which
 made the marker settable by anything that could write a file — on 2026-07-20 a test run against the
