@@ -825,7 +825,7 @@ def test_get_atr_without_cache(tmp_path, monkeypatch):
 
 def test_get_intraday_range_reads_todays_row(cache_db):
     today = tt._et_today()
-    _summary_row(cache_db, "SPX", today, 6050.0, 5990.0, 5995.0)
+    _summary_row(cache_db, "SPX", today, 6050.0, 5990.0, 5995.0, opn=6010.0)
     _insert(
         cache_db,
         "stream_trades",
@@ -839,6 +839,17 @@ def test_get_intraday_range_reads_todays_row(cache_db):
     assert out["ok"] is True
     assert out["range_points"] == 60.0
     assert out["range_pct"] == round(60.0 / 6000.0, 6)
+    # day_open rides along on the same row so the regime trend dimension (spot vs. today's
+    # open) costs the caller no extra streamer round trip.
+    assert out["day_open"] == 6010.0
+
+
+def test_get_intraday_range_day_open_none_when_not_yet_captured(cache_db):
+    today = tt._et_today()
+    _summary_row(cache_db, "SPX", today, 6050.0, 5990.0, 5995.0)  # opn defaults to None
+    out = tt.cmd_get_intraday_range(_Args(symbol="SPX"))
+    assert out["ok"] is True
+    assert out["day_open"] is None
 
 
 def test_get_intraday_range_without_summary_row(cache_db):

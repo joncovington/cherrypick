@@ -22,7 +22,7 @@ An autonomous options trading agent running the **Multiple Entry Iron Condor (ME
 
 Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`** library, a sibling package (`packages/core`) in this same monorepo — install it once (`pip install -e ../core`, or `packages/core[dev]` from the repo root) before any `import cherrypick.core...` resolves in this package.
 
-**New in this release:** a full **paper-trading system** that shadow-trades all four risk profiles against live quotes with zero capital, a dedicated paper dashboard, an unattended self-healing daemon, corrected MEIC exit rules (cash-settled positions are now left to expire, not force-closed), and automated end-of-day reports. See [What's new](#whats-new).
+**New in this release:** a full **paper-trading system** that shadow-trades a forward-test arm registry (`control`/`open`/`width-5`/`width-10`) against live quotes with zero capital, a dedicated paper dashboard, an unattended self-healing daemon, corrected MEIC exit rules (cash-settled positions are now left to expire, not force-closed), and automated end-of-day reports. See [What's new](#whats-new).
 
 ---
 
@@ -72,13 +72,13 @@ claude
 
 Then, inside Claude Code, pick a track:
 
-**Paper trading (recommended first)** — no capital, no live orders, runs all four risk profiles side by side:
+**Paper trading (recommended first)** — no capital, no live orders, runs every enabled forward-test stream side by side:
 
 ```
 /paper-start
 ```
 
-Launches the market-data streamer, the paper dashboard at `http://localhost:5051`, and (on Windows) registers a self-healing scheduled task that evaluates every configured symbol every 2 minutes during market hours. On **macOS/Linux**, the scheduled task isn't available — instead keep the loop running in a terminal with `python -m cherrypick.meic.paper_loop`, or wire a cron job to `python -m cherrypick.meic.paper_loop --once` every 2 minutes.
+Verifies/starts the shared market-data streamer, launches the paper dashboard at `http://localhost:5051`, and (on Windows) registers a self-healing scheduled task that evaluates every configured symbol every 2 minutes during market hours. On **macOS/Linux**, the scheduled task isn't available — instead keep the loop running in a terminal with `python -m cherrypick.meic.paper_loop`, or wire a cron job to `python -m cherrypick.meic.paper_loop --once` every 2 minutes.
 
 **Live / dry-run trading** — the real agent loop (defaults to dry-run until `enable_live_trading: true`):
 
@@ -86,7 +86,7 @@ Launches the market-data streamer, the paper dashboard at `http://localhost:5051
 /meic-start
 ```
 
-Launches the streamer, the live dashboard at `http://localhost:5050`, and the agent loop.
+Verifies/starts the shared market-data streamer, then starts the agent loop — it does **not** launch a dashboard; run `/dashboard` separately if you want to watch the session at `http://localhost:5050`.
 
 See [docs/setup.md](docs/setup.md) for the full walkthrough and [docs/paper-trading.md](docs/paper-trading.md) for the paper-trading design and graduation criteria.
 
@@ -118,7 +118,7 @@ for the exact couplings.
 
 ## What's new
 
-- **Parallel-shadow paper trading** — every trading day, all four risk profiles (conservative / moderate / aggressive / very-aggressive) are evaluated deterministically against the *same* live-quote snapshot per symbol, each with its own $100,000 virtual bankroll. No capital, no live orders, apples-to-apples profile comparison. Optional SPX historical-replay mode front-loads samples from past days that actually paid. See [docs/paper-trading.md](docs/paper-trading.md).
+- **Parallel-shadow paper trading** — every trading day, every enabled forward-test stream (`control`/`open`/`width-5`/`width-10`) is evaluated deterministically against the *same* live-quote snapshot per symbol, each with its own $100,000 virtual bankroll. No capital, no live orders, apples-to-apples stream comparison. Optional SPX historical-replay mode front-loads samples from past days that actually paid. See [docs/paper-trading.md](docs/paper-trading.md) and [docs/paper-experiments.md](docs/paper-experiments.md).
 - **Corrected MEIC exit rules** — iron condors have exactly three exits: a per-side software stop, a time-based force-close **before the bell for non-cash-settled symbols only** (QQQ/IWM/equities — avoids physical assignment), and **left-to-expire cash settlement for cash-settled symbols** (SPX/XSP). There is **no profit-target exit** — that was removed as it isn't part of MEIC. Event days (FOMC, triple-witching, quarterly) still force-close everything as risk overrides.
 - **Two dashboards, one codebase** — the same dashboard runs against the live account (port 5050) or the paper account (port 5051, visibly badged "Paper Mode"), so you can watch both at once without confusion.
 - **Realistic fee modeling** — the paper engine charges tastytrade's exact broad-based-index-options fee schedule per leg (commission, clearing, ORF, per-symbol exchange fee, TAF on sells), so simulated P&L reflects real cost drag.
@@ -154,16 +154,23 @@ All of the following must pass — any one failure blocks the trade:
 
 ## Risk Profiles
 
-Switch entry-gate thresholds with a single command instead of hand-editing `config.json`. A **risk profile** bundles IV-rank floors, credit minimums, delta limits, stop triggers, and position caps — each preset offsets its gate relaxations with compensating constraints (fewer concurrent ICs, tighter stops) so you're reallocating risk, not just adding it.
+> ⚠️ **This four-tier ladder is `/set-risk-profile`'s target for LIVE trading only.** Since
+> 2026-08-07 it's disabled by default for paper collection, superseded there by a smaller
+> forward-test arm registry (`control`/`open`/`width-5`/`width-10` — see
+> [docs/paper-experiments.md](docs/paper-experiments.md)); the ladder stays fully documented and
+> usable for live sessions, it's just not what the automated paper loop runs day to day. See
+> [docs/risk-profiles.md](docs/risk-profiles.md) for the full history.
+
+Switch entry-gate thresholds with a single command instead of hand-editing `config.json`. A **risk profile** bundles IV-rank floors, credit minimums, delta limits, and stop triggers — each preset offsets its gate relaxations with a tighter stop so you're reallocating risk, not just adding it. (Concurrency caps used to be part of that offset too; since 2026-08-01 every profile runs uncapped, so the stop is the ladder's only remaining offset — see `docs/risk-profiles.md`.)
 
 | Profile | What it does | Trade-off |
 |---|---|---|
 | **conservative** (default) | Strict IV-rank (≥30%) and credit floors, wide OTM buffers, latest entry time (12:00 PM) | Fewest trades (~1–2/day), highest per-trade safety margin |
 | **moderate** | Slightly relax IV-rank (≥22%) and credit floors, enter earlier (11:00 AM) | ~1 more trade/day, thinner credit cushion but offset by tighter 93% stop |
-| **aggressive** | Tier 1 + accept closer-to-money strikes (delta 0.22, OTM tighter); cap 3 concurrent ICs instead of 4 | ~2–3 more trades/week, each one riskier but position cap and 90% stop limit total exposure |
-| **very-aggressive** | Tier 2 + trade through higher-VIX (≤30) and trending (ATR ≤2.0% of price) conditions; cap 2 concurrent ICs, stop at 85% | Most trades (~3–5 more/week on active weeks), each with high gamma/pin risk; only for deliberate short experiments |
+| **aggressive** | Tier 1 + accept closer-to-money strikes (delta 0.22, OTM tighter) | ~2–3 more trades/week, each one riskier but the 90% stop limits per-trade exposure |
+| **very-aggressive** | Tier 2 + trade through higher-VIX (≤30) and trending (ATR ≤2.0% of price) conditions; stop at 85% | Most trades (~3–5 more/week on active weeks), each with high gamma/pin risk; only for deliberate short experiments |
 
-Use `/set-risk-profile <name>` to switch (backed up automatically, takes effect on next loop). The paper-trading system runs **all four profiles at once** so you can compare them on identical market days before committing to one. Start at **moderate** after 2–4 weeks if conservative rejects 40%+ of entries. See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, decision tree, and when to escalate.
+Use `/set-risk-profile <name>` to switch (backed up automatically, takes effect on next loop) — **only for these four names**; the paper-only forward-test streams must never be applied to live config (see the warning in `.claude/commands/set-risk-profile.md`). Start at **moderate** after 2–4 weeks if conservative rejects 40%+ of entries. See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, decision tree, and when to escalate.
 
 ## Paper trading
 
@@ -177,7 +184,7 @@ python -m cherrypick.meic.paper_loop --status         # daemon/task status + ope
 python -m cherrypick.meic.paper_loop --uninstall-task # stop the unattended session
 ```
 
-Every 2 minutes during market hours, the engine takes one live-quote snapshot per symbol and runs all four risk profiles against it deterministically — synthetic fills at natural bid, each profile on its own $100,000 virtual bankroll, tastytrade's exact fee schedule applied per leg. Writes go only to `paper_trades.db` in the data home; the live account and `meic_trades.db` are never touched, and no live order is ever submitted (paper mode is not gated by `enable_live_trading`).
+Every 2 minutes during market hours, the engine takes one live-quote snapshot per symbol and runs every enabled arm against it deterministically — synthetic fills at natural bid, each arm on its own $100,000 virtual bankroll, tastytrade's exact fee schedule applied per leg. Writes go only to `paper_trades.db` in the data home; the live account and `meic_trades.db` are never touched, and no live order is ever submitted (paper mode is not gated by `enable_live_trading`).
 
 A pre-registered **graduation gate** (≥30 filled ICs, positive expectancy, ≥65% win rate, profit factor 1.3–4.0, bounded drawdown and worst day) decides when a profile has earned live capital. See [docs/paper-trading.md](docs/paper-trading.md) for the full design, the SPX historical-replay accelerator, and the known limitations of a frictionless paper model.
 
@@ -206,6 +213,7 @@ Everything runs locally against your own tastytrade account — no cloud depende
 - [Strategy](docs/strategy.md) — MEIC structure, wing width selection, stops, exit rules, EOD settlement handling
 - [Entry gates](GATES.md) — the full entry-gate stack in evaluation order
 - [Paper trading](docs/paper-trading.md) — the parallel-shadow engine, fee model, historical replay, graduation gate, known limitations
+- [Paper experiments](docs/paper-experiments.md) — the current forward-test streams, the breakeven identity, and the retired-study record
 - [Risk Profiles](docs/risk-profiles.md) — trade-off tiers for entry-gate thresholds, when to switch, full rationale
 - [`CLAUDE.md`](CLAUDE.md) — the agent's operating instructions (loop steps, config reference, guardrails)
 
@@ -224,25 +232,43 @@ cherrypick/
     ├── CLAUDE.md                    # Agent operational brain (loaded every loop iteration)
     ├── GATES.md                     # Reference: the full entry-gate stack in evaluation order
     ├── config.example.json          # Config template — copy to config.json
-    ├── config.risk.json             # Risk-profile presets (conservative → very-aggressive)
+    ├── config.risk.json             # Arm registry: control/open/width-5/width-10 (enabled) + the
+    │                                 # disabled ladder tiers and retired GEX arms (kept, not deleted)
     ├── src/cherrypick/meic/         # the cherrypick.meic namespace package (run as -m cherrypick.meic.<mod>)
     │   ├── tt.py                    # tastytrade CLI — get_quote, get_strategies, execute_trade, etc.
-    │   ├── streamer.py              # Persistent DXLink streaming daemon (live quotes/greeks/OI/volume)
+    │   ├── streamer.py              # Persistent DXLink streaming daemon (rollback-only since the
+    │   │                             # 2026-07-21 producer cutover — see packages/streamer)
+    │   ├── stream_request.py        # Declares symbols + open legs to the shared streamer's cache
     │   ├── session.py               # OAuth2 session management
     │   ├── credentials.py           # OS-keyring credential storage
-    │   ├── db.py                    # SQLite CLI helper (live + paper databases)
+    │   ├── paths.py                 # Resolves the shared data/logs/config home (~/.cherrypick/...)
+    │   ├── db.py                    # SQLite CLI + in-process db.call() dispatcher (live + paper DBs)
     │   ├── notify.py                # Structured log CLI helper
     │   ├── gex_math.py              # Gamma-exposure (GEX) computation helpers
-    │   ├── paper.py                 # Deterministic parallel-shadow paper engine (all 4 profiles)
-    │   ├── paper_loop.py            # Unattended paper daemon / scheduled-task runner + EOD report
-    │   ├── paper_replay.py          # SPX historical-replay mode (0DTESPX data)
-    │   └── dashboard.py             # Local browser dashboard (--mode live|paper)
+    │   ├── regime.py                # Entry-time regime tagging (vol/GEX/skew/trend, 8 dimensions)
+    │   ├── stop_policies.py         # Derived stop policies, computed read-side from open's paths
+    │   ├── analytics.py             # Read-only query layer: by_arm, breakeven_scorecard, regime cuts
+    │   ├── paper.py                 # Deterministic parallel-shadow paper engine (every enabled arm)
+    │   ├── paper_loop.py            # Unattended paper daemon / scheduled-task runner + EOD reports
+    │   ├── paper_practice.py        # 0DTESPX-backed practice-mode backtester (see paper-practice-plan.md)
+    │   ├── paper_replay.py          # SPX historical-replay mode (0DTESPX data; bulk mode disabled)
+    │   ├── live_loop.py             # Live agent-loop entry/exit mechanics (isolated from paper's arms)
+    │   ├── live_orders.py           # Live order placement/adjustment helpers
+    │   ├── live_smoke.py            # Supervised dry-run smoke test of the live broker write path
+    │   ├── experiment.py            # Session-bootstrap comparison CLI for study arms
+    │   ├── gate_health.py           # Reports which regime gates are armed/stood-down right now
+    │   ├── dashboard.py             # Local browser dashboard (--mode live|paper)
+    │   └── section.py               # Compact suite-dashboard card (python -m cherrypick.meic.section)
     ├── docs/
+    │   ├── README.md                # Doc index
     │   ├── setup.md                 # Installation and configuration
     │   ├── operating.md             # Running and monitoring the agent
     │   ├── strategy.md              # MEIC strategy details and exit rules
     │   ├── paper-trading.md         # Paper-trading engine, fee model, graduation gate
-    │   └── risk-profiles.md         # Entry-gate threshold presets and when to use each
+    │   ├── paper-experiments.md     # The current forward test + retired-study design record
+    │   ├── paper-practice-plan.md   # Structured plan for building paper-workflow confidence
+    │   ├── risk-profiles.md         # Entry-gate threshold presets and when to use each
+    │   └── 0dtespx-api.md           # 0DTESPX API/ToS notes (historical-replay data source)
     ├── .claude/
     │   ├── settings.json            # Permissions and MCP environment overrides
     │   └── commands/
@@ -274,10 +300,14 @@ orchestrator and this module read the same files. Resolved by [`cherrypick/meic/
 ```
 ~/.cherrypick/data/meic/             # default; override with the MEIC_DATA_DIR env var
 ├── meic_trades.db                   # Live trade history, loop log, daily summaries
-├── paper_trades.db                  # Paper trade history (all four profiles)
-├── stream_cache.db                  # Live streamer cache (quotes/greeks/OI/volume/GEX history)
+├── paper_trades.db                  # Paper trade history (every enabled arm)
 ├── replay_cache/                    # Cached SPX historical-replay snapshots
-└── streamer.pid / paper_loop.pid    # Daemon PID + lock files
+└── streamer.pid / paper_loop.pid    # Daemon PID + lock files (rollback-producer mode only)
+
+~/.cherrypick/data/marketdata/       # shared across every module, not MEIC-owned
+└── stream_cache.db                  # Live streamer cache (quotes/greeks/OI/volume/GEX history) —
+                                      # written by the standalone streamer (packages/streamer), the
+                                      # producer since the 2026-07-21 cutover
 ```
 
 ---

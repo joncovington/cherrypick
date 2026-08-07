@@ -80,11 +80,18 @@ Each gate runs in order; an entry is rejected immediately upon hitting the first
 - **Unproven** (noted 2026-08-01): this gate refuses roughly 40% of samples — SPX net-GEX sign runs
   ~61% positive and swings hard by day (2.3% positive on 2026-07-29, 98.3% on 2026-07-31) — and
   nothing yet establishes that the trades it cuts would have been worse than the ones it keeps.
-  Only 20 trades carry `gex_net_at_entry` (all from 2026-07-28) and no backfill exists. The switch
-  is there so a shadow profile with `regime_gex_block_negative: false` can run beside the gated one
-  — same days, one difference — and settle it. **That study is now running**: the `gex-open` /
-  `gex-blocked` arm pair, read with `python -m cherrypick.meic.experiment` — see
-  [docs/paper-experiments.md](docs/paper-experiments.md#gex-study-2026-08-01--does-the-gex-gate-earn-what-it-cuts).
+- **Superseded 2026-08-07**: the dedicated `gex-open`/`gex-blocked` control-treatment pair
+  (below) is retired — the two arms went byte-identical over their one session of data because
+  `gex_positive_at_entry` never took the value 0 among 78 tagged rows (73% of rows untagged
+  entirely, not a gate that never fired). The question is now answered **read-side, from one
+  stream's own rows**: the `open` arm runs with `regime_gex_block_negative: false` and records
+  `entry_gex_bucket`/`entry_gex_value` (see `regime.py`) on every entry, so
+  `analytics.by_regime(conn, "gex", arm="open")` reconstructs what this gate — and both stricter
+  variants below — would have blocked, from real recorded floats, without needing a second
+  byte-identical book. `analytics.regime_coverage` reports the untagged share alongside the
+  bucket split so a coverage gap is never misread as a settled question. See
+  [docs/paper-experiments.md](docs/paper-experiments.md) for the full design and the
+  byte-identical finding.
 
 #### 7b. The two stricter GEX variants (opt-in, both OFF by default)
 
@@ -101,9 +108,11 @@ Readable by the engine since they were written, but documented in no config file
   least this fraction away from the gamma-flip strike. Gate 7 only refuses below the flip; this
   refuses the fragile zone just above it, where the regime can invert intraday.
 
-Both are per-profile, so a shadow arm can carry one without touching the live ladder — the same
-shape the `gex-open`/`gex-blocked` study uses.
-  Until it reports, the gate stays on by default, but treat it as untested rather than validated.
+Both are per-profile, so a shadow arm could still carry one without touching the live ladder if a
+dedicated arm were ever warranted — but per 7b's update above, both are now readable read-side from
+`open`'s own recorded `entry_gex_bucket`/`entry_gex_value`, the same way gate 7's block_negative
+question is. The gate stays on by default; treat it as untested rather than validated until the
+regime-coverage read has enough tagged, non-degenerate sessions to say more.
 
 ### 8. Zero-Gamma Threat (Symbol-Specific, Non-Blocking)
 - **Trigger**: Price within 0.3% of gamma flip level; close to regime boundary
@@ -192,13 +201,29 @@ shape the `gex-open`/`gex-blocked` study uses.
 - **IC Impact**: Hard block
 - **ORB Impact**: Not applicable
 
-### 16. Strike Overlap Gate (Hard Stop)
-- **Trigger**: Proposed IC legs overlap with already-open positions on this symbol
-- **Effect**: Reject entry
-- **Config**: None (checked against `get_open_positions` for this symbol)
-- **Rationale**: Prevents accidental double-stacking, simplifies stop management
-- **IC Impact**: Hard block
-- **ORB Impact**: Checked against existing ORB position
+### 16. Strike Overlap Gate (Hard Stop, profile-tunable since the 2026-08-07 arms cutover)
+- **Trigger**: Proposed IC legs overlap with this profile's own already-open positions on this
+  symbol, per `overlap_scope`:
+  - `"all"` (strictest): any leg strike shared with any open position blocks the entry
+  - `"shorts"`: blocks only an exact repeat of the SAME short put/call pair — the profit zone,
+    the same one-structure-per-centre rule flies enforces
+  - `"none"`: no overlap check at all — every tick is an independent draw, treating each entry
+    as its own sample rather than a position in a shared book. Only valid for the forced-sampling
+    forward-test streams (`open`/`width-5`/`width-10`), which run uncapped
+    (`max_concurrent_ics: 999`) and are not meant to model a real book — see gate 12's note and
+    [docs/paper-experiments.md](docs/paper-experiments.md)
+- **Effect**: Reject entry (unless `overlap_scope: "none"`)
+- **Config**: `overlap_scope` (`"all"` / `"shorts"` / `"none"`; default `"all"` if unset,
+  `"shorts"` on `control` and the disabled ladder tiers, `"none"` on the forward-test streams).
+  **Live trading never sees a paper stream's `"none"`**: `live_loop.py` builds its params as an
+  empty profile overlay over `config.json`, so no `config.risk.json` profile key — including a
+  study arm's `overlap_scope` — can reach it; live is bound to `config.json`'s own top-level
+  `overlap_scope` (currently `"shorts"`) regardless of which paper stream is running. Pinned by
+  `test_live_ignores_a_paper_profile_overlap_scope_and_still_refuses_overlap`.
+- **Rationale**: Prevents accidental double-stacking, simplifies stop management. `"none"` trades
+  that protection away deliberately, in paper only, for independent sampling
+- **IC Impact**: Hard block (`"all"`/`"shorts"`) or no-op (`"none"`)
+- **ORB Impact**: Checked against existing ORB position, unaffected by `overlap_scope`
 
 ---
 
@@ -375,6 +400,7 @@ shape the `gex-open`/`gex-blocked` study uses.
 | FOMC post-blackout | `fomc_post_blackout_min_iv_rank`, `fomc_post_blackout_max_intraday_range_pct` | 0.40, 0.005 | Account-wide, FOMC only |
 | Max concurrent ICs | `max_concurrent_ics` | 99 (was 4; see gate 12) | Hard stop, never binds |
 | Daily IC target | `daily_ic_trade_target` | 200 (was 2; see gate 13) | Soft guidance, never binds |
+| Strike overlap | `overlap_scope` | `"all"`/`"shorts"`/`"none"` — see gate 16 | Hard stop unless `"none"`; live never sees `"none"` |
 | Delta (call) | `max_call_delta_entry`, `_open_volatile`, `_late` | 0.20, 0.19, 0.19 | Hard stop |
 | OTM (call, put) | `min_call_otm_pct`, `min_put_otm_pct` | 0.35%, 0.30% | Hard stop |
 | OPEX OTM override | `quarterly_expiry_min_call_otm_pct`, `quarterly_expiry_skip_open_volatile` | 0.67%, true | Tighter on OPEX |

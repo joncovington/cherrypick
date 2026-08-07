@@ -81,7 +81,7 @@
   "advice": {
     "_comment": "PAPER-only advised shadow book (the orchestrator's `cherrypick advise` pipeline). When enabled, the paper loop looks for the orchestrator-written artifact state/advice/meic-<session>.json ONCE at session start, re-validates it against `bounds` below with cherrypick.core.advice (the same code the orchestrator ran -- absent/stale/invalid means baseline), and runs a synthetic `advised:<base_profile>` book beside the un-advised base profile (the control). One out-of-bounds proposal rejects the whole set. This block is the loop-side manifest: nothing the advisor proposes can leave these closed ranges. Off by default; never touches the live loop.",
     "enabled": false,
-    "base_profile": "conservative",
+    "base_profile": "control",
     "bounds": {
       "stop_trigger_ratio": {
         "min": 0.85,
@@ -160,7 +160,6 @@
   "slippage_frac_of_spread": 0.125,
   "_slippage_frac_of_spread_note": "PAPER-TRADING ONLY. Fraction of each vertical's combined bid-ask conceded from mid on every synthetic fill -- opens receive (mid - frac*spread), closes pay (mid + frac*spread). 0.125 models a worked combo-limit fill and matches the earnings cost model (cherrypick.core.fees) for cross-module parity. Paper previously priced fills at the worst case (natural bid to open, (short_ask - long_bid)*stop_limit_ratio to close), which over-counted slippage; that is superseded here. Live trading pays real fills.",
   "per_side_stop_management": true,
-  "per_side_stop_trigger": "full_credit",
   "max_stop_adjustments_per_ic": 3,
   "_no_profit_target_note": "MEIC has NO profit target. An iron condor is only ever closed by a per-side stop, a time-based force-close (non-cash-settled symbols), or an event force-close; cash-settled symbols are left to expire and settled at the close. Do not add a profit_target_pct key. (ORB, a separate directional debit spread, has its own orb_profit_target_pct.)",
   "settlement_header": "===== Settlement & Physical Assignment =====",

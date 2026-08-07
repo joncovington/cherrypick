@@ -6,13 +6,15 @@ starting the loop, watching the dashboard, and checking status. Part of the
 
 ## Pre-market session setup
 
-Run `/meic-start` before 9:30 ET — it launches the dashboard and agent loop in sequence:
+Run `/meic-start` before 9:30 ET — it verifies the shared market-data streamer, then starts the agent loop:
 
 ```
 /meic-start
 ```
 
-This launches the dashboard as a background process, opens the browser at `http://localhost:5050`, then starts the agent loop. The agent will not enter new trades before `entry_window_start` (default 10:00 ET) or after `entry_window_end` (default 14:30 ET). At end of day it force-closes non-cash-settled positions before the bell (`physical_settlement_force_close_time`/`force_close_time`) and leaves cash-settled positions to expire and settle in cash (`expiration_settlement_time`); either way, starting early is safe. On the first iteration of each trading day, the loop runs a **daily connection check** to verify the tastytrade broker session is live before any market assessment begins.
+This does **not** launch the dashboard — it checks (and starts, if down) the standalone streamer
+producer (`packages/streamer`), then starts the agent loop directly. Open the dashboard separately
+with `/dashboard` if you want to watch the session (see below). The agent will not enter new trades before `entry_window_start` (default 10:00 ET) or after `entry_window_end` (default 14:30 ET). At end of day it force-closes non-cash-settled positions before the bell (`physical_settlement_force_close_time`/`force_close_time`) and leaves cash-settled positions to expire and settle in cash (`expiration_settlement_time`); either way, starting early is safe. On the first iteration of each trading day, the loop runs a **daily connection check** to verify the tastytrade broker session is live before any market assessment begins.
 
 To start components individually instead:
 
@@ -42,7 +44,7 @@ The agent runs every ~2-30 minutes depending on session and open positions (see 
 
 ## Paper trading
 
-Before committing real capital, run the parallel-shadow paper engine. It evaluates all four risk profiles (conservative / moderate / aggressive / very-aggressive) against the same live-quote snapshot per symbol, each on its own $100,000 virtual bankroll, and never touches the live account or the live `meic_trades.db`.
+Before committing real capital, run the parallel-shadow paper engine. It evaluates every enabled forward-test stream (`control`/`open`/`width-5`/`width-10` — see `docs/paper-experiments.md`) against the same live-quote snapshot per symbol, each on its own $100,000 virtual bankroll, and never touches the live account or the live `meic_trades.db`.
 
 Start a full unattended paper session:
 

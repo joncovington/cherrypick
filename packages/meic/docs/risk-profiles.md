@@ -20,6 +20,25 @@ Each profile bundles gate-threshold changes with offsetting position-sizing and 
 > that shaped them (worth keeping — it explains why the stop tightens the way it does), each flagged
 > where it no longer reflects the live config. Full rationale for the switch:
 > `docs/paper-experiments.md`'s "Independent sampling" section.
+>
+> **2026-08-07 — the whole ladder is disabled in `config.risk.json`, superseded for paper by a
+> four-stream registry** (`control`/`open`/`width-5`/`width-10` — see
+> `docs/paper-experiments.md`'s "The forward test" section). The ladder's own axis — riskier trades,
+> offset by a tighter stop — stopped being the interesting comparison once every profile became an
+> uncapped sample stream: the rungs differed only in entry-quality thresholds, all of which `open`'s
+> recorded regime floats can now answer read-side without four separately-run books. **This document
+> stays accurate for the ladder as a mechanism** — `conservative`/`moderate`/`aggressive`/
+> `very-aggressive` are `enabled: false`, not deleted, and `/set-risk-profile` still works exactly as
+> described below for **live** trading. The disabled/enabled split is a paper-collection decision,
+> not a statement that the ladder no longer functions.
+>
+> ⚠️ **`/set-risk-profile` is a live-trading-config mutator; the four forward-test streams are
+> paper-only and must never be passed to it.** `open`/`width-5`/`width-10` run with
+> `overlap_scope: "none"` and (for `open`) no per-side stop management — settings that make sense
+> only as independent paper samples, never as a live risk posture. `/set-risk-profile` does not
+> filter on `enabled`, so it will mechanically accept any name in `config.risk.json`'s `profiles`
+> map; the four ladder tiers are the only names it is meant to be called with. See
+> [`.claude/commands/set-risk-profile.md`](../.claude/commands/set-risk-profile.md).
 
 ---
 
@@ -76,9 +95,11 @@ a list.
 It is also why the old symbol-pinned experiment cells (`large-spx`, `small-xsp`, …) were retired: a
 cell that bakes the symbol into its identity fuses the two axes, so "the same strategy on a different
 instrument" becomes inexpressible. See [paper-experiments.md](paper-experiments.md). The
-symbol-agnostic form it prescribes is what every study arm has used since: the wing-width arms
-(retired 2026-08-05 without trading) and the GEX arms (`gex-open`/`gex-blocked`) running now — one
-variable pinned per arm, the (profile × symbol) grain supplying the instrument axis automatically.
+symbol-agnostic form it prescribes is what every study arm has used since: `width-5`/`width-10`
+(wing width pinned, otherwise identical) and `open` (every gate off, no symbol pin) running now — the
+2026-08-01 GEX pair (`gex-open`/`gex-blocked`) and the 2026-07-28 four-way wing study are both
+retired, subsumed by `open`'s read-side regime splits — one variable pinned per arm, the
+(profile × symbol) grain supplying the instrument axis automatically.
 
 ## 3. Thresholds are **profile-relative**, never shared absolutes
 

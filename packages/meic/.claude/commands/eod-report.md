@@ -49,7 +49,7 @@ python -m cherrypick.meic.paper_loop --eod-report [--date <YYYY-MM-DD>]
 ```
 
 It writes **two** files to the MEIC logs home (`~/.cherrypick/logs/meic/` by default, or `$MEIC_LOGS_DIR`):
-- `paper-eod-<date>.md` — the terse per-profile metrics table (trades, win rate, net P&L, expectancy, profit factor, max drawdown), exits-by-reason breakdown, and per-symbol P&L across all four risk profiles.
+- `paper-eod-<date>.md` — the terse per-portfolio/per-profile metrics table (trades, win rate, net P&L, expectancy, profit factor, max drawdown) across every enabled arm (`control`/`open`/`width-5`/`width-10`), exits-by-reason breakdown, and per-symbol P&L, plus (since 2026-08-07) an arm scorecard (the breakeven identity per stream), a gate ledger, a derived stop-policy table, regime coverage, and iteration duration/peak open positions — see `docs/paper-experiments.md`.
 - `eod-analysis-<date>.md` — a conversational 7-section read on the same session (executive snapshot, position-level detail, trade activity log, risk metrics, market context, tax/accounting notes, notes/journal). Still fully deterministic/code-generated (no agent), just written in plain-English analysis language. Regenerate only this one with `python -m cherrypick.meic.paper_loop --eod-analysis [--date <YYYY-MM-DD>]`.
 
 Report the paths it prints; optionally show the user the file contents. (Both are distinct from `/paper-report`, which is the agent-synthesized multi-day write-up.)

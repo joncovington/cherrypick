@@ -6,6 +6,15 @@ Risk profiles bundle entry-gate thresholds with offsetting position-cap and stop
 
 See [docs/risk-profiles.md](../../docs/risk-profiles.md) for the full rationale, trade-offs, and when to use each profile.
 
+> ⚠️ **Only the four ladder tiers are valid targets for this command**: `conservative`,
+> `moderate`, `aggressive`, `very-aggressive`. `config.risk.json` also carries the paper-only
+> forward-test streams (`control`, `open`, `width-5`, `width-10`) used by the automated paper
+> loop — this command does not filter by `enabled` and will mechanically apply any of those names
+> too, but they are not risk-appetite presets: `open`/`width-5`/`width-10` run with
+> `overlap_scope: "none"` and `open` runs with no per-side stop management at all, settings that
+> only make sense as independent paper samples. Never point this command at one of them. See
+> [docs/paper-experiments.md](../../docs/paper-experiments.md).
+
 ## Step 1 — Check valid profile names
 
 List available profiles:
@@ -14,10 +23,11 @@ List available profiles:
 python -c "import json; cfg = json.load(open('config.risk.json')); print('Available profiles:', ', '.join(cfg['profiles'].keys())); print('Current active profile:', cfg['active_profile'])"
 ```
 
-Expected output:
+Expected output (the full registry — includes the paper-only forward-test streams; only the four
+ladder names below the dashes are valid choices for this command):
 ```
-Available profiles: conservative, moderate, aggressive, very-aggressive
-Current active profile: conservative
+Available profiles: control, open, width-5, width-10, conservative, moderate, aggressive, very-aggressive
+Current active profile: control
 ```
 
 If you get an error, check that `config.risk.json` exists in the project root and is valid JSON.
