@@ -405,7 +405,9 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    reported as unconditionally safe.
 4. **The uncompleted branch is reported separately.** When a legged entry never completes, you are
    holding an ordinary credit spread with full defined risk. `completion_rate` is expected to be the
-   number that decides whether this strategy is real.
+   number that decides whether this strategy is real. **This branch is also what rule 6 compares
+   against** — refusing a completion does not free the slot, it leaves *this*, so the two rules
+   describe one moment from opposite sides and must be read together.
 5. **No adjustments after establishment.** No stops, no wing moves, no exceptions — hold to cash
    settlement. v1 is measuring a base rate, and an adjustment rule tuned before a single completion
    rate exists would be fitting noise.
@@ -442,8 +444,38 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    `closed_before_expiry = 1` closed at an intraday quote rather than a settlement price (`pinned =
    0`) — **exclude them when reading paper P&L**, they are not comparable to ordinary settled rows
    and are not representative of current behavior.
-6. **If the floor comes out negative after fees, that is the finding.** The answer is to stop, not to
-   loosen `fee_buffer` until the numbers look better.
+6. **A floor is judged against the alternative, and "negative after fees" is still the finding.**
+   Two claims. They were one sentence until 2026-08-06, and collapsing them cost real money.
+
+   **The comparison.** A completion's floor is judged against *what happens if we refuse it*, never
+   against zero. On a legged entry the alternative is not "no position" — it is rule 4's open short
+   vertical, carrying full defined risk, and refusing does not free the slot. Measured over the SPX
+   era those branches run **+$54.12 completed against −$195.05 stranded**, so a completion with a
+   small negative floor can be the better of two options we already own, and refusing it on the sign
+   alone is not conservatism. This is the same reasoning that correctly moved `min_floor_dollars`
+   50 → 10 on 2026-07-27. Read against a real refusal: on 2026-08-06 the gate turned down a
+   completion whose worst case was **−$2.50** and the position settled at **−$288.44**; across the
+   era it did that 7 times, buying a −$1.87 worst case and delivering −$1,287.58.
+
+   **The finding, unchanged and load-bearing.** A book that needs negative floors to look viable is
+   telling you the strategy does not work. Admitting them improves a losing book without making it a
+   winning one: granting every one of those 7 moves the era from **−$2,973 to −$1,687** and leaves
+   completion **7 points below its own break-even**, because thin completions dilute the completed
+   average while removing the least-bad strandings raises the severity of what remains. Take the
+   change *and* keep the result. **This rule is satisfied by refusing to call that a fix, never by
+   refusing to measure.**
+
+   Two limits, because this is the rule most easily read as a licence:
+   - It governs **completion of a position already open**. It never justifies an *entry*. Entering a
+     structure whose floor is negative manufactures the loss rather than choosing between two you
+     are already holding, and no alternative-branch argument applies.
+   - It is an argument from a **measured** alternative, not a standing permission. If the stranded
+     branch stops being the dominant loss, the comparison changes and the bar goes back up.
+     Re-derive it per symbol and against the current floor definition; never inherit it.
+
+   The original wording — *"the answer is to stop, not to loosen `fee_buffer` until the numbers look
+   better"* — stands verbatim for `fee_buffer`, for entries, and for every gate whose alternative
+   really is no position at all.
 
 ## Guardrails (suite-wide)
 
