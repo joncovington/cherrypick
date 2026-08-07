@@ -52,11 +52,13 @@ from cherrypick.core import home as _core_home  # the shared state dir
 from cherrypick.core import logs as _logs
 from cherrypick.core import viz as _viz  # the suite's one money formatter
 
+from cherrypick.meic import analytics as _an
 from cherrypick.meic import (
     paper,
     stream_request,  # declares symbols + open paper legs to the streamer
 )
 from cherrypick.meic import paths as _paths  # ~/.cherrypick/data/meic or MEIC_DATA_DIR
+from cherrypick.meic import stop_policies as _sp
 
 
 def _now_et():
@@ -273,6 +275,18 @@ def _fetch_intraday_range_pct(symbol):
     return d.get("range_pct") if d.get("ok") else None
 
 
+def _fetch_session(symbol):
+    """Today's day_open and range_pct off ONE get_intraday_range call — the regime trend
+    dimension (spot vs. today's open) rides the same Summary-row read the range gates already
+    fetch every iteration, rather than costing its own round trip. None/None while the cache is
+    warming up or the streamer is down (the same fail-open convention _fetch_intraday_range_pct
+    and _fetch_atr already follow)."""
+    d = _run_json(_TT + ["get_intraday_range", "--symbol", symbol])
+    if not d.get("ok"):
+        return None, None
+    return d.get("day_open"), d.get("range_pct")
+
+
 def _build_candidates(symbol, last, widths, delta_targets, default_delta, today):
     """Fetch the 0DTE chain and build wing-width candidates + leg_quotes. Mirrors the
     strike-selection the live loop/paper-loop.md describe: nearest-delta short strikes,
@@ -399,6 +413,37 @@ def _fmt_symbol(sym, info):
         uniq = set(skips)
         parts.append(f"all {next(iter(uniq))}" if (len(uniq) == 1 and not active) else f"{len(skips)} skip")
     return f"{sym}(ivr {ivr_s}): {'  '.join(parts) if parts else '-'}"
+
+
+def _log_gate_blocks(symbol, outcomes) -> None:
+    """One loop_log row per symbol per iteration, carrying EVERY stream's outcome this tick —
+    a fill/exit, or the precise reason evaluate_entry returned — as machine-readable JSON, not
+    the collapsed 'N skip' / 'all <reason>' display string _fmt_symbol produces for humans.
+
+    `_fmt_symbol` collapses skips for readability because a per-profile dump is unreadable in the
+    log line once the stream roster is more than a couple of entries — but that collapse is where
+    the information a gate ledger needs (which stream, which gate, how often) was being thrown
+    away. This is the same `outcomes` dict `_fmt_symbol` reads, persisted intact instead of
+    summarized, so a zero-entry session is auditable per stream rather than reading as one
+    undifferentiated blank. Best-effort and non-fatal, like every other loop_log write here.
+    """
+    if not outcomes:
+        return
+    try:
+        _subrun(
+            _DB
+            + [
+                "log_loop_action",
+                "--action",
+                "gate_block",
+                "--symbol",
+                symbol,
+                "--reasoning",
+                json.dumps(outcomes, default=str)[:4000],
+            ]
+        )
+    except Exception:
+        pass
 
 
 def _format_iteration(now_et, vix, vix1d_ratio, delta_target, summary):
@@ -549,6 +594,9 @@ def _write_eod_report(day):
     else:
         L.append("_No entries today - flat session._")
     L.append("")
+
+    L.extend(_eod_supplement(day))
+
     L.append(
         f"_Generated {_now_et().strftime('%Y-%m-%d %H:%M:%S %Z')} · paper DB only; live account untouched._"
     )
@@ -556,6 +604,148 @@ def _write_eod_report(day):
     path = _eod_report_path(day)
     path.write_text("\n".join(L), encoding="utf-8")
     return path
+
+
+# ---------------------------------------------------------------------------
+# EOD supplement -- arm scorecard (breakeven identity), gate ledger, stop-policy
+# table, regime coverage, iteration duration/peak positions. Isolated in its own
+# function (rather than threaded through _write_eod_report's existing tables) so
+# it's independently testable and the diff against the pre-arms report stays legible.
+# ---------------------------------------------------------------------------
+
+
+def _eod_supplement(day) -> list[str]:
+    try:
+        conn = sqlite3.connect(_PAPER_DB)
+        conn.row_factory = sqlite3.Row
+    except sqlite3.Error:
+        return []
+    try:
+        return _eod_supplement_lines(conn, day)
+    finally:
+        conn.close()
+
+
+def _eod_supplement_lines(conn, day) -> list[str]:
+    L = []
+
+    # --- Arm scorecard: the breakeven identity, per stream, read per-session rather than
+    # waiting on a bootstrap. ---
+    L.append("## Arm scorecard (breakeven identity)")
+    L.append(
+        "_P(clean OTM) - P(double stop) vs. the fees/credit bar - the health line for each "
+        "stream. See docs/paper-experiments.md for the derivation._"
+    )
+    arms = _an.by_arm(conn, start=day, end=day)
+    if arms:
+        L.append(
+            "| Arm | Trades | Sessions | Net P&L | Win % | Clean % | Double-stop % | "
+            "Breakeven bar % | Margin % |"
+        )
+        L.append("|---|---|---|---|---|---|---|---|---|")
+        for a in arms:
+            bc = _an.breakeven_scorecard(conn, start=day, end=day, arm=a["arm"])
+            wr = f"{a['win_rate'] * 100:.0f}%" if a.get("win_rate") is not None else "-"
+            clean = f"{bc['clean_pct']:.1f}%" if bc.get("clean_pct") is not None else "-"
+            double = f"{bc['double_stop_pct']:.1f}%" if bc.get("double_stop_pct") is not None else "-"
+            bar = f"{bc['breakeven_bar_pct']:.1f}%" if bc.get("breakeven_bar_pct") is not None else "-"
+            margin = f"{bc['margin_pct']:+.1f}%" if bc.get("margin_pct") is not None else "-"
+            L.append(
+                f"| {a['arm']} | {a['trades']} | {a['sessions']} | {_money(a['net_pnl'])} | {wr} | "
+                f"{clean} | {double} | {bar} | {margin} |"
+            )
+    else:
+        L.append("_No resolved trades today._")
+    L.append("")
+
+    # --- Gate ledger: per-stream block/fill/exit outcomes from the gate_block loop_log rows,
+    # so a zero-entry stream states which gate held it back instead of a collapsed "N skip". ---
+    L.append("## Gate ledger")
+    blocks = _an.gate_blocks(conn, day)
+    if blocks:
+        L.append("| Stream | Outcomes |")
+        L.append("|---|---|")
+        for stream in sorted(blocks):
+            parts = ", ".join(
+                f"{label} x{count}" for label, count in sorted(blocks[stream].items(), key=lambda kv: -kv[1])
+            )
+            L.append(f"| {stream} | {parts} |")
+    else:
+        L.append("_No gate_block rows logged today (pre-Phase-1d data, or the loop didn't run)._")
+    L.append("")
+
+    # --- Stop-policy table: read-side derivations from `open`'s recorded paths, not separate
+    # entry streams -- see stop_policies.py and analytics.stop_counterfactual. ---
+    L.append("## Stop-policy table (derived from `open`)")
+    L.append(
+        "_Computed read-side from `open`'s recorded per-side paths, not separate entry "
+        "streams; validated against `control`'s real 0.95x-net mechanism (see "
+        "analytics.validate_stop_derivation)._"
+    )
+    open_today = _an.stats_for_period(conn, start=day, end=day, arm="open")
+    if open_today.get("trades"):
+        L.append(
+            "| Policy | Derivable | Actual net (`open`) | Derived net | Delta | Put fires | Call fires |"
+        )
+        L.append("|---|---|---|---|---|---|---|")
+        for name in _sp.POLICIES:
+            if name == "control":
+                continue
+            sc = _an.stop_counterfactual(conn, name, start=day, end=day, arm="open")
+            L.append(
+                f"| {name} | {sc['derivable']}/{sc['trades']} | {_money(sc['actual_net_pnl'])} | "
+                f"{_money(sc['derived_net_pnl'])} | {_money(sc['delta'])} | {sc['put_fired']} | "
+                f"{sc['call_fired']} |"
+            )
+    else:
+        L.append("_`open` entered no trades today - nothing to derive against._")
+    L.append("")
+
+    # --- Regime coverage: tagged/untagged/degenerate per dimension; a degenerate dimension's
+    # P&L-by-bucket table is withheld since it reports no contrast, not no effect. ---
+    L.append("## Regime coverage")
+    cov = _an.regime_coverage(conn, start=day, end=day)
+    if cov["resolved_trades"]:
+        L.append("| Dimension | Tagged | Untagged | Coverage % | Degenerate |")
+        L.append("|---|---|---|---|---|")
+        non_degenerate = []
+        for dim, d in cov["dimensions"].items():
+            cov_pct = f"{d['coverage_pct']:.0f}%" if d.get("coverage_pct") is not None else "-"
+            L.append(
+                f"| {dim} | {d['tagged']} | {d['untagged']} | {cov_pct} | {'yes' if d['degenerate'] else 'no'} |"
+            )
+            if d["tagged"] and not d["degenerate"]:
+                non_degenerate.append(dim)
+        for dim in non_degenerate:
+            rows = _an.by_regime(conn, dim, start=day, end=day)
+            if not rows:
+                continue
+            L.append("")
+            L.append(f"**{dim}** by bucket:")
+            L.append("| Bucket | Trades | Net P&L | Win % |")
+            L.append("|---|---|---|---|")
+            for r in rows:
+                wr = f"{r['win_rate'] * 100:.0f}%" if r.get("win_rate") is not None else "-"
+                L.append(f"| {r['bucket']} | {r['trades']} | {_money(r['net_pnl'])} | {wr} |")
+    else:
+        L.append("_No resolved trades today._")
+    L.append("")
+
+    # --- Iteration duration & peak open positions, from Phase 0's loop_log instrumentation. ---
+    L.append("## Iteration duration & peak open positions")
+    stats = conn.execute(
+        "SELECT COUNT(*) n, AVG(duration_ms) avg_ms, MAX(duration_ms) max_ms, "
+        "MAX(open_trades_n) peak_open FROM loop_log WHERE loop_date = ? AND duration_ms IS NOT NULL",
+        (day,),
+    ).fetchone()
+    if stats and stats["n"]:
+        L.append(f"- Iterations timed: {stats['n']} · avg {stats['avg_ms']:.0f}ms · max {stats['max_ms']}ms")
+        L.append(f"- Peak open positions (account-wide, any timed iteration): {stats['peak_open']}")
+    else:
+        L.append("_No timed iterations today (pre-instrumentation, or the loop didn't run)._")
+    L.append("")
+
+    return L
 
 
 # ---------------------------------------------------------------------------
@@ -1000,7 +1190,7 @@ def _advice_profiles(cfg, today):
     management-only twin (entries capped to zero) stands in.
     """
     acfg = cfg.get("advice") or {}
-    base = acfg.get("base_profile", "conservative")
+    base = acfg.get("base_profile", "control")
     state_file = _paths.data_path("advice_active.json")
     decision = None
     if state_file.exists():
@@ -1074,6 +1264,12 @@ def _ensure_paper_schema() -> None:
 
 
 def run_iteration(cfg, force=False):
+    # Wall-clock for this whole iteration, logged below alongside open-position count. Was
+    # nowhere -- loop_log.duration_ms existed as a column and get_step_timing could read it, but
+    # nothing here ever wrote one, so the load ceiling that governs how many streams/positions
+    # this loop can carry was invisible until it was already missing ticks. See docs/paper-
+    # experiments.md for the incident this closes the gap on.
+    _iter_t0 = time.time()
     now = _now_et()
     if not force and not _is_trading_time(now, cfg):
         logger.info("outside trading window (%s ET) - skipping.", now.strftime("%H:%M"))
@@ -1097,6 +1293,8 @@ def run_iteration(cfg, force=False):
     summary = {}
     mkt_symbols = {}  # per-symbol price + IV rank/percentile snapshot for the market-context capture
     for symbol in _symbols(cfg):
+        # No-op outside a --once invocation (the lock file won't exist); see _heartbeat_lock.
+        _heartbeat_lock()
         price, ivr, ivp = _fetch_overview(symbol)
         # Store BOTH vol measures per symbol per day: this is the series the IV-gate re-basing and
         # the rank-vs-percentile band fitting are done from (see _fetch_overview). Captured BEFORE
@@ -1116,6 +1314,7 @@ def run_iteration(cfg, force=False):
         )
         gex = _run_json(_TT + ["get_gex", "--symbol", symbol])
         atr_lookback = int(cfg.get("regime_atr_lookback_days", 5))
+        day_open, intraday_range_pct = _fetch_session(symbol)
         snapshot = {
             "symbol": symbol,
             "date": today,
@@ -1128,10 +1327,12 @@ def run_iteration(cfg, force=False):
             "iv_rank_source": "native",
             "vix": vix,
             "vix1d_ratio": vix1d_ratio,
-            # Both feeds come off the streamer's stream_summary day-rows (exchange-official
-            # session OHLC). None while warming up / streamer down -> the gates stay inactive.
+            # All three feeds come off the streamer's stream_summary day-rows (exchange-official
+            # session OHLC). None while warming up / streamer down -> the gates stay inactive and
+            # the regime trend dimension tags 'unknown' rather than a fabricated flat/zero read.
             "atr_5day": _fetch_atr(symbol, atr_lookback),
-            "intraday_range_pct": _fetch_intraday_range_pct(symbol),
+            "intraday_range_pct": intraday_range_pct,
+            "day_open": day_open,
             "session_quality": session,
             "gex": gex if gex.get("ok") else {"ok": False},
             "candidates": candidates,
@@ -1160,13 +1361,30 @@ def run_iteration(cfg, force=False):
             "outcomes": outcomes,
             "cand_err": cand_err,
         }
+        _log_gate_blocks(symbol, outcomes)
 
     reason = _format_iteration(now_et, vix, vix1d_ratio, delta_target, summary)
+    duration_ms = int((time.time() - _iter_t0) * 1000)
     try:
-        _subrun(_DB + ["log_loop_action", "--action", "paper_iteration", "--reasoning", reason[:900]])
+        open_trades_n = _open_count()
+    except Exception:
+        open_trades_n = None
+    try:
+        log_cmd = _DB + [
+            "log_loop_action",
+            "--action",
+            "paper_iteration",
+            "--reasoning",
+            reason[:900],
+            "--duration_ms",
+            str(duration_ms),
+        ]
+        if open_trades_n is not None:
+            log_cmd += ["--open_trades", str(open_trades_n)]
+        _subrun(log_cmd)
     except Exception:
         pass
-    logger.info("%s", reason)
+    logger.info("%s (open=%s, %dms)", reason, open_trades_n, duration_ms)
 
     # Capture a per-day market-context snapshot (VIX / VIX1D / per-symbol price+IV rank) for the EOD
     # analysis report. Once per iteration, upserted — the last write of the session lands closest to
@@ -1230,6 +1448,21 @@ def _sleep_seconds(now, cfg, open_positions):
 # ---------------------------------------------------------------------------
 
 
+def _pid_alive(pid: int) -> bool:
+    try:
+        import psutil
+
+        return psutil.pid_exists(pid)
+    except ImportError:
+        try:
+            os.kill(pid, 0)
+            return True
+        except PermissionError:
+            return True
+        except (OSError, SystemError):
+            return False
+
+
 def _running_pid():
     if not _PID_FILE.exists():
         return None
@@ -1238,20 +1471,7 @@ def _running_pid():
     except ValueError:
         _PID_FILE.unlink(missing_ok=True)
         return None
-    alive = False
-    try:
-        import psutil
-
-        alive = psutil.pid_exists(pid)
-    except ImportError:
-        try:
-            os.kill(pid, 0)
-            alive = True
-        except PermissionError:
-            alive = True
-        except (OSError, SystemError):
-            alive = False
-    if alive:
+    if _pid_alive(pid):
         return pid
     _PID_FILE.unlink(missing_ok=True)
     return None
@@ -1381,8 +1601,20 @@ def _acquire_once_lock():
         os.close(fd)
         return True
     except FileExistsError:
-        try:  # steal a stale lock (a prior --once that died mid-run)
-            if time.time() - os.path.getmtime(_LOCK_FILE) > 180:
+        # A held-but-alive lock is NEVER stolen, regardless of age. Age-only staleness let a
+        # still-running-but-slow iteration (chiefly the 16:00 settlement pass, which can touch
+        # hundreds of open positions) get its lock stolen by the next --once at minute 3, so both
+        # processes settled the same trades concurrently -- P&L corruption, not a skipped tick.
+        # PID liveness is the primary guard; the age check below is only a fallback for a lock
+        # file whose PID can't be read (corrupt/truncated write), never a substitute for it.
+        try:
+            holder_pid = int(_LOCK_FILE.read_text().strip())
+        except (OSError, ValueError):
+            holder_pid = None
+        if holder_pid is not None and _pid_alive(holder_pid):
+            return False
+        try:
+            if holder_pid is not None or time.time() - os.path.getmtime(_LOCK_FILE) > 180:
                 os.unlink(_LOCK_FILE)
                 return _acquire_once_lock()
         except OSError:
@@ -1393,6 +1625,18 @@ def _acquire_once_lock():
 def _release_once_lock():
     try:
         os.unlink(_LOCK_FILE)
+    except OSError:
+        pass
+
+
+def _heartbeat_lock():
+    """Touch the --once lock file's mtime so a long-running iteration doesn't read as stale to
+    the age-based fallback above. Best-effort and non-fatal -- PID liveness is the real guard;
+    this only matters if the PID itself becomes unreadable mid-run, which should not happen but
+    costs nothing to also protect against. Call periodically from inside a long loop (per symbol,
+    per settlement batch), not just once."""
+    try:
+        os.utime(_LOCK_FILE, None)
     except OSError:
         pass
 

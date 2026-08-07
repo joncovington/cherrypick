@@ -18,7 +18,6 @@ import json
 import os
 import pathlib
 import sqlite3
-import subprocess
 import sys
 from datetime import datetime
 
@@ -42,8 +41,6 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 # paper engine loads, so a wrong root here silently loses every named profile.
 _REPO_ROOT = str(pathlib.Path(__file__).resolve().parents[3])
 _RISK_PROFILES_PATH = os.path.join(_REPO_ROOT, "config.risk.json")
-# `-m` rather than a path to db.py -- location-independent.
-_DB_CMD = ["-m", "cherrypick.meic.db"]
 
 from datetime import date as _date  # noqa: E402
 
@@ -51,7 +48,9 @@ from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import fees as _fees  # noqa: E402
 from cherrypick.core import profiles as _profiles  # noqa: E402
 
+from cherrypick.meic import db as _meic_db  # noqa: E402
 from cherrypick.meic import paths as _paths  # noqa: E402
+from cherrypick.meic import regime as _regime  # noqa: E402
 
 
 def _is_event_day(today, predicate) -> bool:
@@ -439,10 +438,17 @@ def evaluate_entry(
     # ATR gate is percentage-based (5-day ATR as a fraction of spot) so one threshold means
     # the same "elevated realized vol" across symbols spanning ~297 (IWM) to ~7500 (SPX) — a
     # fixed points threshold silently over-blocked SPX and never fired for QQQ/IWM.
+    #
+    # `regime_atr_pause_threshold_pct` explicit `is not None` (mirroring the flip-distance gate
+    # below) rather than a bare truthiness/params[...] lookup — an arm that sets this key to
+    # `null` to turn the gate off entirely (e.g. an 'open' sampling stream) must not crash on
+    # `atr/underlying > None`, which TypeErrors in Python 3.
+    atr_threshold = params.get("regime_atr_pause_threshold_pct")
     if (
         atr is not None
         and atr_underlying
-        and (atr / atr_underlying) > params["regime_atr_pause_threshold_pct"]
+        and atr_threshold is not None
+        and (atr / atr_underlying) > atr_threshold
     ):
         return False, "regime_atr_elevated", None
     gex = snapshot.get("gex") or {}
@@ -584,6 +590,13 @@ def evaluate_entry(
     #              centre, for the same reason: a second structure on the same zone doubles the bet
     #              without adding a zone). Longs may overlap, so adjacent zones can share
     #              protection and far more independent samples fit in a session.
+    #   "none"   — no overlap check at all (2026-08-07): every tick is evaluated independently of
+    #              any other open position on this symbol+profile, which is what turns entry
+    #              cadence into a genuine "what would entering right now have produced" sample
+    #              rather than one paced by how far the market has drifted since the last fill.
+    #              Paper-only by construction of how it is used — see live_loop.py, which never
+    #              reads this key from a profile at all and stays on its own hardcoded strike
+    #              overlap check regardless of what any profile's config says.
     overlap_scope = params.get("overlap_scope", "all")
 
     # Restrict to this profile's own wing shortlist for this symbol and order it per its
@@ -610,7 +623,9 @@ def evaluate_entry(
         wing_width = cand["wing_width"]
 
         # Overlap hard stop (this profile's own open ICs on this symbol) -- see `overlap_scope`.
-        if overlap_scope == "shorts":
+        if overlap_scope == "none":
+            pass
+        elif overlap_scope == "shorts":
             if (float(sp["strike"]), float(sc["strike"])) in open_short_pairs:
                 last_reason = "short_pair_occupied"
                 continue
@@ -734,6 +749,23 @@ def synthetic_entry_fill(
         # the flip DISTANCE is reconstructable; it can differ slightly from underlying_price_entry
         # because the two come from separate calls, which is exactly why it is stored separately.
         **_gex_at_entry(snapshot.get("gex")),
+        # Regime tags (bucket + the float it was cut from, per dimension) — descriptive only,
+        # nothing here gates the decision that was already made above. See regime.classify_regime.
+        **_regime.regime_columns(
+            "entry",
+            snapshot,
+            params,
+            put_strike=sp["strike"],
+            call_strike=sc["strike"],
+            put_quote=sp,
+            call_quote=sc,
+        ),
+        # Float-only covariates alongside the regime tags — not re-cuttable buckets, just derived
+        # trade-economics the analysis needs (see regime.py's module docstring on why these are
+        # separate from the 8 bucket+float dimensions above).
+        "credit_richness": _regime.credit_richness(chosen["net_credit"], chosen["wing_width"]),
+        "put_credit_fraction": _regime.put_credit_fraction(chosen["put_credit"], chosen["net_credit"]),
+        "minutes_to_close": _regime.minutes_to_close(snapshot.get("now_et")),
         "ai_entry_reasoning": f"paper/{execution_mode}/{profile_name}: deterministic entry, "
         f"widest clearing candidate ({chosen['wing_width']}-wide)",
         "stop_trigger_original": params["stop_trigger_ratio"],
@@ -749,10 +781,6 @@ def synthetic_entry_fill(
         "created_at": now,
         "updated_at": now,
     }
-
-
-def _leg_quote(snapshot_legs: dict, streamer_symbol: str):
-    return snapshot_legs.get(streamer_symbol)
 
 
 # ---------------------------------------------------------------------------
@@ -784,6 +812,14 @@ def _pin_penalty(strike, underlying, wing_width, params: dict) -> float:
     if abs(strike - underlying) / underlying < threshold:
         return params.get("pin_risk_penalty_pct_of_width", 0.25) * (wing_width or 0)
     return 0.0
+
+
+# force_close_active's reasons close enough to the actual close to serve as a settlement
+# counterfactual proxy — used by process_symbol's virtual un-stopped path (_settle_stopped_trades)
+# to decide when a force-close is a meaningful "what was this worth when it closed" reading vs. an
+# early-session event close (FOMC/expiry) hours before expiration, where the answer would not mean
+# what it looks like it means.
+_EOD_ADJACENT_FORCE_CLOSE_REASONS = ("force_close_physical_settlement", "force_close_eod")
 
 
 def force_close_active(snapshot: dict, base_config: dict, is_cash_settled: bool) -> tuple:
@@ -828,6 +864,33 @@ def settlement_active(snapshot: dict, base_config: dict, is_cash_settled: bool) 
     return now_min >= _time_to_minutes(base_config.get("expiration_settlement_time", "16:00"))
 
 
+def _first_touch_updates(trade: dict, underlying_price: float | None) -> dict:
+    """First-touch instrumentation: the earliest time and spot level at which the underlying
+    reached (crossed toward ITM) each short strike, write-once per side. This is what makes a
+    strike-touch stop policy computable after the fact — 'stop only when spot touches the short
+    strike' needs the crossing MOMENT, not just the eventual settlement outcome, and nothing
+    recorded that before.
+
+    A short PUT touches when spot drops to/below its strike; a short CALL touches when spot rises
+    to/above its strike. Guarded on the trade not already carrying a touch time for that side, so
+    this only ever fills a still-empty column — it never re-derives or overwrites a value already
+    recorded, including for a side that has since closed (whatever it closed at, the first-touch
+    moment already happened and stays what it was).
+    """
+    updates = {}
+    if underlying_price is None:
+        return updates
+    put_strike = trade.get("put_strike")
+    if trade.get("put_touch_time") is None and put_strike is not None and underlying_price <= put_strike:
+        updates["put_touch_time"] = str(_now_et())
+        updates["put_touch_spot"] = underlying_price
+    call_strike = trade.get("call_strike")
+    if trade.get("call_touch_time") is None and call_strike is not None and underlying_price >= call_strike:
+        updates["call_touch_time"] = str(_now_et())
+        updates["call_touch_spot"] = underlying_price
+    return updates
+
+
 def _settlement_value(strike, underlying, wing_width, side) -> float:
     """The value a defined-risk spread settles for at expiration: the short strike's intrinsic
     value, floored at 0 (expires worthless) and capped at the wing width (fully-ITM = max
@@ -864,6 +927,10 @@ def evaluate_open_trade(
     put_open = trade["status"] in ("open", "partial") and trade.get("put_stop_cost") is None
     call_open = trade["status"] in ("open", "partial") and trade.get("call_stop_cost") is None
 
+    # Computed once, up front, and merged into every return below (see _first_touch_updates) --
+    # spot can cross a strike on ANY iteration regardless of which action this one ends up taking.
+    touch_updates = _first_touch_updates(trade, underlying_price)
+
     # Expiration settlement ('left to expire', cash-settled) needs only the strikes and the
     # settlement price — not live leg quotes — so handle it before the quote-availability gate
     # so a missing quote at the close can't strand an expiring position. force_close (events /
@@ -893,6 +960,7 @@ def evaluate_open_trade(
             "put_settle_value": put_settle,
             "call_settle_value": call_settle,
             "settle_underlying": underlying_price,
+            **touch_updates,
         }
 
     sq = leg_quotes.get(trade["put_symbol"])
@@ -900,7 +968,7 @@ def evaluate_open_trade(
     lpq = leg_quotes.get(trade["long_put_symbol"])
     lcq = leg_quotes.get(trade["long_call_symbol"])
     if not all(_quote_usable(q) for q in (sq, cq, lpq, lcq)):
-        return {"action": "hold", "reason": "quotes_unavailable"}
+        return {"action": "hold", "reason": "quotes_unavailable", **touch_updates}
 
     net_credit = trade["net_credit"]
     slippage_frac = params.get("slippage_frac_of_spread", DEFAULT_SLIPPAGE_FRAC)
@@ -938,6 +1006,22 @@ def evaluate_open_trade(
                 call_exit = round(call_exit + friction + call_pin, 4)
                 friction_applied = True
                 pin_applied = pin_applied or call_pin > 0
+        # The same stop-vs-hold counterfactual the settle branch below records, extended to
+        # force-closes (previously ONLY the cash-settled 'left to expire' path computed this, so
+        # a force-closed IC -- FOMC/expiry-event, or ANY non-cash-settled symbol, which is
+        # force-closed rather than settled -- never got one). Computed for BOTH sides regardless
+        # of open/closed, same as the settle branch: for an already-stopped side, settle_value <
+        # its stop cost means the stop paid more than holding to THIS moment would have. Using
+        # the current underlying_price as the settlement proxy is exact for an EOD-adjacent close
+        # (force_close_physical_settlement / force_close_eod, near the real close) and an
+        # approximation for an early-session event close (FOMC/expiry, hours before expiration) --
+        # still the best available reading of "what was this worth when the position closed".
+        put_settle = _settlement_value(
+            trade.get("put_strike"), underlying_price, trade.get("wing_width"), "put"
+        )
+        call_settle = _settlement_value(
+            trade.get("call_strike"), underlying_price, trade.get("wing_width"), "call"
+        )
         return {
             "action": "force_close",
             "put_open": put_open,
@@ -952,6 +1036,10 @@ def evaluate_open_trade(
             # must be able to see the model's hand per trade -- recorded distinctly from the flat
             # friction (which every physical force-close pays).
             "pin_risk_applied": pin_applied,
+            "put_settle_value": put_settle,
+            "call_settle_value": call_settle,
+            "settle_underlying": underlying_price,
+            **touch_updates,
         }
 
     stop_trigger = trade.get("stop_trigger_current") or params["stop_trigger_ratio"]
@@ -984,6 +1072,7 @@ def evaluate_open_trade(
     marks = {
         "put_cost_now": round(put_cost, 4) if put_open else None,
         "call_cost_now": round(call_cost, 4) if call_open else None,
+        **touch_updates,
     }
 
     if call_trigger and put_trigger:
@@ -1014,19 +1103,23 @@ def evaluate_open_trade(
 
 
 # ---------------------------------------------------------------------------
-# DB I/O (shells out to db.py, pointed at the paper DB)
+# DB I/O -- in-process dispatch into db.py (was a `python -m cherrypick.meic.db` subprocess per
+# call; ~0.11s of interpreter startup EACH). At the position counts the multi-stream paper loop
+# now runs, that spawn cost dominated iteration wall-clock and turned paper_loop's 180s stale-lock
+# steal (once heuristic; now PID-liveness-checked, see _acquire_once_lock) into a real correctness
+# risk at the 16:00 settlement pass, not just a throughput one. args_list keeps its historical
+# CLI-token shape (["command", "--key", "value", ...]) so every call site below is unchanged.
 # ---------------------------------------------------------------------------
 
 
 def _db(args_list: list, db_path: str) -> dict:
-    cmd = [sys.executable, *_DB_CMD, "--db", db_path] + args_list
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        return {"ok": False, "error": result.stderr.strip() or f"db.py exited {result.returncode}"}
-    try:
-        return json.loads(result.stdout.strip().splitlines()[-1])
-    except (json.JSONDecodeError, IndexError):
-        return {"ok": False, "error": f"unparseable db.py output: {result.stdout!r}"}
+    command, kwargs = args_list[0], {}
+    i = 1
+    while i < len(args_list):
+        key = args_list[i]
+        kwargs[key[2:]] = args_list[i + 1] if i + 1 < len(args_list) else None
+        i += 2
+    return _meic_db.call(command, db_path, **kwargs)
 
 
 def _save_trade(row: dict, db_path: str) -> dict:
@@ -1046,12 +1139,59 @@ def _update_trade(ic_order_id: str, fields: dict, db_path: str) -> dict:
     return _db(args_list, db_path)
 
 
-def _get_open_trades(symbol: str, profile: str, trade_date: str, db_path: str) -> list:
+def _get_open_trades_all(symbol: str, trade_date: str, db_path: str) -> list:
+    """Every open trade for this symbol+date, across every risk_profile/arm — one query.
+    db.py's get_open_trades already returns them unfiltered (it has no --profile flag); the
+    filtering to one profile happens in Python. Callers processing every profile for a symbol in
+    one pass (`process_symbol`) should call this ONCE and filter the returned list locally rather
+    than calling `_get_open_trades` once per profile, which re-runs the identical SQL query once
+    per arm sharing that symbol+date — the read half of the load `process_symbol` was paying
+    N times over for one symbol's data."""
     # --date pins the query to the snapshot's own trade_date rather than the real system
     # clock, which is required for replay mode (see db.py's cmd_get_open_trades docstring).
     result = _db(["get_open_trades", "--symbol", symbol, "--date", trade_date], db_path)
-    trades = result.get("open_trades", []) if result.get("ok") else []
-    return [t for t in trades if t.get("risk_profile") == profile]
+    return result.get("open_trades", []) if result.get("ok") else []
+
+
+def _settle_stopped_trades(
+    symbol: str, trade_date: str, underlying_price: float | None, db_path: str
+) -> None:
+    """The virtual un-stopped path: a trade whose BOTH sides already stopped for real
+    (status='stopped') drops out of the open-trades query entirely, so evaluate_open_trade's
+    settle branch never runs for it again and its settle counterfactual — "would this have
+    recovered?" — is permanently unanswerable, for exactly the trades a double-stop analysis
+    needs most. This backfills it once, from db.get_unsettled_stopped_trades, WITHOUT touching
+    status/pnl/exit_price — the real recorded outcome is untouched; only the settle_* fields
+    (recorded, never charged) are written.
+
+    Called from process_symbol at the same moments evaluate_open_trade's own settle/force_close
+    branches fire, using the SAME underlying_price reading, so a double-stopped trade's
+    counterfactual is captured at the same fidelity as a still-open trade's."""
+    if underlying_price is None:
+        return
+    result = _db(["get_unsettled_stopped_trades", "--symbol", symbol, "--date", trade_date], db_path)
+    if not result.get("ok"):
+        return
+    for trade in result.get("open_trades", []):
+        put_settle = _settlement_value(
+            trade.get("put_strike"), underlying_price, trade.get("wing_width"), "put"
+        )
+        call_settle = _settlement_value(
+            trade.get("call_strike"), underlying_price, trade.get("wing_width"), "call"
+        )
+        _update_trade(
+            trade["ic_order_id"],
+            {
+                "put_settle_value": put_settle,
+                "call_settle_value": call_settle,
+                "settle_underlying": underlying_price,
+            },
+            db_path,
+        )
+
+
+def _get_open_trades(symbol: str, profile: str, trade_date: str, db_path: str) -> list:
+    return [t for t in _get_open_trades_all(symbol, trade_date, db_path) if t.get("risk_profile") == profile]
 
 
 def _minutes_of_day(iso_str) -> int | None:
@@ -1117,6 +1257,22 @@ def process_symbol(
     underlying_price = snapshot.get("underlying_price")
     leg_quotes = snapshot.get("leg_quotes", {})
 
+    # Virtual un-stopped path: backfill the settle counterfactual for any already-double-stopped
+    # trade on this symbol at the same EOD-adjacent moments evaluate_open_trade's own settle/
+    # force_close branches compute it for still-open trades — real settlement (cash-settled) or a
+    # force-close reason close enough to the actual close to serve as a settlement proxy (an
+    # early-session event close like FOMC/expiry is skipped; the session isn't over yet).
+    if settle or (force_close and force_close_reason in _EOD_ADJACENT_FORCE_CLOSE_REASONS):
+        _settle_stopped_trades(symbol, snapshot["date"], underlying_price, db_path)
+
+    # One query for every profile/arm's open trades on this symbol+date, filtered locally per
+    # profile below instead of re-querying per profile — the query itself was already unfiltered
+    # by profile (db.py's get_open_trades has no --profile flag), so calling it once per name in
+    # the loop re-ran the identical SQL N times for N profiles sharing one symbol.
+    open_by_profile: dict[str, list] = {}
+    for t in _get_open_trades_all(symbol, snapshot["date"], db_path):
+        open_by_profile.setdefault(t.get("risk_profile"), []).append(t)
+
     results = {}
     for name in names:
         params = _merged_params(base_config, all_profiles[name])
@@ -1126,7 +1282,7 @@ def process_symbol(
         prof_syms = [s.upper() for s in params.get("symbols", [])]
         if prof_syms and symbol.upper() not in prof_syms:
             continue
-        open_ics = _get_open_trades(symbol, name, snapshot["date"], db_path)
+        open_ics = open_by_profile.get(name, [])
         actions = []
 
         for trade in open_ics:
@@ -1279,6 +1435,15 @@ def _max_cost_updates(trade: dict, decision: dict) -> dict:
     return out
 
 
+def _touch_updates(decision: dict) -> dict:
+    """Extract first-touch instrumentation (see evaluate_open_trade's _first_touch_updates) from
+    a decision dict for folding into whichever DB write this iteration makes. Present only on the
+    tick a side first crosses its strike (write-once); an empty dict every other tick, same
+    monotone-write shape as _max_cost_updates above."""
+    keys = ("put_touch_time", "put_touch_spot", "call_touch_time", "call_touch_spot")
+    return {k: decision[k] for k in keys if k in decision}
+
+
 def _exit_slippage_update(trade: dict, decision: dict) -> dict:
     """Accumulate this exit's modeled slippage dollars onto the row's running total.
     Empty when the decision priced nothing (hold/expire — settlement crosses no spread)."""
@@ -1294,14 +1459,26 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
     ic_order_id = trade["ic_order_id"]
     mult = 100
 
-    max_updates = _max_cost_updates(trade, decision)
+    # Folded together and spread into every branch below: the running per-side cost-to-close
+    # high-water mark, and any first-touch instrumentation this iteration set (see
+    # _first_touch_updates) — both are "carried on whatever write this tick already makes" data,
+    # never their own separate _update_trade call.
+    carryover_updates = {**_max_cost_updates(trade, decision), **_touch_updates(decision)}
 
     if action == "hold":
-        updates = dict(max_updates)
+        updates = dict(carryover_updates)
         if decision.get("reason") == "quotes_unavailable":
             # Feed-quality accounting: count the iterations this trade went unmarked so a
             # stalled streamer is distinguishable from a quiet market in ic_trades itself
             # (the flies fly_snapshots lesson, applied to the open-trade path).
+            #
+            # Written every tick on purpose, not tapered like _max_cost_updates: paper_loop is
+            # stateless between --once invocations, so a write skipped here is a tick silently
+            # lost from the count, not merely a deferred write -- the audit signal this exists
+            # for would be the thing paying for the taper. This was worth tapering when each
+            # write was a `python -m cherrypick.meic.db` subprocess (~0.11s); since _db() moved
+            # to the in-process dispatch (db.call(), ~1.5ms/write), the cost this was guarding
+            # against is gone, so the taper isn't -- see docs/paper-experiments.md.
             updates["unmarked_iterations"] = int(trade.get("unmarked_iterations") or 0) + 1
             updates["last_unmarked_at"] = now
         if updates:
@@ -1378,7 +1555,7 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
                 "put_settle_value": decision.get("put_settle_value"),
                 "call_settle_value": decision.get("call_settle_value"),
                 "settle_underlying": decision.get("settle_underlying"),
-                **max_updates,
+                **carryover_updates,
             },
             db_path,
         )
@@ -1386,11 +1563,11 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
 
     if action in ("stop_call", "stop_put", "stop_both"):
         fee = close_fees_one_side(symbol) if action != "stop_both" else close_fees_full_ic(symbol)
-        # `max_updates` folded in here so the peak isn't lost on the iteration that exits — the stop
+        # `carryover_updates` folded in here so the peak isn't lost on the iteration that exits — the stop
         # cost IS the running max at that moment, and it's the datum the counterfactual compares against.
         updates = {
             "fees": (trade.get("fees") or 0) + fee,
-            **max_updates,
+            **carryover_updates,
             **_exit_slippage_update(trade, decision),
         }
         if action in ("stop_call", "stop_both"):
@@ -1521,7 +1698,12 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
                 # NULL when the decision predates the flag or the close wasn't physical -- a missing
                 # measurement, never a measured "no pin".
                 "pin_risk_applied": None if pin is None else int(bool(pin)),
-                **max_updates,
+                # Recorded for BOTH sides, including any already stopped — see evaluate_open_trade's
+                # force_close branch for why this is now computed here too, not only on expiry.
+                "put_settle_value": decision.get("put_settle_value"),
+                "call_settle_value": decision.get("call_settle_value"),
+                "settle_underlying": decision.get("settle_underlying"),
+                **carryover_updates,
                 **_exit_slippage_update(trade, decision),
             },
             db_path,

@@ -16,7 +16,9 @@ from socketserver import ThreadingMixIn
 
 from cherrypick.core import viz
 
+from cherrypick.meic import analytics as _an
 from cherrypick.meic import paths as _paths
+from cherrypick.meic import stop_policies as _sp
 
 # ── Timezone helpers ─────────────────────────────────────────────────────────
 
@@ -210,11 +212,12 @@ def _stats_for_period(
 _BANKROLL_BASE = 100000
 
 # The forced-sampling study arms (config.risk.json), in the fixed display order the study chart
-# draws them. The four width-* arms were removed when the wing-width study was retired 2026-08-05
-# (they never traded); the GEX pair is what the frame carries now. The ladder tiers are deliberately
-# excluded — they are reference curves, not part of a controlled comparison
-# (see docs/paper-experiments.md).
-STUDY_ARMS = ["gex-open", "gex-blocked"]
+# draws them. Replaced the ladder + GEX-pair design 2026-08-07: `open` runs every study gate off
+# with full path recording, so it is a superset every other arm (including the retired GEX pair)
+# derives from read-side — see analytics.py and stop_policies.py. `control` is the deployed
+# reference book (validates the derivation); `width-5`/`width-10` are the one genuinely
+# non-derivable structural variant (wing width), paired against each other on the same ticks.
+STUDY_ARMS = ["control", "open", "width-5", "width-10"]
 
 
 def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
@@ -449,11 +452,6 @@ def _spread_statuses(
     return side_badge(put_leg), side_badge(call_leg)
 
 
-# ── Log tail ──────────────────────────────────────────────────────────────────
-
-_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "WARN", "ERROR", "CRITICAL"}
-
-
 # ── History / Performance analytics ────────────────────────────────────────────
 # net convention here is explicit: gross = SUM(pnl) (spread P&L before costs), fees =
 # SUM(fees), net = gross - fees. This matches the gross-vs-net split the report/EOD digest
@@ -547,6 +545,10 @@ def _by_profile_compare(conn, sym_filter):
             {
                 "profile": prof,
                 "trades": trades,
+                # Under overlap_scope 'none' a single session can carry 100+ entries from one
+                # stream (see analytics.py's module docstring) — trades alone overstates the
+                # independent evidence behind a row, so the session count rides beside it.
+                "sessions": len({r["trade_date"] for r in rs if r["trade_date"]}),
                 "gross_pnl": round(gross, 2),
                 "fees": round(fees, 2),
                 "net_pnl": round(net, 2),
@@ -558,6 +560,48 @@ def _by_profile_compare(conn, sym_filter):
         )
     out.sort(key=lambda d: d["net_pnl"], reverse=True)
     return out
+
+
+def _arm_scorecard(conn: sqlite3.Connection, sym_filter: str | None) -> list[dict]:
+    """Per-stream breakeven identity (analytics.by_arm + breakeven_scorecard), the read
+    surface the forward-test plan is designed around. Paper-DB-only (behind an `era`
+    column-exists check, same pattern as `_by_profile_compare`'s `risk_profile` check) — an
+    inert [] on the live DB, which has neither arms nor the identity's inputs."""
+    if not _has_column(conn, "ic_trades", "era"):
+        return []
+    out = []
+    for row in _an.by_arm(conn, symbol=sym_filter):
+        bc = _an.breakeven_scorecard(conn, symbol=sym_filter, arm=row["arm"])
+        out.append({**row, **bc, "arm": row["arm"]})
+    return out
+
+
+def _stop_policy_card(conn: sqlite3.Connection, sym_filter: str | None) -> list[dict]:
+    """What each derived stop policy (stop_policies.POLICIES, minus `control` which IS the
+    real mechanism) would have paid across `open`'s recorded paths — see
+    analytics.stop_counterfactual. Paper-DB-only, same guard as `_arm_scorecard`."""
+    if not _has_column(conn, "ic_trades", "era"):
+        return []
+    return [
+        _an.stop_counterfactual(conn, name, symbol=sym_filter, arm="open")
+        for name in _sp.POLICIES
+        if name != "control"
+    ]
+
+
+def _regime_coverage_panel(conn: sqlite3.Connection, sym_filter: str | None) -> dict:
+    """Regime-tag coverage per dimension, plus a by-bucket P&L cut for every dimension that
+    is both tagged and non-degenerate (see analytics.regime_coverage's docstring on why a
+    degenerate dimension's P&L table is withheld rather than shown as a false contrast).
+    Paper-DB-only, same guard as `_arm_scorecard`."""
+    if not _has_column(conn, "ic_trades", "era"):
+        return {"coverage": {}, "by_dimension": {}}
+    coverage = _an.regime_coverage(conn, symbol=sym_filter)
+    by_dimension = {}
+    for dim, d in coverage["dimensions"].items():
+        if d["tagged"] and not d["degenerate"]:
+            by_dimension[dim] = _an.by_regime(conn, dim, symbol=sym_filter)
+    return {"coverage": coverage, "by_dimension": by_dimension}
 
 
 _DELTA_BANDS = ("<0.10", "0.10-0.15", "0.15-0.20", ">=0.20")
@@ -601,17 +645,22 @@ def _by_signal(conn, sym_clause, sym_params):
             if k is None:
                 continue
             net = float(r.get("pnl") or 0) - float(r.get("fees") or 0)
-            b = buckets.setdefault(k, {"bucket": k, "trades": 0, "net_sum": 0.0, "wins": 0})
+            b = buckets.setdefault(
+                k, {"bucket": k, "trades": 0, "net_sum": 0.0, "wins": 0, "sessions": set()}
+            )
             b["trades"] += 1
             b["net_sum"] += net
             if net > 0:
                 b["wins"] += 1
+            if r.get("trade_date"):
+                b["sessions"].add(r["trade_date"])
         result = []
         for k, b in buckets.items():
             result.append(
                 {
                     "bucket": k,
                     "trades": b["trades"],
+                    "sessions": len(b["sessions"]),
                     "avg_pnl": round(b["net_sum"] / b["trades"], 2) if b["trades"] else None,
                     "win_rate_pct": round(b["wins"] / b["trades"] * 100, 1) if b["trades"] else None,
                 }
@@ -921,11 +970,16 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
         "selected_profile": profile or "ALL",
         # Ranked all-profiles scorecard — ignores the profile selector by design (symbol only).
         "by_profile": _by_profile_compare(conn, sym_filter),
+        # The forward-test streams' breakeven identity and derived-stop-policy read surfaces
+        # (analytics.py) — also ignore the profile selector, same reasoning as by_profile above.
+        "arm_scorecard": _arm_scorecard(conn, sym_filter),
+        "stop_policy_card": _stop_policy_card(conn, sym_filter),
     }
 
     history_trades = _history_trades(conn, sym_filter, prof_filter)
     signals = _by_signal(conn, sym_clause, sym_params)
     daily_pnl = _daily_pnl(conn, sym_clause, sym_params)
+    regime = _regime_coverage_panel(conn, sym_filter)
 
     # Width-study comparison: one daily cumulative_pnl series per (symbol x arm) cell — each
     # already its own paper portfolio via the (profile x symbol) grain, so this is the same
@@ -963,6 +1017,7 @@ def _build_api_data(symbol: str | None = None, profile: str | None = None) -> di
             "history": history_trades,
             "signals": signals,
             "daily_pnl": daily_pnl,
+            "regime": regime,
         },
     }
 
@@ -1339,31 +1394,42 @@ td.num,th.num{text-align:right}
         <div class="apanel">
           <div class="ptitle">Net P&amp;L by Short-Call Delta</div>
           <table class="atable" id="sig-delta-tbl">
-            <thead><tr><th>Delta band</th><th>Trades</th><th>Win %</th><th>Avg Net</th></tr></thead>
+            <thead><tr><th>Delta band</th><th>Trades</th><th>Sessions</th><th>Win %</th><th>Avg Net</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
         <div class="apanel">
           <div class="ptitle">Net P&amp;L by Wing Width</div>
           <table class="atable" id="sig-wing-tbl">
-            <thead><tr><th>Width</th><th>Trades</th><th>Win %</th><th>Avg Net</th></tr></thead>
+            <thead><tr><th>Width</th><th>Trades</th><th>Sessions</th><th>Win %</th><th>Avg Net</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
         <div class="apanel">
           <div class="ptitle">Net P&amp;L by Symbol</div>
           <table class="atable" id="sig-symbol-tbl">
-            <thead><tr><th>Symbol</th><th>Trades</th><th>Win %</th><th>Avg Net</th></tr></thead>
+            <thead><tr><th>Symbol</th><th>Trades</th><th>Sessions</th><th>Win %</th><th>Avg Net</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
         <div class="apanel">
           <div class="ptitle">Net P&amp;L by Weekday</div>
           <table class="atable" id="sig-dow-tbl">
-            <thead><tr><th>Weekday</th><th>Trades</th><th>Win %</th><th>Avg Net</th></tr></thead>
+            <thead><tr><th>Weekday</th><th>Trades</th><th>Sessions</th><th>Win %</th><th>Avg Net</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Regime coverage: tagged/untagged/degenerate per dimension, plus a by-bucket P&L cut
+           for whichever dimensions are both tagged and non-degenerate (paper era only). -->
+      <div class="apanel" style="margin-top:10px;overflow:visible">
+        <div class="ptitle">Regime Coverage</div>
+        <table class="atable" id="regime-cov-tbl">
+          <thead><tr><th>Dimension</th><th>Tagged</th><th>Untagged</th><th>Coverage %</th><th>Degenerate</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="regime-by-dim" style="margin-top:10px"></div>
       </div>
 
       <!-- Filterable trade log (full Today's-Trades shape across all dates) -->
@@ -1421,6 +1487,7 @@ td.num,th.num{text-align:right}
           <thead><tr>
             <th class="sortable" data-k="profile">Profile<span class="ar"></span></th>
             <th class="sortable" data-k="trades">Trades<span class="ar"></span></th>
+            <th class="sortable" data-k="sessions">Sessions<span class="ar"></span></th>
             <th class="sortable" data-k="gross_pnl">Gross<span class="ar"></span></th>
             <th class="sortable" data-k="fees">Fees<span class="ar"></span></th>
             <th class="sortable" data-k="net_pnl">Net<span class="ar"></span></th>
@@ -1432,6 +1499,27 @@ td.num,th.num{text-align:right}
           <tbody></tbody>
         </table>
       </div>
+    </div>
+
+    <div class="frame" style="flex:0 0 auto" id="arm-scorecard-frame">
+      <div class="frame-hdr"><span class="frame-title">Arm Scorecard (Breakeven Identity)</span>
+        <span class="frame-sub">P(clean OTM) - P(double stop) vs. the fees/credit bar, per forward-test stream</span></div>
+      <div style="overflow-x:auto;padding:6px 18px 16px">
+        <table class="atable" id="arm-scorecard-tbl" style="width:100%;min-width:820px">
+          <thead><tr>
+            <th>Arm</th><th>Trades</th><th>Sessions</th><th>Net P&amp;L</th><th>Win %</th>
+            <th>Clean %</th><th>Double-Stop %</th><th>Breakeven Bar %</th><th>Margin %</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="frame" style="flex:0 0 auto" id="stop-policy-frame">
+      <div class="frame-hdr"><span class="frame-title">Stop Policies (derived from <code>open</code>)</span>
+        <span class="frame-sub">read-side computations over `open`'s recorded per-side paths, not separate entry streams</span></div>
+      <div class="fee-grid" id="stop-policy-grid" style="padding:6px 18px 16px"></div>
+      <div class="empty" id="stop-policy-empty" style="display:none;padding:0 18px 16px">No `open`-arm trades yet.</div>
     </div>
 
     <div class="frame" style="flex:0 0 auto">
@@ -1462,7 +1550,7 @@ td.num,th.num{text-align:right}
 
     <div class="frame" style="flex:0 0 210px" id="study-arms-frame">
       <div class="frame-hdr" style="padding-bottom:4px"><span class="frame-title">Study Arms</span>
-        <span class="frame-sub">cumulative net P&amp;L &middot; forced-sampling arms, paired per symbol &middot; conservative excluded (reference curve only)</span></div>
+        <span class="frame-sub">cumulative net P&amp;L &middot; the four forward-test streams (control/open/width-5/width-10) &middot; ladder tiers excluded (reference curves only)</span></div>
       <div class="ana-grid" id="study-arms-grid"></div>
       <div class="empty" id="study-arms-empty" style="display:none;padding:18px 0">No study-arm trades yet.</div>
     </div>
@@ -1748,6 +1836,9 @@ function renderHistory(d) {
   renderSignalTable('sig-symbol-tbl', sig.by_symbol);
   renderSignalTable('sig-dow-tbl',    sig.by_dow);
 
+  // Regime coverage (paper era only -- see _regime_coverage_panel's era-column guard)
+  renderRegimeCoverage(a.regime || {});
+
   // Daily net P&L calendar heatmap
   renderCalHeat(a.daily_pnl || []);
 
@@ -1757,19 +1848,54 @@ function renderHistory(d) {
   renderTradeLog();
 }
 
-// One signal breakdown table: Bucket | Trades | Win % | Avg Net.
+// One signal breakdown table: Bucket | Trades | Sessions | Win % | Avg Net.
 function renderSignalTable(tblId, rows) {
   const tb = document.querySelector('#' + tblId + ' tbody');
   if (!tb) return;
   rows = rows || [];
-  tb.innerHTML = !rows.length ? '<tr><td colspan="4" class="empty">No data</td></tr>'
+  tb.innerHTML = !rows.length ? '<tr><td colspan="5" class="empty">No data</td></tr>'
     : rows.map(r => {
         const ac = r.avg_pnl > 0 ? 'pos' : r.avg_pnl < 0 ? 'neg' : '';
         const wc = r.win_rate_pct == null ? '' : r.win_rate_pct >= 70 ? 'wh' : r.win_rate_pct >= 50 ? 'wm' : 'wl';
         return '<tr><td>' + (r.bucket || '—') + '</td><td>' + r.trades + '</td>' +
+          '<td>' + (r.sessions != null ? r.sessions : '—') + '</td>' +
           '<td class="' + wc + '">' + (r.win_rate_pct != null ? r.win_rate_pct.toFixed(1) + '%' : '—') + '</td>' +
           '<td class="' + ac + '">' + (r.avg_pnl != null ? fMoney(r.avg_pnl) : '—') + '</td></tr>';
       }).join('');
+}
+
+// Regime coverage: tagged/untagged/degenerate per dimension, plus a by-bucket P&L table for
+// every dimension that's both tagged and non-degenerate (server withholds degenerate ones).
+function renderRegimeCoverage(reg) {
+  const cov = (reg && reg.coverage) || {};
+  const dims = cov.dimensions || {};
+  const tb = document.querySelector('#regime-cov-tbl tbody');
+  if (tb) {
+    const keys = Object.keys(dims);
+    tb.innerHTML = !keys.length ? '<tr><td colspan="5" class="empty">No paper-era data yet</td></tr>'
+      : keys.map(k => {
+          const d = dims[k];
+          return '<tr><td>' + k + '</td><td>' + d.tagged + '</td><td>' + d.untagged + '</td>' +
+            '<td>' + (d.coverage_pct != null ? d.coverage_pct.toFixed(0) + '%' : '—') + '</td>' +
+            '<td>' + (d.degenerate ? 'yes' : 'no') + '</td></tr>';
+        }).join('');
+  }
+  const host = document.getElementById('regime-by-dim');
+  if (!host) return;
+  const byDim = (reg && reg.by_dimension) || {};
+  const dimKeys = Object.keys(byDim).filter(k => (byDim[k] || []).length);
+  host.innerHTML = !dimKeys.length ? '' : dimKeys.map(dim => {
+    const rows = byDim[dim];
+    return '<div style="margin-top:8px"><div class="ptitle">' + dim + ' by bucket</div>' +
+      '<table class="atable"><thead><tr><th>Bucket</th><th>Trades</th><th>Sessions</th>' +
+      '<th>Win %</th><th>Net P&amp;L</th></tr></thead><tbody>' +
+      rows.map(r => {
+        const nc = (r.net_pnl || 0) >= 0 ? 'pos' : 'neg';
+        return '<tr><td>' + r.bucket + '</td><td>' + r.trades + '</td><td>' + (r.sessions || 0) + '</td>' +
+          '<td>' + (r.win_rate != null ? (r.win_rate * 100).toFixed(1) + '%' : '—') + '</td>' +
+          '<td class="' + nc + '">' + fMoney(r.net_pnl) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }).join('');
 }
 
 // ── calendar heatmap ──────────────────────────────────────────────────────────
@@ -1971,6 +2097,8 @@ function renderPerformance(d) {
   const isCumulative = g === 'cumulative';
 
   renderProfileCompare(perf.by_profile || []);
+  renderArmScorecard(perf.arm_scorecard || []);
+  renderStopPolicyCard(perf.stop_policy_card || []);
   renderRiskMetrics(perf.risk_metrics || {});
   renderPerfEquity(series);
   renderPerfDrawdown(series);
@@ -1998,7 +2126,7 @@ let studyArmCharts = {};   // symbol -> Chart instance, kept across renders (upd
 // Colours are per arm NAME, so an arm family that is retired takes its colour with it and a new
 // one only needs an entry here. The width-* keys went when the wing-width study was retired.
 const STUDY_ARM_COLORS = {
-  'gex-open': '#00c896', 'gex-blocked': '#f5a623',
+  control: '#2f81f7', open: '#00c896', 'width-5': '#f5a623', 'width-10': '#8b5cf6',
 };
 
 function renderStudyArms(ws) {
@@ -2059,7 +2187,7 @@ function renderProfileCompare(rows) {
   const tb = document.querySelector('#prof-cmp-tbl tbody');
   if (!tb) return;
   if (!profCmpRows.length) {
-    tb.innerHTML = '<tr><td colspan="9" class="empty">No profile-tagged trades yet</td></tr>';
+    tb.innerHTML = '<tr><td colspan="10" class="empty">No profile-tagged trades yet</td></tr>';
     return;
   }
   const k = profCmpSort.k, dir = profCmpSort.dir;
@@ -2079,6 +2207,7 @@ function renderProfileCompare(rows) {
     return '<tr>' +
       '<td style="color:#8b5cf6">' + (r.profile || '—') + '</td>' +
       '<td class="tr">' + r.trades + '</td>' +
+      '<td class="tr">' + (r.sessions != null ? r.sessions : '—') + '</td>' +
       '<td class="tr ' + gc + '">' + fMoney(r.gross_pnl) + '</td>' +
       '<td class="tr" style="color:#6b7280">$' + Number(r.fees || 0).toFixed(2) + '</td>' +
       '<td class="tr ' + nc + '">' + fMoney(r.net_pnl) + '</td>' +
@@ -2089,6 +2218,54 @@ function renderProfileCompare(rows) {
       '</tr>';
   }).join('');
   syncSortIndicators('prof-cmp-tbl', profCmpSort);
+}
+
+// ── arm scorecard (breakeven identity, per forward-test stream) ────────────────
+function renderArmScorecard(rows) {
+  const tb = document.querySelector('#arm-scorecard-tbl tbody');
+  if (!tb) return;
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="9" class="empty">No paper-era resolved trades yet</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(r => {
+    const nc = (r.net_pnl || 0) >= 0 ? 'pos' : 'neg';
+    const mc = r.margin_pct == null ? '' : r.margin_pct >= 0 ? 'pos' : 'neg';
+    const pct = v => v == null ? '—' : v.toFixed(1) + '%';
+    return '<tr>' +
+      '<td style="color:#8b5cf6">' + (r.arm || '—') + '</td>' +
+      '<td class="tr">' + r.trades + '</td>' +
+      '<td class="tr">' + (r.sessions != null ? r.sessions : '—') + '</td>' +
+      '<td class="tr ' + nc + '">' + fMoney(r.net_pnl) + '</td>' +
+      '<td class="tr">' + (r.win_rate != null ? (r.win_rate * 100).toFixed(1) + '%' : '—') + '</td>' +
+      '<td class="tr">' + pct(r.clean_pct) + '</td>' +
+      '<td class="tr">' + pct(r.double_stop_pct) + '</td>' +
+      '<td class="tr">' + pct(r.breakeven_bar_pct) + '</td>' +
+      '<td class="tr ' + mc + '">' + (r.margin_pct == null ? '—' : (r.margin_pct >= 0 ? '+' : '') + r.margin_pct.toFixed(1) + '%') + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ── stop-policy card (derived from `open`'s recorded paths) ────────────────────
+function renderStopPolicyCard(rows) {
+  const grid = document.getElementById('stop-policy-grid');
+  const empty = document.getElementById('stop-policy-empty');
+  if (!grid) return;
+  const hasData = rows.some(r => r.derivable > 0);
+  grid.style.display = hasData ? '' : 'none';
+  if (empty) empty.style.display = hasData ? 'none' : 'block';
+  if (!hasData) { grid.innerHTML = ''; return; }
+  grid.innerHTML = rows.map(r => {
+    const dc = r.delta == null ? '' : r.delta >= 0 ? 'pos' : 'neg';
+    return '<div class="fee-card">' +
+      '<div class="fee-lbl">' + r.policy + '</div>' +
+      '<div class="fee-val ' + dc + '">' + (r.delta == null ? '—' : (r.delta >= 0 ? '+' : '') + fMoney(r.delta)) + '</div>' +
+      '<div style="font-size:9px;color:#6b7280;margin-top:3px">' +
+        (r.derivable || 0) + '/' + (r.trades || 0) + ' derivable &middot; derived ' +
+        (r.derived_net_pnl != null ? fMoney(r.derived_net_pnl) : '—') + ' vs actual ' +
+        (r.actual_net_pnl != null ? fMoney(r.actual_net_pnl) : '—') +
+      '</div></div>';
+  }).join('');
 }
 
 function renderRiskMetrics(rm) {
