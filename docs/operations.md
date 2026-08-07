@@ -174,11 +174,16 @@ Each open gap below is tracked as an issue — the entry here is the operator-fa
 - **Underlyings bind at streamer start.** ([#62](https://github.com/joncovington/cherrypick/issues/62)) The per-module stream-request writers keep the files
   current, but a *new* underlying only reaches the wire on one streamer restart
   (`streamer/src/cherrypick/streamer/daemon.py`). A symbols change = one restart, stated here so it isn't rediscovered.
-- **MEIC's gates fail open when the streamer is down.** ([#63](https://github.com/joncovington/cherrypick/issues/63)) The paper loop does not crash: GEX, ATR, and
-  intraday-range return unavailable and their gates silently deactivate (`meic/GATES.md`;
-  `meic/src/cherrypick/meic/tt.py`). It keeps trading with safety gates off. The ATR gate additionally needs **5
-  complete prior sessions** of `stream_summary`, so a multi-day outage disarms it for a week with no
-  error surfaced.
+- **MEIC's gates fail open when the streamer is down** — now *visible*
+  ([#63](https://github.com/joncovington/cherrypick/issues/63)). The paper loop does not crash: GEX, ATR
+  and intraday-range return unavailable and their gates silently deactivate (`meic/GATES.md`;
+  `meic/src/cherrypick/meic/tt.py`). It keeps trading with safety gates off, and the ATR gate needs **5
+  complete prior sessions** of `stream_summary`, so a multi-day outage disarms it for a further week
+  after the streamer is healthy again. **The fail-open behaviour is unchanged and deliberate** — blocking
+  every entry on a missing feed would be its own outage. What changed on 2026-08-06 is that it is no
+  longer invisible: `python -m cherrypick.meic.gate_health` reports which gates are armed, which have
+  stood down and why, and how many sessions ATR is still missing. Read-only and file-only.
+  **Remaining:** it is a command, not yet a dashboard card, so it still has to be asked.
 - ~~**Thin pre-open margin.**~~ **Fixed 2026-08-06** ([#64](https://github.com/joncovington/cherrypick/issues/64)).
   Supervision started at 09:15 on a 10-minute tick, so the first supervising tick could land ~09:25 —
   minutes before the unrecoverable 09:30–09:35 ORB window, and a restart still needs the 240s settling
