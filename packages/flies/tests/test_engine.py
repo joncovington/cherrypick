@@ -243,6 +243,30 @@ def test_wide_wing_arm_centers_atm_like_control_but_uses_its_own_width():
     assert "wide_wing" in engine.ARMS
 
 
+def test_the_three_side_rules_stay_three_rules():
+    """`choose_debit_side` and `choose_bwb_side` have identical bodies and are deliberately NOT
+    one function. Sharing a side rule across constructions is what caused the bwb roll to be
+    unreachable: `evaluate_bwb_entry` reused `choose_side`, which answers a *legged* question
+    (sell the side spot is on the far end of, so the COMPLETING spread cheapens on continued
+    drift), while a bwb roll buys `centre -/+ wing_width` and sells the far wing — both on the
+    RISK side. That put the roll spread in the money, and an ITM vertical cannot be bought below
+    intrinsic, so it could never clear `roll_debit < credit - fee_buffer`.
+
+    The duplication therefore reads as an oversight and is not one. If a fourth construction
+    arrives, give it its own rule or introduce a named primitive both wrap — but do not collapse
+    these into one callable, because a later change to one construction's side logic would then
+    propagate into the others silently."""
+    rules = (engine.choose_side, engine.choose_debit_side, engine.choose_bwb_side)
+    assert len({id(f) for f in rules}) == 3, "the side rules must stay separate callables"
+
+    snap = snapshot(underlying_price=5990.0)  # spot below centre
+    # legged sells the side spot is on the far end of; the other two are its inverse, and agree
+    # with each other only because both want the roll/completion spread OUT of the money.
+    assert engine.choose_side(snap, 6000.0) == engine.PUT
+    assert engine.choose_debit_side(snap, 6000.0) == engine.CALL
+    assert engine.choose_bwb_side(snap, 6000.0) == engine.CALL
+
+
 def test_atm_twins_isolate_construction_from_centring():
     """`bwb` and `debit-first` each override entry_modes AND center_rule, so each differs from
     `control` in two things and cannot attribute a result to either. Their ATM twins pin the
