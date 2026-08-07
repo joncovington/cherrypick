@@ -456,6 +456,99 @@ def by_entry_mode(conn, start=None, end=None, symbol=None) -> list[dict]:
     return [{"entry_mode": m, **_summarize(rs)} for m, rs in sorted(grouped.items())]
 
 
+# The drift past which a session's direction is treated as committed, as a FRACTION of spot rather
+# than in points. 0.0026 is the 20 points that were measured on SPX (~7710), and expressing it
+# relatively is not cosmetic: the EOD writer reports per day across every book, so an absolute band
+# silently called all 158 XSP rows "flat" — a 20-point move is impossible on a ~750 underlying. That
+# is the same failure MEIC's ATR and intraday-range thresholds were migrated away from, and the same
+# shape as `min_floor_dollars` carrying XSP scaling into an SPX era. Chosen on the rows that measure
+# it (see CLAUDE.md's trend-band note): a current best estimate, not a calibrated constant.
+DRIFT_BAND_PCT = 0.0026
+
+
+def by_drift_alignment(
+    conn,
+    start=None,
+    end=None,
+    symbol=None,
+    arm=None,
+    band=DRIFT_BAND_PCT,
+    entry_modes=COMPARISON_ENTRY_MODES,
+) -> list[dict]:
+    """Outcomes split by whether the COMPLETING direction agreed with the session's committed drift.
+
+    A legged entry only completes once spot moves a particular way — `fly.completing_side_direction`,
+    which inverts by side and is the easiest thing here to code backwards. `entry_trend_value`
+    records `spot − day_open` at entry. So an entry whose completion needs spot to go UP, taken on a
+    day already committed DOWN, is betting on a reversal in the hours it has left.
+
+    Buckets are `with` / `flat` / `against`, where `flat` is any |drift| inside `band` — a
+    fraction of spot at entry, so the split means the same thing on a 750 underlying as a 7710 one.
+
+    **Measured 2026-08-07, 97 SPX positions over 4 sessions: `with` completed 82%, `against` 7%.**
+    The 15 `against` entries lost $3,129 — more than the era's entire −$2,973 — and the split holds
+    in both trend directions (12 opposing on up days, 3 on down days), so it is not an up-trend
+    artefact. Concentrated by arm: `control` takes 4% opposing, `gex` 28%, `time_window` 35%, and
+    removing them flips `time_window` from −$1,154 to +$210 while `gex` still loses.
+
+    **But the XSP era INVERTS it, and that is why this is reported per symbol.** There `against`
+    completed **94%** (16 of 17) for −$15. Blended, the two read 53% — a real signal presented as a
+    weak one, and the reason the EOD section never blends them. The likeliest explanation is scale
+    rather than contradiction: XSP ran 1-wide wings on a ~750 underlying, so a completion needs a
+    point or two of drift and arrives almost regardless of direction, while 5-wide on ~7710 needs
+    proportionally far more. If that is right, this signal is entangled with wing width and is a
+    statement about the SPX structure, not about drift as such — which is one more reason it is a
+    reported prior and not a gate.
+
+    **Reported, not gated.** `choose_side` is what generates these — on a trending day spot moves
+    away from the centre, so it selects the side needing a reversal — and a fix belongs there rather
+    than in a bolt-on filter. But `band` and the opposition rule were both chosen on the same rows
+    that measure them, the down-day cell is n=3, and `docs/centre-lag.md` sets the bar for a gate at
+    a second clearly down-trending session. This surface exists so the next one is read against a
+    stated prior instead of rediscovered.
+
+    Rows without a recorded `entry_trend_value` are omitted rather than bucketed — a session whose
+    open was never captured is not a `flat` day, and calling it one would invent coverage.
+    """
+    where, params = _period_clause(start, end, arm=arm, symbol=symbol)
+    if entry_modes:
+        where += f" AND entry_mode IN ({','.join('?' * len(entry_modes))})"
+        params = [*params, *entry_modes]
+    rows = conn.execute(
+        f"SELECT side, kind, entry_trend_value, underlying_at_entry, gross_pnl, fees, pnl "
+        f"FROM fly_positions WHERE {where} AND entry_trend_value IS NOT NULL "
+        "AND underlying_at_entry IS NOT NULL AND underlying_at_entry > 0",
+        params,
+    ).fetchall()
+
+    grouped: dict[str, list] = {}
+    for r in rows:
+        drift = r["entry_trend_value"]
+        if abs(drift) / r["underlying_at_entry"] < band:
+            key = "flat"
+        else:
+            needs_up = fly.completing_side_direction(r["side"]) == "up"
+            key = "with" if needs_up == (drift > 0) else "against"
+        grouped.setdefault(key, []).append(r)
+
+    out = []
+    for key in ("with", "flat", "against"):
+        rs = grouped.get(key)
+        if not rs:
+            continue
+        completed = [r for r in rs if r["kind"] == "fly"]
+        out.append(
+            {
+                "alignment": key,
+                "completed": len(completed),
+                "completion_rate": _rate(len(completed), len(rs)),
+                "band_pct": band,
+                **_summarize(rs),
+            }
+        )
+    return out
+
+
 def by_entry_window(conn, start=None, end=None, symbol=None) -> list[dict]:
     """Per time-of-day window.
 
