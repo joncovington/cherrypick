@@ -928,10 +928,23 @@ def test_iron_fly_settles_correctly_across_all_three_zones():
 
 # --------------------------------------------------------------------------- bwb_roll (Phase 2)
 def bwb_snapshot(**over):
-    """Spot at 6000 -> choose_side picks PUT -> near wing 6005, far wing (ratio 2.0) 5990. Custom
-    put quotes priced for a plausible ~$1.10 net credit (tail = far_width - wing_width = 5)."""
+    """Spot 6000 -> `choose_bwb_side` picks CALL (centre >= spot), so the roll spread lands OTM:
+    near wing 5995, centre 6000, far wing (ratio 2.0) 6010, and the roll buys 6005 / sells 6010.
+
+    Quotes are deliberately ARBITRAGE-FREE, unlike the put fixture this replaced — that one priced
+    a 5-point ITM put at 2.30, below its own intrinsic, which let the entry gates be tested against
+    prices no chain could print. Here 5995C carries its 5.00 intrinsic plus time value, and the
+    chain is monotone decreasing with decreasing slopes (3.00 / 2.20 / 1.60), so every butterfly in
+    it is non-negative.
+
+    Net credit works out at 0.95 pts after the slippage haircut: 2*5.00 - 8.00 - 1.00 = 1.00 gross,
+    which is the 6005/6010 gap (1.70) less the 5995/6000/6005 butterfly (0.70). **That decomposition
+    is the structural cap on any bwb credit** -- it can never exceed the gap between the two
+    candidate far wings, and that gap collapses as the structure is pushed further out of the money.
+    It is why the credit floor, not the price gate, is what binds an OTM-tail bwb.
+    """
     return snapshot(
-        puts={5990: q(0.4, 0.6), 6000: q(1.9, 2.1), 6005: q(2.2, 2.4)},
+        calls={5995: q(7.95, 8.05), 6000: q(4.95, 5.05), 6005: q(2.7, 2.9), 6010: q(0.95, 1.05)},
         **over,
     )
 
@@ -939,7 +952,9 @@ def bwb_snapshot(**over):
 def test_bwb_entry_returns_a_complete_plan():
     enter, reason, plan = engine.evaluate_bwb_entry(bwb_snapshot(), params(max_bwb_tail_dollars=1000), [])
     assert enter and reason == "ok"
-    assert plan["side"] == "put" and plan["center"] == 6000.0
+    # CALL, not put: `choose_bwb_side` is the inverse of `choose_side`, so the roll spread
+    # (centre + wing / centre + far) lands OUT of the money instead of through spot.
+    assert plan["side"] == "call" and plan["center"] == 6000.0
     assert plan["wing_width"] == 5 and plan["far_width"] == 10.0  # ratio 2.0 * wing_width
     assert 0.0 < plan["credit"] < plan["far_width"] - plan["wing_width"]
 
@@ -955,13 +970,15 @@ def test_bwb_entry_rejects_far_width_not_wider_than_wing():
 
 
 def test_bwb_entry_rejects_a_credit_below_the_tail_floor():
-    thin = snapshot(puts={5990: q(1.0, 1.0), 6000: q(1.05, 1.05), 6005: q(1.1, 1.1)})
+    """A flat chain leaves no gap between the two candidate far wings, so there is no credit to
+    manufacture -- the structural cap in `bwb_snapshot`'s docstring, at its limit."""
+    thin = snapshot(calls={5995: q(1.1, 1.1), 6000: q(1.05, 1.05), 6005: q(1.0, 1.0), 6010: q(0.95, 0.95)})
     enter, reason, _ = engine.evaluate_bwb_entry(thin, params(max_bwb_tail_dollars=1000), [])
     assert not enter and reason == "bwb_credit_below_floor"
 
 
 def test_bwb_entry_rejects_an_intrinsic_heavy_credit():
-    rich = snapshot(puts={5990: q(0.1, 0.1), 6000: q(4.0, 4.0), 6005: q(0.2, 0.2)})
+    rich = snapshot(calls={5995: q(0.1, 0.1), 6000: q(4.0, 4.0), 6005: q(0.15, 0.15), 6010: q(0.2, 0.2)})
     enter, reason, _ = engine.evaluate_bwb_entry(rich, params(max_bwb_tail_dollars=1000), [])
     assert not enter and reason == "bwb_credit_above_ceiling_mostly_intrinsic"
 
