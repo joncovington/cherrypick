@@ -282,6 +282,18 @@ def cmd_install(cfg) -> None:
     else:
         results["reconcile_task"] = tasks.delete(rs["task_name"])
 
+    # Earnings forward-preview scan (packages/earnings' own symbol_watch, feeding scout's
+    # read-only Upcoming section). Its own daily task, off the watchdog tick -- a multi-minute
+    # per-symbol broker-chain scan has no place on the reliability path.
+    sw = cfgmod.symbol_watch_settings(cfg)
+    if sw["enabled"]:
+        sw_tr = tasks.build_tr(pyw, str(_LAUNCHER), "run-earnings-symbol-watch")
+        results["symbol_watch_task"] = tasks.create_daily_task(
+            sw["task_name"], sw_tr, timeutil.to_local_hhmm(sw["at"], tz)
+        )
+    else:
+        results["symbol_watch_task"] = tasks.delete(sw["task_name"])
+
     # Start the standalone market-data producer (top-level `streamer`) if enabled — the same
     # start-detached-if-down contract as a service. The watchdog keeps it alive in-session thereafter;
     # its single-instance guard prevents a duplicate start (e.g. if it's already running).
@@ -412,6 +424,7 @@ def cmd_uninstall(cfg) -> None:
     results["log_archive_task"] = tasks.delete(cfgmod.archive_settings(cfg)["task_name"])
     results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
     results["reconcile_task"] = tasks.delete(cfgmod.reconcile_schedule_settings(cfg)["task_name"])
+    results["symbol_watch_task"] = tasks.delete(cfgmod.symbol_watch_settings(cfg)["task_name"])
     results["follow_notify_task"] = tasks.delete(cfgmod.follow_feed_settings(cfg)["task_name"])
     results["preopen_task"] = tasks.delete(cfgmod.preopen_settings(cfg)["task_name"])
     # Stop generic background services (e.g. the gex recorder) — unlike the streamer, these are the
@@ -446,7 +459,12 @@ def cmd_uninstall(cfg) -> None:
 # --------------------------------------------------------------------------- status
 def cmd_status(cfg) -> None:
     out = {"tasks": tasks.registry_snapshot(cfg), "heartbeats": {}}
-    for hb in ("watchdog.last.json", "earnings_entry.last.json", "earnings_exit.last.json"):
+    for hb in (
+        "watchdog.last.json",
+        "earnings_entry.last.json",
+        "earnings_exit.last.json",
+        "earnings_symbol_watch.last.json",
+    ):
         p = cfgmod.STATE_DIR / hb
         if p.exists():
             try:
@@ -596,6 +614,63 @@ def _run_earnings(cfg, phase: str) -> None:
             trade_notifier.run(cfg)
         except Exception:
             pass
+    _emit(rec)
+
+
+def _run_earnings_symbol_watch(cfg) -> None:
+    """Invoked by the daily scheduled task (see cfgmod.symbol_watch_settings). Runs packages/
+    earnings' own forward-preview scan (`python -m cherrypick.earnings.symbol_watch refresh`) --
+    the source of scout's read-only Earnings page "Upcoming" section. Purely informational: never
+    touches a paper/live ledger and never places an order, so a failure here is a WARNING, not a
+    CRITICAL -- scout's Upcoming section simply keeps showing its last-known-good watch data (or
+    none) until the next successful pass, same degrade-gracefully posture that page already has
+    for a missing/absent snapshot file."""
+    mcfg = cfg.get("modules", {}).get("earnings")
+    hb_path = cfgmod.state_file("earnings_symbol_watch.last.json")
+    log_path = _module_log("earnings_symbol_watch")
+    sw = cfgmod.symbol_watch_settings(cfg)
+
+    if not mcfg or not mcfg.get("enabled"):
+        _emit({"ok": True, "skipped": "earnings module disabled"})
+        return
+
+    root = cfgmod.module_root(mcfg, "earnings")
+    argv = ["-m", "cherrypick.earnings.symbol_watch", "refresh", "--days", str(sw["days"])]
+
+    try:
+        r = subprocess.run(
+            [cfgmod.python_exe(), *argv],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=1800,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        try:
+            result = json.loads(r.stdout or "{}")
+        except json.JSONDecodeError:
+            result = {"raw": (r.stdout or "")[:2000]}
+        ok = r.returncode == 0 and result.get("ok", True) is not False
+        error = None if ok else (result.get("error") or (r.stderr or "")[:500])
+    except Exception as exc:
+        ok, result, error = False, {}, f"{type(exc).__name__}: {exc}"
+
+    rec = {
+        "ok": ok,
+        "error": error,
+        "total": (result or {}).get("total"),
+        "done": (result or {}).get("done"),
+    }
+    hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    _append_log(log_path, {**rec, "result": result})
+
+    if not ok:
+        Notifier(cfg.get("notify")).notify(
+            "WARNING",
+            "earnings.symbol_watch",
+            "Earnings symbol-watch scan failed",
+            f"{error or 'see logs/earnings_symbol_watch.log'}",
+        )
     _emit(rec)
 
 
@@ -968,6 +1043,7 @@ def main() -> None:
             "calibrate",
             "run-earnings-entry",
             "run-earnings-exit",
+            "run-earnings-symbol-watch",
             "ensure-dolt",
             "notify-test",
             "notify-trades",
@@ -1091,6 +1167,7 @@ def main() -> None:
         "notify-follow": lambda: cmd_notify_follow(cfg),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
+        "run-earnings-symbol-watch": lambda: _run_earnings_symbol_watch(cfg),
         "ensure-dolt": lambda: _ensure_dolt(cfg),
         "notify-test": lambda: cmd_notify_test(cfg),
         "secrets-set": lambda: cmd_secrets_set(args.channel, args.url),

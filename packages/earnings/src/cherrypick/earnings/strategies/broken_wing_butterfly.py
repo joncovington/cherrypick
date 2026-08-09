@@ -85,7 +85,9 @@ def fetch_price_and_expected_move(
         winrate_result = scanner.compute_winrate(symbol, config, config.get("winrate_lookback_quarters", 8))
         realized_move_dispersion = None
         if winrate_result.get("ok"):
-            realized_moves = [q["realized_move"] / q["pre_close"] for q in winrate_result["quarters"]]
+            realized_moves = [
+                q["realized_move"] / q["pre_close"] for q in winrate_result["realized_move_quarters"]
+            ]
             if realized_moves:
                 mean_realized = sum(realized_moves) / len(realized_moves)
                 variance = sum((m - mean_realized) ** 2 for m in realized_moves) / len(realized_moves)
@@ -155,6 +157,7 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
 
     scanner.apply_liquidity_gates(criteria, config, hard_fail)
     scanner.apply_soft_criteria(criteria, config, hard_fail)
+    scanner.apply_move_tail_gate(criteria, config, hard_fail)
 
     return {"accepted": not hard_fail, "reject_reasons": hard_fail}
 

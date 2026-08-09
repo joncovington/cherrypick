@@ -117,6 +117,22 @@ table.calendar th, table.calendar td {
 }
 table.calendar th { color: #9fb0bf; font-weight: 600; }
 table.calendar tr.stale td { color: #9fb0bf; }
+table.earnings-screens tr.accepted { background: rgba(127, 209, 168, 0.08); }
+table.earnings-screens tr.accepted td:first-child { color: #7fd1a8; font-weight: 600; }
+table.earnings-screens tr.rejected { background: rgba(224, 139, 139, 0.05); }
+table.earnings-screens tr.rejected td { color: #9fb0bf; }
+.tier {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tier-recommended { background: rgba(127, 209, 168, 0.15); color: #7fd1a8; }
+.tier-near-miss { background: rgba(224, 180, 83, 0.15); color: #e0b453; }
+.tier-fail { background: rgba(224, 139, 139, 0.15); color: #e08b8b; }
+.tier-unscored { background: rgba(119, 132, 143, 0.15); color: #77848f; }
 #stats-panel {
   display: flex;
   flex-wrap: wrap;
@@ -323,8 +339,95 @@ table.income-grid th, table.income-grid td { padding: 2px 3px; text-align: cente
   border-color: #4d9de0;
   color: #cfe3f5;
 }
-.builder-link { color: #7fa8d1; text-decoration: underline; }
+.builder-link {
+  color: #4d9de0; font-family: ui-monospace, monospace; font-weight: 600; text-decoration: none;
+}
+.builder-link:hover { text-decoration: underline; }
 #screener-skipped { margin-top: 8px; }
+
+/* ---- screener: results table -- the vendored "midnight" Tabulator theme is a generic grey skin
+   unrelated to the app's own palette, so this re-themes it onto scout's real colors instead;
+   the row-background overrides need !important to beat the vendor CSS's own !important rules. */
+#screener-table.tabulator { border: none; background: transparent; font-size: 13px; font-variant-numeric: tabular-nums; }
+/* The actual source of the persistent grey banding: .tabulator-table (the row-holding wrapper
+   inside .tabulator-tableholder) carries its own solid #666 fill in the vendor theme, separate
+   from .tabulator-row itself -- row/cell were already transparent, so this grey showed straight
+   through underneath them the whole time. */
+#screener-table .tabulator-tableholder .tabulator-table { background-color: transparent; color: #d7dee5; }
+#screener-table .tabulator-header { background-color: transparent; border-bottom: 1px solid #232c34; color: #9fb0bf; }
+#screener-table .tabulator-header .tabulator-col { background-color: transparent; border-right: none; }
+#screener-table .tabulator-col-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+#screener-table .tabulator-col-sorter .tabulator-arrow { border-bottom-color: #77848f; }
+#screener-table .tabulator-row { background-color: transparent !important; border-bottom: 1px solid #232c34; }
+#screener-table .tabulator-row.tabulator-row-even { background-color: transparent !important; }
+#screener-table .tabulator-row:hover { background-color: rgba(77, 157, 224, 0.05) !important; }
+#screener-table .tabulator-cell { border-right: none; padding: 6px 10px; color: #d7dee5; }
+#screener-table .tabulator-placeholder .tabulator-placeholder-contents { color: #77848f; font-size: 13px; font-weight: 400; }
+.num-up { color: #7fd1a8; }
+.num-down { color: #e08b8b; }
+
+/* ---- screener: filter rail (collapsible sidebar of chip groups) ---- */
+.screener-layout { display: flex; gap: 20px; align-items: flex-start; }
+.screener-rail { width: 208px; flex-shrink: 0; transition: width 0.16s ease; }
+.screener-rail.collapsed { width: 40px; }
+.screener-rail-body { display: flex; flex-direction: column; gap: 4px; }
+.screener-rail.collapsed .screener-rail-body { display: none; }
+.screener-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }
+.screener-field select { width: 100%; }
+
+.screener-rail-collapse-btn {
+  width: 100%; background: none; border: 1px dashed #2a343d; color: #77848f;
+  border-radius: 6px; padding: 4px 0; font-size: 11px; cursor: pointer; font: inherit;
+  margin-bottom: 12px;
+}
+.screener-rail-collapse-btn:hover { border-color: #4d9de0; color: #cfe3f5; }
+
+.screener-rail-section { border-bottom: 1px solid #232c34; padding-bottom: 10px; margin-bottom: 6px; }
+.screener-rail-section:last-child { border-bottom: none; }
+.screener-rail-section-head {
+  display: flex; align-items: center; justify-content: space-between; cursor: pointer;
+  padding: 4px 0; user-select: none;
+}
+.screener-rail-section-head span.title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #77848f; font-weight: 600;
+}
+.screener-rail-section-head .chevron { color: #77848f; font-size: 10px; transition: transform 0.15s; }
+.screener-rail-section.collapsed .chevron { transform: rotate(-90deg); }
+.screener-rail-section-body { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
+.screener-rail-section.collapsed .screener-rail-section-body { display: none; }
+.screener-rail-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.screener-rail .chip-group { flex-direction: column; align-items: flex-start; gap: 4px; }
+
+.screener-rail-strip { display: none; flex-direction: column; align-items: center; gap: 10px; padding-top: 2px; }
+.screener-rail.collapsed .screener-rail-strip { display: flex; }
+.screener-rail-strip button {
+  background: #10151a; border: 1px solid #2a343d; color: #9fb0bf;
+  border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-size: 13px; font: inherit;
+}
+.screener-rail-strip button:hover { border-color: #4d9de0; color: #cfe3f5; }
+.screener-rail-strip .strip-count {
+  font-size: 10.5px; color: #cfe3f5; background: #1d3450; border-radius: 8px; padding: 1px 6px;
+}
+.screener-rail-strip .strip-label {
+  font-size: 9.5px; color: #77848f; text-transform: uppercase; letter-spacing: 0.06em;
+  writing-mode: vertical-rl; margin-top: 4px;
+}
+
+.screener-main { flex: 1; min-width: 0; }
+.active-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; color: #77848f; margin-bottom: 10px; }
+.active-summary .pill {
+  background: #14191f; border: 1px solid #2a343d; color: #9fb0bf;
+  border-radius: 10px; padding: 2px 8px; display: inline-flex; align-items: center; gap: 5px;
+}
+.active-summary .pill button { background: none; border: none; color: #77848f; cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
+.active-summary .pill button:hover { color: #e08b8b; }
+.active-summary .clear-all { color: #4d9de0; background: none; border: none; cursor: pointer; font-size: 12px; padding: 0; }
+
+@media (max-width: 760px) {
+  .screener-layout { flex-direction: column; }
+  .screener-rail:not(.collapsed) { width: 100%; }
+}
+
 .builder-actions { display: flex; gap: 8px; align-self: flex-end; }
 .builder-actions button, .staged-actions button {
   background: #24303a;

@@ -33,6 +33,10 @@ def _metrics_payload(symbol, report_date, **overrides):
     }
 
 
+async def _empty_set():
+    return set()
+
+
 @pytest.mark.asyncio
 async def test_metrics_only_row_inside_the_window(conn, monkeypatch):
     from datetime import datetime, timedelta
@@ -43,14 +47,10 @@ async def test_metrics_only_row_inside_the_window(conn, monkeypatch):
     async def fake_get_metrics(_conn, _session, _symbols, _ttl, now=None):
         return _metrics_payload("AAPL", report_date)
 
-    async def fake_atm_straddle(_session, _symbol):
-        return (100.0, 8.5)
-
     async def fake_dolt(_cfg, _start, _end):
         return []  # Dolt reachable, just nothing extra
 
     monkeypatch.setattr(calendar_service.metrics_service, "get_metrics", fake_get_metrics)
-    monkeypatch.setattr(calendar_service, "_atm_straddle_mid", fake_atm_straddle)
     monkeypatch.setattr(calendar_service, "_fetch_dolt_calendar", fake_dolt)
 
     result = await calendar_service.get_calendar(conn, object(), {}, ["AAPL"], days=14, now=NOW)
@@ -61,7 +61,10 @@ async def test_metrics_only_row_inside_the_window(conn, monkeypatch):
     assert entry["symbol"] == "AAPL"
     assert entry["source"] == "metrics"
     assert entry["stale"] is False
-    assert entry["expected_move_pct"] == pytest.approx(0.085)
+    # calendar_service is broker-quote-free -- expected move is joined in downstream by
+    # earnings_metrics_service.get_upcoming, not computed here.
+    assert entry["expected_move_pct"] is None
+    assert entry["expected_move_is_live"] is None
 
 
 @pytest.mark.asyncio
@@ -119,14 +122,10 @@ async def test_metrics_row_wins_over_a_dolt_row_for_the_same_symbol_and_date(con
     async def fake_get_metrics(*_a, **_kw):
         return _metrics_payload("AAPL", soon)
 
-    async def fake_atm_straddle(*_a, **_kw):
-        return None
-
     async def fake_dolt(_cfg, _start, _end):
         return [{"symbol": "AAPL", "report_date": soon, "timing": "Before market open"}]
 
     monkeypatch.setattr(calendar_service.metrics_service, "get_metrics", fake_get_metrics)
-    monkeypatch.setattr(calendar_service, "_atm_straddle_mid", fake_atm_straddle)
     monkeypatch.setattr(calendar_service, "_fetch_dolt_calendar", fake_dolt)
 
     result = await calendar_service.get_calendar(conn, object(), {}, ["AAPL"], days=14, now=NOW)
@@ -144,9 +143,6 @@ async def test_liquid_only_filters_out_non_liquid_rows_from_both_sources(conn, m
     async def fake_get_metrics(*_a, **_kw):
         return _metrics_payload("AAPL", soon)
 
-    async def fake_atm_straddle(*_a, **_kw):
-        return None
-
     async def fake_dolt(_cfg, _start, _end):
         return [{"symbol": "GME", "report_date": soon, "timing": "Before market open"}]
 
@@ -154,7 +150,6 @@ async def test_liquid_only_filters_out_non_liquid_rows_from_both_sources(conn, m
         return {"AAPL"}  # GME is not liquid by this (fake) reckoning
 
     monkeypatch.setattr(calendar_service.metrics_service, "get_metrics", fake_get_metrics)
-    monkeypatch.setattr(calendar_service, "_atm_straddle_mid", fake_atm_straddle)
     monkeypatch.setattr(calendar_service, "_fetch_dolt_calendar", fake_dolt)
     monkeypatch.setattr(calendar_service.liquidity_service, "get_liquid_symbols", fake_liquid_symbols)
 
@@ -258,47 +253,6 @@ async def test_earnings_watchlist_symbols_are_unioned_into_the_metrics_call(conn
     assert entry["symbol"] == "GME"
     assert entry["source"] == "metrics"
     assert entry["stale"] is False
-    # Not on the user's own watchlist -- expected-move's per-symbol chain fetch is skipped for it.
-    assert entry["expected_move_pct"] is None
-
-
-@pytest.mark.asyncio
-async def test_expected_move_loop_is_scoped_to_the_users_own_watchlist_only(conn, monkeypatch):
-    """The earnings-watchlist union must never widen the per-symbol chain-fetch loop -- that's
-    exactly the "call storm" risk the module was built to avoid for broad third-party rows."""
-    from datetime import datetime, timedelta
-
-    today = datetime.fromtimestamp(NOW).date()
-    soon = (today + timedelta(days=2)).isoformat()
-    straddle_calls = []
-
-    async def fake_get_metrics(_conn, _session, _symbols, _ttl, now=None):
-        return {**_metrics_payload("AAPL", soon), **_metrics_payload("GME", soon)}
-
-    async def fake_atm_straddle(_session, symbol):
-        straddle_calls.append(symbol)
-        return (100.0, 8.5)
-
-    async def fake_earnings_watchlist(*_a, **_kw):
-        return {"GME"}
-
-    async def fake_dolt(_cfg, _start, _end):
-        return []
-
-    monkeypatch.setattr(calendar_service.metrics_service, "get_metrics", fake_get_metrics)
-    monkeypatch.setattr(calendar_service, "_atm_straddle_mid", fake_atm_straddle)
-    monkeypatch.setattr(calendar_service, "_fetch_dolt_calendar", fake_dolt)
-    monkeypatch.setattr(
-        calendar_service.earnings_watchlist_service,
-        "get_earnings_watchlist_symbols",
-        fake_earnings_watchlist,
-    )
-    monkeypatch.setattr(
-        calendar_service.liquidity_service, "get_liquid_symbols", lambda *_a, **_kw: _empty_set()
-    )
-
-    await calendar_service.get_calendar(conn, object(), {}, ["AAPL"], days=14, now=NOW)
-    assert straddle_calls == ["AAPL"]  # GME (earnings-watchlist-only) never triggers a chain fetch
 
 
 @pytest.mark.asyncio
@@ -328,10 +282,6 @@ async def test_use_tastytrade_earnings_watchlist_false_skips_the_union(conn, mon
     assert seen_symbols["requested"] == {"AAPL"}
 
 
-async def _empty_set():
-    return set()
-
-
 @pytest.mark.asyncio
 async def test_dolt_unreachable_degrades_to_metrics_only(conn, monkeypatch):
     from datetime import datetime, timedelta
@@ -342,14 +292,10 @@ async def test_dolt_unreachable_degrades_to_metrics_only(conn, monkeypatch):
     async def fake_get_metrics(*_a, **_kw):
         return _metrics_payload("AAPL", soon)
 
-    async def fake_atm_straddle(*_a, **_kw):
-        return None
-
     async def fake_dolt(*_a, **_kw):
         return None  # Dolt down
 
     monkeypatch.setattr(calendar_service.metrics_service, "get_metrics", fake_get_metrics)
-    monkeypatch.setattr(calendar_service, "_atm_straddle_mid", fake_atm_straddle)
     monkeypatch.setattr(calendar_service, "_fetch_dolt_calendar", fake_dolt)
 
     result = await calendar_service.get_calendar(conn, object(), {}, ["AAPL"], days=14, now=NOW)
@@ -360,40 +306,47 @@ async def test_dolt_unreachable_degrades_to_metrics_only(conn, monkeypatch):
     assert result["entries"][0]["symbol"] == "AAPL"
 
 
-@pytest.mark.asyncio
-async def test_expected_move_pct_is_cached_across_calls(conn, monkeypatch):
-    from datetime import datetime, timedelta
-
-    today = datetime.fromtimestamp(NOW).date()
-    soon = (today + timedelta(days=1)).isoformat()
-
-    calls = []
-
-    async def fake_atm_straddle(_session, symbol):
-        calls.append(symbol)
-        return (200.0, 10.0)
-
-    async def fake_get_metrics(*_a, **_kw):
-        return _metrics_payload("AAPL", soon)
-
-    async def fake_dolt(*_a, **_kw):
-        return []
-
-    monkeypatch.setattr(calendar_service.metrics_service, "get_metrics", fake_get_metrics)
-    monkeypatch.setattr(calendar_service, "_atm_straddle_mid", fake_atm_straddle)
-    monkeypatch.setattr(calendar_service, "_fetch_dolt_calendar", fake_dolt)
-
-    await calendar_service.get_calendar(conn, object(), {}, ["AAPL"], days=14, now=NOW)
-    await calendar_service.get_calendar(conn, object(), {}, ["AAPL"], days=14, now=NOW + 10)
-    assert calls == ["AAPL"]  # second call was a cache hit within the calendar TTL
-
-
-def test_atm_straddle_mid_picks_nearest_expiration_and_nearest_strikes():
-    """A lightweight structural check on the ATM-picking logic without a real broker session --
-    full behavior is exercised through the mocked service tests above."""
+def test_parse_date_handles_date_datetime_and_junk_strings():
     from cherrypick.scout.services.calendar_service import _parse_date
 
     assert _parse_date("2027-03-01") is not None
     assert _parse_date("2027-03-01T00:00:00") is not None
     assert _parse_date(None) is None
     assert _parse_date("not-a-date") is None
+
+
+# --- is_market_hours -----------------------------------------------------------------
+
+
+def test_is_market_hours_true_during_a_weekday_session():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    dt = datetime(2027, 1, 13, 11, 0, tzinfo=ZoneInfo("America/New_York"))  # a Wednesday, 11am ET
+    assert calendar_service.is_market_hours(dt.timestamp()) is True
+
+
+def test_is_market_hours_false_before_the_open_and_after_the_close():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    before = datetime(2027, 1, 13, 8, 0, tzinfo=ZoneInfo("America/New_York"))
+    after = datetime(2027, 1, 13, 17, 0, tzinfo=ZoneInfo("America/New_York"))
+    assert calendar_service.is_market_hours(before.timestamp()) is False
+    assert calendar_service.is_market_hours(after.timestamp()) is False
+
+
+def test_is_market_hours_false_on_a_weekend():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    saturday = datetime(2027, 1, 16, 11, 0, tzinfo=ZoneInfo("America/New_York"))
+    assert calendar_service.is_market_hours(saturday.timestamp()) is False
+
+
+def test_is_market_hours_false_on_an_nyse_holiday():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    new_years_day = datetime(2027, 1, 1, 11, 0, tzinfo=ZoneInfo("America/New_York"))
+    assert calendar_service.is_market_hours(new_years_day.timestamp()) is False

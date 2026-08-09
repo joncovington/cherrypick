@@ -4,9 +4,10 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-cherrypick-scout is a **self-hosted options research surface** for the cherrypick suite: an earnings
-calendar, a credit-spread/iron-condor screener, per-symbol candlestick charts, and a leg-list payoff
-builder — content ideas borrowed from commercial options-research platforms, built on the suite's own data
+cherrypick-scout is a **self-hosted options research surface** for the cherrypick suite: a
+recorded-earnings-screen view, a credit-spread/iron-condor screener, per-symbol candlestick charts,
+and a leg-list payoff builder — content ideas borrowed from commercial options-research platforms,
+built on the suite's own data
 sources (`tastytrade.metrics.get_market_metrics`, the shared Dolt DBs, a new candle/chain cache). It is
 **standalone**: its own port (5057), no orchestrator section card or dashboard-embed registration, and
 not on any reliability path. It was built milestone-by-milestone on the long-lived `feature/scout`
@@ -63,7 +64,32 @@ Config: copy `config.example.json` → `config.json` (git-ignored), or omit it e
   long tail beyond even that broader tastytrade list, not the primary broad source anymore.
 - **Never write a cache this module doesn't own.** `services/cache.py` opens only this module's own
   `~/.cherrypick/data/scout/cache.db`. `calendar_service`'s Dolt read (`earnings.earnings_calendar`)
-  is read-only and never writes its source.
+  is read-only and never writes its source. `services/earnings_metrics_service.py` is a second,
+  explicitly-named sibling of `services/streamcache.py`'s read-only exception: it opens the
+  **cherrypick.earnings** module's own `entry_reviews` table (in either `earnings_trades.db` or
+  `paper_trades.db`, resolved via `cherrypick.core.home.data_dir("earnings",
+  env="EARNINGS_DATA_DIR")` -- the same path earnings' own `paths.py` resolves to, duplicated as a
+  string rather than imported) with `sqlite3.connect(f"file:{path}?mode=ro", uri=True)`. Scout is a
+  reader of this data, never the producer -- it must never write to either earnings database, and
+  per this file's "additive-only outside `packages/scout/`" invariant it must never import
+  `cherrypick.earnings` either (the two DB paths and the `entry_reviews` column names are the only
+  things duplicated here, deliberately, to keep the packages decoupled). A missing DB file, or one
+  that predates `entry_reviews`, degrades to an empty result rather than raising -- same posture
+  `streamcache.py` takes for a streamer daemon that isn't running. A third, narrower sibling of the
+  same exception: `earnings_metrics_service.py` also reads `symbol_watch.json`, a plain JSON file
+  (not a DB) in that same earnings data directory, written by `cherrypick.earnings`'s own scheduled
+  forward-preview scan (`python -m cherrypick.earnings.symbol_watch refresh`, run by an
+  orchestrator-scheduled task, never by scout). It carries price and the broker-chain-heavy
+  signals (expected move, term structure, IV/RV, winrate, historical move stats) plus a
+  recommended/near_miss/fail tier badge, for symbols reporting in the next ~10 **trading** days
+  and pre-filtered on the earnings side to a liquid-enough universe (tastytrade's "Liquid
+  Symbols" + "High Options Volume" + "tasty Earnings" public watchlists) -- exactly the
+  per-symbol cost the Earnings page must never pay on its own request path (see below). Read with
+  a plain `json.load`, never written. The Upcoming section's own display is a **filter**, not
+  just a merge: a calendar row that never matched a scan entry (by symbol AND earnings_date) is
+  dropped entirely, so the page only ever shows what the scan actually reached -- a missing/
+  empty/mid-pass file simply means nothing has matched yet, rendered as the page's own
+  never-run/scanning/last-refreshed status banner rather than a failed request.
 - **The streamer comes before API calls, whenever practical.** Prefer the cached/batched path over a
   fresh broker round trip; the broker API is for acting (dry-run) and for confirming what only it can
   know. `services/cache.py`'s `get_or_fetch`/`async_get_or_fetch` are the shared mechanism — TTL

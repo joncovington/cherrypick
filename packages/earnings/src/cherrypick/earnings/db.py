@@ -19,6 +19,10 @@ Commands (see CLAUDE.md's Database section):
   save_leg_close --data '{"order_id": "...", "leg_role": "...", "close_price": F}'
   log_scan --data '{"scan_date": "YYYY-MM-DD", "symbol": "...", "strategy": "iron_fly",
       "tier": "...", "outcome": "...", "reason": "..."}'
+  save_entry_review --data '{"scan_date": "...", "symbol": "...", ...}' (see
+      scanner.build_entry_review_spec -- the reviewed metric vector + accept/reject decision
+      for one symbol, whether selected or not)
+  get_entry_reviews [--date YYYY-MM-DD] [--scan_date YYYY-MM-DD]
 
 `legs` (optional array on save_trade, each `{leg_role, symbol, action, quantity}`) is for
 strategies with independently-closeable legs (e.g. double_calendar's threatened-side close)
@@ -104,6 +108,43 @@ CREATE TABLE IF NOT EXISTS daily_summary (
     positions_opened INTEGER,
     positions_closed INTEGER,
     net_pnl        REAL
+);
+
+CREATE TABLE IF NOT EXISTS entry_reviews (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_date      TEXT NOT NULL,
+    symbol         TEXT NOT NULL,
+    timing         TEXT,
+    strategy       TEXT,
+    price          REAL,
+    volume         REAL,
+    winrate        REAL,
+    winrate_sample INTEGER,
+    iv_rv_ratio    REAL,
+    iv_rv_source   TEXT,
+    term_structure REAL,
+    market_cap     REAL,
+    expected_move  REAL,
+    expected_move_pct       REAL,
+    combined_open_interest  REAL,
+    combined_option_volume  REAL,
+    bid_ask_spread_pct      REAL,
+    net_combo_spread_pct    REAL,
+    avg_actual_move_pct     REAL,
+    move_dispersion_pct     REAL,
+    max_actual_move_pct     REAL,
+    implied_vs_avg_actual   REAL,
+    move_tail_veto INTEGER,
+    iv_rank        REAL,
+    iv_percentile  REAL,
+    composite_score REAL,
+    best_tier      TEXT,
+    selected       INTEGER NOT NULL DEFAULT 0,
+    reason         TEXT,
+    criteria_json  TEXT,
+    logged_at      REAL,
+    profile        TEXT NOT NULL DEFAULT 'default',
+    UNIQUE(scan_date, symbol, profile)
 );
 """
 
@@ -300,6 +341,135 @@ def cmd_log_scan(args) -> dict:
     return {"ok": True}
 
 
+_ENTRY_REVIEW_COLUMNS = (
+    "scan_date",
+    "symbol",
+    "timing",
+    "strategy",
+    "price",
+    "volume",
+    "winrate",
+    "winrate_sample",
+    "iv_rv_ratio",
+    "iv_rv_source",
+    "term_structure",
+    "market_cap",
+    "expected_move",
+    "expected_move_pct",
+    "combined_open_interest",
+    "combined_option_volume",
+    "bid_ask_spread_pct",
+    "net_combo_spread_pct",
+    "avg_actual_move_pct",
+    "move_dispersion_pct",
+    "max_actual_move_pct",
+    "implied_vs_avg_actual",
+    "move_tail_veto",
+    "iv_rank",
+    "iv_percentile",
+    "composite_score",
+    "best_tier",
+    "selected",
+    "reason",
+    "criteria_json",
+    "logged_at",
+    "profile",
+)
+
+
+def _entry_review_values(spec: dict) -> tuple:
+    """Positional values for _ENTRY_REVIEW_COLUMNS -- byte-identical to db_paper.py's own
+    helper of the same name, kept in step so the live and paper entry_reviews tables never
+    drift apart (same schema-parity discipline as trades/scan_log elsewhere in this file)."""
+    crit = spec.get("criteria") if spec.get("criteria") is not None else spec.get("criteria_json")
+    return (
+        spec["scan_date"],
+        spec["symbol"],
+        spec.get("timing"),
+        spec.get("strategy"),
+        spec.get("price"),
+        spec.get("volume"),
+        spec.get("winrate"),
+        spec.get("winrate_sample"),
+        spec.get("iv_rv_ratio"),
+        spec.get("iv_rv_source"),
+        spec.get("term_structure"),
+        spec.get("market_cap"),
+        spec.get("expected_move"),
+        spec.get("expected_move_pct"),
+        spec.get("combined_open_interest"),
+        spec.get("combined_option_volume"),
+        spec.get("bid_ask_spread_pct"),
+        spec.get("net_combo_spread_pct"),
+        spec.get("avg_actual_move_pct"),
+        spec.get("move_dispersion_pct"),
+        spec.get("max_actual_move_pct"),
+        spec.get("implied_vs_avg_actual"),
+        (1 if spec.get("move_tail_veto") else (0 if spec.get("move_tail_veto") is not None else None)),
+        spec.get("iv_rank"),
+        spec.get("iv_percentile"),
+        spec.get("composite_score"),
+        spec.get("best_tier"),
+        1 if spec.get("selected") else 0,
+        spec.get("reason"),
+        json.dumps(crit) if crit is not None else None,
+        spec.get("logged_at", time.time()),
+        spec.get("profile", "default"),
+    )
+
+
+def cmd_save_entry_review(args) -> dict:
+    """Upsert one per-symbol entry-review record — the data reviewed for a symbol during an entry scan
+    plus the chosen/rejected decision (see scanner.build_entry_review_spec for the field set and
+    db_paper.py's identical command for the paper-side twin). Idempotent on (scan_date, symbol,
+    profile) so a re-run of the scan overwrites. Read by scout's read-only earnings page."""
+    spec = json.loads(args.data)
+    for req in ("scan_date", "symbol"):
+        if not spec.get(req):
+            return {"ok": False, "error": f"missing required field: {req}"}
+    conn = _conn()
+    try:
+        cols = ", ".join(_ENTRY_REVIEW_COLUMNS)
+        placeholders = ", ".join("?" for _ in _ENTRY_REVIEW_COLUMNS)
+        updates = ", ".join(
+            f"{c}=excluded.{c}" for c in _ENTRY_REVIEW_COLUMNS if c not in ("scan_date", "symbol", "profile")
+        )
+        conn.execute(
+            f"INSERT INTO entry_reviews ({cols}) VALUES ({placeholders}) "
+            f"ON CONFLICT(scan_date, symbol, profile) DO UPDATE SET {updates}",
+            _entry_review_values(spec),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "scan_date": spec["scan_date"], "symbol": spec["symbol"]}
+
+
+def cmd_get_entry_reviews(args) -> dict:
+    """Entry reviews for a scan date (default: the most recent scan on or before --date). Ordered
+    selected-first, then by symbol -- identical query shape to db_paper.py's own command."""
+    conn = _conn()
+    try:
+        scan_date = getattr(args, "scan_date", None)
+        if not scan_date:
+            on_or_before = getattr(args, "date", None)
+            q = "SELECT MAX(scan_date) FROM entry_reviews"
+            params: list = []
+            if on_or_before:
+                q += " WHERE scan_date <= ?"
+                params.append(on_or_before)
+            row = conn.execute(q, params).fetchone()
+            scan_date = row[0] if row else None
+        if not scan_date:
+            return {"ok": True, "scan_date": None, "reviews": []}
+        rows = conn.execute(
+            "SELECT * FROM entry_reviews WHERE scan_date = ? ORDER BY selected DESC, symbol", (scan_date,)
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"ok": True, "scan_date": scan_date, "reviews": [dict(r) for r in rows]}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -322,6 +492,13 @@ def main() -> None:
     p_log_scan = sub.add_parser("log_scan")
     p_log_scan.add_argument("--data", required=True)
 
+    p_save_rev = sub.add_parser("save_entry_review")
+    p_save_rev.add_argument("--data", required=True)
+
+    p_get_rev = sub.add_parser("get_entry_reviews")
+    p_get_rev.add_argument("--date", default=None, help="Most recent scan on or before this session day")
+    p_get_rev.add_argument("--scan_date", default=None, help="Exact scan date (overrides --date)")
+
     args = parser.parse_args()
     dispatch = {
         "init_db": cmd_init_db,
@@ -331,6 +508,8 @@ def main() -> None:
         "get_open_legs": cmd_get_open_legs,
         "save_leg_close": cmd_save_leg_close,
         "log_scan": cmd_log_scan,
+        "save_entry_review": cmd_save_entry_review,
+        "get_entry_reviews": cmd_get_entry_reviews,
     }
     result = dispatch[args.command](args)
     json.dump(result, sys.stdout, default=str)

@@ -1,7 +1,7 @@
 # cherrypick-scout
 
-**What this module does:** a self-hosted options research surface — an earnings calendar, a
-credit-spread/iron-condor screener, per-symbol candlestick charts, and a leg-list payoff builder.
+**What this module does:** a self-hosted options research surface — a recorded-earnings-screen view,
+a credit-spread/iron-condor screener, per-symbol candlestick charts, and a leg-list payoff builder.
 It is a **research surface with order staging, never order placement**: the builder can validate a
 ticket against the broker's dry-run API (buying-power effect, fees, warnings — no order is created)
 and save staged tickets locally for manual execution in the tastytrade platform. No code path in this
@@ -62,11 +62,11 @@ packages/scout/
   src/cherrypick/
     scout/
       __init__.py  cli.py  config.py  app.py  serve.py  security.py  sse.py  templates.py
-      api/          __init__.py  watchlist.py  calendar.py  symbol.py  payoff.py  builder.py
-                     screener.py  orders.py
+      api/          __init__.py  watchlist.py  earnings.py  symbol.py  payoff.py
+                     builder.py  screener.py  orders.py
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
                      calendar_service.py  candle_service.py  chain_service.py
-                     earnings_watchlist_service.py  liquidity_service.py
+                     earnings_watchlist_service.py  earnings_metrics_service.py  liquidity_service.py
                      screener_service.py  sector_service.py  staging.py  quote_service.py
                      streamcache.py
       analytics/    __init__.py  describe.py  levels.py  narrative.py  payoff.py  pop.py
@@ -76,12 +76,13 @@ packages/scout/
                      tabulator_midnight.min.css  htmx.min.js  alpine.min.js
                      LICENSE-lightweight-charts.txt  LICENSE-tabulator.txt  LICENSE-htmx.txt
                      LICENSE-alpinejs.txt  LICENSES.md
-      templates/    calendar.html  symbol.html  builder.html  screener.html  staged.html
+      templates/    earnings.html  symbol.html  builder.html  screener.html
+                    staged.html
   tests/            conftest.py  test_config.py  test_cache_ttl.py  test_cache_candles.py
                     test_cache_symbol_meta.py
                     test_watchlist.py  test_security.py  test_self_contained.py
                     test_api_routes.py  test_session.py  test_metrics_service.py
-                    test_calendar_service.py  test_calendar_routes.py  test_candle_service.py
+                    test_calendar_service.py  test_candle_service.py
                     test_levels.py  test_symbol_routes.py  test_chain_service.py  test_payoff.py
                     test_pop.py  test_payoff_routes.py  test_builder_routes.py
                     test_strategies.py  test_screener_service.py  test_screener_routes.py
@@ -89,25 +90,51 @@ packages/scout/
                     test_quote_service.py  test_sse.py  test_streamcache.py  test_trend.py
                     test_narrative.py  test_describe.py  test_templates.py  test_sector_service.py
                     test_liquidity_service.py  test_earnings_watchlist_service.py
+                    test_earnings_metrics_service.py  test_earnings_routes.py
 ```
 
-## The earnings calendar (M2)
+## The earnings calendar service (M2; no longer a standalone tab)
 
-`GET /api/calendar?days=14` / `GET /partial/calendar` union two sources with different honesty
+`services/calendar_service.py` (the M2 milestone's engine) unions two sources with different honesty
 profiles: **metrics** (fresh, watchlist-scoped — `tastytrade.metrics.get_market_metrics`'s earnings
 date/consensus-EPS/IV-rank fields, refreshed on `refresh.metrics_ttl_seconds`) and **Dolt** (broad,
 stale-labeled — the `earnings` Dolt database's `earnings_calendar` table, a periodic snapshot rather
 than a live feed, covering every symbol Dolt knows about, not just the watchlist). When both name the
 same symbol/date the metrics row wins; a row from Dolt alone is always `stale: true`. If Dolt is
-unreachable the calendar quietly degrades to metrics-only with a notice, rather than erroring. Expected
-move (`0.85 x front straddle`) is fetched only for metrics-sourced (watchlist) rows, via a single
-narrow ATM chain snapshot cached under `refresh.calendar_ttl_seconds` — not a full chain fetch, and
-never for the broad Dolt rows, which could number in the hundreds.
+unreachable the calendar quietly degrades to metrics-only with a notice, rather than erroring.
+`market_cap`/`iv_percentile` ride along on every metrics row for free (the same batched
+`get_market_metrics` call already fetches them).
+
+**Deliberately broker-quote-free.** `calendar_service` never fetches an option chain or quote --
+every field it produces (dates, timing, IV rank/percentile, market cap) comes from the cheap batched
+metrics call or the Dolt snapshot. Expected move, term structure, IV/RV ratio, and winrate -- the
+genuinely broker-chain- and Dolt-history-heavy signals, measured at ~1s/symbol dominated by the full
+option-chain fetch -- are computed by **packages/earnings**' own scheduled forward-preview scan
+(`symbol_watch.py`, run by an orchestrator-scheduled task, entirely off this module's request path)
+and filtered+merged onto matching calendar rows by `earnings_metrics_service.get_upcoming`, which
+reads that scan's `symbol_watch.json` output read-only -- same posture as this page's
+`entry_reviews` read below. Unlike a typical enrichment join, a calendar row that never matched a
+scan entry (by symbol AND earnings_date) is **dropped**, not merely left blank: the Upcoming
+section only ever shows the scan's own liquid-enough universe (see symbol_watch.py's own
+docstring), never the broader Dolt-inclusive set `get_calendar` itself still computes. A
+rescheduled earnings date is handled the same way -- since the match key includes the date, a
+moved date just drops that row until the next scan pass catches up, rather than silently showing
+a reading computed for the old date. `get_calendar`'s own top-level `market_hours` flag (a small
+self-contained ET/NYSE-trading-day check — see `is_market_hours`, which deliberately doesn't import
+the orchestrator's own equivalent, per this package's "additive-only outside packages/scout"
+invariant) drives an honest notice banner on the Earnings page when the market's closed, without
+changing what gets fetched.
+
+The M2 milestone originally shipped this behind its own `GET /api/calendar` / `GET /partial/calendar`
+tab; that standalone tab was removed once the Earnings page's "Upcoming" section (below) covered the
+same forward-looking need. `calendar_service.get_calendar` itself stays — `earnings_metrics_service
+.get_upcoming` calls it directly — so nothing below this paragraph changed behavior, only the UI
+entry point did.
 
 This is also the first milestone that talks to the broker: `services/session.py`'s `BrokerSession`
 holds one process-wide `cherrypick.core.auth.session.SessionManager` over the shared
 `cherrypick-broker` keyring service. Missing credentials or a broker hiccup degrade the metrics side
-of the calendar to empty rather than raising — the page always renders.
+of the calendar to empty rather than raising — the caller always gets a renderable result.
 
 **Two tastytrade-sourced refinements, both defaulting on** (`config.calendar`):
 `use_tastytrade_earnings_watchlist` unions tastytrade's own public "All Earnings" watchlist
@@ -115,14 +142,10 @@ of the calendar to empty rather than raising — the page always renders.
 names beyond the user's own watchlist get real dates from live metrics instead of falling through
 to Dolt's third-party snapshot -- the module's original premise ("a third-party source is
 acceptable only where tastytrade has no equivalent") turned out to be wrong once this watchlist
-was found. Deliberately NOT unioned into the expected-move loop, which stays scoped to the user's
-own watchlist -- that loop is a per-symbol chain+quote broker call each, and widening it by up to
-85 names would reintroduce the exact "call storm" risk the module was built to avoid for Dolt.
-`liquid_only` pre-filters every row (both sources) to tastytrade's own "Liquid Symbols" watchlist
+was found. `liquid_only` pre-filters every row (both sources) to tastytrade's own "Liquid Symbols" watchlist
 (`liquidity_service`, 198 symbols) -- covers Dolt rows too, which carry no `liquidity_rating` of
 their own. A fetch failure with nothing cached degrades to skipping the filter (a notice explains
-why), never to emptying the whole calendar. Symbol cells are links (`a.builder-link`) that open
-the builder for that symbol, same click handler the screener's Tabulator cells already use.
+why), never to emptying the whole result.
 
 ## The symbol view (M3)
 
@@ -496,6 +519,45 @@ returned in under 200 ms. This is real broker/DXLink round-trip latency, not a c
 correctness bug -- the log showed exactly the batched, TTL-respecting call pattern the plan calls for,
 and every cache layer behaved as designed. Anyone hitting a slow first screener load after adding new
 watchlist symbols is seeing this, not a hang.
+
+## The Earnings page (read-only view onto `cherrypick.earnings`)
+
+`GET /partial/earnings` (and its two JSON siblings, `GET /api/earnings-screens?date=&mode=paper` and
+`GET /api/earnings-upcoming?days=10`) is a **read-only** window onto the earnings module's
+`entry_reviews` table -- the per-symbol screening metric vector (accepted or rejected) that module
+records on every entry scan, in either of its two SQLite databases (`earnings_trades.db` live,
+`paper_trades.db` paper -- paper is the book actually populated daily, by that module's own
+automated forced-sampling harness, so the page defaults to it). `services/earnings_metrics_service.py`
+resolves both DB paths directly from `cherrypick.core.home.data_dir("earnings",
+env="EARNINGS_DATA_DIR")` -- the same shared-home convention every package in the suite uses -- and
+opens each `mode=ro`, never writing to either file and never importing `cherrypick.earnings` itself
+(scout's own invariant: additive-only outside this package). A missing DB file, or one that predates
+the `entry_reviews` table, degrades to an empty result with an explanatory note rather than raising.
+
+The **Screens** section shows one scan date at a time (a date picker, most recent first, and a
+paper/live toggle) ranked by `composite_score`, with rejected rows muted and accepted/selected rows
+green-tinted -- the same red/green convention the rest of the page already uses for pass/fail and
+buy/sell.
+
+The **Upcoming** section is a liquid-universe earnings screener, not a calendar dump: it composes
+`calendar_service.get_calendar` (for Symbol/Timing/Mkt Cap -- see "The earnings calendar service"
+above) with a **filtering** merge against `symbol_watch.json`, a plain JSON file (not a DB) written
+by `cherrypick.earnings`'s own scheduled forward-preview scan (`symbol_watch.py`, orchestrator-
+scheduled, never scout) -- a second, narrower sibling of the `entry_reviews` read-only exception.
+That scan already restricts itself to the union of tastytrade's "Liquid Symbols" + "High Options
+Volume" + "tasty Earnings" public watchlists and the next ~10 **trading** days, and the Upcoming
+table shows exactly that set: a calendar row that never matched a scan entry (by symbol AND
+earnings_date) is dropped from the page entirely, not left half-blank. Matched rows carry Price,
+Volume, Winrate, IV/RV, Term Structure, Expected Move %, Avg Actual Move %, IV Rank, and Mkt Cap,
+plus a **tier badge** (Recommended / Near miss / Fail, or an unscored dash) from
+`cherrypick.earnings.symbol_watch.classify_tier` -- an EarningsEdgeDetection-derived threshold bar,
+a display ranking only, never a trading decision; hovering a badge shows the specific reasons it
+tripped, and the table sorts recommended-first. A status banner above the table (`never run` /
+`scanning N of M` / `last refreshed <time>`) explains the scan's own progress, and while a pass is
+actively running the whole page **polls itself every 5 seconds** (a plain htmx `hx-trigger="every
+5s"` on the page's own root element, server-terminated: once the scan completes, the next polled
+response simply omits the trigger attribute, so the page goes quiet on its own -- no client-side
+timer to leak). The section header also shows a notice banner when the market's currently closed.
 
 ## Security
 

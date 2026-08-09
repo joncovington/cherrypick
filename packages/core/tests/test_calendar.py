@@ -111,3 +111,26 @@ def test_fomc_year_known_and_unknown():
     assert cal.fomc_year_known(2026) is True
     assert cal.fomc_year_known(2099) is False
     assert cal.fomc_dates(2099) == []  # fail-safe empty for unbundled years
+
+
+def test_nth_trading_day_zero_returns_start_unchanged():
+    # n=0 returns start as-is, even when start itself isn't a trading day.
+    assert cal.nth_trading_day(date(2026, 9, 4), 0) == date(2026, 9, 4)
+    assert cal.nth_trading_day(date(2026, 9, 5), 0) == date(2026, 9, 5)  # a Saturday
+
+
+def test_nth_trading_day_one_matches_next_trading_day():
+    assert cal.nth_trading_day(date(2026, 12, 24), 1) == cal.next_trading_day(date(2026, 12, 24))
+
+
+def test_nth_trading_day_spans_weekend_and_labor_day_holiday():
+    # Fri 2026-09-04 -> weekend (5th/6th) -> Labor Day Mon 2026-09-07 (holiday) -> Tue 09-08 is
+    # the 1st trading day after; each subsequent n steps one further trading day.
+    start = date(2026, 9, 4)
+    assert cal.nth_trading_day(start, 1) == date(2026, 9, 8)
+    assert cal.nth_trading_day(start, 2) == date(2026, 9, 9)
+    assert cal.nth_trading_day(start, 3) == date(2026, 9, 10)
+
+
+def test_nth_trading_day_negative_n_treated_as_zero():
+    assert cal.nth_trading_day(date(2026, 9, 4), -5) == date(2026, 9, 4)

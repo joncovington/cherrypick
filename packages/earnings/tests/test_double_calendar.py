@@ -26,7 +26,7 @@ def test_realized_move_dispersion_insufficient_sample(monkeypatch):
         double_calendar.scanner,
         "compute_winrate",
         lambda *a, **k: {
-            "quarters": [{"realized_move": 5.0, "pre_close": 100.0}],
+            "realized_move_quarters": [{"realized_move": 5.0, "pre_close": 100.0}],
         },
     )
     result = double_calendar.realized_move_dispersion("AAPL", {}, 8)
@@ -38,7 +38,7 @@ def test_realized_move_dispersion_computes_stddev(monkeypatch):
         double_calendar.scanner,
         "compute_winrate",
         lambda *a, **k: {
-            "quarters": [
+            "realized_move_quarters": [
                 {"realized_move": 5.0, "pre_close": 100.0},
                 {"realized_move": 10.0, "pre_close": 100.0},
                 {"realized_move": 15.0, "pre_close": 100.0},

@@ -23,6 +23,7 @@ import argparse
 import json
 import sys
 import threading
+import time
 from datetime import date as _date
 from datetime import datetime, timedelta
 
@@ -75,6 +76,24 @@ def fetch_dolthub_calendar(date: str, config: dict) -> list[dict]:
         cur.execute(
             "SELECT act_symbol AS symbol, date, `when` AS timing FROM earnings_calendar WHERE date = %s",
             (date,),
+        )
+        return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def fetch_dolthub_calendar_range(start: _date, end: _date, config: dict) -> list[dict]:
+    """Like `fetch_dolthub_calendar`, but every row between `start` and `end` inclusive, across
+    every symbol Dolt covers -- for a multi-day forward preview (see `symbol_watch.py`) rather
+    than a single scan date. A symbol reporting more than once in the window (practically never)
+    yields one row per date; the caller decides how to collapse that."""
+    conn = _dolt_connect(config, config.get("dolthub_database", "earnings"))
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT act_symbol AS symbol, date, `when` AS timing FROM earnings_calendar "
+            "WHERE date BETWEEN %s AND %s",
+            (start.isoformat(), end.isoformat()),
         )
         return cur.fetchall()
     finally:
@@ -326,15 +345,33 @@ def _compute_winrate_uncached(symbol: str, config: dict, lookback_quarters: int 
     Quarters with any data gap (missing chain, ambiguous timing, no ohlcv
     row) are skipped and counted separately, not silently treated as
     losses or excluded from the reported sample size.
+
+    Also returns `realized_move_quarters`, a SEPARATE sample of the same
+    earnings dates using only the realized-move side (pre/reaction closes --
+    stock OHLCV, no option chain needed). Winrate's own `quarters` requires
+    BOTH a realized close AND a matching historical straddle price to keep a
+    date at all, so a quarter Dolt's `option_chain` history doesn't reach
+    (that table only goes back to roughly late 2024) throws away perfectly
+    good realized-move data along with the missing implied side. Every
+    consumer of realized-move-only stats (move_stats_from_quarters,
+    compute_historical_move_stats, and the calendar/credit-spread strategies'
+    own inline dispersion calc) should read `realized_move_quarters` instead
+    of `quarters` -- it is typically fuller, sometimes reaching the full
+    `lookback_quarters` even when `quarters` (winrate) cannot, purely because
+    OHLCV coverage runs deeper than option-chain coverage. `implied_vs_avg_actual`
+    (today's live implied move, already fetched by the current scan, divided by
+    this deeper historical average) benefits directly -- it needs no historical
+    option data at all, only this wider realized-move sample.
     """
     today = config.get("_as_of_date")  # test hook; production callers omit this
     before_date = today or "9999-12-31"
     earnings_dates = fetch_historical_earnings_dates(symbol, before_date, lookback_quarters + 4, config)
 
     results = []
+    realized_move_quarters = []
     skipped = []
     for row in earnings_dates:
-        if len(results) >= lookback_quarters:
+        if len(results) >= lookback_quarters and len(realized_move_quarters) >= lookback_quarters:
             break
         closes = pre_and_reaction_closes(symbol, row["date"], row["timing"], config)
         if closes is None:
@@ -342,23 +379,36 @@ def _compute_winrate_uncached(symbol: str, config: dict, lookback_quarters: int 
             continue
         pre, reaction = closes
         pre_close = float(pre["close"])
-        straddle = fetch_atm_straddle_price(symbol, pre["date"], reaction["date"], pre_close, config)
-        if straddle is None:
-            skipped.append({"date": str(row["date"]), "reason": "no_matching_option_chain_data"})
-            continue
-        realized_move = abs(float(reaction["close"]) - pre_close)
-        implied_move = straddle["straddle_mid"]
-        results.append(
-            {
-                "earnings_date": str(row["date"]),
-                "pre_close": pre_close,
-                "reaction_close": float(reaction["close"]),
-                "realized_move": realized_move,
-                "implied_move": implied_move,
-                "win": implied_move > realized_move,
-                "expiration_used": straddle["expiration"],
-            }
-        )
+        reaction_close = float(reaction["close"])
+        realized_move = abs(reaction_close - pre_close)
+
+        if len(realized_move_quarters) < lookback_quarters:
+            realized_move_quarters.append(
+                {
+                    "earnings_date": str(row["date"]),
+                    "pre_close": pre_close,
+                    "reaction_close": reaction_close,
+                    "realized_move": realized_move,
+                }
+            )
+
+        if len(results) < lookback_quarters:
+            straddle = fetch_atm_straddle_price(symbol, pre["date"], reaction["date"], pre_close, config)
+            if straddle is None:
+                skipped.append({"date": str(row["date"]), "reason": "no_matching_option_chain_data"})
+            else:
+                implied_move = straddle["straddle_mid"]
+                results.append(
+                    {
+                        "earnings_date": str(row["date"]),
+                        "pre_close": pre_close,
+                        "reaction_close": reaction_close,
+                        "realized_move": realized_move,
+                        "implied_move": implied_move,
+                        "win": implied_move > realized_move,
+                        "expiration_used": straddle["expiration"],
+                    }
+                )
 
     sample_size = len(results)
     wins = sum(1 for r in results if r["win"])
@@ -368,8 +418,137 @@ def _compute_winrate_uncached(symbol: str, config: dict, lookback_quarters: int 
         "sample_size": sample_size,
         "winrate": (wins / sample_size) if sample_size else None,
         "quarters": results,
+        "realized_move_quarters": realized_move_quarters,
         "skipped": skipped,
     }
+
+
+def move_stats_from_quarters(symbol: str, quarters: list[dict], config: dict) -> dict:
+    """Mean/dispersion/max of historical realized earnings moves (as a % of pre-earnings
+    price), from an already-fetched compute_winrate() quarters list -- pure calculation,
+    no I/O. Pass `realized_move_quarters`, NOT `quarters` -- the former is winrate-independent
+    and typically fuller (see compute_winrate's own docstring: `quarters` additionally requires
+    a matching historical straddle price, which Dolt's option_chain history doesn't cover as far
+    back as plain OHLCV does). Callers that already hold a winrate result
+    (rank_strategies.evaluate_symbol/reverify_symbol, scanner.run_candidate_scan) should call
+    this directly rather than compute_historical_move_stats, which re-fetches; that re-fetch is
+    only free when a per-symbol cache is active (see compute_winrate's own docstring) -- outside
+    one it is a second, fully redundant Dolt walk.
+
+    max_actual_move_pct and tail_quarters (count of quarters at/above move_tail_multiple x
+    the mean) feed the optional move_tail screen (see apply_move_tail_gate) -- a name that
+    averages a tame 4% move but once printed 18% is a different risk than one that is
+    reliably 3-5%, information the mean alone hides.
+    """
+    pct_moves = [q["realized_move"] / q["pre_close"] for q in quarters if q.get("pre_close")]
+    if len(pct_moves) < 2:
+        return {
+            "ok": False,
+            "symbol": symbol,
+            "sample_size": len(pct_moves),
+            "error": "insufficient sample for move stats",
+        }
+    mean = sum(pct_moves) / len(pct_moves)
+    variance = sum((m - mean) ** 2 for m in pct_moves) / (len(pct_moves) - 1)
+    std_dev = variance**0.5
+    max_move = max(pct_moves)
+    tail_multiple = config.get("move_tail_multiple", 2.0)
+    tail_quarters = sum(1 for m in pct_moves if mean and m >= tail_multiple * mean)
+    return {
+        "ok": True,
+        "symbol": symbol,
+        "sample_size": len(pct_moves),
+        "avg_actual_move_pct": mean,
+        "move_dispersion_pct": std_dev,
+        "max_actual_move_pct": max_move,
+        "tail_quarters": tail_quarters,
+        "move_tail_veto": tail_quarters > 0,
+    }
+
+
+def compute_historical_move_stats(symbol: str, config: dict, lookback_quarters: int = 8) -> dict:
+    """Fetching wrapper around move_stats_from_quarters -- calls compute_winrate() itself.
+    Free (served from the memo, no second Dolt walk) only when called inside an active
+    per-symbol cache scope (see compute_winrate/begin_tt_cache) for the same symbol/lookback/
+    as-of-date as an earlier call in that scope; used by atm_calendar.py/double_calendar.py's
+    realized_move_dispersion, which have no pre-fetched winrate result to reuse.
+    """
+    winrate = compute_winrate(symbol, config, lookback_quarters)
+    return move_stats_from_quarters(symbol, winrate["realized_move_quarters"], config)
+
+
+def compute_spread_quality(legs: list[dict]) -> dict:
+    """Net combined bid-ask cost of trading a set of already-fetched ATM option legs
+    together (each `{bid, ask, mid}`, e.g. front_call/front_put from
+    fetch_front_back_atm_entries) -- `sum(ask - bid) / sum(mid)`. Complements
+    fetch_liquidity_criteria's existing `bid_ask_spread_pct` (the single worst leg,
+    already screened as a hard filter): a strategy trading several legs pays every leg's
+    spread on entry, so the combined cost matters more than any one leg once several must
+    all fill. Legs missing bid/ask/mid are skipped, not treated as zero-cost. Returns
+    `net_combo_spread_pct: None` if no leg has complete quote data.
+    """
+    total_width = 0.0
+    total_mid = 0.0
+    complete = False
+    for leg in legs:
+        bid, ask, mid = leg.get("bid"), leg.get("ask"), leg.get("mid")
+        if bid is None or ask is None or not mid:
+            continue
+        total_width += ask - bid
+        total_mid += mid
+        complete = True
+    if not complete or not total_mid:
+        return {"net_combo_spread_pct": None}
+    return {"net_combo_spread_pct": total_width / total_mid}
+
+
+def apply_common_signals(
+    criteria: dict,
+    avg_volume: float | None,
+    dolt_iv_rv_ratio: float | None,
+    winrate: float | None,
+    winrate_sample_size: int,
+    move_stats: dict | None = None,
+) -> None:
+    """Merges the shared, non-strategy-specific screening signals into `criteria` (mutated
+    in place): avg_volume/winrate as fetched, iv_rv_ratio preferring tastytrade's iv_30d/
+    hv_30d ratio (already computed for free by fetch_liquidity_criteria's market-metrics
+    call, in `criteria["tastytrade_iv_rv_ratio"]`) over Dolt's volatility_history, and
+    historical-move stats compared against whatever expected_move_pct the strategy's own
+    broker fetch already populated.
+
+    Must run AFTER `criteria.update(broker["criteria"])` -- tastytrade_iv_rv_ratio and
+    expected_move_pct only exist once the strategy's fetch_criteria_fn has populated them.
+    Tastytrade-first here does not skip Dolt upstream: the cheap, broker-free pre-gate
+    (rank_strategies._dolt_only_hard_fails) still runs on Dolt's iv_rv_ratio alone, since
+    that decision must happen before any broker call -- this only changes which source wins
+    for the FINAL recorded/tiered ratio, so a symbol that clears the pre-gate despite a
+    stale/unreachable Dolt volatility_history still gets a real ratio from the broker.
+    Callers: rank_strategies.evaluate_symbol/reverify_symbol, run_candidate_scan.
+    """
+    criteria["avg_volume"] = avg_volume
+    criteria["winrate"] = winrate
+    criteria["winrate_sample_size"] = winrate_sample_size
+
+    tastytrade_ratio = criteria.get("tastytrade_iv_rv_ratio")
+    if tastytrade_ratio is not None:
+        criteria["iv_rv_ratio"] = tastytrade_ratio
+        criteria["iv_rv_source"] = "tastytrade"
+    elif dolt_iv_rv_ratio is not None:
+        criteria["iv_rv_ratio"] = dolt_iv_rv_ratio
+        criteria["iv_rv_source"] = "dolt"
+    else:
+        criteria["iv_rv_ratio"] = None
+        criteria["iv_rv_source"] = None
+
+    if move_stats and move_stats.get("ok"):
+        criteria["avg_actual_move_pct"] = move_stats["avg_actual_move_pct"]
+        criteria["move_dispersion_pct"] = move_stats["move_dispersion_pct"]
+        criteria["max_actual_move_pct"] = move_stats["max_actual_move_pct"]
+        criteria["move_tail_veto"] = move_stats["move_tail_veto"]
+        expected_pct = criteria.get("expected_move_pct")
+        if expected_pct is not None and move_stats["avg_actual_move_pct"]:
+            criteria["implied_vs_avg_actual"] = expected_pct / move_stats["avg_actual_move_pct"]
 
 
 def fetch_avg_volume(symbol: str, config: dict, days: int = 30) -> float | None:
@@ -639,6 +818,35 @@ def compute_expected_move_and_term_structure(
     }
 
 
+def fetch_liquid_symbols() -> set[str] | None:
+    """Membership of tastytrade's own public "Liquid Symbols" watchlist (via `tt.py
+    get_liquid_symbols`) -- one broker call regardless of how many symbols get checked against
+    it, not a per-symbol cost. `None` means the fetch failed or returned nothing (a broker
+    hiccup, or the watchlist genuinely came back empty) -- callers must treat that as "couldn't
+    determine liquidity", never as "no symbol is liquid", the same discipline
+    packages/scout's `liquidity_service.py` uses for the identical watchlist. Not cached here:
+    `symbol_watch.py` calls this once per scan pass and reuses the result, so a second layer of
+    caching would only add staleness with no round-trip savings."""
+    result = call_tt(["get_liquid_symbols"])
+    if not result.get("ok"):
+        return None
+    symbols = result.get("symbols")
+    return set(symbols) if symbols else None
+
+
+def fetch_watch_universe() -> set[str] | None:
+    """The forward-preview scan's target universe (via `tt.py get_watch_universe`): the union of
+    tastytrade's public "Liquid Symbols", "High Options Volume", and "tasty Earnings" watchlists
+    -- one broker call regardless of symbol count. `None` means the fetch failed or came back
+    genuinely empty; same "couldn't determine" discipline as `fetch_liquid_symbols` -- a caller
+    must degrade to scanning everyone, never to scanning no one."""
+    result = call_tt(["get_watch_universe"])
+    if not result.get("ok"):
+        return None
+    symbols = result.get("symbols")
+    return set(symbols) if symbols else None
+
+
 def fetch_liquidity_criteria(
     symbol: str, front_expiration, expirations: list, front_call: dict, front_put: dict
 ) -> dict:
@@ -666,9 +874,17 @@ def fetch_liquidity_criteria(
         )
 
     market_cap = None
+    iv_rank = None
+    iv_percentile = None
+    tastytrade_iv_rv_ratio = None
     mc = call_tt(["get_market_metrics", "--symbol", symbol])
     if mc.get("ok"):
         market_cap = mc.get("market_cap")
+        iv_rank = mc.get("iv_rank")
+        iv_percentile = mc.get("iv_percentile")
+        iv_30d, hv_30d = mc.get("iv_30d"), mc.get("hv_30d")
+        if iv_30d is not None and hv_30d:
+            tastytrade_iv_rv_ratio = iv_30d / hv_30d
 
     combined_open_interest = None
     combined_option_volume = None
@@ -696,10 +912,14 @@ def fetch_liquidity_criteria(
 
     return {
         "bid_ask_spread_pct": spread_pct,
+        "net_combo_spread_pct": compute_spread_quality([front_call, front_put])["net_combo_spread_pct"],
         "has_weekly_options": has_weekly_options(expirations),
         "market_cap": market_cap,
         "combined_open_interest": combined_open_interest,
         "combined_option_volume": combined_option_volume,
+        "iv_rank": iv_rank,
+        "iv_percentile": iv_percentile,
+        "tastytrade_iv_rv_ratio": tastytrade_iv_rv_ratio,
     }
 
 
@@ -810,6 +1030,23 @@ def apply_liquidity_gates(criteria: dict, config: dict, hard_fail: list) -> None
             hard_fail.append("no_weekly_options")
 
 
+def apply_move_tail_gate(criteria: dict, config: dict, hard_fail: list) -> None:
+    """Optional reject for a name whose historical earnings moves include a blowout quarter
+    (see compute_historical_move_stats' move_tail_veto: at least one of the last
+    winrate_lookback_quarters moves was >= move_tail_multiple x the mean). Off by default
+    (`symbol_screen.move_tail: "off"`) -- this is a record-only signal until the recorded
+    entry_reviews data supports calibrating move_tail_multiple; set to "veto" to enforce it.
+    A missing (never-computed) value never gates, unlike the other soft criteria -- move
+    stats require winrate's own Dolt history, so a genuinely undecidable case here should
+    fall through to whatever the other criteria decide, not add a second unverified reject.
+    """
+    level = _screen_levels(config).get("move_tail", "off")
+    if level != "veto":
+        return
+    if criteria.get("move_tail_veto"):
+        hard_fail.append("move_tail_veto")
+
+
 def is_monthly_expiration(d) -> bool:
     """True if `d` is a standard monthly options expiration (the third
     Friday of its month). Used to distinguish "true" monthly cycles from
@@ -909,6 +1146,83 @@ def compute_composite_score(criteria: dict, winrate_sample_size: int = 0) -> flo
     iv_rv = criteria.get("iv_rv_ratio") or 1.0
     wr = _shrunk_winrate(criteria.get("winrate"), winrate_sample_size)
     return abs(edge) * iv_rv * wr
+
+
+def richest_criteria(results: list[dict]) -> tuple[dict, str | None, float | None]:
+    """The fullest criteria dict across a symbol's per-strategy results (they share the
+    symbol-level fields; some strategies add extras, so take the largest), which strategy
+    it came from, and that result's own composite_score (kept alongside criteria rather
+    than inside it, matching evaluate_symbol's own result shape). Shared by
+    rank_strategies.py's single-best-per-symbol path and strategy_test_runner.py's
+    forced-sampling harness so both callers' entry_reviews rows are built from the same
+    rule, whichever strategy happened to fetch the richest data for a symbol that day.
+    """
+    best: dict = {}
+    best_name = None
+    best_score = None
+    for r in results:
+        c = r.get("criteria") or {}
+        if len(c) > len(best):
+            best = c
+            best_name = r.get("name")
+            best_score = r.get("composite_score")
+    return best, best_name, best_score
+
+
+def build_entry_review_spec(
+    scan_date: str,
+    symbol: str,
+    timing: str | None,
+    criteria: dict,
+    strategy: str | None,
+    selected: bool,
+    reason: str | None,
+    composite_score: float | None = None,
+    logged_at: float | None = None,
+) -> dict:
+    """Assembles one entry_reviews row (db.py/db_paper.py's save_entry_review payload) from
+    a symbol's richest per-strategy criteria dict -- the data reviewed during an entry scan
+    plus the accept/reject decision, recorded whether the symbol was ultimately selected or
+    not. Shared by rank_strategies.py (agent-driven live/paper path) and
+    strategy_test_runner.py (the automated forced-sampling paper harness) so a screened
+    symbol's full metric vector is recorded identically regardless of which caller ran the
+    scan. `criteria_json` keeps the full dict verbatim for fields not promoted to their own
+    column (e.g. per-strategy skew_abs, chain_complete).
+    """
+    return {
+        "scan_date": scan_date,
+        "symbol": symbol,
+        "timing": timing,
+        "strategy": strategy,
+        "price": criteria.get("price"),
+        "volume": criteria.get("avg_volume"),
+        "winrate": criteria.get("winrate"),
+        "winrate_sample": criteria.get("winrate_sample_size"),
+        "iv_rv_ratio": criteria.get("iv_rv_ratio"),
+        "iv_rv_source": criteria.get("iv_rv_source"),
+        "term_structure": criteria.get("term_structure"),
+        "market_cap": criteria.get("market_cap"),
+        "expected_move": criteria.get("expected_move_dollars") or criteria.get("expected_move"),
+        "expected_move_pct": criteria.get("expected_move_pct"),
+        "combined_open_interest": criteria.get("combined_open_interest"),
+        "combined_option_volume": criteria.get("combined_option_volume"),
+        "bid_ask_spread_pct": criteria.get("bid_ask_spread_pct"),
+        "net_combo_spread_pct": criteria.get("net_combo_spread_pct"),
+        "avg_actual_move_pct": criteria.get("avg_actual_move_pct"),
+        "move_dispersion_pct": criteria.get("move_dispersion_pct")
+        or criteria.get("realized_move_dispersion_pct"),
+        "max_actual_move_pct": criteria.get("max_actual_move_pct"),
+        "implied_vs_avg_actual": criteria.get("implied_vs_avg_actual"),
+        "move_tail_veto": criteria.get("move_tail_veto"),
+        "iv_rank": criteria.get("iv_rank"),
+        "iv_percentile": criteria.get("iv_percentile"),
+        "composite_score": composite_score,
+        "best_tier": "accepted" if selected else "rejected",
+        "selected": selected,
+        "reason": reason,
+        "criteria_json": criteria,
+        "logged_at": logged_at if logged_at is not None else time.time(),
+    }
 
 
 def fetch_quotes_by_symbol(underlying_symbol: str, expiration, option_symbols: list, price: float) -> dict:
@@ -1171,14 +1485,20 @@ def run_candidate_scan(
             criteria.update(broker["criteria"])
         broker_error = None if broker.get("ok") else broker.get("error")
 
-        criteria["avg_volume"] = fetch_avg_volume(symbol, config)
-
+        avg_volume = fetch_avg_volume(symbol, config)
         ivrv = fetch_iv_rv_ratio(symbol, config)
-        criteria["iv_rv_ratio"] = ivrv["iv_rv_ratio"] if ivrv.get("ok") else None
-
         winrate = compute_winrate(symbol, config, lookback)
-        criteria["winrate"] = winrate["winrate"]
         winrate_sample_size = winrate["sample_size"]
+        move_stats = move_stats_from_quarters(symbol, winrate["quarters"], config)
+
+        apply_common_signals(
+            criteria,
+            avg_volume,
+            ivrv["iv_rv_ratio"] if ivrv.get("ok") else None,
+            winrate["winrate"],
+            winrate_sample_size,
+            move_stats,
+        )
 
         if extra_criteria_fn is not None:
             extra_criteria_fn(symbol, config, lookback, criteria)

@@ -554,5 +554,12 @@
       "task_name": "cherrypick-reconcile",
       "at": "16:30"
     }
+  },
+  "symbol_watch": {
+    "_comment": "Earnings forward-preview scan (`python -m cherrypick.earnings.symbol_watch refresh`) - the source of scout's read-only Earnings page 'Upcoming' section (expected move, term structure, IV/RV ratio, winrate, historical move stats, and a recommended/near-miss/fail tier badge for symbols reporting in the next 'days' TRADING days, restricted to a liquid-enough universe - tastytrade's 'Liquid Symbols' + 'High Options Volume' + 'tasty Earnings' watchlists). Purely informational: never touches a paper/live ledger, never places an order. Writes a JSON snapshot into the earnings module's own data directory; scout reads it read-only. Its own daily task, deliberately OFF the watchdog tick - a multi-minute per-symbol broker-chain scan has no place on the reliability path. Only meaningful once the 'earnings' module itself is installed and enabled (this task shells into that module's own code). OFF by default; enable then re-run `install`.",
+    "enabled": false,
+    "task_name": "cherrypick-earnings-symbol-watch",
+    "at": "06:30",
+    "days": 10
   }
 }

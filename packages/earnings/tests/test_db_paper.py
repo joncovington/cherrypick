@@ -355,3 +355,62 @@ def test_record_close_failure_ignores_closed_and_unknown_positions():
     unknown = db_paper.cmd_record_close_failure(_ns(data=json.dumps({"order_id": "NOPE", "reason": "x"})))
     assert closed["ok"] is False
     assert unknown["ok"] is False
+
+
+def test_save_entry_review_requires_fields():
+    result = db_paper.cmd_save_entry_review(_ns(data=json.dumps({"symbol": "AAPL"})))
+    assert result["ok"] is False
+
+
+def test_save_entry_review_and_get_roundtrip_new_columns():
+    spec = {
+        "scan_date": "2026-08-07",
+        "symbol": "AAPL",
+        "timing": "After market close",
+        "strategy": "iron_fly",
+        "iv_rv_ratio": 1.4,
+        "iv_rv_source": "tastytrade",
+        "avg_actual_move_pct": 0.04,
+        "move_dispersion_pct": 0.01,
+        "max_actual_move_pct": 0.06,
+        "implied_vs_avg_actual": 1.3,
+        "move_tail_veto": True,
+        "iv_rank": 0.7,
+        "iv_percentile": 0.65,
+        "net_combo_spread_pct": 0.03,
+        "composite_score": 0.42,
+        "selected": True,
+        "reason": "opened iron_fly",
+        "criteria_json": {"price": 150.0},
+    }
+    saved = db_paper.cmd_save_entry_review(_ns(data=json.dumps(spec)))
+    assert saved["ok"] is True
+
+    fetched = db_paper.cmd_get_entry_reviews(_ns(date=None, scan_date="2026-08-07"))
+    row = fetched["reviews"][0]
+    assert row["iv_rv_source"] == "tastytrade"
+    assert row["move_tail_veto"] == 1
+    assert row["net_combo_spread_pct"] == 0.03
+    assert row["composite_score"] == 0.42
+    assert json.loads(row["criteria_json"]) == {"price": 150.0}
+
+
+def test_entry_reviews_schema_parity_with_live_db(tmp_path, monkeypatch):
+    """db.py and db_paper.py's entry_reviews tables must carry the same columns (minus db_paper's
+    market_context/entry_reviews-adjacent tables that don't exist on the live side) -- a drift here
+    would silently lose fields depending on which module wrote a row. Mirrors this project's existing
+    schema-parity discipline for trades/scan_log (see either module's own docstring)."""
+    from cherrypick.earnings import db
+
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "earnings_trades.db")
+    db.cmd_init_db(argparse.Namespace())
+
+    paper_conn = db_paper._conn()
+    live_conn = db._conn()
+    try:
+        paper_cols = {r[1] for r in paper_conn.execute("PRAGMA table_info(entry_reviews)")}
+        live_cols = {r[1] for r in live_conn.execute("PRAGMA table_info(entry_reviews)")}
+    finally:
+        paper_conn.close()
+        live_conn.close()
+    assert paper_cols == live_cols

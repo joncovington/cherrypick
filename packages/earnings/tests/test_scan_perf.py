@@ -79,6 +79,7 @@ def _counting_winrate(counter):
             "sample_size": lookback_quarters,
             "winrate": 0.5,
             "quarters": [],
+            "realized_move_quarters": [],
             "skipped": [],
         }
 
@@ -182,7 +183,16 @@ def _stub_dolt(monkeypatch, avg, ivrv, winrate):
     monkeypatch.setattr(
         scanner, "fetch_iv_rv_ratio", lambda s, c: {"ok": ivrv is not None, "iv_rv_ratio": ivrv}
     )
-    monkeypatch.setattr(scanner, "compute_winrate", lambda s, c, lb: {"winrate": winrate, "sample_size": 5})
+    monkeypatch.setattr(
+        scanner,
+        "compute_winrate",
+        lambda s, c, lb: {
+            "winrate": winrate,
+            "sample_size": 5,
+            "quarters": [],
+            "realized_move_quarters": [],
+        },
+    )
 
 
 def test_dolt_only_hard_fails_flags_only_present_below_floor():
