@@ -8,7 +8,7 @@ import fs from "node:fs";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../config.js";
 import path from "node:path";
-import { computeGexProfile, volumeTotals, type ChainEntryInput } from "../analytics/gex.js";
+import { computeGexProfile, volumeTotals, nearestZeroGamma, netWalls, type ChainEntryInput } from "../analytics/gex.js";
 
 /** Epoch seconds of an ET wall-clock time on a date, DST-aware via Intl. */
 function etEpoch(date: string, time: string): number {
@@ -130,6 +130,10 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
 
       const profile = computeGexProfile(entries, greeks, oi, volume, spot);
       if (!profile.ok) continue;
+      // The gex service overrides the profile's cumulative flip and gamma-pile
+      // walls: panels/overlays use nearest_zero_gamma and the net walls.
+      profile.totals.zero_gamma = nearestZeroGamma(profile.series, spot, "net_gex");
+      [profile.totals.call_wall, profile.totals.put_wall] = netWalls(profile.series, "net_gex");
       let trail = spotHistory(config, symbol);
       let spotSession: { date: string; openTs: number; closeTs: number } | null = null;
       if (trail.length > 0) {
@@ -149,7 +153,7 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
         expiration,
         series: profile.series,
         totals: profile.totals,
-        volumeTotals: volumeTotals(profile.series),
+        volumeTotals: volumeTotals(profile.series, spot),
         spotHistory: trail,
         spotSession,
       };
