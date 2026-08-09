@@ -57,6 +57,29 @@ export function interpolateZeroGamma(strikes: Array<{ strike: number }>, key: st
   return null;
 }
 
+/**
+ * Interpolated strike where per-strike `key` changes sign, NEAREST to spot —
+ * gexbot's zero-gamma definition: the local flip that governs price here.
+ * Deliberately distinct from interpolateZeroGamma (the cumulative whole-book
+ * flip); the gex page's panels and overlays use this one.
+ */
+export function nearestZeroGamma(series: GexStrikeRow[], spot: number, key: "net_gex" | "net_gex_vol"): number | null {
+  const crossings: number[] = [];
+  for (let i = 0; i < series.length - 1; i++) {
+    const a = series[i]!;
+    const b = series[i + 1]!;
+    const va = a[key];
+    const vb = b[key];
+    if ((va < 0 && vb >= 0) || (va >= 0 && vb < 0)) {
+      const den = vb - va;
+      const t = den !== 0 ? -va / den : 0.5;
+      crossings.push(Math.round((a.strike + t * (b.strike - a.strike)) * 100) / 100);
+    }
+  }
+  if (crossings.length === 0) return null;
+  return crossings.reduce((best, z) => (Math.abs(z - spot) < Math.abs(best - spot) ? z : best));
+}
+
 /** (call_wall, put_wall) = strikes of max/min `key` — the net-GEX walls. */
 export function netWalls(series: GexStrikeRow[], key: "net_gex" | "net_gex_vol"): [number | null, number | null] {
   if (series.length === 0) return [null, null];
@@ -175,7 +198,14 @@ export function computeGexProfile(
   };
 }
 
-export function volumeTotals(series: GexStrikeRow[]): {
+/**
+ * Volume-basis roll-ups matching the gex service exactly: zero gamma is
+ * nearest_zero_gamma (needs spot), walls are the net walls.
+ */
+export function volumeTotals(
+  series: GexStrikeRow[],
+  spot: number,
+): {
   total_call_gex_vol: number;
   total_put_gex_vol: number;
   net_gex_vol: number;
@@ -191,7 +221,7 @@ export function volumeTotals(series: GexStrikeRow[]): {
     total_call_gex_vol: Math.round(totalCall),
     total_put_gex_vol: Math.round(totalPut),
     net_gex_vol: Math.round(net),
-    zero_gamma_vol: interpolateZeroGamma(series, "net_gex_vol"),
+    zero_gamma_vol: nearestZeroGamma(series, spot, "net_gex_vol"),
     call_wall_vol: callWall,
     put_wall_vol: putWall,
   };
