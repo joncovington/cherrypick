@@ -80,10 +80,20 @@ function fmtGex(v: number | null): string {
   return v.toFixed(0);
 }
 
+type GexTab = "gex" | "skew" | "volume" | "history";
+
+const TABS: Array<[GexTab, string]> = [
+  ["gex", "GEX"],
+  ["skew", "IV Skew"],
+  ["volume", "Volume"],
+  ["history", "History"],
+];
+
 export function GexPage() {
   const { data, isLoading, isError } = useGex();
   const [symbol, setSymbol] = useState("SPX");
   const [view, setView] = useState<GexView>("net");
+  const [tab, setTab] = useState<GexTab>("gex");
   const symbols = useGexSymbols();
   const profile = useGexProfile(symbol);
   const p = profile.data;
@@ -105,15 +115,25 @@ export function GexPage() {
           </span>
         )}
         <div className="mode-toggle">
-          {(["oivol", "net", "abs"] as GexView[]).map((v) => (
-            <button key={v} type="button" className={view === v ? "mode-btn active" : "mode-btn"} onClick={() => setView(v)}>
-              {v === "oivol" ? "OI vs Vol" : v === "net" ? "Net" : "Abs"}
+          {TABS.map(([t, label]) => (
+            <button key={t} type="button" className={tab === t ? "mode-btn active" : "mode-btn"} onClick={() => setTab(t)}>
+              {label}
             </button>
           ))}
         </div>
+        {tab === "gex" && (
+          <div className="mode-toggle" style={{ marginLeft: 0 }}>
+            {(["oivol", "net", "abs"] as GexView[]).map((v) => (
+              <button key={v} type="button" className={view === v ? "mode-btn active" : "mode-btn"} onClick={() => setView(v)}>
+                {v === "oivol" ? "OI vs Vol" : v === "net" ? "Net" : "Abs"}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="cards cards-wide">
+        {tab === "gex" && (
         <section className="card">
           <h2>
             GEX by strike — {view === "net" ? "net (green = call heavy, red = put heavy)" : view === "oivol" ? "net GEX, OI vs volume" : "absolute"}
@@ -160,7 +180,10 @@ export function GexPage() {
             <p className="muted">{p?.error ?? "no profile"}</p>
           )}
         </section>
+        )}
 
+        {tab === "skew" && (
+        <>
         <section className="card">
           <h2>IV skew — call vs put by strike</h2>
           {p?.ok && p.series && p.spot !== undefined ? (
@@ -187,7 +210,10 @@ export function GexPage() {
             <span className="skeleton skeleton-text" style={{ width: "40%" }} />
           )}
         </section>
+        </>
+        )}
 
+        {tab === "volume" && (
         <section className="card">
           <h2>Volume by strike (calls vs puts)</h2>
           {p?.ok && p.series && p.spot !== undefined ? (
@@ -203,6 +229,10 @@ export function GexPage() {
             <span className="skeleton skeleton-text" style={{ width: "40%" }} />
           )}
         </section>
+        )}
+
+        {tab === "history" && (
+        <>
         <DataCard
           title="Latest regime per symbol"
           headers={["sym", "as of", "spot", "net GEX", "net GEX (vol)", "zero gamma", "call wall", "put wall"]}
@@ -245,6 +275,8 @@ export function GexPage() {
             </tr>
           ))}
         </DataCard>
+        </>
+        )}
       </div>
     </div>
   );
