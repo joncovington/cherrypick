@@ -151,6 +151,7 @@ export function FliesPage() {
           <DataCard
             title="By arm"
             headers={["arm", "trades", "net", "win %", "avg", "PF"]}
+          numFrom={1}
             loading={analytics.isLoading}
             rowCount={a?.byArm.length ?? 0}
           >
@@ -169,6 +170,7 @@ export function FliesPage() {
           <DataCard
             title="Fee drag by arm"
             headers={["arm", "gross", "fees", "net", "drag %"]}
+          numFrom={1}
             loading={analytics.isLoading}
             rowCount={a?.feeDrag.length ?? 0}
           >
@@ -189,6 +191,7 @@ export function FliesPage() {
         <DataCard
           title="Books"
           headers={["date", "arm", "sym", "credit", "debits", "fees", "net cash", "floor", "band", "status", "P&L"]}
+          numFrom={1}
           loading={isLoading}
           isError={isError}
           rowCount={data?.books.length ?? 0}
@@ -217,6 +220,7 @@ export function FliesPage() {
         <DataCard
           title="Positions"
           headers={["symbol", "arm", "mode", "kind", "centre", "net", "floor", "", "status"]}
+          numFrom={1}
           loading={isLoading}
           isError={isError}
           rowCount={data?.positions.length ?? 0}

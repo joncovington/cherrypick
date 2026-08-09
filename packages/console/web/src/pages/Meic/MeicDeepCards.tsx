@@ -19,11 +19,14 @@ interface DeepAnalytics {
   byWeekday: BreakdownRow[];
 }
 
-function useDeep(mode: TradingMode) {
+function useDeep(mode: TradingMode, symbol: string | null, profile: string | null) {
+  const params = new URLSearchParams({ mode });
+  if (symbol !== null) params.set("symbol", symbol);
+  if (profile !== null) params.set("profile", profile);
   return useQuery<DeepAnalytics>({
-    queryKey: ["meic-deep", mode],
+    queryKey: ["meic-deep", mode, symbol, profile],
     queryFn: async () => {
-      const res = await fetch(`/api/meic/deep?mode=${mode}`);
+      const res = await fetch(`/api/meic/deep?${params.toString()}`);
       if (!res.ok) throw new Error(`meic deep: HTTP ${res.status}`);
       return (await res.json()) as DeepAnalytics;
     },
@@ -113,8 +116,16 @@ function BreakdownCard({ title, rows, loading }: { title: string; rows: Breakdow
   );
 }
 
-export function MeicDeepCards({ mode }: { mode: TradingMode }) {
-  const { data, isLoading } = useDeep(mode);
+export function MeicDeepCards({
+  mode,
+  symbol = null,
+  profile = null,
+}: {
+  mode: TradingMode;
+  symbol?: string | null;
+  profile?: string | null;
+}) {
+  const { data, isLoading } = useDeep(mode, symbol, profile);
   return (
     <>
       <section className="card">
