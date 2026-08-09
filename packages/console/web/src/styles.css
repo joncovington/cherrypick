@@ -218,6 +218,28 @@ h2 {
   font-size: 12px;
 }
 
+/* Inline affordance inside a note — reads as prose, acts as a control. */
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--fg);
+}
+
+/* A scope select holding something other than its default, so a narrowed or
+   widened view never looks like the plain one. */
+.scope-select-off-default {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
 .table-scroll {
   overflow-x: auto;
 }

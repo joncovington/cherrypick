@@ -40,9 +40,13 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const query = (q ?? {}) as Record<string, unknown>;
     const pick = (k: string): string | null => {
       const v = query[k];
-      return typeof v === "string" && v !== "" && v !== "ALL" && v.length <= 40 ? v : null;
+      if (typeof v !== "string" || v === "" || v.length > 40) return null;
+      // For symbol and profile "ALL" means unfiltered, so it drops to null. For
+      // era it is a real selection — every era at once — and must survive.
+      if (v === "ALL") return k === "era" ? "ALL" : null;
+      return v;
     };
-    return { symbol: pick("symbol"), profile: pick("profile") };
+    return { symbol: pick("symbol"), profile: pick("profile"), era: pick("era") };
   };
   app.get("/api/meic", async (req) => readMeic(config, parseMode(req.query), parseMeicScope(req.query)));
   app.get("/api/meic/analytics", async (req) =>
@@ -59,7 +63,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const q = req.query as Record<string, unknown>;
     const gran = ["daily", "weekly", "monthly"].includes(String(q["granularity"])) ? String(q["granularity"]) : "daily";
     const scope = parseMeicScope(req.query);
-    return readMeicPerformance(config, parseMode(req.query), gran, scope.symbol, scope.profile);
+    return readMeicPerformance(config, parseMode(req.query), gran, scope.symbol, scope.profile, scope.era);
   });
   const parseFliesFilter = (q: unknown): FliesFilter => {
     const query = (q ?? {}) as Record<string, unknown>;

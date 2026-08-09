@@ -1,21 +1,38 @@
 import path from "node:path";
 import type { MeicPayload, MeicTradeRow, MeicSummaryRow, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb, num, str } from "./db.js";
+import type { DatabaseHandle } from "./db.js";
+import { withReadOnlyDb, hasColumn, num, str } from "./db.js";
 
 const TRADE_LIMIT = 300;
+
+/**
+ * The era the module counts as evidence. Its own analytics narrow to this by
+ * default, so anything tagged to an earlier era is bring-up and shakedown data
+ * — mixing it in silently distorts every breakdown. Duplicated as a literal
+ * rather than imported so the packages stay decoupled; kept in step with
+ * `CURRENT_ERA` in `packages/meic/.../analytics.py`.
+ */
+export const CURRENT_ERA = "sample";
 
 export interface MeicScopeFilter {
   symbol: string | null;
   profile: string | null;
+  /** null = the current era; "ALL" = every era, deliberately. */
+  era: string | null;
 }
 
-export const NO_SCOPE: MeicScopeFilter = { symbol: null, profile: null };
+export const NO_SCOPE: MeicScopeFilter = { symbol: null, profile: null, era: null };
 
-/** Page-wide scope (symbol × profile), the shape every MEIC read is narrowed by. */
-function scopeSql(scope: MeicScopeFilter): { and: string; params: string[] } {
+/** Page-wide scope (era × symbol × profile), the shape every MEIC read is narrowed by. */
+function scopeSql(db: DatabaseHandle, scope: MeicScopeFilter): { and: string; params: string[] } {
   const clauses: string[] = [];
   const params: string[] = [];
+  const era = scope.era ?? CURRENT_ERA;
+  if (era !== "ALL" && hasColumn(db, "ic_trades", "era")) {
+    clauses.push("era = ?");
+    params.push(era);
+  }
   if (scope.symbol !== null) {
     clauses.push("symbol = ?");
     params.push(scope.symbol);
@@ -30,10 +47,10 @@ function scopeSql(scope: MeicScopeFilter): { and: string; params: string[] } {
 export function readMeic(config: ConsoleConfig, mode: TradingMode, scope: MeicScopeFilter = NO_SCOPE): MeicPayload {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
-  const sc = scopeSql(scope);
 
-  const trades = withReadOnlyDb<MeicTradeRow[]>(dbPath, [], (db) =>
-    db
+  const trades = withReadOnlyDb<MeicTradeRow[]>(dbPath, [], (db) => {
+    const sc = scopeSql(db, scope);
+    return db
       .prepare<string[], Record<string, unknown>>(
         `SELECT id, trade_date, entry_time, symbol, put_strike, call_strike, wing_width,
                 net_credit, quantity, status, pnl, fees, exit_reason, iv_rank_at_entry
@@ -56,8 +73,8 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, scope: MeicSc
         fees: num(r["fees"]),
         exitReason: str(r["exit_reason"]),
         ivRankAtEntry: num(r["iv_rank_at_entry"]),
-      })),
-  );
+      }));
+  });
 
   const summaries = withReadOnlyDb<MeicSummaryRow[]>(dbPath, [], (db) =>
     db
@@ -89,12 +106,25 @@ const BANKROLL_BASE = 100_000;
 export interface MeicScope {
   symbols: string[];
   profiles: string[];
+  /** Every era present, with its row count, so the page can say what a filter costs. */
+  eras: Array<{ era: string; trades: number }>;
+  currentEra: string;
 }
 
 export function readMeicScope(config: ConsoleConfig, mode: TradingMode): MeicScope {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
-  return withReadOnlyDb<MeicScope>(dbPath, { symbols: [], profiles: [] }, (db) => ({
+  const empty: MeicScope = { symbols: [], profiles: [], eras: [], currentEra: CURRENT_ERA };
+  return withReadOnlyDb<MeicScope>(dbPath, empty, (db) => ({
+    eras: hasColumn(db, "ic_trades", "era")
+      ? db
+          .prepare<[], { era: string; trades: number }>(
+            `SELECT era, COUNT(*) AS trades FROM ic_trades
+              WHERE era IS NOT NULL GROUP BY era ORDER BY era`,
+          )
+          .all()
+      : [],
+    currentEra: CURRENT_ERA,
     symbols: db
       .prepare<[], { s: string }>("SELECT DISTINCT symbol AS s FROM ic_trades WHERE symbol IS NOT NULL ORDER BY symbol")
       .all()
@@ -231,6 +261,7 @@ export function readMeicPerformance(
   granularity: string,
   symbol: string | null,
   profile: string | null,
+  era: string | null = null,
 ): MeicPerformance {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
@@ -246,10 +277,19 @@ export function readMeicPerformance(
     regimeCoverage: [],
   };
   return withReadOnlyDb<MeicPerformance>(dbPath, empty, (db) => {
-    const hasProfile = db.prepare<[], Record<string, unknown>>("PRAGMA table_info(ic_trades)").all().some((c) => c["name"] === "risk_profile");
+    const hasProfile = hasColumn(db, "ic_trades", "risk_profile");
+    // Era narrows every figure on the page, including the cross-profile and
+    // cross-arm comparisons — comparing a profile's book-era rows against
+    // another's sample-era rows would not be a comparison at all.
+    const activeEra = era ?? CURRENT_ERA;
+    const eraOn = activeEra !== "ALL" && hasColumn(db, "ic_trades", "era");
 
     const clauses = [RESOLVED];
     const params: string[] = [];
+    if (eraOn) {
+      clauses.push("era = ?");
+      params.push(activeEra);
+    }
     if (symbol !== null) {
       clauses.push("symbol = ?");
       params.push(symbol);
@@ -263,6 +303,10 @@ export function readMeicPerformance(
     // --- profile comparison: symbol-scoped, profile-unscoped (compare them all) ---
     const profileClauses = [RESOLVED, "risk_profile IS NOT NULL"];
     const profileParams: string[] = [];
+    if (eraOn) {
+      profileClauses.push("era = ?");
+      profileParams.push(activeEra);
+    }
     if (symbol !== null) {
       profileClauses.push("symbol = ?");
       profileParams.push(symbol);
@@ -397,16 +441,16 @@ export function readMeicPerformance(
         };
       });
 
-    // --- study arms: one cumulative line per profile (ignores the page filters) ---
+    // --- study arms: one cumulative line per profile (ignores the page filters, but not the era) ---
     const studyArms = hasProfile
       ? (() => {
           const rows = db
-            .prepare<[], Record<string, unknown>>(
+            .prepare<string[], Record<string, unknown>>(
               `SELECT risk_profile, trade_date, COALESCE(SUM(pnl), 0) AS net FROM ic_trades
-                WHERE ${RESOLVED} AND risk_profile IS NOT NULL
+                WHERE ${RESOLVED} AND risk_profile IS NOT NULL${eraOn ? " AND era = ?" : ""}
                 GROUP BY risk_profile, trade_date ORDER BY risk_profile, trade_date`,
             )
-            .all();
+            .all(...(eraOn ? [activeEra] : []));
           const byArm = new Map<string, Array<{ date: string; cumulative: number }>>();
           const running = new Map<string, number>();
           for (const r of rows) {
@@ -503,6 +547,23 @@ export interface MeicBreakdownRow {
   avgNet: number | null;
 }
 
+/**
+ * The two-digit ET entry hour, or NULL when the row has no usable one.
+ * `entry_time` has drifted across the module's life: a full timestamp with an
+ * offset (`2026-07-10 09:34:49.29-04:00`), one with a zone suffix
+ * (`2026-06-29 10:01:30 ET`), an ISO `T` separator, and — in the earliest live
+ * rows — a bare `HH:MM`. Anything else buckets as unknown rather than as hour
+ * zero, which is how a bare time used to read.
+ */
+const ENTRY_HOUR = `
+  CASE
+    WHEN entry_time IS NULL THEN NULL
+    WHEN substr(entry_time, 12, 2) GLOB '[0-9][0-9]' THEN substr(entry_time, 12, 2)
+    WHEN substr(entry_time, 1, 2) GLOB '[0-9][0-9]' AND substr(entry_time, 3, 1) = ':'
+      THEN substr(entry_time, 1, 2)
+    ELSE NULL
+  END`;
+
 export interface MeicDeepAnalytics {
   mode: TradingMode;
   /** Per trade date: gross, fees, net, count — the calendar heatmap's cells. */
@@ -522,9 +583,9 @@ export function readMeicDeepAnalytics(
 ): MeicDeepAnalytics {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
-  const sc = scopeSql(scope);
   const empty: MeicDeepAnalytics = { mode, calendar: [], nlv: [], byDelta: [], byWing: [], bySymbol: [], byWeekday: [], byHour: [] };
   return withReadOnlyDb<MeicDeepAnalytics>(dbPath, empty, (db) => {
+    const sc = scopeSql(db, scope);
     const calendar = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT trade_date, SUM(pnl) - SUM(COALESCE(fees, 0)) AS net, COUNT(*) AS trades
@@ -579,16 +640,17 @@ export function readMeicDeepAnalytics(
               WHEN 0 THEN 'Sun' WHEN 1 THEN 'Mon' WHEN 2 THEN 'Tue' WHEN 3 THEN 'Wed'
               WHEN 4 THEN 'Thu' WHEN 5 THEN 'Fri' ELSE 'Sat' END`,
       ),
-      // Entry hour, read straight off the stored ET timestamp (entry_time
-      // carries its own -04:00/-05:00 offset, so no conversion is needed).
-      // Rows outside 09:00-16:00 ET are replay/practice runs, not session
-      // entries — labeled rather than dropped, so the sample stays honest.
+      // Entry hour, read off the stored ET timestamp — already ET, whether it
+      // carries an explicit -04:00/-05:00 offset or an "ET"/"EDT" suffix, so no
+      // conversion applies. Rows outside 09:00-16:00 ET are replay and
+      // shakedown runs rather than session entries; the era filter drops them
+      // from the default view and the marker keeps them readable under era ALL.
       byHour: breakdown(
-        `CASE WHEN entry_time IS NULL THEN 'unknown'
-              ELSE substr(entry_time, 12, 2) || ':00-' ||
-                   printf('%02d', CAST(substr(entry_time, 12, 2) AS INTEGER) + 1) || ':00' ||
-                   CASE WHEN CAST(substr(entry_time, 12, 2) AS INTEGER) BETWEEN 9 AND 15
-                        THEN '' ELSE ' (off-session)' END END`,
+        `CASE WHEN ${ENTRY_HOUR} IS NULL THEN 'unknown'
+              ELSE ${ENTRY_HOUR} || ':00-' ||
+                   printf('%02d', CAST(${ENTRY_HOUR} AS INTEGER) + 1) || ':00' ||
+                   CASE WHEN CAST(${ENTRY_HOUR} AS INTEGER) BETWEEN 9 AND 15
+                        THEN '' ELSE ' *' END END`,
       ),
     };
   });
@@ -609,7 +671,6 @@ export function readMeicAnalytics(
 ): MeicAnalytics {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
-  const sc = scopeSql(scope);
   const empty: MeicAnalytics = {
     mode,
     periods: [],
@@ -617,6 +678,7 @@ export function readMeicAnalytics(
     feeDrag: { grossCredit: 0, fees: 0, netPnl: 0, dragPct: null },
   };
   return withReadOnlyDb<MeicAnalytics>(dbPath, empty, (db) => {
+    const sc = scopeSql(db, scope);
     // ET-anchored period starts, matching the MEIC dashboard.
     const nowEt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
     const iso = (d: Date) => d.toISOString().slice(0, 10);

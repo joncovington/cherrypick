@@ -6,7 +6,7 @@ import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
-import { ScopeSelect, TabStrip, LoopPill } from "../../components/ScopeBar";
+import { ScopeSelect, EraSelect, TabStrip, LoopPill } from "../../components/ScopeBar";
 import { MeicDeepCards } from "./MeicDeepCards";
 import { MeicPerformanceTab } from "./MeicPerformanceTab";
 
@@ -14,6 +14,13 @@ interface MeicAnalytics {
   periods: Array<{ label: string; net: number; trades: number; wins: number; losses: number }>;
   exitReasons: Array<{ reason: string; count: number }>;
   feeDrag: { grossCredit: number; fees: number; netPnl: number; dragPct: number | null };
+}
+
+interface MeicScopeData {
+  symbols: string[];
+  profiles: string[];
+  eras: Array<{ era: string; trades: number }>;
+  currentEra: string;
 }
 
 interface LoopStatus {
@@ -26,18 +33,19 @@ interface LoopStatus {
   sessionQuality: string | null;
 }
 
-function scopeQuery(mode: TradingMode, symbol: string | null, profile: string | null): string {
+function scopeQuery(mode: TradingMode, symbol: string | null, profile: string | null, era: string | null): string {
   const p = new URLSearchParams({ mode });
   if (symbol !== null) p.set("symbol", symbol);
   if (profile !== null) p.set("profile", profile);
+  if (era !== null) p.set("era", era);
   return p.toString();
 }
 
-function useMeicAnalytics(mode: TradingMode, symbol: string | null, profile: string | null) {
+function useMeicAnalytics(mode: TradingMode, symbol: string | null, profile: string | null, era: string | null) {
   return useQuery<MeicAnalytics>({
-    queryKey: ["meic-analytics", mode, symbol, profile],
+    queryKey: ["meic-analytics", mode, symbol, profile, era],
     queryFn: async () => {
-      const res = await fetch(`/api/meic/analytics?${scopeQuery(mode, symbol, profile)}`);
+      const res = await fetch(`/api/meic/analytics?${scopeQuery(mode, symbol, profile, era)}`);
       if (!res.ok) throw new Error(`meic analytics: HTTP ${res.status}`);
       return (await res.json()) as MeicAnalytics;
     },
@@ -60,22 +68,24 @@ export function MeicPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("today");
   const [symbol, setSymbol] = useState<string | null>(null);
   const [profile, setProfile] = useState<string | null>(null);
+  /** null = the module's current era, the default every read inherits. */
+  const [era, setEra] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<(typeof OUTCOMES)[number]>("all");
   const [reason, setReason] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
-  const scope = useQuery<{ symbols: string[]; profiles: string[] }>({
+  const scope = useQuery<MeicScopeData>({
     queryKey: ["meic-scope", mode],
-    queryFn: async () => (await fetch(`/api/meic/scope?mode=${mode}`)).json() as Promise<{ symbols: string[]; profiles: string[] }>,
+    queryFn: async () => (await fetch(`/api/meic/scope?mode=${mode}`)).json() as Promise<MeicScopeData>,
     staleTime: 300_000,
   });
   const loop = useQuery<LoopStatus>({
     queryKey: ["meic-loop", mode, symbol],
-    queryFn: async () => (await fetch(`/api/meic/loop?${scopeQuery(mode, symbol, null)}`)).json() as Promise<LoopStatus>,
+    queryFn: async () => (await fetch(`/api/meic/loop?${scopeQuery(mode, symbol, null, null)}`)).json() as Promise<LoopStatus>,
     refetchInterval: 30_000,
   });
-  const { data, isLoading, isError, dataUpdatedAt } = useMeic(mode, symbol, profile);
-  const analytics = useMeicAnalytics(mode, symbol, profile);
+  const { data, isLoading, isError, dataUpdatedAt } = useMeic(mode, symbol, profile, era);
+  const analytics = useMeicAnalytics(mode, symbol, profile, era);
   const a = analytics.data;
   const totalExits = a?.exitReasons.reduce((s, r) => s + r.count, 0) ?? 0;
 
@@ -92,6 +102,14 @@ export function MeicPage() {
   });
 
   const l = loop.data;
+  // Filtering to an era with nothing in it is a legitimate answer, not a
+  // failure — say so, and offer the widening in one click.
+  const eras = scope.data?.eras ?? [];
+  const activeEra = era ?? scope.data?.currentEra;
+  const activeEraCount = eras.find((e) => e.era === activeEra)?.trades ?? 0;
+  const otherEraCount = eras.reduce((s, e) => s + e.trades, 0) - activeEraCount;
+  const emptyEra = era !== "ALL" && eras.length > 0 && activeEraCount === 0 && otherEraCount > 0;
+
   return (
     <div className="page">
       <div className="page-title-row">
@@ -100,6 +118,7 @@ export function MeicPage() {
         <TabStrip tabs={TABS} value={tab} onChange={setTab} />
         <ScopeSelect label="symbol" value={symbol} options={scope.data?.symbols} onChange={setSymbol} allLabel="all symbols" />
         <ScopeSelect label="profile" value={profile} options={scope.data?.profiles} onChange={setProfile} allLabel="all profiles" />
+        <EraSelect value={era} eras={scope.data?.eras} currentEra={scope.data?.currentEra} onChange={setEra} />
         <LoopPill
           state={l?.state}
           ageSeconds={l?.ageSeconds}
@@ -110,11 +129,21 @@ export function MeicPage() {
         <ModeToggle mode={mode} onChange={setMode} />
       </div>
 
-      {tab === "performance" && <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} />}
+      {emptyEra && (
+        <p className="stale-note">
+          No trades in era <strong>{activeEra}</strong> for this {mode} store — {otherEraCount} sit in earlier
+          eras, which the module treats as shakedown data rather than evidence.{" "}
+          <button type="button" className="link-button" onClick={() => setEra("ALL")}>
+            show every era
+          </button>
+        </p>
+      )}
+
+      {tab === "performance" && <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={era} />}
 
       {tab === "history" && (
         <div className="cards cards-wide">
-          <MeicDeepCards mode={mode} symbol={symbol} profile={profile} />
+          <MeicDeepCards mode={mode} symbol={symbol} profile={profile} era={era} />
           <DataCard
             title="Daily summaries"
             headers={["date", "sym", "entries", "filled", "stopped", "win %", "net P&L"]}
