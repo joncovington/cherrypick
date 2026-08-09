@@ -103,6 +103,23 @@ def test_reconcile_schedule_settings_overrides():
     assert s == {"enabled": True, "task_name": "x", "at": "16:35"}
 
 
+def test_symbol_watch_settings_off_by_default():
+    s = c.symbol_watch_settings({})
+    assert s == {
+        "enabled": False,
+        "task_name": "cherrypick-earnings-symbol-watch",
+        "at": "06:30",
+        "days": 10,
+    }
+
+
+def test_symbol_watch_settings_overrides():
+    s = c.symbol_watch_settings(
+        {"symbol_watch": {"enabled": True, "at": "07:00", "task_name": "x", "days": 21}}
+    )
+    assert s == {"enabled": True, "task_name": "x", "at": "07:00", "days": 21}
+
+
 def test_broker_tool_defaults_to_tt_and_is_overridable():
     # With no module name there is nothing to build a default from -> empty; the caller supplies argv.
     assert c.broker_tool({}) == []

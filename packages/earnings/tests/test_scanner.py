@@ -414,6 +414,7 @@ def test_compute_winrate_no_earnings_dates(monkeypatch):
         "sample_size": 0,
         "winrate": None,
         "quarters": [],
+        "realized_move_quarters": [],
         "skipped": [],
     }
 
@@ -454,6 +455,61 @@ def test_compute_winrate_computes_win_when_implied_exceeds_realized(monkeypatch)
     assert result["quarters"][0]["win"] is True
 
 
+def test_compute_winrate_realized_move_quarters_survives_missing_straddle(monkeypatch):
+    """The bug this guards: a quarter with good OHLCV closes but no matching historical option
+    chain used to be dropped entirely, discarding perfectly good realized-move data along with
+    the missing implied side. realized_move_quarters must keep it; quarters (winrate) still
+    correctly excludes it."""
+    monkeypatch.setattr(
+        scanner,
+        "fetch_historical_earnings_dates",
+        lambda *a, **k: [{"date": date(2026, 1, 1), "timing": "After market close"}],
+    )
+    monkeypatch.setattr(
+        scanner,
+        "pre_and_reaction_closes",
+        lambda *a, **k: (
+            {"date": date(2026, 1, 1), "close": 100.0},
+            {"date": date(2026, 1, 2), "close": 103.0},
+        ),
+    )
+    monkeypatch.setattr(scanner, "fetch_atm_straddle_price", lambda *a, **k: None)
+
+    result = scanner.compute_winrate("AAPL", {}, lookback_quarters=8)
+    assert result["quarters"] == []
+    assert result["sample_size"] == 0
+    assert result["skipped"] == [{"date": "2026-01-01", "reason": "no_matching_option_chain_data"}]
+    assert len(result["realized_move_quarters"]) == 1
+    assert result["realized_move_quarters"][0]["realized_move"] == 3.0
+    assert result["realized_move_quarters"][0]["pre_close"] == 100.0
+
+
+def test_compute_winrate_realized_move_quarters_can_exceed_quarters_sample(monkeypatch):
+    """realized_move_quarters fills to its own lookback_quarters target even when winrate's own
+    sample stays smaller -- deep OHLCV coverage vs shallower option_chain coverage."""
+    dates = [{"date": date(2026, 1, d), "timing": "After market close"} for d in (1, 3, 5)]
+    monkeypatch.setattr(scanner, "fetch_historical_earnings_dates", lambda *a, **k: dates)
+    monkeypatch.setattr(
+        scanner,
+        "pre_and_reaction_closes",
+        lambda symbol, d, timing, config: ({"date": d, "close": 100.0}, {"date": d, "close": 105.0}),
+    )
+    # Only the first date has a matching historical option chain.
+    monkeypatch.setattr(
+        scanner,
+        "fetch_atm_straddle_price",
+        lambda symbol, pre_date, reaction_date, pre_close, config: (
+            {"expiration": "2026-01-16", "atm_strike": 100.0, "straddle_mid": 5.0}
+            if pre_date == date(2026, 1, 1)
+            else None
+        ),
+    )
+
+    result = scanner.compute_winrate("AAPL", {}, lookback_quarters=3)
+    assert result["sample_size"] == 1
+    assert len(result["realized_move_quarters"]) == 3
+
+
 # --- fetch_entry_window_calendar (mocked DB layer) -------------------------------
 
 
@@ -473,3 +529,236 @@ def test_fetch_entry_window_calendar_merges_today_amc_and_tomorrow_bmo(monkeypat
     result = scanner.fetch_entry_window_calendar({}, today=date(2026, 7, 7))
     symbols = [r["symbol"] for r in result]
     assert symbols == ["AMC_TODAY", "BMO_TOMORROW"]
+
+
+# --- compute_historical_move_stats (mocked DB layer, via compute_winrate) --------
+
+
+def _mock_winrate_quarters(monkeypatch, pre_closes, reaction_closes):
+    """3 quarters' worth of fetch_historical_earnings_dates/pre_and_reaction_closes/
+    fetch_atm_straddle_price mocks, so compute_winrate (and therefore
+    compute_historical_move_stats) sees `len(pre_closes)` quarters with the given
+    pre/reaction closes. Straddle mid is irrelevant to move-stats math, kept fixed."""
+    dates = [{"date": date(2026, 1, i + 1), "timing": "After market close"} for i in range(len(pre_closes))]
+    monkeypatch.setattr(scanner, "fetch_historical_earnings_dates", lambda *a, **k: dates)
+
+    closes = iter(zip(pre_closes, reaction_closes, strict=True))
+
+    def fake_closes(*a, **k):
+        pre, reaction = next(closes)
+        return {"date": date(2026, 1, 1), "close": pre}, {"date": date(2026, 1, 2), "close": reaction}
+
+    monkeypatch.setattr(scanner, "pre_and_reaction_closes", fake_closes)
+    monkeypatch.setattr(
+        scanner,
+        "fetch_atm_straddle_price",
+        lambda *a, **k: {"expiration": "2026-01-16", "atm_strike": 100.0, "straddle_mid": 5.0},
+    )
+
+
+def test_compute_historical_move_stats_computes_mean_dispersion_max(monkeypatch):
+    # Realized moves as % of pre_close: 4%, 4%, 20% -- mean 9.33%, the 20% quarter is >= 2x that.
+    _mock_winrate_quarters(monkeypatch, pre_closes=[100.0, 100.0, 100.0], reaction_closes=[104.0, 96.0, 120.0])
+    result = scanner.compute_historical_move_stats("AAPL", {"move_tail_multiple": 2.0}, lookback_quarters=8)
+    assert result["ok"] is True
+    assert result["sample_size"] == 3
+    assert result["avg_actual_move_pct"] == pytest.approx((0.04 + 0.04 + 0.20) / 3)
+    assert result["max_actual_move_pct"] == pytest.approx(0.20)
+    assert result["move_dispersion_pct"] > 0
+    assert result["tail_quarters"] == 1
+    assert result["move_tail_veto"] is True
+
+
+def test_compute_historical_move_stats_no_tail_when_moves_are_consistent(monkeypatch):
+    _mock_winrate_quarters(monkeypatch, pre_closes=[100.0, 100.0], reaction_closes=[104.0, 103.0])
+    result = scanner.compute_historical_move_stats("AAPL", {}, lookback_quarters=8)
+    assert result["tail_quarters"] == 0
+    assert result["move_tail_veto"] is False
+
+
+def test_compute_historical_move_stats_insufficient_sample(monkeypatch):
+    monkeypatch.setattr(scanner, "fetch_historical_earnings_dates", lambda *a, **k: [])
+    result = scanner.compute_historical_move_stats("AAPL", {}, lookback_quarters=8)
+    assert result["ok"] is False
+    assert result["sample_size"] == 0
+
+
+# --- compute_spread_quality --------------------------------------------------------
+
+
+def test_compute_spread_quality_computes_net_combo_spread():
+    legs = [{"bid": 1.90, "ask": 2.10, "mid": 2.00}, {"bid": 0.95, "ask": 1.05, "mid": 1.00}]
+    result = scanner.compute_spread_quality(legs)
+    # total width 0.30, total mid 3.00 -> 10%
+    assert result["net_combo_spread_pct"] == pytest.approx(0.10)
+
+
+def test_compute_spread_quality_skips_incomplete_legs():
+    # First leg has no bid -- skipped entirely, not treated as zero-cost; only the second
+    # leg's 0.10 width / 1.00 mid feeds the result.
+    legs = [{"bid": None, "ask": 2.10, "mid": 2.00}, {"bid": 0.95, "ask": 1.05, "mid": 1.00}]
+    result = scanner.compute_spread_quality(legs)
+    assert result["net_combo_spread_pct"] == pytest.approx(0.10)
+
+
+def test_compute_spread_quality_no_usable_legs_returns_none():
+    result = scanner.compute_spread_quality([{"bid": None, "ask": None, "mid": None}])
+    assert result["net_combo_spread_pct"] is None
+
+
+# --- apply_move_tail_gate ----------------------------------------------------------
+
+
+def test_apply_move_tail_gate_off_by_default_never_rejects():
+    hard_fail: list = []
+    scanner.apply_move_tail_gate({"move_tail_veto": True}, {}, hard_fail)
+    assert hard_fail == []
+
+
+def test_apply_move_tail_gate_veto_rejects_when_flagged():
+    hard_fail: list = []
+    config = {"_symbol_screen": {"move_tail": "veto"}}
+    scanner.apply_move_tail_gate({"move_tail_veto": True}, config, hard_fail)
+    assert hard_fail == ["move_tail_veto"]
+
+
+def test_apply_move_tail_gate_veto_level_but_not_flagged_passes():
+    hard_fail: list = []
+    config = {"_symbol_screen": {"move_tail": "veto"}}
+    scanner.apply_move_tail_gate({"move_tail_veto": False}, config, hard_fail)
+    assert hard_fail == []
+
+
+# --- apply_common_signals -----------------------------------------------------------
+
+
+def test_apply_common_signals_prefers_tastytrade_iv_rv_over_dolt():
+    criteria = {"tastytrade_iv_rv_ratio": 1.6}
+    scanner.apply_common_signals(criteria, 2_000_000, 1.1, 0.6, 8)
+    assert criteria["iv_rv_ratio"] == 1.6
+    assert criteria["iv_rv_source"] == "tastytrade"
+
+
+def test_apply_common_signals_falls_back_to_dolt_when_tastytrade_missing():
+    criteria: dict = {}
+    scanner.apply_common_signals(criteria, 2_000_000, 1.1, 0.6, 8)
+    assert criteria["iv_rv_ratio"] == 1.1
+    assert criteria["iv_rv_source"] == "dolt"
+
+
+def test_apply_common_signals_no_source_when_both_missing():
+    criteria: dict = {}
+    scanner.apply_common_signals(criteria, 2_000_000, None, 0.6, 8)
+    assert criteria["iv_rv_ratio"] is None
+    assert criteria["iv_rv_source"] is None
+
+
+def test_apply_common_signals_computes_implied_vs_avg_actual():
+    criteria = {"expected_move_pct": 0.08}
+    move_stats = {
+        "ok": True,
+        "avg_actual_move_pct": 0.04,
+        "move_dispersion_pct": 0.01,
+        "max_actual_move_pct": 0.06,
+        "move_tail_veto": False,
+    }
+    scanner.apply_common_signals(criteria, 1_000_000, None, 0.5, 4, move_stats)
+    assert criteria["implied_vs_avg_actual"] == pytest.approx(2.0)
+    assert criteria["avg_actual_move_pct"] == 0.04
+    assert criteria["move_tail_veto"] is False
+
+
+def test_apply_common_signals_skips_move_stats_when_not_ok():
+    criteria: dict = {}
+    scanner.apply_common_signals(criteria, 1_000_000, None, 0.5, 4, {"ok": False})
+    assert "avg_actual_move_pct" not in criteria
+
+
+# --- richest_criteria / build_entry_review_spec -------------------------------------
+
+
+def test_richest_criteria_picks_the_largest_dict():
+    results = [
+        {"name": "iron_fly", "criteria": {"a": 1}, "composite_score": 0.1},
+        {"name": "double_calendar", "criteria": {"a": 1, "b": 2, "c": 3}, "composite_score": 0.2},
+    ]
+    crit, name, score = scanner.richest_criteria(results)
+    assert crit == {"a": 1, "b": 2, "c": 3}
+    assert name == "double_calendar"
+    assert score == 0.2
+
+
+def test_richest_criteria_empty_results():
+    crit, name, score = scanner.richest_criteria([])
+    assert crit == {}
+    assert name is None
+    assert score is None
+
+
+def test_build_entry_review_spec_shape():
+    criteria = {
+        "price": 150.0,
+        "avg_volume": 2_000_000,
+        "winrate": 0.6,
+        "winrate_sample_size": 8,
+        "iv_rv_ratio": 1.4,
+        "iv_rv_source": "tastytrade",
+        "term_structure": -0.05,
+        "expected_move_pct": 0.06,
+        "net_combo_spread_pct": 0.03,
+        "avg_actual_move_pct": 0.04,
+        "implied_vs_avg_actual": 1.5,
+        "move_tail_veto": False,
+        "iv_rank": 0.7,
+        "iv_percentile": 0.65,
+    }
+    spec = scanner.build_entry_review_spec(
+        "2026-08-07", "AAPL", "After market close", criteria, "iron_fly", True, "opened iron_fly",
+        composite_score=0.42, logged_at=123.0,
+    )
+    assert spec["scan_date"] == "2026-08-07"
+    assert spec["symbol"] == "AAPL"
+    assert spec["strategy"] == "iron_fly"
+    assert spec["volume"] == 2_000_000
+    assert spec["iv_rv_source"] == "tastytrade"
+    assert spec["best_tier"] == "accepted"
+    assert spec["selected"] is True
+    assert spec["composite_score"] == 0.42
+    assert spec["logged_at"] == 123.0
+    assert spec["criteria_json"] == criteria
+
+
+def test_build_entry_review_spec_rejected_best_tier():
+    spec = scanner.build_entry_review_spec("2026-08-07", "MSFT", "Before market open", {}, None, False, "no edge")
+    assert spec["best_tier"] == "rejected"
+    assert spec["selected"] is False
+
+
+def test_fetch_liquid_symbols_returns_set_on_success(monkeypatch):
+    monkeypatch.setattr(scanner, "call_tt", lambda args: {"ok": True, "symbols": ["AAPL", "MSFT"]})
+    assert scanner.fetch_liquid_symbols() == {"AAPL", "MSFT"}
+
+
+def test_fetch_liquid_symbols_none_on_failure(monkeypatch):
+    monkeypatch.setattr(scanner, "call_tt", lambda args: {"ok": False, "error": "no session"})
+    assert scanner.fetch_liquid_symbols() is None
+
+
+def test_fetch_liquid_symbols_none_on_empty_watchlist(monkeypatch):
+    monkeypatch.setattr(scanner, "call_tt", lambda args: {"ok": True, "symbols": []})
+    assert scanner.fetch_liquid_symbols() is None
+
+
+def test_fetch_watch_universe_returns_set_on_success(monkeypatch):
+    monkeypatch.setattr(scanner, "call_tt", lambda args: {"ok": True, "symbols": ["AAPL", "NET"]})
+    assert scanner.fetch_watch_universe() == {"AAPL", "NET"}
+
+
+def test_fetch_watch_universe_none_on_failure(monkeypatch):
+    monkeypatch.setattr(scanner, "call_tt", lambda args: {"ok": False, "error": "no session"})
+    assert scanner.fetch_watch_universe() is None
+
+
+def test_fetch_watch_universe_none_on_empty_union(monkeypatch):
+    monkeypatch.setattr(scanner, "call_tt", lambda args: {"ok": True, "symbols": []})
+    assert scanner.fetch_watch_universe() is None

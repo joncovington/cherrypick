@@ -61,6 +61,18 @@ def test_registry_snapshot_omits_log_archive_when_opted_out(monkeypatch):
     assert "cherrypick-log-archive" not in tasks.registry_snapshot(cfg)
 
 
+def test_registry_snapshot_includes_symbol_watch_when_enabled(monkeypatch):
+    monkeypatch.setattr(tasks, "query_verbose", lambda name: {"exists": True})
+    cfg = {"modules": {}, "symbol_watch": {"enabled": True}}
+    assert "cherrypick-earnings-symbol-watch" in tasks.registry_snapshot(cfg)
+
+
+def test_registry_snapshot_omits_symbol_watch_by_default(monkeypatch):
+    monkeypatch.setattr(tasks, "query_verbose", lambda name: {"exists": True})
+    cfg = {"modules": {}}
+    assert "cherrypick-earnings-symbol-watch" not in tasks.registry_snapshot(cfg)
+
+
 def test_monthly_schedule_cron_format():
     assert tasks._monthly_schedule(1, "03:30") == "30 3 1 * *"
     with pytest.raises(ValueError):

@@ -1,8 +1,18 @@
 import asyncio
 import json
+import sys
+import types
 from datetime import date
 
 from cherrypick.earnings import tt
+
+
+class _FakeWatchlist:
+    def __init__(self, group_name, name, entries):
+        self.group_name = group_name
+        self.name = name
+        self.watchlist_entries = entries
+
 
 # --- pure helpers ------------------------------------------------------------
 
@@ -318,3 +328,116 @@ def test_cmd_execute_trade_deploy_governor_blocks_live_over_cap(monkeypatch):
     assert result["error"] == "account deploy limit exceeded"
     assert result["governor"]["deploy_governor"] == "enforced"
     assert calls == [True]  # blocked before the live submit
+
+
+def test_cmd_get_liquid_symbols_filters_to_the_liquidity_group_and_liquid_symbols_name(monkeypatch):
+    """Mirrors scout's liquidity_service._default_fetch test -- same watchlist, same live-verified
+    shape (group_name == "Liquidity" has multiple watchlists; only "Liquid Symbols" is wanted)."""
+    watchlists = [
+        _FakeWatchlist("Liquidity", "Liquid Symbols", [{"symbol": "aapl"}, {"symbol": "MSFT"}]),
+        _FakeWatchlist("Liquidity", "High Options Volume", [{"symbol": "SPY"}]),
+        _FakeWatchlist("tasty", "Market", [{"symbol": "IGNORED"}]),
+    ]
+
+    class _FakePublicWatchlist:
+        @staticmethod
+        async def get(_session):
+            return watchlists
+
+    fake_module = types.ModuleType("tastytrade.watchlists")
+    fake_module.PublicWatchlist = _FakePublicWatchlist
+    monkeypatch.setitem(sys.modules, "tastytrade.watchlists", fake_module)
+    monkeypatch.setattr(tt, "get_session", lambda: object())
+
+    result = asyncio.run(tt.cmd_get_liquid_symbols(None))
+    assert result == {"ok": True, "symbols": ["AAPL", "MSFT"]}
+
+
+def test_cmd_get_liquid_symbols_empty_watchlist_returns_empty_list(monkeypatch):
+    class _FakePublicWatchlist:
+        @staticmethod
+        async def get(_session):
+            return []
+
+    fake_module = types.ModuleType("tastytrade.watchlists")
+    fake_module.PublicWatchlist = _FakePublicWatchlist
+    monkeypatch.setitem(sys.modules, "tastytrade.watchlists", fake_module)
+    monkeypatch.setattr(tt, "get_session", lambda: object())
+
+    result = asyncio.run(tt.cmd_get_liquid_symbols(None))
+    assert result == {"ok": True, "symbols": []}
+
+
+def test_cmd_get_liquid_symbols_degrades_on_exception(monkeypatch):
+    def _boom():
+        raise RuntimeError("no session")
+
+    monkeypatch.setattr(tt, "get_session", _boom)
+    result = asyncio.run(tt.cmd_get_liquid_symbols(None))
+    assert result["ok"] is False
+
+
+def test_cmd_get_watch_universe_unions_the_three_watchlists(monkeypatch):
+    watchlists = [
+        _FakeWatchlist("Liquidity", "Liquid Symbols", [{"symbol": "aapl"}, {"symbol": "MSFT"}]),
+        _FakeWatchlist("Liquidity", "High Options Volume", [{"symbol": "SPY"}, {"symbol": "AAPL"}]),
+        _FakeWatchlist("Earnings", "tasty Earnings", [{"symbol": "NET"}]),
+        _FakeWatchlist("Earnings", "All Earnings", [{"symbol": "IGNORED_TOO_BROAD"}]),
+        _FakeWatchlist("tasty", "Market", [{"symbol": "IGNORED"}]),
+    ]
+
+    class _FakePublicWatchlist:
+        @staticmethod
+        async def get(_session):
+            return watchlists
+
+    fake_module = types.ModuleType("tastytrade.watchlists")
+    fake_module.PublicWatchlist = _FakePublicWatchlist
+    monkeypatch.setitem(sys.modules, "tastytrade.watchlists", fake_module)
+    monkeypatch.setattr(tt, "get_session", lambda: object())
+
+    result = asyncio.run(tt.cmd_get_watch_universe(None))
+    assert result == {"ok": True, "symbols": ["AAPL", "MSFT", "NET", "SPY"]}
+
+
+def test_cmd_get_watch_universe_tolerates_a_missing_watchlist(monkeypatch):
+    """Only "Liquid Symbols" is present -- "High Options Volume" and "tasty Earnings" missing
+    entirely (e.g. renamed/retired) must not fail the whole union."""
+    watchlists = [_FakeWatchlist("Liquidity", "Liquid Symbols", [{"symbol": "AAPL"}])]
+
+    class _FakePublicWatchlist:
+        @staticmethod
+        async def get(_session):
+            return watchlists
+
+    fake_module = types.ModuleType("tastytrade.watchlists")
+    fake_module.PublicWatchlist = _FakePublicWatchlist
+    monkeypatch.setitem(sys.modules, "tastytrade.watchlists", fake_module)
+    monkeypatch.setattr(tt, "get_session", lambda: object())
+
+    result = asyncio.run(tt.cmd_get_watch_universe(None))
+    assert result == {"ok": True, "symbols": ["AAPL"]}
+
+
+def test_cmd_get_watch_universe_empty_when_none_present(monkeypatch):
+    class _FakePublicWatchlist:
+        @staticmethod
+        async def get(_session):
+            return []
+
+    fake_module = types.ModuleType("tastytrade.watchlists")
+    fake_module.PublicWatchlist = _FakePublicWatchlist
+    monkeypatch.setitem(sys.modules, "tastytrade.watchlists", fake_module)
+    monkeypatch.setattr(tt, "get_session", lambda: object())
+
+    result = asyncio.run(tt.cmd_get_watch_universe(None))
+    assert result == {"ok": True, "symbols": []}
+
+
+def test_cmd_get_watch_universe_degrades_on_exception(monkeypatch):
+    def _boom():
+        raise RuntimeError("no session")
+
+    monkeypatch.setattr(tt, "get_session", _boom)
+    result = asyncio.run(tt.cmd_get_watch_universe(None))
+    assert result["ok"] is False

@@ -44,30 +44,28 @@ def _strategy_config(config: dict) -> dict:
 
 def realized_move_dispersion(symbol: str, config: dict, lookback_quarters: int = 8) -> dict:
     """Standard deviation of historical realized earnings moves (as a % of
-    pre-earnings price), computed from the same historical earnings dates
-    scanner.compute_winrate() already pulls. Low dispersion means the stock's
+    pre-earnings price). Thin wrapper around scanner.compute_historical_move_stats
+    (shared with every strategy, not just the calendar spreads) that keeps this
+    function's own field names (mean_realized_move_pct/realized_move_dispersion_pct)
+    so apply_tiering below doesn't change. Low dispersion means the stock's
     earnings-move behavior is consistent; high dispersion means occasional
     blowout moves that could undermine a calendar spread's assumptions.
     Shared with double_calendar.py for consistency.
     """
-    winrate = scanner.compute_winrate(symbol, config, lookback_quarters)
-    pct_moves = [q["realized_move"] / q["pre_close"] for q in winrate["quarters"] if q.get("pre_close")]
-    if len(pct_moves) < 2:
+    stats = scanner.compute_historical_move_stats(symbol, config, lookback_quarters)
+    if not stats.get("ok"):
         return {
             "ok": False,
             "symbol": symbol,
-            "sample_size": len(pct_moves),
-            "error": "insufficient sample for dispersion",
+            "sample_size": stats.get("sample_size", 0),
+            "error": stats.get("error", "insufficient sample for dispersion"),
         }
-    mean = sum(pct_moves) / len(pct_moves)
-    variance = sum((m - mean) ** 2 for m in pct_moves) / (len(pct_moves) - 1)
-    std_dev = variance**0.5
     return {
         "ok": True,
         "symbol": symbol,
-        "sample_size": len(pct_moves),
-        "mean_realized_move_pct": mean,
-        "realized_move_dispersion_pct": std_dev,
+        "sample_size": stats["sample_size"],
+        "mean_realized_move_pct": stats["avg_actual_move_pct"],
+        "realized_move_dispersion_pct": stats["move_dispersion_pct"],
     }
 
 
@@ -173,6 +171,7 @@ def apply_tiering(criteria: dict, config: dict) -> dict:
 
     scanner.apply_liquidity_gates(criteria, config, hard_fail)
     scanner.apply_soft_criteria(criteria, config, hard_fail)
+    scanner.apply_move_tail_gate(criteria, config, hard_fail)
 
     return {"accepted": not hard_fail, "reject_reasons": hard_fail}
 

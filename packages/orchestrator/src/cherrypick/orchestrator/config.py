@@ -360,6 +360,27 @@ def follow_feed_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def symbol_watch_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved earnings forward-preview scan config -- packages/earnings' own
+    `cherrypick.earnings.symbol_watch`, the source of scout's read-only Earnings page "Upcoming"
+    section (expected move, term structure, IV/RV, winrate, historical move stats, and a
+    recommended/near-miss/fail tier badge for symbols reporting in the next `days` **trading**
+    days, restricted to a liquid-enough universe). OFF by default, and only meaningful once the
+    `earnings` module itself is installed (this task shells into that module's own code, same as
+    the entry/exit tasks). When enabled, `install` registers a daily task running `symbol_watch
+    refresh --days <days>` -- its own task, off the watchdog tick, since a multi-minute
+    per-symbol broker-chain scan has no place on the reliability path. `days` should match what
+    scout's Upcoming view actually shows (10 trading days by default); widening it here without
+    widening scout's own window just spends broker calls on symbols nothing will ever display."""
+    sw = cfg.get("symbol_watch", {}) or {}
+    return {
+        "enabled": sw.get("enabled", False),
+        "task_name": sw.get("task_name", "cherrypick-earnings-symbol-watch"),
+        "at": sw.get("at", "06:30"),
+        "days": int(sw.get("days", 10)),
+    }
+
+
 def insight_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved AI EOD-insight config. **OFF by default** — it needs Claude Code (`claude`) on PATH,
     an authenticated session, and a paid call, so it's opt-in (`"eod_insight": {"enabled": true}`). When

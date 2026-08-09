@@ -63,7 +63,7 @@ function openBuilderFor(sym) {
   htmx.ajax("GET", `/partial/builder/${sym}`, { target: "#content" });
 }
 
-// Delegated, since the calendar table is re-rendered by htmx on every swap -- one listener here
+// Delegated, since a view's table is re-rendered by htmx on every swap -- one listener here
 // covers every current and future ".builder-link", not a per-row binding that goes stale.
 document.body.addEventListener("click", (evt) => {
   const link = evt.target.closest("a.builder-link[data-sym]");
@@ -271,11 +271,54 @@ function _chipFilterParams(view) {
   return params;
 }
 
+const _SCREENER_RAIL_COLLAPSED_KEY = "scout-screener-rail-collapsed";
+const _SCREENER_FILTER_LABELS = {
+  iv: "IV",
+  liquidity: "Liquidity",
+  cap: "Cap",
+  sector: "Sector",
+  trend: "Trend",
+  sentiment: "Sentiment",
+};
+
+// One pill per active chip, grouped-labeled ("Trend: Bullish") so same-named buckets in different
+// groups (Trend vs. Sentiment both have "Bullish") don't read as duplicates. Each pill's own "x"
+// clears just that chip; a single "Clear all" clears every chip in the rail. Also keeps the
+// collapsed-rail strip's badge honest, since it reads the same .chip.on count.
+function _renderActiveSummary(view) {
+  const summaryEl = view.querySelector("#screener-active-summary");
+  const stripCountEl = view.querySelector("#screener-rail-strip-count");
+  const chips = [...view.querySelectorAll(".chip-group .chip.on")];
+  if (stripCountEl) stripCountEl.textContent = String(chips.length);
+  if (!summaryEl) return;
+  if (!chips.length) {
+    summaryEl.innerHTML = '<span>No filters active — each group\'s config default applies.</span>';
+    return;
+  }
+  const pills = chips
+    .map((chip) => {
+      const group = chip.closest(".chip-group");
+      const label = _SCREENER_FILTER_LABELS[group?.dataset.filter] || group?.dataset.filter || "";
+      return `<span class="pill" data-bucket="${chip.dataset.bucket}" data-filter="${group?.dataset.filter}">${label}: ${chip.textContent.trim()} <button type="button" title="Remove">&times;</button></span>`;
+    })
+    .join("");
+  summaryEl.innerHTML = `${pills}<button type="button" class="clear-all">Clear all</button>`;
+}
+
 function _fmtCap(v) {
   if (typeof v !== "number") return "—";
   if (v >= 1e12) return `${(v / 1e12).toFixed(1)}T`;
   if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
   return `${(v / 1e6).toFixed(0)}M`;
+}
+
+// Signed coloring (green/red) for a skew reading -- same semantic-state-as-color convention as
+// _trendChip, just inline rather than a pill since this is a plain numeric column.
+function _fmtSkew(v) {
+  if (typeof v !== "number") return "—";
+  const cls = v > 0 ? "num-up" : v < 0 ? "num-down" : "";
+  const sign = v > 0 ? "+" : "";
+  return `<span class="${cls}">${sign}${v.toFixed(2)}</span>`;
 }
 
 async function mountScreenerView(view) {
@@ -327,11 +370,27 @@ async function mountScreenerView(view) {
     } else {
       _screenerTable = new Tabulator(tableEl, {
         data: rows,
-        layout: "fitColumns",
-        persistence: true,
+        // fitColumns forces every column's width to sum to exactly the container's width --
+        // with 17 columns and the filter rail now claiming part of that width, columns were
+        // squeezed to a handful of pixels each (headers truncating to "S...", "1..."). fitDataFill
+        // sizes each column to its own content and only stretches to fill leftover space, scrolling
+        // horizontally instead of shrinking below readable width -- same idea as the layout
+        // mockup's own wide-table treatment.
+        layout: "fitDataFill",
+        // Column-width persistence (not sort) is what would otherwise keep replaying a squeezed
+        // fitColumns-era layout out of localStorage even after this fix ships.
+        persistence: { sort: true },
         persistenceID: "scout-screener",
         placeholder: "No candidates matched -- try a different strategy or widen the watchlist.",
         initialSort: [{ column: "composite_score", dir: "desc" }],
+        // The vendored "midnight" theme's row background survives even an `!important` stylesheet
+        // override in some Tabulator code paths (its formatters/print/responsive modules set
+        // background inline in a few places) -- setProperty's own "important" flag on the row's
+        // inline style is the one thing guaranteed to outrank that, so row theming happens here
+        // instead of fighting it further in CSS. Selected/hover states stay CSS-driven (scout.css).
+        rowFormatter: (row) => {
+          row.getElement().style.setProperty("background-color", "transparent", "important");
+        },
         columns: [
           {
             title: "Symbol",
@@ -340,31 +399,43 @@ async function mountScreenerView(view) {
               `<a href="#" data-sym="${cell.getValue()}" class="builder-link">${cell.getValue()}</a>`,
             cellClick: (_e, cell) => openBuilderFor(cell.getValue()),
           },
-          { title: "Spot", field: "spot", formatter: (c) => _fmtNum(c.getValue()) },
-          { title: "IV rank", field: "iv_rank", formatter: (c) => _fmtPct(c.getValue()) },
+          { title: "Spot", field: "spot", hozAlign: "right", formatter: (c) => _fmtNum(c.getValue()) },
+          { title: "IV rank", field: "iv_rank", hozAlign: "right", formatter: (c) => _fmtPct(c.getValue()) },
           { title: "Liquidity", field: "liquidity" },
-          { title: "Mkt cap", field: "market_cap", formatter: (c) => _fmtCap(c.getValue()) },
+          { title: "Mkt cap", field: "market_cap", hozAlign: "right", formatter: (c) => _fmtCap(c.getValue()) },
           { title: "Sector", field: "sector", formatter: (c) => c.getValue() || "—" },
-          { title: "1M trend", field: "trend_1m", formatter: (c) => c.getValue() || "—" },
-          { title: "Skew edge", field: "skew_edge", formatter: (c) => _fmtNum(c.getValue()) },
+          { title: "1M trend", field: "trend_1m", formatter: (c) => _trendChip(c.getValue()) },
+          { title: "Skew edge", field: "skew_edge", hozAlign: "right", formatter: (c) => _fmtSkew(c.getValue()) },
           { title: "Strikes", field: "strikes" },
-          { title: "DTE", field: "dte" },
-          { title: "Credit", field: "credit", formatter: (c) => _fmtNum(c.getValue()) },
-          { title: "Max risk", field: "max_risk", formatter: (c) => _fmtNum(c.getValue()) },
-          { title: "POP (model)", field: "pop", formatter: (c) => _fmtPct(c.getValue()) },
-          { title: "POP (1-2d)", field: "pop_heuristic", formatter: (c) => _fmtPct(c.getValue()) },
+          { title: "DTE", field: "dte", hozAlign: "right" },
+          { title: "Credit", field: "credit", hozAlign: "right", formatter: (c) => _fmtNum(c.getValue()) },
+          { title: "Max risk", field: "max_risk", hozAlign: "right", formatter: (c) => _fmtNum(c.getValue()) },
+          { title: "POP (model)", field: "pop", hozAlign: "right", formatter: (c) => _fmtPct(c.getValue()) },
+          {
+            title: "POP (1-2d)",
+            field: "pop_heuristic",
+            hozAlign: "right",
+            formatter: (c) => _fmtPct(c.getValue()),
+          },
           { title: "Breakevens", field: "breakevens" },
           {
             title: "Return/risk",
             field: "return_on_risk",
+            hozAlign: "right",
             formatter: (c) => _fmtPct(c.getValue()),
           },
           {
             title: "Annualized*",
             field: "annualized_return",
+            hozAlign: "right",
             formatter: (c) => _fmtPct(c.getValue()),
           },
-          { title: "Score", field: "composite_score", formatter: (c) => _fmtNum(c.getValue()) },
+          {
+            title: "Score",
+            field: "composite_score",
+            hozAlign: "right",
+            formatter: (c) => _fmtNum(c.getValue()),
+          },
         ],
       });
     }
@@ -377,9 +448,47 @@ async function mountScreenerView(view) {
   view.querySelectorAll(".chip").forEach((chip) => {
     chip.onclick = () => {
       chip.classList.toggle("on");
+      _renderActiveSummary(view);
       load();
     };
   });
+
+  // Whole-rail collapse: hands the rail's width back to the (fitColumns) table when the filters
+  // aren't needed on screen at all. Persisted across reloads -- a per-section (Explore) collapse
+  // resets every mount by design (quiet-by-default), but "I don't want the rail at all" is a
+  // standing preference worth remembering.
+  const rail = view.querySelector("#screener-rail");
+  const setRailCollapsed = (collapsed) => {
+    rail.classList.toggle("collapsed", collapsed);
+    localStorage.setItem(_SCREENER_RAIL_COLLAPSED_KEY, collapsed ? "1" : "0");
+  };
+  view.querySelector("#screener-rail-collapse").onclick = () => setRailCollapsed(true);
+  view.querySelector("#screener-rail-expand").onclick = () => setRailCollapsed(false);
+  setRailCollapsed(localStorage.getItem(_SCREENER_RAIL_COLLAPSED_KEY) === "1");
+
+  const exploreSection = view.querySelector("#screener-explore-section");
+  view.querySelector("#screener-explore-toggle").onclick = () => {
+    exploreSection.classList.toggle("collapsed");
+  };
+
+  view.querySelector("#screener-active-summary").addEventListener("click", (evt) => {
+    if (evt.target.closest(".clear-all")) {
+      view.querySelectorAll(".chip.on").forEach((c) => c.classList.remove("on"));
+      _renderActiveSummary(view);
+      load();
+      return;
+    }
+    const pill = evt.target.closest(".pill");
+    if (pill && evt.target.closest("button")) {
+      view
+        .querySelectorAll(`.chip-group[data-filter="${pill.dataset.filter}"] .chip[data-bucket="${pill.dataset.bucket}"]`)
+        .forEach((c) => c.classList.remove("on"));
+      _renderActiveSummary(view);
+      load();
+    }
+  });
+
+  _renderActiveSummary(view);
   await load();
 }
 
@@ -463,11 +572,11 @@ async function mountStagedView(view) {
 // replaced (a direct hx-get click, or the watchlist/screener's programmatic htmx.ajax calls),
 // since all of them route through this one afterSwap event regardless of trigger.
 const _VIEW_TO_NAV = {
-  "calendar-view": "nav-calendar",
   "screener-view": "nav-screener",
   "symbol-view": "nav-symbol",
   "builder-view": "nav-builder",
   "staged-view": "nav-staged",
+  "earnings-view": "nav-earnings",
 };
 
 function _setActiveNavTab(target) {
