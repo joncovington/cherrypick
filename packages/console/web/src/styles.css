@@ -476,6 +476,11 @@ select.text-input {
   border: 1px solid rgba(217, 92, 74, 0.5);
 }
 
+.chain-badge:not(.chain-badge-short):not(.chain-badge-long) {
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
 .chain-badge-long {
   color: var(--ok);
   background: rgba(67, 181, 122, 0.12);
