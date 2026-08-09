@@ -246,6 +246,9 @@ h2 {
   font-size: 13px;
   font-family: var(--num-face);
   font-variant-numeric: tabular-nums;
+  /* Bucket labels and figures read on one line; a cell that genuinely needs
+     to wrap sets white-space itself. */
+  white-space: nowrap;
 }
 
 .data-table tr:last-child td {
