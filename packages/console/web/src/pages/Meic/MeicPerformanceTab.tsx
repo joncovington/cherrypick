@@ -247,6 +247,7 @@ export function MeicPerformanceTab({
           title="Win rate by session quality"
           headers={["session", "trades", "sessions", "win %", "avg net"]}
           numFrom={1}
+          tableClass="data-table-labelled"
           loading={isLoading}
           rowCount={data?.bySession.length ?? 0}
           updatedAt={dataUpdatedAt}
@@ -266,6 +267,7 @@ export function MeicPerformanceTab({
           title="Avg P&L by IV-rank band"
           headers={["IV rank", "trades", "sessions", "win %", "avg net"]}
           numFrom={1}
+          tableClass="data-table-labelled"
           loading={isLoading}
           rowCount={data?.byIvRank.length ?? 0}
           updatedAt={dataUpdatedAt}
@@ -285,6 +287,7 @@ export function MeicPerformanceTab({
           title="Regime coverage"
           headers={["dimension", "tagged", "untagged", "coverage", ""]}
           numFrom={1}
+          tableClass="data-table-labelled"
           loading={isLoading}
           rowCount={data?.regimeCoverage.length ?? 0}
           updatedAt={dataUpdatedAt}

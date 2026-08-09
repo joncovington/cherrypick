@@ -190,6 +190,7 @@ export function MeicPage() {
               title="Exit reasons"
               headers={["reason", "count", "%"]}
               numFrom={1}
+              tableClass="data-table-labelled"
               loading={analytics.isLoading}
               rowCount={a?.exitReasons.length ?? 0}
               updatedAt={analytics.dataUpdatedAt}
