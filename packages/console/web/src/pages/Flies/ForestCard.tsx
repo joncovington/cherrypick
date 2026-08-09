@@ -125,7 +125,9 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
   let body = null;
   let legendRow = null;
   if (shown.length > 0) {
-    // X window: centred on the books' centres (+ spot); fixed widths are minimums.
+    // X window: the day's traded CENTRES only — from just below the lowest
+    // centre to just above the highest. Spot does not stretch the window;
+    // the day's movement replays inside the structures that were traded.
     let cMin = Infinity;
     let cMax = -Infinity;
     for (const a of shown) {
@@ -135,12 +137,9 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
         cMax = Math.max(cMax, k);
       }
     }
-    if (spot !== null) {
-      cMin = Math.min(cMin, spot);
-      cMax = Math.max(cMax, spot);
-    }
+    const buffer = Math.max((cMax - cMin) * 0.08, 3);
     const mid = (cMin + cMax) / 2;
-    const naturalHalf = (cMax - cMin) / 2 + 2;
+    const naturalHalf = (cMax - cMin) / 2 + buffer;
     const half = xwidth === "auto" ? naturalHalf : Math.max(Number(xwidth) / 2, naturalHalf);
     const xMin = mid - half;
     const xMax = mid + half;

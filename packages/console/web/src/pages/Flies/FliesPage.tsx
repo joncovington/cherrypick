@@ -7,6 +7,7 @@ import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import type { TradingMode } from "@console/shared";
 import { ForestCard } from "./ForestCard";
+import { TimelineCard } from "./TimelineCard";
 
 interface FliesAnalytics {
   today: {
@@ -112,6 +113,8 @@ export function FliesPage() {
         </section>
 
         <ForestCard mode={mode} filter={filter} />
+
+        <TimelineCard mode={mode} filter={filter} arm={arm} />
 
         <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(20rem, 1fr))" }}>
           <DataCard

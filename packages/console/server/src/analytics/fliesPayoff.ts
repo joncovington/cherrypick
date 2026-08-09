@@ -84,6 +84,74 @@ export function bookPnl(positions: FlyPosition[], s: number): number {
   return positions.reduce((sum, p) => sum + positionPnl(p, s), 0);
 }
 
+// --- tastytrade fee schedule (port of core fees: the IC open stack) ---
+const COMMISSION_OPEN = 1.0;
+const CLEARING = 0.1;
+const ORF = 0.02;
+const TAF_SELL = 0.00329;
+const INDEX_EXCHANGE: Record<string, number> = { SPX: 0.6, XSP: 0.0, NDX: 0.25, RUT: 0.18 };
+
+function icOpenFee(symbol: string, quantity: number, legs: number, sellLegs: number): number {
+  const exch = INDEX_EXCHANGE[symbol.toUpperCase()] ?? 0;
+  const perContract = COMMISSION_OPEN + CLEARING + ORF + exch;
+  return Math.round((legs * quantity * perContract + sellLegs * quantity * TAF_SELL) * 1e4) / 1e4;
+}
+
+export function verticalOpenFee(symbol: string, quantity: number): number {
+  return icOpenFee(symbol, quantity, 2, 1);
+}
+
+export function flyOpenFee(symbol: string, quantity: number): number {
+  return icOpenFee(symbol, quantity, 4, 2);
+}
+
+export interface FlyRow extends FlyPosition {
+  symbol: string;
+  entryTime: string | null;
+  completedAt: string | null;
+  entryMode: string | null;
+  credit: number | null;
+  debit: number | null;
+}
+
+/**
+ * Port of analytics._state_at: this position as it stood at `when`, or null if
+ * not on the book yet. A legged entry is a SHORT VERTICAL until it completes;
+ * debit_first is a LONG VERTICAL; bwb_roll is a bwb on its opening credit. The
+ * rewind is exact: pre-completion net is the recorded credit/debit and the fee
+ * is the 2-leg vertical open fee — recorded values, never inferred.
+ */
+export function stateAt(row: FlyRow, when: string): FlyPosition | null {
+  if (row.entryTime === null || when < row.entryTime) return null;
+  const state: FlyPosition = {
+    kind: row.kind,
+    side: row.side,
+    center: row.center,
+    wingWidth: row.wingWidth,
+    farWidth: row.farWidth,
+    net: row.net,
+    quantity: row.quantity,
+    fees: row.fees,
+    status: row.status,
+  };
+  if (row.completedAt !== null && when < row.completedAt) {
+    if (row.entryMode === "legged" && row.credit !== null) {
+      state.kind = "short_vertical";
+      state.net = row.credit;
+      state.fees = verticalOpenFee(row.symbol, state.quantity);
+    } else if (row.entryMode === "debit_first" && row.debit !== null) {
+      state.kind = "long_vertical";
+      state.net = -row.debit;
+      state.fees = verticalOpenFee(row.symbol, state.quantity);
+    } else if (row.entryMode === "bwb_roll" && row.farWidth !== null) {
+      state.kind = "bwb";
+      state.net = row.credit ?? row.net;
+      state.fees = flyOpenFee(row.symbol, state.quantity);
+    }
+  }
+  return state;
+}
+
 export interface PayoffCurve {
   empty: boolean;
   positions: number;

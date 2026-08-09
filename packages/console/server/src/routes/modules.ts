@@ -2,7 +2,14 @@ import type { FastifyInstance } from "fastify";
 import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { readMeic, readMeicAnalytics, readMeicDeepAnalytics } from "../readers/meic.js";
-import { readFlies, readFliesAnalytics, readFliesForest, readFliesMeta, type FliesFilter } from "../readers/flies.js";
+import {
+  readFlies,
+  readFliesAnalytics,
+  readFliesForest,
+  readFliesMeta,
+  readFliesTimeline,
+  type FliesFilter,
+} from "../readers/flies.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics } from "../readers/earnings.js";
 import { readGex } from "../readers/gex.js";
 import { buildGexProfile, gexSymbols } from "../services/gexProfile.js";
@@ -29,6 +36,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     readFliesAnalytics(config, parseMode(req.query), parseFliesFilter(req.query)),
   );
   app.get("/api/flies/meta", async (req) => readFliesMeta(config, parseMode(req.query)));
+  app.get("/api/flies/timeline", async (req) => {
+    const f = parseFliesFilter(req.query);
+    return readFliesTimeline(config, parseMode(req.query), f.date);
+  });
   app.get("/api/flies/forest", async (req) => {
     const f = parseFliesFilter(req.query);
     return readFliesForest(config, parseMode(req.query), f.date, f.arm);
