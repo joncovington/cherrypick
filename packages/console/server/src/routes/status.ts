@@ -19,7 +19,11 @@ function fileFreshness(key: string, label: string, p: string): SourceFreshness {
   }
 }
 
-export function registerStatusRoutes(app: FastifyInstance, config: ConsoleConfig): void {
+export function registerStatusRoutes(
+  app: FastifyInstance,
+  config: ConsoleConfig,
+  market?: { dxState: string },
+): void {
   app.get("/api/status", async (): Promise<StatusPayload> => {
     const streamer = streamerFreshness(config);
     const sources: SourceFreshness[] = [
@@ -29,9 +33,12 @@ export function registerStatusRoutes(app: FastifyInstance, config: ConsoleConfig
       fileFreshness("earnings.paper", "Earnings paper", path.join(config.paths.earningsDir, "paper_trades.db")),
       fileFreshness("gex", "GEX history", path.join(config.paths.gexDir, "gex_history.db")),
     ];
-    // Market-data state: "live" arrives with the console's own DXLink session (M3).
-    // Until then the truthful answer is "cached" when the streamer cache is present.
-    const marketData = streamer.present ? "cached" : "disconnected";
+    const marketData =
+      market?.dxState === "connected"
+        ? "live"
+        : streamer.present
+          ? "cached"
+          : "disconnected";
     const now = new Date();
     return {
       now: now.toISOString(),
