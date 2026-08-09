@@ -23,9 +23,10 @@ old dashboards (2026-08-09). "Done" means the same reads are served, not necessa
 |---|---|
 | Period stats grid (today/week/month/year/all) | done |
 | Today's trades table | partial — trade table exists; per-leg put/call status badges missing |
-| NLV over time chart | **missing** (daily_summary has no rows yet on paper) |
-| Daily P&L calendar heatmap | **missing** |
-| Win rate by session / Avg P&L by IV rank / signal breakdowns (delta band, wing, symbol, weekday) | **missing** |
+| NLV over time chart | done (empty until daily_summary gets closing_nlv rows) |
+| Daily P&L calendar heatmap | done |
+| Signal breakdowns (delta band, wing, symbol, weekday) | done |
+| Win rate by session / Avg P&L by IV rank | **missing** |
 | Exit reasons | done |
 | Fee drag | done |
 | Regime coverage | **missing** |
@@ -37,7 +38,7 @@ old dashboards (2026-08-09). "Done" means the same reads are served, not necessa
 | Card | Status |
 |---|---|
 | Today tiles (net, positions, open, risk-free, completion, fees) | done (max-possible-loss tile missing) |
-| Payoff forest (per-arm payoff curves + floors) | **missing** — the flagship; needs analytics.payoff_curve port |
+| Payoff forest (per-arm payoff curves + floors) | done — fly.py payoff core ported (all five kinds, assignment fee, book floor/bands), live spot marker |
 | Session timeline / decision journal | **missing** |
 | Positions + book floors tables | done (M2) |
 | By arm / fee drag by arm | done |
@@ -64,7 +65,7 @@ old dashboards (2026-08-09). "Done" means the same reads are served, not necessa
 | KPI row (expectancy, total net, closed trades, strategies active) | done (capital basis missing) |
 | Equity panels (cumulative / rolling 4w / 1w / per-week) | partial — per-week bars only |
 | Open positions | done |
-| Cross-strategy comparison (win rate, PF, expectancy, sample progress) | **missing** |
+| Cross-strategy comparison (win rate, PF, expectancy, sample progress) | done (sample-progress bars missing) |
 | Regime coverage heat + rejection histogram | **missing** |
 | Per-strategy detail (equity+drawdown, Sharpe, IV crush) | **missing** |
 

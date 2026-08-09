@@ -142,6 +142,15 @@ export interface EarningsAnalytics {
     expiration: string | null;
   }>;
   weekly: Array<{ week: string; net: number }>;
+  /** Cross-strategy comparison: win rate, profit factor, expectancy on net. */
+  strategies: Array<{
+    strategy: string;
+    trades: number;
+    winRatePct: number | null;
+    profitFactor: number | null;
+    expectancy: number | null;
+    net: number;
+  }>;
 }
 
 export function readEarningsAnalytics(config: ConsoleConfig, mode: TradingMode): EarningsAnalytics {
@@ -152,6 +161,7 @@ export function readEarningsAnalytics(config: ConsoleConfig, mode: TradingMode):
     kpis: { totalNet: 0, closedTrades: 0, expectancy: null, strategiesActive: 0 },
     openPositions: [],
     weekly: [],
+    strategies: [],
   };
   return withReadOnlyDb<EarningsAnalytics>(dbPath, empty, (db) => {
     const closed = db
@@ -201,6 +211,34 @@ export function readEarningsAnalytics(config: ConsoleConfig, mode: TradingMode):
         };
       });
 
+    const byStrategy = new Map<string, number[]>();
+    for (const r of closed) {
+      const key = String(r["strategy"] ?? "?");
+      let list = byStrategy.get(key);
+      if (list === undefined) {
+        list = [];
+        byStrategy.set(key, list);
+      }
+      list.push(Number(r["net"]));
+    }
+    const strategyRows = [...byStrategy.entries()]
+      .map(([strategy, nets]) => {
+        const wins = nets.filter((n) => n > 0);
+        const losses = nets.filter((n) => n < 0);
+        const won = wins.reduce((s, n) => s + n, 0);
+        const lost = Math.abs(losses.reduce((s, n) => s + n, 0));
+        const net = nets.reduce((s, n) => s + n, 0);
+        return {
+          strategy,
+          trades: nets.length,
+          winRatePct: wins.length + losses.length > 0 ? (wins.length / (wins.length + losses.length)) * 100 : null,
+          profitFactor: lost > 0 ? won / lost : null,
+          expectancy: nets.length > 0 ? net / nets.length : null,
+          net,
+        };
+      })
+      .sort((a, b) => b.net - a.net);
+
     return {
       mode,
       kpis: {
@@ -211,6 +249,7 @@ export function readEarningsAnalytics(config: ConsoleConfig, mode: TradingMode):
       },
       openPositions,
       weekly: [...weeklyMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([week, net]) => ({ week, net })),
+      strategies: strategyRows,
     };
   });
 }

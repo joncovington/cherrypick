@@ -55,6 +55,14 @@ interface EarningsAnalytics {
     expiration: string | null;
   }>;
   weekly: Array<{ week: string; net: number }>;
+  strategies: Array<{
+    strategy: string;
+    trades: number;
+    winRatePct: number | null;
+    profitFactor: number | null;
+    expectancy: number | null;
+    net: number;
+  }>;
 }
 
 function useEarningsAnalytics() {
@@ -125,6 +133,24 @@ export function EarningsPage() {
             </div>
           )}
         </section>
+
+        <DataCard
+          title="Cross-strategy comparison (net of costs)"
+          headers={["strategy", "trades", "win rate", "profit factor", "expectancy", "net"]}
+          loading={analytics.isLoading}
+          rowCount={a?.strategies.length ?? 0}
+        >
+          {a?.strategies.map((s) => (
+            <tr key={s.strategy}>
+              <td>{s.strategy}</td>
+              <td>{s.trades}</td>
+              <td>{s.winRatePct !== null ? `${s.winRatePct.toFixed(0)}%` : "—"}</td>
+              <td>{s.profitFactor !== null ? s.profitFactor.toFixed(2) : "—"}</td>
+              <td>{s.expectancy !== null ? <PnlCell v={s.expectancy} /> : "—"}</td>
+              <td><PnlCell v={s.net} /></td>
+            </tr>
+          ))}
+        </DataCard>
 
         <DataCard
           title="Open positions"

@@ -61,6 +61,59 @@ export function readFlies(config: ConsoleConfig, mode: TradingMode): FliesPayloa
   return { mode, books, positions };
 }
 
+import { payoffCurve, type FlyPosition, type PayoffCurve } from "../analytics/fliesPayoff.js";
+
+export interface FliesForest {
+  mode: TradingMode;
+  tradeDate: string | null;
+  /** One curve per arm active on the day. */
+  arms: Array<{ arm: string; curve: PayoffCurve }>;
+}
+
+/** The profit forest: per-arm book payoff curves for the latest (or given) day. */
+export function readFliesForest(config: ConsoleConfig, mode: TradingMode, day: string | null): FliesForest {
+  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.fliesDir, file);
+  return withReadOnlyDb<FliesForest>(dbPath, { mode, tradeDate: null, arms: [] }, (db) => {
+    const tradeDate =
+      day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_positions").get()?.d ?? null;
+    if (tradeDate === null) return { mode, tradeDate: null, arms: [] };
+    const rows = db
+      .prepare<[string], Record<string, unknown>>(
+        `SELECT arm, kind, side, center, wing_width, far_width, net, quantity, fees, status
+           FROM fly_positions WHERE trade_date = ? AND status != 'voided' AND void_reason IS NULL`,
+      )
+      .all(tradeDate);
+    const byArm = new Map<string, FlyPosition[]>();
+    for (const r of rows) {
+      const arm = String(r["arm"] ?? "?");
+      let list = byArm.get(arm);
+      if (list === undefined) {
+        list = [];
+        byArm.set(arm, list);
+      }
+      list.push({
+        kind: String(r["kind"] ?? "fly"),
+        side: String(r["side"] ?? "put"),
+        center: Number(r["center"]),
+        wingWidth: Number(r["wing_width"]),
+        farWidth: typeof r["far_width"] === "number" ? r["far_width"] : null,
+        net: Number(r["net"] ?? 0),
+        quantity: Number(r["quantity"] ?? 1),
+        fees: Number(r["fees"] ?? 0),
+        status: r["status"] === null ? null : String(r["status"]),
+      });
+    }
+    return {
+      mode,
+      tradeDate,
+      arms: [...byArm.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([arm, positions]) => ({ arm, curve: payoffCurve(positions) })),
+    };
+  });
+}
+
 export interface FliesAnalytics {
   mode: TradingMode;
   /** Latest trade date's tiles, flies-dashboard shape. */
