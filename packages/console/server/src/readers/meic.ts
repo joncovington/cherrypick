@@ -512,6 +512,7 @@ export interface MeicDeepAnalytics {
   byWing: MeicBreakdownRow[];
   bySymbol: MeicBreakdownRow[];
   byWeekday: MeicBreakdownRow[];
+  byHour: MeicBreakdownRow[];
 }
 
 export function readMeicDeepAnalytics(
@@ -522,7 +523,7 @@ export function readMeicDeepAnalytics(
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
   const sc = scopeSql(scope);
-  const empty: MeicDeepAnalytics = { mode, calendar: [], nlv: [], byDelta: [], byWing: [], bySymbol: [], byWeekday: [] };
+  const empty: MeicDeepAnalytics = { mode, calendar: [], nlv: [], byDelta: [], byWing: [], bySymbol: [], byWeekday: [], byHour: [] };
   return withReadOnlyDb<MeicDeepAnalytics>(dbPath, empty, (db) => {
     const calendar = db
       .prepare<string[], Record<string, unknown>>(
@@ -577,6 +578,17 @@ export function readMeicDeepAnalytics(
         `CASE CAST(strftime('%w', trade_date) AS INTEGER)
               WHEN 0 THEN 'Sun' WHEN 1 THEN 'Mon' WHEN 2 THEN 'Tue' WHEN 3 THEN 'Wed'
               WHEN 4 THEN 'Thu' WHEN 5 THEN 'Fri' ELSE 'Sat' END`,
+      ),
+      // Entry hour, read straight off the stored ET timestamp (entry_time
+      // carries its own -04:00/-05:00 offset, so no conversion is needed).
+      // Rows outside 09:00-16:00 ET are replay/practice runs, not session
+      // entries — labeled rather than dropped, so the sample stays honest.
+      byHour: breakdown(
+        `CASE WHEN entry_time IS NULL THEN 'unknown'
+              ELSE substr(entry_time, 12, 2) || ':00-' ||
+                   printf('%02d', CAST(substr(entry_time, 12, 2) AS INTEGER) + 1) || ':00' ||
+                   CASE WHEN CAST(substr(entry_time, 12, 2) AS INTEGER) BETWEEN 9 AND 15
+                        THEN '' ELSE ' (off-session)' END END`,
       ),
     };
   });

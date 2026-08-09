@@ -17,6 +17,7 @@ interface DeepAnalytics {
   byWing: BreakdownRow[];
   bySymbol: BreakdownRow[];
   byWeekday: BreakdownRow[];
+  byHour: BreakdownRow[];
 }
 
 function useDeep(mode: TradingMode, symbol: string | null, profile: string | null) {
@@ -102,7 +103,7 @@ function NlvChart({ points }: { points: Array<{ date: string; nlv: number }> }) 
 
 function BreakdownCard({ title, rows, loading }: { title: string; rows: BreakdownRow[] | undefined; loading: boolean }) {
   return (
-    <DataCard title={title} headers={["bucket", "trades", "sessions", "win %", "avg net"]} loading={loading} rowCount={rows?.length ?? 0}>
+    <DataCard title={title} headers={["bucket", "trades", "sessions", "win %", "avg net"]} numFrom={1} loading={loading} rowCount={rows?.length ?? 0}>
       {rows?.map((r) => (
         <tr key={r.bucket}>
           <td>{r.bucket}</td>
@@ -143,6 +144,7 @@ export function MeicDeepCards({
         <BreakdownCard title="By wing width" rows={data?.byWing} loading={isLoading} />
         <BreakdownCard title="By symbol" rows={data?.bySymbol} loading={isLoading} />
         <BreakdownCard title="By weekday" rows={data?.byWeekday} loading={isLoading} />
+        <BreakdownCard title="By entry hour (ET)" rows={data?.byHour} loading={isLoading} />
       </div>
     </>
   );
