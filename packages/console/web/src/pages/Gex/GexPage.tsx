@@ -21,6 +21,7 @@ interface GexProfilePayload {
     put_wall: number | null;
   };
   spotHistory?: Array<{ ts: number; spot: number }>;
+  spotSession?: { date: string; openTs: number; closeTs: number } | null;
   volumeTotals?: {
     total_call_gex_vol: number;
     total_put_gex_vol: number;
@@ -127,6 +128,7 @@ export function GexPage() {
                 callWall={view === "oivol" ? (p.volumeTotals?.call_wall_vol ?? null) : (p.totals.call_wall ?? null)}
                 putWall={view === "oivol" ? (p.volumeTotals?.put_wall_vol ?? null) : (p.totals.put_wall ?? null)}
                 spotHistory={p.spotHistory}
+                spotSession={p.spotSession}
               />
               <div className="gex-metrics-row">
                 <div className="gex-panel">

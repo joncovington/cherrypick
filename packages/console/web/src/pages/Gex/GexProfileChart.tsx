@@ -36,6 +36,8 @@ interface Props {
   putWall: number | null;
   /** Today's intraday spot trail (epoch seconds), drawn across the session width. */
   spotHistory?: Array<{ ts: number; spot: number }>;
+  /** ET trading-session bounds for the trail's time axis (9:30–16:00). */
+  spotSession?: { date: string; openTs: number; closeTs: number } | null;
   height?: number;
 }
 
@@ -44,7 +46,7 @@ interface Props {
  * gex module's page: green = call-heavy, red = put-heavy; overlays for spot
  * (blue), zero gamma (amber dashed), call/put walls (green/red ticks).
  */
-export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWall, spotHistory, height = 460 }: Props) {
+export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWall, spotHistory, spotSession, height = 460 }: Props) {
   // Trim to strikes with data, nearest 40 to spot.
   const active = series.filter((s) => s.abs_gex !== 0 || s.net_gex_vol !== 0 || s.total_vol !== 0);
   const rows = [...active]
@@ -54,7 +56,8 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
   if (rows.length === 0) return <p className="muted">no strikes with GEX data</p>;
 
   const width = 760;
-  const m = { l: 64, r: 16, t: 8, b: 8 };
+  const hasTimeAxis = spotSession != null && spotHistory !== undefined && spotHistory.length > 1;
+  const m = { l: 64, r: 16, t: 8, b: hasTimeAxis ? 22 : 8 };
   const plotW = width - m.l - m.r;
   const rowH = (height - m.t - m.b) / rows.length;
   const values = (r: GexStrikeRow): number[] =>
@@ -125,26 +128,61 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
           </g>
         );
       })}
-      {spotHistory !== undefined && spotHistory.length > 1 && (() => {
-        // Trail across the plot width: x = time position within the recorded
-        // session, y = spot interpolated on the strike axis (the gex page's
-        // _spotHistoryPlugin). A full session records thousands of ticks —
-        // decimate to ~400 points so the SVG stays light.
+      {hasTimeAxis && (() => {
+        // Trail across the plot width, anchored to the ET trading session:
+        // x = (ts − 9:30 ET) / (16:00 − 9:30), y = spot interpolated on the
+        // strike axis. A full session records thousands of ticks — decimate
+        // to ~400 points so the SVG stays light.
+        const { openTs, closeTs } = spotSession!;
+        const span = Math.max(closeTs - openTs, 1);
         const stride = Math.max(1, Math.floor(spotHistory.length / 400));
         const sampled = spotHistory.filter((_, i) => i % stride === 0 || i === spotHistory.length - 1);
-        const t0 = sampled[0]!.ts;
-        const t1 = sampled[sampled.length - 1]!.ts;
         const pts = sampled
           .map((h) => {
             const y = strikeY(h.spot);
             if (y === null) return null;
-            const x = m.l + ((h.ts - t0) / Math.max(t1 - t0, 1)) * plotW;
-            return `${x.toFixed(1)},${y.toFixed(1)}`;
+            const frac = Math.min(1, Math.max(0, (h.ts - openTs) / span));
+            return `${(m.l + frac * plotW).toFixed(1)},${y.toFixed(1)}`;
           })
           .filter((s): s is string => s !== null);
-        return pts.length > 1 ? (
-          <polyline points={pts.join(" ")} fill="none" stroke="#7aa2ff" strokeWidth={1} opacity={0.45} />
-        ) : null;
+        const hours = [
+          ["9:30", 0],
+          ["10:30", 1 / 6.5],
+          ["11:30", 2 / 6.5],
+          ["12:30", 3 / 6.5],
+          ["13:30", 4 / 6.5],
+          ["14:30", 5 / 6.5],
+          ["15:30", 6 / 6.5],
+          ["16:00", 1],
+        ] as const;
+        return (
+          <>
+            {pts.length > 1 && (
+              <polyline points={pts.join(" ")} fill="none" stroke="#7aa2ff" strokeWidth={1} opacity={0.45} />
+            )}
+            {hours.map(([label, frac]) => {
+              const x = m.l + frac * plotW;
+              return (
+                <g key={label}>
+                  <line x1={x} y1={height - m.b} x2={x} y2={height - m.b + 4} stroke="#82878f" />
+                  <text
+                    x={x}
+                    y={height - m.b + 14}
+                    textAnchor={frac === 0 ? "start" : frac === 1 ? "end" : "middle"}
+                    fontSize={9}
+                    fill="#82878f"
+                    fontFamily="Consolas, monospace"
+                  >
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+            <text x={m.l} y={m.t + 9} fontSize={9} fill="#7aa2ff" opacity={0.8}>
+              spot trail — {spotSession!.date} ET
+            </text>
+          </>
+        );
       })()}
       {overlays.map((o, i) => (
         <g key={i}>
