@@ -139,7 +139,7 @@ export function MeicDeepCards({
         {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <NlvChart points={data?.nlv ?? []} />}
       </section>
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(18rem, 1fr))" }}>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(23rem, 1fr))" }}>
         <BreakdownCard title="By short-call delta" rows={data?.byDelta} loading={isLoading} />
         <BreakdownCard title="By wing width" rows={data?.byWing} loading={isLoading} />
         <BreakdownCard title="By symbol" rows={data?.bySymbol} loading={isLoading} />
