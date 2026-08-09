@@ -24,6 +24,8 @@ interface Forest {
   mode: TradingMode;
   tradeDate: string | null;
   arms: Array<{ arm: string; curve: PayoffCurve }>;
+  settlement: { price: number; source: string | null } | null;
+  lastTickSpot: number | null;
 }
 
 function useForest(mode: TradingMode, filter: FliesFilter) {
@@ -113,7 +115,13 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
   const [hover, setHover] = useState<{ px: number; frac: number } | null>(null);
   const symbol = "XSP";
   const quote = useQuote(symbol);
-  const spot = quote?.last ?? (quote?.bid !== undefined && quote?.ask !== undefined ? (quote.bid + quote.ask) / 2 : null);
+  const liveSpot = quote?.last ?? (quote?.bid !== undefined && quote?.ask !== undefined ? (quote.bid + quote.ask) / 2 : null);
+
+  // A settled day marks the SETTLEMENT print (the number that decided every
+  // payoff); only an unsettled current day marks the live spot.
+  const settled = data?.settlement ?? null;
+  const spot = settled !== null ? settled.price : liveSpot;
+  const spotTag = settled !== null ? "settled" : "spot";
 
   const allArms = data?.arms ?? [];
   const shown = allArms.filter((a) => !a.curve.empty && a.curve.prices.length > 0);
@@ -256,12 +264,12 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
           </g>
         ))}
 
-        {/* spot line: solid amber with an outlined amber tag sitting at the top of the line */}
+        {/* spot/settlement line: solid amber with an outlined amber tag at the top */}
         {spot !== null && spot >= xMin && spot <= xMax && (
           <>
             <line x1={X(spot)} y1={pad.t} x2={X(spot)} y2={height - pad.b} stroke={SPOT_COLOR} strokeWidth={2} opacity={0.9} />
             {(() => {
-              const label = `spot ${spot.toFixed(2)}`;
+              const label = `${spotTag} ${spot.toFixed(2)}`;
               const lw = label.length * 5.6 + 12;
               const lx = Math.min(Math.max(X(spot) - lw / 2, pad.l), width - pad.r - lw);
               return (
@@ -321,7 +329,7 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
           <i className="forest-dash" style={{ background: "#82878f" }} /> centres
         </span>
         <span>
-          <i style={{ background: SPOT_COLOR }} /> spot now
+          <i style={{ background: SPOT_COLOR }} /> {settled !== null ? "settlement" : "spot now"}
         </span>
       </div>
     );
@@ -362,6 +370,13 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
                 <span className={a.curve.floor.floorHolds ? "pnl-pos" : "pnl-neg"}>●</span> {floorSentence(a.arm, a.curve)}
               </p>
             ))}
+            {settled !== null && (
+              <p className="muted" style={{ margin: "0.15rem 0", fontSize: 12 }}>
+                Settled at <strong>{settled.price.toFixed(2)}</strong> ({settled.source ?? "unknown"})
+                {data?.lastTickSpot != null &&
+                  ` — last intraday tick was ${data.lastTickSpot.toFixed(2)}, ${Math.abs(data.lastTickSpot - settled.price).toFixed(2)} ${data.lastTickSpot >= settled.price ? "above" : "below"} the close.`}
+              </p>
+            )}
           </div>
         </>
       )}
