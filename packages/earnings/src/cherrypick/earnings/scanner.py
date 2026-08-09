@@ -1209,7 +1209,8 @@ def build_entry_review_spec(
         "bid_ask_spread_pct": criteria.get("bid_ask_spread_pct"),
         "net_combo_spread_pct": criteria.get("net_combo_spread_pct"),
         "avg_actual_move_pct": criteria.get("avg_actual_move_pct"),
-        "move_dispersion_pct": criteria.get("move_dispersion_pct") or criteria.get("realized_move_dispersion_pct"),
+        "move_dispersion_pct": criteria.get("move_dispersion_pct")
+        or criteria.get("realized_move_dispersion_pct"),
         "max_actual_move_pct": criteria.get("max_actual_move_pct"),
         "implied_vs_avg_actual": criteria.get("implied_vs_avg_actual"),
         "move_tail_veto": criteria.get("move_tail_veto"),

@@ -339,7 +339,9 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
                 criteria.update(broker["criteria"])
             broker_error = None if broker.get("ok") else broker.get("error")
 
-            scanner.apply_common_signals(criteria, avg_volume, iv_rv_ratio, winrate, winrate_sample_size, move_stats)
+            scanner.apply_common_signals(
+                criteria, avg_volume, iv_rv_ratio, winrate, winrate_sample_size, move_stats
+            )
 
             extra_fn = entry.get("extra_criteria_fn")
             if extra_fn is not None:

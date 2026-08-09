@@ -558,7 +558,9 @@ def _mock_winrate_quarters(monkeypatch, pre_closes, reaction_closes):
 
 def test_compute_historical_move_stats_computes_mean_dispersion_max(monkeypatch):
     # Realized moves as % of pre_close: 4%, 4%, 20% -- mean 9.33%, the 20% quarter is >= 2x that.
-    _mock_winrate_quarters(monkeypatch, pre_closes=[100.0, 100.0, 100.0], reaction_closes=[104.0, 96.0, 120.0])
+    _mock_winrate_quarters(
+        monkeypatch, pre_closes=[100.0, 100.0, 100.0], reaction_closes=[104.0, 96.0, 120.0]
+    )
     result = scanner.compute_historical_move_stats("AAPL", {"move_tail_multiple": 2.0}, lookback_quarters=8)
     assert result["ok"] is True
     assert result["sample_size"] == 3
@@ -713,8 +715,15 @@ def test_build_entry_review_spec_shape():
         "iv_percentile": 0.65,
     }
     spec = scanner.build_entry_review_spec(
-        "2026-08-07", "AAPL", "After market close", criteria, "iron_fly", True, "opened iron_fly",
-        composite_score=0.42, logged_at=123.0,
+        "2026-08-07",
+        "AAPL",
+        "After market close",
+        criteria,
+        "iron_fly",
+        True,
+        "opened iron_fly",
+        composite_score=0.42,
+        logged_at=123.0,
     )
     assert spec["scan_date"] == "2026-08-07"
     assert spec["symbol"] == "AAPL"
@@ -729,7 +738,9 @@ def test_build_entry_review_spec_shape():
 
 
 def test_build_entry_review_spec_rejected_best_tier():
-    spec = scanner.build_entry_review_spec("2026-08-07", "MSFT", "Before market open", {}, None, False, "no edge")
+    spec = scanner.build_entry_review_spec(
+        "2026-08-07", "MSFT", "Before market open", {}, None, False, "no edge"
+    )
     assert spec["best_tier"] == "rejected"
     assert spec["selected"] is False
 
