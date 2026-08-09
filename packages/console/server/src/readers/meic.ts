@@ -4,7 +4,10 @@ import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
 import { withReadOnlyDb, hasColumn, num, str } from "./db.js";
 
-const TRADE_LIMIT = 300;
+/** Page sizes the trade log offers, and the ceiling on anything asked for. */
+export const TRADE_PAGE_SIZES = [50, 100, 200, 500] as const;
+const MAX_PAGE = 500;
+const DEFAULT_PAGE = 100;
 
 /**
  * The era the module counts as evidence. Its own analytics narrow to this by
@@ -44,19 +47,73 @@ function scopeSql(db: DatabaseHandle, scope: MeicScopeFilter): { and: string; pa
   return { and: clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "", params };
 }
 
-export function readMeic(config: ConsoleConfig, mode: TradingMode, scope: MeicScopeFilter = NO_SCOPE): MeicPayload {
+export type MeicOutcome = "all" | "wins" | "losses" | "open";
+
+/** The trade log's own query: page-wide scope, plus its filters and its page. */
+export interface MeicTradeQuery extends MeicScopeFilter {
+  outcome: MeicOutcome;
+  /** Exit reason as the analytics card labels it — "open" means no exit reason yet. */
+  reason: string | null;
+  search: string;
+  limit: number;
+  offset: number;
+}
+
+export const NO_TRADE_QUERY: MeicTradeQuery = {
+  ...NO_SCOPE,
+  outcome: "all",
+  reason: null,
+  search: "",
+  limit: DEFAULT_PAGE,
+  offset: 0,
+};
+
+/**
+ * The log's filters run in SQL rather than over the fetched page. Filtering a
+ * single page would make the match count a statement about that page and not
+ * about the data — "3 losses" when the scope holds two hundred.
+ */
+function tradeFilterSql(db: DatabaseHandle, q: MeicTradeQuery): { where: string; params: string[] } {
+  const sc = scopeSql(db, q);
+  const clauses = ["1=1"];
+  const params = [...sc.params];
+  if (sc.and !== "") clauses.push(sc.and.slice(5));
+  if (q.outcome === "wins") clauses.push("pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0");
+  if (q.outcome === "losses") clauses.push("pnl IS NOT NULL AND pnl - COALESCE(fees, 0) <= 0");
+  if (q.outcome === "open") clauses.push("pnl IS NULL");
+  if (q.reason !== null) {
+    clauses.push("COALESCE(exit_reason, 'open') = ?");
+    params.push(q.reason);
+  }
+  if (q.search !== "") {
+    // Same fields the log renders, so what you see is what you search.
+    clauses.push(
+      `(trade_date LIKE ? OR symbol LIKE ? OR status LIKE ? OR COALESCE(exit_reason, '') LIKE ?)`,
+    );
+    const like = `%${q.search.replace(/[%_]/g, "")}%`;
+    params.push(like, like, like, like);
+  }
+  return { where: clauses.join(" AND "), params };
+}
+
+export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTradeQuery = NO_TRADE_QUERY): MeicPayload {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
+  const limit = Math.min(Math.max(1, Math.trunc(query.limit)), MAX_PAGE);
+  const offset = Math.max(0, Math.trunc(query.offset));
 
-  const trades = withReadOnlyDb<MeicTradeRow[]>(dbPath, [], (db) => {
-    const sc = scopeSql(db, scope);
-    return db
+  const page = withReadOnlyDb<{ rows: MeicTradeRow[]; total: number }>(dbPath, { rows: [], total: 0 }, (db) => {
+    const f = tradeFilterSql(db, query);
+    const total = Number(
+      (db.prepare<string[], { n: number }>(`SELECT COUNT(*) AS n FROM ic_trades WHERE ${f.where}`).get(...f.params))?.n ?? 0,
+    );
+    const rows = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT id, trade_date, entry_time, symbol, put_strike, call_strike, wing_width,
                 net_credit, quantity, status, pnl, fees, exit_reason, iv_rank_at_entry
-           FROM ic_trades WHERE 1=1${sc.and} ORDER BY id DESC LIMIT ${TRADE_LIMIT}`,
+           FROM ic_trades WHERE ${f.where} ORDER BY id DESC LIMIT ? OFFSET ?`,
       )
-      .all(...sc.params)
+      .all(...f.params, String(limit), String(offset))
       .map((r: Record<string, unknown>) => ({
         mode,
         id: num(r["id"]) ?? 0,
@@ -74,6 +131,7 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, scope: MeicSc
         exitReason: str(r["exit_reason"]),
         ivRankAtEntry: num(r["iv_rank_at_entry"]),
       }));
+    return { rows, total };
   });
 
   const summaries = withReadOnlyDb<MeicSummaryRow[]>(dbPath, [], (db) =>
@@ -96,7 +154,7 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, scope: MeicSc
       })),
   );
 
-  return { mode, trades, summaries };
+  return { mode, trades: page.rows, total: page.total, offset, limit, summaries };
 }
 
 const RESOLVED = "status NOT IN ('cancelled','pending','partial_entry')";

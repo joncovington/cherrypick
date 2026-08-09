@@ -92,6 +92,87 @@ export function TabStrip<T extends string>({
   );
 }
 
+/**
+ * Pager for a server-paged table. Reports the window against the true match
+ * count, so the reader always knows how much sits outside the page — a table
+ * that quietly stops at its page size is the thing this exists to prevent.
+ */
+export function Pager({
+  offset,
+  limit,
+  total,
+  pageSizes,
+  onOffset,
+  onLimit,
+}: {
+  offset: number;
+  limit: number;
+  total: number;
+  pageSizes: readonly number[];
+  onOffset: (v: number) => void;
+  onLimit: (v: number) => void;
+}) {
+  const first = total === 0 ? 0 : offset + 1;
+  const last = Math.min(offset + limit, total);
+  const atStart = offset <= 0;
+  const atEnd = last >= total;
+  return (
+    <div className="pager">
+      <button type="button" className="pager-btn" disabled={atStart} onClick={() => onOffset(0)} title="first page">
+        ⏮
+      </button>
+      <button
+        type="button"
+        className="pager-btn"
+        disabled={atStart}
+        onClick={() => onOffset(Math.max(0, offset - limit))}
+        title="previous page"
+      >
+        ◀
+      </button>
+      <span className="pager-range">
+        {first.toLocaleString()}–{last.toLocaleString()} of {total.toLocaleString()}
+      </span>
+      <button
+        type="button"
+        className="pager-btn"
+        disabled={atEnd}
+        onClick={() => onOffset(offset + limit)}
+        title="next page"
+      >
+        ▶
+      </button>
+      <button
+        type="button"
+        className="pager-btn"
+        disabled={atEnd}
+        onClick={() => onOffset(Math.max(0, (Math.ceil(total / limit) - 1) * limit))}
+        title="last page"
+      >
+        ⏭
+      </button>
+      <select
+        className="text-input pager-size"
+        value={limit}
+        onChange={(e) => {
+          // Keep the first visible row visible across a page-size change.
+          const next = Number(e.target.value);
+          onLimit(next);
+          onOffset(Math.floor(offset / next) * next);
+        }}
+        aria-label="rows per page"
+        title="rows per page"
+      >
+        {pageSizes.map((n) => (
+          <option key={n} value={n}>
+            {n} / page
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 /** Loop freshness pill: LIVE when the module's loop wrote within its window. */
 export function LoopPill({
   state,

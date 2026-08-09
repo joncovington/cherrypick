@@ -120,6 +120,10 @@ interface DataCardProps {
   numFrom?: number;
   /** Extra class on the table itself, for per-table column behavior. */
   tableClass?: string;
+  /** Rendered under the table — pagers and per-table notes. */
+  footer?: ReactNode;
+  /** Dim the rows while a new page loads, without collapsing the card. */
+  busy?: boolean;
   updatedAt?: number;
   controls?: ReactNode;
   children: ReactNode;
@@ -139,13 +143,15 @@ export function DataCard({
   skeletonRows = 6,
   numFrom,
   tableClass = "",
+  footer,
+  busy = false,
   updatedAt,
   controls,
   children,
 }: DataCardProps) {
   return (
     <Card title={title} updatedAt={updatedAt} isError={isError} controls={controls}>
-      <div className="table-scroll">
+      <div className={`table-scroll ${busy ? "table-busy" : ""}`}>
         <table
           className={`data-table ${numFrom !== undefined ? `num-from-${Math.min(numFrom, 6)}` : ""} ${tableClass}`}
         >
@@ -171,6 +177,7 @@ export function DataCard({
           </tbody>
         </table>
       </div>
+      {footer !== undefined && footer !== false && <div className="card-footer">{footer}</div>}
     </Card>
   );
 }

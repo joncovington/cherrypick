@@ -9,6 +9,7 @@ import {
   readMeicScope,
   readMeicLoopStatus,
   type MeicScopeFilter,
+  type MeicTradeQuery,
 } from "../readers/meic.js";
 import {
   readFlies,
@@ -48,7 +49,28 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     };
     return { symbol: pick("symbol"), profile: pick("profile"), era: pick("era") };
   };
-  app.get("/api/meic", async (req) => readMeic(config, parseMode(req.query), parseMeicScope(req.query)));
+  const parseMeicTradeQuery = (q: unknown): MeicTradeQuery => {
+    const query = (q ?? {}) as Record<string, unknown>;
+    const text = (k: string, max: number): string => {
+      const v = query[k];
+      return typeof v === "string" ? v.slice(0, max) : "";
+    };
+    const int = (k: string, fallback: number): number => {
+      const n = Number(query[k]);
+      return Number.isFinite(n) ? Math.trunc(n) : fallback;
+    };
+    const outcome = text("outcome", 10);
+    const reason = text("reason", 60);
+    return {
+      ...parseMeicScope(query),
+      outcome: outcome === "wins" || outcome === "losses" || outcome === "open" ? outcome : "all",
+      reason: reason === "" ? null : reason,
+      search: text("search", 60),
+      limit: int("limit", 100),
+      offset: int("offset", 0),
+    };
+  };
+  app.get("/api/meic", async (req) => readMeic(config, parseMode(req.query), parseMeicTradeQuery(req.query)));
   app.get("/api/meic/analytics", async (req) =>
     readMeicAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
   );
