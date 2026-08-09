@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import type { StatusPayload, SourceFreshness } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { streamerFreshness } from "../readers/streamcache.js";
+import { loadCredentials } from "../auth/credentials.js";
 
 function fileFreshness(key: string, label: string, p: string): SourceFreshness {
   try {
@@ -44,6 +45,7 @@ export function registerStatusRoutes(
       now: now.toISOString(),
       nowEt: now.toLocaleString("en-US", { timeZone: "America/New_York" }),
       marketData,
+      credentialScope: loadCredentials()?.scope ?? null,
       sources,
     };
   });

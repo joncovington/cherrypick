@@ -87,10 +87,16 @@ export function BuilderPage() {
     setLegs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
 
   const qc = useQueryClient();
+  const status = useQuery<{ credentialScope: "read" | "trade" | null }>({
+    queryKey: ["status"],
+    queryFn: async () => (await fetch("/api/status")).json() as Promise<{ credentialScope: "read" | "trade" | null }>,
+    staleTime: 60_000,
+  });
+  const readOnly = status.data?.credentialScope === "read";
   const stageable = legs.length > 0 && legs.every((l) => l.occSymbol !== null && l.price !== "" && l.quantity !== 0);
   const stage = useMutation({
     mutationFn: () =>
-      mutateJson<{ ticket: { id: string; dryRun: { ok: boolean; error?: string } } }>("/api/orders/stage", "POST", {
+      mutateJson<{ ticket: { id: string; dryRun: { ok: boolean; error?: string; skipped?: boolean } } }>("/api/orders/stage", "POST", {
         symbol,
         strategy: null,
         legs: legs.map((l) => ({ symbol: l.occSymbol, quantity: l.quantity, price: Number(l.price) })),
@@ -134,20 +140,24 @@ export function BuilderPage() {
               style={{ marginLeft: "auto" }}
               disabled={!stageable || stage.isPending}
               title={
-                stageable
-                  ? "validate via broker dry-run (no order created) and save the ticket"
-                  : "legs must come from the chain (need OCC symbols) with prices"
+                !stageable
+                  ? "legs must come from the chain (need OCC symbols) with prices"
+                  : readOnly
+                    ? "read-only credential — the ticket saves WITHOUT broker dry-run validation"
+                    : "validate via broker dry-run (no order created) and save the ticket"
               }
               onClick={() => stage.mutate()}
             >
-              {stage.isPending ? "staging…" : "Stage ticket (dry-run)"}
+              {stage.isPending ? "staging…" : readOnly ? "Stage ticket (no validation)" : "Stage ticket (dry-run)"}
             </button>
           </div>
           {stage.data && (
             <p className={stage.data.ticket.dryRun.ok ? "muted" : "stale-note"} style={{ marginTop: 0 }}>
               {stage.data.ticket.dryRun.ok
                 ? "ticket staged — dry-run validated, no order created"
-                : `ticket staged; dry-run failed: ${stage.data.ticket.dryRun.error ?? "unknown"}`}
+                : stage.data.ticket.dryRun.skipped === true
+                  ? "ticket staged — dry-run skipped (read-only credential)"
+                  : `ticket staged; dry-run failed: ${stage.data.ticket.dryRun.error ?? "unknown"}`}
             </p>
           )}
           {legs.length === 0 ? (

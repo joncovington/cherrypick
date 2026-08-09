@@ -6,6 +6,7 @@ import {
   clearCredentials,
   mask,
 } from "../auth/credentials.js";
+import { probeCredentials } from "../auth/probe.js";
 
 function promptHidden(question: string): Promise<string> {
   // Echo-suppressing prompt: readline writes to a sink while the secret is typed.
@@ -35,33 +36,50 @@ async function main(): Promise<number> {
   switch (action) {
     case "set": {
       console.log(
-        "Storing the console's tastytrade OAuth credential (Windows Credential Manager,\n" +
-          "service \"cherrypick-console\"): the OAuth application's shared client secret\n" +
-          "plus the console's own READ-ONLY refresh token (scope rides on the refresh\n" +
-          "token — generate one at my.tastytrade.com → API → OAuth applications).\n",
+        "Storing THE suite broker credential (one credential set for the whole\n" +
+          "suite — Windows Credential Manager, service \"cherrypick-broker\", slot\n" +
+          "\"oauth\"): the OAuth application's shared client secret plus a refresh\n" +
+          "token. Scope rides on the refresh token.\n",
       );
       const clientSecret = await promptHidden("Client secret (shared): ");
-      const refreshToken = await promptHidden("Read-only refresh token: ");
+      const refreshToken = await promptHidden("Refresh token: ");
       if (clientSecret === "" || refreshToken === "") {
         console.error("Both values are required — nothing saved.");
         return 1;
       }
-      saveCredentials({ clientSecret, refreshToken });
-      console.log("Saved. The console will use this grant for market data and reads only.");
+      console.log("Validating against the broker…");
+      const probe = await probeCredentials({ clientSecret, refreshToken });
+      if (!probe.ok) {
+        console.error(`Validation failed: ${probe.error}`);
+        console.error("Nothing saved — check the values and try again.");
+        return 1;
+      }
+      saveCredentials({ clientSecret, refreshToken, scope: probe.scope, validatedAt: new Date().toISOString() });
+      console.log(`Saved. Account ${probe.account}, detected scope: ${probe.scope}.`);
+      if (probe.scope === "read") {
+        console.log(
+          "\nWARNING: this refresh token is READ-ONLY. Write-oriented functions are\n" +
+            "disabled across the console: staged tickets will save WITHOUT broker\n" +
+            "dry-run validation. Generate a trade-scoped refresh token and re-run\n" +
+            "`credentials set` to enable dry-run validation (the console still can\n" +
+            "never place an order — that invariant is enforced in CI regardless).",
+        );
+      }
       return 0;
     }
     case "show": {
       const creds = loadCredentials();
       if (creds === null) {
-        console.log("No console credential stored.");
+        console.log("No suite credential stored.");
         return 0;
       }
       console.log(`client secret: ${mask(creds.clientSecret)}`);
       console.log(`refresh token: ${mask(creds.refreshToken)}`);
+      console.log(`scope: ${creds.scope ?? "unknown (never validated)"}${creds.validatedAt !== undefined ? ` — validated ${creds.validatedAt}` : ""}`);
       return 0;
     }
     case "clear": {
-      console.log(clearCredentials() ? "Credential cleared." : "No console credential stored.");
+      console.log(clearCredentials() ? "Credential cleared." : "No suite credential stored.");
       return 0;
     }
     default:
