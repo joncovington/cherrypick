@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 export interface GexStrikeRow {
   strike: number;
   call_iv: number;
@@ -42,24 +44,35 @@ interface Props {
 }
 
 /**
- * GEX by strike — horizontal bars, strikes descending down the axis like the
- * gex module's page: green = call-heavy, red = put-heavy; overlays for spot
- * (blue), zero gamma (amber dashed), call/put walls (green/red ticks).
+ * GEX by strike — the old page's Chart.js rendering reproduced: the FULL
+ * strike ladder on the y axis (non-zero range padded 3, then |strike−spot| ≤
+ * 120 like the reference), thin 3px bars, faint vertical gridlines, a rotated
+ * axis title, and a hover tooltip with per-basis values.
  */
-export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWall, spotHistory, spotSession, height = 460 }: Props) {
-  // Trim to strikes with data, nearest 40 to spot.
-  const active = series.filter((s) => s.abs_gex !== 0 || s.net_gex_vol !== 0 || s.total_vol !== 0);
-  const rows = [...active]
-    .sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))
-    .slice(0, 40)
+export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWall, spotHistory, spotSession }: Props) {
+  const [hover, setHover] = useState<{ index: number; px: number; py: number } | null>(null);
+
+  // Trim to the non-zero span padded by 3 strikes, then the ±120 dollar band.
+  const nonZero = series
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => s.abs_gex !== 0 || s.net_gex_vol !== 0 || s.total_vol !== 0);
+  if (nonZero.length === 0) return <p className="muted">no strikes with GEX data</p>;
+  const first = Math.max(0, nonZero[0]!.i - 3);
+  const last = Math.min(series.length - 1, nonZero[nonZero.length - 1]!.i + 3);
+  const rows = series
+    .slice(first, last + 1)
+    .filter((s) => Math.abs(s.strike - spot) <= 120)
     .sort((a, b) => b.strike - a.strike);
   if (rows.length === 0) return <p className="muted">no strikes with GEX data</p>;
 
-  const width = 760;
+  // Wide viewBox so the SVG renders near 1:1 in the card — stretched-up
+  // viewBoxes are what made the fonts look oversized.
+  const width = 1150;
   const hasTimeAxis = spotSession != null && spotHistory !== undefined && spotHistory.length > 1;
+  const rowH = 13;
   const m = { l: 64, r: 16, t: 8, b: hasTimeAxis ? 22 : 8 };
+  const height = m.t + m.b + rows.length * rowH;
   const plotW = width - m.l - m.r;
-  const rowH = (height - m.t - m.b) / rows.length;
   const values = (r: GexStrikeRow): number[] =>
     view === "net" ? [r.net_gex] : view === "abs" ? [r.abs_gex] : [r.net_gex, r.net_gex_vol];
   const maxAbs = Math.max(...rows.flatMap((r) => values(r).map(Math.abs)), 1);
@@ -108,37 +121,79 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
       overlays.push({ y, color: "#d95c4a", dash: "3 3", label: putWall.toFixed(2), side: "left", filled: true });
   }
 
+  const seriesMeta = (j: number): { label: string; color: string } => {
+    if (view === "abs") return { label: "Abs GEX", color: "#7aa2ff" };
+    if (view === "net") return { label: "Net GEX", color: "#43b57a" };
+    return j === 0 ? { label: "Net GEX (OI)", color: "#43b57a" } : { label: "Net GEX (Volume)", color: "#7fd4a8" };
+  };
+  const barColor = (v: number, j: number): string =>
+    view === "abs" ? "#7aa2ff" : v >= 0 ? (j === 0 ? "#43b57a" : "#7fd4a8") : j === 0 ? "#d95c4a" : "#e89386";
+
+  const hovered = hover !== null ? rows[hover.index] : undefined;
+
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="GEX by strike" style={{ width: "100%", height: "auto", display: "block" }}>
+    <div style={{ position: "relative" }}>
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label="GEX by strike"
+      style={{ width: "100%", height: "auto", display: "block" }}
+      onMouseLeave={() => setHover(null)}
+    >
+      {/* faint vertical gridlines, chart.js-style */}
+      {[0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875].map((f) => (
+        <line key={f} x1={m.l + f * plotW} y1={m.t} x2={m.l + f * plotW} y2={height - m.b} stroke="#15181e" />
+      ))}
       <line x1={zeroX} y1={m.t} x2={zeroX} y2={height - m.b} stroke="#23262d" />
+      <text
+        x={10}
+        y={m.t + (height - m.t - m.b) / 2}
+        fontSize={9}
+        fill="#82878f"
+        textAnchor="middle"
+        transform={`rotate(-90 10 ${m.t + (height - m.t - m.b) / 2})`}
+      >
+        Strike Price
+      </text>
       {rows.map((r, i) => {
         const yMid = m.t + (i + 0.5) * rowH;
         const vals = values(r);
         return (
           <g key={r.strike}>
-            {rowH >= 11 && (
-              <text x={m.l - 6} y={yMid + 3} textAnchor="end" fontSize={10} fill="#a6adb8" fontFamily="Consolas, monospace">
-                {r.strike}
-              </text>
-            )}
+            <text x={m.l - 6} y={yMid + 2.5} textAnchor="end" fontSize={8.5} fill="#82878f" fontFamily="Consolas, monospace">
+              {r.strike}
+            </text>
             {vals.map((v, j) => {
-              const barH = Math.max(2, (rowH * 0.7) / vals.length);
-              const y = yMid - (rowH * 0.35) + j * barH;
-              const color =
-                view === "abs" ? "#7aa2ff" : v >= 0 ? (j === 0 ? "#43b57a" : "#7fd4a8") : j === 0 ? "#d95c4a" : "#e89386";
+              const barH = 3;
+              const gap = vals.length > 1 ? 1 : 0;
+              const total = vals.length * barH + (vals.length - 1) * gap;
+              const y = yMid - total / 2 + j * (barH + gap);
               return (
                 <rect
                   key={j}
                   x={Math.min(zeroX, sx(v))}
                   y={y}
                   width={Math.max(1, Math.abs(sx(v) - zeroX))}
-                  height={barH - 1}
-                  fill={color}
-                >
-                  <title>{`${r.strike}: ${fmtGexDollars(v)}`}</title>
-                </rect>
+                  height={barH}
+                  fill={barColor(v, j)}
+                />
               );
             })}
+            {/* row-wide hover target */}
+            <rect
+              x={m.l}
+              y={m.t + i * rowH}
+              width={plotW}
+              height={rowH}
+              fill="transparent"
+              onMouseEnter={(e) => {
+                const host = (e.currentTarget.ownerSVGElement?.parentElement ?? null) as HTMLElement | null;
+                const rect = host?.getBoundingClientRect();
+                if (rect !== undefined) {
+                  setHover({ index: i, px: e.clientX - rect.left, py: e.clientY - rect.top });
+                }
+              }}
+            />
           </g>
         );
       })}
@@ -199,13 +254,13 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
         );
       })()}
       {overlays.map((o, i) => {
-        const tagH = 15;
-        const tagW = o.label.length * 6.4 + 12;
+        const tagH = 13;
+        const tagW = o.label.length * 5.6 + 10;
         const tagX = o.side === "left" ? m.l - 4 : width - m.r - tagW;
         const tagY = o.y - tagH / 2;
         return (
           <g key={i}>
-            <line x1={m.l} y1={o.y} x2={width - m.r} y2={o.y} stroke={o.color} strokeWidth={1.3} strokeDasharray={o.dash} />
+            <line x1={m.l} y1={o.y} x2={width - m.r} y2={o.y} stroke={o.color} strokeWidth={1.2} strokeDasharray={o.dash} />
             <rect
               x={tagX}
               y={tagY}
@@ -218,9 +273,9 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
             />
             <text
               x={tagX + tagW / 2}
-              y={o.y + 3.5}
+              y={o.y + 3}
               textAnchor="middle"
-              fontSize={10}
+              fontSize={9}
               fontWeight={700}
               fill={o.filled ? "#0b0c0f" : o.color}
               fontFamily="Consolas, monospace"
@@ -231,6 +286,38 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
         );
       })}
     </svg>
+    {hovered !== undefined && hover !== null && (
+      <div
+        style={{
+          position: "absolute",
+          left: Math.min(hover.px + 14, 900),
+          top: hover.py + 10,
+          background: "#1b1f28f2",
+          border: "1px solid #2a2f3a",
+          borderRadius: 6,
+          padding: "6px 10px",
+          pointerEvents: "none",
+          fontSize: 12,
+          fontFamily: "Consolas, monospace",
+          whiteSpace: "nowrap",
+          zIndex: 5,
+        }}
+      >
+        <div style={{ fontWeight: 700, marginBottom: 2 }}>{hovered.strike}</div>
+        {values(hovered).map((v, j) => {
+          const meta = seriesMeta(j);
+          return (
+            <div key={j} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 9, height: 9, background: barColor(v, j), display: "inline-block", borderRadius: 2 }} />
+              <span>
+                {meta.label}: {fmtGexDollars(v)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    )}
+    </div>
   );
 }
 
