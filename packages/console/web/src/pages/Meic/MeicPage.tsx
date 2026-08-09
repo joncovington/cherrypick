@@ -48,6 +48,13 @@ function useMeicAnalytics(mode: TradingMode, symbol: string | null, profile: str
 const TABS = ["today", "history", "performance"] as const;
 const OUTCOMES = ["all", "wins", "losses", "open"] as const;
 
+/** Status reads at a glance: stopped is the loss branch, expired is the win branch. */
+function StatusBadge({ status }: { status: string }) {
+  const s = status.toLowerCase();
+  const cls = s.includes("stop") ? "chain-badge-short" : s.includes("expire") ? "chain-badge-long" : "";
+  return <span className={`chain-badge ${cls}`}>{status}</span>;
+}
+
 export function MeicPage() {
   const [mode, setMode] = useMode();
   const [tab, setTab] = useState<(typeof TABS)[number]>("today");
@@ -241,7 +248,7 @@ export function MeicPage() {
                 <td>{fmtMoney(t.netCredit)}</td>
                 <td>{fmtNum(t.quantity, 0)}</td>
                 <td className="muted">{t.ivRankAtEntry !== null ? `${(t.ivRankAtEntry * 100).toFixed(0)}%` : "—"}</td>
-                <td>{t.status}</td>
+                <td><StatusBadge status={t.status} /></td>
                 <td><PnlCell v={t.pnl} /></td>
                 <td className="muted" style={{ textAlign: "left" }}>{t.exitReason ?? "—"}</td>
               </tr>
