@@ -15,6 +15,29 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+let csrfToken: string | null = null;
+
+async function getCsrf(): Promise<string> {
+  if (csrfToken !== null) return csrfToken;
+  const { token } = await getJson<{ token: string }>("/api/csrf");
+  csrfToken = token;
+  return token;
+}
+
+export async function mutateJson<T>(url: string, method: "POST" | "DELETE", body?: unknown): Promise<T> {
+  const token = await getCsrf();
+  const res = await fetch(url, {
+    method,
+    headers: {
+      "x-csrf-token": token,
+      ...(body !== undefined ? { "content-type": "application/json" } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  return (await res.json()) as T;
+}
+
 export function useStatus() {
   return useQuery<StatusPayload>({
     queryKey: ["status"],
@@ -52,6 +75,29 @@ export function useEarnings() {
     queryKey: ["earnings"],
     queryFn: () => getJson<EarningsPayload>("/api/earnings"),
     refetchInterval: 30_000,
+  });
+}
+
+export interface SymbolAnalysis {
+  symbol: string;
+  bars: Array<{ t: number; o: number; h: number; l: number; c: number; v: number }>;
+  overlays: Record<string, Array<number | null>>;
+  levels: Array<{ price: number; kind: "support" | "resistance"; touches: number }>;
+  trend: { "1m": string | null; "6m": string | null };
+}
+
+export function useWatchlist() {
+  return useQuery<{ symbols: string[] }>({
+    queryKey: ["watchlist"],
+    queryFn: () => getJson<{ symbols: string[] }>("/api/watchlist"),
+  });
+}
+
+export function useSymbolAnalysis(symbol: string) {
+  return useQuery<SymbolAnalysis>({
+    queryKey: ["symbol", symbol],
+    queryFn: () => getJson<SymbolAnalysis>(`/api/symbol/${symbol}`),
+    retry: false,
   });
 }
 

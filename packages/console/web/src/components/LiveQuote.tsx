@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useQuote } from "../lib/useQuote";
 
 function fmt(v: number | undefined, digits: number): string {
@@ -6,7 +6,15 @@ function fmt(v: number | undefined, digits: number): string {
 }
 
 /** One live symbol row: last + bid/ask, tick-flash + roll on change. */
-export function LiveQuoteRow({ symbol, digits = 2 }: { symbol: string; digits?: number }) {
+export function LiveQuoteRow({
+  symbol,
+  digits = 2,
+  trailing,
+}: {
+  symbol: string;
+  digits?: number;
+  trailing?: ReactNode;
+}) {
   const q = useQuote(symbol);
   const lastRef = useRef<HTMLTableCellElement>(null);
   const prevTs = useRef<number>(0);
@@ -33,6 +41,7 @@ export function LiveQuoteRow({ symbol, digits = 2 }: { symbol: string; digits?: 
       <td className="muted">{fmt(q?.bid, digits)}</td>
       <td className="muted">{fmt(q?.ask, digits)}</td>
       <td className="muted">{q === undefined ? "" : q.source === "dxlink" ? "live" : "cached"}</td>
+      {trailing}
     </tr>
   );
 }
