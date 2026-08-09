@@ -119,18 +119,20 @@ export function GexPage() {
             GEX by strike — {view === "net" ? "net (green = call heavy, red = put heavy)" : view === "oivol" ? "net GEX, OI vs volume" : "absolute"}
           </h2>
           {p?.ok && p.series && p.spot !== undefined && p.totals ? (
-            <>
-              <GexProfileChart
-                series={p.series}
-                view={view}
-                spot={p.spot}
-                zeroGamma={view === "oivol" ? (p.volumeTotals?.zero_gamma_vol ?? null) : (p.totals.zero_gamma ?? null)}
-                callWall={view === "oivol" ? (p.volumeTotals?.call_wall_vol ?? null) : (p.totals.call_wall ?? null)}
-                putWall={view === "oivol" ? (p.volumeTotals?.put_wall_vol ?? null) : (p.totals.put_wall ?? null)}
-                spotHistory={p.spotHistory}
-                spotSession={p.spotSession}
-              />
-              <div className="gex-metrics-row">
+            <div className="gex-layout">
+              <div className="gex-chart-area">
+                <GexProfileChart
+                  series={p.series}
+                  view={view}
+                  spot={p.spot}
+                  zeroGamma={view === "oivol" ? (p.volumeTotals?.zero_gamma_vol ?? null) : (p.totals.zero_gamma ?? null)}
+                  callWall={view === "oivol" ? (p.volumeTotals?.call_wall_vol ?? null) : (p.totals.call_wall ?? null)}
+                  putWall={view === "oivol" ? (p.volumeTotals?.put_wall_vol ?? null) : (p.totals.put_wall ?? null)}
+                  spotHistory={p.spotHistory}
+                  spotSession={p.spotSession}
+                />
+              </div>
+              <div className="gex-rail">
                 <div className="gex-panel">
                   <h2>open interest (positioning)</h2>
                   <Metric label="total call GEX" value={fmtGexDollars(p.totals.total_call_gex)} />
@@ -151,7 +153,7 @@ export function GexPage() {
                   <Metric label="zero gamma" value={p.volumeTotals?.zero_gamma_vol != null ? p.volumeTotals.zero_gamma_vol.toFixed(0) : "—"} />
                 </div>
               </div>
-            </>
+            </div>
           ) : profile.isLoading ? (
             <span className="skeleton skeleton-text" style={{ width: "50%" }} />
           ) : (
