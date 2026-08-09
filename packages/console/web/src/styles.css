@@ -1,0 +1,403 @@
+/* Terminal luxe: density as luxury — hairlines, mono numerals, sharp corners,
+   one cherry accent reserved for brand, live-mode, and alert moments. */
+:root {
+  --bg: #0b0c0f;
+  --bg-raised: #0e1013;
+  --bg-card: #101216;
+  --border: #23262d;
+  --row-line: #1a1d23;
+  --row-hover: #15181e;
+  --text: #eceff3;
+  --text-muted: #a6adb8;
+  --accent: #d23f57;
+  --ok: #43b57a;
+  --warn: #d9a13b;
+  --err: #d95c4a;
+  --live: #43b57a;
+  --cached: #d9a13b;
+  --num-face: "Cascadia Code", "Consolas", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+}
+
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.nav {
+  width: 11rem;
+  flex-shrink: 0;
+  background: var(--bg-raised);
+  border-right: 1px solid var(--border);
+  padding: 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-brand {
+  font-weight: 650;
+  color: var(--accent);
+  padding: 0.5rem 1rem 1rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.95rem;
+}
+
+.nav-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 0.45rem 1rem;
+  border-left: 2px solid transparent;
+}
+
+.nav-link:hover {
+  color: var(--text);
+}
+
+.nav-link.active {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: rgba(210, 63, 87, 0.06);
+}
+
+.shell-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.status-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1.25rem;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  min-height: 2.6rem;
+}
+
+.status-clock {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.status-items {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.chip {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.1rem 0.6rem;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.chip-ok {
+  color: var(--ok);
+  border-color: rgba(67, 181, 122, 0.4);
+}
+
+.chip-warn {
+  color: var(--warn);
+  border-color: rgba(217, 161, 59, 0.4);
+}
+
+.chip-live {
+  color: var(--live);
+  border-color: rgba(67, 181, 122, 0.4);
+}
+
+.chip-cached {
+  color: var(--cached);
+  border-color: rgba(217, 161, 59, 0.4);
+}
+
+.chip-disconnected,
+.chip-missing {
+  color: var(--err);
+  border-color: rgba(217, 92, 74, 0.4);
+}
+
+.shell-content {
+  padding: 1.25rem;
+  overflow-x: auto;
+}
+
+.page-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+h1 {
+  font-size: 1.15rem;
+  margin: 0 0 1rem;
+  letter-spacing: 0.04em;
+}
+
+h2 {
+  font-size: 11px;
+  margin: 0 0 0.7rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 0.75rem;
+}
+
+.cards-wide {
+  grid-template-columns: 1fr;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.85rem 0.95rem;
+}
+
+.card-stale {
+  opacity: 0.65;
+}
+
+.stale-note {
+  margin-top: 0.5rem;
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 0.28rem 0.55rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 0.28rem 0.55rem;
+  border-bottom: 1px solid var(--row-line);
+  vertical-align: top;
+  font-size: 13px;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-ok {
+  background: var(--ok);
+}
+
+.status-warn {
+  background: var(--warn);
+}
+
+.status-err {
+  background: var(--err);
+}
+
+.status-off {
+  background: var(--border);
+}
+
+.pnl-pos {
+  color: var(--ok);
+}
+
+.pnl-neg {
+  color: var(--err);
+}
+
+.row-selected td {
+  background: rgba(67, 181, 122, 0.07);
+}
+
+.badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 0.08rem 0.45rem;
+  letter-spacing: 0.06em;
+}
+
+.badge-live {
+  background: rgba(210, 63, 87, 0.14);
+  color: var(--accent);
+  border: 1px solid rgba(210, 63, 87, 0.55);
+}
+
+.badge-paper {
+  background: rgba(67, 181, 122, 0.12);
+  color: var(--ok);
+  border: 1px solid rgba(67, 181, 122, 0.4);
+}
+
+.mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-left: auto;
+}
+
+.mode-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 0.25rem 0.9rem;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.35s ease, color 0.35s ease;
+}
+
+.mode-btn.active {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+.mode-btn-live.active {
+  color: var(--accent);
+}
+
+.mode-btn:focus-visible,
+.nav-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Skeletons: cards render at final size with ghost content — no spinners, no hidden cards. */
+.skeleton {
+  display: inline-block;
+  background: linear-gradient(90deg, var(--border) 25%, #343a47 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 3px;
+}
+
+.skeleton-text {
+  height: 0.85rem;
+  width: 60%;
+}
+
+.skeleton-chip {
+  height: 1.35rem;
+  width: 6.5rem;
+  border-radius: 3px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Motion: motion means information. Tick flashes + number roll for live values (M3). */
+@keyframes flash-up {
+  0% {
+    background: rgba(67, 181, 122, 0.26);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@keyframes flash-down {
+  0% {
+    background: rgba(217, 92, 74, 0.26);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.flash-up {
+  animation: flash-up 0.5s ease-out;
+}
+
+.flash-down {
+  animation: flash-down 0.5s ease-out;
+}
+
+@keyframes roll-in {
+  0% {
+    transform: translateY(-0.35em);
+    opacity: 0.2;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.roll {
+  display: inline-block;
+  animation: roll-in 0.18s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .flash-up,
+  .flash-down,
+  .roll {
+    animation: none;
+  }
+}

@@ -23,12 +23,13 @@ procedures read this table, so no other part of this command needs to change.
 | `--gex` | gex | `packages/gex/run.py` exists | `python packages/gex/run.py dashboard --serve --port <port>` | `serve.port` in `~/.cherrypick/config/gex.json` (or `packages/gex/config.json`), else **5055** (WebSocket push on `serve.ws_port`, default `port + 1`, same process) | opens by default; **suppress with `--no-browser`** |
 | `--meic` | meic | `packages/meic/src/cherrypick/meic/dashboard.py` exists | `python -m cherrypick.meic.dashboard [--mode paper] --port <port>` — runs from any working directory (no more bare `import paths`) | **5050** live / **5051** paper (`--paper` → `--mode paper`, paper_trades.db, "Paper Mode — Simulated") | opens by default; **suppress with `--no-browser`** |
 | `--flies` | flies | `packages/flies/run.py` exists | `python packages/flies/run.py dashboard --port <port>` | `FLIES_DASHBOARD_PORT` env, else **5052** | opens by default; **suppress with `--no-browser`** |
+| `--console` | console | `packages/console/server/dist/index.js` exists (built — from `packages/console`: `pnpm install` then `pnpm build`) | `python packages/console/run.py dashboard --serve [--port <port>]` — the server is Node; the launcher just locates it | `serve.port` in `~/.cherrypick/config/console.json`, else **5070** (WebSocket on the same port at `/ws`) | opens by default; **suppress with `--no-browser`** |
 | `--settings` | orchestrator suite | always (the repo itself) | `python packages/orchestrator/run.py settings --port <port>` | `settings.serve.port` in `~/.cherrypick/config.json` (or in-repo `config.example.json`), else **8804** — the next slot after the 88xx embeds | opens by default; **suppress with `--no-browser`** |
 
 All targets share one browser convention: a dashboard opens a tab on start unless you pass
 **`--no-browser`**.
 
-**`--settings` is excluded from `all`.** The other four rows are read-only status views meant to be
+**`--settings` is excluded from `all`.** The other rows are read-only status views meant to be
 open together; `--settings` can edit config and rotate secrets, so it stays a deliberate, individually
 started target — never auto-started by "Start/Stop/Restart all dashboards", and never listed alongside
 them in an `all` report. Start/stop/restart it explicitly with `--settings`.
@@ -38,15 +39,15 @@ them in an `all` report. Start/stop/restart it explicitly with `--settings`.
 Check `--restart` and `--stop` before the start flags:
 
 - If it contains **`--restart`**, pick the target by the word that follows it:
-  - `--restart gex` / `--restart meic` / `--restart flies` → **Restart a single dashboard** for that module.
+  - `--restart gex` / `--restart meic` / `--restart flies` / `--restart console` → **Restart a single dashboard** for that module.
   - `--restart all` → **Restart all dashboards**.
   - `--restart` with no target (or `--restart suite`) → **Restart a single dashboard** for the suite.
 - Else if it contains **`--stop`**, pick the stop target by the word that follows it:
-  - `--stop gex` / `--stop meic` / `--stop flies` → **Stop a single dashboard** for that module.
+  - `--stop gex` / `--stop meic` / `--stop flies` / `--stop console` → **Stop a single dashboard** for that module.
   - `--stop all` → **Stop all dashboards**.
   - `--stop` with no target (or `--stop suite`) → **Stop a single dashboard** for the suite.
 - Else if it contains **`all`** → **Start all dashboards**.
-- Else if it contains **`--gex`** / **`--meic`** / **`--flies`** / **`--settings`** → **Start a single dashboard** for that target.
+- Else if it contains **`--gex`** / **`--meic`** / **`--flies`** / **`--console`** / **`--settings`** → **Start a single dashboard** for that target.
 - Otherwise → **Start a single dashboard** for the suite. (Any bare number in `$ARGUMENTS` is the port.)
 
 ---
@@ -126,7 +127,8 @@ nothing else in the suite (use `/uninstall` to fully stop everything).
 4. **Confirm it's the right process before killing.** Look up the owning process
    (`Get-Process -Id <OwningProcess>`) and confirm it's this module's Python dashboard server (the process
    running the row's start command — e.g. `run.py dashboard --serve` for suite/gex, `cherrypick.meic.dashboard`
-   for meic, `run.py dashboard` for flies), not some unrelated service on that port. If it's clearly not the
+   for meic, `run.py dashboard` for flies; for console the listener is a **node** process running
+   `packages/console/server/dist/index.js`), not some unrelated service on that port. If it's clearly not the
    dashboard, report what's on the port and leave it alone.
 
 5. **Stop it.** Kill the owning process for each confirmed port, e.g.
