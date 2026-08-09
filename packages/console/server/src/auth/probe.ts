@@ -23,12 +23,24 @@ function isInsufficientScope(err: unknown): boolean {
  * token is read-only: write-oriented functions must disable themselves.
  */
 export async function probeCredentials(creds: ConsoleCredentials): Promise<ProbeResult> {
-  const client = new TastytradeClient({
-    ...TastytradeClient.ProdConfig,
-    clientSecret: creds.clientSecret,
-    refreshToken: creds.refreshToken,
-    oauthScopes: ["read"],
-  } as ConstructorParameters<typeof TastytradeClient>[0]);
+  // Request the FULL scope set: the OAuth refresh grant narrows the access
+  // token to the scopes requested, so asking for ["read"] would cap a
+  // trade-capable refresh token at read and misreport it. If the token
+  // endpoint refuses the trade scope outright, fall back to read-only.
+  const build = (scopes: string[]) =>
+    new TastytradeClient({
+      ...TastytradeClient.ProdConfig,
+      clientSecret: creds.clientSecret,
+      refreshToken: creds.refreshToken,
+      oauthScopes: scopes,
+    } as ConstructorParameters<typeof TastytradeClient>[0]);
+
+  let client = build(["read", "trade"]);
+  try {
+    await client.accountsAndCustomersService.getCustomerAccounts();
+  } catch {
+    client = build(["read"]);
+  }
 
   let accountNumber: string;
   try {

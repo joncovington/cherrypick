@@ -8,22 +8,31 @@ import { loadCredentials } from "../auth/credentials.js";
  * Market data and reads only — this module never touches order endpoints.
  */
 
+import { getScope } from "../auth/credentials.js";
+
 let client: TastytradeClient | null = null;
+let clientScopeKey = "";
 
 export function getClient(): TastytradeClient {
-  if (client !== null) return client;
+  // The OAuth refresh grant narrows access tokens to the requested scopes,
+  // so the client asks for what the probe detected: read-only stays read
+  // (a token request for trade would fail), trade-capable gets both so the
+  // dry-run validation path isn't capped. Rebuilt if the scope changes.
+  const detected = getScope().scope;
+  const scopes = detected === "trade" ? ["read", "trade"] : ["read"];
+  const key = scopes.join(" ");
+  if (client !== null && key === clientScopeKey) return client;
   const creds = loadCredentials();
   if (creds === null) {
-    throw new Error(
-      "no console broker credential — run: python run.py credentials set",
-    );
+    throw new Error("no suite broker credential — set one with: python -m cherrypick.core.auth setup");
   }
   client = new TastytradeClient({
     ...TastytradeClient.ProdConfig,
     clientSecret: creds.clientSecret,
     refreshToken: creds.refreshToken,
-    oauthScopes: ["read"],
+    oauthScopes: scopes,
   } as ConstructorParameters<typeof TastytradeClient>[0]);
+  clientScopeKey = key;
   return client;
 }
 
