@@ -3,15 +3,21 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
+import fastifyWebsocket from "@fastify/websocket";
 import { loadConfig, BIND_HOST } from "./config.js";
 import { registerStatusRoutes } from "./routes/status.js";
 import { registerOverviewRoutes } from "./routes/overview.js";
 import { registerModuleRoutes } from "./routes/modules.js";
+import { MarketDataService } from "./market/marketData.js";
+import { registerWsHub } from "./ws/hub.js";
 
 const config = loadConfig();
 const app = Fastify({ logger: { level: "info" } });
+const market = new MarketDataService(config);
 
-registerStatusRoutes(app, config);
+await app.register(fastifyWebsocket);
+registerWsHub(app, market);
+registerStatusRoutes(app, config, market);
 registerOverviewRoutes(app, config);
 registerModuleRoutes(app, config);
 app.get("/api/health", async () => ({ ok: true }));

@@ -1,5 +1,8 @@
 import { useOverview } from "../../lib/api";
+import { LiveQuoteRow } from "../../components/LiveQuote";
 import type { WatchdogFinding } from "@console/shared";
+
+const WATCH_SYMBOLS = ["SPX", "XSP", "QQQ", "IWM"];
 
 function statusClass(status: string): string {
   const s = status.toUpperCase();
@@ -56,6 +59,26 @@ export function OverviewPage() {
       </div>
 
       <div className="cards">
+        <section className="card">
+          <h2>Live quotes</h2>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>sym</th>
+                <th>last</th>
+                <th>bid</th>
+                <th>ask</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {WATCH_SYMBOLS.map((s) => (
+                <LiveQuoteRow key={s} symbol={s} />
+              ))}
+            </tbody>
+          </table>
+        </section>
+
         <section className={`card ${isError ? "card-stale" : ""}`}>
           <h2>Watchdog findings</h2>
           <table className="data-table">

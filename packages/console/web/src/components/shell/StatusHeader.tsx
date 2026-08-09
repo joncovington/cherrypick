@@ -1,4 +1,5 @@
 import { useStatus } from "../../lib/api";
+import { useWsState } from "../../lib/useQuote";
 
 function ageLabel(ageSeconds: number | null): string {
   if (ageSeconds === null) return "—";
@@ -9,6 +10,9 @@ function ageLabel(ageSeconds: number | null): string {
 
 export function StatusHeader() {
   const { data, isError } = useStatus();
+  const ws = useWsState();
+  // The WS heartbeat is the fresher signal when the socket is open.
+  const marketData = ws.socket === "open" ? ws.marketData : data?.marketData;
 
   return (
     <header className="status-header">
@@ -22,8 +26,8 @@ export function StatusHeader() {
       <div className="status-items">
         {data ? (
           <>
-            <span className={`chip chip-${data.marketData}`}>
-              {data.marketData === "live" ? "● live" : data.marketData === "cached" ? "◐ cached" : "○ disconnected"}
+            <span className={`chip chip-${marketData}`} title={`dxlink: ${ws.dxlink}`}>
+              {marketData === "live" ? "● live" : marketData === "cached" ? "◐ cached" : "○ disconnected"}
             </span>
             {data.sources.map((s) => (
               <span
