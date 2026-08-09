@@ -510,6 +510,86 @@ select.text-input {
   color: var(--text-muted);
 }
 
+.gex-metrics-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+  margin-top: 0.8rem;
+}
+
+.gex-panel {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.6rem 0.8rem;
+}
+
+.gex-metric {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  padding: 0.12rem 0;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.6rem;
+}
+
+.stat-tile {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem 0.7rem;
+}
+
+.stat-tile .stat-label {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  display: block;
+}
+
+.stat-tile .stat-value {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
+}
+
+.log-line {
+  display: flex;
+  gap: 0.6rem;
+  font-size: 12px;
+  font-family: var(--num-face);
+  padding: 0.1rem 0;
+  border-bottom: 1px solid var(--row-line);
+}
+
+.log-level {
+  width: 4.5rem;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.log-source {
+  width: 5.5rem;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.log-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lvl-CRITICAL, .lvl-ERROR { color: var(--err); }
+.lvl-WARN, .lvl-WARNING { color: var(--warn); }
+.lvl-OK { color: var(--ok); }
+.lvl-INFO, .lvl-DEBUG, .lvl-NOTIFY { color: var(--text-muted); }
+
 /* Skeletons: cards render at final size with ghost content — no spinners, no hidden cards. */
 .skeleton {
   display: inline-block;
