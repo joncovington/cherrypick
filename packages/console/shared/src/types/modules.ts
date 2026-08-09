@@ -33,7 +33,12 @@ export interface MeicSummaryRow {
 
 export interface MeicPayload {
   mode: TradingMode;
+  /** One page of the trade log, newest first. */
   trades: MeicTradeRow[];
+  /** Rows matching the scope and filters across every page — what the log is a window onto. */
+  total: number;
+  offset: number;
+  limit: number;
   summaries: MeicSummaryRow[];
 }
 

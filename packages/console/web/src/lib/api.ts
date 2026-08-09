@@ -54,20 +54,36 @@ export function useOverview() {
   });
 }
 
-export function useMeic(
-  mode: TradingMode,
-  symbol: string | null = null,
-  profile: string | null = null,
-  era: string | null = null,
-) {
-  const params = new URLSearchParams({ mode });
-  if (symbol !== null) params.set("symbol", symbol);
-  if (profile !== null) params.set("profile", profile);
-  if (era !== null) params.set("era", era);
+export interface MeicTradeQuery {
+  symbol: string | null;
+  profile: string | null;
+  era: string | null;
+  outcome: string;
+  reason: string | null;
+  search: string;
+  limit: number;
+  offset: number;
+}
+
+export function useMeic(mode: TradingMode, q: MeicTradeQuery) {
+  const params = new URLSearchParams({
+    mode,
+    outcome: q.outcome,
+    search: q.search,
+    limit: String(q.limit),
+    offset: String(q.offset),
+  });
+  if (q.symbol !== null) params.set("symbol", q.symbol);
+  if (q.profile !== null) params.set("profile", q.profile);
+  if (q.era !== null) params.set("era", q.era);
+  if (q.reason !== null) params.set("reason", q.reason);
   return useQuery<MeicPayload>({
-    queryKey: ["meic", mode, symbol, profile, era],
+    queryKey: ["meic", mode, q.symbol, q.profile, q.era, q.outcome, q.reason, q.search, q.limit, q.offset],
     queryFn: () => getJson<MeicPayload>(`/api/meic?${params.toString()}`),
     refetchInterval: 15_000,
+    // A page that briefly empties while the next one loads reads as "no
+    // trades"; holding the previous page keeps paging visually continuous.
+    placeholderData: (prev) => prev,
   });
 }
 

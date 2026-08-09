@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { useMeic } from "../../lib/api";
@@ -6,7 +6,7 @@ import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
-import { ScopeSelect, EraSelect, TabStrip, LoopPill } from "../../components/ScopeBar";
+import { ScopeSelect, EraSelect, TabStrip, LoopPill, Pager } from "../../components/ScopeBar";
 import { MeicDeepCards } from "./MeicDeepCards";
 import { MeicPerformanceTab } from "./MeicPerformanceTab";
 
@@ -55,6 +55,8 @@ function useMeicAnalytics(mode: TradingMode, symbol: string | null, profile: str
 
 const TABS = ["today", "history", "performance"] as const;
 const OUTCOMES = ["all", "wins", "losses", "open"] as const;
+/** Mirrors the server's TRADE_PAGE_SIZES; anything larger is clamped there. */
+const PAGE_SIZES = [50, 100, 200, 500] as const;
 
 /** Status reads at a glance: stopped is the loss branch, expired is the win branch. */
 function StatusBadge({ status }: { status: string }) {
@@ -73,6 +75,15 @@ export function MeicPage() {
   const [outcome, setOutcome] = useState<(typeof OUTCOMES)[number]>("all");
   const [reason, setReason] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [limit, setLimit] = useState<number>(PAGE_SIZES[1]);
+
+  // Search now hits the DB, so let typing settle before re-querying.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const scope = useQuery<MeicScopeData>({
     queryKey: ["meic-scope", mode],
@@ -84,22 +95,28 @@ export function MeicPage() {
     queryFn: async () => (await fetch(`/api/meic/loop?${scopeQuery(mode, symbol, null, null)}`)).json() as Promise<LoopStatus>,
     refetchInterval: 30_000,
   });
-  const { data, isLoading, isError, dataUpdatedAt } = useMeic(mode, symbol, profile, era);
+  // The filters run in SQL, so `total` counts every match and not just this
+  // page. Any change to what is being matched sends the reader back to page 1 —
+  // holding an offset into a different result set lands nowhere meaningful.
+  useEffect(() => {
+    setOffset(0);
+  }, [mode, symbol, profile, era, outcome, reason, debouncedSearch]);
+
+  const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useMeic(mode, {
+    symbol,
+    profile,
+    era,
+    outcome,
+    reason,
+    search: debouncedSearch,
+    limit,
+    offset,
+  });
   const analytics = useMeicAnalytics(mode, symbol, profile, era);
   const a = analytics.data;
   const totalExits = a?.exitReasons.reduce((s, r) => s + r.count, 0) ?? 0;
-
-  const trades = (data?.trades ?? []).filter((t) => {
-    if (outcome === "wins" && !(t.pnl !== null && t.pnl - (t.fees ?? 0) > 0)) return false;
-    if (outcome === "losses" && !(t.pnl !== null && t.pnl - (t.fees ?? 0) <= 0)) return false;
-    if (outcome === "open" && t.pnl !== null) return false;
-    if (reason !== null && (t.exitReason ?? "open") !== reason) return false;
-    if (search !== "") {
-      const hay = `${t.tradeDate} ${t.symbol} ${t.status} ${t.exitReason ?? ""}`.toLowerCase();
-      if (!hay.includes(search.toLowerCase())) return false;
-    }
-    return true;
-  });
+  const trades = data?.trades ?? [];
+  const total = data?.total ?? 0;
 
   const l = loop.data;
   // Filtering to an era with nothing in it is a legitimate answer, not a
@@ -229,14 +246,28 @@ export function MeicPage() {
           </div>
 
           <DataCard
-            title={`Trades (${trades.length} of ${data?.trades.length ?? 0})`}
+            title={`Trades — ${total.toLocaleString()} matching`}
             headers={["date", "entry", "sym", "put", "call", "wing", "credit", "qty", "IVR", "status", "P&L", "exit reason"]}
             numFrom={3}
             loading={isLoading}
             isError={isError}
             rowCount={trades.length}
             skeletonRows={10}
+            busy={isPlaceholderData}
+            empty="no trades match these filters"
             updatedAt={dataUpdatedAt}
+            footer={
+              total > 0 && (
+                <Pager
+                  offset={data?.offset ?? offset}
+                  limit={data?.limit ?? limit}
+                  total={total}
+                  pageSizes={PAGE_SIZES}
+                  onOffset={setOffset}
+                  onLimit={setLimit}
+                />
+              )
+            }
             controls={
               <>
                 <div className="mode-toggle" style={{ marginLeft: 0 }}>

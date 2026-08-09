@@ -31,7 +31,7 @@ Card-by-card status of the console against the surfaces it replaces (re-audited 
 | Win rate by session / Avg P&L by IV-rank band | done |
 | Exit reasons / fee drag | done |
 | Regime coverage (with degenerate flags) | done |
-| Trade log filters (outcome, exit reason, search) | done over 300 rows; explicit date-range inputs still missing |
+| Trade log filters (outcome, exit reason, search) | done — filters and paging both in SQL, so counts describe the scope and not the page; explicit date-range inputs still missing |
 | Performance view: profile comparison, risk metrics, equity + underwater, study arms, per-period charts | done. **Missing: arm scorecard (breakeven identity) and stop-policy counterfactuals** |
 
 ## Flies dashboard (:5052) — at parity+
