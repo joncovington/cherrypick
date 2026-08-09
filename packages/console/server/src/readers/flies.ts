@@ -56,8 +56,8 @@ export function readFlies(config: ConsoleConfig, mode: TradingMode, filter: Flie
   const positions = withReadOnlyDb<FliesPositionRow[]>(dbPath, [], (db) =>
     db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT position_id, trade_date, symbol, kind, side, center, wing_width,
-                quantity, net, status, pnl, entry_time
+        `SELECT position_id, trade_date, symbol, arm, entry_mode, kind, side, center, wing_width,
+                quantity, net, floor_dollars, risk_free, status, pnl, entry_time
            FROM fly_positions ${where} ORDER BY id DESC LIMIT 50`,
       )
       .all(...params)
@@ -66,12 +66,16 @@ export function readFlies(config: ConsoleConfig, mode: TradingMode, filter: Flie
         positionId: str(r["position_id"]) ?? "",
         tradeDate: str(r["trade_date"]) ?? "",
         symbol: str(r["symbol"]) ?? "",
+        arm: str(r["arm"]),
+        entryMode: str(r["entry_mode"]),
         kind: str(r["kind"]),
         side: str(r["side"]),
         center: num(r["center"]),
         wingWidth: num(r["wing_width"]),
         quantity: num(r["quantity"]),
         net: num(r["net"]),
+        floorDollars: num(r["floor_dollars"]),
+        riskFree: r["risk_free"] === 1,
         status: str(r["status"]) ?? "",
         pnl: num(r["pnl"]),
         entryTime: str(r["entry_time"]),

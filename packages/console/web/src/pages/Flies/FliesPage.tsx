@@ -185,25 +185,32 @@ export function FliesPage() {
 
         <DataCard
           title="Positions"
-          headers={["date", "entry", "sym", "kind", "side", "center", "wing", "qty", "net", "status", "P&L"]}
+          headers={["symbol", "arm", "mode", "kind", "centre", "net", "floor", "", "status"]}
           loading={isLoading}
           isError={isError}
           rowCount={data?.positions.length ?? 0}
           skeletonRows={10}
+          empty={arm !== null || date !== null ? "no matching positions" : "no positions today"}
         >
           {data?.positions.map((p) => (
             <tr key={p.positionId}>
-              <td>{p.tradeDate}</td>
-              <td className="muted">{p.entryTime?.slice(11, 16) ?? "—"}</td>
               <td>{p.symbol}</td>
-              <td>{p.kind ?? "—"}</td>
-              <td>{p.side ?? "—"}</td>
+              <td className="muted">{p.arm ?? "—"}</td>
+              <td className="muted">{p.entryMode ?? "—"}</td>
+              <td>{p.kind === "fly" ? "fly" : p.kind === "iron_fly" ? "iron fly" : p.kind === "bwb" ? `bwb ${p.side}` : `short ${p.side}`}</td>
               <td>{fmtNum(p.center, 0)}</td>
-              <td>{fmtNum(p.wingWidth, 0)}</td>
-              <td>{fmtNum(p.quantity, 0)}</td>
-              <td>{fmtMoney(p.net)}</td>
+              <td>{fmtNum(p.net, 2)}</td>
+              <td>{p.floorDollars !== null ? <PnlCell v={p.floorDollars} /> : "—"}</td>
+              <td>
+                {p.riskFree ? (
+                  <span className="chain-badge chain-badge-long">risk-free</span>
+                ) : p.kind === "fly" || p.kind === "iron_fly" ? (
+                  <span className="chain-badge chain-badge-short">floor negative</span>
+                ) : (
+                  <span className="chain-badge">at risk</span>
+                )}
+              </td>
               <td>{p.status}</td>
-              <td><PnlCell v={p.pnl} /></td>
             </tr>
           ))}
         </DataCard>

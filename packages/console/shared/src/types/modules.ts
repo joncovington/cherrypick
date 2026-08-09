@@ -61,12 +61,16 @@ export interface FliesPositionRow {
   positionId: string;
   tradeDate: string;
   symbol: string;
+  arm: string | null;
+  entryMode: string | null;
   kind: string | null;
   side: string | null;
   center: number | null;
   wingWidth: number | null;
   quantity: number | null;
   net: number | null;
+  floorDollars: number | null;
+  riskFree: boolean;
   status: string;
   pnl: number | null;
   entryTime: string | null;
