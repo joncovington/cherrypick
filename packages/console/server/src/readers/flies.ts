@@ -393,6 +393,381 @@ export function readFliesTimeline(config: ConsoleConfig, mode: TradingMode, day:
   });
 }
 
+// ---- history / performance (ports of analytics.py's read layer) ----
+
+/** Settled, non-void — the shared WHERE every history read builds on. */
+const SETTLED = "status = 'settled' AND void_reason IS NULL";
+
+export interface FliesSummary {
+  trades: number;
+  grossPnl: number;
+  fees: number;
+  netPnl: number;
+  wins: number;
+  losses: number;
+  winRatePct: number | null;
+  avgPnl: number | null;
+  feeDragPct: number | null;
+  profitFactor: number | null;
+}
+
+interface PnlRow {
+  gross: number;
+  fees: number;
+  pnl: number;
+}
+
+function summarize(rows: PnlRow[]): FliesSummary {
+  const gross = rows.reduce((s, r) => s + r.gross, 0);
+  const fees = rows.reduce((s, r) => s + r.fees, 0);
+  const nets = rows.map((r) => r.pnl);
+  const wins = nets.filter((n) => n > 0);
+  const losses = nets.filter((n) => n < 0);
+  const totalWin = wins.reduce((s, n) => s + n, 0);
+  const totalLoss = Math.abs(losses.reduce((s, n) => s + n, 0));
+  const net = nets.reduce((s, n) => s + n, 0);
+  return {
+    trades: rows.length,
+    grossPnl: gross,
+    fees,
+    netPnl: net,
+    wins: wins.length,
+    losses: losses.length,
+    winRatePct: wins.length + losses.length > 0 ? (wins.length / (wins.length + losses.length)) * 100 : null,
+    avgPnl: nets.length > 0 ? net / nets.length : null,
+    feeDragPct: gross > 0 ? (fees / gross) * 100 : null,
+    profitFactor: totalLoss > 0 ? totalWin / totalLoss : null,
+  };
+}
+
+function pnlRows(db: import("better-sqlite3").Database, where: string, params: string[]): Array<Record<string, unknown>> {
+  return db
+    .prepare<string[], Record<string, unknown>>(
+      `SELECT trade_date, arm, entry_mode, entry_window, COALESCE(gross_pnl, 0) AS gross,
+              COALESCE(fees, 0) AS fees, COALESCE(pnl, 0) AS pnl
+         FROM fly_positions WHERE ${where}`,
+    )
+    .all(...params);
+}
+
+const toPnl = (r: Record<string, unknown>): PnlRow => ({ gross: Number(r["gross"]), fees: Number(r["fees"]), pnl: Number(r["pnl"]) });
+
+function groupSummaries<T extends string>(rows: Array<Record<string, unknown>>, key: string, label: T): Array<Record<T, string> & FliesSummary> {
+  const grouped = new Map<string, PnlRow[]>();
+  for (const r of rows) {
+    const k = String(r[key] ?? "unknown");
+    let list = grouped.get(k);
+    if (list === undefined) {
+      list = [];
+      grouped.set(k, list);
+    }
+    list.push(toPnl(r));
+  }
+  return [...grouped.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([k, rs]) => ({ [label]: k, ...summarize(rs) }) as Record<T, string> & FliesSummary);
+}
+
+export interface FliesHistory {
+  mode: TradingMode;
+  /** Legged-only, per the reference: the arms differ by centring/timing/width, never by entry mode. */
+  byArm: Array<{ arm: string } & FliesSummary>;
+  byEntryMode: Array<{ entryMode: string } & FliesSummary>;
+  byEntryWindow: Array<{ window: string } & FliesSummary>;
+  feeDrag: Array<{ arm: string } & FliesSummary>;
+  dailyPnl: Array<{ date: string; trades: number; netPnl: number }>;
+  tradeLog: Array<{
+    tradeDate: string;
+    symbol: string;
+    arm: string | null;
+    entryMode: string | null;
+    kind: string | null;
+    side: string | null;
+    center: number | null;
+    window: string | null;
+    net: number | null;
+    fees: number | null;
+    pnl: number | null;
+    latencyMin: number | null;
+    pinned: boolean;
+  }>;
+}
+
+export function readFliesHistory(config: ConsoleConfig, mode: TradingMode): FliesHistory {
+  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.fliesDir, file);
+  const empty: FliesHistory = { mode, byArm: [], byEntryMode: [], byEntryWindow: [], feeDrag: [], dailyPnl: [], tradeLog: [] };
+  return withReadOnlyDb<FliesHistory>(dbPath, empty, (db) => {
+    const legged = pnlRows(db, `${SETTLED} AND entry_mode = 'legged'`, []);
+    const all = pnlRows(db, SETTLED, []);
+    const byArm = groupSummaries(legged, "arm", "arm").sort((a, b) => b.netPnl - a.netPnl);
+
+    const dailyMap = new Map<string, PnlRow[]>();
+    for (const r of all) {
+      const d = String(r["trade_date"]);
+      let list = dailyMap.get(d);
+      if (list === undefined) {
+        list = [];
+        dailyMap.set(d, list);
+      }
+      list.push(toPnl(r));
+    }
+    const dailyPnl = [...dailyMap.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, rs]) => ({ date, trades: rs.length, netPnl: rs.reduce((s, x) => s + x.pnl, 0) }));
+
+    const tradeLog = db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT trade_date, symbol, arm, entry_mode, kind, side, center, entry_window, net, fees, pnl,
+                completion_latency_min, pinned
+           FROM fly_positions WHERE ${SETTLED}
+          ORDER BY trade_date DESC, entry_time DESC LIMIT 500`,
+      )
+      .all()
+      .map((r) => ({
+        tradeDate: String(r["trade_date"]),
+        symbol: String(r["symbol"] ?? ""),
+        arm: str(r["arm"]),
+        entryMode: str(r["entry_mode"]),
+        kind: str(r["kind"]),
+        side: str(r["side"]),
+        center: num(r["center"]),
+        window: str(r["entry_window"]),
+        net: num(r["net"]),
+        fees: num(r["fees"]),
+        pnl: num(r["pnl"]),
+        latencyMin: num(r["completion_latency_min"]),
+        pinned: r["pinned"] === 1,
+      }));
+
+    return {
+      mode,
+      byArm,
+      byEntryMode: groupSummaries(all, "entry_mode", "entryMode"),
+      byEntryWindow: groupSummaries(all, "entry_window", "window"),
+      feeDrag: byArm,
+      dailyPnl,
+      tradeLog,
+    };
+  });
+}
+
+export interface FliesPerformance {
+  mode: TradingMode;
+  tiles: FliesSummary & { completionRatePct: number | null };
+  series: Array<{ bucket: string; netPnl: number; cumulative: number }>;
+  completion: {
+    leggedEntries: number;
+    completed: number;
+    completionRatePct: number | null;
+    neverOffered: number;
+    bufferBlocked: number;
+    floorBlocked: number;
+    unknown: number;
+    medianLatencyMin: number | null;
+    minLatencyMin: number | null;
+    maxLatencyMin: number | null;
+    medianSpotMove: number | null;
+  };
+  completionTrend: Array<{ day: string; legged: number; completed: number; ratePct: number | null }>;
+  liveVsPaper: {
+    arm: string;
+    live: { sessions: number; entries: number; completed: number; completionRatePct: number | null; medianLatencyMin: number | null; avgCredit: number | null };
+    paper: { sessions: number; entries: number; completed: number; completionRatePct: number | null; medianLatencyMin: number | null; avgCredit: number | null };
+    completionGapPct: number | null;
+    abort: { minLiveEntries: number; gapLimitPct: number; armed: boolean; triggered: boolean };
+  } | null;
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const ordered = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(ordered.length / 2);
+  return ordered.length % 2 === 1 ? ordered[mid]! : (ordered[mid - 1]! + ordered[mid]!) / 2;
+}
+
+/** Weekly buckets are Monday-anchored (SQLite's %W would split a trading week). */
+function bucketKey(tradeDate: string, granularity: string): string {
+  if (granularity === "monthly") return tradeDate.slice(0, 7);
+  if (granularity === "weekly") {
+    const d = new Date(tradeDate + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    return d.toISOString().slice(0, 10);
+  }
+  return tradeDate;
+}
+
+const ABORT_MIN_LIVE_ENTRIES = 30;
+const ABORT_COMPLETION_GAP = 0.15;
+
+export function readFliesPerformance(config: ConsoleConfig, mode: TradingMode, granularity: string): FliesPerformance {
+  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.fliesDir, file);
+  const empty: FliesPerformance = {
+    mode,
+    tiles: { ...summarize([]), completionRatePct: null },
+    series: [],
+    completion: {
+      leggedEntries: 0, completed: 0, completionRatePct: null, neverOffered: 0, bufferBlocked: 0,
+      floorBlocked: 0, unknown: 0, medianLatencyMin: null, minLatencyMin: null, maxLatencyMin: null, medianSpotMove: null,
+    },
+    completionTrend: [],
+    liveVsPaper: null,
+  };
+  const result = withReadOnlyDb<FliesPerformance>(dbPath, empty, (db) => {
+    const all = pnlRows(db, SETTLED, []);
+    const tilesBase = summarize(all.map(toPnl));
+
+    const buckets = new Map<string, PnlRow[]>();
+    for (const r of all) {
+      const k = bucketKey(String(r["trade_date"]), granularity);
+      let list = buckets.get(k);
+      if (list === undefined) {
+        list = [];
+        buckets.set(k, list);
+      }
+      list.push(toPnl(r));
+    }
+    let cumulative = 0;
+    const series = [...buckets.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([bucket, rs]) => {
+        const net = rs.reduce((s, x) => s + x.pnl, 0);
+        cumulative += net;
+        return { bucket, netPnl: net, cumulative };
+      });
+
+    // completion_stats, legged: the counterfactual's floor split reads the
+    // decisions journal (the engine's own recorded reason), never recomputed.
+    const modeRows = db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT position_id, kind, credit, best_completing_debit, completion_latency_min,
+                underlying_at_entry, spot_at_completion
+           FROM fly_positions WHERE entry_mode = 'legged'`,
+      )
+      .all();
+    const floorGated = new Set(
+      db
+        .prepare<[], { position_id: string | null }>(
+          "SELECT DISTINCT position_id FROM fly_decisions WHERE mode = 'completion' AND reason = 'floor_below_minimum_after_fees'",
+        )
+        .all()
+        .map((r) => r.position_id)
+        .filter((p): p is string => p !== null),
+    );
+    const completed = modeRows.filter((r) => r["kind"] === "fly");
+    const missed = modeRows.filter((r) => r["kind"] !== "fly");
+    let neverOffered = 0;
+    let bufferBlocked = 0;
+    let floorBlocked = 0;
+    let unknown = 0;
+    for (const r of missed) {
+      const best = num(r["best_completing_debit"]);
+      const target = num(r["credit"]);
+      if (best === null || target === null) unknown += 1;
+      else if (!(best < target)) neverOffered += 1;
+      else if (floorGated.has(String(r["position_id"]))) floorBlocked += 1;
+      else bufferBlocked += 1;
+    }
+    const latencies = completed.map((r) => num(r["completion_latency_min"])).filter((v): v is number => v !== null);
+    const moves = completed
+      .map((r) => {
+        const a = num(r["spot_at_completion"]);
+        const b = num(r["underlying_at_entry"]);
+        return a !== null && b !== null ? Math.abs(a - b) : null;
+      })
+      .filter((v): v is number => v !== null);
+
+    const trend = db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT trade_date, COUNT(*) AS legged, SUM(CASE WHEN kind = 'fly' THEN 1 ELSE 0 END) AS completed
+           FROM fly_positions WHERE entry_mode = 'legged' GROUP BY trade_date ORDER BY trade_date`,
+      )
+      .all()
+      .map((r) => {
+        const legged = Number(r["legged"]);
+        const done = Number(r["completed"]);
+        return { day: String(r["trade_date"]), legged, completed: done, ratePct: legged > 0 ? (done / legged) * 100 : null };
+      });
+
+    return {
+      mode,
+      tiles: {
+        ...tilesBase,
+        completionRatePct: modeRows.length > 0 ? (completed.length / modeRows.length) * 100 : null,
+      },
+      series,
+      completion: {
+        leggedEntries: modeRows.length,
+        completed: completed.length,
+        completionRatePct: modeRows.length > 0 ? (completed.length / modeRows.length) * 100 : null,
+        neverOffered,
+        bufferBlocked,
+        floorBlocked,
+        unknown,
+        medianLatencyMin: median(latencies),
+        minLatencyMin: latencies.length > 0 ? Math.min(...latencies) : null,
+        maxLatencyMin: latencies.length > 0 ? Math.max(...latencies) : null,
+        medianSpotMove: median(moves),
+      },
+      completionTrend: trend,
+      liveVsPaper: null,
+    };
+  });
+
+  // live vs paper: CONTEMPORANEOUS — paper restricted to the live arm's sessions.
+  result.liveVsPaper = withReadOnlyDb(path.join(config.paths.fliesDir, "live_trades.db"), null, (liveDb) => {
+    const days = liveDb
+      .prepare<[], { d: string }>(
+        "SELECT DISTINCT trade_date AS d FROM fly_positions WHERE arm = 'gex' AND entry_mode = 'legged' AND status != 'cancelled' ORDER BY trade_date",
+      )
+      .all()
+      .map((r) => r.d);
+    if (days.length === 0) return null;
+    const marks = days.map(() => "?").join(",");
+    const side = (db: import("better-sqlite3").Database) => {
+      const rows = db
+        .prepare<string[], Record<string, unknown>>(
+          `SELECT kind, credit, completion_latency_min FROM fly_positions
+            WHERE arm = 'gex' AND entry_mode = 'legged' AND status != 'cancelled' AND trade_date IN (${marks})`,
+        )
+        .all(...days);
+      const done = rows.filter((r) => r["kind"] === "fly");
+      const lat = done.map((r) => num(r["completion_latency_min"])).filter((v): v is number => v !== null && v !== 0);
+      const credits = rows.map((r) => num(r["credit"])).filter((v): v is number => v !== null);
+      return {
+        sessions: days.length,
+        entries: rows.length,
+        completed: done.length,
+        completionRatePct: rows.length > 0 ? (done.length / rows.length) * 100 : null,
+        medianLatencyMin: median(lat),
+        avgCredit: credits.length > 0 ? credits.reduce((s, v) => s + v, 0) / credits.length : null,
+      };
+    };
+    const live = side(liveDb);
+    const paper = withReadOnlyDb(path.join(config.paths.fliesDir, "paper_trades.db"), side(liveDb), side);
+    const gap =
+      live.completionRatePct !== null && paper.completionRatePct !== null
+        ? (paper.completionRatePct - live.completionRatePct) / 100
+        : null;
+    const armed = live.entries >= ABORT_MIN_LIVE_ENTRIES;
+    return {
+      arm: "gex",
+      live,
+      paper,
+      completionGapPct: gap !== null ? gap * 100 : null,
+      abort: {
+        minLiveEntries: ABORT_MIN_LIVE_ENTRIES,
+        gapLimitPct: ABORT_COMPLETION_GAP * 100,
+        armed,
+        triggered: armed && gap !== null && gap > ABORT_COMPLETION_GAP,
+      },
+    };
+  });
+
+  return result;
+}
+
 export interface FliesAnalytics {
   mode: TradingMode;
   /** Latest trade date's tiles, flies-dashboard shape. */

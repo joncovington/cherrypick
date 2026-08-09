@@ -8,6 +8,8 @@ import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable"
 import type { TradingMode } from "@console/shared";
 import { ForestCard } from "./ForestCard";
 import { TimelineCard } from "./TimelineCard";
+import { HistoryTab } from "./HistoryTab";
+import { PerformanceTab } from "./PerformanceTab";
 
 interface FliesAnalytics {
   today: {
@@ -35,10 +37,13 @@ function useFliesAnalytics(mode: TradingMode, filter: FliesFilter) {
   });
 }
 
+type FliesTab = "today" | "history" | "performance";
+
 export function FliesPage() {
   const [mode, setMode] = useMode();
   const [arm, setArm] = useState<string | null>(null);
   const [date, setDate] = useState<string | null>(null);
+  const [tab, setTab] = useState<FliesTab>("today");
   const filter: FliesFilter = { arm, date };
   const meta = useFliesMeta(mode);
   const { data, isLoading, isError } = useFlies(mode, filter);
@@ -50,6 +55,15 @@ export function FliesPage() {
       <div className="page-title-row">
         <h1>Flies</h1>
         <PaperLiveBadge mode={mode} />
+        <div className="mode-toggle" style={{ marginLeft: 0 }}>
+          {(["today", "history", "performance"] as FliesTab[]).map((t) => (
+            <button key={t} type="button" className={tab === t ? "mode-btn active" : "mode-btn"} onClick={() => setTab(t)}>
+              {t}
+            </button>
+          ))}
+        </div>
+        {tab === "today" && (
+        <>
         <select
           className="text-input"
           value={arm ?? ""}
@@ -76,9 +90,23 @@ export function FliesPage() {
             </option>
           ))}
         </select>
+        </>
+        )}
         <ModeToggle mode={mode} onChange={setMode} />
       </div>
 
+      {tab === "history" && (
+        <HistoryTab
+          mode={mode}
+          onReplayDay={(d) => {
+            setDate(d);
+            setTab("today");
+          }}
+        />
+      )}
+      {tab === "performance" && <PerformanceTab mode={mode} />}
+
+      {tab === "today" && (
       <div className="cards cards-wide">
         <section className="card">
           <h2>{a?.today.tradeDate !== null && a !== undefined ? `latest session — ${a.today.tradeDate}` : "latest session"}</h2>
@@ -215,6 +243,7 @@ export function FliesPage() {
           ))}
         </DataCard>
       </div>
+      )}
     </div>
   );
 }
