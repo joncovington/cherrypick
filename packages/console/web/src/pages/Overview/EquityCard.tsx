@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createChart, LineSeries, type IChartApi, type UTCTimestamp } from "lightweight-charts";
 import { fmtMoney } from "../../components/DataTable";
@@ -115,7 +115,10 @@ interface LogLine {
   text: string;
 }
 
+const LOG_LEVELS = ["ALL", "CRITICAL", "WARN", "INFO", "NOTIFY", "OK"] as const;
+
 export function LogsCard() {
+  const [level, setLevel] = useState<(typeof LOG_LEVELS)[number]>("ALL");
   const { data } = useQuery<{ lines: LogLine[] }>({
     queryKey: ["logs"],
     queryFn: async () => {
@@ -125,10 +128,25 @@ export function LogsCard() {
     },
     refetchInterval: 15_000,
   });
-  const lines = data?.lines ?? [];
+  const all = data?.lines ?? [];
+  const lines = all.filter((l) => {
+    if (level === "ALL") return true;
+    if (level === "CRITICAL") return l.level === "CRITICAL" || l.level === "ERROR";
+    if (level === "WARN") return l.level === "WARN" || l.level === "WARNING";
+    return l.level === level;
+  });
   return (
     <section className="card">
-      <h2>recent logs (watchdog · notify · module paper logs)</h2>
+      <div className="card-head">
+        <h2>recent logs (watchdog · notify · module paper logs)</h2>
+        <div className="mode-toggle" style={{ marginLeft: "auto" }}>
+          {LOG_LEVELS.map((lv) => (
+            <button key={lv} type="button" className={level === lv ? "mode-btn active" : "mode-btn"} onClick={() => setLevel(lv)}>
+              {lv}
+            </button>
+          ))}
+        </div>
+      </div>
       {data === undefined ? (
         <span className="skeleton skeleton-text" style={{ width: "60%" }} />
       ) : lines.length === 0 ? (

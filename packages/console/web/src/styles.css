@@ -781,3 +781,42 @@ select.text-input {
     animation: none;
   }
 }
+
+/* Rendered EOD markdown reports */
+.report-body {
+  margin-top: 0.7rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+  font-size: 12.5px;
+  max-height: 30rem;
+  overflow-y: auto;
+}
+
+.report-body h2,
+.report-body h3,
+.report-body h4,
+.report-body h5 {
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  margin: 0.7rem 0 0.35rem;
+}
+
+.report-body p {
+  margin: 0.25rem 0;
+  color: var(--text-muted);
+}
+
+.report-body ul {
+  margin: 0.25rem 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+}
+
+.report-body code {
+  font-family: var(--num-face);
+  background: var(--row-hover);
+  padding: 0 0.2rem;
+  border-radius: 2px;
+}

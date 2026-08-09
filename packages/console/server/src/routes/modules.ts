@@ -26,6 +26,8 @@ import { readGex } from "../readers/gex.js";
 import { buildGexProfile, gexSymbols } from "../services/gexProfile.js";
 import { buildSuiteReport } from "../services/report.js";
 import { readLogTail } from "../readers/logs.js";
+import { buildCalibration } from "../services/calibrate.js";
+import { readSystemPanel, readEod, renderReport } from "../services/suite.js";
 
 function parseMode(q: unknown): TradingMode {
   const mode = (q as Record<string, unknown> | undefined)?.["mode"];
@@ -99,4 +101,16 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   });
   app.get("/api/report", async () => buildSuiteReport(config));
   app.get("/api/logs", async () => ({ lines: readLogTail(config) }));
+  app.get("/api/calibration", async () => ({ modules: buildCalibration(config) }));
+  app.get("/api/system", async () => readSystemPanel(config));
+  app.get("/api/eod", async () => readEod(config));
+  app.get("/api/eod/report", async (req, reply) => {
+    // Only files the EOD card itself listed can be rendered — no arbitrary reads.
+    const { file } = req.query as { file?: string };
+    const allowed = new Set(readEod(config).reports.filter((r) => r.exists).map((r) => r.file));
+    if (file === undefined || !allowed.has(file)) return reply.code(404).send({ error: "unknown report" });
+    const html = renderReport(file);
+    if (html === null) return reply.code(404).send({ error: "unreadable" });
+    return { html };
+  });
 }
