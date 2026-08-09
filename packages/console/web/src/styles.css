@@ -461,6 +461,8 @@ select.text-input {
 }
 
 .chain-badge {
+  display: inline-block;
+  white-space: nowrap;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.05em;
