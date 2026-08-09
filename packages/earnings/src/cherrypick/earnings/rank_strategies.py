@@ -292,6 +292,7 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
     winrate_result = scanner.compute_winrate(symbol, config, lookback)
     winrate = winrate_result["winrate"]
     winrate_sample_size = winrate_result["sample_size"]
+    move_stats = scanner.move_stats_from_quarters(symbol, winrate_result["realized_move_quarters"], config)
 
     # Cheap pre-gate: skip the ~30s of live broker chain fetches when EVERY strategy would Reject
     # on a Dolt-only signal (avg_volume / iv_rv_ratio / winrate below its near-miss floor). No live
@@ -338,10 +339,9 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
                 criteria.update(broker["criteria"])
             broker_error = None if broker.get("ok") else broker.get("error")
 
-            criteria["avg_volume"] = avg_volume
-            criteria["iv_rv_ratio"] = iv_rv_ratio
-            criteria["winrate"] = winrate
-            criteria["winrate_sample_size"] = winrate_sample_size
+            scanner.apply_common_signals(
+                criteria, avg_volume, iv_rv_ratio, winrate, winrate_sample_size, move_stats
+            )
 
             extra_fn = entry.get("extra_criteria_fn")
             if extra_fn is not None:
@@ -397,12 +397,19 @@ def reverify_symbol(
     else:
         return {"ok": False, "reason": f"reverify_failed_{broker.get('error', 'fetch_error')}"}
 
-    criteria["avg_volume"] = scanner.fetch_avg_volume(symbol, config)
+    avg_volume = scanner.fetch_avg_volume(symbol, config)
     ivrv = scanner.fetch_iv_rv_ratio(symbol, config)
-    criteria["iv_rv_ratio"] = ivrv["iv_rv_ratio"] if ivrv.get("ok") else None
     lookback = config.get("winrate_lookback_quarters", 8)
     winrate_result = scanner.compute_winrate(symbol, config, lookback)
-    criteria["winrate"] = winrate_result["winrate"]
+    move_stats = scanner.move_stats_from_quarters(symbol, winrate_result["realized_move_quarters"], config)
+    scanner.apply_common_signals(
+        criteria,
+        avg_volume,
+        ivrv["iv_rv_ratio"] if ivrv.get("ok") else None,
+        winrate_result["winrate"],
+        winrate_result["sample_size"],
+        move_stats,
+    )
 
     extra_fn = entry.get("extra_criteria_fn")
     if extra_fn is not None:
@@ -463,6 +470,33 @@ def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) 
         ],
         paper_mode,
     )
+
+
+def _save_entry_review(scan_date: str, symbol_result: dict, paper_mode: bool) -> None:
+    """Persists one entry_reviews row for a symbol -- the richest per-strategy criteria plus
+    the cross-strategy accept/reject decision (see scanner.build_entry_review_spec) -- via
+    the paper/live-routed save_entry_review command, mirroring strategy_test_runner.py's own
+    _save_entry_review for the automated forced-sampling harness. Called for every symbol on
+    the entry-window calendar, selected or not, so a screen's full metric vector is recorded
+    whether the symbol was ultimately traded. Best-effort: a recording failure must never
+    break the scan whose decisions it is only recording after the fact.
+    """
+    criteria, strategy, score = scanner.richest_criteria(symbol_result["strategies"])
+    selected = symbol_result["outcome"] == "selected"
+    spec = scanner.build_entry_review_spec(
+        scan_date,
+        symbol_result["symbol"],
+        symbol_result["earnings_timing"],
+        criteria,
+        strategy,
+        selected,
+        symbol_result["reason"],
+        composite_score=score,
+    )
+    try:
+        _call_db(["save_entry_review", "--data", json.dumps(spec, default=str)], paper_mode)
+    except Exception as e:
+        print(f"Failed to save entry review for {symbol_result['symbol']}: {e}", file=sys.stderr)
 
 
 def _evaluate_and_rank_symbol(symbol: str, entry_date, earnings_timing: str, config: dict) -> dict:
@@ -570,6 +604,7 @@ def cmd_get_ranked_symbols(args) -> dict:
     scan_date = str(scanner._date.today())
     for s in per_symbol:
         _log_symbol_decision(scan_date, s, paper_mode)
+        _save_entry_review(scan_date, s, paper_mode)
 
     return {
         "ok": True,

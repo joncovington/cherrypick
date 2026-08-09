@@ -24,18 +24,28 @@
   "screening_header": "===== Screening & Concentration =====",
   "max_concurrent_earnings_positions": 3,
 
-  "_symbol_screen_note": "Single accept/reject bar for a symbol's soft criteria (replaces the old Tier 1/2/Near-Miss ladder). Hard filters -- price, front-expiration window, open interest, term structure, ATM delta, expected move, weekly cadence, bid/ask spread -- always apply. Each soft criterion below is required at the chosen level: 'pass' uses the strict min_* threshold in strategies.<name>, 'near_miss' uses the looser near_miss_min_* threshold, 'off' drops the criterion entirely. Default is every criterion at 'pass' (the strict bar). See docs/screening-criteria.md.",
+  "_symbol_screen_note": "Single accept/reject bar for a symbol's soft criteria (replaces the old Tier 1/2/Near-Miss ladder). Hard filters -- price, front-expiration window, open interest, term structure, ATM delta, expected move, weekly cadence, bid/ask spread -- always apply. Each soft criterion below is required at the chosen level: 'pass' uses the strict min_* threshold in strategies.<name>, 'near_miss' uses the looser near_miss_min_* threshold, 'off' drops the criterion entirely. Default is every criterion at 'pass' (the strict bar). 'move_tail' is a two-level switch, not a min/near_miss threshold: 'off' (default, record-only via entry_reviews) or 'veto' (reject a symbol whose historical earnings moves include a blowout quarter -- see move_tail_multiple). See docs/screening-criteria.md.",
   "symbol_screen": {
     "avg_volume": "pass",
     "winrate": "pass",
     "iv_rv_ratio": "pass",
     "market_cap": "pass",
-    "combined_option_volume": "pass"
+    "combined_option_volume": "pass",
+    "move_tail": "off"
   },
+
+  "_move_tail_multiple_note": "How many multiples of a name's own mean historical earnings move counts as a 'blowout' quarter for scanner.compute_historical_move_stats' move_tail_veto flag (recorded on every entry_reviews row via symbol_screen; only rejects a symbol when symbol_screen.move_tail is 'veto', off by default until the recorded data supports calibrating this number). 2.0 means any quarter at or above 2x the mean flags the name.",
+  "move_tail_multiple": 2.0,
 
   "_strat_test_portfolio_note": "How the forced-sampling strat_test paper book is split. 'per_strategy' (default) gives each strategy its own book (profile tag strat_test:<strategy>) so each has its own P&L/equity curve and a newly added strategy automatically gets its own stream; 'combined' keeps a single strat_test book. See docs/paper-trading.md and strategy_test_runner._book_tag.",
   "_per_name_concentration_is_intended": "DECIDED 2026-07-27, do not 'fix' this: every name clearing the accept bar runs EVERY strategy, and the resulting stack of structures on one name is the design, not a risk-control gap. The research question is which strategy is most profitable, which is only answerable if each strategy sees the same names under the same conditions — capping structures per name, or rotating strategies across names, would confound the comparison with selection differences and leave each strategy a different, much smaller sample. An EOD review on 2026-07-27 flagged one accepted name carrying six structures and $2,482 of overnight defined max loss ($1,323 in a single iron_fly) and recommended a per-name cap; that recommendation is declined on the above grounds. What bounds it is that every earnings strategy is DEFINED-RISK (naked was removed for exactly this reason), so the overnight worst case is known at entry — concentrated, not unbounded. The guard actually worth building is the missing CORRELATION guard: several index-correlated names qualifying the same night would collapse supposedly independent bets into one, which is a different problem from one name running the full sweep.",
   "strat_test_portfolio": "per_strategy",
+
+  "_symbol_watch_note": "Config for the forward-preview scan (python -m cherrypick.earnings.symbol_watch refresh) -- purely informational, feeds scout's read-only Earnings page 'Upcoming' section, never a trading decision. Scheduling (whether it runs at all, --days [now TRADING days], time of day) lives in the ORCHESTRATOR's own config, since that's what invokes it. liquid_only (default true) pre-filters the scan to the union of tastytrade's public 'Liquid Symbols' + 'High Options Volume' + 'tasty Earnings' watchlists (tt.py get_watch_universe, one call per pass) BEFORE the expensive per-symbol chain fetch -- scout's own Upcoming section only ever displays rows the scan actually reached, so scanning a name outside that union would waste a broker round trip for nothing never seen. Set false only if a full unfiltered preview is genuinely wanted. tier_thresholds overrides the EarningsEdgeDetection-derived recommended/near_miss/fail bar (symbol_watch.classify_tier) -- a display ranking only, never a gate; omit any key to keep its default (see classify_tier's own _TIER_DEFAULTS for the full list: min_price 10, near_miss_min_price 5, min_iv_rv_ratio 1.25, near_miss_min_iv_rv_ratio 1.00, min_winrate 0.50, near_miss_min_winrate 0.40, min_avg_volume 1500000, near_miss_min_avg_volume 1000000, min_term_structure -0.004, min_expected_move_dollars 0.90, min_combined_open_interest 2000).",
+  "symbol_watch": {
+    "liquid_only": true,
+    "tier_thresholds": {}
+  },
 
   "data_sources_header": "===== Data Sources (Dolt, Finnhub) =====",
   "earnings_calendar_source": "dolthub",

@@ -193,14 +193,6 @@ def _entry_context(criteria: dict, composite_score) -> dict:
 
 
 # --- Per-symbol entry review (the data reviewed for a symbol + the chosen/rejected decision) ---------
-def _symbol_decision(results: list[dict]) -> str | None:
-    """The per-symbol screen outcome (what the Tier 1/2/Reject ladder used to
-    convey): "accepted" if any strategy cleared the screen, else "rejected"."""
-    if not results:
-        return None
-    return "accepted" if any(r.get("accepted") for r in results) else "rejected"
-
-
 def _book_tag(config: dict, strategy_name: str) -> str:
     """The paper-book (profile) tag a strat_test trade is written under. In
     "per_strategy" mode (the default) each strategy gets its own book,
@@ -219,17 +211,6 @@ def _is_strat_test_book(profile: str | None) -> bool:
     return bool(profile) and (profile == TEST_PROFILE or profile.startswith(TEST_PROFILE + ":"))
 
 
-def _richest_criteria(results: list[dict]) -> dict:
-    """The fullest criteria dict across a symbol's per-strategy results (they share the symbol-level
-    fields; some strategies add extras, so take the largest)."""
-    best: dict = {}
-    for r in results:
-        c = r.get("criteria") or {}
-        if len(c) > len(best):
-            best = c
-    return best
-
-
 def _summarize_skips(reasons: list[str]) -> str:
     """A compact rejection reason from the per-strategy skip reasons for one symbol."""
     heads = [rr.split(":")[0].strip() for rr in reasons if rr]
@@ -245,39 +226,24 @@ def _summarize_skips(reasons: list[str]) -> str:
 
 def _save_entry_review(scan_date, symbol, timing, results, opened_strategies, skip_reasons) -> None:
     """Persist one per-symbol review — the reviewed data + the chosen/rejected decision — for the
-    orchestrator's per-symbol notification and the EOD analysis. Best-effort; never breaks the scan."""
-    crit = _richest_criteria(results)
+    orchestrator's per-symbol notification and the EOD analysis. Best-effort; never breaks the scan.
+    Delegates the spec shape to scanner.build_entry_review_spec, shared with rank_strategies.py's own
+    _save_entry_review so both callers' entry_reviews rows carry the same research-backed screening
+    metrics (implied-vs-historical move, spread quality, IV rank, move-tail flag), whichever caller
+    ran the scan."""
+    crit, strategy, score = scanner.richest_criteria(results)
     selected = bool(opened_strategies)
     reason = (
         ("opened " + ", ".join(sorted(set(opened_strategies))))
         if selected
         else _summarize_skips(skip_reasons)
     )
+    spec = scanner.build_entry_review_spec(
+        scan_date, symbol, timing, crit, strategy, selected, reason, composite_score=score
+    )
+    spec["profile"] = TEST_PROFILE
     try:
-        db_paper.cmd_save_entry_review(
-            argparse.Namespace(
-                data=json.dumps(
-                    {
-                        "scan_date": scan_date,
-                        "symbol": symbol,
-                        "timing": timing,
-                        "price": crit.get("price"),
-                        "volume": crit.get("avg_volume"),
-                        "winrate": crit.get("winrate"),
-                        "winrate_sample": crit.get("winrate_sample_size"),
-                        "iv_rv_ratio": crit.get("iv_rv_ratio"),
-                        "term_structure": crit.get("term_structure"),
-                        "market_cap": crit.get("market_cap"),
-                        "expected_move": crit.get("expected_move_dollars") or crit.get("expected_move"),
-                        "best_tier": _symbol_decision(results),
-                        "selected": selected,
-                        "reason": reason,
-                        "criteria": crit,
-                        "profile": TEST_PROFILE,
-                    }
-                )
-            )
-        )
+        db_paper.cmd_save_entry_review(argparse.Namespace(data=json.dumps(spec, default=str)))
     except Exception:
         pass
 

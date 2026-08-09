@@ -11,6 +11,8 @@ Usage:
       [--include_greeks] [--include_quotes] [--include_oi] [--include_volume]
       [--strike_count N] [--around_price F]
   python src/tt.py get_market_metrics --symbol AAPL
+  python src/tt.py get_liquid_symbols
+  python src/tt.py get_watch_universe
   python src/tt.py execute_trade --order '<JSON>' [--account_number X] [--live]
 
 NOTE: This file exceeds 500-line guideline (529 lines). Documented exception
@@ -202,6 +204,17 @@ async def cmd_get_quote(args) -> dict:
         return _error(exc)
 
 
+def _iv_30d_frac(value: Any) -> float | None:
+    """`implied_volatility_30_day`/`historical_volatility_30_day` arrive from the SDK as
+    percentage-point numbers (e.g. 27.16 meaning 27.16%) -- unlike
+    `implied_volatility_index_rank`/`implied_volatility_percentile`, which are already 0..1
+    fractions despite their `str` type on the SDK dataclass. Same convention scout's
+    metrics_service uses for the same fields; normalized once here so scanner.py's
+    iv_30d/hv_30d ratio needs no second conversion."""
+    num = _num(value)
+    return num / 100 if num is not None else None
+
+
 async def cmd_get_market_metrics(args) -> dict:
     try:
         from tastytrade.metrics import get_market_metrics
@@ -212,7 +225,70 @@ async def cmd_get_market_metrics(args) -> dict:
         if not metrics:
             return {"ok": False, "error": f"no market metrics for {symbol}"}
         m = metrics[0]
-        return {"ok": True, "symbol": symbol, "market_cap": _num(m.market_cap)}
+        return {
+            "ok": True,
+            "symbol": symbol,
+            "market_cap": _num(m.market_cap),
+            "iv_rank": _num(getattr(m, "implied_volatility_index_rank", None)),
+            "iv_percentile": _num(getattr(m, "implied_volatility_percentile", None)),
+            "iv_30d": _iv_30d_frac(getattr(m, "implied_volatility_30_day", None)),
+            "hv_30d": _iv_30d_frac(getattr(m, "historical_volatility_30_day", None)),
+        }
+    except Exception as exc:
+        return _error(exc)
+
+
+async def cmd_get_liquid_symbols(_args) -> dict:
+    """Membership of tastytrade's own public "Liquid Symbols" watchlist (`group_name ==
+    "Liquidity"`, `name == "Liquid Symbols"`) -- a broker-defined liquidity bar, zero per-symbol
+    cost (one watchlist fetch regardless of how many symbols get checked against it). Mirrors
+    packages/scout's `liquidity_service.py` exactly (same watchlist), so `symbol_watch.py`'s
+    forward-preview scan can pre-filter to the same universe scout's Earnings page displays by
+    default, instead of spending a full per-symbol chain fetch on a name scout's own
+    `calendar.liquid_only` filter would hide anyway."""
+    try:
+        from tastytrade.watchlists import PublicWatchlist
+
+        session = get_session()
+        watchlists = await PublicWatchlist.get(session)
+        wl = next((w for w in watchlists if w.group_name == "Liquidity" and w.name == "Liquid Symbols"), None)
+        if wl is None or not wl.watchlist_entries:
+            return {"ok": True, "symbols": []}
+        symbols = sorted({entry["symbol"].upper() for entry in wl.watchlist_entries if entry.get("symbol")})
+        return {"ok": True, "symbols": symbols}
+    except Exception as exc:
+        return _error(exc)
+
+
+# The forward-preview scan's target universe: liquid enough to matter (two "Liquidity"-group
+# watchlists) plus the curated earnings-focused list -- deliberately "tasty Earnings" (~26 names,
+# hand-curated) rather than the much broader "All Earnings" (~85 names, many illiquid), since the
+# whole point of unioning in an earnings-specific list here is more signal, not more noise.
+_WATCH_UNIVERSE_WATCHLISTS = (
+    ("Liquidity", "Liquid Symbols"),
+    ("Liquidity", "High Options Volume"),
+    ("Earnings", "tasty Earnings"),
+)
+
+
+async def cmd_get_watch_universe(_args) -> dict:
+    """Union of tastytrade's own public watchlists that define `symbol_watch.py`'s forward-preview
+    scan universe -- see `_WATCH_UNIVERSE_WATCHLISTS`. One `PublicWatchlist.get` call regardless of
+    how many of the three are actually present; a watchlist tastytrade doesn't return (a renamed/
+    retired list) just contributes nothing rather than failing the whole union."""
+    try:
+        from tastytrade.watchlists import PublicWatchlist
+
+        session = get_session()
+        watchlists = await PublicWatchlist.get(session)
+        by_key = {(w.group_name, w.name): w for w in watchlists}
+        symbols: set[str] = set()
+        for key in _WATCH_UNIVERSE_WATCHLISTS:
+            wl = by_key.get(key)
+            if wl is None or not wl.watchlist_entries:
+                continue
+            symbols.update(entry["symbol"].upper() for entry in wl.watchlist_entries if entry.get("symbol"))
+        return {"ok": True, "symbols": sorted(symbols)}
     except Exception as exc:
         return _error(exc)
 
@@ -435,6 +511,8 @@ _ASYNC_COMMANDS = {
     "get_option_chain",
     "execute_trade",
     "get_market_metrics",
+    "get_liquid_symbols",
+    "get_watch_universe",
 }
 
 
@@ -468,6 +546,9 @@ def main() -> None:
     p_metrics = sub.add_parser("get_market_metrics")
     p_metrics.add_argument("--symbol", required=True)
 
+    sub.add_parser("get_liquid_symbols")
+    sub.add_parser("get_watch_universe")
+
     p_exec = sub.add_parser("execute_trade")
     p_exec.add_argument("--order", required=True)
     p_exec.add_argument("--account_number", default=None)
@@ -484,6 +565,8 @@ def main() -> None:
         "get_option_chain": cmd_get_option_chain,
         "execute_trade": cmd_execute_trade,
         "get_market_metrics": cmd_get_market_metrics,
+        "get_liquid_symbols": cmd_get_liquid_symbols,
+        "get_watch_universe": cmd_get_watch_universe,
     }
     handler = dispatch[args.command]
     if args.command in _ASYNC_COMMANDS:

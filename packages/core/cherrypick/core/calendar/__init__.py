@@ -132,6 +132,17 @@ def previous_trading_day(d: date) -> date:
     return prev
 
 
+def nth_trading_day(start: date, n: int) -> date:
+    """The n-th trading day strictly after `start` (n=1 is the next trading day; n=0 returns
+    `start` unchanged, whether or not it is itself a trading day). Gives "the next N trading
+    days" an unambiguous endpoint: the window (start, nth_trading_day(start, N)] contains
+    exactly N trading days regardless of weekends/holidays inside it."""
+    d = start
+    for _ in range(max(0, n)):
+        d = next_trading_day(d)
+    return d
+
+
 # --------------------------------------------------------------------------- expiries
 def triple_witching_dates(year: int) -> list[date]:
     """3rd Friday of March, June, September, December (simultaneous expiry of stock options, index

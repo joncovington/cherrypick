@@ -20,18 +20,17 @@
   <span class="tag">research surface — staging only, no order placement</span>
 </header>
 <nav id="nav">
-  <a id="nav-calendar" hx-get="/partial/calendar" hx-target="#content" hx-trigger="load, click" class="on">Calendar</a>
-  <a id="nav-screener" hx-get="/partial/screener" hx-target="#content">Screener</a>
+  <a id="nav-screener" hx-get="/partial/screener" hx-target="#content" hx-trigger="load, click" class="on">Screener</a>
   <a id="nav-symbol" href="#" hx-target="#content">Symbol</a>
   <a id="nav-builder" href="#" hx-target="#content">Builder</a>
   <a id="nav-staged" hx-get="/partial/staged" hx-target="#content">Staged</a>
+  <a id="nav-earnings" hx-get="/partial/earnings" hx-target="#content">Earnings</a>
 </nav>
 <main>
   <div id="content">
     <div class="card">
       <h2>Welcome</h2>
-      <p class="note">Calendar / Screener / Symbol / Builder views land in later milestones. This is
-        the M1 skeleton: security, cache, and the watchlist below are live now.</p>
+      <p class="note">Loading...</p>
     </div>
   </div>
   <aside id="watchlist" x-data="watchlistStore()" x-init="load()">
