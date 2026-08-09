@@ -85,7 +85,7 @@ export function readFlies(config: ConsoleConfig, mode: TradingMode, filter: Flie
   return { mode, books, positions };
 }
 
-import { payoffCurve, stateAt, bookPnl, type FlyPosition, type FlyRow, type PayoffCurve } from "../analytics/fliesPayoff.js";
+import { payoffCurve, stateAt, bookPnl, positionFloor, type FlyPosition, type FlyRow, type PayoffCurve } from "../analytics/fliesPayoff.js";
 
 export interface FliesForest {
   mode: TradingMode;
@@ -511,6 +511,78 @@ function groupSummaries<T extends string>(rows: Array<Record<string, unknown>>, 
     .map(([k, rs]) => ({ [label]: k, ...summarize(rs) }) as Record<T, string> & FliesSummary);
 }
 
+export interface ArmDivergence {
+  date: string | null;
+  iterations: number;
+  allAgreeRatePct: number | null;
+  pairs: Array<{ arms: string; iterations: number; agreementRatePct: number | null }>;
+}
+
+/**
+ * Port of analytics.arm_divergence: how often the arms actually picked
+ * DIFFERENT centres. The experiment can only separate two arms to the extent
+ * they disagree — a high agreement rate means the comparison cannot answer
+ * the question as framed, and that is far better learned in week one.
+ */
+export function readArmDivergence(config: ConsoleConfig, mode: TradingMode, day: string | null): ArmDivergence {
+  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.fliesDir, file);
+  const empty: ArmDivergence = { date: null, iterations: 0, allAgreeRatePct: null, pairs: [] };
+  return withReadOnlyDb<ArmDivergence>(dbPath, empty, (db) => {
+    const date =
+      day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_iterations").get()?.d ?? null;
+    if (date === null) return empty;
+    const rows = db
+      .prepare<[string], Record<string, unknown>>(
+        "SELECT iteration_ts, symbol, arm, center FROM fly_iterations WHERE trade_date = ? ORDER BY iteration_ts",
+      )
+      .all(date);
+    const iterations = new Map<string, Record<string, number>>();
+    for (const r of rows) {
+      if (typeof r["center"] !== "number") continue;
+      const key = `${String(r["iteration_ts"])}|${String(r["symbol"])}`;
+      let bucket = iterations.get(key);
+      if (bucket === undefined) {
+        bucket = {};
+        iterations.set(key, bucket);
+      }
+      bucket[String(r["arm"])] = r["center"];
+    }
+    const pairs = new Map<string, boolean[]>();
+    let allAgree = 0;
+    let considered = 0;
+    for (const centers of iterations.values()) {
+      const arms = Object.keys(centers).sort();
+      if (arms.length < 2) continue;
+      considered += 1;
+      if (new Set(Object.values(centers)).size === 1) allAgree += 1;
+      for (let i = 0; i < arms.length; i++) {
+        for (let j = i + 1; j < arms.length; j++) {
+          const key = `${arms[i]} vs ${arms[j]}`;
+          let list = pairs.get(key);
+          if (list === undefined) {
+            list = [];
+            pairs.set(key, list);
+          }
+          list.push(centers[arms[i]!] === centers[arms[j]!]);
+        }
+      }
+    }
+    return {
+      date,
+      iterations: considered,
+      allAgreeRatePct: considered > 0 ? (allAgree / considered) * 100 : null,
+      pairs: [...pairs.entries()]
+        .map(([arms, matches]) => ({
+          arms,
+          iterations: matches.length,
+          agreementRatePct: matches.length > 0 ? (matches.filter(Boolean).length / matches.length) * 100 : null,
+        }))
+        .sort((a, b) => (b.agreementRatePct ?? 0) - (a.agreementRatePct ?? 0)),
+    };
+  });
+}
+
 export interface FliesHistory {
   mode: TradingMode;
   /** Legged-only, per the reference: the arms differ by centring/timing/width, never by entry mode. */
@@ -822,6 +894,8 @@ export interface FliesAnalytics {
     riskFree: number;
     completionPct: number | null;
     fees: number;
+    /** Every OPEN position own worst case, summed. Zero means nothing open can still lose. */
+    maxPossibleLoss: number;
   };
   byArm: Array<{ arm: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
   feeDrag: Array<{ arm: string; gross: number; fees: number; net: number; dragPct: number | null }>;
@@ -832,7 +906,7 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
   const dbPath = path.join(config.paths.fliesDir, file);
   const empty: FliesAnalytics = {
     mode,
-    today: { tradeDate: null, netPnl: 0, positions: 0, open: 0, riskFree: 0, completionPct: null, fees: 0 },
+    today: { tradeDate: null, netPnl: 0, positions: 0, open: 0, riskFree: 0, completionPct: null, fees: 0, maxPossibleLoss: 0 },
     byArm: [],
     feeDrag: [],
   };
@@ -857,6 +931,29 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
         )
         .get(tradeDate, ...armParams) ?? {};
       const positions = Number(t["positions"] ?? 0);
+      // Max possible loss: each still-open position own floor, summed — reads
+      // zero when nothing open can lose any more.
+      const openRows = db
+        .prepare<string[], Record<string, unknown>>(
+          `SELECT kind, side, center, wing_width, far_width, net, quantity, fees, status
+             FROM fly_positions WHERE trade_date = ?${armClause}
+              AND status NOT IN ('settled','closed','voided')`,
+        )
+        .all(tradeDate, ...armParams);
+      const maxPossibleLoss = openRows.reduce((sum, r) => {
+        const floor = positionFloor({
+          kind: String(r["kind"] ?? "fly"),
+          side: String(r["side"] ?? "put"),
+          center: Number(r["center"]),
+          wingWidth: Number(r["wing_width"]),
+          farWidth: typeof r["far_width"] === "number" ? r["far_width"] : null,
+          net: Number(r["net"] ?? 0),
+          quantity: Number(r["quantity"] ?? 1),
+          fees: Number(r["fees"] ?? 0),
+          status: r["status"] === null ? null : String(r["status"]),
+        });
+        return sum + Math.min(0, floor);
+      }, 0);
       today = {
         tradeDate,
         netPnl: Number(t["net"] ?? 0),
@@ -865,6 +962,7 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
         riskFree: Number(t["risk_free"] ?? 0),
         completionPct: positions > 0 ? (Number(t["completed"] ?? 0) / positions) * 100 : null,
         fees: Number(t["fees"] ?? 0),
+        maxPossibleLoss,
       };
     }
 
