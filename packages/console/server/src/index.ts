@@ -13,6 +13,7 @@ import { registerWsHub } from "./ws/hub.js";
 import { registerSecurity } from "./security.js";
 import { registerScoutRoutes } from "./routes/scout.js";
 import { registerPayoffRoutes } from "./routes/payoff.js";
+import { registerOrderRoutes } from "./routes/orders.js";
 
 const config = loadConfig();
 const app = Fastify({ logger: { level: "info" } });
@@ -21,6 +22,7 @@ const market = new MarketDataService(config);
 registerSecurity(app);
 registerScoutRoutes(app, config);
 registerPayoffRoutes(app);
+registerOrderRoutes(app, config);
 await app.register(fastifyWebsocket);
 registerWsHub(app, market);
 registerStatusRoutes(app, config, market);

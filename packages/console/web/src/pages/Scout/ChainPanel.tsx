@@ -4,6 +4,7 @@ import { SkeletonRows } from "../../components/DataTable";
 
 export interface ChainSide {
   streamerSymbol: string;
+  occSymbol: string | null;
   bid: number | null;
   ask: number | null;
   delta: number | null;
@@ -74,6 +75,7 @@ interface Props {
     price: number | null;
     delta: number | null;
     expiration: string | null;
+    occSymbol: string | null;
   }) => void;
   spot: number | null;
   legs: LegMark[];
@@ -182,14 +184,14 @@ export function ChainPanel({ symbol, expiration, onExpiration, onPick, spot, leg
                     <td>{r.call ? fmt(r.call.delta) : "—"}</td>
                     <ChainCell
                       side={r.call}
-                      onSell={() => r.call && onPick({ kind: "call", strike: r.strike, quantity: -1, price: mid(r.call), delta: r.call.delta, expiration: data?.expiration ?? null })}
-                      onBuy={() => r.call && onPick({ kind: "call", strike: r.strike, quantity: 1, price: mid(r.call), delta: r.call.delta, expiration: data?.expiration ?? null })}
+                      onSell={() => r.call && onPick({ kind: "call", strike: r.strike, quantity: -1, price: mid(r.call), delta: r.call.delta, expiration: data?.expiration ?? null, occSymbol: r.call.occSymbol })}
+                      onBuy={() => r.call && onPick({ kind: "call", strike: r.strike, quantity: 1, price: mid(r.call), delta: r.call.delta, expiration: data?.expiration ?? null, occSymbol: r.call.occSymbol })}
                     />
                     <td className={`chain-strike ${inBand ? "chain-em-band" : ""}`}>{r.strike}</td>
                     <ChainCell
                       side={r.put}
-                      onSell={() => r.put && onPick({ kind: "put", strike: r.strike, quantity: -1, price: mid(r.put), delta: r.put.delta, expiration: data?.expiration ?? null })}
-                      onBuy={() => r.put && onPick({ kind: "put", strike: r.strike, quantity: 1, price: mid(r.put), delta: r.put.delta, expiration: data?.expiration ?? null })}
+                      onSell={() => r.put && onPick({ kind: "put", strike: r.strike, quantity: -1, price: mid(r.put), delta: r.put.delta, expiration: data?.expiration ?? null, occSymbol: r.put.occSymbol })}
+                      onBuy={() => r.put && onPick({ kind: "put", strike: r.strike, quantity: 1, price: mid(r.put), delta: r.put.delta, expiration: data?.expiration ?? null, occSymbol: r.put.occSymbol })}
                     />
                     <td>{r.put ? fmt(r.put.delta) : "—"}</td>
                     <td className="muted">{r.put ? fmtOi(r.put.openInterest) : "—"}</td>

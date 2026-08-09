@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { mutateJson } from "../../lib/api";
 import { useQuote } from "../../lib/useQuote";
 import { PayoffChart } from "./PayoffChart";
@@ -14,6 +14,8 @@ interface LegDraft {
   price: string;
   delta: number | null;
   expiration: string | null;
+  /** OCC symbol from the chain — required to stage a ticket. */
+  occSymbol: string | null;
 }
 
 interface PayoffResult {
@@ -84,6 +86,20 @@ export function BuilderPage() {
   const update = (id: number, patch: Partial<LegDraft>) =>
     setLegs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
 
+  const qc = useQueryClient();
+  const stageable = legs.length > 0 && legs.every((l) => l.occSymbol !== null && l.price !== "" && l.quantity !== 0);
+  const stage = useMutation({
+    mutationFn: () =>
+      mutateJson<{ ticket: { id: string; dryRun: { ok: boolean; error?: string } } }>("/api/orders/stage", "POST", {
+        symbol,
+        strategy: null,
+        legs: legs.map((l) => ({ symbol: l.occSymbol, quantity: l.quantity, price: Number(l.price) })),
+        credit: data?.maxProfit.value ?? null,
+        maxRisk: data?.maxLoss.value ?? null,
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["staged"] }),
+  });
+
   return (
     <div className="page">
       <div className="page-title-row">
@@ -110,7 +126,30 @@ export function BuilderPage() {
 
       <div className="cards cards-wide">
         <section className="card">
-          <h2>Order details</h2>
+          <div className="panel-head-row">
+            <h2>Order details</h2>
+            <button
+              type="button"
+              className="btn"
+              style={{ marginLeft: "auto" }}
+              disabled={!stageable || stage.isPending}
+              title={
+                stageable
+                  ? "validate via broker dry-run (no order created) and save the ticket"
+                  : "legs must come from the chain (need OCC symbols) with prices"
+              }
+              onClick={() => stage.mutate()}
+            >
+              {stage.isPending ? "staging…" : "Stage ticket (dry-run)"}
+            </button>
+          </div>
+          {stage.data && (
+            <p className={stage.data.ticket.dryRun.ok ? "muted" : "stale-note"} style={{ marginTop: 0 }}>
+              {stage.data.ticket.dryRun.ok
+                ? "ticket staged — dry-run validated, no order created"
+                : `ticket staged; dry-run failed: ${stage.data.ticket.dryRun.error ?? "unknown"}`}
+            </p>
+          )}
           {legs.length === 0 ? (
             <p className="muted">click bid (sell) or ask (buy) in the chain below to add legs</p>
           ) : (
@@ -206,7 +245,7 @@ export function BuilderPage() {
           legs={legs
             .filter((l) => l.kind !== "stock" && l.strike !== "")
             .map((l) => ({ kind: l.kind as "call" | "put", strike: Number(l.strike), quantity: l.quantity }))}
-          onPick={({ kind, strike, quantity, price, delta, expiration: exp }) =>
+          onPick={({ kind, strike, quantity, price, delta, expiration: exp, occSymbol }) =>
             setLegs((ls) => [
               ...ls,
               {
@@ -217,6 +256,7 @@ export function BuilderPage() {
                 price: price !== null ? price.toFixed(2) : "",
                 delta,
                 expiration: exp,
+                occSymbol,
               },
             ])
           }
