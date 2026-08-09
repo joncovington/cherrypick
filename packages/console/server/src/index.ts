@@ -53,3 +53,22 @@ try {
   app.log.error(err);
   process.exit(1);
 }
+
+// One-time scope backfill: a credential stored before scope detection existed
+// (or migrated from the pre-unification slot) gets probed once in the
+// background so read-only gating applies without re-entering the secret.
+void (async () => {
+  const { loadCredentials, saveCredentials } = await import("./auth/credentials.js");
+  const creds = loadCredentials();
+  if (creds === null || creds.scope !== undefined) return;
+  try {
+    const { probeCredentials } = await import("./auth/probe.js");
+    const probe = await probeCredentials(creds);
+    if (probe.ok && probe.scope !== undefined) {
+      saveCredentials({ ...creds, scope: probe.scope, validatedAt: new Date().toISOString() });
+      app.log.info(`credential scope detected: ${probe.scope}${probe.scope === "read" ? " — write-oriented functions disabled" : ""}`);
+    }
+  } catch (err) {
+    app.log.warn(`credential scope probe failed: ${(err as Error).message}`);
+  }
+})();

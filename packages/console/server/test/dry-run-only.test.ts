@@ -42,9 +42,12 @@ describe("dry-run-only invariant", () => {
     }
   });
 
-  it("postOrderDryRun appears in exactly one file — services/staging.ts", () => {
+  it("postOrderDryRun appears in exactly two files — staging and the scope probe", () => {
     const hits = files.filter((f) => contents.get(f)!.includes("postOrderDryRun"));
-    expect(hits.map((h) => path.relative(SRC, h).replace(/\\/g, "/"))).toEqual(["services/staging.ts"]);
+    expect(hits.map((h) => path.relative(SRC, h).replace(/\\/g, "/")).sort()).toEqual([
+      "auth/probe.ts",
+      "services/staging.ts",
+    ]);
   });
 
   it("order specs are opening-only with signed-quantity actions and per-share net price", () => {

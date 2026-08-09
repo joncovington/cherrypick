@@ -16,6 +16,8 @@ export interface StatusPayload {
   /** Eastern-time wall clock string the market clock renders from. */
   nowEt: string;
   marketData: MarketDataState;
+  /** The suite credential's detected scope; null = no credential or never probed. */
+  credentialScope: "read" | "trade" | null;
   sources: SourceFreshness[];
 }
 

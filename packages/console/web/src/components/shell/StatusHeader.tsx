@@ -29,6 +29,11 @@ export function StatusHeader() {
             <span className={`chip chip-${marketData}`} title={`dxlink: ${ws.dxlink}`}>
               {marketData === "live" ? "● live" : marketData === "cached" ? "◐ cached" : "○ disconnected"}
             </span>
+            {data.credentialScope === "read" && (
+              <span className="chip chip-warn" title="the suite credential's refresh token is read-only — broker dry-run validation is disabled; re-run credentials set with a trade-scoped token to enable it">
+                read-only credential
+              </span>
+            )}
             {data.sources.map((s) => (
               <span
                 key={s.key}

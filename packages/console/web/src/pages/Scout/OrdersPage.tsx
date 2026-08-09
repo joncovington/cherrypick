@@ -16,7 +16,7 @@ interface StagedTicket {
   legs: TicketLeg[];
   credit: number | null;
   maxRisk: number | null;
-  dryRun: { ok: boolean; error?: string; account?: string } | null;
+  dryRun: { ok: boolean; error?: string; skipped?: boolean; account?: string } | null;
   note: string | null;
   status: string;
 }
@@ -88,6 +88,10 @@ export function OrdersPage() {
                         <span className="muted">—</span>
                       ) : t.dryRun.ok ? (
                         <span className="pnl-pos">validated</span>
+                      ) : t.dryRun.skipped === true ? (
+                        <span className="muted" title={t.dryRun.error}>
+                          skipped (read-only)
+                        </span>
                       ) : (
                         <span className="pnl-neg" title={t.dryRun.error}>
                           failed

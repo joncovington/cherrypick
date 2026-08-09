@@ -21,11 +21,12 @@ Or via the suite command: `/serve-dashboard --console`.
 
 ## Broker credential
 
-tastytrade allows one client secret per OAuth application but many refresh tokens, and scope rides
-on the refresh token. The console therefore uses the application's shared client secret paired with
-its **own read-only refresh token** (generate one at my.tastytrade.com → API → OAuth applications).
-Both are stored together as one entry in the OS credential store under the `cherrypick-console`
-service:
+One credential set serves the whole suite: the OAuth application's shared client secret plus a
+refresh token (generate at my.tastytrade.com → API → OAuth applications; scope rides on the
+refresh token). Stored as one entry in the OS credential store under the `cherrypick-broker`
+service, `oauth` slot. `set` validates the credential live and detects its scope — a read-only
+token is accepted with a warning, and write-oriented functions (broker dry-run validation of
+staged tickets) disable themselves until a trade-scoped token is stored:
 
 ```
 python run.py credentials set     # prompts for client secret + refresh token, input hidden

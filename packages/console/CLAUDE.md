@@ -27,10 +27,14 @@ Commands (from this directory): `pnpm install`, `pnpm build`, `pnpm dev:server` 
 - **Market data**: the console opens its own DXLink session via the official `@tastytrade/api` npm
   SDK (`quoteStreamer`). The Python streamer and its `stream_cache.db` are untouched; the cache is
   read read-only as the off-hours / disconnected fallback.
-- **Own credential, read-only intent**: broker auth pairs the OAuth application's shared client
-  secret with the console's **own read-only refresh token** (scope rides on the refresh token, and
-  tastytrade allows one secret but many refresh tokens per application). Both are stored under the
-  `cherrypick-console` service in the OS credential store (`@napi-rs/keyring`).
+- **One suite credential, scope-gated**: broker auth uses THE suite credential — the OAuth
+  application's shared client secret plus one refresh token, stored under the suite's
+  `cherrypick-broker` keyring service in the `oauth` slot (`@napi-rs/keyring`; the old
+  `cherrypick-console` slot migrates on first read). `credentials set` validates it live and
+  detects scope via a dry-run probe: a **read-only** token gets a loud warning and every
+  write-oriented function disables itself (staged tickets save without broker dry-run validation,
+  the header shows a read-only chip). Scope rides on the refresh token, and tastytrade allows one
+  secret but many refresh tokens per application.
   **This package contains no order-placement code paths** — staged tickets are dry-run records in the
   console's own store. It never touches any module's `enable_live_trading`.
 
