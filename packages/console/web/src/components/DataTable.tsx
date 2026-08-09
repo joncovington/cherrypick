@@ -118,6 +118,8 @@ interface DataCardProps {
   skeletonRows?: number;
   /** Right-align every column from this index on — numbers read down a column. */
   numFrom?: number;
+  /** Extra class on the table itself, for per-table column behavior. */
+  tableClass?: string;
   updatedAt?: number;
   controls?: ReactNode;
   children: ReactNode;
@@ -136,6 +138,7 @@ export function DataCard({
   rowCount,
   skeletonRows = 6,
   numFrom,
+  tableClass = "",
   updatedAt,
   controls,
   children,
@@ -143,7 +146,9 @@ export function DataCard({
   return (
     <Card title={title} updatedAt={updatedAt} isError={isError} controls={controls}>
       <div className="table-scroll">
-        <table className={`data-table ${numFrom !== undefined ? `num-from-${Math.min(numFrom, 6)}` : ""}`}>
+        <table
+          className={`data-table ${numFrom !== undefined ? `num-from-${Math.min(numFrom, 6)}` : ""} ${tableClass}`}
+        >
           <thead>
             <tr>
               {headers.map((h, i) => (

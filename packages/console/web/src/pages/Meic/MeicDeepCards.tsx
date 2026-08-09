@@ -104,7 +104,14 @@ function NlvChart({ points }: { points: Array<{ date: string; nlv: number }> }) 
 
 function BreakdownCard({ title, rows, loading }: { title: string; rows: BreakdownRow[] | undefined; loading: boolean }) {
   return (
-    <DataCard title={title} headers={["bucket", "trades", "sessions", "win %", "avg net"]} numFrom={1} loading={loading} rowCount={rows?.length ?? 0}>
+    <DataCard
+      title={title}
+      headers={["bucket", "trades", "sessions", "win %", "avg net"]}
+      numFrom={1}
+      tableClass="data-table-labelled"
+      loading={loading}
+      rowCount={rows?.length ?? 0}
+    >
       {rows?.map((r) => {
         // A trailing "*" marks a bucket outside the regular session — rendered
         // as a marker so one long label can't widen the whole column.

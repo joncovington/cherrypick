@@ -273,6 +273,21 @@ h2 {
   white-space: nowrap;
 }
 
+/* Breakdown tables. The bucket label is prose, not a figure: it takes whatever
+   width the numbers leave and wraps there, so a long label costs a second line
+   inside the card instead of pushing the figures out of it. Sizing the numeric
+   columns to their content keeps them from being squeezed in the trade. */
+.data-table-labelled th:first-child,
+.data-table-labelled td:first-child {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.data-table-labelled th:not(:first-child),
+.data-table-labelled td:not(:first-child) {
+  width: 1%;
+}
+
 .data-table tr:last-child td {
   border-bottom: none;
 }
