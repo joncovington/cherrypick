@@ -1,5 +1,6 @@
 import { useOverview } from "../../lib/api";
 import { LiveQuoteRow } from "../../components/LiveQuote";
+import { EquityCard, LogsCard } from "./EquityCard";
 import type { WatchdogFinding } from "@console/shared";
 
 const WATCH_SYMBOLS = ["SPX", "XSP", "QQQ", "IWM"];
@@ -58,6 +59,10 @@ export function OverviewPage() {
         )}
       </div>
 
+      <div className="cards cards-wide" style={{ marginBottom: "0.75rem" }}>
+        <EquityCard />
+      </div>
+
       <div className="cards">
         <section className="card">
           <h2>Live quotes</h2>
@@ -113,6 +118,10 @@ export function OverviewPage() {
             </tbody>
           </table>
         </section>
+      </div>
+
+      <div className="cards cards-wide" style={{ marginTop: "0.75rem" }}>
+        <LogsCard />
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import path from "node:path";
 import type { EarningsPayload, EarningsTradeRow, EntryReviewRow, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, num, str } from "./db.js";
+import { sessionDate } from "../services/report.js";
 
 function readTrades(dbPath: string, mode: TradingMode): EarningsTradeRow[] {
   return withReadOnlyDb<EarningsTradeRow[]>(dbPath, [], (db) =>
@@ -124,6 +125,94 @@ export function readSymbolWatch(config: ConsoleConfig): SymbolWatchPayload {
     total: num(raw["total"]) ?? 0,
     rows,
   };
+}
+
+export interface EarningsAnalytics {
+  mode: TradingMode;
+  /** Strategy-dashboard KPIs: net = pnl − entry_cost − exit_cost on closed trades. */
+  kpis: { totalNet: number; closedTrades: number; expectancy: number | null; strategiesActive: number };
+  openPositions: Array<{
+    strategy: string;
+    symbol: string;
+    quantity: number | null;
+    credit: number | null;
+    netOfCost: number | null;
+    maxLoss: number | null;
+    entryCost: number | null;
+    expiration: string | null;
+  }>;
+  weekly: Array<{ week: string; net: number }>;
+}
+
+export function readEarningsAnalytics(config: ConsoleConfig, mode: TradingMode): EarningsAnalytics {
+  const file = mode === "live" ? "earnings_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.earningsDir, file);
+  const empty: EarningsAnalytics = {
+    mode,
+    kpis: { totalNet: 0, closedTrades: 0, expectancy: null, strategiesActive: 0 },
+    openPositions: [],
+    weekly: [],
+  };
+  return withReadOnlyDb<EarningsAnalytics>(dbPath, empty, (db) => {
+    const closed = db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT closed_at, strategy,
+                pnl - COALESCE(entry_cost, 0) - COALESCE(exit_cost, 0) AS net
+           FROM trades WHERE closed_at IS NOT NULL AND pnl IS NOT NULL`,
+      )
+      .all();
+    const totalNet = closed.reduce((s, r) => s + Number(r["net"]), 0);
+    const strategies = new Set(closed.map((r) => String(r["strategy"])));
+
+    const weeklyMap = new Map<string, number>();
+    for (const r of closed) {
+      const session = sessionDate(r["closed_at"]);
+      if (session === null) continue;
+      const d = new Date(session + "T00:00:00Z");
+      if (Number.isNaN(d.getTime())) continue;
+      // ISO week key YYYY-Www.
+      const day = (d.getUTCDay() + 6) % 7;
+      const thursday = new Date(d);
+      thursday.setUTCDate(d.getUTCDate() - day + 3);
+      const jan1 = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
+      const week = Math.ceil(((thursday.getTime() - jan1.getTime()) / 86_400_000 + 1) / 7);
+      const key = `${thursday.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+      weeklyMap.set(key, (weeklyMap.get(key) ?? 0) + Number(r["net"]));
+    }
+
+    const openPositions = db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT strategy, symbol, quantity, entry_credit, capital_at_risk, entry_cost, expiration
+           FROM trades WHERE closed_at IS NULL ORDER BY expiration`,
+      )
+      .all()
+      .map((r) => {
+        const credit = num(r["entry_credit"]);
+        const entryCost = num(r["entry_cost"]);
+        return {
+          strategy: str(r["strategy"]) ?? "?",
+          symbol: str(r["symbol"]) ?? "?",
+          quantity: num(r["quantity"]),
+          credit: credit !== null ? credit * 100 : null,
+          netOfCost: credit !== null ? credit * 100 - (entryCost ?? 0) : null,
+          maxLoss: num(r["capital_at_risk"]),
+          entryCost,
+          expiration: str(r["expiration"]),
+        };
+      });
+
+    return {
+      mode,
+      kpis: {
+        totalNet,
+        closedTrades: closed.length,
+        expectancy: closed.length > 0 ? totalNet / closed.length : null,
+        strategiesActive: strategies.size,
+      },
+      openPositions,
+      weekly: [...weeklyMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([week, net]) => ({ week, net })),
+    };
+  });
 }
 
 /** Earnings browses both books at once — every row carries the mode of its source DB. */

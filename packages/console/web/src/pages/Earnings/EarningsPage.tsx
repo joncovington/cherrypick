@@ -42,9 +42,39 @@ function tierClass(tier: string): string {
   return "";
 }
 
+interface EarningsAnalytics {
+  kpis: { totalNet: number; closedTrades: number; expectancy: number | null; strategiesActive: number };
+  openPositions: Array<{
+    strategy: string;
+    symbol: string;
+    quantity: number | null;
+    credit: number | null;
+    netOfCost: number | null;
+    maxLoss: number | null;
+    entryCost: number | null;
+    expiration: string | null;
+  }>;
+  weekly: Array<{ week: string; net: number }>;
+}
+
+function useEarningsAnalytics() {
+  return useQuery<EarningsAnalytics>({
+    queryKey: ["earnings-analytics"],
+    queryFn: async () => {
+      const res = await fetch("/api/earnings/analytics?mode=paper");
+      if (!res.ok) throw new Error(`earnings analytics: HTTP ${res.status}`);
+      return (await res.json()) as EarningsAnalytics;
+    },
+    refetchInterval: 60_000,
+  });
+}
+
 export function EarningsPage() {
   const { data, isLoading, isError } = useEarnings();
   const upcoming = useUpcoming();
+  const analytics = useEarningsAnalytics();
+  const a = analytics.data;
+  const maxWeek = Math.max(...(a?.weekly.map((w) => Math.abs(w.net)) ?? [0]), 1);
 
   return (
     <div className="page">
@@ -54,6 +84,69 @@ export function EarningsPage() {
       </div>
 
       <div className="cards cards-wide">
+        <section className="card">
+          <h2>Strategy test — paper</h2>
+          <div className="stats-grid">
+            <div className="stat-tile">
+              <span className="stat-label">net expectancy / trade</span>
+              <span className={`stat-value ${(a?.kpis.expectancy ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}`}>
+                {a?.kpis.expectancy != null ? fmtMoney(a.kpis.expectancy) : "—"}
+              </span>
+            </div>
+            <div className="stat-tile">
+              <span className="stat-label">total net P&L</span>
+              <span className={`stat-value ${(a?.kpis.totalNet ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}`}>
+                {a !== undefined ? fmtMoney(a.kpis.totalNet) : "—"}
+              </span>
+            </div>
+            <div className="stat-tile">
+              <span className="stat-label">closed trades</span>
+              <span className="stat-value">{a?.kpis.closedTrades ?? "—"}</span>
+            </div>
+            <div className="stat-tile">
+              <span className="stat-label">strategies active</span>
+              <span className="stat-value">{a?.kpis.strategiesActive ?? "—"}</span>
+            </div>
+          </div>
+          {a !== undefined && a.weekly.length > 0 && (
+            <div style={{ display: "flex", gap: 4, alignItems: "flex-end", marginTop: "0.8rem", height: "3.6rem" }}>
+              {a.weekly.slice(-16).map((w) => (
+                <div key={w.week} title={`${w.week}: ${fmtMoney(w.net)}`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%" }}>
+                  <div
+                    style={{
+                      height: `${Math.max(6, (Math.abs(w.net) / maxWeek) * 100)}%`,
+                      background: w.net >= 0 ? "var(--ok)" : "var(--err)",
+                      borderRadius: 2,
+                      opacity: 0.75,
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <DataCard
+          title="Open positions"
+          headers={["strategy", "sym", "qty", "credit/(debit)", "net of cost", "max loss", "entry cost", "exp"]}
+          loading={analytics.isLoading}
+          rowCount={a?.openPositions.length ?? 0}
+          empty="no open positions"
+        >
+          {a?.openPositions.map((p, i) => (
+            <tr key={`${p.symbol}-${i}`}>
+              <td>{p.strategy}</td>
+              <td>{p.symbol}</td>
+              <td>{fmtNum(p.quantity, 0)}</td>
+              <td>{p.credit != null ? fmtMoney(p.credit) : "—"}</td>
+              <td>{p.netOfCost != null ? <PnlCell v={p.netOfCost} /> : "—"}</td>
+              <td>{p.maxLoss != null ? fmtMoney(-Math.abs(p.maxLoss)) : "—"}</td>
+              <td className="muted">{p.entryCost != null ? fmtMoney(p.entryCost) : "—"}</td>
+              <td className="muted">{p.expiration ?? "—"}</td>
+            </tr>
+          ))}
+        </DataCard>
+
         <DataCard
           title={`Upcoming earnings (forward scan${upcoming.data && upcoming.data.total > 0 ? ` — ${upcoming.data.done}/${upcoming.data.total}` : ""})`}
           headers={["date", "sym", "timing", "price", "exp move", "IV/RV", "term", "winrate", "IVR", "tier"]}
