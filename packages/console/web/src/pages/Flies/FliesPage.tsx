@@ -9,6 +9,7 @@ import type { TradingMode } from "@console/shared";
 import { ForestCard } from "./ForestCard";
 import { TimelineCard } from "./TimelineCard";
 import { HistoryTab } from "./HistoryTab";
+import { JournalCard } from "./JournalCard";
 import { PerformanceTab } from "./PerformanceTab";
 
 interface FliesAnalytics {
@@ -143,6 +144,8 @@ export function FliesPage() {
         <ForestCard mode={mode} filter={filter} />
 
         <TimelineCard mode={mode} filter={filter} arm={arm} />
+
+        <JournalCard mode={mode} filter={filter} />
 
         <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(20rem, 1fr))" }}>
           <DataCard
