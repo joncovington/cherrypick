@@ -63,6 +63,7 @@ See [reporting-and-dashboard.md](reporting-and-dashboard.md) for how these compo
 |---|---|
 | `run-earnings-entry` | Run the Earnings paper **entry** pass now (the daily ~15:45 ET task). |
 | `run-earnings-exit` | Run the Earnings paper **exit** pass now (the daily ~09:45 ET task). |
+| `run-earnings-symbol-watch` | Run the Earnings forward-preview scan now (`symbol_watch.py refresh`) — the source of scout's read-only Earnings page "Upcoming" section. Purely informational; off by default (`symbol_watch.enabled`). |
 | `ensure-dolt` | Start a module's declared Dolt server if down (the earnings keep-alive task). |
 
 MEIC's paper loop is **self-healing** and registers its own task (`cherrypick-meic-paper-loop`); the

@@ -97,7 +97,9 @@ def test_reverify_symbol_succeeds_when_still_accepted(monkeypatch):
 
 def test_save_entry_review_calls_call_db_with_richest_criteria(monkeypatch):
     calls = []
-    monkeypatch.setattr(rank_strategies, "_call_db", lambda args, paper_mode: calls.append((args, paper_mode)))
+    monkeypatch.setattr(
+        rank_strategies, "_call_db", lambda args, paper_mode: calls.append((args, paper_mode))
+    )
 
     symbol_result = {
         "symbol": "AAPL",
