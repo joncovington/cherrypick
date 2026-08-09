@@ -78,20 +78,34 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
     return null;
   };
 
-  const overlays: Array<{ y: number; color: string; dash?: string; label: string }> = [];
+  interface Overlay {
+    y: number;
+    color: string;
+    dash?: string;
+    label: string;
+    side: "left" | "right";
+    filled: boolean;
+  }
+  // Old-page tag styling: filled wall pills hug the left axis; spot and
+  // zero-gamma ride the right edge as outlined value tags.
+  const overlays: Overlay[] = [];
   const spotY = strikeY(spot);
-  if (spotY !== null) overlays.push({ y: spotY, color: "#7aa2ff", label: `spot ${spot.toFixed(2)}` });
+  if (spotY !== null)
+    overlays.push({ y: spotY, color: "#7aa2ff", label: `$${spot.toFixed(2)}`, side: "right", filled: false });
   if (zeroGamma !== null) {
     const y = strikeY(zeroGamma);
-    if (y !== null) overlays.push({ y, color: "#d9a13b", dash: "5 4", label: `zero Γ ${zeroGamma.toFixed(0)}` });
+    if (y !== null)
+      overlays.push({ y, color: "#d9a13b", dash: "3 3", label: `Zero Γ: $${zeroGamma.toFixed(2)}`, side: "right", filled: false });
   }
   if (callWall !== null) {
     const y = strikeY(callWall);
-    if (y !== null) overlays.push({ y, color: "#43b57a", dash: "2 3", label: `call wall ${callWall}` });
+    if (y !== null)
+      overlays.push({ y, color: "#43b57a", dash: "6 4", label: callWall.toFixed(2), side: "left", filled: true });
   }
   if (putWall !== null) {
     const y = strikeY(putWall);
-    if (y !== null) overlays.push({ y, color: "#d95c4a", dash: "2 3", label: `put wall ${putWall}` });
+    if (y !== null)
+      overlays.push({ y, color: "#d95c4a", dash: "3 3", label: putWall.toFixed(2), side: "left", filled: true });
   }
 
   return (
@@ -184,14 +198,38 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
           </>
         );
       })()}
-      {overlays.map((o, i) => (
-        <g key={i}>
-          <line x1={m.l} y1={o.y} x2={width - m.r} y2={o.y} stroke={o.color} strokeWidth={1.2} strokeDasharray={o.dash} />
-          <text x={width - m.r - 4} y={o.y - 3} textAnchor="end" fontSize={10} fill={o.color} fontFamily="Consolas, monospace">
-            {o.label}
-          </text>
-        </g>
-      ))}
+      {overlays.map((o, i) => {
+        const tagH = 15;
+        const tagW = o.label.length * 6.4 + 12;
+        const tagX = o.side === "left" ? m.l - 4 : width - m.r - tagW;
+        const tagY = o.y - tagH / 2;
+        return (
+          <g key={i}>
+            <line x1={m.l} y1={o.y} x2={width - m.r} y2={o.y} stroke={o.color} strokeWidth={1.3} strokeDasharray={o.dash} />
+            <rect
+              x={tagX}
+              y={tagY}
+              width={tagW}
+              height={tagH}
+              rx={3}
+              fill={o.filled ? o.color : "#101216"}
+              stroke={o.color}
+              strokeWidth={1}
+            />
+            <text
+              x={tagX + tagW / 2}
+              y={o.y + 3.5}
+              textAnchor="middle"
+              fontSize={10}
+              fontWeight={700}
+              fill={o.filled ? "#0b0c0f" : o.color}
+              fontFamily="Consolas, monospace"
+            >
+              {o.label}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }
