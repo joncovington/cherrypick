@@ -165,13 +165,16 @@ export function GexPage() {
           {p?.ok && p.series && p.spot !== undefined && p.totals ? (
             <div className="gex-layout">
               <div className="gex-chart-area">
+                {/* Overlays always use the VOLUME basis, like the old page's plugin:
+                    flow-based zero gamma and walls track today's session, and they
+                    sit near spot where the strike window actually is. */}
                 <GexProfileChart
                   series={p.series}
                   view={view}
                   spot={p.spot}
-                  zeroGamma={view === "oivol" ? (p.volumeTotals?.zero_gamma_vol ?? null) : (p.totals.zero_gamma ?? null)}
-                  callWall={view === "oivol" ? (p.volumeTotals?.call_wall_vol ?? null) : (p.totals.call_wall ?? null)}
-                  putWall={view === "oivol" ? (p.volumeTotals?.put_wall_vol ?? null) : (p.totals.put_wall ?? null)}
+                  zeroGamma={p.volumeTotals?.zero_gamma_vol ?? null}
+                  callWall={p.volumeTotals?.call_wall_vol ?? null}
+                  putWall={p.volumeTotals?.put_wall_vol ?? null}
                   spotHistory={p.spotHistory}
                   spotSession={p.spotSession}
                 />
