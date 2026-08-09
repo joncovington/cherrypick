@@ -7,6 +7,7 @@ import {
   importScoutWatchlist,
 } from "../store/consoleDb.js";
 import { readDailyCandles, candleSymbols } from "../readers/scoutdb.js";
+import { readChain } from "../readers/chain.js";
 import { movingAverages, supportResistance } from "../analytics/levels.js";
 import { classifyTrend } from "../analytics/trend.js";
 
@@ -34,6 +35,12 @@ export function registerScoutRoutes(app: FastifyInstance, config: ConsoleConfig)
   app.post("/api/watchlist/import", async () => {
     const result = importScoutWatchlist(config);
     return { ...result, symbols: getWatchlist(config) };
+  });
+
+  app.get("/api/chain/:symbol", async (req) => {
+    const { symbol } = req.params as { symbol: string };
+    const { expiration } = req.query as { expiration?: string };
+    return readChain(config, symbol.toUpperCase(), expiration ?? null);
   });
 
   app.get("/api/symbol/:symbol", async (req, reply) => {
