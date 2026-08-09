@@ -4,6 +4,8 @@ import type { ConsoleConfig } from "../config.js";
 
 export interface ChainSide {
   streamerSymbol: string;
+  /** OCC symbol (e.g. "SPXW  260810P07700000") — what an order ticket needs. */
+  occSymbol: string | null;
   bid: number | null;
   ask: number | null;
   delta: number | null;
@@ -42,13 +44,19 @@ export function readChain(config: ConsoleConfig, symbol: string, expiration: str
     db = new Database(p, { readonly: true, fileMustExist: true });
     db.pragma("busy_timeout = 2000");
 
-    const expirations = db
-      .prepare<[string], { expiration: string }>(
-        "SELECT DISTINCT expiration FROM stream_chain WHERE underlying_symbol = ? ORDER BY expiration",
+    const expByQuotes = db
+      .prepare<[string], { expiration: string; quoted: number }>(
+        `SELECT c.expiration, COUNT(q.symbol) AS quoted
+           FROM stream_chain c LEFT JOIN stream_quotes q ON q.symbol = c.streamer_symbol
+          WHERE c.underlying_symbol = ?
+          GROUP BY c.expiration ORDER BY c.expiration`,
       )
-      .all(symbol)
-      .map((r) => r.expiration);
-    const exp = expiration ?? expirations[expirations.length - 1] ?? null;
+      .all(symbol);
+    const expirations = expByQuotes.map((r) => r.expiration);
+    // Default to the latest expiration that actually has cached quotes (e.g.
+    // Friday's session data on a weekend), not just the latest expiration.
+    const latestQuoted = [...expByQuotes].reverse().find((r) => r.quoted > 0)?.expiration ?? null;
+    const exp = expiration ?? latestQuoted ?? expirations[expirations.length - 1] ?? null;
     if (exp === null) return { symbol, expiration: null, expirations, rows: [] };
 
     const now = Date.now() / 1000;
@@ -87,6 +95,7 @@ export function readChain(config: ConsoleConfig, symbol: string, expiration: str
       const updatedAt = num(q?.["updated_at"]);
       const side: ChainSide = {
         streamerSymbol: row.streamer_symbol,
+        occSymbol: typeof meta["symbol"] === "string" ? meta["symbol"] : null,
         bid: num(q?.["bid"]),
         ask: num(q?.["ask"]),
         delta: num(g?.["delta"]),

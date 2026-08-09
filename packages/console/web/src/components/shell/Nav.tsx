@@ -8,6 +8,7 @@ const links = [
   { to: "/gex", label: "GEX" },
   { to: "/scout", label: "Watchlist", end: true },
   { to: "/scout/builder", label: "Builder" },
+  { to: "/scout/orders", label: "Orders" },
 ];
 
 export function Nav() {
