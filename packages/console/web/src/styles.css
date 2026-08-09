@@ -433,12 +433,79 @@ select.text-input {
   cursor: pointer;
 }
 
-.chain-click:hover {
-  background: rgba(210, 63, 87, 0.12);
+.chain-sell:hover {
+  background: rgba(217, 92, 74, 0.14);
+}
+
+.chain-buy:hover {
+  background: rgba(67, 181, 122, 0.14);
 }
 
 .chain-atm td {
   background: var(--row-hover);
+}
+
+/* Selected strikes: red border = short (STO), green = long (BTO). */
+.chain-held-short td {
+  border-top: 1px solid rgba(217, 92, 74, 0.7);
+  border-bottom: 1px solid rgba(217, 92, 74, 0.7);
+}
+
+.chain-held-long td {
+  border-top: 1px solid rgba(67, 181, 122, 0.7);
+  border-bottom: 1px solid rgba(67, 181, 122, 0.7);
+}
+
+.chain-badge-cell {
+  width: 3.6rem;
+}
+
+.chain-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  border-radius: 3px;
+  padding: 0.06rem 0.35rem;
+}
+
+.chain-badge-short {
+  color: var(--err);
+  background: rgba(217, 92, 74, 0.14);
+  border: 1px solid rgba(217, 92, 74, 0.5);
+}
+
+.chain-badge-long {
+  color: var(--ok);
+  background: rgba(67, 181, 122, 0.12);
+  border: 1px solid rgba(67, 181, 122, 0.45);
+}
+
+/* Expected-move band on the strike column. */
+.chain-em-band {
+  box-shadow: inset 3px 0 0 #a0703c;
+}
+
+.chip-em {
+  color: #c99a66;
+  border-color: rgba(160, 112, 60, 0.55);
+}
+
+.legs-table td {
+  vertical-align: middle;
+}
+
+.qty-input {
+  width: 3.6rem;
+}
+
+.leg-kind {
+  font-weight: 600;
+}
+
+.collapse-toggle {
+  padding: 0 0.3rem;
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 /* Skeletons: cards render at final size with ghost content — no spinners, no hidden cards. */

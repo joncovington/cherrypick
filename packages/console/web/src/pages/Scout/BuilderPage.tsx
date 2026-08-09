@@ -12,8 +12,8 @@ interface LegDraft {
   quantity: number;
   strike: string;
   price: string;
-  /** Carried from the chain when the leg was picked there — the strike-selection read. */
   delta: number | null;
+  expiration: string | null;
 }
 
 interface PayoffResult {
@@ -30,18 +30,27 @@ interface PayoffResult {
 
 let nextId = 1;
 
-const DEFAULT_LEGS: LegDraft[] = [
-  { id: nextId++, kind: "put", quantity: -1, strike: "", price: "", delta: null },
-  { id: nextId++, kind: "put", quantity: 1, strike: "", price: "", delta: null },
-];
-
 function extremum(e: { value: number | null; unbounded: boolean }): string {
   return e.unbounded ? "unbounded" : fmtMoney(e.value);
 }
 
+function dteOf(expiration: string | null): number | null {
+  if (expiration === null) return null;
+  const t = Date.parse(expiration);
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.round((t - Date.now()) / 86_400_000));
+}
+
+function fmtExpiry(expiration: string | null): string {
+  if (expiration === null) return "—";
+  const t = Date.parse(expiration);
+  if (Number.isNaN(t)) return expiration;
+  return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
 export function BuilderPage() {
   const [symbol, setSymbol] = useState("SPX");
-  const [legs, setLegs] = useState<LegDraft[]>(DEFAULT_LEGS);
+  const [legs, setLegs] = useState<LegDraft[]>([]);
   const [iv, setIv] = useState("20");
   const [dte, setDte] = useState("30");
   const [expiration, setExpiration] = useState<string | null>(null);
@@ -59,7 +68,7 @@ export function BuilderPage() {
       delta: l.delta,
     }));
 
-  const { data, isFetching } = useQuery<PayoffResult>({
+  const { data } = useQuery<PayoffResult>({
     queryKey: ["payoff", validLegs, spot, iv, dte],
     queryFn: () =>
       mutateJson<PayoffResult>("/api/payoff", "POST", {
@@ -91,155 +100,127 @@ export function BuilderPage() {
             spot {spot.toFixed(2)} {quote?.source === "dxlink" ? "live" : "cached"}
           </span>
         )}
+        <label className="muted lbl">
+          IV % <input className="text-input num-input" value={iv} onChange={(e) => setIv(e.target.value)} />
+        </label>
+        <label className="muted lbl">
+          DTE <input className="text-input num-input" value={dte} onChange={(e) => setDte(e.target.value)} />
+        </label>
       </div>
 
       <div className="cards cards-wide">
         <section className="card">
-          <div className="panel-head-row">
-            <h2>Legs</h2>
-            <label className="muted lbl">
-              IV %{" "}
-              <input className="text-input num-input" value={iv} onChange={(e) => setIv(e.target.value)} />
-            </label>
-            <label className="muted lbl">
-              DTE{" "}
-              <input className="text-input num-input" value={dte} onChange={(e) => setDte(e.target.value)} />
-            </label>
-          </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>kind</th>
-                <th>qty (− short)</th>
-                <th>strike</th>
-                <th>price/share</th>
-                <th>Δ</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {legs.map((l) => (
-                <tr key={l.id}>
-                  <td>
-                    <select
-                      className="text-input"
-                      value={l.kind}
-                      onChange={(e) => update(l.id, { kind: e.target.value as LegDraft["kind"] })}
-                    >
-                      <option value="call">call</option>
-                      <option value="put">put</option>
-                      <option value="stock">stock</option>
-                    </select>
-                  </td>
-                  <td>
-                    <input
-                      className="text-input num-input"
-                      type="number"
-                      value={l.quantity}
-                      onChange={(e) => update(l.id, { quantity: Number(e.target.value) })}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      className="text-input num-input"
-                      value={l.strike}
-                      disabled={l.kind === "stock"}
-                      placeholder={l.kind === "stock" ? "n/a" : "strike"}
-                      onChange={(e) => update(l.id, { strike: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      className="text-input num-input"
-                      value={l.price}
-                      placeholder="price"
-                      onChange={(e) => update(l.id, { price: e.target.value })}
-                    />
-                  </td>
-                  <td className="muted">{l.delta !== null ? l.delta.toFixed(2) : "—"}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn btn-quiet"
-                      onClick={() => setLegs((ls) => ls.filter((x) => x.id !== l.id))}
-                      aria-label="remove leg"
-                    >
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button
-            type="button"
-            className="btn"
-            style={{ marginTop: "0.6rem" }}
-            onClick={() =>
-              setLegs((ls) => [
-                ...ls,
-                { id: nextId++, kind: "call", quantity: -1, strike: "", price: "", delta: null },
-              ])
-            }
-          >
-            + add leg
-          </button>
+          <h2>Order details</h2>
+          {legs.length === 0 ? (
+            <p className="muted">click bid (sell) or ask (buy) in the chain below to add legs</p>
+          ) : (
+            <table className="data-table legs-table">
+              <tbody>
+                {legs.map((l) => {
+                  const legDte = dteOf(l.expiration);
+                  const short = l.quantity < 0;
+                  return (
+                    <tr key={l.id}>
+                      <td>
+                        <input
+                          className="text-input qty-input"
+                          type="number"
+                          value={l.quantity}
+                          onChange={(e) => update(l.id, { quantity: Number(e.target.value) })}
+                          aria-label="quantity (negative = short)"
+                        />
+                      </td>
+                      <td>{fmtExpiry(l.expiration)}</td>
+                      <td className="muted">{legDte !== null ? `${legDte}d` : "—"}</td>
+                      <td>
+                        <input
+                          className="text-input num-input"
+                          value={l.strike}
+                          disabled={l.kind === "stock"}
+                          onChange={(e) => update(l.id, { strike: e.target.value })}
+                          aria-label="strike"
+                        />
+                      </td>
+                      <td className="leg-kind">{l.kind === "stock" ? "S" : l.kind === "call" ? "C" : "P"}</td>
+                      <td>
+                        <span className={`chain-badge ${short ? "chain-badge-short" : "chain-badge-long"}`}>
+                          {short ? "STO" : "BTO"}
+                        </span>
+                      </td>
+                      <td>
+                        <input
+                          className="text-input num-input"
+                          value={l.price}
+                          onChange={(e) => update(l.id, { price: e.target.value })}
+                          aria-label="price (mid)"
+                        />
+                      </td>
+                      <td className="muted">{l.delta !== null ? `Δ ${l.delta.toFixed(2)}` : ""}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-quiet"
+                          onClick={() => setLegs((ls) => ls.filter((x) => x.id !== l.id))}
+                          aria-label="remove leg"
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </section>
+
+        {data && (
+          <section className="card">
+            <h2>Payoff at expiry</h2>
+            <PayoffChart curve={data.curve} slopes={data.slopes} breakevens={data.breakevens} spot={spot} />
+            <div className="stat-row">
+              <span className="chip">max profit {extremum(data.maxProfit)}</span>
+              <span className="chip">max loss {extremum(data.maxLoss)}</span>
+              <span className="chip">
+                breakevens {data.breakevens.length > 0 ? data.breakevens.map((b) => b.toFixed(2)).join(" / ") : "—"}
+              </span>
+              {data.pop !== null && <span className="chip chip-ok">POP {(data.pop * 100).toFixed(1)}%</span>}
+              {data.expectedMove !== null && <span className="chip">±1σ {data.expectedMove.toFixed(2)}</span>}
+              {data.netGreeks["delta"] != null && (
+                <span className="chip">net Δ {data.netGreeks["delta"].toFixed(1)}</span>
+              )}
+              {data.pnlAtSpot !== null && (
+                <span className={`chip ${data.pnlAtSpot >= 0 ? "chip-ok" : "chip-missing"}`}>
+                  at spot {fmtMoney(data.pnlAtSpot)}
+                </span>
+              )}
+            </div>
+          </section>
+        )}
 
         <ChainPanel
           symbol={symbol}
           expiration={expiration}
           onExpiration={setExpiration}
           spot={spot}
-          onPick={({ kind, strike, price, delta }: { kind: "call" | "put"; strike: number; price: number | null; delta?: number | null }) =>
+          legs={legs
+            .filter((l) => l.kind !== "stock" && l.strike !== "")
+            .map((l) => ({ kind: l.kind as "call" | "put", strike: Number(l.strike), quantity: l.quantity }))}
+          onPick={({ kind, strike, quantity, price, delta, expiration: exp }) =>
             setLegs((ls) => [
               ...ls,
               {
                 id: nextId++,
                 kind,
-                quantity: -1,
+                quantity,
                 strike: String(strike),
                 price: price !== null ? price.toFixed(2) : "",
-                delta: delta ?? null,
+                delta,
+                expiration: exp,
               },
             ])
           }
         />
-
-        <section className={`card ${isFetching ? "" : ""}`}>
-          <h2>Payoff at expiry</h2>
-          {data ? (
-            <>
-              <PayoffChart
-                curve={data.curve}
-                slopes={data.slopes}
-                breakevens={data.breakevens}
-                spot={spot}
-              />
-              <div className="stat-row">
-                <span className="chip">max profit {extremum(data.maxProfit)}</span>
-                <span className="chip">max loss {extremum(data.maxLoss)}</span>
-                <span className="chip">
-                  breakevens {data.breakevens.length > 0 ? data.breakevens.map((b) => b.toFixed(2)).join(" / ") : "—"}
-                </span>
-                {data.pop !== null && <span className="chip chip-ok">POP {(data.pop * 100).toFixed(1)}%</span>}
-                {data.expectedMove !== null && (
-                  <span className="chip">±1σ {data.expectedMove.toFixed(2)}</span>
-                )}
-                {data.netGreeks["delta"] != null && (
-                  <span className="chip">net Δ {data.netGreeks["delta"].toFixed(1)}</span>
-                )}
-                {data.pnlAtSpot !== null && (
-                  <span className={`chip ${data.pnlAtSpot >= 0 ? "chip-ok" : "chip-missing"}`}>
-                    at spot {fmtMoney(data.pnlAtSpot)}
-                  </span>
-                )}
-              </div>
-            </>
-          ) : (
-            <p className="muted">fill in legs (strike + price) to compute</p>
-          )}
-        </section>
       </div>
     </div>
   );
