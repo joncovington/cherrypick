@@ -9,6 +9,7 @@ import { WatchlistPage } from "./pages/Scout/WatchlistPage";
 import { SymbolPage } from "./pages/Scout/SymbolPage";
 import { BuilderPage } from "./pages/Scout/BuilderPage";
 import { OrdersPage } from "./pages/Scout/OrdersPage";
+import { ScreenerPage } from "./pages/Scout/ScreenerPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 
 export default function App() {
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="scout/symbol/:symbol" element={<SymbolPage />} />
         <Route path="scout/builder" element={<BuilderPage />} />
         <Route path="scout/orders" element={<OrdersPage />} />
+        <Route path="scout/screener" element={<ScreenerPage />} />
         <Route path="scout/*" element={<PlaceholderPage title="Scout" />} />
       </Route>
     </Routes>

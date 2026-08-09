@@ -117,6 +117,40 @@ export class MarketDataService extends EventEmitter {
     });
   }
 
+  /**
+   * Bounded quote snapshot for a symbol batch — the screener's quote source
+   * (there is no REST quote endpoint in the JS SDK). Subscribes, collects
+   * conflated ticks until every symbol has a bid+ask or the timeout lapses,
+   * then unsubscribes via the normal refcount path. Mirrors scout's
+   * opened-on-demand, never-resident DXLink exception.
+   */
+  async snapshotQuotes(symbols: string[], timeoutMs = 5_000): Promise<Map<string, { bid?: number; ask?: number; last?: number }>> {
+    const out = new Map<string, { bid?: number; ask?: number; last?: number }>();
+    if (symbols.length === 0) return out;
+    const pending = new Set(symbols);
+    const listener = (tick: QuoteTick): void => {
+      if (!pending.has(tick.symbol) && !out.has(tick.symbol)) return;
+      const cur = out.get(tick.symbol) ?? {};
+      if (tick.bid !== undefined) cur.bid = tick.bid;
+      if (tick.ask !== undefined) cur.ask = tick.ask;
+      if (tick.last !== undefined) cur.last = tick.last;
+      out.set(tick.symbol, cur);
+      if (cur.bid !== undefined && cur.ask !== undefined) pending.delete(tick.symbol);
+    };
+    this.on("tick", listener);
+    for (const s of symbols) this.subscribe(s);
+    try {
+      const start = Date.now();
+      while (pending.size > 0 && Date.now() - start < timeoutMs) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    } finally {
+      this.off("tick", listener);
+      for (const s of symbols) this.unsubscribe(s);
+    }
+    return out;
+  }
+
   /** dxfeed delivers event objects (sometimes batched in arrays); map defensively. */
   private handleEvents(events: unknown): void {
     const list = Array.isArray(events) ? events : [events];

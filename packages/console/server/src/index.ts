@@ -14,6 +14,7 @@ import { registerSecurity } from "./security.js";
 import { registerScoutRoutes } from "./routes/scout.js";
 import { registerPayoffRoutes } from "./routes/payoff.js";
 import { registerOrderRoutes } from "./routes/orders.js";
+import { registerScreenerRoutes } from "./routes/screener.js";
 
 const config = loadConfig();
 const app = Fastify({ logger: { level: "info" } });
@@ -23,6 +24,7 @@ registerSecurity(app);
 registerScoutRoutes(app, config);
 registerPayoffRoutes(app);
 registerOrderRoutes(app, config);
+registerScreenerRoutes(app, config, market);
 await app.register(fastifyWebsocket);
 registerWsHub(app, market);
 registerStatusRoutes(app, config, market);
