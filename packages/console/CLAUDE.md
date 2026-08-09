@@ -27,14 +27,17 @@ Commands (from this directory): `pnpm install`, `pnpm build`, `pnpm dev:server` 
 - **Market data**: the console opens its own DXLink session via the official `@tastytrade/api` npm
   SDK (`quoteStreamer`). The Python streamer and its `stream_cache.db` are untouched; the cache is
   read read-only as the off-hours / disconnected fallback.
-- **One suite credential, scope-gated**: broker auth uses THE suite credential — the OAuth
-  application's shared client secret plus one refresh token, stored under the suite's
-  `cherrypick-broker` keyring service in the `oauth` slot (`@napi-rs/keyring`; the old
-  `cherrypick-console` slot migrates on first read). `credentials set` validates it live and
-  detects scope via a dry-run probe: a **read-only** token gets a loud warning and every
-  write-oriented function disables itself (staged tickets save without broker dry-run validation,
-  the header shows a read-only chip). Scope rides on the refresh token, and tastytrade allows one
-  secret but many refresh tokens per application.
+- **Single source of broker auth**: the console reads THE suite credential — the
+  `production:client_secret` / `production:refresh_token` entries under the `cherrypick-broker`
+  keyring service, the same entries every Python module reads through and onboarding manages.
+  Python-keyring targets aren't addressable from Node, so reads bridge through Python
+  (`auth/suiteBridge.ts`). **The console never writes credentials** — there is exactly one setting
+  path suite-wide, `python -m cherrypick.core.auth setup`; the console CLI's `set` prints that
+  pointer, `probe` re-validates on demand, and `clear` touches only the pre-unification Node
+  slots. Scope is detected via a dry-run probe (per-process, never persisted): a
+  **read-only** refresh token gets a loud warning and every write-oriented function disables
+  itself (staged tickets save without broker dry-run validation; the header shows a read-only
+  chip). Scope rides on the refresh token.
   **This package contains no order-placement code paths** — staged tickets are dry-run records in the
   console's own store. It never touches any module's `enable_live_trading`.
 
