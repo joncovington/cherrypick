@@ -1,81 +1,93 @@
 import { Entry } from "@napi-rs/keyring";
+import { readSuiteOauthEntries } from "./suiteBridge.js";
 
 /**
- * THE suite broker credential — one credential set for the whole suite,
- * stored under the suite's own keyring service (`cherrypick-broker`) in a
- * dedicated `oauth` slot: the OAuth application's shared client secret plus
- * a refresh token. Scope rides on the refresh token; `scope` records what a
- * live probe detected ("read" = write-oriented functions disable themselves).
- * The pre-unification `cherrypick-console` slot is migrated on first read.
+ * SINGLE SOURCE of broker auth: the suite's canonical keyring entries
+ * (`production:client_secret` / `production:refresh_token` under the
+ * `cherrypick-broker` service) — the same entries every Python module reads
+ * through and onboarding writes. The console reads them via the Python
+ * bridge (Python keyring targets aren't addressable from the Node keyring)
+ * and `credentials set` writes THOSE entries, so there is one credential set
+ * however it is managed.
+ *
+ * The Node-side slots from the pre-unification era (`oauth` under
+ * cherrypick-broker / cherrypick-console) remain as read-only fallbacks and
+ * are what `credentials clear` removes; the suite entries are never deleted
+ * from here — onboarding owns their lifecycle.
+ *
+ * Scope ("read" | "trade") is detected by a live probe and cached in memory
+ * per process — never persisted, so it can't go stale against a rotated
+ * refresh token.
  */
-const SERVICE = "cherrypick-broker";
-const ACCOUNT = "oauth";
-const LEGACY_SERVICE = "cherrypick-console";
+const LEGACY_SLOTS: Array<[string, string]> = [
+  ["cherrypick-broker", "oauth"],
+  ["cherrypick-console", "oauth"],
+];
 
 export interface ConsoleCredentials {
   clientSecret: string;
   refreshToken: string;
-  /** Detected by the live probe on `credentials set`; absent = never probed. */
-  scope?: "read" | "trade";
-  validatedAt?: string;
+  source: "suite" | "legacy-slot";
 }
 
-function entry(): Entry {
-  return new Entry(SERVICE, ACCOUNT);
+let cached: ConsoleCredentials | null | undefined;
+let currentScope: "read" | "trade" | null = null;
+let scopeValidatedAt: string | null = null;
+
+export function getScope(): { scope: "read" | "trade" | null; validatedAt: string | null } {
+  return { scope: currentScope, validatedAt: scopeValidatedAt };
 }
 
-export function saveCredentials(creds: ConsoleCredentials): void {
-  entry().setPassword(JSON.stringify(creds));
+export function setScope(scope: "read" | "trade"): void {
+  currentScope = scope;
+  scopeValidatedAt = new Date().toISOString();
 }
 
-function parse(raw: string | null): ConsoleCredentials | null {
-  if (raw === null) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<ConsoleCredentials>;
-    if (typeof parsed.clientSecret !== "string" || typeof parsed.refreshToken !== "string") return null;
-    return {
-      clientSecret: parsed.clientSecret,
-      refreshToken: parsed.refreshToken,
-      scope: parsed.scope === "read" || parsed.scope === "trade" ? parsed.scope : undefined,
-      validatedAt: typeof parsed.validatedAt === "string" ? parsed.validatedAt : undefined,
-    };
-  } catch {
-    return null;
-  }
+/** Drop the per-process caches (after `credentials set` rotates the entries). */
+export function resetCredentialCache(): void {
+  cached = undefined;
+  currentScope = null;
+  scopeValidatedAt = null;
 }
 
-export function loadCredentials(): ConsoleCredentials | null {
-  try {
-    const current = parse(entry().getPassword());
-    if (current !== null) return current;
-  } catch {
-    /* fall through to legacy */
-  }
-  // Migrate the pre-unification slot: copy into the suite-wide service.
-  try {
-    const legacy = parse(new Entry(LEGACY_SERVICE, ACCOUNT).getPassword());
-    if (legacy !== null) {
-      saveCredentials(legacy);
-      return legacy;
+function readLegacySlots(): ConsoleCredentials | null {
+  for (const [service, account] of LEGACY_SLOTS) {
+    try {
+      const raw = new Entry(service, account).getPassword();
+      if (raw === null) continue;
+      const parsed = JSON.parse(raw) as { clientSecret?: unknown; refreshToken?: unknown };
+      if (typeof parsed.clientSecret === "string" && typeof parsed.refreshToken === "string") {
+        return { clientSecret: parsed.clientSecret, refreshToken: parsed.refreshToken, source: "legacy-slot" };
+      }
+    } catch {
+      /* try the next slot */
     }
-  } catch {
-    /* no legacy entry either */
   }
   return null;
 }
 
-export function clearCredentials(): boolean {
+export function loadCredentials(): ConsoleCredentials | null {
+  if (cached !== undefined) return cached;
+  const suite = readSuiteOauthEntries();
+  if (suite !== null) {
+    cached = { ...suite, source: "suite" };
+    return cached;
+  }
+  cached = readLegacySlots();
+  return cached;
+}
+
+/** Remove the console-era slots only. The suite entries are onboarding's to manage. */
+export function clearLegacySlots(): boolean {
   let cleared = false;
-  try {
-    cleared = entry().deletePassword();
-  } catch {
-    /* absent */
+  for (const [service, account] of LEGACY_SLOTS) {
+    try {
+      if (new Entry(service, account).deletePassword()) cleared = true;
+    } catch {
+      /* absent */
+    }
   }
-  try {
-    new Entry(LEGACY_SERVICE, ACCOUNT).deletePassword();
-  } catch {
-    /* absent */
-  }
+  resetCredentialCache();
   return cleared;
 }
 

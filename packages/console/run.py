@@ -27,8 +27,8 @@ def main() -> int:
     dash = sub.add_parser("dashboard", help="serve the console UI")
     dash.add_argument("--serve", action="store_true", help="start the server (required)")
     dash.add_argument("--port", type=int, default=None, help="override the listen port")
-    creds = sub.add_parser("credentials", help="manage the console's broker credential")
-    creds.add_argument("action", choices=["set", "show", "clear"])
+    creds = sub.add_parser("credentials", help="inspect the suite broker credential (read-only)")
+    creds.add_argument("action", choices=["set", "show", "probe", "clear"])
     args = parser.parse_args()
 
     node = shutil.which("node")

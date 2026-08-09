@@ -17,7 +17,7 @@
  */
 
 import { getClient, hasCredential } from "../market/session.js";
-import { loadCredentials } from "../auth/credentials.js";
+import { getScope } from "../auth/credentials.js";
 
 export interface TicketLeg {
   /** OCC option symbol from the chain. */
@@ -79,9 +79,9 @@ export async function dryRunOrder(legs: TicketLeg[]): Promise<DryRunResult> {
   if (legs.length === 0) return { ok: false, error: "no legs to validate" };
   if (!hasCredential()) return { ok: false, error: "no suite broker credential" };
   // Write-oriented functions disable themselves on a read-only credential:
-  // the scope was detected by the live probe at `credentials set`, so don't
-  // spend a broker call on a request that will 403.
-  if (loadCredentials()?.scope === "read") {
+  // the scope was detected by the live probe at boot / credentials set, so
+  // don't spend a broker call on a request that will 403.
+  if (getScope().scope === "read") {
     return { ok: false, skipped: true, error: "read-only credential — broker dry-run validation disabled" };
   }
   try {

@@ -21,17 +21,22 @@ Or via the suite command: `/serve-dashboard --console`.
 
 ## Broker credential
 
-One credential set serves the whole suite: the OAuth application's shared client secret plus a
-refresh token (generate at my.tastytrade.com → API → OAuth applications; scope rides on the
-refresh token). Stored as one entry in the OS credential store under the `cherrypick-broker`
-service, `oauth` slot. `set` validates the credential live and detects its scope — a read-only
-token is accepted with a warning, and write-oriented functions (broker dry-run validation of
-staged tickets) disable themselves until a trade-scoped token is stored:
+One credential set serves the whole suite — the shared keyring entries every module reads
+(`cherrypick-broker` service, `production:client_secret` / `production:refresh_token`) — and there
+is exactly **one path for setting them**, the suite onboarding CLI:
 
 ```
-python run.py credentials set     # prompts for client secret + refresh token, input hidden
-python run.py credentials show    # masked values only
-python run.py credentials clear
+python -m cherrypick.core.auth setup      # THE single setting path (hidden input)
+```
+
+The console only reads. At boot it probes the credential's scope live (scope rides on the refresh
+token): a read-only token disables write-oriented functions (broker dry-run validation of staged
+tickets) until a trade-scoped token is rotated in. Inspection commands:
+
+```
+python run.py credentials show     # source + masked values
+python run.py credentials probe    # validate now and report detected scope
+python run.py credentials clear    # remove pre-unification console-only slots
 ```
 
 ## Development
