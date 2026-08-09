@@ -18,10 +18,16 @@ function spotHistory(config: ConsoleConfig, symbol: string): Array<{ ts: number;
   try {
     db = new Database(p, { readonly: true, fileMustExist: true });
     db.pragma("busy_timeout = 2000");
+    // The recorder also runs off-hours, writing the frozen cached spot — a
+    // "trail" of identical points. Use the most recent date with real
+    // movement (a genuine session), not just the most recent date.
     return db
       .prepare<[string, string], Record<string, unknown>>(
         `SELECT ts, spot FROM gex_spot_history
-          WHERE symbol = ? AND trade_date = (SELECT MAX(trade_date) FROM gex_spot_history WHERE symbol = ?)
+          WHERE symbol = ? AND trade_date = (
+            SELECT trade_date FROM gex_spot_history WHERE symbol = ?
+             GROUP BY trade_date HAVING COUNT(DISTINCT spot) > 1
+             ORDER BY trade_date DESC LIMIT 1)
           ORDER BY ts`,
       )
       .all(symbol, symbol)

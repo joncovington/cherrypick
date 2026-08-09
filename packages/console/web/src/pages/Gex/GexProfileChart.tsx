@@ -128,10 +128,13 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
       {spotHistory !== undefined && spotHistory.length > 1 && (() => {
         // Trail across the plot width: x = time position within the recorded
         // session, y = spot interpolated on the strike axis (the gex page's
-        // _spotHistoryPlugin).
-        const t0 = spotHistory[0]!.ts;
-        const t1 = spotHistory[spotHistory.length - 1]!.ts;
-        const pts = spotHistory
+        // _spotHistoryPlugin). A full session records thousands of ticks —
+        // decimate to ~400 points so the SVG stays light.
+        const stride = Math.max(1, Math.floor(spotHistory.length / 400));
+        const sampled = spotHistory.filter((_, i) => i % stride === 0 || i === spotHistory.length - 1);
+        const t0 = sampled[0]!.ts;
+        const t1 = sampled[sampled.length - 1]!.ts;
+        const pts = sampled
           .map((h) => {
             const y = strikeY(h.spot);
             if (y === null) return null;
