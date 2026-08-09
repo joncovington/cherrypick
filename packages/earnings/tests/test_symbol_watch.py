@@ -392,7 +392,9 @@ def test_refresh_symbol_watch_prefilters_to_watch_universe_by_default(monkeypatc
         lambda symbol, earnings_date, timing, config: seen_symbols.append(symbol) or {"symbol": symbol},
     )
 
-    result = symbol_watch.refresh_symbol_watch(days=10, config={})  # liquid_only defaults True
+    # A non-empty but liquid_only-default config -- {} is falsy and would fall through to a real
+    # _load_config() disk read (works locally, fails in CI with no config file present).
+    result = symbol_watch.refresh_symbol_watch(days=10, config={"symbol_watch": {}})
 
     assert result["total"] == 1
     assert seen_symbols == ["AAPL"]  # ILLIQUIDCO never reached the expensive per-symbol fetch
@@ -434,7 +436,7 @@ def test_refresh_symbol_watch_degrades_to_unfiltered_on_universe_fetch_failure(m
         lambda symbol, earnings_date, timing, config: {"symbol": symbol},
     )
 
-    result = symbol_watch.refresh_symbol_watch(days=10, config={})
+    result = symbol_watch.refresh_symbol_watch(days=10, config={"symbol_watch": {}})
 
     assert result["total"] == 2
 
