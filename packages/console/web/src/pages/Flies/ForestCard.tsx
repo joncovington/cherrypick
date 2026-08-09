@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { useQuote } from "../../lib/useQuote";
 import { fmtMoney } from "../../components/DataTable";
+import { fliesQuery, type FliesFilter } from "../../lib/api";
 
 interface PayoffCurve {
   empty: boolean;
@@ -24,11 +25,11 @@ interface Forest {
   arms: Array<{ arm: string; curve: PayoffCurve }>;
 }
 
-function useForest(mode: TradingMode) {
+function useForest(mode: TradingMode, filter: FliesFilter) {
   return useQuery<Forest>({
-    queryKey: ["flies-forest", mode],
+    queryKey: ["flies-forest", mode, filter],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/forest?mode=${mode}`);
+      const res = await fetch(`/api/flies/forest?${fliesQuery(mode, filter)}`);
       if (!res.ok) throw new Error(`forest: HTTP ${res.status}`);
       return (await res.json()) as Forest;
     },
@@ -48,8 +49,8 @@ function floorSentence(arm: string, c: PayoffCurve): string {
 }
 
 /** The profit forest: one payoff line per arm, live spot marker, per-arm floor sentences. */
-export function ForestCard({ mode }: { mode: TradingMode }) {
-  const { data, isLoading } = useForest(mode);
+export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesFilter }) {
+  const { data, isLoading } = useForest(mode, filter);
   const symbol = "XSP"; // flies trades XSP today; the curves' own price domain governs the axis
   const quote = useQuote(symbol);
   const spot = quote?.last ?? (quote?.bid !== undefined && quote?.ask !== undefined ? (quote.bid + quote.ask) / 2 : null);

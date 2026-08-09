@@ -62,11 +62,31 @@ export function useMeic(mode: TradingMode) {
   });
 }
 
-export function useFlies(mode: TradingMode) {
+export interface FliesFilter {
+  arm: string | null;
+  date: string | null;
+}
+
+export function fliesQuery(mode: TradingMode, filter: FliesFilter): string {
+  const params = new URLSearchParams({ mode });
+  if (filter.arm !== null) params.set("arm", filter.arm);
+  if (filter.date !== null) params.set("date", filter.date);
+  return params.toString();
+}
+
+export function useFlies(mode: TradingMode, filter: FliesFilter) {
   return useQuery<FliesPayload>({
-    queryKey: ["flies", mode],
-    queryFn: () => getJson<FliesPayload>(`/api/flies?mode=${mode}`),
+    queryKey: ["flies", mode, filter],
+    queryFn: () => getJson<FliesPayload>(`/api/flies?${fliesQuery(mode, filter)}`),
     refetchInterval: 15_000,
+  });
+}
+
+export function useFliesMeta(mode: TradingMode) {
+  return useQuery<{ arms: string[]; dates: string[] }>({
+    queryKey: ["flies-meta", mode],
+    queryFn: () => getJson<{ arms: string[]; dates: string[] }>(`/api/flies/meta?mode=${mode}`),
+    staleTime: 300_000,
   });
 }
 
