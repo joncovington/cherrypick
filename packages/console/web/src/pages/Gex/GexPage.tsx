@@ -116,7 +116,7 @@ const TABS: Array<[GexTab, string]> = [
 export function GexPage() {
   const { data, isLoading, isError } = useGex();
   const [symbol, setSymbol] = useState("SPX");
-  const [view, setView] = useState<GexView>("net");
+  const [view, setView] = useState<GexView>("oivol");
   const [tab, setTab] = useState<GexTab>("gex");
   const symbols = useGexSymbols();
   const profile = useGexProfile(symbol);
