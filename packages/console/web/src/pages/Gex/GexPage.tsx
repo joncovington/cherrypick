@@ -56,12 +56,33 @@ function useGexSymbols() {
   });
 }
 
-function Metric({ label, value, colored }: { label: string; value: string; colored?: number }) {
-  const cls = colored === undefined ? "" : colored >= 0 ? "pnl-pos" : "pnl-neg";
+function Metric({
+  label,
+  value,
+  colored,
+  tone,
+}: {
+  label: string;
+  value: string;
+  /** Color by this number's sign. */
+  colored?: number;
+  /** Fixed semantic tone: call-side green, put-side red. */
+  tone?: "pos" | "neg";
+}) {
+  const cls =
+    tone !== undefined
+      ? tone === "pos"
+        ? "pnl-pos"
+        : "pnl-neg"
+      : colored === undefined
+        ? ""
+        : colored >= 0
+          ? "pnl-pos"
+          : "pnl-neg";
   return (
     <div className="gex-metric">
       <span className="muted">{label}</span>
-      <span className={cls}>{value}</span>
+      <span className={`gex-metric-value ${cls}`}>{value}</span>
     </div>
   );
 }
@@ -155,21 +176,21 @@ export function GexPage() {
               <div className="gex-rail">
                 <div className="gex-panel">
                   <h2>open interest (positioning)</h2>
-                  <Metric label="total call GEX" value={fmtGexDollars(p.totals.total_call_gex)} />
-                  <Metric label="total put GEX" value={fmtGexDollars(-p.totals.total_put_gex)} />
+                  <Metric label="total call GEX" value={fmtGexDollars(p.totals.total_call_gex)} tone="pos" />
+                  <Metric label="total put GEX" value={fmtGexDollars(-p.totals.total_put_gex)} tone="neg" />
                   <Metric label="net GEX" value={fmtGexDollars(p.totals.net_gex)} colored={p.totals.net_gex} />
                   <Metric label="max GEX strike" value={String(p.totals.max_gex_strike ?? "—")} />
-                  <Metric label="call wall" value={String(p.totals.call_wall ?? "—")} />
-                  <Metric label="put wall" value={String(p.totals.put_wall ?? "—")} />
+                  <Metric label="call wall" value={String(p.totals.call_wall ?? "—")} tone="pos" />
+                  <Metric label="put wall" value={String(p.totals.put_wall ?? "—")} tone="neg" />
                   <Metric label="zero gamma (flip)" value={p.totals.zero_gamma !== null ? p.totals.zero_gamma.toFixed(0) : "—"} />
                 </div>
                 <div className="gex-panel">
                   <h2>volume (flow)</h2>
-                  <Metric label="total call GEX" value={fmtGexDollars(p.volumeTotals?.total_call_gex_vol ?? 0)} />
-                  <Metric label="total put GEX" value={fmtGexDollars(-(p.volumeTotals?.total_put_gex_vol ?? 0))} />
+                  <Metric label="total call GEX" value={fmtGexDollars(p.volumeTotals?.total_call_gex_vol ?? 0)} tone="pos" />
+                  <Metric label="total put GEX" value={fmtGexDollars(-(p.volumeTotals?.total_put_gex_vol ?? 0))} tone="neg" />
                   <Metric label="net GEX" value={fmtGexDollars(p.volumeTotals?.net_gex_vol ?? 0)} colored={p.volumeTotals?.net_gex_vol} />
-                  <Metric label="call wall" value={String(p.volumeTotals?.call_wall_vol ?? "—")} />
-                  <Metric label="put wall" value={String(p.volumeTotals?.put_wall_vol ?? "—")} />
+                  <Metric label="call wall" value={String(p.volumeTotals?.call_wall_vol ?? "—")} tone="pos" />
+                  <Metric label="put wall" value={String(p.volumeTotals?.put_wall_vol ?? "—")} tone="neg" />
                   <Metric label="zero gamma" value={p.volumeTotals?.zero_gamma_vol != null ? p.volumeTotals.zero_gamma_vol.toFixed(0) : "—"} />
                 </div>
               </div>
