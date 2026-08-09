@@ -245,7 +245,12 @@ export function BuilderPage() {
           legs={legs
             .filter((l) => l.kind !== "stock" && l.strike !== "")
             .map((l) => ({ kind: l.kind as "call" | "put", strike: Number(l.strike), quantity: l.quantity }))}
-          onPick={({ kind, strike, quantity, price, delta, expiration: exp, occSymbol }) =>
+          onPick={({ kind, strike, quantity, price, delta, expiration: exp, occSymbol, atmIv }) => {
+            // Auto-fill the POP inputs from the chain: DTE from the picked
+            // expiration, IV from the ATM call. Manual edits still win after.
+            const d = dteOf(exp);
+            if (d !== null) setDte(String(d));
+            if (atmIv !== null) setIv((atmIv * 100).toFixed(1));
             setLegs((ls) => [
               ...ls,
               {
@@ -258,8 +263,8 @@ export function BuilderPage() {
                 expiration: exp,
                 occSymbol,
               },
-            ])
-          }
+            ]);
+          }}
         />
       </div>
     </div>

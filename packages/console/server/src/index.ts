@@ -21,7 +21,7 @@ const app = Fastify({ logger: { level: "info" } });
 const market = new MarketDataService(config);
 
 registerSecurity(app);
-registerScoutRoutes(app, config);
+registerScoutRoutes(app, config, market);
 registerPayoffRoutes(app);
 registerOrderRoutes(app, config);
 registerScreenerRoutes(app, config, market);

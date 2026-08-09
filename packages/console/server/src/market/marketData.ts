@@ -151,12 +151,66 @@ export class MarketDataService extends EventEmitter {
     return out;
   }
 
+  /**
+   * Bounded daily-candle backfill via DXLink candle subscription — the
+   * console's own chart-history source when scout's cache lacks a symbol.
+   * Chart history only; never informs a decision. Collects until the feed
+   * goes quiet or the hard cap lapses, then unsubscribes.
+   */
+  async backfillDailyCandles(
+    symbol: string,
+    days = 365,
+    quietMs = 2_500,
+    capMs = 25_000,
+  ): Promise<Array<{ t: number; o: number; h: number; l: number; c: number; v: number }>> {
+    await this.ensureConnected();
+    const candleSymbol = `${symbol}{=d}`;
+    const bars = new Map<number, { t: number; o: number; h: number; l: number; c: number; v: number }>();
+    let lastEventAt = Date.now();
+    const listener = (e: Record<string, unknown>): void => {
+      if (e["eventSymbol"] !== candleSymbol) return;
+      const n = (k: string): number | null => {
+        const v = e[k];
+        return typeof v === "number" && Number.isFinite(v) ? v : null;
+      };
+      const time = n("time");
+      const o = n("open");
+      const h = n("high");
+      const l = n("low");
+      const c = n("close");
+      // A real value can still be zero/degenerate — a zero-filled placeholder
+      // for the still-forming bar must not pass as genuine data (scout's rule).
+      if (time === null || o === null || h === null || l === null || c === null || c <= 0 || o <= 0) return;
+      lastEventAt = Date.now();
+      bars.set(Math.floor(time / 1000), { t: Math.floor(time / 1000), o, h, l, c, v: n("volume") ?? 0 });
+    };
+    this.on("feed", listener);
+    const { CandleType } = await import("@tastytrade/api");
+    const fromTime = Date.now() - days * 86_400_000;
+    try {
+      getClient().quoteStreamer.subscribeCandles(symbol, fromTime, 1, CandleType.Day);
+      const start = Date.now();
+      while (Date.now() - start < capMs && (bars.size === 0 || Date.now() - lastEventAt < quietMs)) {
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    } finally {
+      this.off("feed", listener);
+      try {
+        getClient().quoteStreamer.unsubscribe([candleSymbol]);
+      } catch {
+        /* candle unsubscribe is best-effort */
+      }
+    }
+    return [...bars.values()].sort((a, b) => a.t - b.t);
+  }
+
   /** dxfeed delivers event objects (sometimes batched in arrays); map defensively. */
   private handleEvents(events: unknown): void {
     const list = Array.isArray(events) ? events : [events];
     for (const raw of list.flat()) {
       if (typeof raw !== "object" || raw === null) continue;
       const e = raw as Record<string, unknown>;
+      this.emit("feed", e);
       const symbol = typeof e["eventSymbol"] === "string" ? e["eventSymbol"] : null;
       if (symbol === null) continue;
       const tick: QuoteTick = { type: "tick", symbol, source: "dxlink", ts: Date.now() };

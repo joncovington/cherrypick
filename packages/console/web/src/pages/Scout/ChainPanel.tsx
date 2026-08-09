@@ -76,6 +76,8 @@ interface Props {
     delta: number | null;
     expiration: string | null;
     occSymbol: string | null;
+    /** ATM IV for the shown expiration — lets the builder auto-fill its POP inputs. */
+    atmIv: number | null;
   }) => void;
   spot: number | null;
   legs: LegMark[];
@@ -99,12 +101,16 @@ export function ChainPanel({ symbol, expiration, onExpiration, onPick, spot, leg
 
   // Expected move from the ATM call's IV: spot * iv * sqrt(dte/365).
   let expectedMove: number | null = null;
+  let atmIv: number | null = null;
   if (spot !== null && data?.expiration != null) {
     const dte = Math.max(0, (Date.parse(data.expiration) - Date.now()) / 86_400_000);
     const atm = [...visible]
       .filter((r) => r.call?.delta != null && r.call.iv != null && r.call.iv > 0 && r.call.iv < 5)
       .sort((a, b) => Math.abs((a.call?.delta ?? 1) - 0.5) - Math.abs((b.call?.delta ?? 1) - 0.5))[0];
-    if (atm?.call?.iv != null) expectedMove = spot * atm.call.iv * Math.sqrt(dte / 365);
+    if (atm?.call?.iv != null) {
+      atmIv = atm.call.iv;
+      expectedMove = spot * atmIv * Math.sqrt(dte / 365);
+    }
   }
 
   const netAt = (kind: "call" | "put", strike: number): number =>
@@ -184,14 +190,14 @@ export function ChainPanel({ symbol, expiration, onExpiration, onPick, spot, leg
                     <td>{r.call ? fmt(r.call.delta) : "—"}</td>
                     <ChainCell
                       side={r.call}
-                      onSell={() => r.call && onPick({ kind: "call", strike: r.strike, quantity: -1, price: mid(r.call), delta: r.call.delta, expiration: data?.expiration ?? null, occSymbol: r.call.occSymbol })}
-                      onBuy={() => r.call && onPick({ kind: "call", strike: r.strike, quantity: 1, price: mid(r.call), delta: r.call.delta, expiration: data?.expiration ?? null, occSymbol: r.call.occSymbol })}
+                      onSell={() => r.call && onPick({ kind: "call", strike: r.strike, quantity: -1, price: mid(r.call), delta: r.call.delta, expiration: data?.expiration ?? null, occSymbol: r.call.occSymbol, atmIv })}
+                      onBuy={() => r.call && onPick({ kind: "call", strike: r.strike, quantity: 1, price: mid(r.call), delta: r.call.delta, expiration: data?.expiration ?? null, occSymbol: r.call.occSymbol, atmIv })}
                     />
                     <td className={`chain-strike ${inBand ? "chain-em-band" : ""}`}>{r.strike}</td>
                     <ChainCell
                       side={r.put}
-                      onSell={() => r.put && onPick({ kind: "put", strike: r.strike, quantity: -1, price: mid(r.put), delta: r.put.delta, expiration: data?.expiration ?? null, occSymbol: r.put.occSymbol })}
-                      onBuy={() => r.put && onPick({ kind: "put", strike: r.strike, quantity: 1, price: mid(r.put), delta: r.put.delta, expiration: data?.expiration ?? null, occSymbol: r.put.occSymbol })}
+                      onSell={() => r.put && onPick({ kind: "put", strike: r.strike, quantity: -1, price: mid(r.put), delta: r.put.delta, expiration: data?.expiration ?? null, occSymbol: r.put.occSymbol, atmIv })}
+                      onBuy={() => r.put && onPick({ kind: "put", strike: r.strike, quantity: 1, price: mid(r.put), delta: r.put.delta, expiration: data?.expiration ?? null, occSymbol: r.put.occSymbol, atmIv })}
                     />
                     <td>{r.put ? fmt(r.put.delta) : "—"}</td>
                     <td className="muted">{r.put ? fmtOi(r.put.openInterest) : "—"}</td>
