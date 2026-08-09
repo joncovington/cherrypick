@@ -10,6 +10,7 @@ import {
   readFliesTimeline,
   readFliesHistory,
   readFliesPerformance,
+  readFliesJournal,
   type FliesFilter,
 } from "../readers/flies.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics } from "../readers/earnings.js";
@@ -39,6 +40,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   );
   app.get("/api/flies/meta", async (req) => readFliesMeta(config, parseMode(req.query)));
   app.get("/api/flies/history", async (req) => readFliesHistory(config, parseMode(req.query)));
+  app.get("/api/flies/journal", async (req) => {
+    const f = parseFliesFilter(req.query);
+    return readFliesJournal(config, parseMode(req.query), f.date, f.arm);
+  });
   app.get("/api/flies/performance", async (req) => {
     const q = req.query as Record<string, unknown>;
     const gran = ["daily", "weekly", "monthly"].includes(String(q["granularity"])) ? String(q["granularity"]) : "daily";

@@ -393,6 +393,49 @@ export function readFliesTimeline(config: ConsoleConfig, mode: TradingMode, day:
   });
 }
 
+export interface JournalRow {
+  arm: string;
+  mode: string;
+  reason: string;
+  accepted: boolean;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  occurrences: number;
+  centerLast: number | null;
+  detail: string | null;
+}
+
+/** The day's decisions, newest run first — already collapsed at write time, so a plain read. */
+export function readFliesJournal(config: ConsoleConfig, mode: TradingMode, day: string | null, arm: string | null): { date: string | null; rows: JournalRow[] } {
+  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.fliesDir, file);
+  return withReadOnlyDb<{ date: string | null; rows: JournalRow[] }>(dbPath, { date: null, rows: [] }, (db) => {
+    const date =
+      day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_decisions").get()?.d ?? null;
+    if (date === null) return { date: null, rows: [] };
+    const clause = arm !== null ? " AND arm = ?" : "";
+    const params: string[] = arm !== null ? [date, arm] : [date];
+    const rows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT arm, mode, reason, accepted, first_seen, last_seen, occurrences, center_last, detail
+           FROM fly_decisions WHERE trade_date = ?${clause} ORDER BY id DESC`,
+      )
+      .all(...params)
+      .map((r) => ({
+        arm: String(r["arm"] ?? "?"),
+        mode: String(r["mode"] ?? "?"),
+        reason: String(r["reason"] ?? ""),
+        accepted: r["accepted"] === 1,
+        firstSeen: str(r["first_seen"]),
+        lastSeen: str(r["last_seen"]),
+        occurrences: Number(r["occurrences"] ?? 1),
+        centerLast: num(r["center_last"]),
+        detail: str(r["detail"]),
+      }));
+    return { date, rows };
+  });
+}
+
 // ---- history / performance (ports of analytics.py's read layer) ----
 
 /** Settled, non-void — the shared WHERE every history read builds on. */
