@@ -5,6 +5,7 @@ import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import type { TradingMode } from "@console/shared";
+import { ForestCard } from "./ForestCard";
 
 interface FliesAnalytics {
   today: {
@@ -78,6 +79,8 @@ export function FliesPage() {
             </div>
           </div>
         </section>
+
+        <ForestCard mode={mode} />
 
         <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(20rem, 1fr))" }}>
           <DataCard

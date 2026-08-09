@@ -5,6 +5,7 @@ import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import type { TradingMode } from "@console/shared";
+import { MeicDeepCards } from "./MeicDeepCards";
 
 interface MeicAnalytics {
   periods: Array<{ label: string; net: number; trades: number; wins: number; losses: number }>;
@@ -121,6 +122,8 @@ export function MeicPage() {
             </tr>
           ))}
         </DataCard>
+
+        <MeicDeepCards mode={mode} />
 
         <DataCard
           title="Daily summaries"

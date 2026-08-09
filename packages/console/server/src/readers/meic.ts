@@ -61,6 +61,88 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode): MeicPayload 
 
 const RESOLVED = "status NOT IN ('cancelled','pending','partial_entry')";
 
+export interface MeicBreakdownRow {
+  bucket: string;
+  trades: number;
+  sessions: number;
+  winPct: number | null;
+  avgNet: number | null;
+}
+
+export interface MeicDeepAnalytics {
+  mode: TradingMode;
+  /** Per trade date: gross, fees, net, count — the calendar heatmap's cells. */
+  calendar: Array<{ date: string; net: number; trades: number }>;
+  nlv: Array<{ date: string; nlv: number }>;
+  byDelta: MeicBreakdownRow[];
+  byWing: MeicBreakdownRow[];
+  bySymbol: MeicBreakdownRow[];
+  byWeekday: MeicBreakdownRow[];
+}
+
+export function readMeicDeepAnalytics(config: ConsoleConfig, mode: TradingMode): MeicDeepAnalytics {
+  const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.meicDir, file);
+  const empty: MeicDeepAnalytics = { mode, calendar: [], nlv: [], byDelta: [], byWing: [], bySymbol: [], byWeekday: [] };
+  return withReadOnlyDb<MeicDeepAnalytics>(dbPath, empty, (db) => {
+    const calendar = db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT trade_date, SUM(pnl) - SUM(COALESCE(fees, 0)) AS net, COUNT(*) AS trades
+           FROM ic_trades WHERE ${RESOLVED} AND pnl IS NOT NULL GROUP BY trade_date ORDER BY trade_date`,
+      )
+      .all()
+      .map((r) => ({ date: String(r["trade_date"]), net: Number(r["net"]), trades: Number(r["trades"]) }));
+
+    const nlv = db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT summary_date, closing_nlv FROM daily_summary WHERE closing_nlv IS NOT NULL ORDER BY summary_date`,
+      )
+      .all()
+      .map((r) => ({ date: String(r["summary_date"]), nlv: Number(r["closing_nlv"]) }));
+
+    // Signal breakdowns, MEIC-dashboard rules: pnl IS NOT NULL, avg net = pnl − fees.
+    const breakdown = (bucketExpr: string): MeicBreakdownRow[] =>
+      db
+        .prepare<[], Record<string, unknown>>(
+          `SELECT ${bucketExpr} AS bucket, COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions,
+                  SUM(CASE WHEN pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins,
+                  AVG(pnl - COALESCE(fees, 0)) AS avg_net
+             FROM ic_trades WHERE ${RESOLVED} AND pnl IS NOT NULL
+            GROUP BY bucket ORDER BY bucket`,
+        )
+        .all()
+        .map((r) => {
+          const trades = Number(r["trades"]);
+          return {
+            bucket: String(r["bucket"] ?? "?"),
+            trades,
+            sessions: Number(r["sessions"]),
+            winPct: trades > 0 ? (Number(r["wins"]) / trades) * 100 : null,
+            avgNet: r["avg_net"] === null ? null : Number(r["avg_net"]),
+          };
+        });
+
+    return {
+      mode,
+      calendar,
+      nlv,
+      byDelta: breakdown(
+        `CASE WHEN ABS(COALESCE(call_delta_at_entry, 0)) < 0.10 THEN '<0.10'
+              WHEN ABS(call_delta_at_entry) < 0.15 THEN '0.10-0.15'
+              WHEN ABS(call_delta_at_entry) < 0.20 THEN '0.15-0.20'
+              ELSE '>=0.20' END`,
+      ),
+      byWing: breakdown(`CAST(CAST(wing_width AS INTEGER) AS TEXT) || '-wide'`),
+      bySymbol: breakdown("symbol"),
+      byWeekday: breakdown(
+        `CASE CAST(strftime('%w', trade_date) AS INTEGER)
+              WHEN 0 THEN 'Sun' WHEN 1 THEN 'Mon' WHEN 2 THEN 'Tue' WHEN 3 THEN 'Wed'
+              WHEN 4 THEN 'Thu' WHEN 5 THEN 'Fri' ELSE 'Sat' END`,
+      ),
+    };
+  });
+}
+
 export interface MeicAnalytics {
   mode: TradingMode;
   /** TODAY / WEEK / MONTH / YEAR / ALL, MEIC-dashboard rules: net = SUM(pnl); win = pnl − fees > 0. */
