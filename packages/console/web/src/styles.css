@@ -562,6 +562,14 @@ select.text-input {
   font-weight: 600;
 }
 
+.gex-metric-em {
+  font-size: 14.5px;
+}
+
+.gex-metric-em .gex-metric-value {
+  font-weight: 700;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
