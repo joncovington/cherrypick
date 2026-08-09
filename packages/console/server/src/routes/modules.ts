@@ -21,7 +21,7 @@ import {
   readFliesJournal,
   type FliesFilter,
 } from "../readers/flies.js";
-import { readEarnings, readSymbolWatch, readEarningsAnalytics } from "../readers/earnings.js";
+import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
 import { readGex } from "../readers/gex.js";
 import { buildGexProfile, gexSymbols } from "../services/gexProfile.js";
 import { buildSuiteReport } from "../services/report.js";
@@ -90,6 +90,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/earnings", async () => readEarnings(config));
   app.get("/api/earnings/upcoming", async () => readSymbolWatch(config));
   app.get("/api/earnings/analytics", async (req) => readEarningsAnalytics(config, parseMode(req.query)));
+  app.get("/api/earnings/detail", async (req) => readEarningsDetail(config, parseMode(req.query)));
   app.get("/api/gex", async () => readGex(config));
   app.get("/api/gex/symbols", async () => ({ symbols: gexSymbols(config) }));
   app.get("/api/gex/profile/:symbol", async (req) => {

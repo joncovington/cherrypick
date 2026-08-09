@@ -1,7 +1,12 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useEarnings } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
+import { TabStrip } from "../../components/ScopeBar";
+import { EarningsDetailCards } from "./EarningsDetail";
+
+const TABS = ["overview", "strategy detail", "upcoming"] as const;
 
 interface UpcomingRow {
   symbol: string;
@@ -78,6 +83,7 @@ function useEarningsAnalytics() {
 }
 
 export function EarningsPage() {
+  const [tab, setTab] = useState<(typeof TABS)[number]>("overview");
   const { data, isLoading, isError } = useEarnings();
   const upcoming = useUpcoming();
   const analytics = useEarningsAnalytics();
@@ -88,10 +94,14 @@ export function EarningsPage() {
     <div className="page">
       <div className="page-title-row">
         <h1>Earnings</h1>
+        <TabStrip tabs={TABS} value={tab} onChange={setTab} />
         <span className="chip">both books</span>
       </div>
 
       <div className="cards cards-wide">
+        {tab === "strategy detail" && <EarningsDetailCards mode="paper" />}
+        {tab === "overview" && (
+        <>
         <section className="card">
           <h2>Strategy test — paper</h2>
           <div className="stats-grid">
@@ -114,6 +124,12 @@ export function EarningsPage() {
             <div className="stat-tile">
               <span className="stat-label">strategies active</span>
               <span className="stat-value">{a?.kpis.strategiesActive ?? "—"}</span>
+            </div>
+            <div className="stat-tile">
+              <span className="stat-label">capital at risk (open)</span>
+              <span className="stat-value">
+                {a !== undefined ? fmtMoney(a.openPositions.reduce((s, p) => s + Math.abs(p.maxLoss ?? 0), 0)) : "—"}
+              </span>
             </div>
           </div>
           {a !== undefined && a.weekly.length > 0 && (
@@ -173,8 +189,23 @@ export function EarningsPage() {
               <td className="muted">{p.expiration ?? "—"}</td>
             </tr>
           ))}
+          {a !== undefined && a.openPositions.length > 0 && (
+            <tr>
+              <td colSpan={2} className="muted">{a.openPositions.length} open</td>
+              <td />
+              <td>{fmtMoney(a.openPositions.reduce((s, p) => s + (p.credit ?? 0), 0))}</td>
+              <td><PnlCell v={a.openPositions.reduce((s, p) => s + (p.netOfCost ?? 0), 0)} /></td>
+              <td className="pnl-neg">{fmtMoney(-a.openPositions.reduce((s, p) => s + Math.abs(p.maxLoss ?? 0), 0))}</td>
+              <td className="muted">{fmtMoney(a.openPositions.reduce((s, p) => s + (p.entryCost ?? 0), 0))}</td>
+              <td />
+            </tr>
+          )}
         </DataCard>
 
+        </>
+        )}
+
+        {tab === "upcoming" && (
         <DataCard
           title={`Upcoming earnings (forward scan${upcoming.data && upcoming.data.total > 0 ? ` — ${upcoming.data.done}/${upcoming.data.total}` : ""})`}
           headers={["date", "sym", "timing", "price", "exp move", "IV/RV", "term", "winrate", "IVR", "tier"]}
@@ -205,6 +236,10 @@ export function EarningsPage() {
           ))}
         </DataCard>
 
+        )}
+
+        {tab === "overview" && (
+        <>
         <DataCard
           title="Trades"
           headers={["", "opened", "sym", "strategy", "exp", "credit", "qty", "closed", "P&L"]}
@@ -253,6 +288,8 @@ export function EarningsPage() {
             </tr>
           ))}
         </DataCard>
+        </>
+        )}
       </div>
     </div>
   );

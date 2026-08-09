@@ -127,6 +127,221 @@ export function readSymbolWatch(config: ConsoleConfig): SymbolWatchPayload {
   };
 }
 
+/** The strategy dashboard's significance target — the sample a strategy needs to mean something. */
+const SIGNIFICANT_TARGET = 30;
+const DIRECTIONAL_TARGET = 10;
+
+export interface EarningsDetail {
+  mode: TradingMode;
+  /** Closed-trade equity by settlement date, for cumulative and rolling windows. */
+  equity: Array<{ date: string; net: number; cumulative: number }>;
+  perStrategy: Array<{
+    strategy: string;
+    trades: number;
+    winRatePct: number | null;
+    profitFactor: number | null;
+    expectancy: number | null;
+    net: number;
+    sharpe: number | null;
+    maxDrawdown: number;
+    maxDrawdownPct: number | null;
+    avgIvCrushPts: number | null;
+    ivSample: number;
+    sampleProgress: number;
+    significant: boolean;
+    directional: boolean;
+    curve: Array<{ i: number; equity: number; drawdown: number }>;
+  }>;
+  /** IV/RV × dispersion buckets — where the sample actually lives. */
+  regimeHeat: {
+    ivRvBuckets: string[];
+    dispersionBuckets: string[];
+    cells: Array<{ strategy: string; ivRv: string; dispersion: string; trades: number }>;
+  };
+  /** Top rejection reasons, split on ';' like the reference histogram. */
+  rejections: Array<{ reason: string; count: number }>;
+  capitalAtRisk: number;
+}
+
+function bucketIvRv(v: number | null): string {
+  if (v === null) return "unknown";
+  if (v < 1.0) return "<1.0";
+  if (v < 1.2) return "1.0–1.2";
+  if (v < 1.5) return "1.2–1.5";
+  return "≥1.5";
+}
+
+function bucketDispersion(v: number | null): string {
+  if (v === null) return "unknown";
+  if (v < 0.02) return "<2%";
+  if (v < 0.04) return "2–4%";
+  if (v < 0.07) return "4–7%";
+  return "≥7%";
+}
+
+export function readEarningsDetail(config: ConsoleConfig, mode: TradingMode): EarningsDetail {
+  const file = mode === "live" ? "earnings_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.earningsDir, file);
+  const empty: EarningsDetail = {
+    mode,
+    equity: [],
+    perStrategy: [],
+    regimeHeat: { ivRvBuckets: [], dispersionBuckets: [], cells: [] },
+    rejections: [],
+    capitalAtRisk: 0,
+  };
+  return withReadOnlyDb<EarningsDetail>(dbPath, empty, (db) => {
+    const closed = db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT strategy, symbol, closed_at, entry_iv, exit_iv, entry_context, capital_at_risk,
+                pnl - COALESCE(entry_cost, 0) - COALESCE(exit_cost, 0) AS net
+           FROM trades WHERE closed_at IS NOT NULL AND pnl IS NOT NULL ORDER BY closed_at`,
+      )
+      .all();
+
+    // --- daily equity ---
+    const byDate = new Map<string, number>();
+    for (const r of closed) {
+      const d = sessionDate(r["closed_at"]);
+      if (d === null) continue;
+      byDate.set(d, (byDate.get(d) ?? 0) + Number(r["net"]));
+    }
+    let cum = 0;
+    const equity = [...byDate.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, net]) => {
+        cum += net;
+        return { date, net, cumulative: cum };
+      });
+
+    // --- per strategy ---
+    const groups = new Map<string, Array<Record<string, unknown>>>();
+    for (const r of closed) {
+      const k = String(r["strategy"] ?? "?");
+      let list = groups.get(k);
+      if (list === undefined) {
+        list = [];
+        groups.set(k, list);
+      }
+      list.push(r);
+    }
+    const perStrategy = [...groups.entries()]
+      .map(([strategy, rs]) => {
+        const nets = rs.map((r) => Number(r["net"]));
+        const wins = nets.filter((n) => n > 0);
+        const losses = nets.filter((n) => n < 0);
+        const gw = wins.reduce((s, n) => s + n, 0);
+        const gl = Math.abs(losses.reduce((s, n) => s + n, 0));
+        const net = nets.reduce((s, n) => s + n, 0);
+        // Trade-level Sharpe: mean/sd of per-trade nets (not annualized — an
+        // earnings trade is an event, not a period).
+        const mean = nets.length > 0 ? net / nets.length : 0;
+        const sd =
+          nets.length >= 2
+            ? Math.sqrt(nets.reduce((s, n) => s + (n - mean) ** 2, 0) / (nets.length - 1))
+            : null;
+        let running = 0;
+        let peak = 0;
+        let maxdd = 0;
+        const curve = nets.map((n, i) => {
+          running += n;
+          peak = Math.max(peak, running);
+          maxdd = Math.max(maxdd, peak - running);
+          return { i, equity: running, drawdown: peak - running };
+        });
+        const ivPairs = rs
+          .map((r) => {
+            const a = num(r["entry_iv"]);
+            const b = num(r["exit_iv"]);
+            return a !== null && b !== null ? (a - b) * 100 : null;
+          })
+          .filter((v): v is number => v !== null);
+        const capital = rs.reduce((s, r) => s + (num(r["capital_at_risk"]) ?? 0), 0);
+        return {
+          strategy,
+          trades: rs.length,
+          winRatePct: wins.length + losses.length > 0 ? (wins.length / (wins.length + losses.length)) * 100 : null,
+          profitFactor: gl > 0 ? gw / gl : null,
+          expectancy: nets.length > 0 ? net / nets.length : null,
+          net,
+          sharpe: sd !== null && sd !== 0 ? Math.round((mean / sd) * 1000) / 1000 : null,
+          maxDrawdown: maxdd,
+          maxDrawdownPct: capital > 0 ? (maxdd / capital) * 100 : null,
+          avgIvCrushPts: ivPairs.length > 0 ? ivPairs.reduce((s, v) => s + v, 0) / ivPairs.length : null,
+          ivSample: ivPairs.length,
+          sampleProgress: Math.min(1, rs.length / SIGNIFICANT_TARGET),
+          significant: rs.length >= SIGNIFICANT_TARGET,
+          directional: rs.length >= DIRECTIONAL_TARGET,
+          curve,
+        };
+      })
+      .sort((a, b) => b.net - a.net);
+
+    // --- regime heat: where the sample lives ---
+    const cellMap = new Map<string, number>();
+    const ivRvSet = new Set<string>();
+    const dispSet = new Set<string>();
+    for (const r of closed) {
+      let ctx: Record<string, unknown> = {};
+      try {
+        ctx = JSON.parse(String(r["entry_context"] ?? "{}")) as Record<string, unknown>;
+      } catch {
+        /* untagged */
+      }
+      const iv = bucketIvRv(num(ctx["iv_rv_ratio"]));
+      const dp = bucketDispersion(num(ctx["dispersion"]));
+      ivRvSet.add(iv);
+      dispSet.add(dp);
+      const key = `${String(r["strategy"])}|${iv}|${dp}`;
+      cellMap.set(key, (cellMap.get(key) ?? 0) + 1);
+    }
+    const cells = [...cellMap.entries()].map(([k, trades]) => {
+      const [strategy, ivRv, dispersion] = k.split("|");
+      return { strategy: strategy!, ivRv: ivRv!, dispersion: dispersion!, trades };
+    });
+
+    // --- rejection histogram: reasons are ';'-joined lists ---
+    const reasonCounts = new Map<string, number>();
+    for (const r of db
+      .prepare<[], Record<string, unknown>>(
+        "SELECT reason FROM scan_log WHERE reason IS NOT NULL AND reason != ''",
+      )
+      .all()) {
+      for (const part of String(r["reason"]).split(";")) {
+        const key = part.trim();
+        if (key === "") continue;
+        reasonCounts.set(key, (reasonCounts.get(key) ?? 0) + 1);
+      }
+    }
+    const rejections = [...reasonCounts.entries()]
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15);
+
+    const capitalAtRisk =
+      num(
+        (db
+          .prepare<[], Record<string, unknown>>(
+            "SELECT COALESCE(SUM(capital_at_risk), 0) AS c FROM trades WHERE closed_at IS NULL",
+          )
+          .get() ?? {})["c"],
+      ) ?? 0;
+
+    return {
+      mode,
+      equity,
+      perStrategy,
+      regimeHeat: {
+        ivRvBuckets: [...ivRvSet].sort(),
+        dispersionBuckets: [...dispSet].sort(),
+        cells,
+      },
+      rejections,
+      capitalAtRisk,
+    };
+  });
+}
+
 export interface EarningsAnalytics {
   mode: TradingMode;
   /** Strategy-dashboard KPIs: net = pnl − entry_cost − exit_cost on closed trades. */
