@@ -6,14 +6,20 @@ import {
   removeFromWatchlist,
   importScoutWatchlist,
 } from "../store/consoleDb.js";
-import { readDailyCandles, candleSymbols } from "../readers/scoutdb.js";
+import { candleSymbols } from "../readers/scoutdb.js";
 import { readChain } from "../readers/chain.js";
+import { getDailyBars } from "../services/candles.js";
+import type { MarketDataService } from "../market/marketData.js";
 import { movingAverages, supportResistance } from "../analytics/levels.js";
 import { classifyTrend } from "../analytics/trend.js";
 
 const SYMBOL_RE = /^[A-Z][A-Z0-9./]{0,9}$/;
 
-export function registerScoutRoutes(app: FastifyInstance, config: ConsoleConfig): void {
+export function registerScoutRoutes(
+  app: FastifyInstance,
+  config: ConsoleConfig,
+  market: MarketDataService,
+): void {
   app.get("/api/watchlist", async () => ({ symbols: getWatchlist(config) }));
 
   app.post("/api/watchlist", async (req, reply) => {
@@ -46,10 +52,10 @@ export function registerScoutRoutes(app: FastifyInstance, config: ConsoleConfig)
   app.get("/api/symbol/:symbol", async (req, reply) => {
     const { symbol } = req.params as { symbol: string };
     const sym = symbol.toUpperCase();
-    const bars = readDailyCandles(config, sym);
+    const { bars, source } = await getDailyBars(config, market, sym);
     if (bars.length === 0) {
       return reply.code(404).send({
-        error: "no cached candles for symbol",
+        error: "no candles for symbol (scout cache empty and DXLink backfill returned nothing)",
         available: candleSymbols(config),
       });
     }
@@ -57,6 +63,7 @@ export function registerScoutRoutes(app: FastifyInstance, config: ConsoleConfig)
     return {
       symbol: sym,
       bars,
+      source,
       overlays: movingAverages(bars),
       levels: supportResistance(bars),
       trend: classifyTrend(closes),

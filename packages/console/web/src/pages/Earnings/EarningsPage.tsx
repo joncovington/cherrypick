@@ -1,9 +1,50 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEarnings } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 
+interface UpcomingRow {
+  symbol: string;
+  earningsDate: string;
+  timing: string | null;
+  price: number | null;
+  expectedMovePct: number | null;
+  ivRvRatio: number | null;
+  termStructure: number | null;
+  winrate: number | null;
+  ivRank: number | null;
+  tier: string;
+  tierReasons: string[];
+}
+
+interface UpcomingPayload {
+  passCompletedAt: number | null;
+  done: number;
+  total: number;
+  rows: UpcomingRow[];
+}
+
+function useUpcoming() {
+  return useQuery<UpcomingPayload>({
+    queryKey: ["earnings-upcoming"],
+    queryFn: async () => {
+      const res = await fetch("/api/earnings/upcoming");
+      if (!res.ok) throw new Error(`upcoming: HTTP ${res.status}`);
+      return (await res.json()) as UpcomingPayload;
+    },
+    refetchInterval: 60_000,
+  });
+}
+
+function tierClass(tier: string): string {
+  if (tier === "recommended") return "chip-ok";
+  if (tier === "near_miss") return "chip-warn";
+  return "";
+}
+
 export function EarningsPage() {
   const { data, isLoading, isError } = useEarnings();
+  const upcoming = useUpcoming();
 
   return (
     <div className="page">
@@ -13,6 +54,35 @@ export function EarningsPage() {
       </div>
 
       <div className="cards cards-wide">
+        <DataCard
+          title={`Upcoming earnings (forward scan${upcoming.data && upcoming.data.total > 0 ? ` — ${upcoming.data.done}/${upcoming.data.total}` : ""})`}
+          headers={["date", "sym", "timing", "price", "exp move", "IV/RV", "term", "winrate", "IVR", "tier"]}
+          loading={upcoming.isLoading}
+          isError={upcoming.isError}
+          rowCount={upcoming.data?.rows.length ?? 0}
+          skeletonRows={6}
+          empty="no forward scan yet — the earnings module's scheduled symbol_watch refresh writes this"
+        >
+          {upcoming.data?.rows.map((r) => (
+            <tr key={`${r.earningsDate}-${r.symbol}`}>
+              <td>{r.earningsDate}</td>
+              <td>{r.symbol}</td>
+              <td className="muted">{r.timing ?? "—"}</td>
+              <td>{fmtNum(r.price, 2)}</td>
+              <td>{r.expectedMovePct !== null ? `${(r.expectedMovePct * 100).toFixed(1)}%` : "—"}</td>
+              <td>{fmtNum(r.ivRvRatio, 2)}</td>
+              <td>{fmtNum(r.termStructure, 2)}</td>
+              <td>{r.winrate !== null ? `${(r.winrate * 100).toFixed(0)}%` : "—"}</td>
+              <td>{r.ivRank !== null ? (r.ivRank * 100).toFixed(0) : "—"}</td>
+              <td>
+                <span className={`chip ${tierClass(r.tier)}`} title={r.tierReasons.join("; ")}>
+                  {r.tier.replace("_", " ")}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </DataCard>
+
         <DataCard
           title="Trades"
           headers={["", "opened", "sym", "strategy", "exp", "credit", "qty", "closed", "P&L"]}
