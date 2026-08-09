@@ -137,6 +137,7 @@ export function EarningsPage() {
         <DataCard
           title="Cross-strategy comparison (net of costs)"
           headers={["strategy", "trades", "win rate", "profit factor", "expectancy", "net"]}
+          numFrom={1}
           loading={analytics.isLoading}
           rowCount={a?.strategies.length ?? 0}
         >
@@ -155,6 +156,7 @@ export function EarningsPage() {
         <DataCard
           title="Open positions"
           headers={["strategy", "sym", "qty", "credit/(debit)", "net of cost", "max loss", "entry cost", "exp"]}
+          numFrom={1}
           loading={analytics.isLoading}
           rowCount={a?.openPositions.length ?? 0}
           empty="no open positions"
@@ -176,6 +178,7 @@ export function EarningsPage() {
         <DataCard
           title={`Upcoming earnings (forward scan${upcoming.data && upcoming.data.total > 0 ? ` — ${upcoming.data.done}/${upcoming.data.total}` : ""})`}
           headers={["date", "sym", "timing", "price", "exp move", "IV/RV", "term", "winrate", "IVR", "tier"]}
+          numFrom={1}
           loading={upcoming.isLoading}
           isError={upcoming.isError}
           rowCount={upcoming.data?.rows.length ?? 0}
@@ -205,6 +208,7 @@ export function EarningsPage() {
         <DataCard
           title="Trades"
           headers={["", "opened", "sym", "strategy", "exp", "credit", "qty", "closed", "P&L"]}
+          numFrom={1}
           loading={isLoading}
           isError={isError}
           rowCount={data?.trades.length ?? 0}
@@ -228,6 +232,7 @@ export function EarningsPage() {
         <DataCard
           title="Entry reviews (screened symbols)"
           headers={["", "scan", "sym", "timing", "winrate", "IV/RV", "exp move", "tier", "selected", "reason"]}
+          numFrom={1}
           loading={isLoading}
           isError={isError}
           rowCount={data?.reviews.length ?? 0}

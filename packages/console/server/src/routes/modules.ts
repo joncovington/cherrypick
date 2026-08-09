@@ -1,7 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { readMeic, readMeicAnalytics, readMeicDeepAnalytics } from "../readers/meic.js";
+import {
+  readMeic,
+  readMeicAnalytics,
+  readMeicDeepAnalytics,
+  readMeicPerformance,
+  readMeicScope,
+  readMeicLoopStatus,
+  type MeicScopeFilter,
+} from "../readers/meic.js";
 import {
   readFlies,
   readFliesAnalytics,
@@ -25,9 +33,31 @@ function parseMode(q: unknown): TradingMode {
 }
 
 export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig): void {
-  app.get("/api/meic", async (req) => readMeic(config, parseMode(req.query)));
-  app.get("/api/meic/analytics", async (req) => readMeicAnalytics(config, parseMode(req.query)));
-  app.get("/api/meic/deep", async (req) => readMeicDeepAnalytics(config, parseMode(req.query)));
+  const parseMeicScope = (q: unknown): MeicScopeFilter => {
+    const query = (q ?? {}) as Record<string, unknown>;
+    const pick = (k: string): string | null => {
+      const v = query[k];
+      return typeof v === "string" && v !== "" && v !== "ALL" && v.length <= 40 ? v : null;
+    };
+    return { symbol: pick("symbol"), profile: pick("profile") };
+  };
+  app.get("/api/meic", async (req) => readMeic(config, parseMode(req.query), parseMeicScope(req.query)));
+  app.get("/api/meic/analytics", async (req) =>
+    readMeicAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
+  );
+  app.get("/api/meic/deep", async (req) =>
+    readMeicDeepAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
+  );
+  app.get("/api/meic/scope", async (req) => readMeicScope(config, parseMode(req.query)));
+  app.get("/api/meic/loop", async (req) =>
+    readMeicLoopStatus(config, parseMode(req.query), parseMeicScope(req.query)),
+  );
+  app.get("/api/meic/performance", async (req) => {
+    const q = req.query as Record<string, unknown>;
+    const gran = ["daily", "weekly", "monthly"].includes(String(q["granularity"])) ? String(q["granularity"]) : "daily";
+    const scope = parseMeicScope(req.query);
+    return readMeicPerformance(config, parseMode(req.query), gran, scope.symbol, scope.profile);
+  });
   const parseFliesFilter = (q: unknown): FliesFilter => {
     const query = (q ?? {}) as Record<string, unknown>;
     const date = typeof query["date"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(query["date"]) ? query["date"] : null;

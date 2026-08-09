@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 export function fmtMoney(v: number | null): string {
   if (v === null) return "—";
@@ -8,6 +8,10 @@ export function fmtMoney(v: number | null): string {
 
 export function fmtNum(v: number | null, digits = 2): string {
   return v === null ? "—" : v.toFixed(digits);
+}
+
+export function fmtPct(v: number | null, digits = 0): string {
+  return v === null ? "—" : `${v.toFixed(digits)}%`;
 }
 
 export function PnlCell({ v }: { v: number | null }) {
@@ -29,6 +33,81 @@ export function SkeletonRows({ n, cols }: { n: number; cols: number }) {
   );
 }
 
+/** "14:32:05" in ET — the per-card freshness stamp. */
+export function asOfLabel(updatedAt: number | undefined): string | null {
+  if (updatedAt === undefined || updatedAt === 0) return null;
+  return new Date(updatedAt).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: false });
+}
+
+const COLLAPSE_KEY = "cherrypick-console-collapsed-v1";
+
+function readCollapsed(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "{}") as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+}
+
+/** Collapse state persisted per card title, like the old dashboards remembered layout. */
+export function useCollapsed(key: string): [boolean, () => void] {
+  const [collapsed, setCollapsed] = useState(() => readCollapsed()[key] === true);
+  const toggle = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    const all = readCollapsed();
+    if (next) all[key] = true;
+    else delete all[key];
+    try {
+      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(all));
+    } catch {
+      /* storage unavailable — collapse still works for the session */
+    }
+  };
+  return [collapsed, toggle];
+}
+
+interface CardProps {
+  title: ReactNode;
+  /** Stable key for persisted collapse; defaults to the title when it's a string. */
+  collapseKey?: string;
+  /** Query dataUpdatedAt — renders an "as of" stamp so staleness is never invisible. */
+  updatedAt?: number;
+  isError?: boolean;
+  controls?: ReactNode;
+  children: ReactNode;
+}
+
+/** Card shell with the house header: collapse caret, title, controls, freshness stamp. */
+export function Card({ title, collapseKey, updatedAt, isError = false, controls, children }: CardProps) {
+  const key = collapseKey ?? (typeof title === "string" ? title : "card");
+  const [collapsed, toggle] = useCollapsed(key);
+  const asOf = asOfLabel(updatedAt);
+  return (
+    <section className={`card ${isError ? "card-stale" : ""}`}>
+      <div className="card-head">
+        <button
+          type="button"
+          className="btn btn-quiet collapse-toggle"
+          onClick={toggle}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "expand" : "collapse"}
+        >
+          {collapsed ? "▸" : "▾"}
+        </button>
+        <h2>{title}</h2>
+        {controls}
+        {asOf !== null && (
+          <span className="card-asof" title="last refreshed (ET)">
+            as of {asOf}
+          </span>
+        )}
+      </div>
+      {!collapsed && children}
+    </section>
+  );
+}
+
 interface DataCardProps {
   title: string;
   headers: string[];
@@ -37,6 +116,10 @@ interface DataCardProps {
   empty?: string;
   rowCount: number;
   skeletonRows?: number;
+  /** Right-align every column from this index on — numbers read down a column. */
+  numFrom?: number;
+  updatedAt?: number;
+  controls?: ReactNode;
   children: ReactNode;
 }
 
@@ -52,17 +135,19 @@ export function DataCard({
   empty = "no rows",
   rowCount,
   skeletonRows = 6,
+  numFrom,
+  updatedAt,
+  controls,
   children,
 }: DataCardProps) {
   return (
-    <section className={`card ${isError ? "card-stale" : ""}`}>
-      <h2>{title}</h2>
+    <Card title={title} updatedAt={updatedAt} isError={isError} controls={controls}>
       <div className="table-scroll">
-        <table className="data-table">
+        <table className={`data-table ${numFrom !== undefined ? `num-from-${Math.min(numFrom, 6)}` : ""}`}>
           <thead>
             <tr>
-              {headers.map((h) => (
-                <th key={h}>{h}</th>
+              {headers.map((h, i) => (
+                <th key={`${h}-${i}`}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -81,6 +166,6 @@ export function DataCard({
           </tbody>
         </table>
       </div>
-    </section>
+    </Card>
   );
 }

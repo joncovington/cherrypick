@@ -146,6 +146,34 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
+  padding: 0.25rem 0 0.5rem;
+  margin-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+}
+
+.card-head h2 {
+  margin: 0;
+}
+
+.card-asof {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-family: var(--num-face);
+  white-space: nowrap;
+  opacity: 0.75;
 }
 
 h1 {
@@ -226,6 +254,22 @@ h2 {
 
 .data-table tbody tr:hover td {
   background: var(--row-hover);
+}
+
+/* Numbers read down a column: right-align from the first numeric column on. */
+.num-from-1 th:nth-child(n + 2),
+.num-from-1 td:nth-child(n + 2),
+.num-from-2 th:nth-child(n + 3),
+.num-from-2 td:nth-child(n + 3),
+.num-from-3 th:nth-child(n + 4),
+.num-from-3 td:nth-child(n + 4),
+.num-from-4 th:nth-child(n + 5),
+.num-from-4 td:nth-child(n + 5),
+.num-from-5 th:nth-child(n + 6),
+.num-from-5 td:nth-child(n + 6),
+.num-from-6 th:nth-child(n + 7),
+.num-from-6 td:nth-child(n + 7) {
+  text-align: right;
 }
 
 .muted {

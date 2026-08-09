@@ -263,6 +263,7 @@ export function GexPage() {
         <DataCard
           title="Latest regime per symbol"
           headers={["sym", "as of", "spot", "net GEX", "net GEX (vol)", "zero gamma", "call wall", "put wall"]}
+          numFrom={1}
           loading={isLoading}
           isError={isError}
           rowCount={data?.latest.length ?? 0}
@@ -285,6 +286,7 @@ export function GexPage() {
         <DataCard
           title="Today's regime snapshots"
           headers={["time", "sym", "spot", "net GEX", "zero gamma", "call wall", "put wall"]}
+          numFrom={1}
           loading={isLoading}
           isError={isError}
           rowCount={data?.recent.length ?? 0}

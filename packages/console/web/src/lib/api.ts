@@ -54,10 +54,13 @@ export function useOverview() {
   });
 }
 
-export function useMeic(mode: TradingMode) {
+export function useMeic(mode: TradingMode, symbol: string | null = null, profile: string | null = null) {
+  const params = new URLSearchParams({ mode });
+  if (symbol !== null) params.set("symbol", symbol);
+  if (profile !== null) params.set("profile", profile);
   return useQuery<MeicPayload>({
-    queryKey: ["meic", mode],
-    queryFn: () => getJson<MeicPayload>(`/api/meic?mode=${mode}`),
+    queryKey: ["meic", mode, symbol, profile],
+    queryFn: () => getJson<MeicPayload>(`/api/meic?${params.toString()}`),
     refetchInterval: 15_000,
   });
 }
