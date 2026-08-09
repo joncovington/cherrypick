@@ -7,6 +7,7 @@ import { EarningsPage } from "./pages/Earnings/EarningsPage";
 import { GexPage } from "./pages/Gex/GexPage";
 import { WatchlistPage } from "./pages/Scout/WatchlistPage";
 import { SymbolPage } from "./pages/Scout/SymbolPage";
+import { BuilderPage } from "./pages/Scout/BuilderPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="gex" element={<GexPage />} />
         <Route path="scout" element={<WatchlistPage />} />
         <Route path="scout/symbol/:symbol" element={<SymbolPage />} />
+        <Route path="scout/builder" element={<BuilderPage />} />
         <Route path="scout/*" element={<PlaceholderPage title="Scout" />} />
       </Route>
     </Routes>

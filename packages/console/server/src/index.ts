@@ -12,6 +12,7 @@ import { MarketDataService } from "./market/marketData.js";
 import { registerWsHub } from "./ws/hub.js";
 import { registerSecurity } from "./security.js";
 import { registerScoutRoutes } from "./routes/scout.js";
+import { registerPayoffRoutes } from "./routes/payoff.js";
 
 const config = loadConfig();
 const app = Fastify({ logger: { level: "info" } });
@@ -19,6 +20,7 @@ const market = new MarketDataService(config);
 
 registerSecurity(app);
 registerScoutRoutes(app, config);
+registerPayoffRoutes(app);
 await app.register(fastifyWebsocket);
 registerWsHub(app, market);
 registerStatusRoutes(app, config, market);

@@ -6,7 +6,8 @@ const links = [
   { to: "/flies", label: "Flies" },
   { to: "/earnings", label: "Earnings" },
   { to: "/gex", label: "GEX" },
-  { to: "/scout", label: "Scout" },
+  { to: "/scout", label: "Watchlist", end: true },
+  { to: "/scout/builder", label: "Builder" },
 ];
 
 export function Nav() {

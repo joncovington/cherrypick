@@ -390,6 +390,57 @@ h2 {
   min-width: 0;
 }
 
+.panel-head-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.lbl {
+  font-size: 12px;
+}
+
+.num-input {
+  width: 6rem;
+  text-transform: none;
+}
+
+.stat-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.7rem;
+}
+
+select.text-input {
+  text-transform: none;
+}
+
+.chain-table th,
+.chain-table td {
+  text-align: right;
+}
+
+.chain-strike {
+  text-align: center !important;
+  color: var(--text);
+  font-weight: 600;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.chain-click {
+  cursor: pointer;
+}
+
+.chain-click:hover {
+  background: rgba(210, 63, 87, 0.12);
+}
+
+.chain-atm td {
+  background: var(--row-hover);
+}
+
 /* Skeletons: cards render at final size with ghost content — no spinners, no hidden cards. */
 .skeleton {
   display: inline-block;
