@@ -80,6 +80,26 @@ export function positionPnl(p: FlyPosition, s: number): number {
   return cash * CONTRACT_MULTIPLIER * p.quantity - fees;
 }
 
+/** Worst-case ITM settlement events per kind, at each kind own worst price. */
+const WORST_CASE_ITM_LEGS: Record<string, number> = { fly: 3, short_vertical: 2, long_vertical: 1, iron_fly: 2, bwb: 3 };
+
+/**
+ * Port of fly.position_floor: this position worst-case dollar outcome GOING
+ * FORWARD, net of recorded fees AND the assignment fee it would owe at that
+ * worst price. A fly bottoms at 0 payoff (a genuine guarantee); a short
+ * vertical bottoms at -W, full defined risk, and calling that risk-free is
+ * the lie the module exists to avoid.
+ */
+export function positionFloor(p: FlyPosition): number {
+  let worstPayoff: number;
+  if (p.kind === "fly" || p.kind === "long_vertical") worstPayoff = 0;
+  else if (p.kind === "short_vertical" || p.kind === "iron_fly") worstPayoff = -p.wingWidth;
+  else if (p.kind === "bwb") worstPayoff = -((p.farWidth ?? p.wingWidth) - p.wingWidth);
+  else return 0;
+  const reserve = ASSIGNMENT_FEE_PER_EVENT * (WORST_CASE_ITM_LEGS[p.kind] ?? 0);
+  return (p.net + worstPayoff) * CONTRACT_MULTIPLIER * p.quantity - p.fees - reserve;
+}
+
 export function bookPnl(positions: FlyPosition[], s: number): number {
   return positions.reduce((sum, p) => sum + positionPnl(p, s), 0);
 }

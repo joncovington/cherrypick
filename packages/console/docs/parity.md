@@ -1,6 +1,6 @@
 # Dashboard parity checklist
 
-Card-by-card status of the console against the surfaces it replaces (re-audited 2026-08-09 evening).
+Card-by-card status of the console against the surfaces it replaces (re-audited after the completion pass, 2026-08-09).
 "Done" means the same reads are served, not necessarily pixel-identical.
 
 ## Suite dashboard (:8787)
@@ -10,39 +10,39 @@ Card-by-card status of the console against the surfaces it replaces (re-audited 
 | Header status pill / watchdog age / session / findings | done (Overview); active-alerts callout (WARN/CRITICAL filter) and notify-channels line missing |
 | Suite stats strip (net, trades, win %, avg) | done |
 | Suite equity — cumulative net P&L + module lines | done; missing: 2x-slippage restatement, best/worst-day metrics, VIX right-axis overlay, data-epoch marker |
-| Champions & challengers (calibrate) | **missing** — needs a calibrate port (readings, qualification bars, recommendation) |
-| System: scheduled tasks / modules installed / config summary / doctor live checks | **missing** |
+| Champions & challengers (calibrate) | done — core.metrics + profiles qualification ported; per-check progress bars |
+| System: modules, services, config summary, halt flag | done (live doctor checks and OS task registry not ported — they need the orchestrator's own subprocess) |
 | Live ops: halt flag, per-module live gates, reconcile panel | **missing** — broker-touching; port deliberately |
-| End-of-day card + md report links/rendering | **missing** |
-| Recent logs (merged tail) | done; level-filter buttons and the red-bordered live-logs sub-block missing |
+| End-of-day card + md report links/rendering | done (in-page markdown rendering, allowlisted files) |
+| Recent logs (merged tail, level filters) | done; live-logs sub-block still missing |
 
 ## MEIC dashboard (:5050/:5051)
 
 | Card | Status |
 |---|---|
-| Sidebar status pill (loop freshness LIVE/IDLE) + meta (last loop, IV rank, underlying) | **missing** |
-| Symbol + profile selectors (page-wide scope) | **missing** — console has mode only |
+| Loop status pill (LIVE/IDLE) + IV rank / underlying chips | done |
+| Symbol + profile selectors (page-wide scope) | done — threaded through every MEIC read |
 | Period stats grid | done |
 | Today's trades / trade table | partial — per-leg put/call status badges, stop-adjustment columns, AI reasoning missing |
 | NLV over time | done |
 | Daily P&L calendar | done |
 | Signal breakdowns (delta band, wing, symbol, weekday) | done |
-| Win rate by session / Avg P&L by IV-rank band | **missing** |
+| Win rate by session / Avg P&L by IV-rank band | done |
 | Exit reasons / fee drag | done |
-| Regime coverage | **missing** |
-| Trade log filters (date range, outcome, reason, search) | **missing** — 50 recent rows only |
-| Performance view: profile comparison, arm scorecard, stop policies, risk-adjusted metrics, equity + underwater charts, study arms, six per-period charts + table | **missing** — the largest remaining block |
+| Regime coverage (with degenerate flags) | done |
+| Trade log filters (outcome, exit reason, search) | done over 300 rows; explicit date-range inputs still missing |
+| Performance view: profile comparison, risk metrics, equity + underwater, study arms, per-period charts | done. **Missing: arm scorecard (breakeven identity) and stop-policy counterfactuals** |
 
 ## Flies dashboard (:5052) — at parity+
 
 | Card | Status |
 |---|---|
-| Today tiles | done except the max-possible-loss tile |
+| Today tiles | done |
 | Profit forest (fills, floors, settlement marker, x/y controls) | done |
 | Session timeline (entry-window→close axis, gaps named, replayed book) | done |
 | Decision journal (Gantt + table) | done |
 | Positions / book floors | done (reference columns + pills) |
-| Arm divergence | **missing** (last reference card) |
+| Arm divergence | done (>80% agreement flagged) |
 | History: by arm/mode/window, fee drag, calendar (click→replay), trade log + filters | done |
 | Performance: tiles, P&L bars, completion + why-misses, trend, live-vs-paper | done (trend and live-vs-paper are console-only additions) |
 | Symbol filter (page-wide) | **missing** — arm/date only; live-quote spot assumes XSP |
@@ -58,13 +58,13 @@ console-only addition.
 
 | Card | Status |
 |---|---|
-| KPI row | done except Capital Basis |
-| Equity panels (cumulative / rolling 4w / rolling 1w / per-week) | partial — per-week bars only; no cumulative or rolling equity lines |
-| Open positions | done except the totals row |
-| Cross-strategy comparison | done except sample-progress bars (n/target with significance coloring) |
-| Regime coverage heat + rejection histogram | **missing** |
-| Per-strategy detail (equity+drawdown chart, PF pass/fail, Sharpe, max DD, IV crush) | **missing** |
-| Footer caveats block | **missing** |
+| KPI row | done (capital at risk included) |
+| Equity panels (cumulative / rolling 4w / rolling 1w / per-week) | done |
+| Open positions | done (totals row included) |
+| Cross-strategy comparison + sample-progress bars | done |
+| Regime coverage heat + rejection histogram | done |
+| Per-strategy detail (equity+drawdown, PF pass/fail, Sharpe, max DD, IV crush) | done |
+| Footer caveats block | done |
 
 ## Scout (:5057)
 

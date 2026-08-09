@@ -10,6 +10,7 @@ import { ForestCard } from "./ForestCard";
 import { TimelineCard } from "./TimelineCard";
 import { HistoryTab } from "./HistoryTab";
 import { JournalCard } from "./JournalCard";
+import { DivergenceCard } from "./DivergenceCard";
 import { PerformanceTab } from "./PerformanceTab";
 
 interface FliesAnalytics {
@@ -21,6 +22,7 @@ interface FliesAnalytics {
     riskFree: number;
     completionPct: number | null;
     fees: number;
+    maxPossibleLoss: number;
   };
   byArm: Array<{ arm: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
   feeDrag: Array<{ arm: string; gross: number; fees: number; net: number; dragPct: number | null }>;
@@ -138,6 +140,12 @@ export function FliesPage() {
               <span className="stat-label">fees</span>
               <span className="stat-value pnl-neg">{a !== undefined ? fmtMoney(a.today.fees) : "—"}</span>
             </div>
+            <div className="stat-tile" title="every open position own worst case, net of fees and the worst-case assignment fee — zero means nothing open can still lose">
+              <span className="stat-label">max possible loss</span>
+              <span className={`stat-value ${(a?.today.maxPossibleLoss ?? 0) < 0 ? "pnl-neg" : "muted"}`}>
+                {a !== undefined ? fmtMoney(a.today.maxPossibleLoss) : "—"}
+              </span>
+            </div>
           </div>
         </section>
 
@@ -146,6 +154,8 @@ export function FliesPage() {
         <TimelineCard mode={mode} filter={filter} arm={arm} />
 
         <JournalCard mode={mode} filter={filter} />
+
+        <DivergenceCard mode={mode} filter={filter} />
 
         <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(20rem, 1fr))" }}>
           <DataCard

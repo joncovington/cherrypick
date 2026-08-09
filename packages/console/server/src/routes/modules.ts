@@ -19,6 +19,7 @@ import {
   readFliesHistory,
   readFliesPerformance,
   readFliesJournal,
+  readArmDivergence,
   type FliesFilter,
 } from "../readers/flies.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
@@ -72,6 +73,9 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   );
   app.get("/api/flies/meta", async (req) => readFliesMeta(config, parseMode(req.query)));
   app.get("/api/flies/history", async (req) => readFliesHistory(config, parseMode(req.query)));
+  app.get("/api/flies/divergence", async (req) =>
+    readArmDivergence(config, parseMode(req.query), parseFliesFilter(req.query).date),
+  );
   app.get("/api/flies/journal", async (req) => {
     const f = parseFliesFilter(req.query);
     return readFliesJournal(config, parseMode(req.query), f.date, f.arm);
