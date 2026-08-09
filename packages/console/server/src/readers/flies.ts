@@ -88,6 +88,10 @@ export interface FliesForest {
   tradeDate: string | null;
   /** One curve per arm active on the day. */
   arms: Array<{ arm: string; curve: PayoffCurve }>;
+  /** The day's settlement print when the session has settled; null intraday. */
+  settlement: { price: number; source: string | null } | null;
+  /** Last recorded intraday tick for the day, for the settled-vs-close note. */
+  lastTickSpot: number | null;
 }
 
 /** Distinct arms and trade dates, for the page's filter selects. */
@@ -115,10 +119,33 @@ export function readFliesForest(
 ): FliesForest {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
-  return withReadOnlyDb<FliesForest>(dbPath, { mode, tradeDate: null, arms: [] }, (db) => {
+  const empty: FliesForest = { mode, tradeDate: null, arms: [], settlement: null, lastTickSpot: null };
+  return withReadOnlyDb<FliesForest>(dbPath, empty, (db) => {
     const tradeDate =
       day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_positions").get()?.d ?? null;
-    if (tradeDate === null) return { mode, tradeDate: null, arms: [] };
+    if (tradeDate === null) return empty;
+
+    const settleRow = db
+      .prepare<[string], Record<string, unknown>>(
+        `SELECT settlement_price, settlement_source FROM fly_books
+          WHERE trade_date = ? AND settlement_price IS NOT NULL LIMIT 1`,
+      )
+      .get(tradeDate);
+    const settlement =
+      typeof settleRow?.["settlement_price"] === "number"
+        ? {
+            price: settleRow["settlement_price"],
+            source:
+              typeof settleRow["settlement_source"] === "string" && settleRow["settlement_source"] !== ""
+                ? settleRow["settlement_source"]
+                : null,
+          }
+        : null;
+    const lastTick = db
+      .prepare<[string], { spot: number | null }>(
+        "SELECT underlying_price AS spot FROM fly_iterations WHERE trade_date = ? AND underlying_price IS NOT NULL ORDER BY iteration_ts DESC LIMIT 1",
+      )
+      .get(tradeDate);
     const armClause = arm !== null ? " AND arm = ?" : "";
     const params: string[] = arm !== null ? [tradeDate, arm] : [tradeDate];
     const rows = db
@@ -153,6 +180,8 @@ export function readFliesForest(
       arms: [...byArm.entries()]
         .sort((a, b) => a[0].localeCompare(b[0]))
         .map(([arm, positions]) => ({ arm, curve: payoffCurve(positions) })),
+      settlement,
+      lastTickSpot: lastTick?.spot ?? null,
     };
   });
 }
