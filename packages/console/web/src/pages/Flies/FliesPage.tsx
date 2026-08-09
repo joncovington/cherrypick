@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useFlies } from "../../lib/api";
+import { useFlies, useFliesMeta, fliesQuery, type FliesFilter } from "../../lib/api";
 import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
@@ -21,11 +22,11 @@ interface FliesAnalytics {
   feeDrag: Array<{ arm: string; gross: number; fees: number; net: number; dragPct: number | null }>;
 }
 
-function useFliesAnalytics(mode: TradingMode) {
+function useFliesAnalytics(mode: TradingMode, filter: FliesFilter) {
   return useQuery<FliesAnalytics>({
-    queryKey: ["flies-analytics", mode],
+    queryKey: ["flies-analytics", mode, filter],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/analytics?mode=${mode}`);
+      const res = await fetch(`/api/flies/analytics?${fliesQuery(mode, filter)}`);
       if (!res.ok) throw new Error(`flies analytics: HTTP ${res.status}`);
       return (await res.json()) as FliesAnalytics;
     },
@@ -35,8 +36,12 @@ function useFliesAnalytics(mode: TradingMode) {
 
 export function FliesPage() {
   const [mode, setMode] = useMode();
-  const { data, isLoading, isError } = useFlies(mode);
-  const analytics = useFliesAnalytics(mode);
+  const [arm, setArm] = useState<string | null>(null);
+  const [date, setDate] = useState<string | null>(null);
+  const filter: FliesFilter = { arm, date };
+  const meta = useFliesMeta(mode);
+  const { data, isLoading, isError } = useFlies(mode, filter);
+  const analytics = useFliesAnalytics(mode, filter);
   const a = analytics.data;
 
   return (
@@ -44,6 +49,32 @@ export function FliesPage() {
       <div className="page-title-row">
         <h1>Flies</h1>
         <PaperLiveBadge mode={mode} />
+        <select
+          className="text-input"
+          value={arm ?? ""}
+          onChange={(e) => setArm(e.target.value === "" ? null : e.target.value)}
+          aria-label="arm filter"
+        >
+          <option value="">all arms</option>
+          {meta.data?.arms.map((armName) => (
+            <option key={armName} value={armName}>
+              {armName}
+            </option>
+          ))}
+        </select>
+        <select
+          className="text-input"
+          value={date ?? ""}
+          onChange={(e) => setDate(e.target.value === "" ? null : e.target.value)}
+          aria-label="date filter"
+        >
+          <option value="">latest day</option>
+          {meta.data?.dates.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
         <ModeToggle mode={mode} onChange={setMode} />
       </div>
 
@@ -80,7 +111,7 @@ export function FliesPage() {
           </div>
         </section>
 
-        <ForestCard mode={mode} />
+        <ForestCard mode={mode} filter={filter} />
 
         <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(20rem, 1fr))" }}>
           <DataCard
