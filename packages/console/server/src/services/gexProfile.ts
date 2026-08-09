@@ -10,6 +10,19 @@ import type { ConsoleConfig } from "../config.js";
 import path from "node:path";
 import { computeGexProfile, volumeTotals, type ChainEntryInput } from "../analytics/gex.js";
 
+/** Epoch seconds of an ET wall-clock time on a date, DST-aware via Intl. */
+function etEpoch(date: string, time: string): number {
+  const probe = new Date(`${date}T12:00:00Z`);
+  const offsetPart = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    timeZoneName: "longOffset",
+  })
+    .formatToParts(probe)
+    .find((p) => p.type === "timeZoneName")?.value; // e.g. "GMT-04:00"
+  const offset = offsetPart?.replace("GMT", "") ?? "-05:00";
+  return Date.parse(`${date}T${time}:00${offset}`) / 1000;
+}
+
 /** Today's intraday spot trail from the gex module's own history DB (read-only). */
 function spotHistory(config: ConsoleConfig, symbol: string): Array<{ ts: number; spot: number }> {
   const p = path.join(config.paths.gexDir, "gex_history.db");
@@ -117,6 +130,18 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
 
       const profile = computeGexProfile(entries, greeks, oi, volume, spot);
       if (!profile.ok) continue;
+      let trail = spotHistory(config, symbol);
+      let spotSession: { date: string; openTs: number; closeTs: number } | null = null;
+      if (trail.length > 0) {
+        // The recorder also logs overnight/pre-market ticks; the trail shows
+        // the regular session only, 9:30–16:00 ET on the recorded date.
+        const date = new Date(trail[trail.length - 1]!.ts * 1000).toLocaleDateString("en-CA", {
+          timeZone: "America/New_York",
+        });
+        spotSession = { date, openTs: etEpoch(date, "09:30"), closeTs: etEpoch(date, "16:00") };
+        const { openTs, closeTs } = spotSession;
+        trail = trail.filter((t) => t.ts >= openTs && t.ts <= closeTs);
+      }
       return {
         ok: true,
         symbol,
@@ -125,7 +150,8 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
         series: profile.series,
         totals: profile.totals,
         volumeTotals: volumeTotals(profile.series),
-        spotHistory: spotHistory(config, symbol),
+        spotHistory: trail,
+        spotSession,
       };
     }
     return { ok: false, error: `no expiration with cached greeks for ${symbol}` };
