@@ -175,3 +175,70 @@ def test_log_scan_success():
         )
     )
     assert result["ok"] is True
+
+
+def test_save_entry_review_requires_fields():
+    result = db.cmd_save_entry_review(_ns(data=json.dumps({"symbol": "AAPL"})))
+    assert result["ok"] is False
+
+
+def test_save_entry_review_and_get_roundtrip():
+    spec = {
+        "scan_date": "2026-08-07",
+        "symbol": "AAPL",
+        "timing": "After market close",
+        "strategy": "iron_fly",
+        "price": 150.0,
+        "winrate": 0.6,
+        "winrate_sample": 8,
+        "iv_rv_ratio": 1.4,
+        "iv_rv_source": "tastytrade",
+        "avg_actual_move_pct": 0.04,
+        "move_dispersion_pct": 0.01,
+        "max_actual_move_pct": 0.06,
+        "implied_vs_avg_actual": 1.3,
+        "move_tail_veto": False,
+        "iv_rank": 0.7,
+        "iv_percentile": 0.65,
+        "net_combo_spread_pct": 0.03,
+        "composite_score": 0.42,
+        "best_tier": "accepted",
+        "selected": True,
+        "reason": "opened iron_fly",
+        "criteria_json": {"price": 150.0, "winrate": 0.6},
+    }
+    saved = db.cmd_save_entry_review(_ns(data=json.dumps(spec)))
+    assert saved["ok"] is True
+
+    fetched = db.cmd_get_entry_reviews(_ns(date=None, scan_date="2026-08-07"))
+    assert fetched["ok"] is True
+    assert fetched["scan_date"] == "2026-08-07"
+    rows = fetched["reviews"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["symbol"] == "AAPL"
+    assert row["strategy"] == "iron_fly"
+    assert row["iv_rv_source"] == "tastytrade"
+    assert row["move_tail_veto"] == 0
+    assert row["selected"] == 1
+    assert json.loads(row["criteria_json"]) == {"price": 150.0, "winrate": 0.6}
+
+
+def test_save_entry_review_upserts_on_scan_date_symbol_profile():
+    base = {"scan_date": "2026-08-07", "symbol": "AAPL", "selected": False, "reason": "rejected"}
+    db.cmd_save_entry_review(_ns(data=json.dumps(base)))
+    db.cmd_save_entry_review(_ns(data=json.dumps({**base, "selected": True, "reason": "opened iron_fly"})))
+
+    fetched = db.cmd_get_entry_reviews(_ns(date=None, scan_date="2026-08-07"))
+    assert len(fetched["reviews"]) == 1
+    assert fetched["reviews"][0]["selected"] == 1
+    assert fetched["reviews"][0]["reason"] == "opened iron_fly"
+
+
+def test_get_entry_reviews_defaults_to_most_recent_scan_on_or_before_date():
+    db.cmd_save_entry_review(_ns(data=json.dumps({"scan_date": "2026-08-05", "symbol": "MSFT"})))
+    db.cmd_save_entry_review(_ns(data=json.dumps({"scan_date": "2026-08-07", "symbol": "AAPL"})))
+
+    fetched = db.cmd_get_entry_reviews(_ns(date="2026-08-07", scan_date=None))
+    assert fetched["scan_date"] == "2026-08-07"
+    assert [r["symbol"] for r in fetched["reviews"]] == ["AAPL"]

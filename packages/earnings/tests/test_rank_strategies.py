@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 from cherrypick.earnings import rank_strategies
@@ -30,7 +31,9 @@ def test_evaluate_symbol_returns_one_result_per_strategy(monkeypatch):
         rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": True, "iv_rv_ratio": 1.5}
     )
     monkeypatch.setattr(
-        rank_strategies.scanner, "compute_winrate", lambda *a, **k: {"winrate": 0.6, "sample_size": 8}
+        rank_strategies.scanner,
+        "compute_winrate",
+        lambda *a, **k: {"winrate": 0.6, "sample_size": 8, "quarters": [], "realized_move_quarters": []},
     )
 
     results = rank_strategies.evaluate_symbol("AAPL", date(2026, 7, 7), "After market close", {})
@@ -47,7 +50,9 @@ def test_evaluate_symbol_records_broker_error_when_fetch_fails(monkeypatch):
     monkeypatch.setattr(rank_strategies.scanner, "fetch_avg_volume", lambda *a, **k: None)
     monkeypatch.setattr(rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": False})
     monkeypatch.setattr(
-        rank_strategies.scanner, "compute_winrate", lambda *a, **k: {"winrate": None, "sample_size": 0}
+        rank_strategies.scanner,
+        "compute_winrate",
+        lambda *a, **k: {"winrate": None, "sample_size": 0, "quarters": [], "realized_move_quarters": []},
     )
 
     results = rank_strategies.evaluate_symbol("AAPL", date(2026, 7, 7), "After market close", {})
@@ -80,12 +85,62 @@ def test_reverify_symbol_succeeds_when_still_accepted(monkeypatch):
         rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": True, "iv_rv_ratio": 1.5}
     )
     monkeypatch.setattr(
-        rank_strategies.scanner, "compute_winrate", lambda *a, **k: {"winrate": 0.6, "sample_size": 8}
+        rank_strategies.scanner,
+        "compute_winrate",
+        lambda *a, **k: {"winrate": 0.6, "sample_size": 8, "quarters": [], "realized_move_quarters": []},
     )
 
     result = rank_strategies.reverify_symbol("AAPL", "strat_a", date(2026, 7, 7), "After market close", {})
     assert result["ok"] is True
     assert "criteria" in result
+
+
+def test_save_entry_review_calls_call_db_with_richest_criteria(monkeypatch):
+    calls = []
+    monkeypatch.setattr(rank_strategies, "_call_db", lambda args, paper_mode: calls.append((args, paper_mode)))
+
+    symbol_result = {
+        "symbol": "AAPL",
+        "earnings_timing": "After market close",
+        "outcome": "selected",
+        "reason": "selected iron_fly (score 0.5000) within this symbol; ranked 1/1",
+        "strategies": [
+            {"name": "strat_a", "criteria": {"price": 150.0}, "composite_score": 0.2},
+            {
+                "name": "strat_b",
+                "criteria": {"price": 150.0, "winrate": 0.6, "iv_rv_ratio": 1.4},
+                "composite_score": 0.5,
+            },
+        ],
+    }
+    rank_strategies._save_entry_review("2026-08-07", symbol_result, paper_mode=True)
+
+    assert len(calls) == 1
+    args, paper_mode = calls[0]
+    assert args[0] == "save_entry_review"
+    assert paper_mode is True
+    spec = json.loads(args[2])
+    assert spec["scan_date"] == "2026-08-07"
+    assert spec["symbol"] == "AAPL"
+    assert spec["strategy"] == "strat_b"  # richest criteria dict (3 keys) wins over strat_a's (1 key)
+    assert spec["winrate"] == 0.6
+    assert spec["selected"] is True
+    assert spec["composite_score"] == 0.5
+
+
+def test_save_entry_review_never_raises_on_call_db_failure(monkeypatch):
+    def boom(args, paper_mode):
+        raise RuntimeError("db subprocess failed")
+
+    monkeypatch.setattr(rank_strategies, "_call_db", boom)
+    symbol_result = {
+        "symbol": "AAPL",
+        "earnings_timing": "After market close",
+        "outcome": "rejected_no_viable_strategy",
+        "reason": "no edge",
+        "strategies": [],
+    }
+    rank_strategies._save_entry_review("2026-08-07", symbol_result, paper_mode=True)  # must not raise
 
 
 def test_reverify_symbol_fails_when_rejected(monkeypatch):
@@ -96,7 +151,9 @@ def test_reverify_symbol_fails_when_rejected(monkeypatch):
         rank_strategies.scanner, "fetch_iv_rv_ratio", lambda *a, **k: {"ok": True, "iv_rv_ratio": 1.5}
     )
     monkeypatch.setattr(
-        rank_strategies.scanner, "compute_winrate", lambda *a, **k: {"winrate": 0.6, "sample_size": 8}
+        rank_strategies.scanner,
+        "compute_winrate",
+        lambda *a, **k: {"winrate": 0.6, "sample_size": 8, "quarters": [], "realized_move_quarters": []},
     )
 
     result = rank_strategies.reverify_symbol("AAPL", "strat_a", date(2026, 7, 7), "After market close", {})

@@ -444,6 +444,9 @@ def registry_snapshot(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     ff = cfgmod.follow_feed_settings(cfg)
     if ff["enabled"]:
         out[ff["task_name"]] = query_verbose(ff["task_name"])
+    sw = cfgmod.symbol_watch_settings(cfg)
+    if sw["enabled"]:
+        out[sw["task_name"]] = query_verbose(sw["task_name"])
     return out
 
 

@@ -31,7 +31,7 @@ Each criterion lists both its strict `min_*` and looser `near_miss_min_*` thresh
 
 8. **30-day average volume** — strict `min_avg_volume` 1,500,000 shares; looser `near_miss_min_avg_volume` 1,000,000.
 9. **Winrate** (historical: % of past earnings where the option-implied move — ATM straddle mid on the nearest expiration on/after the earnings reaction — exceeded the actual realized move, target 8 quarters sample): strict `min_winrate` 50%; looser `near_miss_min_winrate` 40%. **Implemented** — `scanner.compute_winrate()` backtests against DoltHub's `post-no-preference/options.option_chain` (historical chains) and `post-no-preference/stocks.ohlcv` (realized moves). Verified live 2026-07-06: AAPL scored 7/7 (100%) over the available sample, but note the **real sample-size caveat** found during testing — `option_chain`'s historical depth only reaches back to roughly late 2024, so a "last 8 quarters" request against an older or less-covered symbol may return a materially smaller sample (5 of the requested 8 quarters were skipped for AAPL with `no_matching_option_chain_data`, all skips logged, not silently dropped). **Always check `sample_size` before trusting a winrate** — a 100% winrate on a 2-quarter sample is not the same claim as on 8.
-10. **IV/RV ratio** — strict `min_iv_rv_ratio` 1.25; looser `near_miss_min_iv_rv_ratio` 1.00. **Implemented** — `scanner.fetch_iv_rv_ratio()` queries `post-no-preference/options.volatility_history`'s `iv_current`/`hv_current` (falling back up to 5 trading days back if the most recent row has a null `iv_current`, which happens even for liquid large-caps). Verified live 2026-07-06 against a real dual-database `dolt sql-server` (AAPL: IV/RV ≈ 0.84 as of 2026-07-02 — below the 1.25 strict threshold, and below the 1.00 near-miss threshold too, so rejected at either `symbol_screen` level for that name on that day).
+10. **IV/RV ratio** — strict `min_iv_rv_ratio` 1.25; looser `near_miss_min_iv_rv_ratio` 1.00. **Implemented, tastytrade-first with a Dolt fallback**: the cheap universe pre-gate (`rank_strategies._dolt_only_hard_fails`, runs before any broker call) always uses `scanner.fetch_iv_rv_ratio()`'s Dolt `post-no-preference/options.volatility_history` `iv_current`/`hv_current` (falling back up to 5 trading days back if the most recent row has a null `iv_current`) — it must stay Dolt-only and broker-free by construction. Once a symbol clears that pre-gate and its chain is fetched, the *final* ratio used for tiering/scoring/ranking prefers the broker's own `implied_volatility_30_day`/`historical_volatility_30_day` (via `tt.py get_market_metrics`, already fetched for market cap/OI — zero extra round trip), falling back to the Dolt value only when the broker pair is unavailable. `criteria["iv_rv_source"]` ("tastytrade" or "dolt") is recorded on every `entry_reviews` row so which source decided a given day's ratio is always visible — this is what keeps a stale/unreachable Dolt `volatility_history` from silently degrading the *final* signal even though the pre-gate itself still depends on Dolt being reachable. Verified live 2026-07-06 against a real dual-database `dolt sql-server` (AAPL: IV/RV ≈ 0.84 as of 2026-07-02 — below the 1.25 strict threshold, and below the 1.00 near-miss threshold too, so rejected at either `symbol_screen` level for that name on that day).
 11. **Market cap** (strict `min_market_cap` $2B / looser `near_miss_min_market_cap` $1B) and **combined front-month option volume** (strict `min_combined_option_volume` 500 / looser `near_miss_min_combined_option_volume` 200) — both **shared engine logic** (`scanner.fetch_liquidity_criteria()`/`apply_liquidity_gates()`), sourced from the tastytrade SDK directly (REST `get_market_metrics` for market cap; DXLink `Trade.day_volume` for option volume via `tt.py get_option_chain --include_volume`), not DoltHub. Reasoned starting points, not backtested for any strategy yet.
 
 ## The accept/reject decision
@@ -44,6 +44,39 @@ Screening is a single binary bar, not a graded ladder: a symbol is either **acce
 - A low-`sample_size` winrate (see #9's caveat) is a further reason to treat even an accepted result with more skepticism than the bar alone conveys.
 - **A real sign-convention bug was caught and fixed during this live testing**: the term-structure calculation (now `scanner.compute_expected_move_and_term_structure()`, originally iron_fly.py's own `compute_term_structure`) originally computed `(front_iv - back_iv) / back_iv`, which is *positive* when the front month is IV-richer than the back month — backwards from this doc's own `≤ -0.004` threshold (negative-is-good) and from the function's own docstring. A real earnings candidate (EPAC, front IV ~64% richer than back) was being rejected as `term_structure_insufficient` — exactly the opposite of the intended behavior. Fixed to `(back_iv - front_iv) / back_iv`, re-verified live: EPAC's term structure flipped from `+0.64` (wrongly rejected) to `-0.64` (correctly passes).
 - A second bug caught in the same pass: front-month expiration was originally picked as "nearest expiration to today," ignoring the earnings date entirely — harmless for the four low-liquidity small-caps tested (they only had monthly expirations, so the nearest-to-today and nearest-to-reaction-date happened to coincide), but confirmed live against AAPL (which has weeklies including same-day expirations) that this would otherwise grab an irrelevant 0DTE chain. Fixed to select the nearest expiration on/after the earnings *reaction* date (next trading day for "After market close," the report day itself for "Before market open").
+
+## Recorded-only metrics (not gates, unless noted)
+
+Every screened symbol — accepted or rejected — has its full metric vector persisted to
+`entry_reviews` (`db.py`/`db_paper.py`, see each module's own docstring) via
+`scanner.build_entry_review_spec()`, whether the scan ran through `rank_strategies.py` (the
+agent-driven live/paper path) or `strategy_test_runner.py` (the automated forced-sampling paper
+harness). Four of these metrics are new and, apart from `move_tail`, are **record-only** —
+visible in `entry_reviews`/scout's earnings page for calibration, but not yet gating acceptance:
+
+- **Implied vs. historical move** — `criteria["expected_move_pct"]` (this scan's option-implied
+  move) divided by `avg_actual_move_pct` (the mean of the same `winrate_lookback_quarters`
+  quarters' *actual* post-earnings moves, from `scanner.compute_historical_move_stats()` — reuses
+  `compute_winrate()`'s already-fetched quarters, no extra Dolt walk). Recorded as
+  `implied_vs_avg_actual`; a value well above 1.0 says the market is pricing a bigger move than
+  this name has historically delivered, the core edge premium-selling strategies are targeting.
+  `move_dispersion_pct` (standard deviation of the same moves) and `max_actual_move_pct` ride
+  along — a name that averages a tame move but once printed a blowout is a different risk profile
+  than one that is consistently tight, information the mean alone hides.
+- **Move-history tail flag** — `move_tail_veto` (true if any of the lookback quarters' actual move
+  was ≥ `move_tail_multiple` (default 2.0) times the mean). Unlike the three metrics above, this
+  one **can** gate: `symbol_screen.move_tail` is `"off"` (record-only, default) or `"veto"`
+  (rejects with reason `move_tail_veto`) — off by default until the recorded `entry_reviews` data
+  supports calibrating the multiple.
+- **Bid-ask spread quality** — `net_combo_spread_pct` (`scanner.compute_spread_quality()`,
+  `sum(ask-bid)/sum(mid)` across the front-month ATM call/put already fetched for
+  `bid_ask_spread_pct`) — the combined round-trip cost of trading both legs together, which
+  matters more than any single leg's spread (already a hard filter, #7c) once several legs must
+  all fill.
+- **IV rank / percentile** — `iv_rank`/`iv_percentile` from the same `get_market_metrics` call
+  used for market cap and the tastytrade IV/RV ratio above — a secondary richness signal (where
+  this name's current IV sits in its own 52-week range), lower-signal than the implied-vs-actual
+  comparison specifically around an earnings event, so not screened.
 
 ## Ranking and position selection (after screening, before entry)
 

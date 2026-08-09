@@ -14,10 +14,17 @@ Dolt-absent host degrades to metrics-only rather than failing the whole calendar
 When both sources name the same (symbol, date), the metrics row wins (it is strictly richer and
 fresher); the Dolt row is only added when metrics has nothing for that day.
 
-Expected move (`0.85 * front straddle`, `earnings.scanner.compute_expected_move_and_term_structure`'s
-heuristic) is fetched -- one narrow ATM chain snapshot, not `chain_service`'s full multi-expiration
-cache -- **only** for watchlist/metrics-sourced rows inside the requested window, since a broad Dolt
-row can number in the hundreds and would turn a calendar page load into a call storm.
+This module is deliberately broker-quote-free -- every field here (dates, timing, IV rank/
+percentile, market cap) comes from tastytrade's `metrics` reference dataset (cheap, batches
+across symbols for free) or the Dolt snapshot, never a per-symbol chain/quote round trip. Expected
+move / term structure / IV-RV ratio / winrate -- the genuinely broker-quote- and Dolt-history-
+heavy signals -- are computed by **packages/earnings**' own scheduled scan (real per-symbol chain
+fetches + Greeks-based term structure, the same machinery `scanner.py` already uses for entry
+screening, run on a recurring interval independent of this page) and merged onto matching rows by
+`earnings_metrics_service.get_upcoming`, which reads that scan's output table read-only -- same
+posture as the Screens section already reading `entry_reviews`. Measured cost of computing that
+per symbol live (~1s, dominated by the full option-chain fetch) is exactly why it doesn't belong
+on this module's request path across a ~85-symbol earnings watchlist.
 
 `config.calendar.liquid_only` (default True) pre-filters the combined rows to
 `liquidity_service.get_liquid_symbols`'s tastytrade-sourced "Liquid Symbols" watchlist membership
@@ -30,16 +37,41 @@ from __future__ import annotations
 import sqlite3
 import time
 from datetime import date, datetime, timedelta
+from datetime import time as _time
 from typing import Any
 
+from cherrypick.core import calendar as _core_calendar
+
 from . import earnings_watchlist_service, liquidity_service, metrics_service
-from .cache import peek, put
 from .session import BrokerSession
 
-_STRADDLE_BUCKET = "straddle"
 _DOLT_DATABASE = "earnings"
 _DOLT_CONNECT_TIMEOUT_SECONDS = 5
 _DOLT_QUERY_TIMEOUT_SECONDS = 10
+
+_MARKET_OPEN_ET = _time(9, 30)
+_MARKET_CLOSE_ET = _time(16, 0)
+
+
+def is_market_hours(now: float) -> bool:
+    """Regular trading hours (9:30-16:00 ET) on an NYSE trading day. Self-contained rather than
+    importing the orchestrator's own `timeutil.is_market_hours` -- this package's own CLAUDE.md
+    invariant ("additive-only outside packages/scout, don't reach into a sibling module") rules
+    that import out, so this duplicates the small time-of-day check while reusing
+    `cherrypick.core.calendar.is_trading_day` for the weekend/holiday side rather than
+    re-deriving the NYSE holiday calendar a second time. Best-effort: a timezone-database failure
+    (shouldn't happen -- `tzdata` is present in this repo's venv) degrades to "assume open" rather
+    than silently block a fetch that might well still succeed.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+
+        dt_et = datetime.fromtimestamp(now, tz=ZoneInfo("America/New_York"))
+    except Exception:
+        return True
+    if not _core_calendar.is_trading_day(dt_et.date()):
+        return False
+    return _MARKET_OPEN_ET <= dt_et.time() <= _MARKET_CLOSE_ET
 
 
 def _parse_date(value: Any) -> date | None:
@@ -69,7 +101,15 @@ def _metrics_rows(metrics: dict[str, dict], start: date, end: date) -> dict[tupl
             "consensus_eps": earnings.get("consensus_estimate"),
             "estimated": earnings.get("estimated"),
             "iv_rank": info.get("iv_rank"),
+            "iv_percentile": info.get("iv_percentile"),
             "liquidity_rating": info.get("liquidity_rating"),
+            "market_cap": info.get("market_cap"),
+            # Filled in downstream, not here -- expected_move/term_structure/iv_rv_ratio/winrate
+            # are earnings-package-computed (packages/earnings' own scheduled scan, richer than
+            # anything scout would compute itself), joined onto matching rows by
+            # earnings_metrics_service.get_upcoming. calendar_service stays broker-quote-free.
+            "expected_move_pct": None,
+            "expected_move_is_live": None,
             "source": "metrics",
             "stale": False,
         }
@@ -131,70 +171,15 @@ def _dolt_rows(raw_rows: list[dict], covered: set[tuple[str, date]]) -> dict[tup
             "consensus_eps": None,
             "estimated": None,
             "iv_rank": None,
+            "iv_percentile": None,
             "liquidity_rating": None,
+            "market_cap": None,
             "expected_move_pct": None,
+            "expected_move_is_live": None,
             "source": "dolt",
             "stale": True,
         }
     return rows
-
-
-async def _atm_straddle_mid(session: BrokerSession, symbol: str) -> tuple[float, float] | None:
-    """`(spot, expected_move_dollars)` from the nearest-expiration ATM call+put mid, or `None` if the
-    chain/quotes aren't available. Deliberately a single narrow fetch, not `chain_service`'s cache."""
-    from tastytrade import instruments as _instruments
-    from tastytrade import market_data as _market_data
-
-    chain = await session.call(_instruments.get_option_chain, symbol)
-    if not chain:
-        return None
-    front_expiration = min(chain)
-    options = chain[front_expiration]
-
-    equity_data = await session.call(_market_data.get_market_data_by_type, equities=[symbol])
-    if not equity_data or equity_data[0].mark is None:
-        return None
-    spot = float(equity_data[0].mark)
-
-    calls = [o for o in options if o.option_type.value.lower().startswith("c")]
-    puts = [o for o in options if o.option_type.value.lower().startswith("p")]
-    if not calls or not puts:
-        return None
-    atm_call = min(calls, key=lambda o: abs(float(o.strike_price) - spot))
-    atm_put = min(puts, key=lambda o: abs(float(o.strike_price) - spot))
-
-    quotes = await session.call(
-        _market_data.get_market_data_by_type, options=[atm_call.symbol, atm_put.symbol]
-    )
-    by_symbol = {q.symbol: q for q in quotes}
-    call_quote, put_quote = by_symbol.get(atm_call.symbol), by_symbol.get(atm_put.symbol)
-    if call_quote is None or put_quote is None or call_quote.mid is None or put_quote.mid is None:
-        return None
-    expected_move = 0.85 * float(call_quote.mid + put_quote.mid)
-    return spot, expected_move
-
-
-async def _expected_move_pct(
-    conn: sqlite3.Connection, session: BrokerSession, symbol: str, ttl: float, now: float
-) -> float | None:
-    """Cached `(spot, expected_move_dollars)` -> `expected_move_pct`, TTL-checked by hand rather than
-    through `cache.get_or_fetch` -- that primitive's `fetch_fn` is synchronous, and the straddle fetch
-    is an awaited broker call. `None` is itself a valid cached payload (symbol has no usable chain),
-    so a repeated miss doesn't retry the broker every request within the TTL."""
-    cached = peek(conn, _STRADDLE_BUCKET, symbol)
-    if cached is not None and (now - cached[1]) < ttl:
-        payload = cached[0]
-    else:
-        try:
-            result = await _atm_straddle_mid(session, symbol)
-        except Exception:
-            result = None
-        payload = list(result) if result is not None else None
-        put(conn, _STRADDLE_BUCKET, symbol, payload, now)
-    if not payload:
-        return None
-    spot, expected_move = payload
-    return (expected_move / spot) if spot else None
 
 
 async def get_calendar(
@@ -211,16 +196,12 @@ async def get_calendar(
     end = today + timedelta(days=max(1, days))
 
     metrics_ttl = cfg.get("refresh", {}).get("metrics_ttl_seconds", 900)
-    calendar_ttl = cfg.get("refresh", {}).get("calendar_ttl_seconds", 3600)
 
     # Broad coverage beyond the user's own watchlist prefers tastytrade's own "All Earnings" public
     # watchlist over Dolt where the two overlap -- fetched once (a cached watchlist membership
     # call, not a per-symbol one), then unioned into the SAME batched metrics call the user's own
     # watchlist already makes, so these symbols get real dates from live metrics instead of Dolt's
-    # third-party periodic snapshot. Deliberately NOT unioned into the expected-move loop below --
-    # that's a per-symbol chain+quote broker call each, and the whole reason this module bounds it
-    # to metrics-sourced rows is to avoid a "call storm" from a wide symbol set (see module
-    # docstring); up to 85 more names in the window would reintroduce exactly that risk.
+    # third-party periodic snapshot.
     use_earnings_watchlist = cfg.get("calendar", {}).get("use_tastytrade_earnings_watchlist", True)
     earnings_watchlist_symbols: set[str] = set()
     if use_earnings_watchlist:
@@ -231,14 +212,6 @@ async def get_calendar(
 
     metrics = await metrics_service.get_metrics(conn, session, metrics_symbols, metrics_ttl, now=now)
     metrics_rows = _metrics_rows(metrics, today, end)
-
-    own_watchlist = {s.strip().upper() for s in watchlist_symbols if s}
-    for (symbol, _report_date), row in metrics_rows.items():
-        row["expected_move_pct"] = (
-            await _expected_move_pct(conn, session, symbol, calendar_ttl, now)
-            if symbol in own_watchlist
-            else None
-        )
 
     raw_dolt = await _fetch_dolt_calendar(cfg, today, end)
     dolt_available = raw_dolt is not None
@@ -266,6 +239,7 @@ async def get_calendar(
         "as_of": now,
         "stale": not dolt_available,
         "dolt_available": dolt_available,
+        "market_hours": is_market_hours(now),
         "days": days,
         "liquid_only": liquid_only,
         "liquidity_filter_available": liquidity_filter_available,

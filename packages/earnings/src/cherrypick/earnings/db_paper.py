@@ -126,14 +126,29 @@ CREATE TABLE IF NOT EXISTS entry_reviews (
     scan_date      TEXT NOT NULL,
     symbol         TEXT NOT NULL,
     timing         TEXT,
+    strategy       TEXT,
     price          REAL,
     volume         REAL,
     winrate        REAL,
     winrate_sample INTEGER,
     iv_rv_ratio    REAL,
+    iv_rv_source   TEXT,
     term_structure REAL,
     market_cap     REAL,
     expected_move  REAL,
+    expected_move_pct       REAL,
+    combined_open_interest  REAL,
+    combined_option_volume  REAL,
+    bid_ask_spread_pct      REAL,
+    net_combo_spread_pct    REAL,
+    avg_actual_move_pct     REAL,
+    move_dispersion_pct     REAL,
+    max_actual_move_pct     REAL,
+    implied_vs_avg_actual   REAL,
+    move_tail_veto INTEGER,
+    iv_rank        REAL,
+    iv_percentile  REAL,
+    composite_score REAL,
     best_tier      TEXT,
     selected       INTEGER NOT NULL DEFAULT 0,
     reason         TEXT,
@@ -167,6 +182,56 @@ _MIGRATIONS = [
     ("trades", "entry_slippage", "ALTER TABLE trades ADD COLUMN entry_slippage REAL"),
     ("trades", "exit_slippage", "ALTER TABLE trades ADD COLUMN exit_slippage REAL"),
     ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+    # Extended entry_reviews columns (research-backed screening metrics: implied-vs-historical
+    # move, bid-ask spread quality, IV rank/percentile, move-history tail flag) added for an
+    # entry_reviews table that pre-existed these columns -- see docs/screening-criteria.md.
+    ("entry_reviews", "strategy", "ALTER TABLE entry_reviews ADD COLUMN strategy TEXT"),
+    ("entry_reviews", "iv_rv_source", "ALTER TABLE entry_reviews ADD COLUMN iv_rv_source TEXT"),
+    ("entry_reviews", "expected_move_pct", "ALTER TABLE entry_reviews ADD COLUMN expected_move_pct REAL"),
+    (
+        "entry_reviews",
+        "combined_open_interest",
+        "ALTER TABLE entry_reviews ADD COLUMN combined_open_interest REAL",
+    ),
+    (
+        "entry_reviews",
+        "combined_option_volume",
+        "ALTER TABLE entry_reviews ADD COLUMN combined_option_volume REAL",
+    ),
+    (
+        "entry_reviews",
+        "bid_ask_spread_pct",
+        "ALTER TABLE entry_reviews ADD COLUMN bid_ask_spread_pct REAL",
+    ),
+    (
+        "entry_reviews",
+        "net_combo_spread_pct",
+        "ALTER TABLE entry_reviews ADD COLUMN net_combo_spread_pct REAL",
+    ),
+    (
+        "entry_reviews",
+        "avg_actual_move_pct",
+        "ALTER TABLE entry_reviews ADD COLUMN avg_actual_move_pct REAL",
+    ),
+    (
+        "entry_reviews",
+        "move_dispersion_pct",
+        "ALTER TABLE entry_reviews ADD COLUMN move_dispersion_pct REAL",
+    ),
+    (
+        "entry_reviews",
+        "max_actual_move_pct",
+        "ALTER TABLE entry_reviews ADD COLUMN max_actual_move_pct REAL",
+    ),
+    (
+        "entry_reviews",
+        "implied_vs_avg_actual",
+        "ALTER TABLE entry_reviews ADD COLUMN implied_vs_avg_actual REAL",
+    ),
+    ("entry_reviews", "move_tail_veto", "ALTER TABLE entry_reviews ADD COLUMN move_tail_veto INTEGER"),
+    ("entry_reviews", "iv_rank", "ALTER TABLE entry_reviews ADD COLUMN iv_rank REAL"),
+    ("entry_reviews", "iv_percentile", "ALTER TABLE entry_reviews ADD COLUMN iv_percentile REAL"),
+    ("entry_reviews", "composite_score", "ALTER TABLE entry_reviews ADD COLUMN composite_score REAL"),
 ]
 
 
@@ -376,48 +441,103 @@ def cmd_save_market_context(args) -> dict:
     return {"ok": True, "context_date": date}
 
 
+_ENTRY_REVIEW_COLUMNS = (
+    "scan_date",
+    "symbol",
+    "timing",
+    "strategy",
+    "price",
+    "volume",
+    "winrate",
+    "winrate_sample",
+    "iv_rv_ratio",
+    "iv_rv_source",
+    "term_structure",
+    "market_cap",
+    "expected_move",
+    "expected_move_pct",
+    "combined_open_interest",
+    "combined_option_volume",
+    "bid_ask_spread_pct",
+    "net_combo_spread_pct",
+    "avg_actual_move_pct",
+    "move_dispersion_pct",
+    "max_actual_move_pct",
+    "implied_vs_avg_actual",
+    "move_tail_veto",
+    "iv_rank",
+    "iv_percentile",
+    "composite_score",
+    "best_tier",
+    "selected",
+    "reason",
+    "criteria_json",
+    "logged_at",
+    "profile",
+)
+
+
+def _entry_review_values(spec: dict) -> tuple:
+    """Positional values for _ENTRY_REVIEW_COLUMNS, applying each field's own default --
+    shared by db.py's identical INSERT so the two modules' entry_reviews rows never drift
+    apart (see this module's own docstring on schema parity)."""
+    crit = spec.get("criteria") if spec.get("criteria") is not None else spec.get("criteria_json")
+    return (
+        spec["scan_date"],
+        spec["symbol"],
+        spec.get("timing"),
+        spec.get("strategy"),
+        spec.get("price"),
+        spec.get("volume"),
+        spec.get("winrate"),
+        spec.get("winrate_sample"),
+        spec.get("iv_rv_ratio"),
+        spec.get("iv_rv_source"),
+        spec.get("term_structure"),
+        spec.get("market_cap"),
+        spec.get("expected_move"),
+        spec.get("expected_move_pct"),
+        spec.get("combined_open_interest"),
+        spec.get("combined_option_volume"),
+        spec.get("bid_ask_spread_pct"),
+        spec.get("net_combo_spread_pct"),
+        spec.get("avg_actual_move_pct"),
+        spec.get("move_dispersion_pct"),
+        spec.get("max_actual_move_pct"),
+        spec.get("implied_vs_avg_actual"),
+        (1 if spec.get("move_tail_veto") else (0 if spec.get("move_tail_veto") is not None else None)),
+        spec.get("iv_rank"),
+        spec.get("iv_percentile"),
+        spec.get("composite_score"),
+        spec.get("best_tier"),
+        1 if spec.get("selected") else 0,
+        spec.get("reason"),
+        json.dumps(crit) if crit is not None else None,
+        spec.get("logged_at", time.time()),
+        spec.get("profile", "default"),
+    )
+
+
 def cmd_save_entry_review(args) -> dict:
     """Upsert one per-symbol entry-review record — the data reviewed for a symbol during an entry scan
-    plus the chosen/rejected decision. Read by the orchestrator's trade-notify (per-symbol push) and by
-    the EOD analysis. Idempotent on (scan_date, symbol, profile) so a re-run of the scan overwrites."""
+    plus the chosen/rejected decision (see scanner.build_entry_review_spec for the field set). Read by
+    the orchestrator's trade-notify (per-symbol push), the EOD analysis, and scout's read-only earnings
+    page. Idempotent on (scan_date, symbol, profile) so a re-run of the scan overwrites."""
     spec = json.loads(args.data)
     for req in ("scan_date", "symbol"):
         if not spec.get(req):
             return {"ok": False, "error": f"missing required field: {req}"}
-    crit = spec.get("criteria")
     conn = _conn()
     try:
+        cols = ", ".join(_ENTRY_REVIEW_COLUMNS)
+        placeholders = ", ".join("?" for _ in _ENTRY_REVIEW_COLUMNS)
+        updates = ", ".join(
+            f"{c}=excluded.{c}" for c in _ENTRY_REVIEW_COLUMNS if c not in ("scan_date", "symbol", "profile")
+        )
         conn.execute(
-            "INSERT INTO entry_reviews (scan_date, symbol, timing, price, volume, winrate, "
-            " winrate_sample, iv_rv_ratio, term_structure, market_cap, expected_move, best_tier, "
-            " selected, reason, criteria_json, logged_at, profile) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(scan_date, symbol, profile) DO UPDATE SET "
-            " timing=excluded.timing, price=excluded.price, volume=excluded.volume, "
-            " winrate=excluded.winrate, winrate_sample=excluded.winrate_sample, "
-            " iv_rv_ratio=excluded.iv_rv_ratio, term_structure=excluded.term_structure, "
-            " market_cap=excluded.market_cap, expected_move=excluded.expected_move, "
-            " best_tier=excluded.best_tier, selected=excluded.selected, reason=excluded.reason, "
-            " criteria_json=excluded.criteria_json, logged_at=excluded.logged_at",
-            (
-                spec["scan_date"],
-                spec["symbol"],
-                spec.get("timing"),
-                spec.get("price"),
-                spec.get("volume"),
-                spec.get("winrate"),
-                spec.get("winrate_sample"),
-                spec.get("iv_rv_ratio"),
-                spec.get("term_structure"),
-                spec.get("market_cap"),
-                spec.get("expected_move"),
-                spec.get("best_tier"),
-                1 if spec.get("selected") else 0,
-                spec.get("reason"),
-                json.dumps(crit) if crit is not None else None,
-                spec.get("logged_at", time.time()),
-                spec.get("profile", "default"),
-            ),
+            f"INSERT INTO entry_reviews ({cols}) VALUES ({placeholders}) "
+            f"ON CONFLICT(scan_date, symbol, profile) DO UPDATE SET {updates}",
+            _entry_review_values(spec),
         )
         conn.commit()
     finally:

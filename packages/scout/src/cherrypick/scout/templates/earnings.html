@@ -1,0 +1,50 @@
+<div id="earnings-page"$watch_poll_attr>
+<div class="card" id="earnings-view">
+  <h2>Earnings screens <span class="note">recorded entry-review metrics (entry_reviews)</span></h2>
+  <div class="builder-row" id="earnings-controls"
+       hx-get="/partial/earnings" hx-target="#content" hx-trigger="change from:select"
+       hx-include="#earnings-date,#earnings-mode,#earnings-days">
+    <label>Scan date
+      <select id="earnings-date" name="date">$date_options</select>
+    </label>
+    <label>Book
+      <select id="earnings-mode" name="mode">$mode_options</select>
+    </label>
+    <input type="hidden" id="earnings-days" name="days" value="$days">
+  </div>
+  <table class="calendar earnings-screens">
+    <thead>
+      <tr>
+        <th>Symbol</th><th>Timing</th><th>Strategy</th><th>Outcome</th><th>Reason</th>
+        <th>Score</th><th>IV/RV</th><th>Winrate</th><th>Term structure</th>
+        <th>Expected move</th><th>Avg actual move</th><th>Implied vs actual</th>
+        <th>Move tail veto</th><th>Net combo spread</th><th>IV rank / pctile</th><th>Mkt cap</th>
+      </tr>
+    </thead>
+    <tbody>
+      $screen_rows
+    </tbody>
+  </table>
+</div>
+<div class="card" id="earnings-upcoming-view">
+  <h2>Upcoming earnings <span class="note">next $days trading days -- Liquid Symbols + High Options Volume + tasty Earnings universe</span></h2>
+  $market_notice
+  $watch_notice
+  <p class="note">Only symbols the earnings module's forward-preview scan has actually reached
+    appear here -- Mkt Cap comes from tastytrade's batched reference metrics (fresher when
+    available); everything else is the scan's own broker-chain read, ranked by the tier badge
+    (Recommended / Near miss / Fail -- hover a badge for the specific reasons).</p>
+  <table class="calendar earnings-screens">
+    <thead>
+      <tr>
+        <th>Date</th><th>Symbol</th><th>Timing</th><th>Tier</th><th>Price</th><th>Volume</th>
+        <th>Winrate</th><th>IV/RV</th><th>Term structure</th><th>Expected move</th>
+        <th>Avg actual move</th><th>IV rank</th><th>Mkt cap</th>
+      </tr>
+    </thead>
+    <tbody>
+      $upcoming_rows
+    </tbody>
+  </table>
+</div>
+</div>

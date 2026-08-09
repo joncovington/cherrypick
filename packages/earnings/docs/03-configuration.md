@@ -41,7 +41,8 @@ it's what the code actually reads.
 | `correlation_block_list` | Sector/date groupings you don't want opened simultaneously (e.g. two banks reporting the same night). Empty by default — see the note in `CLAUDE.md`: correlation risk isn't fully guarded today, so treat this as a partial mitigation, not a complete one. |
 | `reprice_interval_s` / `reprice_step` | Live-mode only: how often (seconds) and by how much an unfilled limit order reprices toward the market while working an entry. |
 | `tastytrade_costs` | Fee model for paper-mode cost-adjusted P&L — see below. |
-| `symbol_screen` | Per-criterion strictness for the five soft screening criteria — see below. |
+| `symbol_screen` | Per-criterion strictness for the five soft screening criteria, plus the `move_tail` veto switch — see below. |
+| `move_tail_multiple` | How many multiples of a name's own mean historical earnings move counts as a "blowout" quarter for `scanner.compute_historical_move_stats()`'s `move_tail_veto` flag. Only rejects when `symbol_screen.move_tail` is `"veto"` (default `"off"`, record-only). `2.0` default. |
 | `strat_test_portfolio` | How the forced-sampling test buckets trades into books (`per_strategy` vs `combined`) — see below. |
 | `strategies` | Per-strategy parameter blocks — see below. |
 
@@ -91,11 +92,12 @@ See [Screening Criteria](./screening-criteria.md) for what each criterion checks
   "winrate": "pass",
   "iv_rv_ratio": "pass",
   "market_cap": "pass",
-  "combined_option_volume": "pass"
+  "combined_option_volume": "pass",
+  "move_tail": "off"
 }
 ```
 
-Each of the five is independently set to one of:
+Each of the first five is independently set to one of:
 
 - `"pass"` (the default for all five) — the candidate must clear the strict `min_*` threshold in
   `strategies.<name>` for that criterion.
@@ -108,6 +110,16 @@ The per-strategy `min_*` / `near_miss_min_*` thresholds still live under `strate
 (see below); `symbol_screen` just decides which of the two — or neither — is enforced. Screening
 stays a single **accept/reject** decision regardless of these levels; loosening a criterion to
 `"near_miss"` or `"off"` only widens what counts as accepted.
+
+`move_tail` is a different shape — a two-level switch, not a min/near_miss threshold — for
+`scanner.apply_move_tail_gate()`: `"off"` (default) records `move_tail_veto` on every
+`entry_reviews` row without rejecting anything; `"veto"` rejects a symbol whose historical
+earnings moves (over `winrate_lookback_quarters`) include a quarter at or above `move_tail_multiple`
+times the mean, with reason `move_tail_veto`. Left off by default until the recorded data supports
+calibrating `move_tail_multiple` — see [Screening Criteria](./screening-criteria.md)'s "Recorded-only
+metrics" section for the full set of new metrics recorded alongside the existing screen (implied
+vs. historical move, bid-ask spread quality, IV rank/percentile), all visible per symbol — accepted
+or rejected — via `db.py`/`db_paper.py`'s `entry_reviews` table and scout's earnings page.
 
 ---
 
