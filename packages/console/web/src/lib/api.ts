@@ -54,12 +54,18 @@ export function useOverview() {
   });
 }
 
-export function useMeic(mode: TradingMode, symbol: string | null = null, profile: string | null = null) {
+export function useMeic(
+  mode: TradingMode,
+  symbol: string | null = null,
+  profile: string | null = null,
+  era: string | null = null,
+) {
   const params = new URLSearchParams({ mode });
   if (symbol !== null) params.set("symbol", symbol);
   if (profile !== null) params.set("profile", profile);
+  if (era !== null) params.set("era", era);
   return useQuery<MeicPayload>({
-    queryKey: ["meic", mode, symbol, profile],
+    queryKey: ["meic", mode, symbol, profile, era],
     queryFn: () => getJson<MeicPayload>(`/api/meic?${params.toString()}`),
     refetchInterval: 15_000,
   });

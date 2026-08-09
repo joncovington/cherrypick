@@ -24,6 +24,11 @@ Commands (from this directory): `pnpm install`, `pnpm build`, `pnpm dev:server` 
   `~/.cherrypick/data/console/`.
 - **Paper/live isolation**: every trade payload carries `mode` taken from its source DB
   (`paper_trades.db` vs the live DB). Mode is never merged across sources or inferred client-side.
+- **A module's own evidence window is the default.** Where a module narrows its analytics to a
+  current era or study window, the console's reads default to the same narrowing rather than
+  showing every row it can reach — MEIC's `CURRENT_ERA` is the case in hand. Earlier eras stay
+  reachable through a visible scope control, so widening is a stated choice and never the quiet
+  default. Filtering to nothing is reported as a filtered-out result, not an empty page.
 - **Market data**: the console opens its own DXLink session via the official `@tastytrade/api` npm
   SDK (`quoteStreamer`). The Python streamer and its `stream_cache.db` are untouched; the cache is
   read read-only as the off-hours / disconnected fallback.

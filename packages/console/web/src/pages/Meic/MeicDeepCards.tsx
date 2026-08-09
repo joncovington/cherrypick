@@ -20,12 +20,13 @@ interface DeepAnalytics {
   byHour: BreakdownRow[];
 }
 
-function useDeep(mode: TradingMode, symbol: string | null, profile: string | null) {
+function useDeep(mode: TradingMode, symbol: string | null, profile: string | null, era: string | null) {
   const params = new URLSearchParams({ mode });
   if (symbol !== null) params.set("symbol", symbol);
   if (profile !== null) params.set("profile", profile);
+  if (era !== null) params.set("era", era);
   return useQuery<DeepAnalytics>({
-    queryKey: ["meic-deep", mode, symbol, profile],
+    queryKey: ["meic-deep", mode, symbol, profile, era],
     queryFn: async () => {
       const res = await fetch(`/api/meic/deep?${params.toString()}`);
       if (!res.ok) throw new Error(`meic deep: HTTP ${res.status}`);
@@ -104,15 +105,27 @@ function NlvChart({ points }: { points: Array<{ date: string; nlv: number }> }) 
 function BreakdownCard({ title, rows, loading }: { title: string; rows: BreakdownRow[] | undefined; loading: boolean }) {
   return (
     <DataCard title={title} headers={["bucket", "trades", "sessions", "win %", "avg net"]} numFrom={1} loading={loading} rowCount={rows?.length ?? 0}>
-      {rows?.map((r) => (
+      {rows?.map((r) => {
+        // A trailing "*" marks a bucket outside the regular session — rendered
+        // as a marker so one long label can't widen the whole column.
+        const off = r.bucket.endsWith(" *");
+        return (
         <tr key={r.bucket}>
-          <td>{r.bucket}</td>
+          <td>
+            {off ? r.bucket.slice(0, -2) : r.bucket}
+            {off && (
+              <span className="muted" title="outside 09:00–16:00 ET — paper replay or practice, not a session entry">
+                {" *"}
+              </span>
+            )}
+          </td>
           <td>{r.trades}</td>
           <td className="muted">{r.sessions}</td>
           <td>{r.winPct !== null ? `${r.winPct.toFixed(0)}%` : "—"}</td>
           <td>{r.avgNet !== null ? <PnlCell v={r.avgNet} /> : "—"}</td>
         </tr>
-      ))}
+        );
+      })}
     </DataCard>
   );
 }
@@ -121,12 +134,14 @@ export function MeicDeepCards({
   mode,
   symbol = null,
   profile = null,
+  era = null,
 }: {
   mode: TradingMode;
   symbol?: string | null;
   profile?: string | null;
+  era?: string | null;
 }) {
-  const { data, isLoading } = useDeep(mode, symbol, profile);
+  const { data, isLoading } = useDeep(mode, symbol, profile, era);
   return (
     <>
       <section className="card">
@@ -139,12 +154,12 @@ export function MeicDeepCards({
         {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <NlvChart points={data?.nlv ?? []} />}
       </section>
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(23rem, 1fr))" }}>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(25rem, 1fr))" }}>
         <BreakdownCard title="By short-call delta" rows={data?.byDelta} loading={isLoading} />
         <BreakdownCard title="By wing width" rows={data?.byWing} loading={isLoading} />
         <BreakdownCard title="By symbol" rows={data?.bySymbol} loading={isLoading} />
         <BreakdownCard title="By weekday" rows={data?.byWeekday} loading={isLoading} />
-        <BreakdownCard title="By entry hour (ET)" rows={data?.byHour} loading={isLoading} />
+        <BreakdownCard title="By entry hour (ET) — * is off-session" rows={data?.byHour} loading={isLoading} />
       </div>
     </>
   );

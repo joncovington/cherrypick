@@ -22,6 +22,7 @@ Card-by-card status of the console against the surfaces it replaces (re-audited 
 |---|---|
 | Loop status pill (LIVE/IDLE) + IV rank / underlying chips | done |
 | Symbol + profile selectors (page-wide scope) | done — threaded through every MEIC read |
+| Era scope (defaults to the module's `CURRENT_ERA`, as its analytics do) | done — earlier eras reachable, never mixed in silently |
 | Period stats grid | done |
 | Today's trades / trade table | partial — per-leg put/call status badges, stop-adjustment columns, AI reasoning missing |
 | NLV over time | done |

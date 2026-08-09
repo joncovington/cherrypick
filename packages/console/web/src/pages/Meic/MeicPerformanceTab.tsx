@@ -58,17 +58,20 @@ export function MeicPerformanceTab({
   mode,
   symbol,
   profile,
+  era = null,
 }: {
   mode: TradingMode;
   symbol: string | null;
   profile: string | null;
+  era?: string | null;
 }) {
   const [granularity, setGranularity] = useState<(typeof GRANULARITIES)[number]>("daily");
   const params = new URLSearchParams({ mode, granularity });
   if (symbol !== null) params.set("symbol", symbol);
   if (profile !== null) params.set("profile", profile);
+  if (era !== null) params.set("era", era);
   const { data, isLoading, dataUpdatedAt } = useQuery<Performance>({
-    queryKey: ["meic-performance", mode, granularity, symbol, profile],
+    queryKey: ["meic-performance", mode, granularity, symbol, profile, era],
     queryFn: async () => {
       const res = await fetch(`/api/meic/performance?${params.toString()}`);
       if (!res.ok) throw new Error(`meic performance: HTTP ${res.status}`);
@@ -218,7 +221,7 @@ export function MeicPerformanceTab({
         )}
       </Card>
 
-      <Card title="Study arms — cumulative net per profile (ignores the page scope)" updatedAt={dataUpdatedAt}>
+      <Card title="Study arms — cumulative net per profile (ignores the symbol and profile scope, not the era)" updatedAt={dataUpdatedAt}>
         {isLoading ? (
           <span className="skeleton skeleton-text" style={{ width: "40%" }} />
         ) : (data?.studyArms.length ?? 0) === 0 ? (

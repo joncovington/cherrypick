@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import Database from "better-sqlite3";
 
+export type DatabaseHandle = Database.Database;
+
 /**
  * Open a module's SQLite store read-only, run `fn`, and close the handle.
  * Returns `fallback` when the DB doesn't exist or the read fails — module
@@ -18,6 +20,17 @@ export function withReadOnlyDb<T>(path: string, fallback: T, fn: (db: Database.D
   } finally {
     db?.close();
   }
+}
+
+/**
+ * Whether a column exists, for stores whose schema has moved over time — an
+ * older DB (or the practice store) can be missing a column the current one has.
+ */
+export function hasColumn(db: Database.Database, table: string, column: string): boolean {
+  return db
+    .prepare<[], Record<string, unknown>>(`PRAGMA table_info(${table})`)
+    .all()
+    .some((c) => c["name"] === column);
 }
 
 export function num(v: unknown): number | null {

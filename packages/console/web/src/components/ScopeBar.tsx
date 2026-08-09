@@ -30,6 +30,47 @@ export function ScopeSelect({
   );
 }
 
+/**
+ * Era selector. Unlike the other scope selects, its default is not "everything"
+ * — it is the module's current era, matching what the module's own analytics
+ * count as evidence. Earlier eras stay reachable, and picking one says so out
+ * loud rather than quietly mixing shakedown rows into the numbers.
+ */
+export function EraSelect({
+  value,
+  eras,
+  currentEra,
+  onChange,
+}: {
+  value: string | null;
+  eras: Array<{ era: string; trades: number }> | undefined;
+  currentEra: string | undefined;
+  onChange: (v: string | null) => void;
+}) {
+  if (eras === undefined || eras.length < 2) return null;
+  const total = eras.reduce((s, e) => s + e.trades, 0);
+  const currentCount = eras.find((e) => e.era === currentEra)?.trades ?? 0;
+  return (
+    <select
+      className={`text-input ${value === null ? "" : "scope-select-off-default"}`}
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+      aria-label="era"
+      title="which era of trades counts as evidence"
+    >
+      <option value="">era {currentEra} · {currentCount}</option>
+      {eras
+        .filter((e) => e.era !== currentEra)
+        .map((e) => (
+          <option key={e.era} value={e.era}>
+            era {e.era} · {e.trades}
+          </option>
+        ))}
+      <option value="ALL">every era · {total}</option>
+    </select>
+  );
+}
+
 /** A tab strip in the page title row, styled like the mode toggle. */
 export function TabStrip<T extends string>({
   tabs,
