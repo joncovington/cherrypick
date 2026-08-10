@@ -6,24 +6,22 @@ Bring the cherrypick suite to a **complete, clean stop**: nothing running, nothi
 stays stopped. Runs from the monorepo root. Data (paper DBs, Dolt store, keyring) is never touched —
 `/install` brings everything back.
 
-**Order matters: unschedule first.** If you stopped a daemon while its task was still registered, the
-Dolt keep-alive (every ~5 min) or the watchdog's auto-restarts (streamer in-session; services every
-tick) would resurrect it within minutes. Remove the schedule first so the stops stick.
+**The order is built in.** `uninstall` deletes the `cherrypick-supervisor` anchor task FIRST (so
+nothing can restart the daemon), then stops the supervisor (polite stop file, ≤10s wait, terminate
+fallback) — with the supervisor gone, no job fires and nothing resurrects a stopped daemon.
 
 Do this:
 
-1. **Remove the scheduled tasks and stop the managed services** (idempotent):
+1. **Unschedule, stop the supervisor, and stop the managed services** (idempotent):
    `python packages/orchestrator/run.py uninstall`
-   It prints a doctor-style `[ OK ]`/`[FAIL]` line per task, ending in `Result: ALL REMOVED` or
-   `Result: FAILURES -- action needed` (exit code follows). Confirm every registered task shows
-   `[ OK ]` — the module paper loops (`cherrypick-meic-paper-loop`, `cherrypick-flies-paper-loop`,
-   each removed via the module's own `--uninstall-task`), `cherrypick-earnings-paper-entry` / `-exit`,
-   `cherrypick-earnings-dolt`, `cherrypick-watchdog`, `cherrypick-trade-notify`,
-   `cherrypick-log-archive`, and (attempted by name even when unregistered, which reports `[ OK ]` as
-   a no-op) `cherrypick-eod-digest`, `cherrypick-eod-insight`, `cherrypick-reconcile` — and that
-   `service.gex-recorder` (and any other `services` entry) reports stopped. Its own "Left running by
-   design" section names the streamer, any dashboard server, and Dolt — **the streamer is why the
-   next step exists.**
+   It prints a doctor-style `[ OK ]`/`[FAIL]` line per item, ending in `Result: ALL REMOVED` or
+   `Result: FAILURES -- action needed` (exit code follows). Confirm: `anchor_task` `[ OK ]`,
+   `supervisor` stopped, every `legacy.cherrypick-*` deletion `[ OK ]` (these are attempted by name
+   even when long gone — a no-op reports `[ OK ]`; on a pre-cutover box this is what removes the old
+   per-job tasks), and `service.gex-recorder` (and any other `services` entry) stopped. If a
+   `<module>.live_arm` line appears, a **live arm record was removed** — check the broker UI for
+   resting orders. The "Left running by design" section names the streamer, any dashboard server,
+   and Dolt — **the streamer is why the next step exists.**
 
 2. **Stop what uninstall leaves behind** (each is best-effort — "not running" is a fine result):
    - **Streamer** (the standalone producer, `packages/streamer` — the suite's single market-data
@@ -45,7 +43,9 @@ Do this:
 
 3. **Verify a clean stop:**
    - No cherrypick tasks: `Get-ScheduledTask | Where-Object { $_.TaskName -like 'cherrypick*' }`
-     returns nothing.
+     returns nothing (the anchor included).
+   - Supervisor down: `~/.cherrypick/state/supervisor.last.json` goes stale (its `pid` no longer
+     running); `python packages/orchestrator/run.py status` shows the legacy empty-tasks view.
    - Streamer down: `python packages/streamer/run.py --status` reports `"running": false`.
    - gex recorder down: `python packages/gex/run.py record --status` reports `"running": false`.
    - Nothing listening on ports **3306**, **8787**, or **7699**.

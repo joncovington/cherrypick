@@ -159,9 +159,46 @@ def _git_ref(root: Path) -> str | None:
 
 
 def _task_views(cfg: dict[str, Any]) -> list[dict[str, Any]]:
-    """Scheduled-task registry for the System panel. Local OS scheduler query only (`schtasks`/cron),
-    same source of truth as `cherrypick status` (tasks.registry_snapshot)."""
+    """Scheduling registry for the System panel — same source of truth as `cherrypick status`.
+
+    Supervisor-driven boxes read the job registry file (zero subprocess spawns per render — the cost
+    `tasks.query_verbose`'s one-spawn rule existed to bound goes to zero); pre-cutover boxes keep
+    the OS-scheduler query (`schtasks`/cron) until the transition window closes."""
+    from . import supersnap
+
     rows = []
+    if supersnap.supervisor_alive():
+        snap = supersnap.supervisor_snapshot(cfg, query_anchor=False)
+        sup = snap["supervisor"]
+        rows.append(
+            {
+                "name": "· supervisor",
+                "exists": True,
+                "status": f"running (pid {sup.get('pid')})",
+                "last_run": f"heartbeat {sup.get('heartbeat_age_seconds', 0):.0f}s ago",
+                "last_result": "—",
+                "next_run": "—",
+            }
+        )
+        for job_id, st in snap["jobs"].items():
+            if st.get("running_pid"):
+                status = f"running (pid {st['running_pid']})"
+            elif not st.get("enabled", True):
+                status = st.get("enabled_reason") or "disabled"
+            else:
+                status = st.get("resident_state") or "ready"
+            rows.append(
+                {
+                    "name": job_id,
+                    "exists": True,
+                    "status": status,
+                    "last_run": st.get("last_start") or "—",
+                    "last_result": st.get("last_exit_code", "—"),
+                    "next_run": st.get("next_run") or st.get("schedule") or "—",
+                }
+            )
+        rows.sort(key=lambda r: r["name"])
+        return rows
     for name, info in tasks.registry_snapshot(cfg).items():
         rows.append(
             {

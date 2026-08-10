@@ -4,13 +4,15 @@ argument-hint: [--stop]
 ---
 
 Arm the flies live loop for today — real money, real orders, against the real designated
-account. Arming registers the self-healing `cherrypick-flies-live-loop` OS task (one
-`cherrypick.flies.live_loop --once --live` tick per minute, with burst fill-watchers spawned as needed). The
-loop **self-disarms at `live.disarm_time` (default 17:00 ET)** and any tick that finds a
-previous day's arm stamp disarms immediately — arming is per-day by design, and the
-orchestrator watchdog backstops with the suite halt flag. This command exists so nothing live
-ever starts without a fresh, explicit confirmation, a current status readout, and a visible way
-to stop.
+account. Arming writes the **arm record** (`~/.cherrypick/state/flies-live-arm.json`), which the
+orchestrator's supervisor daemon reads to enable its `flies-live` job (one
+`cherrypick.flies.live_loop --once --live` tick per minute, with burst fill-watchers spawned as
+needed); on a box without a running supervisor, arming falls back to registering the legacy
+`cherrypick-flies-live-loop` OS task. The loop **self-disarms at `live.disarm_time` (default
+17:00 ET)** — disarming deletes the arm record, and any tick that finds a stale record disarms
+immediately — arming is per-day by design, and the orchestrator watchdog backstops with the
+suite halt flag. This command exists so nothing live ever starts without a fresh, explicit
+confirmation, a current status readout, and a visible way to stop.
 
 `--stop`: disarm — see "Stop" below. Anything else: the arm flow.
 
@@ -48,6 +50,11 @@ to stop.
      resolved in the broker UI before arming anything.
    - **Market state**: whether it's currently a trading day inside RTH. Off-hours arming is
      allowed (the ticks no-op until the open) but say so plainly.
+   - **Supervisor liveness**: check `~/.cherrypick/state/supervisor.last.json` is fresh (< ~90s
+     old). If it's stale or absent, say so PROMINENTLY — on a supervisor-driven box **nothing
+     will tick if the supervisor is down**; run `python packages/orchestrator/run.py
+     ensure-supervisor` (or check the `cherrypick-supervisor` anchor task) before arming. Arming
+     on a legacy (schtasks) box doesn't need this.
    - **Order-alert daemon** (only when `live.use_order_alert_daemon` is true): `--status` carries
      an `alert_daemon` block. Report it, but treat it as INFORMATIONAL — the daemon only makes
      fills get *noticed* sooner; a dead or missing one costs latency and nothing else, and is
@@ -68,7 +75,9 @@ to stop.
    - ```bash
      python -m cherrypick.flies.live_loop --install-task
      ```
-     This registers the 1-minute task, stamps today's arm date, and fires the first tick.
+     This writes today's arm record (the supervisor enables its `flies-live` job within one
+     pass — the JSON output's `driver` field says which path armed: `supervisor` or the legacy
+     `schtasks`) and fires the first tick immediately.
    - **Only if `live.use_order_alert_daemon` is true**, also start the order-alert daemon,
      detached and headless, after first stopping any stale one:
      ```bash
@@ -78,7 +87,10 @@ to stop.
      It self-exits at `disarm_time`. If it fails to start, say so and CONTINUE — the loop
      confirms fills without it (just later); a failed daemon never blocks arming.
 
-5. **Report**: the task name, the armed-for date, the self-disarm time, the log to watch
+5. **Verify + report**: confirm `--status` now shows `armed_for` = today, and (supervisor-driven)
+   that `python packages/orchestrator/run.py status` shows the `flies-live` job enabled with a
+   future `next_run`. Then report: the driver (supervisor job or legacy task), the armed-for
+   date, the self-disarm time, the log to watch
    (`tail -f ~/.cherrypick/logs/flies/flies_live.log`), the dashboard's live source
    (http://127.0.0.1:5052/ → source: live), and how to stop early: `/live-flies-start --stop`,
    or create the halt flag (`~/.cherrypick/state/halt-live.flag` — stops new entries within one
@@ -96,6 +108,8 @@ to stop.
 3. ```bash
    python -m cherrypick.flies.live_loop --uninstall-task
    ```
+   This deletes the arm record (the supervisor's `flies-live` job disables within one pass) and
+   removes the legacy scheduled task if one exists.
    Then, if `live.use_order_alert_daemon` is true, also stop the alert daemon (it holds an
    authenticated broker session open; disarming should not leave one running):
    ```bash

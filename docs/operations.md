@@ -8,38 +8,52 @@ trusted.
 ## The model, in one paragraph
 
 **There is no daily startup.** `python run.py install` (from `packages/orchestrator`) is a one-time
-act: it registers OS scheduled tasks and starts two long-running daemons, and from then on every task
-fires all day and self-gates on trading hours — an out-of-hours tick is a clean no-op. `install` is
-idempotent and safe to re-run at any time (it overwrites task registrations at the current checkout's
-paths and only starts a daemon that is down). Daily "startup" is therefore **verification**, not
-launching — the checklist below.
+act: it registers **one** OS scheduled task and starts the long-running daemons, and from then on the
+**supervisor** fires every job all day (each job still self-gates on trading hours — an out-of-hours
+tick is a clean no-op). `install` is idempotent and safe to re-run at any time (it re-anchors at the
+current checkout's paths, restarts nothing that is healthy, and deletes any legacy per-job scheduled
+tasks). Daily "startup" is therefore **verification**, not launching — the checklist below.
 
-## Inventory — OS scheduled tasks
+## Inventory — the anchor task and the supervisor's jobs
 
-All registrations bake in the absolute path of the checkout that ran `install`, which is what makes a
-given checkout "the live instance." Sources: `cli.py` (`cmd_install`), `config.example.json`, each
-module's `paper_loop.py --install-task`, and `schtasks /Query /V` on the live box.
+Since the **2026-08-09 supervisor cutover**, Task Scheduler holds exactly ONE cherrypick entry:
 
-| Task | Trigger | Runs | Registered by |
+| Task | Trigger | Runs | Purpose |
 |---|---|---|---|
-| `cherrypick-meic-paper-loop` | every **2 min** | `pythonw -m cherrypick.meic.paper_loop --once` | **the MEIC module itself** (`install` shells `-m cherrypick.meic.paper_loop --install-task`; the cadence is a module constant, not config) |
-| `cherrypick-flies-paper-loop` | every **1 min** | `pythonw -m cherrypick.flies.paper_loop --once` | **the flies module itself** (same pattern; 2 → 1 min on 2026-07-29 — the completion gate's cadence sensitivity is documented at the constant in `cherrypick/flies/paper_loop.py`) |
-| `cherrypick-flies-live-loop` | every **1 min** — **per-day, usually absent** | `pythonw -m cherrypick.flies.live_loop --once --live` | **the flies module itself**, via `/live-flies-start` (fresh YES each day). SELF-DISARMS at `live.disarm_time` (17:00 ET) or on a stale arm stamp; the watchdog backstops by setting the halt flag if it survives. Absent = normal (disarmed); mid-session absence while `--status` says armed-for-today is the CRITICAL the watchdog raises. Spawns short-lived `--watch-fills` burst watchers while orders are pending. Settle: provisional at 16:20 from the last streamed trade; confirm with `python -m cherrypick.flies.live_loop --settle --price <official>`. Stop: `/live-flies-start --stop`, or the halt flag (`state/halt-live.flag`). |
-| `cherrypick-earnings-paper-entry` | daily **15:45 ET** | `pythonw <orch>/run.py run-earnings-entry` | orchestrator |
-| `cherrypick-earnings-paper-exit` | daily **09:45 ET** | `pythonw <orch>/run.py run-earnings-exit` | orchestrator |
-| `cherrypick-earnings-dolt` | every **5 min** | `pythonw <orch>/run.py ensure-dolt` (keep-alive: starts `dolt sql-server` only when 3306 is down) | orchestrator (`paper.dolt_service`) |
-| `cherrypick-watchdog` | every **10 min** | `pythonw <orch>/run.py watchdog` | orchestrator |
-| `cherrypick-preopen` | every **2 min, 09:00–09:35 ET only** | `pythonw <orch>/run.py preopen-check` (streamer liveness only) | orchestrator |
-| `cherrypick-trade-notify` | every **2 min** | `pythonw <orch>/run.py notify-trades` | orchestrator |
-| `cherrypick-follow-notify` | every **5 min** — **opt-in, off by default** (`follow_feed.enabled`) | `pythonw <orch>/run.py notify-follow` | orchestrator, only when enabled |
-| `cherrypick-log-archive` | monthly, day 1 @ **03:30** local | `pythonw <orch>/run.py archive` | orchestrator |
-| `cherrypick-reconcile` | daily 16:30 ET — **opt-in, off by default** (`reconcile.schedule.enabled`; a phase-5 posture for live operation) | `run.py reconcile --scheduled` | orchestrator, only when enabled |
+| `cherrypick-supervisor` | every **2 min** | `pythonw <orch>/run.py ensure-supervisor` | Probe: is the supervisor daemon alive (fresh `state/supervisor.last.json` + live PID)? Start it detached if not; after 3 consecutive failed probes, raise one CRITICAL (`supervisor.down`) — the alerting floor of last resort. |
 
-**Two tasks are deliberately absent** — do not read their absence in `status` as a fault:
-`cherrypick-eod-digest` and `cherrypick-eod-insight` are no longer fixed-time tasks. Both are
-**event-driven**: the watchdog fires them (detached, off the reliability path) once every installed
+Everything below is a **supervisor job**, derived from `~/.cherrypick/config.json` on every daemon
+pass (`orchestrator/jobspec.py::derive_jobs` — the job table is a projection of config, no separate
+registration step) and recorded per-run in `state/supervisor-jobs.json`. Cadences are ET wall-clock,
+DST-correct, and no longer bound by the OS scheduler's 1-minute floor.
+
+| Job | Schedule (ET) | Runs | Notes |
+|---|---|---|---|
+| `watchdog` | every **10 min** | `run.py watchdog` | unchanged cadence; overlap-guarded by the supervisor |
+| `streamer-health` | every **60 s**, 09:00–16:00, trading days | `run.py streamer-health` | replaces `cherrypick-preopen` with whole-session coverage — a silent streamer is caught within ~5 min all day |
+| `trade-notify` | every **30 s** | `run.py notify-trades` | was 2 min (the scheduler floor made faster spawns pointless); fills now reach you in ~30 s |
+| `follow-notify` | every 5 min — opt-in | `run.py notify-follow` | network → its own job, never on the watchdog tick (unchanged) |
+| `earnings-dolt` | every 5 min | `run.py ensure-dolt` | keep-alive: starts `dolt sql-server` only when 3306 is down |
+| `meic-paper` | every **60 s** | `pythonw -m cherrypick.meic.paper_loop --once` | was a module-registered 2-min task with a hardcoded cadence; now `modules.meic.paper.tick_interval_seconds` |
+| `flies-paper` | **resident** `--interval 15`, 09:30–16:00, trading days | `pythonw -m cherrypick.flies.paper_loop --interval 15` | the one resident child: supervised (restart on death + on 120 s of log silence). 15 s samples completion-debit dips ~4× finer than the old 1-min floor — a journaled measurement break (completion rates are not comparable across 2026-08-09) |
+| `flies-paper-offsession` | every 60 s **outside** 09:30–16:00 | `…paper_loop --once` | keeps 16:20 settlement, retry-until-settled, and the hourly idle heartbeat exactly as before |
+| `flies-live` | every 60 s — **enabled only while the arm record is valid for today** | `pythonw -m cherrypick.flies.live_loop --once --live` | armed by `/live-flies-start` writing `state/flies-live-arm.json` (fresh YES each day); self-disarms by deleting the record at `live.disarm_time` (17:00 ET) or on a stale date; the watchdog backstops with the halt flag if the record survives. Burst `--watch-fills` watchers unchanged. |
+| `earnings-entry` / `earnings-exit` | daily 15:45 / 09:45 | `run.py run-earnings-entry/-exit` | missed-fire catchup: entry 30 min (under the 35-min SLA grace), exit 120 min |
+| `symbol-watch` | daily 06:30 — opt-in | `run.py run-earnings-symbol-watch` | catchup until ~09:00 |
+| `reconcile` | daily 16:30 — opt-in | `run.py reconcile --scheduled` | catchup 4 h |
+| `log-archive` | monthly day 1 @ 03:30 | `run.py archive` | catchup 7 days (idempotent, finished months only) |
+
+Missed-fire policy after sleep/hibernate: interval jobs fire once immediately and resume cadence
+(never a burst); daily/monthly jobs fire inside their catchup window, else record `missed` and skip.
+
+**Still deliberately absent from any schedule**: `eod-digest` / `eod-insight` / `advise` remain
+**event-driven** — the watchdog fires them (detached, off the reliability path) once every installed
 module has written its `paper-eod-<day>.md`, with `eod_digest.deadline` (16:45 ET) as the backstop.
-`install` actively deletes any stale fixed-time registration of either (`cli.py`).
+
+**Rollback** (documented for one transition window): `git tag pre-supervisor` marks the last
+schtasks-driven commit. To roll back: `run.py uninstall` (new code), check out the tag, `run.py
+install` (old code re-registers every per-job task; the module `--install-task` helpers still exist
+there). The old and new mechanisms never coexist — each `install` deletes the other's registrations.
 
 ## Inventory — daemons (not tasks)
 
@@ -129,9 +143,12 @@ Five commands; what "good" looks like is quoted from real runs (2026-07-29).
    `clock/tz` line (`trading_day=True` on a session day) and `onboarding` (each module's credential
    source + masked account). A failing state names its finding — e.g. before install it shows
    `not installed (run: cherrypick install)` per module and a dead streamer.
-2. **`python run.py status`** — every task `Scheduled Task State: Enabled` **with a future
-   `Next Run Time`**. This is the check `doctor` does not make: a task can be registered but disabled
-   or stuck in the past. (`Last Result: 267011` on a daily task just means "hasn't run yet today.")
+2. **`python run.py status`** — the `supervisor` block shows `running: true` with a small
+   `heartbeat_age_seconds`, the `anchor` task exists, and every enabled job has a recent
+   `last_start` (interval jobs) or a future `next_run`. This is the check `doctor` makes too
+   (`supervisor` / `supervisor.anchor` / per-job rows); a job `disabled` with a reason naming a
+   config opt-out is healthy. `state/supervisor.last.json` older than ~90 s means the daemon is
+   down — `run.py ensure-supervisor` starts it (the anchor task does the same within 2 min).
 3. **`python packages/streamer/run.py --status`** — require **both** `"running": true **and** a small
    `oldest_event_age_s`** during market hours. Liveness alone is insufficient — the whole lesson of
    the 2026-07-01 34-hour stall is a socket that is connected and silent. Caveat observed at cutover:
@@ -164,8 +181,9 @@ Real — act:
   2026-07-29 the signature `Missing credentials: client_secret, refresh_token` meant a keyring
   service-chain gap).
 - `earnings entry SLA` CRITICAL after 16:20: the day's entries did not run.
-- `watchdog.last.json` older than ~20 min: the watchdog task itself is dead — nothing else is being
-  supervised.
+- `watchdog.last.json` older than ~20 min: the watchdog job is not firing — check
+  `state/supervisor.last.json` first (a dead supervisor stops every job at once; the anchor task +
+  `ensure-supervisor` should revive it within ~2 min, and escalate `supervisor.down` if they can't).
 
 ## Known gaps (documented, deliberately not fixed)
 
@@ -184,14 +202,13 @@ Each open gap below is tracked as an issue — the entry here is the operator-fa
   longer invisible: `python -m cherrypick.meic.gate_health` reports which gates are armed, which have
   stood down and why, and how many sessions ATR is still missing. Read-only and file-only.
   **Remaining:** it is a command, not yet a dashboard card, so it still has to be asked.
-- ~~**Thin pre-open margin.**~~ **Fixed 2026-08-06** ([#64](https://github.com/joncovington/cherrypick/issues/64)).
-  Supervision started at 09:15 on a 10-minute tick, so the first supervising tick could land ~09:25 —
-  minutes before the unrecoverable 09:30–09:35 ORB window, and a restart still needs the 240s settling
-  window before quotes are trustworthy. A dedicated `cherrypick-preopen` task now runs the streamer
-  liveness check every 2 minutes from 09:00 to 09:35. Its own task rather than a shorter global
-  interval: dropping the full tick to 2 minutes would multiply module checks, dashboard renders and
-  EOD triggers all day to fix 35 minutes. It reuses `_check_streamer_health` (so the silence-restart
-  lesson can't drift), writes no heartbeat, and stops at the door on a non-trading day.
+- ~~**Thin pre-open margin.**~~ **Fixed 2026-08-06** ([#64](https://github.com/joncovington/cherrypick/issues/64)),
+  **superseded 2026-08-09**: the dedicated `cherrypick-preopen` task (streamer liveness every 2 min,
+  09:00–09:35) became the supervisor's `streamer-health` job — same check (`_check_streamer_health`
+  reused, never copied; no heartbeat write; stops at the door on a non-trading day), every 60 s
+  across the whole 09:00–16:00 session. The original reasoning survives intact: the full watchdog
+  tick still never speeds up to protect the streamer — the check just has its own cadence now that
+  per-job cadences are free.
 - ~~**`doctor` coverage holes.**~~ **Mostly fixed 2026-08-06** ([#65](https://github.com/joncovington/cherrypick/issues/65)).
   `doctor` now checks every orchestrator-owned task — `trade-notify`, `log-archive`, `reconcile`,
   `follow-notify` and `preopen` — resolving each name through the same settings helper `install` uses,

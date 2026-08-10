@@ -72,13 +72,16 @@ same form (`["-m", "cherrypick.meic.paper_loop", "--once"]`).
 Everything hangs off one config file per package. The orchestrator's `config.json`
 (`orchestrator/config.py`) splits into two halves:
 
-- **Write side — the reliability guarantee.** `orchestrator/watchdog.py` runs on a schedule
-  (`orchestrator/tasks.py` → Windows `schtasks` / POSIX cron), checks each module's paper pipeline (task
-  registered, data fresh in-session, streamer alive, earnings SLA met), logs findings, and pushes alerts
-  through `notify/notifier.py`. It has a dedup / re-notify / recovery state machine
-  (`state/watchdog_state.json`). This path uses **only the stdlib + the OS shell** — no network, no AI —
-  so it has no new failure mode. (A 34-hour silent stall from an external streamer dependency is why that
-  rule is load-bearing.)
+- **Write side — the reliability guarantee.** The **supervisor daemon** (`orchestrator/supervisor.py`,
+  kept alive by the single `cherrypick-supervisor` OS task since the 2026-08-09 cutover) derives every
+  recurring job from config each pass (`orchestrator/jobspec.py`, ET/DST-correct) and spawns them as
+  short-lived headless ticks; `orchestrator/watchdog.py` runs as its 10-minute job, checks each
+  module's paper pipeline (job present, data fresh in-session, streamer alive, earnings SLA met) plus
+  the supervisor and its anchor, logs findings, and pushes alerts through `notify/notifier.py`. It has
+  a dedup / re-notify / recovery state machine (`state/watchdog_state.json`). This whole path uses
+  **only the stdlib + the OS shell + local files** — no network, no AI — so it has no new failure
+  mode. (A 34-hour silent stall from an external streamer dependency is why that rule is
+  load-bearing.)
 - **Read side — look whenever you want.** `report.py` (cross-module paper P&L), `calibrate.py` (per-profile
   promotion advisor), `eod_digest.py` (one session's cross-module roll-up), `eod_insight.py` (opt-in AI
   synthesis), `logrotate.py` (monthly archive), and `dashboard.py` (a static HTML page + a live server).

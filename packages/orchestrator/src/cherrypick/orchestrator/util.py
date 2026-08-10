@@ -84,3 +84,89 @@ def read_json(path, default=None) -> Any:
             return json.load(fh)
     except Exception:
         return {} if default is None else default
+
+
+def atomic_write_json(path, obj: Any) -> None:
+    """Write JSON via a sibling temp file + `os.replace`, so a reader never sees a half-written
+    file. The supervisor rewrites its heartbeat and job registry every few seconds while watchdog
+    ticks read them concurrently; a plain `open(..., 'w')` leaves a window where the file is
+    truncated-but-unwritten and `read_json` returns {} — indistinguishable from a dead supervisor."""
+    from pathlib import Path as _Path
+
+    path = _Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        json.dump(obj, fh, indent=2, default=str)
+    os.replace(tmp, path)
+
+
+def pid_alive(pid: int | None) -> bool:
+    """Is `pid` a live process? The probe chain the streamer/gex/flies daemons already settled on:
+    psutil, then the Win32 OpenProcess probe, then os.kill(pid, 0) as a last resort — never bare
+    os.kill first, which is unreliable on Windows (raises SystemError for some process states)."""
+    if not pid or pid <= 0:
+        return False
+    try:
+        import psutil  # type: ignore
+
+        return bool(psutil.pid_exists(pid))
+    except ImportError:
+        pass
+    try:
+        import ctypes
+
+        synchronize = 0x00100000
+        handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        return False
+    except Exception:
+        try:
+            os.kill(pid, 0)
+            return True
+        except PermissionError:
+            return True
+        except (OSError, SystemError):
+            return False
+
+
+def acquire_pid_lock(path, stale_seconds: int = 180) -> bool:
+    """Single-instance guard: O_EXCL-create `path` holding this process's PID.
+
+    Ports MEIC's `_acquire_once_lock` semantics (the P&L-corruption lesson): a held-but-ALIVE lock
+    is never stolen, regardless of age — PID liveness is the primary check, and the `stale_seconds`
+    mtime fallback applies only when the holder's PID can't be read (corrupt/truncated write) or the
+    holder is dead. Returns True when this process now holds the lock."""
+    import time as _time
+
+    path = str(path)
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        return True
+    except FileExistsError:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                holder_pid = int(fh.read().strip())
+        except (OSError, ValueError):
+            holder_pid = None
+        if holder_pid is not None and pid_alive(holder_pid):
+            return False
+        try:
+            if holder_pid is not None or _time.time() - os.path.getmtime(path) > stale_seconds:
+                os.unlink(path)
+                return acquire_pid_lock(path, stale_seconds)
+        except OSError:
+            pass
+        return False
+
+
+def release_pid_lock(path) -> None:
+    """Release a lock taken by `acquire_pid_lock`. Best-effort; never raises."""
+    try:
+        os.unlink(str(path))
+    except OSError:
+        pass
