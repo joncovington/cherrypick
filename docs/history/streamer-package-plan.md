@@ -9,15 +9,15 @@ what was intended at the time — where intent and outcome diverged, the outcome
 ## Why
 
 The suite has grown several consumers of live DXLink market data, but only one *producer*: MEIC's
-streamer daemon ([`packages/meic/src/streamer.py`](../packages/meic/src/cherrypick/meic/streamer.py), 922 lines). It
+streamer daemon ([`packages/meic/src/streamer.py`](../../packages/meic/src/cherrypick/meic/streamer.py), 922 lines). It
 writes `data/meic/stream_cache.db`, and everyone else reads that file **read-only**:
 
-- **flies** — [`provider.py`](../packages/flies/src/cherrypick/flies/provider.py) opens MEIC's cache `?mode=ro` and turns
+- **flies** — [`provider.py`](../../packages/flies/src/cherrypick/flies/provider.py) opens MEIC's cache `?mode=ro` and turns
   it into the snapshot every entry decision is priced from. It runs no streamer of its own
-  ([`paper_loop.py:334`](../packages/flies/src/cherrypick/flies/paper_loop.py#L334): *"no streamer of its own, so when the
+  ([`paper_loop.py:334`](../../packages/flies/src/cherrypick/flies/paper_loop.py#L334): *"no streamer of its own, so when the
   upstream one stalls we go blind"*).
 - **gex** — in piggyback mode reads the same MEIC cache; in standalone mode runs its own thin wrapper
-  ([`gex/src/cherrypick/gex/streamer.py`](../packages/gex/src/cherrypick/gex/streamer.py)) over the shared engine.
+  ([`gex/src/cherrypick/gex/streamer.py`](../../packages/gex/src/cherrypick/gex/streamer.py)) over the shared engine.
 
 The cache is therefore owned by a **trading module**, not by **infrastructure**. Uninstall MEIC and the
 producer vanishes — flies-only or gex-only installs have no data source. That breaks the goal of a
@@ -34,14 +34,14 @@ MEIC-bound.
 - `cherrypick.core.streamer.ChainStreamer` is generic — the WebSocket, listeners, cache writes, ATM
   window, and reconnect all live there, with MEIC policy injected via the `extra_subscriptions`,
   `protected_symbols`, and `trade_hook` constructor params
-  ([`ChainStreamer.__init__`](../packages/core/cherrypick/core/streamer/__init__.py)).
+  ([`ChainStreamer.__init__`](../../packages/core/cherrypick/core/streamer/__init__.py)).
   gex's 58-line wrapper reusing it — zero MEIC imports — is the existence proof.
 - Auth is centralized in `cherrypick.core.auth` under one keyring service (`"meicagent"`, legacy
   `"tastytrade-mcp"`). Any package can build a session with no dependency on MEIC's `session.py`.
 - The cache schema lives in `cherrypick.core.streamcache`. The shared surface between producers and
   consumers is **the cache file + its schema**, both already in core.
 - Reader-side indirection already exists: flies
-  ([`paper_loop.py:61-68`](../packages/flies/src/cherrypick/flies/paper_loop.py#L61-L68)) and gex both read
+  ([`paper_loop.py:61-68`](../../packages/flies/src/cherrypick/flies/paper_loop.py#L61-L68)) and gex both read
   `source.stream_cache_db` from config and only *default* to MEIC's path.
 
 The only thing missing is a **package that owns the daemon lifecycle** — the generic machinery currently
@@ -99,7 +99,7 @@ dependency safe; do not flip MEIC before both are in place.
 
 ## The subscription registry
 
-`packages/streamer/src/cherrypick/streamer/registry.py` ([done](../packages/streamer/src/cherrypick/streamer/registry.py)). Each consumer writes
+`packages/streamer/src/cherrypick/streamer/registry.py` ([done](../../packages/streamer/src/cherrypick/streamer/registry.py)). Each consumer writes
 one file `~/.cherrypick/state/stream_requests/<module>.json`:
 
 ```json
@@ -156,12 +156,12 @@ already cleanly separable from MEIC policy:
 
 | Machinery to lift (generic) | Source in MEIC today |
 |---|---|
-| PID-file / single-instance guard | [`streamer.py:782-817`](../packages/meic/src/cherrypick/meic/streamer.py#L782-L817) |
-| `--status` JSON (`running`, `pid`, `oldest_event_age_s`, `stale_age_s`, `connected_since`, `last_event_at`) | [`streamer.py:820-858`](../packages/meic/src/cherrypick/meic/streamer.py#L820-L858) |
-| `--stop` (SIGTERM to PID) | [`streamer.py:861-870`](../packages/meic/src/cherrypick/meic/streamer.py#L861-L870) |
-| Logging + rotation | [`streamer.py:73-93`](../packages/meic/src/cherrypick/meic/streamer.py#L73-L93) |
-| Symbol resolution (CLI > `symbols` > default) | [`streamer.py:873-882`](../packages/meic/src/cherrypick/meic/streamer.py#L873-L882) |
-| Main-loop skeleton (signal wiring, PID write/unlink, `await streamer.run_async()`) | [`streamer.py:738-775`](../packages/meic/src/cherrypick/meic/streamer.py#L738-L775) (generic parts) |
+| PID-file / single-instance guard | [`streamer.py:782-817`](../../packages/meic/src/cherrypick/meic/streamer.py#L782-L817) |
+| `--status` JSON (`running`, `pid`, `oldest_event_age_s`, `stale_age_s`, `connected_since`, `last_event_at`) | [`streamer.py:820-858`](../../packages/meic/src/cherrypick/meic/streamer.py#L820-L858) |
+| `--stop` (SIGTERM to PID) | [`streamer.py:861-870`](../../packages/meic/src/cherrypick/meic/streamer.py#L861-L870) |
+| Logging + rotation | [`streamer.py:73-93`](../../packages/meic/src/cherrypick/meic/streamer.py#L73-L93) |
+| Symbol resolution (CLI > `symbols` > default) | [`streamer.py:873-882`](../../packages/meic/src/cherrypick/meic/streamer.py#L873-L882) |
+| Main-loop skeleton (signal wiring, PID write/unlink, `await streamer.run_async()`) | [`streamer.py:738-775`](../../packages/meic/src/cherrypick/meic/streamer.py#L738-L775) (generic parts) |
 
 **Explicitly NOT lifted** (stays in MEIC — it's live-trading policy flies/gex don't need): ORB capture
 (`_OrbTracker`, 227-267), open-position leg subscriptions reading `ic_trades` (146-181), the account REST
@@ -181,7 +181,7 @@ drop-in for the orchestrator's existing streamer contract.
   path. Because it's one fixed path regardless of producer, readers never need per-install rewriting.
 - **Migration:** on first install after the cutover, the old `data/meic/stream_cache.db` is simply
   abandoned (the streamer recreates its schema on start, via
-  [`cherrypick.core.streamcache`](../packages/core/cherrypick/core/streamcache/__init__.py)'s `DDL`).
+  [`cherrypick.core.streamcache`](../../packages/core/cherrypick/core/streamcache/__init__.py)'s `DDL`).
   No data migration needed; the cache is ephemeral live state.
 
 ## Authentication & standalone credential bootstrap
@@ -191,7 +191,7 @@ daemon can authenticate. How auth works today:
 
 - The daemon builds its session from `cherrypick.core.auth`: `CredentialStore("meicagent",
   legacy=("tastytrade-mcp",))` → `SessionManager(store, thread_local=True).get_session`
-  ([daemon.py](../packages/streamer/src/cherrypick/streamer/daemon.py)). OAuth2 via the tastytrade SDK; tokens auto-refresh
+  ([daemon.py](../../packages/streamer/src/cherrypick/streamer/daemon.py)). OAuth2 via the tastytrade SDK; tokens auto-refresh
   from the long-lived refresh token. Secrets live only in the OS keyring — never files/env/logs.
 - Two facts that shape the bootstrap:
   1. **The streamer needs only the two bearer secrets** (`client_secret`, `refresh_token`). It never
@@ -203,14 +203,14 @@ daemon can authenticate. How auth works today:
      own tool**, not that the orchestrator starts handling bearer secrets.
 
 **Done (streamer side, self-contained):** the streamer package has its own credential tool —
-`run.py --secrets-set` / `--secrets-status` ([credentials.py](../packages/streamer/src/cherrypick/streamer/credentials.py)),
+`run.py --secrets-set` / `--secrets-status` ([credentials.py](../../packages/streamer/src/cherrypick/streamer/credentials.py)),
 a thin wrapper over `CredentialStore("meicagent", …)` that stores only the two bearer secrets under the
 shared service. So a streamer-only box can be onboarded directly, and the entry is interchangeable with
 MEIC/earnings/gex (same keyring entry).
 
 **Remaining (orchestrator side):** make `cherrypick connect` able to delegate to the streamer. Today
 `connect` hardcodes `src/tt.py secrets_set` and requires a `modules.<name>` entry + checkout on disk
-([connect.py](../packages/orchestrator/src/cherrypick/orchestrator/connect.py)). To target the streamer:
+([connect.py](../../packages/orchestrator/src/cherrypick/orchestrator/connect.py)). To target the streamer:
 
 - Make the delegated credential command **config-driven** (e.g. a `credential_argv`, default
   `["src/tt.py"]`) so the streamer can set `["run.py"]` and connect invokes
@@ -230,7 +230,7 @@ Two changes, one config + one small code.
 Today the streamer is a sub-block of `modules.meic` and only gets stale-restart treatment inside
 `_check_meic`. Repoint it at the standalone package as a top-level managed producer whose `path` selects
 the run directory (resolution is purely `path`-driven —
-[`config.py:106-119`](../packages/orchestrator/src/cherrypick/orchestrator/config.py#L106-L119)):
+[`config.py:106-119`](../../packages/orchestrator/src/cherrypick/orchestrator/config.py#L106-L119)):
 
 - producer `path = ../streamer`, argv `run.py` / `run.py --status` / `run.py --stop`.
 
@@ -242,10 +242,10 @@ remaining sidecar — REST poller + 7699 API — is a separate managed process, 
 
 The generic `services[]` path only checks the `running` bool; the richer stale-age restart lives only in
 `_check_meic`. The helpers it uses — `_streamer_stale_age` / `_streamer_connection_age`
-([`watchdog.py:79-111`](../packages/orchestrator/src/cherrypick/orchestrator/watchdog.py#L79-L111)) — are
+([`watchdog.py:79-111`](../../packages/orchestrator/src/cherrypick/orchestrator/watchdog.py#L79-L111)) — are
 already generic. Extend the managed-producer check to call them so the standalone streamer gets the same
 "stalled → stop → restart" behavior MEIC's does today
-([`watchdog.py:216-293`](../packages/orchestrator/src/cherrypick/orchestrator/watchdog.py#L216-L293)).
+([`watchdog.py:216-293`](../../packages/orchestrator/src/cherrypick/orchestrator/watchdog.py#L216-L293)).
 No change to the launch mechanics (`_start_streamer` / `_stop_streamer` already shell out via `path` +
 argv and honor the single-instance guard).
 
@@ -360,8 +360,8 @@ actions + rollback.
 11. **Standalone acceptance (live smoke)** — run the daemon against the broker and confirm flies + MEIC
     price off the shared cache with the registry driving symbols/legs. User-supervised (market hours +
     keyring creds), per the suite's broker-cutover pattern.
-12. **Docs** — update [`architecture.md`](architecture.md),
-    [`configuration-and-storage.md`](configuration-and-storage.md), and each consumer's CLAUDE.md "Data
+12. **Docs** — update [`architecture.md`](../architecture.md),
+    [`configuration-and-storage.md`](../configuration-and-storage.md), and each consumer's CLAUDE.md "Data
     source" section for the sole-producer + registry model.
 
 ## Risks & open questions
@@ -372,7 +372,7 @@ actions + rollback.
 - **Symbol-union staleness** — adding a module without re-running `install` leaves the producer streaming
   a stale symbol set. Mitigated by the `doctor` warning; consider whether the watchdog should also flag it.
 - **`stream_status` table columns** — MEIC's `--status` line 2 dumps the `stream_status` row plus computed
-  keys ([`streamer.py:834-856`](../packages/meic/src/cherrypick/meic/streamer.py#L834-L856)); the lifted daemon must write
+  keys ([`streamer.py:834-856`](../../packages/meic/src/cherrypick/meic/streamer.py#L834-L856)); the lifted daemon must write
   the same table via `core.streamcache` so both producers present an identical status contract to the
   watchdog.
 - **Install ordering** — `packages/streamer` should install as a dependency whenever any data-consuming

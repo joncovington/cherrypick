@@ -203,7 +203,7 @@ git clone https://github.com/joncovington/cherrypick.git
 cd cherrypick
 
 # Installs the shared cherrypick.core library first, then every Python package. From the repo root.
-bash scripts/dev-install.sh                      # macOS / Linux / Git Bash
+./scripts/dev-install.sh                         # macOS / Linux / Git Bash
 powershell -File scripts\dev-install.ps1         # Windows PowerShell
 ```
 

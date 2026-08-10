@@ -64,7 +64,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 
 All tastytrade operations are called via `python -m cherrypick.meic.tt <command>`. Commands output JSON to stdout. Credentials are read from the OS keyring (set via `python -m cherrypick.meic.tt secrets_set`; check status with `python -m cherrypick.meic.tt secrets_status`). Live-order tools require `enable_live_trading: true` in `config.json`.
 
-`get_quote`, `get_option_chain`, and `get_strategies` check the canonical shared stream cache `~/.cherrypick/data/marketdata/stream_cache.db` first (data age < 10s) before opening a live DXLink connection. Start the streamer daemon for near-zero latency on these calls during active trading. (The cache moved out of `data/meic` to `data/marketdata` so it is owned by infrastructure and readable by any module even when MEIC isn't the producer — see `docs/streamer-package-plan.md`.)
+`get_quote`, `get_option_chain`, and `get_strategies` check the canonical shared stream cache `~/.cherrypick/data/marketdata/stream_cache.db` first (data age < 10s) before opening a live DXLink connection. Start the streamer daemon for near-zero latency on these calls during active trading. (The cache moved out of `data/meic` to `data/marketdata` so it is owned by infrastructure and readable by any module even when MEIC isn't the producer — see `docs/history/streamer-package-plan.md`.)
 
 | Command | Purpose | Requires live trading? |
 |---|---|---|
