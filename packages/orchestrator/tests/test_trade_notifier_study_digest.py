@@ -160,7 +160,7 @@ def test_flush_after_interval_emits_one_digest_and_clears_bucket():
     assert len(n2.sent) == 1
     key, body = n2.sent[0]
     assert key.startswith("trade.meic.summary.")
-    assert "MEIC width study" in body and "ET —" in body
+    assert "MEIC digest" in body and "ET —" in body
     assert "XSP:" in body and "QQQ:" in body
     assert "1 exit net +$24" in body  # 25.0 pnl - 1.5 fees, rounded
     assert "day 1 trades net +$24" in body
@@ -180,6 +180,19 @@ def test_empty_window_flushes_nothing():
     )
     assert n2.sent == []
     assert counts["summary_pushed"] is False
+
+
+def test_summary_mode_routes_every_profile_to_digest():
+    """notify.trade_summary.mode='summary' resolves to the empty prefix, which matches every
+    risk_profile — a profile the prefix list would have pushed per-trade lands in the digest."""
+    conn = _conn([_row(id=1, status="open", risk_profile="conservative")])
+    state = tn._meic_seed(_conn([]))
+    n = _Recorder()
+    counts = tn._meic_process(conn, state, n, "meic", summary_prefixes=("",), now=1000.0)
+
+    assert counts["entries_notified"] == 1
+    assert n.sent == []
+    assert state["pending_summary"]["XSP"]["entries"] == ["conservative"]
 
 
 def test_watermark_advances_once_per_row_across_both_paths():
