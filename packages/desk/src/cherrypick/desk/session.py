@@ -15,16 +15,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from cherrypick.core.auth import CredentialStore, SessionManager
+from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 
 _managers: dict[str, SessionManager] = {}
 
 
 def get_session(cfg: dict[str, Any]) -> Any:
-    """A cached OAuth session for the configured broker keyring service."""
+    """A cached OAuth session for the configured broker keyring service.
+
+    Falls back read-only to the suite-wide shared service (the single credential source), so a
+    machine onboarded once needs no per-module entry — borrowing credentials is still not
+    borrowing permissions; desk authorization remains its own config + PIN + ticket.
+    """
     service = str(cfg.get("broker_keyring_service") or "meicagent")
     if service not in _managers:
-        _managers[service] = SessionManager(CredentialStore(service))
+        legacy = () if service == SHARED_SERVICE else (SHARED_SERVICE,)
+        _managers[service] = SessionManager(CredentialStore(service, legacy_service_names=legacy))
     return _managers[service].get_session()
 
 

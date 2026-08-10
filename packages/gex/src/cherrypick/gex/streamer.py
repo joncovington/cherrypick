@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 
-from cherrypick.core.auth import CredentialStore, SessionManager
+from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 from cherrypick.core.streamer import ChainStreamer
 
 _SERVICE = "meicagent"
@@ -27,8 +27,11 @@ def make_session_factory():
 
     thread_local: the engine's DXLink loop and any REST call must each get a session bound to their own
     event loop (tastytrade's Session holds a loop-bound httpx client) — see cherrypick.core.auth.
+
+    The fallback chain ends at the suite-wide shared service, so a machine onboarded once (the
+    single credential source) works here without a per-module credential ever being written.
     """
-    store = CredentialStore(_SERVICE, legacy_service_names=(_LEGACY,))
+    store = CredentialStore(_SERVICE, legacy_service_names=(_LEGACY, SHARED_SERVICE))
     return SessionManager(store, thread_local=True).get_session
 
 
