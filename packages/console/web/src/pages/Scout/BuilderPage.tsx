@@ -1,10 +1,14 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { mutateJson } from "../../lib/api";
 import { useQuote } from "../../lib/useQuote";
 import { PayoffChart } from "./PayoffChart";
 import { ChainPanel } from "./ChainPanel";
 import { fmtMoney } from "../../components/DataTable";
+import { SymbolCard } from "../../components/SymbolCard";
+import { StrategyCards, type ApiLeg } from "../../components/StrategyCards";
+import { CollectorBanner } from "../../components/CollectorBanner";
 
 interface LegDraft {
   id: number;
@@ -51,7 +55,11 @@ function fmtExpiry(expiration: string | null): string {
 }
 
 export function BuilderPage() {
-  const [symbol, setSymbol] = useState("SPX");
+  const [search] = useSearchParams();
+  const [symbol, setSymbol] = useState(() => {
+    const s = search.get("symbol")?.trim().toUpperCase() ?? "";
+    return s !== "" ? s : "SPX";
+  });
   const [legs, setLegs] = useState<LegDraft[]>([]);
   const [iv, setIv] = useState("20");
   const [dte, setDte] = useState("30");
@@ -108,6 +116,7 @@ export function BuilderPage() {
 
   return (
     <div className="page">
+      <CollectorBanner chain />
       <div className="page-title-row">
         <h1>Builder</h1>
         <input
@@ -128,6 +137,32 @@ export function BuilderPage() {
         <label className="muted lbl">
           DTE <input className="text-input num-input" value={dte} onChange={(e) => setDte(e.target.value)} />
         </label>
+      </div>
+
+      <div className="cards">
+        <SymbolCard symbol={symbol} />
+        <StrategyCards
+          symbol={symbol}
+          onApply={(apiLegs: ApiLeg[], exp: string) => {
+          setLegs(
+            apiLegs.map((l) => ({
+              id: nextId++,
+              kind: l.kind,
+              quantity: l.quantity,
+              strike: l.strike !== null ? String(l.strike) : "",
+              price: l.price.toFixed(2),
+              delta: l.delta,
+              expiration: l.expiration,
+              occSymbol: l.occSymbol,
+            })),
+          );
+            if (exp !== "") {
+              setExpiration(exp);
+              const d = dteOf(exp);
+              if (d !== null) setDte(String(d));
+            }
+          }}
+        />
       </div>
 
       <div className="cards cards-wide">

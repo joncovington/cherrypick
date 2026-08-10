@@ -8,10 +8,19 @@ import type { ConsoleConfig } from "../config.js";
  * Opens per call and closes immediately: the DB is WAL and cheap to open,
  * and holding no handle means the console can never interfere with the writer.
  */
+/** Streamer rows persist across weeks, so age-gate every read: the cache only
+ *  holds symbols scout is (or once was) streaming, and a quote from a
+ *  long-unsubscribed symbol is days old, not "last". The default tolerates a
+ *  long weekend's worth of staleness for display; decision-adjacent callers
+ *  (screener/chain-snapshot spot) pass a tight gate and fall back to a live
+ *  DXLink snapshot or candle close instead. */
+const DEFAULT_MAX_AGE_S = 4 * 86_400;
+
 /** Last cached quote/trade for one symbol — the off-hours / DXLink-down fallback. */
 export function cachedQuote(
   config: ConsoleConfig,
   symbol: string,
+  maxAgeS: number = DEFAULT_MAX_AGE_S,
 ): { bid?: number; ask?: number; last?: number } | null {
   const p = config.paths.streamCacheDb;
   if (!fs.existsSync(p)) return null;
@@ -19,12 +28,17 @@ export function cachedQuote(
   try {
     db = new Database(p, { readonly: true, fileMustExist: true });
     db.pragma("busy_timeout = 2000");
+    const cutoff = Date.now() / 1000 - maxAgeS;
     const q = db
-      .prepare<[string], Record<string, unknown>>("SELECT bid, ask FROM stream_quotes WHERE symbol = ?")
-      .get(symbol);
+      .prepare<[string, number], Record<string, unknown>>(
+        "SELECT bid, ask FROM stream_quotes WHERE symbol = ? AND updated_at >= ?",
+      )
+      .get(symbol, cutoff);
     const t = db
-      .prepare<[string], Record<string, unknown>>("SELECT last FROM stream_trades WHERE symbol = ?")
-      .get(symbol);
+      .prepare<[string, number], Record<string, unknown>>(
+        "SELECT last FROM stream_trades WHERE symbol = ? AND updated_at >= ?",
+      )
+      .get(symbol, cutoff);
     if (q === undefined && t === undefined) return null;
     const out: { bid?: number; ask?: number; last?: number } = {};
     if (typeof q?.["bid"] === "number") out.bid = q["bid"];
