@@ -38,7 +38,7 @@ export function SymbolCard({ symbol }: { symbol: string }) {
   if (isError || data === undefined) return null;
 
   const price = data.last ?? data.eodClose;
-  const tiles: Array<{ label: string; value: string; cls?: string }> = [
+  const tiles: Array<{ label: string; value: string; cls?: string; tag?: boolean }> = [
     {
       label: "last / chg",
       value: `${money(price)} ${data.eodChangePct !== null ? `${data.eodChangePct >= 0 ? "+" : ""}${data.eodChangePct.toFixed(2)}%` : ""}`,
@@ -59,8 +59,8 @@ export function SymbolCard({ symbol }: { symbol: string }) {
     { label: "mkt cap", value: compact(data.marketCap) },
     { label: "volume", value: compact(data.volume) },
     { label: "earnings", value: fmtEarnings(data.earningsDate) },
-    { label: "1m trend", value: data.trend1m ?? "—", cls: trendClass(data.trend1m) },
-    { label: "6m trend", value: data.trend6m ?? "—", cls: trendClass(data.trend6m) },
+    { label: "1m trend", value: data.trend1m ?? "—", cls: trendClass(data.trend1m), tag: data.trend1m !== null },
+    { label: "6m trend", value: data.trend6m ?? "—", cls: trendClass(data.trend6m), tag: data.trend6m !== null },
   ];
 
   return (
@@ -69,7 +69,13 @@ export function SymbolCard({ symbol }: { symbol: string }) {
         {tiles.map((t) => (
           <div key={t.label} className="stat-tile">
             <span className="stat-label">{t.label}</span>
-            <span className={`stat-value ${t.cls ?? ""}`}>{t.value}</span>
+            {t.tag === true ? (
+              <span className={`chip ${t.cls ?? ""}`} style={{ alignSelf: "flex-start" }}>
+                {t.value.replace(/_/g, " ")}
+              </span>
+            ) : (
+              <span className={`stat-value ${t.cls ?? ""}`}>{t.value}</span>
+            )}
           </div>
         ))}
       </div>
