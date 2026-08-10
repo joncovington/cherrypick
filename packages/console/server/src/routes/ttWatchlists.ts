@@ -38,7 +38,7 @@ export function registerTtWatchlistRoutes(
   app.get("/api/tt-watchlists/:key", async (req, reply) => {
     const { key } = req.params as { key: string };
     if (!KEY_RE.test(key)) return reply.code(400).send({ error: "invalid watchlist key" });
-    const payload = await ttWatchlistPayload(config, key);
+    const payload = await ttWatchlistPayload(config, key, market);
     if (payload === null) return reply.code(404).send({ error: "unknown watchlist" });
     return payload;
   });

@@ -218,6 +218,13 @@ h2 {
   font-size: 12px;
 }
 
+.collector-banner {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
 /* --- champions & challengers --- */
 
 .verdict {
