@@ -70,6 +70,8 @@ every supervisor pass by `orchestrator/jobspec.py` — so changing a cadence is 
 effect on the next pass, with no `install` step and no scheduled task to register. The job ids are what
 `cherrypick status` lists.
 
+"Default" below means what `config.example.json` ships; your own `config.json` may differ.
+
 | Block / source | Enabled by default | Supervisor job |
 |---|---|---|
 | `watchdog` | on | `watchdog` |
@@ -84,9 +86,9 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `eod_digest` | **on**, event-driven (deadline backstop 16:45 ET) | *no job* — the watchdog fires it detached once every module's `paper-eod` exists |
 | `eod_insight` | **off**, event-driven with the digest; needs Claude Code | *no job* (same event) |
 | `advise` | **off twice** (suite + per-module), event-driven with the digest | *no job* (same event) |
-| `symbol_watch` | on, daily | `symbol-watch` |
+| `symbol_watch` | **off**, daily 06:30 when enabled | `symbol-watch` |
 | `log_archive` | **on**, day 1 @ 03:30 | `log-archive` (monthly) |
-| `reconcile.schedule` | **on**, daily 16:30 | `reconcile` |
+| `reconcile.schedule` | **off** by default, daily 16:30 when enabled — worth turning on once any module trades live, since it diffs the live ledger against the broker | `reconcile` |
 
 Cadences are deliberately not restated here — each job's interval is the value of its own config key
 (`watchdog.interval_minutes`, `trade_notify.interval_seconds`, a module's `paper.tick_interval_seconds`,
