@@ -53,7 +53,7 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `cherrypick/flies/section.py` | the compact `cherrypick.core.viz` card for the suite dashboard. |
 | `cherrypick/flies/eod.py` | `paper-eod-<day>.md` and `eod-analysis-<day>.md`. |
 | `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `dashboard` / `section`. |
-| `cherrypick/flies/live_loop.py` | The LIVE loop: 1-min self-healing tick (`--once --live`, per-day arming via `/live-flies-start`, self-disarms at `live.disarm_time`) + burst fill-watchers (`--watch-fills`). `--once` (dry-run default) is the rung-0 smoke; `--status`, `--settle --price` for the official print. |
+| `cherrypick/flies/live_loop.py` | The LIVE loop: a 1-min `--once --live` tick fired by the orchestrator's supervisor while the arm record (`state/flies-live-arm.json`, written per-day via `/live-flies-start`) is valid; self-disarms at `live.disarm_time` by deleting the record. Burst fill-watchers (`--watch-fills`) unchanged. `--once` (dry-run default) is the rung-0 smoke; `--status`, `--settle --price` for the official print. |
 | `cherrypick/flies/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. |
 | `cherrypick/flies/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). |
 | `cherrypick/flies/alert_daemon.py` | Optional order-alert daemon: one tastytrade account-alert websocket for the trading day, started on arm / stopped on disarm. Decides nothing — appends to the inbox below so fills are *noticed* sooner. |
@@ -648,6 +648,19 @@ These are the constraints the module exists to enforce. Breaking one makes the n
 - Instruction files hold no code.
 
 ## Status
+
+**Tick cadence 60s → 15s on 2026-08-09 (supervisor cutover) — a journaled measurement break.** The
+orchestrator replaced its per-task Task Scheduler entries with one supervisor daemon, which removed
+the 1-minute floor the paper cadence was pinned to. In-session the loop now runs as the module's own
+resident `--interval 15` process (supervised: restarted on death and on 120 s of log silence; a
+shared PID lock keeps it and any `--once` from ever overlapping), while off-session ticks stay
+1-minute `--once` spawns so settlement at 16:20 keeps its exact shape. A faster poll catches
+transient completing-debit dips a slower one missed, so the **completion rate — the headline number
+— is not comparable across this date**: pre- and post-cutover rates must never be pooled. The break
+is recorded as a `mode='cadence'` row in the decision journal (written by `_note_cadence_change` on
+the first resident tick at the new cadence). Live arming also re-keyed the same day: the armed
+signal is now the arm record in the shared state dir, not a schtasks registration (see the layout
+table's `live_loop.py` row).
 
 **Complete and tested:** decision engine, floor accounting, paper DB, snapshot provider, session
 driver, CLI, and the orchestrator `fly_book` wiring across all four schema registries. 300 tests,

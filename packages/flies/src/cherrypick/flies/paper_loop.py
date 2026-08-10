@@ -45,15 +45,20 @@ RTH_CLOSE_MIN = 16 * 60
 DEFAULT_SETTLE_MIN = 16 * 60 + 20
 
 _TASK_NAME = "cherrypick-flies-paper-loop"
-# Every minute — the OS scheduler's floor. This cadence is load-bearing for THIS strategy in a way
-# it is not for MEIC (which stays at 2): the completing spread of a legged fly can cheapen
-# transiently, so a slower poll measures a lower completion rate — the module's headline number —
-# for reasons that have nothing to do with the market. Tightened 2 -> 1 on 2026-07-29 with the XSP
-# move: XSP premiums run ~1/10 of SPX against the same absolute fee stack, so the completion gate
-# clears by smaller margins and inter-tick dips matter proportionally more. Note that any discrete
-# poll underestimates what a resting limit order would catch live, so the completion rate measured
-# here is a floor on that count and a ceiling on live fill quality. Going below 1 minute would mean
-# a resident process instead of the self-healing scheduled task — a different reliability model.
+# Cadence history — load-bearing for THIS strategy in a way it is not for MEIC: the completing
+# spread of a legged fly can cheapen transiently, so a slower poll measures a lower completion rate
+# — the module's headline number — for reasons that have nothing to do with the market. Any discrete
+# poll underestimates what a resting limit order would catch live, so the measured completion rate
+# is a floor on that count and a ceiling on live fill quality — which also means CHANGING the
+# cadence changes what the number measures; every change is a journaled measurement break (see
+# `_note_cadence_change`) and pre/post rates are never pooled. 2 min -> 1 min on 2026-07-29 (XSP
+# move: ~1/10 the premiums against the same fee stack, so inter-tick dips mattered more); 1 min was
+# the OS scheduler's floor. Since the 2026-08-09 supervisor cutover the in-session driver is the
+# resident `--interval` loop at the orchestrator-configured cadence (15s) — supervised
+# (restart-on-death, restart-on-silence), which is the reliability model that going sub-minute
+# always required — while off-session ticks stay `--once` spawns so settlement, retries, and the
+# idle heartbeat keep their shape. _TASK_INTERVAL_MIN survives only for the legacy standalone
+# schtasks path (`--install-task`) and the off-session heartbeat rate-limit below.
 _TASK_INTERVAL_MIN = 1
 _NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
@@ -119,6 +124,129 @@ def in_session(now_min: int) -> bool:
     return RTH_OPEN_MIN <= now_min < RTH_CLOSE_MIN
 
 
+# --------------------------------------------------------------------------- loop lock + cadence
+def _paper_data_dir() -> str:
+    return os.path.dirname(os.environ.get("FLIES_DB_PATH") or dbmod.default_db_path())
+
+
+def _loop_lock_path() -> str:
+    return os.path.join(_paper_data_dir(), "paper_loop.lock")
+
+
+def _pid_alive(pid: int) -> bool:
+    """The settled probe chain (psutil → Win32 OpenProcess → os.kill last) — never bare
+    os.kill first, which is unreliable on Windows."""
+    if pid <= 0:
+        return False
+    try:
+        import psutil  # type: ignore
+
+        return bool(psutil.pid_exists(pid))
+    except ImportError:
+        pass
+    try:
+        import ctypes
+
+        synchronize = 0x00100000
+        handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        return False
+    except Exception:
+        try:
+            os.kill(pid, 0)
+            return True
+        except PermissionError:
+            return True
+        except (OSError, SystemError):
+            return False
+
+
+def _acquire_loop_lock(stale_seconds: int = 180) -> bool:
+    """Single-instance guard shared by `--interval` and `--once`, so the supervised resident loop
+    and an off-session/manual `--once` can never iterate the same book concurrently (nothing
+    guarded this before the resident mode existed — the 1-minute task never overlapped itself for
+    long thanks to MEIC-style short ticks, but a resident process changes that calculus). MEIC's
+    lock semantics: a held-but-ALIVE lock is never stolen regardless of age; the mtime fallback
+    applies only when the holder's PID is unreadable."""
+    path = _loop_lock_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        return True
+    except FileExistsError:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                holder = int(fh.read().strip())
+        except (OSError, ValueError):
+            holder = None
+        if holder is not None and _pid_alive(holder):
+            return False
+        try:
+            if holder is not None or time.time() - os.path.getmtime(path) > stale_seconds:
+                os.unlink(path)
+                return _acquire_loop_lock(stale_seconds)
+        except OSError:
+            pass
+        return False
+
+
+def _release_loop_lock() -> None:
+    try:
+        os.unlink(_loop_lock_path())
+    except OSError:
+        pass
+
+
+def _cadence_state_path() -> str:
+    return os.path.join(_paper_data_dir(), "tick_cadence.json")
+
+
+def _note_cadence_change(conn, interval_seconds: int) -> None:
+    """Journal a tick-cadence change as an explicit measurement break.
+
+    The completion rate is cadence-dependent (a faster poll catches transient completing-debit dips
+    a slower one misses — see the cadence-history note at the top), so pre/post-change rates are
+    not comparable and must never be pooled. The break is recorded where analysis actually looks:
+    one decision-journal row (visible on the dashboard's Decision Journal card), keyed off a small
+    state file so the row is written exactly once per change. Best-effort — telemetry, never a
+    reason to skip a tick. First-ever run baselines against 60s, the cadence of the entire
+    pre-supervisor ledger.
+    """
+    try:
+        prev = 60
+        state_path = _cadence_state_path()
+        try:
+            with open(state_path, encoding="utf-8") as fh:
+                prev = int(json.load(fh).get("seconds", 60))
+        except (OSError, ValueError):
+            pass
+        if prev == interval_seconds:
+            return
+        day = provider.now_et().date().isoformat()
+        dbmod.record_decision(
+            conn,
+            trade_date=day,
+            arm="*",
+            symbol="*",
+            mode="cadence",
+            reason=(
+                f"tick_interval {prev}s->{interval_seconds}s (supervisor cutover); "
+                "completion rate not comparable across this date"
+            ),
+            accepted=False,
+            detail=json.dumps({"old_seconds": prev, "new_seconds": interval_seconds}),
+        )
+        with open(state_path, "w", encoding="utf-8") as fh:
+            json.dump({"seconds": interval_seconds, "since": day}, fh)
+        _log(f"tick cadence changed {prev}s -> {interval_seconds}s — journaled as a measurement break")
+    except Exception as exc:  # noqa: BLE001 — never let telemetry break the loop
+        _log(f"cadence-change journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
 def settle_time_min(config: dict) -> int:
     at = config.get("defaults", {}).get("settle_time")
     if not at:
@@ -158,7 +286,7 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
 
     # Nothing happens on a non-trading day — not even settlement.
     #
-    # The task fires every two minutes forever, so without this the Saturday-evening tick would find
+    # The off-session tick fires every minute forever, so without this the Saturday-evening tick would find
     # the clock past the settle time and no report written for that date, "settle" a session that
     # never happened, and emit paper-eod-<saturday>.md. The suite digest discovers those files by
     # filename alone, so it would ingest weekends and holidays as real sessions.
@@ -181,7 +309,8 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
         # A settled day is silent for the rest of the evening, and silence is what a dead loop looks
         # like too — the whole reason 2026-07-20 read as "the loop stopped at 13:58" is that the
         # skip logged nothing. So leave a heartbeat, rate-limited to the first tick of each hour:
-        # the task fires ~700 times a day and a line per tick would bury the session it surrounds.
+        # the off-session --once tick fires ~1/min around the clock (the in-session resident loop
+        # never reaches this branch) and a line per tick would bury the session it surrounds.
         if past_settle and settled and now_min % 60 < _TASK_INTERVAL_MIN:
             _log(f"{day} settled — idle until the next session")
         return {"ok": True, "skipped": "outside_rth", "now_min": now_min, "session_settled": settled}
@@ -480,28 +609,53 @@ def main(argv=None) -> int:
         )
         return 0
     if args.interval:
-        _log(f"loop starting, interval {args.interval}s, cache {cache_path}")
-        # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session run
-        # from an older branch writes NULL to any regime column that branch predates -- silently, all
-        # day, with no backfill path afterwards. Logged rather than enforced: a stale checkout cannot
-        # fix itself, and refusing to trade would turn a telemetry gap into an outage.
-        drift = dbmod.stale_writer_columns(conn)
-        if drift:
-            _log(
-                f"WARNING: {len(drift)} ledger column(s) this checkout will never write — "
-                f"{', '.join(drift)}. The running code is older than the database schema; "
-                "this session's rows will be missing that telemetry. Check the branch."
-            )
-        while args.force or in_session(provider.minute_of_day(provider.now_et())):
-            run_once(config, conn, cache_path=cache_path, force=args.force)
-            time.sleep(args.interval)
-        _log("session closed")
-        return 0
+        # One loop at a time — the supervised resident session and any off-session/manual --once
+        # share this lock, so two processes can never iterate the same book concurrently.
+        if not _acquire_loop_lock():
+            _log("another paper loop holds the lock — exiting")
+            print(json.dumps({"ok": True, "skipped": "another paper loop is already running"}))
+            return 0
+        try:
+            _log(f"loop starting, interval {args.interval}s, cache {cache_path}")
+            _note_cadence_change(conn, args.interval)
+            # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session
+            # run from an older branch writes NULL to any regime column that branch predates --
+            # silently, all day, with no backfill path afterwards. Logged rather than enforced: a
+            # stale checkout cannot fix itself, and refusing to trade would turn a telemetry gap
+            # into an outage.
+            drift = dbmod.stale_writer_columns(conn)
+            if drift:
+                _log(
+                    f"WARNING: {len(drift)} ledger column(s) this checkout will never write — "
+                    f"{', '.join(drift)}. The running code is older than the database schema; "
+                    "this session's rows will be missing that telemetry. Check the branch."
+                )
+            while args.force or in_session(provider.minute_of_day(provider.now_et())):
+                # A transient failure costs one tick, not the session — the supervisor restarts a
+                # dead resident child, but dying on every quote hiccup would turn each into a
+                # restart+backoff cycle when the next tick would have been fine.
+                try:
+                    run_once(config, conn, cache_path=cache_path, force=args.force)
+                except Exception as exc:  # noqa: BLE001
+                    _log(f"iteration error (continuing): {type(exc).__name__}: {exc}")
+                time.sleep(args.interval)
+            _log("session closed")
+            return 0
+        finally:
+            _release_loop_lock()
     if args.once:
-        print(
-            json.dumps(run_once(config, conn, cache_path=cache_path, force=args.force), indent=2, default=str)
-        )
-        return 0
+        if not _acquire_loop_lock():
+            print(json.dumps({"ok": True, "skipped": "another paper loop is already running"}))
+            return 0
+        try:
+            print(
+                json.dumps(
+                    run_once(config, conn, cache_path=cache_path, force=args.force), indent=2, default=str
+                )
+            )
+            return 0
+        finally:
+            _release_loop_lock()
 
     ap.error("choose one of --once, --interval, --settle, --status")
     return 2
