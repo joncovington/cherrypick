@@ -6,6 +6,7 @@ const links = [
   { to: "/flies", label: "Flies" },
   { to: "/earnings", label: "Earnings" },
   { to: "/gex", label: "GEX" },
+  { to: "/champions", label: "Champions" },
   { to: "/scout", label: "Watchlist", end: true },
   { to: "/scout/screener", label: "Screener" },
   { to: "/scout/builder", label: "Builder" },
