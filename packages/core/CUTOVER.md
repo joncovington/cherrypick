@@ -1,4 +1,12 @@
-# Consumer cutover — wiring cherrypit-core into a module (auth first)
+# Consumer cutover — wiring cherrypick-core into a module (auth first)
+
+> **⚠️ Frozen 2026-08-01 — a historical record of the cutover, not current reference.** It was written
+> when `cherrypick-core` was a separate repository being wired into modules one at a time. That is
+> done: core is now `packages/core` in this monorepo, every package installs it as an editable
+> dependency, and there is no cutover left to perform. It also names `tastytrade-mcp`, which is
+> retired. For current state read [`CLAUDE.md`](CLAUDE.md) — including the module map — and the suite
+> [documentation index](../../docs/README.md). Kept because the verification-per-module method is
+> worth having on record if core is ever wired into something new.
 
 This is the **deliberate, verified** step that connects a live module (MEICAgent / EarningsAgent /
 tastytrade-mcp) to `cherrypit-core`. It is intentionally separate from building the library, because
