@@ -45,9 +45,11 @@ _COLS = (
 class _Recorder:
     def __init__(self):
         self.sent = []
+        self.embeds = []
 
     def notify(self, level, key, title, body, embed=None):
         self.sent.append((key, body))
+        self.embeds.append(embed)
 
 
 def _row(**kw):
@@ -160,11 +162,38 @@ def test_flush_after_interval_emits_one_digest_and_clears_bucket():
     assert len(n2.sent) == 1
     key, body = n2.sent[0]
     assert key.startswith("trade.meic.summary.")
-    assert "MEIC width study" in body and "ET —" in body
+    assert "MEIC digest" in body and "ET —" in body
     assert "XSP:" in body and "QQQ:" in body
     assert "1 exit net +$24" in body  # 25.0 pnl - 1.5 fees, rounded
     assert "day 1 trades net +$24" in body
     assert state["pending_summary"] == {}, "the bucket must clear after a flush"
+
+
+def test_digest_counts_arms_and_carries_a_card():
+    """Repeated arms are counted ('open×3'), never listed one label per entry, and the flush pushes
+    a Discord card whose per-symbol field carries the same figures as the plain line."""
+    rows = [
+        _row(id=i, symbol="SPX", risk_profile=arm, status="open")
+        for i, arm in enumerate(["open", "open", "open", "width-5", "width-5", "width-10"], start=1)
+    ]
+    state = tn._meic_seed(_conn([]))
+    n = _Recorder()
+    start = _et_epoch(2026, 8, 10, 12, 36)
+    tn._meic_process(_conn(rows), state, n, "meic", summary_prefixes=("",), now=start)
+
+    n2 = _Recorder()
+    tn._meic_process(
+        _conn(rows), state, n2, "meic", summary_prefixes=("",), summary_interval_minutes=10, now=start + 600
+    )
+    assert len(n2.sent) == 1
+    _, body = n2.sent[0]
+    assert "6 entries (open×3 width-10 width-5×2)" in body
+    assert body.count("open") == 1, "each arm appears once with a count, not once per entry"
+
+    embed = n2.embeds[0]
+    assert embed["color"] == tn.COLOR_DIGEST
+    assert [f["name"] for f in embed["fields"]] == ["SPX"]
+    assert "6 entries (open×3 width-10 width-5×2)" in embed["fields"][0]["value"]
 
 
 def test_empty_window_flushes_nothing():
@@ -180,6 +209,19 @@ def test_empty_window_flushes_nothing():
     )
     assert n2.sent == []
     assert counts["summary_pushed"] is False
+
+
+def test_summary_mode_routes_every_profile_to_digest():
+    """notify.trade_summary.mode='summary' resolves to the empty prefix, which matches every
+    risk_profile — a profile the prefix list would have pushed per-trade lands in the digest."""
+    conn = _conn([_row(id=1, status="open", risk_profile="conservative")])
+    state = tn._meic_seed(_conn([]))
+    n = _Recorder()
+    counts = tn._meic_process(conn, state, n, "meic", summary_prefixes=("",), now=1000.0)
+
+    assert counts["entries_notified"] == 1
+    assert n.sent == []
+    assert state["pending_summary"]["XSP"]["entries"] == ["conservative"]
 
 
 def test_watermark_advances_once_per_row_across_both_paths():

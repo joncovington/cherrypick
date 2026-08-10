@@ -159,6 +159,7 @@ COLOR_STOP = 0xEF4444  # red — one wing stopped out early
 COLOR_COMPLETE = 0x10B981  # emerald — flies: the floor just became a guarantee
 COLOR_CHOSEN = 0x8B5CF6  # violet — earnings: a symbol cleared the screen (not yet a position)
 COLOR_REJECTED = 0x6B7280  # slate — earnings: a symbol was screened and passed over
+COLOR_DIGEST = 0x6366F1  # indigo — the periodic MEIC roll-up: many trades, no single lifecycle event
 
 _FIELD_MAX = 1024  # Discord's per-field value limit; over it the whole message is rejected
 
@@ -287,23 +288,50 @@ def _meic_day_totals(conn, symbol: str, day: str, prefixes: tuple[str, ...]) -> 
     return int(row[0] or 0), float(row[1] or 0.0)
 
 
+def _meic_symbol_segment(conn, symbol: str, bucket: dict, day: str, prefixes: tuple[str, ...]) -> list[str]:
+    """One symbol's digest figures as three parts (entries / exits / day total), shared by the plain
+    line and the embed card so the two can never drift. Arms are counted, not listed — a 30-entry
+    window would otherwise repeat the same three labels ten times each."""
+    entries = bucket.get("entries", [])
+    exits = bucket.get("exits", [])
+    entry_part = f"{len(entries)} {'entry' if len(entries) == 1 else 'entries'}"
+    counts: dict[str, int] = {}
+    for e in entries:
+        label = _short_arm_label(e)
+        counts[label] = counts.get(label, 0) + 1
+    labels = " ".join(f"{arm}×{n}" if n > 1 else arm for arm, n in sorted(counts.items()))
+    if labels:
+        entry_part += f" ({labels})"
+    exit_part = f"{len(exits)} {'exit' if len(exits) == 1 else 'exits'} net {_money(sum(exits))}"
+    day_count, day_net = _meic_day_totals(conn, symbol, day, prefixes)
+    return [entry_part, exit_part, f"day {day_count} trades net {_money(day_net)}"]
+
+
 def _fmt_meic_summary(conn, pending: dict, day: str, hhmm: str, prefixes: tuple[str, ...]) -> str:
-    segments = []
-    for symbol in sorted(pending):
-        bucket = pending[symbol]
-        entries = bucket.get("entries", [])
-        exits = bucket.get("exits", [])
-        entry_part = f"{len(entries)} {'entry' if len(entries) == 1 else 'entries'}"
-        labels = " ".join(_short_arm_label(e) for e in entries)
-        if labels:
-            entry_part += f" ({labels})"
-        exit_net = sum(exits)
-        exit_part = f"{len(exits)} {'exit' if len(exits) == 1 else 'exits'} net {_money(exit_net)}"
-        day_count, day_net = _meic_day_totals(conn, symbol, day, prefixes)
-        segments.append(
-            f"{symbol}: {entry_part} · {exit_part} · day {day_count} trades net {_money(day_net)}"
-        )
-    return f"MEIC width study {hhmm} ET — " + " | ".join(segments)
+    segments = [
+        f"{symbol}: " + " · ".join(_meic_symbol_segment(conn, symbol, pending[symbol], day, prefixes))
+        for symbol in sorted(pending)
+    ]
+    return f"MEIC digest {hhmm} ET — " + " | ".join(segments)
+
+
+def _embed_meic_summary(conn, pending: dict, day: str, hhmm: str, prefixes: tuple[str, ...]) -> dict:
+    """The digest as a card: one field per symbol (fields stack one per row on every client — see the
+    embed color note above), the same figures as the plain line, one per line instead of dot-joined."""
+    fields = [
+        {
+            "name": symbol[:256],
+            "value": "\n".join(_meic_symbol_segment(conn, symbol, pending[symbol], day, prefixes))[
+                :_FIELD_MAX
+            ],
+        }
+        for symbol in sorted(pending)
+    ]
+    return {
+        "title": f"DIGEST · MEIC {hhmm} ET",
+        "color": COLOR_DIGEST,
+        "fields": fields,
+    }
 
 
 def _meic_process(
@@ -385,10 +413,14 @@ def _meic_process(
         st["last_summary_flush"] = now  # first activation of the digest path — flush from here on
     elif pending and (now - last_flush) >= summary_interval_minutes * 60:
         et = timeutil.et_from_epoch(now)
-        text = _fmt_meic_summary(
-            conn, pending, et.strftime("%Y-%m-%d"), et.strftime("%H:%M"), summary_prefixes
+        day, hhmm = et.strftime("%Y-%m-%d"), et.strftime("%H:%M")
+        notifier.notify(
+            "INFO",
+            f"trade.{name}.summary.{int(now)}",
+            "Trade digest",
+            _fmt_meic_summary(conn, pending, day, hhmm, summary_prefixes),
+            embed=_embed_meic_summary(conn, pending, day, hhmm, summary_prefixes),
         )
-        notifier.notify("INFO", f"trade.{name}.summary.{int(now)}", "Width study digest", text)
         st["pending_summary"] = {}
         st["last_summary_flush"] = now
         summary_pushed = True
@@ -870,7 +902,13 @@ def run(cfg: dict | None = None) -> dict:
         channels = notify_cfg.get("trade_channels", ["log", "discord"])
         notifier = Notifier({**notify_cfg, "channels": channels})
         summary_cfg = notify_cfg.get("trade_summary", {})
-        summary_prefixes = tuple(summary_cfg.get("profile_prefixes", []))
+        # mode "summary" routes EVERY trade to the digest regardless of profile; the empty prefix
+        # matches every risk_profile (str.startswith("") is always True, and the day-totals query's
+        # LIKE '%' matches every row). "per-trade" (the default) keeps the prefix routing.
+        if summary_cfg.get("mode", "per-trade") == "summary":
+            summary_prefixes: tuple[str, ...] = ("",)
+        else:
+            summary_prefixes = tuple(summary_cfg.get("profile_prefixes", []))
         summary_interval_minutes = summary_cfg.get("interval_minutes", 15)
 
         state = _load_state()
