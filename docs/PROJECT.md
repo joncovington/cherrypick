@@ -72,8 +72,8 @@ flies, gex, and the streamer need no install — the orchestrator runs them in p
 
 Three more surfaces are optional and set up separately when you want them: `packages/console` (the
 unified web console — Node/TypeScript, so it installs with `npm`, not pip), `packages/scout`
-(screening and strategy exploration), and `packages/desk` (the manual trading desk, which places live
-orders on your instruction only — read its README before using it).
+(screening and strategy exploration), and `packages/desk` (⚠️ **experimental** — the manual trading
+desk, which places real orders on your explicit per-order confirmation; read its README in full first).
 
 ---
 
@@ -104,10 +104,16 @@ setup. If you previously set credentials per engine, the wizard offers to consol
 into the shared login so there's one place to rotate. The **GEX** dashboard and the streamer
 reuse the same keyring credentials — no separate step.
 
-Two surfaces deliberately do **not** share that login, and each is set up on its own: the **console**
-holds a separate read-scoped credential, and the **desk** (the manual trading desk) has its own
-credential and its own keyring PIN so that placing a discretionary order never touches a strategy
-module's live-trading switch.
+There is exactly **one** place credentials are set (this wizard) and one shared keyring entry the whole
+suite reads, so there is a single point to rotate. Two surfaces limit what that shared login can *do*
+rather than holding a login of their own:
+
+- The **console** only ever reads. At boot it probes the token's scope, and a read-only token disables
+  its write-oriented functions until a trade-scoped one is rotated in.
+- The **desk** (⚠️ experimental — see the live-trading warning below) stores no secrets — it borrows a module's keyring session and
+  adds its own **authorization**: a PIN (only a salted verifier is stored), a ticket you confirm per
+  order, and its own policy gates. Borrowing credentials is not borrowing permissions, which is how it
+  places a discretionary order without touching any module's live-trading switch.
 
 **3. Choose your strategy details.** The fine-grained trading rules — which symbols, target deltas,
 credit floors, entry windows, risk profiles — live in each engine's own config:
@@ -262,6 +268,27 @@ Paper and live books are kept strictly separate, and credentials stay in your OS
 flies module's live pilot adds an extra safeguard on top of this: it has to be armed with a
 fresh, explicit confirmation every trading day, and it turns itself off automatically each
 evening — there's no way for one day's confirmation to silently carry into the next.
+
+> ### ⚠️ If you are thinking about trading live
+>
+> **Know every way an order can be placed.** There are four: MEIC, earnings, and flies each have a live
+> path behind their own `enable_live_trading` gate, and the desk is the manual one. The first three are
+> **loops** — once you open that gate, they trade on their own schedule without asking again. The
+> orchestrator never places an order itself, but "the automation won't trade for me" stops being true
+> the moment one of those gates is open.
+>
+> **`packages/desk` is experimental.** It is the newest and least-exercised package here, it has no
+> meaningful track record, there is no paper mode for it, and every order it submits is irreversible.
+> Read [its documentation](../packages/desk/README.md) in full before you use it, start at the smallest
+> size that could possibly matter, and never point it at money you cannot afford to lose outright.
+>
+> **Nothing in this suite has been validated as profitable.** The paper experiments exist because the
+> answer isn't known yet, and a good number of the recorded results so far are negative. Simulated
+> fills are also optimistic by construction — the suite's own measurements show live fills costing far
+> more than the model assumed — so paper results are not a forecast of live ones.
+>
+> This is educational and research software, not financial advice. If you enable any live capability
+> you do so entirely at your own risk; see the disclaimer at the end of this guide.
 
 ## How your account is protected
 

@@ -1,5 +1,29 @@
 # cherrypick-desk
 
+> ## ⚠️ EXPERIMENTAL — this places real orders with real money
+>
+> This is the newest and least-exercised package in the suite, and it has no meaningful track record.
+> Every order it submits is **irreversible**: there is no undo, no paper mode, and no simulation path —
+> `--live` here means live.
+>
+> It is not the only live-order path in the suite (MEIC, earnings, and flies each have one behind their
+> own `enable_live_trading` gate), but it is the only **discretionary** one — the others are loops that
+> act on a schedule, this one acts because you typed a confirmation.
+>
+> Read this file in full before using it. Then:
+>
+> - **Start at the smallest size that could possibly matter**, and stay there until you have your own
+>   evidence that the desk behaves the way you expect.
+> - **Never use it with capital you cannot afford to lose outright.** Options can lose their entire
+>   value, and the defined-risk requirement below bounds a *position's* loss, not your judgment.
+> - **Check the ticket every time.** The confirmation step is the last thing standing between a typo
+>   and a filled order; the gates in `policy.py` are what constrain everything else.
+> - **Nothing in this suite is validated as profitable.** The rest of cherrypick is a paper experiment
+>   whose results are, so far, substantially negative. The desk does not change that.
+>
+> The suite as a whole is for **education and research** and is **not financial advice**. If you use
+> this, you do so entirely at your own risk — see the [disclaimer](../../README.md#disclaimer).
+
 The suite's **manual trading desk** — a foreground CLI for placing discretionary orders on the real
 broker account, authorized entirely on its own terms.
 

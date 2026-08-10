@@ -49,9 +49,9 @@ configure their own engine and nothing else:
 | `~/.cherrypick/config/flies.json` | Flies | `symbols`, wing/increment scaling, entry gates and floors, the experiment `arms`, and the `live` block for the narrow live pilot (armed per day via `/live-flies-start`, one arm / one symbol / one incomplete position, self-disarming at `live.disarm_time`). |
 | `~/.cherrypick/config/gex.json` | GEX | `symbols`, the shared stream-cache source path, serve host/port, history DB path. |
 | `~/.cherrypick/config/streamer.json` | Streamer | Broker session settings and the stream-cache path it writes; the symbol set is not configured here — it is the union of every module's `state/stream_requests/` file. |
-| `~/.cherrypick/config/console.json` | Console | Serve host/port (`127.0.0.1:5070`), which modules' read models to surface, and its own read-scoped broker credential. |
+| `~/.cherrypick/config/console.json` | Console | Serve host/port (`127.0.0.1:5070`) and which modules' read models to surface. No credential of its own — it reads the shared suite entry and never writes one. |
 | `~/.cherrypick/config/scout.json` | Scout | Screening parameters and serve host/port. |
-| `~/.cherrypick/config/desk.json` | Desk | Its own broker credential and keyring PIN for discretionary live orders — deliberately separate from every module's `enable_live_trading`. |
+| `~/.cherrypick/config/desk.json` | Desk | Its own authorization for discretionary live orders — which module's keyring service to borrow a session from (`broker_keyring_service`), the allowed accounts, and the policy gates (defined-risk requirement, per-order cap). It stores no broker secrets; the PIN is kept only as a salted verifier. Deliberately independent of every module's `enable_live_trading`. |
 
 **Resolution rules:**
 - A module `path` in the orchestrator config is resolved **relative to the config file's directory** /
