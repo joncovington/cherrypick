@@ -303,7 +303,7 @@ def _fmt_meic_summary(conn, pending: dict, day: str, hhmm: str, prefixes: tuple[
         segments.append(
             f"{symbol}: {entry_part} · {exit_part} · day {day_count} trades net {_money(day_net)}"
         )
-    return f"MEIC width study {hhmm} ET — " + " | ".join(segments)
+    return f"MEIC digest {hhmm} ET — " + " | ".join(segments)
 
 
 def _meic_process(
@@ -870,7 +870,13 @@ def run(cfg: dict | None = None) -> dict:
         channels = notify_cfg.get("trade_channels", ["log", "discord"])
         notifier = Notifier({**notify_cfg, "channels": channels})
         summary_cfg = notify_cfg.get("trade_summary", {})
-        summary_prefixes = tuple(summary_cfg.get("profile_prefixes", []))
+        # mode "summary" routes EVERY trade to the digest regardless of profile; the empty prefix
+        # matches every risk_profile (str.startswith("") is always True, and the day-totals query's
+        # LIKE '%' matches every row). "per-trade" (the default) keeps the prefix routing.
+        if summary_cfg.get("mode", "per-trade") == "summary":
+            summary_prefixes: tuple[str, ...] = ("",)
+        else:
+            summary_prefixes = tuple(summary_cfg.get("profile_prefixes", []))
         summary_interval_minutes = summary_cfg.get("interval_minutes", 15)
 
         state = _load_state()
