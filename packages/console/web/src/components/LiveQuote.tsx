@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { useQuote } from "../lib/useQuote";
 
 function fmt(v: number | undefined, digits: number): string {
@@ -10,10 +11,13 @@ export function LiveQuoteRow({
   symbol,
   digits = 2,
   trailing,
+  symbolTo,
 }: {
   symbol: string;
   digits?: number;
   trailing?: ReactNode;
+  /** Route the symbol cell links to (e.g. the builder); plain text when unset. */
+  symbolTo?: string;
 }) {
   const q = useQuote(symbol);
   const lastRef = useRef<HTMLTableCellElement>(null);
@@ -34,7 +38,15 @@ export function LiveQuoteRow({
 
   return (
     <tr>
-      <td>{symbol}</td>
+      <td>
+        {symbolTo !== undefined ? (
+          <Link to={symbolTo} className="link">
+            {symbol}
+          </Link>
+        ) : (
+          symbol
+        )}
+      </td>
       <td ref={lastRef} className={q?.direction === "down" ? "pnl-neg" : q?.direction === "up" ? "pnl-pos" : ""}>
         {fmt(mid, digits)}
       </td>
