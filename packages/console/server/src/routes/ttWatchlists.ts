@@ -15,6 +15,7 @@ import { warmCandles, WARM_MAX_SYMBOLS } from "../services/candleWarm.js";
 import {
   chainSnapshotStatus,
   runChainSnapshot,
+  snapshotOneSymbol,
   snapshotUniverse,
   SNAPSHOT_MAX_SYMBOLS,
 } from "../services/chainEod.js";
@@ -78,6 +79,15 @@ export function registerTtWatchlistRoutes(
   app.get("/api/chain-eod/status", async () => chainSnapshotStatus(config));
 
   const SYMBOL_RE = /^[A-Z][A-Z0-9./]{0,9}$/;
+
+  // Single-symbol capture for the builder's on-selection auto-run: bounded
+  // (one REST chain + one DXLink snapshot) with a per-symbol attempt floor.
+  app.post("/api/chain-eod/symbol", async (req, reply) => {
+    const body = (req.body ?? {}) as { symbol?: unknown };
+    const sym = typeof body.symbol === "string" ? body.symbol.trim().toUpperCase() : "";
+    if (!SYMBOL_RE.test(sym)) return reply.code(400).send({ error: "invalid symbol" });
+    return snapshotOneSymbol(config, market, sym);
+  });
 
   // Builder strategy surfaces — pure reads over the EOD chain snapshot.
   app.get("/api/builder/suggestions/:symbol", async (req, reply) => {
