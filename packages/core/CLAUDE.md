@@ -40,6 +40,36 @@ One cost of staying flat: `tests/` is a top-level importable name if `packages/c
 directly on `sys.path`. Nothing in the suite does that — core is always reached through an installed
 `cherrypick-core` distribution — so this is accepted, not a bug to fix.
 
+## The module map
+
+What lives here and who leans on it. Deliberately one line each and no signatures — an API listing over
+this much code would drift within a sprint and nothing could verify it. The docstring at the top of each
+module is the real reference; this is the index that tells you which one to open.
+
+| Module | What it owns |
+|---|---|
+| `home` | The one resolver for the per-user cherrypick home. Everything else derives paths from it. |
+| `db` | SQLite connection mechanics + additive migrations, including the shared read-only opener. |
+| `logs` | One line format for every module log in the suite. |
+| `calendar` | The shared market calendar. The suite's single source of trading days and holidays. |
+| `fees` | The tastytrade cost model — one home for the fee schedule. Every "net" figure in the suite goes through it. |
+| `auth` | Keyring credentials + a lazy OAuth session, parameterized per consumer. |
+| `broker` | Shared tastytrade primitives: account resolution, option-chain helpers, and the live write path with its governor. |
+| `risk` | Account-level risk primitives. Fail-closed and opt-in. |
+| `streamer` | The generic persistent DXLink streaming engine. `packages/streamer` is the daemon around this. |
+| `streamcache` | The shared stream-cache schema and its SQLite helpers — the contract between producer and every reader. |
+| `streamrequests` | The consumer half of the subscription registry: how a module declares the symbols it needs. |
+| `dxfeed` | On-demand DXLink event collectors, for callers that want a snapshot rather than a stream. |
+| `gex` | The GEX engine: a pure function over an option-chain snapshot. Copying this once let the math drift ~75×. |
+| `profiles` | The named risk-profile registry and merge engine — how a partial override becomes an effective config. |
+| `metrics` | The shared calibration metric bundle: one vocabulary for promotion evidence. |
+| `advice` | Bounded, expiring, deterministically-validated parameter advice. Both the orchestrator and the module loop validate through this same code. |
+| `viz` | A declarative dashboard-section contract plus one generic renderer. |
+
+The reason to put something here is that **two packages would otherwise disagree** — on what a fee is,
+what a trading day is, or what "net" means. That is the bar; a helper only one package uses belongs in
+that package.
+
 ## Commands
 
 ```bash
