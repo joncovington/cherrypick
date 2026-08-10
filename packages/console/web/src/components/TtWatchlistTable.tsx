@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CandleWarmResult, TtWatchlistRow } from "@console/shared";
 import { mutateJson, useTtWatchlist } from "../lib/api";
 import { LiveQuoteRow } from "./LiveQuote";
-import { SkeletonRows } from "./DataTable";
+import { SkeletonRows, SortTh, sortRows, useSort } from "./DataTable";
 
 function fmt(v: number | null, digits = 2): string {
   return v === null ? "—" : v.toFixed(digits);
@@ -24,12 +24,61 @@ function compact(v: number | null): string {
   return v.toFixed(0);
 }
 
+/** Column accessors shared by every watchlist table (local card included). */
+export const WATCHLIST_SORT: Record<string, (r: TtWatchlistRow) => number | string | null> = {
+  sym: (r) => r.symbol,
+  last: (r) => r.last ?? r.eodClose,
+  bid: (r) => r.bid,
+  ask: (r) => r.ask,
+  eod: (r) => r.eodClose,
+  chg: (r) => r.eodChangePct,
+  ivr: (r) => r.ivRank,
+  ivx: (r) => r.ivIndex,
+  vol: (r) => r.volume,
+  cap: (r) => r.marketCap,
+  hi: (r) => r.yearHigh,
+  lo: (r) => r.yearLow,
+};
+
+/** The shared sortable header row; `extra` = trailing unsortable cells. */
+export function WatchlistHeadRow({
+  sort,
+  srcCol,
+  extra,
+}: {
+  sort: ReturnType<typeof useSort>;
+  srcCol: string;
+  extra: number;
+}) {
+  return (
+    <tr>
+      <SortTh label="sym" k="sym" sort={sort} />
+      <SortTh label="last" k="last" sort={sort} />
+      <SortTh label="bid" k="bid" sort={sort} />
+      <SortTh label="ask" k="ask" sort={sort} />
+      <SortTh label={srcCol} k="eod" sort={sort} />
+      <SortTh label="chg%" k="chg" sort={sort} />
+      <SortTh label="IVR" k="ivr" sort={sort} />
+      <SortTh label="IV%" k="ivx" sort={sort} />
+      <SortTh label="vol" k="vol" sort={sort} />
+      <SortTh label="mkt cap" k="cap" sort={sort} />
+      <SortTh label="1y high" k="hi" sort={sort} />
+      <SortTh label="1y low" k="lo" sort={sort} />
+      {Array.from({ length: extra }, (_, i) => (
+        <th key={i}></th>
+      ))}
+    </tr>
+  );
+}
+
 /** One tastytrade watchlist as a read-only table: cached quotes + EOD context.
  *  Live WS rows only for small lists — a 200-symbol public list stays static. */
 export function TtWatchlistTable({ tabKey }: { tabKey: string }) {
   const { data, isLoading } = useTtWatchlist(tabKey);
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const sort = useSort();
+  const rows = sortRows(data?.rows ?? [], sort, WATCHLIST_SORT);
 
   const refresh = useMutation({
     mutationFn: () => mutateJson("/api/tt-watchlists/refresh", "POST", {}),
@@ -79,21 +128,7 @@ export function TtWatchlistTable({ tabKey }: { tabKey: string }) {
       <div className="table-scroll">
         <table className="data-table">
           <thead>
-            <tr>
-              <th>sym</th>
-              <th>last</th>
-              <th>bid</th>
-              <th>ask</th>
-              <th>{data?.live === true ? "" : "eod"}</th>
-              <th>chg%</th>
-              <th>IVR</th>
-              <th>IV%</th>
-              <th>vol</th>
-              <th>mkt cap</th>
-              <th>1y high</th>
-              <th>1y low</th>
-              <th></th>
-            </tr>
+            <WatchlistHeadRow sort={sort} srcCol={data?.live === true ? "" : "eod"} extra={1} />
           </thead>
           <tbody>
             {isLoading || data === undefined ? (
@@ -105,7 +140,7 @@ export function TtWatchlistTable({ tabKey }: { tabKey: string }) {
                 </td>
               </tr>
             ) : data.live ? (
-              data.rows.map((r) => (
+              rows.map((r) => (
                 <LiveQuoteRow
                   key={r.symbol}
                   symbol={r.symbol}
@@ -114,7 +149,7 @@ export function TtWatchlistTable({ tabKey }: { tabKey: string }) {
                 />
               ))
             ) : (
-              data.rows.map((r) => <StaticRow key={r.symbol} r={r} />)
+              rows.map((r) => <StaticRow key={r.symbol} r={r} />)
             )}
           </tbody>
         </table>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { mutateJson, useBlacklist, useChainEodStatus, useTtWatchlists } from "../../lib/api";
-import { fmtMoney } from "../../components/DataTable";
+import { fmtMoney, SortTh, sortRows, useSort } from "../../components/DataTable";
 
 interface CandidateLeg {
   kind: string;
@@ -51,6 +51,19 @@ interface ChainSnapshotResult {
   error?: string;
 }
 
+const SCREENER_SORT: Record<string, (r: ScreenerRow) => number | string | null> = {
+  score: (r) => r.candidate.score,
+  sym: (r) => r.symbol,
+  strategy: (r) => r.candidate.strategy,
+  exp: (r) => r.candidate.dte,
+  credit: (r) => r.candidate.credit,
+  risk: (r) => r.candidate.maxRisk,
+  ror: (r) => r.candidate.returnOnRisk,
+  pop: (r) => r.candidate.pop,
+  ivr: (r) => r.ivRank,
+  edge: (r) => r.directionalEdge,
+};
+
 function legsLabel(legs: CandidateLeg[]): string {
   return legs
     .map((l) => `${l.quantity > 0 ? "+" : ""}${l.quantity} ${l.strike ?? "stk"}${l.kind === "call" ? "C" : l.kind === "put" ? "P" : ""}`)
@@ -88,6 +101,8 @@ export function ScreenerPage() {
       }),
   });
   const result = run.data;
+  const sort = useSort();
+  const sortedRows = sortRows(result?.rows ?? [], sort, SCREENER_SORT);
 
   const sourceLabel =
     source === "local" ? "the local watchlist" : (tt.data?.tabs.find((t) => t.key === source)?.name ?? source);
@@ -178,21 +193,21 @@ export function ScreenerPage() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>score</th>
-                    <th>sym</th>
-                    <th>strategy</th>
+                    <SortTh label="score" k="score" sort={sort} />
+                    <SortTh label="sym" k="sym" sort={sort} />
+                    <SortTh label="strategy" k="strategy" sort={sort} />
                     <th>legs</th>
-                    <th>exp (dte)</th>
-                    <th>credit</th>
-                    <th>max risk</th>
-                    <th>RoR</th>
-                    <th>POP</th>
-                    <th>IVR</th>
-                    <th>edge</th>
+                    <SortTh label="exp (dte)" k="exp" sort={sort} />
+                    <SortTh label="credit" k="credit" sort={sort} />
+                    <SortTh label="max risk" k="risk" sort={sort} />
+                    <SortTh label="RoR" k="ror" sort={sort} />
+                    <SortTh label="POP" k="pop" sort={sort} />
+                    <SortTh label="IVR" k="ivr" sort={sort} />
+                    <SortTh label="edge" k="edge" sort={sort} />
                   </tr>
                 </thead>
                 <tbody>
-                  {result.rows.map((r, i) => (
+                  {sortedRows.map((r, i) => (
                     <tr key={i}>
                       <td>{r.candidate.score !== null ? r.candidate.score.toFixed(3) : "—"}</td>
                       <td>{r.symbol}</td>
