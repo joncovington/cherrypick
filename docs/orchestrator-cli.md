@@ -77,11 +77,14 @@ job that owns settlement. The modules' `--install-task` helpers remain only for 
 
 ## Global flags
 
-`--date YYYY-MM-DD` (report/eod-digest/notify-eod/eod-insight) · `--fast` (doctor) ·
+`--date YYYY-MM-DD` (report/eod-digest/notify-eod/eod-insight) · `--eod` (report — scope to one
+settlement session) · `--live` (report — read the modules' separate live ledgers instead of paper; a
+deliberately separate path calibrate can never reach) · `--fast` (doctor) ·
 `--module` / `--set` / `--clear` / `--yes` (connect/account) ·
 `--serve` / `--host` / `--port` / `--no-browser` (dashboard, settings) · `--apply` (migrate-home,
-settings --organize) · `--organize [target]` (settings) ·
-`--month` / `--dry-run` (archive) · `--channel` / `--url` (secrets) · `--force` (init).
+settings --organize) · `--organize [target]` (settings) · `--stop` (supervise — ask a running
+supervisor to exit) · `--scheduled` (reconcile — the daily job's mode; notifies on any non-FLAT
+verdict) · `--month` / `--dry-run` (archive) · `--channel` / `--url` (secrets) · `--force` (init).
 
 ## Slash-command equivalents (Claude Code)
 

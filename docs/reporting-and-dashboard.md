@@ -70,6 +70,33 @@ as a detached subprocess once every installed module has written its `paper-eod-
 `eod_digest.deadline` as the backstop so a late or flat module can't skip the day. Detached because the
 push is a network call and the watchdog tick must stay stdlib-and-OS-shell only.
 
+## Trade notifications (intraday)
+
+The `trade-notify` supervisor job (`orchestrator/trade_notifier.py`) is the intraday counterpart to the
+digest: it reads each module's paper DB **read-only, files and no broker**, finds trades that opened,
+had a wing stopped, or closed since the last check, and pushes them. Each event is one-shot, tracked by
+an id watermark rather than deduped — and on first activation the watermark is seeded to the current DB
+state, so switching it on never backfills your existing trades as a burst.
+
+Push goes to `notify.trade_channels` (default `log` + `discord`) rather than every channel, so frequent
+paper fills don't spam desktop toasts. Per module, it is opt-in via `paper.notify_trades`; a module's
+**live** ledger is a separate opt-in (`live.notify_trades`) and its pushes carry a LIVE prefix and a
+desktop toast, because real money warrants one where paper deliberately doesn't.
+
+**MEIC runs several parallel arms, so per-trade pushes can get loud.** `notify.trade_summary.mode`
+decides how its events reach you:
+
+- **`per-trade`** (default) — one push per entry, stop, and exit. `trade_summary.profile_prefixes`
+  routes only the arms whose `risk_profile` starts with a listed prefix into the digest instead, which
+  is how a high-volume study arm is kept quiet while the everyday book stays per-trade.
+- **`summary`** — every MEIC trade accumulates into a periodic per-symbol digest, pushed every
+  `interval_minutes`; `profile_prefixes` is ignored. A quiet window pushes nothing rather than an empty
+  heartbeat, and wing stops fold into the eventual exit line rather than firing mid-trade.
+
+A digest line reads `MEIC digest 13:45 ET — SPX: 30 entries (open×10 width-10×10 width-5×10) · 2 exits
+net +$48 · day 7 trades net +$61`, with a matching Discord card. Arms are **counted, not listed** — a
+30-entry window would otherwise repeat the same three labels ten times each.
+
 ## The AI EOD insight (opt-in)
 
 `cherrypick eod-insight` (`orchestrator/eod_insight.py`) is the one place AI is invoked in the product,

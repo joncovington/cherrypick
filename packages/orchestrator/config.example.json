@@ -19,18 +19,9 @@
       "paper": {
         "kind": "self_healing",
         "task_name": "cherrypick-meic-paper-loop",
-        "_tick_interval_note": "Supervisor cadence for the paper tick (spawns once_argv sans --force every N seconds). 60 halves the old hardcoded 2-minute schtasks cadence (2026-08-09 supervisor cutover) for tighter exit management on open condors. task_name/install_argv/uninstall_argv are the legacy schtasks path -- still used by the module standalone, retained here so install/uninstall can delete the old task by name.",
+        "_tick_interval_note": "Supervisor cadence for the paper tick: the daemon spawns tick_argv (default: once_argv minus --force) every N seconds. 60 halves the old hardcoded 2-minute schtasks cadence (2026-08-09 supervisor cutover) for tighter exit management on open condors. At >= 60 this is a short-lived tick job; BELOW 60 the shape changes -- see the flies block's resident_start/resident_end note. `task_name` is the only legacy-schtasks key still read (tasks.legacy_task_names deletes the pre-cutover task by that name); the module's own --install-task remains for standalone use but the orchestrator never invokes it, which is why there is no install_argv/uninstall_argv here.",
         "tick_interval_seconds": 60,
-        "install_argv": [
-          "-m",
-          "cherrypick.meic.paper_loop",
-          "--install-task"
-        ],
-        "uninstall_argv": [
-          "-m",
-          "cherrypick.meic.paper_loop",
-          "--uninstall-task"
-        ],
+        "_tick_argv_note": "OPTIONAL. The exact argv the supervisor spawns each tick. Omit it and the orchestrator derives one from once_argv by dropping --force, which is what every module here relies on; set it only when a module's tick must differ from its manual one-shot.",
         "status_argv": [
           "-m",
           "cherrypick.meic.paper_loop",
@@ -105,6 +96,7 @@
           "cherrypick.flies.live_loop",
           "--status"
         ],
+        "_tick_argv_note": "OPTIONAL. The argv the supervisor's <module>-live job spawns each tick while the module is armed. Omitted here because the orchestrator derives it the same way it does for paper; set it only if the live tick must differ.",
         "log": "flies_live.log",
         "freshness_minutes": 5,
         "notify_trades": true,
@@ -116,19 +108,12 @@
         "_kind_note": "self_healing, NOT cherrypick_scheduled. This was cherrypick_scheduled, which registers one entry task at entry_time and one exit task at exit_time \u2014 a shape that fits Earnings (one entry, one exit per day) and is wrong for a legged 0DTE strategy. A single daily entry would open a credit spread at noon and never look at it again, so the completing spread could never be bought and the completion rate \u2014 the module's headline measurement \u2014 would read 0% every day for reasons that have nothing to do with the market. cherrypick_scheduled also hardcodes the earnings launcher verbs, so this module's own entry_argv would have been ignored entirely.",
         "kind": "self_healing",
         "task_name": "cherrypick-flies-paper-loop",
-        "_timing_note": "tick_interval_seconds is the supervisor cadence. Sub-minute (<60) runs the module's own resident `--interval N` loop IN-SESSION (09:30-16:00 ET, supervised: restarted on death and on silence_seconds of log silence) plus a 60s `--once` spawn job OUTSIDE the session, so settlement at 16:20, retry-until-settled, and the hourly idle heartbeat keep exactly the shape the 1-minute task gave them. 15s (2026-08-09 supervisor cutover, was 60 -- the OS scheduler's floor) samples transient completion-debit dips ~4x finer; the completion rate is NOT comparable across that date (any discrete poll understates what a resting limit order would catch, so faster polling measures a truer, higher rate). The change is journaled in the module's decision journal and its CLAUDE.md. task_name/install_argv/uninstall_argv are the legacy schtasks path, retained for deletion by name.",
+        "_timing_note": "tick_interval_seconds is the supervisor cadence. Sub-minute (<60) runs the module's own resident `--interval N` loop IN-SESSION (the resident_start/resident_end window below, supervised: restarted on death and on silence_seconds of log silence) plus a 60s `--once` spawn job OUTSIDE that window, so settlement at 16:20, retry-until-settled, and the hourly idle heartbeat keep exactly the shape the 1-minute task gave them. 15s (2026-08-09 supervisor cutover, was 60 -- the OS scheduler's floor) samples transient completion-debit dips ~4x finer; the completion rate is NOT comparable across that date (any discrete poll understates what a resting limit order would catch, so faster polling measures a truer, higher rate). The change is journaled in the module's decision journal and its CLAUDE.md. `task_name` is the only legacy-schtasks key still read, for deleting the pre-cutover task by name.",
         "tick_interval_seconds": 15,
         "silence_seconds": 120,
-        "install_argv": [
-          "-m",
-          "cherrypick.flies.paper_loop",
-          "--install-task"
-        ],
-        "uninstall_argv": [
-          "-m",
-          "cherrypick.flies.paper_loop",
-          "--uninstall-task"
-        ],
+        "_resident_window_note": "OPTIONAL, and only meaningful when tick_interval_seconds < 60: the ET window inside which the resident loop runs, on trading days. Defaults 09:30/16:00. These gate the ENTIRE resident job -- widen them and the loop runs longer, narrow them and it simply will not run outside -- so they are worth stating explicitly rather than inheriting silently. Outside the window the 60s `--once` job takes over (that is what settles at 16:20).",
+        "resident_start": "09:30",
+        "resident_end": "16:00",
         "status_argv": [
           "-m",
           "cherrypick.flies.paper_loop",
@@ -168,6 +153,8 @@
         "exit_task_name": "cherrypick-earnings-paper-exit",
         "entry_time": "15:45",
         "exit_time": "09:45",
+        "_entry_sla_note": "OPTIONAL (default 35). Minutes past entry_time before the watchdog treats a missing entry heartbeat as CRITICAL. It is a grace, not a schedule: the entry job fires AT entry_time, its subprocess may run up to the 1800s CLI timeout, and the heartbeat is only written when it RETURNS -- so comparing against entry_time alone raised CRITICAL for a run that was merely still in progress. Raise it if this module's entry scan legitimately runs longer.",
+        "entry_sla_grace_minutes": 35,
         "entry_argv": [
           "-m",
           "cherrypick.earnings.strategy_test_runner",
