@@ -1,3 +1,6 @@
+import { useRef, useState } from "react";
+import { FIRST_PAGE, PAGE_SIZES, type PageState } from "../lib/api";
+
 /** Page-wide scope selectors — the shape every module dashboard leads with. */
 export function ScopeSelect({
   label,
@@ -93,6 +96,29 @@ export function TabStrip<T extends string>({
 }
 
 /**
+ * One table's page state, with the reset every filter change needs: an offset
+ * into a result set that no longer exists points nowhere.
+ */
+export function usePage(resetKeys: unknown[] = []): {
+  page: PageState;
+  setOffset: (v: number) => void;
+  setLimit: (v: number) => void;
+} {
+  const [page, setPage] = useState<PageState>(FIRST_PAGE);
+  const key = JSON.stringify(resetKeys);
+  const seen = useRef(key);
+  if (seen.current !== key) {
+    seen.current = key;
+    if (page.offset !== 0) setPage((p) => ({ ...p, offset: 0 }));
+  }
+  return {
+    page,
+    setOffset: (offset: number) => setPage((p) => ({ ...p, offset })),
+    setLimit: (limit: number) => setPage((p) => ({ limit, offset: Math.floor(p.offset / limit) * limit })),
+  };
+}
+
+/**
  * Pager for a server-paged table. Reports the window against the true match
  * count, so the reader always knows how much sits outside the page — a table
  * that quietly stops at its page size is the thing this exists to prevent.
@@ -101,14 +127,14 @@ export function Pager({
   offset,
   limit,
   total,
-  pageSizes,
+  pageSizes = PAGE_SIZES,
   onOffset,
   onLimit,
 }: {
   offset: number;
   limit: number;
   total: number;
-  pageSizes: readonly number[];
+  pageSizes?: readonly number[];
   onOffset: (v: number) => void;
   onLimit: (v: number) => void;
 }) {

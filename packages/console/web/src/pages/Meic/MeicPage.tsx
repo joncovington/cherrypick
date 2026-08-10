@@ -6,7 +6,7 @@ import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
-import { ScopeSelect, EraSelect, TabStrip, LoopPill, Pager } from "../../components/ScopeBar";
+import { ScopeSelect, EraSelect, TabStrip, LoopPill, Pager, usePage } from "../../components/ScopeBar";
 import { MeicDeepCards } from "./MeicDeepCards";
 import { MeicPerformanceTab } from "./MeicPerformanceTab";
 
@@ -55,8 +55,6 @@ function useMeicAnalytics(mode: TradingMode, symbol: string | null, profile: str
 
 const TABS = ["today", "history", "performance"] as const;
 const OUTCOMES = ["all", "wins", "losses", "open"] as const;
-/** Mirrors the server's TRADE_PAGE_SIZES; anything larger is clamped there. */
-const PAGE_SIZES = [50, 100, 200, 500] as const;
 
 /** Status reads at a glance: stopped is the loss branch, expired is the win branch. */
 function StatusBadge({ status }: { status: string }) {
@@ -75,9 +73,6 @@ export function MeicPage() {
   const [outcome, setOutcome] = useState<(typeof OUTCOMES)[number]>("all");
   const [reason, setReason] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [offset, setOffset] = useState(0);
-  const [limit, setLimit] = useState<number>(PAGE_SIZES[1]);
-
   // Search now hits the DB, so let typing settle before re-querying.
   const [debouncedSearch, setDebouncedSearch] = useState("");
   useEffect(() => {
@@ -96,11 +91,8 @@ export function MeicPage() {
     refetchInterval: 30_000,
   });
   // The filters run in SQL, so `total` counts every match and not just this
-  // page. Any change to what is being matched sends the reader back to page 1 —
-  // holding an offset into a different result set lands nowhere meaningful.
-  useEffect(() => {
-    setOffset(0);
-  }, [mode, symbol, profile, era, outcome, reason, debouncedSearch]);
+  // page; changing what is matched resets to page one.
+  const { page, setOffset, setLimit } = usePage([mode, symbol, profile, era, outcome, reason, debouncedSearch]);
 
   const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useMeic(mode, {
     symbol,
@@ -109,14 +101,13 @@ export function MeicPage() {
     outcome,
     reason,
     search: debouncedSearch,
-    limit,
-    offset,
+    ...page,
   });
   const analytics = useMeicAnalytics(mode, symbol, profile, era);
   const a = analytics.data;
   const totalExits = a?.exitReasons.reduce((s, r) => s + r.count, 0) ?? 0;
-  const trades = data?.trades ?? [];
-  const total = data?.total ?? 0;
+  const trades = data?.trades.rows ?? [];
+  const total = data?.trades.total ?? 0;
 
   const l = loop.data;
   // Filtering to an era with nothing in it is a legitimate answer, not a
@@ -259,10 +250,9 @@ export function MeicPage() {
             footer={
               total > 0 && (
                 <Pager
-                  offset={data?.offset ?? offset}
-                  limit={data?.limit ?? limit}
+                  offset={data?.trades.offset ?? page.offset}
+                  limit={data?.trades.limit ?? page.limit}
                   total={total}
-                  pageSizes={PAGE_SIZES}
                   onOffset={setOffset}
                   onLimit={setLimit}
                 />

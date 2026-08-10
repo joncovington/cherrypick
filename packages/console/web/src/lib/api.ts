@@ -6,6 +6,7 @@ import type {
   FliesPayload,
   EarningsPayload,
   GexPayload,
+  Paged,
   TradingMode,
 } from "@console/shared";
 
@@ -99,11 +100,58 @@ export function fliesQuery(mode: TradingMode, filter: FliesFilter): string {
   return params.toString();
 }
 
-export function useFlies(mode: TradingMode, filter: FliesFilter) {
+export interface PageState {
+  limit: number;
+  offset: number;
+}
+
+export const FIRST_PAGE: PageState = { limit: 100, offset: 0 };
+/** Mirrors the server's PAGE_SIZES; anything larger is clamped there. */
+export const PAGE_SIZES = [50, 100, 200, 500] as const;
+
+/** Serialize one table's page under its own prefix, so several can share an endpoint. */
+function pageParams(params: URLSearchParams, prefix: string, page: PageState): void {
+  const key = (k: string): string => (prefix === "" ? k : `${prefix}${k[0]!.toUpperCase()}${k.slice(1)}`);
+  params.set(key("limit"), String(page.limit));
+  params.set(key("offset"), String(page.offset));
+}
+
+export function useFlies(mode: TradingMode, filter: FliesFilter, books: PageState, positions: PageState) {
+  const params = new URLSearchParams(fliesQuery(mode, filter));
+  pageParams(params, "books", books);
+  pageParams(params, "positions", positions);
   return useQuery<FliesPayload>({
-    queryKey: ["flies", mode, filter],
-    queryFn: () => getJson<FliesPayload>(`/api/flies?${fliesQuery(mode, filter)}`),
+    queryKey: ["flies", mode, filter, books, positions],
+    queryFn: () => getJson<FliesPayload>(`/api/flies?${params.toString()}`),
     refetchInterval: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export interface FliesTradeLogRow {
+  tradeDate: string;
+  symbol: string;
+  arm: string | null;
+  entryMode: string | null;
+  kind: string | null;
+  side: string | null;
+  center: number | null;
+  window: string | null;
+  net: number | null;
+  fees: number | null;
+  pnl: number | null;
+  latencyMin: number | null;
+  pinned: boolean;
+}
+
+export function useFliesTradeLog(mode: TradingMode, outcome: string, search: string, page: PageState) {
+  const params = new URLSearchParams({ mode, outcome, search });
+  pageParams(params, "", page);
+  return useQuery<Paged<FliesTradeLogRow>>({
+    queryKey: ["flies-tradelog", mode, outcome, search, page],
+    queryFn: () => getJson<Paged<FliesTradeLogRow>>(`/api/flies/tradelog?${params.toString()}`),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -115,11 +163,15 @@ export function useFliesMeta(mode: TradingMode) {
   });
 }
 
-export function useEarnings() {
+export function useEarnings(trades: PageState, reviews: PageState) {
+  const params = new URLSearchParams();
+  pageParams(params, "trades", trades);
+  pageParams(params, "reviews", reviews);
   return useQuery<EarningsPayload>({
-    queryKey: ["earnings"],
-    queryFn: () => getJson<EarningsPayload>("/api/earnings"),
+    queryKey: ["earnings", trades, reviews],
+    queryFn: () => getJson<EarningsPayload>(`/api/earnings?${params.toString()}`),
     refetchInterval: 30_000,
+    placeholderData: (prev) => prev,
   });
 }
 

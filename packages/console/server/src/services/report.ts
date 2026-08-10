@@ -30,16 +30,24 @@ function meicNets(config: ConsoleConfig): TradeNet[] {
   );
 }
 
-/** closed_at may be an ISO string or an epoch-seconds float — normalize to YYYY-MM-DD. */
-export function sessionDate(closedAt: unknown): string | null {
-  if (typeof closedAt === "number" && Number.isFinite(closedAt)) {
-    return new Date(closedAt * 1000).toISOString().slice(0, 10);
-  }
-  const s = String(closedAt ?? "");
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+/**
+ * Earnings timestamps are stored as epoch-seconds floats in some columns and
+ * ISO strings in others — normalize either to a full ISO stamp. Reading one as
+ * the other is not a formatting slip: a float read as a string is null, and a
+ * null closed_at means "still open".
+ */
+export function isoStamp(v: unknown): string | null {
+  if (typeof v === "number" && Number.isFinite(v)) return new Date(v * 1000).toISOString();
+  const s = String(v ?? "");
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s;
   const n = Number.parseFloat(s);
-  if (Number.isFinite(n) && n > 1e9) return new Date(n * 1000).toISOString().slice(0, 10);
+  if (Number.isFinite(n) && n > 1e9) return new Date(n * 1000).toISOString();
   return null;
+}
+
+/** The same value narrowed to its session, YYYY-MM-DD. */
+export function sessionDate(closedAt: unknown): string | null {
+  return isoStamp(closedAt)?.slice(0, 10) ?? null;
 }
 
 function earningsNets(config: ConsoleConfig): TradeNet[] {

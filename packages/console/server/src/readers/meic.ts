@@ -1,13 +1,10 @@
 import path from "node:path";
-import type { MeicPayload, MeicTradeRow, MeicSummaryRow, TradingMode } from "@console/shared";
+import type { MeicPayload, MeicTradeRow, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
 import { withReadOnlyDb, hasColumn, num, str } from "./db.js";
+import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 
-/** Page sizes the trade log offers, and the ceiling on anything asked for. */
-export const TRADE_PAGE_SIZES = [50, 100, 200, 500] as const;
-const MAX_PAGE = 500;
-const DEFAULT_PAGE = 100;
 
 /**
  * The era the module counts as evidence. Its own analytics narrow to this by
@@ -50,22 +47,19 @@ function scopeSql(db: DatabaseHandle, scope: MeicScopeFilter): { and: string; pa
 export type MeicOutcome = "all" | "wins" | "losses" | "open";
 
 /** The trade log's own query: page-wide scope, plus its filters and its page. */
-export interface MeicTradeQuery extends MeicScopeFilter {
+export interface MeicTradeQuery extends MeicScopeFilter, PageRequest {
   outcome: MeicOutcome;
   /** Exit reason as the analytics card labels it — "open" means no exit reason yet. */
   reason: string | null;
   search: string;
-  limit: number;
-  offset: number;
 }
 
 export const NO_TRADE_QUERY: MeicTradeQuery = {
   ...NO_SCOPE,
+  ...FIRST_PAGE,
   outcome: "all",
   reason: null,
   search: "",
-  limit: DEFAULT_PAGE,
-  offset: 0,
 };
 
 /**
@@ -99,22 +93,20 @@ function tradeFilterSql(db: DatabaseHandle, q: MeicTradeQuery): { where: string;
 export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTradeQuery = NO_TRADE_QUERY): MeicPayload {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
-  const limit = Math.min(Math.max(1, Math.trunc(query.limit)), MAX_PAGE);
-  const offset = Math.max(0, Math.trunc(query.offset));
-
-  const page = withReadOnlyDb<{ rows: MeicTradeRow[]; total: number }>(dbPath, { rows: [], total: 0 }, (db) => {
+  const trades = withReadOnlyDb<Paged<MeicTradeRow>>(dbPath, emptyPage(query), (db) => {
     const f = tradeFilterSql(db, query);
-    const total = Number(
-      (db.prepare<string[], { n: number }>(`SELECT COUNT(*) AS n FROM ic_trades WHERE ${f.where}`).get(...f.params))?.n ?? 0,
-    );
-    const rows = db
-      .prepare<string[], Record<string, unknown>>(
-        `SELECT id, trade_date, entry_time, symbol, put_strike, call_strike, wing_width,
-                net_credit, quantity, status, pnl, fees, exit_reason, iv_rank_at_entry
-           FROM ic_trades WHERE ${f.where} ORDER BY id DESC LIMIT ? OFFSET ?`,
-      )
-      .all(...f.params, String(limit), String(offset))
-      .map((r: Record<string, unknown>) => ({
+    return pagedQuery<MeicTradeRow>(
+      db,
+      {
+        columns: `id, trade_date, entry_time, symbol, put_strike, call_strike, wing_width,
+                  net_credit, quantity, status, pnl, fees, exit_reason, iv_rank_at_entry`,
+        from: "ic_trades",
+        where: f.where,
+        params: f.params,
+        orderBy: "id DESC",
+      },
+      query,
+      (r) => ({
         mode,
         id: num(r["id"]) ?? 0,
         tradeDate: str(r["trade_date"]) ?? "",
@@ -130,8 +122,8 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
         fees: num(r["fees"]),
         exitReason: str(r["exit_reason"]),
         ivRankAtEntry: num(r["iv_rank_at_entry"]),
-      }));
-    return { rows, total };
+      }),
+    );
   });
 
   const summaries = withReadOnlyDb<MeicSummaryRow[]>(dbPath, [], (db) =>
@@ -154,7 +146,7 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
       })),
   );
 
-  return { mode, trades: page.rows, total: page.total, offset, limit, summaries };
+  return { mode, trades, summaries };
 }
 
 const RESOLVED = "status NOT IN ('cancelled','pending','partial_entry')";
