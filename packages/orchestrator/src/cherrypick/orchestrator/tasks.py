@@ -450,6 +450,40 @@ def registry_snapshot(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return out
 
 
+def legacy_task_names(cfg: dict[str, Any]) -> list[str]:
+    """Every per-job task name the pre-supervisor install registered, by its resolved config name —
+    the supervisor cutover's deletion list, and doctor's drift check ('a legacy task still
+    registered means the cutover was incomplete and something may double-fire'). The module-
+    registered names (meic/flies paper, flies live) come from the same config keys the modules use.
+    """
+    from . import config as cfgmod  # local import: avoids a cycle at module load
+
+    names: list[str] = []
+    for mcfg in cfgmod.enabled_modules(cfg).values():
+        paper = mcfg.get("paper", {}) or {}
+        for tkey in ("task_name", "entry_task_name", "exit_task_name"):
+            if paper.get(tkey):
+                names.append(paper[tkey])
+        svc_task = (paper.get("dolt_service") or {}).get("task_name")
+        if svc_task:
+            names.append(svc_task)
+        live_task = (mcfg.get("live") or {}).get("task_name")
+        if live_task:
+            names.append(live_task)
+    for section in ("watchdog", "trade_notify"):
+        tn = (cfg.get(section, {}) or {}).get("task_name")
+        if tn:
+            names.append(tn)
+    names.append(cfgmod.preopen_settings(cfg)["task_name"])
+    names.append(cfgmod.eod_digest_settings(cfg)["task_name"])
+    names.append(cfgmod.insight_settings(cfg)["task_name"])
+    names.append(cfgmod.archive_settings(cfg)["task_name"])
+    names.append(cfgmod.reconcile_schedule_settings(cfg)["task_name"])
+    names.append(cfgmod.symbol_watch_settings(cfg)["task_name"])
+    names.append(cfgmod.follow_feed_settings(cfg)["task_name"])
+    return names
+
+
 def delete(name: str) -> dict[str, Any]:
     """Remove a task. Deleting a task that isn't registered is a **successful no-op**, not a failure.
 

@@ -26,9 +26,11 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 
 | Command | What it does |
 |---|---|
-| `install` | Register all scheduled tasks (module paper loops, earnings entry/exit, Dolt keep-alive, watchdog, fast trade-notify, monthly log-archive, and — if enabled — the scheduled reconcile) and start the streamer / services if down. The EOD digest/insight/advise are **not** tasks — the watchdog fires them on a completion event, and `install` deletes any stale fixed-time registrations. Full verified inventory: [operations.md](operations.md). |
-| `uninstall` | Remove all cherrypick-managed scheduled tasks and stop the orchestrator's own background services. Recorded data and config are untouched. |
-| `status` | Task registration + last heartbeats + last earnings run. Local OS-scheduler queries only. |
+| `install` | Register the ONE `cherrypick-supervisor` anchor task, start the supervisor daemon (which derives every job — module paper loops, earnings entry/exit, Dolt keep-alive, watchdog, streamer-health, trade-notify, log-archive, opt-ins — from config each pass), delete every legacy per-job task, and start the streamer / services if down. Refuses while flies is live-armed today (`--force` overrides). The EOD digest/insight/advise remain event-driven (watchdog-fired). Full verified inventory: [operations.md](operations.md). |
+| `uninstall` | Delete the anchor task first, stop the supervisor, remove any legacy per-job tasks, and stop the orchestrator's own background services. Recorded data and config are untouched. |
+| `status` | Supervisor liveness + per-job registry (last start/exit, next run) + heartbeats. File reads plus one anchor-task query; falls back to the OS-scheduler snapshot on a pre-cutover box. |
+| `supervise` | Run the supervisor daemon loop in the foreground (diagnostic; the anchor task keeps it alive normally). `--stop` asks a running daemon to exit via its stop file. |
+| `ensure-supervisor` | The anchor task's 2-minute probe: fresh heartbeat + live PID → no-op; otherwise start the daemon detached; after 3 consecutive failed probes, raise one CRITICAL (`supervisor.down`). Stdlib + local files only. |
 
 ## Health & reliability
 
@@ -36,7 +38,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 |---|---|---|
 | `doctor` | One green/red readiness check — Python, config, broker session, data feed, DBs, (earnings) Dolt. | `--fast` (skip the authenticated broker round-trip) |
 | `watchdog` | Run one watchdog pass — the reliability check the scheduled task invokes (data-fresh, streamer alive, earnings SLA, dedup/re-notify/recovery). stdlib + OS shell only. | — |
-| `preopen-check` | Streamer liveness only, on the tight pre-open task (`cherrypick-preopen`, every 2 min 09:00–09:35 ET). Closes the gap where the full 10-minute tick's first supervising pass could land ~09:25, minutes before the unrecoverable 09:30–09:35 opening range. Reuses `_check_streamer_health` and the normal notify path; writes no heartbeat; no-ops on a non-trading day. | — |
+| `streamer-health` | Streamer liveness only — the supervisor's 60 s in-session job (09:00–16:00 ET, trading days), the whole-session successor to the retired `cherrypick-preopen` windowed task. Still exists so the full 10-minute tick never has to speed up to protect the streamer, whose 09:30–09:35 opening-range window is unrecoverable once missed. Reuses `_check_streamer_health` and the normal notify path; writes no heartbeat; no-ops on a non-trading day. (`preopen-check` survives as a deprecated alias.) | — |
 | `reconcile` | Paper↔live isolation guard: enumerate **every** account on the login (read-only `list_accounts`/`get_positions`/`get_account_info`) and flag any open positions/BP a paper-only suite shouldn't hold. On-demand; never trades; accounts masked. `reconcile.schedule.enabled` promotes it to a daily `cherrypick-reconcile` task (`--scheduled` notifies on any non-FLAT verdict) — the phase-5 posture once anything trades live. | `--scheduled` |
 | `notify-test` | Fire a test notification through every configured channel. | — |
 | `notify-trades` | Push new paper entries/exits to the trade channels (also runs best-effort on each watchdog tick). | — |
@@ -57,17 +59,20 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 
 See [reporting-and-dashboard.md](reporting-and-dashboard.md) for how these compose and the report files they produce.
 
-## Module drivers (invoked by scheduled tasks — rarely run by hand)
+## Module drivers (invoked by supervisor jobs — rarely run by hand)
 
 | Command | What it does |
 |---|---|
-| `run-earnings-entry` | Run the Earnings paper **entry** pass now (the daily ~15:45 ET task). |
-| `run-earnings-exit` | Run the Earnings paper **exit** pass now (the daily ~09:45 ET task). |
+| `run-earnings-entry` | Run the Earnings paper **entry** pass now (the daily ~15:45 ET job). |
+| `run-earnings-exit` | Run the Earnings paper **exit** pass now (the daily ~09:45 ET job). |
 | `run-earnings-symbol-watch` | Run the Earnings forward-preview scan now (`symbol_watch.py refresh`) — the source of scout's read-only Earnings page "Upcoming" section. Purely informational; off by default (`symbol_watch.enabled`). |
-| `ensure-dolt` | Start a module's declared Dolt server if down (the earnings keep-alive task). |
+| `ensure-dolt` | Start a module's declared Dolt server if down (the earnings keep-alive job). |
 
-MEIC's paper loop is **self-healing** and registers its own task (`cherrypick-meic-paper-loop`); the
-orchestrator invokes MEIC's installer during `install` rather than driving each iteration.
+The module paper loops are supervisor jobs too: MEIC as a 60 s `--once` spawn
+(`modules.meic.paper.tick_interval_seconds`), flies as the one **resident** child (its own
+`--interval 15` mode in-session, supervised for death and silence) plus a 60 s off-session `--once`
+job that owns settlement. The modules' `--install-task` helpers remain only for standalone
+(orchestrator-less) use.
 
 ## Global flags
 

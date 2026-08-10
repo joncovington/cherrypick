@@ -127,6 +127,78 @@ def _writable(path: Path) -> bool:
         return False
 
 
+def _supervisor_driving() -> bool:
+    """True when a live supervisor owns this box's scheduling (fresh heartbeat + live PID) — the
+    dual-read switch every task-registration check branches on until the transition window closes."""
+    from . import supersnap  # local import: avoids a cycle at module load
+
+    return supersnap.supervisor_alive()
+
+
+def _job_check(key: str, job_id: str, enabled: bool = True) -> Check:
+    """One supervisor-job registration check — the `tasks.exists` equivalent, read from the job
+    registry file (zero subprocess spawns). Keeps the off-by-choice-is-healthy distinction."""
+    from . import supersnap
+
+    st = supersnap.job_state(job_id)
+    if enabled and st and st.get("enabled"):
+        return Check(key, OK, f"supervised (job {job_id})")
+    if enabled and st is not None:
+        return Check(key, WARN, f"job {job_id} disabled: {st.get('enabled_reason') or 'unknown'}")
+    if enabled:
+        return Check(key, WARN, f"job {job_id} missing from supervisor registry (check supervisor.log)")
+    return Check(key, OK, f"disabled (job {job_id} off)")
+
+
+def _supervisor_checks(cfg: dict[str, Any], fast: bool) -> list[Check]:
+    """The supervisor's own health for doctor: daemon liveness, the anchor task, and — full mode
+    only — the legacy-task drift sweep (a pre-cutover `cherrypick-*` task still registered means the
+    cutover was incomplete and something may double-fire). Empty on a pre-cutover box (no heartbeat
+    file has ever been written), so the dual-read period stays noise-free."""
+    from . import supersnap, supervisor
+
+    if not supervisor.heartbeat_path().exists():
+        return []
+    checks: list[Check] = []
+    age = supersnap.heartbeat_age_seconds()
+    if supersnap.supervisor_alive():
+        checks.append(Check("supervisor", OK, f"running (heartbeat {age:.0f}s old)"))
+    else:
+        detail = f"heartbeat {age:.0f}s old" if age is not None else "no heartbeat"
+        checks.append(
+            Check(
+                "supervisor",
+                FAIL,
+                f"NOT running ({detail}; limit {supervisor.HEARTBEAT_FRESH_SECONDS}s) — "
+                "run: cherrypick ensure-supervisor",
+            )
+        )
+    if not fast:
+        anchor = tasks.exists(supersnap.ANCHOR_TASK)
+        checks.append(
+            Check(
+                "supervisor.anchor",
+                OK if anchor else FAIL,
+                "anchor task registered"
+                if anchor
+                else f"anchor task '{supersnap.ANCHOR_TASK}' missing — nothing restarts a dead "
+                "supervisor (run: cherrypick install)",
+            )
+        )
+        leftovers = [n for n in tasks.legacy_task_names(cfg) if tasks.exists(n)]
+        checks.append(
+            Check(
+                "supervisor.legacy_tasks",
+                WARN if leftovers else OK,
+                f"legacy scheduled task(s) still registered — incomplete cutover, may double-fire: "
+                f"{', '.join(leftovers)} (run: cherrypick install)"
+                if leftovers
+                else "no legacy scheduled tasks remain",
+            )
+        )
+    return checks
+
+
 def _suite_task_checks(cfg: dict[str, Any]) -> list[Check]:
     """The orchestrator's own recurring tasks — the ones `install` registers that are not a module's.
 
@@ -142,6 +214,16 @@ def _suite_task_checks(cfg: dict[str, Any]) -> list[Check]:
     would train the operator to ignore this whole section — which is the failure mode that let
     `holidays_loaded=0` sit in the docs as an accepted gap.
     """
+    if _supervisor_driving():
+        sh = (cfg.get("watchdog", {}) or {}).get("streamer_health", {}) or {}
+        return [
+            _job_check("task.trade_notify", "trade-notify"),
+            _job_check("task.log_archive", "log-archive", cfgmod.archive_settings(cfg)["enabled"]),
+            _job_check("task.reconcile", "reconcile", cfgmod.reconcile_schedule_settings(cfg)["enabled"]),
+            _job_check("task.follow_notify", "follow-notify", cfgmod.follow_feed_settings(cfg)["enabled"]),
+            # streamer-health is preopen's whole-session replacement under the supervisor
+            _job_check("task.streamer_health", "streamer-health", sh.get("enabled", True)),
+        ]
     resolved = [
         ("trade_notify", (cfg.get("trade_notify", {}) or {}).get("task_name"), True),
         ("log_archive", cfgmod.archive_settings(cfg)["task_name"], cfgmod.archive_settings(cfg)["enabled"]),
@@ -320,18 +402,23 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
                 mark = OK if status == eval_activity.OK else WARN
                 checks.append(Check(f"{name}.eval_activity", mark, detail))
 
-        # scheduled task(s)
-        for tkey in ("task_name", "entry_task_name", "exit_task_name"):
+        # scheduled task(s) — or, on a supervisor-driven box, the matching supervisor job(s)
+        task_keys = (("task_name", "paper"), ("entry_task_name", "entry"), ("exit_task_name", "exit"))
+        for tkey, suffix in task_keys:
             tn = paper.get(tkey)
-            if tn:
-                reg = tasks.exists(tn)
-                checks.append(
-                    Check(
-                        f"{name}.task[{tn}]",
-                        OK if reg else WARN,
-                        "registered" if reg else "not registered (run: cherrypick install)",
-                    )
+            if not tn:
+                continue
+            if _supervisor_driving():
+                checks.append(_job_check(f"{name}.task[{name}-{suffix}]", f"{name}-{suffix}"))
+                continue
+            reg = tasks.exists(tn)
+            checks.append(
+                Check(
+                    f"{name}.task[{tn}]",
+                    OK if reg else WARN,
+                    "registered" if reg else "not registered (run: cherrypick install)",
                 )
+            )
 
         # broker/keyring — check once, via the first module that can. Skipped in fast mode: it's the
         # only authenticated broker round-trip, unsafe to poll on the live-checks cadence.
@@ -388,28 +475,36 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
 
             svc = paper.get("dolt_service")
             if svc and svc.get("task_name"):
-                reg = tasks.exists(svc["task_name"])
-                checks.append(
-                    Check(
-                        f"{name}.dolt_service",
-                        OK if reg else WARN,
-                        "keep-alive task registered"
-                        if reg
-                        else "keep-alive task missing (run: cherrypick install)",
+                if _supervisor_driving():
+                    checks.append(_job_check(f"{name}.dolt_service", f"{name}-dolt"))
+                else:
+                    reg = tasks.exists(svc["task_name"])
+                    checks.append(
+                        Check(
+                            f"{name}.dolt_service",
+                            OK if reg else WARN,
+                            "keep-alive task registered"
+                            if reg
+                            else "keep-alive task missing (run: cherrypick install)",
+                        )
                     )
-                )
 
-    # watchdog task
+    # watchdog task (or its supervisor job)
     wt = cfg.get("watchdog", {}).get("task_name")
     if wt:
-        checks.append(
-            Check(
-                "watchdog.task",
-                OK if tasks.exists(wt) else WARN,
-                "registered" if tasks.exists(wt) else "not registered (run: cherrypick install)",
+        if _supervisor_driving():
+            checks.append(_job_check("watchdog.task", "watchdog"))
+        else:
+            registered = tasks.exists(wt)
+            checks.append(
+                Check(
+                    "watchdog.task",
+                    OK if registered else WARN,
+                    "registered" if registered else "not registered (run: cherrypick install)",
+                )
             )
-        )
 
+    checks.extend(_supervisor_checks(cfg, fast))
     checks.extend(_suite_task_checks(cfg))
 
     # notify reachability — can the walk-away user actually be told?

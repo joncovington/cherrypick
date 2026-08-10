@@ -64,7 +64,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 
 from cherrypick.core import calendar as _cal  # noqa: E402
@@ -122,6 +122,17 @@ def _watch_lock_path() -> str:
 
 
 def arm_stamp_path() -> str:
+    """The live ARM RECORD — 'armed for today' as a file, in the SHARED state dir so the module
+    (self-disarm), the supervisor (job enablement), and the watchdog (dead-man's backstop) all read
+    the one file. Under the supervisor, this record — not a schtasks registration — IS the armed
+    signal: present-and-dated-today enables the `flies-live` job; deleting it disarms within one
+    supervisor pass. Only this module's human-confirmed arm command ever writes it."""
+    return str(_home.state_dir() / "flies-live-arm.json")
+
+
+def _legacy_arm_stamp_path() -> str:
+    """Pre-supervisor location (`data/flies/live_armed.json`) — read as a migration fallback for
+    one transition window, never written anymore."""
     return os.path.join(_data_dir(), "live_armed.json")
 
 
@@ -1506,11 +1517,60 @@ def _allow_on_battery() -> dict:
         return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
 
 
+def _supervisor_heartbeat_fresh(max_age_seconds: int = 90) -> bool:
+    """Is the orchestrator's supervisor daemon driving this box? A file read, never an import —
+    the module stays independent of orchestrator code. Fresh heartbeat → arming is a record write
+    (the supervisor fires the ticks); stale/absent → the legacy schtasks path still applies."""
+    try:
+        with open(_home.state_dir() / "supervisor.last.json", encoding="utf-8") as f:
+            ts = json.load(f).get("ts")
+        then = datetime.fromisoformat(str(ts))
+        if then.tzinfo is None:
+            then = then.replace(tzinfo=UTC)
+        return (datetime.now(UTC) - then).total_seconds() <= max_age_seconds
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def _spawn_first_tick() -> None:
+    """Fire one detached `--once --live` immediately so arming doesn't wait up to a full interval
+    for the first tick — the same behavior `schtasks /Run` gave the legacy registration."""
+    flags = 0
+    if os.name == "nt":
+        flags = 0x00000008 | 0x08000000 | 0x00000200  # DETACHED | NO_WINDOW | NEW_GROUP
+    try:
+        subprocess.Popen(
+            [_pl._pythonw(), "-m", "cherrypick.flies.live_loop", "--once", "--live"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+        )
+    except OSError:
+        pass  # the next scheduled tick covers it
+
+
 def install_task() -> dict:
-    """Arm the live loop FOR TODAY: register the every-minute task and stamp the arm date.
-    The stamp is what makes arming per-day — a tick that finds a stale stamp disarms itself."""
+    """Arm the live loop FOR TODAY by writing the arm record. The record is what makes arming
+    per-day — a tick that finds a stale record disarms itself, and the watchdog's backstop keys on
+    the same file.
+
+    Driver dispatch: when the orchestrator's supervisor is running, the record alone arms (the
+    supervisor derives the `flies-live` job from it within one pass) and NO schtasks entry is
+    created. Otherwise the legacy every-minute task is registered exactly as before. Both paths
+    fire one immediate tick."""
+    armed_for = provider.now_et().date().isoformat()
+    if _supervisor_heartbeat_fresh():
+        _write_arm_stamp()
+        _spawn_first_tick()
+        return {
+            "ok": True,
+            "driver": "supervisor",
+            "cadence": "every 60s (supervisor job flies-live)",
+            "armed_for": armed_for,
+            "detail": f"arm record written: {arm_stamp_path()}",
+        }
     if os.name != "nt":
-        return {"ok": False, "error": "scheduled-task install is Windows-only"}
+        return {"ok": False, "error": "no supervisor running, and scheduled-task install is Windows-only"}
     tr = f'"{_pl._pythonw()}" -m cherrypick.flies.live_loop --once --live'
     r = subprocess.run(
         [
@@ -1541,45 +1601,68 @@ def install_task() -> dict:
         )
     return {
         "ok": ok,
+        "driver": "schtasks",
         "task": _TASK_NAME,
         "cadence": f"every {_TASK_INTERVAL_MIN} min",
-        "armed_for": provider.now_et().date().isoformat(),
+        "armed_for": armed_for,
         "battery": battery,
         "detail": (r.stdout or r.stderr).strip(),
     }
 
 
 def uninstall_task() -> dict:
-    if os.name != "nt":
-        return {"ok": False, "error": "Windows-only"}
-    subprocess.run(
-        ["schtasks", "/End", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
-    )
-    r = subprocess.run(
-        ["schtasks", "/Delete", "/TN", _TASK_NAME, "/F"],
-        capture_output=True,
-        text=True,
-        creationflags=_NO_WINDOW,
-    )
-    try:
-        os.unlink(arm_stamp_path())
-    except OSError:
-        pass
-    return {"ok": r.returncode == 0, "task": _TASK_NAME, "detail": (r.stdout or r.stderr).strip()}
+    """Disarm: delete the arm record (which disables the supervisor's `flies-live` job within one
+    pass), and remove the legacy scheduled task if one is registered. Record deletion is the
+    authoritative act; the schtasks removal is transition-window hygiene."""
+    removed = False
+    for path in (arm_stamp_path(), _legacy_arm_stamp_path()):
+        try:
+            os.unlink(path)
+            removed = True
+        except OSError:
+            pass
+    task_result = None
+    if os.name == "nt" and task_installed():
+        subprocess.run(
+            ["schtasks", "/End", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
+        )
+        r = subprocess.run(
+            ["schtasks", "/Delete", "/TN", _TASK_NAME, "/F"],
+            capture_output=True,
+            text=True,
+            creationflags=_NO_WINDOW,
+        )
+        task_result = {"ok": r.returncode == 0, "detail": (r.stdout or r.stderr).strip()}
+    return {
+        "ok": removed or task_result is not None,
+        "task": _TASK_NAME,
+        "arm_record_removed": removed,
+        "legacy_task": task_result,
+        "detail": "disarmed (arm record removed)" if removed else "nothing was armed",
+    }
 
 
 def _write_arm_stamp() -> None:
-    os.makedirs(_data_dir(), exist_ok=True)
-    with open(arm_stamp_path(), "w", encoding="utf-8") as f:
-        json.dump({"date": provider.now_et().date().isoformat(), "at": clock.now_iso()}, f)
+    record = {
+        "date": provider.now_et().date().isoformat(),
+        "at": clock.now_iso(),
+        "armed_by": "live-flies-start",
+        "confirmation": "literal-YES",
+    }
+    path = arm_stamp_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(record, f)
 
 
 def arm_stamp_date() -> str | None:
-    try:
-        with open(arm_stamp_path(), encoding="utf-8") as f:
-            return json.load(f).get("date")
-    except (OSError, ValueError):
-        return None
+    for path in (arm_stamp_path(), _legacy_arm_stamp_path()):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f).get("date")
+        except (OSError, ValueError):
+            continue
+    return None
 
 
 def should_disarm(config: dict, now_min: int, today: str) -> str | None:
