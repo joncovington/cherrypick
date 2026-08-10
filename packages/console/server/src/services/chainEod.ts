@@ -94,6 +94,91 @@ function pickMonthlies(
   return monthlies.slice(0, MAX_EXPIRATIONS);
 }
 
+/** Capture one symbol's snapshot rows; returns a failure reason or null on success. */
+async function captureSymbol(
+  config: ConsoleConfig,
+  market: MarketDataService,
+  symbol: string,
+  tradeDate: string,
+): Promise<string | null> {
+  const client = getClient();
+  let spot = cachedQuote(config, symbol)?.last ?? null;
+  if (spot === null) {
+    const snap = await market.snapshotQuotes([symbol], 4_000);
+    const q = snap.get(symbol);
+    spot = q?.last ?? (q?.bid !== undefined && q?.ask !== undefined ? (q.bid + q.ask) / 2 : null);
+  }
+  if (spot === null) return "no spot price";
+
+  await sleep(POLITENESS_MS);
+  let expirations: Array<{ expiration: string; strikes: NestedStrike[] }>;
+  try {
+    const chainRaw: unknown = await client.instrumentsService.getNestedOptionChain(symbol);
+    expirations = pickMonthlies(parseNestedChain(chainRaw).chains, Date.now());
+  } catch (err) {
+    return `chain fetch failed: ${(err as Error).message}`;
+  }
+  if (expirations.length === 0) return `no monthly expiration in ${EXP_MIN_DTE}-${EXP_MAX_DTE} DTE`;
+
+  const rows: ChainEodOptionRow[] = [];
+  const bySymbol = new Map<string, { expiration: string; strike: number; otype: "C" | "P" }>();
+  for (const { expiration, strikes } of expirations) {
+    const windowed = [...strikes]
+      .sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))
+      .slice(0, STRIKE_WINDOW * 2);
+    for (const s of windowed) {
+      if (s.callStreamer !== null) bySymbol.set(s.callStreamer, { expiration, strike: s.strike, otype: "C" });
+      if (s.putStreamer !== null) bySymbol.set(s.putStreamer, { expiration, strike: s.strike, otype: "P" });
+    }
+  }
+  const data = await market.snapshotOptionData([...bySymbol.keys()], 8_000);
+  for (const [streamerSym, where] of bySymbol) {
+    const d = data.get(streamerSym);
+    const bid = d?.bid ?? null;
+    const ask = d?.ask ?? null;
+    rows.push({
+      ...where,
+      bid,
+      ask,
+      mid: bid !== null && ask !== null ? (bid + ask) / 2 : null,
+      delta: d?.delta ?? null,
+      iv: d?.iv ?? null,
+    });
+  }
+  if (rows.filter((r) => r.mid !== null).length === 0) return "no option quotes arrived";
+  writeChainEod(config, tradeDate, symbol, spot, rows);
+  return null;
+}
+
+// The builder's on-selection auto-capture: one symbol, bounded (one REST
+// chain + one DXLink snapshot), with a per-symbol attempt floor so a page
+// re-render can't hammer the broker for a symbol that keeps failing.
+const SYMBOL_ATTEMPT_FLOOR_MS = 5 * 60_000;
+const symbolAttempts = new Map<string, number>();
+
+export async function snapshotOneSymbol(
+  config: ConsoleConfig,
+  market: MarketDataService,
+  symbol: string,
+): Promise<{ ok: boolean; tradeDate: string; fresh: boolean; reason?: string }> {
+  const tradeDate = etNow().date;
+  if (chainEodMeta(config, tradeDate, symbol) !== null) return { ok: true, tradeDate, fresh: true };
+  if (!hasCredential()) return { ok: false, tradeDate, fresh: false, reason: "no console broker credential" };
+  const blacklisted = getBlacklistReason(config, symbol);
+  if (blacklisted !== null) {
+    return { ok: false, tradeDate, fresh: false, reason: `blacklisted: ${blacklisted}` };
+  }
+  const last = symbolAttempts.get(symbol) ?? 0;
+  if (Date.now() - last < SYMBOL_ATTEMPT_FLOOR_MS) {
+    return { ok: false, tradeDate, fresh: false, reason: "recently attempted — try again in a few minutes" };
+  }
+  symbolAttempts.set(symbol, Date.now());
+  const failure = await captureSymbol(config, market, symbol, tradeDate);
+  if (failure !== null) return { ok: false, tradeDate, fresh: false, reason: failure };
+  symbolAttempts.delete(symbol);
+  return { ok: true, tradeDate, fresh: false };
+}
+
 export async function runChainSnapshot(
   config: ConsoleConfig,
   market: MarketDataService,
@@ -115,7 +200,6 @@ export async function runChainSnapshot(
   try {
     const tradeDate = etNow().date;
     const capped = symbols.slice(0, SNAPSHOT_MAX_SYMBOLS);
-    const client = getClient();
     const skipped: Array<{ symbol: string; reason: string }> = [];
     let captured = 0;
     let skippedFresh = 0;
@@ -134,63 +218,11 @@ export async function runChainSnapshot(
         skippedFresh += 1;
         continue;
       }
-
-      let spot = cachedQuote(config, symbol)?.last ?? null;
-      if (spot === null) {
-        const snap = await market.snapshotQuotes([symbol], 4_000);
-        const q = snap.get(symbol);
-        spot = q?.last ?? (q?.bid !== undefined && q?.ask !== undefined ? (q.bid + q.ask) / 2 : null);
-      }
-      if (spot === null) {
-        skipped.push({ symbol, reason: "no spot price" });
+      const failure = await captureSymbol(config, market, symbol, tradeDate);
+      if (failure !== null) {
+        skipped.push({ symbol, reason: failure });
         continue;
       }
-
-      await sleep(POLITENESS_MS);
-      let expirations: Array<{ expiration: string; strikes: NestedStrike[] }>;
-      try {
-        const chainRaw: unknown = await client.instrumentsService.getNestedOptionChain(symbol);
-        expirations = pickMonthlies(parseNestedChain(chainRaw).chains, Date.now());
-      } catch (err) {
-        skipped.push({ symbol, reason: `chain fetch failed: ${(err as Error).message}` });
-        continue;
-      }
-      if (expirations.length === 0) {
-        skipped.push({ symbol, reason: `no monthly expiration in ${EXP_MIN_DTE}-${EXP_MAX_DTE} DTE` });
-        continue;
-      }
-
-      const rows: ChainEodOptionRow[] = [];
-      const bySymbol = new Map<string, { expiration: string; strike: number; otype: "C" | "P" }>();
-      for (const { expiration, strikes } of expirations) {
-        const windowed = [...strikes]
-          .sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))
-          .slice(0, STRIKE_WINDOW * 2);
-        for (const s of windowed) {
-          if (s.callStreamer !== null) bySymbol.set(s.callStreamer, { expiration, strike: s.strike, otype: "C" });
-          if (s.putStreamer !== null) bySymbol.set(s.putStreamer, { expiration, strike: s.strike, otype: "P" });
-        }
-      }
-      const data = await market.snapshotOptionData([...bySymbol.keys()], 8_000);
-      for (const [streamerSym, where] of bySymbol) {
-        const d = data.get(streamerSym);
-        const bid = d?.bid ?? null;
-        const ask = d?.ask ?? null;
-        rows.push({
-          ...where,
-          bid,
-          ask,
-          mid: bid !== null && ask !== null ? (bid + ask) / 2 : null,
-          delta: d?.delta ?? null,
-          iv: d?.iv ?? null,
-        });
-      }
-      const withQuotes = rows.filter((r) => r.mid !== null).length;
-      if (withQuotes === 0) {
-        skipped.push({ symbol, reason: "no option quotes arrived" });
-        continue;
-      }
-      writeChainEod(config, tradeDate, symbol, spot, rows);
       captured += 1;
       await sleep(POLITENESS_MS);
     }
