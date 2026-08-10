@@ -26,7 +26,7 @@ python -c "import json; cfg = json.load(open('config.risk.json')); print('Availa
 Expected output (the full registry — includes the paper-only forward-test streams; only the four
 ladder names below the dashes are valid choices for this command):
 ```
-Available profiles: control, open, width-5, width-10, conservative, moderate, aggressive, very-aggressive
+Available profiles: control, open, width-5, width-10, conservative, moderate, aggressive, very-aggressive, gex-open, gex-blocked
 Current active profile: control
 ```
 

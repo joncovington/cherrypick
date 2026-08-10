@@ -74,6 +74,9 @@
   "entry_window_end": "15:55",
   "close_window_start": "09:45",
 
+  "_exit_after_announcement_note": "SAME-SESSION time backstop used by iron_fly, iron_condor and directional_credit_spread: minutes after entry before the position is closed unconditionally with reason 'iv_crush_backstop'. Evaluated BEFORE the profit/stop check, so it wins. TOP-LEVEL, not per-strategy: evaluate_position receives the whole project config (strategy_test_runner passes scanner._load_config() straight through), so a copy inside a strategies.<name> block would be ignored. Stated explicitly here because it was previously absent from this file while the code default (240) ran anyway -- an 'overnight hold' could be force-closed four hours after entry with nothing in config to explain it. Raise it past the overnight gap to disable the behaviour in practice.",
+  "exit_after_announcement_minutes": 240,
+
   "_correlation_block_list_note": "Groups of names not to hold simultaneously — scanner.select_positions takes at most ONE per group, checking already-open positions too. Populated 2026-07-28; it had been empty since the module was written, so the one correlation guard that exists was never actually armed. The group below is the mega-cap index-weight cluster: these carry enough S&P/Nasdaq weight to move with the index and with each other, so holding several overnight is one factor bet wearing the costume of diversification. Deliberately DISTINCT from the per-name concentration decision (running every strategy on ONE accepted name is intended sampling and stays); stacking several CORRELATED names on one night is a different exposure and is what this blocks. A durable sector grouping rather than a dated one, so it keeps working past the week that prompted it. Still a PARTIAL mitigation: it does not measure correlation, it refuses a hand-listed cluster.",
   "correlation_block_list": [
     ["AAPL", "MSFT", "AMZN", "META", "GOOGL", "GOOG", "NVDA", "AVGO", "TSLA"]
@@ -291,7 +294,7 @@
       "min_winrate": 0.50,
       "near_miss_min_winrate": 0.40,
 
-      "_exit_note": "Step 3c (market-open-to-close-window) profit-target/stop-loss check via scanner.evaluate_debit_spread_exit, same convention and values as expected_move_butterfly's -- 25% of max profit target, a stop at a 40% loss of the debit paid. Not backtested for this project specifically.",
+      "_exit_note": "Exit order for this strategy: (1) a per-leg delta stop, leg_stop_delta_abs, code default 0.60; (2) scanner.evaluate_credit_spread_exit -- the CREDIT-spread exit, not the debit one, despite the structure pricing as a net debit. That function reads profit_target_pct and stop_loss_credit_multiple. WARNING: stop_loss_pct_of_debit below is NEVER READ on this path (it belongs to evaluate_debit_spread_exit, which this strategy does not call), so the effective stop is the code default 2.0x credit, not 40% of debit. Kept only because removing a key an older config may still carry is a separate change; set stop_loss_credit_multiple explicitly if you want a different stop. Not backtested for this project specifically.",
       "profit_target_pct": 0.25,
       "stop_loss_pct_of_debit": 0.40,
 

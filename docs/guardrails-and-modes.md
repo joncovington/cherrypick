@@ -14,19 +14,39 @@ incident history behind them. If you extend the suite, preserve them.
   a **deliberate, manual** action you take per module — the automation never does it for you, and if you
   go there you do so **entirely at your own risk**.
 
-Paper and live books are strictly separated: separate SQLite files, and a module's live-order tools are
-gated behind `enable_live_trading: true`. Even a paper "dry-run" never calls `execute_trade` (a dry-run
-performs a real margin check).
+Paper and live books are strictly separated: separate SQLite files. Even a paper "dry-run" never calls
+`execute_trade` (a dry-run performs a real margin check).
 
-**One narrow, explicitly-authorized exception: the flies live pilot.** The orchestrator itself still
-never places an order — but the flies module runs its own separate, per-day-armed live trading loop
-(started only via `/live-flies-start`, which requires a fresh explicit confirmation every single trading
-day and self-disarms every evening). This is a deliberate, small, tightly-bounded exception to the
-"paper by default" rule above, not a change to it — one strategy variant, one contract, one open
-position at a time. Every other guardrail on this page (masked accounts, keyring-only credentials, no
-AI/network on the decision path) still applies to it in full. See
-[`packages/flies/docs/live-trading-plan.md`](../packages/flies/docs/live-trading-plan.md) for the complete
-rulebook.
+### The four live-order paths, and what actually gates each
+
+Know all four before opening any of them. **They do not share one gate**, and "gated behind
+`enable_live_trading`" — which earlier versions of this page said — is true of only two:
+
+| Path | Code | What gates it |
+|---|---|---|
+| **MEIC** | `meic/live_loop.py`, `live_orders.py` | `enable_live_trading` in MEIC's config, plus its own daily-loss breaker and the suite halt flag. Inert by default and never installed by the orchestrator, but it is a full live loop. |
+| **Earnings** | `earnings/tt.py execute_trade --live` | `enable_live_trading` in the earnings config. |
+| **Flies** | `flies/live_loop.py`, `live_orders.py` | **Not** `enable_live_trading`. A separate `live.enabled` **and** `live.gate0_confirmed` attestation, **and** a per-day arm record written by `/live-flies-start`, **and** a designated account, **and** the halt flag. Self-disarms every evening. |
+| **Desk** | `packages/desk` | **Never reads `enable_live_trading` at all** — deliberately. Its own config `enabled`, an account allowlist, a PIN, a per-order ticket you confirm, and its own `policy.py` gates. ⚠️ Experimental. |
+
+The first three are **loops**: once the gate is open they act on their own schedule without asking
+again. The desk is the only discretionary one — it acts because you typed a confirmation.
+
+**What "the orchestrator never places an order" does and doesn't mean.** The orchestrator process
+genuinely never calls a place-order path. But its supervisor derives a `<module>-live` job for *any*
+module that declares `live.task_name`, and spawns that module's live loop on an interval while it is
+armed — so it is the thing that launches the process that trades. Today only flies configures that key;
+the mechanism is not flies-specific.
+
+**The flies pilot is the most tightly bounded of the three loops** — one arm, one symbol, re-armed by
+hand each trading day. Note the precise concurrency rule: at most one *incomplete* position at a time.
+An open short vertical always blocks a new entry; a **completed** fly blocks only while its floor is
+negative, so several completed flies can be open at once. See
+[`packages/flies/docs/live-trading-plan.md`](../packages/flies/docs/live-trading-plan.md) for the
+complete rulebook.
+
+Every other guardrail on this page — masked accounts, keyring-only credentials, no AI/network on a
+decision path — applies to all four paths in full.
 
 ## The one live-config boundary: `connect` / `account`
 
@@ -74,9 +94,13 @@ the stdlib + the OS shell — no MCP, no HTTP client, no AI tooling — so it ha
 **34-hour silent stall** (2026-07-01, from an external streamer dependency) is why this rule exists. The
 modules' loop decisions depend only on their local tools + their instructions, for the same reason.
 
-- The AI **EOD insight** does not violate this: it's opt-in, feature-detected, and runs on a **separate**
-  scheduled task strictly **off** the watchdog/paper path, best-effort. The deterministic `eod-analysis`
-  remains the guaranteed artifact.
+- The AI **EOD insight** does not violate this: it's opt-in, feature-detected, and the watchdog fires it
+  **detached** on the module-completion event, strictly **off** the watchdog/paper path, best-effort. The
+  deterministic `eod-analysis` remains the guaranteed artifact.
+- **That insight run does make an outbound call, by default.** `eod_insight.research_events` defaults to
+  true, which grants the agent `WebSearch` (bounded turns) to research upcoming events. It is the one
+  sanctioned network exception in the suite, and it sits entirely off the reliability path — but it is
+  real, so do not read "no network" as covering it. `"research_events": false` makes the run offline.
 
 **Read surfaces read files, never the broker.** `report`/`calibrate`/`dashboard`/EOD reports read paper
 DBs (SQLite read-only), watchdog state, logs, and report files. The static dashboard render reads the

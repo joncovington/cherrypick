@@ -4,6 +4,11 @@
 between with one command, what each one trades off, and when to move up or down the ladder. Part
 of the [MEIC module](../README.md) in the cherrypick suite.
 
+> **These four presets are `enabled: false` and are not what paper is running.** They remain the
+> **live**-trading preset system that `/set-risk-profile` targets — read this document in that frame.
+> Paper runs the four-stream forward test (`control`/`open`/`width-5`/`width-10`), with
+> `active_profile: "control"`. See the Overview note below for the full split.
+
 ## Overview
 
 A **risk profile** is a named preset of entry-gate thresholds that you select based on market conditions or your confidence level. Instead of manually editing a dozen keys in `config.json` every time you want to trade more (or less) aggressively, you switch profiles with one slash command: `/set-risk-profile <name>`.
@@ -309,7 +314,7 @@ When you run `/set-risk-profile moderate`:
 
 ## Switching Back
 
-`/set-risk-profile conservative` restores today's baseline. Since the `conservative` profile contains every key at its exact current value, switching back is a complete reset.
+`/set-risk-profile conservative` restores the ladder's own baseline rung — it is a complete reset in the sense that `conservative` names every key explicitly. Note it is **not** "today's settings": the registry's `active_profile` is `control`, and the ladder is disabled for paper.
 
 If you've manually edited `config.json` outside of profile switches (e.g., tuned `stop_trigger_ratio` from 0.95 to 0.92), switching profiles **overwrites only the keys in that profile** — unspecified keys stay as you edited them. So manual edits can survive profile switches if you're careful.
 
@@ -322,5 +327,5 @@ If you've manually edited `config.json` outside of profile switches (e.g., tuned
 - **Aggressive**: 2+ weeks on moderate, win rate 60%+, largest loss < 2% account equity
 - **Very-Aggressive**: Deliberate 1-week experiment testing high-VIX/ATR tactics; not a permanent mode
 
-**Default recommendation**: Run **moderate** for most traders most of the time. It captures ~50% more entries than conservative without the execution complexity of aggressive/very-aggressive.
+**Default recommendation for live use of the ladder** (paper does not use it at all): Run **moderate** for most traders most of the time. It captures ~50% more entries than conservative without the execution complexity of aggressive/very-aggressive.
 

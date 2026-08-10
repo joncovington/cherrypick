@@ -10,9 +10,14 @@ Strictly an enrichment layer, strictly off the reliability path — the guardrai
   - **Feature-detected + opt-in.** No `claude`, or `enabled` false → skipped; the deterministic
     `eod-analysis` remains the guaranteed floor. Default off (it needs Claude + auth + a paid call).
   - **Files in, text out, no dangerous tools.** The report markdown is piped to Claude on stdin; the
-    invocation disallows Bash/Edit/Write/NotebookEdit/WebFetch/WebSearch/Task, so the agent can't run
-    commands, edit/write files, or reach the network — it reads the text and emits prose. The
-    **orchestrator** writes the output file; the agent never gets filesystem/broker access.
+    invocation always disallows Bash/Edit/Write/NotebookEdit/WebFetch/Task, so the agent can't run
+    commands or edit/write files — it reads the text and emits prose. The **orchestrator** writes the
+    output file; the agent never gets filesystem/broker access.
+  - **One deliberate network exception: `WebSearch`, ON by default.** `eod_insight.research_events`
+    defaults to True, and when it is on the invocation *grants* WebSearch (bounded by `--max-turns 8`)
+    so the debrief can research upcoming macro/earnings events. Set `research_events: false` to add
+    WebSearch to the disallowed list and make the run fully offline. Do not describe this path as
+    "cannot reach the network" — it can, unless you turn that off.
   - **Best-effort.** Any failure returns `{"ok": False, ...}` and never raises fatally; a caller must
     invoke it off the watchdog reliability path (like `eod_digest`).
 

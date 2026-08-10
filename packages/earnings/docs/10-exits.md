@@ -2,9 +2,9 @@
 
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
-How positions actually get closed — there's no same-day announcement backstop in this system;
-every strategy is either an overnight hold or a short multi-day calendar hold, and the exit
-mechanics follow directly from that.
+How positions actually get closed. Every strategy is either an overnight hold or a short multi-day
+calendar hold, and most of the exit mechanics follow from that — but note the post-announcement
+backstop below, which fires the same session and which earlier versions of this page denied existed.
 
 ---
 
@@ -18,16 +18,41 @@ mechanics follow directly from that.
    target — the IV crush this system is built to capture already happened overnight, so there's
    no more edge in continuing to hold.
 
-That's the entire exit model for the five overnight-hold strategies (`iron_fly`, `iron_condor`,
-`directional_credit_spread`, `broken_wing_butterfly`). The two calendar
-strategies (`atm_calendar`, `double_calendar`) add their own intraday management on top of this
-during the days they're held — covered separately below.
+Those two checks cover the four overnight-hold strategies (`iron_fly`, `iron_condor`,
+`directional_credit_spread`, `broken_wing_butterfly`). The two calendar strategies (`atm_calendar`,
+`double_calendar`) add their own intraday management on top, during the days they're held — covered
+separately below.
 
-There's no per-leg delta stop, no 4-hour post-announcement backstop, and no same-day exit
-anywhere in this system — positions open before the close and get their first live look the
-next morning.
+**Two exits fire ahead of those checks, and both are easy to miss:**
+
+- **A post-announcement time backstop, same session.** `iron_fly`, `iron_condor`, and
+  `directional_credit_spread` each close unconditionally once `exit_after_announcement_minutes` have
+  elapsed since entry — **default 240 (4 hours)** — with reason `iv_crush_backstop`. It is evaluated
+  *before* the profit/stop check, so it wins. The key is **not present in `config.example.json`**, so
+  the 240-minute default is what actually runs unless you add it. This means an overnight position can
+  be force-closed the same day it was opened.
+- **A per-leg delta stop on `broken_wing_butterfly`.** `leg_stop_delta_abs`, **default 0.60**, checked
+  before the whole-position exit; reason `leg_stop_delta` (or `leg_stop_delta_overnight_gap`). The
+  calendars have their own at 0.45.
+
+Everything else does wait for the next morning: positions open before the close and get their first
+live look after the open.
 
 ---
+
+## ⚠️ The configured thresholds below may not be the ones actually applied
+
+The values in this section are what each strategy's `strategies.<name>` config block *says*. On the
+forced-sampling paper path they are **not** what runs. `strategy_test_runner` passes the **full**
+project config to `evaluate_position`, which hands that same dict to
+`scanner.evaluate_credit_spread_exit`. That function reads `profit_target_pct` and
+`stop_loss_credit_multiple` off the dict it is given — and `_load_config` merges `strategy_defaults`
+*downward into* each strategy's sub-config, never upward — so the per-strategy values are out of
+scope and the function's own defaults (**0.10 profit target, 2.0× stop**) apply instead.
+
+Until that is fixed in code, treat the numbers below as the configured intent and read
+`scan_log` for the exit reason actually recorded. This is a code defect, not a documentation one; it
+is written down here so nobody spends an afternoon wondering why an iron fly closed at 10%.
 
 ## Profit Target / Stop Loss by Strategy Type
 
@@ -54,21 +79,23 @@ Profit target: 50% → close if buying back costs ≤ $0.40
 Stop loss: 1.5x → close if buying back would cost ≥ $1.20
 ```
 
-### Debit strategies with a single-unit close (`broken_wing_butterfly`)
+### `broken_wing_butterfly`
 
-`scanner.evaluate_debit_spread_exit()`:
+Despite being entered for a debit, it exits through **`scanner.evaluate_credit_spread_exit()`** — the
+same function the credit strategies above use — after its per-leg delta stop has been checked:
 
 ```
-profit = value_received_on_close - entry_debit
-if profit >= entry_debit * profit_target_pct:
-    close_all (profit_target)
-if (entry_debit - value_received_on_close) >= entry_debit * stop_loss_pct_of_debit:
-    close_all (stop_loss)
+1. per-leg delta stop:  abs(leg delta) >= leg_stop_delta_abs   → close_all (leg_stop_delta)
+2. otherwise, the credit-spread exit on profit_target_pct / stop_loss_credit_multiple
 ```
 
-Default `profit_target_pct` is `0.25`, `stop_loss_pct_of_debit` is `0.40` — deliberately
-tighter than the calendar strategies' stop, since these are faster-resolving overnight
-structures, not multi-week calendar spreads.
+`leg_stop_delta_abs` defaults to **0.60**. `profit_target_pct` is set to `0.25` in the config;
+`stop_loss_credit_multiple` is **not** set there, so the function's default of **2.0×** applies.
+
+> **`stop_loss_pct_of_debit` is dead for this strategy.** The config block sets it to `0.40` and the
+> adjacent `_exit_note` describes it as the stop, but `evaluate_credit_spread_exit` never reads that
+> key — it reads `stop_loss_credit_multiple`. The effective stop is 2× credit, not 40% of debit. Fix
+> the config note rather than trusting it.
 
 ### Calendar strategies (`atm_calendar`, `double_calendar`)
 

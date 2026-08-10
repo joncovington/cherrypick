@@ -13,8 +13,10 @@ Two shared facts apply to every strategy below, so they aren't repeated six time
   target / stop loss, checked against live quotes the first morning after entry, from market
   open until `close_window_start`) followed by Step 3's unconditional close-window backstop
   (whatever's still open gets closed regardless of P&L). See
-  [Exit Strategy Guide](./10-exits.md) for the exact formulas. There is no same-day, hours-
-  after-the-announcement exit anywhere in this system.
+  [Exit Strategy Guide](./10-exits.md) for the exact formulas — **including two exits that fire
+  ahead of those checks**: a same-session post-announcement time backstop on `iron_fly`,
+  `iron_condor`, and `directional_credit_spread` (`exit_after_announcement_minutes`, default 240),
+  and a per-leg delta stop on `broken_wing_butterfly` (`leg_stop_delta_abs`, default 0.60).
 - **Every strategy shares the same liquidity/quality gates** (price floor, bid-ask spread,
   market cap, option volume, open interest, IV/RV ratio, winrate) with its own threshold values
   — see [Screening Criteria](./screening-criteria.md) for the full shared-gate reference and
@@ -133,9 +135,11 @@ as a smaller-debit butterfly.
 (unlike the credit spreads above — this strategy doesn't gate on term structure), plus the
 shared gates.
 
-**Exit:** `evaluate_debit_spread_exit()` (despite pricing as a net credit, the exit math treats
-the position like a debit strategy's profit-zone check) — 25% profit target, 40% stop by
-default.
+**Exit:** a per-leg delta stop first (`leg_stop_delta_abs`, default **0.60**), then
+`evaluate_credit_spread_exit()` — the same function the credit strategies use, not the debit one.
+25% profit target; the stop is `stop_loss_credit_multiple`, unset in config so the **2.0× credit**
+default applies. The `stop_loss_pct_of_debit: 0.40` in this strategy's config block is **never
+read** by that function — see [Exit Strategy Guide](./10-exits.md).
 
 ```
 Earnings expected to move down (put side richer)
@@ -184,7 +188,8 @@ width-defined credit strategy's max loss. Also gates on `max_realized_move_dispe
 consistent the underlying's historical earnings moves have been), since this structure leans on
 the expected-move assumption more than a single-expiration credit spread does.
 
-**Exit:** same 25%/100% target/stop shape and 5-day time-stop as `atm_calendar`, plus a per-side
+**Exit:** the same target/stop shape and 5-day time-stop as `atm_calendar` (though the profit target
+differs: 25% here, 30% there), plus a per-side
 delta stop (`leg_stop_delta_abs`, default 0.45) checked during Step 3b — a side crossing this
 threshold gets closed independently while the other side, likely still healthy, stays open.
 

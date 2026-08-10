@@ -3,6 +3,11 @@ record rather than as a how-to guide. If you're looking for how to run paper tra
 see [paper-trading.md](paper-trading.md) instead. Part of the [MEIC module](../README.md) in the
 cherrypick suite.
 
+> The profile names used for scope below (`large-spx`, `explore-spx-*`, the four ladder tiers, the
+> small/medium cells) are **all retired** — the symbol-pinned cells were removed 2026-07-18 and the
+> ladder was disabled 2026-08-07. They are preserved as written because this is a record of a plan as
+> it stood, not a description of the current registry.
+
 # Build plan — `paper_practice.py` (0DTESPX practice-session backtester)
 
 A **side backtesting project**: a ToS-compliant historical backtester that drives our real MEIC

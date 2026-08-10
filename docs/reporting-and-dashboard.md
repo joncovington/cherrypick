@@ -21,14 +21,18 @@ report.run(session=day)  ── unified cross-module P&L (gross/net, per profile
         └── dashboard ───►  dashboard.html (static)  or  a live server (--serve)
 ```
 
-`calibrate` sits alongside `report`, reading the same paper DBs to advise on risk-profile promotion.
+`calibrate` sits alongside `report`, reading the same paper DBs to produce per-profile qualification
+readings. It compares a **champion** (the currently-live profile) against every other observed tag as a
+challenger; where a module's tags are parallel experiment arms rather than a risk sequence, it declares
+no champion and reports each arm on its own. The older fixed-ladder "promote to the next rung" model was
+retired 2026-08-01 — it produced a meaningless recommendation for parallel arms.
 `logrotate` (`archive`) sweeps finished months into `logs/archive/`.
 
 ## `report` — unified paper P&L
 
 `report.run(cfg, session=…)` reads each enabled module's paper DB through the per-schema adapter
-(`meic_ic` / `earnings`), normalizes every closed trade to `{profile, symbol, strategy, gross_pnl, cost,
-net_pnl, session}`, and summarizes:
+(`meic_ic`, `earnings`, `fly_book`), normalizes every closed trade to `{profile, symbol, strategy,
+gross_pnl, cost, net_pnl, session}`, and summarizes:
 
 - **Suite total** and **per-module** rows.
 - **Per-profile** breakdown (grouping by the trade's attribution tag via
@@ -36,9 +40,14 @@ net_pnl, session}`, and summarizes:
 - Both **`win_rate`** (on net P&L) and **`gross_win_rate`** (on gross) — the gap shows how many trades
   have edge *before* costs but not *after* (the signal at 1-contract sizing, where cost dominates).
 
-`--session`/`--date` scopes to one settlement day; omit it for the cumulative view. This one function is
-the single source of truth the digest, dashboard EOD card, and calibration all cite, so they can never
-disagree for the same day.
+On the CLI: `--date YYYY-MM-DD` scopes to one settlement day and `--eod` scopes to today's; omit both
+for the cumulative view. (There is no `--session` flag — that is the `report.run` keyword, not a CLI
+option.) `--live` switches to a **separate** reader (`report.live_run`) over the modules' live ledgers;
+it is a different function by design, so `calibrate` — which goes through `report.run` — can never see a
+live trade even by accident. Both are files-only and never touch the broker.
+
+This one function is the single source of truth the digest, dashboard EOD card, and calibration all
+cite, so they can never disagree for the same day.
 
 ## The two per-module EOD reports (deterministic)
 
@@ -107,9 +116,15 @@ and it's deliberately fenced:
   of record.
 - **Files in, text out, no dangerous tools.** It pipes the day's deterministic reports (each module's
   `eod-analysis` + `paper-eod`, plus the suite digest) to `claude -p` in headless mode with
-  `--disallowed-tools Bash Edit Write NotebookEdit WebFetch WebSearch Task` — so the agent can't run
-  commands, edit/write files, or reach the network. The **orchestrator** writes the output file; the
-  agent never gets filesystem/broker access.
+  `--disallowed-tools Bash Edit Write NotebookEdit WebFetch Task` — so the agent can't run commands or
+  edit/write files. The **orchestrator** writes the output file; the agent never gets filesystem or
+  broker access.
+- **⚠️ It does reach the network by default.** `eod_insight.research_events` defaults to **true**, and
+  when it is on the run is granted **`WebSearch`** (bounded by `--max-turns 8`) so the debrief can
+  research upcoming macro and earnings events. That is the single deliberate exception to "no network".
+  Set `"research_events": false` to move WebSearch onto the disallowed list and make the run fully
+  offline. This does not touch the reliability-path invariant — the call is opt-in, detached, and
+  best-effort — but it is a real outbound call, and this page previously claimed the opposite.
 - **Off the reliability path.** Fired by the watchdog on the same module-completion event as the
   digest and **launched detached**, so the `claude` call runs in that child and never in the watchdog
   process. Best-effort, never on the paper loop.
