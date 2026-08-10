@@ -14,10 +14,16 @@ infrastructure rather than by a trading module — any single installed consumer
 readers) can price off live quotes with no MEIC streamer required. It places no orders and never touches
 live trading.
 
-It is the generic daemon **lifecycle only** — PID guard, `--status`/`--stop`, logging — around the shared
-engine. It deliberately carries **none** of MEIC's trading policy: no ORB capture, no open-position leg
-subscriptions, no account REST poller, no `127.0.0.1:7699` HTTP API. Those stay in MEIC's wrapper
+It is the daemon **lifecycle** — PID guard, `--status`/`--stop`, logging — plus the subscription registry
+and the opening-range hook, around the shared engine. It deliberately carries **none** of MEIC's
+*trading* policy: no open-position leg subscriptions of its own, no account REST poller, no
+`127.0.0.1:7699` HTTP API. Those stay in MEIC's wrapper
 (`../meic/src/cherrypick/meic/streamer.py`); a live-trading module layers them onto the same engine.
+
+Opening-range capture **is** here (`orb.py`), lifted from MEIC's streamer when this became the sole
+producer. It is not an exception to that rule: it watches Trade ticks and writes a generic
+`orb_ranges` table any consumer reads, and it belongs to the always-on producer because a consumer's
+cadence is not guaranteed to land inside the 09:30–09:35 window.
 
 ## Commands
 
@@ -62,6 +68,9 @@ absolute paths.
   two — it never makes an account-scoped call, so no `account_number`. `cherrypick connect` delegates
   bearer-secret entry here for a streamer-only (no-MEIC) install; writes only the keyring, never the
   broker.
+- **`cherrypick/streamer/orb.py`** — the opening-range `trade_hook`: per-symbol 09:30–09:35 ET high/low from
+  live Trade ticks, written once to the cache's `orb_ranges` table when the window closes (idempotent
+  per day). No schema change — that table already lives in `cherrypick.core.streamcache`.
 - **`cherrypick/streamer/cli.py` + `run.py`** — the CLI. Flat args (`--status` / `--stop` / `--symbol` / `--secrets-set` /
   `--secrets-status`, default = run) so the orchestrator drives it with the same start/status/stop argv
   contract it uses for MEIC's streamer.
