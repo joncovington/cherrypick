@@ -8,6 +8,9 @@ import type {
   GexPayload,
   Paged,
   TradingMode,
+  TtWatchlistIndex,
+  TtWatchlistPayload,
+  SymbolCardPayload,
 } from "@console/shared";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -187,6 +190,61 @@ export function useWatchlist() {
   return useQuery<{ symbols: string[] }>({
     queryKey: ["watchlist"],
     queryFn: () => getJson<{ symbols: string[] }>("/api/watchlist"),
+  });
+}
+
+export function useTtWatchlists() {
+  return useQuery<TtWatchlistIndex & { lastError: string | null }>({
+    queryKey: ["tt-watchlists"],
+    queryFn: () => getJson<TtWatchlistIndex & { lastError: string | null }>("/api/tt-watchlists"),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useTtWatchlist(key: string | null) {
+  return useQuery<TtWatchlistPayload>({
+    queryKey: ["tt-watchlist", key],
+    queryFn: () => getJson<TtWatchlistPayload>(`/api/tt-watchlists/${encodeURIComponent(key!)}`),
+    enabled: key !== null,
+    refetchInterval: 30_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export interface BlacklistRow {
+  symbol: string;
+  reason: string;
+  addedAt: string;
+}
+
+export function useBlacklist() {
+  return useQuery<{ rows: BlacklistRow[] }>({
+    queryKey: ["blacklist"],
+    queryFn: () => getJson<{ rows: BlacklistRow[] }>("/api/blacklist"),
+  });
+}
+
+export interface ChainEodStatus {
+  latest: { tradeDate: string; symbols: number } | null;
+  running: boolean;
+}
+
+export function useChainEodStatus() {
+  return useQuery<ChainEodStatus>({
+    queryKey: ["chain-eod-status"],
+    queryFn: () => getJson<ChainEodStatus>("/api/chain-eod/status"),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useSymbolCard(symbol: string) {
+  const valid = /^[A-Z][A-Z0-9./]{0,9}$/.test(symbol);
+  return useQuery<SymbolCardPayload>({
+    queryKey: ["symbol-card", symbol],
+    queryFn: () => getJson<SymbolCardPayload>(`/api/symbol-card/${encodeURIComponent(symbol)}`),
+    enabled: valid,
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
   });
 }
 
