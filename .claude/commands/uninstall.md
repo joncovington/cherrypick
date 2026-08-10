@@ -31,8 +31,9 @@ Do this:
      stop that one instead: `python -m cherrypick.meic.streamer --stop`. Exactly one producer ever
      runs.)
    - **Dashboard servers** (only if any `--serve` is up): run the `/serve-dashboard --stop all`
-     procedure, which covers the suite (8787) and every module dashboard (8801–8802, 5050–5052, 5055)
-     with its confirm-before-kill guard.
+     procedure, which covers the suite (8787) and every module dashboard (embeds 8801–8803; MEIC
+     5050–5051, flies 5052, scout 5057, gex 5055–5056, console 5070) with its confirm-before-kill
+     guard. The settings editor (8804) is foreground-only — it stops when you close it.
    - **Dolt sql-server** (earnings' local market-data DB; its keep-alive task was removed in step 1):
      stop the process serving port **3306**:
      `Get-NetTCPConnection -LocalPort 3306 -State Listen -EA SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`

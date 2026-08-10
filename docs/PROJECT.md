@@ -70,6 +70,11 @@ The modules live under `packages/meic`, `packages/earnings`, `packages/flies`, a
 same way if you plan to run them (`pip install -e ".[dev]"` in `packages/meic` or `packages/earnings`;
 flies, gex, and the streamer need no install — the orchestrator runs them in place).
 
+Three more surfaces are optional and set up separately when you want them: `packages/console` (the
+unified web console — Node/TypeScript, so it installs with `npm`, not pip), `packages/scout`
+(screening and strategy exploration), and `packages/desk` (the manual trading desk, which places live
+orders on your instruction only — read its README before using it).
+
 ---
 
 ## First-time setup
