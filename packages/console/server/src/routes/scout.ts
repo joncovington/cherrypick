@@ -12,6 +12,7 @@ import { getDailyBars } from "../services/candles.js";
 import type { MarketDataService } from "../market/marketData.js";
 import { movingAverages, supportResistance } from "../analytics/levels.js";
 import { classifyTrend } from "../analytics/trend.js";
+import { buildRows } from "../services/ttWatchlists.js";
 
 const SYMBOL_RE = /^[A-Z][A-Z0-9./]{0,9}$/;
 
@@ -20,7 +21,11 @@ export function registerScoutRoutes(
   config: ConsoleConfig,
   market: MarketDataService,
 ): void {
-  app.get("/api/watchlist", async () => ({ symbols: getWatchlist(config) }));
+  // Same enriched rows as the tastytrade tabs (metrics + candle EOD context).
+  app.get("/api/watchlist", async () => {
+    const symbols = getWatchlist(config);
+    return { symbols, rows: await buildRows(config, symbols) };
+  });
 
   app.post("/api/watchlist", async (req, reply) => {
     const body = req.body as { symbol?: unknown };
