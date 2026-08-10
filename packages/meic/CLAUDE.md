@@ -118,8 +118,10 @@ The streamer automatically subscribes to, for **every symbol in `symbols`** (not
 
 Instead of hand-editing `config.json` to change entry thresholds, use the **risk profile** system: `/set-risk-profile <name>` switches a named preset (conservative/moderate/aggressive/very-aggressive) that bundles related gate thresholds with offsetting position-sizing and stop-management constraints. Each profile is a partial override — only the named keys get rewritten into `config.json`, and the change takes effect on the next loop iteration without restart.
 
-**Four tiers**:
-- **conservative** (default): Today's settings. Strict IV-rank (≥30%) and credit floors (≥15%), wide OTM buffers, latest entry time (12:00 PM). Fewest trades (~1–2/day), highest per-trade safety.
+**Four tiers.** These are the **live**-trading presets `/set-risk-profile` targets. They are *not* what
+paper is running: `config.risk.json`'s `active_profile` is `control`, and all four tiers below are
+`enabled: false` — see the forward-test section immediately after this one.
+- **conservative**: Strict IV-rank (≥30%) and credit floors (≥15%), wide OTM buffers, latest entry time (12:00 PM). Fewest trades (~1–2/day), highest per-trade safety.
 - **moderate**: Relax IV-rank (≥22%) and credit (≥12%), enter earlier (11:00 AM), tighten stop to 0.93. ~1 more trade/day; use after 2–4 weeks on conservative.
 - **aggressive**: Tier 1 + accept tighter OTM strikes (delta 0.22, calls 0.30% OTM); offset with max_concurrent_ics=3 and stop_trigger_ratio=0.90. ~2–3 more trades/week; use after 2+ weeks at moderate with 60%+ win rate.
 - **very-aggressive**: Tier 2 + trade through higher-VIX (≤30) and trending (5-day ATR ≤2.0% of price); offset with max_concurrent_ics=2 and stop_trigger_ratio=0.85. Highest activity and risk; **deliberate short experiments only** (1 week test windows).

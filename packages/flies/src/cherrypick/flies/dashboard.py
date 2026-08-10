@@ -42,8 +42,10 @@ from cherrypick.core import viz  # noqa: E402
 from cherrypick.flies import analytics  # noqa: E402
 from cherrypick.flies import db as dbmod  # noqa: E402
 
-# 8801 is MEIC's embed and 8802 is the gex dashboard's, so flies takes the next one. Keep this in
-# step with the `dashboard.embeds` entry in the orchestrator's config.example.json.
+# The standalone default sits in the suite's 50XX dashboard range (MEIC 5050/5051, gex 5055/5056).
+# This is NOT the embed port: the orchestrator serves this dashboard as an iframe on 8803, set by its
+# own `dashboard.embeds` entry in config.example.json, which passes --port explicitly. Keep the two
+# straight — a comment claiming this constant was 8803 outlived the move here and misled a doc pass.
 DEFAULT_PORT = 5052
 HOST = "127.0.0.1"
 

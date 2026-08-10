@@ -105,11 +105,12 @@ All loopback-only. Sources: each module's own default, the orchestrator embed co
 | 8787 | Suite dashboard — `run.py dashboard --serve` (`dashboard.serve`) |
 | 8801 | MEIC dashboard as a suite embed (`dashboard.embeds`, PAPER mode forced) |
 | 8802 | gex full dashboard as a suite embed |
-| 8803 | flies dashboard (both standalone default and as the suite embed) |
+| 8803 | flies dashboard as a suite embed (`dashboard.embeds`) |
 | 5050 / 5051 | MEIC dashboard run directly: live / paper (`python -m cherrypick.meic.dashboard`) |
+| 5052 | flies dashboard run directly (`dashboard.DEFAULT_PORT`) — **not** the embed port above |
 | 5055 (+5056) | gex standalone serve (`serve.port`; WebSocket push defaults to port+1) |
 | 7699 | MEIC REST sidecar (optional, off) |
-| 3306 | Dolt SQL server (earnings data; `cherrypick-earnings-dolt` keeps it alive) |
+| 3306 | Dolt SQL server (earnings data; the `earnings-dolt` supervisor job keeps it alive) |
 
 ## Dependency order and the clock
 

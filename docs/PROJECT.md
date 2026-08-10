@@ -96,14 +96,19 @@ engine), a connection check, picking which account the suite would use if you ev
 live trading (you confirm; per-engine overrides are possible with `connect --module <name>`),
 optional Slack/Discord notifications (Enter skips), and a status panel showing each engine's
 setup. If you previously set credentials per engine, the wizard offers to consolidate them
-into the shared login so there's one place to rotate. The **GEX** dashboard and streamer
+into the shared login so there's one place to rotate. The **GEX** dashboard and the streamer
 reuse the same keyring credentials — no separate step.
+
+Two surfaces deliberately do **not** share that login, and each is set up on its own: the **console**
+holds a separate read-scoped credential, and the **desk** (the manual trading desk) has its own
+credential and its own keyring PIN so that placing a discretionary order never touches a strategy
+module's live-trading switch.
 
 **3. Choose your strategy details.** The fine-grained trading rules — which symbols, target deltas,
 credit floors, entry windows, risk profiles — live in each engine's own config:
 
-- MEIC: `~/.cherrypick/config/meic.json` (e.g. the `symbols` list, `min_iv_rank`, entry/exit windows, and
-  the conservative → very-aggressive **risk profiles**).
+- MEIC: `~/.cherrypick/config/meic.json` (e.g. the `symbols` list, `min_iv_rank`, entry/exit windows).
+  The **risk profiles** themselves live in the repo's `config.risk.json` — see below.
 - Earnings: `~/.cherrypick/config/earnings.json` (position caps, entry/close windows, per-strategy
   tuning).
 
@@ -135,7 +140,8 @@ That registers cherrypick to run on a schedule and starts the data feed. From no
 own — the full inventory of what got installed, what runs when, and what "healthy" looks like each
 morning is the [operations runbook](operations.md):
 
-- **MEIC** evaluates entries every couple of minutes during the session.
+- **MEIC** evaluates entries roughly once a minute during the session (its
+  `paper.tick_interval_seconds`).
 - **Earnings** opens plays before the close and closes them after the next open, on daily timers.
 - A **monitor** checks in every few minutes and a **fill-notifier** pushes new paper trades to you
   quickly.
@@ -154,18 +160,16 @@ parallel**, each as its own shadow book. Every recorded trade is tagged with the
 `report` breaks results down per profile.
 
 The value is in controlled comparison: clone a baseline profile, change **one** parameter, and you can
-measure that idea's effect in isolation rather than confounding several changes at once. For MEIC's SPX
-book, the shipped experiment profiles include:
+measure that idea's effect in isolation rather than confounding several changes at once. MEIC's live
+profiles are in `packages/meic/config.risk.json`; four are enabled, and they run as a **four-stream
+forward test** rather than a ladder:
 
-- **`large-spx`** — the control.
-- **`large-spx-holdtoexpiry`** — identical, but never stops (held to settlement): does the per-side stop
-  protect the position, or exit good trades early?
-- **`large-spx-farotm` / `large-spx-closeotm`** — a short-strike delta sweep (0.10 / 0.15 / 0.25): do wider
-  strikes justify their thinner credit?
-- **`large-spx-gexmag`** — enters only when dealer gamma (GEX) is firmly positive: does the regime filter
-  avoid the adverse days?
-- **`large-spx-lateonly`, `large-spx-trim`, `large-spx-directional`** — entry timing, allocation, and a
-  tighter directional guard, each isolated.
+- **`control`** — the baseline and the `active_profile`. Every other arm differs from it in exactly one
+  thing, which is what makes any difference in the results attributable.
+- **`open`** — control with the entry cap removed: does taking every qualifying setup beat being
+  selective, once costs are paid?
+- **`width-5` / `width-10`** — control with the wing width pinned: does a wider wing justify what it
+  costs to build?
 
 Read the outcomes two ways. `report` shows **gross P&L** (did the entry select good setups?) alongside
 **net** (did it survive commissions and slippage?), because at small size costs can turn a real entry edge
@@ -173,8 +177,11 @@ into a net loss. And `calibrate` reports when a profile has met a documented thr
 sustained win rate, and a sufficient sample — to justify a step up in risk. Calibration is advisory only; it
 never changes your risk settings.
 
-The four **risk-ladder** profiles (conservative → moderate → aggressive → very-aggressive) are the everyday
-tiers; the `large-spx-*`, `small-xsp`, and other prefixed cells are the experiment book. See
+Older profile names still appear in historical reports and are kept in `config.risk.json` (disabled) so
+those books stay readable: the **risk ladder** (conservative → moderate → aggressive → very-aggressive)
+was the everyday progression until the 2026-08-07 arms cutover replaced it with the forward test above,
+and a `large-spx-*` / `small-xsp` family of fixed `(symbol, wing, credit)` cells was removed 2026-07-18.
+Neither is live. See
 [risk profiles](../packages/meic/docs/risk-profiles.md) and
 [paper experiments](../packages/meic/docs/paper-experiments.md) for the complete method.
 

@@ -96,12 +96,18 @@ parallel** as its own shadow book, and every recorded trade is tagged with the p
 The value is **controlled comparison**: clone a baseline, change *one* parameter, and measure that idea's
 effect in isolation. Two tiers of profiles:
 
-- **The risk ladder** — conservative → moderate → aggressive → very-aggressive: the everyday progression
-  tiers (each a full partial-override preset).
-- **Experiment cells** — `large-spx`, `small-xsp`, `…-holdtoexpiry`, `…-farotm`/`…-closeotm` (a delta
-  sweep), `…-gexmag` (GEX-gated), `…-lateonly`/`…-trim`/`…-directional`, etc.: each pins one
-  `(symbol, wing, credit)` cell or isolates one lever, so per-account-size / per-idea comparison reads
-  directly off the report.
+- **The active arms** — `control`, `open`, `width-5`, `width-10`: a four-stream forward test, each
+  differing from `control` in exactly one thing (`open` drops the entry cap, the two `width-*` arms pin
+  the wing width). `control` is the `active_profile` and the shared baseline; without a naive baseline a
+  profitable arm would prove nothing.
+- **Retired, kept for attribution** — `conservative`, `moderate`, `aggressive`, `very-aggressive` (the
+  old risk ladder) and `gex-open`/`gex-blocked`. All `enabled: false`; they stay in `config.risk.json`
+  so historical books opened under those names remain readable in `report`.
+
+The ladder was the everyday progression until the 2026-08-07 arms cutover replaced it with the forward
+test above; an earlier `large-spx-*` / `small-xsp` family of `(symbol, wing, credit)` cells was removed
+2026-07-18. Neither exists in `config.risk.json` any more — if you find one named in an old note or
+report, that is what it was.
 
 Read outcomes two ways: **gross** P&L (did the entry select good setups?) vs **net** (did it survive
 commissions and slippage?), and use `calibrate` to see when a profile has met a documented threshold
