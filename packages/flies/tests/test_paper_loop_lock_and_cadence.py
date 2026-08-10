@@ -36,9 +36,7 @@ def test_cadence_change_is_journaled_exactly_once(managed_home):
     conn = dbmod.connect()
     # first resident run at 15s: baseline is 60s (the whole pre-supervisor ledger's cadence)
     pl._note_cadence_change(conn, 15)
-    rows = conn.execute(
-        "SELECT reason, detail FROM fly_decisions WHERE mode = 'cadence'"
-    ).fetchall()
+    rows = conn.execute("SELECT reason, detail FROM fly_decisions WHERE mode = 'cadence'").fetchall()
     assert len(rows) == 1
     assert "60s->15s" in rows[0]["reason"] and "not comparable" in rows[0]["reason"]
     assert json.loads(rows[0]["detail"]) == {"old_seconds": 60, "new_seconds": 15}
@@ -52,7 +50,5 @@ def test_cadence_change_is_journaled_exactly_once(managed_home):
 
     # a later change journals a second break
     pl._note_cadence_change(conn, 30)
-    rows = conn.execute(
-        "SELECT reason FROM fly_decisions WHERE mode = 'cadence' ORDER BY rowid"
-    ).fetchall()
+    rows = conn.execute("SELECT reason FROM fly_decisions WHERE mode = 'cadence' ORDER BY rowid").fetchall()
     assert len(rows) == 2 and "15s->30s" in rows[1]["reason"]
