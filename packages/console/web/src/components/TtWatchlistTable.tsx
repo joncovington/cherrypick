@@ -128,7 +128,7 @@ export function TtWatchlistTable({ tabKey }: { tabKey: string }) {
   );
 }
 
-function EodCells({ r }: { r: TtWatchlistRow }) {
+export function EodCells({ r }: { r: TtWatchlistRow }) {
   return (
     <>
       <td className={r.eodChangePct !== null && r.eodChangePct < 0 ? "pnl-neg" : "pnl-pos"}>

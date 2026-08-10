@@ -10,6 +10,7 @@ import type {
   TradingMode,
   TtWatchlistIndex,
   TtWatchlistPayload,
+  TtWatchlistRow,
   SymbolCardPayload,
 } from "@console/shared";
 
@@ -187,9 +188,11 @@ export interface SymbolAnalysis {
 }
 
 export function useWatchlist() {
-  return useQuery<{ symbols: string[] }>({
+  return useQuery<{ symbols: string[]; rows: TtWatchlistRow[] }>({
     queryKey: ["watchlist"],
-    queryFn: () => getJson<{ symbols: string[] }>("/api/watchlist"),
+    queryFn: () => getJson<{ symbols: string[]; rows: TtWatchlistRow[] }>("/api/watchlist"),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
   });
 }
 
