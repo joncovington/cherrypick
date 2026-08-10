@@ -8,6 +8,7 @@ import { ChainPanel } from "./ChainPanel";
 import { fmtMoney } from "../../components/DataTable";
 import { SymbolCard } from "../../components/SymbolCard";
 import { StrategyCards, type ApiLeg } from "../../components/StrategyCards";
+import { CollectorBanner } from "../../components/CollectorBanner";
 
 interface LegDraft {
   id: number;
@@ -115,6 +116,7 @@ export function BuilderPage() {
 
   return (
     <div className="page">
+      <CollectorBanner chain />
       <div className="page-title-row">
         <h1>Builder</h1>
         <input

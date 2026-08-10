@@ -282,8 +282,9 @@ export async function runScreener(
         occSymbol: null,
       }));
     } else {
-      // Spot: stream cache first; DXLink snapshot only if missing.
-      spot = cachedQuote(config, symbol)?.last ?? null;
+      // Spot: stream cache first (tight age gate — a strike window centered
+      // on a days-old price scans the wrong strikes); DXLink snapshot if missing.
+      spot = cachedQuote(config, symbol, 900)?.last ?? null;
       if (spot === null) {
         const snap = await market.snapshotQuotes([symbol], 4_000);
         const q = snap.get(symbol);

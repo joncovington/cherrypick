@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { mutateJson, useBlacklist, useChainEodStatus, useTtWatchlists } from "../../lib/api";
+import { CollectorBanner } from "../../components/CollectorBanner";
 import { fmtMoney, SortTh, sortRows, useSort } from "../../components/DataTable";
 
 interface CandidateLeg {
@@ -109,6 +110,7 @@ export function ScreenerPage() {
 
   return (
     <div className="page">
+      <CollectorBanner chain />
       <div className="page-title-row">
         <h1>Screener</h1>
         <label className="muted lbl">

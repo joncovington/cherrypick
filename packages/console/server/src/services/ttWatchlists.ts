@@ -250,14 +250,19 @@ export async function metricsFor(
   return readTtMetrics(config, symbols);
 }
 
-/** Stream cache quote + console/scout candle cache + TTL'd metrics. At most
- *  one batched broker call (metrics); everything else is pure reads. */
-export async function buildRows(config: ConsoleConfig, symbols: string[]): Promise<TtWatchlistRow[]> {
+/** Quotes freshest-first (this process's tick memory, then scout's stream
+ *  cache) + console/scout candle cache + TTL'd metrics. At most one batched
+ *  broker call (metrics); everything else is pure reads. */
+export async function buildRows(
+  config: ConsoleConfig,
+  symbols: string[],
+  market?: import("../market/marketData.js").MarketDataService,
+): Promise<TtWatchlistRow[]> {
   const nowS = Date.now() / 1000;
   const metrics = await metricsFor(config, symbols);
   return symbols.map((symbol) => {
     const m = metrics.get(symbol);
-    const q = cachedQuote(config, symbol);
+    const q = market?.recent(symbol, QUOTE_FRESH_S) ?? cachedQuote(config, symbol);
     let bars = readDailyCandles(config, symbol);
     let fresh = bars.length > 0; // scout keeps its own symbols current
     if (bars.length === 0) {
@@ -296,17 +301,57 @@ export async function buildRows(config: ConsoleConfig, symbols: string[]): Promi
   });
 }
 
+const QUOTE_FRESH_S = 900;
+const SWEEP_FLOOR_S = 120;
+// Small chunks with a generous window: DXLink conflates and delivers lazily,
+// and a wide batch on a short timeout comes back mostly empty.
+const SWEEP_CHUNK = 25;
+const SWEEP_TIMEOUT_MS = 8_000;
+const SWEEP_MAX_SYMBOLS = 200;
+const sweepLastAt = new Map<string, number>();
+
+/**
+ * Background quote sweep for tabs too large for per-viewer live subscriptions:
+ * bounded snapshot batches whose ticks land in the market service's memory, so
+ * the tab's next poll serves real last/bid/ask. Floored per tab key.
+ */
+async function sweepQuotes(
+  market: import("../market/marketData.js").MarketDataService,
+  key: string,
+  symbols: string[],
+): Promise<void> {
+  const now = Date.now() / 1000;
+  if (now - (sweepLastAt.get(key) ?? 0) < SWEEP_FLOOR_S) return;
+  sweepLastAt.set(key, now);
+  const capped = symbols.slice(0, SWEEP_MAX_SYMBOLS);
+  for (let i = 0; i < capped.length; i += SWEEP_CHUNK) {
+    await market.snapshotQuotes(capped.slice(i, i + SWEEP_CHUNK), SWEEP_TIMEOUT_MS);
+  }
+}
+
 export async function ttWatchlistPayload(
   config: ConsoleConfig,
   key: string,
+  market?: import("../market/marketData.js").MarketDataService,
 ): Promise<TtWatchlistPayload | null> {
   const row = getTtWatchlist(config, key);
   if (row === null) return null;
+  const rows = await buildRows(config, row.symbols, market);
+  const live = row.symbols.length <= LIVE_MAX_SYMBOLS;
+  if (market !== undefined) {
+    // Fire-and-forget collectors; both are floored, so polling stays cheap.
+    if (!live) void sweepQuotes(market, key, row.symbols).catch(() => undefined);
+    const stale = rows.filter((r) => !r.candleFresh).map((r) => r.symbol);
+    if (stale.length > 0) {
+      const { warmCandles } = await import("./candleWarm.js");
+      void warmCandles(config, market, stale).catch(() => undefined);
+    }
+  }
   return {
     tab: toTab(row, Date.now() / 1000),
-    rows: await buildRows(config, row.symbols),
+    rows,
     skipped: row.skipped,
-    live: row.symbols.length <= LIVE_MAX_SYMBOLS,
+    live,
   };
 }
 
@@ -340,7 +385,7 @@ export async function symbolCard(
   const lastBar = valid.length > 0 ? valid[valid.length - 1]! : null;
   const highs = yearBars.map((b) => (Number.isFinite(b.h) && b.h > 0 ? b.h : b.c));
   const lows = yearBars.map((b) => (Number.isFinite(b.l) && b.l > 0 ? b.l : b.c));
-  const q = cachedQuote(config, symbol);
+  const q = market.recent(symbol, QUOTE_FRESH_S) ?? cachedQuote(config, symbol);
   const trend = classifyTrend(closes);
   return {
     symbol,
