@@ -73,3 +73,31 @@ jobs:
         run: ruff format --check .
       - name: Test (pytest)
         run: pytest
+
+  # The console is the one Node package (pnpm workspace inside packages/console), so it gets its
+  # own job rather than a row in the Python matrix. Typecheck stands in for lint; the vitest run
+  # includes the dry-run-only source scan (the invariant that no code path can place an order).
+  console:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/console
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: packages/console/pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      # Build first: @console/shared resolves through its dist/, so the server's
+      # typecheck and tests need it emitted. tsc runs inside the build, so this
+      # step IS the typecheck.
+      - name: Build (tsc + vite)
+        run: pnpm build
+      - name: Test (vitest, incl. dry-run-only invariant scan)
+        run: pnpm --filter @console/server test

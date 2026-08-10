@@ -35,4 +35,21 @@ Install-Editable "packages\flies[dev]"        "packages/flies"
 Install-Editable "packages\streamer[dev]"     "packages/streamer"
 Install-Editable "packages\desk[dev]"         "packages/desk"
 
+# The console UI is the one Node package. Optional: skipped with a notice when pnpm is absent,
+# so the Python-only setup stays one command with no new required toolchain.
+if (Get-Command pnpm -ErrorAction SilentlyContinue) {
+    Write-Host "==> packages/console (pnpm install + build)"
+    Push-Location "$root\packages\console"
+    try {
+        pnpm install
+        if ($LASTEXITCODE -ne 0) { throw "pnpm install failed (exit $LASTEXITCODE)" }
+        pnpm build
+        if ($LASTEXITCODE -ne 0) { throw "pnpm build failed (exit $LASTEXITCODE)" }
+    } finally {
+        Pop-Location
+    }
+} else {
+    Write-Host "==> packages/console skipped -- install pnpm (npm install -g pnpm) to build the console UI"
+}
+
 Write-Host "==> done"
