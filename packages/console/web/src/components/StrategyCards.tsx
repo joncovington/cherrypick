@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { mutateJson } from "../lib/api";
 import { fmtMoney } from "./DataTable";
 
 export interface ApiLeg {
@@ -72,6 +73,7 @@ export function StrategyCards({
 }) {
   const [sentiment, setSentiment] = useState<string>("bullish");
   const valid = /^[A-Z][A-Z0-9./]{0,9}$/.test(symbol);
+  const qc = useQueryClient();
 
   const sugg = useQuery<SuggestionsPayload>({
     queryKey: ["builder-suggestions", symbol, sentiment],
@@ -91,8 +93,39 @@ export function StrategyCards({
     placeholderData: (prev) => prev,
   });
 
+  // No snapshot for this symbol yet → capture one automatically (bounded
+  // single-symbol run, floored server-side) and refetch as data lands.
+  const attempted = useRef<Set<string>>(new Set());
+  const capture = useMutation({
+    mutationFn: (sym: string) =>
+      mutateJson<{ ok: boolean; reason?: string }>("/api/chain-eod/symbol", "POST", { symbol: sym }),
+    onSuccess: (result) => {
+      if (result.ok) {
+        void qc.invalidateQueries({ queryKey: ["builder-suggestions"] });
+        void qc.invalidateQueries({ queryKey: ["builder-income-grid"] });
+        void qc.invalidateQueries({ queryKey: ["chain-eod-status"] });
+      }
+    },
+  });
+  const missing =
+    sugg.data?.error !== undefined && sugg.data.error.includes("no EOD chain snapshot");
+  useEffect(() => {
+    if (!valid || !missing || capture.isPending || attempted.current.has(symbol)) return;
+    attempted.current.add(symbol);
+    capture.mutate(symbol);
+  }, [valid, missing, symbol, capture]);
+  const capturing = capture.isPending;
+  const captureFailed =
+    !capturing && capture.data !== undefined && !capture.data.ok ? capture.data.reason : undefined;
+
+  const emptyNote = (error: string | undefined): string => {
+    if (capturing) return "no snapshot yet — capturing this symbol's chain now…";
+    if (captureFailed !== undefined) return `snapshot capture failed: ${captureFailed}`;
+    return error ?? "";
+  };
+
   return (
-    <div className="cards cards-wide">
+    <>
       <section className="card">
         <div className="page-title-row">
           <h2 style={{ margin: 0 }}>Suggestions</h2>
@@ -113,7 +146,7 @@ export function StrategyCards({
           )}
         </div>
         {sugg.data?.error !== undefined ? (
-          <p className="muted">{sugg.data.error}</p>
+          <p className="muted">{emptyNote(sugg.data.error)}</p>
         ) : (sugg.data?.cards ?? []).length === 0 ? (
           <p className="muted">no viable structures for this expiration</p>
         ) : (
@@ -151,7 +184,7 @@ export function StrategyCards({
           {grid.data?.tradeDate !== undefined && <span className="chip">EOD {grid.data.tradeDate}</span>}
         </div>
         {grid.data?.error !== undefined ? (
-          <p className="muted">{grid.data.error}</p>
+          <p className="muted">{emptyNote(grid.data.error)}</p>
         ) : (grid.data?.buckets ?? []).length === 0 ? (
           <p className="muted">no expirations inside the 20–180 day windows in the snapshot</p>
         ) : (
@@ -210,6 +243,6 @@ export function StrategyCards({
           </div>
         )}
       </section>
-    </div>
+    </>
   );
 }

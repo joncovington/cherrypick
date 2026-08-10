@@ -137,11 +137,11 @@ export function BuilderPage() {
         </label>
       </div>
 
-      <SymbolCard symbol={symbol} />
-
-      <StrategyCards
-        symbol={symbol}
-        onApply={(apiLegs: ApiLeg[], exp: string) => {
+      <div className="cards">
+        <SymbolCard symbol={symbol} />
+        <StrategyCards
+          symbol={symbol}
+          onApply={(apiLegs: ApiLeg[], exp: string) => {
           setLegs(
             apiLegs.map((l) => ({
               id: nextId++,
@@ -154,13 +154,14 @@ export function BuilderPage() {
               occSymbol: l.occSymbol,
             })),
           );
-          if (exp !== "") {
-            setExpiration(exp);
-            const d = dteOf(exp);
-            if (d !== null) setDte(String(d));
-          }
-        }}
-      />
+            if (exp !== "") {
+              setExpiration(exp);
+              const d = dteOf(exp);
+              if (d !== null) setDte(String(d));
+            }
+          }}
+        />
+      </div>
 
       <div className="cards cards-wide">
         <section className="card">
