@@ -305,18 +305,44 @@ def test_dead_config_key_rule_errs_toward_silence(name, reader_body, tmp_path, m
     assert cd._check_dead_config_keys([cfg, reader]) == [], name
 
 
-def test_dead_config_key_rule_counts_json_keys_elsewhere(tmp_path, monkeypatch):
-    """`entry_price_strategy` is a real MEIC knob that appears only in JSON and prose -- never as a
-    Python literal. Scanning Python alone reported it dead."""
+def test_dead_config_key_rule_counts_a_key_documented_only_in_prose(tmp_path, monkeypatch):
+    """A key with no Python reader is not dead if a doc describes it. MEIC's loop is driven by an
+    agent reading its CLAUDE.md config table, so `stop_type` and the whole `orb_*` family have no
+    Python reader and are entirely live -- scanning code alone reported 23 false deaths there."""
     monkeypatch.setattr(cd, "ROOT", tmp_path)
-    cfg = tmp_path / cd._CONFIG_EXAMPLE
+    cfg = tmp_path / "packages/meic/config.example.json"
     cfg.parent.mkdir(parents=True)
-    cfg.write_text('{"entry_price_strategy": {}}')
-    other = tmp_path / "packages/meic/config.example.json"
-    other.parent.mkdir(parents=True)
-    other.write_text('{"entry_price_strategy": "auto"}')
+    cfg.write_text('{"stop_type": "spread"}')
+    doc = tmp_path / "packages/meic/CLAUDE.md"
+    doc.write_text("| `stop_type` | `spread` | software stop only |\n")
 
-    assert cd._check_dead_config_keys([cfg, other]) == []
+    assert cd._check_dead_config_keys([cfg, doc]) == []
+
+
+def test_dead_config_key_rule_covers_every_package_not_just_the_orchestrator(tmp_path, monkeypatch):
+    """It was orchestrator-only, which is why earnings' exit_after_announcement_minutes gap -- a key
+    that force-closes three strategies four hours in -- had to be found by hand."""
+    monkeypatch.setattr(cd, "ROOT", tmp_path)
+    cfg = tmp_path / "packages/earnings/config/config.example.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text('{"ghost_knob": 1}')
+
+    findings = cd._check_dead_config_keys([cfg])
+    assert len(findings) == 1
+    assert "ghost_knob" in findings[0] and "packages/earnings" in findings[0]
+
+
+def test_dead_config_key_rule_does_not_let_two_templates_vouch_for_each_other(tmp_path, monkeypatch):
+    """Every template is a target, so a key present in two of them and nowhere else is still dead.
+    Otherwise a copy-pasted stale block would immunise itself."""
+    monkeypatch.setattr(cd, "ROOT", tmp_path)
+    a = tmp_path / "packages/meic/config.example.json"
+    b = tmp_path / "packages/flies/config.example.json"
+    for p in (a, b):
+        p.parent.mkdir(parents=True)
+        p.write_text('{"copied_stale_key": 1}')
+
+    assert len(cd._check_dead_config_keys([a, b])) == 2
 
 
 # -------------------------------------------------------------- rule 11: package roster coverage
@@ -339,6 +365,78 @@ def test_roster_rule_reports_a_package_missing_from_one_index(tmp_path, monkeypa
 
     findings = cd._check_package_roster()
     assert len(findings) == 1 and "packages/console" in findings[0]
+
+
+# -------------------------------------------------------------- rule 12: AI tool-policy claims
+def test_tool_policy_claims_match_the_code():
+    """The live check: what the docs say the AI insight may do must match what it is granted."""
+    assert cd._check_tool_policy(cd.tracked_files()) == []
+
+
+def _tool_policy_tree(tmp_path, monkeypatch, doc_body: str, disallowed: str):
+    monkeypatch.setattr(cd, "ROOT", tmp_path)
+    src = tmp_path / cd._TOOL_POLICY_SOURCE
+    src.parent.mkdir(parents=True)
+    src.write_text(f"_DISALLOWED_TOOLS = [{disallowed}]\n")
+    doc = tmp_path / "docs/reporting.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text(doc_body)
+    return [doc]
+
+
+def test_tool_policy_rule_catches_the_shipped_false_security_claim(tmp_path, monkeypatch):
+    """The exact prose that shipped: it listed WebSearch as disallowed and told the reader the agent
+    could not reach the network, while WebSearch was in fact granted by default. Both halves must be
+    reported — the flag contents AND the sentence built on them."""
+    files = _tool_policy_tree(
+        tmp_path,
+        monkeypatch,
+        "It runs with `--disallowed-tools Bash Edit Write NotebookEdit WebFetch WebSearch Task` —\n"
+        "so the agent can't run commands, edit files, or reach the network.\n",
+        '"Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "Task"',
+    )
+    joined = " ".join(cd._check_tool_policy(files))
+    assert "WebSearch" in joined, "a tool claimed disallowed but actually grantable must be reported"
+    assert "reach the network" in joined, "the security sentence built on it must be reported too"
+
+
+def test_tool_policy_rule_reports_a_tool_the_docs_forgot(tmp_path, monkeypatch):
+    """The other direction: the code denies something the doc's list omits, so a reader under-counts
+    the fence. Silent today — each file is individually valid."""
+    files = _tool_policy_tree(
+        tmp_path,
+        monkeypatch,
+        "runs with `--disallowed-tools Bash Edit`\n",
+        '"Bash", "Edit", "Write"',
+    )
+    joined = " ".join(cd._check_tool_policy(files))
+    assert "Write" in joined and "omits" in joined
+
+
+def test_tool_policy_rule_accepts_the_corrected_prose(tmp_path, monkeypatch):
+    """The wording that replaced it: the list matches, and the network sentence is qualified rather
+    than absolute. This must stay quiet or the rule is unusable."""
+    files = _tool_policy_tree(
+        tmp_path,
+        monkeypatch,
+        "runs with `--disallowed-tools Bash Edit Write NotebookEdit WebFetch Task` — so the agent\n"
+        "can't run commands or edit files.\n"
+        "It does reach the network by default: research_events grants WebSearch.\n",
+        '"Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "Task"',
+    )
+    assert cd._check_tool_policy(files) == []
+
+
+def test_tool_policy_rule_allows_the_network_claim_once_websearch_is_denied(tmp_path, monkeypatch):
+    """If someone sets research_events off *as the default* by adding WebSearch to the always-denied
+    list, 'cannot reach the network' becomes true and must stop being flagged."""
+    files = _tool_policy_tree(
+        tmp_path,
+        monkeypatch,
+        "runs with `--disallowed-tools Bash WebSearch` so it cannot reach the network.\n",
+        '"Bash", "WebSearch"',
+    )
+    assert cd._check_tool_policy(files) == []
 
 
 # ------------------------------------------------------------------------------------ end to end

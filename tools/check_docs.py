@@ -36,6 +36,9 @@ idea for the guardrails that live in every CLAUDE.md:
      own retention that was false.
  11. No package missing from the four indexes that claim to list them all. The suite grew 7 -> 10 and
      every index stopped at 7 independently, so console -- 17,920 lines -- was documented nowhere.
+ 12. No drift between the AI insight's real tool policy and the docs that describe it. This is the
+     only rule here guarding a *security* claim, which is why it exists: three files stated the agent
+     "can't reach the network" while `WebSearch` was granted by default.
 
 Run: python tools/check_docs.py
 Exits non-zero on any finding, printing `path:line: message` so it reads like a linter.
@@ -292,8 +295,16 @@ def _check_ports() -> list[str]:
     return findings
 
 
-#: The orchestrator's annotated config template, and what counts as a mention of one of its keys.
+#: Every annotated config template in the suite. Discovered, not listed: a new package's template
+#: should be covered the day it lands, not the day someone remembers to add it here.
+_CONFIG_EXAMPLE_NAME = "config.example.json"
+#: The orchestrator's, kept as a name for the tests that pin the original bug.
 _CONFIG_EXAMPLE = "packages/orchestrator/config.example.json"
+#: Files whose *text* counts as a mention. A key described in a module's CLAUDE.md but read by no
+#: Python is not dead -- MEIC's loop is driven by an agent reading that very table, so `stop_type`
+#: and the `orb_*` family have no Python reader and are entirely live. Scanning prose is what keeps
+#: the rule from reporting 23 false deaths on that one package alone.
+_MENTION_TEXT_SUFFIXES = {".md", ".ts", ".tsx"}
 
 
 def _json_key_names(obj: object, out: set[str]) -> None:
@@ -343,20 +354,20 @@ def _check_dead_config_keys(files: list[Path]) -> list[str]:
     So it checks one direction only. The reverse -- a key the code reads that the example omits -- is
     not mechanically checkable at useful precision: a scan of every `.get("...")` in the orchestrator
     returns 317 hits, nearly all of them ordinary dict access with no relationship to config.
-    """
-    target = ROOT / _CONFIG_EXAMPLE
-    if not target.exists():
-        return []
-    try:
-        example = json.loads(target.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        return [f"{_CONFIG_EXAMPLE}: not valid JSON ({exc.msg}) -- the dead-key check cannot run"]
-    documented: set[str] = set()
-    _documented_config_keys(example, documented)
 
-    mentioned: set[str] = set()
+    Runs over **every** `config.example.json` in the suite, not just the orchestrator's. The gap that
+    prompted widening it: `exit_after_announcement_minutes` closes three earnings strategies four
+    hours after entry and was absent from that package's template, so the default ran with nothing in
+    config to explain it.
+    """
+    targets = [p for p in files if p.name == _CONFIG_EXAMPLE_NAME and p.exists()]
+    if not targets:
+        return []
+
+    literals: set[str] = set()
+    text_blobs: list[str] = []
     for path in files:
-        if path == target or not path.exists():
+        if not path.exists() or path.name == _CONFIG_EXAMPLE_NAME:
             continue
         if path.suffix == ".py":
             try:
@@ -365,18 +376,112 @@ def _check_dead_config_keys(files: list[Path]) -> list[str]:
                 continue
             for node in ast.walk(tree):
                 if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                    mentioned.add(node.value)
+                    literals.add(node.value)
         elif path.suffix == ".json":
             try:
-                _json_key_names(json.loads(path.read_text(encoding="utf-8")), mentioned)
+                _json_key_names(json.loads(path.read_text(encoding="utf-8")), literals)
             except (json.JSONDecodeError, OSError):
                 continue
+        elif path.suffix in _MENTION_TEXT_SUFFIXES:
+            text_blobs.append(path.read_text(encoding="utf-8", errors="replace"))
+    prose = "\n".join(text_blobs)
 
-    return [
-        f"{_CONFIG_EXAMPLE}: documents `{key}`, which nothing in the suite reads -- "
-        "remove it, or the note beside it is promising something that does not happen"
-        for key in sorted(documented - mentioned)
-    ]
+    findings = []
+    for target in targets:
+        rel = target.relative_to(ROOT).as_posix()
+        try:
+            example = json.loads(target.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            findings.append(f"{rel}: not valid JSON ({exc.msg}) -- the dead-key check cannot run")
+            continue
+        documented: set[str] = set()
+        _documented_config_keys(example, documented)
+        for key in sorted(documented - literals):
+            if key in prose:  # described in a CLAUDE.md / doc / TS source -- a real consumer
+                continue
+            findings.append(
+                f"{rel}: documents `{key}`, which nothing in the suite reads or documents -- "
+                "remove it, or the note beside it is promising something that does not happen"
+            )
+    return findings
+
+
+#: Where the AI insight's tool policy is really decided, and the name of the list it builds.
+_TOOL_POLICY_SOURCE = "packages/orchestrator/src/cherrypick/orchestrator/eod_insight.py"
+_TOOL_POLICY_NAME = "_DISALLOWED_TOOLS"
+#: A doc restating that policy: `--disallowed-tools Bash Edit Write ...` (bare or backticked).
+_TOOL_POLICY_DOC = re.compile(r"--disallowed-tools\s+([A-Za-z ]+?)\s*(?:`|--|\n|$)")
+
+
+def _check_tool_policy(files: list[Path]) -> list[str]:
+    """The docs' account of what the AI insight may do must match the code's.
+
+    This is the only rule here guarding a **security** claim, and it exists because that claim was
+    wrong in the worst direction. `docs/reporting-and-dashboard.md`, `docs/guardrails-and-modes.md`,
+    and the module's own docstring all said the agent could not reach the network -- while
+    `eod_insight.research_events` defaults to true and *grants* `WebSearch`. Every other rule here
+    guards an inconvenience; a false "it cannot reach the network" is the kind of sentence somebody
+    relies on when deciding whether to enable something.
+
+    Checks the disallowed set both ways against `_DISALLOWED_TOOLS`, and separately refuses any doc
+    that claims the run cannot reach the network while `WebSearch` is absent from that set (i.e. is
+    grantable). It cannot check the prose around the flag, only the flag's contents -- so keep the
+    surrounding sentence honest by hand.
+    """
+    src = ROOT / _TOOL_POLICY_SOURCE
+    if not src.exists():
+        return []
+    real: set[str] | None = None
+    try:
+        tree = ast.parse(src.read_text(encoding="utf-8"))
+    except (SyntaxError, ValueError):
+        return [f"{_TOOL_POLICY_SOURCE}: unparseable -- the tool-policy check cannot run"]
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == _TOOL_POLICY_NAME for t in node.targets
+        ):
+            if isinstance(node.value, (ast.List, ast.Tuple)):
+                real = {
+                    e.value
+                    for e in node.value.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)
+                }
+    if real is None:
+        return [f"{_TOOL_POLICY_SOURCE}: no {_TOOL_POLICY_NAME} -- the tool-policy check cannot run"]
+
+    findings = []
+    for path in files:
+        if path.suffix.lower() not in DOC_SUFFIXES or not path.exists():
+            continue
+        rel = path.relative_to(ROOT).as_posix()
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for n, line in enumerate(text.split("\n"), 1):
+            m = _TOOL_POLICY_DOC.search(line)
+            if not m:
+                continue
+            claimed = set(m.group(1).split())
+            for extra in sorted(claimed - real):
+                findings.append(
+                    f"{rel}:{n}: claims `{extra}` is disallowed for the AI insight, but "
+                    f"{_TOOL_POLICY_NAME} does not list it -- the run may still be granted it"
+                )
+            for missing in sorted(real - claimed):
+                findings.append(
+                    f"{rel}:{n}: omits `{missing}` from the disallowed list that {_TOOL_POLICY_NAME} "
+                    "does contain"
+                )
+        if "WebSearch" not in real:
+            for n, line in enumerate(text.split("\n"), 1):
+                low = line.lower()
+                if "reach the network" in low and not any(
+                    w in low for w in ("does reach", "can reach", "by default", "exception")
+                ):
+                    findings.append(
+                        f"{rel}:{n}: says the AI insight cannot reach the network, but `WebSearch` "
+                        "is not in the always-disallowed set and is granted when "
+                        "`eod_insight.research_events` is on (it defaults to on)"
+                    )
+    return findings
 
 
 #: Every index that claims to enumerate the suite's packages.
@@ -613,6 +718,7 @@ def main() -> int:
         + _check_ports()
         + _check_dead_config_keys(tracked)
         + _check_package_roster()
+        + _check_tool_policy(tracked)
     )
     if not findings:
         print("check_docs: OK")

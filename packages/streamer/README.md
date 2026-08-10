@@ -83,4 +83,4 @@ never a faster full watchdog tick.
   into this package — the GEX math once drifted ~75× when it was copied.
 
 Development guidance and the full invariant list: [CLAUDE.md](CLAUDE.md). Why the streamer was split
-out of MEIC: [docs/streamer-package-plan.md](../../docs/streamer-package-plan.md).
+out of MEIC: [docs/streamer-package-plan.md](../../docs/history/streamer-package-plan.md).

@@ -7,8 +7,9 @@ import { readSuiteOauthEntries } from "./suiteBridge.js";
  * `cherrypick-broker` service) — the same entries every Python module reads
  * through and onboarding writes. The console reads them via the Python
  * bridge (Python keyring targets aren't addressable from the Node keyring)
- * and `credentials set` writes THOSE entries, so there is one credential set
- * however it is managed.
+ * and never writes them: `credentials set` only prints a pointer to
+ * `python -m cherrypick.core.auth setup`, which is the suite's one setting
+ * path. So there is one credential set, and exactly one thing that writes it.
  *
  * The Node-side slots from the pre-unification era (`oauth` under
  * cherrypick-broker / cherrypick-console) remain as read-only fallbacks and

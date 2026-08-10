@@ -3,7 +3,7 @@
 > Build commands and guidelines for the **streamer** package — the suite's standalone market-data
 > daemon. Suite-wide context is the root [documentation index](../../docs/README.md); the design and
 > rationale for splitting the streamer out of MEIC live in
-> [docs/streamer-package-plan.md](../../docs/streamer-package-plan.md).
+> [docs/streamer-package-plan.md](../../docs/history/streamer-package-plan.md).
 
 ## What this is
 
