@@ -7,6 +7,11 @@ One workspace for the trading-tool suite. Work in the package for your area — 
 - **packages/meic** — MEIC 0DTE multiple-entry iron-condor trading module.
 - **packages/earnings** — earnings-play trading module (defined-risk strategies).
 - **packages/gex** — live GEX (gamma exposure) dashboard; a self-hosted read-only surface.
+- **packages/streamer** — the standalone market-data streamer: the suite's **single** producer of the
+  shared stream cache every module reads. Modules declare their symbols via `state/stream_requests/`;
+  it streams the union. Nothing else may write that cache.
+- **packages/scout** — interactive screening and strategy-exploration surfaces (also surfaced through
+  the console).
 - **packages/flies** — 0DTE net-credit butterfly ("profit forest") module. Paper by default, with a
   deliberately narrow, per-day-armed live pilot (one arm, one symbol, one incomplete position at a
   time); deliberately built to make a negative result usable: floors are measured after fees, and a

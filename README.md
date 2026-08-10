@@ -82,9 +82,30 @@ real transaction costs.
   go there you do so **entirely at your own risk** (see the disclaimer). The flies module additionally
   supports a small, explicitly-armed live pilot (one contract, one position at a time, arms fresh each
   trading day) — see [packages/flies/docs/live-trading-plan.md](packages/flies/docs/live-trading-plan.md).
+- **The manual desk (you, at the keyboard).** [packages/desk](packages/desk) is the sanctioned path for
+  a discretionary live order: a foreground CLI you invoke yourself, with its own config, its own keyring
+  PIN, and a ticket you confirm per order. It is deliberately authorized on its own so that placing one
+  order never means temporarily flipping a strategy module's live-trading switch. It is never scheduled,
+  and no automated package may import it.
 
 Credentials live in your operating system's secure keyring — never in a file — and paper and live books are
 kept strictly separate.
+
+## What's in the repo
+
+One workspace, ten packages. The three strategy engines above plus the pieces that feed, drive, and
+read them:
+
+| Package | What it is |
+|---|---|
+| [packages/orchestrator](packages/orchestrator) | The scheduler, watchdog, notifications, and the whole read side (report / calibrate / dashboard / EOD). Drives the engines by subprocess. |
+| [packages/core](packages/core) | The shared `cherrypick.core` library — calendar, fees, profiles, GEX math, broker, auth. Install it first. |
+| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) | The three strategy engines. |
+| [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
+| [packages/gex](packages/gex) | The standalone GEX dashboard. |
+| [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models in one app. Read-only. |
+| [packages/scout](packages/scout) | Interactive screening and strategy exploration. |
+| [packages/desk](packages/desk) | The manual trading desk — see below. |
 
 ## Requirements
 

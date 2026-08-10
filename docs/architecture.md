@@ -16,8 +16,12 @@ One workspace holds the whole trading-tool suite as separate packages under `pac
 | `packages/gex` | The standalone **GEX** (gamma-exposure) dashboard, built on the shared GEX engine and embedded by the orchestrator. |
 | `packages/flies` | The **Flies** 0DTE net-credit butterfly ("profit forest") paper engine — deliberately built so a negative result is usable (floors measured after fees, arm-based experiments). |
 | `packages/streamer` | The **standalone streamer** — the suite's single market-data producer, writing the canonical shared stream cache that every module reads; modules declare their symbols via `state/stream_requests/`. |
+| `packages/console` | The unified reactive **console** UI (Node + TypeScript, React SPA on `127.0.0.1:5070`): every module's read models plus scout's interactive surfaces in one app. Runs alongside the per-module dashboards while it grows into their replacement. Read-only over every other package's data, with its own store and its own read-scoped broker credential; no order-placement code paths. |
+| `packages/scout` | **Scout** — interactive screening and strategy-exploration surfaces, now also surfaced through the console. |
+| `packages/desk` | The **manual trading desk** — a foreground, human-initiated CLI for discretionary live orders, authorized entirely on its own (own config, own keyring PIN, per-order ticket) so placing one order never requires flipping a module's `enable_live_trading`. Not a strategy module: no loop, no schedule, no ledger. Never scheduled, and no automated package may import it. |
 
 Each package has its own `CLAUDE.md` with build commands, tech-stack reference, and invariants.
+`packages/console` is the one non-Python package; the rest share the src-layout described below.
 
 ## Shared library: `cherrypick.core` (an in-repo package)
 

@@ -97,12 +97,16 @@ ledger, so open positions' option legs stay subscribed after spot walks the ATM 
 
 ## Inventory — ports
 
-All loopback-only. Sources: each module's own default, the orchestrator embed config, and
-`config.example.json`.
+All loopback-only. Each port's source of truth is the code or config named in its row — this table
+restates them, so treat a disagreement as a bug in the table (`tools/check_docs.py` checks both
+directions).
 
 | Port | Surface |
 |---|---|
 | 8787 | Suite dashboard — `run.py dashboard --serve` (`dashboard.serve`) |
+| 8804 | Settings editor — `run.py settings` (`settings_serve.py`); the suite's only config-writing surface |
+| 5070 | Console UI (`packages/console/server/src/config.ts`, overridable via `config/console.json`) |
+| 5057 | Scout serve (`packages/scout/.../config.py`, `serve.port`) |
 | 8801 | MEIC dashboard as a suite embed (`dashboard.embeds`, PAPER mode forced) |
 | 8802 | gex full dashboard as a suite embed |
 | 8803 | flies dashboard as a suite embed (`dashboard.embeds`) |
