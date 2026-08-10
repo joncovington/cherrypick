@@ -3,7 +3,8 @@ import path from "node:path";
 import type { EarningsPayload, EarningsTradeRow, EntryReviewRow, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, num, str } from "./db.js";
-import { sessionDate } from "../services/report.js";
+import { pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { isoStamp, sessionDate } from "../services/report.js";
 
 function readTrades(dbPath: string, mode: TradingMode): EarningsTradeRow[] {
   return withReadOnlyDb<EarningsTradeRow[]>(dbPath, [], (db) =>
@@ -11,7 +12,7 @@ function readTrades(dbPath: string, mode: TradingMode): EarningsTradeRow[] {
       .prepare<[], Record<string, unknown>>(
         `SELECT order_id, symbol, strategy, expiration, entry_credit, pnl, quantity,
                 opened_at, closed_at, profile
-           FROM trades ORDER BY opened_at DESC LIMIT 50`,
+           FROM trades ORDER BY opened_at DESC`,
       )
       .all()
       .map((r: Record<string, unknown>) => ({
@@ -23,8 +24,9 @@ function readTrades(dbPath: string, mode: TradingMode): EarningsTradeRow[] {
         entryCredit: num(r["entry_credit"]),
         pnl: num(r["pnl"]),
         quantity: num(r["quantity"]),
-        openedAt: str(r["opened_at"]),
-        closedAt: str(r["closed_at"]),
+        // Epoch floats in this store, not strings — see isoStamp.
+        openedAt: isoStamp(r["opened_at"]),
+        closedAt: isoStamp(r["closed_at"]),
         profile: str(r["profile"]),
       })),
   );
@@ -40,7 +42,7 @@ function readReviews(dbPath: string, mode: TradingMode): EntryReviewRow[] {
       .prepare<[], Record<string, unknown>>(
         `SELECT scan_date, symbol, timing, winrate, iv_rv_ratio, expected_move,
                 best_tier, selected, reason
-           FROM entry_reviews ORDER BY id DESC LIMIT 100`,
+           FROM entry_reviews ORDER BY id DESC`,
       )
       .all()
       .map((r: Record<string, unknown>) => ({
@@ -469,12 +471,30 @@ export function readEarningsAnalytics(config: ConsoleConfig, mode: TradingMode):
   });
 }
 
-/** Earnings browses both books at once — every row carries the mode of its source DB. */
-export function readEarnings(config: ConsoleConfig): EarningsPayload {
+export interface EarningsPageRequest {
+  trades: PageRequest;
+  reviews: PageRequest;
+}
+
+export const EARNINGS_FIRST_PAGE: EarningsPageRequest = { trades: FIRST_PAGE, reviews: FIRST_PAGE };
+
+/**
+ * Earnings browses both books at once — every row carries the mode of its
+ * source DB. Because the list spans two stores, neither can page it: a LIMIT in
+ * either one would cut rows the merged ordering has not placed yet. So both are
+ * read whole, merged, ordered, and paged in memory. The cost is proportional to
+ * the module's total trade count, which is small and grows by a handful a week;
+ * the alternative — a per-store LIMIT — silently drops rows, which is what this
+ * is here to stop.
+ */
+export function readEarnings(config: ConsoleConfig, page: EarningsPageRequest = EARNINGS_FIRST_PAGE): EarningsPayload {
   const liveDb = path.join(config.paths.earningsDir, "earnings_trades.db");
   const paperDb = path.join(config.paths.earningsDir, "paper_trades.db");
-  return {
-    trades: [...readTrades(liveDb, "live"), ...readTrades(paperDb, "paper")],
-    reviews: [...readReviews(liveDb, "live"), ...readReviews(paperDb, "paper")],
-  };
+  const trades = [...readTrades(liveDb, "live"), ...readTrades(paperDb, "paper")].sort((a, b) =>
+    (b.openedAt ?? "").localeCompare(a.openedAt ?? ""),
+  );
+  const reviews = [...readReviews(liveDb, "live"), ...readReviews(paperDb, "paper")].sort((a, b) =>
+    b.scanDate.localeCompare(a.scanDate),
+  );
+  return { trades: pageArray(trades, page.trades), reviews: pageArray(reviews, page.reviews) };
 }

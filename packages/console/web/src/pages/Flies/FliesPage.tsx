@@ -5,6 +5,7 @@ import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
+import { Pager, usePage } from "../../components/ScopeBar";
 import type { TradingMode } from "@console/shared";
 import { ForestCard } from "./ForestCard";
 import { TimelineCard } from "./TimelineCard";
@@ -49,7 +50,11 @@ export function FliesPage() {
   const [tab, setTab] = useState<FliesTab>("today");
   const filter: FliesFilter = { arm, date };
   const meta = useFliesMeta(mode);
-  const { data, isLoading, isError } = useFlies(mode, filter);
+  // Two tables on one payload, each with its own page — turning one leaves the
+  // other where it was. Both reset when the filter changes underneath them.
+  const booksPage = usePage([mode, arm, date]);
+  const positionsPage = usePage([mode, arm, date]);
+  const { data, isLoading, isError, isPlaceholderData } = useFlies(mode, filter, booksPage.page, positionsPage.page);
   const analytics = useFliesAnalytics(mode, filter);
   const a = analytics.data;
 
@@ -199,14 +204,26 @@ export function FliesPage() {
         </div>
 
         <DataCard
-          title="Books"
+          title={`Books — ${(data?.books.total ?? 0).toLocaleString()} matching`}
           headers={["date", "arm", "sym", "credit", "debits", "fees", "net cash", "floor", "band", "status", "P&L"]}
           numFrom={1}
           loading={isLoading}
           isError={isError}
-          rowCount={data?.books.length ?? 0}
+          busy={isPlaceholderData}
+          rowCount={data?.books.rows.length ?? 0}
+          footer={
+            (data?.books.total ?? 0) > 0 && (
+              <Pager
+                offset={data?.books.offset ?? booksPage.page.offset}
+                limit={data?.books.limit ?? booksPage.page.limit}
+                total={data?.books.total ?? 0}
+                onOffset={booksPage.setOffset}
+                onLimit={booksPage.setLimit}
+              />
+            )
+          }
         >
-          {data?.books.map((b) => (
+          {data?.books.rows.map((b) => (
             <tr key={b.bookId}>
               <td>{b.tradeDate}</td>
               <td className="muted">{b.arm ?? "—"}</td>
@@ -228,16 +245,28 @@ export function FliesPage() {
         </DataCard>
 
         <DataCard
-          title="Positions"
+          title={`Positions — ${(data?.positions.total ?? 0).toLocaleString()} matching`}
           headers={["symbol", "arm", "mode", "kind", "centre", "net", "floor", "", "status"]}
           numFrom={1}
           loading={isLoading}
           isError={isError}
-          rowCount={data?.positions.length ?? 0}
+          busy={isPlaceholderData}
+          rowCount={data?.positions.rows.length ?? 0}
           skeletonRows={10}
           empty={arm !== null || date !== null ? "no matching positions" : "no positions today"}
+          footer={
+            (data?.positions.total ?? 0) > 0 && (
+              <Pager
+                offset={data?.positions.offset ?? positionsPage.page.offset}
+                limit={data?.positions.limit ?? positionsPage.page.limit}
+                total={data?.positions.total ?? 0}
+                onOffset={positionsPage.setOffset}
+                onLimit={positionsPage.setLimit}
+              />
+            )
+          }
         >
-          {data?.positions.map((p) => (
+          {data?.positions.rows.map((p) => (
             <tr key={p.positionId}>
               <td>{p.symbol}</td>
               <td className="muted">{p.arm ?? "—"}</td>

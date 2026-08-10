@@ -11,6 +11,7 @@ import {
   type MeicScopeFilter,
   type MeicTradeQuery,
 } from "../readers/meic.js";
+import { parsePage } from "../readers/paging.js";
 import {
   readFlies,
   readFliesAnalytics,
@@ -21,6 +22,7 @@ import {
   readFliesPerformance,
   readFliesJournal,
   readArmDivergence,
+  readFliesTradeLog,
   type FliesFilter,
 } from "../readers/flies.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
@@ -93,7 +95,24 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const arm = typeof query["arm"] === "string" && query["arm"] !== "" && query["arm"].length <= 40 ? query["arm"] : null;
     return { arm, date };
   };
-  app.get("/api/flies", async (req) => readFlies(config, parseMode(req.query), parseFliesFilter(req.query)));
+  app.get("/api/flies", async (req) =>
+    readFlies(config, parseMode(req.query), parseFliesFilter(req.query), {
+      books: parsePage(req.query, "books"),
+      positions: parsePage(req.query, "positions"),
+    }),
+  );
+  app.get("/api/flies/tradelog", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const outcome = typeof q["outcome"] === "string" ? q["outcome"] : "all";
+    return readFliesTradeLog(config, parseMode(req.query), {
+      ...parsePage(req.query),
+      outcome:
+        outcome === "wins" || outcome === "losses" || outcome === "pinned" || outcome === "risk-free"
+          ? outcome
+          : "all",
+      search: typeof q["search"] === "string" ? q["search"].slice(0, 60) : "",
+    });
+  });
   app.get("/api/flies/analytics", async (req) =>
     readFliesAnalytics(config, parseMode(req.query), parseFliesFilter(req.query)),
   );
@@ -119,7 +138,9 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const f = parseFliesFilter(req.query);
     return readFliesForest(config, parseMode(req.query), f.date, f.arm);
   });
-  app.get("/api/earnings", async () => readEarnings(config));
+  app.get("/api/earnings", async (req) =>
+    readEarnings(config, { trades: parsePage(req.query, "trades"), reviews: parsePage(req.query, "reviews") }),
+  );
   app.get("/api/earnings/upcoming", async () => readSymbolWatch(config));
   app.get("/api/earnings/analytics", async (req) => readEarningsAnalytics(config, parseMode(req.query)));
   app.get("/api/earnings/detail", async (req) => readEarningsDetail(config, parseMode(req.query)));

@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEarnings } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
-import { TabStrip } from "../../components/ScopeBar";
+import { TabStrip, Pager, usePage } from "../../components/ScopeBar";
 import { EarningsDetailCards } from "./EarningsDetail";
 
 const TABS = ["overview", "strategy detail", "upcoming"] as const;
@@ -84,7 +84,9 @@ function useEarningsAnalytics() {
 
 export function EarningsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("overview");
-  const { data, isLoading, isError } = useEarnings();
+  const tradesPage = usePage();
+  const reviewsPage = usePage();
+  const { data, isLoading, isError, isPlaceholderData } = useEarnings(tradesPage.page, reviewsPage.page);
   const upcoming = useUpcoming();
   const analytics = useEarningsAnalytics();
   const a = analytics.data;
@@ -241,15 +243,27 @@ export function EarningsPage() {
         {tab === "overview" && (
         <>
         <DataCard
-          title="Trades"
+          title={`Trades — ${(data?.trades.total ?? 0).toLocaleString()} across both books`}
           headers={["", "opened", "sym", "strategy", "exp", "credit", "qty", "closed", "P&L"]}
           numFrom={1}
           loading={isLoading}
           isError={isError}
-          rowCount={data?.trades.length ?? 0}
+          busy={isPlaceholderData}
+          rowCount={data?.trades.rows.length ?? 0}
           skeletonRows={8}
+          footer={
+            (data?.trades.total ?? 0) > 0 && (
+              <Pager
+                offset={data?.trades.offset ?? tradesPage.page.offset}
+                limit={data?.trades.limit ?? tradesPage.page.limit}
+                total={data?.trades.total ?? 0}
+                onOffset={tradesPage.setOffset}
+                onLimit={tradesPage.setLimit}
+              />
+            )
+          }
         >
-          {data?.trades.map((t) => (
+          {data?.trades.rows.map((t) => (
             <tr key={`${t.mode}-${t.orderId}`}>
               <td><PaperLiveBadge mode={t.mode} /></td>
               <td>{t.openedAt?.slice(0, 10) ?? "—"}</td>
@@ -265,15 +279,27 @@ export function EarningsPage() {
         </DataCard>
 
         <DataCard
-          title="Entry reviews (screened symbols)"
+          title={`Entry reviews (screened symbols) — ${(data?.reviews.total ?? 0).toLocaleString()} across both books`}
           headers={["", "scan", "sym", "timing", "winrate", "IV/RV", "exp move", "tier", "selected", "reason"]}
           numFrom={1}
           loading={isLoading}
           isError={isError}
-          rowCount={data?.reviews.length ?? 0}
+          busy={isPlaceholderData}
+          rowCount={data?.reviews.rows.length ?? 0}
           skeletonRows={10}
+          footer={
+            (data?.reviews.total ?? 0) > 0 && (
+              <Pager
+                offset={data?.reviews.offset ?? reviewsPage.page.offset}
+                limit={data?.reviews.limit ?? reviewsPage.page.limit}
+                total={data?.reviews.total ?? 0}
+                onOffset={reviewsPage.setOffset}
+                onLimit={reviewsPage.setLimit}
+              />
+            )
+          }
         >
-          {data?.reviews.map((r, i) => (
+          {data?.reviews.rows.map((r, i) => (
             <tr key={`${r.mode}-${r.scanDate}-${r.symbol}-${i}`} className={r.selected ? "row-selected" : ""}>
               <td><PaperLiveBadge mode={r.mode} /></td>
               <td>{r.scanDate}</td>

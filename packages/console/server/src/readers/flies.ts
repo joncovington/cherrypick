@@ -1,12 +1,21 @@
 import path from "node:path";
-import type { FliesPayload, FliesBookRow, FliesPositionRow, TradingMode } from "@console/shared";
+import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, num, str } from "./db.js";
+import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 
 export interface FliesFilter {
   arm: string | null;
   date: string | null;
 }
+
+/** Books and positions page independently — they are two tables, not one list. */
+export interface FliesPageRequest {
+  books: PageRequest;
+  positions: PageRequest;
+}
+
+export const FLIES_FIRST_PAGE: FliesPageRequest = { books: FIRST_PAGE, positions: FIRST_PAGE };
 
 function filterSql(filter: FliesFilter): { where: string; params: string[] } {
   const clauses: string[] = [];
@@ -19,23 +28,32 @@ function filterSql(filter: FliesFilter): { where: string; params: string[] } {
     clauses.push("trade_date = ?");
     params.push(filter.date);
   }
-  return { where: clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "", params };
+  return { where: clauses.length > 0 ? clauses.join(" AND ") : "1=1", params };
 }
 
-export function readFlies(config: ConsoleConfig, mode: TradingMode, filter: FliesFilter): FliesPayload {
+export function readFlies(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  filter: FliesFilter,
+  page: FliesPageRequest = FLIES_FIRST_PAGE,
+): FliesPayload {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
   const { where, params } = filterSql(filter);
 
-  const books = withReadOnlyDb<FliesBookRow[]>(dbPath, [], (db) =>
-    db
-      .prepare<string[], Record<string, unknown>>(
-        `SELECT book_id, trade_date, arm, symbol, credit_collected, debits_paid, fees,
-                net_cash, floor_holds, band_low, band_high, pnl, status
-           FROM fly_books ${where} ORDER BY id DESC LIMIT 30`,
-      )
-      .all(...params)
-      .map((r: Record<string, unknown>) => ({
+  const books = withReadOnlyDb<Paged<FliesBookRow>>(dbPath, emptyPage(page.books), (db) =>
+    pagedQuery<FliesBookRow>(
+      db,
+      {
+        columns: `book_id, trade_date, arm, symbol, credit_collected, debits_paid, fees,
+                  net_cash, floor_holds, band_low, band_high, pnl, status`,
+        from: "fly_books",
+        where,
+        params,
+        orderBy: "id DESC",
+      },
+      page.books,
+      (r: Record<string, unknown>) => ({
         mode,
         bookId: str(r["book_id"]) ?? "",
         tradeDate: str(r["trade_date"]) ?? "",
@@ -53,15 +71,19 @@ export function readFlies(config: ConsoleConfig, mode: TradingMode, filter: Flie
       })),
   );
 
-  const positions = withReadOnlyDb<FliesPositionRow[]>(dbPath, [], (db) =>
-    db
-      .prepare<string[], Record<string, unknown>>(
-        `SELECT position_id, trade_date, symbol, arm, entry_mode, kind, side, center, wing_width,
-                quantity, net, floor_dollars, risk_free, status, pnl, entry_time
-           FROM fly_positions ${where} ORDER BY id DESC LIMIT 50`,
-      )
-      .all(...params)
-      .map((r: Record<string, unknown>) => ({
+  const positions = withReadOnlyDb<Paged<FliesPositionRow>>(dbPath, emptyPage(page.positions), (db) =>
+    pagedQuery<FliesPositionRow>(
+      db,
+      {
+        columns: `position_id, trade_date, symbol, arm, entry_mode, kind, side, center, wing_width,
+                  quantity, net, floor_dollars, risk_free, status, pnl, entry_time`,
+        from: "fly_positions",
+        where,
+        params,
+        orderBy: "id DESC",
+      },
+      page.positions,
+      (r: Record<string, unknown>) => ({
         mode,
         positionId: str(r["position_id"]) ?? "",
         tradeDate: str(r["trade_date"]) ?? "",
@@ -591,27 +613,96 @@ export interface FliesHistory {
   byEntryWindow: Array<{ window: string } & FliesSummary>;
   feeDrag: Array<{ arm: string } & FliesSummary>;
   dailyPnl: Array<{ date: string; trades: number; netPnl: number }>;
-  tradeLog: Array<{
-    tradeDate: string;
-    symbol: string;
-    arm: string | null;
-    entryMode: string | null;
-    kind: string | null;
-    side: string | null;
-    center: number | null;
-    window: string | null;
-    net: number | null;
-    fees: number | null;
-    pnl: number | null;
-    latencyMin: number | null;
-    pinned: boolean;
-  }>;
+}
+
+export interface FliesTradeLogRow {
+  tradeDate: string;
+  symbol: string;
+  arm: string | null;
+  entryMode: string | null;
+  kind: string | null;
+  side: string | null;
+  center: number | null;
+  window: string | null;
+  net: number | null;
+  fees: number | null;
+  pnl: number | null;
+  latencyMin: number | null;
+  pinned: boolean;
+}
+
+export type FliesOutcome = "all" | "wins" | "losses" | "pinned" | "risk-free";
+
+export interface FliesTradeLogQuery extends PageRequest {
+  outcome: FliesOutcome;
+  search: string;
+}
+
+export const NO_TRADE_LOG_QUERY: FliesTradeLogQuery = { ...FIRST_PAGE, outcome: "all", search: "" };
+
+/**
+ * The settled trade log, filtered and paged in SQL. It lives apart from
+ * `readFliesHistory` so turning a page costs one indexed query instead of
+ * recomputing every summary on the tab.
+ */
+export function readFliesTradeLog(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  query: FliesTradeLogQuery = NO_TRADE_LOG_QUERY,
+): Paged<FliesTradeLogRow> {
+  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.fliesDir, file);
+  return withReadOnlyDb<Paged<FliesTradeLogRow>>(dbPath, emptyPage(query), (db) => {
+    const clauses = [SETTLED];
+    const params: string[] = [];
+    if (query.outcome === "wins") clauses.push("pnl IS NOT NULL AND pnl > 0");
+    if (query.outcome === "losses") clauses.push("pnl IS NOT NULL AND pnl < 0");
+    if (query.outcome === "pinned") clauses.push("pinned = 1");
+    // Risk-free is the fly that came back whole: a butterfly closed at or above
+    // flat, the shape the module is built to manufacture.
+    if (query.outcome === "risk-free") clauses.push("pnl IS NOT NULL AND pnl >= 0 AND kind = 'fly'");
+    if (query.search !== "") {
+      clauses.push(
+        `(trade_date LIKE ? OR symbol LIKE ? OR COALESCE(arm, '') LIKE ? OR COALESCE(entry_mode, '') LIKE ?
+          OR COALESCE(kind, '') LIKE ? OR COALESCE(entry_window, '') LIKE ?)`,
+      );
+      const like = `%${query.search.replace(/[%_]/g, "")}%`;
+      params.push(like, like, like, like, like, like);
+    }
+    return pagedQuery<FliesTradeLogRow>(
+      db,
+      {
+        columns: `trade_date, symbol, arm, entry_mode, kind, side, center, entry_window, net, fees, pnl,
+                  completion_latency_min, pinned`,
+        from: "fly_positions",
+        where: clauses.join(" AND "),
+        params,
+        orderBy: "trade_date DESC, entry_time DESC",
+      },
+      query,
+      (r) => ({
+        tradeDate: String(r["trade_date"]),
+        symbol: String(r["symbol"] ?? ""),
+        arm: str(r["arm"]),
+        entryMode: str(r["entry_mode"]),
+        kind: str(r["kind"]),
+        side: str(r["side"]),
+        center: num(r["center"]),
+        window: str(r["entry_window"]),
+        net: num(r["net"]),
+        fees: num(r["fees"]),
+        pnl: num(r["pnl"]),
+        latencyMin: num(r["completion_latency_min"]),
+        pinned: r["pinned"] === 1,
+      }),
+    );
+  });
 }
 
 export function readFliesHistory(config: ConsoleConfig, mode: TradingMode): FliesHistory {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
-  const empty: FliesHistory = { mode, byArm: [], byEntryMode: [], byEntryWindow: [], feeDrag: [], dailyPnl: [], tradeLog: [] };
+  const empty: FliesHistory = { mode, byArm: [], byEntryMode: [], byEntryWindow: [], feeDrag: [], dailyPnl: [] };
   return withReadOnlyDb<FliesHistory>(dbPath, empty, (db) => {
     const legged = pnlRows(db, `${SETTLED} AND entry_mode = 'legged'`, []);
     const all = pnlRows(db, SETTLED, []);
@@ -631,30 +722,6 @@ export function readFliesHistory(config: ConsoleConfig, mode: TradingMode): Flie
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([date, rs]) => ({ date, trades: rs.length, netPnl: rs.reduce((s, x) => s + x.pnl, 0) }));
 
-    const tradeLog = db
-      .prepare<[], Record<string, unknown>>(
-        `SELECT trade_date, symbol, arm, entry_mode, kind, side, center, entry_window, net, fees, pnl,
-                completion_latency_min, pinned
-           FROM fly_positions WHERE ${SETTLED}
-          ORDER BY trade_date DESC, entry_time DESC LIMIT 500`,
-      )
-      .all()
-      .map((r) => ({
-        tradeDate: String(r["trade_date"]),
-        symbol: String(r["symbol"] ?? ""),
-        arm: str(r["arm"]),
-        entryMode: str(r["entry_mode"]),
-        kind: str(r["kind"]),
-        side: str(r["side"]),
-        center: num(r["center"]),
-        window: str(r["entry_window"]),
-        net: num(r["net"]),
-        fees: num(r["fees"]),
-        pnl: num(r["pnl"]),
-        latencyMin: num(r["completion_latency_min"]),
-        pinned: r["pinned"] === 1,
-      }));
-
     return {
       mode,
       byArm,
@@ -662,7 +729,6 @@ export function readFliesHistory(config: ConsoleConfig, mode: TradingMode): Flie
       byEntryWindow: groupSummaries(all, "entry_window", "window"),
       feeDrag: byArm,
       dailyPnl,
-      tradeLog,
     };
   });
 }

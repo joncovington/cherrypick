@@ -1,5 +1,17 @@
 import type { TradingMode } from "./status.js";
 
+/**
+ * One page of a larger result. `total` counts every row matching the scope and
+ * filters, not the ones returned — a table that reports its page size as its
+ * count reads like an answer while hiding the rest.
+ */
+export interface Paged<T> {
+  rows: T[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 // ---- MEIC ----
 
 export interface MeicTradeRow {
@@ -33,12 +45,8 @@ export interface MeicSummaryRow {
 
 export interface MeicPayload {
   mode: TradingMode;
-  /** One page of the trade log, newest first. */
-  trades: MeicTradeRow[];
-  /** Rows matching the scope and filters across every page — what the log is a window onto. */
-  total: number;
-  offset: number;
-  limit: number;
+  /** The trade log, newest first — one page of it. */
+  trades: Paged<MeicTradeRow>;
   summaries: MeicSummaryRow[];
 }
 
@@ -83,8 +91,9 @@ export interface FliesPositionRow {
 
 export interface FliesPayload {
   mode: TradingMode;
-  books: FliesBookRow[];
-  positions: FliesPositionRow[];
+  /** Two tables, paged independently — a page turn in one leaves the other alone. */
+  books: Paged<FliesBookRow>;
+  positions: Paged<FliesPositionRow>;
 }
 
 // ---- Earnings ----
@@ -118,8 +127,8 @@ export interface EntryReviewRow {
 
 /** Earnings browses both books at once, like scout does. */
 export interface EarningsPayload {
-  trades: EarningsTradeRow[];
-  reviews: EntryReviewRow[];
+  trades: Paged<EarningsTradeRow>;
+  reviews: Paged<EntryReviewRow>;
 }
 
 // ---- GEX ----

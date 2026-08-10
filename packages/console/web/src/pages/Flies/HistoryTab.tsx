@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
+import { useFliesTradeLog } from "../../lib/api";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
+import { Pager, usePage } from "../../components/ScopeBar";
 
 interface Summary {
   trades: number;
@@ -22,21 +24,6 @@ interface History {
   byEntryWindow: Array<{ window: string } & Summary>;
   feeDrag: Array<{ arm: string } & Summary>;
   dailyPnl: Array<{ date: string; trades: number; netPnl: number }>;
-  tradeLog: Array<{
-    tradeDate: string;
-    symbol: string;
-    arm: string | null;
-    entryMode: string | null;
-    kind: string | null;
-    side: string | null;
-    center: number | null;
-    window: string | null;
-    net: number | null;
-    fees: number | null;
-    pnl: number | null;
-    latencyMin: number | null;
-    pinned: boolean;
-  }>;
 }
 
 function useHistory(mode: TradingMode) {
@@ -125,18 +112,19 @@ export function HistoryTab({ mode, onReplayDay }: { mode: TradingMode; onReplayD
   const [outcome, setOutcome] = useState<(typeof OUTCOMES)[number]>("all");
   const [search, setSearch] = useState("");
 
+  // Search reaches the DB now, so let typing settle first.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const { page, setOffset, setLimit } = usePage([mode, outcome, debouncedSearch]);
+  const logQuery = useFliesTradeLog(mode, outcome, debouncedSearch, page);
+  const log = logQuery.data?.rows ?? [];
+  const logTotal = logQuery.data?.total ?? 0;
+
   const headers = ["", "trades", "net", "win %", "avg", "PF"];
-  const log = (data?.tradeLog ?? []).filter((r) => {
-    if (outcome === "wins" && !(r.pnl !== null && r.pnl > 0)) return false;
-    if (outcome === "losses" && !(r.pnl !== null && r.pnl < 0)) return false;
-    if (outcome === "pinned" && !r.pinned) return false;
-    if (outcome === "risk-free" && !(r.pnl !== null && r.pnl >= 0 && r.kind === "fly")) return false;
-    if (search !== "") {
-      const hay = `${r.tradeDate} ${r.symbol} ${r.arm} ${r.entryMode} ${r.kind} ${r.window}`.toLowerCase();
-      if (!hay.includes(search.toLowerCase())) return false;
-    }
-    return true;
-  });
 
   return (
     <div className="cards cards-wide">
@@ -172,7 +160,7 @@ export function HistoryTab({ mode, onReplayDay }: { mode: TradingMode; onReplayD
 
       <section className="card">
         <div className="panel-head-row">
-          <h2>Trade log ({log.length} of {data?.tradeLog.length ?? 0})</h2>
+          <h2>Trade log — {logTotal.toLocaleString()} matching</h2>
           <div className="mode-toggle">
             {OUTCOMES.map((o) => (
               <button key={o} type="button" className={outcome === o ? "mode-btn active" : "mode-btn"} onClick={() => setOutcome(o)}>
@@ -182,7 +170,7 @@ export function HistoryTab({ mode, onReplayDay }: { mode: TradingMode; onReplayD
           </div>
           <input className="text-input" placeholder="search…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ textTransform: "none" }} />
         </div>
-        <div className="table-scroll">
+        <div className={`table-scroll ${logQuery.isPlaceholderData ? "table-busy" : ""}`}>
           <table className="data-table">
             <thead>
               <tr>
@@ -210,6 +198,17 @@ export function HistoryTab({ mode, onReplayDay }: { mode: TradingMode; onReplayD
             </tbody>
           </table>
         </div>
+        {logTotal > 0 && (
+          <div className="card-footer">
+            <Pager
+              offset={logQuery.data?.offset ?? page.offset}
+              limit={logQuery.data?.limit ?? page.limit}
+              total={logTotal}
+              onOffset={setOffset}
+              onLimit={setLimit}
+            />
+          </div>
+        )}
       </section>
     </div>
   );
