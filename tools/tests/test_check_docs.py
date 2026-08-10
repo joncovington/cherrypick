@@ -224,6 +224,123 @@ def test_cli_coverage_detects_drift_in_both_directions(tmp_path, monkeypatch):
     assert "doctor" not in joined and "status" not in joined, "matching commands must stay quiet"
 
 
+# ---------------------------------------------------------------------------- rule 9: port parity
+def test_port_table_matches_what_the_code_declares():
+    """The live check: the runbook calls its port table a complete loopback inventory."""
+    assert cd._check_ports() == []
+
+
+def test_port_rule_detects_drift_in_both_directions(tmp_path, monkeypatch):
+    """The two real shapes: flies' standalone port was documented as 8803 while the constant said
+    5052, and four surfaces were missing from a table presenting itself as complete."""
+    monkeypatch.setattr(cd, "ROOT", tmp_path)
+    src = tmp_path / "packages/flies/src/cherrypick/flies/dashboard.py"
+    src.parent.mkdir(parents=True)
+    src.write_text("DEFAULT_PORT = 5052\n")
+    monkeypatch.setattr(
+        cd, "_PORT_DECLS", ((src.relative_to(tmp_path).as_posix(), r"DEFAULT_PORT\s*=\s*(\d+)"),)
+    )
+    doc = tmp_path / cd._PORT_DOC
+    doc.parent.mkdir(parents=True)
+    doc.write_text("| Port | Surface |\n|---|---|\n| 8803 | flies dashboard |\n")
+
+    findings = " ".join(cd._check_ports())
+    assert "5052" in findings, "a declared port missing from the table must be reported"
+    assert "8803" in findings, "a documented port nothing declares must be reported"
+
+
+def test_port_rule_stays_quiet_on_multi_port_cells_and_the_allowlist(tmp_path, monkeypatch):
+    """Real rows carry `5050 / 5051` and `5055 (+5056)` in one cell, and three documented ports are
+    genuinely underivable (a +1 WebSocket, an off-by-default sidecar, Dolt's own default)."""
+    monkeypatch.setattr(cd, "ROOT", tmp_path)
+    src = tmp_path / "ports.py"
+    src.write_text("PAIR = (5050, 5051)\n")
+    monkeypatch.setattr(cd, "_PORT_DECLS", (("ports.py", r"PAIR = \((\d+), (\d+)\)"),))
+    doc = tmp_path / cd._PORT_DOC
+    doc.parent.mkdir(parents=True)
+    doc.write_text("| Port | Surface |\n|---|---|\n| 5050 / 5051 | dash |\n| 3306 | Dolt |\n")
+
+    assert cd._check_ports() == []
+
+
+# ------------------------------------------------------------------- rule 10: dead config keys
+def test_config_example_documents_no_dead_keys():
+    """The live check: every knob in the template is mentioned somewhere in the suite."""
+    assert cd._check_dead_config_keys(cd.tracked_files()) == []
+
+
+def test_dead_config_key_rule_finds_the_key_nothing_reads(tmp_path, monkeypatch):
+    """`install_argv` sat in the template under a note claiming install/uninstall retained it to
+    delete the old task by name. Nothing read it; only `task_name` was ever consulted."""
+    monkeypatch.setattr(cd, "ROOT", tmp_path)
+    cfg = tmp_path / cd._CONFIG_EXAMPLE
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text('{"paper": {"task_name": "t", "install_argv": ["-m", "x"], "_note": "prose"}}')
+    reader = tmp_path / "reader.py"
+    reader.write_text('cfg.get("task_name")\n')
+
+    findings = " ".join(cd._check_dead_config_keys([cfg, reader]))
+    assert "install_argv" in findings, "a key with no reader anywhere must be reported"
+    assert "task_name" not in findings, "a key the code mentions must stay quiet"
+    assert "_note" not in findings, "the file's own prose keys are structure, not knobs"
+
+
+@pytest.mark.parametrize(
+    "name,reader_body",
+    [
+        ("read by iterating a tuple, never as .get()", 'for k in ("entry_task_name",): pass\n'),
+        ("mentioned only inside a longer f-string arg", 'x = {"entry_task_name": 1}\n'),
+    ],
+)
+def test_dead_config_key_rule_errs_toward_silence(name, reader_body, tmp_path, monkeypatch):
+    """A false accusation of deadness invites deleting something load-bearing, so any mention counts.
+    `entry_task_name` really is read this way -- a `.get("...")`-only scan called it dead."""
+    monkeypatch.setattr(cd, "ROOT", tmp_path)
+    cfg = tmp_path / cd._CONFIG_EXAMPLE
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text('{"entry_task_name": "t"}')
+    reader = tmp_path / "reader.py"
+    reader.write_text(reader_body)
+
+    assert cd._check_dead_config_keys([cfg, reader]) == [], name
+
+
+def test_dead_config_key_rule_counts_json_keys_elsewhere(tmp_path, monkeypatch):
+    """`entry_price_strategy` is a real MEIC knob that appears only in JSON and prose -- never as a
+    Python literal. Scanning Python alone reported it dead."""
+    monkeypatch.setattr(cd, "ROOT", tmp_path)
+    cfg = tmp_path / cd._CONFIG_EXAMPLE
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text('{"entry_price_strategy": {}}')
+    other = tmp_path / "packages/meic/config.example.json"
+    other.parent.mkdir(parents=True)
+    other.write_text('{"entry_price_strategy": "auto"}')
+
+    assert cd._check_dead_config_keys([cfg, other]) == []
+
+
+# -------------------------------------------------------------- rule 11: package roster coverage
+def test_every_package_is_registered_in_every_index():
+    """The live check: four indexes each claim to list the suite's packages."""
+    assert cd._check_package_roster() == []
+
+
+def test_roster_rule_reports_a_package_missing_from_one_index(tmp_path, monkeypatch):
+    """Console, desk, and scout were absent from all four indexes at once -- each stopped at seven of
+    ten packages independently, so no single file looked wrong."""
+    monkeypatch.setattr(cd, "ROOT", tmp_path)
+    for pkg in ("meic", "console"):
+        d = tmp_path / "packages" / pkg
+        d.mkdir(parents=True)
+        (d / "CLAUDE.md").write_text("# pkg\n")
+    (tmp_path / "packages" / "node_modules").mkdir()  # no CLAUDE.md -- not a package
+    monkeypatch.setattr(cd, "_ROSTER_DOCS", ("index.md",))
+    (tmp_path / "index.md").write_text("see packages/meic for the engine\n")
+
+    findings = cd._check_package_roster()
+    assert len(findings) == 1 and "packages/console" in findings[0]
+
+
 # ------------------------------------------------------------------------------------ end to end
 def test_the_repo_itself_is_clean():
     """The check every push runs. Kept last so a failure above points at the rule, not the repo."""

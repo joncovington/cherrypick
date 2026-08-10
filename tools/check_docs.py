@@ -28,6 +28,14 @@ idea for the guardrails that live in every CLAUDE.md:
      Both directions: an undocumented command is invisible to readers, a documented-but-removed one
      sends them at something that exits non-zero, and neither file is individually wrong -- only
      their disagreement is.
+  9. No drift between a port declared in code and the runbook's port table. The table presents itself
+     as a complete loopback inventory, which is what makes an omission dangerous: `/uninstall` reads
+     it to decide what to shut down, so four missing rows left four servers running.
+ 10. No config key documented in `config.example.json` that nothing in the suite mentions. A dead key
+     reads as a supported knob, and the one that prompted this carried a note stating a reason for its
+     own retention that was false.
+ 11. No package missing from the four indexes that claim to list them all. The suite grew 7 -> 10 and
+     every index stopped at 7 independently, so console -- 17,920 lines -- was documented nowhere.
 
 Run: python tools/check_docs.py
 Exits non-zero on any finding, printing `path:line: message` so it reads like a linter.
@@ -38,6 +46,8 @@ deliberately out of scope.
 
 from __future__ import annotations
 
+import ast
+import json
 import os
 import re
 import subprocess
@@ -191,6 +201,213 @@ def _check_cli_coverage() -> list[str]:
         findings.append(f"{_CLI_DOC}: command `{missing}` exists in cli.py but is not documented")
     for extra in sorted(documented - real):
         findings.append(f"{_CLI_DOC}: documents `{extra}`, which is not a cli.py command")
+    return findings
+
+
+#: The runbook table that claims to be the complete loopback-port inventory.
+_PORT_DOC = "docs/operations.md"
+#: Where each port is really decided. Deliberately an EXPLICIT table rather than a scan for
+#: "integers that look like ports": a generic scan reports every timeout and byte count in the
+#: repo, and a linter that cries wolf gets switched off (see this module's test file).
+#: Each entry is (source path, regex); every capture group is read as a port.
+_PORT_DECLS: tuple[tuple[str, str], ...] = (
+    ("packages/orchestrator/src/cherrypick/orchestrator/serve.py", r'scfg\.get\("port",\s*(\d+)\)'),
+    (
+        "packages/orchestrator/src/cherrypick/orchestrator/settings_serve.py",
+        r'scfg\.get\("port",\s*(\d+)\)',
+    ),
+    (
+        "packages/meic/src/cherrypick/meic/dashboard.py",
+        r'port_arg or \((\d+) if mode == "paper" else (\d+)\)',
+    ),
+    ("packages/flies/src/cherrypick/flies/dashboard.py", r"DEFAULT_PORT\s*=\s*(\d+)"),
+    ("packages/gex/src/cherrypick/gex/config.py", r'"serve":\s*\{[^}]*?"port":\s*(\d+)'),
+    ("packages/scout/src/cherrypick/scout/config.py", r'"serve":\s*\{[^}]*?"port":\s*(\d+)'),
+    ("packages/console/server/src/config.ts", r'serve\["port"\]\s*:\s*(\d+)'),
+)
+#: The orchestrator's embed ports live in config, not code.
+_PORT_EMBED_CONFIG = "packages/orchestrator/config.example.json"
+#: Ports the table documents that no source declares, each with the reason it cannot. Every entry
+#: carries a reason on purpose -- an allowlist without them is where drift hides.
+_PORT_DOC_ONLY = {
+    "5056": "gex WebSocket push -- derived as serve.port + 1, never declared on its own",
+    "7699": "MEIC's optional REST sidecar -- off by default, no module-level constant",
+    "3306": "Dolt's own default -- an external service the suite only keeps alive",
+}
+#: A port cell in the runbook table: `| 8787 | Suite dashboard ... |`.
+_PORT_ROW = re.compile(r"^\|\s*([\d\s/(+)-]+?)\s*\|", re.M)
+_PORT_NUM = re.compile(r"\d{4}")
+
+
+def _check_ports() -> list[str]:
+    """The runbook's port table says "all loopback-only" and reads as a complete inventory. Hold it.
+
+    The bug: the table said flies' dashboard was 8803 while `dashboard.py` said 5052, and the source
+    comment three lines above that constant agreed with the *table*, so reading the code did not settle
+    it either. Separately the table simply omitted four surfaces (console, scout, settings, the gex
+    WebSocket) while presenting itself as complete -- and `/uninstall` uses it to decide what to stop,
+    so those four kept running after an "uninstall".
+
+    Checks presence in both directions and nothing else. It cannot tell whether the description beside
+    a port is right, and it cannot see a port that only ever arrives as a `--port` argument.
+    """
+    doc = ROOT / _PORT_DOC
+    if not doc.exists():
+        return []  # layout moved; the link rule will say so more usefully
+    declared: dict[str, str] = {}
+    for rel, pattern in _PORT_DECLS:
+        src = ROOT / rel
+        if not src.exists():
+            return [f"{rel}: port source is missing -- the port check cannot run"]
+        found = re.findall(pattern, src.read_text(encoding="utf-8"))
+        flat = [g for match in found for g in (match if isinstance(match, tuple) else (match,))]
+        if not flat:
+            return [f"{rel}: no port matched the declared pattern -- the port check cannot run"]
+        for port in flat:
+            declared[port] = rel
+    embed_cfg = ROOT / _PORT_EMBED_CONFIG
+    if embed_cfg.exists():
+        try:
+            cfg = json.loads(embed_cfg.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            cfg = {}
+        for embed in (cfg.get("dashboard") or {}).get("embeds") or []:
+            if isinstance(embed, dict) and embed.get("port"):
+                declared[str(embed["port"])] = _PORT_EMBED_CONFIG
+
+    documented: set[str] = set()
+    for cell in _PORT_ROW.findall(doc.read_text(encoding="utf-8")):
+        documented.update(_PORT_NUM.findall(cell))
+
+    findings = []
+    for port in sorted(set(declared) - documented):
+        findings.append(
+            f"{_PORT_DOC}: port {port} is declared in {declared[port]} but missing from the port table"
+        )
+    for port in sorted(documented - set(declared) - set(_PORT_DOC_ONLY)):
+        findings.append(
+            f"{_PORT_DOC}: port table lists {port}, which no source declares -- "
+            "fix the row, or allowlist it in _PORT_DOC_ONLY with the reason"
+        )
+    return findings
+
+
+#: The orchestrator's annotated config template, and what counts as a mention of one of its keys.
+_CONFIG_EXAMPLE = "packages/orchestrator/config.example.json"
+
+
+def _json_key_names(obj: object, out: set[str]) -> None:
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            out.add(k)
+            _json_key_names(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _json_key_names(v, out)
+
+
+def _documented_config_keys(obj: object, out: set[str]) -> None:
+    """Leaf key names from the example, minus its self-documentation.
+
+    `_`-prefixed keys are the file's own `_note`/`_comment` prose and `*_header` keys are the section
+    markers `settings --organize` inserts -- both are deliberate structure, not knobs, and `configedit`
+    preserves them on every write.
+    """
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if not k.startswith("_") and not k.endswith("_header"):
+                out.add(k)
+                _documented_config_keys(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _documented_config_keys(v, out)
+
+
+def _check_dead_config_keys(files: list[Path]) -> list[str]:
+    """A key documented in `config.example.json` that nothing anywhere in the suite mentions.
+
+    The bug: `paper.install_argv`/`uninstall_argv` sat in the template under a note claiming
+    install/uninstall retained them to delete the old task by name. Nothing read either one -- legacy
+    deletion goes through `tasks.legacy_task_names`, which reads only `task_name` -- so the file
+    documented a knob that did nothing *and* supplied a false reason for keeping it. The same scan then
+    found `earnings.paper.entry_argv`/`exit_argv`, which `jobspec` ignores because the
+    `cherrypick_scheduled` branch hardcodes the launcher verbs.
+
+    "Mentioned" is deliberately generous: any string literal in any tracked `.py`, or any key in any
+    other tracked `.json`. Keys reach code by routes a narrower scan misses -- `entry_task_name` is read
+    by iterating a tuple of names, never as `.get("entry_task_name")`, and `entry_price_strategy` is a
+    MEIC key that appears only in JSON and prose. Both looked dead to a `.get()`-only scan and are not.
+    Erring toward silence is right here: this rule exists to catch a key with NO reader anywhere, and a
+    false accusation of deadness invites deleting something load-bearing.
+
+    So it checks one direction only. The reverse -- a key the code reads that the example omits -- is
+    not mechanically checkable at useful precision: a scan of every `.get("...")` in the orchestrator
+    returns 317 hits, nearly all of them ordinary dict access with no relationship to config.
+    """
+    target = ROOT / _CONFIG_EXAMPLE
+    if not target.exists():
+        return []
+    try:
+        example = json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [f"{_CONFIG_EXAMPLE}: not valid JSON ({exc.msg}) -- the dead-key check cannot run"]
+    documented: set[str] = set()
+    _documented_config_keys(example, documented)
+
+    mentioned: set[str] = set()
+    for path in files:
+        if path == target or not path.exists():
+            continue
+        if path.suffix == ".py":
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+            except (SyntaxError, ValueError):
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    mentioned.add(node.value)
+        elif path.suffix == ".json":
+            try:
+                _json_key_names(json.loads(path.read_text(encoding="utf-8")), mentioned)
+            except (json.JSONDecodeError, OSError):
+                continue
+
+    return [
+        f"{_CONFIG_EXAMPLE}: documents `{key}`, which nothing in the suite reads -- "
+        "remove it, or the note beside it is promising something that does not happen"
+        for key in sorted(documented - mentioned)
+    ]
+
+
+#: Every index that claims to enumerate the suite's packages.
+_ROSTER_DOCS = ("docs/architecture.md", "docs/README.md", "CLAUDE.md", "README.md")
+
+
+def _check_package_roster() -> list[str]:
+    """A package missing from an index that claims to list them all.
+
+    The bug: the suite grew from seven packages to ten, and four independent indexes each stopped at
+    seven. `packages/console` -- 17,920 lines and the only non-Python package -- appeared in none of
+    them, and `packages/desk`, the one surface that places live orders, appeared in none either, so a
+    reader of the guardrails docs alone would conclude no sanctioned live-order path existed.
+
+    Truth is the filesystem: a directory under `packages/` holding a `CLAUDE.md` is a package. The match
+    is deliberately dumb -- the literal string `packages/<name>` anywhere in the file. It checks that a
+    package is *mentioned*, never that what is said about it is any good.
+    """
+    pkg_root = ROOT / "packages"
+    if not pkg_root.is_dir():
+        return []
+    names = sorted(p.name for p in pkg_root.iterdir() if (p / "CLAUDE.md").is_file())
+    findings = []
+    for rel in _ROSTER_DOCS:
+        doc = ROOT / rel
+        if not doc.exists():
+            continue
+        text = doc.read_text(encoding="utf-8", errors="replace")
+        for name in names:
+            if f"packages/{name}" not in text:
+                findings.append(f"{rel}: does not mention packages/{name}, but it is a package")
     return findings
 
 
@@ -389,7 +606,14 @@ def check(paths: list[Path]) -> list[str]:
 
 
 def main() -> int:
-    findings = check(tracked_files()) + _check_cli_coverage()
+    tracked = tracked_files()
+    findings = (
+        check(tracked)
+        + _check_cli_coverage()
+        + _check_ports()
+        + _check_dead_config_keys(tracked)
+        + _check_package_roster()
+    )
     if not findings:
         print("check_docs: OK")
         return 0

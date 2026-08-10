@@ -148,6 +148,7 @@
       "path": "../earnings",
       "keyring_service": "earningsagent",
       "paper": {
+        "_kind_note": "cherrypick_scheduled: one entry job at entry_time and one exit job at exit_time. Note this kind HARDCODES the launcher verbs (jobspec derives `run-<module>-entry` / `run-<module>-exit`), so there is deliberately no entry_argv/exit_argv here -- a module needing its own argv wants kind `self_healing`, whose tick_argv/once_argv are read. entry_task_name/exit_task_name are the only legacy-schtasks keys still read, for deleting the pre-cutover tasks by name.",
         "kind": "cherrypick_scheduled",
         "entry_task_name": "cherrypick-earnings-paper-entry",
         "exit_task_name": "cherrypick-earnings-paper-exit",
@@ -155,18 +156,6 @@
         "exit_time": "09:45",
         "_entry_sla_note": "OPTIONAL (default 35). Minutes past entry_time before the watchdog treats a missing entry heartbeat as CRITICAL. It is a grace, not a schedule: the entry job fires AT entry_time, its subprocess may run up to the 1800s CLI timeout, and the heartbeat is only written when it RETURNS -- so comparing against entry_time alone raised CRITICAL for a run that was merely still in progress. Raise it if this module's entry scan legitimately runs longer.",
         "entry_sla_grace_minutes": 35,
-        "entry_argv": [
-          "-m",
-          "cherrypick.earnings.strategy_test_runner",
-          "run_entries",
-          "--date",
-          "{today}"
-        ],
-        "exit_argv": [
-          "-m",
-          "cherrypick.earnings.strategy_test_runner",
-          "run_closes"
-        ],
         "log": "earnings_paper.log",
         "paper_db": "~/.cherrypick/data/earnings/paper_trades.db",
         "notify_trades": true,
