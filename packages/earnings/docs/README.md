@@ -50,6 +50,9 @@ The Earnings Agent is a rules-based options trading system that:
 
 ## Documentation Index
 
+The numbers are stable identifiers, not a sequence — 07, 09, 12, and 13 are retired documents and the
+remaining files keep the numbers they were written with, so existing links stay good. Gaps are expected.
+
 ### Getting Started
 - [Installation & Setup](./01-setup.md) — Configure, run tests, connect to the broker and Dolt
 - [Quick Reference](./02-quick-reference.md) — CLI commands, common workflows

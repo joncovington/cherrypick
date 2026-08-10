@@ -14,8 +14,19 @@ Unlike the rest of the suite this package is **Node + TypeScript**, not Python:
 - `run.py` — thin launcher (`python run.py dashboard --serve`) so the serve-dashboard command and the
   orchestrator never need to know about the Node toolchain.
 
-Commands (from this directory): `pnpm install`, `pnpm build`, `pnpm dev:server` + `pnpm dev:web`
-(Vite on :5173 proxying to :5070), `pnpm test`, `pnpm typecheck`.
+## Commands
+
+The one package with a Node toolchain — `pip`/`pytest`/`ruff` do not apply here. From this directory:
+
+```bash
+pnpm install
+pnpm build                        # build shared + server + the SPA
+pnpm dev:server                   # backend on :5070 with reload
+pnpm dev:web                      # Vite on :5173, proxying /api and /ws to :5070
+pnpm test                         # vitest
+pnpm typecheck                    # tsc --noEmit across all three workspaces
+python run.py dashboard --serve   # what the orchestrator and /serve-dashboard invoke
+```
 
 ## Data rules
 
