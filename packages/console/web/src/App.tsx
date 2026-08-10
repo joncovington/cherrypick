@@ -2,6 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import { Shell } from "./components/shell/Shell";
 import { OverviewPage } from "./pages/Overview/OverviewPage";
 import { MeicPage } from "./pages/Meic/MeicPage";
+import { ChampionsPage } from "./pages/Champions/ChampionsPage";
 import { FliesPage } from "./pages/Flies/FliesPage";
 import { EarningsPage } from "./pages/Earnings/EarningsPage";
 import { GexPage } from "./pages/Gex/GexPage";
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="flies" element={<FliesPage />} />
         <Route path="earnings" element={<EarningsPage />} />
         <Route path="gex" element={<GexPage />} />
+        <Route path="champions" element={<ChampionsPage />} />
         <Route path="scout" element={<WatchlistPage />} />
         <Route path="scout/symbol/:symbol" element={<SymbolPage />} />
         <Route path="scout/builder" element={<BuilderPage />} />
