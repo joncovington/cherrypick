@@ -33,12 +33,17 @@ const POLITENESS_MS = 300;
 const RUN_BUDGET_MS = 35 * 60_000;
 export const SNAPSHOT_MAX_SYMBOLS = 250;
 
-// Scheduler: first tick at/after 15:30 ET on a weekday triggers the run.
+// Scheduler: any weekday tick at/after 15:30 ET triggers the day's run if it
+// hasn't happened yet — no closing window, so a console started in the
+// evening still catches up on its own.
 const SCHED_START_MINUTES = 15 * 60 + 30;
-const SCHED_END_MINUTES = 16 * 60;
 
 let lastRunAt = 0;
 let running = false;
+let progressDone = 0;
+let progressTotal = 0;
+let lastResult: { tradeDate: string; captured: number; skipped: number; finishedAt: number } | null = null;
+let schedDoneDate = "";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -102,7 +107,9 @@ async function captureSymbol(
   tradeDate: string,
 ): Promise<string | null> {
   const client = getClient();
-  let spot = cachedQuote(config, symbol)?.last ?? null;
+  // Tight age gate: a strike window centered on a days-old cached price
+  // captures the wrong strikes; prefer the live snapshot / candle fallbacks.
+  let spot = cachedQuote(config, symbol, 900)?.last ?? null;
   if (spot === null) {
     const snap = await market.snapshotQuotes([symbol], 4_000);
     const q = snap.get(symbol);
@@ -219,11 +226,14 @@ export async function runChainSnapshot(
   try {
     const tradeDate = etNow().date;
     const capped = symbols.slice(0, SNAPSHOT_MAX_SYMBOLS);
+    progressDone = 0;
+    progressTotal = capped.length;
     const skipped: Array<{ symbol: string; reason: string }> = [];
     let captured = 0;
     let skippedFresh = 0;
 
     for (const [i, symbol] of capped.entries()) {
+      progressDone = i;
       if (Date.now() - start > RUN_BUDGET_MS) {
         for (const rest of capped.slice(i)) skipped.push({ symbol: rest, reason: "run budget exhausted" });
         break;
@@ -246,6 +256,7 @@ export async function runChainSnapshot(
       await sleep(POLITENESS_MS);
     }
 
+    lastResult = { tradeDate, captured, skipped: skipped.length, finishedAt: Date.now() };
     return { tradeDate, requested: capped.length, captured, skippedFresh, skipped, tookMs: Date.now() - start };
   } finally {
     running = false;
@@ -255,8 +266,15 @@ export async function runChainSnapshot(
 export function chainSnapshotStatus(config: ConsoleConfig): {
   latest: { tradeDate: string; symbols: number } | null;
   running: boolean;
+  progress: { done: number; total: number } | null;
+  lastResult: { tradeDate: string; captured: number; skipped: number; finishedAt: number } | null;
 } {
-  return { latest: chainEodStatus(config), running };
+  return {
+    latest: chainEodStatus(config),
+    running,
+    progress: running ? { done: progressDone, total: progressTotal } : null,
+    lastResult,
+  };
 }
 
 /**
@@ -271,15 +289,16 @@ export function startChainEodScheduler(
   log: (msg: string) => void,
 ): NodeJS.Timeout {
   const timer = setInterval(() => {
-    const { minutes, weekday } = etNow();
-    if (!weekday || minutes < SCHED_START_MINUTES || minutes >= SCHED_END_MINUTES) return;
-    if (running) return;
+    const { date, minutes, weekday } = etNow();
+    if (!weekday || minutes < SCHED_START_MINUTES) return;
+    if (running || schedDoneDate === date) return;
     const universe = snapshotUniverse(config);
     if (universe.length === 0) return;
     void runChainSnapshot(config, market, universe).then((result) => {
       if ("error" in result) {
         if (!result.error.includes("floor")) log(`chain EOD snapshot: ${result.error}`);
       } else {
+        schedDoneDate = date;
         log(
           `chain EOD snapshot ${result.tradeDate}: captured ${result.captured}, fresh ${result.skippedFresh}, skipped ${result.skipped.length} (${Math.round(result.tookMs / 1000)}s)`,
         );

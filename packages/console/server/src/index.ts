@@ -17,6 +17,7 @@ import { registerOrderRoutes } from "./routes/orders.js";
 import { registerScreenerRoutes } from "./routes/screener.js";
 import { registerTtWatchlistRoutes } from "./routes/ttWatchlists.js";
 import { startChainEodScheduler } from "./services/chainEod.js";
+import { startCandleWarmScheduler } from "./services/candleWarm.js";
 
 const config = loadConfig();
 const app = Fastify({ logger: { level: "info" } });
@@ -37,6 +38,10 @@ app.get("/api/health", async () => ({ ok: true }));
 
 // Daily EOD chain snapshot (~15:30 ET weekdays) on the console's own session.
 startChainEodScheduler(config, market, (msg) => app.log.info(msg));
+// Morning candle warm (~09:35 ET weekdays) over the same watchlist universe.
+startCandleWarmScheduler(config, market, (msg) => app.log.info(msg));
+// RTH watchdog for the silently-dying DXLink websocket.
+market.startHeartbeat((msg) => app.log.info(msg));
 
 // Serve the built SPA when present (prod); in dev, Vite serves the frontend.
 const here = path.dirname(fileURLToPath(import.meta.url));

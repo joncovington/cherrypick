@@ -232,6 +232,30 @@ export interface ChainEodStatus {
   running: boolean;
 }
 
+export interface CollectorsPayload {
+  dx: string;
+  etDate: string;
+  candles: {
+    running: boolean;
+    progress: { done: number; total: number } | null;
+    lastResult: { warmed: number; failed: number; finishedAt: number } | null;
+  };
+  chain: {
+    latest: { tradeDate: string; symbols: number } | null;
+    running: boolean;
+    progress: { done: number; total: number } | null;
+    lastResult: { tradeDate: string; captured: number; skipped: number; finishedAt: number } | null;
+  };
+}
+
+export function useCollectors() {
+  return useQuery<CollectorsPayload>({
+    queryKey: ["collectors"],
+    queryFn: () => getJson<CollectorsPayload>("/api/collectors"),
+    refetchInterval: 10_000,
+  });
+}
+
 export function useChainEodStatus() {
   return useQuery<ChainEodStatus>({
     queryKey: ["chain-eod-status"],

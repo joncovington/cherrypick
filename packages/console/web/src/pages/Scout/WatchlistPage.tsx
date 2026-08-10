@@ -6,6 +6,7 @@ import { useWatchlist, useTtWatchlists, mutateJson } from "../../lib/api";
 import { LiveQuoteRow } from "../../components/LiveQuote";
 import { SkeletonRows, sortRows, useSort } from "../../components/DataTable";
 import { TtWatchlistTable, EodCells, WatchlistHeadRow, WATCHLIST_SORT } from "../../components/TtWatchlistTable";
+import { CollectorBanner } from "../../components/CollectorBanner";
 
 export function WatchlistPage() {
   const [search, setSearch] = useSearchParams();
@@ -41,6 +42,8 @@ export function WatchlistPage() {
           </span>
         )}
       </div>
+
+      <CollectorBanner />
 
       <div className="page-title-row" role="tablist" aria-label="watchlists">
         <button
