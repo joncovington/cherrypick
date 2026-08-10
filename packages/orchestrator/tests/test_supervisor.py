@@ -106,6 +106,12 @@ def flies_cfg(tmp_path):
     )
 
 
+def test_launcher_path_resolves_to_a_real_run_py():
+    """The daemon spawns `pythonw <launcher> <verb>` — a wrong parents[] depth makes every run.py
+    verb exit 2 silently (caught live at the 2026-08-09 cutover; the -m module jobs masked it)."""
+    assert supervisor._LAUNCHER.name == "run.py" and supervisor._LAUNCHER.exists()
+
+
 def test_pass_spawns_due_jobs_and_writes_state(spawned):
     sup = supervisor.Supervisor(base_cfg())
     res = sup.pass_once(now=MONDAY_NOON)
