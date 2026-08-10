@@ -39,3 +39,19 @@ export function getClient(): TastytradeClient {
 export function hasCredential(): boolean {
   return loadCredentials() !== null;
 }
+
+/**
+ * Drop the cached client so the next getClient() builds a fresh one — the
+ * recovery path when the DXLink socket dies underneath the SDK (it can go
+ * silent without ever flipping its own state). Old streamer is disconnected
+ * best-effort; REST calls mint their own tokens, so nothing else is lost.
+ */
+export function resetClient(): void {
+  try {
+    (client?.quoteStreamer as { disconnect?: () => void } | undefined)?.disconnect?.();
+  } catch {
+    /* already dead */
+  }
+  client = null;
+  clientScopeKey = "";
+}

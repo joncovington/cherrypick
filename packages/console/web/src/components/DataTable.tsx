@@ -39,6 +39,70 @@ export function asOfLabel(updatedAt: number | undefined): string | null {
   return new Date(updatedAt).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: false });
 }
 
+export type SortDir = "asc" | "desc";
+
+export interface SortState {
+  key: string | null;
+  dir: SortDir;
+  toggle: (key: string) => void;
+}
+
+/** Column-sort state: first click sorts desc (numbers read best big-first), second flips, third clears. */
+export function useSort(): SortState {
+  const [key, setKey] = useState<string | null>(null);
+  const [dir, setDir] = useState<SortDir>("desc");
+  const toggle = (k: string) => {
+    if (key !== k) {
+      setKey(k);
+      setDir("desc");
+    } else if (dir === "desc") {
+      setDir("asc");
+    } else {
+      setKey(null);
+    }
+  };
+  return { key, dir, toggle };
+}
+
+/** Sort rows by the active column's accessor; nulls always sink to the bottom. */
+export function sortRows<T>(
+  rows: T[],
+  sort: SortState,
+  accessors: Record<string, (r: T) => number | string | null>,
+): T[] {
+  if (sort.key === null) return rows;
+  const get = accessors[sort.key];
+  if (get === undefined) return rows;
+  const mul = sort.dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = get(a);
+    const vb = get(b);
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1;
+    if (vb === null) return -1;
+    if (typeof va === "string" || typeof vb === "string") {
+      return mul * String(va).localeCompare(String(vb));
+    }
+    return mul * (va - vb);
+  });
+}
+
+/** Clickable header cell wired to a useSort state; shows ▲/▼ on the active column. */
+export function SortTh({ label, k, sort }: { label: ReactNode; k: string; sort: SortState }) {
+  const active = sort.key === k;
+  return (
+    <th
+      onClick={() => sort.toggle(k)}
+      style={{ cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+      title="sort"
+    >
+      {label}
+      {active ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
+    </th>
+  );
+}
+
 const COLLAPSE_KEY = "cherrypick-console-collapsed-v1";
 
 function readCollapsed(): Record<string, boolean> {
