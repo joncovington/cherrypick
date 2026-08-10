@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { mutateJson } from "../../lib/api";
+import { useSearchParams } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { mutateJson, useBlacklist, useChainEodStatus, useTtWatchlists } from "../../lib/api";
 import { fmtMoney } from "../../components/DataTable";
 
 interface CandidateLeg {
@@ -35,6 +36,18 @@ interface ScreenerResult {
   rows?: ScreenerRow[];
   skipped?: Array<{ symbol: string; reason: string }>;
   ranAt?: string;
+  source?: string;
+  quoteSource?: string;
+  eodTradeDate?: string;
+  error?: string;
+}
+
+interface ChainSnapshotResult {
+  tradeDate?: string;
+  captured?: number;
+  skippedFresh?: number;
+  skipped?: Array<{ symbol: string; reason: string }>;
+  tookMs?: number;
   error?: string;
 }
 
@@ -45,10 +58,22 @@ function legsLabel(legs: CandidateLeg[]): string {
 }
 
 export function ScreenerPage() {
+  const [search] = useSearchParams();
   const [dteMin, setDteMin] = useState("25");
   const [dteMax, setDteMax] = useState("45");
   const [minIvRank, setMinIvRank] = useState("0");
   const [minLiquidity, setMinLiquidity] = useState("0");
+  const [maxSymbols, setMaxSymbols] = useState("60");
+  const [source, setSource] = useState(search.get("source") ?? "local");
+  const [quoteSource, setQuoteSource] = useState<"live" | "eod">("eod");
+  const tt = useTtWatchlists();
+  const eod = useChainEodStatus();
+  const qc = useQueryClient();
+
+  const snapshot = useMutation({
+    mutationFn: () => mutateJson<ChainSnapshotResult>("/api/chain-eod/run", "POST", { source: "all" }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["chain-eod-status"] }),
+  });
 
   const run = useMutation({
     mutationFn: () =>
@@ -57,14 +82,53 @@ export function ScreenerPage() {
         dteMax: Number(dteMax),
         minIvRank: Number(minIvRank),
         minLiquidity: Number(minLiquidity),
+        maxSymbols: Number(maxSymbols),
+        source,
+        quoteSource,
       }),
   });
   const result = run.data;
+
+  const sourceLabel =
+    source === "local" ? "the local watchlist" : (tt.data?.tabs.find((t) => t.key === source)?.name ?? source);
 
   return (
     <div className="page">
       <div className="page-title-row">
         <h1>Screener</h1>
+        <label className="muted lbl">
+          list{" "}
+          <select className="text-input" value={source} onChange={(e) => setSource(e.target.value)}>
+            <option value="local">Local</option>
+            {(tt.data?.tabs ?? []).map((t) => (
+              <option key={t.key} value={t.key}>
+                {t.name} ({t.count})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="muted lbl">
+          quotes{" "}
+          <select
+            className="text-input"
+            value={quoteSource}
+            onChange={(e) => setQuoteSource(e.target.value === "eod" ? "eod" : "live")}
+          >
+            <option value="live">live</option>
+            <option value="eod">
+              EOD chain{eod.data?.latest ? ` (${eod.data.latest.tradeDate})` : " (none)"}
+            </option>
+          </select>
+        </label>
+        <label className="muted lbl">
+          max syms{" "}
+          <input
+            className="text-input num-input"
+            style={{ width: "3.5rem" }}
+            value={maxSymbols}
+            onChange={(e) => setMaxSymbols(e.target.value)}
+          />
+        </label>
         <label className="muted lbl">
           DTE <input className="text-input num-input" style={{ width: "3.5rem" }} value={dteMin} onChange={(e) => setDteMin(e.target.value)} />
           –<input className="text-input num-input" style={{ width: "3.5rem" }} value={dteMax} onChange={(e) => setDteMax(e.target.value)} />
@@ -79,11 +143,28 @@ export function ScreenerPage() {
           {run.isPending ? "screening…" : "Run screener"}
         </button>
         {result?.ranAt && <span className="chip">ran {new Date(result.ranAt).toLocaleTimeString()}</span>}
+        {result?.eodTradeDate !== undefined && <span className="chip">EOD chain {result.eodTradeDate}</span>}
+        <button
+          type="button"
+          className="btn btn-quiet"
+          disabled={snapshot.isPending || eod.data?.running === true}
+          onClick={() => snapshot.mutate()}
+          title="capture today's EOD chain snapshot now (also runs automatically ~15:30 ET)"
+        >
+          {snapshot.isPending || eod.data?.running === true ? "snapshotting…" : "snapshot chains now"}
+        </button>
+        {snapshot.data !== undefined && (
+          <span className="muted">
+            {snapshot.data.error !== undefined
+              ? snapshot.data.error
+              : `captured ${snapshot.data.captured}, fresh ${snapshot.data.skippedFresh}, skipped ${snapshot.data.skipped?.length ?? 0}`}
+          </span>
+        )}
       </div>
 
       <div className="cards cards-wide">
         <section className="card">
-          <h2>Candidates (over the watchlist)</h2>
+          <h2>Candidates (over {sourceLabel})</h2>
           {run.isPending ? (
             <p className="muted">running — one batched metrics call, then chains + quote snapshots per survivor…</p>
           ) : result?.error ? (
@@ -140,7 +221,86 @@ export function ScreenerPage() {
             </p>
           )}
         </section>
+        <BlacklistCard />
       </div>
     </div>
+  );
+}
+
+/** Learned + manual symbol blacklist (e.g. "no weekly options"). */
+function BlacklistCard() {
+  const { data } = useBlacklist();
+  const qc = useQueryClient();
+  const invalidate = () => void qc.invalidateQueries({ queryKey: ["blacklist"] });
+  const [input, setInput] = useState("");
+  const add = useMutation({
+    mutationFn: (symbol: string) => mutateJson("/api/blacklist", "POST", { symbol }),
+    onSuccess: invalidate,
+  });
+  const remove = useMutation({
+    mutationFn: (symbol: string) => mutateJson(`/api/blacklist/${symbol}`, "DELETE"),
+    onSuccess: invalidate,
+  });
+  const rows = data?.rows ?? [];
+  return (
+    <section className="card">
+      <h2>Blacklist</h2>
+      <p className="muted">
+        skipped on every run before any broker call — auto-added when a chain shows no weekly options
+      </p>
+      <form
+        className="add-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const symbol = input.trim().toUpperCase();
+          if (symbol !== "") {
+            add.mutate(symbol);
+            setInput("");
+          }
+        }}
+      >
+        <input
+          className="text-input"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="blacklist symbol…"
+          aria-label="blacklist symbol"
+        />
+        <button type="submit" className="btn" disabled={add.isPending}>
+          add
+        </button>
+      </form>
+      {rows.length === 0 ? (
+        <p className="muted">empty</p>
+      ) : (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>sym</th>
+              <th>reason</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.symbol}>
+                <td>{r.symbol}</td>
+                <td className="muted">{r.reason}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn btn-quiet"
+                    onClick={() => remove.mutate(r.symbol)}
+                    aria-label={`unblacklist ${r.symbol}`}
+                  >
+                    ✕
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }
