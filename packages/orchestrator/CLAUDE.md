@@ -26,10 +26,13 @@ configuration, guardrails).
 # Run the CLI from a source checkout (do NOT create a root cherrypick.py — see Gotchas):
 python run.py <cmd>          # or, if pip-installed: `cherrypick <cmd>` / `python -m cherrypick`
 python run.py doctor         # green/red readiness (read-only)
-python run.py install        # register OS scheduled tasks + start the standalone streamer producer (Windows-only)
-python run.py status         # task registration + last heartbeats
-python run.py watchdog       # one watchdog pass (what the scheduled task runs)
-python run.py preopen-check  # streamer-liveness-only pass on the tight pre-open task (cherrypick-preopen, every 2 min 09:00-09:35 ET) so a producer that died overnight is caught before the unrecoverable 09:30-09:35 opening range
+python run.py install        # register the ONE anchor task (cherrypick-supervisor), start the supervisor daemon + streamer/services, delete legacy per-job tasks; refuses while flies is live-armed today (--force overrides)
+python run.py status         # supervisor job registry + heartbeats (legacy schtasks snapshot on a pre-cutover box)
+python run.py watchdog       # one watchdog pass (the supervisor's 10-minute job runs this)
+python run.py supervise      # run the supervisor daemon loop foreground (--stop asks a running one to exit); the anchor task keeps it alive via ensure-supervisor
+python run.py ensure-supervisor  # the anchor task's probe: restart a dead/stale supervisor; escalate one CRITICAL after 3 failed probes
+python run.py streamer-health    # one streamer-liveness pass (the supervisor's 60s in-session job; whole-session successor to the retired cherrypick-preopen task)
+python run.py preopen-check  # deprecated alias for streamer-health (honors the legacy preopen enable flag)
 python run.py report         # unified cross-module paper P&L (read-only); --eod / --date YYYY-MM-DD scopes to one session; --live reads the live-tagged ledgers (modules' live_db) instead — a separate view that never feeds calibrate/promotion
 python run.py eod-digest     # write logs/eod-digest-<day>.md: one session's cross-module P&L + module paper-eod links
 python run.py notify-eod     # write the digest + push a one-line summary (the watchdog fires this, detached, once every module has settled)
@@ -63,11 +66,19 @@ resolved **relative to the config file's directory** — never hardcode absolute
 `cherrypick.cli:main`.
 
 **Two halves, one config.** Everything hangs off `config.json` (`orchestrator/config.py`):
-- **Write side (the reliability guarantee):** `orchestrator/watchdog.py` runs on a schedule
-  (`orchestrator/tasks.py` → Windows `schtasks`), checks each module's paper pipeline (task registered,
-  data fresh in-session, the standalone streamer producer alive, earnings SLA met), logs findings, and pushes alerts through
-  `notify/notifier.py`. It has a **dedup / re-notify / recovery state machine** (`_process_notifications`
-  in watchdog.py, state in `state/watchdog_state.json`).
+- **Write side (the reliability guarantee):** the **supervisor daemon** (`orchestrator/supervisor.py`,
+  kept alive by the one OS anchor task `cherrypick-supervisor` → `ensure-supervisor` probe) derives
+  every job from config each pass (`orchestrator/jobspec.py` — pure ET/DST-correct schedule math,
+  per-job windows/catchup, unit-tested with fake clocks) and spawns them as the same short-lived
+  headless ticks the OS scheduler used to fire, recording per-job state in
+  `state/supervisor-jobs.json` + its own heartbeat in `state/supervisor.last.json` (atomic writes).
+  `orchestrator/watchdog.py` runs as its 10-minute job, checks each module's paper pipeline (job
+  present, data fresh in-session, the standalone streamer producer alive, earnings SLA met) plus the
+  supervisor/anchor themselves, logs findings, and pushes alerts through `notify/notifier.py`. It has
+  a **dedup / re-notify / recovery state machine** (`_process_notifications` in watchdog.py, state in
+  `state/watchdog_state.json`). The supervisor itself is stdlib + local files only — no broker, no
+  network, no AI — and every registration check dual-reads (schtasks fallback) until the transition
+  window closes.
 - **Read side (look whenever you want):** `report.py` (cross-module paper P&L; `run(session=…)` scopes
   to one settlement day for the daily/EOD views), `calibrate.py` (per-profile promotion advisor),
   `eod_digest.py` (one session's cross-module roll-up → `logs/eod-digest-<day>.md`, citing `report`'s
@@ -200,15 +211,18 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   module's live engine, and never edits a module's code/config files. Account writes are human-confirmed;
   account numbers are masked everywhere (only the write to keyring uses the full number). `reconcile`
   honors the designation — a designated live account is *expected* to hold positions (not drift).
-- **Pre-open supervision is its own task, not a faster watchdog.** `preopen-check`
-  (`watchdog.run_preopen`, task `cherrypick-preopen`) runs the streamer liveness check every 2
-  minutes between 09:00 and 09:35 ET, because the full tick's 10-minute interval plus a 09:15
-  supervision start could first land ~09:25 — minutes before the 09:30–09:35 opening range, which
-  cannot be reconstructed once missed. Shortening the global interval instead would multiply module
-  checks, dashboard renders and EOD triggers all day to cover 35 minutes. It **reuses**
+- **Streamer supervision is its own job, never a faster watchdog.** `streamer-health`
+  (`watchdog.run_streamer_health`, the supervisor's 60s job, 09:00–16:00 ET on trading days) exists
+  because the streamer's failure window is unrecoverable — a producer dead through 09:30–09:35
+  loses the opening range for good, and a restart still needs the 240s settling window — while the
+  full tick's 10-minute cadence is right for everything else it does. The invariant survives the
+  supervisor cutover with the mechanism changed: the answer to "the streamer needs tighter watching"
+  is a tighter cadence on THIS job (a config value now, not a second OS task), never speeding up the
+  full tick and multiplying module checks, dashboard renders and EOD triggers all day. It **reuses**
   `_check_streamer_health` (never a copy — that function carries the silence-restart lesson), writes
   **no heartbeat** (the full tick owns that; a second writer makes "when did the watchdog last run"
-  ambiguous), and gates on `is_trading_day` because `schtasks /SC MINUTE` has no day filter.
+  ambiguous), and stops at the door on a non-trading day. `run_preopen` remains as a deprecated
+  delegating alias for the retired `cherrypick-preopen` windowed task until the transition closes.
 - **The watchdog's only trading-adjacent action is benign, non-trading remediation** (restart a dead or
   silently-stalled **market-data streamer** — the standalone producer, a top-level `streamer` config
   block, session-gated and restarted on *silence* not just death, since the 34-hour stall was a live-but-
@@ -297,8 +311,12 @@ repeated.
   an explicit migrate moves it. The notifier computes the same logs home independently (it stays free of
   a config import on the reliability path). Edit `config.example.json` when a config key should be
   documented for other machines.
-- **Scheduler dispatches by platform.** `orchestrator/tasks.py` uses `schtasks` on Windows and a crontab
-  backend on POSIX (cherrypick lines tagged `# cherrypick:<name>`). The cron logic is pure + unit-tested;
-  cron *execution* on a real POSIX host is still unvalidated. launchd/systemd are future backends.
+- **One anchor task; everything else is the supervisor.** Since 2026-08-09 the OS scheduler holds
+  exactly one cherrypick entry (`cherrypick-supervisor`, every 2 min → `ensure-supervisor`);
+  `orchestrator/tasks.py` (`schtasks` on Windows, tagged crontab lines on POSIX) survives to manage
+  that anchor, to delete legacy per-job tasks by name (`legacy_task_names`), and as the dual-read
+  fallback on a pre-cutover box. Job cadence/schedule questions are config + `jobspec.py` questions
+  now — never a new scheduled task. The cron backend's *execution* on a real POSIX host is still
+  unvalidated.
 - **Commit messages: no AI / co-author attribution or AI signatures** (a suite-wide rule). Write docs
   and PRs from a human developer's perspective.

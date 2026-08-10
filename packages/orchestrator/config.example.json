@@ -19,6 +19,8 @@
       "paper": {
         "kind": "self_healing",
         "task_name": "cherrypick-meic-paper-loop",
+        "_tick_interval_note": "Supervisor cadence for the paper tick (spawns once_argv sans --force every N seconds). 60 halves the old hardcoded 2-minute schtasks cadence (2026-08-09 supervisor cutover) for tighter exit management on open condors. task_name/install_argv/uninstall_argv are the legacy schtasks path -- still used by the module standalone, retained here so install/uninstall can delete the old task by name.",
+        "tick_interval_seconds": 60,
         "install_argv": [
           "-m",
           "cherrypick.meic.paper_loop",
@@ -114,7 +116,9 @@
         "_kind_note": "self_healing, NOT cherrypick_scheduled. This was cherrypick_scheduled, which registers one entry task at entry_time and one exit task at exit_time \u2014 a shape that fits Earnings (one entry, one exit per day) and is wrong for a legged 0DTE strategy. A single daily entry would open a credit spread at noon and never look at it again, so the completing spread could never be bought and the completion rate \u2014 the module's headline measurement \u2014 would read 0% every day for reasons that have nothing to do with the market. cherrypick_scheduled also hardcodes the earnings launcher verbs, so this module's own entry_argv would have been ignored entirely.",
         "kind": "self_healing",
         "task_name": "cherrypick-flies-paper-loop",
-        "_timing_note": "The module registers its own recurring task (every 1 min \u2014 the scheduler floor; the completing spread can cheapen transiently between ticks, and paper_loop.py explains why the cadence is load-bearing) and `--once` carries all the session logic: out of RTH it is a clean no-op, after the settle time it settles the day and writes the EOD reports exactly once. One task, so there is no second schedule to drift out of sync with the first.",
+        "_timing_note": "tick_interval_seconds is the supervisor cadence. Sub-minute (<60) runs the module's own resident `--interval N` loop IN-SESSION (09:30-16:00 ET, supervised: restarted on death and on silence_seconds of log silence) plus a 60s `--once` spawn job OUTSIDE the session, so settlement at 16:20, retry-until-settled, and the hourly idle heartbeat keep exactly the shape the 1-minute task gave them. 15s (2026-08-09 supervisor cutover, was 60 -- the OS scheduler's floor) samples transient completion-debit dips ~4x finer; the completion rate is NOT comparable across that date (any discrete poll understates what a resting limit order would catch, so faster polling measures a truer, higher rate). The change is journaled in the module's decision journal and its CLAUDE.md. task_name/install_argv/uninstall_argv are the legacy schtasks path, retained for deletion by name.",
+        "tick_interval_seconds": 15,
+        "silence_seconds": 120,
         "install_argv": [
           "-m",
           "cherrypick.flies.paper_loop",
@@ -206,7 +210,14 @@
     "task_name": "cherrypick-watchdog",
     "interval_minutes": 10,
     "renotify_minutes": 60,
-    "_preopen_note": "Pre-open supervision: a STREAMER-ONLY liveness check on a tight interval inside a short window (09:00-09:35 ET), registered as its own task (cherrypick-preopen). The full tick above runs every 10 minutes and streamer supervision starts at 09:15, so the first supervising tick of the day can land ~09:25 -- minutes before the 09:30-09:35 opening range, which cannot be reconstructed once missed, and a restart still needs the 240s settling window before quotes are trustworthy. A separate task rather than a shorter global interval: dropping the full tick to every 2 minutes would multiply module checks, dashboard renders and EOD triggers all day to fix 35 minutes. ON by default -- the window it protects is unrecoverable, so opting in would put the protection behind a step nobody takes until it has already cost a session. start/end are ET wall-clock (install converts to the host's local time); the window must stay inside one hour.",
+    "_streamer_health_note": "The dedicated STREAMER-ONLY liveness job: every interval_seconds across the whole session (start-end, ET, trading days), as its own supervisor job so the full 10-minute tick above never has to speed up to protect the streamer. Successor to the retired cherrypick-preopen windowed task (whose reasons all survive: a producer dead overnight must be caught before the unrecoverable 09:30-09:35 opening range, and a restart still needs the 240s settling window) with strictly broader coverage -- silence is now caught within ~5 min all session, not just pre-open. ON by default for the same reason preopen was.",
+    "streamer_health": {
+      "enabled": true,
+      "interval_seconds": 60,
+      "start": "09:00",
+      "end": "16:00"
+    },
+    "_preopen_note": "RETIRED (2026-08-09, supervisor cutover) -- replaced by streamer_health above. The block remains only so install/uninstall can delete the legacy cherrypick-preopen task by its resolved name; remove it once every machine has cut over.",
     "preopen": {
       "enabled": true,
       "task_name": "cherrypick-preopen",
@@ -437,9 +448,9 @@
   ],
   "notify_header": "x",
   "trade_notify": {
-    "_comment": "Dedicated low-latency task that pushes new paper entries/exits to trade_channels. Runs far more often than the watchdog so fills reach you within ~interval_minutes instead of a full watchdog cycle.",
+    "_comment": "Dedicated low-latency supervisor job that pushes new paper entries/exits to trade_channels. Runs far more often than the watchdog so fills reach you within ~30s instead of a full watchdog cycle. interval_seconds is the supervisor cadence (sub-minute became possible when the OS scheduler's 1-minute floor went away, 2026-08-09); a legacy interval_minutes is still honored if set explicitly. task_name is retained only so install/uninstall can delete the pre-supervisor task by name.",
     "task_name": "cherrypick-trade-notify",
-    "interval_minutes": 2
+    "interval_seconds": 30
   },
   "follow_feed": {
     "_comment": "Push tastylive Follow Feed orders (other traders' fills, as shown on the platform's Follow page) to their own Discord channel. Reads two undocumented public GETs on https://follow.tastylive.com - no auth, no broker, read-only. UNLIKE every other notifier this one makes a NETWORK call, so it is its own scheduled task and is never called from the watchdog tick (the reliability path stays stdlib + OS shell only). A feed outage degrades to 'no notifications', never a failed tick. OFF by default; set enabled=true, store the webhook (cherrypick secrets-set --channel discord_follow), then re-run `install`.",
