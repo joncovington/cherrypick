@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { TtWatchlistRow } from "@console/shared";
 import { useWatchlist, useTtWatchlists, mutateJson } from "../../lib/api";
 import { LiveQuoteRow } from "../../components/LiveQuote";
 import { SkeletonRows } from "../../components/DataTable";
-import { TtWatchlistTable } from "../../components/TtWatchlistTable";
+import { TtWatchlistTable, EodCells } from "../../components/TtWatchlistTable";
 
 export function WatchlistPage() {
   const [search, setSearch] = useSearchParams();
@@ -148,53 +149,63 @@ function LocalWatchlistCard() {
               add
             </button>
           </form>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>sym</th>
-                <th>last</th>
-                <th>bid</th>
-                <th>ask</th>
-                <th></th>
-                <th></th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <SkeletonRows n={6} cols={7} />
-              ) : data?.symbols.length === 0 ? (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan={7} className="muted">
-                    empty — add a symbol or import from scout
-                  </td>
+                  <th>sym</th>
+                  <th>last</th>
+                  <th>bid</th>
+                  <th>ask</th>
+                  <th></th>
+                  <th>chg%</th>
+                  <th>IVR</th>
+                  <th>IV%</th>
+                  <th>vol</th>
+                  <th>mkt cap</th>
+                  <th>1y high</th>
+                  <th>1y low</th>
+                  <th></th>
+                  <th></th>
                 </tr>
-              ) : (
-                data?.symbols.map((s) => (
-                  <WatchRow key={s} symbol={s} onRemove={() => remove.mutate(s)} />
-                ))
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <SkeletonRows n={6} cols={14} />
+                ) : data?.symbols.length === 0 ? (
+                  <tr>
+                    <td colSpan={14} className="muted">
+                      empty — add a symbol or import from scout
+                    </td>
+                  </tr>
+                ) : (
+                  (data?.rows ?? []).map((r) => (
+                    <WatchRow key={r.symbol} row={r} onRemove={() => remove.mutate(r.symbol)} />
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
       </section>
     </div>
   );
 }
 
-function WatchRow({ symbol, onRemove }: { symbol: string; onRemove: () => void }) {
+function WatchRow({ row, onRemove }: { row: TtWatchlistRow; onRemove: () => void }) {
   return (
     <LiveQuoteRow
-      symbol={symbol}
-      symbolTo={`/scout/builder?symbol=${symbol}`}
+      symbol={row.symbol}
+      symbolTo={`/scout/builder?symbol=${encodeURIComponent(row.symbol)}`}
       trailing={
         <>
+          <EodCells r={row} />
           <td>
-            <Link to={`/scout/symbol/${symbol}`} className="link">
-              chart
-            </Link>
-          </td>
-          <td>
-            <button type="button" className="btn btn-quiet" onClick={onRemove} aria-label={`remove ${symbol}`}>
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={onRemove}
+              aria-label={`remove ${row.symbol}`}
+            >
               ✕
             </button>
           </td>
