@@ -13,6 +13,13 @@ import type { MarketDataService } from "../market/marketData.js";
 import type { ConsoleConfig } from "../config.js";
 import { cachedQuote } from "../readers/streamcache.js";
 import {
+  addToBlacklist,
+  getBlacklistReason,
+  chainEodMeta,
+  chainEodStatus,
+  readChainEod,
+} from "../store/consoleDb.js";
+import {
   type ChainOption,
   type Candidate,
   putCreditSpread,
@@ -35,6 +42,9 @@ export interface ScreenerParams {
   wingWidthPct: number;
   minIvRank: number; // 0..100 scale, UI-side convention
   minLiquidity: number; // 0..4
+  maxSymbols: number; // survivors cap after the metrics prefilter
+  /** "live" fetches chains+quotes per survivor; "eod" reads the last daily chain snapshot. */
+  quoteSource: "live" | "eod";
 }
 
 export interface ScreenerRow {
@@ -51,6 +61,10 @@ export interface ScreenerResult {
   rows: ScreenerRow[];
   skipped: Array<{ symbol: string; reason: string }>;
   ranAt: string;
+  source: string;
+  quoteSource: "live" | "eod";
+  /** Set in eod mode: the snapshot trade date the scan read from. */
+  eodTradeDate?: string;
 }
 
 let lastRunAt = 0;
@@ -64,12 +78,12 @@ function num(v: unknown): number | null {
   return null;
 }
 
-function isMonthly(expIso: string): boolean {
+export function isMonthly(expIso: string): boolean {
   const d = new Date(expIso + "T00:00:00Z");
   return d.getUTCDay() === 5 && d.getUTCDate() >= 15 && d.getUTCDate() <= 21;
 }
 
-interface NestedStrike {
+export interface NestedStrike {
   strike: number;
   callStreamer: string | null;
   putStreamer: string | null;
@@ -77,8 +91,16 @@ interface NestedStrike {
   putOcc: string | null;
 }
 
-function parseNestedChain(raw: unknown): Map<string, NestedStrike[]> {
+export interface ParsedChain {
+  chains: Map<string, NestedStrike[]>;
+  /** true/false when the API stated expiration types; null when it didn't. */
+  hasWeeklies: boolean | null;
+}
+
+export function parseNestedChain(raw: unknown): ParsedChain {
   const out = new Map<string, NestedStrike[]>();
+  let sawType = false;
+  let sawWeekly = false;
   // The SDK returns the items array directly; older shapes nest under data.items.
   let items: Array<Record<string, unknown>>;
   if (Array.isArray(raw)) {
@@ -95,6 +117,11 @@ function parseNestedChain(raw: unknown): Map<string, NestedStrike[]> {
       const iso = typeof exp["expiration-date"] === "string" ? exp["expiration-date"] : null;
       const strikes = exp["strikes"] as Array<Record<string, unknown>> | undefined;
       if (iso === null || !Array.isArray(strikes)) continue;
+      const expType = exp["expiration-type"];
+      if (typeof expType === "string" && expType !== "") {
+        sawType = true;
+        if (/weekly/i.test(expType)) sawWeekly = true;
+      }
       out.set(
         iso,
         strikes
@@ -109,7 +136,7 @@ function parseNestedChain(raw: unknown): Map<string, NestedStrike[]> {
       );
     }
   }
-  return out;
+  return { chains: out, hasWeeklies: sawType ? sawWeekly : null };
 }
 
 function pickExpiration(
@@ -138,6 +165,7 @@ export async function runScreener(
   market: MarketDataService,
   symbols: string[],
   params: ScreenerParams,
+  source = "local",
 ): Promise<ScreenerResult | { error: string }> {
   const now = Date.now();
   if (now - lastRunAt < RUN_FLOOR_MS) {
@@ -154,15 +182,38 @@ export async function runScreener(
   // One batched metrics call for the entire list.
   let metricsBySymbol = new Map<string, Record<string, unknown>>();
   try {
-    const raw = (await client.marketMetricsService.getMarketMetrics({ symbols: symbols.join(",") })) as Record<string, unknown>;
-    const data = (raw?.["data"] ?? raw) as Record<string, unknown>;
-    const items = (data?.["items"] ?? []) as Array<Record<string, unknown>>;
+    // The SDK's extractResponseData returns the items array directly; the
+    // {data:{items}} fallback covers older shapes.
+    const raw: unknown = await client.marketMetricsService.getMarketMetrics({ symbols: symbols.join(",") });
+    let items: Array<Record<string, unknown>>;
+    if (Array.isArray(raw)) {
+      items = raw as Array<Record<string, unknown>>;
+    } else {
+      const root = raw as Record<string, unknown>;
+      const data = (root?.["data"] ?? root) as Record<string, unknown>;
+      items = (data?.["items"] ?? []) as Array<Record<string, unknown>>;
+    }
     metricsBySymbol = new Map(items.map((m) => [String(m["symbol"]), m]));
   } catch (err) {
     return { error: `market metrics failed: ${(err as Error).message}` };
   }
 
+  // Zero-broker-call prefilter over the whole list, then a survivors cap
+  // (IV rank desc, nulls last) so large tastytrade lists cut hard before any
+  // chain fetch.
+  interface Prefiltered {
+    symbol: string;
+    ivRankFrac: number | null;
+    liquidity: number | null;
+    iv: number;
+  }
+  const prefiltered: Prefiltered[] = [];
   for (const symbol of symbols) {
+    const blacklisted = getBlacklistReason(config, symbol);
+    if (blacklisted !== null) {
+      skipped.push({ symbol, reason: `blacklisted: ${blacklisted}` });
+      continue;
+    }
     const m = metricsBySymbol.get(symbol);
     const ivRankFrac = num(m?.["implied-volatility-index-rank"]);
     const liquidity = num(m?.["liquidity-rating"]);
@@ -176,52 +227,117 @@ export async function runScreener(
       skipped.push({ symbol, reason: `liquidity ${liquidity} < ${params.minLiquidity}` });
       continue;
     }
+    prefiltered.push({ symbol, ivRankFrac, liquidity, iv });
+  }
+  prefiltered.sort((a, b) => (b.ivRankFrac ?? -1) - (a.ivRankFrac ?? -1));
+  for (const cut of prefiltered.slice(params.maxSymbols)) {
+    skipped.push({ symbol: cut.symbol, reason: `over maxSymbols cap (${params.maxSymbols})` });
+  }
+  const survivors = prefiltered.slice(0, params.maxSymbols);
 
-    // Spot: stream cache first; DXLink snapshot only if missing.
-    let spot = cachedQuote(config, symbol)?.last ?? null;
-    if (spot === null) {
-      const snap = await market.snapshotQuotes([symbol], 4_000);
-      const q = snap.get(symbol);
-      spot = q?.last ?? (q?.bid !== undefined && q?.ask !== undefined ? (q.bid + q.ask) / 2 : null);
-    }
-    if (spot === null) {
-      skipped.push({ symbol, reason: "no spot price" });
-      continue;
-    }
+  // EOD mode reads the last daily chain snapshot instead of fetching.
+  const eodDate = params.quoteSource === "eod" ? (chainEodStatus(config)?.tradeDate ?? null) : null;
+  if (params.quoteSource === "eod" && eodDate === null) {
+    return { error: "no EOD chain snapshot on file — run one from the screener page first" };
+  }
 
-    await sleep(POLITENESS_MS);
-    let picked: { expiration: string; dte: number; strikes: NestedStrike[] } | null;
-    try {
-      const chainRaw: unknown = await client.instrumentsService.getNestedOptionChain(symbol);
-      picked = pickExpiration(parseNestedChain(chainRaw), params.dteMin, params.dteMax);
-    } catch (err) {
-      skipped.push({ symbol, reason: `chain fetch failed: ${(err as Error).message}` });
-      continue;
-    }
-    if (picked === null) {
-      skipped.push({ symbol, reason: `no expiration in ${params.dteMin}-${params.dteMax} DTE` });
-      continue;
-    }
+  for (const { symbol, ivRankFrac, liquidity, iv } of survivors) {
+    let spot: number | null;
+    let picked: { expiration: string; dte: number } | null;
+    let options: ChainOption[];
 
-    // Window ±STRIKE_WINDOW strikes around spot, snapshot their quotes once.
-    const windowed = [...picked.strikes]
-      .sort((a, b) => Math.abs(a.strike - spot!) - Math.abs(b.strike - spot!))
-      .slice(0, STRIKE_WINDOW * 2)
-      .sort((a, b) => a.strike - b.strike);
-    const streamerSymbols = windowed.flatMap((s) =>
-      [s.callStreamer, s.putStreamer].filter((x): x is string => x !== null),
-    );
-    const quotes = await market.snapshotQuotes(streamerSymbols, 6_000);
-    const midOf = (sym: string | null): number | null => {
-      if (sym === null) return null;
-      const q = quotes.get(sym);
-      if (q?.bid === undefined || q.ask === undefined) return null;
-      return (q.bid + q.ask) / 2;
-    };
-    const options: ChainOption[] = windowed.flatMap((s) => [
-      { strike: s.strike, optionType: "C" as const, mid: midOf(s.callStreamer), occSymbol: s.callOcc },
-      { strike: s.strike, optionType: "P" as const, mid: midOf(s.putStreamer), occSymbol: s.putOcc },
-    ]);
+    if (eodDate !== null) {
+      const meta = chainEodMeta(config, eodDate, symbol);
+      if (meta === null) {
+        skipped.push({ symbol, reason: `no EOD chain snapshot for ${eodDate}` });
+        continue;
+      }
+      spot = meta.spot;
+      const stored = readChainEod(config, eodDate, symbol);
+      const today = Date.now();
+      const byExp = new Map<string, typeof stored>();
+      for (const r of stored) {
+        const list = byExp.get(r.expiration) ?? [];
+        list.push(r);
+        byExp.set(r.expiration, list);
+      }
+      const midTarget = (params.dteMin + params.dteMax) / 2;
+      let best: { expiration: string; dte: number } | null = null;
+      for (const expiration of byExp.keys()) {
+        const dte = Math.round((Date.parse(expiration) - today) / 86_400_000);
+        if (dte < params.dteMin || dte > params.dteMax) continue;
+        if (best === null || Math.abs(dte - midTarget) < Math.abs(best.dte - midTarget)) {
+          best = { expiration, dte };
+        }
+      }
+      if (best === null) {
+        skipped.push({ symbol, reason: `snapshot has no expiration in ${params.dteMin}-${params.dteMax} DTE` });
+        continue;
+      }
+      picked = best;
+      options = (byExp.get(best.expiration) ?? []).map((r) => ({
+        strike: r.strike,
+        optionType: r.otype,
+        mid: r.mid,
+        occSymbol: null,
+      }));
+    } else {
+      // Spot: stream cache first; DXLink snapshot only if missing.
+      spot = cachedQuote(config, symbol)?.last ?? null;
+      if (spot === null) {
+        const snap = await market.snapshotQuotes([symbol], 4_000);
+        const q = snap.get(symbol);
+        spot = q?.last ?? (q?.bid !== undefined && q?.ask !== undefined ? (q.bid + q.ask) / 2 : null);
+      }
+      if (spot === null) {
+        skipped.push({ symbol, reason: "no spot price" });
+        continue;
+      }
+
+      await sleep(POLITENESS_MS);
+      let pickedLive: { expiration: string; dte: number; strikes: NestedStrike[] } | null;
+      try {
+        const chainRaw: unknown = await client.instrumentsService.getNestedOptionChain(symbol);
+        const parsed = parseNestedChain(chainRaw);
+        // Learned blacklist: the API stated its expiration types and none were
+        // weekly — remember that so future runs skip the symbol before any
+        // broker call. User-clearable via the blacklist endpoint.
+        if (parsed.hasWeeklies === false) {
+          addToBlacklist(config, symbol, "no weekly options");
+          skipped.push({ symbol, reason: "no weekly options (blacklisted for future runs)" });
+          continue;
+        }
+        pickedLive = pickExpiration(parsed.chains, params.dteMin, params.dteMax);
+      } catch (err) {
+        skipped.push({ symbol, reason: `chain fetch failed: ${(err as Error).message}` });
+        continue;
+      }
+      if (pickedLive === null) {
+        skipped.push({ symbol, reason: `no expiration in ${params.dteMin}-${params.dteMax} DTE` });
+        continue;
+      }
+      picked = { expiration: pickedLive.expiration, dte: pickedLive.dte };
+
+      // Window ±STRIKE_WINDOW strikes around spot, snapshot their quotes once.
+      const windowed = [...pickedLive.strikes]
+        .sort((a, b) => Math.abs(a.strike - spot!) - Math.abs(b.strike - spot!))
+        .slice(0, STRIKE_WINDOW * 2)
+        .sort((a, b) => a.strike - b.strike);
+      const streamerSymbols = windowed.flatMap((s) =>
+        [s.callStreamer, s.putStreamer].filter((x): x is string => x !== null),
+      );
+      const quotes = await market.snapshotQuotes(streamerSymbols, 6_000);
+      const midOf = (sym: string | null): number | null => {
+        if (sym === null) return null;
+        const q = quotes.get(sym);
+        if (q?.bid === undefined || q.ask === undefined) return null;
+        return (q.bid + q.ask) / 2;
+      };
+      options = windowed.flatMap((s) => [
+        { strike: s.strike, optionType: "C" as const, mid: midOf(s.callStreamer), occSymbol: s.callOcc },
+        { strike: s.strike, optionType: "P" as const, mid: midOf(s.putStreamer), occSymbol: s.putOcc },
+      ]);
+    }
 
     const t = picked.dte / 365;
     const expectedMove = spot * iv * Math.sqrt(t);
@@ -259,9 +375,16 @@ export async function runScreener(
         candidate: { ...candidate, pop: popVal, returnOnRisk: ror, score },
       });
     }
-    await sleep(POLITENESS_MS);
+    if (eodDate === null) await sleep(POLITENESS_MS);
   }
 
   rows.sort((a, b) => (b.candidate.score ?? -1) - (a.candidate.score ?? -1));
-  return { rows, skipped, ranAt: new Date().toISOString() };
+  return {
+    rows,
+    skipped,
+    ranAt: new Date().toISOString(),
+    source,
+    quoteSource: params.quoteSource,
+    ...(eodDate !== null ? { eodTradeDate: eodDate } : {}),
+  };
 }

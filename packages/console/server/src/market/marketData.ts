@@ -152,6 +152,53 @@ export class MarketDataService extends EventEmitter {
   }
 
   /**
+   * Bounded quote+greeks snapshot for option symbols — the EOD chain
+   * snapshot's data source. quoteStreamer.subscribe already covers Greeks
+   * events, so this listens on the raw feed for Quote (bid/ask) and Greeks
+   * (volatility/delta) per symbol until both arrived or the timeout lapses.
+   */
+  async snapshotOptionData(
+    symbols: string[],
+    timeoutMs = 8_000,
+  ): Promise<Map<string, { bid?: number; ask?: number; iv?: number; delta?: number }>> {
+    const out = new Map<string, { bid?: number; ask?: number; iv?: number; delta?: number }>();
+    if (symbols.length === 0) return out;
+    const wanted = new Set(symbols);
+    const pending = new Set(symbols);
+    const listener = (e: Record<string, unknown>): void => {
+      const symbol = typeof e["eventSymbol"] === "string" ? e["eventSymbol"] : null;
+      if (symbol === null || !wanted.has(symbol)) return;
+      const n = (k: string): number | undefined => {
+        const v = e[k];
+        return typeof v === "number" && Number.isFinite(v) && v !== 0x7fffffff ? v : undefined;
+      };
+      const cur = out.get(symbol) ?? {};
+      const bid = n("bidPrice");
+      const ask = n("askPrice");
+      const iv = n("volatility");
+      const delta = n("delta");
+      if (bid !== undefined) cur.bid = bid;
+      if (ask !== undefined) cur.ask = ask;
+      if (iv !== undefined) cur.iv = iv;
+      if (delta !== undefined) cur.delta = delta;
+      out.set(symbol, cur);
+      if (cur.bid !== undefined && cur.ask !== undefined && cur.iv !== undefined) pending.delete(symbol);
+    };
+    this.on("feed", listener);
+    for (const s of symbols) this.subscribe(s);
+    try {
+      const start = Date.now();
+      while (pending.size > 0 && Date.now() - start < timeoutMs) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    } finally {
+      this.off("feed", listener);
+      for (const s of symbols) this.unsubscribe(s);
+    }
+    return out;
+  }
+
+  /**
    * Bounded daily-candle backfill via DXLink candle subscription — the
    * console's own chart-history source when scout's cache lacks a symbol.
    * Chart history only; never informs a decision. Collects until the feed
