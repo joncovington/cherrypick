@@ -7,16 +7,24 @@ whenever something stalls. Never touches live trading; never sits on a module's 
 
 Subcommands:
   init                 Scaffold + validate config.json (first-run onboarding); --force to overwrite.
-  install              Register all scheduled tasks (MEIC paper, earnings entry/exit, watchdog,
-                       fast trade-notify) and start the streamer if it is down.
-  uninstall            Remove cherrypick-managed scheduled tasks.
-  status               Show task registration, last watchdog heartbeat, and last earnings run.
+  install              Register the ONE OS anchor task (cherrypick-supervisor), start the supervisor
+                       daemon (which derives and fires every job from config), delete legacy per-job
+                       tasks, and start the streamer/services if down. Refuses while flies is
+                       live-armed for today (--force overrides).
+  uninstall            Anchor task off first, then stop the supervisor, remove legacy tasks, and
+                       stop managed services.
+  status               Show the supervisor job registry + heartbeats (falls back to the legacy
+                       schtasks snapshot on a pre-cutover box).
   doctor               One green/red readiness check (read-only). --fast skips the authenticated
                        broker round-trip (local/offline checks only).
-  watchdog             Run one watchdog pass (this is what the scheduled task invokes).
-  preopen-check        Streamer-only liveness check on a tight pre-open interval (own task,
-                       09:00-09:35 ET) so a producer that died overnight is caught before the
-                       unrecoverable 09:30-09:35 opening-range window.
+  watchdog             Run one watchdog pass (the supervisor's 10-minute job invokes this).
+  supervise            Run the supervisor daemon loop in the foreground (--stop asks a running
+                       daemon to exit). The anchor task keeps it alive via ensure-supervisor.
+  ensure-supervisor    The anchor task's probe: restart the supervisor if its heartbeat is stale;
+                       escalate one CRITICAL after 3 consecutive failed probes.
+  streamer-health      One streamer-liveness pass (the supervisor's 60s in-session job) — the
+                       whole-session replacement for the retired pre-open task.
+  preopen-check        Deprecated alias for streamer-health (honors the legacy preopen flag).
   report               Unified cross-module paper P&L (read-only): totals + per-profile breakdown.
                        --eod (today ET) or --date YYYY-MM-DD restricts to one session; default all-time.
                        --live reads the live-tagged ledgers (modules' live_db) instead — a separate
@@ -150,149 +158,64 @@ def _ensure_module_checkout(name: str, mcfg: dict) -> dict:
     return {"ok": True, "detail": f"cloned to {root}"}
 
 
-def cmd_install(cfg) -> None:
+def cmd_install(cfg, force: bool = False) -> None:
+    """Install = ONE anchor task + the supervisor daemon. The supervisor derives every job
+    (watchdog, notifiers, module loops, dailies) from config each pass, so nothing else needs
+    registering — and every legacy per-job task is unconditionally deleted (the eod-digest deletion
+    pattern) so the two mechanisms can never double-fire."""
+    from cherrypick.orchestrator import supersnap, supervisor
+
     results = {}
     pyw = cfgmod.pythonw_exe()
     modules = cfgmod.enabled_modules(cfg)
-    # Daily task times (entry/exit/digest) are expressed in the market timezone but the OS scheduler
-    # fires on local time — convert so e.g. 15:45 ET registers correctly on a non-ET host.
-    tz = cfg.get("timezone", "America/New_York")
+
+    # Refuse to cut over while flies is live-armed for today: deleting the legacy live task
+    # mid-armed-day must never silently disarm real orders. --force overrides deliberately.
+    today = timeutil.now_et(cfg.get("timezone", "America/New_York")).date().isoformat()
+    for name, mcfg in modules.items():
+        if not mcfg.get("live"):
+            continue
+        rec = supervisor.read_arm_records(cfg).get(name)
+        if rec and str(rec.get("date")) == today and not force:
+            _emit(
+                {
+                    "ok": False,
+                    "error": f"{name} is LIVE-ARMED for today ({supervisor.arm_record_path(name)}). "
+                    "Install would delete its legacy task mid-day. Disarm first "
+                    "(python -m cherrypick.flies.live_loop --uninstall-task) or re-run with --force.",
+                }
+            )
+            sys.exit(1)
 
     for name, mcfg in modules.items():
-        # Materialize the module checkout first; skip task registration if it isn't on disk.
+        # Materialize the module checkout; the supervisor spawns its ticks from this path.
         chk = _ensure_module_checkout(name, mcfg)
         results[f"{name}.checkout"] = chk
         if not chk.get("ok"):
             continue
         root = cfgmod.module_root(mcfg, name)
-        paper = mcfg.get("paper", {})
-        kind = paper.get("kind")
+        # per-module streamer (the disabled rollback path) still starts like any daemon
+        streamer = mcfg.get("streamer", {})
+        if streamer.get("enabled"):
+            results[f"{name}.streamer"] = _ensure_daemon(root, streamer, f"{name}.streamer")
 
-        if kind == "self_healing":
-            # MEIC manages its own self-healing task; just invoke its installer in place.
-            r = subprocess.run(
-                [cfgmod.python_exe(), *paper["install_argv"]],
-                cwd=str(root),
-                capture_output=True,
-                text=True,
-                creationflags=CREATE_NO_WINDOW,
-            )
-            results[f"{name}.paper_task"] = {
-                "ok": r.returncode == 0,
-                "detail": (r.stdout or r.stderr).strip(),
-            }
-            # the module registers its own task; clear its battery guards too (laptop durability)
-            if r.returncode == 0 and paper.get("task_name"):
-                tasks.allow_on_battery(paper["task_name"])
-            # start streamer if down
-            streamer = mcfg.get("streamer", {})
-            if streamer.get("enabled"):
-                results[f"{name}.streamer"] = _ensure_daemon(root, streamer, f"{name}.streamer")
+    # The one remaining OS task: a 2-minute keep-alive probe that (re)starts the supervisor.
+    # The OS guarantees the probe; the probe guarantees the daemon; the daemon fires everything.
+    anchor_tr = tasks.build_tr(pyw, str(_LAUNCHER), "ensure-supervisor")
+    results["anchor_task"] = tasks.create_minute_task(supersnap.ANCHOR_TASK, anchor_tr, 2, run_now=False)
 
-        elif kind == "cherrypick_scheduled":
-            # cherrypick owns the earnings schedule (the module has none).
-            entry_tr = tasks.build_tr(pyw, str(_LAUNCHER), "run-earnings-entry")
-            exit_tr = tasks.build_tr(pyw, str(_LAUNCHER), "run-earnings-exit")
-            results[f"{name}.entry_task"] = tasks.create_daily_task(
-                paper["entry_task_name"], entry_tr, timeutil.to_local_hhmm(paper["entry_time"], tz)
-            )
-            results[f"{name}.exit_task"] = tasks.create_daily_task(
-                paper["exit_task_name"], exit_tr, timeutil.to_local_hhmm(paper["exit_time"], tz)
-            )
-
-        # optional cherrypick-managed Dolt keep-alive (portable, idempotent; run_now starts it now)
-        svc = paper.get("dolt_service")
-        if svc and svc.get("task_name"):
-            svc_tr = tasks.build_tr(pyw, str(_LAUNCHER), "ensure-dolt")
-            results[f"{name}.dolt_service"] = tasks.create_minute_task(
-                svc["task_name"], svc_tr, svc.get("interval_minutes", 5)
-            )
-
-    # watchdog task
-    wd = cfg.get("watchdog", {})
-    if wd.get("task_name"):
-        wd_tr = tasks.build_tr(pyw, str(_LAUNCHER), "watchdog")
-        results["watchdog_task"] = tasks.create_minute_task(
-            wd["task_name"], wd_tr, wd.get("interval_minutes", 10)
-        )
-
-    # Pre-open supervision: a tight-interval task inside a short window, protecting the 09:30-09:35
-    # opening range that cannot be reconstructed once missed. Its own task rather than a shorter
-    # global interval -- see cfgmod.preopen_settings. Times are ET in config, local on the scheduler.
-    po = cfgmod.preopen_settings(cfg)
-    if po["enabled"]:
-        po_tr = tasks.build_tr(pyw, str(_LAUNCHER), "preopen-check")
-        results["preopen_task"] = tasks.create_windowed_minute_task(
-            po["task_name"],
-            po_tr,
-            po["interval_minutes"],
-            timeutil.to_local_hhmm(po["start"], tz),
-            timeutil.to_local_hhmm(po["end"], tz),
-        )
+    # Start the supervisor now rather than waiting for the anchor's first fire.
+    if supersnap.supervisor_alive():
+        results["supervisor"] = {"ok": True, "detail": "already running"}
     else:
-        results["preopen_task"] = tasks.delete(po["task_name"])
+        started = _spawn_supervisor_detached()
+        results["supervisor"] = {"ok": started, "detail": "started" if started else "start failed"}
 
-    # dedicated low-latency trade-notify task (polls paper DBs far more often than the watchdog)
-    tn = cfg.get("trade_notify", {})
-    if tn.get("task_name"):
-        tn_tr = tasks.build_tr(pyw, str(_LAUNCHER), "notify-trades")
-        results["trade_notify_task"] = tasks.create_minute_task(
-            tn["task_name"], tn_tr, tn.get("interval_minutes", 2)
-        )
-
-    # Follow Feed notifier: its OWN recurring task, never a watchdog-tick call -- it is the one
-    # notifier that makes a network request, and the reliability path stays network-free.
-    ff = cfgmod.follow_feed_settings(cfg)
-    if ff["enabled"]:
-        ff_tr = tasks.build_tr(pyw, str(_LAUNCHER), "notify-follow")
-        results["follow_notify_task"] = tasks.create_minute_task(
-            ff["task_name"], ff_tr, ff["interval_minutes"]
-        )
-    else:
-        results["follow_notify_task"] = tasks.delete(ff["task_name"])
-
-    # The suite end-of-day digest + AI insight are no longer fixed-time tasks — the watchdog fires them
-    # once every installed module has written its paper-eod file (or at the deadline backstop), so the
-    # digest can't race a module that settles a few minutes late. Remove any stale fixed-time task a
-    # prior install registered so it doesn't double-fire alongside the watchdog trigger.
-    results["eod_digest_task"] = tasks.delete(cfgmod.eod_digest_settings(cfg)["task_name"])
-
-    # end-of-month log/report rotation: zip each finished month's reports + rotated logs into
-    # logs/archive/. ON by default (opt out with "log_archive": {"enabled": false}); the archive is
-    # idempotent and only touches complete prior months, so the exact fire day/time isn't critical.
-    la = cfgmod.archive_settings(cfg)
-    if la["enabled"]:
-        la_tr = tasks.build_tr(pyw, str(_LAUNCHER), "archive")
-        results["log_archive_task"] = tasks.create_monthly_task(
-            la["task_name"], la_tr, la["day"], timeutil.to_local_hhmm(la["at"], tz)
-        )
-
-    # AI EOD insight is likewise watchdog-fired now (detached, only when enabled + claude on PATH).
-    # Remove any stale fixed-time task from a prior install.
-    results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
-
-    # Scheduled reconcile (phase 5): a daily paper<->live isolation check during live operation.
-    # Its own task, off the watchdog tick -- the broker call never rides the reliability path.
-    rs = cfgmod.reconcile_schedule_settings(cfg)
-    if rs["enabled"]:
-        rs_tr = tasks.build_tr(pyw, str(_LAUNCHER), "reconcile", "--scheduled")
-        results["reconcile_task"] = tasks.create_daily_task(
-            rs["task_name"], rs_tr, timeutil.to_local_hhmm(rs["at"], tz)
-        )
-    else:
-        results["reconcile_task"] = tasks.delete(rs["task_name"])
-
-    # Earnings forward-preview scan (packages/earnings' own symbol_watch, feeding scout's
-    # read-only Upcoming section). Its own daily task, off the watchdog tick -- a multi-minute
-    # per-symbol broker-chain scan has no place on the reliability path.
-    sw = cfgmod.symbol_watch_settings(cfg)
-    if sw["enabled"]:
-        sw_tr = tasks.build_tr(pyw, str(_LAUNCHER), "run-earnings-symbol-watch")
-        results["symbol_watch_task"] = tasks.create_daily_task(
-            sw["task_name"], sw_tr, timeutil.to_local_hhmm(sw["at"], tz)
-        )
-    else:
-        results["symbol_watch_task"] = tasks.delete(sw["task_name"])
+    # Unconditionally delete every legacy per-job task (idempotent — deleting an absent task is a
+    # successful no-op), so a partially-cutover box can't have schtasks and the supervisor both
+    # firing the same command.
+    for legacy in tasks.legacy_task_names(cfg):
+        results[f"legacy.{legacy}"] = tasks.delete(legacy)
 
     # Start the standalone market-data producer (top-level `streamer`) if enabled — the same
     # start-detached-if-down contract as a service. The watchdog keeps it alive in-session thereafter;
@@ -388,45 +311,52 @@ def _format_uninstall_report(results: dict[str, dict]) -> tuple[str, int]:
 
 
 def cmd_uninstall(cfg) -> None:
+    """Unschedule + stop, in the one order that can't resurrect anything: anchor task first (so
+    nothing restarts the supervisor), then the supervisor itself (stop file, then terminate), then
+    every legacy task name (idempotent; covers a pre-cutover box too), then the managed services."""
+    import time as _time
+
+    from cherrypick.orchestrator import supersnap, supervisor
+    from cherrypick.orchestrator.util import pid_alive, read_json
+
     results = {}
+    # 1. The anchor goes first — deleting it after stopping the supervisor would leave a window
+    # where the next probe fire restarts what we're stopping (the old dolt-keep-alive hazard).
+    results["anchor_task"] = tasks.delete(supersnap.ANCHOR_TASK)
+
+    # 2. Stop the supervisor: polite stop file, ≤10s wait, then terminate.
+    pid = (read_json(supervisor.heartbeat_path()) or {}).get("pid")
+    if pid and pid_alive(pid):
+        supervisor.request_stop()
+        deadline = _time.time() + 10
+        while _time.time() < deadline and pid_alive(pid):
+            _time.sleep(0.5)
+        if pid_alive(pid):
+            supervisor._terminate_pid(pid)
+            results["supervisor"] = {"ok": not pid_alive(pid), "detail": f"terminated pid {pid}"}
+        else:
+            results["supervisor"] = {"ok": True, "detail": f"stopped cleanly (pid {pid})"}
+    else:
+        results["supervisor"] = {"ok": True, "detail": "not running"}
+
+    # 3. A surviving live arm record on a stopped box is a silent live loop — remove it and say so.
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
-        root = cfgmod.module_root(mcfg, name)
-        paper = mcfg.get("paper", {})
-        if paper.get("kind") == "self_healing" and paper.get("uninstall_argv"):
-            r = subprocess.run(
-                [cfgmod.python_exe(), *paper["uninstall_argv"]],
-                cwd=str(root),
-                capture_output=True,
-                text=True,
-                creationflags=CREATE_NO_WINDOW,
-            )
-            out = (r.stdout or r.stderr).strip()
-            parsed = first_json(out)
-            results[f"{name}.paper_task"] = {
-                "ok": r.returncode == 0,
-                # Modules print their own {"ok":..., "detail":...} JSON (possibly pretty-printed);
-                # flatten it to one line instead of embedding the raw multi-line blob.
-                "detail": parsed.get("detail", out) if parsed else out,
-            }
-        for tkey in ("entry_task_name", "exit_task_name"):
-            if paper.get(tkey):
-                results[f"{name}.{tkey}"] = tasks.delete(paper[tkey])
-        svc = paper.get("dolt_service")
-        if svc and svc.get("task_name"):
-            results[f"{name}.dolt_service"] = tasks.delete(svc["task_name"])
-    if cfg.get("watchdog", {}).get("task_name"):
-        results["watchdog_task"] = tasks.delete(cfg["watchdog"]["task_name"])
-    if cfg.get("trade_notify", {}).get("task_name"):
-        results["trade_notify_task"] = tasks.delete(cfg["trade_notify"]["task_name"])
-    # Always attempt the digest + log-archive tasks by their resolved names (idempotent) so opting out
-    # *after* an install still removes a previously-registered task.
-    results["eod_digest_task"] = tasks.delete(cfgmod.eod_digest_settings(cfg)["task_name"])
-    results["log_archive_task"] = tasks.delete(cfgmod.archive_settings(cfg)["task_name"])
-    results["eod_insight_task"] = tasks.delete(cfgmod.insight_settings(cfg)["task_name"])
-    results["reconcile_task"] = tasks.delete(cfgmod.reconcile_schedule_settings(cfg)["task_name"])
-    results["symbol_watch_task"] = tasks.delete(cfgmod.symbol_watch_settings(cfg)["task_name"])
-    results["follow_notify_task"] = tasks.delete(cfgmod.follow_feed_settings(cfg)["task_name"])
-    results["preopen_task"] = tasks.delete(cfgmod.preopen_settings(cfg)["task_name"])
+        if not mcfg.get("live"):
+            continue
+        rec_path = supervisor.arm_record_path(name)
+        if rec_path.exists():
+            try:
+                rec_path.unlink()
+                results[f"{name}.live_arm"] = {
+                    "ok": True,
+                    "detail": "LIVE ARM RECORD REMOVED — check the broker UI for resting orders",
+                }
+            except OSError as exc:
+                results[f"{name}.live_arm"] = {"ok": False, "detail": str(exc)}
+
+    # 4. Every legacy per-job task by its resolved name (idempotent — also cleans a pre-cutover box).
+    for legacy in tasks.legacy_task_names(cfg):
+        results[f"legacy.{legacy}"] = tasks.delete(legacy)
     # Stop generic background services (e.g. the gex recorder) — unlike the streamer, these are the
     # orchestrator's own daemons, so a full uninstall stops them.
     for svc in cfgmod.enabled_services(cfg):
@@ -458,7 +388,14 @@ def cmd_uninstall(cfg) -> None:
 
 # --------------------------------------------------------------------------- status
 def cmd_status(cfg) -> None:
-    out = {"tasks": tasks.registry_snapshot(cfg), "heartbeats": {}}
+    from cherrypick.orchestrator import supersnap
+
+    # Supervisor-driven boxes report the job registry (+ the anchor task's OS truth) — the
+    # `registry_snapshot` schtasks sweep survives only as the pre-cutover fallback.
+    if supersnap.supervisor_alive():
+        out = {"supervisor": supersnap.supervisor_snapshot(cfg), "heartbeats": {}}
+    else:
+        out = {"tasks": tasks.registry_snapshot(cfg), "heartbeats": {}}
     for hb in (
         "watchdog.last.json",
         "earnings_entry.last.json",
@@ -694,6 +631,91 @@ def cmd_watchdog(cfg) -> None:
 
 def cmd_preopen_check(cfg) -> None:
     _emit(watchdog.run_preopen(cfg))
+
+
+def cmd_streamer_health(cfg) -> None:
+    """One streamer-liveness pass — the supervisor's 60s in-session `streamer-health` job."""
+    _emit(watchdog.run_streamer_health(cfg))
+
+
+# --------------------------------------------------------------------------- supervisor
+def cmd_supervise(cfg, stop: bool = False) -> None:
+    """Run the supervisor daemon loop in THIS process (the anchor task launches it detached via
+    ensure-supervisor; running it foreground is the manual/diagnostic path). --stop asks a running
+    daemon to exit via its stop file."""
+    from cherrypick.orchestrator import supervisor
+
+    if stop:
+        _emit(supervisor.request_stop())
+        return
+    _emit(supervisor.run(cfg))
+
+
+def _spawn_supervisor_detached() -> bool:
+    """Launch `run.py supervise` as a detached, windowless daemon — the same flags every other
+    daemon start here uses (DETACHED | NO_WINDOW | NEW_GROUP), so it survives this process and
+    never flashes a console."""
+    flags = 0
+    if os.name == "nt":
+        flags = 0x00000008 | 0x08000000 | 0x00000200  # DETACHED | NO_WINDOW | NEW_GROUP
+    try:
+        subprocess.Popen(
+            [cfgmod.pythonw_exe(), str(_LAUNCHER), "supervise"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+        )
+        return True
+    except OSError:
+        return False
+
+
+def cmd_ensure_supervisor(cfg) -> None:
+    """The anchor task's probe: fresh heartbeat + live PID → no-op; otherwise start the daemon
+    detached. Stdlib + local files only — this is the alerting floor of last resort, so after 3
+    consecutive probes that found the supervisor down despite restart attempts it raises ONE
+    CRITICAL through the (stdlib, OS-shell) Notifier and holds it until a probe succeeds.
+    """
+    from cherrypick.orchestrator import supersnap, supervisor
+
+    state_path = cfgmod.state_file("ensure_supervisor.json")
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        state = {}
+
+    if supersnap.supervisor_alive():
+        if state.get("failures"):
+            state = {"failures": 0, "notified": False}
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+        _emit({"ok": True, "detail": "supervisor running"})
+        return
+
+    started = _spawn_supervisor_detached()
+    failures = int(state.get("failures") or 0) + 1
+    notified = bool(state.get("notified"))
+    if failures >= 3 and not notified:
+        try:
+            Notifier(cfg.get("notify")).notify(
+                "CRITICAL",
+                "supervisor.down",
+                "Supervisor is down and not staying up",
+                f"{failures} consecutive ensure-supervisor probes found no live supervisor "
+                f"(heartbeat {supervisor.heartbeat_path().name} stale/absent) despite restart "
+                "attempts. Scheduled jobs — including the watchdog — are NOT running. "
+                "Check logs/supervisor.log.",
+            )
+            notified = True
+        except Exception:
+            pass
+    state_path.write_text(json.dumps({"failures": failures, "notified": notified}), encoding="utf-8")
+    _emit(
+        {
+            "ok": started,
+            "detail": f"supervisor not running — {'started' if started else 'START FAILED'} "
+            f"(probe failure #{failures})",
+        }
+    )
 
 
 def _account_table(listing: dict) -> None:
@@ -1029,6 +1051,9 @@ def main() -> None:
             "doctor",
             "watchdog",
             "preopen-check",
+            "streamer-health",
+            "supervise",
+            "ensure-supervisor",
             "report",
             "eod-digest",
             "notify-eod",
@@ -1136,6 +1161,11 @@ def main() -> None:
         action="store_true",
         help="For archive: report what would be archived without writing or deleting",
     )
+    parser.add_argument(
+        "--stop",
+        action="store_true",
+        help="For supervise: ask the running supervisor daemon to exit (via its stop file)",
+    )
     args = parser.parse_args()
 
     # `init` scaffolds config.json, so it must run before the config pre-load (a fresh user has none).
@@ -1145,12 +1175,15 @@ def main() -> None:
 
     cfg = cfgmod.load_config()
     dispatch = {
-        "install": lambda: cmd_install(cfg),
+        "install": lambda: cmd_install(cfg, force=args.force),
         "uninstall": lambda: cmd_uninstall(cfg),
         "status": lambda: cmd_status(cfg),
         "doctor": lambda: cmd_doctor(cfg, fast=args.fast),
         "watchdog": lambda: cmd_watchdog(cfg),
         "preopen-check": lambda: cmd_preopen_check(cfg),
+        "streamer-health": lambda: cmd_streamer_health(cfg),
+        "supervise": lambda: cmd_supervise(cfg, stop=args.stop),
+        "ensure-supervisor": lambda: cmd_ensure_supervisor(cfg),
         "report": lambda: cmd_report(cfg, args),
         "eod-digest": lambda: cmd_eod_digest(cfg, args),
         "notify-eod": lambda: cmd_notify_eod(cfg, args),

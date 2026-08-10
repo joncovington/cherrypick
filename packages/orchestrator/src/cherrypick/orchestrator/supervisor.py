@@ -1,0 +1,442 @@
+"""The supervisor daemon — the suite's in-process replacement for ~13 Task Scheduler entries.
+
+One long-lived process (kept alive by the single remaining OS task, `cherrypick-supervisor`, whose
+`ensure-supervisor` probe restarts it within ~2 minutes) evaluates the job table derived from config
+(`jobspec.derive_jobs`) on a ~1s wall-clock loop and spawns each due job as a short-lived headless
+subprocess — the same `--once` ticks the scheduler used to fire, preserving per-iteration crash
+isolation. The one exception is a sub-minute-cadence module loop (flies paper at 15s), which runs as
+a supervised RESIDENT child using the module's own `--interval` mode, restarted on death and on
+silence (the streamer's stale-restart pattern).
+
+State surfaces (both atomic writes; the scheduler-state replacements every consumer re-sources from):
+- `state/supervisor.last.json`  — heartbeat: is the daemon alive, and how recently it looped.
+- `state/supervisor-jobs.json`  — per-job registry: enabled/reason, last_start, running_pid,
+  last_exit_code/at, next_run, missed/backoff. `running_pid` alive is the SCHED_S_TASK_RUNNING
+  (267009) equivalent the live-loop freshness check keys on.
+
+Reliability rules carried over:
+- Single instance via the shared PID lock (never steals from a live PID).
+- Every child spawns with CREATE_NO_WINDOW (test_headless.py covers this file automatically).
+- Overlap guard: a job whose previous run is still alive is skipped, replacing schtasks'
+  no-double-fire behavior. A supervisor restart ADOPTS a still-alive prior child (marked
+  `orphaned`) rather than killing or duplicating it — the MEIC lock lesson.
+- Per-job crash backoff (cap 10 min) so one broken command can't hot-loop.
+- Clean shutdown via a stop file (`state/supervisor.stop`) — no console events, which are exactly
+  what made long-lived daemons fragile on Windows before.
+- No network, no broker, no AI: the daemon decides from config + clock + local files only.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from . import config as cfgmod
+from . import jobspec, timeutil
+from .util import CREATE_NO_WINDOW, atomic_write_json, pid_alive, read_json, rotate_if_large
+
+HEARTBEAT_FILE = "supervisor.last.json"
+JOBS_FILE = "supervisor-jobs.json"
+LOCK_FILE = "supervisor.lock"
+STOP_FILE = "supervisor.stop"
+
+_LAUNCHER = Path(__file__).resolve().parents[2] / "run.py"
+
+# How stale the heartbeat may be before ensure-supervisor treats the daemon as dead. The loop writes
+# it every HEARTBEAT_WRITE_SECONDS; 90s tolerates a slow pass or a paused clock without flapping.
+HEARTBEAT_WRITE_SECONDS = 5
+HEARTBEAT_FRESH_SECONDS = 90
+
+_BACKOFF_BASE_SECONDS = 30
+_BACKOFF_CAP_SECONDS = 600
+# A resident child younger than this is never judged for silence — the settling grace the streamer
+# taught (a just-started process hasn't had time to produce output yet).
+_RESIDENT_SETTLE_SECONDS = 90
+
+
+def heartbeat_path() -> Path:
+    return cfgmod.STATE_DIR / HEARTBEAT_FILE
+
+
+def jobs_path() -> Path:
+    return cfgmod.STATE_DIR / JOBS_FILE
+
+
+def lock_path() -> Path:
+    return cfgmod.STATE_DIR / LOCK_FILE
+
+
+def stop_path() -> Path:
+    return cfgmod.STATE_DIR / STOP_FILE
+
+
+def arm_record_path(module: str) -> Path:
+    """The per-module live arm record (`state/<module>-live-arm.json`) — written only by the
+    module's own human-confirmed arm command, read by the supervisor (job enablement) and the
+    watchdog (dead-man's backstop). One file, three readers, zero ambiguity about 'armed'."""
+    return cfgmod.STATE_DIR / f"{module}-live-arm.json"
+
+
+def read_arm_records(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    records: dict[str, dict[str, Any]] = {}
+    for name, mcfg in cfgmod.enabled_modules(cfg).items():
+        if mcfg.get("live"):
+            rec = read_json(arm_record_path(name), default=None)
+            if isinstance(rec, dict) and rec:
+                records[name] = rec
+    return records
+
+
+def _log(msg: str) -> None:
+    try:
+        path = cfgmod.log_file("supervisor.log")
+        rotate_if_large(path)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(f"{datetime.now().isoformat(timespec='seconds')} {msg}\n")
+    except OSError:
+        pass
+
+
+def _terminate_pid(pid: int) -> bool:
+    """Terminate a process we do not hold a Popen handle for (an adopted resident child that went
+    silent). Only ever called on PIDs this daemon's registry recorded as its own children."""
+    try:
+        import psutil  # type: ignore
+
+        psutil.Process(pid).terminate()
+        return True
+    except ImportError:
+        pass
+    except Exception:
+        return False
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            process_terminate = 0x0001
+            handle = ctypes.windll.kernel32.OpenProcess(process_terminate, False, pid)
+            if not handle:
+                return False
+            ok = bool(ctypes.windll.kernel32.TerminateProcess(handle, 1))
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return ok
+        os.kill(pid, 15)
+        return True
+    except (OSError, SystemError):
+        return False
+
+
+class Supervisor:
+    """The daemon's state machine, factored so tests can drive single passes with a fake clock."""
+
+    def __init__(self, cfg: dict[str, Any] | None = None):
+        self._cfg = cfg
+        self._cfg_pinned = cfg is not None  # tests pass cfg directly; production reloads on mtime
+        self._cfg_mtime: float | None = None
+        self._handles: dict[str, subprocess.Popen] = {}
+        self._state: dict[str, dict[str, Any]] = {}
+        self._errors: dict[str, str] = {}
+        self._holidays: set[str] = set()
+        self._holidays_day: str | None = None
+        self._started_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        self._loop_seq = 0
+        self._last_heartbeat = 0.0
+
+    # ----------------------------------------------------------------- config / derivation
+    def _load_cfg(self) -> dict[str, Any]:
+        if self._cfg_pinned:
+            return self._cfg or {}
+        try:
+            path = cfgmod.effective_config_path()
+            mtime = path.stat().st_mtime
+            if self._cfg is None or mtime != self._cfg_mtime:
+                self._cfg = cfgmod.load_config()
+                self._cfg_mtime = mtime
+                _log(f"config loaded ({path.name}, mtime {mtime})")
+        except Exception as exc:
+            # Keep running on the last good config — a transient config problem must not kill the
+            # daemon that everything else's liveness depends on.
+            _log(f"config reload failed, keeping last good: {type(exc).__name__}: {exc}")
+        return self._cfg or {}
+
+    def _holiday_set(self, now: datetime) -> set[str]:
+        day = now.strftime("%Y-%m-%d")
+        if day != self._holidays_day:
+            self._holidays = timeutil.load_holidays()
+            self._holidays_day = day
+        return self._holidays
+
+    # ----------------------------------------------------------------- state bookkeeping
+    def adopt_prior_state(self) -> None:
+        """Load the persisted registry. A still-alive prior child is ADOPTED (orphaned=true, still
+        counted by the overlap guard) — never killed, never duplicated. Dead PIDs are cleared."""
+        data = read_json(jobs_path())
+        self._state = dict((data or {}).get("jobs") or {})
+        for jid, st in self._state.items():
+            pid = st.get("running_pid")
+            if pid and pid_alive(pid):
+                st["orphaned"] = True
+                _log(f"{jid}: adopted running child pid {pid} from a prior supervisor")
+            elif pid:
+                st["running_pid"] = None
+
+    def _job_running(self, jid: str, st: dict[str, Any]) -> bool:
+        handle = self._handles.get(jid)
+        if handle is not None:
+            code = handle.poll()
+            if code is None:
+                return True
+            self._record_exit(jid, st, code)
+            del self._handles[jid]
+            return False
+        pid = st.get("running_pid")
+        if pid and pid_alive(pid):
+            return True  # adopted orphan still going
+        if pid:
+            # Orphan finished while we weren't holding a handle: exit code unknowable.
+            st["running_pid"] = None
+            st["last_exit_at"] = _utc_iso()
+        return False
+
+    def _record_exit(self, jid: str, st: dict[str, Any], code: int) -> None:
+        st["running_pid"] = None
+        st["last_exit_code"] = code
+        st["last_exit_at"] = _utc_iso()
+        if code == 0:
+            st["consecutive_failures"] = 0
+            st["backoff_until"] = None
+        else:
+            n = int(st.get("consecutive_failures") or 0) + 1
+            st["consecutive_failures"] = n
+            delay = min(_BACKOFF_CAP_SECONDS, _BACKOFF_BASE_SECONDS * (2 ** (n - 1)))
+            st["backoff_until"] = time.time() + delay
+            _log(f"{jid}: exit {code} (failure #{n}), backoff {delay}s")
+
+    def _spawn(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
+        try:
+            handle = subprocess.Popen(
+                list(spec.argv),
+                cwd=spec.cwd or None,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=CREATE_NO_WINDOW,
+            )
+        except OSError as exc:
+            self._record_exit(spec.id, st, -1)
+            _log(f"{spec.id}: spawn failed: {exc}")
+            return False
+        self._handles[spec.id] = handle
+        st["running_pid"] = handle.pid
+        st["last_start"] = _utc_iso()
+        st.pop("orphaned", None)
+        return True
+
+    # ----------------------------------------------------------------- one pass
+    def pass_once(self, now: datetime | None = None) -> dict[str, Any]:
+        cfg = self._load_cfg()
+        tz = cfg.get("timezone", "America/New_York")
+        now = now or timeutil.now_et(tz)
+        holidays = self._holiday_set(now)
+        jobs, errors = jobspec.derive_jobs(
+            cfg,
+            pythonw=cfgmod.pythonw_exe(),
+            launcher=str(_LAUNCHER),
+            now=now,
+            arm_records=read_arm_records(cfg),
+        )
+        for jid, err in errors.items():
+            if self._errors.get(jid) != err:
+                _log(f"{jid}: derivation failed, job disabled: {err}")
+        self._errors = errors
+
+        started: list[str] = []
+        for spec in jobs:
+            st = self._state.setdefault(spec.id, {})
+            st.update(
+                {
+                    "enabled": spec.enabled,
+                    "enabled_reason": spec.enabled_reason,
+                    "kind": spec.kind,
+                    "interval_seconds": spec.interval_seconds or None,
+                    "schedule": spec.describe(),
+                }
+            )
+            if spec.kind == jobspec.KIND_RESIDENT:
+                if self._manage_resident(spec, st, now, holidays):
+                    started.append(spec.id)
+                continue
+            if self._job_running(spec.id, st):
+                continue  # overlap guard — schtasks' no-double-fire, preserved
+            if st.get("backoff_until") and time.time() < float(st["backoff_until"]):
+                continue
+            fire, reason, patch = jobspec.should_start(spec, st, now, holidays)
+            st.update(patch)
+            if spec.kind == jobspec.KIND_INTERVAL and spec.enabled:
+                st["next_run"] = _epoch_iso(st.get("next_run_epoch"))
+            if fire and self._spawn(spec, st):
+                started.append(spec.id)
+
+        self._loop_seq += 1
+        self._write_registry(errors)
+        self._write_heartbeat(now, len(jobs))
+        return {"started": started, "jobs": len(jobs), "errors": errors}
+
+    def _manage_resident(
+        self, spec: jobspec.JobSpec, st: dict[str, Any], now: datetime, holidays: set[str]
+    ) -> bool:
+        want, why = jobspec.resident_should_run(spec, now, holidays)
+        alive = self._job_running(spec.id, st)
+        if not want:
+            # Outside its window the child exits on its own (the module loop is session-scoped);
+            # never terminate here — a settlement or final write may still be in flight.
+            st["resident_state"] = why or "idle"
+            return False
+        if alive:
+            st["resident_state"] = "running"
+            if self._resident_silent(spec, st):
+                pid = st.get("running_pid")
+                _log(f"{spec.id}: silent > {spec.silence_seconds}s, restarting (pid {pid})")
+                handle = self._handles.pop(spec.id, None)
+                if handle is not None and handle.poll() is None:
+                    handle.terminate()
+                    try:
+                        handle.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        handle.kill()
+                elif pid:
+                    _terminate_pid(pid)
+                self._record_exit(spec.id, st, -2)  # silence counts as a failure → backoff
+                return False
+            return False
+        if st.get("backoff_until") and time.time() < float(st["backoff_until"]):
+            st["resident_state"] = "backoff"
+            return False
+        ok = self._spawn(spec, st)
+        st["resident_state"] = "running" if ok else "start failed"
+        if ok:
+            _log(f"{spec.id}: resident child started (pid {st['running_pid']})")
+        return ok
+
+    def _resident_silent(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
+        if not spec.silence_file or not spec.silence_seconds:
+            return False
+        started = _iso_epoch(st.get("last_start"))
+        if started and time.time() - started < max(_RESIDENT_SETTLE_SECONDS, spec.silence_seconds):
+            return False  # settling — never judge a child younger than the silence window
+        try:
+            age = time.time() - os.path.getmtime(spec.silence_file)
+        except OSError:
+            return False  # no file yet: the settle grace above covers startup
+        return age > spec.silence_seconds
+
+    # ----------------------------------------------------------------- state files
+    def _write_registry(self, errors: dict[str, str]) -> None:
+        atomic_write_json(
+            jobs_path(),
+            {
+                "schema": 1,
+                "written_at": _utc_iso(),
+                "supervisor_pid": os.getpid(),
+                "derive_errors": errors,
+                "jobs": self._state,
+            },
+        )
+
+    def _write_heartbeat(self, now: datetime, job_count: int, force: bool = False) -> None:
+        t = time.time()
+        if not force and t - self._last_heartbeat < HEARTBEAT_WRITE_SECONDS:
+            return
+        self._last_heartbeat = t
+        atomic_write_json(
+            heartbeat_path(),
+            {
+                "ts": _utc_iso(),
+                "et": now.isoformat(),
+                "pid": os.getpid(),
+                "started_at": self._started_at,
+                "loop_seq": self._loop_seq,
+                "jobs": job_count,
+                "resident_children": sum(
+                    1
+                    for s in self._state.values()
+                    if s.get("kind") == jobspec.KIND_RESIDENT and s.get("running_pid")
+                ),
+            },
+        )
+
+
+def _utc_iso() -> str:
+    from datetime import timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _epoch_iso(epoch: float | None) -> str | None:
+    if not epoch:
+        return None
+    from datetime import timezone
+
+    return datetime.fromtimestamp(float(epoch), tz=timezone.utc).isoformat(timespec="seconds")
+
+
+def _iso_epoch(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except ValueError:
+        return None
+
+
+def run(cfg: dict[str, Any] | None = None, *, max_passes: int | None = None) -> dict[str, Any]:
+    """Run the daemon loop until the stop file appears (or `max_passes`, for tests).
+
+    Single-instance: refuses to start when a live supervisor holds the lock. A stale stop file left
+    by a previous shutdown is cleared at startup so it can't kill a fresh daemon.
+    """
+    cfgmod.ensure_dirs()
+    if not os.environ.get("CHERRYPICK_SUPERVISOR_NO_LOCK"):
+        from .util import acquire_pid_lock, release_pid_lock
+
+        if not acquire_pid_lock(lock_path()):
+            return {"ok": False, "detail": "supervisor already running"}
+    try:
+        stop_path().unlink(missing_ok=True)
+        sup = Supervisor(cfg)
+        sup.adopt_prior_state()
+        _log(f"supervisor started (pid {os.getpid()})")
+        passes = 0
+        while True:
+            if stop_path().exists():
+                _log("stop file seen — shutting down")
+                stop_path().unlink(missing_ok=True)
+                break
+            sup.pass_once()
+            passes += 1
+            if max_passes is not None and passes >= max_passes:
+                break
+            time.sleep(1)
+        return {"ok": True, "passes": passes}
+    finally:
+        if not os.environ.get("CHERRYPICK_SUPERVISOR_NO_LOCK"):
+            release_pid_lock(lock_path())
+
+
+def request_stop() -> dict[str, Any]:
+    """Ask a running supervisor to exit (it polls the stop file every pass)."""
+    cfgmod.ensure_dirs()
+    stop_path().write_text(json.dumps({"requested_at": _utc_iso()}), encoding="utf-8")
+    return {"ok": True, "detail": f"stop requested via {stop_path().name}"}
+
+
+if __name__ == "__main__":
+    result = run()
+    if sys.stdout is not None:
+        json.dump(result, sys.stdout, indent=2)
+        print()

@@ -55,6 +55,74 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ----------------------------------------------------------------- supervisor dual-read
+# During the schtasks→supervisor transition every registration check reads BOTH ways: when a live
+# supervisor is driving this box (fresh heartbeat + live PID), job presence comes from its registry;
+# otherwise the legacy scheduled-task checks apply unchanged. The fallback branch is deleted with
+# the transition window (P6).
+def _supervisor_driving() -> bool:
+    from . import supersnap  # local import: avoids a cycle at module load
+
+    return supersnap.supervisor_alive()
+
+
+def _supervisor_job(job_id: str) -> dict[str, Any] | None:
+    from . import supersnap
+
+    return supersnap.job_state(job_id)
+
+
+def _check_supervisor(cfg: dict[str, Any]) -> list[Finding]:
+    """Belt-and-suspenders over the supervisor itself: the anchor task restarts a dead supervisor
+    (ensure-supervisor), and this finding catches the inverse faults the anchor can't see — the
+    anchor task being deleted while the supervisor still runs (nothing would restart it after the
+    next crash), and a wedged/dead supervisor observed from a still-firing legacy watchdog task
+    mid-transition. Skipped entirely on a box that has neither an anchor nor a heartbeat (pre-
+    cutover), so the dual-read period stays alarm-free."""
+    from . import supersnap, supervisor
+
+    # The heartbeat file is the post-cutover marker: the supervisor writes it on its first pass and
+    # it persists thereafter. No file → pre-cutover box → skip (and never spawn a schtasks query).
+    if not supervisor.heartbeat_path().exists():
+        return []
+    anchor_exists = tasks.exists(supersnap.ANCHOR_TASK)
+    findings: list[Finding] = []
+    if supersnap.supervisor_alive():
+        findings.append(
+            Finding(
+                "supervisor.alive",
+                OK,
+                "Supervisor",
+                f"running (heartbeat {supersnap.heartbeat_age_seconds():.0f}s old)",
+            )
+        )
+    else:
+        age = supersnap.heartbeat_age_seconds()
+        findings.append(
+            Finding(
+                "supervisor.alive",
+                CRITICAL,
+                "Supervisor is not running",
+                (f"Heartbeat is {age:.0f}s old" if age is not None else "No supervisor heartbeat found")
+                + f" (limit {supervisor.HEARTBEAT_FRESH_SECONDS}s). Scheduled jobs are not being "
+                "fired. ensure-supervisor should restart it within ~2 min; check logs/supervisor.log.",
+            )
+        )
+    if anchor_exists:
+        findings.append(Finding("supervisor.anchor", OK, "Supervisor anchor task", "registered"))
+    else:
+        findings.append(
+            Finding(
+                "supervisor.anchor",
+                CRITICAL,
+                "Supervisor anchor task missing",
+                f"Scheduled task '{supersnap.ANCHOR_TASK}' is not registered — nothing will restart "
+                "the supervisor if it dies. Run: cherrypick install",
+            )
+        )
+    return findings
+
+
 def _file_age_minutes(path: Path) -> float | None:
     try:
         if not path.exists():
@@ -406,9 +474,33 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
     paper = mcfg.get("paper", {})
     label = name.upper() if len(name) <= 4 else name.capitalize()
 
-    # (a) self-healing task registered
+    # (a) the paper loop has a driver. Supervisor-driven boxes check the job registry (the file the
+    # supervisor maintains); pre-cutover boxes fall back to the scheduled task — dual-read until the
+    # transition window closes.
     task_name = paper.get("task_name")
-    if task_name and not tasks.exists(task_name):
+    if _supervisor_driving():
+        st = _supervisor_job(f"{name}-paper")
+        if st is None:
+            findings.append(
+                Finding(
+                    f"{name}.task",
+                    CRITICAL,
+                    f"{label} paper job missing",
+                    f"Supervisor has no '{name}-paper' job. Check config + logs/supervisor.log.",
+                )
+            )
+        elif not st.get("enabled", False):
+            findings.append(
+                Finding(
+                    f"{name}.task",
+                    CRITICAL,
+                    f"{label} paper job disabled",
+                    f"Supervisor job '{name}-paper' is disabled: {st.get('enabled_reason') or 'unknown'}",
+                )
+            )
+        else:
+            findings.append(Finding(f"{name}.task", OK, f"{label} paper job", "supervised"))
+    elif task_name and not tasks.exists(task_name):
         findings.append(
             Finding(
                 f"{name}.task",
@@ -471,10 +563,26 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
     findings: list[Finding] = []
     paper = mcfg.get("paper", {})
 
-    # (a) entry/exit tasks registered
+    # (a) entry/exit have a driver (supervisor job registry, or the scheduled tasks pre-cutover)
     for tkey, label in (("entry_task_name", "entry"), ("exit_task_name", "exit")):
         tn = paper.get(tkey)
-        if tn and not tasks.exists(tn):
+        if not tn:
+            continue
+        if _supervisor_driving():
+            st = _supervisor_job(f"{name}-{label}")
+            if st is None or not st.get("enabled", False):
+                why = "missing" if st is None else f"disabled: {st.get('enabled_reason') or 'unknown'}"
+                findings.append(
+                    Finding(
+                        f"{name}.task.{label}",
+                        CRITICAL,
+                        f"Earnings {label} job {why.split(':')[0]}",
+                        f"Supervisor job '{name}-{label}' is {why}. Check config + logs/supervisor.log.",
+                    )
+                )
+            else:
+                findings.append(Finding(f"{name}.task.{label}", OK, f"Earnings {label} job", "supervised"))
+        elif not tasks.exists(tn):
             findings.append(
                 Finding(
                     f"{name}.task.{label}",
@@ -483,7 +591,7 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
                     f"Scheduled task '{tn}' is not registered. Run: cherrypick install",
                 )
             )
-        elif tn:
+        else:
             findings.append(Finding(f"{name}.task.{label}", OK, f"Earnings {label} task", "registered"))
 
     # (b) Dolt reachability (only meaningful on trading days)
@@ -756,9 +864,44 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
         except Exception:
             status = None
 
-    registered = tasks.exists(task_name)
+    # The armed SIGNAL, per driver. Post-cutover (a supervisor heartbeat exists on this box) the
+    # module's arm record is authoritative — the same file that enables the supervisor's
+    # `<name>-live` job — with the legacy task registration still honored as a transition-window
+    # belt-and-braces (a stale schtasks entry must still trip the backstop). Pre-cutover it is the
+    # schtasks registration, exactly as before. Checked record-first so the disarmed steady state
+    # costs no schtasks spawn on a supervisor box.
+    from . import supersnap, supervisor
+
+    hb_exists = supervisor.heartbeat_path().exists()
+    sup_alive = _supervisor_driving()
+    arm_rec = util.read_json(supervisor.arm_record_path(name), default=None) or None
+    if hb_exists:
+        registered = bool(arm_rec) or tasks.exists(task_name)
+        armed_desc = "arm record present" if arm_rec else f"task '{task_name}' registered"
+    else:
+        registered = tasks.exists(task_name)
+        armed_desc = f"task '{task_name}' registered"
     armed_for = (status or {}).get("armed_for")
     today = now_et.date().isoformat()
+
+    # A dead supervisor while live is armed is a SILENT live loop — no ticks are being fired, no
+    # stops are being watched. Strictly stronger than any freshness read: raise it before anything
+    # else (except that the disarm backstop below still runs on its own signal).
+    supervisor_down_while_armed = (
+        hb_exists and not sup_alive and (str((arm_rec or {}).get("date")) == today or armed_for == today)
+    )
+    if supervisor_down_while_armed:
+        findings.append(
+            Finding(
+                f"{name}.live_supervisor",
+                CRITICAL,
+                f"{label} LIVE armed but the supervisor is down",
+                "The arm record says live is armed for today, but the supervisor heartbeat is "
+                "stale — no live ticks are being fired and resting orders are unwatched. "
+                "ensure-supervisor should restart it within ~2 min; if not, disarm "
+                "(--uninstall-task) and flatten manually.",
+            )
+        )
 
     # (d) Disarm backstop first — it's the check that must never be skipped.
     disarm_hhmm = str(live.get("disarm_time", "17:00"))
@@ -783,17 +926,71 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             Finding(
                 f"{name}.live_disarm",
                 CRITICAL,
-                f"{label} LIVE task survived past disarm",
-                f"{task_name} still registered past {disarm_hhmm}+{grace}m (armed_for={armed_for}); "
+                f"{label} LIVE armed signal survived past disarm",
+                f"{armed_desc} past {disarm_hhmm}+{grace}m (armed_for={armed_for}); "
                 "halt flag set — live ticks now refuse. Investigate why self-disarm failed, then "
-                "uninstall the task and clear the halt flag before re-arming.",
+                "disarm (--uninstall-task removes the arm record and any legacy task) and clear "
+                "the halt flag before re-arming.",
             )
         )
         return findings  # halted state — the armed-window checks below would only add noise
 
     if registered:
-        # (b) freshness while armed and in session: the task must have actually RUN recently.
-        if in_session:
+        # (b) freshness while armed and in session: the ticks must actually be RUNNING recently.
+        if in_session and sup_alive:
+            # Supervisor-driven: the job registry is the run record — `still_running` is the
+            # SCHED_S_TASK_RUNNING equivalent, last_start/last_exit_code replace the scheduler's
+            # LastRunTime/LastTaskResult. Same false-alarm posture: a quiet-but-running tick is OK.
+            fresh_minutes = int(live.get("freshness_minutes", 5))
+            job = supersnap.job_state(f"{name}-live")
+            info = supersnap.job_run_info(f"{name}-live")
+            if job is None or not job.get("enabled", False):
+                why = "missing from the supervisor registry" if job is None else "disabled"
+                findings.append(
+                    Finding(
+                        f"{name}.live_fresh",
+                        CRITICAL,
+                        f"{label} LIVE job not running",
+                        f"Armed, but supervisor job '{name}-live' is {why} — arming did not take. "
+                        "Check the arm record and logs/supervisor.log.",
+                    )
+                )
+            elif info is None:
+                # enabled but never started: a just-armed loop's first tick lands within one
+                # interval — not an alarm state yet; the next watchdog tick re-judges.
+                findings.append(
+                    Finding(f"{name}.live_fresh", OK, f"{label} live loop", "armed, first tick pending")
+                )
+            elif info["still_running"]:
+                findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "tick running"))
+            else:
+                try:
+                    started = datetime.fromisoformat(str(info["last_run_time"]))
+                    if started.tzinfo is None:
+                        started = started.replace(tzinfo=timezone.utc)
+                    age_min = (now_et.astimezone(timezone.utc) - started).total_seconds() / 60
+                except ValueError:
+                    age_min = None
+                failed = info.get("last_exit_code") not in (0, None)
+                if age_min is None or age_min > fresh_minutes or failed:
+                    if age_min is None:
+                        shown = "unparseable last-start time"
+                    elif failed:
+                        shown = f"last tick {age_min:.0f} min ago, exit={info.get('last_exit_code')}"
+                    else:
+                        shown = f"last tick {age_min:.0f} min ago"
+                    findings.append(
+                        Finding(
+                            f"{name}.live_fresh",
+                            CRITICAL,
+                            f"{label} LIVE loop silent",
+                            f"supervisor registry reports {shown} while live is armed and the market "
+                            "is open — real working orders may be resting unwatched.",
+                        )
+                    )
+                else:
+                    findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "fresh"))
+        elif in_session and not supervisor_down_while_armed:
             fresh_minutes = int(live.get("freshness_minutes", 5))
             scheduler_info = tasks.last_run_info(task_name)
             if scheduler_info is not None:
@@ -843,13 +1040,14 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                 else:
                     findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "fresh"))
     elif armed_for == today and now_minute < disarm_minute:
-        # (a) status says armed-for-today but the task is gone mid-window.
+        # (a) status says armed-for-today but the armed signal is gone mid-window.
+        missing = "no arm record and no legacy task" if hb_exists else f"{task_name} not registered"
         findings.append(
             Finding(
                 f"{name}.live_task",
                 CRITICAL,
-                f"{label} LIVE task missing",
-                f"{task_name} not registered but the arm stamp says armed for {armed_for}.",
+                f"{label} LIVE armed signal missing",
+                f"{missing}, but the module's status says armed for {armed_for}.",
             )
         )
 
@@ -1087,18 +1285,16 @@ def _process_notifications(
 
 
 # --------------------------------------------------------------------------- entrypoint
-def run_preopen(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
-    """The pre-open producer check: streamer liveness only, on a tight interval, in a short window.
+def run_streamer_health(cfg: dict[str, Any] | None = None, *, require_enabled: bool = True) -> dict[str, Any]:
+    """The dedicated producer check: streamer liveness only, on its own tight cadence.
 
-    The full tick runs every 10 minutes and streamer supervision starts at 09:15, so the first
-    supervising tick of the day can land as late as ~09:25 — minutes before the 09:30–09:35 opening
-    range, which cannot be reconstructed once missed. A streamer that died overnight was therefore
-    unsupervised until then, and a restart is not instant: `_check_streamer_health`'s own `settling`
-    window is 240s, so a 09:25 relaunch is still resubscribing when the range starts.
-
-    This is a separate task rather than a shorter global interval on purpose. Dropping the watchdog
-    to 2 minutes would multiply every tick's work — module checks, dashboard render, EOD triggers —
-    all day, to fix a 35-minute window.
+    Under the supervisor this runs as the `streamer-health` job — every 60s across the whole
+    session (09:00–16:00 ET, trading days), which is strictly broader than the pre-open window the
+    old `cherrypick-preopen` task covered. The reasons that task existed all survive here: don't
+    multiply the full 10-minute tick's work (module checks, dashboard render, EOD triggers) to
+    protect streamer liveness; a streamer that died overnight must be caught before the 09:30–09:35
+    opening range, which cannot be reconstructed once missed and needs the 240s settling window
+    before quotes are trustworthy again.
 
     It reuses `_check_streamer_health` rather than copying it: that function carries the 2026-07-20
     silence-restart lesson (a live-but-quiet socket reporting running=true), and a second copy would
@@ -1107,9 +1303,10 @@ def run_preopen(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     "when did the watchdog last run" ambiguous.
     """
     cfg = cfgmod.load_config() if cfg is None else cfg
-    settings = cfgmod.preopen_settings(cfg)
-    if not settings["enabled"]:
-        return {"ok": True, "skipped": "preopen not enabled"}
+    if require_enabled:
+        sh = (cfg.get("watchdog", {}) or {}).get("streamer_health", {}) or {}
+        if not sh.get("enabled", True):
+            return {"ok": True, "skipped": "streamer-health not enabled"}
 
     tz = cfg.get("timezone", "America/New_York")
     now = timeutil.now_et(tz)
@@ -1150,6 +1347,17 @@ def run_preopen(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
+def run_preopen(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Deprecated alias for the pre-supervisor `cherrypick-preopen` task. Honors that task's own
+    legacy enable flag, then delegates to `run_streamer_health` — the check itself is identical, so
+    a box mid-transition (task still registered, supervisor not yet cut over) behaves exactly as
+    before. Retired with the task once the transition window closes."""
+    cfg = cfgmod.load_config() if cfg is None else cfg
+    if not cfgmod.preopen_settings(cfg)["enabled"]:
+        return {"ok": True, "skipped": "preopen not enabled"}
+    return run_streamer_health(cfg, require_enabled=False)
+
+
 def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     tz = cfg.get("timezone", "America/New_York")
@@ -1186,6 +1394,14 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
                     f"{type(exc).__name__}: {exc}",
                 )
             )
+
+    # The supervisor + its anchor task (skips itself entirely on a pre-cutover box).
+    try:
+        findings += _check_supervisor(cfg)
+    except Exception as exc:
+        findings.append(
+            Finding("supervisor.error", WARN, "Supervisor check failed", f"{type(exc).__name__}: {exc}")
+        )
 
     # Drift alert: report-driven paper-drawdown check (opt-in). Flows through the same notify path.
     findings += _check_drawdown(cfg)
