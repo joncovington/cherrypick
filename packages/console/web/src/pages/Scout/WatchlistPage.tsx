@@ -4,8 +4,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TtWatchlistRow } from "@console/shared";
 import { useWatchlist, useTtWatchlists, mutateJson } from "../../lib/api";
 import { LiveQuoteRow } from "../../components/LiveQuote";
-import { SkeletonRows } from "../../components/DataTable";
-import { TtWatchlistTable, EodCells } from "../../components/TtWatchlistTable";
+import { SkeletonRows, sortRows, useSort } from "../../components/DataTable";
+import { TtWatchlistTable, EodCells, WatchlistHeadRow, WATCHLIST_SORT } from "../../components/TtWatchlistTable";
 
 export function WatchlistPage() {
   const [search, setSearch] = useSearchParams();
@@ -98,6 +98,8 @@ export function WatchlistPage() {
 
 function LocalWatchlistCard() {
   const { data, isLoading } = useWatchlist();
+  const sort = useSort();
+  const rows = sortRows(data?.rows ?? [], sort, WATCHLIST_SORT);
   const [input, setInput] = useState("");
   const qc = useQueryClient();
   const invalidate = () => void qc.invalidateQueries({ queryKey: ["watchlist"] });
@@ -152,22 +154,7 @@ function LocalWatchlistCard() {
           <div className="table-scroll">
             <table className="data-table">
               <thead>
-                <tr>
-                  <th>sym</th>
-                  <th>last</th>
-                  <th>bid</th>
-                  <th>ask</th>
-                  <th></th>
-                  <th>chg%</th>
-                  <th>IVR</th>
-                  <th>IV%</th>
-                  <th>vol</th>
-                  <th>mkt cap</th>
-                  <th>1y high</th>
-                  <th>1y low</th>
-                  <th></th>
-                  <th></th>
-                </tr>
+                <WatchlistHeadRow sort={sort} srcCol="" extra={2} />
               </thead>
               <tbody>
                 {isLoading ? (
@@ -179,7 +166,7 @@ function LocalWatchlistCard() {
                     </td>
                   </tr>
                 ) : (
-                  (data?.rows ?? []).map((r) => (
+                  rows.map((r) => (
                     <WatchRow key={r.symbol} row={r} onRemove={() => remove.mutate(r.symbol)} />
                   ))
                 )}
