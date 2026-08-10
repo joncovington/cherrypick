@@ -108,6 +108,15 @@ async function captureSymbol(
     const q = snap.get(symbol);
     spot = q?.last ?? (q?.bid !== undefined && q?.ask !== undefined ? (q.bid + q.ask) / 2 : null);
   }
+  if (spot === null) {
+    // Off-hours fallback: the last daily candle close. An EOD snapshot centered
+    // on the close is exactly right after hours; getDailyBars backfills via
+    // DXLink candle history, which delivers even when quotes don't.
+    const { getDailyBars } = await import("./candles.js");
+    const { bars } = await getDailyBars(config, market, symbol);
+    const valid = bars.filter((b) => Number.isFinite(b.c) && b.c > 0);
+    if (valid.length > 0) spot = valid[valid.length - 1]!.c;
+  }
   if (spot === null) return "no spot price";
 
   await sleep(POLITENESS_MS);
@@ -131,7 +140,7 @@ async function captureSymbol(
       if (s.putStreamer !== null) bySymbol.set(s.putStreamer, { expiration, strike: s.strike, otype: "P" });
     }
   }
-  const data = await market.snapshotOptionData([...bySymbol.keys()], 8_000);
+  const data = await market.snapshotOptionData([...bySymbol.keys()], 15_000);
   for (const [streamerSym, where] of bySymbol) {
     const d = data.get(streamerSym);
     const bid = d?.bid ?? null;
@@ -174,7 +183,17 @@ export async function snapshotOneSymbol(
   }
   symbolAttempts.set(symbol, Date.now());
   const failure = await captureSymbol(config, market, symbol, tradeDate);
-  if (failure !== null) return { ok: false, tradeDate, fresh: false, reason: failure };
+  if (failure !== null) {
+    // Off-hours, "no quotes" is the expected outcome, not an error — dxfeed
+    // has nothing to conflate for contracts that haven't printed. Say so.
+    const { minutes, weekday } = etNow();
+    const marketOpen = weekday && minutes >= 9 * 60 + 30 && minutes < 16 * 60;
+    const reason =
+      !marketOpen && (failure.includes("no option quotes") || failure.includes("no spot price"))
+        ? "market closed — live option quotes unavailable; this symbol will capture automatically during market hours"
+        : failure;
+    return { ok: false, tradeDate, fresh: false, reason };
+  }
   symbolAttempts.delete(symbol);
   return { ok: true, tradeDate, fresh: false };
 }
