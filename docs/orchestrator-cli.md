@@ -14,8 +14,10 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | Command | What it does | Key flags |
 |---|---|---|
 | `init` | Scaffold + validate `~/.cherrypick/config.json` from the template (first-run). | `--force` (overwrite an existing config) |
-| `connect --module <m>` | Guided per-module onboarding: runs the module's **own** hidden-input credential tool for the OAuth secrets (the orchestrator never sees `client_secret`/`refresh_token`) and selects the live-trading account. Never trades. | `--module meic\|earnings` |
-| `account --module <m>` | List, set, or clear a module's **designated** live-trading account (masked). Configuration only. | `--module`, `--set <last4\|index>`, `--clear`, `--yes` |
+| `connect` | **The onboarding path for most setups.** The suite wizard: the shared login entered once (hidden input), an offer to migrate any per-module credential copies into it so there is one rotation point, one suite-wide account designation, and optional webhooks (Enter skips). Never trades. | — |
+| `connect --module <m>` | The per-module **override** layer: runs that module's own hidden-input credential tool for the OAuth secrets (the orchestrator never sees `client_secret`/`refresh_token`) and selects that module's account. Only needed when one module must differ from the suite default. | `--module meic\|earnings` |
+| `account` | List, set, or clear the **suite-wide** designated live-trading account (masked) — the default every module inherits through the store fallback chain. Configuration only. | `--set <last4\|index>`, `--clear`, `--yes` |
+| `account --module <m>` | The same, for one module's own designation (its override). Configuration only. | `--module`, `--set <last4\|index>`, `--clear`, `--yes` |
 | `migrate-home` | Move in-repo config into `~/.cherrypick` and sweep leftovers. Dry-run by default. | `--apply` (perform the move) |
 | `secrets-set` | Store a Slack/Discord webhook URL in the OS keyring (prompted without echo if `--url` omitted). `discord_follow` is a **second** Discord webhook so the Follow Feed can post to its own channel. | `--channel slack\|discord\|discord_follow`, `--url` |
 | `secrets-status` | Show which push-channel webhooks are configured (secret-free). | — |

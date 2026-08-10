@@ -4,6 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
+> ⚠️ **EXPERIMENTAL.** Least-exercised code in the repo, no meaningful track record, no paper mode, and
+> every submitted order is irreversible. It is not the suite's only live-order path — MEIC, earnings,
+> and flies each have one behind `enable_live_trading` — but it is the only *discretionary* one.
+> Changes here are changes to the one path where real money moves — hold them to the invariants below
+> rather than to convenience, and prefer failing closed over any behaviour you are unsure of. The
+> user-facing warnings live in [README.md](README.md).
+
 **cherrypick-desk** is the suite's *manual trading desk*: a foreground, human-initiated CLI for
 placing discretionary orders on the real broker account. It exists because the alternative that grew
 up in its absence was worse — temporarily flipping a module's `enable_live_trading` (a guarded,

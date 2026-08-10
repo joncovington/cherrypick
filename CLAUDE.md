@@ -19,11 +19,16 @@ One workspace for the trading-tool suite. Work in the package for your area — 
 - **packages/console** — the unified reactive web UI (Node + TypeScript, React SPA on
   127.0.0.1:5070): every module's read models plus scout's interactive surfaces in one app. Runs in
   parallel with the per-module dashboards and scout while it grows into their replacement. Read-only
-  over every other package's data (its own store is `~/.cherrypick/data/console/`); own read-scoped
-  broker credential; no order-placement code paths.
-- **packages/desk** — the **manual trading desk**: a foreground, human-initiated CLI for
-  discretionary live orders, authorized entirely on its own (own config, own keyring PIN, per-order
-  ticket) so it never touches a module's `enable_live_trading`. Not a strategy module — no loop, no
+  over every other package's data (its own store is `~/.cherrypick/data/console/`); reads the shared
+  suite credential and never writes one, gating its write-oriented functions on the token's probed
+  scope; no order-placement code paths.
+- **packages/desk** — ⚠️ **EXPERIMENTAL.** The **manual trading desk** and the suite's only
+  *discretionary* live-order path (meic/earnings/flies each have a live loop behind their own
+  `enable_live_trading` gate; this has no loop): a foreground, human-initiated CLI for
+  discretionary live orders, authorized entirely on its own (own config, own PIN kept as a salted
+  verifier, per-order ticket, own policy gates) so it never touches a module's `enable_live_trading`.
+  It stores no broker secrets — it borrows a module's keyring session, because borrowing credentials
+  is not borrowing permissions. Not a strategy module — no loop, no
   schedule, no ledger. It exists so placing one discretionary order never requires temporarily
   flipping a guarded, plan-gated module flag. Never scheduled; no automated package may import it.
 
