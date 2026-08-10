@@ -46,7 +46,9 @@ JOBS_FILE = "supervisor-jobs.json"
 LOCK_FILE = "supervisor.lock"
 STOP_FILE = "supervisor.stop"
 
-_LAUNCHER = Path(__file__).resolve().parents[2] / "run.py"
+# This module lives at src/cherrypick/orchestrator/supervisor.py, so the repo-root run.py is THREE
+# parents up (same resolution as watchdog._RUN_PY — cli.py, one level shallower, uses two).
+_LAUNCHER = Path(__file__).resolve().parents[3] / "run.py"
 
 # How stale the heartbeat may be before ensure-supervisor treats the daemon as dead. The loop writes
 # it every HEARTBEAT_WRITE_SECONDS; 90s tolerates a slow pass or a paused clock without flapping.
