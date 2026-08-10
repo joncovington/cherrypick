@@ -64,8 +64,11 @@ earnings) is captured on the loop write path — stdlib/DB-only — so the marke
 carried the day, cost drag as a share of gross, and the gross-vs-net win-rate gap — "costs flipped ~N
 trades from win to loss"; on an all-red day it names the least-bad and worst instead of a "carrier"), the
 suite total, a per-module table, and links to each module's `paper-eod` and `eod-analysis`. It cites
-`report`'s numbers rather than re-summing the DBs, so it can't drift. Scheduled daily as
-`cherrypick-eod-digest` (via `notify-eod`, which also pushes a one-line summary), on by default.
+`report`'s numbers rather than re-summing the DBs, so it can't drift. On by default and **event-driven,
+not scheduled**: the watchdog fires `notify-eod` (which writes the digest and pushes a one-line summary)
+as a detached subprocess once every installed module has written its `paper-eod-<day>.md`, with
+`eod_digest.deadline` as the backstop so a late or flat module can't skip the day. Detached because the
+push is a network call and the watchdog tick must stay stdlib-and-OS-shell only.
 
 ## The AI EOD insight (opt-in)
 
@@ -80,12 +83,13 @@ and it's deliberately fenced:
   `--disallowed-tools Bash Edit Write NotebookEdit WebFetch WebSearch Task` — so the agent can't run
   commands, edit/write files, or reach the network. The **orchestrator** writes the output file; the
   agent never gets filesystem/broker access.
-- **Off the reliability path.** A separate daily `cherrypick-eod-insight` task (registered only when
-  enabled), best-effort, never on the watchdog/paper loop.
+- **Off the reliability path.** Fired by the watchdog on the same module-completion event as the
+  digest and **launched detached**, so the `claude` call runs in that child and never in the watchdog
+  process. Best-effort, never on the paper loop.
 
 Output: `logs/eod-insight-<day>.md` — a genuine cross-module narrative (the "why", trends, concrete
 paper-tuning recommendations), clearly labelled AI-generated and not advice. Enable with
-`"eod_insight": {"enabled": true}` and re-run `install`. See
+`"eod_insight": {"enabled": true}` — it takes effect on the next watchdog tick, with no install step. See
 [guardrails-and-modes.md](guardrails-and-modes.md) for why this satisfies the no-AI-on-the-reliability-path
 invariant.
 

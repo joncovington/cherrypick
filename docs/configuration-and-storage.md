@@ -14,6 +14,10 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   config/earnings.json            # Earnings engine config
   config/flies.json               # Flies engine config
   config/gex.json                 # GEX dashboard config
+  config/streamer.json            # standalone streamer config
+  config/console.json             # unified console UI config
+  config/scout.json               # scout config
+  config/desk.json                # manual trading desk config (own credential + PIN)
   data/marketdata/stream_cache.db # the canonical shared DXLink stream cache (quotes/greeks/OI) —
                                   #   written ONLY by the standalone streamer, read by every module
   data/meic/paper_trades.db       # MEIC paper ledger (ic_trades)   ← orchestrator reads this
@@ -21,7 +25,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/earnings/paper_trades.db   # Earnings paper ledger (trades)  ← orchestrator reads this
   data/earnings/earnings_trades.db# Earnings live ledger
   data/flies/paper_trades.db      # Flies paper ledger (fly_positions / fly_books)
-  data/flies/live_trades.db       # Flies live ledger (inert scaffold)
+  data/flies/live_trades.db       # Flies live ledger (the live pilot writes here; armed per day)
   data/gex/gex_history.db         # GEX spot trail + regime history
   logs/                           # suite logs + eod-digest-<day>.md + eod-insight-<day>.md
   logs/meic/  logs/earnings/  logs/flies/  logs/gex/  logs/streamer/   # per-module logs + EOD reports
@@ -33,16 +37,21 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
 
 ## Config model
 
-Three config layers, all machine-local and gitignored (only the `config.example.json` templates are
-tracked):
+One config file per package, all machine-local and gitignored (only the `config.example.json`
+templates are tracked). The orchestrator's is the only one that describes other packages; the rest
+configure their own engine and nothing else:
 
 | Config | Owned by | Sets |
 |---|---|---|
 | `~/.cherrypick/config.json` | Orchestrator | Which modules are enabled + their `path` and `live_db`; the per-module `paper` block (`paper_db`, `trade_schema`, task names, entry/exit times) and `calibration`; the top-level `streamer` (the standalone producer) and `services` (background daemons like the gex recorder); `watchdog`, `trade_notify`, `eval_activity`, `notify`, `eod_digest`, `eod_insight`, `advise`, `data_epoch`, `log_archive`, `reconcile`, `dashboard`; timezone. |
 | `~/.cherrypick/config/meic.json` | MEIC | `symbols`, delta/VIX bands, wing widths, credit floors, entry/exit windows, stop policy, regime thresholds, cash-settled set, deploy-limit pct (risk profiles live in the repo's `config.risk.json`). |
 | `~/.cherrypick/config/earnings.json` | Earnings | `available_capital_paper_mode`, position caps, entry/close windows, correlation block list, liquidity gates, per-strategy tuning, named profiles. |
-| `~/.cherrypick/config/flies.json` | Flies | `symbols`, wing/increment scaling, entry gates and floors, the experiment `arms` (incl. the width sweep), the inert `live` block. |
+| `~/.cherrypick/config/flies.json` | Flies | `symbols`, wing/increment scaling, entry gates and floors, the experiment `arms`, and the `live` block for the narrow live pilot (armed per day via `/live-flies-start`, one arm / one symbol / one incomplete position, self-disarming at `live.disarm_time`). |
 | `~/.cherrypick/config/gex.json` | GEX | `symbols`, the shared stream-cache source path, serve host/port, history DB path. |
+| `~/.cherrypick/config/streamer.json` | Streamer | Broker session settings and the stream-cache path it writes; the symbol set is not configured here — it is the union of every module's `state/stream_requests/` file. |
+| `~/.cherrypick/config/console.json` | Console | Serve host/port (`127.0.0.1:5070`), which modules' read models to surface, and its own read-scoped broker credential. |
+| `~/.cherrypick/config/scout.json` | Scout | Screening parameters and serve host/port. |
+| `~/.cherrypick/config/desk.json` | Desk | Its own broker credential and keyring PIN for discretionary live orders — deliberately separate from every module's `enable_live_trading`. |
 
 **Resolution rules:**
 - A module `path` in the orchestrator config is resolved **relative to the config file's directory** /
@@ -53,25 +62,37 @@ tracked):
   `MEIC_DATA_DIR` / `EARNINGS_DATA_DIR` and `MEIC_LOGS_DIR` / `EARNINGS_LOGS_DIR` relocate a single
   module's data/logs; `MEIC_DB_PATH` points db.py at a specific DB (used by the paper engine).
 
-### Orchestrator scheduling knobs (defaults)
+### Orchestrator scheduling knobs
 
-| Block / source | Default | Task |
+Since the 2026-08-09 supervisor cutover the OS scheduler holds **exactly one** cherrypick entry
+(`cherrypick-supervisor`). Everything below is a **supervisor job**, re-derived from this config on
+every supervisor pass by `orchestrator/jobspec.py` — so changing a cadence is a config edit that takes
+effect on the next pass, with no `install` step and no scheduled task to register. The job ids are what
+`cherrypick status` lists.
+
+| Block / source | Enabled by default | Supervisor job |
 |---|---|---|
-| `watchdog` | on, ~10 min | `cherrypick-watchdog` |
-| `trade_notify` | on, ~2 min | `cherrypick-trade-notify` |
-| `follow_feed` | **off**, ~5 min when enabled | `cherrypick-follow-notify` |
-| module `paper` (kind `self_healing`) | module constants: MEIC 2 min, flies 1 min | `cherrypick-meic-paper-loop`, `cherrypick-flies-paper-loop` — registered by the modules' own `--install-task` |
-| module `paper` (kind `cherrypick_scheduled`) | entry 15:45 / exit 09:45 ET | `cherrypick-earnings-paper-entry`, `-exit` |
-| `paper.dolt_service` | on, ~5 min | `cherrypick-earnings-dolt` (keep-alive) |
-| `eod_digest` | **on**, event-driven (deadline backstop 16:45 ET) | *no task* — watchdog-fired once every module's paper-eod exists; `install` deletes any stale fixed-time task |
-| `eod_insight` | **off**, event-driven with the digest; needs Claude Code | *no task* (same event) |
-| `advise` | **off twice** (suite + per-module), event-driven with the digest | *no task* (same event) |
-| `log_archive` | **on**, day 1 @ 03:30 | `cherrypick-log-archive` (monthly) |
-| `reconcile.schedule` | **off** (phase-5 posture, daily 16:30 when on) | `cherrypick-reconcile` |
+| `watchdog` | on | `watchdog` |
+| `streamer` | on (in-session liveness probe) | `streamer-health` |
+| `trade_notify` | on | `trade-notify` |
+| `follow_feed` | **off** | `follow-notify` |
+| module `paper`, `tick_interval_seconds` ≥ 60 | on | `<module>-paper` (short-lived tick) |
+| module `paper`, `tick_interval_seconds` < 60 | on | `<module>-paper` (the module's own resident `--interval` loop, in-session only, restarted on death and on `silence_seconds` of log silence) plus `<module>-paper-offsession` (60 s ticks outside the session, so settlement and retries keep their shape) |
+| module `paper` (kind `cherrypick_scheduled`) | on, entry 15:45 / exit 09:45 ET | `<module>-entry`, `<module>-exit` |
+| `paper.dolt_service` | on | `<module>-dolt` (keep-alive) |
+| module `live` | **off** until armed | `<module>-live` |
+| `eod_digest` | **on**, event-driven (deadline backstop 16:45 ET) | *no job* — the watchdog fires it detached once every module's `paper-eod` exists |
+| `eod_insight` | **off**, event-driven with the digest; needs Claude Code | *no job* (same event) |
+| `advise` | **off twice** (suite + per-module), event-driven with the digest | *no job* (same event) |
+| `symbol_watch` | on, daily | `symbol-watch` |
+| `log_archive` | **on**, day 1 @ 03:30 | `log-archive` (monthly) |
+| `reconcile.schedule` | **on**, daily 16:30 | `reconcile` |
 
-Each is opt-out (or opt-in where marked off) via its `enabled` key, then re-run `install`/`uninstall`.
-Full annotated examples live in `packages/orchestrator/config.example.json`; the complete verified
-inventory with commands and registration ownership is in [operations.md](operations.md).
+Cadences are deliberately not restated here — each job's interval is the value of its own config key
+(`watchdog.interval_minutes`, `trade_notify.interval_seconds`, a module's `paper.tick_interval_seconds`,
+and so on), and a table that repeats them is a second place for them to go stale. Read the current
+values from `packages/orchestrator/config.example.json`, which annotates every one. The complete
+verified job inventory with commands is in [operations.md](operations.md).
 
 ## Databases & schemas
 

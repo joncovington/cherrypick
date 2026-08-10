@@ -74,8 +74,9 @@ treatment. Surfaced *informationally* in the EOD analysis tax section — not ta
 **Slippage** — The modeled haircut off mid price applied to fills, on top of the real tastytrade fee
 schedule, so reported "net" reflects realistic transaction costs.
 
-**Streamer** — The daemon (`cherrypick.core.streamer`) that holds the DXLink WebSocket and writes the
-stream cache; a stale streamer is the failure mode the watchdog guards against.
+**Streamer** — The standalone daemon (`packages/streamer`) that holds the DXLink WebSocket and is the
+suite's single writer of the shared stream cache; every module reads it and none of them write it. A
+stale streamer is the failure mode the watchdog guards against.
 
 **VIX1D** — The 1-day volatility index; MEIC uses `vix1d / vix` as a same-day-specific event-day signal.
 
