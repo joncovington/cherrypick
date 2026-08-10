@@ -112,6 +112,9 @@ import { payoffCurve, stateAt, bookPnl, positionFloor, type FlyPosition, type Fl
 export interface FliesForest {
   mode: TradingMode;
   tradeDate: string | null;
+  /** The day's traded underlying (most-traded symbol when mixed) — the
+   *  client subscribes this for the live spot line, never a hardcoded one. */
+  symbol: string | null;
   /** One curve per arm active on the day. */
   arms: Array<{ arm: string; curve: PayoffCurve }>;
   /** The day's settlement print when the session has settled; null intraday. */
@@ -145,7 +148,7 @@ export function readFliesForest(
 ): FliesForest {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
-  const empty: FliesForest = { mode, tradeDate: null, arms: [], settlement: null, lastTickSpot: null };
+  const empty: FliesForest = { mode, tradeDate: null, symbol: null, arms: [], settlement: null, lastTickSpot: null };
   return withReadOnlyDb<FliesForest>(dbPath, empty, (db) => {
     const tradeDate =
       day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_positions").get()?.d ?? null;
@@ -200,9 +203,17 @@ export function readFliesForest(
         status: r["status"] === null ? null : String(r["status"]),
       });
     }
+    const symRow = db
+      .prepare<string[], { symbol: string | null }>(
+        `SELECT symbol FROM fly_positions
+          WHERE trade_date = ? AND status != 'voided' AND void_reason IS NULL${armClause}
+          GROUP BY symbol ORDER BY COUNT(*) DESC LIMIT 1`,
+      )
+      .get(...params);
     return {
       mode,
       tradeDate,
+      symbol: typeof symRow?.symbol === "string" && symRow.symbol !== "" ? symRow.symbol : null,
       arms: [...byArm.entries()]
         .sort((a, b) => a[0].localeCompare(b[0]))
         .map(([arm, positions]) => ({ arm, curve: payoffCurve(positions) })),

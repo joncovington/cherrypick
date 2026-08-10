@@ -23,6 +23,8 @@ interface PayoffCurve {
 interface Forest {
   mode: TradingMode;
   tradeDate: string | null;
+  /** The day's traded underlying — drives the live-spot subscription. */
+  symbol: string | null;
   arms: Array<{ arm: string; curve: PayoffCurve }>;
   settlement: { price: number; source: string | null } | null;
   lastTickSpot: number | null;
@@ -113,8 +115,10 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
   const [xwidth, setXwidth] = useState<(typeof X_WIDTHS)[number]>("auto");
   const [ywidth, setYwidth] = useState<(typeof Y_WIDTHS)[number]>("auto");
   const [hover, setHover] = useState<{ px: number; frac: number } | null>(null);
-  const symbol = "XSP";
-  const quote = useQuote(symbol);
+  // Subscribe the day's actual underlying (SPX days must not show an XSP
+  // quote); no symbol on file → no live spot line rather than a wrong-scale one.
+  const symbol = data?.symbol ?? null;
+  const quote = useQuote(symbol ?? "");
   const liveSpot = quote?.last ?? (quote?.bid !== undefined && quote?.ask !== undefined ? (quote.bid + quote.ask) / 2 : null);
 
   // A settled day marks the SETTLEMENT print (the number that decided every
@@ -133,9 +137,9 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
   let body = null;
   let legendRow = null;
   if (shown.length > 0) {
-    // X window: the day's traded CENTRES only — from just below the lowest
-    // centre to just above the highest. Spot does not stretch the window;
-    // the day's movement replays inside the structures that were traded.
+    // X window: the day's traded CENTRES, stretched to keep spot (or the
+    // settlement print) inside — a spot line the chart can't show is worse
+    // than a wider window when price walks away from the structures.
     let cMin = Infinity;
     let cMax = -Infinity;
     for (const a of shown) {
@@ -144,6 +148,10 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
         cMin = Math.min(cMin, k);
         cMax = Math.max(cMax, k);
       }
+    }
+    if (spot !== null) {
+      cMin = Math.min(cMin, spot);
+      cMax = Math.max(cMax, spot);
     }
     const buffer = Math.max((cMax - cMin) * 0.08, 3);
     const mid = (cMin + cMax) / 2;
