@@ -32,11 +32,11 @@ Card-by-card status of the console against the surfaces it replaces (re-audited 
 | Exit reasons / fee drag | done |
 | Regime coverage (with degenerate flags) | done |
 | Trade log filters (outcome, exit reason, search) | done — filters and paging both in SQL, so counts describe the scope and not the page; explicit date-range inputs still missing |
+| Performance view: profile comparison, risk metrics, equity + underwater, study arms, per-period charts | done. **Missing: arm scorecard (breakeven identity) and stop-policy counterfactuals** |
 
 Every row-listing table in the console is server-paged against a true match count
 (`Paged<T>` in `@console/shared`, `readers/paging.ts` on the server). No table stops
 at a hidden row cap.
-| Performance view: profile comparison, risk metrics, equity + underwater, study arms, per-period charts | done. **Missing: arm scorecard (breakeven identity) and stop-policy counterfactuals** |
 
 ## Flies dashboard (:5052) — at parity+
 

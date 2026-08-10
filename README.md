@@ -174,7 +174,7 @@ read them:
 | **Python 3.11+** | Runs the orchestrator, both strategy engines, and the reporting. |
 | **[Claude Code](https://docs.claude.com/en/docs/claude-code)** | Anthropic's agentic CLI. It drives the interactive and live-trading sessions, the slash-command workflows (`/meic-start`, `/earnings-start`, `/eod-report`), and the agent-synthesized analysis. The unattended **paper** automation runs on its own without it — but the agent-driven features need it. Installs via npm (needs [Node.js](https://nodejs.org) 18+). |
 | A computer that stays awake during market hours | cherrypick runs on your machine on a schedule, so it has to be on to capture a session. **Windows is recommended** — the scheduler and self-healing are most complete there. |
-| **[pnpm](https://pnpm.io)** *(console only)* | The unified web console is a Node/TypeScript package and builds with pnpm. Not needed for anything else — every other package is Python. |
+| **[Node.js](https://nodejs.org) 22+ and [pnpm](https://pnpm.io)** *(console only)* | The unified web console is a Node/TypeScript package. It needs Node **22+** — a higher floor than Claude Code's 18+. Not needed for anything else; every other package is Python. |
 | **[Dolt](https://github.com/dolthub/dolt)** *(earnings engine only)* | The earnings module reads its historical datasets from a local `dolt sql-server`. Not needed for MEIC or the GEX dashboard. |
 
 ## Quick Start
@@ -202,9 +202,13 @@ Then run `claude` from the project directory to use the suite's slash commands (
 git clone https://github.com/joncovington/cherrypick.git
 cd cherrypick
 
-# Installs the shared cherrypick.core library first, then every package. Do this from the repo root.
-scripts/dev-install.sh          # or: scripts\dev-install.ps1 on Windows
+# Installs the shared cherrypick.core library first, then every Python package. From the repo root.
+bash scripts/dev-install.sh                      # macOS / Linux / Git Bash
+powershell -File scripts\dev-install.ps1         # Windows PowerShell
 ```
+
+It also builds the console if `pnpm` is present, and skips it with a notice if not — so the
+Python-only setup stays one command.
 
 Prefer to do it by hand, or only want the orchestrator? `cherrypick.core` **must** go first — every other
 package imports it, and there is no `sys.path` fallback:
@@ -215,9 +219,11 @@ cd packages/orchestrator
 pip install -e ".[dev]"
 ```
 
-MEIC and earnings install the same way (`pip install -e ".[dev]"` in their directory) if you plan to run
-them. **flies, gex, and the streamer need no install** — the orchestrator runs them in place. The
-**console** is the one Node package; build it only if you want the unified UI:
+Every other Python package installs the same way (`pip install -e ".[dev]"` in its directory). The
+orchestrator can also run flies, gex, and the streamer **in place** without installing them, which is
+why a minimal setup is just core plus the orchestrator — but the script above installs them anyway, so
+their own CLIs and test suites work. The **console** is the one Node package; build it only if you want
+the unified UI:
 
 ```bash
 cd packages/console && pnpm install && pnpm build
@@ -331,7 +337,9 @@ per-user directory — relocate the whole thing by setting `CHERRYPICK_HOME`:
   config.json                       # the orchestrator's config
   config/<engine>.json              # one per engine (meic, earnings, flies, gex, streamer, console, …)
   data/marketdata/stream_cache.db   # the shared market-data cache — one writer, every module reads it
-  data/<module>/paper_trades.db     # paper ledger, per module (live ledgers are separate files)
+  data/<module>/paper_trades.db     # paper ledger (live ledgers are separate files). MEIC's shipped
+                                    #   default is checkout-relative instead — set paper_db explicitly
+                                    #   if you want every module's data under this home
   logs/                             # suite + per-module logs, EOD reports, digests
   state/                            # supervisor job state, heartbeats
 ```

@@ -349,7 +349,14 @@ how many samples get collected. The cells use *throughput* caps (concurrency 4 /
 time-cohorts stay open at once for denser time-of-day coverage; reconstruct a strict small account
 (e.g. 2 concurrent) by filtering the tagged rows in analysis.
 
-## The current roster
+## The retired symbol/wing/credit roster (removed 2026-07-18)
+
+> **None of the seven profiles below exist in `config.risk.json`.** They were removed 2026-07-18 for
+> pinning a *symbol* into a profile's identity, which collided with the portfolio model. The table is
+> kept so historical books opened under these names stay readable, and because the per-profile
+> mechanism it documents (`symbols`, `wing_widths_by_symbol` + `wing_selection`, `stagger_entries`) is
+> what every study arm since has used — without the `symbols` pin. The **live** roster is the
+> four-stream forward test described earlier in this document.
 
 | Profile | Symbol | Wings | Pick | min_credit | Concurrent | Daily | Spacing | Tier / purpose |
 |---|---|---|---|---|---|---|---|---|
