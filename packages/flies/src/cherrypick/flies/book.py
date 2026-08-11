@@ -261,7 +261,9 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
         "no_0dte_expiration": "no_candidate",
     }
 
-    def record_attempt(mode, reason, *, accepted=False, plan=None, center=None, position_id=None):
+    def record_attempt(
+        mode, reason, *, accepted=False, plan=None, center=None, position_id=None, detail=None
+    ):
         """One row per evaluated entry opportunity -- the measurement record under the journal.
 
         Wrapped so a telemetry failure can never cost a trade: this runs after the decision is made
@@ -286,6 +288,8 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 gex_positive=(snapshot.get("gex") or {}).get("gex_positive"),
                 would_be_credit=(plan or {}).get("credit"),
                 position_id=position_id,
+                blocking_strike=(detail or {}).get("blocking_strike"),
+                seconds_until_cadence_clear=(detail or {}).get("seconds_until_cadence_clear"),
                 ts=now,
             )
         except Exception:  # noqa: BLE001 - telemetry must never break the loop
@@ -583,10 +587,17 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 _record_post_best_credit(conn, pos, fly.vertical_credit(center_q, wing_q, slip), now)
 
     open_positions = [p for p in positions if p["status"] == "open"]
+    # Filled in by the engine's portfolio gates on a refusal: the strike that collided, or the
+    # seconds still to wait. Passed as an out-dict because `plan is None on refusal` is an
+    # invariant live_loop documents and leans on, and telemetry is not a good enough reason to
+    # loosen a contract live-order code reads.
+    gate_detail: dict = {}
 
     # --- 2. legged entry: sell a new credit spread
     if "legged" in params.get("entry_modes", ["legged"]):
-        enter, reason, plan = engine.evaluate_credit_spread_entry(snapshot, params, open_positions, positions)
+        enter, reason, plan = engine.evaluate_credit_spread_entry(
+            snapshot, params, open_positions, positions, gate_detail
+        )
         if enter:
             position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}"
             pos = {
@@ -664,13 +675,13 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             )
         else:
             journal("legged", reason, center=wanted_center)
-            record_attempt("legged", reason, plan=plan, center=wanted_center)
+            record_attempt("legged", reason, plan=plan, center=wanted_center, detail=gate_detail)
             actions.append({"action": "entry_skipped", "mode": "legged", "reason": reason})
 
     # --- 2.5. debit-first entry: buy a debit vertical, complete later by SELLING a credit spread
     if "debit_first" in params.get("entry_modes", []):
         enter, reason, plan = engine.evaluate_debit_vertical_entry(
-            snapshot, params, open_positions, positions
+            snapshot, params, open_positions, positions, gate_detail
         )
         if enter:
             position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-D"
@@ -747,12 +758,14 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             )
         else:
             journal("debit_first", reason, center=wanted_center)
-            record_attempt("debit_first", reason, plan=plan, center=wanted_center)
+            record_attempt("debit_first", reason, plan=plan, center=wanted_center, detail=gate_detail)
             actions.append({"action": "entry_skipped", "mode": "debit_first", "reason": reason})
 
     # --- 2.75. bwb_roll entry: buy a broken-wing butterfly whole for a net credit
     if "bwb_roll" in params.get("entry_modes", []):
-        enter, reason, plan = engine.evaluate_bwb_entry(snapshot, params, open_positions, positions)
+        enter, reason, plan = engine.evaluate_bwb_entry(
+            snapshot, params, open_positions, positions, gate_detail
+        )
         if enter:
             position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-B"
             pos = {
@@ -828,7 +841,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             )
         else:
             journal("bwb_roll", reason, center=wanted_center)
-            record_attempt("bwb_roll", reason, plan=plan, center=wanted_center)
+            record_attempt("bwb_roll", reason, plan=plan, center=wanted_center, detail=gate_detail)
             actions.append({"action": "entry_skipped", "mode": "bwb_roll", "reason": reason})
 
     # --- 3. outright entry: buy a cheap fly, funded only by premium already taken in
@@ -911,7 +924,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             )
         else:
             journal("outright", reason, center=wanted_center)
-            record_attempt("outright", reason, plan=plan, center=wanted_center)
+            record_attempt("outright", reason, plan=plan, center=wanted_center, detail=gate_detail)
             actions.append({"action": "entry_skipped", "mode": "outright", "reason": reason})
 
     summary = _save_book(conn, book_id, trade_date, arm, symbol, positions, params)

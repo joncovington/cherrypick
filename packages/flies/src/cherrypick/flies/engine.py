@@ -690,7 +690,11 @@ def portfolio_gates(
 
 # --------------------------------------------------------------------------- legged entry (step 1)
 def evaluate_credit_spread_entry(
-    snapshot: dict, params: dict, open_positions: list, day_positions: list | None = None
+    snapshot: dict,
+    params: dict,
+    open_positions: list,
+    day_positions: list | None = None,
+    gate_detail: dict | None = None,
 ) -> tuple:
     """Should this arm sell an opening credit spread? Returns (enter, reason, plan | None).
 
@@ -749,6 +753,12 @@ def evaluate_credit_spread_entry(
         structure=structure,
     )
     if refusal:
+        # Recorded through an out-dict rather than the return tuple on purpose. `plan is None on
+        # refusal` is an invariant live_loop documents and leans on, and telemetry is not a good
+        # enough reason to loosen a contract that live-order code reads. Callers that want the
+        # detail pass a dict; the live loop passes nothing and is untouched.
+        if gate_detail is not None:
+            gate_detail.update(_detail)
         return False, refusal, None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
@@ -880,7 +890,11 @@ def choose_debit_side(snapshot: dict, center: float) -> str:
 
 
 def evaluate_debit_vertical_entry(
-    snapshot: dict, params: dict, open_positions: list, day_positions: list | None = None
+    snapshot: dict,
+    params: dict,
+    open_positions: list,
+    day_positions: list | None = None,
+    gate_detail: dict | None = None,
 ) -> tuple:
     """Should this arm buy an opening debit vertical? Returns (enter, reason, plan | None).
 
@@ -927,6 +941,12 @@ def evaluate_debit_vertical_entry(
         structure=(float(center), float(width), None),
     )
     if refusal:
+        # Recorded through an out-dict rather than the return tuple on purpose. `plan is None on
+        # refusal` is an invariant live_loop documents and leans on, and telemetry is not a good
+        # enough reason to loosen a contract that live-order code reads. Callers that want the
+        # detail pass a dict; the live loop passes nothing and is untouched.
+        if gate_detail is not None:
+            gate_detail.update(_detail)
         return False, refusal, None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
@@ -1126,7 +1146,11 @@ def _bwb_lower_upper(side: str, near_wing: float, far_wing: float) -> tuple[floa
 
 
 def evaluate_bwb_entry(
-    snapshot: dict, params: dict, open_positions: list, day_positions: list | None = None
+    snapshot: dict,
+    params: dict,
+    open_positions: list,
+    day_positions: list | None = None,
+    gate_detail: dict | None = None,
 ) -> tuple:
     """Should this arm enter a broken-wing butterfly for a net credit? Returns (enter, reason, plan).
 
@@ -1190,6 +1214,12 @@ def evaluate_bwb_entry(
         structure=(float(center), float(width), float(far_width)),
     )
     if refusal:
+        # Recorded through an out-dict rather than the return tuple on purpose. `plan is None on
+        # refusal` is an invariant live_loop documents and leans on, and telemetry is not a good
+        # enough reason to loosen a contract that live-order code reads. Callers that want the
+        # detail pass a dict; the live loop passes nothing and is untouched.
+        if gate_detail is not None:
+            gate_detail.update(_detail)
         return False, refusal, None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)

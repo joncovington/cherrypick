@@ -1415,3 +1415,58 @@ def test_the_price_gate_bounds_the_floor_before_min_floor_dollars_can(conn=None)
     snap = snapshot(underlying_price=6004.0, puts={6000: q(0.00, 0.01), 6005: q(2.42, 2.47)})
     done, _, plan = engine.evaluate_completion(snap, open_spread(), params(min_floor_dollars=bound - 1))
     assert done and plan["floor"] > bound
+
+
+def test_a_refusal_reports_the_blocking_strike_without_returning_a_plan():
+    """The detail rides an out-dict, not the return tuple.
+
+    `plan is None on refusal` is an invariant live_loop documents and leans on, so the strike that
+    collided is handed back through a caller-supplied dict instead. Asserted together because the
+    two halves are the point: the detail arrives AND the contract is unchanged.
+    """
+    held = {
+        "center": 6000.0,
+        "kind": "short_vertical",
+        "side": "put",
+        "wing_width": 5,
+        "far_width": None,
+        "trade_date": "2026-08-11",
+    }
+    detail: dict = {}
+    enter, reason, plan = engine.evaluate_credit_spread_entry(
+        snapshot(underlying_price=5993.0), params(), [held], None, detail
+    )
+    assert not enter and reason == "sign_rule_conflict"
+    assert plan is None, "live_loop relies on a refusal carrying no plan"
+    assert detail["blocking_strike"] == 5995.0
+    assert detail["blocking_right"] == "P"
+
+
+def test_a_cadence_refusal_reports_the_seconds_still_to_wait():
+    """The distribution of that wait is the measured cost of the current spacing — the only honest
+    input to changing it — so it has to be recorded, not just implied by the refusal."""
+    held = {
+        "center": 5900.0,
+        "kind": "short_vertical",
+        "side": "put",
+        "wing_width": 5,
+        "far_width": None,
+        "trade_date": "2026-08-11",
+        "entry_time_min": 11 * 60,
+    }
+    snap = snapshot(underlying_price=5998.0)
+    snap["now_min"] = 11 * 60 + 2
+    detail: dict = {}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(
+        snap, {**params(), "min_seconds_between_entries": 360}, [held], None, detail
+    )
+    assert not enter and reason == "entry_cadence_wait"
+    assert detail["seconds_until_cadence_clear"] == 240.0
+
+
+def test_the_out_dict_is_optional_so_the_live_loop_signature_is_unchanged():
+    held = {"center": 6000.0, "kind": "fly", "side": "put", "wing_width": 5, "far_width": None}
+    enter, reason, plan = engine.evaluate_credit_spread_entry(
+        snapshot(underlying_price=5998.0), params(), [held]
+    )
+    assert not enter and reason == "duplicate_structure" and plan is None
