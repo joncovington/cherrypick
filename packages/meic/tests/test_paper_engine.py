@@ -818,7 +818,12 @@ def test_crossed_leg_quote_holds_as_quotes_unavailable():
         underlying_price=7500.0,
         settle=False,
     )
-    assert d == {"action": "hold", "reason": "quotes_unavailable"}
+    # Asserted on the decision itself rather than the whole dict: the per-side excursion keys
+    # (_mae_updates) ride along on every return, including this one, and deliberately so — an
+    # excursion is a fact about SPOT, which is known here, not about the leg quotes, which are not.
+    # A stalled quote feed must not also lose the spot record.
+    assert d["action"] == "hold" and d["reason"] == "quotes_unavailable"
+    assert "put_exit_price" not in d and "call_exit_price" not in d
 
 
 def test_one_sided_leg_quote_holds_as_quotes_unavailable():
@@ -831,7 +836,9 @@ def test_one_sided_leg_quote_holds_as_quotes_unavailable():
         underlying_price=7500.0,
         settle=False,
     )
-    assert d == {"action": "hold", "reason": "quotes_unavailable"}
+    # See the crossed-quote test above on why this is not an exact-dict assertion.
+    assert d["action"] == "hold" and d["reason"] == "quotes_unavailable"
+    assert "put_exit_price" not in d and "call_exit_price" not in d
 
 
 def test_unmarked_iterations_are_counted_on_the_trade(monkeypatch):
@@ -2408,3 +2415,77 @@ def test_control_keeps_todays_deployed_policy():
     assert control["max_concurrent_ics"] == 99
     assert control["per_side_stop_management"] is True
     assert control["stop_trigger_ratio"] == 0.95
+
+
+# --------------------------------------------------------------------------- adverse excursion
+
+
+def _mae(spot, **trade_over):
+    return paper.evaluate_open_trade(
+        _markable_trade(**trade_over),
+        _CHEAP_QUOTES,
+        _params(MODERATE),
+        force_close=False,
+        underlying_price=spot,
+        settle=False,
+    )
+
+
+def test_mae_seeds_on_the_first_marked_tick():
+    """A NULL must not be ambiguous between 'never marked' and 'never went adverse', so the first
+    marked tick records a real level for both sides regardless of direction."""
+    d = _mae(7500.0)
+    assert d["put_mae_spot"] == 7500.0 and d["call_mae_spot"] == 7500.0
+    assert d["put_mae_time"] and d["call_mae_time"]
+
+
+def test_mae_tracks_each_side_in_its_own_adverse_direction():
+    """A short put gets worse as spot FALLS, a short call as spot RISES — so one tick can worsen one
+    side's excursion while leaving the other's alone."""
+    down = _mae(7470.0, put_mae_spot=7500.0, call_mae_spot=7500.0)
+    assert down["put_mae_spot"] == 7470.0  # spot fell: worse for the short put
+    assert "call_mae_spot" not in down  # ...and better for the short call, so untouched
+
+    up = _mae(7530.0, put_mae_spot=7500.0, call_mae_spot=7500.0)
+    assert up["call_mae_spot"] == 7530.0
+    assert "put_mae_spot" not in up
+
+
+def test_mae_is_monotone_and_never_relaxes():
+    """The excursion is a high-water mark: a recovery must not erase how far it went, which is the
+    whole reason it can answer a stop policy after the fact."""
+    d = _mae(7495.0, put_mae_spot=7460.0, call_mae_spot=7540.0)
+    assert "put_mae_spot" not in d and "put_mae_time" not in d
+    assert "call_mae_spot" not in d and "call_mae_time" not in d
+
+
+def test_mae_distinguishes_a_near_miss_from_a_blowout():
+    """What first-touch structurally cannot do. Neither of these positions ever touched its short
+    put (7480), and one came within a point while the other never came close — first-touch records
+    the identical NULL for both."""
+    near = _mae(7481.0)
+    far = _mae(7600.0)
+    # First-touch is silent for both — neither crossed 7480, so it cannot tell them apart at all.
+    assert "put_touch_time" not in near and "put_touch_time" not in far
+    # The excursion separates them: 1 point away versus 120.
+    assert near["put_mae_spot"] == 7481.0 and far["put_mae_spot"] == 7600.0
+
+
+def test_mae_needs_no_leg_quotes():
+    """An excursion is a fact about SPOT, so a stalled quote feed must not also lose it."""
+    d = paper.evaluate_open_trade(
+        _markable_trade(),
+        {**_CHEAP_QUOTES, "SP": {"bid": 0.20, "ask": 0.10}},  # crossed -> quotes_unavailable
+        _params(MODERATE),
+        force_close=False,
+        underlying_price=7455.0,
+        settle=False,
+    )
+    assert d["reason"] == "quotes_unavailable"
+    assert d["put_mae_spot"] == 7455.0
+
+
+def test_mae_is_absent_without_a_spot_price():
+    """No spot, no excursion — never a fabricated one."""
+    d = _mae(None)
+    assert "put_mae_spot" not in d and "call_mae_spot" not in d

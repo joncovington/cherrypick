@@ -154,3 +154,49 @@ def test_minutes_to_close():
     assert regime.minutes_to_close("16:30") == -30
     assert regime.minutes_to_close(None) is None
     assert regime.minutes_to_close("not-a-time") is None
+
+
+# --------------------------------------------------------------------------- market dimensions
+
+
+def test_market_dimensions_exclude_the_structure_ones():
+    """The split that makes an iteration row meaningful: a tick with no structure chosen can still
+    be tagged along every MARKET dimension, and must not carry the two that describe a structure —
+    those would be 'unknown' on every refused tick, a column degenerate by construction."""
+    assert set(regime.MARKET_DIMENSIONS) | set(regime.STRUCTURE_DIMENSIONS) == set(regime.DIMENSIONS)
+    assert not set(regime.MARKET_DIMENSIONS) & set(regime.STRUCTURE_DIMENSIONS)
+    assert regime.STRUCTURE_DIMENSIONS == ("skew", "center_offset")
+
+
+def test_market_regime_columns_tags_a_tick_with_no_structure():
+    snapshot = {
+        "iv_rank": 0.72,
+        "vix1d_ratio": 1.45,
+        "atr_5day": 120.0,
+        "underlying_price": 6000.0,
+        "intraday_range_pct": 0.001,
+        "day_open": 5900.0,
+        "gex": {"ok": True, "gamma_flip": 5800.0, "spot": 6000.0},
+    }
+    cols = regime.market_regime_columns(snapshot, {})
+
+    # Every market dimension resolved to a real bucket without a single strike or quote in hand —
+    # this is the whole reason a refused tick can be a denominator.
+    assert cols["vol_implied_bucket"] == "high"
+    assert cols["vol_event_bucket"] == "event"
+    assert cols["vol_realized_bucket"] == "high"
+    assert cols["vol_intraday_bucket"] == "low"
+    assert cols["gex_bucket"] == "deep_positive"
+    assert cols["trend_bucket"] == "up_from_open"
+    assert cols["vol_implied_value"] == 0.72
+
+    # ...and the structure dimensions are absent, not present-and-'unknown'.
+    assert not [k for k in cols if k.startswith(("skew", "center_offset"))]
+
+
+def test_market_regime_columns_degrades_on_an_empty_snapshot():
+    """Same contract as classify_regime: an empty snapshot tags 'unknown', never raises. The
+    iteration writer calls this on every tick including ones where the feed gave us nothing."""
+    cols = regime.market_regime_columns({}, {})
+    assert all(cols[f"{d}_bucket"] == "unknown" for d in regime.MARKET_DIMENSIONS)
+    assert all(cols[f"{d}_value"] is None for d in regime.MARKET_DIMENSIONS)

@@ -135,6 +135,65 @@ REGIME_DIMENSIONS = {
 }
 
 
+# The session count below which a dimension cannot support a threshold re-cut. Deliberately the SAME
+# number as experiment.MIN_SESSIONS_FOR_INTERVAL (14) rather than a second one invented here: both
+# answer "how many sessions before this book may draw a conclusion", and two constants for one
+# question is how they start disagreeing. Not imported from experiment.py because that module pulls
+# in paths/config and this one is a pure read layer over an open connection — the coupling is stated
+# here and pinned by a test instead.
+#
+# The bar's own provenance is experiment.py's: PROMOTION_RULE.min_days is 14 and this module's docs
+# put a regime-level claim at 14-20 sessions. Raise it, don't lower it, if a re-cut made on a sample
+# this size later fails to hold.
+MIN_EFFECTIVE_N = 14
+
+# How small within-session movement has to be, relative to movement BETWEEN sessions, before a
+# dimension is called daily-scale. Not a test for a constant: a daily-scale input still wobbles
+# slightly within a day because it is normalized by spot (5-day ATR / spot moves whenever spot does
+# — measured at 0.00005 within a session against 0.00154 across them, a real ratio of 0.03), so a
+# strict equality test would never fire and would report every dimension as intraday.
+DAILY_SCALE_RATIO = 0.2
+
+
+def _session_scale(conn, table: str, where: str, params: list, bucket_col: str, value_col: str):
+    """(sessions, daily_scale) for one regime dimension: how many distinct sessions its tagged rows
+    came from, and whether its recorded float essentially only moves BETWEEN them.
+
+    Daily-scale means the row count overstates the independent draws by roughly the number of
+    entries per session — this book takes hundreds — so `regime_coverage` reports sessions as the
+    effective n instead. Measured as (mean within-session range) / (range of session means) against
+    DAILY_SCALE_RATIO, rather than declared per dimension, so it follows what the data actually did:
+    a dimension can be daily-scale in one period and intraday in another, and hardcoding a list
+    would keep asserting the first after the second became true.
+
+    Degrades to daily_scale=False on a single session or a flat across-session range — with one
+    session there is no between-session movement to compare against, and claiming daily-scale from
+    that would be reading a denominator of zero as evidence.
+    """
+    rows = conn.execute(
+        f"SELECT trade_date, MAX({value_col}) - MIN({value_col}) AS spread, AVG({value_col}) AS mean "
+        f"FROM {table} WHERE {where} AND {bucket_col} IS NOT NULL AND {value_col} IS NOT NULL "
+        f"GROUP BY trade_date",
+        params,
+    ).fetchall()
+    sessions = (
+        conn.execute(
+            f"SELECT COUNT(DISTINCT trade_date) FROM {table} WHERE {where} AND {bucket_col} IS NOT NULL",
+            params,
+        ).fetchone()[0]
+        or 0
+    )
+    if len(rows) < 2:
+        return sessions, False
+    means = [r["mean"] for r in rows if r["mean"] is not None]
+    spreads = [r["spread"] for r in rows if r["spread"] is not None]
+    across = (max(means) - min(means)) if means else 0
+    if not spreads or across <= 0:
+        return sessions, False
+    within = sum(spreads) / len(spreads)
+    return sessions, (within / across) < DAILY_SCALE_RATIO
+
+
 def _edge_label(edges: list[float], value: float | None) -> str:
     if value is None:
         return "unknown"
@@ -194,6 +253,10 @@ def by_regime(
                 "bucket": bucket,
                 "value_min": _round(min(values), 4) if values else None,
                 "value_max": _round(max(values), 4) if values else None,
+                # `sessions` per bucket comes from _summarize, which already computes it for every
+                # read surface in this module — a bucket of 600 rows drawn from one day is one draw
+                # dressed as six hundred, and the trades count alone cannot show that. See
+                # regime_coverage's effective_n for the same accounting per dimension.
                 **_summarize(rs),
             }
         )
@@ -209,11 +272,23 @@ def regime_coverage(conn, start=None, end=None, symbol=None, era=CURRENT_ERA, ar
     together would misdiagnose a coverage gap (the gex dimension: 73% of rows untagged because the
     GEX surface was unavailable at entry) as a gate that never fired, when the two call for
     different fixes — the first needs better instrumentation, the second needs a different arm.
+
+    **Reports `effective_n` in SESSIONS, not rows, for any dimension whose input only moves daily.**
+    Rows are not draws. Under uncapped independent sampling this book takes hundreds of entries per
+    session, so a dimension fed by a daily-scale input (IV rank, trailing ATR) has one value repeated
+    across every row of a day: 967 rows of `vol_implied` measured on 2026-08-07 and 08-10 is n=2, and
+    reading it as n=967 is how a two-day sample came to look like a month's evidence. Detected rather
+    than declared — `daily_scale` is true when the recorded float never varies WITHIN a session, so
+    it follows what the data did instead of a hardcoded list of which dimensions are slow.
+
+    `underpowered` is the flag to act on: too few independent draws to cut a threshold against,
+    whatever the row count says. A degenerate dimension and an underpowered one look identical in a
+    bucket table and call for opposite responses — re-cut the float, versus collect more sessions.
     """
     where, params = _period_clause(start, end, arm, symbol, era)
     total = conn.execute(f"SELECT COUNT(*) FROM ic_trades WHERE {where}", params).fetchone()[0]
     out = {"resolved_trades": total, "dimensions": {}}
-    for dim, (bucket_col, _) in REGIME_DIMENSIONS.items():
+    for dim, (bucket_col, value_col) in REGIME_DIMENSIONS.items():
         rows = conn.execute(
             f"SELECT {bucket_col} AS bucket, COUNT(*) AS n FROM ic_trades WHERE {where} "
             f"AND {bucket_col} IS NOT NULL GROUP BY 1",
@@ -221,15 +296,27 @@ def regime_coverage(conn, start=None, end=None, symbol=None, era=CURRENT_ERA, ar
         ).fetchall()
         counts = {r["bucket"]: r["n"] for r in rows}
         tagged = sum(counts.values())
+
+        sessions, daily_scale = _session_scale(conn, "ic_trades", where, params, bucket_col, value_col)
+        effective_n = sessions if daily_scale else tagged
+
         out["dimensions"][dim] = {
             "tagged": tagged,
             "untagged": total - tagged,
             "coverage_pct": _round(tagged / total * 100) if total else None,
             "buckets": dict(sorted(counts.items(), key=lambda kv: -kv[1])),
+            "sessions": sessions,
+            "daily_scale": daily_scale,
+            "effective_n": effective_n,
             # One populated bucket among the TAGGED rows means the tag cannot discriminate — no
             # contrast, not no effect. Computed over tagged rows only, so an untagged majority
             # (a coverage gap) is never mistaken for gate degeneracy.
             "degenerate": tagged > 0 and len(counts) == 1,
+            # Keyed on SESSIONS, not effective_n, and deliberately so. Rows inside one session share
+            # that session's market, so a threshold cut on two days of intraday-varying data is
+            # still a threshold cut on two days — `daily_scale` says how severe the collapse is, not
+            # whether it happened. Every dimension in this table is bounded by the session count.
+            "underpowered": tagged > 0 and sessions < MIN_EFFECTIVE_N,
         }
     return out
 
