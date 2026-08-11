@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
+import { readMeicForest } from "../readers/meic.js";
+import { readEntryAttempts } from "../readers/attempts.js";
 import {
   readMeic,
   readMeicAnalytics,
@@ -80,6 +82,18 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     readMeicDeepAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
   );
   app.get("/api/meic/scope", async (req) => readMeicScope(config, parseMode(req.query)));
+  app.get("/api/meic/forest", async (req) => {
+    const f = parseFliesFilter(req.query);
+    return readMeicForest(config, parseMode(req.query), f.date);
+  });
+  app.get("/api/meic/attempts", async (req) => {
+    const f = parseFliesFilter(req.query);
+    return readEntryAttempts(config, "meic", parseMode(req.query), f.date);
+  });
+  app.get("/api/flies/attempts", async (req) => {
+    const f = parseFliesFilter(req.query);
+    return readEntryAttempts(config, "flies", parseMode(req.query), f.date);
+  });
   app.get("/api/meic/loop", async (req) =>
     readMeicLoopStatus(config, parseMode(req.query), parseMeicScope(req.query)),
   );

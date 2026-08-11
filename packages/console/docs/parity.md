@@ -75,3 +75,37 @@ console-only addition.
 
 Done except narrative/describe prose. Console additions beyond scout: chain delta+OI picker,
 STO/BTO highlights, ±EM band, scope-gated real dry-run validation.
+
+## Per-arm portfolios: what the API serves and what is still missing (2026-08-11)
+
+Both modules now record an **entry-attempts ledger** — one row per evaluated entry opportunity per
+arm — and MEIC has a **profit forest** to match flies'. The server side is complete; the React views
+are not built yet.
+
+| Surface | Endpoint | Status |
+|---|---|---|
+| MEIC profit forest (per-profile expiry-payoff curves, per-position curves behind the aggregate, strikes released by stops) | `GET /api/meic/forest` | reader done, **no card yet** |
+| Entry attempts — arm rail + attempt timeline (MEIC) | `GET /api/meic/attempts` | reader done, **no card yet** |
+| Entry attempts — arm rail + attempt timeline (flies) | `GET /api/flies/attempts` | reader done, **no card yet** |
+| Strike-occupancy map (longs vs shorts per arm, blocking strike marked) | — | not started |
+| Refusal history, day replay, rule attribution, entry-slot yield | — | not started |
+
+**What the attempts payload is for.** With each arm an independent portfolio on unbounded capital,
+every arm sees the same market with the same money — so the only thing differentiating them is which
+entries the rules let through. The refusals are the primary signal. The arm rail answers "why is this
+arm quiet right now" (cadence, the sign rule, or a gate) without reading logs; the timeline answers
+it for any past minute of the session.
+
+**`no_fill` is a distinct outcome and the UI must keep it distinct.** Under a fill-based cadence
+clock an entry that cleared every gate and simply did not fill neither spent the arm's slot nor was
+refused by a rule. Rendering it as a gate refusal would make the gates look stricter than they are.
+
+**The reader degrades rather than fails.** A ledger written by a checkout predating the attempts work
+has no such table; `readEntryAttempts` returns an empty payload rather than erroring, because the
+console is read-only over every other package's data and must never fail a page over a schema it does
+not own.
+
+**Paper and live are not the same experiment, and the pages should say so.** Paper runs every arm
+concurrently and accepts account-level netting between them; live runs one arm at a time. That is a
+deliberate difference, but it means a paper result is not a live prediction for any effect that
+depends on netting.

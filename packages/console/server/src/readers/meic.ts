@@ -4,6 +4,7 @@ import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
 import { withReadOnlyDb, hasColumn, num, str } from "./db.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { payoffAt, type Leg } from "../analytics/payoff.js";
 
 
 /**
@@ -793,5 +794,171 @@ export function readMeicAnalytics(
         dragPct: gross > 0 ? (fees / gross) * 100 : null,
       },
     };
+  });
+}
+
+// ── The MEIC profit forest ──────────────────────────────────────────────────
+
+export interface MeicForestArm {
+  profile: string;
+  /** One entry per open IC, so a nested condor reads as nested rather than as one lumpy line. */
+  positions: Array<{ icOrderId: string; putStrike: number; callStrike: number; wingWidth: number; netCredit: number; quantity: number }>;
+  /** The arm's aggregate curve: P&L at expiry across the price grid. */
+  prices: number[];
+  pnl: number[];
+  /** Each position's own curve, drawn faintly behind the aggregate. */
+  perPosition: Array<{ icOrderId: string; pnl: number[] }>;
+}
+
+export interface MeicForest {
+  mode: TradingMode;
+  tradeDate: string | null;
+  symbol: string | null;
+  arms: MeicForestArm[];
+  /** Strikes released by a stop today: drawn as vacated so the forest and the
+   *  occupancy map can never disagree about what the book still holds. */
+  releasedStrikes: Array<{ profile: string; strike: number; right: "P" | "C"; at: string | null }>;
+  lastSpot: number | null;
+}
+
+/**
+ * An IC as generic payoff legs. Long strikes are DERIVED from `wing_width` —
+ * the ledger stores only the shorts as numbers (the longs live inside the
+ * OCC strings) — mirroring `paper.ic_legs` in the MEIC package. Kept as one
+ * conversion here for the same reason it is one function there: the same
+ * arithmetic in three places is three chances to disagree about what is held.
+ *
+ * `price` is carried entirely on the short put so the curve sits at the trade's
+ * real net credit; splitting it across four legs would change nothing about the
+ * shape and would invent per-leg prices the ledger never recorded.
+ */
+function icLegs(row: {
+  putStrike: number;
+  callStrike: number;
+  wingWidth: number;
+  netCredit: number;
+}): Leg[] {
+  return [
+    { kind: "put", quantity: -1, price: row.netCredit, strike: row.putStrike },
+    { kind: "put", quantity: 1, price: 0, strike: row.putStrike - row.wingWidth },
+    { kind: "call", quantity: -1, price: 0, strike: row.callStrike },
+    { kind: "call", quantity: 1, price: 0, strike: row.callStrike + row.wingWidth },
+  ];
+}
+
+/** The price grid the forest is drawn on: every strike in play plus a margin either side. */
+function forestGrid(strikes: number[]): number[] {
+  if (strikes.length === 0) return [];
+  const lo = Math.min(...strikes);
+  const hi = Math.max(...strikes);
+  const pad = Math.max((hi - lo) * 0.35, hi * 0.01);
+  const start = lo - pad;
+  const step = (hi + pad - start) / 120;
+  return Array.from({ length: 121 }, (_, i) => Math.round((start + i * step) * 100) / 100);
+}
+
+/**
+ * Per-profile expiry-payoff curves for the open book on one day — MEIC's
+ * equivalent of the flies profit forest.
+ *
+ * Two things this needs that the flies forest does not. **Nesting is the
+ * point**: MEIC stacks condors inside one another deliberately, so each IC's
+ * own curve is returned alongside the aggregate rather than only the sum.
+ * **Stops change the shape mid-day**: a stopped side releases its strikes, so
+ * those are reported explicitly — otherwise the forest and the strike-occupancy
+ * map disagree about what is held and neither gets trusted.
+ */
+export function readMeicForest(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  day: string | null,
+  scope: MeicScopeFilter = NO_SCOPE,
+): MeicForest {
+  const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.meicDir, file);
+  const empty: MeicForest = { mode, tradeDate: null, symbol: null, arms: [], releasedStrikes: [], lastSpot: null };
+
+  return withReadOnlyDb<MeicForest>(dbPath, empty, (db) => {
+    const { and, params: scopeParams } = scopeSql(db, scope);
+    const dayRow = day
+      ? { d: day }
+      : db
+          .prepare<string[], { d: string }>(
+            `SELECT MAX(trade_date) AS d FROM ic_trades WHERE 1=1${and}`,
+          )
+          .get(...scopeParams);
+    const tradeDate = dayRow?.d ?? null;
+    if (tradeDate === null) return empty;
+
+    const rows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT ic_order_id, risk_profile, symbol, put_strike, call_strike, wing_width,
+                net_credit, quantity, status, underlying_price_entry
+           FROM ic_trades
+          WHERE trade_date = ?${and}`,
+      )
+      .all(tradeDate, ...scopeParams);
+
+    // Open positions build the curves; everything else is history for this day.
+    const open = rows.filter((r) => str(r["status"]) === "open");
+    const byProfile = new Map<string, typeof open>();
+    for (const r of open) {
+      const profile = str(r["risk_profile"]) ?? "?";
+      const list = byProfile.get(profile) ?? [];
+      list.push(r);
+      byProfile.set(profile, list);
+    }
+
+    const allStrikes = open.flatMap((r) => {
+      const w = num(r["wing_width"]) ?? 0;
+      const p = num(r["put_strike"]) ?? 0;
+      const c = num(r["call_strike"]) ?? 0;
+      return [p - w, p, c, c + w];
+    });
+    const prices = forestGrid(allStrikes);
+
+    const arms: MeicForestArm[] = [...byProfile.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([profile, list]) => {
+        const positions = list.map((r) => ({
+          icOrderId: str(r["ic_order_id"]) ?? "",
+          putStrike: num(r["put_strike"]) ?? 0,
+          callStrike: num(r["call_strike"]) ?? 0,
+          wingWidth: num(r["wing_width"]) ?? 0,
+          netCredit: num(r["net_credit"]) ?? 0,
+          quantity: num(r["quantity"]) ?? 1,
+        }));
+        const perPosition = positions.map((p) => ({
+          icOrderId: p.icOrderId,
+          pnl: prices.map((s) => payoffAt(icLegs(p), s) * p.quantity),
+        }));
+        const pnl = prices.map((_, i) => perPosition.reduce((sum, p) => sum + (p.pnl[i] ?? 0), 0));
+        return { profile, positions, prices, pnl, perPosition };
+      });
+
+    // A stopped side has released its strikes. Reported per side rather than per
+    // trade: MEIC stops each side independently, so a trade can have given back
+    // its calls while its puts are still on the book.
+    const released: MeicForest["releasedStrikes"] = [];
+    for (const r of rows) {
+      const status = str(r["status"]);
+      if (status === "open") continue;
+      const profile = str(r["risk_profile"]) ?? "?";
+      const w = num(r["wing_width"]) ?? 0;
+      const p = num(r["put_strike"]);
+      const c = num(r["call_strike"]);
+      if (p !== null) {
+        released.push({ profile, strike: p, right: "P", at: null });
+        if (w) released.push({ profile, strike: p - w, right: "P", at: null });
+      }
+      if (c !== null) {
+        released.push({ profile, strike: c, right: "C", at: null });
+        if (w) released.push({ profile, strike: c + w, right: "C", at: null });
+      }
+    }
+
+    const symbol = str(open[0]?.["symbol"] ?? rows[0]?.["symbol"]) ?? null;
+    const lastSpot = num(rows[rows.length - 1]?.["underlying_price_entry"]);
+    return { mode, tradeDate, symbol, arms, releasedStrikes: released, lastSpot };
   });
 }
