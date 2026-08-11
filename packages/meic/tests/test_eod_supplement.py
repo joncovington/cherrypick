@@ -243,3 +243,77 @@ def test_write_eod_report_includes_the_supplement(tmp_path, monkeypatch):
     assert "## Arm scorecard (breakeven identity)" in md
     # the supplement lands before the footer, not after it.
     assert md.index("## Arm scorecard") < md.index("_Generated ")
+
+
+def test_eod_analysis_reports_stops_that_actually_happened(tmp_path, monkeypatch):
+    """Regression, 2026-08-11: the exit query filtered `ic_spread_legs.status='closed'`, a value the
+    writer has never once written — so it matched nothing on every session ever generated and the
+    report fell through to "No side stops fired" unconditionally. It printed that on a day 430 legs
+    stopped, and the EOD insight layer read the line and built a whole narrative on it.
+
+    Asserts both halves: the false sentence is gone, AND the side-attribution branch the code already
+    carried now actually runs. Written against the real writer and its real output file rather than a
+    captured string, because the failure mode was precisely a query that quietly matched nothing —
+    a test that could pass on an empty result would reproduce the bug rather than catch it.
+    """
+    import sqlite3
+
+    db = tmp_path / "paper_trades.db"
+    con = sqlite3.connect(db)
+    con.executescript(
+        """
+        CREATE TABLE ic_trades (ic_order_id TEXT, trade_date TEXT, entry_time TEXT, symbol TEXT,
+            risk_profile TEXT, status TEXT, pnl REAL, fees REAL, net_credit REAL, quantity INTEGER,
+            wing_width REAL, put_strike REAL, call_strike REAL, dollar_multiplier REAL,
+            underlying_price_entry REAL, expiration TEXT, era TEXT);
+        CREATE TABLE ic_spread_legs (ic_order_id TEXT, side TEXT, status TEXT, exit_time TEXT,
+            exit_reason TEXT, exit_price REAL, pnl REAL);
+        CREATE TABLE market_context (context_date TEXT, vix REAL, underlying_price REAL);
+        """
+    )
+    for i in range(3):
+        con.execute(
+            "INSERT INTO ic_trades VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                f"IC{i}",
+                "2026-08-11",
+                "2026-08-11 10:00:00",
+                "SPX",
+                "control",
+                "partial",
+                -100.0,
+                6.89,
+                1.5,
+                1,
+                5.0,
+                7700.0,
+                7800.0,
+                100.0,
+                7750.0,
+                "2026-08-11",
+                "sample",
+            ),
+        )
+        # Put side stopped, call side rode to expiry — the shape of a down-trending day.
+        con.execute(
+            "INSERT INTO ic_spread_legs VALUES (?,?,?,?,?,?,?)",
+            (f"IC{i}", "put", "stopped", "2026-08-11 13:00:00", "stop_trigger", 2.0, -50.0),
+        )
+        con.execute(
+            "INSERT INTO ic_spread_legs VALUES (?,?,?,?,?,?,?)",
+            (f"IC{i}", "call", "expired", None, None, None, 25.0),
+        )
+    con.commit()
+    con.close()
+
+    monkeypatch.setattr(paper_loop, "_PAPER_DB", str(db))
+    monkeypatch.setattr(paper_loop, "_LOG_FILE", tmp_path / "logs" / "paper_loop.log")
+    (tmp_path / "logs").mkdir(exist_ok=True)
+
+    paper_loop._write_eod_analysis("2026-08-11")
+    text = (tmp_path / "logs" / "eod-analysis-2026-08-11.md").read_text(encoding="utf-8")
+
+    assert "No side stops fired" not in text
+    # The attribution branch that was unreachable for the life of the ledger.
+    assert "Put side did most of the stopping" in text
+    assert "Put-side stops: 3" in text

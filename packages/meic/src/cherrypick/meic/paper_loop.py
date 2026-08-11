@@ -892,12 +892,25 @@ def _write_eod_analysis(day):
                 "SELECT * FROM ic_trades WHERE trade_date=? ORDER BY entry_time", (day,)
             ).fetchall()
         ]
+        # EXITED legs, by the vocabulary the writer actually uses. `ic_spread_legs.status` is only
+        # ever 'expired', 'stopped' or 'force_closed' -- 'closed' has never been written, not once in
+        # 3,934 legs. This filter said `status='closed'` until 2026-08-11, so it matched nothing on
+        # every session ever generated, `exit_counts` was always empty, and the report fell through
+        # to its "No side stops fired - the ICs rode to settlement" branch UNCONDITIONALLY. It
+        # printed that on 2026-08-11 while 430 legs stopped for -$31k gross, and on 08-10 (345
+        # stops), 08-07 (173) and 08-04 (54). A report that cannot express a stop is worse than one
+        # that omits them: the deterministic file is the source of record, and the EOD insight layer
+        # read this line and built a whole narrative on it.
+        #
+        # 'expired' is deliberately EXCLUDED: it is the intended 0DTE path, not an exit event, and
+        # folding it in would make every clean settlement read as an "exit" and drown the signal the
+        # side-attribution below exists to surface.
         legs = [
             dict(r)
             for r in con.execute(
                 "SELECT l.side, l.exit_time, l.exit_reason, l.exit_price, l.pnl, l.ic_order_id "
                 "FROM ic_spread_legs l JOIN ic_trades t ON l.ic_order_id=t.ic_order_id "
-                "WHERE t.trade_date=? AND l.status='closed'",
+                "WHERE t.trade_date=? AND l.status IN ('stopped', 'force_closed')",
                 (day,),
             ).fetchall()
         ]

@@ -99,7 +99,13 @@ def _seed(tmp_path, monkeypatch):
         _ns(
             ic_order_id="A2",
             side="call",
-            status="closed",
+            # 'stopped', not 'closed'. This fixture said "closed" until 2026-08-11 — a status the
+            # production writer has never once written — and the EOD analysis query filtered on that
+            # same phantom value, so the two agreed with each other and disagreed with the ledger.
+            # The test went green while the report matched zero rows on every real session and
+            # printed "No side stops fired" unconditionally. A fixture that invents a vocabulary is
+            # how a query bug survives its own test.
+            status="stopped",
             exit_time="2026-07-16 14:10:00",
             exit_reason="per_side_stop_call",
             exit_price=1.20,
