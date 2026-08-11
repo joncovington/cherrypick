@@ -34,6 +34,15 @@ DIMENSIONS = (
     "trend",
 )
 
+# The split that decides what can be tagged on a tick where nothing was entered. MARKET_DIMENSIONS
+# are pure reads of the snapshot: they have a value on every iteration, entered or refused, which is
+# what makes them the UNCENSORED denominator (see db.iteration_regime). STRUCTURE_DIMENSIONS are
+# properties of the structure we chose, so on a refused tick there is no structure to describe and
+# they would tag 'unknown' 100% of the time — a column degenerate by construction, which is exactly
+# what analytics.regime_coverage exists to flag. They are therefore recorded at fill time only.
+STRUCTURE_DIMENSIONS = ("skew", "center_offset")
+MARKET_DIMENSIONS = tuple(d for d in DIMENSIONS if d not in STRUCTURE_DIMENSIONS)
+
 
 def _leg_mid(q: dict | None) -> float | None:
     if not q:
@@ -280,6 +289,26 @@ def regime_columns(
         call_quote=call_quote,
     )
     return {f"{prefix}_{key}": value for key, value in regime.items()}
+
+
+def market_regime_columns(snapshot: dict, params: dict) -> dict:
+    """The MARKET_DIMENSIONS half of classify_regime, unprefixed — what a tick can be tagged with
+    before (or without) any structure being chosen. This is what db.save_iteration_regime records
+    on EVERY iteration, including the ones every gate refused.
+
+    The point is the denominator. Every regime row in ic_trades is conditioned on having entered,
+    so the gates censor the distribution before it is recorded and "which regime does this arm win
+    in" can only ever be answered over the ticks that already passed. Tagging the iteration is what
+    turns that censored sample into a full one, and makes the gate itself measurable — 'we refused
+    N ticks, here is the regime they were in'. flies got this right first with fly_iterations /
+    fly_snapshots; MEIC already writes the loop rows (paper_iteration, gate_block) and simply never
+    put a regime on them.
+
+    Takes no structure arguments, deliberately — see STRUCTURE_DIMENSIONS.
+    """
+    regime = classify_regime(snapshot, params)
+    keys = [f"{d}_bucket" for d in MARKET_DIMENSIONS] + [f"{d}_value" for d in MARKET_DIMENSIONS]
+    return {k: regime[k] for k in keys}
 
 
 # ---------------------------------------------------------------------------

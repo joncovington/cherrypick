@@ -441,3 +441,100 @@ def test_session_bootstrap_no_difference_is_not_significant():
     b = {f"d{i}": 5.0 for i in range(20)}
     out = analytics.session_bootstrap(a, b, min_sessions=14, iterations=500)
     assert out["significant"] is False
+
+
+# --------------------------------------------------------------------------- session denominators
+
+
+def _tag(conn, oid, date, value, bucket="normal"):
+    _insert(
+        conn,
+        ic_order_id=oid,
+        trade_date=date,
+        entry_vol_realized_bucket=bucket,
+        entry_vol_realized_value=value,
+    )
+
+
+def test_regime_coverage_counts_sessions_not_just_rows(conn):
+    """Rows are not draws. Under uncapped sampling this book takes hundreds of entries per session,
+    so a row count says nothing about how many independent observations are behind a dimension."""
+    for i in range(5):
+        _tag(conn, f"a{i}", "2026-08-07", 0.0120 + i * 0.00001)
+    for i in range(5):
+        _tag(conn, f"b{i}", "2026-08-10", 0.0135 + i * 0.00001)
+
+    dim = analytics.regime_coverage(conn)["dimensions"]["vol_realized"]
+    assert dim["tagged"] == 10
+    assert dim["sessions"] == 2
+
+
+def test_regime_coverage_collapses_effective_n_for_a_daily_scale_dimension(conn):
+    """5-day ATR is recomputed per tick but only really moves between days, so its effective n is
+    the session count. This is the accounting that made 967 rows of vol_realized read as n=2."""
+    for i in range(20):
+        _tag(conn, f"a{i}", "2026-08-07", 0.0120 + i * 0.0000001)  # ~flat within the day
+    for i in range(20):
+        _tag(conn, f"b{i}", "2026-08-10", 0.0135 + i * 0.0000001)
+
+    dim = analytics.regime_coverage(conn)["dimensions"]["vol_realized"]
+    assert dim["daily_scale"] is True
+    assert dim["effective_n"] == 2 and dim["tagged"] == 40
+
+
+def test_regime_coverage_keeps_row_count_for_an_intraday_dimension(conn):
+    """A dimension that genuinely moves within the session keeps its rows as the effective n —
+    daily_scale is measured from the data, never declared per dimension."""
+    for i in range(20):
+        _tag(conn, f"a{i}", "2026-08-07", 0.010 + i * 0.0005)  # wide intraday swing
+    for i in range(20):
+        _tag(conn, f"b{i}", "2026-08-10", 0.011 + i * 0.0005)
+
+    dim = analytics.regime_coverage(conn)["dimensions"]["vol_realized"]
+    assert dim["daily_scale"] is False
+    assert dim["effective_n"] == 40
+
+
+def test_regime_coverage_never_claims_daily_scale_from_one_session(conn):
+    """With a single session there is no between-session movement to compare against; claiming
+    daily-scale off that would be reading a zero denominator as evidence."""
+    for i in range(10):
+        _tag(conn, f"a{i}", "2026-08-07", 0.0120)
+
+    dim = analytics.regime_coverage(conn)["dimensions"]["vol_realized"]
+    assert dim["sessions"] == 1
+    assert dim["daily_scale"] is False
+
+
+def test_underpowered_is_keyed_on_sessions_not_rows(conn):
+    """Rows inside one session share that session's market, so a threshold cut on two days of
+    intraday-varying data is still a cut on two days — degenerate and underpowered are different
+    findings calling for opposite responses (re-cut the float vs collect more sessions)."""
+    for i in range(500):
+        _tag(conn, f"a{i}", "2026-08-07", 0.010 + i * 0.00001)
+
+    dim = analytics.regime_coverage(conn)["dimensions"]["vol_realized"]
+    assert dim["tagged"] == 500 and dim["effective_n"] == 500
+    assert dim["underpowered"] is True  # 1 session, despite 500 rows
+
+
+def test_underpowered_clears_once_enough_sessions_accumulate(conn):
+    for d in range(analytics.MIN_EFFECTIVE_N):
+        _tag(conn, f"a{d}", f"2026-08-{d + 1:02d}", 0.010 + d * 0.001)
+
+    dim = analytics.regime_coverage(conn)["dimensions"]["vol_realized"]
+    assert dim["sessions"] == analytics.MIN_EFFECTIVE_N
+    assert dim["underpowered"] is False
+
+
+def test_by_regime_reports_sessions_per_bucket(conn):
+    """A bucket of 600 rows drawn from one day is one draw dressed as six hundred, and the trades
+    count alone cannot show that."""
+    _tag(conn, "a1", "2026-08-07", 0.012, bucket="normal")
+    _tag(conn, "a2", "2026-08-07", 0.013, bucket="normal")
+    _tag(conn, "b1", "2026-08-10", 0.014, bucket="normal")
+    _tag(conn, "c1", "2026-08-07", 0.020, bucket="high")
+
+    rows = {r["bucket"]: r for r in analytics.by_regime(conn, "vol_realized")}
+    assert rows["normal"]["trades"] == 3 and rows["normal"]["sessions"] == 2
+    assert rows["high"]["trades"] == 1 and rows["high"]["sessions"] == 1

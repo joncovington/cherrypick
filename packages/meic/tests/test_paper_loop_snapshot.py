@@ -180,3 +180,90 @@ def test_iteration_logs_duration_even_when_open_count_fails(loop_env, monkeypatc
     cmd = log_calls[0]
     assert "--duration_ms" in cmd
     assert "--open_trades" not in cmd
+
+
+# --------------------------------------------------------------------------- iteration regime
+
+
+def _iteration_regime_calls(calls):
+    return [c for c in calls if "save_iteration_regime" in c]
+
+
+def test_iteration_regime_is_written_on_a_tick_that_entered_nothing(loop_env, monkeypatch):
+    """The denominator. Every regime row in ic_trades is conditioned on having entered, so without
+    this the recorded regime distribution is censored by the very gates it would be used to judge —
+    a refused tick left no trace of what it refused."""
+    calls = []
+    monkeypatch.setattr(paper_loop, "_subrun", lambda cmd: calls.append(cmd))
+
+    def refuse(snapshot, db_path, mode, extra_profiles=None):
+        return {
+            "ok": True,
+            "symbol": snapshot["symbol"],
+            "results": {"control": [{"entry": "skipped", "reason": "iv_rank_floor"}]},
+        }
+
+    monkeypatch.setattr(paper_loop.paper, "process_symbol", refuse)
+    paper_loop.run_iteration(_CFG, force=True)
+
+    written = _iteration_regime_calls(calls)
+    assert len(written) == 1
+    cmd = written[0]
+    assert cmd[cmd.index("--symbol") + 1] == "SPX"
+    assert cmd[cmd.index("--entries_n") + 1] == "0"
+    assert cmd[cmd.index("--blocked_n") + 1] == "1"
+    assert cmd[cmd.index("--underlying_price") + 1] == "6040.0"
+
+    payload = json.loads(cmd[cmd.index("--regime") + 1])
+    # Tagged from the snapshot alone — no structure needed, which is what lets a refused tick carry
+    # a regime at all.
+    assert payload["vol_implied_bucket"] == "normal"  # iv_rank 0.42, between the 0.30/0.60 cuts
+    assert payload["vol_realized_value"] == pytest.approx(55.0 / 6040.0)
+    assert payload["trend_bucket"] in ("flat", "up_from_open", "down_from_open")
+
+
+def test_iteration_regime_counts_fills_and_blocks_separately(loop_env, monkeypatch):
+    calls = []
+    monkeypatch.setattr(paper_loop, "_subrun", lambda cmd: calls.append(cmd))
+
+    def mixed(snapshot, db_path, mode, extra_profiles=None):
+        return {
+            "ok": True,
+            "symbol": snapshot["symbol"],
+            "results": {
+                "control": [{"entry": "filled", "net_credit": 1.8}],
+                "open": [{"entry": "filled", "net_credit": 1.9}],
+                "width-5": [{"entry": "skipped", "reason": "credit_floor"}],
+                "width-10": [{"decision": {"action": "hold"}}],  # neither a fill nor a refusal
+            },
+        }
+
+    monkeypatch.setattr(paper_loop.paper, "process_symbol", mixed)
+    paper_loop.run_iteration(_CFG, force=True)
+
+    cmd = _iteration_regime_calls(calls)[0]
+    assert cmd[cmd.index("--entries_n") + 1] == "2"
+    assert cmd[cmd.index("--blocked_n") + 1] == "1"
+
+
+def test_iteration_regime_carries_no_structure_dimensions(loop_env, monkeypatch):
+    """skew and center_offset describe the structure we chose, so on a refused tick they would be
+    'unknown' 100% of the time — a column degenerate by construction, the exact thing
+    regime_coverage exists to flag."""
+    calls = []
+    monkeypatch.setattr(paper_loop, "_subrun", lambda cmd: calls.append(cmd))
+    paper_loop.run_iteration(_CFG, force=True)
+
+    payload = json.loads(_iteration_regime_calls(calls)[0][_iteration_regime_calls(calls)[0].index("--regime") + 1])
+    assert not [k for k in payload if k.startswith(("skew", "center_offset"))]
+
+
+def test_iteration_regime_failure_never_breaks_the_iteration(loop_env, monkeypatch):
+    """Telemetry is best-effort: a lost row is a lost observation, never a lost iteration."""
+    def boom(cmd):
+        if "save_iteration_regime" in cmd:
+            raise RuntimeError("db locked")
+
+    monkeypatch.setattr(paper_loop, "_subrun", boom)
+    paper_loop.run_iteration(_CFG, force=True)  # must not raise
+    assert loop_env["captured"]["snapshot"]["symbol"] == "SPX"
