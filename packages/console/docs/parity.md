@@ -84,11 +84,20 @@ are not built yet.
 
 | Surface | Endpoint | Status |
 |---|---|---|
-| MEIC profit forest (per-profile expiry-payoff curves, per-position curves behind the aggregate, strikes released by stops) | `GET /api/meic/forest` | reader done, **no card yet** |
-| Entry attempts — arm rail + attempt timeline (MEIC) | `GET /api/meic/attempts` | reader done, **no card yet** |
-| Entry attempts — arm rail + attempt timeline (flies) | `GET /api/flies/attempts` | reader done, **no card yet** |
-| Strike-occupancy map (longs vs shorts per arm, blocking strike marked) | — | not started |
-| Refusal history, day replay, rule attribution, entry-slot yield | — | not started |
+| Arm rail — per-arm cadence countdown, entries today, refusal mix, what is holding it | `/api/{meic,flies}/attempts` | done, both pages |
+| Attempt timeline — one lane per arm, every evaluated opportunity by outcome | `/api/{meic,flies}/attempts` | done, both pages |
+| Strike occupancy — longs vs shorts per arm, refusing strikes ringed | `/api/{meic,flies}/occupancy` | done, both pages |
+| MEIC profit forest — per-profile curves, each condor faint behind the aggregate, stop-released strikes | `GET /api/meic/forest` | done |
+| Refusal history (per session, stacked by reason) | — | not started |
+| Day replay (scrub the timeline, occupancy rebuilding) | — | not started |
+| Rule attribution / entry-slot yield | — | not started |
+| Session grid (sessions × arms) | — | not started |
+
+**One known rough edge.** The attempts views default to the latest day in the *attempts* ledger
+while the forest and occupancy views default to the latest day with *positions*. On a morning where
+nothing has filled yet those differ, so the cards can show yesterday's book beside today's attempts.
+Both carry their own date in the heading, so it is labelled rather than misleading — but they should
+share one day selector.
 
 **What the attempts payload is for.** With each arm an independent portfolio on unbounded capital,
 every arm sees the same market with the same money — so the only thing differentiating them is which

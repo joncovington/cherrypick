@@ -68,6 +68,29 @@ export interface AttemptsPayload {
   timeline: AttemptRow[];
 }
 
+/**
+ * Give every attempt a timestamp the client can actually parse.
+ *
+ * The two modules stamp their rows differently and neither is wrong in its own
+ * ledger: flies writes a full ET ISO string (`clock.now_iso()`), MEIC writes its
+ * snapshot's `now_et`, which is a bare `HH:MM`. Left alone, `Date.parse` returns
+ * NaN for the MEIC form — so every MEIC mark would silently vanish from the
+ * timeline and the arm rail's clocks would all read "—", with the page looking
+ * merely empty rather than broken. Normalizing here keeps that difference from
+ * reaching the UI at all, rather than asking each view to remember it.
+ *
+ * The trade date supplies the missing day. Anything already carrying a date is
+ * passed through untouched.
+ */
+function normalizeTs(ts: string | null, tradeDate: string | null): string | null {
+  if (ts === null || ts === "") return null;
+  if (ts.includes("T") || ts.includes(" ")) return ts;
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(ts) && tradeDate !== null) {
+    return `${tradeDate}T${ts.length === 5 ? `${ts}:00` : ts}`;
+  }
+  return ts;
+}
+
 interface TableSpec {
   file: (mode: TradingMode) => string;
   dir: (config: ConsoleConfig) => string;
@@ -135,7 +158,7 @@ export function readEntryAttempts(
       .all(tradeDate);
 
     const timeline: AttemptRow[] = rows.map((r) => ({
-      ts: str(r["ts"]),
+      ts: normalizeTs(str(r["ts"]), str(r["trade_date"])),
       tradeDate: str(r["trade_date"]),
       arm: str(r["arm"]) ?? "?",
       symbol: str(r["symbol"]),

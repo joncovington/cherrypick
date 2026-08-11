@@ -8,6 +8,9 @@ import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { ScopeSelect, EraSelect, TabStrip, LoopPill, Pager, usePage } from "../../components/ScopeBar";
 import { MeicDeepCards } from "./MeicDeepCards";
+import { ArmRail, AttemptTimeline } from "../../components/Attempts";
+import { OccupancyMap } from "../../components/OccupancyMap";
+import { MeicForestCard } from "./MeicForestCard";
 import { MeicPerformanceTab } from "./MeicPerformanceTab";
 
 interface MeicAnalytics {
@@ -178,6 +181,14 @@ export function MeicPage() {
 
       {tab === "today" && (
         <div className="cards cards-wide">
+          <ArmRail module="meic" mode={mode} />
+
+          <AttemptTimeline module="meic" mode={mode} />
+
+          <OccupancyMap module="meic" mode={mode} />
+
+          <MeicForestCard mode={mode} />
+
           <Card title="Performance (net = gross P&L; win = P&L − fees > 0)" updatedAt={analytics.dataUpdatedAt}>
             <div className="stats-grid">
               {(a?.periods ?? []).map((p) => (

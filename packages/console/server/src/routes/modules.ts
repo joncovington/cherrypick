@@ -3,6 +3,7 @@ import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { readMeicForest } from "../readers/meic.js";
 import { readEntryAttempts } from "../readers/attempts.js";
+import { readOccupancy } from "../readers/occupancy.js";
 import {
   readMeic,
   readMeicAnalytics,
@@ -89,6 +90,14 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/meic/attempts", async (req) => {
     const f = parseFliesFilter(req.query);
     return readEntryAttempts(config, "meic", parseMode(req.query), f.date);
+  });
+  app.get("/api/meic/occupancy", async (req) => {
+    const f = parseFliesFilter(req.query);
+    return readOccupancy(config, "meic", parseMode(req.query), f.date);
+  });
+  app.get("/api/flies/occupancy", async (req) => {
+    const f = parseFliesFilter(req.query);
+    return readOccupancy(config, "flies", parseMode(req.query), f.date);
   });
   app.get("/api/flies/attempts", async (req) => {
     const f = parseFliesFilter(req.query);

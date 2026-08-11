@@ -1294,6 +1294,7 @@ def _record_entry_attempt(
     entered: bool,
     chosen: dict | None = None,
     ic_order_id: str | None = None,
+    seconds_until_cadence_clear: float | None = None,
 ) -> None:
     """Append one evaluated entry opportunity to `entry_attempts`. Best effort, never fatal.
 
@@ -1313,8 +1314,9 @@ def _record_entry_attempt(
         conn.execute(
             "INSERT INTO entry_attempts (ts, trade_date, risk_profile, symbol, expiration, outcome, "
             "block_detail, proposed_legs, put_strike, call_strike, wing_width, underlying_price, "
-            "iv_rank, gex_net, gex_positive, session_quality, would_be_credit, ic_order_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "iv_rank, gex_net, gex_positive, session_quality, would_be_credit, ic_order_id, "
+            "seconds_until_cadence_clear) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 str(snapshot.get("now_et") or ""),
                 snapshot.get("date"),
@@ -1341,6 +1343,7 @@ def _record_entry_attempt(
                 snapshot.get("session_quality"),
                 (chosen or {}).get("net_credit"),
                 ic_order_id,
+                seconds_until_cadence_clear,
             ),
         )
         conn.commit()
@@ -1571,6 +1574,17 @@ def process_symbol(
                 )
             else:
                 actions.append({"entry": "skipped", "reason": reason})
+                # The cadence gate returns a bare reason, so the seconds still to wait are
+                # reconstructed here where both the clock and the last fill are in hand. Recorded
+                # because the DISTRIBUTION of that wait is the measured cost of the current
+                # spacing -- the only honest input to changing it -- and because the console's
+                # arm rail counts down from it rather than from a config value it cannot see.
+                waiting = None
+                if reason == "entry_cadence_wait" and last_entry_min is not None:
+                    now_min = _time_to_minutes(snapshot["now_et"])
+                    if now_min is not None:
+                        spacing = params.get("min_seconds_between_entries", 0) or 0
+                        waiting = max(spacing - (now_min - last_entry_min) * 60, 0)
                 _record_entry_attempt(
                     db_path,
                     snapshot=snapshot,
@@ -1579,6 +1593,7 @@ def process_symbol(
                     reason=reason,
                     entered=False,
                     chosen=chosen,
+                    seconds_until_cadence_clear=waiting,
                 )
         else:
             actions.append({"entry": "skipped", "reason": "max_concurrent_ics_reached"})

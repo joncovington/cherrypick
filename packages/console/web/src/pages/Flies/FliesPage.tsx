@@ -8,6 +8,8 @@ import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable"
 import { Pager, usePage } from "../../components/ScopeBar";
 import type { TradingMode } from "@console/shared";
 import { ForestCard } from "./ForestCard";
+import { ArmRail, AttemptTimeline } from "../../components/Attempts";
+import { OccupancyMap } from "../../components/OccupancyMap";
 import { TimelineCard } from "./TimelineCard";
 import { HistoryTab } from "./HistoryTab";
 import { JournalCard } from "./JournalCard";
@@ -153,6 +155,12 @@ export function FliesPage() {
             </div>
           </div>
         </section>
+
+        <ArmRail module="flies" mode={mode} date={filter.date} />
+
+        <AttemptTimeline module="flies" mode={mode} date={filter.date} />
+
+        <OccupancyMap module="flies" mode={mode} date={filter.date} />
 
         <ForestCard mode={mode} filter={filter} />
 

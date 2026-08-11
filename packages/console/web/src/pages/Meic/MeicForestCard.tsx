@@ -1,0 +1,238 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { TradingMode } from "@console/shared";
+import { fmtMoney } from "../../components/DataTable";
+
+/**
+ * MEIC's profit forest: expiry payoff for each arm's open book.
+ *
+ * Two things this needs that the flies forest does not.
+ *
+ * **Nesting is the point.** MEIC stacks condors inside one another deliberately,
+ * so each IC's own curve is drawn faintly behind the arm's aggregate. Without
+ * that a nested book reads as one lumpy line and the structure that produced it
+ * is invisible.
+ *
+ * **Stops change the shape mid-day.** A stopped side releases its strikes, and
+ * those are marked on the axis — otherwise this chart and the strike-occupancy
+ * map disagree about what the book still holds, and neither gets trusted.
+ *
+ * Payoff at EXPIRY, not a mark: nothing here is quoted intraday, and the label
+ * says so, the same discipline the flies forest keeps.
+ */
+
+interface ForestPosition {
+  icOrderId: string;
+  putStrike: number;
+  callStrike: number;
+  wingWidth: number;
+  netCredit: number;
+  quantity: number;
+}
+
+interface ForestArm {
+  profile: string;
+  positions: ForestPosition[];
+  prices: number[];
+  pnl: number[];
+  perPosition: Array<{ icOrderId: string; pnl: number[] }>;
+}
+
+interface MeicForest {
+  mode: TradingMode;
+  tradeDate: string | null;
+  symbol: string | null;
+  arms: ForestArm[];
+  releasedStrikes: Array<{ profile: string; strike: number; right: "P" | "C"; at: string | null }>;
+  lastSpot: number | null;
+}
+
+const ARM_COLORS = ["#d23f57", "#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a"];
+
+function useMeicForest(mode: TradingMode, date: string | null) {
+  return useQuery<MeicForest>({
+    queryKey: ["meic-forest", mode, date],
+    queryFn: async () => {
+      const qs = new URLSearchParams({ mode });
+      if (date !== null) qs.set("date", date);
+      const res = await fetch(`/api/meic/forest?${qs.toString()}`);
+      if (!res.ok) throw new Error(`meic forest: HTTP ${res.status}`);
+      return (await res.json()) as MeicForest;
+    },
+    refetchInterval: 30_000,
+  });
+}
+
+function ticksFor(min: number, max: number, target: number): number[] {
+  const span = max - min || 1;
+  const raw = span / target;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 5, 10].map((k) => k * mag).find((s) => span / s <= target + 1) ?? 10 * mag;
+  const out: number[] = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(v);
+  return out;
+}
+
+function path(prices: number[], pnl: number[], X: (v: number) => number, Y: (v: number) => number): string {
+  return prices.map((p, i) => `${i === 0 ? "M" : "L"}${X(p).toFixed(1)},${Y(pnl[i] ?? 0).toFixed(1)}`).join(" ");
+}
+
+export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?: string | null }) {
+  const { data, isLoading } = useMeicForest(mode, date);
+  const [showNested, setShowNested] = useState(true);
+  const [hover, setHover] = useState<{ price: number } | null>(null);
+
+  const arms = (data?.arms ?? []).filter((a) => a.positions.length > 0 && a.prices.length > 0);
+
+  const width = 1150;
+  const height = 320;
+  const pad = { l: 66, r: 12, t: 20, b: 26 };
+
+  let body = null;
+  if (arms.length > 0) {
+    const prices = arms[0]!.prices;
+    const xMin = Math.min(...arms.map((a) => a.prices[0] ?? 0));
+    const xMax = Math.max(...arms.map((a) => a.prices[a.prices.length - 1] ?? 0));
+    let yLo = 0;
+    let yHi = 0;
+    for (const a of arms) {
+      for (const v of a.pnl) {
+        yLo = Math.min(yLo, v);
+        yHi = Math.max(yHi, v);
+      }
+    }
+    const span = yHi - yLo || 1;
+    const yMin = yLo - span * 0.1;
+    const yMax = yHi + span * 0.1;
+
+    const X = (v: number) => pad.l + ((v - xMin) / (xMax - xMin || 1)) * (width - pad.l - pad.r);
+    const Y = (v: number) => height - pad.b - ((v - yMin) / (yMax - yMin || 1)) * (height - pad.t - pad.b);
+    const colorOf = (profile: string) =>
+      ARM_COLORS[(data?.arms ?? []).findIndex((a) => a.profile === profile) % ARM_COLORS.length]!;
+
+    const hoverIdx =
+      hover !== null
+        ? prices.reduce((best, p, i) => (Math.abs(p - hover.price) < Math.abs((prices[best] ?? 0) - hover.price) ? i : best), 0)
+        : null;
+
+    body = (
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label="MEIC profit forest"
+        style={{ width: "100%", height: "auto", display: "block" }}
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const fx = ((e.clientX - rect.left) / rect.width) * width;
+          if (fx >= pad.l && fx <= width - pad.r) {
+            setHover({ price: xMin + ((fx - pad.l) / (width - pad.l - pad.r)) * (xMax - xMin) });
+          } else setHover(null);
+        }}
+        onMouseLeave={() => setHover(null)}
+      >
+        {ticksFor(yMin, yMax, 5).map((v) => (
+          <g key={`y${v}`}>
+            <line x1={pad.l} x2={width - pad.r} y1={Y(v)} y2={Y(v)} stroke={v === 0 ? "#3a424e" : "#1e232b"} />
+            <text x={pad.l - 6} y={Y(v) + 3} fontSize={10} fill="#6c7480" textAnchor="end">
+              {fmtMoney(v)}
+            </text>
+          </g>
+        ))}
+        {ticksFor(xMin, xMax, 8).map((v) => (
+          <text key={`x${v}`} x={X(v)} y={height - pad.b + 14} fontSize={10} fill="#6c7480" textAnchor="middle">
+            {v.toFixed(0)}
+          </text>
+        ))}
+
+        {/* Each IC's own curve, faint, behind the aggregate — the nesting made visible. */}
+        {showNested &&
+          arms.flatMap((a) =>
+            a.perPosition.map((p) => (
+              <path
+                key={`${a.profile}-${p.icOrderId}`}
+                d={path(a.prices, p.pnl, X, Y)}
+                fill="none"
+                stroke={colorOf(a.profile)}
+                strokeWidth={1}
+                opacity={0.28}
+              />
+            )),
+          )}
+
+        {arms.map((a) => (
+          <path key={a.profile} d={path(a.prices, a.pnl, X, Y)} fill="none" stroke={colorOf(a.profile)} strokeWidth={2} />
+        ))}
+
+        {/* Strikes a stop has released: they no longer constrain a new entry, and
+            the occupancy map must agree with this chart about that. */}
+        {(data?.releasedStrikes ?? []).map((r, i) => (
+          <line
+            key={`rel-${i}`}
+            x1={X(r.strike)}
+            x2={X(r.strike)}
+            y1={height - pad.b - 6}
+            y2={height - pad.b}
+            stroke="#6c7480"
+            strokeWidth={1}
+            strokeDasharray="2 2"
+          />
+        ))}
+
+        {hoverIdx !== null && hover !== null && (
+          <line x1={X(hover.price)} x2={X(hover.price)} y1={pad.t} y2={height - pad.b} stroke="#3a424e" strokeDasharray="3 3" />
+        )}
+      </svg>
+    );
+  }
+
+  return (
+    <section className="card">
+      <div className="panel-head-row">
+        <h2>Payoff at expiry — the profit forest{data?.tradeDate != null ? ` (${data.tradeDate})` : ""}</h2>
+        <label className="muted lbl">
+          <input type="checkbox" checked={showNested} onChange={(e) => setShowNested(e.target.checked)} /> show each
+          condor
+        </label>
+      </div>
+      {isLoading ? (
+        <span className="skeleton skeleton-text" style={{ width: "50%" }} />
+      ) : arms.length === 0 ? (
+        <p className="muted">no open positions on this day</p>
+      ) : (
+        <>
+          {body}
+          <div className="legend-row" style={{ marginTop: "0.4rem" }}>
+            {arms.map((a, i) => (
+              <span key={a.profile} className="muted" style={{ fontSize: 11, marginRight: "0.9rem" }}>
+                <i
+                  style={{
+                    background: ARM_COLORS[(data?.arms ?? []).findIndex((x) => x.profile === a.profile) % ARM_COLORS.length],
+                    display: "inline-block",
+                    width: 8,
+                    height: 8,
+                    marginRight: 4,
+                  }}
+                />
+                {a.profile} — {a.positions.length} {a.positions.length === 1 ? "condor" : "condors"}
+                {hover !== null &&
+                  ` · ${fmtMoney(
+                    a.pnl[
+                      a.prices.reduce(
+                        (best, p, idx) => (Math.abs(p - hover.price) < Math.abs((a.prices[best] ?? 0) - hover.price) ? idx : best),
+                        0,
+                      )
+                    ] ?? 0,
+                  )}`}
+                {i === arms.length - 1 ? "" : ""}
+              </span>
+            ))}
+          </div>
+          <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
+            Expiry payoff, not an intraday mark — nothing here is quoted live. Faint lines are the individual condors
+            behind each arm's aggregate; dashed ticks on the axis are strikes a stop has released back for re-entry.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
