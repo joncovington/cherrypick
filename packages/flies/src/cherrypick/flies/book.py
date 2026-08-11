@@ -286,10 +286,10 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 spot=snapshot.get("underlying_price"),
                 net_gex=(snapshot.get("gex") or {}).get("net_gex"),
                 gex_positive=(snapshot.get("gex") or {}).get("gex_positive"),
-                would_be_credit=(plan or {}).get("credit"),
                 position_id=position_id,
                 blocking_strike=(detail or {}).get("blocking_strike"),
                 seconds_until_cadence_clear=(detail or {}).get("seconds_until_cadence_clear"),
+                would_be_credit=(plan or {}).get("credit") or (detail or {}).get("would_be_credit"),
                 ts=now,
             )
         except Exception:  # noqa: BLE001 - telemetry must never break the loop

@@ -55,6 +55,8 @@
     ],
     "_min_credit_pct_of_width": "Opening credit floor as a fraction of wing width. Below this there is no room for the completing debit to come in cheaper AND clear two fee stacks.",
     "min_credit_pct_of_width": 0.2,
+    "_max_intrinsic_pct_of_width": "Refuse a legged entry whose short strike is already this deep in the money, as a fraction of wing width. null (default) disables it; 1.0 means 'refuse when BOTH legs are ITM', i.e. the spread's expiry value is already pinned at maximum loss and only a reversal through the entire width recovers it. Set on the ARM, not here -- it is opt-in and currently carried by `gex-intrinsic` alone. THIS IS WHAT max_credit_pct_of_width IS NAMED FOR AND CANNOT DO: that gate reads the CREDIT as a proxy for moneyness, and at 0DTE the proxy fails, because with hours left a fully-ITM 5-wide prices near 2.5-3.0 rather than near 5.00 -- there is still real probability of moving back out. Measured over the SPX era, all 16 fully-ITM legged entries priced at 48-59.7% of width, every one UNDER the 0.60 ceiling, so the ceiling had never once caught the case it is named for. Intrinsic is computed directly from the short strike and spot (engine.intrinsic_at_entry), so it is exact and needs no per-symbol calibration. LEGGED ONLY: bwb and debit_first carry different geometry and their own populations are unmeasured.",
+    "max_intrinsic_pct_of_width": null,
     "_max_credit_pct_of_width": "Opening credit CEILING. A vertical cannot be worth more than its width, so a credit near that width means the short leg is deep ITM and the premium is mostly intrinsic — a low-probability directional bet rather than a pin bet. Observed against real SPX quotes: a centre 67 points from spot produced a 77%-of-width credit with 67 points of intrinsic. The floor above cannot catch that, because a fatter intrinsic-heavy credit looks better to a floor.",
     "max_credit_pct_of_width": 0.6,
     "_min_debit_pct_of_width": "debit_first's mirror of min_credit_pct_of_width: below this the debit vertical bought first is too far OTM to be plausible — little room left to richen before the completing credit spread's own width ceiling caps it.",
@@ -119,6 +121,17 @@
           "14:30"
         ]
       ]
+    },
+    "gex-intrinsic": {
+      "enabled": true,
+      "_note": "gex's twin, differing in EXACTLY ONE thing: `max_intrinsic_pct_of_width: 1.0`, which refuses an entry whose short strike is already so far in the money that BOTH legs are ITM. Added 2026-08-11. Paired against `gex` and nothing else -- the two share centring, windows, gates, and cadence, so a difference between their books is this rule.\n\nWHY A GEX TWIN AND NOT A CONTROL TWIN: all 16 fully-ITM legged entries in the SPX era were gex's. control, time_window and debit-first have none, so a control twin would almost never fire and would produce a near-duplicate book measuring nothing. This is the arm where the rule bites, which is where it has to be measured.\n\nWHAT IT REPLACES IN INTENT: `max_credit_pct_of_width` (0.60) is named for this job and structurally cannot do it. It uses the CREDIT as a proxy for moneyness, and at 0DTE the proxy fails -- with hours to expiry a fully-ITM 5-wide prices near 2.5-3.0, not near 5.00, because there is still real probability of moving back out. Measured: those 16 entries priced at 48-59.7% of width, every one UNDER the ceiling, so the gate had never once caught the thing it is named for. Intrinsic is exact and needs no calibration.\n\nTHE MEASURED ALTERNATIVE (8 sessions, gex only -- below this module's own 14-session bar, so treat the SIZE as directional; the mechanism argument does not depend on the sample): the 16 realized -$1,119.64, split 8 completions (+$630, +$21..+$202 each) against 8 strandings (-$1,750, about -$220 each). Refusing them forgoes the completions to avoid the strandings, net +$1,119.64. Note this is an ENTRY gate, so rule 6's stranded-branch argument explicitly does NOT apply -- refusing an entry manufactures no loss, it declines to open one.\n\nSCOPE: legged only. bwb and debit_first carry different geometry and their own populations are unmeasured; a gate extended to a structure it was never derived against is the mistake this module keeps a rule about.\n\nWHAT WOULD RETIRE IT: if gex-intrinsic's book is not better than gex's over a comparable number of sessions, the rule is not earning its refusals and the finding is that fully-ITM entries are survivable -- which is itself a result worth keeping (rule 6).",
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ],
+      "max_intrinsic_pct_of_width": 1.0
     },
     "time_window": {
       "enabled": true,

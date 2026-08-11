@@ -1470,3 +1470,97 @@ def test_the_out_dict_is_optional_so_the_live_loop_signature_is_unchanged():
         snapshot(underlying_price=5998.0), params(), [held]
     )
     assert not enter and reason == "duplicate_structure" and plan is None
+
+
+# ── The moneyness gate (gex-intrinsic, 2026-08-11) ───────────────────────────
+
+
+def test_intrinsic_at_entry_measures_the_short_strike_against_spot():
+    """A put spread is in the money when spot sits BELOW its short strike, a call spread when above,
+    and either way the value is capped at the width — a vertical cannot be worth more than the gap
+    between its legs."""
+    assert engine.intrinsic_at_entry("put", 6000.0, 5998.0, 5) == 2.0
+    assert engine.intrinsic_at_entry("call", 6000.0, 6002.0, 5) == 2.0
+    assert engine.intrinsic_at_entry("put", 6000.0, 6010.0, 5) == 0.0
+    assert engine.intrinsic_at_entry("call", 6000.0, 5990.0, 5) == 0.0
+    # Both legs through: capped at the width rather than growing without bound.
+    assert engine.intrinsic_at_entry("put", 6000.0, 5980.0, 5) == 5.0
+
+
+# A GEX surface pinning the centre well ABOVE spot — the geometry that produces a fully-ITM put
+# spread, and the one an ATM arm structurally cannot reach: an ATM centre sits on spot, so its long
+# strike is always a full width away and the structure can never be entirely through.
+_LAGGING_GEX = {
+    "ok": True,
+    "per_strike": [
+        {"strike": 6005, "call_gex": 90_000, "put_gex": 88_000, "net_gex": 2_000},
+        {"strike": 5990, "call_gex": 1_000, "put_gex": 500, "net_gex": 500},
+    ],
+}
+
+
+def test_the_moneyness_gate_refuses_a_fully_itm_entry():
+    """At intrinsic == width both legs are ITM: the expiry value is already pinned at maximum loss
+    and only a reversal through the whole width recovers it.
+
+    Built on a GEX-centred arm on purpose. This is not an incidental fixture choice — all 16
+    fully-ITM entries in the SPX era were the gex arm's, because an ATM centre cannot produce one.
+    """
+    snap = snapshot(
+        underlying_price=5998.0,
+        gex=_LAGGING_GEX,
+        puts={5995: q(1.0, 1.4), 6000: q(2.6, 3.0), 6005: q(9.0, 9.4), 6010: q(13.0, 13.4)},
+    )
+    gated = {**params("gex"), "max_intrinsic_pct_of_width": 1.0, "max_center_distance_pct": 0.01}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snap, gated, [])
+    assert not enter and reason == "entry_mostly_intrinsic"
+
+
+def test_the_moneyness_gate_binds_before_the_credit_ceiling_it_replaces():
+    """Ordering matters for the ledger, not just the outcome: the same trade refused as
+    `credit_above_ceiling_mostly_intrinsic` would be attributed to the gate that demonstrably never
+    caught this case, and the attempts ledger would keep crediting the wrong rule."""
+    snap = snapshot(
+        underlying_price=5998.0,
+        gex=_LAGGING_GEX,
+        puts={5995: q(1.0, 1.4), 6000: q(2.6, 3.0), 6005: q(9.0, 9.4), 6010: q(13.0, 13.4)},
+    )
+    gated = {**params("gex"), "max_intrinsic_pct_of_width": 1.0, "max_center_distance_pct": 0.01}
+    _, reason, _ = engine.evaluate_credit_spread_entry(snap, gated, [])
+    assert reason == "entry_mostly_intrinsic"
+
+
+def test_the_moneyness_gate_is_off_when_unset():
+    """Every existing arm must be untouched — this is opt-in, carried by gex-intrinsic alone."""
+    snap = snapshot(
+        underlying_price=5998.0,
+        gex=_LAGGING_GEX,
+        puts={5995: q(1.0, 1.4), 6000: q(2.6, 3.0), 6005: q(9.0, 9.4), 6010: q(13.0, 13.4)},
+    )
+    _, reason, _ = engine.evaluate_credit_spread_entry(
+        snap, {**params("gex"), "max_center_distance_pct": 0.01}, []
+    )
+    assert reason != "entry_mostly_intrinsic"
+
+
+def test_the_moneyness_gate_admits_an_ordinary_shallow_entry():
+    """The shallow bucket is the strategy's normal population (116 of 133 SPX-era entries) and must
+    not be caught: `choose_side` deliberately sells the side spot has already crossed, so SOME
+    intrinsic is inherent to legging in."""
+    gated = {**params(), "max_intrinsic_pct_of_width": 1.0}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(underlying_price=5998.0), gated, [])
+    assert enter, reason
+
+
+def test_the_credit_ceiling_now_records_what_it_refused():
+    """146 refusals in one session with no record of the number refused is a gate whose cost cannot
+    be measured afterwards — the blind spot `best_completing_debit` exists to close on the
+    completion side."""
+    rich = snapshot(
+        underlying_price=5998.0,
+        puts={5990: q(0.2, 0.4), 5995: q(1.0, 1.4), 6000: q(5.0, 5.4), 6005: q(8.6, 9.0)},
+    )
+    detail: dict = {}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(rich, params(), [], None, detail)
+    assert not enter and reason == "credit_above_ceiling_mostly_intrinsic"
+    assert detail["would_be_credit"] > 0

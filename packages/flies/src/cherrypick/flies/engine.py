@@ -47,6 +47,7 @@ PUT, CALL = fly.PUT, fly.CALL
 # 20-point wing is off-scale (the scaled equivalent of the drift it brackets is covered by width-2).
 ARMS = (
     "gex",
+    "gex-intrinsic",
     "time_window",
     "control",
     "wide_wing",
@@ -525,6 +526,25 @@ def choose_bwb_side(snapshot: dict, center: float) -> str:
     return CALL if spot <= center else PUT
 
 
+def intrinsic_at_entry(side: str, center: float, spot: float, width: float) -> float:
+    """How much of this credit spread's value is already decided: the short strike's intrinsic,
+    capped at the wing width.
+
+    `center` IS the short strike for a legged entry. A put spread is in the money when spot sits
+    BELOW it, a call spread when spot sits above; the cap at `width` is the structure's own maximum,
+    since a vertical cannot be worth more than the distance between its legs.
+
+    Reaching the cap means BOTH legs are in the money -- the spread's expiry value is already pinned
+    at maximum loss and only a reversal through the entire width recovers it. That is a directional
+    bet, not the pin bet this module is built on.
+
+    Deliberately computed from spot and the strike rather than inferred from the credit. See
+    `max_intrinsic_pct_of_width` for why the credit cannot carry this signal at 0DTE.
+    """
+    intrinsic = (center - spot) if side == PUT else (spot - center)
+    return min(max(intrinsic, 0.0), width)
+
+
 def before_open_gate(params: dict, now_min: int | None) -> bool:
     """Is it still inside the post-open blackout? A floor that an arm's own windows cannot override.
 
@@ -728,6 +748,34 @@ def evaluate_credit_spread_entry(
     if not _have(snapshot, side, [center, long_strike]):
         return False, "missing_leg_quotes", None
 
+    # Moneyness gate (opt-in per arm via `max_intrinsic_pct_of_width`; off when unset).
+    #
+    # This is what `max_credit_pct_of_width` was meant to do and structurally cannot. That gate uses
+    # the CREDIT as a proxy for moneyness, and at 0DTE the proxy does not hold: with hours left, a
+    # fully in-the-money 5-wide prices near 2.5-3.0 rather than near 5.00, because there is still
+    # real probability of moving back out. Measured over the SPX era, all 16 fully-ITM entries priced
+    # at 48-59.7% of width -- every one of them UNDER the 0.60 ceiling, so the gate named for this
+    # job had never once caught it.
+    #
+    # Intrinsic is exact and needs no calibration: `center` is the short strike and spot is in the
+    # snapshot. At `intrinsic >= width` both legs are in the money and the expiry value is already
+    # pinned at maximum loss; only a reversal through the entire width recovers it. Those 16 entries
+    # realized -$1,119.64 (8 completed for +$630, 8 stranded for -$1,750) against -$15.27 average for
+    # the shallow bucket.
+    #
+    # Applied to the LEGGED path only. bwb and debit_first carry different geometry and their own
+    # populations have not been measured, and a gate extended to a structure it was never derived
+    # against is the mistake this module keeps a rule about.
+    max_intrinsic = params.get("max_intrinsic_pct_of_width")
+    if max_intrinsic is not None:
+        spot = snapshot.get("underlying_price")
+        if spot is not None:
+            intrinsic = intrinsic_at_entry(side, center, spot, width)
+            if intrinsic >= max_intrinsic * width:
+                if gate_detail is not None:
+                    gate_detail["intrinsic"] = round(intrinsic, 4)
+                return False, "entry_mostly_intrinsic", None
+
     # The per-arm portfolio rules: cadence, no duplicate structure, no self-cancelling leg.
     #
     # These replace the old `center_already_occupied` check. That rule refused a second structure on
@@ -779,6 +827,12 @@ def evaluate_credit_spread_entry(
     # every arm rather than just the one that exposed it.
     max_credit = params.get("max_credit_pct_of_width", 0.60) * width
     if credit > max_credit:
+        # Record the number it refused on. Until 2026-08-11 this gate returned a bare reason, so a
+        # session could show 146 refusals with no way to ask afterwards what was turned down or
+        # whether turning it down was right -- the same blind spot `best_completing_debit` exists to
+        # close on the completion side.
+        if gate_detail is not None:
+            gate_detail["would_be_credit"] = round(credit, 4)
         return False, "credit_above_ceiling_mostly_intrinsic", None
 
     # A credit spread whose credit can't clear the fee stack on BOTH legs of the leg-in can never
