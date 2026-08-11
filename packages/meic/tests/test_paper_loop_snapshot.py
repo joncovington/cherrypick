@@ -254,12 +254,15 @@ def test_iteration_regime_carries_no_structure_dimensions(loop_env, monkeypatch)
     monkeypatch.setattr(paper_loop, "_subrun", lambda cmd: calls.append(cmd))
     paper_loop.run_iteration(_CFG, force=True)
 
-    payload = json.loads(_iteration_regime_calls(calls)[0][_iteration_regime_calls(calls)[0].index("--regime") + 1])
+    payload = json.loads(
+        _iteration_regime_calls(calls)[0][_iteration_regime_calls(calls)[0].index("--regime") + 1]
+    )
     assert not [k for k in payload if k.startswith(("skew", "center_offset"))]
 
 
 def test_iteration_regime_failure_never_breaks_the_iteration(loop_env, monkeypatch):
     """Telemetry is best-effort: a lost row is a lost observation, never a lost iteration."""
+
     def boom(cmd):
         if "save_iteration_regime" in cmd:
             raise RuntimeError("db locked")

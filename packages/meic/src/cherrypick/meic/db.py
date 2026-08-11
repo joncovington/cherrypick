@@ -1195,6 +1195,7 @@ CREATE TABLE IF NOT EXISTS iteration_regime (
     created_at           TEXT NOT NULL
 )"""
 
+
 def _regime_market_dimensions() -> tuple:
     """regime.MARKET_DIMENSIONS, imported at call time. Every other regime import in this module is
     deferred the same way; regime.py imports nothing from here, so this is style consistency rather

@@ -538,3 +538,13 @@ def test_by_regime_reports_sessions_per_bucket(conn):
     rows = {r["bucket"]: r for r in analytics.by_regime(conn, "vol_realized")}
     assert rows["normal"]["trades"] == 3 and rows["normal"]["sessions"] == 2
     assert rows["high"]["trades"] == 1 and rows["high"]["sessions"] == 1
+
+
+def test_min_effective_n_matches_the_experiment_session_bar():
+    """Both constants answer 'how many sessions before this book may draw a conclusion'. They are
+    kept equal deliberately — two constants for one question is how they start disagreeing — and
+    analytics.py cannot import experiment.py (it pulls in paths/config; this is a pure read layer),
+    so the coupling is pinned here instead."""
+    from cherrypick.meic import experiment
+
+    assert analytics.MIN_EFFECTIVE_N == experiment.MIN_SESSIONS_FOR_INTERVAL
