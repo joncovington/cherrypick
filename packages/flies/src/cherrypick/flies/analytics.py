@@ -337,11 +337,13 @@ REGIME_DIMENSIONS = {
 # XSP era, which the module's own symbol rules say not to do.)
 
 
-# The independent-draw count below which a dimension cannot support a threshold re-cut. A reasoned
-# starting point, not a calibrated constant -- the same standing as every regime threshold in this
-# module, and mirrored in packages/meic's analytics for the same reason. It exists so "not enough
-# sessions yet" is a reported state rather than something a reader must infer from a row count.
-MIN_EFFECTIVE_N = 10
+# The session count below which a dimension cannot support a threshold re-cut. Matches MEIC's
+# analytics.MIN_EFFECTIVE_N, which in turn matches its experiment.MIN_SESSIONS_FOR_INTERVAL: all
+# three answer "how many sessions before a book may draw a conclusion", and a different number here
+# would make the same question resolve differently per module. It exists so "not enough sessions
+# yet" is a reported state rather than something a reader must infer from a row count that looks
+# large. Raise it, don't lower it, if a re-cut made on a sample this size later fails to hold.
+MIN_EFFECTIVE_N = 14
 
 # How small within-session movement must be, relative to movement BETWEEN sessions, before a
 # dimension counts as daily-scale. Not a constancy test: a daily-scale input still wobbles within a
@@ -364,10 +366,13 @@ def _session_scale(conn, where: str, params: list, bucket_col: str, value_col: s
         f"GROUP BY trade_date",
         params,
     ).fetchall()
-    sessions = conn.execute(
-        f"SELECT COUNT(DISTINCT trade_date) FROM fly_positions WHERE {where} AND {bucket_col} IS NOT NULL",
-        params,
-    ).fetchone()[0] or 0
+    sessions = (
+        conn.execute(
+            f"SELECT COUNT(DISTINCT trade_date) FROM fly_positions WHERE {where} AND {bucket_col} IS NOT NULL",
+            params,
+        ).fetchone()[0]
+        or 0
+    )
     if len(rows) < 2:
         return sessions, False
     means = [r["mean"] for r in rows if r["mean"] is not None]

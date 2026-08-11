@@ -135,12 +135,17 @@ REGIME_DIMENSIONS = {
 }
 
 
-# The independent-draw count below which a dimension cannot support a threshold re-cut. A reasoned
-# starting point, not a calibrated constant — the same standing as every regime threshold in this
-# module. It exists so "not enough sessions yet" is a reported state rather than something a reader
-# has to notice from a row count that looks large. Raise it, don't lower it, if a re-cut made on a
-# sample this size later fails to hold.
-MIN_EFFECTIVE_N = 10
+# The session count below which a dimension cannot support a threshold re-cut. Deliberately the SAME
+# number as experiment.MIN_SESSIONS_FOR_INTERVAL (14) rather than a second one invented here: both
+# answer "how many sessions before this book may draw a conclusion", and two constants for one
+# question is how they start disagreeing. Not imported from experiment.py because that module pulls
+# in paths/config and this one is a pure read layer over an open connection — the coupling is stated
+# here and pinned by a test instead.
+#
+# The bar's own provenance is experiment.py's: PROMOTION_RULE.min_days is 14 and this module's docs
+# put a regime-level claim at 14-20 sessions. Raise it, don't lower it, if a re-cut made on a sample
+# this size later fails to hold.
+MIN_EFFECTIVE_N = 14
 
 # How small within-session movement has to be, relative to movement BETWEEN sessions, before a
 # dimension is called daily-scale. Not a test for a constant: a daily-scale input still wobbles
@@ -171,10 +176,13 @@ def _session_scale(conn, table: str, where: str, params: list, bucket_col: str, 
         f"GROUP BY trade_date",
         params,
     ).fetchall()
-    sessions = conn.execute(
-        f"SELECT COUNT(DISTINCT trade_date) FROM {table} WHERE {where} AND {bucket_col} IS NOT NULL",
-        params,
-    ).fetchone()[0] or 0
+    sessions = (
+        conn.execute(
+            f"SELECT COUNT(DISTINCT trade_date) FROM {table} WHERE {where} AND {bucket_col} IS NOT NULL",
+            params,
+        ).fetchone()[0]
+        or 0
+    )
     if len(rows) < 2:
         return sessions, False
     means = [r["mean"] for r in rows if r["mean"] is not None]
@@ -245,11 +253,10 @@ def by_regime(
                 "bucket": bucket,
                 "value_min": _round(min(values), 4) if values else None,
                 "value_max": _round(max(values), 4) if values else None,
-                # How many distinct SESSIONS this bucket's rows came from. A bucket of 600 rows
-                # drawn from one day is one draw dressed as six hundred, and the trades count alone
-                # cannot show that — see regime_coverage's effective_n for the same accounting per
-                # dimension. Cheap here because trade_date is already selected.
-                "sessions": len({r["trade_date"] for r in rs if r["trade_date"]}),
+                # `sessions` per bucket comes from _summarize, which already computes it for every
+                # read surface in this module — a bucket of 600 rows drawn from one day is one draw
+                # dressed as six hundred, and the trades count alone cannot show that. See
+                # regime_coverage's effective_n for the same accounting per dimension.
                 **_summarize(rs),
             }
         )

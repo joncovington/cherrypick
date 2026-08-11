@@ -1163,7 +1163,10 @@ def test_regime_coverage_counts_sessions_not_just_rows(conn):
         position(conn, f"A{i}", pnl=10.0, regime={"vol_bucket": "high", "vol_value": 0.004 + i * 0.0001})
     for i in range(4):
         position(
-            conn, f"B{i}", day="2026-07-21", pnl=10.0,
+            conn,
+            f"B{i}",
+            day="2026-07-21",
+            pnl=10.0,
             regime={"vol_bucket": "normal", "vol_value": 0.002 + i * 0.0001},
         )
     dim = analytics.regime_coverage(conn)["dimensions"]["vol"]
@@ -1178,7 +1181,10 @@ def test_regime_coverage_collapses_effective_n_for_a_daily_scale_dimension(conn)
         position(conn, f"A{i}", pnl=10.0, regime={"vol_bucket": "high", "vol_value": 0.0040 + i * 1e-7})
     for i in range(10):
         position(
-            conn, f"B{i}", day="2026-07-21", pnl=10.0,
+            conn,
+            f"B{i}",
+            day="2026-07-21",
+            pnl=10.0,
             regime={"vol_bucket": "normal", "vol_value": 0.0020 + i * 1e-7},
         )
     dim = analytics.regime_coverage(conn)["dimensions"]["vol"]
@@ -1191,7 +1197,10 @@ def test_regime_coverage_keeps_row_count_for_an_intraday_dimension(conn):
         position(conn, f"A{i}", pnl=10.0, regime={"vol_bucket": "high", "vol_value": 0.001 + i * 0.0005})
     for i in range(10):
         position(
-            conn, f"B{i}", day="2026-07-21", pnl=10.0,
+            conn,
+            f"B{i}",
+            day="2026-07-21",
+            pnl=10.0,
             regime={"vol_bucket": "normal", "vol_value": 0.002 + i * 0.0005},
         )
     dim = analytics.regime_coverage(conn)["dimensions"]["vol"]
@@ -1212,7 +1221,10 @@ def test_underpowered_is_keyed_on_sessions_not_rows(conn):
 def test_underpowered_clears_once_enough_sessions_accumulate(conn):
     for d in range(analytics.MIN_EFFECTIVE_N):
         position(
-            conn, f"A{d}", day=f"2026-07-{d + 1:02d}", pnl=10.0,
+            conn,
+            f"A{d}",
+            day=f"2026-07-{d + 1:02d}",
+            pnl=10.0,
             regime={"vol_bucket": "high", "vol_value": 0.001 + d * 0.001},
         )
     dim = analytics.regime_coverage(conn)["dimensions"]["vol"]
