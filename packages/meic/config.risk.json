@@ -29,6 +29,29 @@
       "stagger_entries": true,
       "min_minutes_between_entries": 0
     },
+    "sign": {
+      "_note": "Control's twin, differing in EXACTLY ONE thing: overlap_scope 'sign' instead of 'shorts'. Added 2026-08-11 to measure the leg-sign entry rule without disturbing any existing stream. The rule refuses a candidate leg only when it would sit OPPOSITE an open leg on the same contract (long-on-short or short-on-long at one expiry/right/strike); same-sign stacking is fine, so a condor nests inside an open one freely and two condors may share a wing. What it forbids is the pair that NETS OUT -- two legs summing to zero mean the ledger's recorded risk is not the risk actually on, and every number derived from it (floor, MAE, settlement) then describes a position nobody holds. Strictly weaker than 'all' (which blocks any strike touch, including long-on-long) and strictly stronger than 'shorts'. It is the ONLY scope that reads the LONG strikes, which are not stored as numbers -- paper.ic_legs derives them from wing_width. Read against `control` for the scope's effect on sample count and net; the pair shares every other gate, cap, and stop, so a difference between them is the rule and nothing else. Deliberately NOT added to `open`, which exists as the unconstrained superset every gate variant is answered from read-side -- constraining it would destroy what it is for. Deliberately does NOT set min_seconds_between_entries either: entry cadence is a second variable and would confound this one. Add it as its own arm when that question is asked.",
+      "enabled": true,
+      "min_iv_rank": 0.3,
+      "min_credit_pct_of_width": 0.15,
+      "max_call_delta_entry": 0.2,
+      "max_call_delta_entry_open_volatile": 0.19,
+      "max_call_delta_entry_late": 0.19,
+      "min_call_otm_pct": 0.0035,
+      "min_put_otm_pct": 0.003,
+      "late_entry_bias_enabled": true,
+      "late_entry_bias_start_time": "12:00",
+      "regime_vix_pause_threshold": 25,
+      "regime_atr_pause_threshold_pct": 0.015,
+      "regime_vix1d_ratio_pause_threshold": 1.3,
+      "per_side_stop_management": true,
+      "stop_trigger_ratio": 0.95,
+      "max_concurrent_ics": 99,
+      "daily_ic_trade_target": 200,
+      "overlap_scope": "sign",
+      "stagger_entries": true,
+      "min_minutes_between_entries": 0
+    },
     "open": {
       "_note": "The permissive superset (2026-08-07): every study gate off (IV floor, OTM floor, ATR/VIX/VIX1D regime pauses, GEX block/require/magnitude, late-entry bias), no per-side stop (per_side_stop_management false — held to settlement/force-close, reusing the existing hold-to-expiry mechanism rather than a new one), overlap_scope 'none' (no pacing by prior fills — every tick is an independent draw), and the widened 09:45-15:30 window. This is what atr-open/ivr-open/otm-open/gex-mag/window-late/gex-open would each have been as separate arms — with overlap off and no position interaction, an entry filter is a deterministic function of a float this stream already records (entry_vol_realized_value, entry_vol_implied_value, etc. — see regime.py), so every one of those questions is a READ-SIDE split of this stream's own rows (analytics.by_regime), not a reason to run a fifth arm. Same reasoning for the stop question: a fully-marked open position's path contains every stop policy's outcome, so stop-none/stop-0.75-net/stop-2.0-side/strike-touch (Phase 3) are computed from these rows too, at 1x position cost and with exact pairing to control's own entries where the derivation validates.",
       "_gate_thresholds_note": "regime_vix_pause_threshold/regime_vix1d_ratio_pause_threshold are sentinel-high (999), not null — those two gates are NOT null-safe in code (`params['regime_vix_pause_threshold']` is a required key with no is-not-None guard, and vix1d's `.get(key, 1.30)` returns None rather than the default for a PRESENT-but-null key, same crash class regime_atr_pause_threshold_pct had before 2026-08-07's fix). regime_atr_pause_threshold_pct and regime_gex_min_flip_distance_pct ARE null-safe (explicit `is not None` guards) and are turned off with null, matching the convention config.example.json already documents for the GEX magnitude gate.",
@@ -86,8 +109,12 @@
       "max_concurrent_ics": 999,
       "daily_ic_trade_target": 999,
       "wing_widths_by_symbol": {
-        "SPX": [5],
-        "DEFAULT": [5]
+        "SPX": [
+          5
+        ],
+        "DEFAULT": [
+          5
+        ]
       }
     },
     "width-10": {
@@ -118,8 +145,12 @@
       "max_concurrent_ics": 999,
       "daily_ic_trade_target": 999,
       "wing_widths_by_symbol": {
-        "SPX": [10],
-        "DEFAULT": [10]
+        "SPX": [
+          10
+        ],
+        "DEFAULT": [
+          10
+        ]
       }
     },
     "conservative": {

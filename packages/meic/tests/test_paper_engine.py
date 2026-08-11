@@ -2489,3 +2489,101 @@ def test_mae_is_absent_without_a_spot_price():
     """No spot, no excursion — never a fabricated one."""
     d = _mae(None)
     assert "put_mae_spot" not in d and "call_mae_spot" not in d
+
+
+# ── The leg-sign overlap scope and the entry cadence (per-arm portfolios, 2026-08-11) ────────────
+
+
+def test_overlap_scope_sign_refuses_only_legs_that_would_net_out():
+    """The rule the per-arm portfolio model is built on: a candidate leg is refused only when it
+    would sit OPPOSITE an open leg on the same contract.
+
+    Strictly weaker than "all" (which blocks any strike touch, including long-on-long) and strictly
+    stronger than "none". The pair it forbids is the one that NETS OUT — two legs summing to zero
+    mean the ledger's recorded risk is not the risk on, and every number derived from it describes a
+    position nobody holds.
+    """
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+    params = {**_params(CONSERVATIVE), "overlap_scope": "sign"}
+
+    # The candidate is short 583P / long 578P / short 598C / long 603C.
+    # An open IC short at 578P sits under this candidate's LONG 578P -> they net out. Refused.
+    nets_out = [{"put_strike": 578.0, "call_strike": 593.0, "wing_width": 5}]
+    entered, reason, _ = paper.evaluate_entry(snap, params, nets_out)
+    assert entered is False and reason == "sign_rule_conflict"
+
+    # An open IC nested INSIDE the candidate touches no contract at all -> allowed. This is the
+    # ordinary MEIC stacking pattern and must never be refused.
+    nested = [{"put_strike": 570.0, "call_strike": 610.0, "wing_width": 5}]
+    entered, reason, _ = paper.evaluate_entry(snap, params, nested)
+    assert entered is True, reason
+
+
+def test_overlap_scope_sign_allows_two_condors_to_share_a_wing():
+    """Same-sign stacking is legal. An open IC whose LONG put sits at 578 shares that strike with
+    this candidate's own long 578 — two longs, nothing cancels — so the entry stands."""
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+    params = {**_params(CONSERVATIVE), "overlap_scope": "sign"}
+    # Short 583/598 with wing 5 -> longs at 578/603, the same longs the candidate carries.
+    shares_both_wings = [{"put_strike": 583.0, "call_strike": 598.0, "wing_width": 5}]
+    # Shorts coincide too, and shorts stack with shorts, so nothing here nets out.
+    entered, reason, _ = paper.evaluate_entry(snap, params, shares_both_wings)
+    assert entered is True, reason
+
+
+def test_overlap_scope_sign_never_nets_a_put_against_a_call():
+    """Option TYPE is part of the identity. A short call and a long put at one strike are different
+    contracts; refusing that pair would block ordinary structures for no reason."""
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+    params = {**_params(CONSERVATIVE), "overlap_scope": "sign"}
+    # Open IC short CALL at 578 — the same number as the candidate's long PUT, different contract.
+    call_at_the_puts_long = [{"put_strike": 560.0, "call_strike": 578.0, "wing_width": 5}]
+    entered, reason, _ = paper.evaluate_entry(snap, params, call_at_the_puts_long)
+    assert entered is True, reason
+
+
+def test_ic_legs_derives_the_wings_from_wing_width():
+    """The long strikes are not stored — they live in the ledger only as OCC strings — so the sign
+    rule depends on this derivation being exact and in one place."""
+    legs = paper.ic_legs({"put_strike": 583.0, "call_strike": 598.0, "wing_width": 5})
+    assert sorted(legs) == sorted(
+        [
+            ("0dte", "P", 583.0, -1),
+            ("0dte", "P", 578.0, 1),
+            ("0dte", "C", 598.0, -1),
+            ("0dte", "C", 603.0, 1),
+        ]
+    )
+
+
+def test_ic_legs_without_a_wing_width_yields_the_shorts_alone():
+    """A malformed historical row must constrain what it can rather than take the session down."""
+    legs = paper.ic_legs({"put_strike": 583.0, "call_strike": 598.0, "wing_width": None})
+    assert legs == [("0dte", "P", 583.0, -1), ("0dte", "C", 598.0, -1)]
+
+
+def test_entry_cadence_applies_without_stagger_entries():
+    """Cadence is universal, unlike `min_minutes_between_entries`, which only binds for profiles
+    opting into `stagger_entries` — and opting in ALSO turns the daily target into a hard cap. The
+    two are deliberately separate keys so an arm can take the pacing without the throttle.
+    """
+    params = {**_window_params(CONSERVATIVE), "min_seconds_between_entries": 360}
+    params.pop("stagger_entries", None)
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+
+    # Last fill three minutes ago (13:00 is minute 780; 777 is 12:57) -> inside the window.
+    entered, reason, _ = paper.evaluate_entry(snap, params, [], last_entry_min=777)
+    assert entered is False and reason == "entry_cadence_wait"
+
+    # Six minutes is eligible: the gate is "at least this far apart", not "more than".
+    entered, reason, _ = paper.evaluate_entry(snap, params, [], last_entry_min=774)
+    assert entered is True, reason
+
+
+def test_entry_cadence_is_off_when_unset():
+    """Absent the key, nothing changes — every existing profile keeps its current pacing."""
+    params = _window_params(CONSERVATIVE)
+    params.pop("stagger_entries", None)
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+    entered, reason, _ = paper.evaluate_entry(snap, params, [], last_entry_min=779)
+    assert entered is True, reason

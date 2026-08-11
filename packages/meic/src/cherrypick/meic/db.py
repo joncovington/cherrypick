@@ -250,6 +250,52 @@ CREATE TABLE IF NOT EXISTS iteration_regime (
 
 CREATE INDEX IF NOT EXISTS idx_iteration_regime_date ON iteration_regime (loop_date, symbol);
 
+-- One row per EVALUATED ENTRY OPPORTUNITY per (iteration x profile x symbol): what was proposed
+-- and what happened to it.
+--
+-- Added 2026-08-11, when each profile became an independent portfolio with unbounded capital. Every
+-- arm now sees the same market with the same money, so the ONLY thing that differentiates them is
+-- which entries the rules let through -- which makes the refusals the primary measurement rather
+-- than a diagnostic. Before this, MEIC's refusal reasons reached only the free-text
+-- `loop_log.reasoning` blob, which has to be regex-scraped and cannot be aggregated at all;
+-- `iteration_regime` counts blocked entries but not WHY any one of them was blocked.
+--
+-- Uncollapsed, one row per evaluation. `seconds_until_cadence_clear` falls by one tick every
+-- iteration, so any run-collapsing scheme would degenerate to one row per tick anyway.
+--
+-- `outcome` is the taxonomy the read side buckets on. `no_fill` is deliberately its own value:
+-- under a fill-based cadence clock an entry that cleared every gate and simply did not fill neither
+-- consumed the profile's slot nor was refused by a rule, and folding it into a gate outcome would
+-- make the gates look stricter than they are.
+CREATE TABLE IF NOT EXISTS entry_attempts (
+    id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts                          TEXT NOT NULL,
+    trade_date                  TEXT NOT NULL,
+    risk_profile                TEXT NOT NULL,
+    symbol                      TEXT NOT NULL,
+    expiration                  TEXT,
+    outcome                     TEXT NOT NULL,  -- filled | cadence_blocked | sign_rule_blocked
+                                                --   | gate_blocked | window_blocked | no_candidate
+                                                --   | no_fill
+    block_detail                TEXT,           -- the evaluate_entry reason, e.g. 'regime_gex_negative'
+    proposed_legs               TEXT,           -- JSON [{strike, right, sign}] of the chosen candidate
+    put_strike                  REAL,
+    call_strike                 REAL,
+    wing_width                  REAL,
+    blocking_strike             REAL,           -- populated for sign_rule_blocked
+    seconds_until_cadence_clear REAL,           -- populated for cadence_blocked
+    underlying_price            REAL,
+    iv_rank                     REAL,
+    gex_net                     REAL,
+    gex_positive                INTEGER,
+    session_quality             TEXT,
+    would_be_credit             REAL,
+    ic_order_id                 TEXT            -- set on the filled path, linking attempt to result
+);
+
+CREATE INDEX IF NOT EXISTS idx_entry_attempts_date ON entry_attempts (trade_date, risk_profile);
+CREATE INDEX IF NOT EXISTS idx_entry_attempts_outcome ON entry_attempts (trade_date, outcome);
+
 """
 
 

@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # The registry after the 2026-08-07 arms cutover: the four active streams (control/open/width-5/
 # width-10) plus every retired/disabled profile kept for historical record (the four-tier ladder,
 # and the GEX study pair). See config.risk.json's _arms_cutover_note for the full rationale.
-ACTIVE_STREAMS = {"control", "open", "width-5", "width-10"}
+ACTIVE_STREAMS = {"control", "sign", "open", "width-5", "width-10"}
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
 RETIRED_STUDY_ARMS = {"gex-open", "gex-blocked"}
 UNCAPPED_SAMPLING_STREAMS = {"open", "width-5", "width-10"}
@@ -555,3 +555,36 @@ def test_documenting_those_gates_did_not_change_what_they_do():
     }
     assert paper.evaluate_entry(snapshot, documented, [], 0)[:2] == (False, "regime_gex_negative")
     assert paper.evaluate_entry(snapshot, stripped, [], 0)[:2] == (False, "regime_gex_negative")
+
+
+def test_sign_is_control_with_only_the_overlap_scope_changed(sample_risk_profiles):
+    """The `sign` arm exists to measure the leg-sign entry rule, and it can only do that if the rule
+    is the ONLY thing separating it from the reference book.
+
+    Pinned key-by-key rather than by eyeball: this arm was added by copying `control`, and the next
+    edit to `control` is exactly when the two would silently drift apart — at which point a
+    difference in their books stops being attributable to the scope.
+
+    `min_seconds_between_entries` is asserted ABSENT deliberately. Entry cadence is a second
+    variable; adding it here would confound the one this arm is for.
+    """
+    profiles = sample_risk_profiles["profiles"]
+    control = {k: v for k, v in profiles["control"].items() if not k.startswith("_")}
+    sign = {k: v for k, v in profiles["sign"].items() if not k.startswith("_")}
+
+    assert sign["overlap_scope"] == "sign"
+    assert control["overlap_scope"] == "shorts"
+    assert "min_seconds_between_entries" not in sign
+
+    assert set(sign) == set(control), "sign and control must carry the same key set"
+    for key, value in control.items():
+        if key == "overlap_scope":
+            continue
+        assert sign[key] == value, f"sign diverges from control on {key!r} — that is a second variable"
+
+
+def test_the_unconstrained_superset_never_gains_an_overlap_rule(sample_risk_profiles):
+    """`open` is the permissive stream every gate variant is answered from read-side. Constraining
+    it — including with the sign rule — destroys what it is for, so this is pinned rather than left
+    to the reader of a config diff."""
+    assert sample_risk_profiles["profiles"]["open"]["overlap_scope"] == "none"
