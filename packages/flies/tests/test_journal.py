@@ -194,7 +194,7 @@ def test_a_live_iteration_writes_both_refusals_and_acceptances(conn):
     rows = journal(conn)
     reasons = {r["reason"] for r in rows}
     assert "entered" in reasons, "the accept path must be journalled, not just refusals"
-    assert "center_already_occupied" in reasons
+    assert "duplicate_structure" in reasons
 
     entered = next(r for r in rows if r["reason"] == "entered")
     assert entered["position_id"] is not None

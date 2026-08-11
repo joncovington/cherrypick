@@ -154,6 +154,26 @@ def _record_post_best_credit(conn, position: dict, credit: float, when: str) -> 
     )
 
 
+def _minute_of_day(entry_time) -> int | None:
+    """Minute-of-day (0-1439) from a stored `entry_time`, or None if it cannot be read.
+
+    Returns None rather than raising or guessing: an unreadable timestamp must not silently become
+    minute 0, which would read as "filled at midnight" and hand the cadence gate an elapsed time of
+    a full session — quietly disabling it for the rest of the day.
+    """
+    if not entry_time:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(entry_time))
+    except (TypeError, ValueError):
+        try:
+            hh, mm = str(entry_time).strip().split(" ")[-1].split(":")[:2]
+            return int(hh) * 60 + int(mm)
+        except (IndexError, ValueError):
+            return None
+    return parsed.hour * 60 + parsed.minute
+
+
 def _to_position(row: dict) -> dict:
     """Database row -> the plain dict the pure math in fly.py consumes."""
     return {
@@ -177,6 +197,11 @@ def _to_position(row: dict) -> dict:
         "post_best_completing_debit": row["post_best_completing_debit"],
         "post_best_completing_credit": row["post_best_completing_credit"],
         "entry_time": row["entry_time"],
+        # Minute-of-day of the fill, for the entry-cadence clock (engine.cadence_state). Derived
+        # here rather than in the engine because the engine is pure and gates in minute-of-day,
+        # while the ledger stores an ISO timestamp -- and because deriving it per gate call would
+        # re-parse the same strings on every arm on every tick.
+        "entry_time_min": _minute_of_day(row["entry_time"]),
         # Carried so `max_positions_per_window` can count what this window has already spent. Without
         # it the cap would read every position as window-less and never bind.
         "entry_window": row["entry_window"],
@@ -219,6 +244,52 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             detail=detail,
             when=now,
         )
+
+    # Outcome taxonomy for the attempts ledger. Every engine refusal reason maps to exactly one
+    # bucket, and anything unrecognized falls to `gate_blocked` with the raw reason kept in
+    # `block_detail` -- so a reason added later degrades to "some gate refused it" rather than
+    # disappearing from the read side.
+    _OUTCOMES = {
+        "entry_cadence_wait": "cadence_blocked",
+        "duplicate_structure": "duplicate_blocked",
+        "sign_rule_conflict": "sign_rule_blocked",
+        "outside_entry_window": "window_blocked",
+        "before_open_gate": "window_blocked",
+        "max_positions_reached": "window_blocked",
+        "max_positions_this_window_reached": "window_blocked",
+        "missing_leg_quotes": "no_candidate",
+        "no_0dte_expiration": "no_candidate",
+    }
+
+    def record_attempt(mode, reason, *, accepted=False, plan=None, center=None, position_id=None):
+        """One row per evaluated entry opportunity -- the measurement record under the journal.
+
+        Wrapped so a telemetry failure can never cost a trade: this runs after the decision is made
+        and the position is already saved, and an exception here would abort the tick with the book
+        half-written. The module's own rule is that refusals are ordinary; losing the record of one
+        is a gap in the data, not a reason to stop trading.
+        """
+        try:
+            dbmod.record_entry_attempt(
+                conn,
+                trade_date=trade_date,
+                arm=arm,
+                symbol=symbol,
+                expiry=snapshot.get("expiration") or trade_date,
+                mode=mode,
+                outcome="filled" if accepted else _OUTCOMES.get(reason, "gate_blocked"),
+                block_detail=None if accepted else reason,
+                center=center if center is not None else (plan or {}).get("center"),
+                wing_width=(plan or {}).get("wing_width"),
+                spot=snapshot.get("underlying_price"),
+                net_gex=(snapshot.get("gex") or {}).get("net_gex"),
+                gex_positive=(snapshot.get("gex") or {}).get("gex_positive"),
+                would_be_credit=(plan or {}).get("credit"),
+                position_id=position_id,
+                ts=now,
+            )
+        except Exception:  # noqa: BLE001 - telemetry must never break the loop
+            pass
 
     # What this arm WANTED this iteration, recorded before any gate can veto it. Written even when
     # nothing trades, because arm divergence is measured over intentions, not fills.
@@ -515,7 +586,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
 
     # --- 2. legged entry: sell a new credit spread
     if "legged" in params.get("entry_modes", ["legged"]):
-        enter, reason, plan = engine.evaluate_credit_spread_entry(snapshot, params, open_positions)
+        enter, reason, plan = engine.evaluate_credit_spread_entry(snapshot, params, open_positions, positions)
         if enter:
             position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}"
             pos = {
@@ -533,6 +604,11 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 # gates read, so it has to carry the window or the per-window cap misses it until the
                 # next iteration re-reads from the DB.
                 "entry_window": plan["entry_window"],
+                # Same reason the window is carried: this dict joins the list the entry gates
+                # read, so without the fill minute the cadence clock would not see this entry
+                # until the next tick re-reads the ledger -- and a second mode could enter
+                # inside the spacing window it was meant to be held out of.
+                "entry_time_min": _minute_of_day(now),
             }
             positions.append(pos)
             open_positions.append(pos)
@@ -567,6 +643,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "status": "open",
                 },
             )
+            record_attempt("legged", "entered", accepted=True, plan=plan, position_id=position_id)
             journal(
                 "legged",
                 "entered",
@@ -587,11 +664,14 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             )
         else:
             journal("legged", reason, center=wanted_center)
+            record_attempt("legged", reason, plan=plan, center=wanted_center)
             actions.append({"action": "entry_skipped", "mode": "legged", "reason": reason})
 
     # --- 2.5. debit-first entry: buy a debit vertical, complete later by SELLING a credit spread
     if "debit_first" in params.get("entry_modes", []):
-        enter, reason, plan = engine.evaluate_debit_vertical_entry(snapshot, params, open_positions)
+        enter, reason, plan = engine.evaluate_debit_vertical_entry(
+            snapshot, params, open_positions, positions
+        )
         if enter:
             position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-D"
             pos = {
@@ -606,6 +686,11 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "status": "open",
                 "position_id": position_id,
                 "entry_window": plan["entry_window"],
+                # Same reason the window is carried: this dict joins the list the entry gates
+                # read, so without the fill minute the cadence clock would not see this entry
+                # until the next tick re-reads the ledger -- and a second mode could enter
+                # inside the spacing window it was meant to be held out of.
+                "entry_time_min": _minute_of_day(now),
             }
             positions.append(pos)
             open_positions.append(pos)
@@ -641,6 +726,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "status": "open",
                 },
             )
+            record_attempt("debit_first", "entered", accepted=True, plan=plan, position_id=position_id)
             journal(
                 "debit_first",
                 "entered",
@@ -661,11 +747,12 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             )
         else:
             journal("debit_first", reason, center=wanted_center)
+            record_attempt("debit_first", reason, plan=plan, center=wanted_center)
             actions.append({"action": "entry_skipped", "mode": "debit_first", "reason": reason})
 
     # --- 2.75. bwb_roll entry: buy a broken-wing butterfly whole for a net credit
     if "bwb_roll" in params.get("entry_modes", []):
-        enter, reason, plan = engine.evaluate_bwb_entry(snapshot, params, open_positions)
+        enter, reason, plan = engine.evaluate_bwb_entry(snapshot, params, open_positions, positions)
         if enter:
             position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}-B"
             pos = {
@@ -681,6 +768,11 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "status": "open",
                 "position_id": position_id,
                 "entry_window": plan["entry_window"],
+                # Same reason the window is carried: this dict joins the list the entry gates
+                # read, so without the fill minute the cadence clock would not see this entry
+                # until the next tick re-reads the ledger -- and a second mode could enter
+                # inside the spacing window it was meant to be held out of.
+                "entry_time_min": _minute_of_day(now),
             }
             positions.append(pos)
             open_positions.append(pos)
@@ -715,6 +807,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "status": "open",
                 },
             )
+            record_attempt("bwb_roll", "entered", accepted=True, plan=plan, position_id=position_id)
             journal(
                 "bwb_roll",
                 "entered",
@@ -735,6 +828,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             )
         else:
             journal("bwb_roll", reason, center=wanted_center)
+            record_attempt("bwb_roll", reason, plan=plan, center=wanted_center)
             actions.append({"action": "entry_skipped", "mode": "bwb_roll", "reason": reason})
 
     # --- 3. outright entry: buy a cheap fly, funded only by premium already taken in
@@ -764,6 +858,11 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                 "status": "open",
                 "position_id": position_id,
                 "entry_window": plan["entry_window"],
+                # Same reason the window is carried: this dict joins the list the entry gates
+                # read, so without the fill minute the cadence clock would not see this entry
+                # until the next tick re-reads the ledger -- and a second mode could enter
+                # inside the spacing window it was meant to be held out of.
+                "entry_time_min": _minute_of_day(now),
             }
             positions.append(pos)
             dbmod.save_position(
@@ -793,6 +892,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "status": "open",
                 },
             )
+            record_attempt("outright", "entered", accepted=True, plan=plan, position_id=position_id)
             journal(
                 "outright",
                 "entered",
@@ -811,6 +911,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
             )
         else:
             journal("outright", reason, center=wanted_center)
+            record_attempt("outright", reason, plan=plan, center=wanted_center)
             actions.append({"action": "entry_skipped", "mode": "outright", "reason": reason})
 
     summary = _save_book(conn, book_id, trade_date, arm, symbol, positions, params)

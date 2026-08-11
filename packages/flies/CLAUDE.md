@@ -493,6 +493,58 @@ by `max_gex_input_age_seconds` (1800, much longer than the quote limit because O
 snapshot) and `min_gex_strikes` (20); below that the surface is refused and `select_center` degrades
 to ATM. `snapshot["gex_stats"]` carries fresh/stale/coverage the way `quote_stats` always has.
 
+## Per-arm portfolios: cadence and the entry rules (2026-08-11)
+
+Each arm is an independent portfolio with **unbounded capital and buying power**. Nothing else paces
+it, so three rules are the whole of what decides how many structures a session accumulates — and
+because every arm now sees the same market with the same money, **the refusals are the primary
+measurement**, not a diagnostic.
+
+- **Cadence** — one entry per arm per `min_seconds_between_entries` (360), clocked from the last
+  **fill**. An order placed and never filled did not spend the slot; charging it for one would make a
+  quiet market read as a throttled arm. `engine.cadence_state`.
+- **The same-strike sign rule** — within one arm, every open leg at a given (expiry, right, strike)
+  must share a sign. Longs stack with longs, shorts with shorts; a long against a short is refused.
+  Two legs that net to zero mean the ledger's recorded risk is not the risk on, and every number
+  downstream of it — floor, MAE, payoff curve, settlement — then describes a position nobody holds.
+  `cherrypick.core.entry.sign_conflict`, fed by `fly.position_legs`.
+- **No duplicate structure** — keyed on geometry `(centre, wing_width, far_width)`, spanning the
+  whole day because flies complete rather than close. This **replaces `center_already_occupied`** and
+  collapses to it exactly today, since `wing_width` is arm-constant (width variation lives in
+  separate arms). Written as the general rule because that is what "the same trade twice" means.
+
+**Option type is part of the leg identity, and that is load-bearing.** A short put and a long call at
+one strike are different contracts and do not net. An iron fly is short a put AND a call at its
+centre; getting this wrong would refuse ordinary structures for no reason.
+
+**The sign rule pushes adjacent structures one strike further apart, by design.** With 5-point wings
+on 5-point SPX strikes, a completed fly at K holds a LONG at K±w — so an entry centred one strike
+away would SELL a strike the book owns, and is refused. Two strikes away it stacks: that is exactly
+the `+1 -2 +2 -2 +1` shape, two flies sharing a wing. The forest still grows; its trees stand a
+strike further apart. **Expect fewer entries per session than the pre-2026-08-11 books**, and do not
+pool the two.
+
+**Both sides of the comparison are stamped with one expiry token.** The day book is a single
+(trade_date, arm, symbol) and every structure in it is 0DTE for that date, so forcing one token is
+correct — and it is the only safe construction, because the stored rows carry `trade_date` while a
+snapshot's own date field is not guaranteed populated. If the two ever disagreed the legs would land
+in different buckets and the rule would silently permit everything. A gate that fails open and
+silently is worse than no gate: it still reads as enforced.
+
+**`fly_entry_attempts` is the measurement record; `fly_decisions` stays the narrative.** One
+uncollapsed row per evaluated entry opportunity, carrying the outcome, the blocking strike, and the
+seconds the arm still had to wait. Deliberately not folded into `fly_decisions`, whose whole design
+is to collapse a run of identical reasons — `seconds_until_cadence_clear` falls every tick, so no two
+rows would share a run key and the collapse would degenerate to one row per tick with the
+aggregation machinery still in the path. `no_fill` is its own outcome: an entry that cleared every
+gate and did not fill neither spent the slot nor was refused, and folding it into a gate outcome
+makes the gates look stricter than they are. Writes are wrapped so a telemetry failure can never cost
+a trade.
+
+**Changing the cadence is a measurement break**, the same class as the 60s→15s tick change: entry
+pacing decides how many structures a session holds and therefore what a per-session net means.
+Journal it and keep the eras apart.
+
 **A global position cap does not make a multi-window arm test its windows.** `max_positions` alone let
 the book fill in the first window: over 07-20…07-24 `time_window` put 15 of its 16 legged entries in
 `10:30-11:00`, 1 in `12:30-13:00` and 0 in `14:00-14:30`, so the timing hypothesis was never exercised

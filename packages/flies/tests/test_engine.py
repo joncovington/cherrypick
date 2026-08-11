@@ -318,11 +318,88 @@ def test_entry_respects_the_position_cap():
 
 def test_entry_will_not_stack_two_structures_on_one_center():
     """Two flies on the same strike double the pin bet without adding a profit zone — the opposite of
-    what a forest of separate zones is for."""
+    what a forest of separate zones is for.
+
+    Now enforced by the duplicate-structure rule, which keys on the full geometry (centre + wings)
+    rather than the centre alone. Within an arm the two are the same rule, because `wing_width` is
+    arm-constant; the geometry key is what states it correctly.
+    """
+    held = {"center": 6000.0, "kind": "fly", "side": "put", "wing_width": 5, "far_width": None}
     enter, reason, _ = engine.evaluate_credit_spread_entry(
-        snapshot(underlying_price=5998.0), params(), [{"center": 6000.0, "kind": "fly"}]
+        snapshot(underlying_price=5998.0), params(), [held]
     )
-    assert not enter and reason == "center_already_occupied"
+    assert not enter and reason == "duplicate_structure"
+
+
+def test_a_different_wing_width_on_the_same_centre_is_not_a_duplicate():
+    """The generalization the geometry key buys: same centre, different wings, different trade.
+
+    Unreachable in today's config — width variation lives in separate arms — and asserted anyway so
+    the rule is pinned as geometry rather than re-collapsing to centre occupancy by accident.
+    """
+    held = {"center": 6000.0, "kind": "fly", "side": "put", "wing_width": 25, "far_width": None}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(
+        snapshot(underlying_price=5998.0), params(), [held]
+    )
+    assert enter, reason
+
+
+def test_entry_refused_when_a_leg_would_cancel_an_open_one():
+    """The sign rule: this arm holds a LONG put at 5995, so a new spread shorting 5995 nets it out
+    and the ledger would stop describing the position actually held."""
+    held = {
+        "center": 6000.0,
+        "kind": "short_vertical",
+        "side": "put",
+        "wing_width": 5,
+        "far_width": None,
+        "trade_date": "2026-08-11",
+    }
+    # A 5995-centred put spread is short 5995 / long 5990 — 5995 is held long above.
+    enter, reason, _ = engine.evaluate_credit_spread_entry(
+        snapshot(underlying_price=5993.0), params(), [held]
+    )
+    assert not enter and reason == "sign_rule_conflict"
+
+
+def test_entry_allowed_when_the_shared_strike_is_the_same_sign():
+    """`+1 -2 +2 -2 +1`: two structures sharing a wing stack rather than cancel."""
+    # A wide short vertical holding SHORT 6000 / long 5975. The new ATM entry is short 6000 too:
+    # same sign at a shared strike, which stacks. The widths differ so the duplicate rule stays out
+    # of the way and the sign rule is what is actually under test.
+    held = {
+        "center": 6000.0,
+        "kind": "short_vertical",
+        "side": "put",
+        "wing_width": 25,
+        "far_width": None,
+        "trade_date": "2026-08-11",
+    }
+    enter, reason, _ = engine.evaluate_credit_spread_entry(
+        snapshot(underlying_price=6000.0), params(), [held]
+    )
+    assert enter, reason
+
+
+def test_cadence_blocks_a_second_entry_inside_the_spacing_window():
+    held = {
+        "center": 5900.0,
+        "kind": "short_vertical",
+        "side": "put",
+        "wing_width": 5,
+        "far_width": None,
+        "trade_date": "2026-08-11",
+        "entry_time_min": 11 * 60,
+    }
+    cfg = {**params(), "min_seconds_between_entries": 360}
+    snap = snapshot(underlying_price=5998.0)
+    snap["now_min"] = 11 * 60 + 3  # three minutes after the last fill
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snap, cfg, [held])
+    assert not enter and reason == "entry_cadence_wait"
+
+    snap["now_min"] = 11 * 60 + 6  # six minutes: eligible again
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snap, cfg, [held])
+    assert enter, reason
 
 
 def test_entry_rejects_a_credit_below_the_floor():
