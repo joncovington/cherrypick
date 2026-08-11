@@ -1426,7 +1426,7 @@ td.num,th.num{text-align:right}
       <div class="apanel" style="margin-top:10px;overflow:visible">
         <div class="ptitle">Regime Coverage</div>
         <table class="atable" id="regime-cov-tbl">
-          <thead><tr><th>Dimension</th><th>Tagged</th><th>Untagged</th><th>Coverage %</th><th>Degenerate</th></tr></thead>
+          <thead><tr><th>Dimension</th><th>Tagged</th><th>Untagged</th><th>Coverage %</th><th>Sessions</th><th>Effective n</th><th>Degenerate</th></tr></thead>
           <tbody></tbody>
         </table>
         <div id="regime-by-dim" style="margin-top:10px"></div>
@@ -1872,11 +1872,19 @@ function renderRegimeCoverage(reg) {
   const tb = document.querySelector('#regime-cov-tbl tbody');
   if (tb) {
     const keys = Object.keys(dims);
-    tb.innerHTML = !keys.length ? '<tr><td colspan="5" class="empty">No paper-era data yet</td></tr>'
+    tb.innerHTML = !keys.length ? '<tr><td colspan="7" class="empty">No paper-era data yet</td></tr>'
       : keys.map(k => {
           const d = dims[k];
+          // Sessions, not rows, is what bounds a threshold re-cut: rows inside one session share
+          // that session's market. An underpowered dimension is flagged on the row itself rather
+          // than left to be inferred from a trade count that can read as large while resting on
+          // two days. Distinct from degenerate — that one says re-cut, this one says wait.
+          const eff = (d.effective_n != null ? d.effective_n : '—') + (d.daily_scale ? ' (daily)' : '');
+          const warn = d.underpowered ? ' class="neg" title="too few sessions to cut a threshold against"' : '';
           return '<tr><td>' + k + '</td><td>' + d.tagged + '</td><td>' + d.untagged + '</td>' +
             '<td>' + (d.coverage_pct != null ? d.coverage_pct.toFixed(0) + '%' : '—') + '</td>' +
+            '<td' + warn + '>' + (d.sessions != null ? d.sessions : '—') + '</td>' +
+            '<td>' + eff + '</td>' +
             '<td>' + (d.degenerate ? 'yes' : 'no') + '</td></tr>';
         }).join('');
   }

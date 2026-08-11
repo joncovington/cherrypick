@@ -214,6 +214,42 @@ CREATE TABLE IF NOT EXISTS market_context (
     updated_at    TEXT NOT NULL
 );
 
+-- One row per (iteration x symbol): the regime this tick was in, recorded whether or not anything
+-- was entered. ic_trades' regime columns are all conditioned on having entered, so the entry gates
+-- censor that distribution before it reaches the ledger -- 'which regime does this arm win in' can
+-- only be asked over ticks that already passed every gate, and the refused ticks leave no trace of
+-- what they refused. This is the uncensored denominator, and it makes the gates themselves
+-- measurable. Deliberately carries only regime.MARKET_DIMENSIONS (see that split's comment): the
+-- two structure dimensions have no structure to describe on a refused tick.
+--
+-- entries_n / blocked_n are the per-symbol arm outcomes for this tick, so the common question
+-- ('what regime were we in when we refused') is one query rather than a join against loop_log's
+-- free-text reasoning. Not a decision input -- nothing in the loop ever reads this table.
+CREATE TABLE IF NOT EXISTS iteration_regime (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    loop_date            TEXT NOT NULL,
+    loop_time            TEXT NOT NULL,
+    symbol               TEXT NOT NULL,
+    underlying_price     REAL,
+    entries_n            INTEGER DEFAULT 0,
+    blocked_n            INTEGER DEFAULT 0,
+    vol_implied_bucket   TEXT,
+    vol_implied_value    REAL,
+    vol_event_bucket     TEXT,
+    vol_event_value      REAL,
+    vol_realized_bucket  TEXT,
+    vol_realized_value   REAL,
+    vol_intraday_bucket  TEXT,
+    vol_intraday_value   REAL,
+    gex_bucket           TEXT,
+    gex_value            REAL,
+    trend_bucket         TEXT,
+    trend_value          REAL,
+    created_at           TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_iteration_regime_date ON iteration_regime (loop_date, symbol);
+
 """
 
 
@@ -290,6 +326,22 @@ _ADDED_TRADE_COLUMNS = {
     "put_touch_spot": "REAL",
     "call_touch_time": "TEXT",
     "call_touch_spot": "REAL",
+    # Maximum adverse excursion per side: the worst spot level reached against each short strike
+    # and when, updated whenever it worsens (unlike first-touch above, which is write-once at the
+    # crossing). First-touch answers exactly one stop policy — 'stop when spot touches the short'.
+    # This answers ANY of them: with the worst level recorded, a stop at 0.5x / 1x / 2x the wing,
+    # or at any distance from the strike, is derivable after the fact from a row that already
+    # carries put_strike/call_strike/wing_width. The distance is deliberately NOT stored — it is
+    # spot minus a strike already on the row, and storing a derived column is how two columns
+    # start disagreeing.
+    #
+    # This is the one item here that cannot be backfilled: the shared stream cache keeps no quote
+    # history and no spot history, so an excursion not recorded as it happened is gone. Recorded,
+    # never acted on — same convention as the settle_* counterfactuals and first-touch.
+    "put_mae_spot": "REAL",
+    "put_mae_time": "TEXT",
+    "call_mae_spot": "REAL",
+    "call_mae_time": "TEXT",
     # Sampling era. 'book' for every row that predates the arms/uncapped-sampling cutover (the
     # profile-ladder era, where max_concurrent_ics and entry spacing bounded each portfolio);
     # 'sample' for every row after. The two eras differ in selection intensity by roughly an
@@ -857,6 +909,12 @@ _UPDATABLE_TRADE_FIELDS = (
     "put_touch_spot",
     "call_touch_time",
     "call_touch_spot",
+    # Max-adverse-excursion instrumentation — monotone, rewritten whenever the excursion worsens.
+    # See paper._mae_updates and the schema comment on these columns.
+    "put_mae_spot",
+    "put_mae_time",
+    "call_mae_spot",
+    "call_mae_time",
 )
 
 
@@ -1113,6 +1171,99 @@ def cmd_save_market_context(args):
     _out({"ok": True, "date": date})
 
 
+_ITERATION_REGIME_DDL = """
+CREATE TABLE IF NOT EXISTS iteration_regime (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    loop_date            TEXT NOT NULL,
+    loop_time            TEXT NOT NULL,
+    symbol               TEXT NOT NULL,
+    underlying_price     REAL,
+    entries_n            INTEGER DEFAULT 0,
+    blocked_n            INTEGER DEFAULT 0,
+    vol_implied_bucket   TEXT,
+    vol_implied_value    REAL,
+    vol_event_bucket     TEXT,
+    vol_event_value      REAL,
+    vol_realized_bucket  TEXT,
+    vol_realized_value   REAL,
+    vol_intraday_bucket  TEXT,
+    vol_intraday_value   REAL,
+    gex_bucket           TEXT,
+    gex_value            REAL,
+    trend_bucket         TEXT,
+    trend_value          REAL,
+    created_at           TEXT NOT NULL
+)"""
+
+
+def _regime_market_dimensions() -> tuple:
+    """regime.MARKET_DIMENSIONS, imported at call time. Every other regime import in this module is
+    deferred the same way; regime.py imports nothing from here, so this is style consistency rather
+    than a cycle break."""
+    from cherrypick.meic import regime as _regime
+
+    return _regime.MARKET_DIMENSIONS
+
+
+# Every column the regime payload may set, so an unknown key in --regime is dropped rather than
+# interpolated into SQL. Derived from regime.MARKET_DIMENSIONS rather than re-listed, so adding a
+# dimension there cannot leave this silently writing NULL for it.
+_ITERATION_REGIME_FIELDS = tuple(
+    f"{dim}_{suffix}" for dim in _regime_market_dimensions() for suffix in ("bucket", "value")
+)
+
+
+def cmd_save_iteration_regime(args):
+    """Append one (iteration x symbol) regime row — see the iteration_regime schema comment for why
+    this exists at all. Creates the table on demand so it works against paper/live DBs that predate
+    it without re-running init_db, matching cmd_save_market_context's pattern.
+
+    Append-only, never upserted: two ticks in the same minute are two observations of the market and
+    collapsing them would quietly weight a slow-polling stretch the same as a fast one. Best-effort
+    by construction — the caller swallows failures, since losing a telemetry row must never fail an
+    iteration that is otherwise trading fine.
+    """
+    now = str(_now_et())
+    try:
+        regime = json.loads(args.regime) if args.regime else {}
+    except (TypeError, ValueError):
+        regime = {}
+    if not isinstance(regime, dict):
+        regime = {}
+    cols = {k: regime.get(k) for k in _ITERATION_REGIME_FIELDS}
+
+    def _num(value, cast):
+        # call() hands kwargs through as strings (argparse's type= never runs on that path), so
+        # coerce here rather than relying on SQLite's affinity to silently do it.
+        try:
+            return cast(value) if value is not None and value != "" else None
+        except (TypeError, ValueError):
+            return None
+
+    row = {
+        "loop_date": args.date or _today_et(),
+        "loop_time": args.time or now,
+        "symbol": args.symbol,
+        "underlying_price": _num(getattr(args, "underlying_price", None), float),
+        "entries_n": _num(getattr(args, "entries_n", 0), int) or 0,
+        "blocked_n": _num(getattr(args, "blocked_n", 0), int) or 0,
+        **cols,
+        "created_at": now,
+    }
+    conn = _connect()
+    conn.execute(_ITERATION_REGIME_DDL)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_iteration_regime_date ON iteration_regime (loop_date, symbol)"
+    )
+    conn.execute(
+        f"INSERT INTO iteration_regime ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
+        list(row.values()),
+    )
+    conn.commit()
+    conn.close()
+    _out({"ok": True, "date": row["loop_date"], "symbol": row["symbol"]})
+
+
 # ---------------------------------------------------------------------------
 # CLI dispatch
 # ---------------------------------------------------------------------------
@@ -1138,6 +1289,7 @@ _COMMANDS = {
     "update_trade": cmd_update_trade,
     "save_daily_summary": cmd_save_daily_summary,
     "save_market_context": cmd_save_market_context,
+    "save_iteration_regime": cmd_save_iteration_regime,
     "record_stop_adjustment": cmd_record_stop_adjustment,
     "log_loop_action": cmd_log_loop_action,
     "record_leg_exit": cmd_record_leg_exit,
@@ -1280,6 +1432,19 @@ def main():
     p_mctx.add_argument("--vix1d_ratio", default=None, type=float)
     p_mctx.add_argument(
         "--symbols", default="{}", help="JSON: {SYM: {price, iv_rank}} snapshot for the EOD analysis report"
+    )
+
+    p_iter = sub.add_parser("save_iteration_regime")
+    p_iter.add_argument("--date", default=None)
+    p_iter.add_argument("--time", default=None)
+    p_iter.add_argument("--symbol", required=True)
+    p_iter.add_argument("--underlying_price", default=None, type=float)
+    p_iter.add_argument("--entries_n", default=0, type=int)
+    p_iter.add_argument("--blocked_n", default=0, type=int)
+    p_iter.add_argument(
+        "--regime",
+        default="{}",
+        help="JSON from regime.market_regime_columns: {<dimension>_bucket/_value: ...}",
     )
 
     p_log = sub.add_parser("log_loop_action")

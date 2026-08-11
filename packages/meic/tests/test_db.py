@@ -490,3 +490,110 @@ def test_migrate_does_not_reoverwrite_center_offset_on_a_later_call(db_path):
     ).fetchone()
     conn.close()
     assert row == ("above_spot", 0.0099)
+
+
+# --------------------------------------------------------------------------- iteration_regime
+
+
+def _save_iteration(db_path, **over):
+    args = dict(
+        date="2026-08-10",
+        time="2026-08-10 11:00:00",
+        symbol="SPX",
+        underlying_price=7500.0,
+        entries_n=0,
+        blocked_n=3,
+        regime=json.dumps({"vol_implied_bucket": "low", "vol_implied_value": 0.28}),
+    )
+    args.update(over)
+    db.cmd_save_iteration_regime(argparse.Namespace(**args))
+
+
+def test_save_iteration_regime_records_a_tick_that_entered_nothing(db_path):
+    """The point of the table: a tick where every gate refused still leaves a regime record. Without
+    it the recorded regime distribution is censored by the gates it would be used to evaluate."""
+    _save_iteration(db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM iteration_regime").fetchone()
+    conn.close()
+
+    assert row["symbol"] == "SPX"
+    assert row["entries_n"] == 0 and row["blocked_n"] == 3
+    assert row["underlying_price"] == 7500.0
+    assert row["vol_implied_bucket"] == "low"
+    assert row["vol_implied_value"] == 0.28
+    # A dimension the payload omitted is NULL, not an error.
+    assert row["gex_bucket"] is None
+
+
+def test_save_iteration_regime_is_append_only(db_path):
+    """Two ticks in the same minute are two observations. Collapsing them would weight a
+    slow-polling stretch the same as a fast one."""
+    _save_iteration(db_path)
+    _save_iteration(db_path, blocked_n=4)
+
+    conn = sqlite3.connect(db_path)
+    rows = conn.execute("SELECT blocked_n FROM iteration_regime ORDER BY id").fetchall()
+    conn.close()
+    assert [r[0] for r in rows] == [3, 4]
+
+
+def test_save_iteration_regime_drops_unknown_keys(db_path):
+    """The payload is interpolated into SQL by column name, so an unrecognised key must be dropped
+    rather than reaching the statement."""
+    _save_iteration(db_path, regime=json.dumps({"vol_implied_bucket": "low", "nonsense; DROP": 1}))
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute("SELECT vol_implied_bucket FROM iteration_regime").fetchone()
+    conn.close()
+    assert row[0] == "low"
+
+
+def test_save_iteration_regime_survives_a_malformed_payload(db_path):
+    """Telemetry must never fail an iteration that is otherwise trading fine."""
+    _save_iteration(db_path, regime="not json at all")
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute("SELECT symbol, vol_implied_bucket FROM iteration_regime").fetchone()
+    conn.close()
+    assert row == ("SPX", None)
+
+
+def test_save_iteration_regime_creates_the_table_on_an_older_db(tmp_path, monkeypatch):
+    """Works against a paper/live DB that predates the table without re-running init_db — the same
+    on-demand pattern save_market_context uses."""
+    path = str(tmp_path / "old.db")
+    monkeypatch.setattr(db, "_DB_PATH", path)
+    sqlite3.connect(path).close()  # an empty DB: no init_db, no tables at all
+
+    _save_iteration(path)
+
+    conn = sqlite3.connect(path)
+    assert conn.execute("SELECT COUNT(*) FROM iteration_regime").fetchone()[0] == 1
+    conn.close()
+
+
+def test_save_iteration_regime_coerces_string_kwargs(tmp_path, monkeypatch):
+    """db.call() hands kwargs through as strings (argparse's type= never runs on that path), which
+    is how the paper loop reaches this command."""
+    path = str(tmp_path / "coerce.db")
+    monkeypatch.setattr(db, "_DB_PATH", path)
+    sqlite3.connect(path).close()
+
+    _save_iteration(path, underlying_price="7500.5", entries_n="2", blocked_n="1")
+
+    conn = sqlite3.connect(path)
+    row = conn.execute("SELECT underlying_price, entries_n, blocked_n FROM iteration_regime").fetchone()
+    conn.close()
+    assert row == (7500.5, 2, 1)
+
+
+def test_iteration_regime_fields_track_the_market_dimensions():
+    """Derived from regime.MARKET_DIMENSIONS rather than re-listed, so adding a dimension there
+    cannot leave this command silently writing NULL for it."""
+    from cherrypick.meic import regime
+
+    expected = {f"{d}_{s}" for d in regime.MARKET_DIMENSIONS for s in ("bucket", "value")}
+    assert set(db._ITERATION_REGIME_FIELDS) == expected

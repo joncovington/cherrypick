@@ -452,6 +452,20 @@ time: the raw minute is recorded now, so `bucket_edges` can cut it against what 
 `analytics.regime_coverage` flags any single-bucket dimension, and the EOD report warns on it and
 withholds that dimension's P&L table — a one-bucket table reads as a finding and is not one.
 
+**Rows are not draws, and the coverage guard counts sessions too (2026-08-10).** `regime_coverage`
+reported a row count, which is what let a dimension resting on a handful of sessions look like
+evidence: positions entered on one day observe one market between them, so a threshold cut on a
+large row count from few sessions is still a cut on few sessions. It now reports `sessions`,
+`daily_scale`, `effective_n`, and `underpowered`, and `by_regime` reports sessions per bucket.
+`daily_scale` is **measured, not declared** — mean within-session range against the range of session
+means, against `DAILY_SCALE_RATIO` — because a daily-scale input still wobbles slightly within a day
+once it is normalized by spot, so a strict constancy test would never fire. A dimension whose input
+only moves between sessions has the session count as its effective n however many rows it holds.
+**`underpowered` is keyed on sessions, not `effective_n`**, and it is deliberately a different
+finding from `degenerate`: the two look identical in a bucket table and call for opposite responses —
+re-cut the float, versus collect more sessions. `time_bucket` was re-cut on 97 rows; the session
+count behind those rows is the number that should have been read first, and now is.
+
 **`time_bucket` was re-cut on 2026-08-06, and the redundancy hypothesis it carried is answered — it
 is kept.** Boundaries **10:00/15:30 → 11:00/13:00**, derived from the recorded minute with no session
 re-run (entries span 10:00–14:42, median 11:19). The dimension had gone degenerate a second time by

@@ -891,6 +891,43 @@ def _first_touch_updates(trade: dict, underlying_price: float | None) -> dict:
     return updates
 
 
+def _mae_updates(trade: dict, underlying_price: float | None) -> dict:
+    """Maximum adverse excursion per side: the worst spot level reached against each short strike,
+    and when. A short PUT gets worse as spot FALLS, a short CALL as spot RISES, so each side keeps
+    its own running extreme in its own direction.
+
+    This generalizes _first_touch_updates above rather than duplicating it. First-touch is
+    write-once at the crossing and therefore answers exactly one stop policy — 'stop when spot
+    touches the short strike'. It says nothing about a position that came within a point of the
+    strike and turned (no touch, no record) or one that blew 40 points through it (touch recorded
+    identically to a 1-point breach). The running extreme answers any stop distance, because the
+    strike and wing width are already on the row.
+
+    Monotone, same shape as _max_cost_updates: returns an empty dict on any tick that did not
+    worsen the excursion, so it only ever rides along on a write the tick was already making.
+    Recorded, never acted on.
+    """
+    updates = {}
+    if underlying_price is None:
+        return updates
+    # Seeded on the first marked tick regardless of direction: the excursion is measured against
+    # the strike, so the entry-day best case ('never went adverse at all') has to be a real
+    # recorded level rather than a NULL indistinguishable from a trade that was never marked.
+    put_strike = trade.get("put_strike")
+    if put_strike is not None:
+        prior = trade.get("put_mae_spot")
+        if prior is None or underlying_price < prior:
+            updates["put_mae_spot"] = underlying_price
+            updates["put_mae_time"] = str(_now_et())
+    call_strike = trade.get("call_strike")
+    if call_strike is not None:
+        prior = trade.get("call_mae_spot")
+        if prior is None or underlying_price > prior:
+            updates["call_mae_spot"] = underlying_price
+            updates["call_mae_time"] = str(_now_et())
+    return updates
+
+
 def _settlement_value(strike, underlying, wing_width, side) -> float:
     """The value a defined-risk spread settles for at expiration: the short strike's intrinsic
     value, floored at 0 (expires worthless) and capped at the wing width (fully-ITM = max
@@ -929,7 +966,10 @@ def evaluate_open_trade(
 
     # Computed once, up front, and merged into every return below (see _first_touch_updates) --
     # spot can cross a strike on ANY iteration regardless of which action this one ends up taking.
-    touch_updates = _first_touch_updates(trade, underlying_price)
+    touch_updates = {
+        **_first_touch_updates(trade, underlying_price),
+        **_mae_updates(trade, underlying_price),
+    }
 
     # Expiration settlement ('left to expire', cash-settled) needs only the strikes and the
     # settlement price — not live leg quotes — so handle it before the quote-availability gate
@@ -1436,11 +1476,21 @@ def _max_cost_updates(trade: dict, decision: dict) -> dict:
 
 
 def _touch_updates(decision: dict) -> dict:
-    """Extract first-touch instrumentation (see evaluate_open_trade's _first_touch_updates) from
-    a decision dict for folding into whichever DB write this iteration makes. Present only on the
-    tick a side first crosses its strike (write-once); an empty dict every other tick, same
-    monotone-write shape as _max_cost_updates above."""
-    keys = ("put_touch_time", "put_touch_spot", "call_touch_time", "call_touch_spot")
+    """Extract the per-side excursion instrumentation (evaluate_open_trade's _first_touch_updates
+    and _mae_updates) from a decision dict for folding into whichever DB write this iteration
+    makes. First-touch is present only on the tick a side first crosses its strike (write-once);
+    the MAE keys are present on any tick that worsened the excursion. Empty on every other tick,
+    same monotone-write shape as _max_cost_updates above."""
+    keys = (
+        "put_touch_time",
+        "put_touch_spot",
+        "call_touch_time",
+        "call_touch_spot",
+        "put_mae_spot",
+        "put_mae_time",
+        "call_mae_spot",
+        "call_mae_time",
+    )
     return {k: decision[k] for k in keys if k in decision}
 
 
