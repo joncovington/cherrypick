@@ -364,17 +364,23 @@ def _regime_paragraph(coverage: dict, conn) -> str:
     if not total:
         return "No settled positions yet, so nothing is regime-tagged."
 
-    lines, degenerate, thin = [], [], []
+    lines, degenerate, thin, underpowered = [], [], [], []
     for dim, info in coverage["dimensions"].items():
         if not info["tagged"]:
             thin.append(dim)
             continue
         spread = ", ".join(f"{b} {n}" for b, n in info["buckets"].items())
+        # Sessions reported beside the row count, always — the two are different numbers and only
+        # the second bounds what can be read off the split.
+        scale = " · daily-scale" if info.get("daily_scale") else ""
         lines.append(
-            f"- **{dim}** — {info['tagged']}/{total} tagged ({_drag(info['coverage_pct'])}): {spread}"
+            f"- **{dim}** — {info['tagged']}/{total} tagged ({_drag(info['coverage_pct'])}) "
+            f"over {info['sessions']} session(s){scale}: {spread}"
         )
         if info["degenerate"]:
             degenerate.append(dim)
+        if info.get("underpowered"):
+            underpowered.append(dim)
 
     out = [
         "Regime tags are descriptive only — nothing here gates a decision. They exist so a future "
@@ -394,6 +400,17 @@ def _regime_paragraph(coverage: dict, conn) -> str:
             "carries no information, and any P&L split on it would be an artefact. The continuous "
             "measure behind each bucket is stored alongside it, so the cut can be re-derived with "
             "`flies regime --dimension <dim> --bucket-edges ...` without re-running any session.",
+        ]
+    if underpowered:
+        out += [
+            "",
+            f"⚠️ **{', '.join(underpowered)}** rest on fewer than {analytics.MIN_EFFECTIVE_N} "
+            "sessions. Rows are not independent draws — positions entered on one day observe one "
+            "market between them, and a dimension marked `daily-scale` above moves only between "
+            "sessions, so its effective n is the session count rather than its row count. This is "
+            "the opposite finding to a degenerate dimension: that one calls for re-cutting the "
+            "float, this one only for more sessions. `time_bucket` was re-cut on 97 rows — this "
+            "is the number that should have been read first.",
         ]
 
     # Only show a P&L split where the dimension actually separates — a one-bucket table reads as a

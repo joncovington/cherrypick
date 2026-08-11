@@ -392,6 +392,34 @@ profile-name-agnostic:
   comparison — and notes which configured profiles were idle.
 - The live dashboard's profile selector lists whatever tags exist.
 
+### Read the session count before the trade count (2026-08-10)
+
+`analytics.regime_coverage` reports `sessions`, `daily_scale`, `effective_n` and `underpowered`
+alongside the row counts, and `by_regime` reports sessions per bucket, because **rows are not
+independent draws**. Under the independent-sampling convention above this book takes hundreds of
+entries per session, so a dimension can carry a four-figure trade count and rest on two days.
+Measured on 2026-08-10: 967 tagged rows across **2 sessions** (08-07 and 08-10), and `vol_realized`
+— trailing 5-day ATR over spot — varied by 0.00005 within a session against 0.00154 across them,
+which is an effective n of **2**, not 967.
+
+That is why `underpowered` is keyed on the session count rather than `effective_n`: rows inside one
+session share that session's market, so even a genuinely intraday dimension is bounded by how many
+days it has seen. It is deliberately a separate flag from `degenerate` — the two look identical in a
+bucket table and call for opposite responses. A degenerate dimension says *re-cut the float* (the
+measure is stored precisely so this costs nothing); an underpowered one says *collect more sessions*,
+and re-cutting it instead is fitting a boundary to a handful of days. `daily_scale` is measured from
+the data rather than declared per dimension, since a dimension can be daily-scale in one period and
+intraday in another.
+
+### The regime you refused is recorded too
+
+`iteration_regime` (see the MEIC CLAUDE.md's Database section) writes one row per iteration × symbol
+regardless of whether anything filled. Every regime column on `ic_trades` is conditioned on having
+entered, so on its own the ledger can only answer "which regime does this arm win in" over ticks that
+already cleared every gate — the refused ticks, which are most of them, left no trace of what they
+refused. With the iteration row, `gate_block`'s *which gate* and the regime row's *what the market
+was* combine into the counterfactual the gates have never been measurable against.
+
 ## Validation (forward paper on tastytrade)
 
 All cells are validated **forward** by the automated paper engine (`paper_loop.py`) against live

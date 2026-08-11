@@ -337,6 +337,48 @@ REGIME_DIMENSIONS = {
 # XSP era, which the module's own symbol rules say not to do.)
 
 
+# The independent-draw count below which a dimension cannot support a threshold re-cut. A reasoned
+# starting point, not a calibrated constant -- the same standing as every regime threshold in this
+# module, and mirrored in packages/meic's analytics for the same reason. It exists so "not enough
+# sessions yet" is a reported state rather than something a reader must infer from a row count.
+MIN_EFFECTIVE_N = 10
+
+# How small within-session movement must be, relative to movement BETWEEN sessions, before a
+# dimension counts as daily-scale. Not a constancy test: a daily-scale input still wobbles within a
+# day because it is normalized by spot, so strict equality would never fire. Mirrors the same
+# constant in packages/meic's analytics.
+DAILY_SCALE_RATIO = 0.2
+
+
+def _session_scale(conn, where: str, params: list, bucket_col: str, value_col: str):
+    """(sessions, daily_scale) for one regime dimension -- how many distinct sessions its tagged
+    rows came from, and whether its float essentially only moves BETWEEN them, in which case the row
+    count overstates the independent draws and `regime_coverage` reports sessions as the effective
+    n. Measured from the data (mean within-session range against the range of session means) rather
+    than declared per dimension. Degrades to False on a single session or a flat across-session
+    range: with nothing to compare against, claiming daily-scale would be reading a zero denominator
+    as evidence."""
+    rows = conn.execute(
+        f"SELECT trade_date, MAX({value_col}) - MIN({value_col}) AS spread, AVG({value_col}) AS mean "
+        f"FROM fly_positions WHERE {where} AND {bucket_col} IS NOT NULL AND {value_col} IS NOT NULL "
+        f"GROUP BY trade_date",
+        params,
+    ).fetchall()
+    sessions = conn.execute(
+        f"SELECT COUNT(DISTINCT trade_date) FROM fly_positions WHERE {where} AND {bucket_col} IS NOT NULL",
+        params,
+    ).fetchone()[0] or 0
+    if len(rows) < 2:
+        return sessions, False
+    means = [r["mean"] for r in rows if r["mean"] is not None]
+    spreads = [r["spread"] for r in rows if r["spread"] is not None]
+    across = (max(means) - min(means)) if means else 0
+    if not spreads or across <= 0:
+        return sessions, False
+    within = sum(spreads) / len(spreads)
+    return sessions, (within / across) < DAILY_SCALE_RATIO
+
+
 def _edge_label(edges: list[float], value: float | None) -> str:
     if value is None:
         return "unknown"
@@ -385,7 +427,7 @@ def by_regime(
         where += f" AND entry_mode IN ({','.join('?' * len(entry_modes))})"
         params = [*params, *entry_modes]
     rows = conn.execute(
-        f"SELECT {bucket_col} AS bucket, {value_col} AS value, gross_pnl, fees, pnl "
+        f"SELECT {bucket_col} AS bucket, {value_col} AS value, gross_pnl, fees, pnl, trade_date "
         f"FROM fly_positions WHERE {where}",
         params,
     ).fetchall()
@@ -406,6 +448,10 @@ def by_regime(
                 # actually occurred rather than against what it was guessed to be.
                 "value_min": _round(min(values), 4) if values else None,
                 "value_max": _round(max(values), 4) if values else None,
+                # Distinct sessions behind this bucket. A bucket's trade count and its independent
+                # -draw count are different numbers, and only the second bounds what can be read off
+                # it -- see regime_coverage's effective_n.
+                "sessions": len({r["trade_date"] for r in rs if r["trade_date"]}),
                 **_summarize(rs),
             }
         )
@@ -420,11 +466,21 @@ def regime_coverage(conn, start=None, end=None, symbol=None) -> dict:
     like a result and contains no contrast. `entry_gex_bucket` was exactly that -- 'thin' 60 times
     out of 60 -- until the classifier was windowed on 2026-08-01, and nothing in the read layer
     would have said so.
+
+    **`effective_n` counts SESSIONS, not rows, for any dimension whose input only moves daily.** Rows
+    are not draws: a dimension fed by a daily-scale input holds one value repeated across every row
+    of a day, so its row count says nothing about how many independent observations are behind it.
+    `daily_scale` is detected from whether the recorded float ever varies WITHIN a session rather
+    than declared per dimension, so it tracks what the data did. `underpowered` is the flag to act
+    on, and it is deliberately distinct from `degenerate`: the two look identical in a bucket table
+    and call for opposite responses -- re-cut the float, versus collect more sessions. `time_bucket`
+    was re-cut on 97 rows, and this is what makes the sessions behind such a decision visible before
+    it is taken rather than after.
     """
     where, params = _period_clause(start, end, symbol=symbol)
     total = conn.execute(f"SELECT COUNT(*) FROM fly_positions WHERE {where}", params).fetchone()[0]
     out = {"settled_trades": total, "dimensions": {}}
-    for dim, (bucket_col, _) in REGIME_DIMENSIONS.items():
+    for dim, (bucket_col, value_col) in REGIME_DIMENSIONS.items():
         rows = conn.execute(
             f"SELECT {bucket_col} AS bucket, COUNT(*) AS n FROM fly_positions WHERE {where} "
             f"AND {bucket_col} IS NOT NULL GROUP BY 1",
@@ -432,13 +488,25 @@ def regime_coverage(conn, start=None, end=None, symbol=None) -> dict:
         ).fetchall()
         counts = {r["bucket"]: r["n"] for r in rows}
         tagged = sum(counts.values())
+
+        sessions, daily_scale = _session_scale(conn, where, params, bucket_col, value_col)
+        effective_n = sessions if daily_scale else tagged
+
         out["dimensions"][dim] = {
             "tagged": tagged,
             "untagged": total - tagged,
             "coverage_pct": _round(tagged / total * 100) if total else None,
             "buckets": dict(sorted(counts.items(), key=lambda kv: -kv[1])),
+            "sessions": sessions,
+            "daily_scale": daily_scale,
+            "effective_n": effective_n,
             # One populated bucket means the tag cannot discriminate — no contrast, not no effect.
             "degenerate": tagged > 0 and len(counts) == 1,
+            # Keyed on SESSIONS rather than effective_n: rows inside one session share that
+            # session's market, so a cut made on a few days of intraday-varying data is still a cut
+            # made on a few days. `daily_scale` says how severe the collapse is, not whether the
+            # session count binds -- it always does.
+            "underpowered": tagged > 0 and sessions < MIN_EFFECTIVE_N,
         }
     return out
 

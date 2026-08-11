@@ -1152,3 +1152,80 @@ def test_rows_without_a_recorded_spot_are_omitted(conn):
     _drift(conn, "S1", side="call", drift=+50.0, completed=False, pnl=-200.0)
     conn.execute("UPDATE fly_positions SET underlying_at_entry = NULL WHERE position_id = 'S1'")
     assert analytics.by_drift_alignment(conn) == []
+
+
+# --------------------------------------------------------------------------- session denominators
+
+
+def test_regime_coverage_counts_sessions_not_just_rows(conn):
+    """Rows are not draws: several positions entered on one day observe one market between them."""
+    for i in range(4):
+        position(conn, f"A{i}", pnl=10.0, regime={"vol_bucket": "high", "vol_value": 0.004 + i * 0.0001})
+    for i in range(4):
+        position(
+            conn, f"B{i}", day="2026-07-21", pnl=10.0,
+            regime={"vol_bucket": "normal", "vol_value": 0.002 + i * 0.0001},
+        )
+    dim = analytics.regime_coverage(conn)["dimensions"]["vol"]
+    assert dim["tagged"] == 8
+    assert dim["sessions"] == 2
+
+
+def test_regime_coverage_collapses_effective_n_for_a_daily_scale_dimension(conn):
+    """A dimension that only really moves between sessions has the session count as its effective
+    n, however many rows it has."""
+    for i in range(10):
+        position(conn, f"A{i}", pnl=10.0, regime={"vol_bucket": "high", "vol_value": 0.0040 + i * 1e-7})
+    for i in range(10):
+        position(
+            conn, f"B{i}", day="2026-07-21", pnl=10.0,
+            regime={"vol_bucket": "normal", "vol_value": 0.0020 + i * 1e-7},
+        )
+    dim = analytics.regime_coverage(conn)["dimensions"]["vol"]
+    assert dim["daily_scale"] is True
+    assert dim["effective_n"] == 2 and dim["tagged"] == 20
+
+
+def test_regime_coverage_keeps_row_count_for_an_intraday_dimension(conn):
+    for i in range(10):
+        position(conn, f"A{i}", pnl=10.0, regime={"vol_bucket": "high", "vol_value": 0.001 + i * 0.0005})
+    for i in range(10):
+        position(
+            conn, f"B{i}", day="2026-07-21", pnl=10.0,
+            regime={"vol_bucket": "normal", "vol_value": 0.002 + i * 0.0005},
+        )
+    dim = analytics.regime_coverage(conn)["dimensions"]["vol"]
+    assert dim["daily_scale"] is False
+    assert dim["effective_n"] == 20
+
+
+def test_underpowered_is_keyed_on_sessions_not_rows(conn):
+    """`time_bucket` was re-cut on 97 rows; this is what makes the sessions behind such a decision
+    visible before it is taken rather than after."""
+    for i in range(40):
+        position(conn, f"A{i}", pnl=10.0, regime={"vol_bucket": "high", "vol_value": 0.001 + i * 0.0005})
+    dim = analytics.regime_coverage(conn)["dimensions"]["vol"]
+    assert dim["tagged"] == 40
+    assert dim["underpowered"] is True  # one session
+
+
+def test_underpowered_clears_once_enough_sessions_accumulate(conn):
+    for d in range(analytics.MIN_EFFECTIVE_N):
+        position(
+            conn, f"A{d}", day=f"2026-07-{d + 1:02d}", pnl=10.0,
+            regime={"vol_bucket": "high", "vol_value": 0.001 + d * 0.001},
+        )
+    dim = analytics.regime_coverage(conn)["dimensions"]["vol"]
+    assert dim["sessions"] == analytics.MIN_EFFECTIVE_N
+    assert dim["underpowered"] is False
+
+
+def test_by_regime_reports_sessions_per_bucket(conn):
+    position(conn, "A1", pnl=10.0, regime={"vol_bucket": "high", "vol_value": 0.004})
+    position(conn, "A2", pnl=10.0, regime={"vol_bucket": "high", "vol_value": 0.005})
+    position(conn, "B1", day="2026-07-21", pnl=10.0, regime={"vol_bucket": "high", "vol_value": 0.004})
+    position(conn, "C1", pnl=10.0, regime={"vol_bucket": "low", "vol_value": 0.001})
+
+    rows = {r["bucket"]: r for r in analytics.by_regime(conn, "vol")}
+    assert rows["high"]["trades"] == 3 and rows["high"]["sessions"] == 2
+    assert rows["low"]["trades"] == 1 and rows["low"]["sessions"] == 1

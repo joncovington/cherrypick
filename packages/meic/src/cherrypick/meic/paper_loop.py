@@ -55,6 +55,7 @@ from cherrypick.core import viz as _viz  # the suite's one money formatter
 from cherrypick.meic import analytics as _an
 from cherrypick.meic import (
     paper,
+    regime,  # market-dimension tagging for the per-iteration (uncensored) regime row
     stream_request,  # declares symbols + open paper legs to the streamer
 )
 from cherrypick.meic import paths as _paths  # ~/.cherrypick/data/meic or MEIC_DATA_DIR
@@ -446,6 +447,56 @@ def _log_gate_blocks(symbol, outcomes) -> None:
         pass
 
 
+def _log_iteration_regime(symbol, snapshot, params, result) -> None:
+    """One iteration_regime row per symbol per tick — the regime this tick was in, recorded whether
+    or not anything was entered.
+
+    This is the denominator `_log_gate_blocks` above is missing. That row records WHICH gate
+    refused; this one records WHAT THE MARKET WAS when it did, which is the half needed to ask
+    whether a gate is refusing the regime it was built to refuse. Every regime row in ic_trades is
+    conditioned on having entered, so without this the recorded regime distribution is censored by
+    the very gates it would be used to evaluate.
+
+    Tagged with the BASE config's thresholds, not any one arm's overlay: the market dimensions are
+    arm-independent reads, and cutting them per-arm would give each stream its own denominator and
+    make the streams incomparable — the opposite of the point. Best-effort and non-fatal, like every
+    other telemetry write in this module; a lost row is a lost observation, never a lost iteration.
+    """
+    entries_n = blocked_n = 0
+    for actions in (result or {}).get("results", {}).values():
+        for a in actions:
+            if a.get("entry") == "filled":
+                entries_n += 1
+            elif a.get("entry") == "skipped":
+                blocked_n += 1
+    try:
+        payload = regime.market_regime_columns(snapshot, params)
+    except Exception:
+        return
+    try:
+        _subrun(
+            _DB
+            + [
+                "save_iteration_regime",
+                "--symbol",
+                symbol,
+                "--entries_n",
+                str(entries_n),
+                "--blocked_n",
+                str(blocked_n),
+                "--regime",
+                json.dumps(payload, default=str),
+            ]
+            + (
+                ["--underlying_price", str(snapshot["underlying_price"])]
+                if snapshot.get("underlying_price") is not None
+                else []
+            )
+        )
+    except Exception:
+        pass
+
+
 def _format_iteration(now_et, vix, vix1d_ratio, delta_target, summary):
     """A compact, human-readable one-line iteration summary for the log and the dashboard."""
     vix_s = f"{vix:.1f}" if isinstance(vix, (int, float)) else "-"
@@ -706,16 +757,34 @@ def _eod_supplement_lines(conn, day) -> list[str]:
     L.append("## Regime coverage")
     cov = _an.regime_coverage(conn, start=day, end=day)
     if cov["resolved_trades"]:
-        L.append("| Dimension | Tagged | Untagged | Coverage % | Degenerate |")
-        L.append("|---|---|---|---|---|")
-        non_degenerate = []
+        L.append("| Dimension | Tagged | Untagged | Coverage % | Sessions | Effective n | Degenerate |")
+        L.append("|---|---|---|---|---|---|---|")
+        non_degenerate, underpowered = [], []
         for dim, d in cov["dimensions"].items():
             cov_pct = f"{d['coverage_pct']:.0f}%" if d.get("coverage_pct") is not None else "-"
+            eff = f"{d['effective_n']}" + (" (daily)" if d.get("daily_scale") else "")
             L.append(
-                f"| {dim} | {d['tagged']} | {d['untagged']} | {cov_pct} | {'yes' if d['degenerate'] else 'no'} |"
+                f"| {dim} | {d['tagged']} | {d['untagged']} | {cov_pct} | {d['sessions']} | {eff} "
+                f"| {'yes' if d['degenerate'] else 'no'} |"
             )
             if d["tagged"] and not d["degenerate"]:
                 non_degenerate.append(dim)
+            if d.get("underpowered"):
+                underpowered.append(dim)
+        if underpowered:
+            # Stated rather than left to be inferred from a row count. A trade count in the
+            # thousands and a session count of two look identical in the table above unless the
+            # sessions column is read, and the second is what bounds any threshold re-cut: rows
+            # inside one session share that session's market. Distinct from `degenerate` on
+            # purpose — that one says re-cut the float, this one says collect more sessions.
+            L.append("")
+            L.append(
+                f"⚠️ **{', '.join(underpowered)}** rest on fewer than {_an.MIN_EFFECTIVE_N} sessions. "
+                "Rows are not independent draws — a dimension marked `(daily)` above moves only "
+                "between sessions, so its effective n IS the session count. Do not re-cut a "
+                "threshold against a sample this size; the split below is a description of these "
+                "days, not evidence about the strategy."
+            )
         for dim in non_degenerate:
             rows = _an.by_regime(conn, dim, start=day, end=day)
             if not rows:
@@ -1362,6 +1431,7 @@ def run_iteration(cfg, force=False):
             "cand_err": cand_err,
         }
         _log_gate_blocks(symbol, outcomes)
+        _log_iteration_regime(symbol, snapshot, cfg, result)
 
     reason = _format_iteration(now_et, vix, vix1d_ratio, delta_target, summary)
     duration_ms = int((time.time() - _iter_t0) * 1000)

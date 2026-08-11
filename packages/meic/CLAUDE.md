@@ -234,7 +234,28 @@ used — `symbols`, `wing_widths_by_symbol` + `wing_selection`, `stagger_entries
 
 ## Database
 
-**Database**: `~/.cherrypick/data/meic/meic_trades.db` (SQLite, WAL mode) — the data dir lives under the shared cherrypick home, resolved by `cherrypick/meic/paths.py` (default `~/.cherrypick/data/meic`; set `MEIC_DATA_DIR` to override, e.g. tests to a tmp path). Five tables: `ic_trades` (one row per IC, primary key `ic_order_id`), `ic_spread_legs` (one row per side — put/call — of an IC, its own status/exit/P&L for per-side stop tracking), `daily_summary` (one row per trading date, keyed on `summary_date`), `loop_log` (append-only iteration log), and `market_context` (per-iteration market snapshot). All reads and writes go through `cherrypick/meic/db.py` subcommands — e.g. `python -m cherrypick.meic.db save_trade --data '{...}'`.
+**Database**: `~/.cherrypick/data/meic/meic_trades.db` (SQLite, WAL mode) — the data dir lives under the shared cherrypick home, resolved by `cherrypick/meic/paths.py` (default `~/.cherrypick/data/meic`; set `MEIC_DATA_DIR` to override, e.g. tests to a tmp path). Six tables: `ic_trades` (one row per IC, primary key `ic_order_id`), `ic_spread_legs` (one row per side — put/call — of an IC, its own status/exit/P&L for per-side stop tracking), `daily_summary` (one row per trading date, keyed on `summary_date`), `loop_log` (append-only iteration log), `market_context` (per-day market snapshot), and `iteration_regime` (see below). All reads and writes go through `cherrypick/meic/db.py` subcommands — e.g. `python -m cherrypick.meic.db save_trade --data '{...}'`.
+
+**`iteration_regime` is the uncensored denominator, and it exists because every other regime row is
+conditioned on having entered.** One row per (iteration × symbol), written by `paper_loop` whether or
+not anything filled, carrying `regime.MARKET_DIMENSIONS` plus `entries_n`/`blocked_n`. Without it the
+entry gates censor the regime distribution before it is recorded: "which regime does this arm win in"
+could only ever be asked over the ticks that already passed every gate, and a refused tick left no
+trace of what it refused. `gate_block` records *which* gate refused; this records *what the market
+was* when it did, and the two together are what make a gate measurable. Deliberately carries only the
+six market dimensions — `skew` and `center_offset` describe the structure we chose, so on a refused
+tick they would read `unknown` 100% of the time, a column degenerate by construction. Tagged with the
+**base config's** thresholds, never an arm's overlay, or each stream would get its own denominator and
+the streams would stop being comparable. Nothing in the loop reads this table.
+
+**Max adverse excursion (`put_mae_spot`/`call_mae_spot` + times) generalizes first-touch.** First-touch
+is write-once at the crossing and therefore answers exactly one stop policy; it records the identical
+NULL for a position that came within a point of the short strike and one that never came close, and
+the identical value for a 1-point breach and a 40-point one. The running per-side extreme makes *any*
+stop distance derivable after the fact, since the strikes and wing width are already on the row. The
+distance itself is deliberately not stored (it is spot minus a strike already present). **Cannot be
+backfilled** — the shared stream cache keeps no spot history — and, like the `settle_*`
+counterfactuals, is recorded and never acted on.
 
 ---
 
