@@ -192,6 +192,15 @@ def open_positions() -> list[dict]:
 
 
 def refresh_stream_request(positions: list[dict]) -> None:
+    """Declare the underlyings of everything currently open.
+
+    **Only safe to GROW this set outside the session**, which is why the entry phase does not call
+    it and `pre_open` does. A producer binds its underlyings once, at startup, so the watchdog
+    recycles it when the union grows — and a recycle costs a settling window during which NOTHING is
+    streaming. Growing the set at 15:45 would therefore blind the 0DTE modules trading into their
+    own close, to make symbols available fourteen hours before this module needs them. Shrinking is
+    always safe: an over-subscribed producer serves everyone correctly and never triggers a recycle.
+    """
     stream_request.register(sorted({p["symbol"] for p in positions if p.get("symbol")}))
 
 
@@ -491,7 +500,10 @@ def run_iteration(config: dict | None = None, now: datetime | None = None) -> di
                 "opened": entry.get("opened"),
             },
         )
-        refresh_stream_request(open_positions())
+        # Deliberately NOT refreshing the stream request here. Tonight's new underlyings would grow
+        # the union and recycle the producer mid-session, blinding the 0DTE modules into their own
+        # close -- to make symbols available fourteen hours before this module marks anything.
+        # `pre_open` picks them up tomorrow, ahead of the first mark that needs them.
 
     elif phase == PHASE_EOD:
         harness._write_eod_report(session)

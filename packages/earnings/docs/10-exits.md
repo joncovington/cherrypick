@@ -22,7 +22,7 @@ so a tick can be reasoned about without knowing anything about the tick before i
 | Phase | ET | What it does |
 |---|---|---|
 | `off_hours` | outside the below | nothing, and records no row — an out-of-session tick is not a measurement |
-| `pre_open` | 09:00–09:30 | refreshes the producer's subscription request |
+| `pre_open` | 09:00–09:30 | refreshes the producer's subscription request — the **only** phase allowed to GROW it (see below) |
 | `open_window` | 09:30–09:40 | **marks, never acts** |
 | `management` | 09:40–15:40 | marks, decides, acts |
 | `entry` | 15:45, once daily | the forced-sampling entry scan |
@@ -32,6 +32,13 @@ The open window is a phase of its own because the first ten minutes of an earnin
 not reliably priceable — spreads can be wider than the edge being managed, so a target computed off
 that mid is arithmetic rather than a price. Marks are still recorded through it, and a decision
 reached there is recorded with the gate that held it and taken on the first tick that clears.
+
+**Why only `pre_open` grows the stream request.** A producer binds its underlyings when it
+starts, so the watchdog recycles it when the union grows — and a recycle costs a settling window in
+which nothing streams for anyone. Growing the set at 15:45 would blind the 0DTE modules trading into
+their own close, to make symbols available fourteen hours before this module marks anything. Shrinking
+(a position closing) is always safe and happens whenever it needs to: an over-subscribed producer
+serves every consumer correctly and never triggers a recycle.
 
 **Known gap:** the entry scan holds the loop's single-writer lock for up to ~25 minutes, so positions
 go unmarked roughly 15:45–16:10. Accepted deliberately — the morning is where management matters, and
