@@ -169,6 +169,17 @@
         ]
       ]
     },
+    "control-drift": {
+      "enabled": true,
+      "_note": "control's twin, differing in EXACTLY ONE thing: `refuse_completion_against_trend: true`, which refuses an entry whose completing direction opposes a COMMITTED session drift. Added 2026-08-11. Read against `control` and nothing else -- they share centring, windows, gates, cadence and wings, so a difference between their books is this rule.\n\nTHE MECHANISM: `choose_side` sells the side spot has already crossed, and `completing_side_direction` then makes a PUT spread complete on an UP move and a CALL spread on a DOWN one. So on a day that has committed to a direction, the arm systematically legs into the side that needs the day to turn around.\n\nTHE EVIDENCE, and it is the strongest this module has: entries whose completing direction opposed a committed drift completed 7% against 89% for the rest across the SPX era. It reproduced in MIRROR IMAGE -- 2026-08-04 was an up day whose two losing gex entries both legged into the side the +115 run was against; 2026-08-05 was a down day whose three misses were all up-completions; 2026-08-11 split 79% completion / +$1,376 with the drift against 23% / -$3,237 into it. The sign flips with the market rather than persisting, which is what separates a mechanism from an up-trending artefact.\n\nWHY AN ARM AND NOT A SHARED GATE: the band was fit on the same rows that measure it, and docs/centre-lag.md records this as a hypothesis awaiting out-of-sample confirmation. An arm is how that confirmation gets collected without betting every book on it. Same posture as `gex-intrinsic`.\n\nUSES THE SAME BAND AS THE TAG (`regime_trend_points`, 20), so the gate and the regime label can never disagree about what 'committed' means. Inside the band it does not fire: that dead zone is a known failure mode (2026-08-05 10:01 read 'flat' at +13.6 and the day reversed 48 points), and widening the gate past the tag to cover it would be fitting the number to the outcome. Fails OPEN on missing session coverage -- no opinion, not a refusal; coverage starts 2026-07-29.\n\nWHAT WOULD RETIRE IT: if control-drift's completion rate is not materially better than control's over a comparable number of sessions, the dimension does not survive out of sample and the 7%/89% split was in-sample fitting -- which is itself a result worth keeping.",
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ],
+      "refuse_completion_against_trend": true
+    },
     "debit-first": {
       "enabled": true,
       "_note": "GEX arm's twin, isolating the LEGGING ORDER: buy the debit vertical first, complete by SELLING the credit spread second (entry_modes: [\"debit_first\"]) -- the exact reverse of legged's two trades. Completion drift direction is INVERTED from every other arm: legged needs spot to drift AWAY from the short strike; this arm needs spot to drift TOWARD the centre (reversion), so it and legged monetize opposite path regimes at the same centre. See docs/faq.md for the full construction.",

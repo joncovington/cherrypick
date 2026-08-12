@@ -1564,3 +1564,71 @@ def test_the_credit_ceiling_now_records_what_it_refused():
     enter, reason, _ = engine.evaluate_credit_spread_entry(rich, params(), [], None, detail)
     assert not enter and reason == "credit_above_ceiling_mostly_intrinsic"
     assert detail["would_be_credit"] > 0
+
+
+# ── The drift gate (control-drift, 2026-08-11) ───────────────────────────────
+
+
+def _drift_snapshot(spot, day_open, **over):
+    snap = snapshot(underlying_price=spot, **over)
+    snap["session"] = {"day_open": day_open}
+    return snap
+
+
+def test_completion_opposes_drift_reads_the_side_against_the_day():
+    """A PUT spread completes on an UP move and a CALL spread on a DOWN one, so a committed drift
+    makes exactly one of them a bet on the day turning around."""
+    p = params()
+    # Down day: a put spread needs UP to complete — that opposes the drift.
+    opposes, drift = engine.completion_opposes_drift(_drift_snapshot(5960.0, 6000.0), p, "put")
+    assert opposes is True and drift == -40.0
+    # A call spread needs DOWN, which is the way the day is already going.
+    opposes, _ = engine.completion_opposes_drift(_drift_snapshot(5960.0, 6000.0), p, "call")
+    assert opposes is False
+    # Up day mirrors it exactly — the sign flips with the market.
+    opposes, _ = engine.completion_opposes_drift(_drift_snapshot(6040.0, 6000.0), p, "call")
+    assert opposes is True
+    opposes, _ = engine.completion_opposes_drift(_drift_snapshot(6040.0, 6000.0), p, "put")
+    assert opposes is False
+
+
+def test_an_uncommitted_day_never_opposes():
+    """Inside `regime_trend_points` the day has not committed, and the gate says nothing. The band's
+    dead zone is a known failure mode; widening the gate past the tag would be fitting the number to
+    the outcome."""
+    opposes, drift = engine.completion_opposes_drift(_drift_snapshot(6013.6, 6000.0), params(), "put")
+    assert opposes is False and drift == pytest.approx(13.6)
+
+
+def test_missing_session_coverage_fails_open():
+    """No session row means no opinion, not a refusal — coverage starts 2026-07-29."""
+    snap = snapshot(underlying_price=5960.0)
+    snap.pop("session", None)
+    opposes, drift = engine.completion_opposes_drift(snap, params(), "put")
+    assert opposes is False and drift is None
+
+
+def test_the_drift_gate_refuses_an_entry_that_needs_a_reversal():
+    """Spot 5998 against a 6050 open is a committed down day (-52). `choose_side` sells the PUT
+    spread there (spot sits at or below the centre), and a put spread needs an UP move to complete —
+    so this entry is a bet on the day turning around, which is exactly what the gate refuses."""
+    snap = _drift_snapshot(5998.0, 6050.0)
+    gated = {**params(), "refuse_completion_against_trend": True}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snap, gated, [])
+    assert not enter and reason == "completion_against_drift"
+
+
+def test_the_drift_gate_is_off_when_unset():
+    """control and every existing arm must be untouched — this is opt-in, carried by control-drift."""
+    snap = _drift_snapshot(5998.0, 6050.0)
+    _, reason, _ = engine.evaluate_credit_spread_entry(snap, params(), [])
+    assert reason != "completion_against_drift"
+
+
+def test_the_drift_gate_reports_the_drift_it_refused_on():
+    snap = _drift_snapshot(5998.0, 6050.0)
+    detail: dict = {}
+    engine.evaluate_credit_spread_entry(
+        snap, {**params(), "refuse_completion_against_trend": True}, [], None, detail
+    )
+    assert detail["drift_points"] == -52.0

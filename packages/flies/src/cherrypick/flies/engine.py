@@ -50,6 +50,7 @@ ARMS = (
     "gex-intrinsic",
     "time_window",
     "control",
+    "control-drift",
     "wide_wing",
     "width-2",
     "width-3",
@@ -589,6 +590,45 @@ def _window_cap_reached(params: dict, open_positions: list, window: str | None) 
 _EXPIRY = "0dte"
 
 
+def completion_opposes_drift(snapshot: dict, params: dict, side: str) -> tuple[bool, float | None]:
+    """Would this entry need spot to REVERSE a committed session drift in order to complete?
+
+    Returns ``(opposes, drift)``. `drift` is `spot - day_open` in points, or None when the session
+    row is absent -- coverage starts 2026-07-29, and a missing open is never replaced with a guess.
+
+    The mechanism, and why this is the sharpest dimension this module has found. `choose_side` sells
+    the side spot has already crossed, and `fly.completing_side_direction` then makes a PUT spread
+    complete on an UP move and a CALL spread on a DOWN one. So on a day that has committed to a
+    direction, the arm systematically legs into the side that needs the day to turn around.
+
+    Measured across the SPX era: entries whose completing direction opposed a committed drift
+    completed 7% against 89% for the rest. It reproduced in mirror image on 2026-08-04 (up day,
+    both losing gex entries legged into the side the +115 run was against) and 2026-08-05 (down day,
+    all three misses were up-completions), and again on 2026-08-11 -- with-drift 79% completion for
+    +$1,376, against-drift 23% for -$3,237. The sign flips with the market rather than persisting,
+    which is what separates a mechanism from an up-trending artefact.
+
+    Reads `regime_trend_points` (default 20) as the flat band, the SAME key `_classify_trend` uses,
+    so the gate and the tag can never disagree about what "committed" means. Inside the band the day
+    has not committed and this returns False: the band's own dead zone is a known failure mode (see
+    `_classify_trend`), and widening the gate past the tag to cover it would be fitting the number
+    to the outcome.
+
+    Fails OPEN on unknown coverage -- a missing session row means no opinion, not a refusal.
+    """
+    spot = snapshot.get("underlying_price")
+    day_open = (snapshot.get("session") or {}).get("day_open")
+    if spot is None or day_open is None:
+        return False, None
+    drift = spot - day_open
+    band = params.get("regime_trend_points", 20.0)
+    if abs(drift) <= band:
+        return False, drift
+    needs = fly.completing_side_direction(side)
+    opposes = (needs == "up" and drift < 0) or (needs == "down" and drift > 0)
+    return opposes, drift
+
+
 def _day_book(open_positions: list, day_positions: list | None) -> list:
     """The positions the portfolio rules read: the arm's WHOLE day, not just what is still open.
 
@@ -747,6 +787,23 @@ def evaluate_credit_spread_entry(
     long_strike = center - width if side == PUT else center + width
     if not _have(snapshot, side, [center, long_strike]):
         return False, "missing_leg_quotes", None
+
+    # Drift gate (opt-in per arm via `refuse_completion_against_trend`; off when unset).
+    #
+    # Refuses an entry that would need spot to REVERSE a committed session drift to complete. This
+    # is the module's sharpest measured dimension and until now nothing gated on it -- 7% completion
+    # against 89%, reproduced in both directions across sessions. See `completion_opposes_drift`.
+    #
+    # Placed BEFORE the moneyness gate so the attempts ledger attributes a refusal to the drift when
+    # both would fire: drift is a property of the day and decides whether the trade can work at all,
+    # while moneyness is a property of the strike we picked. Crediting the wrong one would make the
+    # arm comparison read the wrong rule.
+    if params.get("refuse_completion_against_trend"):
+        opposes, drift = completion_opposes_drift(snapshot, params, side)
+        if opposes:
+            if gate_detail is not None:
+                gate_detail["drift_points"] = round(drift, 2) if drift is not None else None
+            return False, "completion_against_drift", None
 
     # Moneyness gate (opt-in per arm via `max_intrinsic_pct_of_width`; off when unset).
     #
