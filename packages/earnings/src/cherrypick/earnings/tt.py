@@ -242,7 +242,7 @@ async def cmd_get_liquid_symbols(_args) -> dict:
     """Membership of tastytrade's own public "Liquid Symbols" watchlist (`group_name ==
     "Liquidity"`, `name == "Liquid Symbols"`) -- a broker-defined liquidity bar, zero per-symbol
     cost (one watchlist fetch regardless of how many symbols get checked against it). Mirrors
-    packages/scout's `liquidity_service.py` exactly (same watchlist), so `symbol_watch.py`'s
+    the console's screener exactly (same watchlist), so `symbol_watch.py`'s
     forward-preview scan can pre-filter to the same universe scout's Earnings page displays by
     default, instead of spending a full per-symbol chain fetch on a name scout's own
     `calendar.liquid_only` filter would hide anyway."""

@@ -73,7 +73,7 @@ setup is core plus the orchestrator — the `dev-install` script installs them a
 and test suites work.
 
 Three more surfaces are optional and set up separately when you want them: `packages/console` (the
-unified web console — Node/TypeScript, so it installs with `npm`, not pip), `packages/scout`
+unified web console — Node/TypeScript, so it installs with `npm`, not pip)
 (screening and strategy exploration), and `packages/desk` (⚠️ **experimental** — the manual trading
 desk, which places real orders on your explicit per-order confirmation; read its README in full first).
 

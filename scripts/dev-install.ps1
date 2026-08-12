@@ -33,7 +33,6 @@ Install-Editable "packages\earnings[dev]"     "packages/earnings"
 Install-Editable "packages\gex[dev]"          "packages/gex"
 Install-Editable "packages\flies[dev]"        "packages/flies"
 Install-Editable "packages\streamer[dev]"     "packages/streamer"
-Install-Editable "packages\scout[dev]"        "packages/scout"
 Install-Editable "packages\desk[dev]"         "packages/desk"
 
 # The console UI is the one Node package. Optional: skipped with a notice when pnpm is absent,

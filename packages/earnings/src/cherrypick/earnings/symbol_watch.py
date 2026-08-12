@@ -1,4 +1,4 @@
-"""Forward-looking earnings preview scan -- the source of packages/scout's read-only Earnings
+"""Forward-looking earnings preview scan -- the source of the console's read-only Earnings
 page "Upcoming" section. Unlike rank_strategies' daily entry scan (today/tomorrow's actionable
 candidates, hard-filtered against strategy-specific accept/reject thresholds), this walks the
 next `--days` **trading days** (`cherrypick.core.calendar.nth_trading_day` -- weekends/holidays
