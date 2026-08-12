@@ -297,6 +297,34 @@ which side to sell. The short strike itself is chosen so that *breakeven* (short
 credit received) lands at the expected-move boundary, not the strike itself — a genuinely
 different strike-selection convention from `iron_condor`'s.
 
+## `management` — the position lifecycle
+
+Common keys apply to every strategy; `management.<strategy>` overrides them for one. Full rules in
+[Exit Strategy Guide](./10-exits.md).
+
+| Key | Default | What it does |
+|---|---|---|
+| `hold_winners_max_days` | `3` | Session cap for the four overnight structures. **Trading** sessions, so a weekend cannot spend it. The calendars are exempt — they run their own front-expiration stop. |
+| `close_losers_first_morning` | `true` | The PEAD gate. A position at or below breakeven closes on the first check of a day; a winner may carry. |
+| `exec_window_start` | `"09:40"` | Before this, decisions are recorded and not acted on. Opening spreads can exceed the edge being managed. |
+| `max_leg_spread_pct` | `0.35` | Widest leg spread (of mid) still worth acting on. |
+| `pin_guard_dollars` | `1.00` | A short strike this close to spot, late on its expiration day, closes the position. |
+| `pin_guard_window_minutes` | `60` | How late "late" is. |
+| `max_executions_per_tick` | `3` | Bounds one tick; the rest are deferred a minute, not dropped. |
+| `quote_max_age_seconds` | `300` | Older cached leg quotes are refused. |
+| `spot_max_age_seconds` | `600` | Spot tolerates more age — it gates checks that move on the scale of a strike. |
+| `open_capital_warn` | `15000` | Advisory watermark on total open risk. Multi-day holds accumulate what the old book never carried; this warns rather than capping, since truncating carried winners would bias exactly the sample the hold policy exists to measure. |
+| `exit_after_announcement_minutes` | very large | The strategies' same-session backstop, deliberately set past any hold it could preempt. Lower it to re-enable a same-session forced close. |
+
+```json
+"management": {
+  "hold_winners_max_days": 3,
+  "close_losers_first_morning": true,
+  "exec_window_start": "09:40",
+  "iron_fly": { "hold_winners_max_days": 1 }
+}
+```
+
 ### `broken_wing_butterfly`
 
 Body-anchored butterfly: two short contracts at the expected-move strike (side picked by skew),

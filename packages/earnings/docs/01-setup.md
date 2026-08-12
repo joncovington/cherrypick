@@ -183,7 +183,7 @@ python -m cherrypick.earnings.strategy_dashboard   # writes reports/strategy_das
 
 > **Inside the suite:** you don't have to run this by hand day to day. The [orchestrator](../../orchestrator)
 > registers and watchdogs two daily OS tasks (via `cherrypick install`) — an entry task at 15:45 ET and an
-> exit task at 09:45 ET — that run the same `strat_test_harness.py` `run_entries` / `run_closes` into the
+> 60-second `self_healing` job — that runs `paper_loop.py`, which does entry, marking and managed exits from its own clock, into the
 > `strat_test` book, then surface the results through `cherrypick report` / `dashboard` / `calibrate`. It
 > drives this module by subprocess only — it never places live orders or edits this config. Running
 > `/paper-start` here is the standalone equivalent, minus the watchdog and notifications.

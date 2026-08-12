@@ -85,7 +85,7 @@ own. Inside the cherrypick suite it plays two roles:
   symbol's single best strategy. This is the only path that can place live orders, and only when you set
   `enable_live_trading: true`. The orchestrator never touches it.
 - **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator) package registers
-  and watchdogs two self-healing daily OS tasks — an entry task (15:45 ET) and an exit task (09:45 ET) —
+  and watchdogs a single self-healing 60-second job that runs the managed paper loop —
   that run this module's forced-sampling paper harness (`cherrypick/earnings/strat_test_harness.py`, `run_entries` /
   `run_closes`) into the isolated strat_test books, and reads the resulting `paper_trades.db` — which
   lives in the shared cherrypick data home (`~/.cherrypick/data/earnings` by default) — for

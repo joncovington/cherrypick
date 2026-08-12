@@ -167,3 +167,25 @@ Promotion copies the validated strategy's exact parameters into the live config 
 - `cherrypick/earnings/sizing.py` — code-enforced risk-cap sizing
 - `cherrypick/earnings/costs.py` — the tastytrade fee model
 - `cherrypick/earnings/strategy_metrics.py` — the single source of truth for every number in the report/dashboard
+
+
+---
+
+## Measurement break — 2026-08-12, the managed lifecycle
+
+Positions stopped being force-closed the morning after entry and became **managed**: marked once a
+minute, exited on a rule, carried up to three trading sessions when they are winners. The
+per-strategy thresholds changed in the same commit (`iron_fly` 50% → 25%, `directional_credit_spread`
+stop 1.5× → 2.0×, both calendars to 15% of debit with a 50% stop).
+
+**Both halves of a comparison moved, so results either side are not comparable.** Exit timing decides
+win rate, expectancy and hold time together; pooling the two eras would produce a blended number that
+describes neither. Recorded as a `lifecycle_cutover` row:
+
+```bash
+python -m cherrypick.earnings.db_paper get_measurement_breaks
+```
+
+The 64 pre-cutover trades carry `exit_reason = 'legacy_next_morning'`, which is how they stay
+identifiable without relying on the date alone. Sample counting toward the 30/100 targets restarts
+from this date for any question about exits; entry screening is unaffected and its history stands.

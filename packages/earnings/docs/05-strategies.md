@@ -9,14 +9,14 @@ unmonitored overnight hold this system is built around.
 
 Two shared facts apply to every strategy below, so they aren't repeated six times:
 
-- **Exit mechanics are the same shape for all six** — a Step 3c early-exit check (profit
-  target / stop loss, checked against live quotes the first morning after entry, from market
-  open until `close_window_start`) followed by Step 3's unconditional close-window backstop
-  (whatever's still open gets closed regardless of P&L). See
-  [Exit Strategy Guide](./10-exits.md) for the exact formulas — **including two exits that fire
-  ahead of those checks**: a same-session post-announcement time backstop on `iron_fly`,
-  `iron_condor`, and `directional_credit_spread` (`exit_after_announcement_minutes`, default 240),
-  and a per-leg delta stop on `broken_wing_butterfly` (`leg_stop_delta_abs`, default 0.60).
+- **Exit mechanics are the same shape for all six** — positions are **managed**, not force-closed
+  the morning after entry (changed 2026-08-12; a measurement break, never pool across it). Each
+  strategy owns its own profit target and stop, listed below; on top of those sit the rules that need
+  more than one tick to see — the PEAD gate (a winner may carry, a loser closes the first morning),
+  a three-session cap on the four overnight structures, and a pin guard on expiration day. Marks are
+  taken every minute but never acted on before 09:40, since opening spreads can exceed the edge being
+  managed. See [Exit Strategy Guide](./10-exits.md) for the formulas, the execution gates, and which
+  thresholds are research-backed rather than house rules.
 - **Every strategy shares the same liquidity/quality gates** (price floor, bid-ask spread,
   market cap, option volume, open interest, IV/RV ratio, winrate) with its own threshold values
   — see [Screening Criteria](./screening-criteria.md) for the full shared-gate reference and
@@ -48,14 +48,15 @@ IV/RV ratio — richer IV/RV earns a wider, more protective wing).
 `min_term_structure`), expected move above a dollar floor, ATM delta sanity check
 (`max_atm_delta_abs`), plus the shared IV/RV/winrate/liquidity gates.
 
-**Exit:** `evaluate_credit_spread_exit()` — default 50% of credit as the profit target, 1.5×
-credit as the stop.
+**Exit:** `evaluate_credit_spread_exit()` — **25%** of credit as the profit target, 1.5× credit as
+the stop. The 25% is research-backed and deliberately tighter than a condor's 50%: a fly's max-profit
+zone is a point, not a band. (It was 50% before 2026-08-12.)
 
 ```
 Sell 150 call / Buy 158 call
 Sell 150 put / Buy 142 put
 Entry credit: $0.80/spread
-Profit target: $0.40  (50%)
+Profit target: $0.20  (25%)
 Stop loss: $1.20       (1.5x)
 Max loss: wing width - credit = $8.00 - $0.80 = $7.20
 ```
@@ -76,8 +77,9 @@ profile than `iron_fly`, not just a config variant of it.
 **Entry gate:** expected move above a percentage floor (`min_expected_move_pct`), negative term
 structure, plus the shared gates.
 
-**Exit:** same `evaluate_credit_spread_exit()` shape as `iron_fly` — 50% profit target, 1.5×
-stop by default.
+**Exit:** same `evaluate_credit_spread_exit()` shape as `iron_fly`, but it keeps the **50%** target
+the fly gives up — a condor profits across a band rather than at a point. 1.5× credit stop. A breached
+short side closes the whole position; no rolling once the event has resolved.
 
 ```
 Stock at 100, expected move $3.00 (3%)
@@ -106,7 +108,11 @@ lookup.
 **Entry gate:** skew magnitude floor (`min_skew_abs`), expected move floor, negative term
 structure, plus the shared gates.
 
-**Exit:** same `evaluate_credit_spread_exit()` shape — 50% profit target, 1.5× stop by default.
+**Exit:** same `evaluate_credit_spread_exit()` shape — 50% profit target, **2.0×** credit stop.
+Both are **house rules**: no published backtest of stop multiples for an overnight earnings vertical
+was found, so this is the generic credit-spread convention carried over. Post-event this is a pure
+directional position with no vol edge left, which is why the PEAD gate matters more here than the
+threshold does.
 
 ```
 Tech stock, calls richer than puts (bearish skew signal)
@@ -137,8 +143,9 @@ shared gates.
 
 **Exit:** a per-leg delta stop first (`leg_stop_delta_abs`, default **0.60**), then
 `evaluate_credit_spread_exit()` — the same function the credit strategies use, not the debit one.
-25% profit target; the stop is `stop_loss_credit_multiple`, set explicitly to **2.0× credit** in
-this strategy's config block — see [Exit Strategy Guide](./10-exits.md).
+25% profit target, stop at **2.0× credit**. Both are **house rules**: tastylive has traded BWBs into
+earnings but published no management study for them. Layered on top, like every strategy: the PEAD
+gate, the three-session cap, and the pin guard — see [Exit Strategy Guide](./10-exits.md).
 
 ```
 Earnings expected to move down (put side richer)
