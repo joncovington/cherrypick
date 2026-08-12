@@ -56,3 +56,10 @@ pnpm dev:web      # Vite on 127.0.0.1:5173, proxies /api and /ws to 5070
 
 See `CLAUDE.md` for the data rules (read-only over module stores, own credential, no order
 placement) and `docs/verify-notes.md` for the M0 spike findings.
+
+## Desktop window
+
+`pnpm --filter @console/desktop start` opens the console in its own window (tray icon, remembered
+size). It is a window and nothing else — the supervisor still owns the server — and when the console
+is not answering it says which of four things went wrong rather than showing a connection error. See
+[desktop/README.md](desktop/README.md).

@@ -221,7 +221,9 @@ _PORT_DECLS: tuple[tuple[str, str], ...] = (
         "packages/orchestrator/src/cherrypick/orchestrator/settings_serve.py",
         r'scfg\.get\("port",\s*(\d+)\)',
     ),
-    ("packages/console/server/src/config.ts", r'serve\["port"\]\s*:\s*(\d+)'),
+    # The console's port lives in shared/, not the server, because the desktop shell has to resolve
+    # the same value — see that module's header.
+    ("packages/console/shared/src/paths.ts", r"DEFAULT_CONSOLE_PORT\s*=\s*(\d+)"),
 )
 #: Ports the table documents that no source declares, each with the reason it cannot. Every entry
 #: carries a reason on purpose -- an allowlist without them is where drift hides.

@@ -26,6 +26,11 @@ Unlike the rest of the suite this package is **Node + TypeScript**, not Python:
 - `server/` — Fastify backend, binds **127.0.0.1:5070** (loopback hard-coded; port via `serve.port`
   in `~/.cherrypick/config/console.json`). Serves the built SPA, `/api/*`, and (from M3) `/ws`.
 - `web/` — React + Vite SPA.
+- `desktop/` — Electron shell (`@console/desktop`), a **window only**: it never starts the server, so
+  it can never contend with the supervisor for the port. See its README; the short version is that
+  home/port resolution lives in `shared/src/paths.ts` precisely so the shell and the server cannot
+  disagree, and that no native module is ever loaded inside Electron (the server is its own process),
+  which is what keeps `electron-rebuild` out of the package.
 - `run.py` — thin launcher (`python run.py dashboard --serve`) so the supervisor and `/console` never
   need to know about the Node toolchain. Spawns node with `CREATE_NO_WINDOW`, or every restart under
   `pythonw` pops a terminal window.
@@ -36,12 +41,13 @@ The one package with a Node toolchain — `pip`/`pytest`/`ruff` do not apply her
 
 ```bash
 pnpm install
-pnpm build                        # build shared + server + the SPA
+pnpm build                        # build shared + server + the SPA + the desktop main process
 pnpm dev:server                   # backend on :5070 with reload
 pnpm dev:web                      # Vite on :5173, proxying /api and /ws to :5070
 pnpm test                         # vitest
 pnpm typecheck                    # tsc --noEmit across all three workspaces
 python run.py dashboard --serve   # what the supervisor's `console` job invokes
+pnpm --filter @console/desktop start   # the desktop window
 ```
 
 ## Data rules
