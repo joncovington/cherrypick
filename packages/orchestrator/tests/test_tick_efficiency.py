@@ -1,12 +1,13 @@
-"""The watchdog-tick cost fixes, pinned: one schtasks spawn per task query, no git
-subprocess per render, bounded log tails, and rotation for the orchestrator's own logs."""
+"""The watchdog-tick cost fixes, pinned: one schtasks spawn per task query, and rotation for the
+orchestrator's own logs. (The no-git-subprocess and bounded-log-tail cases covered the static
+dashboard render, which the tick no longer does — those helpers went with dashboard.py.)"""
 
 import json
 import subprocess
 
 import pytest
 
-from cherrypick.orchestrator import dashboard, tasks, util
+from cherrypick.orchestrator import tasks, util
 
 pytestmark = pytest.mark.unit
 
@@ -93,56 +94,6 @@ def test_last_run_info_bad_json_returns_none(monkeypatch):
 def test_last_run_info_none_on_posix(monkeypatch):
     monkeypatch.setattr(tasks, "_IS_WINDOWS", False)
     assert tasks.last_run_info("anything") is None
-
-
-# --------------------------------------------------------------------- _git_ref
-def _fake_repo(tmp_path, sha="0123456789abcdef", packed=False):
-    git = tmp_path / ".git"
-    (git / "refs" / "heads").mkdir(parents=True)
-    (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
-    if packed:
-        (git / "packed-refs").write_text(
-            f"# pack-refs with: peeled fully-peeled sorted\n{sha} refs/heads/main\n", encoding="utf-8"
-        )
-    else:
-        (git / "refs" / "heads" / "main").write_text(sha + "\n", encoding="utf-8")
-    return tmp_path
-
-
-def test_git_ref_reads_loose_ref_without_subprocess(tmp_path, monkeypatch):
-    def _boom(*a, **k):
-        raise AssertionError("git subprocess spawned")
-
-    monkeypatch.setattr(subprocess, "run", _boom)
-    assert dashboard._git_ref(_fake_repo(tmp_path)) == "0123456"
-
-
-def test_git_ref_reads_packed_refs(tmp_path):
-    assert dashboard._git_ref(_fake_repo(tmp_path, packed=True)) == "0123456"
-
-
-def test_git_ref_none_for_non_repo(tmp_path):
-    assert dashboard._git_ref(tmp_path) is None
-
-
-# --------------------------------------------------------------------- _tail
-def test_tail_reads_only_the_end_of_a_large_file(tmp_path):
-    log = tmp_path / "big.log"
-    with log.open("w", encoding="utf-8") as fh:
-        for i in range(20_000):
-            fh.write(json.dumps({"ts": i, "level": "INFO", "message": f"line {i}"}) + "\n")
-    assert log.stat().st_size > dashboard._TAIL_READ_BYTES
-    lines = dashboard._tail(log, 50)
-    assert len(lines) == 50
-    assert json.loads(lines[-1])["message"] == "line 19999"
-    assert json.loads(lines[0])["message"] == "line 19950"
-
-
-def test_tail_small_file_unchanged(tmp_path):
-    log = tmp_path / "small.log"
-    log.write_text("a\n\nb\nc\n", encoding="utf-8")
-    assert dashboard._tail(log, 10) == ["a", "b", "c"]
-    assert dashboard._tail(tmp_path / "missing.log", 10) == []
 
 
 # --------------------------------------------------------------------- rotation

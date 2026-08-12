@@ -1,4 +1,8 @@
-"""cherrypick-scout CLI: ``serve`` / ``watchlist`` / ``cache``."""
+"""cherrypick-scout CLI: ``watchlist`` / ``cache``.
+
+The research surface itself is the console (packages/console); this package keeps the watchlist and
+the cache it feeds.
+"""
 
 from __future__ import annotations
 
@@ -6,17 +10,8 @@ import argparse
 import json
 
 from . import config as _config
-from . import serve as _serve
 from .services import cache as _cache
 from .services import watchlist as _watchlist
-
-
-def _cmd_serve(cfg: dict, args: argparse.Namespace) -> int:
-    result = _serve.serve(cfg, host=args.host, port=args.port)
-    if not result.get("ok"):
-        print(result.get("error"))
-        return 1
-    return 0
 
 
 def _cmd_watchlist(cfg: dict, args: argparse.Namespace) -> int:
@@ -61,10 +56,6 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="cherrypick-scout")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    s = sub.add_parser("serve", help="run the scout web app")
-    s.add_argument("--host", default=None)
-    s.add_argument("--port", type=int, default=None)
-
     w = sub.add_parser("watchlist", help="view/edit the watchlist")
     wsub = w.add_subparsers(dest="wl_command", required=True)
     wsub.add_parser("list")
@@ -80,8 +71,6 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     cfg = _config.load()
-    if args.command == "serve":
-        return _cmd_serve(cfg, args)
     if args.command == "watchlist":
         return _cmd_watchlist(cfg, args)
     if args.command == "cache":

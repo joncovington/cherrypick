@@ -95,19 +95,6 @@ def cmd_status(args) -> int:
     return 0
 
 
-def cmd_dashboard(args) -> int:
-    from cherrypick.flies import dashboard
-
-    return dashboard.serve(dashboard.resolve_port(args.port), args.db, open_browser=not args.no_browser)
-
-
-def cmd_section(args) -> int:
-    from cherrypick.flies import section
-
-    print(json.dumps(section.build_section(args.db, args.date, args.arm), indent=2, default=str))
-    return 0
-
-
 def cmd_regime(args) -> int:
     """Regime-conditioned outcomes, plus the coverage guard that says whether to believe them."""
     from cherrypick.flies import analytics
@@ -157,21 +144,6 @@ def main(argv=None) -> int:
     p_status = sub.add_parser("status", help="print books")
     p_status.add_argument("--date")
     p_status.set_defaults(func=cmd_status)
-
-    p_dash = sub.add_parser("dashboard", help="serve the read-only dashboard (loopback)")
-    p_dash.add_argument("--port", type=int)
-    p_dash.add_argument(
-        "--no-browser",
-        action="store_true",
-        help="don't open a browser tab on start (for headless/background launches)",
-    )
-    p_dash.set_defaults(func=cmd_dashboard)
-
-    p_section = sub.add_parser("section", help="emit a cherrypick.core.viz card payload")
-    p_section.add_argument("--json", action="store_true", help="accepted for symmetry; always JSON")
-    p_section.add_argument("--date")
-    p_section.add_argument("--arm")
-    p_section.set_defaults(func=cmd_section)
 
     p_regime = sub.add_parser(
         "regime", help="outcomes grouped by the regime entered into, with a coverage guard"

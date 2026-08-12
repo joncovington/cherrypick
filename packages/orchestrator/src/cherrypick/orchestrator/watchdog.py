@@ -1485,16 +1485,6 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     except Exception:
         pass
 
-    # Regenerate the read-side dashboard (static HTML, file-only) — best-effort; a render hiccup must
-    # never break the reliability path.
-    if cfg.get("dashboard", {}).get("auto_regen", True):
-        try:
-            from . import dashboard
-
-            dashboard.render(cfg)
-        except Exception:
-            pass
-
     cfgmod.ensure_dirs()
     _HEARTBEAT.write_text(
         json.dumps(
