@@ -113,13 +113,29 @@ export function MeicPage() {
     refetchInterval: 30_000,
   });
   // The filters run in SQL, so `total` counts every match and not just this
+  // The default era is the module's CURRENT_ERA when this store actually has rows in it, and
+  // otherwise the newest era that does. CURRENT_ERA ("sample") is the paper forward test; the LIVE
+  // ledger has never held a row of it and never will, so a hardcoded default made the whole live
+  // view read as empty. The emptyEra note below still covers the case where a store has rows in
+  // some era but none in any that exists — this just stops the common case from needing it.
+  const erasPresent = scope.data?.eras ?? [];
+  const defaultEra =
+    scope.data === undefined
+      ? undefined
+      : erasPresent.some((e) => e.era === scope.data?.currentEra)
+        ? scope.data.currentEra
+        : (erasPresent[erasPresent.length - 1]?.era ?? scope.data.currentEra);
+  const activeEra = era ?? defaultEra;
+  // The era every read actually uses — the explicit selection, or the resolved default.
+  const resolvedEra = era ?? defaultEra ?? null;
+
   // page; changing what is matched resets to page one.
-  const { page, setOffset, setLimit } = usePage([mode, symbol, profile, era, outcome, reason, debouncedSearch]);
+  const { page, setOffset, setLimit } = usePage([mode, symbol, profile, resolvedEra, outcome, reason, debouncedSearch]);
 
   const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useMeic(mode, {
     symbol,
     profile,
-    era,
+    era: resolvedEra,
     outcome,
     reason,
     search: debouncedSearch,
@@ -135,7 +151,6 @@ export function MeicPage() {
   // Filtering to an era with nothing in it is a legitimate answer, not a
   // failure — say so, and offer the widening in one click.
   const eras = scope.data?.eras ?? [];
-  const activeEra = era ?? scope.data?.currentEra;
   const activeEraCount = eras.find((e) => e.era === activeEra)?.trades ?? 0;
   const otherEraCount = eras.reduce((s, e) => s + e.trades, 0) - activeEraCount;
   const emptyEra = era !== "ALL" && eras.length > 0 && activeEraCount === 0 && otherEraCount > 0;
@@ -198,11 +213,11 @@ export function MeicPage() {
         </p>
       )}
 
-      {tab === "performance" && <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={era} />}
+      {tab === "performance" && <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />}
 
       {tab === "history" && (
         <div className="cards cards-wide">
-          <MeicDeepCards mode={mode} symbol={symbol} profile={profile} era={era} />
+          <MeicDeepCards mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />
           <DataCard
             title="Daily summaries"
             headers={["date", "sym", "entries", "filled", "stopped", "win %", "net P&L"]}

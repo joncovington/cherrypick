@@ -34,6 +34,8 @@ export interface ArmRailEntry {
   arm: string;
   attempts: number;
   fills: number;
+  sessionsSeen: number;
+  sessionsWithFills: number;
   refusals: Record<string, number>;
   lastRefusal: string | null;
   lastAttemptTs: string | null;
@@ -244,6 +246,28 @@ export function ArmRail({
                 {a.fills > 0 && a.fills < 5 && (
                   <div style={{ fontSize: 11, marginTop: "0.15rem", color: COLOR_OF["no_fill"] }}>
                     {a.fills} {a.fills === 1 ? "entry" : "entries"} — too few to read
+                  </div>
+                )}
+
+                {/* An arm evaluating every tick and never filling is the failure this rail exists to
+                    catch, and one day cannot show it — today looks identical to "quiet this
+                    morning". Escalates to a warning once it has sat out more than one session. */}
+                {a.sessionsWithFills === 0 && a.sessionsSeen > 0 && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      marginTop: "0.15rem",
+                      color: a.sessionsSeen > 1 ? COLOR_OF["gate_blocked"] : undefined,
+                    }}
+                    className={a.sessionsSeen > 1 ? undefined : "muted"}
+                    title="Enabled and evaluating, but it has never taken an entry. Check the dominant refusal — a gate may be holding it out permanently rather than situationally."
+                  >
+                    no entries in {a.sessionsSeen} {a.sessionsSeen === 1 ? "session" : "sessions"}
+                  </div>
+                )}
+                {a.sessionsWithFills > 0 && a.sessionsWithFills < a.sessionsSeen && (
+                  <div className="muted" style={{ fontSize: 11, marginTop: "0.15rem" }}>
+                    traded {a.sessionsWithFills} of {a.sessionsSeen} sessions
                   </div>
                 )}
 

@@ -51,6 +51,12 @@ export interface ArmRailEntry {
   arm: string;
   attempts: number;
   fills: number;
+  /** Sessions this arm has EVALUATED in, and sessions it has actually filled in — across the whole
+   *  ledger, not just today. An arm that is enabled and running produces attempt rows even when it
+   *  takes nothing, so a large gap between these two is the signature of an arm quietly doing
+   *  nothing for days: the failure the rail exists to catch, and one a single day cannot show. */
+  sessionsSeen: number;
+  sessionsWithFills: number;
   /** Refusals by outcome — the shape the rail's "why is this arm quiet" read needs. */
   refusals: Record<string, number>;
   /** The most recent refusal reason, or null if the last thing it did was fill. */
@@ -189,6 +195,8 @@ export function readEntryAttempts(
           arm: row.arm,
           attempts: 0,
           fills: 0,
+          sessionsSeen: 0,
+          sessionsWithFills: 0,
           refusals: {},
           lastRefusal: null,
           lastAttemptTs: null,
@@ -233,6 +241,29 @@ export function readEntryAttempts(
       breaks = breaks.filter((b) => b.reason !== "");
     } catch {
       breaks = [];
+    }
+
+    // Lifetime session counts per arm, joined onto today's rail. Cheap (one grouped scan of a
+    // small table) and it is the only way the rail can distinguish "quiet this morning" from "has
+    // not traded since it was added".
+    try {
+      const lifetime = db
+        .prepare<[], { arm: string; seen: number; filled: number }>(
+          `SELECT ${spec.armColumn} AS arm,
+                  COUNT(DISTINCT trade_date) AS seen,
+                  COUNT(DISTINCT CASE WHEN outcome = 'filled' THEN trade_date END) AS filled
+             FROM ${spec.table} GROUP BY 1`,
+        )
+        .all();
+      for (const row of lifetime) {
+        const entry = byArm.get(row.arm);
+        if (entry !== undefined) {
+          entry.sessionsSeen = row.seen;
+          entry.sessionsWithFills = row.filled;
+        }
+      }
+    } catch {
+      // A ledger too old to group is not a reason to fail the rail.
     }
 
     return {
