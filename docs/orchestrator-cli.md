@@ -46,6 +46,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | `notify-test` | Fire a test notification through every configured channel. | — |
 | `notify-trades` | Push new paper entries/exits to the trade channels (also runs best-effort on each watchdog tick). | — |
 | `notify-follow` | Push new [tastylive Follow Feed](https://follow.tastylive.com) orders — other traders' fills, as shown on the platform's Follow page — to their own channel. **Off by default**; the only notifier that makes a network call, so it runs on its own task and *never* on the watchdog tick. Read-only, no auth, no broker. | — |
+| `notify-desk` | Card each manual-desk order on submit and again when it reaches a terminal state (filled / cancelled / rejected / expired). **Off by default**; like `notify-follow` it runs on its own task and *never* on the watchdog tick — it pushes a Discord card **and** asks the broker for order status. Reads the desk's audit journal as a file and never imports `cherrypick.desk`, so observing desk orders cannot make the submit path reachable from scheduled code. | — |
 
 ## Reporting & review (the read side)
 

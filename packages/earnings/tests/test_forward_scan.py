@@ -24,7 +24,9 @@ def at(hhmm, day="2026-08-12"):
 
 # --------------------------------------------------------------------------- the phase
 def test_the_forward_scan_owns_the_pre_market_slot():
-    assert paper_loop.phase_for(at("06:30"), CONFIG, entry_done=False, forward_scan_done=False) == "forward_scan"
+    assert (
+        paper_loop.phase_for(at("06:30"), CONFIG, entry_done=False, forward_scan_done=False) == "forward_scan"
+    )
 
 
 def test_it_runs_once_a_day():
@@ -42,11 +44,16 @@ def test_it_never_runs_inside_the_session():
 
 def test_it_can_be_turned_off():
     disabled = {"symbol_watch": {"enabled": False}}
-    assert paper_loop.phase_for(at("06:30"), disabled, entry_done=False, forward_scan_done=False) == "off_hours"
+    assert (
+        paper_loop.phase_for(at("06:30"), disabled, entry_done=False, forward_scan_done=False) == "off_hours"
+    )
 
 
 def test_it_does_not_run_on_a_non_trading_day():
-    assert paper_loop.phase_for(at("06:30", "2026-08-15"), CONFIG, entry_done=False, forward_scan_done=False) == "off_hours"
+    assert (
+        paper_loop.phase_for(at("06:30", "2026-08-15"), CONFIG, entry_done=False, forward_scan_done=False)
+        == "off_hours"
+    )
 
 
 # --------------------------------------------------------------------------- the pre-filter
