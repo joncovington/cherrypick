@@ -4,9 +4,26 @@ import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, num, str } from "./db.js";
 import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 
+/**
+ * The era this module counts as evidence — the SPX 5-wide books from 2026-08-01.
+ *
+ * Flies has no `era` column, so an era here is a (symbol, start-date) pair rather than a tag. The
+ * XSP books (2026-07-29..07-31) are a different trade, not an earlier version of this one: 1-wide
+ * structures on a $750 index, where the median completed fly collected $12.00 against $4.97 of fees
+ * — 41.4% drag against the SPX book's 10.9%. Credits, widths and per-contract risk all differ by
+ * roughly 5x, so pooling them silently distorts every per-arm breakdown.
+ *
+ * Mirrors MEIC's `CURRENT_ERA`: narrow by default, widen only as a stated choice. Deliberately a
+ * FILTER and never a deletion — the XSP books are the record of a documented fee finding, and the
+ * module keeps negative results on purpose.
+ */
+export const CURRENT_ERA = { symbol: "SPX", from: "2026-08-01" } as const;
+
 export interface FliesFilter {
   arm: string | null;
   date: string | null;
+  /** null = the current era; "ALL" = every era, deliberately. */
+  era: string | null;
 }
 
 /** Books and positions page independently — they are two tables, not one list. */
@@ -27,6 +44,13 @@ function filterSql(filter: FliesFilter): { where: string; params: string[] } {
   if (filter.date !== null) {
     clauses.push("trade_date = ?");
     params.push(filter.date);
+  }
+  // Era last, so an explicit date the caller asked for is never silently overridden — asking for a
+  // specific XSP-era day and getting an empty page would read as "nothing happened" rather than
+  // "filtered out", which is the failure the scope control exists to prevent.
+  if (filter.era !== "ALL") {
+    clauses.push("symbol = ? AND trade_date >= ?");
+    params.push(CURRENT_ERA.symbol, CURRENT_ERA.from);
   }
   return { where: clauses.length > 0 ? clauses.join(" AND ") : "1=1", params };
 }
@@ -123,18 +147,37 @@ export interface FliesForest {
   lastTickSpot: number | null;
 }
 
-/** Distinct arms and trade dates, for the page's filter selects. */
-export function readFliesMeta(config: ConsoleConfig, mode: TradingMode): { arms: string[]; dates: string[] } {
+/**
+ * Distinct arms and trade dates, for the page's filter selects — narrowed to the same era as the
+ * data itself.
+ *
+ * The selects have to agree with the scope or they lie about what is reachable: several arms are
+ * XSP-era only (`width-2`/`width-3`/`width-4` cannot be built on SPX at all, whose strikes are 5
+ * points apart), so an unfiltered list offers arms that select nothing and dates that return an
+ * empty page. An option that yields no rows reads as "nothing happened" rather than "not in this
+ * era", which is exactly the confusion the scope control exists to remove.
+ */
+export function readFliesMeta(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  era: string | null = null,
+): { arms: string[]; dates: string[] } {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
+  const scope = era === "ALL" ? "" : " AND symbol = ? AND trade_date >= ?";
+  const params: string[] = era === "ALL" ? [] : [CURRENT_ERA.symbol, CURRENT_ERA.from];
   return withReadOnlyDb<{ arms: string[]; dates: string[] }>(dbPath, { arms: [], dates: [] }, (db) => ({
     arms: db
-      .prepare<[], { arm: string }>("SELECT DISTINCT arm FROM fly_positions WHERE arm IS NOT NULL ORDER BY arm")
-      .all()
+      .prepare<string[], { arm: string }>(
+        `SELECT DISTINCT arm FROM fly_positions WHERE arm IS NOT NULL${scope} ORDER BY arm`,
+      )
+      .all(...params)
       .map((r) => r.arm),
     dates: db
-      .prepare<[], { d: string }>("SELECT DISTINCT trade_date AS d FROM fly_positions ORDER BY trade_date DESC")
-      .all()
+      .prepare<string[], { d: string }>(
+        `SELECT DISTINCT trade_date AS d FROM fly_positions WHERE 1=1${scope} ORDER BY trade_date DESC`,
+      )
+      .all(...params)
       .map((r) => r.d),
   }));
 }

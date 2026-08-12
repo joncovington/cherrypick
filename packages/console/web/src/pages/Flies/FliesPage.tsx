@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useFlies, useFliesMeta, fliesQuery, type FliesFilter } from "../../lib/api";
 import { useMode } from "../../lib/useMode";
@@ -49,16 +49,29 @@ export function FliesPage() {
   const [mode, setMode] = useMode();
   const [arm, setArm] = useState<string | null>(null);
   const [date, setDate] = useState<string | null>(null);
+  // null = the module's current era (SPX from 2026-08-01), matching what its own analytics
+  // count as evidence. "ALL" reaches the XSP books too — a different trade at 1/5 the width and
+  // 4x the fee drag — so widening is a stated choice, never the quiet default.
+  const [era, setEra] = useState<string | null>(null);
   const [tab, setTab] = useState<FliesTab>("today");
-  const filter: FliesFilter = { arm, date };
-  const meta = useFliesMeta(mode);
+  const filter: FliesFilter = { arm, date, era };
+  const meta = useFliesMeta(mode, era);
   // Two tables on one payload, each with its own page — turning one leaves the
   // other where it was. Both reset when the filter changes underneath them.
-  const booksPage = usePage([mode, arm, date]);
-  const positionsPage = usePage([mode, arm, date]);
+  const booksPage = usePage([mode, arm, date, era]);
+  const positionsPage = usePage([mode, arm, date, era]);
   const { data, isLoading, isError, isPlaceholderData } = useFlies(mode, filter, booksPage.page, positionsPage.page);
   const analytics = useFliesAnalytics(mode, filter);
   const a = analytics.data;
+
+  // Narrowing the era can remove the arm or date currently selected (width-2/3/4 are XSP-only).
+  // Clear a selection the new scope no longer offers, so the page never filters on a value the
+  // dropdown cannot show — a filter you can't see is indistinguishable from a broken query.
+  useEffect(() => {
+    if (meta.data === undefined) return;
+    if (arm !== null && !meta.data.arms.includes(arm)) setArm(null);
+    if (date !== null && !meta.data.dates.includes(date)) setDate(null);
+  }, [meta.data, arm, date]);
 
   return (
     <div className="page">
@@ -86,6 +99,16 @@ export function FliesPage() {
               {armName}
             </option>
           ))}
+        </select>
+        <select
+          className="text-input"
+          value={era ?? ""}
+          onChange={(e) => setEra(e.target.value === "" ? null : e.target.value)}
+          aria-label="era scope"
+          title="The XSP books (2026-07-29..07-31) are a different trade — 1-wide structures at 41% fee drag against the SPX book's 11%. Pooling them distorts every per-arm breakdown."
+        >
+          <option value="">SPX era (current)</option>
+          <option value="ALL">all eras</option>
         </select>
         <select
           className="text-input"

@@ -116,7 +116,8 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const query = (q ?? {}) as Record<string, unknown>;
     const date = typeof query["date"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(query["date"]) ? query["date"] : null;
     const arm = typeof query["arm"] === "string" && query["arm"] !== "" && query["arm"].length <= 40 ? query["arm"] : null;
-    return { arm, date };
+    const era = query["era"] === "ALL" ? "ALL" : null;
+    return { arm, date, era };
   };
   app.get("/api/flies", async (req) =>
     readFlies(config, parseMode(req.query), parseFliesFilter(req.query), {
@@ -139,7 +140,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/flies/analytics", async (req) =>
     readFliesAnalytics(config, parseMode(req.query), parseFliesFilter(req.query)),
   );
-  app.get("/api/flies/meta", async (req) => readFliesMeta(config, parseMode(req.query)));
+  app.get("/api/flies/meta", async (req) => readFliesMeta(config, parseMode(req.query), parseFliesFilter(req.query).era));
   app.get("/api/flies/history", async (req) => readFliesHistory(config, parseMode(req.query)));
   app.get("/api/flies/divergence", async (req) =>
     readArmDivergence(config, parseMode(req.query), parseFliesFilter(req.query).date),
