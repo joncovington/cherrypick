@@ -403,3 +403,56 @@ def test_a_new_trade_in_a_migrated_database_still_gets_a_status(tmp_path, monkey
     _save("NEW")
     rows = {r["order_id"]: r for r in db_paper.cmd_get_open_positions(_ns())["positions"]}
     assert rows["NEW"]["status"] == "open"
+
+
+# --------------------------------------------------------------------------- the EOD lifecycle sections
+def _eod(tmp_path, monkeypatch, day):
+    from cherrypick.earnings import strat_test_harness as harness
+    from cherrypick.earnings import strategy_metrics as metrics
+
+    monkeypatch.setattr(metrics, "DB_PATH", db_paper.DB_PATH)
+    monkeypatch.setattr(harness, "_eod_report_path", lambda d: tmp_path / f"paper-eod-{d}.md")
+    return harness._write_eod_report(day).read_text(encoding="utf-8")
+
+
+def test_the_eod_report_says_why_each_position_closed(tmp_path, monkeypatch):
+    """Under a managed lifecycle the reason IS the finding: a session of profit targets and one of
+    stops produce the same P&L line and mean entirely different things."""
+    day = date.today().isoformat()
+    _save("A", opened_at=time.time() - 86400)
+    db_paper.cmd_save_close(
+        _ns(data=json.dumps({"order_id": "A", "exit_debit": 1.0, "pnl": 100.0, "exit_reason": "pead_loser"}))
+    )
+    assert "pead_loser" in _eod(tmp_path, monkeypatch, day)
+
+
+def test_the_eod_report_marks_positions_still_carrying_risk(tmp_path, monkeypatch):
+    """Positions were force-closed the next morning before this change, so the section had nothing
+    to say. A carried winner's mid-flight worth is what says whether carrying it was right."""
+    day = date.today().isoformat()
+    _save("B", capital_at_risk=500.0, opened_at=time.time() - 86400)
+    _mark("B", usable=True, exit_debit=2.4, unrealized_pnl=60.0, session_date=day)
+
+    report = _eod(tmp_path, monkeypatch, day)
+    assert "Still open (carrying risk now)" in report and "$60.00" in report
+
+
+def test_a_refused_mark_is_never_reported_as_a_valuation(tmp_path, monkeypatch):
+    """It records that we looked and could not price it. Printing one as the position's worth would
+    put a number in the report that no quote ever supported."""
+    day = date.today().isoformat()
+    _save("C", capital_at_risk=500.0, opened_at=time.time() - 86400)
+    _mark("C", usable=False, refusal="missing_leg_quotes", unrealized_pnl=-9999.0, session_date=day)
+
+    report = _eod(tmp_path, monkeypatch, day)
+    assert "_unpriced_" in report and "-9999" not in report
+
+
+def test_the_eod_report_separates_a_thin_feed_from_a_quiet_day(tmp_path, monkeypatch):
+    day = date.today().isoformat()
+    _save("D", opened_at=time.time() - 86400)
+    _mark("D", usable=True, exit_debit=1.0, unrealized_pnl=10.0, session_date=day)
+    _mark("D", usable=False, refusal="missing_leg_quotes", session_date=day)
+
+    report = _eod(tmp_path, monkeypatch, day)
+    assert "Feed quality" in report and "missing_leg_quotes x1" in report
