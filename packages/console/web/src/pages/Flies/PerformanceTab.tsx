@@ -14,6 +14,19 @@ interface Performance {
     completionRatePct: number | null;
   };
   series: Array<{ bucket: string; netPnl: number; cumulative: number }>;
+  roll: {
+    leggedEntries: number;
+    completed: number;
+    completionRatePct: number | null;
+    neverOffered: number;
+    bufferBlocked: number;
+    floorBlocked: number;
+    unknown: number;
+    medianLatencyMin: number | null;
+    minLatencyMin: number | null;
+    maxLatencyMin: number | null;
+    medianSpotMove: number | null;
+  } | null;
   completion: {
     leggedEntries: number;
     completed: number;
@@ -156,6 +169,7 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
   const { data, isLoading } = usePerformance(mode, granularity, filter);
   const t = data?.tiles;
   const c = data?.completion;
+  const roll = data?.roll ?? null;
   const lvp = data?.liveVsPaper ?? null;
 
   return (
@@ -207,6 +221,58 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
             </table>
           )}
         </section>
+
+        {/* The bwb arm has no completion rate: it is entered WHOLE for a credit and converted by a
+            ROLL, not legged in and completed. Its own panel rather than a row in the one above, so
+            neither number is read as the other. Hidden entirely when no bwb entries are in scope --
+            an empty panel reading "0%" is a claim, and there is nothing to claim. */}
+        {roll !== null && (
+          <section className="card">
+            <h2>Roll (bwb — the same question, a different trade)</h2>
+            <table className="data-table">
+              <tbody>
+                <tr><td className="muted">bwb entries</td><td>{roll.leggedEntries}</td></tr>
+                <tr><td className="muted">rolled into flies</td><td>{roll.completed}</td></tr>
+                <tr><td className="muted">roll rate</td><td>{roll.completionRatePct !== null ? `${roll.completionRatePct.toFixed(1)}%` : "—"}</td></tr>
+                <tr><td className="muted">median latency</td><td>{roll.medianLatencyMin !== null ? `${roll.medianLatencyMin.toFixed(0)}m` : "—"}</td></tr>
+                <tr>
+                  <td className="muted">latency range</td>
+                  <td>{roll.minLatencyMin !== null ? `${roll.minLatencyMin.toFixed(0)}–${roll.maxLatencyMin?.toFixed(0)}m` : "—"}</td>
+                </tr>
+                <tr><td className="muted">median spot move to roll</td><td>{roll.medianSpotMove !== null ? roll.medianSpotMove.toFixed(2) : "—"}</td></tr>
+              </tbody>
+            </table>
+            <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
+              Until it rolls, a bwb carries real negative tail risk of{" "}
+              <strong>wing − far wing</strong> — unlike an uncompleted legged entry, whose worst case
+              is its own defined width. An unrolled bwb is not a neutral outcome.
+            </p>
+            {roll.leggedEntries > 0 && roll.leggedEntries < 5 && (
+              <p className="muted" style={{ fontSize: 12, margin: "0.3rem 0 0" }}>
+                <strong>{roll.leggedEntries} entries</strong> — too few to read as a rate.
+              </p>
+            )}
+          </section>
+        )}
+
+        {roll !== null && (
+          <section className="card">
+            <h2>Why rolls missed</h2>
+            <table className="data-table">
+              <tbody>
+                <tr><td className="muted">never cheap enough</td><td>{roll.neverOffered}</td></tr>
+                <tr><td className="muted">our buffer refused it</td><td>{roll.bufferBlocked}</td></tr>
+                <tr><td className="muted">our floor refused it</td><td>{roll.floorBlocked}</td></tr>
+                <tr><td className="muted">unknown</td><td>{roll.unknown}</td></tr>
+              </tbody>
+            </table>
+            <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
+              Read against <code>best_roll_debit</code>: "the market never made the roll cheap enough"
+              and "our own gate refused a roll that was offered" are identical in the P&amp;L and call
+              for opposite fixes.
+            </p>
+          </section>
+        )}
 
         <section className="card">
           <h2>Why misses missed (opposite remedies — do not lump)</h2>
