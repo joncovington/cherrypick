@@ -62,7 +62,7 @@ from pathlib import Path
 
 from cherrypick.core import viz
 
-from cherrypick.earnings import costs, db_paper, paths, rank_strategies, scanner, sizing
+from cherrypick.earnings import costs, db_paper, paths, rank_strategies, scanner, sizing, symbol_watch
 from cherrypick.earnings import strategy_metrics as metrics
 from cherrypick.earnings.strategies import (
     atm_calendar,
@@ -498,8 +498,14 @@ def _write_eod_report(day: str) -> Path:
         L.append("|---|---|---|---|---|---|---|")
         for t in sorted(carried, key=lambda x: (x["symbol"], x.get("strategy") or "")):
             mark = t.get("_mark")
-            unreal = _money(round(mark["unrealized_pnl"], 2)) if mark and mark.get("unrealized_pnl") is not None else "-"
-            debit = f"{mark['exit_debit']:.2f}" if mark and mark.get("exit_debit") is not None else "_unpriced_"
+            unreal = (
+                _money(round(mark["unrealized_pnl"], 2))
+                if mark and mark.get("unrealized_pnl") is not None
+                else "-"
+            )
+            debit = (
+                f"{mark['exit_debit']:.2f}" if mark and mark.get("exit_debit") is not None else "_unpriced_"
+            )
             L.append(
                 f"| {t['symbol']} | {t.get('strategy', '-')} | {_open_session(t) or '-'} | "
                 f"{t.get('_sessions_held', '-')} | {_money(t.get('entry_credit'))} | {debit} | {unreal} |"
@@ -520,13 +526,17 @@ def _write_eod_report(day: str) -> Path:
         if feed["refusals"]:
             L.append(
                 "- Refusals: "
-                + ", ".join(f"{reason} x{n}" for reason, n in sorted(feed["refusals"].items(), key=lambda kv: -kv[1]))
+                + ", ".join(
+                    f"{reason} x{n}" for reason, n in sorted(feed["refusals"].items(), key=lambda kv: -kv[1])
+                )
                 + "."
             )
         if feed["gated"]:
             L.append(
                 "- Decisions held back by an execution gate: "
-                + ", ".join(f"{gate} x{n}" for gate, n in sorted(feed["gated"].items(), key=lambda kv: -kv[1]))
+                + ", ".join(
+                    f"{gate} x{n}" for gate, n in sorted(feed["gated"].items(), key=lambda kv: -kv[1])
+                )
                 + " (recorded, retried on the next tick)."
             )
         L.append("")
@@ -1083,6 +1093,30 @@ def _parallel_scan(calendar, config, workers, symbol_timeout, budget_seconds):
     return out
 
 
+def _log_prefilter_skip(scan_date: str, symbol: str, reason: str) -> None:
+    """Record a name the morning scan disqualified, so a symbol missing from the evening's candidate
+    list is explained rather than simply absent. Best-effort: telemetry must never fail a scan."""
+    try:
+        db_paper.cmd_log_scan(
+            argparse.Namespace(
+                data=json.dumps(
+                    {
+                        "scan_date": scan_date,
+                        "symbol": symbol,
+                        "strategy": "_prefilter",
+                        "tier": "prefilter",
+                        "outcome": "skipped",
+                        "reason": reason,
+                        "logged_at": time.time(),
+                        "profile": TEST_PROFILE,
+                    }
+                )
+            )
+        )
+    except Exception:
+        pass
+
+
 def cmd_run_entries(args) -> dict:
     if not rank_strategies._ensure_dolt_running():
         return {"ok": False, "error": "dolt sql-server not available"}
@@ -1100,6 +1134,16 @@ def cmd_run_entries(args) -> dict:
         return {"ok": False, "error": f"dolt calendar fetch exceeded {calendar_timeout}s"}
     scan_date = str(_date.today())
     _capture_market_context(scan_date)  # entry-evening VIX for the next close session's analysis
+
+    # Narrow the list using this morning's forward scan before paying for a live chain per name.
+    # Stable criteria only (winrate, average volume, market cap) and against the loosest floor, so a
+    # dropped name is one that could not have passed under any setting -- every survivor is still
+    # screened entirely on live data below. Measured cost is ~8s per symbol, so on a heavy night this
+    # is the difference between finishing inside the entry window and running past it.
+    calendar, prefiltered = symbol_watch.prefilter_symbols(calendar, config, session=scan_date)
+    if prefiltered:
+        for symbol, reason in prefiltered.items():
+            _log_prefilter_skip(scan_date, symbol, reason)
 
     opened: list[dict] = []
     skipped: list[dict] = []

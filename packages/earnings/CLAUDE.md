@@ -14,9 +14,9 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
 
 - **Unattended paper (automated).** The **cherrypick** orchestrator runs the managed paper loop
   `cherrypick/earnings/paper_loop.py` as a **60-second supervisor tick** (`self_healing` job kind) —
-  this module still has no scheduler of its own. Each tick derives its phase from the clock: mark-only
-  through the opening spread window, mark/decide/act 09:40–15:40, the forced-sampling entry scan once
-  at 15:45, EOD reports 16:00–16:30, nothing outside the session. It opens the isolated strat_test
+  this module still has no scheduler of its own. Each tick derives its phase from the clock: the pre-market
+  forward scan at ~06:30, mark-only through the opening spread window, mark/decide/act 09:40–15:40,
+  the forced-sampling entry scan once at 15:35, EOD reports 16:00–16:30, nothing outside the session. It opens the isolated strat_test
   books (every strategy that clears the screen on every viable name; per-strategy by default via
   `strat_test_portfolio`), always paper-only into the paper book (`paper_trades.db` in the cherrypick
   data home — see the data-home note below), with no per-iteration agent. This is what collects data
@@ -25,7 +25,15 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
   measurement break — never pool results across it). A winner short of its target is carried up to
   three *trading* sessions; a loser closes on the first morning, because post-earnings drift continues
   rather than reverting. Quotes come from the shared stream cache first, the broker only to price what
-  nobody subscribed and to confirm a close. `run_entries` / `run_closes` survive as manual and
+  nobody subscribed and to confirm a close.
+  **Screening is split across the day**: the `forward_scan` phase computes the slow, stable half
+  (the earnings calendar and every Dolt-derived metric, next 10 trading days) pre-market at ~06:30.
+  That snapshot both feeds the console's Upcoming surface and PRE-FILTERS the entry scan — on stable
+  criteria only (winrate, average volume, market cap), against the loosest floor, so no morning
+  reading ever decides an entry. The entry scan costs ~35s + ~8s per symbol, so a heavy night at the
+  old 15:45 start risked finishing past the 15:55 window; it starts at 15:35 now (`entry_scan_at`).
+  **This module drives that scan itself — the orchestrator's `symbol-watch` job is superseded and
+  must stay disabled**, or it runs twice. `run_entries` / `run_closes` survive as manual and
   backfill verbs. Rules, thresholds and provenance: `docs/10-exits.md`.
 - **Agent-driven loop (live or paper).** The **Loop Steps** below are executed by you, the agent, for
   live trading and manual sessions — `rank_strategies.py` picks each symbol's single best strategy, and

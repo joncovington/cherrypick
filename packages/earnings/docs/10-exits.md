@@ -22,16 +22,38 @@ so a tick can be reasoned about without knowing anything about the tick before i
 | Phase | ET | What it does |
 |---|---|---|
 | `off_hours` | outside the below | nothing, and records no row — an out-of-session tick is not a measurement |
+| `forward_scan` | ~06:30, once daily | the slow, stable half of screening, pre-market (see below) |
 | `pre_open` | 09:00–09:30 | refreshes the producer's subscription request — the **only** phase allowed to GROW it (see below) |
 | `open_window` | 09:30–09:40 | **marks, never acts** |
 | `management` | 09:40–15:40 | marks, decides, acts |
-| `entry` | 15:45, once daily | the forced-sampling entry scan |
+| `entry` | 15:35, once daily | the forced-sampling entry scan |
 | `eod` | 16:00–16:30 | writes the session's reports |
 
 The open window is a phase of its own because the first ten minutes of an earnings name's options are
 not reliably priceable — spreads can be wider than the edge being managed, so a target computed off
 that mid is arithmetic rather than a price. Marks are still recorded through it, and a decision
 reached there is recorded with the gate that held it and taken on the first tick that clears.
+
+**Screening is split across the day.** The slow half — the earnings calendar and every
+Dolt-derived metric (winrate, IV/RV, market cap, average volume, historical move stats) — is computed
+pre-market by `forward_scan` for the next ten trading days. The fast, perishable half — live price,
+expected move, term structure, spread, open interest — is fetched at entry, where it has to be fresh.
+
+That split exists because the entry scan costs roughly **35s of fixed overhead plus 8s per symbol**
+(measured over eight real runs: 17 symbols took 1m17s, 35 took 5m24s). The heaviest night on record,
+87 symbols, extrapolates to about twelve minutes — which at the old 15:45 start would have finished
+*past* the 15:55 entry window. The scan now starts at **15:35** (`entry_scan_at`, deliberately its own
+key rather than `entry_window_start`, which means "when may entries be placed at all") and reads the
+morning snapshot to **pre-filter** its candidate list.
+
+The pre-filter drops a name only on criteria that cannot move intraday — **winrate, average volume,
+market cap** — and only against the *near-miss* floor, the loosest bar any `symbol_screen` setting can
+ask for. So it can only ever drop a name that could not have passed under any configuration, and every
+survivor is re-screened entirely on live data. `iv_rv_ratio` is deliberately excluded even though it is
+cheap and Dolt-derived: implied vol *rises* into an announcement, so a name below the floor in the
+morning can legitimately clear it by the afternoon. A snapshot whose pass did not complete **today** is
+ignored outright rather than partially trusted. Dropped names are recorded in `scan_log` under strategy
+`_prefilter`, so a symbol missing from the evening's candidates is explained rather than simply absent.
 
 **Why only `pre_open` grows the stream request.** A producer binds its underlyings when it
 starts, so the watchdog recycles it when the union grows — and a recycle costs a settling window in
