@@ -190,6 +190,72 @@ export function useEarnings(trades: PageState, reviews: PageState) {
   });
 }
 
+export interface EarningsMark {
+  markedAt: string | null;
+  exitDebit: number | null;
+  unrealizedPnl: number | null;
+  spot: number | null;
+  source: string | null;
+  maxLegSpreadPct: number | null;
+}
+
+export interface EarningsEvent {
+  orderId: string;
+  occurredAt: string | null;
+  phase: string | null;
+  action: string;
+  reason: string;
+  executed: boolean;
+  gate: string | null;
+}
+
+export interface EarningsOpenPosition {
+  orderId: string;
+  symbol: string;
+  strategy: string;
+  expiration: string | null;
+  entryCredit: number | null;
+  quantity: number | null;
+  capitalAtRisk: number | null;
+  openedAt: string | null;
+  status: string | null;
+  closeAttempts: number | null;
+  maxUnrealizedPnl: number | null;
+  minUnrealizedPnl: number | null;
+  mark: EarningsMark | null;
+  lastEvent: EarningsEvent | null;
+}
+
+export interface EarningsLivePayload {
+  positions: EarningsOpenPosition[];
+  events: EarningsEvent[];
+  loop: {
+    ranAt: string | null;
+    phase: string | null;
+    status: string | null;
+    openPositions: number | null;
+    marksWritten: number | null;
+    actionsTaken: number | null;
+    quotesFresh: number | null;
+    quotesStale: number | null;
+    openCapital: number | null;
+    note: string | null;
+  } | null;
+  openCapital: number;
+  generatedAt: string;
+}
+
+/** Open earnings positions and the managed loop's own vital signs. Polled at the loop's own
+ *  cadence — a faster poll would only redraw the same minute's marks. */
+export function useEarningsLive() {
+  return useQuery<EarningsLivePayload>({
+    queryKey: ["earnings-live"],
+    queryFn: () => getJson<EarningsLivePayload>("/api/earnings/live"),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
 export interface SymbolAnalysis {
   symbol: string;
   bars: Array<{ t: number; o: number; h: number; l: number; c: number; v: number }>;
