@@ -97,26 +97,38 @@ position is open across a multi-day hold.
 
 ---
 
-## Next Morning: Close Window (Default Starting 09:45 ET)
+## After the Announcement: the Managed Lifecycle
 
-Two things can happen the next morning, in this order:
+Positions used to be force-closed at 09:45 the next morning, full stop. They are managed now — the
+loop marks every open position once a minute and closes it when a rule says so, which means a
+position can live for one morning or for three sessions.
 
-1. **Early exit check (Step 3c)**, consulted at `close_window_start` — profit-target and
-   stop-loss checks run against live quotes for the four overnight-hold credit strategies
-   (`iron_fly`, `iron_condor`, `directional_credit_spread`, `broken_wing_butterfly`). If the
-   position already hit its `profit_target_pct` or `stop_loss_credit_multiple`, it closes right
-   there with that reason recorded instead of the generic backstop below.
-2. **Unconditional close-window backstop (Step 3)** — whatever's still open once
-   `close_window_start` arrives gets closed, full stop, regardless of P&L. The IV crush already
-   happened overnight; there's no more edge from continuing to hold, so this is a hard stop, not
-   a target to wait for.
+The full rule set, the thresholds, and the execution gates are in
+[Exit Strategy Guide](./10-exits.md); the shape of a day is:
 
-`double_calendar` and `atm_calendar` (the two multi-day, calendar-spread strategies) instead run
-their own management logic (Step 3b/3d) across however many days they're actually held, closing
-either a single side or the whole position based on `evaluate_position()`'s read of the current
-greeks — but they still hit the same unconditional close-window backstop as a final exit rule.
+1. **09:30–09:40** — marks are taken but nothing is acted on. Opening spreads on an earnings name can
+   be wider than the edge being managed, so a target computed off that mid is not a price.
+2. **09:40 onward** — decisions are acted on. Most positions resolve here: a winner at its target
+   closes, and a **loser closes regardless**, because the gap that put it there tends to continue
+   rather than revert.
+3. **A winner short of its target is held** — that is the change. It carries overnight and is
+   re-marked from the next open, up to a three-session cap.
+4. **Every close is confirmed through the broker** before it is recorded, even when the cache decided
+   it.
 
----
+**A worked multi-day hold:**
+
+```
+Mon 15:47  iron_fly on AAPL opened for $5.00 credit, carried into earnings
+Tue 09:31  first mark: exit_debit 4.60 → +$40 unrealized. Marked, not acted on (open_window)
+Tue 09:41  4.55 → +$45. A winner, short of the $1.25 target → hold  (used to close here)
+Tue 15:39  4.10 → +$90. Still working → hold
+Wed 09:41  3.70 → +$130. Still short of target → hold
+Thu 09:41  3.40 → +$160, and the session cap is reached → closed, exit_reason=max_hold
+```
+
+That position would have closed Tuesday at +$45 under the old sweep. Whether holding it was right is
+exactly what the `hold_days` and excursion columns now let the reports answer.
 
 ## End of Day
 

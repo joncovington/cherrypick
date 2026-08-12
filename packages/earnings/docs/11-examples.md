@@ -79,7 +79,7 @@ mode would submit both via `tt.py execute_trade --live`.
 NVEX announces after close, gaps +10%.
 Next morning 09:15 ET (Step 3c): iron_condor's exit_debit computed from live quotes —
   profit came in under the 50% target, exit_debit stayed under the 1.5x stop → hold.
-09:45 ET (Step 3, unconditional close-window): still open → close regardless of P&L.
+09:41 ET (management): still open and winning short of target → hold; a loser would close here.
   Realized: -$310 net (defined risk — the wings capped it well short of the raw
   spread-width max loss).
 
