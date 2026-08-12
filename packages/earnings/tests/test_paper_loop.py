@@ -14,6 +14,7 @@ import pytest
 
 from cherrypick.earnings import db_paper, paper_loop
 from cherrypick.earnings import strat_test_harness as harness
+from cherrypick.earnings import strategy_metrics as metrics
 
 ET = paper_loop.ET
 
@@ -50,8 +51,18 @@ def _ns(**kwargs):
 
 @pytest.fixture(autouse=True)
 def wired(tmp_path, monkeypatch):
-    """An isolated book, state directory, and quote source — no broker, no streamer, no real home."""
-    monkeypatch.setattr(db_paper, "DB_PATH", tmp_path / "paper_trades.db")
+    """An isolated book, state directory, and quote source — no broker, no streamer, no real home.
+
+    strategy_metrics keeps its OWN module-level DB_PATH, so patching db_paper's alone leaves the EOD
+    writer reading the developer's real paper book. That passes locally and fails in CI, which is the
+    wrong way round: a test that silently reads live data is worse than one that fails.
+    """
+    book = tmp_path / "paper_trades.db"
+    monkeypatch.setattr(db_paper, "DB_PATH", book)
+    monkeypatch.setattr(metrics, "DB_PATH", book)
+    monkeypatch.setattr(metrics, "PAPER_DB_PATH", book)
+    monkeypatch.setattr(harness, "_eod_report_path", lambda day: tmp_path / f"paper-eod-{day}.md")
+    monkeypatch.setattr(harness, "_analysis_path", lambda day: tmp_path / f"eod-analysis-{day}.md")
     db_paper.cmd_init_db(argparse.Namespace())
     monkeypatch.setattr(paper_loop, "state_file", lambda name: tmp_path / name)
     monkeypatch.setattr(paper_loop, "lock_path", lambda: tmp_path / "loop.lock")
