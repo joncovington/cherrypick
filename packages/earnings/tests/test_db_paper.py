@@ -367,7 +367,11 @@ def test_closing_a_stranded_position_clears_the_status():
     for _ in range(2):
         db_paper.cmd_record_close_failure(_ns(data=json.dumps({"order_id": "S3", "reason": "x"})))
     db_paper.cmd_save_close(
-        _ns(data=json.dumps({"order_id": "S3", "exit_debit": 1.0, "pnl": 100.0, "exit_reason": "close_window"}))
+        _ns(
+            data=json.dumps(
+                {"order_id": "S3", "exit_debit": 1.0, "pnl": 100.0, "exit_reason": "close_window"}
+            )
+        )
     )
     row = db_paper.cmd_get_pnl_summary(_ns(strategy=None, profile=None))["trades"][0]
     assert row["status"] == "closed" and row["exit_reason"] == "close_window"
