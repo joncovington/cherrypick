@@ -875,6 +875,39 @@ def _loop_gate_tail(day):
     return n, tail
 
 
+def _intraday_path(active: list) -> str | None:
+    """One sentence describing the day by its PATH, not its endpoints.
+
+    Added 2026-08-11 after a debrief opened with "SPX barely moved (-0.32%)", called the tape
+    dead-calm, and built its whole thesis on a market that supposedly cooperated -- on a day the
+    index slid 44.95 points (0.58% of spot) from 7763 to 7718 and that drift stopped 384 put sides.
+    Close-to-close hid the move that actually decided the session, which is the same failure shape
+    as reading an exit query that matches nothing: the number was available and nobody printed it.
+
+    Measured across the underlying prices recorded at THIS session's own entries, so it describes
+    the window the book was actually exposed to rather than the whole cash session. That also means
+    it is only as wide as the entry window -- stated here rather than left to be inferred.
+
+    Note 0.5% is the threshold `quarterly_expiry_max_intraday_range_pct` already treats as a blown-out
+    range, so a day past it should never be narrated as calm.
+    """
+    prices = [r.get("underlying_price_entry") for r in active if r.get("underlying_price_entry")]
+    if len(prices) < 2:
+        return None
+    lo, hi = min(prices), max(prices)
+    span = hi - lo
+    pct = span / hi * 100 if hi else 0.0
+    first, last = prices[0], prices[-1]
+    drift = last - first
+    direction = "drifted up" if drift > 0 else ("drifted down" if drift < 0 else "round-tripped")
+    calm = "calm" if pct < 0.30 else ("ordinary" if pct < 0.50 else "NOT calm - a wide-range day")
+    return (
+        f"Across the entry window the underlying ranged **{lo:.2f}-{hi:.2f}** "
+        f"({span:.2f} pts, **{pct:.2f}%** of spot) and {direction} {abs(drift):.2f} pts from first "
+        f"entry to last. Judge the session by this path, not by the close-to-close change: {calm}."
+    )
+
+
 def _write_eod_analysis(day):
     """Write a conversational 7-section end-of-day analysis for `day` to logs/eod-analysis-<day>.md.
     Deterministic templated prose (no agent/LLM/network) so it runs unattended from the settlement
@@ -981,6 +1014,9 @@ def _write_eod_analysis(day):
         elif best:
             line += f" All of it came from {best[0]}."
         L.append(line)
+        path_line = _intraday_path(active)
+        if path_line:
+            L.append(path_line)
     L.append("")
 
     # 2. Position-level detail -------------------------------------------------
