@@ -387,3 +387,32 @@ def test_the_entry_scan_never_starts_after_the_entry_window(monkeypatch):
 def test_the_entry_scan_still_runs_inside_the_window(monkeypatch):
     monkeypatch.setattr(harness, "cmd_run_entries", lambda args: {"ok": True, "opened": 1})
     assert paper_loop.run_iteration(CONFIG, at("15:54"))["phase"] == "entry"
+
+
+def test_the_entry_scan_does_not_grow_the_stream_request(monkeypatch):
+    """A producer binds its underlyings at startup, so growing the union recycles it — and a recycle
+    costs a settling window in which nothing streams at all. Doing that at 15:45 would blind the
+    0DTE modules trading into their own close, to make symbols available fourteen hours before this
+    module marks anything. pre_open picks them up instead."""
+    registered = []
+    monkeypatch.setattr(paper_loop.stream_request, "register", lambda syms: registered.append(syms))
+    monkeypatch.setattr(harness, "cmd_run_entries", lambda args: {"ok": True, "opened": 3})
+    open_trade()
+
+    paper_loop.run_iteration(CONFIG, at("15:45"))
+    assert registered == []
+
+    paper_loop.run_iteration(CONFIG, at("09:05"))
+    assert registered == [["AAPL"]], "pre_open is where the union is allowed to grow"
+
+
+def test_closing_a_position_still_refreshes_the_request(priced, monkeypatch):
+    """Shrinking is always safe: an over-subscribed producer serves everyone correctly and the
+    growth-only staleness check never recycles for it."""
+    registered = []
+    monkeypatch.setattr(paper_loop.stream_request, "register", lambda syms: registered.append(syms))
+    open_trade()
+    priced(quotes_pricing(3.00))
+    paper_loop.run_iteration(CONFIG, at("10:00"))
+
+    assert registered == [[]], "the position closed, so its underlying is no longer needed"
