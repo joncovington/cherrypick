@@ -1256,6 +1256,33 @@ def fetch_quotes_by_symbol(underlying_symbol: str, expiration, option_symbols: l
     return {e["symbol"]: e for e in entries if e["symbol"] in wanted}
 
 
+def fetch_streamer_symbols(underlying_symbol: str, expiration, option_symbols: list, price: float) -> dict:
+    """`{OCC symbol: DXLink streamer symbol}` from the broker's own chain.
+
+    Captured at entry and stored on each leg so the monitoring loop can find that leg in the shared
+    stream cache, which is keyed by streamer symbol rather than OCC. Read from the broker rather than
+    derived from the OCC string: the transformation looks mechanical and is not (weeklies, adjusted
+    contracts, and index roots each bend it), and a symbol this module invented would not fail loudly
+    — it would simply never match a cached quote, and every position carrying one would silently fall
+    back to the slow path forever.
+    """
+    entries = fetch_quotes_by_symbol(underlying_symbol, expiration, option_symbols, price)
+    return {occ: e["streamer_symbol"] for occ, e in entries.items() if e.get("streamer_symbol")}
+
+
+def attach_streamer_symbols(legs: list[dict], mapping: dict) -> list[dict]:
+    """Copy of `legs` with each leg's `streamer_symbol` filled in where the chain knew it.
+
+    A leg the chain had no streamer symbol for is left without one rather than guessed at; the
+    provider reports that as its own refusal (`legs_missing_streamer_symbol`), which is a gap in what
+    entry recorded and wants a different fix from a feed that went quiet.
+    """
+    return [
+        {**leg, "streamer_symbol": mapping[leg["symbol"]]} if mapping.get(leg.get("symbol")) else dict(leg)
+        for leg in legs
+    ]
+
+
 def compute_generic_exit_debit(legs: list[dict], quotes: dict) -> float | None:
     """Signed exit debit for closing an arbitrary multi-leg single-expiration
     position, given its original entry legs (`{symbol, action, quantity}`,
