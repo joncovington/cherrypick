@@ -112,35 +112,36 @@ re-implemented in TypeScript; what is left is narrower than the line count sugge
 | `/api/symbol/{s}/quote` | `market/marketData.ts` | done |
 | `/api/symbol/{s}/template` | `services/builderTemplates.ts` | done |
 | `/api/symbol/{s}/income-grid` `/suggestions` | `GET /api/builder/{income-grid,suggestions}/:symbol` | done |
-| `/api/payoff` | `POST /api/payoff` | **partial** — curve, breakevens, max profit/loss, net greeks, slopes, POP, expected move. Missing every `describe.py` field |
+| `/api/payoff` | `POST /api/payoff` | done — the payoff engine's own numbers plus every `describe.py` field |
 | `/api/screener` | `POST /api/screener/run` | done |
 | `/api/order/dry-run`, `/api/staged*` | `/api/orders/stage`, `/api/orders/staged` | done |
 | `/api/watchlist` | `/api/watchlist` | done |
 | `/api/earnings-upcoming` | `GET /api/earnings/upcoming` | done |
-| `/api/symbol/{s}/stats` | — | **missing** — `_compute_stats(bars)` plus iv_rank / iv_30d / liquidity / beta |
-| `/api/symbol/{s}/analysis` | — | **missing** — `narrative.py` |
-| `/api/symbol/{s}/warnings` | — | **missing** — `narrative.event_warnings` |
+| `/api/symbol/{s}/stats` | folded into the analysis payload (IV, realized vol, IV rank, earnings date) | done |
+| `/api/symbol/{s}/analysis` | `GET /api/symbol/:symbol/analysis` | done |
+| `/api/symbol/{s}/warnings` | `GET /api/symbol/:symbol/warnings?expiration=` | done |
 
 **Superseded, delete rather than port**: `services/` `cache`, `candle_service`, `chain_service`,
 `metrics_service`, `quote_service`, `screener_service`, `staging`, `streamcache`, `session`,
 `watchlist`; `analytics/` `levels`, `payoff`, `pop`, `strategies`, `templates`, `trend`.
 
-**Still to port** — about 890 lines of Python, in two files:
+**Ported, 2026-08-12.** `analytics/describe.py` → `analytics/describe.ts` and
+`analytics/narrative.py` → `analytics/narrative.ts`, composed by `services/symbolAnalysis.ts` and
+served on the three routes above; the views are `pages/Scout/AnalysisCard.tsx` (symbol page) and
+`pages/Scout/StrategyReadout.tsx` (builder). Scout's own `test_describe.py` and `test_narrative.py`
+came across as vitest suites — 43 cases — because they are not ordinary unit tests: each replays an
+observed reference-platform card and together they are the evidence that justified the formulae.
+They passed against the TypeScript on the first run.
 
-- `analytics/describe.py` (474) splits in half. **Numbers** console does not compute:
-  `raw_return`, `annualized_return`, `projected_yield_12m`, `score`, `probable_risk_2sd`,
-  `prob_worthless`, `bs_greeks` (the model-greeks fallback when a leg carries none),
-  `combo_spread_pct`, `direction`, `has_weekly_cadence`. **Prose**: `strategy_explanation`,
-  `greeks_explanation`, `short_put_suggestion`, `checklist`, `checklist_directional`.
-- `analytics/narrative.py` (414): `price_action`, `scan_headline`, `technical_bullet`,
-  `options_bullet`, `relative_strength_bullet`, `event_warnings`, `cci`, and their helpers.
+Two deliberate differences, both because the console holds different data than scout did:
 
-**The port is not the whole job.** Console's `SymbolPage` renders a chart and a levels card and
-nothing else — `useSymbolAnalysis` calls `/api/symbol/:symbol`, which returns no prose. So there is
-no panel waiting for this output: shipping it means new endpoints *and* the views that display them,
-on the symbol page and in the builder. Scale the estimate accordingly, and note the option of
-porting the `describe.py` **numbers** first (they slot into the existing payoff response with no new
-UI) and treating the prose as its own piece of work.
+- **Realized volatility is computed, not read.** Scout's metrics service supplied `hv_30d`; the
+  console's cache never stored it. Rather than lose the IV-vs-realized bullet — the sharpest of
+  them — it is computed from the daily closes the console already has (annualized stdev of log
+  returns), which is the same definition.
+- **Ex-dividend warnings degrade to absent.** The metrics cache carries no ex-date, so
+  `eventWarnings` is given null and says nothing. Since absence of a warning is a real claim in that
+  function, this is a gap to close by caching the field — not by inventing a value.
 
 **Also unresolved**: `calendar_service.py`, `earnings_metrics_service.py` and
 `earnings_watchlist_service.py` back scout's `/api/earnings-screens`, which has no console

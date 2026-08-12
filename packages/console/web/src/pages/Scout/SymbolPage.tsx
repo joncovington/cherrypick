@@ -8,6 +8,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useSymbolAnalysis } from "../../lib/api";
+import { AnalysisCard } from "./AnalysisCard";
 import { useQuote } from "../../lib/useQuote";
 
 const SMA_COLORS: Record<string, string> = {
@@ -140,6 +141,8 @@ export function SymbolPage() {
             </div>
           )}
         </section>
+
+        <AnalysisCard symbol={sym} />
 
         <section className="card">
           <h2>Levels</h2>

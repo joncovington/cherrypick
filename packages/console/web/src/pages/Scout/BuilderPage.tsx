@@ -9,6 +9,7 @@ import { fmtMoney } from "../../components/DataTable";
 import { SymbolCard } from "../../components/SymbolCard";
 import { StrategyCards, type ApiLeg } from "../../components/StrategyCards";
 import { CollectorBanner } from "../../components/CollectorBanner";
+import { StrategyReadout } from "./StrategyReadout";
 
 interface LegDraft {
   id: number;
@@ -20,6 +21,14 @@ interface LegDraft {
   expiration: string | null;
   /** OCC symbol from the chain — required to stage a ticket. */
   occSymbol: string | null;
+  /** The two-sided quote this leg was picked from, for the NET combo spread. */
+  bid: number | null;
+  ask: number | null;
+}
+
+interface CheckItem {
+  name: string;
+  status: "pass" | "warn" | "fail";
 }
 
 interface PayoffResult {
@@ -32,6 +41,22 @@ interface PayoffResult {
   pnlAtSpot: number | null;
   pop: number | null;
   expectedMove: number | null;
+
+  // The describe.py half: strategy-card numbers and their prose.
+  direction: "bullish" | "bearish" | "neutral" | null;
+  credit: number;
+  annualizedReturn: number | null;
+  probWorthless: number | null;
+  probableRisk2sd: number | null;
+  score: number | null;
+  /** A defined-risk score is externally validated; an undefined-risk one is our own estimate. */
+  scoreIsEstimated: boolean;
+  comboSpreadPct: number | null;
+  hasWeeklyCadence: boolean | null;
+  explanation: string | null;
+  greeksText: string | null;
+  checklist: CheckItem[];
+  checklistDirectional: CheckItem[] | null;
 }
 
 let nextId = 1;
@@ -76,6 +101,8 @@ export function BuilderPage() {
       price: Number(l.price),
       strike: l.kind === "stock" ? null : Number(l.strike),
       delta: l.delta,
+      bid: l.bid,
+      ask: l.ask,
     }));
 
   const { data } = useQuery<PayoffResult>({
@@ -86,6 +113,11 @@ export function BuilderPage() {
         spot,
         sigma: Number(iv) / 100,
         dte: Number(dte),
+        symbol,
+        expiration,
+        // Two-sided quotes drive the NET combo spread the liquidity row grades — per-leg widths
+        // are not what it measures.
+        quotedLegs: validLegs.map((l) => ({ quantity: l.quantity, bid: l.bid, ask: l.ask })),
       }),
     enabled: validLegs.length > 0,
     placeholderData: (prev) => prev,
@@ -154,6 +186,10 @@ export function BuilderPage() {
               delta: l.delta,
               expiration: l.expiration,
               occSymbol: l.occSymbol,
+              // A suggested strategy carries no two-sided quote, so the liquidity row warns
+              // rather than grading a spread nobody measured.
+              bid: null,
+              ask: null,
             })),
           );
             if (exp !== "") {
@@ -282,6 +318,8 @@ export function BuilderPage() {
           </section>
         )}
 
+        {data && <StrategyReadout data={data} symbol={symbol} expiration={expiration} />}
+
         <ChainPanel
           symbol={symbol}
           expiration={expiration}
@@ -290,7 +328,7 @@ export function BuilderPage() {
           legs={legs
             .filter((l) => l.kind !== "stock" && l.strike !== "")
             .map((l) => ({ kind: l.kind as "call" | "put", strike: Number(l.strike), quantity: l.quantity }))}
-          onPick={({ kind, strike, quantity, price, delta, expiration: exp, occSymbol, atmIv }) => {
+          onPick={({ kind, strike, quantity, price, delta, expiration: exp, occSymbol, atmIv, bid, ask }) => {
             // Auto-fill the POP inputs from the chain: DTE from the picked
             // expiration, IV from the ATM call. Manual edits still win after.
             const d = dteOf(exp);
@@ -307,6 +345,8 @@ export function BuilderPage() {
                 delta,
                 expiration: exp,
                 occSymbol,
+                bid,
+                ask,
               },
             ]);
           }}

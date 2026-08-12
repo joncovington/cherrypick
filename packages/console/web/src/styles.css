@@ -191,6 +191,16 @@ h2 {
   text-transform: uppercase;
 }
 
+/* A sub-heading inside a card, for when one card holds two labelled blocks. Same treatment as h2
+   so the hierarchy reads as card title → block label, without a second real heading level. */
+.fine-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));

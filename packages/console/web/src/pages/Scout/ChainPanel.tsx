@@ -67,7 +67,9 @@ interface Props {
   symbol: string;
   expiration: string | null;
   onExpiration: (exp: string) => void;
-  /** bid = sell (short), ask = buy (long); price is ALWAYS the mid. */
+  /** bid = sell (short), ask = buy (long); price is ALWAYS the mid. `bid`/`ask` ride along
+   *  unchanged so the builder can grade the NET combo spread, which is what the liquidity row
+   *  measures — per-leg widths are a different number. */
   onPick: (pick: {
     kind: "call" | "put";
     strike: number;
@@ -78,6 +80,8 @@ interface Props {
     occSymbol: string | null;
     /** ATM IV for the shown expiration — lets the builder auto-fill its POP inputs. */
     atmIv: number | null;
+    bid: number | null;
+    ask: number | null;
   }) => void;
   spot: number | null;
   legs: LegMark[];
@@ -190,14 +194,14 @@ export function ChainPanel({ symbol, expiration, onExpiration, onPick, spot, leg
                     <td>{r.call ? fmt(r.call.delta) : "—"}</td>
                     <ChainCell
                       side={r.call}
-                      onSell={() => r.call && onPick({ kind: "call", strike: r.strike, quantity: -1, price: mid(r.call), delta: r.call.delta, expiration: data?.expiration ?? null, occSymbol: r.call.occSymbol, atmIv })}
-                      onBuy={() => r.call && onPick({ kind: "call", strike: r.strike, quantity: 1, price: mid(r.call), delta: r.call.delta, expiration: data?.expiration ?? null, occSymbol: r.call.occSymbol, atmIv })}
+                      onSell={() => r.call && onPick({ kind: "call", strike: r.strike, quantity: -1, price: mid(r.call), delta: r.call.delta, expiration: data?.expiration ?? null, occSymbol: r.call.occSymbol, atmIv, bid: r.call.bid, ask: r.call.ask })}
+                      onBuy={() => r.call && onPick({ kind: "call", strike: r.strike, quantity: 1, price: mid(r.call), delta: r.call.delta, expiration: data?.expiration ?? null, occSymbol: r.call.occSymbol, atmIv, bid: r.call.bid, ask: r.call.ask })}
                     />
                     <td className={`chain-strike ${inBand ? "chain-em-band" : ""}`}>{r.strike}</td>
                     <ChainCell
                       side={r.put}
-                      onSell={() => r.put && onPick({ kind: "put", strike: r.strike, quantity: -1, price: mid(r.put), delta: r.put.delta, expiration: data?.expiration ?? null, occSymbol: r.put.occSymbol, atmIv })}
-                      onBuy={() => r.put && onPick({ kind: "put", strike: r.strike, quantity: 1, price: mid(r.put), delta: r.put.delta, expiration: data?.expiration ?? null, occSymbol: r.put.occSymbol, atmIv })}
+                      onSell={() => r.put && onPick({ kind: "put", strike: r.strike, quantity: -1, price: mid(r.put), delta: r.put.delta, expiration: data?.expiration ?? null, occSymbol: r.put.occSymbol, atmIv, bid: r.put.bid, ask: r.put.ask })}
+                      onBuy={() => r.put && onPick({ kind: "put", strike: r.strike, quantity: 1, price: mid(r.put), delta: r.put.delta, expiration: data?.expiration ?? null, occSymbol: r.put.occSymbol, atmIv, bid: r.put.bid, ask: r.put.ask })}
                     />
                     <td>{r.put ? fmt(r.put.delta) : "—"}</td>
                     <td className="muted">{r.put ? fmtOi(r.put.openInterest) : "—"}</td>
