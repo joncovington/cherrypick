@@ -106,8 +106,8 @@ def _log(msg: str) -> None:
 
 
 def _terminate_pid(pid: int) -> bool:
-    """Terminate a process we do not hold a Popen handle for (an adopted resident child that went
-    silent). Only ever called on PIDs this daemon's registry recorded as its own children."""
+    """Terminate one process, leaving anything it spawned alone. Only ever called on PIDs this daemon
+    recorded as its own child, or on the daemon itself (`cherrypick uninstall`)."""
     try:
         import psutil  # type: ignore
 
@@ -131,6 +131,61 @@ def _terminate_pid(pid: int) -> bool:
         os.kill(pid, 15)
         return True
     except (OSError, SystemError):
+        return False
+
+
+def _terminate_tree(pid: int) -> bool:
+    """Terminate a child and everything it spawned. Only ever called on PIDs this daemon's registry
+    recorded as its own children.
+
+    The tree, not the process, because a job's argv is not always the thing holding the resources. The
+    console's `run.py` is a launcher that runs the Node server as a CHILD, so killing only the PID the
+    registry holds leaves the server alive — still bound to :5070, still writing its heartbeat — while
+    the supervisor starts a replacement that cannot bind and dies. That turns one silence restart into
+    a permanent crash-loop, which is exactly the failure the silence check exists to end. Measured on
+    2026-08-12, before this killed the tree.
+
+    Best-effort and bounded: waits briefly for the tree to actually go, since the replacement is
+    spawned right after and a still-held listening port would fail it.
+    """
+    try:
+        import psutil  # type: ignore
+    except ImportError:
+        psutil = None  # type: ignore
+
+    if psutil is not None:
+        try:
+            parent = psutil.Process(pid)
+            procs = parent.children(recursive=True) + [parent]
+            for p in procs:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+            _, alive = psutil.wait_procs(procs, timeout=10)
+            for p in alive:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+            return True
+        except Exception:
+            return False
+
+    try:
+        if os.name == "nt":
+            # /T takes the tree, /F forces it. Without psutil this is the only way to reach a
+            # grandchild — the Win32 API has no "children of" query.
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(pid)],
+                capture_output=True,
+                creationflags=CREATE_NO_WINDOW,
+                timeout=15,
+            )
+            return True
+        os.killpg(os.getpgid(pid), 15)
+        return True
+    except (OSError, SystemError, subprocess.SubprocessError):
         return False
 
 
@@ -305,14 +360,17 @@ class Supervisor:
                 pid = st.get("running_pid")
                 _log(f"{spec.id}: silent > {spec.silence_seconds}s, restarting (pid {pid})")
                 handle = self._handles.pop(spec.id, None)
+                # Kill the tree first: a launcher-style job (the console's run.py -> node) keeps its
+                # real server alive if only the tracked PID is terminated, and the replacement then
+                # cannot bind. Then reap the handle so no zombie is left behind.
+                if pid:
+                    _terminate_tree(pid)
                 if handle is not None and handle.poll() is None:
                     handle.terminate()
                     try:
                         handle.wait(timeout=10)
                     except subprocess.TimeoutExpired:
                         handle.kill()
-                elif pid:
-                    _terminate_pid(pid)
                 self._record_exit(spec.id, st, -2)  # silence counts as a failure → backoff
                 return False
             return False

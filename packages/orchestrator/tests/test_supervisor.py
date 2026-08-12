@@ -212,6 +212,10 @@ def test_offsession_tick_fires_outside_window(spawned, tmp_path):
 
 def test_silent_resident_child_is_restarted_with_backoff(spawned, tmp_path, monkeypatch):
     cfg = flies_cfg(tmp_path)
+    # The real tree kill shells out to taskkill, which would run against a fake pid here. What the
+    # tree kill does is pinned separately below; this test is about the restart/backoff semantics.
+    killed: list[int] = []
+    monkeypatch.setattr(supervisor, "_terminate_tree", lambda pid: killed.append(pid) or True)
     sup = supervisor.Supervisor(cfg)
     sup.pass_once(now=MONDAY_NOON)
     child = next(p for p in spawned if "--interval" in p.argv)
@@ -227,6 +231,7 @@ def test_silent_resident_child_is_restarted_with_backoff(spawned, tmp_path, monk
     st["last_start"] = (datetime.now(timezone.utc) - timedelta(seconds=1000)).isoformat()
     sup.pass_once(now=MONDAY_NOON)
     assert child.terminated
+    assert killed == [child.pid], "the child's whole tree must be taken down, not just the handle"
     assert st["running_pid"] is None and st["backoff_until"] > time.time()
     # after backoff expires the child is restarted
     st["backoff_until"] = time.time() - 1

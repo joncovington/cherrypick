@@ -2,8 +2,27 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 
-const HOME = os.homedir();
-const CHERRYPICK = path.join(HOME, ".cherrypick");
+/**
+ * The per-user cherrypick home, resolved the way `cherrypick.core.home` resolves it: `$CHERRYPICK_HOME`
+ * is the master override that relocates the whole tree in one move, else `~/.cherrypick`.
+ *
+ * The console has to agree with the Python side about this path, not merely be portable. It reads
+ * every module's data from under here, and the supervisor now watches a heartbeat file the console
+ * writes here — so a console that ignored the override would read an empty suite and report itself
+ * dead to a supervisor looking somewhere else entirely.
+ */
+function cherrypickHome(): string {
+  const override = process.env["CHERRYPICK_HOME"];
+  if (override) {
+    const expanded = override.startsWith("~")
+      ? path.join(os.homedir(), override.slice(1))
+      : override;
+    return path.resolve(expanded);
+  }
+  return path.join(os.homedir(), ".cherrypick");
+}
+
+const CHERRYPICK = cherrypickHome();
 
 export interface ConsoleConfig {
   port: number;

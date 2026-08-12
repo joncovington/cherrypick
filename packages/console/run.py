@@ -4,8 +4,8 @@ Usage:
     python run.py dashboard --serve [--port 5070]
 
 The server itself is Node (server/dist/index.js); this script just locates and
-execs it so the orchestrator and the serve-dashboard command never need to know
-about the Node toolchain.
+execs it so the supervisor and the /console command never need to know about the
+Node toolchain. The supervisor keeps this running as an always-on resident job.
 """
 
 from __future__ import annotations
@@ -19,6 +19,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SERVER_ENTRY = HERE / "server" / "dist" / "index.js"
+
+# node is a console-subsystem program, and the supervisor launches this script under pythonw (no
+# console of its own) — so without this flag every start and every restart of the console pops a
+# terminal window on the user's screen. Inherited stdio still works, so a human running this from a
+# terminal sees the server's output exactly as before. 0 off-Windows, so the call site stays portable.
+CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
 def main() -> int:
@@ -45,7 +51,7 @@ def main() -> int:
 
     if args.command == "credentials":
         cli = HERE / "server" / "dist" / "cli" / "credentials-cli.js"
-        return subprocess.call([node, str(cli), args.action])
+        return subprocess.call([node, str(cli), args.action], creationflags=CREATE_NO_WINDOW)
 
     if not args.serve:
         parser.error("only 'dashboard --serve' is supported")
@@ -68,7 +74,7 @@ def main() -> int:
             cfg_path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
             print(f"wrote serve.port={args.port} to {cfg_path}")
 
-    return subprocess.call([node, str(SERVER_ENTRY)])
+    return subprocess.call([node, str(SERVER_ENTRY)], creationflags=CREATE_NO_WINDOW)
 
 
 if __name__ == "__main__":

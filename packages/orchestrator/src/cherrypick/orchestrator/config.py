@@ -399,6 +399,42 @@ def symbol_watch_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def console_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved console config — the suite's one read surface, and the only long-lived HTTP server the
+    supervisor keeps up. ON by default (opt out with `"console": {"enabled": false}`).
+
+    Unlike every other job this one is **not** session-scoped: a read surface you can only open
+    between 09:30 and 16:00 is useless for reading last night's session, so it declares no window and
+    no trading-day gate. `path` resolves like a module's (absolute, or relative to the source root),
+    defaulting to the sibling package in this monorepo.
+
+    Liveness is a heartbeat FILE, not an HTTP probe. The server is Node and a wedged event loop stays
+    alive while answering nothing, so process-liveness alone would never restart it; the server
+    rewrites `state/console.heartbeat` every ~15s and the supervisor's existing silence machinery
+    watches its mtime. That also keeps the reliability path free of network calls, per the suite
+    invariant. `silence_seconds` is several heartbeats wide so one slow pass never reads as a wedge.
+    """
+    con = cfg.get("console", {}) or {}
+    raw = con.get("path") or "../console"
+    p = Path(raw)
+    root = p.resolve() if p.is_absolute() else (ROOT / p).resolve()
+    return {
+        "enabled": con.get("enabled", True),
+        "root": root,
+        "launcher": root / "run.py",
+        # The built Node server. Absent means `pnpm build` was never run in that checkout, which is a
+        # disabled job with a reason -- never a crash-loop.
+        "server_entry": root / "server" / "dist" / "index.js",
+        "silence_seconds": int(con.get("silence_seconds", 60)),
+    }
+
+
+def console_heartbeat_path() -> Path:
+    """Where the console writes its liveness file (`state/console.heartbeat`). One definition, read by
+    the supervisor's silence check and by anything reporting whether the read surface is up."""
+    return STATE_DIR / "console.heartbeat"
+
+
 def insight_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved AI EOD-insight config. **OFF by default** — it needs Claude Code (`claude`) on PATH,
     an authenticated session, and a paid call, so it's opt-in (`"eod_insight": {"enabled": true}`). When

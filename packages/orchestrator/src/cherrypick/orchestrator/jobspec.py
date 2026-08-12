@@ -340,6 +340,34 @@ def derive_jobs(
         ),
     )
 
+    # --- console (the suite's read surface): the one job with no window at all
+    con = cfgmod.console_settings(cfg)
+    if not con["enabled"]:
+        con_reason = "disabled in config (console)"
+    elif not con["server_entry"].exists():
+        # An unbuilt checkout is off-by-choice-is-healthy, not a job to restart every 30s. The fix is
+        # `pnpm install && pnpm build` in packages/console, and the reason says so.
+        con_reason = "console not built (packages/console: pnpm install && pnpm build)"
+    else:
+        con_reason = ""
+    add(
+        "console",
+        lambda con=con, con_reason=con_reason: JobSpec(
+            id="console",
+            argv=(pythonw, str(con["launcher"]), "dashboard", "--serve"),
+            kind=KIND_RESIDENT,
+            cwd=str(con["root"]),
+            # Resident jobs are re-evaluated on the ~1s loop; this is the silence budget, not a cadence.
+            interval_seconds=con["silence_seconds"],
+            # No window and no trading-day gate, deliberately: a read surface that is only up during
+            # RTH cannot be used to read the session that just ended.
+            silence_file=str(cfgmod.console_heartbeat_path()),
+            silence_seconds=con["silence_seconds"],
+            enabled=not con_reason,
+            enabled_reason=con_reason,
+        ),
+    )
+
     # --- per-module jobs
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         paper = mcfg.get("paper", {}) or {}

@@ -36,10 +36,6 @@ def _config_moves(cfg: dict[str, Any]) -> list[tuple[str, Path, Path]]:
         root = cfgmod.module_root(mcfg, name)
         legacy = root / _MODULE_CONFIG_REL.get(name, Path("config.json"))
         moves.append((name, legacy, _home.config_path(name)))
-    for sec in cfg.get("dashboard", {}).get("sections", []) or []:
-        if sec.get("id") and (sec.get("path") or sec.get("repo")):
-            root = cfgmod.module_root(sec, sec["id"])
-            moves.append((sec["id"], root / "config.json", _home.config_path(sec["id"])))
     return moves
 
 
@@ -47,9 +43,6 @@ def _sweep_roots(cfg: dict[str, Any]) -> list[Path]:
     roots = [cfgmod.ROOT]
     for name, mcfg in cfg.get("modules", {}).items():
         roots.append(cfgmod.module_root(mcfg, name))
-    for sec in cfg.get("dashboard", {}).get("sections", []) or []:
-        if sec.get("id") and (sec.get("path") or sec.get("repo")):
-            roots.append(cfgmod.module_root(sec, sec["id"]))
     # de-dup while preserving order
     seen: set[Path] = set()
     return [r for r in roots if not (r in seen or seen.add(r))]
