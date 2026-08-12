@@ -340,12 +340,37 @@ def test_record_close_failure_increments_attempts():
     r2 = db_paper.cmd_record_close_failure(
         _ns(data=json.dumps({"order_id": "S1", "reason": "leg_quotes_unavailable"}))
     )
-    assert r1 == {"ok": True, "order_id": "S1", "close_attempts": 1}
+    assert r1 == {"ok": True, "order_id": "S1", "close_attempts": 1, "status": "open"}
     assert r2["close_attempts"] == 2
     pos = db_paper.cmd_get_open_positions(_ns())["positions"][0]
     assert pos["close_attempts"] == 2
     assert pos["last_close_error"] == "leg_quotes_unavailable"
     assert pos["last_close_attempt_at"] is not None
+
+
+def test_a_position_becomes_stranded_at_the_second_failed_close():
+    """One missed sweep is a slow open or a halted name; two is a position nothing can price. The
+    threshold used to be applied inside a single sweep, so a position that missed one attempt per
+    day looked fresh every morning — as a status it outlives the run that noticed it."""
+    _save("S2", "HALT", "iron_fly", 2.0)
+    first = db_paper.cmd_record_close_failure(_ns(data=json.dumps({"order_id": "S2", "reason": "x"})))
+    assert first["status"] == "open"
+
+    second = db_paper.cmd_record_close_failure(_ns(data=json.dumps({"order_id": "S2", "reason": "x"})))
+    assert second["status"] == "stranded"
+    assert db_paper.cmd_get_open_positions(_ns())["positions"][0]["status"] == "stranded"
+
+
+def test_closing_a_stranded_position_clears_the_status():
+    """Stranded is a state, not a scar: whatever finally prices it closes it like any other."""
+    _save("S3", "HALT", "iron_fly", 2.0)
+    for _ in range(2):
+        db_paper.cmd_record_close_failure(_ns(data=json.dumps({"order_id": "S3", "reason": "x"})))
+    db_paper.cmd_save_close(
+        _ns(data=json.dumps({"order_id": "S3", "exit_debit": 1.0, "pnl": 100.0, "exit_reason": "close_window"}))
+    )
+    row = db_paper.cmd_get_pnl_summary(_ns(strategy=None, profile=None))["trades"][0]
+    assert row["status"] == "closed" and row["exit_reason"] == "close_window"
 
 
 def test_record_close_failure_ignores_closed_and_unknown_positions():

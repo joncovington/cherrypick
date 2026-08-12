@@ -5,8 +5,8 @@ match a tag against its per-strategy sub-books without the LIKE-wildcard over-ma
 
 import sqlite3
 
-from cherrypick.earnings import strategy_metrics as sm
 from cherrypick.earnings import strat_test_harness as r
+from cherrypick.earnings import strategy_metrics as sm
 
 
 def test_book_tag_defaults_to_per_strategy():
