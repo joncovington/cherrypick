@@ -284,6 +284,7 @@ def test_derive_full_suite_job_table():
         "streamer-health",
         "trade-notify",
         "follow-notify",
+        "desk-notify",
         "meic-paper",
         "flies-paper",
         "flies-paper-offsession",

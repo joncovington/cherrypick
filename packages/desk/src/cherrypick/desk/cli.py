@@ -93,8 +93,9 @@ def _resolve_account(cfg: dict, requested: str | None) -> str | None:
 
         from cherrypick.core import broker as _broker
 
-        from .session import get_session
+        from .session import get_session, reset
 
+        reset()
         session = get_session(cfg)
         account = asyncio.run(_broker.resolve_account(session, requested))
         return account.account_number
@@ -184,18 +185,28 @@ def cmd_propose(args) -> dict:
 
 
 def _preflight(cfg: dict, spec: dict, account_number: str | None) -> dict:
-    """Broker dry-run. Returns a JSON-safe summary; never submits."""
+    """Broker dry-run. Returns a JSON-safe summary; never submits.
+
+    Account resolution and the dry-run share one event loop: the borrowed session caches its async
+    transport against the loop that first drives it, so a second `asyncio.run` here would find that
+    transport bound to an already-closed loop.
+    """
     try:
         import asyncio
 
         from cherrypick.core import broker as _broker
 
-        from .session import get_session, serialize
+        from .session import get_session, reset, serialize
 
-        session = get_session(cfg)
-        account = asyncio.run(_broker.resolve_account(session, account_number))
-        order = _broker.build_order(spec)
-        return asyncio.run(_broker.place_order(account, session, order, live=False, serialize=serialize))
+        reset()
+
+        async def _run() -> dict:
+            session = get_session(cfg)
+            account = await _broker.resolve_account(session, account_number)
+            order = _broker.build_order(spec)
+            return await _broker.place_order(account, session, order, live=False, serialize=serialize)
+
+        return asyncio.run(_run())
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
@@ -257,17 +268,25 @@ def cmd_confirm(args) -> dict:
 
 
 def _submit(cfg: dict, spec: dict, account_number: str | None) -> dict:
+    """The one line where real money moves. Resolution and submission share a single event loop,
+    for the reason spelled out in `_preflight` — a session reused across two `asyncio.run` calls
+    carries a transport bound to a closed loop."""
     try:
         import asyncio
 
         from cherrypick.core import broker as _broker
 
-        from .session import get_session, serialize
+        from .session import get_session, reset, serialize
 
-        session = get_session(cfg)
-        account = asyncio.run(_broker.resolve_account(session, account_number))
-        order = _broker.build_order(spec)
-        return asyncio.run(_broker.place_order(account, session, order, live=True, serialize=serialize))
+        reset()
+
+        async def _run() -> dict:
+            session = get_session(cfg)
+            account = await _broker.resolve_account(session, account_number)
+            order = _broker.build_order(spec)
+            return await _broker.place_order(account, session, order, live=True, serialize=serialize)
+
+        return asyncio.run(_run())
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
