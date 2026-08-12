@@ -9,6 +9,7 @@ The phase is derived from the clock rather than held in memory, which is what ma
 tick knows what to do from the time and the database alone.
 
     off_hours     nothing, and no row: an out-of-session tick is not a measurement
+    forward_scan  ~06:30, once daily: the slow, stable half of screening, pre-market
     pre_open      09:00-09:30, refresh the producer's subscription request
     open_window   09:30 to the execution window, MARK but never act
     management    the execution window to 15:40, mark, decide, and act
@@ -41,7 +42,15 @@ from pathlib import Path
 from cherrypick.core import calendar as _calendar
 from cherrypick.core import home as _home
 
-from cherrypick.earnings import costs, db_paper, management, provider, scanner, stream_request
+from cherrypick.earnings import (
+    costs,
+    db_paper,
+    management,
+    provider,
+    scanner,
+    stream_request,
+    symbol_watch,
+)
 from cherrypick.earnings import strat_test_harness as harness
 
 ET = management.ET
@@ -52,6 +61,7 @@ ET = management.ET
 LOCK_STALE_SECONDS = 1800
 
 PHASE_OFF_HOURS = "off_hours"
+PHASE_FORWARD_SCAN = "forward_scan"
 PHASE_PRE_OPEN = "pre_open"
 PHASE_OPEN_WINDOW = "open_window"
 PHASE_MANAGEMENT = "management"
@@ -86,7 +96,25 @@ def _clock_minutes(value, default: int) -> int:
 
 
 def _entry_minutes(config: dict) -> int:
-    return _clock_minutes(config.get("entry_window_start", "15:45"), 15 * 60 + 45)
+    """When the automated entry scan STARTS.
+
+    Its own key rather than `entry_window_start`, which means something different: that bounds when
+    entries may be placed at all and is read by the agent-driven loop too. The scan is one bounded
+    job inside that window and needs to begin early enough to finish inside it.
+    """
+    return _clock_minutes(
+        config.get("entry_scan_at") or config.get("entry_window_start", "15:35"), 15 * 60 + 35
+    )
+
+
+def _forward_scan_settings(config: dict) -> tuple[bool, int, int]:
+    """`(enabled, minute-of-day, trading days)` for the pre-market forward scan."""
+    sw = config.get("symbol_watch") or {}
+    return (
+        sw.get("enabled", True) is not False,
+        _clock_minutes(sw.get("at", "06:30"), 6 * 60 + 30),
+        int(sw.get("days", 10) or 10),
+    )
 
 
 def _entry_deadline_minutes(config: dict) -> int:
@@ -101,14 +129,20 @@ def _entry_deadline_minutes(config: dict) -> int:
     return _clock_minutes(config.get("entry_window_end", "15:55"), 15 * 60 + 55)
 
 
-def phase_for(now: datetime, config: dict, *, entry_done: bool) -> str:
-    """What this tick is for. Derived from the clock and one fact from the database, so a tick can
+def phase_for(now: datetime, config: dict, *, entry_done: bool, forward_scan_done: bool = True) -> str:
+    """What this tick is for. Derived from the clock and two facts from the database, so a tick can
     be reasoned about without knowing anything about the tick before it."""
     if not _calendar.is_trading_day(now.date()):
         return PHASE_OFF_HOURS
     minute = _minutes(now)
     entry_at = _entry_minutes(config)
+    scan_enabled, scan_at, _ = _forward_scan_settings(config)
 
+    # The forward scan runs pre-market on purpose. It is the slow, stable half of screening --
+    # calendar, winrate, IV/RV, market cap, historical moves -- none of which needs a live session,
+    # and all of which the entry scan would otherwise pay for at 15:35 while the clock runs.
+    if scan_enabled and scan_at <= minute < _PRE_OPEN and not forward_scan_done:
+        return PHASE_FORWARD_SCAN
     if minute < _PRE_OPEN:
         return PHASE_OFF_HOURS
     if minute < _MARKET_OPEN:
@@ -456,6 +490,16 @@ def _record_event(trade, action, reason, now, phase, *, executed, gate=None, det
 
 
 # --------------------------------------------------------------------------- the tick
+def forward_scan_already_ran(session: str) -> bool:
+    """Whether today's pre-market forward scan has happened.
+
+    Read from `loop_iterations` rather than a marker file: the row is written by the tick that did
+    the work, so the two cannot disagree about whether it ran.
+    """
+    rows = db_paper.cmd_get_iterations(_ns(session_date=session, limit=200))["iterations"]
+    return any(r.get("phase") == PHASE_FORWARD_SCAN and r.get("status") == "ok" for r in rows)
+
+
 def entry_already_ran(session: str) -> bool:
     try:
         record = json.loads(state_file("earnings_entry.last.json").read_text(encoding="utf-8"))
@@ -471,13 +515,31 @@ def run_iteration(config: dict | None = None, now: datetime | None = None) -> di
     session = now.date().isoformat()
     started = time.time()
 
-    phase = phase_for(now, config, entry_done=entry_already_ran(session))
+    phase = phase_for(
+        now,
+        config,
+        entry_done=entry_already_ran(session),
+        forward_scan_done=forward_scan_already_ran(session),
+    )
     if phase == PHASE_OFF_HOURS:
         return {"ok": True, "phase": phase, "session": session, "skipped": "outside session"}
 
     record: dict = {"ok": True, "phase": phase, "session": session}
 
-    if phase == PHASE_PRE_OPEN:
+    if phase == PHASE_FORWARD_SCAN:
+        # The slow, stable half of screening, done while nothing is trading: the earnings calendar
+        # and every Dolt-derived metric for the next N trading days. The entry scan reads this to
+        # narrow its candidate list, and the console's Upcoming surface reads the same snapshot.
+        _, _, days = _forward_scan_settings(config)
+        result = symbol_watch.refresh_symbol_watch(days=days, config=config)
+        record["forward_scan"] = {
+            "days": days,
+            "symbols": len(result.get("entries") or result.get("symbols") or []),
+            "ok": result.get("ok", True),
+        }
+        record["ok"] = bool(result.get("ok", True))
+
+    elif phase == PHASE_PRE_OPEN:
         refresh_stream_request(open_positions())
         record["stream_request"] = "refreshed"
 

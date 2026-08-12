@@ -60,6 +60,7 @@ Usage: python -m cherrypick.earnings.symbol_watch refresh [--days 10]
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import os
 import sys
@@ -100,6 +101,87 @@ _TIER_DEFAULTS = {
 def _tier_thresholds(config: dict) -> dict:
     overrides = (config.get("symbol_watch") or {}).get("tier_thresholds") or {}
     return {**_TIER_DEFAULTS, **overrides}
+
+
+# Criteria the entry scan may pre-filter on, hours after this snapshot was taken.
+#
+# Deliberately NOT the tier badge, and deliberately not every criterion measured here. A name is only
+# dropped on something that cannot meaningfully move between the pre-market scan and the afternoon
+# entry window:
+#
+#   winrate      12 quarters of history; changes once a quarter, not once a day
+#   avg_volume   a daily figure off the stocks dataset
+#   market_cap   moves with price, but nowhere near fast enough to cross a $1B floor intraday
+#
+# `iv_rv_ratio` is excluded on purpose even though it is Dolt-derived and cheap: implied vol RISES
+# into an announcement, so a name below the floor in the morning can legitimately clear it by 15:35,
+# and pre-filtering on it would drop exactly the candidates the strategy exists to find. Price, term
+# structure, expected move and open interest are excluded for the same reason, more obviously.
+_STABLE_PREFILTER = ("winrate", "avg_volume", "market_cap")
+
+
+def stable_prefilter_verdict(entry: dict, config: dict) -> tuple[bool, str | None]:
+    """`(drop, reason)` — whether this morning's row disqualifies a symbol on stable criteria alone.
+
+    Measured against the **near-miss** floor, the loosest bar any `symbol_screen` setting can ask
+    for, so this only ever drops a name that could not pass under any configuration. A missing value
+    never drops anything: "couldn't determine" is not "known bad", the same posture `classify_tier`
+    takes.
+
+    This narrows what the entry scan has to price; it never decides an entry. Every survivor is
+    re-screened live, so no value from here reaches an accept/reject decision.
+    """
+    thresholds = _tier_thresholds(config)
+    floors = {
+        "winrate": thresholds["near_miss_min_winrate"],
+        "avg_volume": thresholds["near_miss_min_avg_volume"],
+        "market_cap": (config.get("near_miss_min_market_cap") or 0),
+    }
+    for key in _STABLE_PREFILTER:
+        value, floor = entry.get(key), floors.get(key)
+        if value is None or not floor:
+            continue
+        try:
+            if float(value) < float(floor):
+                return True, f"{key} {value} below near-miss floor {floor}"
+        except (TypeError, ValueError):
+            continue
+    return False, None
+
+
+def prefilter_symbols(symbols, config: dict, *, session: str | None = None) -> tuple[list, dict]:
+    """Split `symbols` into `(keep, {dropped_symbol: reason})` using today's snapshot.
+
+    Only a snapshot whose pass COMPLETED today is consulted. A stale one is ignored entirely rather
+    than partially trusted — filtering today's calendar against last week's readings is exactly the
+    kind of quiet wrongness this module exists to avoid.
+    """
+    snapshot = read_snapshot()
+    completed = snapshot.get("pass_completed_at")
+    fresh = False
+    if completed:
+        try:
+            fresh = _dt.date.fromtimestamp(float(completed)).isoformat() == (
+                session or _dt.date.today().isoformat()
+            )
+        except (TypeError, ValueError, OSError, OverflowError):
+            fresh = False
+    if not fresh:
+        return list(symbols), {}
+
+    rows = snapshot.get("symbols") or {}
+    keep, dropped = [], {}
+    for symbol in symbols:
+        entry = rows.get(symbol if isinstance(symbol, str) else symbol.get("symbol", ""))
+        if not entry:
+            keep.append(symbol)
+            continue
+        drop, reason = stable_prefilter_verdict(entry, config)
+        if drop:
+            dropped[entry.get("symbol") or str(symbol)] = reason
+        else:
+            keep.append(symbol)
+    return keep, dropped
 
 
 def classify_tier(entry: dict, config: dict) -> tuple[str | None, list[str]]:
