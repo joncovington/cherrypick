@@ -162,31 +162,58 @@ export interface MeicScope {
   currentEra: string;
 }
 
-export function readMeicScope(config: ConsoleConfig, mode: TradingMode): MeicScope {
+/**
+ * The page-wide scope selects' own options.
+ *
+ * `symbols` and `profiles` are narrowed to the SAME era the data is, because a select that offers
+ * more than the scope can return is lying about what is reachable. Measured on the paper ledger:
+ * the unfiltered profile list carries 14 names while the current era holds 3 -- the retired ladder
+ * tiers, the GEX study pair, and the pre-2026-07-18 symbol/wing cells are all still in the table by
+ * design, since this module retires an arm by writing a verdict rather than deleting its rows. Eleven
+ * of those fourteen options selected nothing, and an option that yields no rows reads as "this arm
+ * did nothing" rather than "this arm is not in this era". Symbols are the same story: 6 all-time
+ * against 1 in the current era.
+ *
+ * `eras` is deliberately NOT narrowed -- it is the list you widen WITH, and filtering it by the
+ * current era would leave no way back out.
+ */
+export function readMeicScope(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  era: string | null = null,
+): MeicScope {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
   const empty: MeicScope = { symbols: [], profiles: [], eras: [], currentEra: CURRENT_ERA };
-  return withReadOnlyDb<MeicScope>(dbPath, empty, (db) => ({
-    eras: hasColumn(db, "ic_trades", "era")
-      ? db
-          .prepare<[], { era: string; trades: number }>(
-            `SELECT era, COUNT(*) AS trades FROM ic_trades
-              WHERE era IS NOT NULL GROUP BY era ORDER BY era`,
-          )
-          .all()
-      : [],
-    currentEra: CURRENT_ERA,
-    symbols: db
-      .prepare<[], { s: string }>("SELECT DISTINCT symbol AS s FROM ic_trades WHERE symbol IS NOT NULL ORDER BY symbol")
-      .all()
-      .map((r) => r.s),
-    profiles: db
-      .prepare<[], { p: string }>(
-        "SELECT DISTINCT risk_profile AS p FROM ic_trades WHERE risk_profile IS NOT NULL ORDER BY risk_profile",
-      )
-      .all()
-      .map((r) => r.p),
-  }));
+  return withReadOnlyDb<MeicScope>(dbPath, empty, (db) => {
+    const scoped = era !== "ALL" && hasColumn(db, "ic_trades", "era");
+    const and = scoped ? " AND era = ?" : "";
+    const params: string[] = scoped ? [era ?? CURRENT_ERA] : [];
+    return {
+      eras: hasColumn(db, "ic_trades", "era")
+        ? db
+            .prepare<[], { era: string; trades: number }>(
+              `SELECT era, COUNT(*) AS trades FROM ic_trades
+                WHERE era IS NOT NULL GROUP BY era ORDER BY era`,
+            )
+            .all()
+        : [],
+      currentEra: CURRENT_ERA,
+      symbols: db
+        .prepare<string[], { s: string }>(
+          `SELECT DISTINCT symbol AS s FROM ic_trades WHERE symbol IS NOT NULL${and} ORDER BY symbol`,
+        )
+        .all(...params)
+        .map((r) => r.s),
+      profiles: db
+        .prepare<string[], { p: string }>(
+          `SELECT DISTINCT risk_profile AS p FROM ic_trades
+            WHERE risk_profile IS NOT NULL${and} ORDER BY risk_profile`,
+        )
+        .all(...params)
+        .map((r) => r.p),
+    };
+  });
 }
 
 export interface MeicLoopStatus {

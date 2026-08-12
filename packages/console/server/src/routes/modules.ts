@@ -82,7 +82,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/meic/deep", async (req) =>
     readMeicDeepAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
   );
-  app.get("/api/meic/scope", async (req) => readMeicScope(config, parseMode(req.query)));
+  app.get("/api/meic/scope", async (req) => readMeicScope(config, parseMode(req.query), parseMeicScope(req.query).era));
   app.get("/api/meic/forest", async (req) => {
     const f = parseFliesFilter(req.query);
     return readMeicForest(config, parseMode(req.query), f.date);

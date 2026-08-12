@@ -83,11 +83,24 @@ export function MeicPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Keyed on era: the symbol and profile options are narrowed to it, so a scope change has to
+  // refetch them or the selects keep offering the previous era's arms.
   const scope = useQuery<MeicScopeData>({
-    queryKey: ["meic-scope", mode],
-    queryFn: async () => (await fetch(`/api/meic/scope?mode=${mode}`)).json() as Promise<MeicScopeData>,
+    queryKey: ["meic-scope", mode, era],
+    queryFn: async () =>
+      (await fetch(`/api/meic/scope?mode=${mode}${era !== null ? `&era=${era}` : ""}`)).json() as Promise<MeicScopeData>,
     staleTime: 300_000,
   });
+  // Narrowing the era can remove the symbol or profile currently selected — the retired ladder
+  // tiers and the pre-2026-07-18 symbol cells only exist in the `book` era. Clear a selection the
+  // new scope no longer offers, so the page never filters on a value its own dropdown cannot show.
+  useEffect(() => {
+    const data = scope.data;
+    if (data === undefined) return;
+    if (symbol !== null && !data.symbols.includes(symbol)) setSymbol(null);
+    if (profile !== null && !data.profiles.includes(profile)) setProfile(null);
+  }, [scope.data, symbol, profile]);
+
   const loop = useQuery<LoopStatus>({
     queryKey: ["meic-loop", mode, symbol],
     queryFn: async () => (await fetch(`/api/meic/loop?${scopeQuery(mode, symbol, null, null)}`)).json() as Promise<LoopStatus>,
