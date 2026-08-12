@@ -1609,6 +1609,22 @@ def run_iteration(cfg, force=False):
     # though the daemon keeps ticking through the 16:00–16:05 settlement window.
     sett = cfg.get("expiration_settlement_time", "16:00")
     if (now.hour * 60 + now.minute) >= paper._time_to_minutes(sett) and not _eod_report_path(today).exists():
+        # Roll the session's numbers into daily_summary FIRST, so the reports and any surface reading
+        # that table describe the same settled session. Best-effort like everything else on this
+        # pass: a failed roll-up must not cost the EOD reports, which are the source of record.
+        try:
+            res = subprocess.run(
+                [*_DB, "rollup_daily_summary", "--date", today],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if res.returncode != 0:
+                logger.warning("daily_summary roll-up failed: %s", (res.stderr or "").strip()[:200])
+            else:
+                logger.info("rolled up daily_summary for %s", today)
+        except Exception as exc:
+            logger.warning("daily_summary roll-up failed: %s", exc)
         try:
             p = _write_eod_report(today)
             logger.info("wrote EOD report: %s", p)

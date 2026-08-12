@@ -1156,6 +1156,72 @@ def cmd_set_session_init(_args):
     _out({"ok": True, "session_init_at": now})
 
 
+def cmd_rollup_daily_summary(args):
+    """Recompute and store one session's numbers in `daily_summary`.
+
+    The table declared fourteen numeric columns that no writer had ever set -- its two writers touch
+    only `session_init_at`, `ai_day_summary` and `closing_nlv`, and both are called from the
+    agent-driven `/eod-report` command, which the automated paper loop does not run. So paper held
+    zero rows and live held eight rows of zeros, while the console rendered those zeros as a card.
+
+    Idempotent by design (upsert on `summary_date`, and the columns the agent owns are left alone via
+    COALESCE-free explicit assignment of only the derived ones), so it can run on every settlement
+    pass and be re-run by hand for a past day without destroying a narrative someone wrote.
+
+    The arithmetic lives in `analytics.daily_rollup`, not here: it has to be built on that module's
+    `_RESOLVED` and its fees-inclusive win test, or this table becomes a fourth place that disagrees
+    about what "net" means.
+    """
+    from cherrypick.meic import analytics as _an
+
+    day = args.date or _today_et()
+    now = str(_now_et())
+    conn = _connect()
+    roll = _an.daily_rollup(conn, day, era=getattr(args, "era", None))
+    conn.execute(
+        """INSERT INTO daily_summary (summary_date, total_entries, entries_filled, entries_stopped,
+               entries_expired, entries_cancelled, gross_credit, gross_pnl, fees, net_pnl,
+               win_count, win_rate_pct, avg_iv_rank, sessions_entered, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(summary_date) DO UPDATE SET
+             total_entries = excluded.total_entries,
+             entries_filled = excluded.entries_filled,
+             entries_stopped = excluded.entries_stopped,
+             entries_expired = excluded.entries_expired,
+             entries_cancelled = excluded.entries_cancelled,
+             gross_credit = excluded.gross_credit,
+             gross_pnl = excluded.gross_pnl,
+             fees = excluded.fees,
+             net_pnl = excluded.net_pnl,
+             win_count = excluded.win_count,
+             win_rate_pct = excluded.win_rate_pct,
+             avg_iv_rank = excluded.avg_iv_rank,
+             sessions_entered = excluded.sessions_entered,
+             updated_at = excluded.updated_at""",
+        (
+            day,
+            roll["total_entries"],
+            roll["entries_filled"],
+            roll["entries_stopped"],
+            roll["entries_expired"],
+            roll["entries_cancelled"],
+            roll["gross_credit"],
+            roll["gross_pnl"],
+            roll["fees"],
+            roll["net_pnl"],
+            roll["win_count"],
+            roll["win_rate_pct"],
+            roll["avg_iv_rank"],
+            json.dumps(roll["sessions_entered"]),
+            now,
+            now,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    _out({"ok": True, **roll})
+
+
 def cmd_save_daily_summary(args):
     now = str(_now_et())
     date = args.date or _today_et()
@@ -1334,6 +1400,7 @@ _COMMANDS = {
     "save_trade": cmd_save_trade,
     "update_trade": cmd_update_trade,
     "save_daily_summary": cmd_save_daily_summary,
+    "rollup_daily_summary": cmd_rollup_daily_summary,
     "save_market_context": cmd_save_market_context,
     "save_iteration_regime": cmd_save_iteration_regime,
     "record_stop_adjustment": cmd_record_stop_adjustment,
@@ -1465,6 +1532,10 @@ def main():
 
     p_getlegs = sub.add_parser("get_spread_legs")
     p_getlegs.add_argument("--ic_order_id", required=True)
+
+    p_roll = sub.add_parser("rollup_daily_summary")
+    p_roll.add_argument("--date")
+    p_roll.add_argument("--era")
 
     p_dsum = sub.add_parser("save_daily_summary")
     p_dsum.add_argument("--date", default=None)
