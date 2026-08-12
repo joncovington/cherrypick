@@ -125,7 +125,7 @@ or rejected — via `db.py`/`db_paper.py`'s `entry_reviews` table and scout's ea
 
 ## `strat_test_portfolio`
 
-Controls how the forced-sampling strategy test (`strategy_test_runner.py`, see
+Controls how the forced-sampling strategy test (`strat_test_harness.py`, see
 `docs/strat-test-portfolios.md`) buckets its paper trades into books via the `profile` column.
 
 ```json
@@ -322,7 +322,7 @@ protected by a narrow long wing toward spot and a wide long wing away from it.
   "min_winrate": 0.50,
   "near_miss_min_winrate": 0.40,
   "profit_target_pct": 0.25,
-  "stop_loss_pct_of_debit": 0.40,
+  "stop_loss_credit_multiple": 2.0,
   "require_weekly_options": true,
   "min_combined_open_interest": 2000,
   "max_bid_ask_spread_pct": 0.15,
@@ -463,7 +463,7 @@ Remember these are always ET regardless of where you're running the agent from.
 
 If you're tempted to change several of these at once based on a single night's result — don't.
 See `docs/strategy-optimization.md`'s "do not blind-tune" protocol: change one parameter, run it
-through `strategy_test_runner.py`'s paper program for a real sample, then compare cost-adjusted
+through `strat_test_harness.py`'s paper program for a real sample, then compare cost-adjusted
 expectancy before and after.
 
 ---

@@ -4,7 +4,7 @@ import json
 import pytest
 
 from cherrypick.earnings import scanner
-from cherrypick.earnings import strategy_test_runner as runner
+from cherrypick.earnings import strat_test_harness as runner
 
 # --- the R1 seam: leg scaling must preserve structure ratios ---------------------
 
@@ -236,14 +236,39 @@ def test_atm_calendar_closes_on_its_own_profit_target(tmp_path, monkeypatch):
     assert db_paper.cmd_get_open_positions(argparse.Namespace())["positions"] == []
 
 
-def test_overnight_strategy_still_closes_unconditionally(tmp_path, monkeypatch):
-    """The five overnight strategies keep the Step 3 close-window backstop: whatever is
-    open at 09:45 closes regardless of P&L — that IS their design."""
+def test_overnight_strategy_honors_its_own_profit_target_at_close_window(tmp_path, monkeypatch):
+    """The four single-day credit strategies (iron_fly, iron_condor,
+    directional_credit_spread, broken_wing_butterfly) now consult their own
+    evaluate_position at the 09:45 sweep, same as atm_calendar/double_calendar --
+    so a profit target or stop that already fired is recorded with its real
+    reason, not masked as a generic close_window."""
     legs = [
         {"symbol": "SC", "action": "Sell to Open", "quantity": 1},
         {"symbol": "LC", "action": "Buy to Open", "quantity": 1},
     ]
+    # exit_debit = 2.1 (buy back short) - 0.5 (sell long) = 1.6; profit = 2.00 - 1.6 = 0.40,
+    # which clears the scanner's default 10% profit_target_pct (config has no per-strategy
+    # override here) -- credit_received * 0.10 = 0.20.
     quotes = {"SC": {"bid": 2.0, "ask": 2.1}, "LC": {"bid": 0.5, "ask": 0.6}}
+    db_paper = _close_sweep_env(tmp_path, monkeypatch, quotes)
+    _save_calendar(db_paper, "iron_fly", 2.00, legs)
+
+    result = runner.cmd_run_closes(argparse.Namespace())
+    assert result["held"] == []
+    assert result["closed"][0]["reason"] == "profit_target"
+
+
+def test_overnight_strategy_still_closes_unconditionally_when_neither_threshold_hit(tmp_path, monkeypatch):
+    """The Step 3 close-window backstop is still unconditional: a position that's
+    neither at its profit target nor its stop still closes at 09:45 -- that IS the
+    overnight-hold design, evaluate_position or not."""
+    legs = [
+        {"symbol": "SC", "action": "Sell to Open", "quantity": 1},
+        {"symbol": "LC", "action": "Buy to Open", "quantity": 1},
+    ]
+    # exit_debit = 2.05 - 0.15 = 1.90; profit = 2.00 - 1.90 = 0.10, short of the 0.20
+    # profit-target threshold and nowhere near the 4.00 stop -- evaluate_position holds.
+    quotes = {"SC": {"bid": 2.0, "ask": 2.05}, "LC": {"bid": 0.15, "ask": 0.20}}
     db_paper = _close_sweep_env(tmp_path, monkeypatch, quotes)
     _save_calendar(db_paper, "iron_fly", 2.00, legs)
 

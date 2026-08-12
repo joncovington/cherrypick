@@ -96,6 +96,18 @@ _MULTI_DAY = {
     "double_calendar": double_calendar,
 }
 
+# Overnight-hold strategies keep Step 3's unconditional close-window backstop --
+# unlike _MULTI_DAY, a "hold" verdict here never skips the close. But before falling
+# through to that backstop, consult the strategy's own Step 3c evaluate_position so a
+# profit target, stop loss, or backstop that already fired gets its real reason (and
+# the config's own thresholds, not just "close_window") recorded instead of masking it.
+_OVERNIGHT_MANAGED = {
+    "iron_fly": iron_fly,
+    "iron_condor": iron_condor,
+    "directional_credit_spread": directional_credit_spread,
+    "broken_wing_butterfly": broken_wing_butterfly,
+}
+
 
 def _occ_expiration(symbol: str) -> str:
     """Parse YYYY-MM-DD out of a standard OCC option symbol. The date+C/P+
@@ -1267,6 +1279,17 @@ def cmd_run_closes(args) -> dict:
                 exit_reason = decision.get("reason") or action
                 if action == "close_side":
                     exit_reason = f"{exit_reason}_close_all"
+            else:
+                overnight_manager = _OVERNIGHT_MANAGED.get(strategy_name)
+                if overnight_manager is not None:
+                    if strategy_name == "broken_wing_butterfly":
+                        decision = overnight_manager.evaluate_position(
+                            dict(trade), full_quotes, config, is_first_check_of_day=True
+                        )
+                    else:
+                        decision = overnight_manager.evaluate_position(dict(trade), full_quotes, config)
+                    if decision.get("action") == "close_all":
+                        exit_reason = decision.get("reason") or "close_all"
 
             exit_debit = scanner.compute_generic_exit_debit(legs, full_quotes)
             if exit_debit is None:

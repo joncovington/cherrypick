@@ -101,10 +101,11 @@ position is open across a multi-day hold.
 
 Two things can happen the next morning, in this order:
 
-1. **Early exit check (Step 3c)**, from market open until `close_window_start` — profit-target
-   and stop-loss checks run against live quotes for the five overnight-hold credit/debit
-   strategies (`iron_fly`, `iron_condor`, `directional_credit_spread`, `broken_wing_butterfly`). If the position already hit its `profit_target_pct` or
-   `stop_loss_credit_multiple`/`stop_loss_pct_of_debit`, it closes right there.
+1. **Early exit check (Step 3c)**, consulted at `close_window_start` — profit-target and
+   stop-loss checks run against live quotes for the four overnight-hold credit strategies
+   (`iron_fly`, `iron_condor`, `directional_credit_spread`, `broken_wing_butterfly`). If the
+   position already hit its `profit_target_pct` or `stop_loss_credit_multiple`, it closes right
+   there with that reason recorded instead of the generic backstop below.
 2. **Unconditional close-window backstop (Step 3)** — whatever's still open once
    `close_window_start` arrives gets closed, full stop, regardless of P&L. The IV crush already
    happened overnight; there's no more edge from continuing to hold, so this is a hard stop, not
@@ -133,8 +134,8 @@ Regenerate today's or backfill a past day on demand (`eod_report` writes both; `
 the analysis):
 
 ```
-python -m cherrypick.earnings.strategy_test_runner eod_report [--date YYYY-MM-DD]
-python -m cherrypick.earnings.strategy_test_runner eod_analysis [--date YYYY-MM-DD]
+python -m cherrypick.earnings.strat_test_harness eod_report [--date YYYY-MM-DD]
+python -m cherrypick.earnings.strat_test_harness eod_analysis [--date YYYY-MM-DD]
 ```
 
 The orchestrator's suite digest and (opt-in) AI insight build on these files — see the suite

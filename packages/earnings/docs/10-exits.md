@@ -10,13 +10,17 @@ backstop below, which fires the same session and which earlier versions of this 
 
 ## Two Exit Checks, Run in Order
 
-1. **Early exit check (Step 3c)** — runs the first morning after entry, from market open until
-   `close_window_start` (default `09:45` ET). Profit-target and stop-loss checks run against
-   live quotes.
+1. **Early exit check (Step 3c)** — consulted at `close_window_start` (default `09:45` ET) against
+   live quotes, ahead of the backstop below. On the **automated forced-sampling paper path**
+   (`strat_test_harness.py run_closes`), this is a single check at that one scheduled run, not a
+   continuous poll from market open — `is_first_check_of_day` is always `True` there. The
+   **agent-driven live/paper loop** (CLAUDE.md Step 3c) polls it repeatedly through the morning per
+   its own wakeup schedule instead.
 2. **Unconditional close-window backstop (Step 3)** — whatever's still open once
    `close_window_start` arrives gets closed, regardless of P&L. This is a hard stop, not a
    target — the IV crush this system is built to capture already happened overnight, so there's
-   no more edge in continuing to hold.
+   no more edge in continuing to hold. Unlike the two calendar strategies, a `hold` verdict from
+   Step 3c never lets one of these four skip this backstop.
 
 Those two checks cover the four overnight-hold strategies (`iron_fly`, `iron_condor`,
 `directional_credit_spread`, `broken_wing_butterfly`). The two calendar strategies (`atm_calendar`,
@@ -39,20 +43,6 @@ Everything else does wait for the next morning: positions open before the close 
 live look after the open.
 
 ---
-
-## ⚠️ The configured thresholds below may not be the ones actually applied
-
-The values in this section are what each strategy's `strategies.<name>` config block *says*. On the
-forced-sampling paper path they are **not** what runs. `strategy_test_runner` passes the **full**
-project config to `evaluate_position`, which hands that same dict to
-`scanner.evaluate_credit_spread_exit`. That function reads `profit_target_pct` and
-`stop_loss_credit_multiple` off the dict it is given — and `_load_config` merges `strategy_defaults`
-*downward into* each strategy's sub-config, never upward — so the per-strategy values are out of
-scope and the function's own defaults (**0.10 profit target, 2.0× stop**) apply instead.
-
-Until that is fixed in code, treat the numbers below as the configured intent and read
-`scan_log` for the exit reason actually recorded. This is a code defect, not a documentation one; it
-is written down here so nobody spends an afternoon wondering why an iron fly closed at 10%.
 
 ## Profit Target / Stop Loss by Strategy Type
 
@@ -89,13 +79,9 @@ same function the credit strategies above use — after its per-leg delta stop h
 2. otherwise, the credit-spread exit on profit_target_pct / stop_loss_credit_multiple
 ```
 
-`leg_stop_delta_abs` defaults to **0.60**. `profit_target_pct` is set to `0.25` in the config;
-`stop_loss_credit_multiple` is **not** set there, so the function's default of **2.0×** applies.
-
-> **`stop_loss_pct_of_debit` is dead for this strategy.** The config block sets it to `0.40` and the
-> adjacent `_exit_note` describes it as the stop, but `evaluate_credit_spread_exit` never reads that
-> key — it reads `stop_loss_credit_multiple`. The effective stop is 2× credit, not 40% of debit. Fix
-> the config note rather than trusting it.
+`leg_stop_delta_abs` defaults to **0.60**. `profit_target_pct` is set to `0.25` in the config, and
+`stop_loss_credit_multiple` is set explicitly to `2.0` (the dead `stop_loss_pct_of_debit` key this
+strategy never read has been dropped from the config).
 
 ### Calendar strategies (`atm_calendar`, `double_calendar`)
 
