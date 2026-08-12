@@ -158,7 +158,7 @@ the calendar and picking each symbol's single best-ranked strategy by composite 
 [Entry Conditions Framework](./04-entry-conditions.md).
 
 **Forced-Sampling Paper Test**
-`strategy_test_runner.py`'s testing program (`/paper-start`) — opens a paper trade for every
+`strat_test_harness.py`'s testing program (`/paper-start`) — opens a paper trade for every
 strategy that clears the screen on every viable symbol (not just each symbol's single best), so
 every strategy accumulates a usable sample size instead of only the ones that happen to win the
 head-to-head comparison. Writes to per-strategy strat_test books by default (`profile

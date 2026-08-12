@@ -50,7 +50,7 @@ Screening is a single binary bar, not a graded ladder: a symbol is either **acce
 Every screened symbol — accepted or rejected — has its full metric vector persisted to
 `entry_reviews` (`db.py`/`db_paper.py`, see each module's own docstring) via
 `scanner.build_entry_review_spec()`, whether the scan ran through `rank_strategies.py` (the
-agent-driven live/paper path) or `strategy_test_runner.py` (the automated forced-sampling paper
+agent-driven live/paper path) or `strat_test_harness.py` (the automated forced-sampling paper
 harness). Four of these metrics are new and, apart from `move_tail`, are **record-only** —
 visible in `entry_reviews`/scout's earnings page for calibration, but not yet gating acceptance:
 

@@ -475,7 +475,7 @@ def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) 
 def _save_entry_review(scan_date: str, symbol_result: dict, paper_mode: bool) -> None:
     """Persists one entry_reviews row for a symbol -- the richest per-strategy criteria plus
     the cross-strategy accept/reject decision (see scanner.build_entry_review_spec) -- via
-    the paper/live-routed save_entry_review command, mirroring strategy_test_runner.py's own
+    the paper/live-routed save_entry_review command, mirroring strat_test_harness.py's own
     _save_entry_review for the automated forced-sampling harness. Called for every symbol on
     the entry-window calendar, selected or not, so a screen's full metric vector is recorded
     whether the symbol was ultimately traded. Best-effort: a recording failure must never

@@ -79,7 +79,7 @@ If any are selected, each shows:
 None — this is a read-only ranking scan that prints to the terminal and persists nothing. Real trade
 persistence (for the actual loop, not this standalone scan) goes through `db_paper.py save_trade` into
 the shared `paper_trades.db`, per CLAUDE.md's Step 4b. The end-of-day summary is written separately by
-the forced-sampling close pass (`strategy_test_runner.py eod_report` → `logs/paper-eod-<date>.md`).
+the forced-sampling close pass (`strat_test_harness.py eod_report` → `logs/paper-eod-<date>.md`).
 
 ## Related Commands
 

@@ -143,7 +143,7 @@ cherrypick/
     │   ├── tt.py                # tastytrade broker interface
     │   ├── db.py                # Persistence, live ledger (db_paper.py is the paper twin)
     │   ├── paths.py             # Resolves the data home (~/.cherrypick/data/earnings)
-    │   ├── strategy_test_runner.py  # Forced-sampling paper-testing program (orchestrator-driven)
+    │   ├── strat_test_harness.py  # Forced-sampling paper-testing program (orchestrator-driven)
     │   ├── strategy_report.py   # Per-strategy metrics (strategy_dashboard.py draws the charts)
     │   └── ...
     ├── config/

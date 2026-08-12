@@ -177,7 +177,7 @@ def cmd_get_iv_rv(args) -> dict:
 # Bound the Dolt/MySQL connect phase. mysql-connector's connection_timeout caps only the connect, and
 # Dolt does NOT honor the server-side max_execution_time SELECT cap (verified against the live server
 # 2026-07-22 -- a SELECT SLEEP(4) ran in full under an 800ms cap), so the query phase is bounded by the
-# caller instead (strategy_test_runner._run_bounded). Without a connect bound, a Dolt that is starting
+# caller instead (strat_test_harness._run_bounded). Without a connect bound, a Dolt that is starting
 # up or compacting would block indefinitely -- part of what got the scheduled entry run killed at its
 # 30-minute external timeout.
 _DOLT_CONNECT_TIMEOUT = 10  # seconds
@@ -1153,7 +1153,7 @@ def richest_criteria(results: list[dict]) -> tuple[dict, str | None, float | Non
     symbol-level fields; some strategies add extras, so take the largest), which strategy
     it came from, and that result's own composite_score (kept alongside criteria rather
     than inside it, matching evaluate_symbol's own result shape). Shared by
-    rank_strategies.py's single-best-per-symbol path and strategy_test_runner.py's
+    rank_strategies.py's single-best-per-symbol path and strat_test_harness.py's
     forced-sampling harness so both callers' entry_reviews rows are built from the same
     rule, whichever strategy happened to fetch the richest data for a symbol that day.
     """
@@ -1184,7 +1184,7 @@ def build_entry_review_spec(
     a symbol's richest per-strategy criteria dict -- the data reviewed during an entry scan
     plus the accept/reject decision, recorded whether the symbol was ultimately selected or
     not. Shared by rank_strategies.py (agent-driven live/paper path) and
-    strategy_test_runner.py (the automated forced-sampling paper harness) so a screened
+    strat_test_harness.py (the automated forced-sampling paper harness) so a screened
     symbol's full metric vector is recorded identically regardless of which caller ran the
     scan. `criteria_json` keeps the full dict verbatim for fields not promoted to their own
     column (e.g. per-strategy skew_abs, chain_complete).

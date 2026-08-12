@@ -166,11 +166,11 @@ On the same night, `/paper-start`'s forced-sampling program and the production
 difference is intentional:
 
 ```bash
-python -m cherrypick.earnings.strategy_test_runner run_entries --date 07/08/2026
+python -m cherrypick.earnings.strat_test_harness run_entries --date 07/08/2026
 ```
 
 If `NVEX` is accepted under both `iron_condor` and `directional_credit_spread`,
-`strategy_test_runner.py` opens **both** — each into its own per-strategy strat_test book
+`strat_test_harness.py` opens **both** — each into its own per-strategy strat_test book
 (`strat_test:iron_condor` and `strat_test:directional_credit_spread`) — so every strategy that
 qualifies gets its own sample and its own equity curve, not just the single best. Meanwhile that
 same night's `rank_strategies.py get_ranked_symbols` run would have picked only `iron_condor`

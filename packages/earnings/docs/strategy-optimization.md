@@ -10,7 +10,7 @@ entire edge is the single overnight IV-crush event, and strike/structure choices
 matter more than intraday management (there is none).
 
 **These are hypotheses to validate, not changes to apply.** The right way to act on them is
-the existing paper-testing program (`docs/strategy-testing-plan.md`): `strategy_test_runner`
+the existing paper-testing program (`docs/strategy-testing-plan.md`): `strat_test_harness`
 already force-samples all 6 strategies nightly, and `strategy_metrics` already computes
 cost-adjusted expectancy and captured IV crush per strategy. Change **one** parameter,
 re-run the paper program, compare expectancy — do not blind-tune to the literature. The

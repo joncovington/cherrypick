@@ -52,7 +52,7 @@ a historical win-rate backtest live from tastytrade chains + DoltHub datasets (v
 only its own thresholds and strike/order construction. **Always check win-rate `sample_size`** — historical
 coverage is limited for less-liquid names.
 
-**How it runs.** The orchestrator runs the forced-sampling paper harness `cherrypick/earnings/strategy_test_runner.py`
+**How it runs.** The orchestrator runs the forced-sampling paper harness `cherrypick/earnings/strat_test_harness.py`
 on daily entry (~15:45 ET) and exit (~09:45 ET) tasks it registers and watchdogs — this module has no
 scheduler of its own. The harness opens the isolated `strat_test` book (every Tier 1/2 strategy on every
 viable name) so each strategy accumulates a statistically useful sample fast; it's always paper-only.

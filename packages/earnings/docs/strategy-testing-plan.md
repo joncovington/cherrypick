@@ -15,7 +15,7 @@ sample.
 
 In normal suite operation this program runs **unattended under the [orchestrator](../../orchestrator)**:
 it registers and watchdogs the daily entry (15:45 ET) and exit (09:45 ET) OS tasks that invoke
-`strategy_test_runner.py` (`run_entries` / `run_closes`) into the strat_test books, then reads the
+`strat_test_harness.py` (`run_entries` / `run_closes`) into the strat_test books, then reads the
 resulting `paper_trades.db` (in the shared data home, `~/.cherrypick/data/earnings`) for cross-module
 reporting. This module has no scheduler of its own. Run `/paper-start` here for a single manual day; see
 the [package README](../README.md#how-this-fits-the-suite) for how the standalone and orchestrator-driven
@@ -26,7 +26,7 @@ roles fit together.
 `rank_strategies.py get_ranked_symbols` opens only the single best strategy per symbol per
 night. Candidates are scarce (a typical night: 5-6 symbols, often 0-1 selected). Under
 natural single-best-per-symbol selection, most strategies would starve and never reach a
-statistically meaningful sample in weeks. `strategy_test_runner.py` instead force-samples:
+statistically meaningful sample in weeks. `strat_test_harness.py` instead force-samples:
 it opens a paper trade for **every** strategy that clears the screen on **every** viable symbol
 each night, tagged into a per-strategy book in the shared `paper_trades.db` (in the cherrypick
 data home, `~/.cherrypick/data/earnings`; see `docs/strat-test-portfolios.md`'s "book = strategy"
@@ -58,7 +58,7 @@ baked into `pnl` itself.
 
 **Entry window** (before close):
 ```
-python -m cherrypick.earnings.strategy_test_runner run_entries --date MM/DD/YYYY
+python -m cherrypick.earnings.strat_test_harness run_entries --date MM/DD/YYYY
 ```
 Runs the shared live scan once (`rank_strategies.evaluate_symbol` per calendar entry),
 opens every (strategy, symbol) pair that clears the screen and builds/sizes successfully, logs
@@ -66,7 +66,7 @@ every candidate (selected or not) to `scan_log` tagged with its per-strategy boo
 
 **Close window** (next morning):
 ```
-python -m cherrypick.earnings.strategy_test_runner run_closes
+python -m cherrypick.earnings.strat_test_harness run_closes
 ```
 Closes every open strat_test position via the same generic exit-debit mechanism the real
 loop uses (`scanner.compute_generic_exit_debit`), cost-adjusted.
