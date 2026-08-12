@@ -18,9 +18,17 @@ import { registerScreenerRoutes } from "./routes/screener.js";
 import { registerTtWatchlistRoutes } from "./routes/ttWatchlists.js";
 import { startChainEodScheduler } from "./services/chainEod.js";
 import { startCandleWarmScheduler } from "./services/candleWarm.js";
+import { startHeartbeat } from "./services/heartbeat.js";
+import { createLogStream } from "./logging.js";
 
 const config = loadConfig();
-const app = Fastify({ logger: { level: "info" } });
+const app = Fastify({
+  logger: { level: "info", stream: createLogStream() },
+  // The SPA polls several endpoints every 15s all day, so per-request logging would bury the lines
+  // that matter (startup, credential scope, DXLink reconnects) under thousands of 200s and churn the
+  // rotation. Routes that need to say something log it themselves.
+  disableRequestLogging: true,
+});
 const market = new MarketDataService(config);
 
 registerSecurity(app);
@@ -61,9 +69,23 @@ try {
   await app.listen({ port: config.port, host: BIND_HOST });
   app.log.info(`console serving on http://${BIND_HOST}:${config.port}/`);
 } catch (err) {
-  app.log.error(err);
+  // The supervisor owns this process, so a port already taken means a second console is running —
+  // usually one started by hand. Say that plainly: the supervisor will otherwise just back off and
+  // retry against a message that reads like a crash.
+  if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
+    app.log.error(
+      `port ${config.port} is already in use — another console is running. ` +
+        `The supervisor keeps one running; stop the other, or change serve.port in console.json.`,
+    );
+  } else {
+    app.log.error(err);
+  }
   process.exit(1);
 }
+
+// Liveness for the supervisor, started only once we are actually listening — a heartbeat written
+// before a failed bind would report a console that never came up.
+startHeartbeat(config.paths.cherrypick, config.port, (msg) => app.log.warn(msg));
 
 // Scope detection at boot: the suite credential is probed once per process
 // (never persisted, so a rotated refresh token can't carry a stale scope).

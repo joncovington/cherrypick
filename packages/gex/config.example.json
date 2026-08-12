@@ -1,15 +1,12 @@
 {
   "_comment": "By default cherrypick-gex reads the suite's CANONICAL shared stream cache (~/.cherrypick/data/marketdata/stream_cache.db) and writes its own spot-trail history + logs under ~/.cherrypick/data/gex and ~/.cherrypick/logs/gex — omit the path keys to accept those. Piggyback (the common case): some producer streams the canonical cache — MEIC's streamer, or the standalone packages/streamer daemon — and this module reads it read-only; do NOT run this module's streamer. Standalone: only when nothing else is the producer, run `run.py stream` to populate the canonical cache yourself (exactly one streamer writes it at a time). Point source.stream_cache_db elsewhere to override.",
-  "_symbols_note": "The dashboard's symbol selector and default (symbols[0]) — list the underlyings the source stream cache is actively streaming, most-active first. In piggyback mode these should match the cherrypick-meic streamer's symbols; only symbols the streamer keeps fresh have a live spot/GEX.",
+  "_symbols_note": "The console's GEX symbol selector and default (symbols[0]) — list the underlyings the source stream cache is actively streaming, most-active first. In piggyback mode these should match the cherrypick-meic streamer's symbols; only symbols the streamer keeps fresh have a live spot/GEX.",
   "symbols": ["SPX", "XSP", "QQQ"],
   "streamer": {
     "window_strike_count": 20
   },
+  "_serve_note": "This module no longer serves anything -- the console (packages/console) is the suite's read surface. The key keeps its name because refresh_seconds outlived the server it was named for: it is the spot-trail recorder's sample interval (`run.py record`), and renaming it would break every existing config.json.",
   "serve": {
-    "host": "127.0.0.1",
-    "port": 5055,
-    "ws_port": 5056,
-    "refresh_seconds": 15,
-    "push_min_interval_seconds": 1.0
+    "refresh_seconds": 15
   }
 }

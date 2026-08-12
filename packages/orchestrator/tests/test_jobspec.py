@@ -285,6 +285,7 @@ def test_derive_full_suite_job_table():
         "trade-notify",
         "follow-notify",
         "desk-notify",
+        "console",
         "meic-paper",
         "flies-paper",
         "flies-paper-offsession",
@@ -366,3 +367,59 @@ def test_derive_legacy_interval_minutes_honored_for_trade_notify():
     jobs, _ = derive(cfg)
     tn = next(j for j in jobs if j.id == "trade-notify")
     assert tn.interval_seconds == 120
+
+
+# --------------------------------------------------------------------------- console (read surface)
+def _built_console(tmp_path):
+    """A console checkout that looks built (server/dist/index.js present)."""
+    root = tmp_path / "console"
+    (root / "server" / "dist").mkdir(parents=True)
+    (root / "server" / "dist" / "index.js").write_text("", encoding="utf-8")
+    (root / "run.py").write_text("", encoding="utf-8")
+    return root
+
+
+def test_console_is_a_resident_with_no_window_at_all(tmp_path):
+    """Every other resident is session-scoped. This one must not be: a read surface you can only open
+    during RTH cannot be used to read the session that just ended, or last week's."""
+    cfg = suite_cfg(console={"path": str(_built_console(tmp_path))})
+    con = next(j for j in derive(cfg)[0] if j.id == "console")
+    assert con.kind == jobspec.KIND_RESIDENT
+    assert con.window_start is None and con.window_end is None
+    assert con.trading_days_only is False
+    # Midnight on a Sunday is exactly the case a windowed job would refuse.
+    assert jobspec.resident_should_run(con, et(2026, 8, 9, 0, 30)) == (True, "")
+
+
+def test_console_watches_a_heartbeat_file_not_a_log(tmp_path):
+    """Node stays alive with a wedged event loop, so process-liveness would never restart it. The
+    server rewrites this file on a timer; a stale mtime is the wedge signal."""
+    cfg = suite_cfg(console={"path": str(_built_console(tmp_path))})
+    con = next(j for j in derive(cfg)[0] if j.id == "console")
+    assert con.silence_file is not None and con.silence_file.endswith("console.heartbeat")
+    assert con.silence_seconds == 60
+
+
+def test_console_runs_through_its_own_launcher_from_its_own_root(tmp_path):
+    root = _built_console(tmp_path)
+    cfg = suite_cfg(console={"path": str(root)})
+    con = next(j for j in derive(cfg)[0] if j.id == "console")
+    # run.py locates and execs the Node server, so the supervisor needs no Node-specific handling.
+    assert con.argv == ("pythonw", str(root / "run.py"), "dashboard", "--serve")
+    assert con.cwd == str(root)
+
+
+def test_console_unbuilt_is_disabled_with_a_reason_not_a_crash_loop(tmp_path):
+    """A checkout that never ran `pnpm build` would otherwise respawn and die on the backoff curve
+    forever. Report it the way every other off-by-choice job is reported."""
+    empty = tmp_path / "console"
+    empty.mkdir()
+    cfg = suite_cfg(console={"path": str(empty)})
+    con = next(j for j in derive(cfg)[0] if j.id == "console")
+    assert not con.enabled and "not built" in con.enabled_reason
+
+
+def test_console_can_be_turned_off_and_stays_visible(tmp_path):
+    cfg = suite_cfg(console={"enabled": False, "path": str(_built_console(tmp_path))})
+    con = next(j for j in derive(cfg)[0] if j.id == "console")
+    assert not con.enabled and "disabled in config" in con.enabled_reason

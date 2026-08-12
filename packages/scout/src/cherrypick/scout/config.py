@@ -23,7 +23,6 @@ CONFIG_PATH = ROOT / "config.json"
 EXAMPLE_PATH = ROOT / "config.example.json"
 
 _DEFAULTS: dict = {
-    "serve": {"host": "127.0.0.1", "port": 5057},
     "refresh": {
         "quotes_seconds": 5,
         "metrics_ttl_seconds": 900,

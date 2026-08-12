@@ -27,7 +27,10 @@ EXAMPLE_PATH = ROOT / "config.example.json"
 _DEFAULTS = {
     "symbols": ["SPX"],
     "streamer": {"window_strike_count": 20},
-    "serve": {"host": "127.0.0.1", "port": 5055, "refresh_seconds": 15},
+    # `host`/`port` went with the module's dashboard — the console is the read surface now. The key
+    # keeps its name because `refresh_seconds` outlived the server it was named for: it is the
+    # spot-trail recorder's sample interval, and renaming it would break every existing config.json.
+    "serve": {"refresh_seconds": 15},
 }
 
 
