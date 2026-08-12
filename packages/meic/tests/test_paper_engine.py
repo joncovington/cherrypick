@@ -2587,3 +2587,76 @@ def test_entry_cadence_is_off_when_unset():
     snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
     entered, reason, _ = paper.evaluate_entry(snap, params, [], last_entry_min=779)
     assert entered is True, reason
+
+
+# ── The drift skew (control-drift, 2026-08-11) ───────────────────────────────
+
+
+def test_session_drift_needs_coverage_and_never_guesses():
+    """`day_open` comes off the streamer's exchange-official day row. Absent, the answer is None —
+    never prev_day_close, which answers a different question (the gap across a session, not the
+    drift within one)."""
+    assert paper.session_drift({"underlying_price": 5990.0, "day_open": 6020.0}) == -30.0
+    assert paper.session_drift({"underlying_price": 5990.0}) is None
+    assert paper.session_drift({"day_open": 6020.0}) is None
+
+
+def test_the_skew_widens_the_side_the_drift_is_walking_into():
+    """A falling market walks into the short PUT, so that is the floor that widens. The call side is
+    left alone on purpose — it is the side still earning, and widening it too would just cost credit
+    for no protection."""
+    snap = {"underlying_price": 5980.0, "day_open": 6020.0}  # -40, committed down
+    p = {"drift_skew_otm_multiple": 1.5, "drift_band_points": 20.0}
+    call, put, drift = paper.drift_skewed_otm_floors(snap, p, 0.0035, 0.003)
+    assert drift == -40.0
+    assert put == pytest.approx(0.0045)
+    assert call == 0.0035, "the untested side must not be widened"
+
+    # Up day mirrors it exactly.
+    snap_up = {"underlying_price": 6060.0, "day_open": 6020.0}
+    call, put, _ = paper.drift_skewed_otm_floors(snap_up, p, 0.0035, 0.003)
+    assert call == pytest.approx(0.00525)
+    assert put == 0.003
+
+
+def test_an_uncommitted_day_is_not_skewed():
+    """Inside the band the day has not committed and the arm has no opinion — the same posture the
+    regime tag takes, so gate and label cannot disagree about what 'committed' means."""
+    snap = {"underlying_price": 6008.0, "day_open": 6020.0}  # -12, inside a 20-point band
+    p = {"drift_skew_otm_multiple": 1.5, "drift_band_points": 20.0}
+    call, put, drift = paper.drift_skewed_otm_floors(snap, p, 0.0035, 0.003)
+    assert (call, put) == (0.0035, 0.003) and drift == -12.0
+
+
+def test_missing_coverage_fails_open():
+    """No day row means no skew, not a refusal and not a guessed one."""
+    snap = {"underlying_price": 5980.0}
+    p = {"drift_skew_otm_multiple": 1.5, "drift_band_points": 20.0}
+    assert paper.drift_skewed_otm_floors(snap, p, 0.0035, 0.003) == (0.0035, 0.003, None)
+
+
+def test_the_skew_is_off_when_unset():
+    """Every existing profile must be untouched — this is opt-in, carried by control-drift alone."""
+    snap = {"underlying_price": 5980.0, "day_open": 6020.0}
+    assert paper.drift_skewed_otm_floors(snap, {}, 0.0035, 0.003) == (0.0035, 0.003, -40.0)
+
+
+def test_the_skew_actually_refuses_a_candidate_that_the_plain_floor_admits():
+    """End to end: the same candidate on the same snapshot, admitted by control and refused by the
+    skew, because the put sits inside the widened floor on a committed down day."""
+    # Spot 590, short put 587.5 => 0.42% OTM: clears a 0.3% floor, fails a 0.45% one.
+    snap = _base_snapshot(
+        now_et="13:00",
+        underlying_price=590.0,
+        candidates=[_candidate(5, 587.5, 598.0, sp_delta=-0.15, sc_delta=0.15)],
+    )
+    snap["day_open"] = 594.0  # -4.0 points; band scaled to this fixture's price level
+    base = {**_window_params(CONSERVATIVE), "min_put_otm_pct": 0.003, "min_call_otm_pct": 0.0035}
+    base.pop("stagger_entries", None)
+
+    entered, reason, _ = paper.evaluate_entry(snap, base, [])
+    assert entered is True, reason
+
+    skewed = {**base, "drift_skew_otm_multiple": 1.5, "drift_band_points": 2.0}
+    entered, reason, _ = paper.evaluate_entry(snap, skewed, [])
+    assert entered is False and reason == "put_otm_below_floor"

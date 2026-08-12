@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # The registry after the 2026-08-07 arms cutover: the four active streams (control/open/width-5/
 # width-10) plus every retired/disabled profile kept for historical record (the four-tier ladder,
 # and the GEX study pair). See config.risk.json's _arms_cutover_note for the full rationale.
-ACTIVE_STREAMS = {"control", "sign", "open", "width-5", "width-10"}
+ACTIVE_STREAMS = {"control", "sign", "control-drift", "open", "width-5", "width-10"}
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
 RETIRED_STUDY_ARMS = {"gex-open", "gex-blocked"}
 UNCAPPED_SAMPLING_STREAMS = {"open", "width-5", "width-10"}
@@ -588,3 +588,23 @@ def test_the_unconstrained_superset_never_gains_an_overlap_rule(sample_risk_prof
     it — including with the sign rule — destroys what it is for, so this is pinned rather than left
     to the reader of a config diff."""
     assert sample_risk_profiles["profiles"]["open"]["overlap_scope"] == "none"
+
+
+def test_control_drift_is_control_with_only_the_drift_skew_added(sample_risk_profiles):
+    """The skew arm can only measure the skew if the skew is the only difference.
+
+    Pinned key-by-key for the same reason `sign` is: this arm was made by copying `control`, and the
+    next edit to `control` is exactly when the two would silently drift apart — at which point a
+    difference in their books stops being attributable to the rule.
+    """
+    profiles = sample_risk_profiles["profiles"]
+    control = {k: v for k, v in profiles["control"].items() if not k.startswith("_")}
+    drift = {k: v for k, v in profiles["control-drift"].items() if not k.startswith("_")}
+
+    assert drift["drift_skew_otm_multiple"] == 1.5
+    assert "drift_skew_otm_multiple" not in control, "the skew must be the twin's alone"
+
+    extra = set(drift) - set(control)
+    assert extra == {"drift_skew_otm_multiple", "drift_band_points"}, extra
+    for key, value in control.items():
+        assert drift[key] == value, f"control-drift diverges from control on {key!r}"

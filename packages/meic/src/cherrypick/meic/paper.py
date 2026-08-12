@@ -433,6 +433,63 @@ def _gex_at_entry(gex: dict | None) -> dict:
     }
 
 
+def session_drift(snapshot: dict) -> float | None:
+    """How far the session has travelled from its own open, in points, or None without coverage.
+
+    `day_open` comes off the streamer's exchange-official `stream_summary` day row (see
+    `paper_loop._fetch_session`), the same source flies reads. None whenever that row is absent, and
+    never replaced with prev_day_close -- drift within a session and the gap across one are
+    different questions.
+    """
+    spot = snapshot.get("underlying_price")
+    day_open = snapshot.get("day_open")
+    if spot is None or day_open is None:
+        return None
+    return spot - day_open
+
+
+def drift_skewed_otm_floors(
+    snapshot: dict, params: dict, otm_floor_call: float, otm_floor_put: float
+) -> tuple[float, float, float | None]:
+    """Widen the OTM floor on the side a committed session drift is heading toward.
+
+    Returns ``(call_floor, put_floor, drift)`` -- unchanged floors and the drift when the arm has not
+    opted in, when coverage is missing, or when the day has not committed.
+
+    THE MECHANISM. An iron condor's tested side is whichever way the market moves, so on a committed
+    trend the threatened short is the one the drift is walking into. Unlike flies this is not a
+    reason to refuse the entry: the untested side is simultaneously earning, and standing aside
+    throws that away. So the response is to demand MORE distance on the threatened side and leave
+    the other alone -- the condor is still entered, just skewed away from the move.
+
+    WHY THIS IS WORTH TRYING, and the honest size of the evidence. Stop cost as a share of the
+    expiring side's income ran 48% (2026-08-07) and 38% (08-10) on flat days, then **96%** on 08-11,
+    the one committed-drift session -- 384 put-side stops against 46 call-side on a -30.5 point
+    slide. The stops consumed essentially all the income the expiring side generated, leaving
+    nothing for a fixed fee stack to come out of, and that is what turned a +$12.9k and +$37.6k era
+    into a -$4.3k day. But that is **ONE committed session**: the other two drifted +6.2 and +0.6
+    points, nowhere near any band, so they make no prediction and are not confirmations. This arm is
+    deliberately running AHEAD of its evidence, on a paper book, to collect the sessions that would
+    settle it.
+
+    Note the direction test is near-tautological for an IC -- the tested side must be the one the
+    market moves toward -- so what this arm actually measures is whether ACTING on that helps, which
+    is not tautological at all: a wider threatened side collects less credit, and less credit against
+    a fixed fee is the drag this module already knows dominates.
+    """
+    multiple = params.get("drift_skew_otm_multiple")
+    drift = session_drift(snapshot)
+    if not multiple or drift is None:
+        return otm_floor_call, otm_floor_put, drift
+    band = params.get("drift_band_points", 20.0)
+    if abs(drift) <= band:
+        return otm_floor_call, otm_floor_put, drift
+    if drift < 0:
+        # Falling: the short PUT is the one being walked into.
+        return otm_floor_call, otm_floor_put * multiple, drift
+    return otm_floor_call * multiple, otm_floor_put, drift
+
+
 def evaluate_entry(
     snapshot: dict,
     params: dict,
@@ -689,6 +746,13 @@ def evaluate_entry(
     otm_floor_put = params["min_put_otm_pct"]
     if is_quarterly:
         otm_floor_call = max(otm_floor_call, params.get("quarterly_expiry_min_call_otm_pct", otm_floor_call))
+
+    # Drift skew (opt-in per profile via `drift_skew_otm_multiple`; off when unset). Applied AFTER
+    # the quarterly floor so the two compose rather than one overwriting the other -- a committed
+    # drift on a quarterly expiry should widen the already-widened side, not replace its floor.
+    otm_floor_call, otm_floor_put, _drift = drift_skewed_otm_floors(
+        snapshot, params, otm_floor_call, otm_floor_put
+    )
 
     session = snapshot.get("session_quality")
     delta_ceiling = params["max_call_delta_entry"]
