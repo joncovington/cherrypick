@@ -8,6 +8,9 @@ import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { ScopeSelect, EraSelect, TabStrip, LoopPill, Pager, usePage } from "../../components/ScopeBar";
 import { MeicDeepCards } from "./MeicDeepCards";
+import { ArmRail, AttemptTimeline } from "../../components/Attempts";
+import { OccupancyMap } from "../../components/OccupancyMap";
+import { MeicForestCard } from "./MeicForestCard";
 import { MeicPerformanceTab } from "./MeicPerformanceTab";
 
 interface MeicAnalytics {
@@ -70,6 +73,12 @@ export function MeicPage() {
   const [profile, setProfile] = useState<string | null>(null);
   /** null = the module's current era, the default every read inherits. */
   const [era, setEra] = useState<string | null>(null);
+  // ONE day governs every Today card. The attempts views default to the latest day with attempts
+  // while the forest and occupancy default to the latest day with POSITIONS, and before anything
+  // fills those differ — so the page could show yesterday's book beside today's refusals, each
+  // correctly labelled and confusing side by side. Sessions come from daily_summary, which is the
+  // per-session roll-up and therefore the honest list of days that exist.
+  const [day, setDay] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<(typeof OUTCOMES)[number]>("all");
   const [reason, setReason] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -80,24 +89,53 @@ export function MeicPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Keyed on era: the symbol and profile options are narrowed to it, so a scope change has to
+  // refetch them or the selects keep offering the previous era's arms.
   const scope = useQuery<MeicScopeData>({
-    queryKey: ["meic-scope", mode],
-    queryFn: async () => (await fetch(`/api/meic/scope?mode=${mode}`)).json() as Promise<MeicScopeData>,
+    queryKey: ["meic-scope", mode, era],
+    queryFn: async () =>
+      (await fetch(`/api/meic/scope?mode=${mode}${era !== null ? `&era=${era}` : ""}`)).json() as Promise<MeicScopeData>,
     staleTime: 300_000,
   });
+  // Narrowing the era can remove the symbol or profile currently selected — the retired ladder
+  // tiers and the pre-2026-07-18 symbol cells only exist in the `book` era. Clear a selection the
+  // new scope no longer offers, so the page never filters on a value its own dropdown cannot show.
+  useEffect(() => {
+    const data = scope.data;
+    if (data === undefined) return;
+    if (symbol !== null && !data.symbols.includes(symbol)) setSymbol(null);
+    if (profile !== null && !data.profiles.includes(profile)) setProfile(null);
+  }, [scope.data, symbol, profile]);
+
   const loop = useQuery<LoopStatus>({
     queryKey: ["meic-loop", mode, symbol],
     queryFn: async () => (await fetch(`/api/meic/loop?${scopeQuery(mode, symbol, null, null)}`)).json() as Promise<LoopStatus>,
     refetchInterval: 30_000,
   });
   // The filters run in SQL, so `total` counts every match and not just this
+  // The default era is the module's CURRENT_ERA when this store actually has rows in it, and
+  // otherwise the newest era that does. CURRENT_ERA ("sample") is the paper forward test; the LIVE
+  // ledger has never held a row of it and never will, so a hardcoded default made the whole live
+  // view read as empty. The emptyEra note below still covers the case where a store has rows in
+  // some era but none in any that exists — this just stops the common case from needing it.
+  const erasPresent = scope.data?.eras ?? [];
+  const defaultEra =
+    scope.data === undefined
+      ? undefined
+      : erasPresent.some((e) => e.era === scope.data?.currentEra)
+        ? scope.data.currentEra
+        : (erasPresent[erasPresent.length - 1]?.era ?? scope.data.currentEra);
+  const activeEra = era ?? defaultEra;
+  // The era every read actually uses — the explicit selection, or the resolved default.
+  const resolvedEra = era ?? defaultEra ?? null;
+
   // page; changing what is matched resets to page one.
-  const { page, setOffset, setLimit } = usePage([mode, symbol, profile, era, outcome, reason, debouncedSearch]);
+  const { page, setOffset, setLimit } = usePage([mode, symbol, profile, resolvedEra, outcome, reason, debouncedSearch]);
 
   const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useMeic(mode, {
     symbol,
     profile,
-    era,
+    era: resolvedEra,
     outcome,
     reason,
     search: debouncedSearch,
@@ -113,7 +151,6 @@ export function MeicPage() {
   // Filtering to an era with nothing in it is a legitimate answer, not a
   // failure — say so, and offer the widening in one click.
   const eras = scope.data?.eras ?? [];
-  const activeEra = era ?? scope.data?.currentEra;
   const activeEraCount = eras.find((e) => e.era === activeEra)?.trades ?? 0;
   const otherEraCount = eras.reduce((s, e) => s + e.trades, 0) - activeEraCount;
   const emptyEra = era !== "ALL" && eras.length > 0 && activeEraCount === 0 && otherEraCount > 0;
@@ -123,6 +160,35 @@ export function MeicPage() {
       <div className="page-title-row">
         <h1>MEIC</h1>
         <PaperLiveBadge mode={mode} />
+        {/* The era decides what every number on this page means, and until now it was only visible
+            as a select's current value. Stated as a chip so a glance answers "which era am I
+            reading" without inspecting a dropdown — the sample era's 3 sessions and the book era's
+            are not the same book, and the page should never let that be an assumption. */}
+        {tab === "today" && (data?.summaries.length ?? 0) > 0 && (
+          <select
+            className="text-input"
+            value={day ?? ""}
+            onChange={(e) => setDay(e.target.value === "" ? null : e.target.value)}
+            aria-label="session"
+            title="Governs the arm rail, attempt timeline, occupancy map and forest together, so they can never describe different days side by side."
+          >
+            <option value="">latest session</option>
+            {data?.summaries.map((sm) => (
+              <option key={sm.summaryDate} value={sm.summaryDate}>
+                {sm.summaryDate}
+              </option>
+            ))}
+          </select>
+        )}
+        {activeEra !== undefined && (
+          <span
+            className="chain-badge"
+            title="Everything on this page is scoped to this era. The pre-cutover 'book' era had an order-of-magnitude different selection intensity; pooling the two reads as one book when it is really two."
+          >
+            era: {activeEra}
+            {activeEraCount > 0 && ` · ${activeEraCount.toLocaleString()} trades`}
+          </span>
+        )}
         <TabStrip tabs={TABS} value={tab} onChange={setTab} />
         <ScopeSelect label="symbol" value={symbol} options={scope.data?.symbols} onChange={setSymbol} allLabel="all symbols" />
         <ScopeSelect label="profile" value={profile} options={scope.data?.profiles} onChange={setProfile} allLabel="all profiles" />
@@ -147,11 +213,11 @@ export function MeicPage() {
         </p>
       )}
 
-      {tab === "performance" && <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={era} />}
+      {tab === "performance" && <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />}
 
       {tab === "history" && (
         <div className="cards cards-wide">
-          <MeicDeepCards mode={mode} symbol={symbol} profile={profile} era={era} />
+          <MeicDeepCards mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />
           <DataCard
             title="Daily summaries"
             headers={["date", "sym", "entries", "filled", "stopped", "win %", "net P&L"]}
@@ -178,6 +244,14 @@ export function MeicPage() {
 
       {tab === "today" && (
         <div className="cards cards-wide">
+          <ArmRail module="meic" mode={mode} date={day} />
+
+          <AttemptTimeline module="meic" mode={mode} date={day} />
+
+          <OccupancyMap module="meic" mode={mode} date={day} />
+
+          <MeicForestCard mode={mode} date={day} />
+
           <Card title="Performance (net = gross P&L; win = P&L − fees > 0)" updatedAt={analytics.dataUpdatedAt}>
             <div className="stats-grid">
               {(a?.periods ?? []).map((p) => (
@@ -212,7 +286,7 @@ export function MeicPage() {
               ))}
             </DataCard>
 
-            <Card title="Fee drag (all-time)" updatedAt={analytics.dataUpdatedAt}>
+            <Card title="Fee drag (this era)" updatedAt={analytics.dataUpdatedAt}>
               <div className="stats-grid">
                 <div className="stat-tile">
                   <span className="stat-label">gross credit</span>

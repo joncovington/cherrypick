@@ -2489,3 +2489,174 @@ def test_mae_is_absent_without_a_spot_price():
     """No spot, no excursion — never a fabricated one."""
     d = _mae(None)
     assert "put_mae_spot" not in d and "call_mae_spot" not in d
+
+
+# ── The leg-sign overlap scope and the entry cadence (per-arm portfolios, 2026-08-11) ────────────
+
+
+def test_overlap_scope_sign_refuses_only_legs_that_would_net_out():
+    """The rule the per-arm portfolio model is built on: a candidate leg is refused only when it
+    would sit OPPOSITE an open leg on the same contract.
+
+    Strictly weaker than "all" (which blocks any strike touch, including long-on-long) and strictly
+    stronger than "none". The pair it forbids is the one that NETS OUT — two legs summing to zero
+    mean the ledger's recorded risk is not the risk on, and every number derived from it describes a
+    position nobody holds.
+    """
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+    params = {**_params(CONSERVATIVE), "overlap_scope": "sign"}
+
+    # The candidate is short 583P / long 578P / short 598C / long 603C.
+    # An open IC short at 578P sits under this candidate's LONG 578P -> they net out. Refused.
+    nets_out = [{"put_strike": 578.0, "call_strike": 593.0, "wing_width": 5}]
+    entered, reason, _ = paper.evaluate_entry(snap, params, nets_out)
+    assert entered is False and reason == "sign_rule_conflict"
+
+    # An open IC nested INSIDE the candidate touches no contract at all -> allowed. This is the
+    # ordinary MEIC stacking pattern and must never be refused.
+    nested = [{"put_strike": 570.0, "call_strike": 610.0, "wing_width": 5}]
+    entered, reason, _ = paper.evaluate_entry(snap, params, nested)
+    assert entered is True, reason
+
+
+def test_overlap_scope_sign_allows_two_condors_to_share_a_wing():
+    """Same-sign stacking is legal. An open IC whose LONG put sits at 578 shares that strike with
+    this candidate's own long 578 — two longs, nothing cancels — so the entry stands."""
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+    params = {**_params(CONSERVATIVE), "overlap_scope": "sign"}
+    # Short 583/598 with wing 5 -> longs at 578/603, the same longs the candidate carries.
+    shares_both_wings = [{"put_strike": 583.0, "call_strike": 598.0, "wing_width": 5}]
+    # Shorts coincide too, and shorts stack with shorts, so nothing here nets out.
+    entered, reason, _ = paper.evaluate_entry(snap, params, shares_both_wings)
+    assert entered is True, reason
+
+
+def test_overlap_scope_sign_never_nets_a_put_against_a_call():
+    """Option TYPE is part of the identity. A short call and a long put at one strike are different
+    contracts; refusing that pair would block ordinary structures for no reason."""
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+    params = {**_params(CONSERVATIVE), "overlap_scope": "sign"}
+    # Open IC short CALL at 578 — the same number as the candidate's long PUT, different contract.
+    call_at_the_puts_long = [{"put_strike": 560.0, "call_strike": 578.0, "wing_width": 5}]
+    entered, reason, _ = paper.evaluate_entry(snap, params, call_at_the_puts_long)
+    assert entered is True, reason
+
+
+def test_ic_legs_derives_the_wings_from_wing_width():
+    """The long strikes are not stored — they live in the ledger only as OCC strings — so the sign
+    rule depends on this derivation being exact and in one place."""
+    legs = paper.ic_legs({"put_strike": 583.0, "call_strike": 598.0, "wing_width": 5})
+    assert sorted(legs) == sorted(
+        [
+            ("0dte", "P", 583.0, -1),
+            ("0dte", "P", 578.0, 1),
+            ("0dte", "C", 598.0, -1),
+            ("0dte", "C", 603.0, 1),
+        ]
+    )
+
+
+def test_ic_legs_without_a_wing_width_yields_the_shorts_alone():
+    """A malformed historical row must constrain what it can rather than take the session down."""
+    legs = paper.ic_legs({"put_strike": 583.0, "call_strike": 598.0, "wing_width": None})
+    assert legs == [("0dte", "P", 583.0, -1), ("0dte", "C", 598.0, -1)]
+
+
+def test_entry_cadence_applies_without_stagger_entries():
+    """Cadence is universal, unlike `min_minutes_between_entries`, which only binds for profiles
+    opting into `stagger_entries` — and opting in ALSO turns the daily target into a hard cap. The
+    two are deliberately separate keys so an arm can take the pacing without the throttle.
+    """
+    params = {**_window_params(CONSERVATIVE), "min_seconds_between_entries": 360}
+    params.pop("stagger_entries", None)
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+
+    # Last fill three minutes ago (13:00 is minute 780; 777 is 12:57) -> inside the window.
+    entered, reason, _ = paper.evaluate_entry(snap, params, [], last_entry_min=777)
+    assert entered is False and reason == "entry_cadence_wait"
+
+    # Six minutes is eligible: the gate is "at least this far apart", not "more than".
+    entered, reason, _ = paper.evaluate_entry(snap, params, [], last_entry_min=774)
+    assert entered is True, reason
+
+
+def test_entry_cadence_is_off_when_unset():
+    """Absent the key, nothing changes — every existing profile keeps its current pacing."""
+    params = _window_params(CONSERVATIVE)
+    params.pop("stagger_entries", None)
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598)])
+    entered, reason, _ = paper.evaluate_entry(snap, params, [], last_entry_min=779)
+    assert entered is True, reason
+
+
+# ── The drift skew (control-drift, 2026-08-11) ───────────────────────────────
+
+
+def test_session_drift_needs_coverage_and_never_guesses():
+    """`day_open` comes off the streamer's exchange-official day row. Absent, the answer is None —
+    never prev_day_close, which answers a different question (the gap across a session, not the
+    drift within one)."""
+    assert paper.session_drift({"underlying_price": 5990.0, "day_open": 6020.0}) == -30.0
+    assert paper.session_drift({"underlying_price": 5990.0}) is None
+    assert paper.session_drift({"day_open": 6020.0}) is None
+
+
+def test_the_skew_widens_the_side_the_drift_is_walking_into():
+    """A falling market walks into the short PUT, so that is the floor that widens. The call side is
+    left alone on purpose — it is the side still earning, and widening it too would just cost credit
+    for no protection."""
+    snap = {"underlying_price": 5980.0, "day_open": 6020.0}  # -40, committed down
+    p = {"drift_skew_otm_multiple": 1.5, "drift_band_points": 20.0}
+    call, put, drift = paper.drift_skewed_otm_floors(snap, p, 0.0035, 0.003)
+    assert drift == -40.0
+    assert put == pytest.approx(0.0045)
+    assert call == 0.0035, "the untested side must not be widened"
+
+    # Up day mirrors it exactly.
+    snap_up = {"underlying_price": 6060.0, "day_open": 6020.0}
+    call, put, _ = paper.drift_skewed_otm_floors(snap_up, p, 0.0035, 0.003)
+    assert call == pytest.approx(0.00525)
+    assert put == 0.003
+
+
+def test_an_uncommitted_day_is_not_skewed():
+    """Inside the band the day has not committed and the arm has no opinion — the same posture the
+    regime tag takes, so gate and label cannot disagree about what 'committed' means."""
+    snap = {"underlying_price": 6008.0, "day_open": 6020.0}  # -12, inside a 20-point band
+    p = {"drift_skew_otm_multiple": 1.5, "drift_band_points": 20.0}
+    call, put, drift = paper.drift_skewed_otm_floors(snap, p, 0.0035, 0.003)
+    assert (call, put) == (0.0035, 0.003) and drift == -12.0
+
+
+def test_missing_coverage_fails_open():
+    """No day row means no skew, not a refusal and not a guessed one."""
+    snap = {"underlying_price": 5980.0}
+    p = {"drift_skew_otm_multiple": 1.5, "drift_band_points": 20.0}
+    assert paper.drift_skewed_otm_floors(snap, p, 0.0035, 0.003) == (0.0035, 0.003, None)
+
+
+def test_the_skew_is_off_when_unset():
+    """Every existing profile must be untouched — this is opt-in, carried by control-drift alone."""
+    snap = {"underlying_price": 5980.0, "day_open": 6020.0}
+    assert paper.drift_skewed_otm_floors(snap, {}, 0.0035, 0.003) == (0.0035, 0.003, -40.0)
+
+
+def test_the_skew_actually_refuses_a_candidate_that_the_plain_floor_admits():
+    """End to end: the same candidate on the same snapshot, admitted by control and refused by the
+    skew, because the put sits inside the widened floor on a committed down day."""
+    # Spot 590, short put 587.5 => 0.42% OTM: clears a 0.3% floor, fails a 0.45% one.
+    snap = _base_snapshot(
+        now_et="13:00",
+        underlying_price=590.0,
+        candidates=[_candidate(5, 587.5, 598.0, sp_delta=-0.15, sc_delta=0.15)],
+    )
+    snap["day_open"] = 594.0  # -4.0 points; band scaled to this fixture's price level
+    base = {**_window_params(CONSERVATIVE), "min_put_otm_pct": 0.003, "min_call_otm_pct": 0.0035}
+    base.pop("stagger_entries", None)
+
+    entered, reason, _ = paper.evaluate_entry(snap, base, [])
+    assert entered is True, reason
+
+    skewed = {**base, "drift_skew_otm_multiple": 1.5, "drift_band_points": 2.0}
+    entered, reason, _ = paper.evaluate_entry(snap, skewed, [])
+    assert entered is False and reason == "put_otm_below_floor"

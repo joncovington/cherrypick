@@ -45,6 +45,7 @@ _RISK_PROFILES_PATH = os.path.join(_REPO_ROOT, "config.risk.json")
 from datetime import date as _date  # noqa: E402
 
 from cherrypick.core import calendar as _cal  # noqa: E402
+from cherrypick.core import entry as _entry  # noqa: E402
 from cherrypick.core import fees as _fees  # noqa: E402
 from cherrypick.core import profiles as _profiles  # noqa: E402
 
@@ -274,6 +275,53 @@ def union_short_deltas_for_symbol(
 # ---------------------------------------------------------------------------
 
 
+# The single expiry token the sign rule keys on. Both sides of the comparison are stamped with it
+# rather than each carrying its own: an IC and its candidates are always the same 0DTE expiration
+# (`no_0dte_expiration` is the first hard stop), and if the two ever disagreed the legs would land in
+# different buckets and the rule would silently permit everything. A gate that fails open and
+# silently is worse than no gate, because it still reads as enforced.
+_EXPIRY = "0dte"
+
+
+def ic_legs(trade: dict) -> list[tuple[str, str, float, int]]:
+    """One open IC as individual contracts, in `cherrypick.core.entry`'s ``(expiry, right, strike,
+    sign)`` shape: short put, long put, short call, long call.
+
+    **The long strikes are derived, not stored.** `put_strike`/`call_strike` are the SHORT strikes;
+    the longs exist in the ledger only inside `long_put_symbol`/`long_call_symbol`, as OCC strings.
+    They are recoverable exactly -- an IC's wings sit `wing_width` outside its shorts by construction
+    -- and deriving them in ONE place is the point of this function: the same arithmetic spread
+    across the entry gate, the payoff read, and the console would be three chances to disagree about
+    which contracts a trade holds.
+
+    A row missing `wing_width` yields its shorts alone rather than raising. That is deliberately
+    permissive in one direction only: the shorts are the legs most likely to collide anyway, and a
+    malformed historical row must not take the session down.
+    """
+    legs: list[tuple[str, str, float, int]] = []
+    width = trade.get("wing_width")
+    put_strike, call_strike = trade.get("put_strike"), trade.get("call_strike")
+    if put_strike is not None:
+        legs.append((_EXPIRY, "P", float(put_strike), -1))
+        if width is not None:
+            legs.append((_EXPIRY, "P", float(put_strike) - float(width), 1))
+    if call_strike is not None:
+        legs.append((_EXPIRY, "C", float(call_strike), -1))
+        if width is not None:
+            legs.append((_EXPIRY, "C", float(call_strike) + float(width), 1))
+    return legs
+
+
+def candidate_legs(candidate: dict) -> list[tuple[str, str, float, int]]:
+    """A scanned candidate as contracts, matching `ic_legs`' shape -- the proposed side of the rule."""
+    return [
+        (_EXPIRY, "P", float(candidate["short_put"]["strike"]), -1),
+        (_EXPIRY, "P", float(candidate["long_put"]["strike"]), 1),
+        (_EXPIRY, "C", float(candidate["short_call"]["strike"]), -1),
+        (_EXPIRY, "C", float(candidate["long_call"]["strike"]), 1),
+    ]
+
+
 def _time_to_minutes(hhmm: str) -> int:
     h, m = hhmm.split(":")
     return int(h) * 60 + int(m)
@@ -383,6 +431,63 @@ def _gex_at_entry(gex: dict | None) -> dict:
         # derivable from gamma_flip_at_entry + gex_spot_at_entry, so it is not stored separately.
         "gex_net_vol_at_entry": gex.get("net_gex_vol"),
     }
+
+
+def session_drift(snapshot: dict) -> float | None:
+    """How far the session has travelled from its own open, in points, or None without coverage.
+
+    `day_open` comes off the streamer's exchange-official `stream_summary` day row (see
+    `paper_loop._fetch_session`), the same source flies reads. None whenever that row is absent, and
+    never replaced with prev_day_close -- drift within a session and the gap across one are
+    different questions.
+    """
+    spot = snapshot.get("underlying_price")
+    day_open = snapshot.get("day_open")
+    if spot is None or day_open is None:
+        return None
+    return spot - day_open
+
+
+def drift_skewed_otm_floors(
+    snapshot: dict, params: dict, otm_floor_call: float, otm_floor_put: float
+) -> tuple[float, float, float | None]:
+    """Widen the OTM floor on the side a committed session drift is heading toward.
+
+    Returns ``(call_floor, put_floor, drift)`` -- unchanged floors and the drift when the arm has not
+    opted in, when coverage is missing, or when the day has not committed.
+
+    THE MECHANISM. An iron condor's tested side is whichever way the market moves, so on a committed
+    trend the threatened short is the one the drift is walking into. Unlike flies this is not a
+    reason to refuse the entry: the untested side is simultaneously earning, and standing aside
+    throws that away. So the response is to demand MORE distance on the threatened side and leave
+    the other alone -- the condor is still entered, just skewed away from the move.
+
+    WHY THIS IS WORTH TRYING, and the honest size of the evidence. Stop cost as a share of the
+    expiring side's income ran 48% (2026-08-07) and 38% (08-10) on flat days, then **96%** on 08-11,
+    the one committed-drift session -- 384 put-side stops against 46 call-side on a -30.5 point
+    slide. The stops consumed essentially all the income the expiring side generated, leaving
+    nothing for a fixed fee stack to come out of, and that is what turned a +$12.9k and +$37.6k era
+    into a -$4.3k day. But that is **ONE committed session**: the other two drifted +6.2 and +0.6
+    points, nowhere near any band, so they make no prediction and are not confirmations. This arm is
+    deliberately running AHEAD of its evidence, on a paper book, to collect the sessions that would
+    settle it.
+
+    Note the direction test is near-tautological for an IC -- the tested side must be the one the
+    market moves toward -- so what this arm actually measures is whether ACTING on that helps, which
+    is not tautological at all: a wider threatened side collects less credit, and less credit against
+    a fixed fee is the drag this module already knows dominates.
+    """
+    multiple = params.get("drift_skew_otm_multiple")
+    drift = session_drift(snapshot)
+    if not multiple or drift is None:
+        return otm_floor_call, otm_floor_put, drift
+    band = params.get("drift_band_points", 20.0)
+    if abs(drift) <= band:
+        return otm_floor_call, otm_floor_put, drift
+    if drift < 0:
+        # Falling: the short PUT is the one being walked into.
+        return otm_floor_call, otm_floor_put * multiple, drift
+    return otm_floor_call * multiple, otm_floor_put, drift
 
 
 def evaluate_entry(
@@ -514,6 +619,26 @@ def evaluate_entry(
     if now_min < ews or now_min >= ewe:
         return False, "outside_entry_window", None
 
+    # ENTRY CADENCE — applies to EVERY profile (2026-08-11), unlike the opt-in staggering below.
+    #
+    # Each profile is its own portfolio with unbounded capital, so nothing else paces it: with the
+    # concurrency cap raised to effectively-uncapped and no buying-power limit, an arm would
+    # otherwise take every candidate that cleared the gates on every tick and the session's sample
+    # count would be set by tick frequency rather than by anything meaningful.
+    #
+    # Keyed on the last FILL, not the last attempt: an entry that evaluated green and did not fill
+    # never used the slot. `last_entry_min` comes from `_profile_day_stats`, which reads the ledger
+    # (non-cancelled rows), so it is fills by construction.
+    #
+    # Deliberately separate from `min_minutes_between_entries` below rather than reusing it. That key
+    # rides inside `stagger_entries`, where opting in ALSO makes the daily target a hard cap -- so a
+    # profile could not take universal cadence without also taking a throttle it was never meant to
+    # have. Two names, two behaviours, no silent coupling.
+    spacing_seconds = params.get("min_seconds_between_entries", 0) or 0
+    if spacing_seconds > 0 and last_entry_min is not None and now_min is not None:
+        if (now_min - last_entry_min) * 60 < spacing_seconds:
+            return False, "entry_cadence_wait", None
+
     # Staggered-entry controls (opt-in per profile via `stagger_entries`) — spread the daily target
     # across the session instead of filling every slot in the first passing iterations, giving
     # time-of-day coverage of when a condor is opened. Here the daily target IS a hard cap: staggering
@@ -590,6 +715,16 @@ def evaluate_entry(
     #              centre, for the same reason: a second structure on the same zone doubles the bet
     #              without adding a zone). Longs may overlap, so adjacent zones can share
     #              protection and far more independent samples fit in a session.
+    #   "sign"   — the leg-sign rule (2026-08-11, and the mode the per-arm portfolio design uses).
+    #              A candidate leg is refused only when it would sit OPPOSITE an open leg on the
+    #              same contract: long-on-short or short-on-long at one (expiry, right, strike).
+    #              Same-sign stacking is fine, so a condor nests inside an open one freely and two
+    #              structures may share a wing. What it forbids is the pair that NETS OUT -- because
+    #              two legs summing to zero mean the ledger's recorded risk is not the risk actually
+    #              on, and every number derived from it (floor, MAE, settlement) then describes a
+    #              position nobody holds. Note this is strictly weaker than "all" (which blocks any
+    #              strike touch, including long-on-long) and strictly stronger than "none".
+    #              Unlike the other three it reads the LONG strikes too, via `ic_legs`.
     #   "none"   — no overlap check at all (2026-08-07): every tick is evaluated independently of
     #              any other open position on this symbol+profile, which is what turns entry
     #              cadence into a genuine "what would entering right now have produced" sample
@@ -598,6 +733,10 @@ def evaluate_entry(
     #              reads this key from a profile at all and stays on its own hardcoded strike
     #              overlap check regardless of what any profile's config says.
     overlap_scope = params.get("overlap_scope", "all")
+    # Built once per evaluation rather than per candidate: the open book does not change while the
+    # candidate list is walked, and rebuilding it inside the loop would re-derive every wing for
+    # every width scanned.
+    open_legs = [leg for ic in open_ics for leg in ic_legs(ic)] if overlap_scope == "sign" else []
 
     # Restrict to this profile's own wing shortlist for this symbol and order it per its
     # `wing_selection` (default: widest-first, the fee-drag bias). Taking the first candidate
@@ -607,6 +746,13 @@ def evaluate_entry(
     otm_floor_put = params["min_put_otm_pct"]
     if is_quarterly:
         otm_floor_call = max(otm_floor_call, params.get("quarterly_expiry_min_call_otm_pct", otm_floor_call))
+
+    # Drift skew (opt-in per profile via `drift_skew_otm_multiple`; off when unset). Applied AFTER
+    # the quarterly floor so the two compose rather than one overwriting the other -- a committed
+    # drift on a quarterly expiry should widen the already-widened side, not replace its floor.
+    otm_floor_call, otm_floor_put, _drift = drift_skewed_otm_floors(
+        snapshot, params, otm_floor_call, otm_floor_put
+    )
 
     session = snapshot.get("session_quality")
     delta_ceiling = params["max_call_delta_entry"]
@@ -625,6 +771,10 @@ def evaluate_entry(
         # Overlap hard stop (this profile's own open ICs on this symbol) -- see `overlap_scope`.
         if overlap_scope == "none":
             pass
+        elif overlap_scope == "sign":
+            if _entry.sign_conflict(open_legs, candidate_legs(cand)) is not None:
+                last_reason = "sign_rule_conflict"
+                continue
         elif overlap_scope == "shorts":
             if (float(sp["strike"]), float(sc["strike"])) in open_short_pairs:
                 last_reason = "short_pair_occupied"
@@ -1179,6 +1329,93 @@ def _update_trade(ic_order_id: str, fields: dict, db_path: str) -> dict:
     return _db(args_list, db_path)
 
 
+# Every evaluate_entry reason maps to exactly one attempts bucket. Anything unrecognized falls to
+# `gate_blocked` with the raw reason preserved in `block_detail`, so a reason added later degrades to
+# "some gate refused it" rather than vanishing from the read side.
+_ATTEMPT_OUTCOMES = {
+    "entry_cadence_wait": "cadence_blocked",
+    "entry_spacing_wait": "cadence_blocked",
+    "sign_rule_conflict": "sign_rule_blocked",
+    "strike_overlap": "sign_rule_blocked",
+    "short_pair_occupied": "sign_rule_blocked",
+    "outside_entry_window": "window_blocked",
+    "late_entry_bias_wait": "window_blocked",
+    "fomc_blackout": "window_blocked",
+    "daily_target_reached": "window_blocked",
+    "max_concurrent_ics_reached": "window_blocked",
+    "no_candidate_cleared_all_gates": "no_candidate",
+    "no_0dte_expiration": "no_candidate",
+}
+
+
+def _record_entry_attempt(
+    db_path: str,
+    *,
+    snapshot: dict,
+    profile: str,
+    symbol: str,
+    reason: str,
+    entered: bool,
+    chosen: dict | None = None,
+    ic_order_id: str | None = None,
+    seconds_until_cadence_clear: float | None = None,
+) -> None:
+    """Append one evaluated entry opportunity to `entry_attempts`. Best effort, never fatal.
+
+    A direct sqlite INSERT rather than a `_db` dispatch, following `_profile_day_stats`' precedent
+    in this file: this fires once per (profile x symbol) per tick and the roster is large, so the
+    dispatch layer's per-call overhead is the thing to avoid. It is also strictly append-only with
+    no read-modify-write, which is what makes a bare INSERT safe alongside the loop's other writers.
+
+    Swallows every exception on purpose. This runs AFTER the entry decision is made and the fill (if
+    any) is already persisted, so a failure here costs a row of telemetry; letting it propagate would
+    cost the tick. Refusals are ordinary and frequent in this module -- losing the record of one is a
+    gap in the data, never a reason to stop trading.
+    """
+    gex = snapshot.get("gex") or {}
+    try:
+        conn = sqlite3.connect(db_path, timeout=5)
+        conn.execute(
+            "INSERT INTO entry_attempts (ts, trade_date, risk_profile, symbol, expiration, outcome, "
+            "block_detail, proposed_legs, put_strike, call_strike, wing_width, underlying_price, "
+            "iv_rank, gex_net, gex_positive, session_quality, would_be_credit, ic_order_id, "
+            "seconds_until_cadence_clear) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                str(snapshot.get("now_et") or ""),
+                snapshot.get("date"),
+                profile,
+                symbol.upper(),
+                snapshot.get("expiration"),
+                "filled" if entered else _ATTEMPT_OUTCOMES.get(reason, "gate_blocked"),
+                None if entered else reason,
+                json.dumps(
+                    [
+                        {"expiry": e, "right": r, "strike": k, "sign": s}
+                        for e, r, k, s in candidate_legs(chosen)
+                    ]
+                )
+                if chosen
+                else None,
+                (chosen or {}).get("short_put", {}).get("strike"),
+                (chosen or {}).get("short_call", {}).get("strike"),
+                (chosen or {}).get("wing_width"),
+                snapshot.get("underlying_price"),
+                snapshot.get("iv_rank"),
+                gex.get("net_gex"),
+                None if gex.get("gex_positive") is None else int(bool(gex.get("gex_positive"))),
+                snapshot.get("session_quality"),
+                (chosen or {}).get("net_credit"),
+                ic_order_id,
+                seconds_until_cadence_clear,
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:  # noqa: BLE001 - telemetry must never break the loop
+        pass
+
+
 def _get_open_trades_all(symbol: str, trade_date: str, db_path: str) -> list:
     """Every open trade for this symbol+date, across every risk_profile/arm — one query.
     db.py's get_open_trades already returns them unfiltered (it has no --profile flag); the
@@ -1387,10 +1624,51 @@ def process_symbol(
                             "save_result": save_result,
                         }
                     )
+                # Recorded only on the persisted path: a fill that did not save is not a fill, and
+                # the attempts ledger must not claim one the trade ledger has no row for.
+                _record_entry_attempt(
+                    db_path,
+                    snapshot=snapshot,
+                    profile=name,
+                    symbol=symbol,
+                    reason=reason,
+                    entered=save_result.get("ok") is not False,
+                    chosen=chosen,
+                    ic_order_id=row["ic_order_id"],
+                )
             else:
                 actions.append({"entry": "skipped", "reason": reason})
+                # The cadence gate returns a bare reason, so the seconds still to wait are
+                # reconstructed here where both the clock and the last fill are in hand. Recorded
+                # because the DISTRIBUTION of that wait is the measured cost of the current
+                # spacing -- the only honest input to changing it -- and because the console's
+                # arm rail counts down from it rather than from a config value it cannot see.
+                waiting = None
+                if reason == "entry_cadence_wait" and last_entry_min is not None:
+                    now_min = _time_to_minutes(snapshot["now_et"])
+                    if now_min is not None:
+                        spacing = params.get("min_seconds_between_entries", 0) or 0
+                        waiting = max(spacing - (now_min - last_entry_min) * 60, 0)
+                _record_entry_attempt(
+                    db_path,
+                    snapshot=snapshot,
+                    profile=name,
+                    symbol=symbol,
+                    reason=reason,
+                    entered=False,
+                    chosen=chosen,
+                    seconds_until_cadence_clear=waiting,
+                )
         else:
             actions.append({"entry": "skipped", "reason": "max_concurrent_ics_reached"})
+            _record_entry_attempt(
+                db_path,
+                snapshot=snapshot,
+                profile=name,
+                symbol=symbol,
+                reason="max_concurrent_ics_reached",
+                entered=False,
+            )
 
         results[name] = actions
 

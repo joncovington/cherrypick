@@ -254,6 +254,78 @@ def itm_legs_at_settlement(position: dict, settlement_price: float) -> int:
     return sum(1 for strike in strikes if _itm(strike))
 
 
+def position_legs(position: dict) -> list[tuple[str, str, float, int]]:
+    """This position as individual contracts, in `cherrypick.core.entry`'s leg shape:
+    ``(expiry, right, strike, sign)`` with sign +1 long / -1 short, one tuple per contract.
+
+    The input to the same-strike sign rule. Deliberately derived from the SAME strike sets
+    `itm_legs_at_settlement` uses rather than re-derived alongside them: those sets are the module's
+    settled answer to "which contracts is this position actually made of", and a second copy would
+    be a second chance to disagree with the payoff math about what we hold.
+
+    Doubled strikes appear TWICE (a fly's centre is `-2`, so two short tuples), because the rule
+    accumulates signs and a structure's own doubling must not read as a single contract. `expiry` is
+    taken from the row when present and otherwise from `trade_date` -- these are 0DTE structures, so
+    the two agree by construction, and the fallback keeps the rule working against older ledger rows
+    that predate an explicit expiry column.
+
+    Note flies are single-type by kind except `iron_fly`, which is short a put AND a call at its
+    centre. That is exactly why `right` is part of the key: those two shorts are different contracts
+    and neither of them nets against the other.
+    """
+    kind = position["kind"]
+    center = float(position["center"])
+    width = float(position["wing_width"])
+    expiry = str(position.get("expiry") or position.get("trade_date") or "")
+    side = position.get("side")
+    right = "C" if str(side).lower().startswith("c") else "P"
+
+    if kind == "iron_fly":
+        # Short the straddle at the centre, long the strangle wings -- put wing below, call above.
+        return [
+            (expiry, "P", center - width, 1),
+            (expiry, "P", center, -1),
+            (expiry, "C", center, -1),
+            (expiry, "C", center + width, 1),
+        ]
+    if kind == "fly":
+        return [
+            (expiry, right, center - width, 1),
+            (expiry, right, center, -1),
+            (expiry, right, center, -1),
+            (expiry, right, center + width, 1),
+        ]
+    if kind == "short_vertical":
+        return [
+            (expiry, right, center, -1),
+            (expiry, right, center - width if side == PUT else center + width, 1),
+        ]
+    if kind == "long_vertical":
+        # debit_first's OPENING trade: long the far strike, short the centre -- the same two strikes
+        # short_vertical uses on the opposite side of the centre, per itm_legs_at_settlement.
+        return [
+            (expiry, right, center, -1),
+            (expiry, right, center - width if side == CALL else center + width, 1),
+        ]
+    if kind == "debit_vertical":
+        # Same geometry as long_vertical; kept as its own branch because the two names are used
+        # interchangeably by callers and silently returning [] for one of them would disable the
+        # rule for that structure without any error.
+        return [
+            (expiry, right, center, -1),
+            (expiry, right, center - width if side == CALL else center + width, 1),
+        ]
+    if kind == "bwb":
+        near_wing, _, far_wing = bwb_strikes(side, center, width, position["far_width"])
+        return [
+            (expiry, right, near_wing, 1),
+            (expiry, right, center, -1),
+            (expiry, right, center, -1),
+            (expiry, right, far_wing, 1),
+        ]
+    raise ValueError(f"position_legs: unknown position kind {kind!r}")
+
+
 def assignment_fee(position: dict, settlement_price: float) -> float:
     """The overnight exercise-assignment fee this position would incur if it settled at
     `settlement_price` right now — $0 when every leg is OTM."""

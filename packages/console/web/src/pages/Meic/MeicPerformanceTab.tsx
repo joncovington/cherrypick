@@ -4,6 +4,7 @@ import type { TradingMode } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { LineChart, BarChart, SeriesLegend, SERIES_COLORS } from "../../components/Charts";
 import { TabStrip } from "../../components/ScopeBar";
+import { powerNote, WithheldNote } from "../../lib/power";
 
 interface BreakdownRow {
   bucket: string;
@@ -146,7 +147,12 @@ export function MeicPerformanceTab({
         </div>
       </Card>
 
-      <Card title="Cumulative equity ($100k base) and drawdown" updatedAt={dataUpdatedAt}>
+      {/* Labelled as cumulative NET, not "equity on a $100k base". The base is a display constant,
+          not a bankroll these arms trade: `open` and `width-5` each took 265 one-lot entries in a
+          single session, which is a sampling stream rather than a book. Calling the line equity
+          implies position sizing and compounding this experiment deliberately does not do, and it
+          is the most authoritative-looking chart on the page. The drawdown is real and stays. */}
+      <Card title="Cumulative net P&L and drawdown (1-lot samples, not a sized book)" updatedAt={dataUpdatedAt}>
         {isLoading ? (
           <span className="skeleton skeleton-text" style={{ width: "40%" }} />
         ) : (
@@ -243,6 +249,12 @@ export function MeicPerformanceTab({
       </Card>
 
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(23rem, 1fr))" }}>
+        {powerNote(data?.bySession ?? []) !== null ? (
+          <section className="card">
+            <h2>Win rate by session quality</h2>
+            <WithheldNote note={powerNote(data?.bySession ?? [])!} />
+          </section>
+        ) : (
         <DataCard
           title="Win rate by session quality"
           headers={["session", "trades", "sessions", "win %", "avg net"]}
@@ -262,7 +274,14 @@ export function MeicPerformanceTab({
             </tr>
           ))}
         </DataCard>
+        )}
 
+        {powerNote(data?.byIvRank ?? []) !== null ? (
+          <section className="card">
+            <h2>Avg P&L by IV-rank band</h2>
+            <WithheldNote note={powerNote(data?.byIvRank ?? [])!} />
+          </section>
+        ) : (
         <DataCard
           title="Avg P&L by IV-rank band"
           headers={["IV rank", "trades", "sessions", "win %", "avg net"]}
@@ -282,6 +301,7 @@ export function MeicPerformanceTab({
             </tr>
           ))}
         </DataCard>
+        )}
 
         <DataCard
           title="Regime coverage"

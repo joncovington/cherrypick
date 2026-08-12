@@ -15,6 +15,7 @@ AI pass is the orchestrator's `eod_insight`, which reads these files.
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
 
 from cherrypick.core import viz  # noqa: E402
@@ -47,6 +48,91 @@ def _drag(v) -> str:
 
 
 # --------------------------------------------------------------------------- terse metrics file
+def _entry_attempts_section(conn, day: str) -> list:
+    """The refusal ledger: every evaluated entry opportunity, by arm and outcome.
+
+    Added 2026-08-11, when each arm became an independent portfolio with unbounded capital. Every arm
+    now sees the same market with the same money, so the ONLY thing that differentiates them is which
+    entries the rules let through -- the refusals became the primary measurement rather than a
+    diagnostic, and nothing carried them into the deterministic record. That matters because the EOD
+    insight layer reads THESE FILES and nothing else: a refusal absent from here is invisible to the
+    narrative, however carefully it was recorded in the database.
+
+    Distinct from `fly_decisions`, which collapses a run of identical reasons into one counted row.
+    That collapse is right for reading a session and wrong for measuring one -- it cannot say how
+    long an arm spent waiting on its own cadence, or how many opportunities it evaluated at all.
+
+    Two lines here exist because of specific failures, not for completeness. The LOW-SAMPLE line: a
+    debrief read a two-position arm as a validated thesis and wrote a tuning recommendation from it,
+    and the entry count is the fact that would have stopped it. The PARTIAL-SESSION line: an arm
+    added mid-session starts with an empty book against its twin's full one, which makes the pair
+    non-comparable for that date in a way nothing else in the report would reveal.
+    """
+    L = ["## Entry attempts (the refusal ledger)"]
+    try:
+        rows = conn.execute(
+            "SELECT arm, outcome, block_detail, COUNT(*) n, AVG(seconds_until_cadence_clear) avg_wait "
+            "  FROM fly_entry_attempts WHERE trade_date=? GROUP BY 1, 2, 3",
+            (day,),
+        ).fetchall()
+    except sqlite3.Error:
+        L.append("_No `fly_entry_attempts` table (a ledger written before 2026-08-11)._")
+        L.append("")
+        return L
+    if not rows:
+        L.append("_No entry attempts recorded today -- the loop did not reach its entry window._")
+        L.append("")
+        return L
+
+    by_arm: dict = {}
+    for r in rows:
+        d = dict(r)
+        a = by_arm.setdefault(d["arm"], {"fills": 0, "refused": 0, "reasons": {}, "wait": []})
+        if d["outcome"] == "filled":
+            a["fills"] += d["n"]
+        else:
+            a["refused"] += d["n"]
+            key = d["block_detail"] or d["outcome"]
+            a["reasons"][key] = a["reasons"].get(key, 0) + d["n"]
+        if d["avg_wait"] is not None:
+            a["wait"].append((d["avg_wait"], d["n"]))
+
+    L.append("| arm | evaluated | filled | refused | dominant refusal | cadence wait |")
+    L.append("|---|---|---|---|---|---|")
+    for name in sorted(by_arm):
+        a = by_arm[name]
+        top = max(a["reasons"].items(), key=lambda kv: kv[1]) if a["reasons"] else None
+        wait = (
+            f"~{sum(w * n for w, n in a['wait']) / sum(n for _, n in a['wait']):.0f}s avg"
+            if a["wait"]
+            else "-"
+        )
+        L.append(
+            f"| {name} | {a['fills'] + a['refused']} | {a['fills']} | {a['refused']} | "
+            f"{f'{top[0]} x{top[1]}' if top else '-'} | {wait} |"
+        )
+    L.append("")
+
+    thin = sorted(n for n, a in by_arm.items() if 0 < a["fills"] < 5)
+    if thin:
+        L.append(
+            f"**Too few entries to read: {', '.join(thin)}.** Under 5 fills is not a sample. Report "
+            "what these arms did; do not rank them, call them validated, or write a recommendation "
+            "from them."
+        )
+    try:
+        breaks = conn.execute(
+            "SELECT arm, reason FROM fly_decisions WHERE trade_date=? AND mode='cadence'", (day,)
+        ).fetchall()
+    except sqlite3.Error:
+        breaks = []
+    for b in breaks:
+        L.append(f"**Measurement break ({dict(b)['arm']}):** {dict(b)['reason']}")
+    if thin or breaks:
+        L.append("")
+    return L
+
+
 def build_paper_eod(conn, day: str) -> str:
     stats = analytics.stats_for_period(conn, day, day)
     completion = analytics.completion_stats(conn, day, day)
@@ -151,6 +237,8 @@ def build_paper_eod(conn, day: str) -> str:
         for w in windows:
             L.append(f"| {w['window']} | {w['trades']} | {_money(w['net_pnl'])} | {_pct(w['win_rate'])} |")
         L.append("")
+
+    L += _entry_attempts_section(conn, day)
 
     L.append("## Arm divergence")
     if divergence["iterations"]:

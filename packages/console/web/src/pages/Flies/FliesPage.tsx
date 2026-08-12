@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useFlies, useFliesMeta, fliesQuery, type FliesFilter } from "../../lib/api";
 import { useMode } from "../../lib/useMode";
@@ -8,6 +8,8 @@ import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable"
 import { Pager, usePage } from "../../components/ScopeBar";
 import type { TradingMode } from "@console/shared";
 import { ForestCard } from "./ForestCard";
+import { ArmRail, AttemptTimeline } from "../../components/Attempts";
+import { OccupancyMap } from "../../components/OccupancyMap";
 import { TimelineCard } from "./TimelineCard";
 import { HistoryTab } from "./HistoryTab";
 import { JournalCard } from "./JournalCard";
@@ -47,16 +49,33 @@ export function FliesPage() {
   const [mode, setMode] = useMode();
   const [arm, setArm] = useState<string | null>(null);
   const [date, setDate] = useState<string | null>(null);
+  // null = the module's current era (SPX from 2026-08-01), matching what its own analytics
+  // count as evidence. "ALL" reaches the XSP books too — a different trade at 1/5 the width and
+  // 4x the fee drag — so widening is a stated choice, never the quiet default.
+  const [era, setEra] = useState<string | null>(null);
+  // Only meaningful with era ALL — the current era is SPX alone, so the select hides itself
+  // rather than offering a one-option filter.
+  const [symbol, setSymbol] = useState<string | null>(null);
   const [tab, setTab] = useState<FliesTab>("today");
-  const filter: FliesFilter = { arm, date };
-  const meta = useFliesMeta(mode);
+  const filter: FliesFilter = { arm, date, symbol, era };
+  const meta = useFliesMeta(mode, era);
   // Two tables on one payload, each with its own page — turning one leaves the
   // other where it was. Both reset when the filter changes underneath them.
-  const booksPage = usePage([mode, arm, date]);
-  const positionsPage = usePage([mode, arm, date]);
+  const booksPage = usePage([mode, arm, date, symbol, era]);
+  const positionsPage = usePage([mode, arm, date, symbol, era]);
   const { data, isLoading, isError, isPlaceholderData } = useFlies(mode, filter, booksPage.page, positionsPage.page);
   const analytics = useFliesAnalytics(mode, filter);
   const a = analytics.data;
+
+  // Narrowing the era can remove the arm or date currently selected (width-2/3/4 are XSP-only).
+  // Clear a selection the new scope no longer offers, so the page never filters on a value the
+  // dropdown cannot show — a filter you can't see is indistinguishable from a broken query.
+  useEffect(() => {
+    if (meta.data === undefined) return;
+    if (arm !== null && !meta.data.arms.includes(arm)) setArm(null);
+    if (date !== null && !meta.data.dates.includes(date)) setDate(null);
+    if (symbol !== null && !meta.data.symbols.includes(symbol)) setSymbol(null);
+  }, [meta.data, arm, date, symbol]);
 
   return (
     <div className="page">
@@ -70,8 +89,10 @@ export function FliesPage() {
             </button>
           ))}
         </div>
-        {tab === "today" && (
-        <>
+        {/* Arm, symbol and era scope EVERY tab — a per-arm ranking on History or an equity curve on
+            Performance is exactly where a silently-pooled era does the most damage. Only the date
+            select stays Today-only: the multi-day views drop it, since pinning one session would
+            empty them. */}
         <select
           className="text-input"
           value={arm ?? ""}
@@ -85,6 +106,33 @@ export function FliesPage() {
             </option>
           ))}
         </select>
+        {(meta.data?.symbols.length ?? 0) > 1 && (
+          <select
+            className="text-input"
+            value={symbol ?? ""}
+            onChange={(e) => setSymbol(e.target.value === "" ? null : e.target.value)}
+            aria-label="symbol filter"
+          >
+            <option value="">all symbols</option>
+            {meta.data?.symbols.map((sym) => (
+              <option key={sym} value={sym}>
+                {sym}
+              </option>
+            ))}
+          </select>
+        )}
+        <select
+          className="text-input"
+          value={era ?? ""}
+          onChange={(e) => setEra(e.target.value === "" ? null : e.target.value)}
+          aria-label="era scope"
+          title="The XSP books (2026-07-29..07-31) are a different trade — 1-wide structures at 41% fee drag against the SPX book's 11%. Pooling them distorts every per-arm breakdown."
+        >
+          <option value="">SPX era (current)</option>
+          <option value="ALL">all eras</option>
+        </select>
+        {tab === "today" && (
+        <>
         <select
           className="text-input"
           value={date ?? ""}
@@ -106,16 +154,27 @@ export function FliesPage() {
       {tab === "history" && (
         <HistoryTab
           mode={mode}
+          filter={filter}
           onReplayDay={(d) => {
             setDate(d);
             setTab("today");
           }}
         />
       )}
-      {tab === "performance" && <PerformanceTab mode={mode} />}
+      {tab === "performance" && <PerformanceTab mode={mode} filter={filter} />}
 
       {tab === "today" && (
       <div className="cards cards-wide">
+        <ArmRail module="flies" mode={mode} date={filter.date} />
+
+        <AttemptTimeline module="flies" mode={mode} date={filter.date} />
+
+        <OccupancyMap module="flies" mode={mode} date={filter.date} />
+
+        {/* The aggregate sits BELOW the per-arm views, and that ordering is the point. Every arm is
+            an independent portfolio on unbounded capital, so a net summed across six deliberately
+            different strategies cannot move for any reason worth acting on. It is context, not the
+            headline. */}
         <section className="card">
           <h2>{a?.today.tradeDate !== null && a !== undefined ? `latest session — ${a.today.tradeDate}` : "latest session"}</h2>
           <div className="stats-grid">
@@ -153,6 +212,7 @@ export function FliesPage() {
             </div>
           </div>
         </section>
+
 
         <ForestCard mode={mode} filter={filter} />
 

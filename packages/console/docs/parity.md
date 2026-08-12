@@ -75,3 +75,46 @@ console-only addition.
 
 Done except narrative/describe prose. Console additions beyond scout: chain delta+OI picker,
 STO/BTO highlights, ±EM band, scope-gated real dry-run validation.
+
+## Per-arm portfolios: what the API serves and what is still missing (2026-08-11)
+
+Both modules now record an **entry-attempts ledger** — one row per evaluated entry opportunity per
+arm — and MEIC has a **profit forest** to match flies'. The server side is complete; the React views
+are not built yet.
+
+| Surface | Endpoint | Status |
+|---|---|---|
+| Arm rail — per-arm cadence countdown, entries today, refusal mix, what is holding it | `/api/{meic,flies}/attempts` | done, both pages |
+| Attempt timeline — one lane per arm, every evaluated opportunity by outcome | `/api/{meic,flies}/attempts` | done, both pages |
+| Strike occupancy — longs vs shorts per arm, refusing strikes ringed | `/api/{meic,flies}/occupancy` | done, both pages |
+| MEIC profit forest — per-profile curves, each condor faint behind the aggregate, stop-released strikes | `GET /api/meic/forest` | done |
+| Refusal history (per session, stacked by reason) | — | not started |
+| Day replay (scrub the timeline, occupancy rebuilding) | — | not started |
+| Rule attribution / entry-slot yield | — | not started |
+| Session grid (sessions × arms) | — | not started |
+
+**One known rough edge.** The attempts views default to the latest day in the *attempts* ledger
+while the forest and occupancy views default to the latest day with *positions*. On a morning where
+nothing has filled yet those differ, so the cards can show yesterday's book beside today's attempts.
+Both carry their own date in the heading, so it is labelled rather than misleading — but they should
+share one day selector.
+
+**What the attempts payload is for.** With each arm an independent portfolio on unbounded capital,
+every arm sees the same market with the same money — so the only thing differentiating them is which
+entries the rules let through. The refusals are the primary signal. The arm rail answers "why is this
+arm quiet right now" (cadence, the sign rule, or a gate) without reading logs; the timeline answers
+it for any past minute of the session.
+
+**`no_fill` is a distinct outcome and the UI must keep it distinct.** Under a fill-based cadence
+clock an entry that cleared every gate and simply did not fill neither spent the arm's slot nor was
+refused by a rule. Rendering it as a gate refusal would make the gates look stricter than they are.
+
+**The reader degrades rather than fails.** A ledger written by a checkout predating the attempts work
+has no such table; `readEntryAttempts` returns an empty payload rather than erroring, because the
+console is read-only over every other package's data and must never fail a page over a schema it does
+not own.
+
+**Paper and live are not the same experiment, and the pages should say so.** Paper runs every arm
+concurrently and accepts account-level netting between them; live runs one arm at a time. That is a
+deliberate difference, but it means a paper result is not a live prediction for any effect that
+depends on netting.

@@ -988,7 +988,11 @@ def test_entry_allowed_once_completed_fly_is_risk_free(live_conn):
             "symbol": "SPX",
             "kind": "fly",
             "side": PUT,
-            "center": 7495.0,
+            # Centred two strikes below the ATM entry under test, not one. This completed fly
+            # holds a LONG put at its upper wing, and the sign rule refuses a new entry that
+            # would SELL that same strike -- so an adjacent centre would be blocked by the leg
+            # rule before the floor gate this test is about could be reached.
+            "center": 7490.0,
             "wing_width": 5,
             "quantity": 1,
             # floor = 1.05*100 - 3.44 fees - $20 worst-case exercise fee (4 contracts) = $81.56 >= 0
@@ -1019,7 +1023,11 @@ def test_entry_refused_when_completed_fly_has_negative_floor(live_conn):
             "symbol": "SPX",
             "kind": "fly",
             "side": PUT,
-            "center": 7495.0,
+            # Centred two strikes below the ATM entry under test, not one. This completed fly
+            # holds a LONG put at its upper wing, and the sign rule refuses a new entry that
+            # would SELL that same strike -- so an adjacent centre would be blocked by the leg
+            # rule before the floor gate this test is about could be reached.
+            "center": 7490.0,
             "wing_width": 5,
             "quantity": 1,
             "net": -50.0,  # deeply negative floor
@@ -1855,7 +1863,11 @@ def test_max_structures_per_day_blocks_even_after_risk_free_completion(live_conn
             "symbol": "SPX",
             "kind": "fly",
             "side": PUT,
-            "center": 7495.0,
+            # Centred two strikes below the ATM entry under test, not one. This completed fly
+            # holds a LONG put at its upper wing, and the sign rule refuses a new entry that
+            # would SELL that same strike -- so an adjacent centre would be blocked by the leg
+            # rule before the floor gate this test is about could be reached.
+            "center": 7490.0,
             "wing_width": 5,
             "quantity": 1,
             "net": 0.30,

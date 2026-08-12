@@ -548,3 +548,48 @@ def test_min_effective_n_matches_the_experiment_session_bar():
     from cherrypick.meic import experiment
 
     assert analytics.MIN_EFFECTIVE_N == experiment.MIN_SESSIONS_FOR_INTERVAL
+
+
+def test_daily_rollup_fills_the_columns_nothing_ever_wrote(conn):
+    """`daily_summary` declared fourteen numeric columns and no writer set any of them — its two
+    writers touch only session_init_at, ai_day_summary and closing_nlv, and both are called from the
+    agent-driven /eod-report, which the automated paper loop does not run. Paper held zero rows,
+    live held eight rows of zeros, and the console rendered those zeros as a card.
+
+    Pinned against this module's OWN definitions rather than recomputed here: `_RESOLVED` decides
+    what counts, and a win is a resolved trade whose P&L clears its own fees. A gross-positive,
+    fee-negative trade is a LOSS, and that is asserted explicitly because it is the case a
+    hand-rolled roll-up gets wrong.
+    """
+    # Two clear wins, one gross-positive/fee-negative (a loss), one stop, one cancelled.
+    _insert(conn, ic_order_id="W1", trade_date="2026-08-11", status="expired", pnl=100.0, fees=6.89)
+    _insert(conn, ic_order_id="W2", trade_date="2026-08-11", status="expired", pnl=80.0, fees=6.89)
+    _insert(conn, ic_order_id="F1", trade_date="2026-08-11", status="expired", pnl=3.0, fees=6.89)
+    _insert(conn, ic_order_id="S1", trade_date="2026-08-11", status="stopped", pnl=-50.0, fees=6.89)
+    _insert(conn, ic_order_id="C1", trade_date="2026-08-11", status="cancelled", pnl=None, fees=None)
+
+    roll = analytics.daily_rollup(conn, "2026-08-11", era="ALL")
+
+    assert roll["total_entries"] == 5, "a placed-and-cancelled entry still happened"
+    assert roll["entries_filled"] == 4, "cancelled rows never reach _RESOLVED"
+    assert roll["entries_cancelled"] == 1
+    assert roll["entries_stopped"] == 1
+    assert roll["entries_expired"] == 3
+    assert roll["gross_pnl"] == pytest.approx(133.0)
+    assert roll["fees"] == pytest.approx(27.56)
+    assert roll["net_pnl"] == pytest.approx(105.44)
+    # W1 and W2 only: F1 is gross-positive and fee-negative.
+    assert roll["win_count"] == 2
+    assert roll["win_rate_pct"] == pytest.approx(50.0)
+
+
+def test_daily_rollup_is_era_scoped_like_every_other_reader(conn):
+    """A roll-up written during one sampling era must never be a blend of two — the pre-cutover
+    ledger had an order-of-magnitude different selection intensity."""
+    _insert(
+        conn, ic_order_id="A", trade_date="2026-08-11", status="expired", pnl=10.0, fees=1.0, era="sample"
+    )
+    _insert(conn, ic_order_id="B", trade_date="2026-08-11", status="expired", pnl=999.0, fees=1.0, era="book")
+
+    assert analytics.daily_rollup(conn, "2026-08-11", era="sample")["gross_pnl"] == pytest.approx(10.0)
+    assert analytics.daily_rollup(conn, "2026-08-11", era="ALL")["gross_pnl"] == pytest.approx(1009.0)

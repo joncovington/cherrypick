@@ -247,6 +247,57 @@ def _note_cadence_change(conn, interval_seconds: int) -> None:
         _log(f"cadence-change journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
+def _entry_cadence_state_path() -> str:
+    return os.path.join(_paper_data_dir(), "entry_cadence.json")
+
+
+def _note_entry_cadence_change(conn, config: dict) -> None:
+    """Journal a change to the ENTRY cadence as an explicit measurement break.
+
+    Distinct from `_note_cadence_change`, which tracks how often the loop POLLS. This one tracks how
+    often an arm may ENTER, and the two break different numbers: tick cadence moves the completion
+    rate (a faster poll catches transient completing-debit dips), entry cadence moves how many
+    structures a session accumulates at all — so it changes what a per-session net even means, and
+    pooling across it compares books built under different opportunity counts.
+
+    Same mechanism as its sibling: one decision-journal row per change, keyed off a small state file
+    so it is written exactly once. First-ever run baselines against 0 — the entire pre-2026-08-11
+    ledger had no entry cadence, pacing came only from entry windows.
+
+    Best-effort. Telemetry is never a reason to skip a tick.
+    """
+    try:
+        seconds = int((config.get("defaults") or {}).get("min_seconds_between_entries", 0) or 0)
+        prev = 0
+        state_path = _entry_cadence_state_path()
+        try:
+            with open(state_path, encoding="utf-8") as fh:
+                prev = int(json.load(fh).get("seconds", 0))
+        except (OSError, ValueError):
+            pass
+        if prev == seconds:
+            return
+        day = provider.now_et().date().isoformat()
+        dbmod.record_decision(
+            conn,
+            trade_date=day,
+            arm="*",
+            symbol="*",
+            mode="cadence",
+            reason=(
+                f"entry_cadence {prev}s->{seconds}s (per-arm portfolios); "
+                "entries per session not comparable across this date"
+            ),
+            accepted=False,
+            detail=json.dumps({"old_seconds": prev, "new_seconds": seconds, "kind": "entry"}),
+        )
+        with open(state_path, "w", encoding="utf-8") as fh:
+            json.dump({"seconds": seconds, "since": day}, fh)
+        _log(f"entry cadence changed {prev}s -> {seconds}s — journaled as a measurement break")
+    except Exception as exc:  # noqa: BLE001 — never let telemetry break the loop
+        _log(f"entry-cadence journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
 def settle_time_min(config: dict) -> int:
     at = config.get("defaults", {}).get("settle_time")
     if not at:
@@ -618,6 +669,7 @@ def main(argv=None) -> int:
         try:
             _log(f"loop starting, interval {args.interval}s, cache {cache_path}")
             _note_cadence_change(conn, args.interval)
+            _note_entry_cadence_change(conn, config)
             # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session
             # run from an older branch writes NULL to any regime column that branch predates --
             # silently, all day, with no backfill path afterwards. Logged rather than enforced: a

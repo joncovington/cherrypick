@@ -4,9 +4,28 @@ import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, num, str } from "./db.js";
 import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 
+/**
+ * The era this module counts as evidence — the SPX 5-wide books from 2026-08-01.
+ *
+ * Flies has no `era` column, so an era here is a (symbol, start-date) pair rather than a tag. The
+ * XSP books (2026-07-29..07-31) are a different trade, not an earlier version of this one: 1-wide
+ * structures on a $750 index, where the median completed fly collected $12.00 against $4.97 of fees
+ * — 41.4% drag against the SPX book's 10.9%. Credits, widths and per-contract risk all differ by
+ * roughly 5x, so pooling them silently distorts every per-arm breakdown.
+ *
+ * Mirrors MEIC's `CURRENT_ERA`: narrow by default, widen only as a stated choice. Deliberately a
+ * FILTER and never a deletion — the XSP books are the record of a documented fee finding, and the
+ * module keeps negative results on purpose.
+ */
+export const CURRENT_ERA = { symbol: "SPX", from: "2026-08-01" } as const;
+
 export interface FliesFilter {
   arm: string | null;
   date: string | null;
+  /** null = every symbol in scope. Only meaningful with era "ALL"; the current era is SPX alone. */
+  symbol: string | null;
+  /** null = the current era; "ALL" = every era, deliberately. */
+  era: string | null;
 }
 
 /** Books and positions page independently — they are two tables, not one list. */
@@ -27,6 +46,17 @@ function filterSql(filter: FliesFilter): { where: string; params: string[] } {
   if (filter.date !== null) {
     clauses.push("trade_date = ?");
     params.push(filter.date);
+  }
+  if (filter.symbol !== null) {
+    clauses.push("symbol = ?");
+    params.push(filter.symbol);
+  }
+  // Era last, so an explicit date the caller asked for is never silently overridden — asking for a
+  // specific XSP-era day and getting an empty page would read as "nothing happened" rather than
+  // "filtered out", which is the failure the scope control exists to prevent.
+  if (filter.era !== "ALL") {
+    clauses.push("symbol = ? AND trade_date >= ?");
+    params.push(CURRENT_ERA.symbol, CURRENT_ERA.from);
   }
   return { where: clauses.length > 0 ? clauses.join(" AND ") : "1=1", params };
 }
@@ -123,20 +153,49 @@ export interface FliesForest {
   lastTickSpot: number | null;
 }
 
-/** Distinct arms and trade dates, for the page's filter selects. */
-export function readFliesMeta(config: ConsoleConfig, mode: TradingMode): { arms: string[]; dates: string[] } {
+/**
+ * Distinct arms and trade dates, for the page's filter selects — narrowed to the same era as the
+ * data itself.
+ *
+ * The selects have to agree with the scope or they lie about what is reachable: several arms are
+ * XSP-era only (`width-2`/`width-3`/`width-4` cannot be built on SPX at all, whose strikes are 5
+ * points apart), so an unfiltered list offers arms that select nothing and dates that return an
+ * empty page. An option that yields no rows reads as "nothing happened" rather than "not in this
+ * era", which is exactly the confusion the scope control exists to remove.
+ */
+export function readFliesMeta(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  era: string | null = null,
+): { arms: string[]; dates: string[]; symbols: string[] } {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
-  return withReadOnlyDb<{ arms: string[]; dates: string[] }>(dbPath, { arms: [], dates: [] }, (db) => ({
-    arms: db
-      .prepare<[], { arm: string }>("SELECT DISTINCT arm FROM fly_positions WHERE arm IS NOT NULL ORDER BY arm")
-      .all()
-      .map((r) => r.arm),
-    dates: db
-      .prepare<[], { d: string }>("SELECT DISTINCT trade_date AS d FROM fly_positions ORDER BY trade_date DESC")
-      .all()
-      .map((r) => r.d),
-  }));
+  const scope = era === "ALL" ? "" : " AND symbol = ? AND trade_date >= ?";
+  const params: string[] = era === "ALL" ? [] : [CURRENT_ERA.symbol, CURRENT_ERA.from];
+  return withReadOnlyDb<{ arms: string[]; dates: string[]; symbols: string[] }>(
+    dbPath,
+    { arms: [], dates: [], symbols: [] },
+    (db) => ({
+      arms: db
+        .prepare<string[], { arm: string }>(
+          `SELECT DISTINCT arm FROM fly_positions WHERE arm IS NOT NULL${scope} ORDER BY arm`,
+        )
+        .all(...params)
+        .map((r) => r.arm),
+      dates: db
+        .prepare<string[], { d: string }>(
+          `SELECT DISTINCT trade_date AS d FROM fly_positions WHERE 1=1${scope} ORDER BY trade_date DESC`,
+        )
+        .all(...params)
+        .map((r) => r.d),
+      symbols: db
+        .prepare<string[], { s: string }>(
+          `SELECT DISTINCT symbol AS s FROM fly_positions WHERE symbol IS NOT NULL${scope} ORDER BY symbol`,
+        )
+        .all(...params)
+        .map((r) => r.s),
+    }),
+  );
 }
 
 /** The profit forest: per-arm book payoff curves for the latest (or given) day. */
@@ -476,6 +535,8 @@ const SETTLED = "status = 'settled' AND void_reason IS NULL";
 
 export interface FliesSummary {
   trades: number;
+  /** Distinct settled sessions behind `trades` — the unit of independence. */
+  sessions: number;
   grossPnl: number;
   fees: number;
   netPnl: number;
@@ -491,9 +552,15 @@ interface PnlRow {
   gross: number;
   fees: number;
   pnl: number;
+  /** Carried so every summary can report SESSIONS beside trades. Same-day trades share a regime, so
+   *  they are not independent observations — this module's own experiment docs put the effective N
+   *  at the day count, and a per-arm net over 40 trades from 3 sessions is a 3-sample reading
+   *  wearing a 40-sample coat. */
+  day: string;
 }
 
 function summarize(rows: PnlRow[]): FliesSummary {
+  const sessions = new Set(rows.map((r) => r.day).filter((d) => d !== "")).size;
   const gross = rows.reduce((s, r) => s + r.gross, 0);
   const fees = rows.reduce((s, r) => s + r.fees, 0);
   const nets = rows.map((r) => r.pnl);
@@ -504,6 +571,7 @@ function summarize(rows: PnlRow[]): FliesSummary {
   const net = nets.reduce((s, n) => s + n, 0);
   return {
     trades: rows.length,
+    sessions,
     grossPnl: gross,
     fees,
     netPnl: net,
@@ -526,7 +594,12 @@ function pnlRows(db: import("better-sqlite3").Database, where: string, params: s
     .all(...params);
 }
 
-const toPnl = (r: Record<string, unknown>): PnlRow => ({ gross: Number(r["gross"]), fees: Number(r["fees"]), pnl: Number(r["pnl"]) });
+const toPnl = (r: Record<string, unknown>): PnlRow => ({
+  gross: Number(r["gross"]),
+  fees: Number(r["fees"]),
+  pnl: Number(r["pnl"]),
+  day: String(r["trade_date"] ?? ""),
+});
 
 function groupSummaries<T extends string>(rows: Array<Record<string, unknown>>, key: string, label: T): Array<Record<T, string> & FliesSummary> {
   const grouped = new Map<string, PnlRow[]>();
@@ -710,14 +783,50 @@ export function readFliesTradeLog(
   });
 }
 
-export function readFliesHistory(config: ConsoleConfig, mode: TradingMode): FliesHistory {
+/**
+ * The multi-day views' scope: arm, symbol and era — deliberately NOT date.
+ *
+ * History and Performance answer questions ACROSS sessions, so pinning a day would empty them.
+ * They are otherwise narrowed exactly like the day views, and by the same era default: a per-arm
+ * ranking or an equity curve that silently pools the XSP books against the SPX ones is comparing
+ * two different trades at 5x different width and 4x different fee drag.
+ */
+function scopeClause(filter: FliesFilter): { and: string; params: string[] } {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (filter.arm !== null) {
+    clauses.push("arm = ?");
+    params.push(filter.arm);
+  }
+  if (filter.symbol !== null) {
+    clauses.push("symbol = ?");
+    params.push(filter.symbol);
+  }
+  if (filter.era !== "ALL") {
+    clauses.push("symbol = ? AND trade_date >= ?");
+    params.push(CURRENT_ERA.symbol, CURRENT_ERA.from);
+  }
+  return { and: clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "", params };
+}
+
+export function readFliesHistory(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  filter: FliesFilter,
+): FliesHistory {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
   const empty: FliesHistory = { mode, byArm: [], byEntryMode: [], byEntryWindow: [], feeDrag: [], dailyPnl: [] };
   return withReadOnlyDb<FliesHistory>(dbPath, empty, (db) => {
-    const legged = pnlRows(db, `${SETTLED} AND entry_mode = 'legged'`, []);
-    const all = pnlRows(db, SETTLED, []);
-    const byArm = groupSummaries(legged, "arm", "arm").sort((a, b) => b.netPnl - a.netPnl);
+    const sc = scopeClause(filter);
+    const legged = pnlRows(db, `${SETTLED} AND entry_mode = 'legged'${sc.and}`, sc.params);
+    const all = pnlRows(db, `${SETTLED}${sc.and}`, sc.params);
+    // Sorted by NAME, not by net. A leaderboard over 3-8 sessions manufactures a ranking out of
+    // noise, and on 2026-08-11 it would have put a two-position arm on top -- the same mistake the
+    // EOD debrief made that day. The arms are deliberately-different single-variable twins, so the
+    // useful reading is a pair against its baseline, not a league table. Flies already states this
+    // discipline on "By entry window (deliberately unranked)"; this is the same call.
+    const byArm = groupSummaries(legged, "arm", "arm").sort((a, b) => a.arm.localeCompare(b.arm));
 
     const dailyMap = new Map<string, PnlRow[]>();
     for (const r of all) {
@@ -744,10 +853,38 @@ export function readFliesHistory(config: ConsoleConfig, mode: TradingMode): Flie
   });
 }
 
+/** One leg-in-then-convert story: entries, conversions, why the misses missed, and how long the
+ *  conversions took. Shared by the legged completion and the bwb roll so the two can never drift
+ *  into reporting the same idea differently. */
+export interface CompletionBlock {
+  leggedEntries: number;
+  completed: number;
+  completionRatePct: number | null;
+  neverOffered: number;
+  bufferBlocked: number;
+  floorBlocked: number;
+  unknown: number;
+  medianLatencyMin: number | null;
+  minLatencyMin: number | null;
+  maxLatencyMin: number | null;
+  medianSpotMove: number | null;
+}
+
 export interface FliesPerformance {
   mode: TradingMode;
   tiles: FliesSummary & { completionRatePct: number | null };
   series: Array<{ bucket: string; netPnl: number; cumulative: number }>;
+  /**
+   * The bwb arm's equivalent of `completion`, and it needs its own block rather than a row in that
+   * one: a bwb is entered WHOLE for a credit and converted by a ROLL, not legged in and completed,
+   * so "completion rate" is not a number it has. Null when the scope holds no bwb_roll entries.
+   *
+   * Same counterfactual split, on the roll's own columns (`best_roll_debit` against the entry
+   * `credit`): "the market never made the roll cheap enough" and "our own gate refused it" are
+   * identical in the P&L and call for opposite fixes, which is why this module reports them apart
+   * everywhere else too.
+   */
+  roll: CompletionBlock | null;
   completion: {
     leggedEntries: number;
     completed: number;
@@ -762,6 +899,7 @@ export interface FliesPerformance {
     medianSpotMove: number | null;
   };
   completionTrend: Array<{ day: string; legged: number; completed: number; ratePct: number | null }>;
+  rollTrend: Array<{ day: string; legged: number; completed: number; ratePct: number | null }>;
   liveVsPaper: {
     arm: string;
     live: { sessions: number; entries: number; completed: number; completionRatePct: number | null; medianLatencyMin: number | null; avgCredit: number | null };
@@ -792,7 +930,12 @@ function bucketKey(tradeDate: string, granularity: string): string {
 const ABORT_MIN_LIVE_ENTRIES = 30;
 const ABORT_COMPLETION_GAP = 0.15;
 
-export function readFliesPerformance(config: ConsoleConfig, mode: TradingMode, granularity: string): FliesPerformance {
+export function readFliesPerformance(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  granularity: string,
+  filter: FliesFilter,
+): FliesPerformance {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
   const empty: FliesPerformance = {
@@ -803,11 +946,14 @@ export function readFliesPerformance(config: ConsoleConfig, mode: TradingMode, g
       leggedEntries: 0, completed: 0, completionRatePct: null, neverOffered: 0, bufferBlocked: 0,
       floorBlocked: 0, unknown: 0, medianLatencyMin: null, minLatencyMin: null, maxLatencyMin: null, medianSpotMove: null,
     },
+    roll: null,
     completionTrend: [],
+    rollTrend: [],
     liveVsPaper: null,
   };
   const result = withReadOnlyDb<FliesPerformance>(dbPath, empty, (db) => {
-    const all = pnlRows(db, SETTLED, []);
+    const sc = scopeClause(filter);
+    const all = pnlRows(db, `${SETTLED}${sc.and}`, sc.params);
     const tilesBase = summarize(all.map(toPnl));
 
     const buckets = new Map<string, PnlRow[]>();
@@ -831,13 +977,28 @@ export function readFliesPerformance(config: ConsoleConfig, mode: TradingMode, g
 
     // completion_stats, legged: the counterfactual's floor split reads the
     // decisions journal (the engine's own recorded reason), never recomputed.
-    const modeRows = db
-      .prepare<[], Record<string, unknown>>(
-        `SELECT position_id, kind, credit, best_completing_debit, completion_latency_min,
-                underlying_at_entry, spot_at_completion
-           FROM fly_positions WHERE entry_mode = 'legged'`,
-      )
-      .all();
+    // One computation, run per entry mode. `legged` completes by BUYING the completing debit spread;
+    // `bwb_roll` converts by ROLLING the far wing in. Different trades, identical question -- how
+    // often did the conversion happen, why did the misses miss, and how long did the winners take --
+    // so they share the code rather than growing two versions that quietly answer it differently.
+    const conversionSpec = {
+      legged: {
+        best: "best_completing_debit",
+        latency: "completion_latency_min",
+        spot: "spot_at_completion",
+        gateReason: "floor_below_minimum_after_fees",
+        // Cheaper than the credit is the direction that means "the market offered it".
+        offered: (best: number, target: number) => best < target,
+      },
+      bwb_roll: {
+        best: "best_roll_debit",
+        latency: "roll_latency_min",
+        spot: "spot_at_roll",
+        gateReason: "floor_below_minimum_after_fees",
+        offered: (best: number, target: number) => best < target,
+      },
+    } as const;
+
     const floorGated = new Set(
       db
         .prepare<[], { position_id: string | null }>(
@@ -847,62 +1008,89 @@ export function readFliesPerformance(config: ConsoleConfig, mode: TradingMode, g
         .map((r) => r.position_id)
         .filter((p): p is string => p !== null),
     );
-    const completed = modeRows.filter((r) => r["kind"] === "fly");
-    const missed = modeRows.filter((r) => r["kind"] !== "fly");
-    let neverOffered = 0;
-    let bufferBlocked = 0;
-    let floorBlocked = 0;
-    let unknown = 0;
-    for (const r of missed) {
-      const best = num(r["best_completing_debit"]);
-      const target = num(r["credit"]);
-      if (best === null || target === null) unknown += 1;
-      else if (!(best < target)) neverOffered += 1;
-      else if (floorGated.has(String(r["position_id"]))) floorBlocked += 1;
-      else bufferBlocked += 1;
-    }
-    const latencies = completed.map((r) => num(r["completion_latency_min"])).filter((v): v is number => v !== null);
-    const moves = completed
-      .map((r) => {
-        const a = num(r["spot_at_completion"]);
-        const b = num(r["underlying_at_entry"]);
-        return a !== null && b !== null ? Math.abs(a - b) : null;
-      })
-      .filter((v): v is number => v !== null);
+    // Voided rows are EXCLUDED, and for the roll that is not a detail: 25 of the 37 bwb entries in
+    // the ledger carry a void_reason, because evaluate_roll priced the wrong legs until 2026-08-07
+    // (a spread of width far+wing instead of far-wing, 3x too wide at the default ratio). Counting
+    // them put the roll rate at 65% when the rows that were actually the trade give 83%. The module
+    // disavowed those decisions; a read surface that quietly includes them republishes them.
+    const conversionFor = (mode: keyof typeof conversionSpec): CompletionBlock => {
+      const spec = conversionSpec[mode];
+      const rows = db
+        .prepare<string[], Record<string, unknown>>(
+          `SELECT position_id, kind, credit, ${spec.best} AS best, ${spec.latency} AS latency,
+                  underlying_at_entry, ${spec.spot} AS spot_at_done
+             FROM fly_positions WHERE entry_mode = ? AND void_reason IS NULL${sc.and}`,
+        )
+        .all(mode, ...sc.params);
+      // 'fly' is the converted kind for BOTH modes: a completed leg-in and a rolled bwb both end up
+      // holding a symmetric butterfly, which is the point of each.
+      const done = rows.filter((r) => r["kind"] === "fly");
+      const missed = rows.filter((r) => r["kind"] !== "fly");
+      let neverOffered = 0;
+      let bufferBlocked = 0;
+      let floorBlocked = 0;
+      let unknown = 0;
+      for (const r of missed) {
+        const best = num(r["best"]);
+        const target = num(r["credit"]);
+        if (best === null || target === null) unknown += 1;
+        else if (!spec.offered(best, target)) neverOffered += 1;
+        else if (floorGated.has(String(r["position_id"]))) floorBlocked += 1;
+        else bufferBlocked += 1;
+      }
+      const lats = done.map((r) => num(r["latency"])).filter((v): v is number => v !== null);
+      const mvs = done
+        .map((r) => {
+          const a = num(r["spot_at_done"]);
+          const b = num(r["underlying_at_entry"]);
+          return a !== null && b !== null ? Math.abs(a - b) : null;
+        })
+        .filter((v): v is number => v !== null);
+      return {
+        leggedEntries: rows.length,
+        completed: done.length,
+        completionRatePct: rows.length > 0 ? (done.length / rows.length) * 100 : null,
+        neverOffered,
+        bufferBlocked,
+        floorBlocked,
+        unknown,
+        medianLatencyMin: median(lats),
+        minLatencyMin: lats.length > 0 ? Math.min(...lats) : null,
+        maxLatencyMin: lats.length > 0 ? Math.max(...lats) : null,
+        medianSpotMove: median(mvs),
+      };
+    };
 
-    const trend = db
-      .prepare<[], Record<string, unknown>>(
-        `SELECT trade_date, COUNT(*) AS legged, SUM(CASE WHEN kind = 'fly' THEN 1 ELSE 0 END) AS completed
-           FROM fly_positions WHERE entry_mode = 'legged' GROUP BY trade_date ORDER BY trade_date`,
-      )
-      .all()
-      .map((r) => {
-        const legged = Number(r["legged"]);
-        const done = Number(r["completed"]);
-        return { day: String(r["trade_date"]), legged, completed: done, ratePct: legged > 0 ? (done / legged) * 100 : null };
-      });
+    const legged = conversionFor("legged");
+    const rollBlock = conversionFor("bwb_roll");
+
+    const trendFor = (mode: string) =>
+      db
+        .prepare<string[], Record<string, unknown>>(
+          `SELECT trade_date, COUNT(*) AS legged, SUM(CASE WHEN kind = 'fly' THEN 1 ELSE 0 END) AS completed
+             FROM fly_positions WHERE entry_mode = ? AND void_reason IS NULL${sc.and}
+              GROUP BY trade_date ORDER BY trade_date`,
+        )
+        .all(mode, ...sc.params)
+        .map((r) => {
+          const n = Number(r["legged"]);
+          const c = Number(r["completed"]);
+          return { day: String(r["trade_date"]), legged: n, completed: c, ratePct: n > 0 ? (c / n) * 100 : null };
+        });
 
     return {
       mode,
       tiles: {
         ...tilesBase,
-        completionRatePct: modeRows.length > 0 ? (completed.length / modeRows.length) * 100 : null,
+        completionRatePct: legged.completionRatePct,
       },
       series,
-      completion: {
-        leggedEntries: modeRows.length,
-        completed: completed.length,
-        completionRatePct: modeRows.length > 0 ? (completed.length / modeRows.length) * 100 : null,
-        neverOffered,
-        bufferBlocked,
-        floorBlocked,
-        unknown,
-        medianLatencyMin: median(latencies),
-        minLatencyMin: latencies.length > 0 ? Math.min(...latencies) : null,
-        maxLatencyMin: latencies.length > 0 ? Math.max(...latencies) : null,
-        medianSpotMove: median(moves),
-      },
-      completionTrend: trend,
+      completion: legged,
+      // Null rather than a block of zeros when the scope holds no bwb entries: an empty panel that
+      // says "0% roll rate" is a claim, and there is nothing to claim.
+      roll: rollBlock.leggedEntries > 0 ? rollBlock : null,
+      completionTrend: trendFor("legged"),
+      rollTrend: trendFor("bwb_roll"),
       liveVsPaper: null,
     };
   });

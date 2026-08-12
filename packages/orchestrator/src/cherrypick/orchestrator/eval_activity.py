@@ -46,6 +46,15 @@ _BENIGN_REASON = frozenset(
         "outside_entry_window",
         "daily_target_reached",
         "entry_spacing_wait",
+        # Universal entry cadence (2026-08-11): each profile is an independent portfolio with
+        # unbounded capital, so this is the gate that paces it. Distinct from
+        # `entry_spacing_wait`, which only binds for profiles opting into `stagger_entries`.
+        # Expected to be a DOMINANT reason on a normal day rather than an exceptional one --
+        # an arm holding its six minutes is the system working, not an outage.
+        "entry_cadence_wait",
+        # The leg-sign overlap scope: refused because a candidate leg would have netted out an
+        # open one. Sits beside strike_overlap/short_pair_occupied, the other two scopes.
+        "sign_rule_conflict",
         "late_entry_bias_wait",
         "max_concurrent_ics_reached",
         "quarterly_open_volatile_skip",

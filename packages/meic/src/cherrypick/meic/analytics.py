@@ -616,3 +616,73 @@ def session_bootstrap(
         "ci_high": _round(hi, 4),
         "significant": lo > 0 or hi < 0,
     }
+
+
+def daily_rollup(conn, day: str, era: str | None = None) -> dict:
+    """One session's numbers, in the shape `daily_summary` has always declared and never held.
+
+    Fourteen of that table's columns -- every count, every dollar, the win rate, the average IV rank
+    -- were written by nothing. Its two writers (`db.cmd_set_session_init` and
+    `db.cmd_save_daily_summary`) set only `session_init_at`, `ai_day_summary` and `closing_nlv`, and
+    both are called from the agent-driven `/eod-report` command, which the automated paper loop does
+    not run. So the paper table was empty outright, the live table held eight rows of zeros, and the
+    console rendered those zeros as a "Daily summaries" card. Same shape as the "No side stops fired"
+    bug: a surface reading fields nothing writes, and reporting the absence as data.
+
+    Computed here rather than in `db.py` so it is built on THIS module's own definitions -- `_RESOLVED`
+    and the fees-inclusive win test -- and cannot drift from what every other read surface means by
+    the same words. That drift is a failure this module has already recorded once, when three call
+    sites disagreed about "net".
+
+    Era-scoped like every other reader (default `CURRENT_ERA`), so a roll-up written during one
+    sampling era is never a blend of two.
+
+    `gross_credit` is the credit as collected -- `net_credit x quantity x dollar_multiplier` -- not
+    the raw per-contract quote, so it is comparable with `gross_pnl` and `fees` in the same row
+    rather than being a different unit sitting beside them.
+    """
+    where, params = _period_clause(era=era or CURRENT_ERA)
+    rows = conn.execute(
+        f"""SELECT status, pnl, fees, net_credit, quantity, dollar_multiplier,
+                   iv_rank_at_entry, session_quality
+              FROM ic_trades WHERE {where} AND trade_date = ?""",
+        (*params, day),
+    ).fetchall()
+    resolved = [dict(r) for r in rows]
+
+    # Cancelled rows never reach `_RESOLVED`, so `total_entries` is counted separately: an entry that
+    # was placed and cancelled is an entry that happened, and a roll-up that hides it would make the
+    # loop look quieter than it was.
+    total = conn.execute("SELECT COUNT(*) FROM ic_trades WHERE trade_date = ?", (day,)).fetchone()[0]
+
+    def _num(row, key):
+        value = row.get(key)
+        return 0.0 if value is None else float(value)
+
+    gross_pnl = sum(_num(r, "pnl") for r in resolved)
+    fees = sum(_num(r, "fees") for r in resolved)
+    gross_credit = sum(
+        _num(r, "net_credit") * (r.get("quantity") or 1) * (r.get("dollar_multiplier") or 1) for r in resolved
+    )
+    # The module-wide win definition: a RESOLVED trade whose P&L clears its own fees. Gross-positive
+    # and fee-negative is a loss here, which is the whole point of stating it in one place.
+    wins = sum(1 for r in resolved if _num(r, "pnl") - _num(r, "fees") > 0)
+    iv_ranks = [r["iv_rank_at_entry"] for r in resolved if r.get("iv_rank_at_entry") is not None]
+    sessions = sorted({r["session_quality"] for r in resolved if r.get("session_quality")})
+
+    return {
+        "summary_date": day,
+        "total_entries": total,
+        "entries_filled": len(resolved),
+        "entries_stopped": sum(1 for r in resolved if r["status"] == "stopped"),
+        "entries_expired": sum(1 for r in resolved if r["status"] == "expired"),
+        "entries_cancelled": total - len(resolved),
+        "gross_credit": _round(gross_credit),
+        "gross_pnl": _round(gross_pnl),
+        "fees": _round(fees),
+        "net_pnl": _round(gross_pnl - fees),
+        "win_count": wins,
+        "win_rate_pct": _round(_rate(wins, len(resolved), 4) * 100 if resolved else None),
+        "avg_iv_rank": _round(sum(iv_ranks) / len(iv_ranks), 4) if iv_ranks else None,
+        "sessions_entered": sessions,
+    }
