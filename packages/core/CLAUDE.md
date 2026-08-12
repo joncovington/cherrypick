@@ -59,7 +59,7 @@ module is the real reference; this is the index that tells you which one to open
 | `entry` | Entry-permission rules MEIC and flies must apply identically: cadence and the leg-sign rule. |
 | `streamer` | The generic persistent DXLink streaming engine. `packages/streamer` is the daemon around this. |
 | `streamcache` | The shared stream-cache schema and its SQLite helpers — the contract between producer and every reader. |
-| `streamrequests` | The consumer half of the subscription registry: how a module declares the symbols it needs. |
+| `streamrequests` | The subscription registry: how a module declares the symbols it needs, plus the union read the streamer subscribes from and the orchestrator checks staleness against. |
 | `dxfeed` | On-demand DXLink event collectors, for callers that want a snapshot rather than a stream. |
 | `gex` | The GEX engine: a pure function over an option-chain snapshot. Copying this once let the math drift ~75×. |
 | `profiles` | The named risk-profile registry and merge engine — how a partial override becomes an effective config. |
