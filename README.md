@@ -47,7 +47,7 @@ See [risk profiles](packages/meic/docs/risk-profiles.md) and [paper experiments]
 
 Dealer gamma positioning is a common input for 0DTE traders. cherrypick streams the option chain and
 computes a gamma-exposure profile from open interest and greeks, presenting the **call/put walls**, the
-**gamma-flip point**, and an **open-interest-vs-volume** view in a lightweight browser dashboard. It is
+**gamma-flip point**, and an **open-interest-vs-volume** view on the console's GEX page. It is
 built from data you are already streaming, and it is the same GEX signal the MEIC engine can use to gate
 entries — for example, requiring positive gamma with price well inside the flip.
 
@@ -85,12 +85,10 @@ suite once collected $4.00 of credit against $4.96 of fees.
 
 ## Where you look at the results
 
-- **The console** (`packages/console`, `127.0.0.1:5070`) — the unified web UI: every engine's read models
-  plus interactive screening, the watchlist, and a strategy builder in one app. Read-only over every other
-  package's data. This is where the suite is heading; the per-module dashboards still run alongside it.
-- **The suite dashboard** (`run.py dashboard --serve`, `:8787`) — one status page composing health, P&L,
-  and each module's own dashboard as an embed.
-- **Per-module dashboards** — MEIC (`:5050`/`:5051`), flies (`:5052`), GEX (`:5055`), scout (`:5057`).
+- **The console** (`packages/console`, `127.0.0.1:5070`) — the suite's one read surface: every engine's
+  read models plus interactive screening, the watchlist, and a strategy builder in one app. Read-only over
+  every other package's data, and kept running by the supervisor rather than started by hand. It replaced
+  the suite dashboard and every per-module dashboard on 2026-08-12.
 - **Reports on disk** — a deterministic end-of-day report per module, a cross-module suite digest, and
   (opt-in) an AI-written narrative over the day's deterministic reports. The deterministic files stay the
   source of record.
@@ -157,13 +155,13 @@ read them:
 
 | Package | What it is |
 |---|---|
-| [packages/orchestrator](packages/orchestrator) | The scheduler, watchdog, notifications, and the whole read side (report / calibrate / dashboard / EOD). Drives the engines by subprocess. |
+| [packages/orchestrator](packages/orchestrator) | The supervisor, watchdog, notifications, and the read side (report / calibrate / EOD). Drives the engines by subprocess. |
 | [packages/core](packages/core) | The shared `cherrypick.core` library — calendar, fees, profiles, GEX math, broker, auth. Install it first. |
 | [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) | The three strategy engines. |
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
-| [packages/gex](packages/gex) | The standalone GEX dashboard. |
+| [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models in one app. Read-only. |
-| [packages/scout](packages/scout) | Interactive screening and strategy exploration. |
+| [packages/scout](packages/scout) | The research services and cache behind the console's screening surfaces. |
 | [packages/desk](packages/desk) | ⚠️ **Experimental.** The manual trading desk — the only *discretionary* live-order path, driven by you per order. [Read the warning](#before-you-go-anywhere-near-live-trading). |
 
 ## Requirements
@@ -175,7 +173,7 @@ read them:
 | **[Claude Code](https://docs.claude.com/en/docs/claude-code)** | Anthropic's agentic CLI. It drives the interactive and live-trading sessions, the slash-command workflows (`/meic-start`, `/earnings-start`, `/eod-report`), and the agent-synthesized analysis. The unattended **paper** automation runs on its own without it — but the agent-driven features need it. Installs via npm (needs [Node.js](https://nodejs.org) 18+). |
 | A computer that stays awake during market hours | cherrypick runs on your machine on a schedule, so it has to be on to capture a session. **Windows is recommended** — the scheduler and self-healing are most complete there. |
 | **[Node.js](https://nodejs.org) 22+ and [pnpm](https://pnpm.io)** *(console only)* | The unified web console is a Node/TypeScript package. It needs Node **22+** — a higher floor than Claude Code's 18+. Not needed for anything else; every other package is Python. |
-| **[Dolt](https://github.com/dolthub/dolt)** *(earnings engine only)* | The earnings module reads its historical datasets from a local `dolt sql-server`. Not needed for MEIC or the GEX dashboard. |
+| **[Dolt](https://github.com/dolthub/dolt)** *(earnings engine only)* | The earnings module reads its historical datasets from a local `dolt sql-server`. Not needed for MEIC or GEX. |
 
 ## Quick Start
 
@@ -302,12 +300,12 @@ That's it. From here it collects data hands-off. `python run.py status` shows wh
 ```bash
 python run.py report              # win rate + gross/net P&L across strategies and risk profiles
 python run.py report --eod        # scope to one settlement session (--date YYYY-MM-DD for a past one)
-python run.py dashboard --serve   # the suite status page in your browser (:8787)
 python run.py calibrate           # advice on when a risk profile has "earned" a step up
 python run.py eod-digest          # write today's cross-module digest to a file
 ```
 
-For the unified web console instead: `cd packages/console && python run.py dashboard --serve` (`:5070`).
+To look rather than read: the **console** at <http://127.0.0.1:5070>. The supervisor keeps it running,
+so there is normally nothing to start — `/console` opens it and says what is wrong when it is down.
 
 Paper and live results are read through **separate** commands by design — `report` is paper-only and
 `report --live` reads the modules' separate live ledgers, so a calibration reading can never accidentally

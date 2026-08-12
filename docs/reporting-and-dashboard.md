@@ -1,4 +1,4 @@
-# Reporting & dashboard (the read side)
+# Reporting & the console (the read side)
 
 Everything the suite produces for you to *look at*. All of it is **read-only and file-only** — it reads
 paper DBs (SQLite read-only), watchdog state, logs, and report files, never the broker or the network
@@ -18,7 +18,8 @@ report.run(session=day)  ── unified cross-module P&L (gross/net, per profile
         │
         ├── eod_insight ─►  logs/eod-insight-<day>.md  (opt-in AI synthesis over the above)
         │
-        └── dashboard ───►  dashboard.html (static)  or  a live server (--serve)
+        └── console ─────►  the reactive UI at 127.0.0.1:5070 (packages/console)
+                                 reads these files and every module's DB directly
 ```
 
 `calibrate` sits alongside `report`, reading the same paper DBs to produce per-profile qualification
@@ -135,33 +136,33 @@ paper-tuning recommendations), clearly labelled AI-generated and not advice. Ena
 [guardrails-and-modes.md](guardrails-and-modes.md) for why this satisfies the no-AI-on-the-reliability-path
 invariant.
 
-## The dashboard
+## The console
 
-`dashboard.py` renders one status page composing all of the above plus a log tail and health.
+The suite's **one read surface**: `packages/console`, a Node + TypeScript server and a React SPA on
+**127.0.0.1:5070**, composing every module's read models (overview/watchdog, MEIC, flies, earnings,
+GEX) plus the scout research surfaces. It reads module SQLite stores with `readonly: true` and their
+JSON state as files; its only writable store is `~/.cherrypick/data/console/`.
 
-- **Static** (`cherrypick dashboard`): writes `~/.cherrypick/dashboard.html`, regenerated on each
-  watchdog tick. Reads the **watchdog heartbeat** (`state/watchdog.last.json`) for health rather than
-  re-running `doctor`, so it stays fast and offline and never touches the broker.
-- **Live** (`cherrypick dashboard --serve`): a loopback-only server (default `127.0.0.1:8787`) that
-  rebuilds the same page fresh per request. Adds a few broker-touching cards that exist **only** on the
-  served path — a `/api/system` doctor card, a `/api/reconcile` card, and module dashboard **iframes**
-  (`/embed/<id>`, PAPER mode forced) — plus polled section cards (e.g. the live GEX view).
+**The supervisor keeps it up** as an always-on resident job — no clock window and no trading-day
+gate, since a read surface you can only open during RTH cannot be used to read the session that just
+ended. It is restarted if it dies and if it *wedges*: the server rewrites
+`state/console.heartbeat` every ~15s and a stale mtime is the wedge signal, which is what a
+process-liveness check would miss on a Node event loop. `/console` opens it and diagnoses it when it
+is down; its log is `logs/console/console.log`.
 
-### The EOD card's report links
+The EOD reports above are surfaced in-page, rendered as markdown from an allowlisted set of files.
 
-The EOD card lists, per module, the terse **metrics** report and the conversational **analysis**, plus
-the suite **digest** and (when present) the **AI insight**. On the live server these are clickable links
-that open the report in a new tab via `/eod-report`, rendered as **styled HTML** (a small dependency-free
-markdown→HTML converter: headings, pipe tables, bold/italic/code, nested bullets, themed to match the
-dashboard). On the static file they're plain `✓` existence markers — a file has no server behind it to
-open. Route shapes:
+**What this replaced, on 2026-08-12.** A static `dashboard.html` regenerated on every watchdog tick,
+a served version of the same page on 8787 with broker-touching cards and module-dashboard iframes,
+and each module's own dashboard (MEIC 5050/5051, flies 5052, GEX 5055, scout 5057). All deleted;
+`pre-console-only` is the tag that still has them. Two consequences worth knowing:
 
-| Link | Route |
-|---|---|
-| module metrics | `/eod-report?module=<m>&session=<day>` |
-| module analysis | `/eod-report?module=<m>&kind=analysis&session=<day>` |
-| suite digest | `/eod-report?suite=1&session=<day>` |
-| AI insight | `/eod-report?insight=1&session=<day>` |
+- The watchdog no longer renders anything on its tick, which takes that work off the reliability path
+  for good.
+- The served page's **live ops card** — the halt flag, per-module live gates, and the reconcile
+  panel — has no console equivalent. It was deliberately never ported because it is broker-touching,
+  and it is the one real gap the deletion accepted. `liveops.py` and `reconcile.py` both survive;
+  `cherrypick reconcile` still runs on demand and as its daily job.
 
 ## End-of-month log/report rotation
 

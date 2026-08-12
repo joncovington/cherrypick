@@ -25,9 +25,13 @@ python ../streamer/run.py    # blocks; run detached/hidden
 (Only if this box was deliberately rolled back to MEIC-as-producer — `modules.meic.streamer.enabled`
 true in the cherrypick config — use `python -m cherrypick.meic.streamer --status` / start instead.)
 
-## Step 2 — Paper-trading dashboard
+## Step 2 — The read surface
 
-Invoke `/serve-dashboard --meic --paper` to launch (or confirm already running) the paper-trading dashboard at http://localhost:5051, separate from the live dashboard's port 5050.
+Invoke `/console` to open the suite console at http://127.0.0.1:5070 and confirm its MEIC page is
+serving. The module's own dashboard (5050/5051) was retired on 2026-08-12 — the console reads both
+ledgers and tags every row with the mode it came from, so paper and live are separated by the data
+rather than by which port you opened. The supervisor keeps the console running; you should not need
+to start anything here.
 
 ## Step 3 — Paper-trading loop (scheduled task)
 
@@ -42,4 +46,4 @@ This creates the `cherrypick-meic-paper-loop` task, which runs `python -m cherry
 (For a one-off manual iteration outside the task — e.g. a final force-close pass — run `python -m cherrypick.meic.paper_loop --once`. On non-Windows hosts, run `python -m cherrypick.meic.paper_loop` in a terminal or wire a cron job instead.)
 
 Tell the user:
-"Paper-trading session started — the paper loop runs as the supervisor's `meic-paper` job on the cadence set by `paper.tick_interval_seconds`, across every enabled forward-test stream (`control`/`open`/`width-5`/`width-10` — see config.risk.json), self-healing and time-gated to market hours. It writes a deterministic end-of-day report to logs/paper-eod-<date>.md automatically at the 16:00 settlement pass. Writes go to ~/.cherrypick/data/meic/paper_trades.db only; the live account and ~/.cherrypick/data/meic/meic_trades.db are untouched. Dashboard: http://localhost:5051 (Paper Mode). Stop the session with `python -m cherrypick.meic.paper_loop --uninstall-task`; run /paper-report for a synthesized write-up or `python -m cherrypick.meic.paper_loop --eod-report` for the day's report on demand."
+"Paper-trading session started — the paper loop runs as the supervisor's `meic-paper` job on the cadence set by `paper.tick_interval_seconds`, across every enabled forward-test stream (`control`/`open`/`width-5`/`width-10` — see config.risk.json), self-healing and time-gated to market hours. It writes a deterministic end-of-day report to logs/paper-eod-<date>.md automatically at the 16:00 settlement pass. Writes go to ~/.cherrypick/data/meic/paper_trades.db only; the live account and ~/.cherrypick/data/meic/meic_trades.db are untouched. Read surface: the console at http://127.0.0.1:5070/meic (rows carry their own paper/live mode). Stop the session with `python -m cherrypick.meic.paper_loop --uninstall-task`; run /paper-report for a synthesized write-up or `python -m cherrypick.meic.paper_loop --eod-report` for the day's report on demand."

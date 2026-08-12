@@ -20,8 +20,8 @@ Do this:
    even when long gone — a no-op reports `[ OK ]`; on a pre-cutover box this is what removes the old
    per-job tasks), and `service.gex-recorder` (and any other `services` entry) stopped. If a
    `<module>.live_arm` line appears, a **live arm record was removed** — check the broker UI for
-   resting orders. The "Left running by design" section names the streamer, any dashboard server,
-   and Dolt — **the streamer is why the next step exists.**
+   resting orders. The "Left running by design" section names the streamer, the console, and Dolt —
+   **the streamer is why the next step exists.**
 
 2. **Stop what uninstall leaves behind** (each is best-effort — "not running" is a fine result):
    - **Streamer** (the standalone producer, `packages/streamer` — the suite's single market-data
@@ -30,10 +30,14 @@ Do this:
      (Only if this box was rolled back to MEIC-as-producer — `modules.meic.streamer.enabled` true —
      stop that one instead: `python -m cherrypick.meic.streamer --stop`. Exactly one producer ever
      runs.)
-   - **Dashboard servers** (only if any `--serve` is up): run the `/serve-dashboard --stop all`
-     procedure, which covers the suite (8787) and every module dashboard (embeds 8801–8803; MEIC
-     5050–5051, flies 5052, scout 5057, gex 5055–5056, console 5070) with its confirm-before-kill
-     guard. The settings editor (8804) is foreground-only — it stops when you close it.
+   - **Console** (`packages/console`, port **5070** — the suite's one read surface). Step 1 stopped
+     the supervisor, which owned it, but the console is the supervisor's *grandchild* (`run.py` is a
+     launcher, node is the server), so it outlives the daemon rather than dying with it. Find the
+     listener, confirm it is `node` running `packages/console/server/dist/index.js`, then kill the
+     **tree**:
+     `Get-NetTCPConnection -LocalPort 5070 -State Listen -EA SilentlyContinue | Select-Object -Expand OwningProcess -Unique | ForEach-Object { taskkill /T /F /PID $_ }`
+     (`/T`, not `Stop-Process`: without it the node process survives and keeps the port.)
+     The settings editor (8804) needs nothing — it is foreground-only and stops when you close it.
    - **Dolt sql-server** (earnings' local market-data DB; its keep-alive task was removed in step 1):
      stop the process serving port **3306**:
      `Get-NetTCPConnection -LocalPort 3306 -State Listen -EA SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`
@@ -49,7 +53,7 @@ Do this:
      running); `python packages/orchestrator/run.py status` shows the legacy empty-tasks view.
    - Streamer down: `python packages/streamer/run.py --status` reports `"running": false`.
    - gex recorder down: `python packages/gex/run.py record --status` reports `"running": false`.
-   - Nothing listening on ports **3306**, **8787**, or **7699**.
+   - Nothing listening on ports **3306**, **5070**, or **7699**.
 
 4. **Report** clearly: the suite is fully stopped and unscheduled, which daemons were stopped (vs.
    already down), and that all data/credentials are intact and `/install` restores everything. The full

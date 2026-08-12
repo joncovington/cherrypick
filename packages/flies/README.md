@@ -42,8 +42,9 @@ python -m cherrypick.flies.paper_loop --status           # what's open, what's s
 python run.py once --snapshot snapshot.json
 
 # monitoring and review
-python -m cherrypick.flies.dashboard --port 5052 --open   # opens a browser dashboard: Today / History / Performance
-python run.py section --json                 # the compact summary card shown on the suite-wide dashboard
+# The read surface is the console: http://127.0.0.1:5070/flies -- Today / History / Performance,
+# the profit forest, the session timeline and the decision journal. This module's own dashboard and
+# its suite-dashboard card were retired 2026-08-12; every read still goes through analytics.py.
 python run.py regime                         # results grouped by the market regime each trade entered into
 python -m cherrypick.flies.paper_loop --eod-reports       # regenerates the day's end-of-day report
 ```
@@ -65,7 +66,7 @@ in Claude rather than by hand.
 This module doesn't run its own market-data connection. Instead it reads real-time-ish quotes
 from a shared local cache (`stream_cache.db`) that one dedicated data process (the suite's
 "streamer") maintains for every module in the suite — flies just reads it, the same way the GEX
-dashboard does. That data process has to be running and subscribed to the symbols you've
+console does. That data process has to be running and subscribed to the symbols you've
 configured, or flies has nothing to look at.
 
 If a quote is stale (older than 120 seconds by default), crossed (bid above ask — a bad quote),
@@ -121,31 +122,12 @@ another variant look better than it is.
 into a full butterfly, this strategy is really just selling credit spreads with extra steps —
 and full defined-risk exposure, not a bounded floor.
 
-## Monitoring dashboard
+## Monitoring
 
-Start it with `python -m cherrypick.flies.dashboard --port 5052 --open`, or ask Claude to run
-`/serve-dashboard --flies`. It's read-only and only reachable from your own computer (no
-outside network access), and has three views:
-
-- **Today** — the day's profit-and-loss curve across strike prices (green where the book
-  profits, red where it doesn't, with a dashed line marking each position's center), the open
-  positions and their floors, the book-wide floor and the price band it holds over, and a
-  running "decision journal."
-- **History** — a filterable trade log, comparisons across strategy variants and entry types, a
-  breakdown by time of day, the fee drag on results, and a daily profit/loss calendar.
-- **Performance** — profit and loss over time (daily/weekly/monthly), completion rate and how
-  long completions take, and how often the strategy variants disagree with each other.
-
-**The decision journal** answers "why didn't we trade today?" Repeated identical reasons
-collapse into a single counted line, so a quiet day still reads as a short, explainable list
-rather than a wall of repetition — and it separately tells apart *the market simply didn't offer
-a good enough price* from *we had no usable data to work with*, which look identical in the P&L
-but call for very different responses.
-
-At the market close the module writes two files into `~/.cherrypick/logs/flies/`: a plain
-end-of-day report and a deeper analysis file. Both lead with the completion rate and the
-post-fee floor rather than the day's raw profit or loss — over a handful of same-day-expiry
-sessions, raw P&L is mostly noise, and leading with it invites the wrong conclusion either way.
+The console's flies page, `http://127.0.0.1:5070/flies` (`/console` opens it). Today tiles, the
+profit forest, the session timeline, the decision journal, positions with their post-fee floors, arm
+divergence, history and performance. Read-only and loopback-only, and the supervisor keeps it
+running. This module's own dashboard on 5052 was retired on 2026-08-12.
 
 ## What it costs
 

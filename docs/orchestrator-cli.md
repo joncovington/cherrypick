@@ -59,9 +59,12 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | `eod-insight` | **Opt-in AI synthesis** over the day's deterministic reports → `logs/eod-insight-<day>.md`. Needs Claude Code on PATH + `eod_insight.enabled`; read-only, no dangerous tools, off the reliability path. Best-effort (prints `skipped`/`error` when absent/disabled). | `--date` |
 | `advise` | **Opt-in bounded parameter proposals** for the NEXT session → `state/advice/<module>-<session>.json`, validated by `cherrypick.core.advice` against each module's `advice_bounds` manifest of closed legal ranges (one violation rejects the whole set; rejections written for audit). Off by default **twice** (`advise.enabled` + per-module); needs Claude Code on PATH; all tools denied. The module's paper loop re-validates with the same core code at session start — absent/stale/invalid ⇒ baseline. Watchdog-fired detached on the same completion event as the digest. | `--date` |
 | `archive` | End-of-month rotation: zip each finished month's dated reports + rotated log backups into `logs/archive/<YYYY-MM>/<scope>.zip` and remove the originals (idempotent; never touches the current month or an active `.log`). | `--month YYYY-MM`, `--dry-run` |
-| `dashboard` | Regenerate the static status dashboard → `~/.cherrypick/dashboard.html`, **or** run a localhost live server with `--serve`. | `--serve`, `--host` (def `127.0.0.1`), `--port` (def `8787`), `--no-browser` |
 
-See [reporting-and-dashboard.md](reporting-and-dashboard.md) for how these compose and the report files they produce.
+There is no `dashboard` command. The suite's read surface is the **console** (`packages/console`, on
+127.0.0.1:5070), which the supervisor keeps running as an always-on resident job; the orchestrator's
+static/served dashboard was deleted on 2026-08-12. See
+[reporting-and-dashboard.md](reporting-and-dashboard.md) for how the read commands compose and the
+report files they produce.
 
 ## Module drivers (invoked by supervisor jobs — rarely run by hand)
 
@@ -84,7 +87,7 @@ job that owns settlement. The modules' `--install-task` helpers remain only for 
 settlement session) · `--live` (report — read the modules' separate live ledgers instead of paper; a
 deliberately separate path calibrate can never reach) · `--fast` (doctor) ·
 `--module` / `--set` / `--clear` / `--yes` (connect/account) ·
-`--serve` / `--host` / `--port` / `--no-browser` (dashboard, settings) · `--apply` (migrate-home,
+`--host` / `--port` / `--no-browser` (settings) · `--apply` (migrate-home,
 settings --organize) · `--organize [target]` (settings) · `--stop` (supervise — ask a running
 supervisor to exit) · `--scheduled` (reconcile — the daily job's mode; notifies on any non-FLAT
 verdict) · `--month` / `--dry-run` (archive) · `--channel` / `--url` (secrets) · `--force` (init).
@@ -92,5 +95,5 @@ verdict) · `--month` / `--dry-run` (archive) · `--channel` / `--url` (secrets)
 ## Slash-command equivalents (Claude Code)
 
 Some workflows are also exposed as checked-in slash commands for interactive sessions:
-`/install`, `/uninstall`, `/serve-dashboard`, `/meic-start`, `/earnings-start`. These are dev
+`/install`, `/uninstall`, `/console`, `/meic-start`, `/earnings-start`. These are dev
 conveniences, never a runtime dependency.

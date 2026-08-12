@@ -4,16 +4,19 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-cherrypick-gex is a **GEX (gamma-exposure) dashboard** for the trading-tool suite — a simple
-self-hosted version of gexbot.com / SpotGamma / MenthorQ. It computes GEX via the shared
-`cherrypick.core.gex` engine and serves a localhost live view. It places no orders and never touches
-live trading. Two modes: **piggyback** (the default — `source.stream_cache_db` resolves to the suite's
+cherrypick-gex is the **GEX (gamma-exposure) engine and recorder** for the trading-tool suite — the
+compute half of a self-hosted gexbot.com / SpotGamma / MenthorQ. It computes GEX via the shared
+`cherrypick.core.gex` engine and records the spot trail; the **console** (`packages/console`) is what
+renders it, on <http://127.0.0.1:5070/gex>. It serves nothing itself, places no orders, and never
+touches live trading. Two modes: **piggyback** (the default — `source.stream_cache_db` resolves to the suite's
 canonical shared cache, `~/.cherrypick/data/marketdata/stream_cache.db`, read read-only) or
 **standalone** (`run.py stream` runs `cherrypick.core.streamer` to populate its own cache path instead,
-e.g. `data/stream_cache.db`, if `source.stream_cache_db` is repointed there). The **cherrypick orchestrator** surfaces this module two ways: a compact live GEX
-**section** card (subprocessing `python run.py section --symbol <sym> --json`, a `cherrypick.core.viz`
-payload) and the full **dashboard embed** (an iframe onto `run.py dashboard --serve`). This dashboard is
-the GEX/IV-Skew/Volume view the suite used to render inside MEIC's dashboard, moved here.
+e.g. `data/stream_cache.db`, if `source.stream_cache_db` is repointed there).
+
+**This module's own dashboard (`serve.py`), its WebSocket push (`push.py`), and its suite-dashboard
+section card (`section.py`) were deleted on 2026-08-12**, when the console became the suite's one read
+surface. The console reads `gex_history.db` and the stream cache directly and computes the profile in
+TypeScript, so nothing here serves HTTP any more. Recover them from the `pre-console-only` tag.
 
 Suite-wide context lives in the root [documentation index](../../docs/README.md) (see especially
 [strategy-engines.md](../../docs/strategy-engines.md) for how GEX fits the suite).
@@ -23,8 +26,8 @@ Suite-wide context lives in the root [documentation index](../../docs/README.md)
 ```bash
 python run.py stream --symbol SPX    # run the streamer -> own data/stream_cache.db (standalone mode)
 python run.py record                 # always-on spot-trail recorder (run alongside the streamer; --once/--interval)
-python run.py dashboard --serve      # localhost live GEX view (default 127.0.0.1:5055)
-python run.py gex --symbol SPX --json # one-shot payload (what the orchestrator consumes)
+python run.py gex --symbol SPX --json # one-shot payload to the terminal
+# To look at it: the console's GEX page, http://127.0.0.1:5070/gex
 python -m pytest                     # tests seed a temp cache; no streamer required
 ruff check . && ruff format .        # line-length 110
 ```
@@ -44,21 +47,16 @@ config file's directory — never hardcode absolute paths.
   → chart payload (reads the spot trail **read-only**). The pure, HTTP-free seam. `record_spots(cfg)`
   samples **every** offered symbol's spot into this module's **own** SQLite (`history_db`) so a trail has
   no gap when the viewer switches symbols; `run_recorder(cfg)` is the always-on loop (`run.py record`).
-- **`cherrypick/gex/serve.py`** — stdlib `ThreadingHTTPServer`, loopback-only, one self-contained page polling
-  `/api/gex`, with three tabs (GEX net-by-strike + spot trail, IV Skew, Volume) and a traded-symbol
-  selector — full parity with MEIC's former in-dashboard GEX view. Spawns a background `record_spots`
-  loop so trails stay continuous while the dashboard is up (the standalone `record` daemon covers
-  all-session, dashboard-independent recording).
-- **`cherrypick/gex/section.py`** — maps `build_gex` output onto the `cherrypick.core.viz` section schema (metrics
-  tiles + a signed net-GEX-by-strike bar series). This is what the orchestrator's generic dashboard renders.
-- **`cherrypick/gex/cli.py` + `run.py`** — the CLI; `section --json` is the orchestrator's integration point.
+- **`cherrypick/gex/cli.py` + `run.py`** — the CLI: `gex` (one-shot payload), `stream`, `record`.
+  Nothing here is an integration point any more — the console reads this module's **data**, not its
+  commands, which is why deleting the serving layer changed no consumer.
 - **`cherrypick.core`** — an installed dependency (`packages/core` in this monorepo, `pip install -e
   packages/core`); the GEX math (`core.gex`), the streaming engine (`core.streamer`), and the cache
   schema (`core.streamcache`) live there so this module and cherrypick-meic compute/stream identically.
 
 ## Invariants (do not violate)
 
-- **Only the streamer talks to the broker.** `provider`/`service`/`serve` read files and never open a
+- **Only the streamer talks to the broker.** `provider`/`service` read files and never open a
   broker session or outward network connection. No MCP/AI on any path.
 - **Never write a cache you don't own.** In piggyback mode `source.stream_cache_db` points at MEIC's
   cache — the provider opens it `?mode=ro` and must never write it; the streamer only writes this

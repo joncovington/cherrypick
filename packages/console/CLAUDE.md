@@ -2,8 +2,23 @@
 
 The suite's unified reactive web UI: one app covering every module's read models (overview/watchdog,
 MEIC, flies, earnings, GEX) plus scout's interactive surfaces (watchlist, screener, builder,
-payoff/POP, staged dry-run tickets). Built to replace the per-module dashboards and scout; during the
-transition it runs **in parallel** with them and touches none of their code.
+payoff/POP, staged dry-run tickets). It **replaced** them on 2026-08-12: the suite dashboard, the
+MEIC/flies/GEX dashboards, the earnings strategy dashboard and scout's web app were deleted, and this
+is the suite's only read surface. It still touches none of their code — every module remains a
+producer this package reads. `pre-console-only` is the tag that still has them.
+
+**The supervisor keeps this running** as an always-on resident job (`console` in
+`state/supervisor-jobs.json`): no clock window and no trading-day gate, since a read surface you can
+only open during RTH cannot be used to read the session that just ended. Two things follow that are
+easy to break:
+
+- **The heartbeat is load-bearing.** `services/heartbeat.ts` rewrites `state/console.heartbeat` every
+  ~15s and the supervisor restarts this process if that mtime goes stale. It is how a *wedged* event
+  loop gets caught, which process-liveness cannot see. Do not make it conditional, and do not move it
+  before `app.listen` — a heartbeat written before a failed bind reports a console that never came up.
+- **`run.py` is a launcher, so node is the supervisor's GRANDchild.** Anything that stops the console
+  must kill the process **tree**; terminating only the tracked PID leaves node holding :5070, and every
+  supervised restart then dies on `EADDRINUSE`.
 
 Unlike the rest of the suite this package is **Node + TypeScript**, not Python:
 
@@ -11,8 +26,9 @@ Unlike the rest of the suite this package is **Node + TypeScript**, not Python:
 - `server/` — Fastify backend, binds **127.0.0.1:5070** (loopback hard-coded; port via `serve.port`
   in `~/.cherrypick/config/console.json`). Serves the built SPA, `/api/*`, and (from M3) `/ws`.
 - `web/` — React + Vite SPA.
-- `run.py` — thin launcher (`python run.py dashboard --serve`) so the serve-dashboard command and the
-  orchestrator never need to know about the Node toolchain.
+- `run.py` — thin launcher (`python run.py dashboard --serve`) so the supervisor and `/console` never
+  need to know about the Node toolchain. Spawns node with `CREATE_NO_WINDOW`, or every restart under
+  `pythonw` pops a terminal window.
 
 ## Commands
 
@@ -25,7 +41,7 @@ pnpm dev:server                   # backend on :5070 with reload
 pnpm dev:web                      # Vite on :5173, proxying /api and /ws to :5070
 pnpm test                         # vitest
 pnpm typecheck                    # tsc --noEmit across all three workspaces
-python run.py dashboard --serve   # what the orchestrator and /serve-dashboard invoke
+python run.py dashboard --serve   # what the supervisor's `console` job invokes
 ```
 
 ## Data rules

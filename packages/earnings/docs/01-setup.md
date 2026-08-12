@@ -48,8 +48,7 @@ pip install -e ".[dev]"
 
 The install pulls in `tastytrade` (broker SDK), `keyring` (OS-native credential storage
 for OAuth secrets), and `mysql-connector-python` (talks to `dolt sql-server`, which speaks the
-MySQL wire protocol). `strategy_dashboard.py`'s charts are `cherrypick.core.viz` cards drawn
-client-side on a plain canvas, so the dashboard needs no charting dependency.
+MySQL wire protocol).
 
 ---
 
@@ -178,13 +177,14 @@ Check progress at any time with:
 
 ```bash
 python -m cherrypick.earnings.strategy_report
-python -m cherrypick.earnings.strategy_dashboard   # writes reports/strategy_dashboard.html
+# The HTML view of these numbers is the console's Earnings page (http://127.0.0.1:5070/earnings);
+# strategy_dashboard.py was retired 2026-08-12 when the console became the suite's one read surface.
 ```
 
 > **Inside the suite:** you don't have to run this by hand day to day. The [orchestrator](../../orchestrator)
 > registers and watchdogs two daily OS tasks (via `cherrypick install`) — an entry task at 15:45 ET and an
 > 60-second `self_healing` job — that runs `paper_loop.py`, which does entry, marking and managed exits from its own clock, into the
-> `strat_test` book, then surface the results through `cherrypick report` / `dashboard` / `calibrate`. It
+> `strat_test` book, then surface the results through `cherrypick report` / the console / `calibrate`. It
 > drives this module by subprocess only — it never places live orders or edits this config. Running
 > `/paper-start` here is the standalone equivalent, minus the watchdog and notifications.
 

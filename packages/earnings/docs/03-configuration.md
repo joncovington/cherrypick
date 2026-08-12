@@ -138,7 +138,7 @@ Controls how the forced-sampling strategy test (`strat_test_harness.py`, see
 - `"combined"` — all forced-sampling trades share a single `strat_test` book (the original
   behavior), one blended P&L across every strategy.
 
-Reporting (`strategy_report.py` / `strategy_dashboard.py`) and the orchestrator's
+Reporting (`strategy_report.py`, the console's Earnings page) and the orchestrator's
 `report`/`calibrate` group by that book tag; a `--profile strat_test` request matches the whole
 family (the combined book plus all `strat_test:<strategy>` sub-books). Sizing basis for the test
 is just `available_capital_paper_mode` — there's no per-book capital or risk multiplier.

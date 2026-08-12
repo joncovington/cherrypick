@@ -10,7 +10,7 @@ commands, you can operate cherrypick.
 cherrypick lets you **test options strategies on paper, automatically.** You choose the strategies and
 symbols, turn it on, and leave it running. On a schedule during market hours it runs the strategies in
 simulation, records every would-be trade (with realistic fills and costs), and monitors itself, notifying
-you if anything stops working. Later you open a report or dashboard to review how your strategies would have
+you if anything stops working. Later you open a report or the console to review how your strategies would have
 performed.
 
 Its distinguishing feature is **variance testing**: you can run many parameter variations of a strategy in
@@ -30,7 +30,7 @@ It comes with four modules:
   makes money net of costs, arm-by-arm, and is built so a negative answer is a usable result. Paper
   by default, with a small, explicitly-armed live pilot also available (see
   [`packages/flies/docs/live-trading-plan.md`](../packages/flies/docs/live-trading-plan.md)).
-- **GEX** — a self-hosted read-only **gamma-exposure dashboard** over the shared market-data stream.
+- **GEX** — a self-hosted read-only **gamma-exposure** view over the shared market-data stream.
 
 By default everything runs in **paper mode** — the automation never places, cancels, or closes a real
 order on its own. You can also connect a real tastytrade account for live market data and a read-only
@@ -103,7 +103,7 @@ engine), a connection check, picking which account the suite would use if you ev
 live trading (you confirm; per-engine overrides are possible with `connect --module <name>`),
 optional Slack/Discord notifications (Enter skips), and a status panel showing each engine's
 setup. If you previously set credentials per engine, the wizard offers to consolidate them
-into the shared login so there's one place to rotate. The **GEX** dashboard and the streamer
+into the shared login so there's one place to rotate. The **GEX** engine and the streamer
 reuse the same keyring credentials — no separate step.
 
 There is exactly **one** place credentials are set (this wizard) and one shared keyring entry the whole
@@ -206,8 +206,7 @@ Neither is live. See
 |---|---|
 | `python run.py report` | Win rate with **gross and net** P&L (net of commissions and slippage) across strategies and risk profiles. Add `--eod` (today) or `--date YYYY-MM-DD` for one day. |
 | `python run.py eod-digest` | An end-of-day write-up for one session across both tools, saved to `logs/eod-digest-<day>.md`. Runs automatically each afternoon (see below) — you rarely need to run it by hand. |
-| `python run.py dashboard --serve` | A live dashboard in your browser: overall status, per-strategy P&L, a fee-drag card, a **GEX (gamma-exposure) view** (call/put walls and the gamma-flip point), recent activity, and health checks. |
-| `python run.py dashboard` | The same as a single self-contained web page you can open or share. |
+| the **console** at <http://127.0.0.1:5070> | Everything in your browser: overall status, per-strategy P&L, fee drag, a **GEX (gamma-exposure) view** (call/put walls and the gamma-flip point), recent activity, and health checks. The supervisor keeps it running — there is nothing to start. |
 | `python run.py calibrate` | Advice on whether a risk profile has collected enough good results to consider stepping up (advisory only — it never changes anything). |
 
 The end-of-day digest is **scheduled automatically when you install** and sends you a one-line summary
@@ -246,7 +245,7 @@ python run.py secrets-set --channel discord      # paste your webhook URL when p
 | `python run.py doctor` | Green/red readiness check (add `--fast` to skip the broker check). |
 | `python run.py status` | Shows the schedule and when things last ran / run next. |
 | `python run.py report` | Paper P&L summary. |
-| `python run.py dashboard --serve` | Live browser dashboard. |
+| the **console** at <http://127.0.0.1:5070> | Everything in your browser (kept running for you). |
 | `python run.py reconcile` | Safety check: confirms your **real** brokerage account has no unexpected open positions. |
 | `python run.py account --module meic` | See / choose which account a strategy would use if run live. |
 | `python run.py install` / `uninstall` | Turn the schedule on / off. |

@@ -9,8 +9,15 @@ recorded-earnings-screen view, a credit-spread/iron-condor screener, per-symbol 
 and a leg-list payoff builder — content ideas borrowed from commercial options-research platforms,
 built on the suite's own data
 sources (`tastytrade.metrics.get_market_metrics`, the shared Dolt DBs, a new candle/chain cache). It is
-**standalone**: its own port (5057), no orchestrator section card or dashboard-embed registration, and
-not on any reliability path. It was built milestone-by-milestone on the long-lived `feature/scout`
+**standalone**: no orchestrator section card or dashboard-embed registration, and not on any
+reliability path.
+
+**Its web app was deleted on 2026-08-12** — the console (`packages/console`) is the suite's one read
+surface, and it already re-implements most of `services/` and `analytics/` in TypeScript. What is left
+here is the services-and-cache half, kept until a gap audit ports whatever the console still needs
+(`analytics/describe.py` and `analytics/narrative.py` at minimum); then this package goes. Treat it as
+a library with a watchlist/cache CLI, not a surface. The dry-run invariant below still binds: this
+package still owns the single broker-order call site in `services/staging.py`. It was built milestone-by-milestone on the long-lived `feature/scout`
 branch (see git history) and merges to `main` only when feature-complete — the merge itself is a
 separate, deliberate step, not implied by the branch reaching M8.
 
@@ -22,7 +29,6 @@ python run.py watchlist remove NVDA
 python run.py watchlist list
 python run.py cache stats                    # row counts per cache table
 python run.py cache clear                    # delete the local cache DB (safe -- pure cache)
-python run.py serve                          # localhost research app (default 127.0.0.1:5057)
 python -m pytest                             # tests run against a temp DB/home; no broker/network
 ruff check . && ruff format .                # line-length 110, E501 enforced (new code)
 ```

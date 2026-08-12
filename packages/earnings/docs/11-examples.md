@@ -200,8 +200,8 @@ iron_condor (paper, profile=strat_test)
   IV crush (entry_iv - exit_iv, avg): 0.087
 ```
 
-`python -m cherrypick.earnings.strategy_dashboard --mode paper --profile strat_test` writes the same numbers as
-an HTML dashboard with equity curves and a regime heatmap. See
+The console's Earnings page (<http://127.0.0.1:5070/earnings>) renders the same numbers with equity
+curves and a regime heatmap. See
 `docs/strategy-testing-plan.md` for what sample sizes actually mean here and
 `docs/strategy-optimization.md` for the specific hypotheses these numbers get checked against
 before any config value changes.

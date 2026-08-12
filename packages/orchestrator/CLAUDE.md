@@ -39,7 +39,6 @@ python run.py notify-eod     # write the digest + push a one-line summary (the w
 python run.py archive        # end-of-month rotation: zip each finished month's reports + rotated logs to logs/archive/ (--dry-run / --month YYYY-MM); scheduled monthly as cherrypick-log-archive
 python run.py eod-insight    # opt-in AI synthesis over the day's deterministic reports -> logs/eod-insight-<day>.md (needs Claude Code on PATH + eod_insight.enabled); watchdog-fired (detached) on the same completion event as the digest
 python run.py advise         # opt-in bounded next-session parameter proposals per module -> state/advice/<module>-<session>.json, validated by cherrypick.core.advice against each module's advice_bounds (needs Claude Code on PATH + advise.enabled + per-module enabled); watchdog-fired (detached) on the same completion event; loops re-validate and treat absent/stale/invalid as baseline
-python run.py dashboard      # regenerate the static status dashboard -> dashboard.html
 python run.py settings       # local config editor + secrets manager, loopback:8804 -- the suite's one mutating surface; --organize [target] [--apply] reorders config(s) into their example's sections instead of serving
 python run.py calibrate      # per-profile calibration readings + promotion recommendations
 python run.py migrate-home   # dry-run: move config files into ~/.cherrypick + sweep leftovers (--apply to perform)
@@ -47,7 +46,7 @@ python run.py uninstall      # remove cherrypick-managed tasks
 
 # Tests (pytest; markers: unit [default lane], live, windows)
 python -m pytest                                   # default: `-m "not live" -q` (see pytest.ini)
-python -m pytest tests/test_dashboard.py           # one file
+python -m pytest tests/test_report.py              # one file
 python -m pytest tests/test_report.py::test_report_unifies_pnl_net_of_costs_across_modules  # one test
 
 # Lint / format (line-length 110)
@@ -83,8 +82,8 @@ resolved **relative to the config file's directory** — never hardcode absolute
   to one settlement day for the daily/EOD views), `calibrate.py` (per-profile promotion advisor),
   `eod_digest.py` (one session's cross-module roll-up → `logs/eod-digest-<day>.md`, citing `report`'s
   numbers so it can't drift, + links to each module's own `paper-eod-<day>.md` and conversational
-  `eod-analysis-<day>.md`), and `dashboard.py` (a single static HTML page composing all of it + a log
-  tail). These are **read-only and file-only**. The EOD digest is also surfaced through the notifier.
+  `eod-analysis-<day>.md`). The page that composes all of it is the **console** (`packages/console`),
+  which this package no longer serves anything of its own alongside. These are **read-only and file-only**. The EOD digest is also surfaced through the notifier.
   It is no longer a fixed-time task — the **watchdog fires it once every installed module has written its
   `paper-eod-<day>.md`** (with an `eod_digest.deadline` backstop, ET, so a late or flat module can't skip
   the day), launched **detached** so its notify push never runs on the reliability path. On by default;
@@ -98,7 +97,7 @@ resolved **relative to the config file's directory** — never hardcode absolute
   **no execution/edit/network tools**, and the orchestrator — never the agent — writes the output. The
   watchdog **launches both detached** on the same completion event as the digest — never in the watchdog
   process, so the `claude` calls stay off the reliability path. `eod-insight` writes prose
-  (`eod-insight-<day>.md`, surfaced on the dashboard EOD card). `advise` writes **bounded parameter
+  (`eod-insight-<day>.md`, surfaced on the console's EOD card). `advise` writes **bounded parameter
   proposals** for the NEXT session (`state/advice/<module>-<session>.json`): every proposal must pass
   `cherrypick.core.advice` against the module's `advice_bounds` manifest of closed legal ranges (one
   violation rejects the whole set, the rejections written anyway for audit), the artifact is
@@ -124,7 +123,7 @@ entries in calibrate/reconcile/notifier. Only the multi-day earnings module carr
 
 **SLA heartbeat paths derive from the module name** (`config.sla_state_files`), not from a literal
 filename. They were hardcoded to `earnings_*.last.json`, which was harmless while Earnings was the only
-`cherrypick_scheduled` module and wrong as soon as a second one existed — the dashboard showed one
+`cherrypick_scheduled` module and wrong as soon as a second one existed — the read surface showed one
 module's SLA under another's name and the watchdog raised a CRITICAL titled for the wrong module. Use
 `paper.sla_state_prefix` to override for a module whose heartbeat files are named differently.
 
@@ -154,25 +153,21 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   code, which is the desk's own load-bearing invariant. Its first pass seeds from the existing journal
   rather than backfilling a card per historical order (today's orders still join the watch list, since
   an order placed minutes before the switch was flipped is exactly the one whose fill matters).
-- **Read surfaces read files, never the broker.** `report`/`calibrate`/`dashboard` read paper DBs (SQLite
-  read-only), watchdog state, and logs. In particular the **static** `dashboard.py` render reads the
-  **watchdog heartbeat** (`state/watchdog.last.json`) for health rather than re-running `doctor` (which
-  shells out to the broker/streamer) — keep it that way so the auto-regenerated file stays fast and
-  offline. The one exception is deliberate and gated: `dashboard --serve` exposes a `/api/system` route
-  that runs `doctor.run()` for a live-checks card, polled client-side. That broker-touching call lives
-  only on the served path (never the static regen), mirroring how the live section cards work — so the
-  file written on every watchdog tick still never touches the broker. The serve-only **Live Ops card**
-  (`orchestrator/liveops.py`, `/api/liveops`) is the phase-5 gate surface: each module's
-  `enable_live_trading` kill switch (home config first, then in-repo), its designated live account
-  (masked, via the module keyring), and the suite **halt flag** — `state/halt-live.flag` in the
-  cherrypick home, whose *presence* is the signal (`liveops.halt_flag_path()` defines the path;
-  future live loops poll the same file). liveops is files + keyring only and never writes; the
-  broker-truth half of that card is the existing `/api/reconcile` panel, which composes into it
-  (a designated account's position listing is the live book). `dashboard --serve` also embeds
-  each module's own dashboard in an iframe (`orchestrator/embeds.py`, `/embed/<id>` route): it launches
-  a module's dashboard server or regenerates its static HTML on demand, driven by config-declared argv
-  with **PAPER mode forced** in that argv. This too is serve-only (the static file omits the iframes)
-  and never invokes a live/broker view.
+- **Read surfaces read files, never the broker.** `report`/`calibrate` read paper DBs (SQLite
+  read-only), watchdog state, and logs. This package serves **no HTTP read surface at all** since
+  2026-08-12 — `dashboard.py`, `serve.py`, `embeds.py` and `sections.py` were deleted and the console
+  (`packages/console`) is the one read surface. The watchdog no longer renders anything on its tick,
+  which takes that work off the reliability path outright rather than merely keeping it cheap.
+  `liveops.py` survives and did NOT go with the card that displayed it: it is the phase-5 gate
+  surface — each module's `enable_live_trading` kill switch (home config first, then in-repo), its
+  designated live account (masked, via the module keyring), and the suite **halt flag**,
+  `state/halt-live.flag` in the cherrypick home, whose *presence* is the signal
+  (`liveops.halt_flag_path()` defines the path; live loops poll the same file). It is files + keyring
+  only and never writes. `settings_serve.py` imports it, and the watchdog reads it.
+  **The live-ops view is the one thing the deletion left with no replacement** — it was
+  broker-touching, so it was deliberately never ported to the console, and folding it in means
+  revisiting that package's read-only guardrail. `cherrypick reconcile` still answers the
+  broker-truth half on demand and as its daily job.
 - **Paper ↔ live isolation.** cherrypick only invokes paper engines / paper DBs. Anything advisory
   (e.g. `calibrate`'s promotion recommendations, the drawdown alert) is advisory only — it never mutates
   a module's config or switches live risk. Live P&L is visible only through the explicitly live-tagged
@@ -206,8 +201,7 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   never logged, never written to any file, never echoed in any response. Every GET response contains
   only `secrets_status()` booleans, webhook set/not-set strings, and `mask_account()` output. Like the
   onboarding exception below, it never places an order and is never started by the watchdog or a
-  scheduled task — it runs only when a human runs `cherrypick settings` (or `/serve-dashboard
-  --settings`) in the foreground, and `--organize` (reorder a config into its example's sections) is
+  scheduled task — it runs only when a human runs `cherrypick settings` in the foreground, and `--organize` (reorder a config into its example's sections) is
   the only other thing it does outside the server.
 - **The onboarding surface (`connect`/`account`) is the one narrow live-config exception.**
   `cherrypick connect --module <m>` and `cherrypick account --module <m>` (`orchestrator/connect.py`,
@@ -228,7 +222,7 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   full tick's 10-minute cadence is right for everything else it does. The invariant survives the
   supervisor cutover with the mechanism changed: the answer to "the streamer needs tighter watching"
   is a tighter cadence on THIS job (a config value now, not a second OS task), never speeding up the
-  full tick and multiplying module checks, dashboard renders and EOD triggers all day. It **reuses**
+  full tick and multiplying module checks and EOD triggers all day. It **reuses**
   `_check_streamer_health` (never a copy — that function carries the silence-restart lesson), writes
   **no heartbeat** (the full tick owns that; a second writer makes "when did the watchdog last run"
   ambiguous), and stops at the door on a non-trading day. `run_preopen` remains as a deprecated
@@ -269,7 +263,7 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
 - **Account numbers are masked** to the last 4 digits (`****1234`) anywhere they surface in logs or
   output — never emit a full account number (suite-wide rule).
 - **Best-effort side calls never break the reliability path.** The watchdog tick fires
-  `trade_notifier.run`, `dashboard.render`, and the EOD digest/insight trigger inside `try/except`; a
+  `trade_notifier.run` and the EOD digest/insight trigger inside `try/except`; a
   hiccup must not fail the health check. The EOD trigger only *launches* `notify-eod`/`eod-insight` as
   detached subprocesses — the digest's webhook push and the insight's `claude` call run in those children,
   never here — so the tick itself stays stdlib + OS-shell only. Preserve this pattern when adding
@@ -277,7 +271,7 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
 - **Opt-in AI/dev tooling is local-only and off every runtime path.** `graphify` / `agentmemory` are
   authoring aids; their artifacts (`graphify-out/`, `.claude/`) are gitignored and they are never a
   runtime dependency. The one tracked exception is `.claude/commands/` — checked-in slash commands are
-  shared dev conveniences (e.g. `/serve-dashboard`); the rest of `.claude/` (settings.local.json,
+  shared dev conveniences (e.g. `/console`); the rest of `.claude/` (settings.local.json,
   session state, plans) stays local-only. Slash commands are never a runtime dependency either.
 
 ## Suite-wide guardrails (inherited from the MEIC & Earnings modules)
@@ -321,7 +315,7 @@ repeated.
   Scheduled tasks invoke `run.py`; renaming it breaks them until re-registered via `python run.py
   install`.
 - **Everything runtime lives under the per-user home, not the repo.** All path resolution now goes
-  through `cherrypick.core.home` (the shared resolver): `config.json`, `state/`, `dashboard.html`, and
+  through `cherrypick.core.home` (the shared resolver): `config.json`, `state/`, and
   `logs/` all resolve under `~/.cherrypick` (relocated wholesale by `$CHERRYPICK_HOME`), so nothing
   runtime lands in a source checkout. `ROOT` is no longer the runtime home — it is only the *source
   anchor* for resolving a relative module `path` in config (e.g. `../meic`), derived from `__file__`.

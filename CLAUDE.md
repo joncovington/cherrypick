@@ -6,19 +6,22 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   (report / dashboard / reconcile / calibrate). Drives the modules **by subprocess**, never by import.
 - **packages/meic** — MEIC 0DTE multiple-entry iron-condor trading module.
 - **packages/earnings** — earnings-play trading module (defined-risk strategies).
-- **packages/gex** — live GEX (gamma exposure) dashboard; a self-hosted read-only surface.
+- **packages/gex** — the live GEX (gamma exposure) engine and spot-trail recorder. It computes and
+  records; the console renders it.
 - **packages/streamer** — the standalone market-data streamer: the suite's **single** producer of the
   shared stream cache every module reads. Modules declare their symbols via `state/stream_requests/`;
   it streams the union. Nothing else may write that cache.
-- **packages/scout** — interactive screening and strategy-exploration surfaces (also surfaced through
-  the console).
+- **packages/scout** — the research services and cache behind the console's screening surfaces. Its own
+  web app was deleted 2026-08-12; the package is services-only, pending a gap audit that ports what
+  the console still needs and then removes it.
 - **packages/flies** — 0DTE net-credit butterfly ("profit forest") module. Paper by default, with a
   deliberately narrow, per-day-armed live pilot (one arm, one symbol, one incomplete position at a
   time); deliberately built to make a negative result usable: floors are measured after fees, and a
   book-level floor always carries the price band over which it holds.
-- **packages/console** — the unified reactive web UI (Node + TypeScript, React SPA on
-  127.0.0.1:5070): every module's read models plus scout's interactive surfaces in one app. Runs in
-  parallel with the per-module dashboards and scout while it grows into their replacement. Read-only
+- **packages/console** — the reactive web UI (Node + TypeScript, React SPA on 127.0.0.1:5070) and the
+  suite's **only** read surface since 2026-08-12: every module's read models plus scout's interactive
+  surfaces in one app. The supervisor keeps it running as an always-on resident job, restarted on
+  death and on a stale `state/console.heartbeat` (a wedged Node event loop stays alive). Read-only
   over every other package's data (its own store is `~/.cherrypick/data/console/`); reads the shared
   suite credential and never writes one, gating its write-oriented functions on the token's probed
   scope; no order-placement code paths.
