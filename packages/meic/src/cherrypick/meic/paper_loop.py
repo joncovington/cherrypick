@@ -520,6 +520,88 @@ def _money(x):
     return _viz.fmt_money(x, none="-")
 
 
+def _entry_attempts_section(conn, day) -> list:
+    """The refusal ledger: every evaluated entry opportunity, by arm and outcome.
+
+    Added 2026-08-11, when each profile became an independent portfolio with unbounded capital.
+    Every arm now sees the same market with the same money, so the ONLY thing that differentiates
+    them is which entries the rules let through -- which makes the refusals the primary measurement
+    rather than a diagnostic. This is the section that carries them into the deterministic record,
+    and therefore into the EOD insight layer, which reads these files and nothing else.
+
+    Distinct from the Gate ledger above, which counts `gate_block` rows per stream. This is per
+    ATTEMPT: it can say how many opportunities an arm evaluated, how many it took, and how long it
+    spent waiting on its own cadence -- none of which a block count can express.
+
+    Also prints the LOW-SAMPLE line, and that is deliberate rather than decorative: a debrief read
+    a two-position arm as a validated thesis and wrote a tuning recommendation from it. An arm's
+    entry count is the fact that would have stopped it, so it goes in the record where the narrative
+    layer will see it.
+    """
+    L = ["## Entry attempts (the refusal ledger)"]
+    try:
+        rows = conn.execute(
+            "SELECT risk_profile, outcome, block_detail, COUNT(*) n, "
+            "       AVG(seconds_until_cadence_clear) avg_wait "
+            "  FROM entry_attempts WHERE trade_date=? GROUP BY 1, 2, 3",
+            (day,),
+        ).fetchall()
+    except sqlite3.Error:
+        L.append("_No `entry_attempts` table (a ledger written before 2026-08-11)._")
+        L.append("")
+        return L
+    if not rows:
+        L.append("_No entry attempts recorded today -- the loop did not reach its entry window._")
+        L.append("")
+        return L
+
+    by_arm = {}
+    for r in rows:
+        d = dict(r)
+        arm = by_arm.setdefault(d["risk_profile"], {"fills": 0, "refused": 0, "reasons": {}, "wait": []})
+        if d["outcome"] == "filled":
+            arm["fills"] += d["n"]
+        else:
+            arm["refused"] += d["n"]
+            key = d["block_detail"] or d["outcome"]
+            arm["reasons"][key] = arm["reasons"].get(key, 0) + d["n"]
+        if d["avg_wait"] is not None:
+            arm["wait"].append((d["avg_wait"], d["n"]))
+
+    L.append("| Arm | Evaluated | Filled | Refused | Dominant refusal | Cadence wait |")
+    L.append("|---|---|---|---|---|---|")
+    for name in sorted(by_arm):
+        a = by_arm[name]
+        total = a["fills"] + a["refused"]
+        top = max(a["reasons"].items(), key=lambda kv: kv[1]) if a["reasons"] else None
+        dominant = f"{top[0]} x{top[1]}" if top else "-"
+        if a["wait"]:
+            secs = sum(w * n for w, n in a["wait"]) / sum(n for _, n in a["wait"])
+            wait = f"~{secs:.0f}s avg"
+        else:
+            wait = "-"
+        L.append(f"| {name} | {total} | {a['fills']} | {a['refused']} | {dominant} | {wait} |")
+    L.append("")
+
+    thin = sorted(n for n, a in by_arm.items() if 0 < a["fills"] < 5)
+    flat = sorted(n for n, a in by_arm.items() if a["fills"] == 0)
+    if thin:
+        L.append(
+            f"**Too few entries to read: {', '.join(thin)}.** Under 5 fills is not a sample. Report "
+            "what these arms did; do not rank them, call them validated, or write a recommendation "
+            "from them."
+        )
+    if flat:
+        L.append(
+            f"**Took no entries: {', '.join(flat)}.** A gate held them out all session -- see the "
+            "dominant refusal above. Standing aside is a decision, not a gap, and an arm at zero "
+            "contributes no evidence about anything except the gate that refused it."
+        )
+    if thin or flat:
+        L.append("")
+    return L
+
+
 def _write_eod_report(day):
     """Write a deterministic end-of-day paper report for `day` to logs/paper-eod-<day>.md.
     Code-generated (no agent) so it runs unattended from the daemon's settlement pass. Uses
@@ -725,6 +807,8 @@ def _eod_supplement_lines(conn, day) -> list[str]:
         L.append("_No gate_block rows logged today (pre-Phase-1d data, or the loop didn't run)._")
     L.append("")
 
+    L += _entry_attempts_section(conn, day)
+
     # --- Stop-policy table: read-side derivations from `open`'s recorded paths, not separate
     # entry streams -- see stop_policies.py and analytics.stop_counterfactual. ---
     L.append("## Stop-policy table (derived from `open`)")
@@ -875,6 +959,39 @@ def _loop_gate_tail(day):
     return n, tail
 
 
+def _intraday_path(active: list) -> str | None:
+    """One sentence describing the day by its PATH, not its endpoints.
+
+    Added 2026-08-11 after a debrief opened with "SPX barely moved (-0.32%)", called the tape
+    dead-calm, and built its whole thesis on a market that supposedly cooperated -- on a day the
+    index slid 44.95 points (0.58% of spot) from 7763 to 7718 and that drift stopped 384 put sides.
+    Close-to-close hid the move that actually decided the session, which is the same failure shape
+    as reading an exit query that matches nothing: the number was available and nobody printed it.
+
+    Measured across the underlying prices recorded at THIS session's own entries, so it describes
+    the window the book was actually exposed to rather than the whole cash session. That also means
+    it is only as wide as the entry window -- stated here rather than left to be inferred.
+
+    Note 0.5% is the threshold `quarterly_expiry_max_intraday_range_pct` already treats as a blown-out
+    range, so a day past it should never be narrated as calm.
+    """
+    prices = [r.get("underlying_price_entry") for r in active if r.get("underlying_price_entry")]
+    if len(prices) < 2:
+        return None
+    lo, hi = min(prices), max(prices)
+    span = hi - lo
+    pct = span / hi * 100 if hi else 0.0
+    first, last = prices[0], prices[-1]
+    drift = last - first
+    direction = "drifted up" if drift > 0 else ("drifted down" if drift < 0 else "round-tripped")
+    calm = "calm" if pct < 0.30 else ("ordinary" if pct < 0.50 else "NOT calm - a wide-range day")
+    return (
+        f"Across the entry window the underlying ranged **{lo:.2f}-{hi:.2f}** "
+        f"({span:.2f} pts, **{pct:.2f}%** of spot) and {direction} {abs(drift):.2f} pts from first "
+        f"entry to last. Judge the session by this path, not by the close-to-close change: {calm}."
+    )
+
+
 def _write_eod_analysis(day):
     """Write a conversational 7-section end-of-day analysis for `day` to logs/eod-analysis-<day>.md.
     Deterministic templated prose (no agent/LLM/network) so it runs unattended from the settlement
@@ -892,12 +1009,25 @@ def _write_eod_analysis(day):
                 "SELECT * FROM ic_trades WHERE trade_date=? ORDER BY entry_time", (day,)
             ).fetchall()
         ]
+        # EXITED legs, by the vocabulary the writer actually uses. `ic_spread_legs.status` is only
+        # ever 'expired', 'stopped' or 'force_closed' -- 'closed' has never been written, not once in
+        # 3,934 legs. This filter said `status='closed'` until 2026-08-11, so it matched nothing on
+        # every session ever generated, `exit_counts` was always empty, and the report fell through
+        # to its "No side stops fired - the ICs rode to settlement" branch UNCONDITIONALLY. It
+        # printed that on 2026-08-11 while 430 legs stopped for -$31k gross, and on 08-10 (345
+        # stops), 08-07 (173) and 08-04 (54). A report that cannot express a stop is worse than one
+        # that omits them: the deterministic file is the source of record, and the EOD insight layer
+        # read this line and built a whole narrative on it.
+        #
+        # 'expired' is deliberately EXCLUDED: it is the intended 0DTE path, not an exit event, and
+        # folding it in would make every clean settlement read as an "exit" and drown the signal the
+        # side-attribution below exists to surface.
         legs = [
             dict(r)
             for r in con.execute(
                 "SELECT l.side, l.exit_time, l.exit_reason, l.exit_price, l.pnl, l.ic_order_id "
                 "FROM ic_spread_legs l JOIN ic_trades t ON l.ic_order_id=t.ic_order_id "
-                "WHERE t.trade_date=? AND l.status='closed'",
+                "WHERE t.trade_date=? AND l.status IN ('stopped', 'force_closed')",
                 (day,),
             ).fetchall()
         ]
@@ -968,6 +1098,9 @@ def _write_eod_analysis(day):
         elif best:
             line += f" All of it came from {best[0]}."
         L.append(line)
+        path_line = _intraday_path(active)
+        if path_line:
+            L.append(path_line)
     L.append("")
 
     # 2. Position-level detail -------------------------------------------------
@@ -1476,6 +1609,22 @@ def run_iteration(cfg, force=False):
     # though the daemon keeps ticking through the 16:00–16:05 settlement window.
     sett = cfg.get("expiration_settlement_time", "16:00")
     if (now.hour * 60 + now.minute) >= paper._time_to_minutes(sett) and not _eod_report_path(today).exists():
+        # Roll the session's numbers into daily_summary FIRST, so the reports and any surface reading
+        # that table describe the same settled session. Best-effort like everything else on this
+        # pass: a failed roll-up must not cost the EOD reports, which are the source of record.
+        try:
+            res = subprocess.run(
+                [*_DB, "rollup_daily_summary", "--date", today],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if res.returncode != 0:
+                logger.warning("daily_summary roll-up failed: %s", (res.stderr or "").strip()[:200])
+            else:
+                logger.info("rolled up daily_summary for %s", today)
+        except Exception as exc:
+            logger.warning("daily_summary roll-up failed: %s", exc)
         try:
             p = _write_eod_report(today)
             logger.info("wrote EOD report: %s", p)

@@ -18,9 +18,9 @@ interface Divergence {
  */
 export function DivergenceCard({ mode, filter }: { mode: TradingMode; filter: FliesFilter }) {
   const { data, isLoading, dataUpdatedAt } = useQuery<Divergence>({
-    queryKey: ["flies-divergence", mode, filter.date],
+    queryKey: ["flies-divergence", mode, filter.date, filter.symbol, filter.era],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/divergence?${fliesQuery(mode, { arm: null, date: filter.date })}`);
+      const res = await fetch(`/api/flies/divergence?${fliesQuery(mode, { arm: null, date: filter.date, symbol: filter.symbol, era: filter.era })}`);
       if (!res.ok) throw new Error(`divergence: HTTP ${res.status}`);
       return (await res.json()) as Divergence;
     },

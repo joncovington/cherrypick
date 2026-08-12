@@ -78,12 +78,22 @@ def test_freshly_opened_credit_spread_records_its_worst_case_floor(conn):
 
 def test_the_forest_grows_alongside_a_completed_fly(conn):
     """Completing one structure does not stop the arm opening the next. That is the 'forest': several
-    separate profit zones rather than one big bet, each standing on its own floor. Spot having drifted
-    to 6004 puts the next ATM centre at 6005, clear of the fly already sitting at 6000."""
+    separate profit zones rather than one big bet, each standing on its own floor.
+
+    The second centre is TWO strikes away, not one. A completed fly at 6000 holds a LONG put at 6005
+    (its upper wing), so an entry centred there would sell the strike the book already owns and the
+    two legs would net out -- refused by the sign rule. Centred at 6010 the new spread shorts 6010
+    and buys 6005, and that 6005 long STACKS with the fly's: this is exactly the `+1 -2 +2 -2 +1`
+    shape, two structures sharing a wing. The forest still grows; its trees stand a strike further
+    apart than they used to.
+    """
     config = one_arm_config(entry_modes=["legged"])
     bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
     result = bookmod.process_snapshot(
-        snapshot(underlying_price=6004.0, puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)}),
+        snapshot(
+            underlying_price=6009.0,
+            puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6), 6010: q(5.0, 5.4)},
+        ),
         config,
         conn,
         "control",
@@ -92,7 +102,7 @@ def test_the_forest_grows_alongside_a_completed_fly(conn):
     rows = dbmod.book_positions(conn, result["book_id"])
     assert len(rows) == 2
     assert {r["kind"] for r in rows} == {"fly", "short_vertical"}
-    assert {r["center"] for r in rows} == {6000.0, 6005.0}
+    assert {r["center"] for r in rows} == {6000.0, 6010.0}
 
 
 def test_uncompleted_spread_settles_as_an_ordinary_vertical(conn):
@@ -177,7 +187,7 @@ def test_reprocessing_the_same_snapshot_does_not_duplicate_a_position(conn):
 
     assert len(dbmod.book_positions(conn, first["book_id"])) == 1
     skips = [a for a in second["actions"] if a["action"] == "entry_skipped"]
-    assert skips[0]["reason"] == "center_already_occupied"
+    assert skips[0]["reason"] == "duplicate_structure"
 
 
 def test_book_roll_up_is_persisted_for_the_read_side(conn):

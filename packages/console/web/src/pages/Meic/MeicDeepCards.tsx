@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
+import { powerNote } from "../../lib/power";
 import { DataCard, PnlCell, fmtMoney } from "../../components/DataTable";
 
 interface BreakdownRow {
@@ -103,6 +104,17 @@ function NlvChart({ points }: { points: Array<{ date: string; nlv: number }> }) 
 }
 
 function BreakdownCard({ title, rows, loading }: { title: string; rows: BreakdownRow[] | undefined; loading: boolean }) {
+  const note = rows !== undefined && !loading ? powerNote(rows) : null;
+  if (note !== null) {
+    return (
+      <section className="card">
+        <h2>{title}</h2>
+        <p className="muted" style={{ fontSize: 12 }}>
+          {note}
+        </p>
+      </section>
+    );
+  }
   return (
     <DataCard
       title={title}
@@ -156,10 +168,17 @@ export function MeicDeepCards({
         {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <Calendar days={data?.calendar ?? []} />}
       </section>
 
-      <section className="card">
-        <h2>Account value (NLV) over time</h2>
-        {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <NlvChart points={data?.nlv ?? []} />}
-      </section>
+      {/* Paper mode has no NLV and cannot have one: `closing_nlv` is written only by
+          `db.cmd_save_daily_summary`, reachable solely from the agent-driven /eod-report, and it is
+          a BROKER fact rather than something derivable from ic_trades — the session roll-up
+          deliberately does not invent it. Rendering an empty chart in paper was reporting an
+          absence as a flat line. */}
+      {mode === "live" && (
+        <section className="card">
+          <h2>Account value (NLV) over time</h2>
+          {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <NlvChart points={data?.nlv ?? []} />}
+        </section>
+      )}
 
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(25rem, 1fr))" }}>
         <BreakdownCard title="By short-call delta" rows={data?.byDelta} loading={isLoading} />

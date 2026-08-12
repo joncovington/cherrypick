@@ -250,6 +250,77 @@ CREATE TABLE IF NOT EXISTS iteration_regime (
 
 CREATE INDEX IF NOT EXISTS idx_iteration_regime_date ON iteration_regime (loop_date, symbol);
 
+-- One row per EVALUATED ENTRY OPPORTUNITY per (iteration x profile x symbol): what was proposed
+-- and what happened to it.
+--
+-- Added 2026-08-11, when each profile became an independent portfolio with unbounded capital. Every
+-- arm now sees the same market with the same money, so the ONLY thing that differentiates them is
+-- which entries the rules let through -- which makes the refusals the primary measurement rather
+-- than a diagnostic. Before this, MEIC's refusal reasons reached only the free-text
+-- `loop_log.reasoning` blob, which has to be regex-scraped and cannot be aggregated at all;
+-- `iteration_regime` counts blocked entries but not WHY any one of them was blocked.
+--
+-- Uncollapsed, one row per evaluation. `seconds_until_cadence_clear` falls by one tick every
+-- iteration, so any run-collapsing scheme would degenerate to one row per tick anyway.
+--
+-- `outcome` is the taxonomy the read side buckets on. `no_fill` is deliberately its own value:
+-- under a fill-based cadence clock an entry that cleared every gate and simply did not fill neither
+-- consumed the profile's slot nor was refused by a rule, and folding it into a gate outcome would
+-- make the gates look stricter than they are.
+CREATE TABLE IF NOT EXISTS entry_attempts (
+    id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts                          TEXT NOT NULL,
+    trade_date                  TEXT NOT NULL,
+    risk_profile                TEXT NOT NULL,
+    symbol                      TEXT NOT NULL,
+    expiration                  TEXT,
+    outcome                     TEXT NOT NULL,  -- filled | cadence_blocked | sign_rule_blocked
+                                                --   | gate_blocked | window_blocked | no_candidate
+                                                --   | no_fill
+    block_detail                TEXT,           -- the evaluate_entry reason, e.g. 'regime_gex_negative'
+    proposed_legs               TEXT,           -- JSON [{strike, right, sign}] of the chosen candidate
+    put_strike                  REAL,
+    call_strike                 REAL,
+    wing_width                  REAL,
+    blocking_strike             REAL,           -- populated for sign_rule_blocked
+    seconds_until_cadence_clear REAL,           -- populated for cadence_blocked
+    underlying_price            REAL,
+    iv_rank                     REAL,
+    gex_net                     REAL,
+    gex_positive                INTEGER,
+    session_quality             TEXT,
+    would_be_credit             REAL,
+    ic_order_id                 TEXT            -- set on the filled path, linking attempt to result
+);
+
+-- Why two sessions cannot be pooled: a cadence change, an arm added mid-session, a gate whose
+-- meaning moved. One row per break, written once and never again for the same change.
+--
+-- Added 2026-08-11. Flies has kept these as mode='cadence' rows in its decision journal since the
+-- tick-cadence cutover, and MEIC had no equivalent -- so on the day this module gained a universal
+-- entry cadence and two new arms, nothing in the ledger recorded that sessions either side of it are
+-- not comparable. A break that lives only in a commit message is invisible to every read surface and
+-- to whoever reads a per-arm ranking three weeks from now.
+--
+-- Deliberately its own table rather than a loop_log action: loop_log is per-iteration and rotates
+-- with volume, while a measurement break is a permanent property of the ledger and must outlive any
+-- retention policy applied to the iteration log.
+CREATE TABLE IF NOT EXISTS measurement_breaks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    break_date  TEXT NOT NULL,
+    scope       TEXT NOT NULL,   -- an arm/profile name, or '*' for the whole book
+    kind        TEXT NOT NULL,   -- 'cadence' | 'arm_added' | 'gate_changed' | ...
+    reason      TEXT NOT NULL,
+    detail      TEXT,
+    created_at  TEXT NOT NULL,
+    UNIQUE (break_date, scope, kind)
+);
+
+CREATE INDEX IF NOT EXISTS idx_measurement_breaks_date ON measurement_breaks (break_date);
+
+CREATE INDEX IF NOT EXISTS idx_entry_attempts_date ON entry_attempts (trade_date, risk_profile);
+CREATE INDEX IF NOT EXISTS idx_entry_attempts_outcome ON entry_attempts (trade_date, outcome);
+
 """
 
 
@@ -1110,6 +1181,93 @@ def cmd_set_session_init(_args):
     _out({"ok": True, "session_init_at": now})
 
 
+def cmd_record_break(args):
+    """Record a measurement break -- a reason sessions either side of a date cannot be pooled.
+
+    Idempotent on (date, scope, kind), so a loop that notices the same change on every tick writes
+    one row. `scope` is an arm/profile name or '*' for the whole book.
+    """
+    now = str(_now_et())
+    conn = _connect()
+    conn.execute(
+        """INSERT INTO measurement_breaks (break_date, scope, kind, reason, detail, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(break_date, scope, kind) DO UPDATE SET
+             reason = excluded.reason,
+             detail = COALESCE(excluded.detail, detail)""",
+        (args.date or _today_et(), args.scope or "*", args.kind, args.reason, args.detail, now),
+    )
+    conn.commit()
+    conn.close()
+    _out({"ok": True, "date": args.date or _today_et(), "scope": args.scope or "*", "kind": args.kind})
+
+
+def cmd_rollup_daily_summary(args):
+    """Recompute and store one session's numbers in `daily_summary`.
+
+    The table declared fourteen numeric columns that no writer had ever set -- its two writers touch
+    only `session_init_at`, `ai_day_summary` and `closing_nlv`, and both are called from the
+    agent-driven `/eod-report` command, which the automated paper loop does not run. So paper held
+    zero rows and live held eight rows of zeros, while the console rendered those zeros as a card.
+
+    Idempotent by design (upsert on `summary_date`, and the columns the agent owns are left alone via
+    COALESCE-free explicit assignment of only the derived ones), so it can run on every settlement
+    pass and be re-run by hand for a past day without destroying a narrative someone wrote.
+
+    The arithmetic lives in `analytics.daily_rollup`, not here: it has to be built on that module's
+    `_RESOLVED` and its fees-inclusive win test, or this table becomes a fourth place that disagrees
+    about what "net" means.
+    """
+    from cherrypick.meic import analytics as _an
+
+    day = args.date or _today_et()
+    now = str(_now_et())
+    conn = _connect()
+    roll = _an.daily_rollup(conn, day, era=getattr(args, "era", None))
+    conn.execute(
+        """INSERT INTO daily_summary (summary_date, total_entries, entries_filled, entries_stopped,
+               entries_expired, entries_cancelled, gross_credit, gross_pnl, fees, net_pnl,
+               win_count, win_rate_pct, avg_iv_rank, sessions_entered, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(summary_date) DO UPDATE SET
+             total_entries = excluded.total_entries,
+             entries_filled = excluded.entries_filled,
+             entries_stopped = excluded.entries_stopped,
+             entries_expired = excluded.entries_expired,
+             entries_cancelled = excluded.entries_cancelled,
+             gross_credit = excluded.gross_credit,
+             gross_pnl = excluded.gross_pnl,
+             fees = excluded.fees,
+             net_pnl = excluded.net_pnl,
+             win_count = excluded.win_count,
+             win_rate_pct = excluded.win_rate_pct,
+             avg_iv_rank = excluded.avg_iv_rank,
+             sessions_entered = excluded.sessions_entered,
+             updated_at = excluded.updated_at""",
+        (
+            day,
+            roll["total_entries"],
+            roll["entries_filled"],
+            roll["entries_stopped"],
+            roll["entries_expired"],
+            roll["entries_cancelled"],
+            roll["gross_credit"],
+            roll["gross_pnl"],
+            roll["fees"],
+            roll["net_pnl"],
+            roll["win_count"],
+            roll["win_rate_pct"],
+            roll["avg_iv_rank"],
+            json.dumps(roll["sessions_entered"]),
+            now,
+            now,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    _out({"ok": True, **roll})
+
+
 def cmd_save_daily_summary(args):
     now = str(_now_et())
     date = args.date or _today_et()
@@ -1288,6 +1446,8 @@ _COMMANDS = {
     "save_trade": cmd_save_trade,
     "update_trade": cmd_update_trade,
     "save_daily_summary": cmd_save_daily_summary,
+    "rollup_daily_summary": cmd_rollup_daily_summary,
+    "record_break": cmd_record_break,
     "save_market_context": cmd_save_market_context,
     "save_iteration_regime": cmd_save_iteration_regime,
     "record_stop_adjustment": cmd_record_stop_adjustment,
@@ -1419,6 +1579,17 @@ def main():
 
     p_getlegs = sub.add_parser("get_spread_legs")
     p_getlegs.add_argument("--ic_order_id", required=True)
+
+    p_brk = sub.add_parser("record_break")
+    p_brk.add_argument("--date")
+    p_brk.add_argument("--scope")
+    p_brk.add_argument("--kind", required=True)
+    p_brk.add_argument("--reason", required=True)
+    p_brk.add_argument("--detail")
+
+    p_roll = sub.add_parser("rollup_daily_summary")
+    p_roll.add_argument("--date")
+    p_roll.add_argument("--era")
 
     p_dsum = sub.add_parser("save_daily_summary")
     p_dsum.add_argument("--date", default=None)

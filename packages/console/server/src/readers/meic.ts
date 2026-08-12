@@ -4,6 +4,7 @@ import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
 import { withReadOnlyDb, hasColumn, num, str } from "./db.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { payoffAt, type Leg } from "../analytics/payoff.js";
 
 
 /**
@@ -161,31 +162,58 @@ export interface MeicScope {
   currentEra: string;
 }
 
-export function readMeicScope(config: ConsoleConfig, mode: TradingMode): MeicScope {
+/**
+ * The page-wide scope selects' own options.
+ *
+ * `symbols` and `profiles` are narrowed to the SAME era the data is, because a select that offers
+ * more than the scope can return is lying about what is reachable. Measured on the paper ledger:
+ * the unfiltered profile list carries 14 names while the current era holds 3 -- the retired ladder
+ * tiers, the GEX study pair, and the pre-2026-07-18 symbol/wing cells are all still in the table by
+ * design, since this module retires an arm by writing a verdict rather than deleting its rows. Eleven
+ * of those fourteen options selected nothing, and an option that yields no rows reads as "this arm
+ * did nothing" rather than "this arm is not in this era". Symbols are the same story: 6 all-time
+ * against 1 in the current era.
+ *
+ * `eras` is deliberately NOT narrowed -- it is the list you widen WITH, and filtering it by the
+ * current era would leave no way back out.
+ */
+export function readMeicScope(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  era: string | null = null,
+): MeicScope {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
   const empty: MeicScope = { symbols: [], profiles: [], eras: [], currentEra: CURRENT_ERA };
-  return withReadOnlyDb<MeicScope>(dbPath, empty, (db) => ({
-    eras: hasColumn(db, "ic_trades", "era")
-      ? db
-          .prepare<[], { era: string; trades: number }>(
-            `SELECT era, COUNT(*) AS trades FROM ic_trades
-              WHERE era IS NOT NULL GROUP BY era ORDER BY era`,
-          )
-          .all()
-      : [],
-    currentEra: CURRENT_ERA,
-    symbols: db
-      .prepare<[], { s: string }>("SELECT DISTINCT symbol AS s FROM ic_trades WHERE symbol IS NOT NULL ORDER BY symbol")
-      .all()
-      .map((r) => r.s),
-    profiles: db
-      .prepare<[], { p: string }>(
-        "SELECT DISTINCT risk_profile AS p FROM ic_trades WHERE risk_profile IS NOT NULL ORDER BY risk_profile",
-      )
-      .all()
-      .map((r) => r.p),
-  }));
+  return withReadOnlyDb<MeicScope>(dbPath, empty, (db) => {
+    const scoped = era !== "ALL" && hasColumn(db, "ic_trades", "era");
+    const and = scoped ? " AND era = ?" : "";
+    const params: string[] = scoped ? [era ?? CURRENT_ERA] : [];
+    return {
+      eras: hasColumn(db, "ic_trades", "era")
+        ? db
+            .prepare<[], { era: string; trades: number }>(
+              `SELECT era, COUNT(*) AS trades FROM ic_trades
+                WHERE era IS NOT NULL GROUP BY era ORDER BY era`,
+            )
+            .all()
+        : [],
+      currentEra: CURRENT_ERA,
+      symbols: db
+        .prepare<string[], { s: string }>(
+          `SELECT DISTINCT symbol AS s FROM ic_trades WHERE symbol IS NOT NULL${and} ORDER BY symbol`,
+        )
+        .all(...params)
+        .map((r) => r.s),
+      profiles: db
+        .prepare<string[], { p: string }>(
+          `SELECT DISTINCT risk_profile AS p FROM ic_trades
+            WHERE risk_profile IS NOT NULL${and} ORDER BY risk_profile`,
+        )
+        .all(...params)
+        .map((r) => r.p),
+    };
+  });
 }
 
 export interface MeicLoopStatus {
@@ -765,10 +793,37 @@ export function readMeicAnalytics(
       };
     });
 
+    // Grouped on the LEG PAIR, not on ic_trades.exit_reason.
+    //
+    // That column carries only two values -- 'expired_settlement' and 'stopped+expired_settlement'
+    // -- and the second is three different outcomes wearing one label. In the sample era its 873
+    // rows are 637 put-stopped, 161 call-stopped and 75 where BOTH sides stopped, and those are not
+    // variations of each other: a single-side stop is the design working (eat one side, the other
+    // expires worthless) and averages about -$15, while a double stop means price crossed both
+    // short strikes in one session, paying to close both and collecting nothing. It averages
+    // -$149. Seventy-five trades, 4.5% of the era, carry 47% of every stop-related dollar lost --
+    // and the card that was supposed to show exits could not distinguish them at all.
+    //
+    // `analytics.break_even` in the module already reads the pair for exactly this reason ("stopped
+    // at the IC level also covers a single-side stop, the designed scratch"), so this uses the same
+    // definition rather than inventing a second one that could disagree with the arm scorecard.
     const exitReasons = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT COALESCE(exit_reason, 'open') AS reason, COUNT(*) AS count
-           FROM ic_trades WHERE ${RESOLVED}${sc.and} GROUP BY COALESCE(exit_reason, 'open') ORDER BY count DESC`,
+        `SELECT CASE
+                  WHEN put_status = 'stopped' AND call_status = 'stopped' THEN 'both sides stopped'
+                  WHEN put_status = 'stopped' THEN 'put side stopped'
+                  WHEN call_status = 'stopped' THEN 'call side stopped'
+                  WHEN put_status IS NULL AND call_status IS NULL THEN COALESCE(exit_reason, 'open')
+                  ELSE 'expired clean'
+                END AS reason,
+                COUNT(*) AS count
+           FROM (SELECT t.ic_order_id, t.exit_reason,
+                        MAX(CASE WHEN l.side = 'put' THEN l.status END) AS put_status,
+                        MAX(CASE WHEN l.side = 'call' THEN l.status END) AS call_status
+                   FROM (SELECT * FROM ic_trades WHERE ${RESOLVED}${sc.and}) t
+                   LEFT JOIN ic_spread_legs l ON l.ic_order_id = t.ic_order_id
+                  GROUP BY t.ic_order_id)
+          GROUP BY reason ORDER BY count DESC`,
       )
       .all(...sc.params)
       .map((r) => ({ reason: String(r["reason"]), count: Number(r["count"]) }));
@@ -792,6 +847,220 @@ export function readMeicAnalytics(
         netPnl: Number(fd["net"] ?? 0),
         dragPct: gross > 0 ? (fees / gross) * 100 : null,
       },
+    };
+  });
+}
+
+// ── The MEIC profit forest ──────────────────────────────────────────────────
+
+export interface MeicForestArm {
+  profile: string;
+  /** One entry per open IC, so a nested condor reads as nested rather than as one lumpy line. */
+  positions: Array<{ icOrderId: string; putStrike: number; callStrike: number; wingWidth: number; netCredit: number; quantity: number }>;
+  /** The arm's aggregate curve: P&L at expiry across the price grid. */
+  prices: number[];
+  pnl: number[];
+  /** Each position's own curve, drawn faintly behind the aggregate. */
+  perPosition: Array<{ icOrderId: string; pnl: number[] }>;
+}
+
+export interface MeicForest {
+  mode: TradingMode;
+  tradeDate: string | null;
+  symbol: string | null;
+  /** How many trades this day holds, and how many are still open. A MEIC book resolves entirely at
+   *  settlement, so after 16:00 every trade is stopped or expired and an expiry-payoff curve has
+   *  nothing left to describe — the card must say that rather than render an empty chart. */
+  tradesToday: number;
+  openPositions: number;
+  /** The day's book drawn at ENTRY geometry, so a settled session still shows the structure it
+   *  accumulated. Explicitly not a claim about outcome: a stopped side came off before expiry and
+   *  its realized P&L is not this curve. */
+  asEntered: MeicForestArm[];
+  arms: MeicForestArm[];
+  /** Strikes released by a stop today: drawn as vacated so the forest and the
+   *  occupancy map can never disagree about what the book still holds. */
+  releasedStrikes: Array<{ profile: string; strike: number; right: "P" | "C"; at: string | null }>;
+  lastSpot: number | null;
+}
+
+/**
+ * An IC as generic payoff legs. Long strikes are DERIVED from `wing_width` —
+ * the ledger stores only the shorts as numbers (the longs live inside the
+ * OCC strings) — mirroring `paper.ic_legs` in the MEIC package. Kept as one
+ * conversion here for the same reason it is one function there: the same
+ * arithmetic in three places is three chances to disagree about what is held.
+ *
+ * `price` is carried entirely on the short put so the curve sits at the trade's
+ * real net credit; splitting it across four legs would change nothing about the
+ * shape and would invent per-leg prices the ledger never recorded.
+ */
+function icLegs(row: {
+  putStrike: number;
+  callStrike: number;
+  wingWidth: number;
+  netCredit: number;
+}): Leg[] {
+  return [
+    { kind: "put", quantity: -1, price: row.netCredit, strike: row.putStrike },
+    { kind: "put", quantity: 1, price: 0, strike: row.putStrike - row.wingWidth },
+    { kind: "call", quantity: -1, price: 0, strike: row.callStrike },
+    { kind: "call", quantity: 1, price: 0, strike: row.callStrike + row.wingWidth },
+  ];
+}
+
+/** The price grid the forest is drawn on: every strike in play plus a margin either side. */
+function forestGrid(strikes: number[]): number[] {
+  if (strikes.length === 0) return [];
+  const lo = Math.min(...strikes);
+  const hi = Math.max(...strikes);
+  const pad = Math.max((hi - lo) * 0.35, hi * 0.01);
+  const start = lo - pad;
+  const step = (hi + pad - start) / 120;
+  return Array.from({ length: 121 }, (_, i) => Math.round((start + i * step) * 100) / 100);
+}
+
+/**
+ * Per-profile expiry-payoff curves for the open book on one day — MEIC's
+ * equivalent of the flies profit forest.
+ *
+ * Two things this needs that the flies forest does not. **Nesting is the
+ * point**: MEIC stacks condors inside one another deliberately, so each IC's
+ * own curve is returned alongside the aggregate rather than only the sum.
+ * **Stops change the shape mid-day**: a stopped side releases its strikes, so
+ * those are reported explicitly — otherwise the forest and the strike-occupancy
+ * map disagree about what is held and neither gets trusted.
+ */
+export function readMeicForest(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  day: string | null,
+  scope: MeicScopeFilter = NO_SCOPE,
+): MeicForest {
+  const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.meicDir, file);
+  const empty: MeicForest = {
+    mode,
+    tradeDate: null,
+    symbol: null,
+    tradesToday: 0,
+    openPositions: 0,
+    asEntered: [],
+    arms: [],
+    releasedStrikes: [],
+    lastSpot: null,
+  };
+
+  return withReadOnlyDb<MeicForest>(dbPath, empty, (db) => {
+    const { and, params: scopeParams } = scopeSql(db, scope);
+    const dayRow = day
+      ? { d: day }
+      : db
+          .prepare<string[], { d: string }>(
+            `SELECT MAX(trade_date) AS d FROM ic_trades WHERE 1=1${and}`,
+          )
+          .get(...scopeParams);
+    const tradeDate = dayRow?.d ?? null;
+    if (tradeDate === null) return empty;
+
+    const rows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT ic_order_id, risk_profile, symbol, put_strike, call_strike, wing_width,
+                net_credit, quantity, status, underlying_price_entry
+           FROM ic_trades
+          WHERE trade_date = ?${and}`,
+      )
+      .all(tradeDate, ...scopeParams);
+
+    // Open positions build the live curves; the whole day builds the as-entered view.
+    const open = rows.filter((r) => str(r["status"]) === "open");
+    const entered = rows.filter((r) => str(r["status"]) !== "cancelled");
+    // One builder, run over whichever row set is being drawn. The grid is derived from the SAME
+    // rows as the curves — a grid built from the open book while the curves came from the whole day
+    // would clip the as-entered view to whatever happened to still be open.
+    const buildArms = (source: Array<Record<string, unknown>>): MeicForestArm[] => {
+      if (source.length === 0) return [];
+      const byProfile = new Map<string, Array<Record<string, unknown>>>();
+      for (const r of source) {
+        const profile = str(r["risk_profile"]) ?? "?";
+        const list = byProfile.get(profile) ?? [];
+        list.push(r);
+        byProfile.set(profile, list);
+      }
+      const prices = forestGrid(
+        source.flatMap((r) => {
+          const w = num(r["wing_width"]) ?? 0;
+          const p = num(r["put_strike"]) ?? 0;
+          const c = num(r["call_strike"]) ?? 0;
+          return [p - w, p, c, c + w];
+        }),
+      );
+      return [...byProfile.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([profile, list]) => {
+          const positions = list.map((r) => ({
+            icOrderId: str(r["ic_order_id"]) ?? "",
+            putStrike: num(r["put_strike"]) ?? 0,
+            callStrike: num(r["call_strike"]) ?? 0,
+            wingWidth: num(r["wing_width"]) ?? 0,
+            netCredit: num(r["net_credit"]) ?? 0,
+            quantity: num(r["quantity"]) ?? 1,
+          }));
+          const perPosition = positions.map((pp) => ({
+            icOrderId: pp.icOrderId,
+            pnl: prices.map((sp) => payoffAt(icLegs(pp), sp) * pp.quantity),
+          }));
+          const pnl = prices.map((_, i) => perPosition.reduce((sum, pp) => sum + (pp.pnl[i] ?? 0), 0));
+          return { profile, positions, prices, pnl, perPosition };
+        });
+    };
+
+    const arms = buildArms(open);
+    const asEntered = buildArms(entered);
+
+    // A stopped side has released its strikes. Reported per side rather than per
+    // trade: MEIC stops each side independently, so a trade can have given back
+    // its calls while its puts are still on the book.
+    // Deduped: a settled session resolves every trade, and emitting a row per strike per trade put
+    // 2,840 entries in this array for one day. What a reader needs is the SET of strikes a stop
+    // handed back, per arm and side, not one entry per trade that touched them.
+    const releasedKeys = new Set<string>();
+    const released: MeicForest["releasedStrikes"] = [];
+    const pushReleased = (profile: string, strike: number, right: "P" | "C") => {
+      const key = `${profile}|${right}|${strike}`;
+      if (releasedKeys.has(key)) return;
+      releasedKeys.add(key);
+      released.push({ profile, strike, right, at: null });
+    };
+    for (const r of rows) {
+      const status = str(r["status"]);
+      if (status === "open") continue;
+      const profile = str(r["risk_profile"]) ?? "?";
+      const w = num(r["wing_width"]) ?? 0;
+      const p = num(r["put_strike"]);
+      const c = num(r["call_strike"]);
+      if (p !== null) {
+        pushReleased(profile, p, "P");
+        if (w) pushReleased(profile, p - w, "P");
+      }
+      if (c !== null) {
+        pushReleased(profile, c, "C");
+        if (w) pushReleased(profile, c + w, "C");
+      }
+    }
+
+    const symbol = str(open[0]?.["symbol"] ?? rows[0]?.["symbol"]) ?? null;
+    const lastSpot = num(rows[rows.length - 1]?.["underlying_price_entry"]);
+    return {
+      mode,
+      tradeDate,
+      symbol,
+      tradesToday: rows.length,
+      openPositions: open.length,
+      asEntered,
+      arms,
+      releasedStrikes: released,
+      lastSpot,
     };
   });
 }

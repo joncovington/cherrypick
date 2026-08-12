@@ -155,6 +155,52 @@ CREATE TABLE IF NOT EXISTS fly_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_fly_snapshots_date ON fly_snapshots(trade_date);
 
+-- One row per EVALUATED ENTRY OPPORTUNITY per (iteration x arm): what was proposed and what
+-- happened to it. Uncollapsed, unlike fly_decisions.
+--
+-- This exists because the arms became independent portfolios with unbounded capital (2026-08-11):
+-- every arm now sees the same market with the same money, so the ONLY thing that differentiates
+-- them is which entries the rules let through. That makes the refusals the primary measurement
+-- rather than a diagnostic, and neither module recorded them in a queryable form before.
+--
+-- Deliberately NOT folded into fly_decisions, whose whole design is to collapse a run of identical
+-- reasons into one row with occurrences=N. That collapse is right for reading a session and wrong
+-- for measuring one: `seconds_until_cadence_clear` falls by one tick every iteration, so no two
+-- rows would ever share a run key and the collapse would degenerate into one row per tick anyway --
+-- with the aggregation machinery still in the path. fly_decisions stays exactly as it is, the
+-- human-readable session narrative; this is the measurement record underneath it.
+--
+-- `outcome` is the taxonomy the read side buckets on, and `no_fill` is deliberately its own value:
+-- under a fill-based cadence clock an entry that cleared every gate and simply did not fill neither
+-- consumed the arm's slot nor was refused by a rule, and folding it into a gate outcome would make
+-- the gates look stricter than they are.
+CREATE TABLE IF NOT EXISTS fly_entry_attempts (
+    id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts                          TEXT,
+    trade_date                  TEXT,
+    arm                         TEXT,
+    symbol                      TEXT,
+    expiry                      TEXT,
+    mode                        TEXT,     -- legged | outright | bwb | debit_first
+    outcome                     TEXT,     -- filled | cadence_blocked | sign_rule_blocked
+                                          --   | duplicate_blocked | gate_blocked | window_blocked
+                                          --   | no_candidate | no_fill
+    block_detail                TEXT,     -- the specific engine reason, e.g. 'credit_below_floor'
+    proposed_legs               TEXT,     -- JSON [{strike, sign, type}], the structure that was offered
+    center                      REAL,
+    wing_width                  REAL,
+    blocking_strike             REAL,     -- populated for sign_rule_blocked
+    seconds_until_cadence_clear REAL,     -- populated for cadence_blocked; the cost of the spacing
+    spot                        REAL,
+    net_gex                     REAL,
+    gex_positive                INTEGER,
+    regime_label                TEXT,
+    would_be_credit             REAL,
+    position_id                 TEXT      -- set on the filled path, linking an attempt to its result
+);
+CREATE INDEX IF NOT EXISTS idx_fly_attempts_date ON fly_entry_attempts(trade_date, arm);
+CREATE INDEX IF NOT EXISTS idx_fly_attempts_outcome ON fly_entry_attempts(trade_date, outcome);
+
 -- One row per symbol: the current auto-escalated streamer ATM-window width this loop is requesting,
 -- separate from the engine's own configured default. Written/read by stream_window.py, which widens
 -- this after repeated missing_leg_quotes refusals and decays it back down once they stop. Paper and
@@ -517,6 +563,112 @@ def record_decision(
             ),
         )
     conn.commit()
+
+
+def record_entry_attempt(
+    conn,
+    *,
+    trade_date: str,
+    arm: str,
+    symbol: str,
+    outcome: str,
+    mode: str | None = None,
+    expiry: str | None = None,
+    block_detail: str | None = None,
+    proposed_legs: list | None = None,
+    center: float | None = None,
+    wing_width: float | None = None,
+    blocking_strike: float | None = None,
+    seconds_until_cadence_clear: float | None = None,
+    spot: float | None = None,
+    net_gex: float | None = None,
+    gex_positive: bool | None = None,
+    regime_label: str | None = None,
+    would_be_credit: float | None = None,
+    position_id: str | None = None,
+    ts: str | None = None,
+) -> None:
+    """Append one evaluated entry opportunity. Never collapses — see the table comment for why.
+
+    Pure telemetry on the write side: nothing in the loop reads this back to make a decision, so a
+    failure here must never cost a trade. Callers are expected to wrap it accordingly; it is kept
+    free of any read-modify-write so a single INSERT is the whole operation.
+    """
+    conn.execute(
+        "INSERT INTO fly_entry_attempts (ts, trade_date, arm, symbol, expiry, mode, outcome, "
+        "block_detail, proposed_legs, center, wing_width, blocking_strike, "
+        "seconds_until_cadence_clear, spot, net_gex, gex_positive, regime_label, would_be_credit, "
+        "position_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            ts or _now(),
+            trade_date,
+            arm,
+            symbol,
+            expiry,
+            mode,
+            outcome,
+            block_detail,
+            json.dumps(proposed_legs) if proposed_legs is not None else None,
+            center,
+            wing_width,
+            blocking_strike,
+            seconds_until_cadence_clear,
+            spot,
+            net_gex,
+            None if gex_positive is None else int(bool(gex_positive)),
+            regime_label,
+            would_be_credit,
+            position_id,
+        ),
+    )
+    conn.commit()
+
+
+def last_entry_fill_ts(conn, *, trade_date: str, arm: str, symbol: str) -> str | None:
+    """When this arm last FILLED an entry on this symbol today, or None.
+
+    The cadence clock's input. Read from the position ledger rather than from the attempts table:
+    the ledger is what actually holds a position, and a fill that was written there but whose
+    attempt row failed to write must still consume the arm's slot. Telemetry may be lossy; the
+    clock may not.
+
+    Live rows carry `entry_fill_status` -- a *placed* order is 'pending' until confirmed, and it is
+    counted here, because the slot is spent the moment an order is working. Paper rows leave the
+    column NULL and are counted unconditionally. Rejected and cancelled entries are excluded: those
+    never became a position, so they never used the slot.
+    """
+    row = conn.execute(
+        "SELECT MAX(entry_time) AS t FROM fly_positions WHERE trade_date = ? AND arm = ? "
+        "AND symbol = ? AND status != 'voided' AND void_reason IS NULL "
+        "AND (entry_fill_status IS NULL OR entry_fill_status IN ('filled', 'pending'))",
+        (trade_date, arm, symbol.upper()),
+    ).fetchone()
+    return row["t"] if row and row["t"] else None
+
+
+def day_structure_keys(conn, *, trade_date: str, arm: str, symbol: str) -> set:
+    """Every structure this arm has already established today, as (kind, side, center, wing, far).
+
+    The duplicate rule's input. Deliberately spans the WHOLE day regardless of status: flies are
+    completed, not closed, so a structure never leaves the book before EOD and re-entering it later
+    in the session is the same trade twice. Voided rows are excluded -- those are rows the module
+    has disavowed as evidence, so they constrain nothing.
+    """
+    rows = conn.execute(
+        "SELECT kind, side, center, wing_width, far_width FROM fly_positions "
+        "WHERE trade_date = ? AND arm = ? AND symbol = ? AND status != 'voided' AND void_reason IS NULL",
+        (trade_date, arm, symbol.upper()),
+    ).fetchall()
+    return {
+        (
+            str(r["kind"] or ""),
+            str(r["side"] or ""),
+            None if r["center"] is None else float(r["center"]),
+            None if r["wing_width"] is None else float(r["wing_width"]),
+            None if r["far_width"] is None else float(r["far_width"]),
+        )
+        for r in rows
+    }
 
 
 def record_iteration(

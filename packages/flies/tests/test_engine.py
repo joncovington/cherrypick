@@ -318,11 +318,88 @@ def test_entry_respects_the_position_cap():
 
 def test_entry_will_not_stack_two_structures_on_one_center():
     """Two flies on the same strike double the pin bet without adding a profit zone — the opposite of
-    what a forest of separate zones is for."""
+    what a forest of separate zones is for.
+
+    Now enforced by the duplicate-structure rule, which keys on the full geometry (centre + wings)
+    rather than the centre alone. Within an arm the two are the same rule, because `wing_width` is
+    arm-constant; the geometry key is what states it correctly.
+    """
+    held = {"center": 6000.0, "kind": "fly", "side": "put", "wing_width": 5, "far_width": None}
     enter, reason, _ = engine.evaluate_credit_spread_entry(
-        snapshot(underlying_price=5998.0), params(), [{"center": 6000.0, "kind": "fly"}]
+        snapshot(underlying_price=5998.0), params(), [held]
     )
-    assert not enter and reason == "center_already_occupied"
+    assert not enter and reason == "duplicate_structure"
+
+
+def test_a_different_wing_width_on_the_same_centre_is_not_a_duplicate():
+    """The generalization the geometry key buys: same centre, different wings, different trade.
+
+    Unreachable in today's config — width variation lives in separate arms — and asserted anyway so
+    the rule is pinned as geometry rather than re-collapsing to centre occupancy by accident.
+    """
+    held = {"center": 6000.0, "kind": "fly", "side": "put", "wing_width": 25, "far_width": None}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(
+        snapshot(underlying_price=5998.0), params(), [held]
+    )
+    assert enter, reason
+
+
+def test_entry_refused_when_a_leg_would_cancel_an_open_one():
+    """The sign rule: this arm holds a LONG put at 5995, so a new spread shorting 5995 nets it out
+    and the ledger would stop describing the position actually held."""
+    held = {
+        "center": 6000.0,
+        "kind": "short_vertical",
+        "side": "put",
+        "wing_width": 5,
+        "far_width": None,
+        "trade_date": "2026-08-11",
+    }
+    # A 5995-centred put spread is short 5995 / long 5990 — 5995 is held long above.
+    enter, reason, _ = engine.evaluate_credit_spread_entry(
+        snapshot(underlying_price=5993.0), params(), [held]
+    )
+    assert not enter and reason == "sign_rule_conflict"
+
+
+def test_entry_allowed_when_the_shared_strike_is_the_same_sign():
+    """`+1 -2 +2 -2 +1`: two structures sharing a wing stack rather than cancel."""
+    # A wide short vertical holding SHORT 6000 / long 5975. The new ATM entry is short 6000 too:
+    # same sign at a shared strike, which stacks. The widths differ so the duplicate rule stays out
+    # of the way and the sign rule is what is actually under test.
+    held = {
+        "center": 6000.0,
+        "kind": "short_vertical",
+        "side": "put",
+        "wing_width": 25,
+        "far_width": None,
+        "trade_date": "2026-08-11",
+    }
+    enter, reason, _ = engine.evaluate_credit_spread_entry(
+        snapshot(underlying_price=6000.0), params(), [held]
+    )
+    assert enter, reason
+
+
+def test_cadence_blocks_a_second_entry_inside_the_spacing_window():
+    held = {
+        "center": 5900.0,
+        "kind": "short_vertical",
+        "side": "put",
+        "wing_width": 5,
+        "far_width": None,
+        "trade_date": "2026-08-11",
+        "entry_time_min": 11 * 60,
+    }
+    cfg = {**params(), "min_seconds_between_entries": 360}
+    snap = snapshot(underlying_price=5998.0)
+    snap["now_min"] = 11 * 60 + 3  # three minutes after the last fill
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snap, cfg, [held])
+    assert not enter and reason == "entry_cadence_wait"
+
+    snap["now_min"] = 11 * 60 + 6  # six minutes: eligible again
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snap, cfg, [held])
+    assert enter, reason
 
 
 def test_entry_rejects_a_credit_below_the_floor():
@@ -1338,3 +1415,220 @@ def test_the_price_gate_bounds_the_floor_before_min_floor_dollars_can(conn=None)
     snap = snapshot(underlying_price=6004.0, puts={6000: q(0.00, 0.01), 6005: q(2.42, 2.47)})
     done, _, plan = engine.evaluate_completion(snap, open_spread(), params(min_floor_dollars=bound - 1))
     assert done and plan["floor"] > bound
+
+
+def test_a_refusal_reports_the_blocking_strike_without_returning_a_plan():
+    """The detail rides an out-dict, not the return tuple.
+
+    `plan is None on refusal` is an invariant live_loop documents and leans on, so the strike that
+    collided is handed back through a caller-supplied dict instead. Asserted together because the
+    two halves are the point: the detail arrives AND the contract is unchanged.
+    """
+    held = {
+        "center": 6000.0,
+        "kind": "short_vertical",
+        "side": "put",
+        "wing_width": 5,
+        "far_width": None,
+        "trade_date": "2026-08-11",
+    }
+    detail: dict = {}
+    enter, reason, plan = engine.evaluate_credit_spread_entry(
+        snapshot(underlying_price=5993.0), params(), [held], None, detail
+    )
+    assert not enter and reason == "sign_rule_conflict"
+    assert plan is None, "live_loop relies on a refusal carrying no plan"
+    assert detail["blocking_strike"] == 5995.0
+    assert detail["blocking_right"] == "P"
+
+
+def test_a_cadence_refusal_reports_the_seconds_still_to_wait():
+    """The distribution of that wait is the measured cost of the current spacing — the only honest
+    input to changing it — so it has to be recorded, not just implied by the refusal."""
+    held = {
+        "center": 5900.0,
+        "kind": "short_vertical",
+        "side": "put",
+        "wing_width": 5,
+        "far_width": None,
+        "trade_date": "2026-08-11",
+        "entry_time_min": 11 * 60,
+    }
+    snap = snapshot(underlying_price=5998.0)
+    snap["now_min"] = 11 * 60 + 2
+    detail: dict = {}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(
+        snap, {**params(), "min_seconds_between_entries": 360}, [held], None, detail
+    )
+    assert not enter and reason == "entry_cadence_wait"
+    assert detail["seconds_until_cadence_clear"] == 240.0
+
+
+def test_the_out_dict_is_optional_so_the_live_loop_signature_is_unchanged():
+    held = {"center": 6000.0, "kind": "fly", "side": "put", "wing_width": 5, "far_width": None}
+    enter, reason, plan = engine.evaluate_credit_spread_entry(
+        snapshot(underlying_price=5998.0), params(), [held]
+    )
+    assert not enter and reason == "duplicate_structure" and plan is None
+
+
+# ── The moneyness gate (gex-intrinsic, 2026-08-11) ───────────────────────────
+
+
+def test_intrinsic_at_entry_measures_the_short_strike_against_spot():
+    """A put spread is in the money when spot sits BELOW its short strike, a call spread when above,
+    and either way the value is capped at the width — a vertical cannot be worth more than the gap
+    between its legs."""
+    assert engine.intrinsic_at_entry("put", 6000.0, 5998.0, 5) == 2.0
+    assert engine.intrinsic_at_entry("call", 6000.0, 6002.0, 5) == 2.0
+    assert engine.intrinsic_at_entry("put", 6000.0, 6010.0, 5) == 0.0
+    assert engine.intrinsic_at_entry("call", 6000.0, 5990.0, 5) == 0.0
+    # Both legs through: capped at the width rather than growing without bound.
+    assert engine.intrinsic_at_entry("put", 6000.0, 5980.0, 5) == 5.0
+
+
+# A GEX surface pinning the centre well ABOVE spot — the geometry that produces a fully-ITM put
+# spread, and the one an ATM arm structurally cannot reach: an ATM centre sits on spot, so its long
+# strike is always a full width away and the structure can never be entirely through.
+_LAGGING_GEX = {
+    "ok": True,
+    "per_strike": [
+        {"strike": 6005, "call_gex": 90_000, "put_gex": 88_000, "net_gex": 2_000},
+        {"strike": 5990, "call_gex": 1_000, "put_gex": 500, "net_gex": 500},
+    ],
+}
+
+
+def test_the_moneyness_gate_refuses_a_fully_itm_entry():
+    """At intrinsic == width both legs are ITM: the expiry value is already pinned at maximum loss
+    and only a reversal through the whole width recovers it.
+
+    Built on a GEX-centred arm on purpose. This is not an incidental fixture choice — all 16
+    fully-ITM entries in the SPX era were the gex arm's, because an ATM centre cannot produce one.
+    """
+    snap = snapshot(
+        underlying_price=5998.0,
+        gex=_LAGGING_GEX,
+        puts={5995: q(1.0, 1.4), 6000: q(2.6, 3.0), 6005: q(9.0, 9.4), 6010: q(13.0, 13.4)},
+    )
+    gated = {**params("gex"), "max_intrinsic_pct_of_width": 1.0, "max_center_distance_pct": 0.01}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snap, gated, [])
+    assert not enter and reason == "entry_mostly_intrinsic"
+
+
+def test_the_moneyness_gate_binds_before_the_credit_ceiling_it_replaces():
+    """Ordering matters for the ledger, not just the outcome: the same trade refused as
+    `credit_above_ceiling_mostly_intrinsic` would be attributed to the gate that demonstrably never
+    caught this case, and the attempts ledger would keep crediting the wrong rule."""
+    snap = snapshot(
+        underlying_price=5998.0,
+        gex=_LAGGING_GEX,
+        puts={5995: q(1.0, 1.4), 6000: q(2.6, 3.0), 6005: q(9.0, 9.4), 6010: q(13.0, 13.4)},
+    )
+    gated = {**params("gex"), "max_intrinsic_pct_of_width": 1.0, "max_center_distance_pct": 0.01}
+    _, reason, _ = engine.evaluate_credit_spread_entry(snap, gated, [])
+    assert reason == "entry_mostly_intrinsic"
+
+
+def test_the_moneyness_gate_is_off_when_unset():
+    """Every existing arm must be untouched — this is opt-in, carried by gex-intrinsic alone."""
+    snap = snapshot(
+        underlying_price=5998.0,
+        gex=_LAGGING_GEX,
+        puts={5995: q(1.0, 1.4), 6000: q(2.6, 3.0), 6005: q(9.0, 9.4), 6010: q(13.0, 13.4)},
+    )
+    _, reason, _ = engine.evaluate_credit_spread_entry(
+        snap, {**params("gex"), "max_center_distance_pct": 0.01}, []
+    )
+    assert reason != "entry_mostly_intrinsic"
+
+
+def test_the_moneyness_gate_admits_an_ordinary_shallow_entry():
+    """The shallow bucket is the strategy's normal population (116 of 133 SPX-era entries) and must
+    not be caught: `choose_side` deliberately sells the side spot has already crossed, so SOME
+    intrinsic is inherent to legging in."""
+    gated = {**params(), "max_intrinsic_pct_of_width": 1.0}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snapshot(underlying_price=5998.0), gated, [])
+    assert enter, reason
+
+
+def test_the_credit_ceiling_now_records_what_it_refused():
+    """146 refusals in one session with no record of the number refused is a gate whose cost cannot
+    be measured afterwards — the blind spot `best_completing_debit` exists to close on the
+    completion side."""
+    rich = snapshot(
+        underlying_price=5998.0,
+        puts={5990: q(0.2, 0.4), 5995: q(1.0, 1.4), 6000: q(5.0, 5.4), 6005: q(8.6, 9.0)},
+    )
+    detail: dict = {}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(rich, params(), [], None, detail)
+    assert not enter and reason == "credit_above_ceiling_mostly_intrinsic"
+    assert detail["would_be_credit"] > 0
+
+
+# ── The drift gate (control-drift, 2026-08-11) ───────────────────────────────
+
+
+def _drift_snapshot(spot, day_open, **over):
+    snap = snapshot(underlying_price=spot, **over)
+    snap["session"] = {"day_open": day_open}
+    return snap
+
+
+def test_completion_opposes_drift_reads_the_side_against_the_day():
+    """A PUT spread completes on an UP move and a CALL spread on a DOWN one, so a committed drift
+    makes exactly one of them a bet on the day turning around."""
+    p = params()
+    # Down day: a put spread needs UP to complete — that opposes the drift.
+    opposes, drift = engine.completion_opposes_drift(_drift_snapshot(5960.0, 6000.0), p, "put")
+    assert opposes is True and drift == -40.0
+    # A call spread needs DOWN, which is the way the day is already going.
+    opposes, _ = engine.completion_opposes_drift(_drift_snapshot(5960.0, 6000.0), p, "call")
+    assert opposes is False
+    # Up day mirrors it exactly — the sign flips with the market.
+    opposes, _ = engine.completion_opposes_drift(_drift_snapshot(6040.0, 6000.0), p, "call")
+    assert opposes is True
+    opposes, _ = engine.completion_opposes_drift(_drift_snapshot(6040.0, 6000.0), p, "put")
+    assert opposes is False
+
+
+def test_an_uncommitted_day_never_opposes():
+    """Inside `regime_trend_points` the day has not committed, and the gate says nothing. The band's
+    dead zone is a known failure mode; widening the gate past the tag would be fitting the number to
+    the outcome."""
+    opposes, drift = engine.completion_opposes_drift(_drift_snapshot(6013.6, 6000.0), params(), "put")
+    assert opposes is False and drift == pytest.approx(13.6)
+
+
+def test_missing_session_coverage_fails_open():
+    """No session row means no opinion, not a refusal — coverage starts 2026-07-29."""
+    snap = snapshot(underlying_price=5960.0)
+    snap.pop("session", None)
+    opposes, drift = engine.completion_opposes_drift(snap, params(), "put")
+    assert opposes is False and drift is None
+
+
+def test_the_drift_gate_refuses_an_entry_that_needs_a_reversal():
+    """Spot 5998 against a 6050 open is a committed down day (-52). `choose_side` sells the PUT
+    spread there (spot sits at or below the centre), and a put spread needs an UP move to complete —
+    so this entry is a bet on the day turning around, which is exactly what the gate refuses."""
+    snap = _drift_snapshot(5998.0, 6050.0)
+    gated = {**params(), "refuse_completion_against_trend": True}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snap, gated, [])
+    assert not enter and reason == "completion_against_drift"
+
+
+def test_the_drift_gate_is_off_when_unset():
+    """control and every existing arm must be untouched — this is opt-in, carried by control-drift."""
+    snap = _drift_snapshot(5998.0, 6050.0)
+    _, reason, _ = engine.evaluate_credit_spread_entry(snap, params(), [])
+    assert reason != "completion_against_drift"
+
+
+def test_the_drift_gate_reports_the_drift_it_refused_on():
+    snap = _drift_snapshot(5998.0, 6050.0)
+    detail: dict = {}
+    engine.evaluate_credit_spread_entry(
+        snap, {**params(), "refuse_completion_against_trend": True}, [], None, detail
+    )
+    assert detail["drift_points"] == -52.0

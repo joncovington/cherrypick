@@ -27,6 +27,8 @@ Three arms, differing only in WHERE and WHEN they centre a structure:
 
 from __future__ import annotations
 
+from cherrypick.core import entry as _entry
+
 from cherrypick.flies import fly
 
 PUT, CALL = fly.PUT, fly.CALL
@@ -45,8 +47,10 @@ PUT, CALL = fly.PUT, fly.CALL
 # 20-point wing is off-scale (the scaled equivalent of the drift it brackets is covered by width-2).
 ARMS = (
     "gex",
+    "gex-intrinsic",
     "time_window",
     "control",
+    "control-drift",
     "wide_wing",
     "width-2",
     "width-3",
@@ -523,6 +527,25 @@ def choose_bwb_side(snapshot: dict, center: float) -> str:
     return CALL if spot <= center else PUT
 
 
+def intrinsic_at_entry(side: str, center: float, spot: float, width: float) -> float:
+    """How much of this credit spread's value is already decided: the short strike's intrinsic,
+    capped at the wing width.
+
+    `center` IS the short strike for a legged entry. A put spread is in the money when spot sits
+    BELOW it, a call spread when spot sits above; the cap at `width` is the structure's own maximum,
+    since a vertical cannot be worth more than the distance between its legs.
+
+    Reaching the cap means BOTH legs are in the money -- the spread's expiry value is already pinned
+    at maximum loss and only a reversal through the entire width recovers it. That is a directional
+    bet, not the pin bet this module is built on.
+
+    Deliberately computed from spot and the strike rather than inferred from the credit. See
+    `max_intrinsic_pct_of_width` for why the credit cannot carry this signal at 0DTE.
+    """
+    intrinsic = (center - spot) if side == PUT else (spot - center)
+    return min(max(intrinsic, 0.0), width)
+
+
 def before_open_gate(params: dict, now_min: int | None) -> bool:
     """Is it still inside the post-open blackout? A floor that an arm's own windows cannot override.
 
@@ -562,8 +585,177 @@ def _window_cap_reached(params: dict, open_positions: list, window: str | None) 
     return sum(1 for p in open_positions if p.get("entry_window") == window) >= cap
 
 
+# The single expiry token the sign rule keys on -- see portfolio_gates. These are 0DTE
+# structures scoped to one trade date, so there is exactly one expiry per day book.
+_EXPIRY = "0dte"
+
+
+def completion_opposes_drift(snapshot: dict, params: dict, side: str) -> tuple[bool, float | None]:
+    """Would this entry need spot to REVERSE a committed session drift in order to complete?
+
+    Returns ``(opposes, drift)``. `drift` is `spot - day_open` in points, or None when the session
+    row is absent -- coverage starts 2026-07-29, and a missing open is never replaced with a guess.
+
+    The mechanism, and why this is the sharpest dimension this module has found. `choose_side` sells
+    the side spot has already crossed, and `fly.completing_side_direction` then makes a PUT spread
+    complete on an UP move and a CALL spread on a DOWN one. So on a day that has committed to a
+    direction, the arm systematically legs into the side that needs the day to turn around.
+
+    Measured across the SPX era: entries whose completing direction opposed a committed drift
+    completed 7% against 89% for the rest. It reproduced in mirror image on 2026-08-04 (up day,
+    both losing gex entries legged into the side the +115 run was against) and 2026-08-05 (down day,
+    all three misses were up-completions), and again on 2026-08-11 -- with-drift 79% completion for
+    +$1,376, against-drift 23% for -$3,237. The sign flips with the market rather than persisting,
+    which is what separates a mechanism from an up-trending artefact.
+
+    Reads `regime_trend_points` (default 20) as the flat band, the SAME key `_classify_trend` uses,
+    so the gate and the tag can never disagree about what "committed" means. Inside the band the day
+    has not committed and this returns False: the band's own dead zone is a known failure mode (see
+    `_classify_trend`), and widening the gate past the tag to cover it would be fitting the number
+    to the outcome.
+
+    Fails OPEN on unknown coverage -- a missing session row means no opinion, not a refusal.
+    """
+    spot = snapshot.get("underlying_price")
+    day_open = (snapshot.get("session") or {}).get("day_open")
+    if spot is None or day_open is None:
+        return False, None
+    drift = spot - day_open
+    band = params.get("regime_trend_points", 20.0)
+    if abs(drift) <= band:
+        return False, drift
+    needs = fly.completing_side_direction(side)
+    opposes = (needs == "up" and drift < 0) or (needs == "down" and drift > 0)
+    return opposes, drift
+
+
+def _day_book(open_positions: list, day_positions: list | None) -> list:
+    """The positions the portfolio rules read: the arm's WHOLE day, not just what is still open.
+
+    Flies are completed, not closed, so a structure never leaves the book before EOD -- which means
+    the duplicate rule and the sign rule must both see everything entered today. `day_positions` is
+    passed by `book.py`, which already holds it; the fallback to `open_positions` exists for the
+    live loop and for direct callers/tests, where the two are the same list in practice.
+    """
+    return open_positions if day_positions is None else day_positions
+
+
+def structure_key(position: dict) -> tuple:
+    """The identity of a structure for "never enter the same trade twice": ``(centre, wing, far)``.
+
+    Deliberately GEOMETRY ONLY -- neither `kind` nor `side` is part of it, and both omissions are
+    load-bearing:
+
+    * `kind` is excluded because every entry mode converges on the same structure. A legged short
+      vertical at K completes into a fly at K; so does a debit_first long vertical at K. Keying on
+      kind would let an arm open both and call them different trades, when the book ends the day
+      holding one structure entered twice -- exactly what the rule forbids.
+    * `side` is excluded because a put fly and a call fly on the same centre and wings have the same
+      payoff. They are the same bet expressed two ways, and the arm's own `choose_side` can pick
+      either depending on where spot sits at the moment it looks.
+
+    `far_width` stays in, and is None for every symmetric structure, which is what keeps a bwb from
+    ever colliding with a symmetric fly on the same centre.
+
+    This is the generalization of the `center_already_occupied` rule it replaces, and collapses to
+    it exactly today: `wing_width` is a scalar per arm (width variation lives in SEPARATE arms), so
+    within one arm the same centre already implies the same wings.
+    """
+    return (
+        float(position["center"]),
+        None if position.get("wing_width") is None else float(position["wing_width"]),
+        None if position.get("far_width") is None else float(position["far_width"]),
+    )
+
+
+def cadence_state(params: dict, day_positions: list, now_min: int | None) -> tuple[bool, float | None]:
+    """Has this arm's entry cadence elapsed? Returns ``(allowed, seconds_remaining)``.
+
+    The clock runs from the arm's last FILLED entry, per `cherrypick.core.entry`. An arm is its own
+    portfolio with unbounded capital, so this and the entry rules are the only things pacing it --
+    which also makes `seconds_remaining` worth recording on every refusal, because the distribution
+    of time spent waiting IS the measured cost of the current spacing.
+
+    Works in minute-of-day like the rest of this module's gating rather than in wall-clock datetimes,
+    because that is what a snapshot carries; the seconds it returns are therefore a whole number of
+    minutes. `entry_time_min` is stamped on each position by `book.py` at fill time.
+    """
+    spacing = params.get("min_seconds_between_entries", 0) or 0
+    if spacing <= 0 or now_min is None:
+        return True, None
+    fills = [p.get("entry_time_min") for p in day_positions if p.get("entry_time_min") is not None]
+    if not fills:
+        return True, None
+    elapsed_seconds = (now_min - max(fills)) * 60
+    if elapsed_seconds >= spacing:
+        return True, None
+    return False, float(spacing - elapsed_seconds)
+
+
+def portfolio_gates(
+    params: dict,
+    day_positions: list,
+    now_min: int | None,
+    *,
+    proposed_legs: list | None = None,
+    structure: tuple | None = None,
+) -> tuple[str | None, dict]:
+    """The three per-arm portfolio rules, in the order a refusal is most cheaply explained.
+
+    Returns ``(reason | None, detail)`` -- None meaning "no rule refused this". `detail` carries the
+    measurement the attempts ledger records for that refusal (seconds still to wait, or the strike
+    that collided), so the caller never has to re-derive why.
+
+    Cadence first because it is true of the whole tick regardless of what was proposed, then the
+    duplicate rule (a pure key lookup), then the sign rule (the only one that walks legs). `structure`
+    and `proposed_legs` may each be None, which skips their rule -- a caller that has not built a
+    concrete plan yet can still ask the cadence question.
+    """
+    allowed, remaining = cadence_state(params, day_positions, now_min)
+    if not allowed:
+        return "entry_cadence_wait", {"seconds_until_cadence_clear": remaining}
+
+    if structure is not None:
+        existing = {structure_key(p) for p in day_positions if p.get("center") is not None}
+        if structure in existing:
+            return "duplicate_structure", {}
+
+    if proposed_legs:
+        # Both sides are stamped with ONE expiry token here rather than each carrying its own.
+        #
+        # The day book is scoped to a single (trade_date, arm, symbol) and every structure in it is
+        # 0DTE for that date, so there is exactly one expiry in play and forcing it is correct. It is
+        # also the only safe construction: the stored rows carry `trade_date` while a snapshot's own
+        # date field is not guaranteed to be populated, and if the two ever disagreed the legs would
+        # land in different buckets and the rule would silently permit everything. A gate that fails
+        # OPEN and silently is worse than no gate, because it still reads as enforced.
+        open_legs = []
+        for p in day_positions:
+            try:
+                open_legs.extend((_EXPIRY, r, k, s) for _e, r, k, s in fly.position_legs(p))
+            except (ValueError, KeyError, TypeError):
+                # A row whose geometry cannot be read constrains nothing rather than crashing the
+                # tick. Deliberately permissive in ONE direction only: this can admit an entry the
+                # rule would have refused, never refuse one it would have allowed, and the attempts
+                # ledger still records what was taken. A refusal here would turn a malformed
+                # historical row into an outage for the rest of the session.
+                continue
+        stamped = [(_EXPIRY, r, k, sg) for _e, r, k, sg in proposed_legs]
+        hit = _entry.sign_conflict(open_legs, stamped)
+        if hit is not None:
+            return "sign_rule_conflict", {"blocking_strike": hit[2], "blocking_right": hit[1]}
+
+    return None, {}
+
+
 # --------------------------------------------------------------------------- legged entry (step 1)
-def evaluate_credit_spread_entry(snapshot: dict, params: dict, open_positions: list) -> tuple:
+def evaluate_credit_spread_entry(
+    snapshot: dict,
+    params: dict,
+    open_positions: list,
+    day_positions: list | None = None,
+    gate_detail: dict | None = None,
+) -> tuple:
     """Should this arm sell an opening credit spread? Returns (enter, reason, plan | None).
 
     `plan` carries everything the fill needs: side, centre (the SHORT strike, which becomes the fly's
@@ -590,16 +782,89 @@ def evaluate_credit_spread_entry(snapshot: dict, params: dict, open_positions: l
     if center is None:
         return False, center_reason, None
 
-    # One structure per centre: two flies on the same strike double the pin bet without adding a
-    # profit zone, which is the opposite of what a "forest" of separate zones is for.
-    if any(abs(p["center"] - center) < 1e-6 for p in open_positions):
-        return False, "center_already_occupied", None
-
     width = params.get("wing_width", 5)
     side = choose_side(snapshot, center)
     long_strike = center - width if side == PUT else center + width
     if not _have(snapshot, side, [center, long_strike]):
         return False, "missing_leg_quotes", None
+
+    # Drift gate (opt-in per arm via `refuse_completion_against_trend`; off when unset).
+    #
+    # Refuses an entry that would need spot to REVERSE a committed session drift to complete. This
+    # is the module's sharpest measured dimension and until now nothing gated on it -- 7% completion
+    # against 89%, reproduced in both directions across sessions. See `completion_opposes_drift`.
+    #
+    # Placed BEFORE the moneyness gate so the attempts ledger attributes a refusal to the drift when
+    # both would fire: drift is a property of the day and decides whether the trade can work at all,
+    # while moneyness is a property of the strike we picked. Crediting the wrong one would make the
+    # arm comparison read the wrong rule.
+    if params.get("refuse_completion_against_trend"):
+        opposes, drift = completion_opposes_drift(snapshot, params, side)
+        if opposes:
+            if gate_detail is not None:
+                gate_detail["drift_points"] = round(drift, 2) if drift is not None else None
+            return False, "completion_against_drift", None
+
+    # Moneyness gate (opt-in per arm via `max_intrinsic_pct_of_width`; off when unset).
+    #
+    # This is what `max_credit_pct_of_width` was meant to do and structurally cannot. That gate uses
+    # the CREDIT as a proxy for moneyness, and at 0DTE the proxy does not hold: with hours left, a
+    # fully in-the-money 5-wide prices near 2.5-3.0 rather than near 5.00, because there is still
+    # real probability of moving back out. Measured over the SPX era, all 16 fully-ITM entries priced
+    # at 48-59.7% of width -- every one of them UNDER the 0.60 ceiling, so the gate named for this
+    # job had never once caught it.
+    #
+    # Intrinsic is exact and needs no calibration: `center` is the short strike and spot is in the
+    # snapshot. At `intrinsic >= width` both legs are in the money and the expiry value is already
+    # pinned at maximum loss; only a reversal through the entire width recovers it. Those 16 entries
+    # realized -$1,119.64 (8 completed for +$630, 8 stranded for -$1,750) against -$15.27 average for
+    # the shallow bucket.
+    #
+    # Applied to the LEGGED path only. bwb and debit_first carry different geometry and their own
+    # populations have not been measured, and a gate extended to a structure it was never derived
+    # against is the mistake this module keeps a rule about.
+    max_intrinsic = params.get("max_intrinsic_pct_of_width")
+    if max_intrinsic is not None:
+        spot = snapshot.get("underlying_price")
+        if spot is not None:
+            intrinsic = intrinsic_at_entry(side, center, spot, width)
+            if intrinsic >= max_intrinsic * width:
+                if gate_detail is not None:
+                    gate_detail["intrinsic"] = round(intrinsic, 4)
+                return False, "entry_mostly_intrinsic", None
+
+    # The per-arm portfolio rules: cadence, no duplicate structure, no self-cancelling leg.
+    #
+    # These replace the old `center_already_occupied` check. That rule refused a second structure on
+    # an occupied centre, and the duplicate rule below is its generalization: it keys on the full
+    # geometry (kind, side, centre, wings) rather than the centre alone. The two coincide exactly
+    # today, because `wing_width` is a scalar per arm -- width variation is expressed as SEPARATE
+    # arms (width-2..width-5, wide_wing) precisely to keep the sweep one-variable, so within one arm
+    # the same centre implies the same wings implies the same trade. Written as the general rule
+    # anyway, because that is what "never enter the same trade twice" actually means, and it stays
+    # correct the day an arm sweeps width internally.
+    #
+    # The legs are the structure this entry WOULD hold, which for a legged entry is the opening
+    # short vertical, not the fly it hopes to become. The completing leg is evaluated separately and
+    # deliberately doubles this short into the fly's -2 centre -- same sign, so the sign rule permits
+    # it, which is the whole reason the rule is about sign rather than about strike occupancy.
+    proposed = [(_EXPIRY, side, center, -1), (_EXPIRY, side, long_strike, 1)]
+    structure = (float(center), float(width), None)
+    refusal, _detail = portfolio_gates(
+        params,
+        _day_book(open_positions, day_positions),
+        snapshot.get("now_min"),
+        proposed_legs=proposed,
+        structure=structure,
+    )
+    if refusal:
+        # Recorded through an out-dict rather than the return tuple on purpose. `plan is None on
+        # refusal` is an invariant live_loop documents and leans on, and telemetry is not a good
+        # enough reason to loosen a contract that live-order code reads. Callers that want the
+        # detail pass a dict; the live loop passes nothing and is untouched.
+        if gate_detail is not None:
+            gate_detail.update(_detail)
+        return False, refusal, None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     credit = fly.vertical_credit(quote(snapshot, side, center), quote(snapshot, side, long_strike), slip)
@@ -619,6 +884,12 @@ def evaluate_credit_spread_entry(snapshot: dict, params: dict, open_positions: l
     # every arm rather than just the one that exposed it.
     max_credit = params.get("max_credit_pct_of_width", 0.60) * width
     if credit > max_credit:
+        # Record the number it refused on. Until 2026-08-11 this gate returned a bare reason, so a
+        # session could show 146 refusals with no way to ask afterwards what was turned down or
+        # whether turning it down was right -- the same blind spot `best_completing_debit` exists to
+        # close on the completion side.
+        if gate_detail is not None:
+            gate_detail["would_be_credit"] = round(credit, 4)
         return False, "credit_above_ceiling_mostly_intrinsic", None
 
     # A credit spread whose credit can't clear the fee stack on BOTH legs of the leg-in can never
@@ -729,7 +1000,13 @@ def choose_debit_side(snapshot: dict, center: float) -> str:
     return CALL if spot <= center else PUT
 
 
-def evaluate_debit_vertical_entry(snapshot: dict, params: dict, open_positions: list) -> tuple:
+def evaluate_debit_vertical_entry(
+    snapshot: dict,
+    params: dict,
+    open_positions: list,
+    day_positions: list | None = None,
+    gate_detail: dict | None = None,
+) -> tuple:
     """Should this arm buy an opening debit vertical? Returns (enter, reason, plan | None).
 
     Mirror of `evaluate_credit_spread_entry`, buying instead of selling: the debit vertical bought
@@ -757,14 +1034,31 @@ def evaluate_debit_vertical_entry(snapshot: dict, params: dict, open_positions: 
     if center is None:
         return False, center_reason, None
 
-    if any(abs(p["center"] - center) < 1e-6 for p in open_positions):
-        return False, "center_already_occupied", None
-
     width = params.get("wing_width", 5)
     side = choose_debit_side(snapshot, center)
     long_strike = center - width if side == CALL else center + width
     if not _have(snapshot, side, [center, long_strike]):
         return False, "missing_leg_quotes", None
+
+    # Per-arm portfolio rules -- see the equivalent block in `evaluate_credit_spread_entry`. This
+    # entry holds the mirror geometry (short the centre, long the far strike) and is refused on the
+    # same three grounds.
+    proposed = [(_EXPIRY, side, center, -1), (_EXPIRY, side, long_strike, 1)]
+    refusal, _detail = portfolio_gates(
+        params,
+        _day_book(open_positions, day_positions),
+        snapshot.get("now_min"),
+        proposed_legs=proposed,
+        structure=(float(center), float(width), None),
+    )
+    if refusal:
+        # Recorded through an out-dict rather than the return tuple on purpose. `plan is None on
+        # refusal` is an invariant live_loop documents and leans on, and telemetry is not a good
+        # enough reason to loosen a contract that live-order code reads. Callers that want the
+        # detail pass a dict; the live loop passes nothing and is untouched.
+        if gate_detail is not None:
+            gate_detail.update(_detail)
+        return False, refusal, None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     debit = fly.vertical_debit(quote(snapshot, side, long_strike), quote(snapshot, side, center), slip)
@@ -962,7 +1256,13 @@ def _bwb_lower_upper(side: str, near_wing: float, far_wing: float) -> tuple[floa
     return (far_wing, near_wing) if side == PUT else (near_wing, far_wing)
 
 
-def evaluate_bwb_entry(snapshot: dict, params: dict, open_positions: list) -> tuple:
+def evaluate_bwb_entry(
+    snapshot: dict,
+    params: dict,
+    open_positions: list,
+    day_positions: list | None = None,
+    gate_detail: dict | None = None,
+) -> tuple:
     """Should this arm enter a broken-wing butterfly for a net credit? Returns (enter, reason, plan).
 
     Side via `choose_bwb_side`, NOT `choose_side` — the legged heuristic is the wrong one here and
@@ -992,9 +1292,6 @@ def evaluate_bwb_entry(snapshot: dict, params: dict, open_positions: list) -> tu
     if center is None:
         return False, center_reason, None
 
-    if any(abs(p["center"] - center) < 1e-6 for p in open_positions):
-        return False, "center_already_occupied", None
-
     width = params.get("wing_width", 5)
     # A ratio, not an absolute point value: wing_width itself is manually rescaled per symbol and
     # per width-sweep arm (control=1, width-2..width-5), and a fixed absolute far_width would need
@@ -1009,6 +1306,32 @@ def evaluate_bwb_entry(snapshot: dict, params: dict, open_positions: list) -> tu
     near_wing, _, far_wing = fly.bwb_strikes(side, center, width, far_width)
     if not _have(snapshot, side, [near_wing, center, far_wing]):
         return False, "missing_leg_quotes", None
+
+    # Per-arm portfolio rules -- see `evaluate_credit_spread_entry`. A bwb is entered complete, so
+    # unlike the two legged modes its proposed legs ARE the whole structure: both wings plus the
+    # doubled centre. `far_width` is part of the structure key here and None for every other kind,
+    # which is what keeps a bwb from ever reading as a duplicate of a symmetric structure.
+    proposed = [
+        (_EXPIRY, side, near_wing, 1),
+        (_EXPIRY, side, center, -1),
+        (_EXPIRY, side, center, -1),
+        (_EXPIRY, side, far_wing, 1),
+    ]
+    refusal, _detail = portfolio_gates(
+        params,
+        _day_book(open_positions, day_positions),
+        snapshot.get("now_min"),
+        proposed_legs=proposed,
+        structure=(float(center), float(width), float(far_width)),
+    )
+    if refusal:
+        # Recorded through an out-dict rather than the return tuple on purpose. `plan is None on
+        # refusal` is an invariant live_loop documents and leans on, and telemetry is not a good
+        # enough reason to loosen a contract that live-order code reads. Callers that want the
+        # detail pass a dict; the live loop passes nothing and is untouched.
+        if gate_detail is not None:
+            gate_detail.update(_detail)
+        return False, refusal, None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     lower_wing, upper_wing = _bwb_lower_upper(side, near_wing, far_wing)
