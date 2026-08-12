@@ -82,15 +82,6 @@ def test_halt_flag_presence_is_the_signal(env):
     assert liveops.run(cfg)["halt_flag"]["present"] is True
 
 
-def test_liveops_card_is_serve_only():
-    from cherrypick.orchestrator import dashboard
-
-    card = dashboard._liveops_card_html()
-    # The card composes both halves of live ops: kill switches + the paper↔live/live-book check.
-    assert "data-cp-liveops" in card and "/api/liveops" in card
-    assert "data-cp-reconcile" in card and "/api/reconcile" in card
-
-
 def test_kill_switches_read_flies_nested_convention(env):
     """flies gates live trading via nested `live.enabled`, not the top-level `enable_live_trading`
     meic/earnings use. Before config.live_trading_enabled checked both, this view -- and the halt

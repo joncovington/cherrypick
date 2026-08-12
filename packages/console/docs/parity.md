@@ -1,9 +1,33 @@
 # Dashboard parity checklist
 
-Card-by-card status of the console against the surfaces it replaces (re-audited after the completion pass, 2026-08-09).
-"Done" means the same reads are served, not necessarily pixel-identical.
+Card-by-card status of the console against the surfaces it replaced (re-audited after the completion
+pass, 2026-08-09). "Done" means the same reads are served, not necessarily pixel-identical.
 
-## Suite dashboard (:8787)
+**Those surfaces are gone as of 2026-08-12.** The suite dashboard, the MEIC/flies/GEX dashboards, the
+earnings strategy dashboard, and scout's web app were deleted — console is the suite's only read
+surface. Recover any of them from the `pre-console-only` tag.
+
+So this file changed jobs. It is no longer a transition checklist against a running original; every
+row still marked **missing** below is now simply **console's backlog**, and there is nothing left to
+diff against except that tag. The gaps were accepted knowingly at deletion time rather than gated on:
+
+- **Live ops** (halt flag, per-module live gates, reconcile panel) — the only surface with *no*
+  console equivalent at all. Deliberately never ported because it is broker-touching, and it belongs
+  with the settings editor in a later phase that revisits console's "read-only, never writes
+  credentials" guardrail. `liveops.py` and `reconcile.py` both survive; only their card is gone.
+- Active-alerts callout and notify-channels line; equity 2x-slippage restatement, best/worst-day
+  metrics, VIX overlay, data-epoch marker; the live-logs sub-block.
+- MEIC per-leg badges, stop-adjustment columns, AI reasoning, explicit date-range inputs, the arm
+  scorecard, and stop-policy counterfactuals.
+- Flies symbol filter and the voided-rows accounting line.
+- GEX WebSocket push (console polls at 15s, the cache cadence).
+- Scout's narrative/describe prose — the one gap with a port already planned.
+
+One thing worth pinning: the deleted suite dashboard's log card had a merge bug that took two rounds
+to fix (plain-text stamps parsing as undated, and earnings' log resolving to the wrong directory).
+Console's `readers/logs.ts` is a separate implementation and does not inherit that test.
+
+## Suite dashboard (was :8787, deleted)
 
 | Card | Status |
 |---|---|
@@ -16,7 +40,7 @@ Card-by-card status of the console against the surfaces it replaces (re-audited 
 | End-of-day card + md report links/rendering | done (in-page markdown rendering, allowlisted files) |
 | Recent logs (merged tail, level filters) | done; live-logs sub-block still missing |
 
-## MEIC dashboard (:5050/:5051)
+## MEIC dashboard (was :5050/:5051, deleted)
 
 | Card | Status |
 |---|---|
@@ -38,7 +62,7 @@ Every row-listing table in the console is server-paged against a true match coun
 (`Paged<T>` in `@console/shared`, `readers/paging.ts` on the server). No table stops
 at a hidden row cap.
 
-## Flies dashboard (:5052) — at parity+
+## Flies dashboard (was :5052, deleted) — at parity+
 
 | Card | Status |
 |---|---|
@@ -53,13 +77,13 @@ at a hidden row cap.
 | Symbol filter (page-wide) | **missing** — arm/date only; live-quote spot assumes XSP |
 | Voided-rows accounting line | **missing** (console suggestion) |
 
-## GEX dashboard (:5055) — at parity+
+## GEX dashboard (was :5055, deleted) — at parity+
 
 All cards done and number-verified (walls/zero-gamma definitions matched). Remaining: WebSocket push
 (console polls 15s — cache-cadence equivalent); regime-drift intraday chart is a proposed
 console-only addition.
 
-## Earnings strategy dashboard (static)
+## Earnings strategy dashboard (static HTML, deleted)
 
 | Card | Status |
 |---|---|
@@ -71,7 +95,7 @@ console-only addition.
 | Per-strategy detail (equity+drawdown, PF pass/fail, Sharpe, max DD, IV crush) | done |
 | Footer caveats block | done |
 
-## Scout (:5057)
+## Scout (was :5057, web app deleted)
 
 Done except narrative/describe prose. Console additions beyond scout: chain delta+OI picker,
 STO/BTO highlights, ±EM band, scope-gated real dry-run validation.

@@ -38,5 +38,5 @@ def test_a_failure_is_marked_and_reported():
 def test_names_what_it_deliberately_leaves_running():
     report, _ = cli._format_uninstall_report({})
     assert "streamer" in report
-    assert "dashboard" in report
+    assert "console" in report
     assert "Dolt" in report

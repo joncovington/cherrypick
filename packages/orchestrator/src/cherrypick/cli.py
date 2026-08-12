@@ -48,7 +48,6 @@ Subcommands:
                        hidden-input tool) and select the live-trading account. Never trades.
   account              List (--module), set (--set <last4|index>), or clear (--clear) a module's
                        designated live-trading account. Masked; never trades.
-  dashboard            Regenerate the read-only status dashboard (static HTML: health + P&L + logs).
   calibrate            Per-profile paper calibration readings + advisory promotion recommendations.
   run-earnings-entry   Run EarningsAgent's paper entry now (invoked by its daily task).
   run-earnings-exit    Run EarningsAgent's paper exit now (invoked by its daily task).
@@ -81,7 +80,6 @@ from cherrypick.orchestrator import (
     calibrate,
     configedit,
     connect,
-    dashboard,
     desk_notifier,
     doctor,
     eod_digest,
@@ -92,7 +90,6 @@ from cherrypick.orchestrator import (
     migrate,
     reconcile,
     report,
-    serve,
     servicecfg,
     settings_serve,
     tasks,
@@ -313,7 +310,7 @@ def _format_uninstall_report(results: dict[str, dict]) -> tuple[str, int]:
         "-" * 60,
         "Left running by design (uninstall does not touch these):",
         "  - streamer (packages/streamer) -- the suite's shared market-data producer",
-        "  - any dashboard server you started with --serve",
+        "  - the console (packages/console) -- the suite's read surface, kept alive by the supervisor",
         "  - Dolt sql-server on :3306, if something outside cherrypick started it",
         "  Stop these yourself for a full stop -- see docs/operations.md.",
         "=" * 60,
@@ -959,18 +956,6 @@ def cmd_advise(cfg, args) -> None:
     _emit(advise.run(cfg, day=day))
 
 
-def cmd_dashboard(cfg, args) -> None:
-    """One-shot static render (default), or a localhost live server with --serve.
-
-    Serve mode reuses the same build_model/_render_html as the file render; it adds a live GEX section
-    (polled from the cherrypick-gex module) when `gex.enabled` is set. Blocks until Ctrl-C.
-    """
-    if getattr(args, "serve", False):
-        _emit(serve.serve(cfg, host=args.host, port=args.port, open_browser=not args.no_browser))
-        return
-    _emit(dashboard.run(cfg))
-
-
 def cmd_settings(cfg, args) -> None:
     """The settings surface: a loopback web editor for the suite's configs + keyring secrets (the one
     mutating HTTP server in the suite — see settings_serve). With --organize it instead reorders live
@@ -1079,7 +1064,6 @@ def main() -> None:
             "reconcile",
             "connect",
             "account",
-            "dashboard",
             "migrate-home",
             "calibrate",
             "run-earnings-entry",
@@ -1141,19 +1125,10 @@ def main() -> None:
         help="For reconcile: notify on a non-FLAT verdict (what the scheduled task passes)",
     )
     parser.add_argument("--yes", action="store_true", help="For account --set: skip the confirmation prompt")
+    parser.add_argument("--host", default=None, help="For settings: bind host (default 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=None, help="For settings: bind port (default 8804)")
     parser.add_argument(
-        "--serve",
-        action="store_true",
-        help="For dashboard: run a localhost live server instead of writing a static file",
-    )
-    parser.add_argument(
-        "--host", default=None, help="For dashboard --serve / settings: bind host (default 127.0.0.1)"
-    )
-    parser.add_argument(
-        "--port", type=int, default=None, help="For dashboard --serve (8787) / settings (8804): bind port"
-    )
-    parser.add_argument(
-        "--no-browser", action="store_true", help="For dashboard --serve / settings: do not open a browser"
+        "--no-browser", action="store_true", help="For settings: do not open a browser"
     )
     parser.add_argument(
         "--organize",
@@ -1210,7 +1185,6 @@ def main() -> None:
         "reconcile": lambda: cmd_reconcile(cfg, scheduled=args.scheduled),
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),
-        "dashboard": lambda: cmd_dashboard(cfg, args),
         "migrate-home": lambda: cmd_migrate_home(cfg, args.apply),
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),

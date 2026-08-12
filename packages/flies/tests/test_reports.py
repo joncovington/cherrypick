@@ -1,24 +1,21 @@
-"""Tests for the read surfaces: dashboard API, section card, and the EOD report files."""
+"""Tests for the EOD report files — the module's remaining read surface.
 
-import json
+The dashboard and section-card cases went with those surfaces; the console reads the ledger through
+`analytics.py` directly.
+"""
 
 import pytest
 from test_analytics import position
 
-from cherrypick.flies import analytics, dashboard, section
+from cherrypick.flies import analytics
 from cherrypick.flies import db as dbmod
 from cherrypick.flies import eod as eodmod
 
 
 @pytest.fixture()
 def conn(tmp_path, monkeypatch):
-    """A temp paper DB, also exported as FLIES_DB_PATH.
-
-    The env var matters: `section.build_section` opens its own connection (it is invoked as a
-    subprocess by the orchestrator, so it cannot be handed one). Without this the card would silently
-    read the developer's real paper DB instead of the fixture — passing or failing for reasons that
-    have nothing to do with the test.
-    """
+    """A temp paper DB, also exported as FLIES_DB_PATH, so nothing under test can reach the
+    developer's real paper DB and pass or fail for reasons unrelated to the test."""
     path = tmp_path / "paper_trades.db"
     monkeypatch.setenv("FLIES_DB_PATH", str(path))
     return dbmod.connect(str(path))
@@ -150,132 +147,6 @@ def seeded(conn):
     )
 
 
-# --------------------------------------------------------------------------- dashboard
-def test_resolve_port_precedence(monkeypatch):
-    monkeypatch.delenv("FLIES_DASHBOARD_PORT", raising=False)
-    assert dashboard.resolve_port(None) == dashboard.DEFAULT_PORT
-    monkeypatch.setenv("FLIES_DASHBOARD_PORT", "9111")
-    assert dashboard.resolve_port(None) == 9111
-    assert dashboard.resolve_port(8123) == 8123, "an explicit flag must win over the environment"
-
-
-def test_resolve_port_ignores_junk_env(monkeypatch):
-    monkeypatch.setenv("FLIES_DASHBOARD_PORT", "not-a-port")
-    assert dashboard.resolve_port(None) == dashboard.DEFAULT_PORT
-
-
-def test_api_payload_is_json_serializable_and_complete(conn):
-    seeded(conn)
-    payload = dashboard.build_api_data(conn, DAY)
-    json.dumps(payload, default=str)  # must survive the wire
-    assert payload["ok"] is True
-    assert set(payload["arms"]) >= {"gex", "control", "time_window"}
-    for view in ("today", "history", "performance"):
-        assert payload[view], f"{view} view has no data"
-    assert payload["today"]["curves"]["gex"]["empty"] is False
-
-
-def test_api_payload_on_an_empty_database(conn):
-    """Every morning starts here, so the empty case must be a clean payload, not an exception."""
-    payload = dashboard.build_api_data(conn, DAY)
-    assert payload["ok"] is True
-    assert payload["arms"] == []
-    assert payload["today"]["positions"] == []
-
-
-def test_api_arm_filter_narrows_history(conn):
-    seeded(conn)
-    everything = dashboard.build_api_data(conn, DAY)
-    only_gex = dashboard.build_api_data(conn, DAY, "gex")
-    assert len(only_gex["history"]["trades"]) < len(everything["history"]["trades"])
-    assert {t["arm"] for t in only_gex["history"]["trades"]} == {"gex"}
-
-
-def test_api_symbol_roster_and_filter(conn):
-    """The book moved SPX -> XSP; both eras stay in the ledger, so the symbol selector must offer
-    both and narrowing to one must actually narrow history, performance, and the today card."""
-    seeded(conn)  # all SPX, per test_analytics.position's default
-    position(conn, "X1", day=DAY, arm="gex", symbol="XSP", kind="fly", net=0.20, pnl=15.0)
-
-    everything = dashboard.build_api_data(conn, DAY)
-    assert set(everything["symbols"]) == {"SPX", "XSP"}
-    assert everything["selected_symbol"] == "ALL"
-
-    only_xsp = dashboard.build_api_data(conn, DAY, None, "XSP")
-    assert only_xsp["selected_symbol"] == "XSP"
-    assert {t["symbol"] for t in only_xsp["history"]["trades"]} == {"XSP"}
-    assert only_xsp["history"]["by_arm"][0]["net_pnl"] == 15.0
-    assert only_xsp["performance"]["all_time"]["net_pnl"] == 15.0
-    # Today's tiles/positions/books all narrow to the selected scope too, via session_overview --
-    # the whole card must tell one consistent story for whatever arm/symbol is picked.
-    assert {p["symbol"] for p in only_xsp["today"]["positions"]} == {"XSP"}
-    assert only_xsp["today"]["stats"]["net_pnl"] == 15.0
-
-
-def test_page_is_self_contained(conn):
-    """A loopback page that fetched from a CDN would break offline and add a third-party dependency
-    to a surface whose only job is reading a local SQLite file."""
-    assert "<canvas" in dashboard.HTML
-    for remote in ("http://", "https://", "cdn."):
-        assert remote not in dashboard.HTML, f"page reaches out to {remote}"
-
-
-# --------------------------------------------------------------------------- section card
-def test_section_renders_the_payoff_curve_as_bars(conn):
-    seeded(conn)
-    payload = section.build_section(None, DAY, "gex")
-    assert payload["ok"] is True
-    assert payload["bars"]["series"][0]["tone_by_sign"] is True
-    assert len(payload["bars"]["labels"]) == len(payload["bars"]["series"][0]["values"])
-    labels = [m["label"] for m in payload["metrics"]]
-    assert "Book floor" in labels and "Completion" in labels
-
-
-def test_section_states_the_band_alongside_the_floor(conn):
-    """A floor without the band it holds over is the claim this module exists to avoid making."""
-    position(conn, "P1", day=DAY, arm="control", kind="short_vertical", net=2.55, status="open")
-    dbmod.save_book(
-        conn,
-        {
-            "book_id": f"{DAY}:control:SPX",
-            "trade_date": DAY,
-            "arm": "control",
-            "symbol": "SPX",
-            "credit_collected": 255.0,
-            "debits_paid": 0.0,
-            "fees": 3.44,
-            "status": "open",
-        },
-    )
-    payload = section.build_section(None, DAY, "control")
-    assert any(m["label"] == "Floor holds" for m in payload["metrics"])
-    assert "loses outside the band" in payload["subtitle"]
-
-
-def test_section_on_an_empty_day_is_ok_not_an_error(conn):
-    """A card that shouted 'error' every morning would train the operator to ignore it."""
-    payload = section.build_section(None, DAY)
-    assert payload["ok"] is True
-    assert "no positions" in payload["title"].lower()
-    assert "timeseries" not in payload  # nothing recorded yet, so no trend either
-
-
-def test_section_carries_the_completion_trend(conn):
-    """The card draws rule 4's deciding number across sessions, not just today's blended rate."""
-    seeded(conn)
-    position(conn, "T1", day="2026-07-21", kind="fly")
-    position(conn, "T2", day="2026-07-21", kind="short_vertical")
-    payload = section.build_section(None, DAY, "gex")
-    ts = payload["timeseries"]
-    assert "2026-07-21" in ts["labels"]
-    assert ts["series"][0]["name"] == "completion %"
-    assert ts["series"][0]["values"][ts["labels"].index("2026-07-21")] == 50.0
-
-    # A morning with no positions yet still shows the history.
-    empty_day = section.build_section(None, "2026-07-25")
-    assert "timeseries" in empty_day and empty_day["timeseries"]["labels"] == ts["labels"]
-
-
 # --------------------------------------------------------------------------- EOD files
 def test_write_reports_creates_both_files(conn, tmp_path):
     seeded(conn)
@@ -374,16 +245,15 @@ def test_reports_are_deterministic(conn):
 
 
 def test_every_report_number_comes_from_analytics(conn):
-    """The reports and the dashboard must never disagree. Both read the same layer, so this checks the
-    headline figure agrees across surfaces."""
+    """The EOD report must not compute its own headline figure. MEIC grew three call sites that
+    disagreed about what "net" means; here every surface reads `analytics.py`, so the report's money
+    line has to be exactly what that layer returns."""
     seeded(conn)
     stats = analytics.stats_for_period(conn, DAY, DAY)
     text = eodmod.build_paper_eod(conn, DAY)
     from cherrypick.core import viz
 
     assert viz.fmt_money(stats["net_pnl"]) in text
-    payload = dashboard.build_api_data(conn, DAY)
-    assert payload["today"]["stats"]["net_pnl"] == stats["net_pnl"]
 
 
 # --------------------------------------------------------------------------- regime section
