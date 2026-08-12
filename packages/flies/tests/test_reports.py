@@ -461,7 +461,6 @@ def test_paper_eod_carries_the_refusal_ledger_and_its_two_warnings(tmp_path):
 def test_the_refusal_ledger_degrades_on_a_pre_2026_08_11_ledger(tmp_path):
     """A ledger written before the attempts table existed is a legitimate state, not an error — the
     section says so rather than failing the whole report."""
-    import sqlite3
 
     conn = dbmod.connect(str(tmp_path / "old.db"))
     conn.execute("DROP TABLE fly_entry_attempts")
