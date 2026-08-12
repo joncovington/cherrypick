@@ -14,8 +14,8 @@ import time
 import pytest
 
 from cherrypick.earnings import db_paper
-from cherrypick.earnings import strategy_metrics as metrics
 from cherrypick.earnings import strat_test_harness as runner
+from cherrypick.earnings import strategy_metrics as metrics
 
 
 def _ns(**kwargs):
