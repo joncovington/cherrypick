@@ -2,10 +2,17 @@
 
 Every module that reads the shared stream cache declares what it needs by writing one file,
 ``<state>/stream_requests/<module>.json``; the standalone streamer (``packages/streamer``) reads the
-union across every file and streams exactly that. This module owns the WRITE: the path convention, the
+union across every file and streams exactly that. This module owns the WRITE — the path convention, the
 symbol cleaning, and the atomic write-then-rename (so a concurrent reader in the streamer never sees a
-partial file). It consolidates three byte-similar per-module writers (flies, gex, meic) that each
-carried a "candidate to consolidate into cherrypick.core.streamrequests" note — this is that module.
+partial file) — and the ``union_*`` READ. It consolidates three byte-similar per-module writers (flies,
+gex, meic) that each carried a "candidate to consolidate into cherrypick.core.streamrequests" note —
+this is that module.
+
+The union read lives here rather than in the streamer because two packages consume it and must not
+disagree: the streamer unions the files to decide what to *subscribe*, and the orchestrator unions the
+same files to decide whether a running producer's subscription set has gone stale (a producer binds its
+underlyings once, at startup). Two implementations of "what did every module ask for" would recycle the
+producer on a difference it does not actually see, or miss one it does.
 
 Consumers keep a thin ``stream_request.py`` adapter for their module name, logger, and (MEIC) their
 ``leg_sources`` spec; the adapter's ``register(config)`` stays best-effort — a failed write must never
@@ -32,9 +39,15 @@ from pathlib import Path
 from cherrypick.core import home as _home
 
 
+def requests_dir() -> Path:
+    """The directory holding one request file per module. Not created — readers must tolerate its
+    absence (a suite with no stream consumers installed has no directory, not an error)."""
+    return _home.state_dir() / "stream_requests"
+
+
 def request_path(module: str) -> Path:
     """Where this module's request file lives (directory created if absent)."""
-    return _home.ensure(_home.state_dir() / "stream_requests") / f"{module}.json"
+    return _home.ensure(requests_dir()) / f"{module}.json"
 
 
 def clean_symbols(symbols) -> list[str]:
@@ -74,3 +87,57 @@ def write_request(module: str, symbols, legs=(), leg_sources=(), window_hints=No
     tmp.write_text(json.dumps(payload), encoding="utf-8")
     tmp.replace(path)
     return path
+
+
+def read_all() -> list[dict]:
+    """Every module's request payload, in filename order.
+
+    A file that is missing, half-written, or corrupt is skipped rather than raised on: one bad request
+    file must never take down the producer that reads it — nor the watchdog tick that checks it.
+    """
+    out: list[dict] = []
+    directory = requests_dir()
+    try:
+        if not directory.is_dir():
+            return out
+        files = sorted(directory.glob("*.json"))
+    except OSError:
+        return out
+    for path in files:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            out.append(data)
+    return out
+
+
+def union_symbols(seed_symbols=None) -> list[str]:
+    """Underlyings to stream: every module's ``symbols`` plus the operator's configured seed."""
+    symbols: set[str] = set(clean_symbols(seed_symbols))
+    for data in read_all():
+        symbols.update(clean_symbols(data.get("symbols")))
+    return sorted(symbols)
+
+
+def union_window_hints() -> dict[str, int]:
+    """Per-symbol widened ATM windows: the MAX hint per symbol across every module's file, so one
+    module's need is never narrowed by another module's silence on that symbol."""
+    hints: dict[str, int] = {}
+    for data in read_all():
+        for symbol, count in clean_window_hints(data.get("window_hints")).items():
+            hints[symbol] = max(hints.get(symbol, 0), count)
+    return hints
+
+
+def subscription_snapshot(seed_symbols=None) -> dict:
+    """The half of the registry union that only a producer **restart** can change.
+
+    A producer binds its underlyings once, when it builds its streamer, and sizes each symbol's ATM
+    window at the same time — so a new symbol or a widened hint reaches the file and never the running
+    process. ``legs``/``leg_sources`` are deliberately absent: the engine re-reads those every
+    subscription poll, so a position opening or closing is served with no restart and must not be made
+    to look like a reason for one.
+    """
+    return {"symbols": union_symbols(seed_symbols), "window_hints": union_window_hints()}

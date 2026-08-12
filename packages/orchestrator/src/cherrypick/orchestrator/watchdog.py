@@ -368,7 +368,13 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
 
 
 def _recycle_streamer_if_stale(label: str, root: Path, spec: dict[str, Any], settling: bool) -> Finding:
-    """A streamer that is up and streaming, but on config from before the last edit.
+    """A streamer that is up and streaming, but on config — or a subscription set — from before the
+    last edit.
+
+    Two ways to be stale, same file-versus-process gap (see servicecfg): the config file moved under a
+    process that read it once at launch, or a module's stream request now names an underlying this
+    process never subscribed (underlyings bind once, when the streamer is built; legs do not — those
+    are re-read every poll and need no restart).
 
     Reached only from the healthy branch, so the stall path always wins: a streamer that is silent is
     restarted for silence, and its config gets stamped by that restart anyway. `settling` is honoured
@@ -382,40 +388,46 @@ def _recycle_streamer_if_stale(label: str, root: Path, spec: dict[str, Any], set
     if settling:
         return healthy
     try:
-        state = servicecfg.staleness(spec, root, label)
+        state = servicecfg.staleness(spec, root, label, check_subscriptions=True)
     except Exception:  # never fail the tick over a stale check
         return healthy
 
+    subs = state.get("subscriptions")
     if state["adopt"]:
-        servicecfg.write_stamp(label, state["hash"], state["source"])
+        servicecfg.write_stamp(label, state["hash"], state["source"], subs)
         return healthy
     if not state["stale"]:
         return healthy
 
-    where = state.get("source") or "streamer config"
+    if state.get("kind") == "subscriptions":
+        why = state["reason"]
+        headline = "subscriptions"
+    else:
+        why = f"config changed since launch ({state.get('source') or 'streamer config'})"
+        headline = "config"
     if not spec.get("auto_restart"):
         return Finding(
             label,
             WARN,
-            "Streamer running stale config",
-            f"Config changed since launch ({where}); auto_restart is off, so restart it by hand.",
+            f"Streamer running stale {headline}",
+            f"Streamer {why}; auto_restart is off, so restart it by hand.",
         )
     stopped = _stop_streamer(root, spec)
     started = _start_streamer(root, spec["start_argv"]) if stopped else False
     if started:
-        servicecfg.write_stamp(label, state["hash"], state["source"])
+        servicecfg.write_stamp(label, state["hash"], state["source"], subs)
         return Finding(
             label,
             WARN,
-            "Streamer recycled onto new config",
-            f"Config changed since launch ({where}); stopped and restarted so it re-reads.",
+            f"Streamer recycled onto new {headline}",
+            f"Streamer {why}; stopped and restarted so it picks them up.",
         )
     return Finding(
         label,
         WARN,
-        "Streamer stale config — recycle failed",
-        f"Config changed since launch ({where}) but the {'restart' if stopped else 'stop'} failed; "
-        "it is still producing on the old config.",
+        f"Streamer stale {headline} — recycle failed",
+        f"Streamer {why} but the {'restart' if stopped else 'stop'} failed; "
+        "it is still producing on the old one.",
     )
 
 
