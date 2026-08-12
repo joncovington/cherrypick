@@ -199,7 +199,7 @@ def cmd_install(cfg, force: bool = False) -> None:
         # per-module streamer (the disabled rollback path) still starts like any daemon
         streamer = mcfg.get("streamer", {})
         if streamer.get("enabled"):
-            results[f"{name}.streamer"] = _ensure_daemon(root, streamer, f"{name}.streamer")
+            results[f"{name}.streamer"] = _ensure_daemon(root, streamer, f"{name}.streamer", producer=True)
 
     # The one remaining OS task: a 2-minute keep-alive probe that (re)starts the supervisor.
     # The OS guarantees the probe; the probe guarantees the daemon; the daemon fires everything.
@@ -226,7 +226,7 @@ def cmd_install(cfg, force: bool = False) -> None:
     if streamer_spec.get("enabled"):
         sroot = cfgmod.module_root(streamer_spec, "streamer")
         results["streamer"] = (
-            _ensure_daemon(sroot, streamer_spec, "streamer")
+            _ensure_daemon(sroot, streamer_spec, "streamer", producer=True)
             if sroot.exists()
             else {"ok": False, "detail": f"checkout not found at {sroot}"}
         )
@@ -244,13 +244,14 @@ def cmd_install(cfg, force: bool = False) -> None:
     _emit({"ok": all(v.get("ok", True) for v in results.values()), "installed": results})
 
 
-def _ensure_daemon(root: Path, spec: dict, stamp_id: str | None = None) -> dict:
+def _ensure_daemon(root: Path, spec: dict, stamp_id: str | None = None, *, producer: bool = False) -> dict:
     """Ensure a detached background daemon is up: check `status_argv` (prints {"running": bool}) and
     launch `start_argv` detached if it is down. Shared by the streamer and the generic `services`.
 
     A launch here is also where the config stamp comes from — `install` is what usually FOLLOWS a
     config edit, so stamping the freshly started process is what lets a later edit be detected as
     stale (see servicecfg). An already-running daemon is stamped too, adopting whatever it has.
+    `producer` marks a market-data streamer, whose stamp also carries the subscription union.
     """
     try:
         r = subprocess.run(
@@ -265,24 +266,33 @@ def _ensure_daemon(root: Path, spec: dict, stamp_id: str | None = None) -> dict:
     except Exception:
         running = False
     if running:
-        _stamp_service_config(root, spec, stamp_id)
+        _stamp_service_config(root, spec, stamp_id, producer=producer)
         return {"ok": True, "detail": "already running"}
     started = watchdog._start_streamer(root, spec["start_argv"])
     if started:
-        _stamp_service_config(root, spec, stamp_id)
+        _stamp_service_config(root, spec, stamp_id, producer=producer)
     return {"ok": started, "detail": "started" if started else "start failed"}
 
 
-def _stamp_service_config(root: Path, spec: dict, stamp_id: str | None = None) -> None:
+def _stamp_service_config(
+    root: Path, spec: dict, stamp_id: str | None = None, *, producer: bool = False
+) -> None:
     """Record what config a daemon was launched with. `services[]` entries name themselves with `id`;
     the streamer blocks carry none, so their caller passes the same label the watchdog stamps under
-    ("streamer", "<module>.streamer") — the two must agree or every tick would see a missing stamp."""
+    ("streamer", "<module>.streamer") — the two must agree or every tick would see a missing stamp.
+
+    A `producer` also stamps the stream-request union it just bound, for the same reason: install is
+    what usually follows the config edit, and a producer started here subscribed exactly today's
+    union. Without it the first watchdog tick would adopt that union instead of comparing against it,
+    silently absorbing any request change made between the install and that tick.
+    """
     sid = stamp_id or spec.get("id")
     if not sid:
         return
     try:
         digest, source = servicecfg.effective_config(spec, root)
-        servicecfg.write_stamp(sid, digest, source)
+        subs = servicecfg.subscription_snapshot() if producer else None
+        servicecfg.write_stamp(sid, digest, source, subs)
     except Exception:  # stamping is a convenience, never a reason to fail an install
         pass
 

@@ -368,7 +368,13 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
 
 
 def _recycle_streamer_if_stale(label: str, root: Path, spec: dict[str, Any], settling: bool) -> Finding:
-    """A streamer that is up and streaming, but on config from before the last edit.
+    """A streamer that is up and streaming, but on config — or a subscription set — from before the
+    last edit.
+
+    Two ways to be stale, same file-versus-process gap (see servicecfg): the config file moved under a
+    process that read it once at launch, or a module's stream request now names an underlying this
+    process never subscribed (underlyings bind once, when the streamer is built; legs do not — those
+    are re-read every poll and need no restart).
 
     Reached only from the healthy branch, so the stall path always wins: a streamer that is silent is
     restarted for silence, and its config gets stamped by that restart anyway. `settling` is honoured
@@ -382,40 +388,46 @@ def _recycle_streamer_if_stale(label: str, root: Path, spec: dict[str, Any], set
     if settling:
         return healthy
     try:
-        state = servicecfg.staleness(spec, root, label)
+        state = servicecfg.staleness(spec, root, label, check_subscriptions=True)
     except Exception:  # never fail the tick over a stale check
         return healthy
 
+    subs = state.get("subscriptions")
     if state["adopt"]:
-        servicecfg.write_stamp(label, state["hash"], state["source"])
+        servicecfg.write_stamp(label, state["hash"], state["source"], subs)
         return healthy
     if not state["stale"]:
         return healthy
 
-    where = state.get("source") or "streamer config"
+    if state.get("kind") == "subscriptions":
+        why = state["reason"]
+        headline = "subscriptions"
+    else:
+        why = f"config changed since launch ({state.get('source') or 'streamer config'})"
+        headline = "config"
     if not spec.get("auto_restart"):
         return Finding(
             label,
             WARN,
-            "Streamer running stale config",
-            f"Config changed since launch ({where}); auto_restart is off, so restart it by hand.",
+            f"Streamer running stale {headline}",
+            f"Streamer {why}; auto_restart is off, so restart it by hand.",
         )
     stopped = _stop_streamer(root, spec)
     started = _start_streamer(root, spec["start_argv"]) if stopped else False
     if started:
-        servicecfg.write_stamp(label, state["hash"], state["source"])
+        servicecfg.write_stamp(label, state["hash"], state["source"], subs)
         return Finding(
             label,
             WARN,
-            "Streamer recycled onto new config",
-            f"Config changed since launch ({where}); stopped and restarted so it re-reads.",
+            f"Streamer recycled onto new {headline}",
+            f"Streamer {why}; stopped and restarted so it picks them up.",
         )
     return Finding(
         label,
         WARN,
-        "Streamer stale config — recycle failed",
-        f"Config changed since launch ({where}) but the {'restart' if stopped else 'stop'} failed; "
-        "it is still producing on the old config.",
+        f"Streamer stale {headline} — recycle failed",
+        f"Streamer {why} but the {'restart' if stopped else 'stop'} failed; "
+        "it is still producing on the old one.",
     )
 
 
@@ -563,7 +575,26 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
     findings: list[Finding] = []
     paper = mcfg.get("paper", {})
 
-    # (a) entry/exit have a driver (supervisor job registry, or the scheduled tasks pre-cutover)
+    # (a) entry/exit have a driver (supervisor job registry, or the scheduled tasks pre-cutover).
+    #
+    # Only for the two-daily-jobs shape. A self-healing earnings module runs ONE continuous job
+    # (`<name>-paper`, checked by the generic module coverage) whose loop does entry and exit from
+    # its own clock — so looking up `earnings-entry` there would raise a CRITICAL for a job that is
+    # correctly absent, every tick. entry_task_name/exit_task_name are kept in config for deleting
+    # the pre-cutover scheduled tasks by name, so their presence is not the discriminator; the kind
+    # is.
+    if paper.get("kind") == "cherrypick_scheduled":
+        findings.extend(_check_scheduled_entry_exit_jobs(name, paper))
+
+    # (b) Dolt reachability (only meaningful on trading days)
+    findings.extend(_check_earnings_dolt(name, paper, is_trading))
+    # (c) entry SLA — unchanged by the cutover: the loop writes the same heartbeat files.
+    findings.extend(_check_earnings_entry_sla(name, mcfg, paper, now_et, is_trading))
+    return findings
+
+
+def _check_scheduled_entry_exit_jobs(name: str, paper: dict[str, Any]) -> list[Finding]:
+    findings: list[Finding] = []
     for tkey, label in (("entry_task_name", "entry"), ("exit_task_name", "exit")):
         tn = paper.get(tkey)
         if not tn:
@@ -593,8 +624,11 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
             )
         else:
             findings.append(Finding(f"{name}.task.{label}", OK, f"Earnings {label} task", "registered"))
+    return findings
 
-    # (b) Dolt reachability (only meaningful on trading days)
+
+def _check_earnings_dolt(name: str, paper: dict[str, Any], is_trading: bool) -> list[Finding]:
+    findings: list[Finding] = []
     if paper.get("requires_dolt") and is_trading:
         if _dolt_reachable(paper.get("dolt_host", "127.0.0.1"), paper.get("dolt_port", 3306)):
             findings.append(Finding(f"{name}.dolt", OK, "Dolt server", "reachable"))
@@ -608,11 +642,23 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
                 )
             )
 
-    # (c) entry SLA — after entry_time+grace on a trading day, the run must have happened.
-    # The grace matters: the entry task fires AT entry_time, its subprocess may run up to
-    # 30 minutes (cli timeout 1800s), and the heartbeat is only written after it returns —
-    # so a comparison against entry_time alone raised CRITICAL for a run that was simply
-    # still in progress (the same false-alarm class _check_settlement's grace fixed).
+    return findings
+
+
+def _check_earnings_entry_sla(
+    name: str, mcfg: dict[str, Any], paper: dict[str, Any], now_et: datetime, is_trading: bool
+) -> list[Finding]:
+    """After entry_time+grace on a trading day, the entry run must have happened.
+
+    Unchanged by the lifecycle cutover: the loop writes the same heartbeat files the scheduled verb
+    used to, so the file and its shape are the contract rather than who writes it.
+
+    The grace matters: the scan starts AT entry_time and may run for many minutes, and the
+    heartbeat is only written when it returns — so a comparison against entry_time alone raised
+    CRITICAL for a run that was simply still in progress (the same false-alarm class
+    _check_settlement's grace fixed).
+    """
+    findings: list[Finding] = []
     if is_trading and paper.get("entry_time"):
         try:
             eh, em = [int(x) for x in paper["entry_time"].split(":")]

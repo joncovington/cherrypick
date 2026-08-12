@@ -13,7 +13,7 @@ current calibration, not a separate toy implementation.
 
 Two distinct paper-testing *programs* build on this same paper/live split, and can run
 concurrently since they write to isolated books — see [Strategy Testing Plan](./strategy-testing-plan.md)
-for `/paper-start`'s forced-sampling program (`cherrypick/earnings/strategy_test_runner.py`, per-strategy `strat_test` books)
+for `/paper-start`'s forced-sampling program (`cherrypick/earnings/strat_test_harness.py`, per-strategy `strat_test` books)
 versus `/paper-trading-start`'s one-shot production-ranking analysis (`rank_strategies.py`, no
 persistence at all). What follows describes the underlying mechanism both rely on.
 
@@ -89,7 +89,7 @@ For the production paper/live loop: only each symbol's single best-ranked strate
 `scanner.select_positions()`'s `max_concurrent_earnings_positions`/`correlation_block_list`
 filtering — the same portfolio-construction logic live trading would use, not a simplified
 single-trade-a-day version. The separate forced-sampling program
-(`strategy_test_runner.py`/`/paper-start`) intentionally trades *every* candidate that clears the
+(`strat_test_harness.py`/`/paper-start`) intentionally trades *every* candidate that clears the
 screen under *every* qualifying strategy instead, specifically to avoid starving strategies that
 rarely win the single-best-per-symbol comparison — see
 [Strategy Testing Plan](./strategy-testing-plan.md).

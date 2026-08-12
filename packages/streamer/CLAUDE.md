@@ -53,7 +53,12 @@ absolute paths.
   any module points the streamer at its own DB the same way. (`legs` is an optional explicit static list
   for a module that would rather name symbols than query.) The streamer only ever *reads* these files and
   opens the declared DBs read-only; a consumer writes only *its own* file. This is the coupling surface —
-  data + the module's own SQL, not code — so no package imports another.
+  data + the module's own SQL, not code — so no package imports another. The **symbol/window-hint union**
+  is delegated to `cherrypick.core.streamrequests` rather than implemented here: the orchestrator unions
+  the same files to decide whether a *running* producer's subscriptions have gone stale (underlyings bind
+  once, at startup — see its `servicecfg`), and two implementations of "what did every module ask for"
+  would recycle this daemon over a difference it never sees. `union_legs` stays local — legs are re-read
+  every poll from module-declared DBs, this package's own sqlite concern.
 - **`cherrypick/streamer/config.py`** — config loading + path resolution. Owns the **canonical cache** default
   (`data/marketdata/stream_cache.db`, a neutral scope owned by no trading module), the operator *base*
   symbols (a seed the registry union adds to), and the log/PID paths, all via `cherrypick.core.home`.

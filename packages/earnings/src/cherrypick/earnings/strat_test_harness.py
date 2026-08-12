@@ -62,7 +62,7 @@ from pathlib import Path
 
 from cherrypick.core import viz
 
-from cherrypick.earnings import costs, db_paper, paths, rank_strategies, scanner, sizing
+from cherrypick.earnings import costs, db_paper, paths, rank_strategies, scanner, sizing, symbol_watch
 from cherrypick.earnings import strategy_metrics as metrics
 from cherrypick.earnings.strategies import (
     atm_calendar,
@@ -94,6 +94,18 @@ _ORDER_FNS = {
 _MULTI_DAY = {
     "atm_calendar": atm_calendar,
     "double_calendar": double_calendar,
+}
+
+# Overnight-hold strategies keep Step 3's unconditional close-window backstop --
+# unlike _MULTI_DAY, a "hold" verdict here never skips the close. But before falling
+# through to that backstop, consult the strategy's own Step 3c evaluate_position so a
+# profit target, stop loss, or backstop that already fired gets its real reason (and
+# the config's own thresholds, not just "close_window") recorded instead of masking it.
+_OVERNIGHT_MANAGED = {
+    "iron_fly": iron_fly,
+    "iron_condor": iron_condor,
+    "directional_credit_spread": directional_credit_spread,
+    "broken_wing_butterfly": broken_wing_butterfly,
 }
 
 
@@ -294,6 +306,56 @@ def _open_session(trade: dict) -> str:
         return ""
 
 
+def _open_positions_with_marks() -> list[dict]:
+    """Open positions, each carrying its latest USABLE mark and how long it has been held.
+
+    Usable only: a refused mark records that we looked and could not price it, which is worth
+    keeping but is not a valuation. Reporting one as the position's worth would put a number in the
+    report that no quote ever supported.
+    """
+    out = []
+    for trade in metrics.load_open_trades():
+        marks = db_paper.cmd_get_marks(
+            argparse.Namespace(order_id=trade["order_id"], session_date=None, limit=50)
+        )["marks"]
+        usable = next((m for m in marks if m.get("usable")), None)
+        out.append(
+            {
+                **trade,
+                "_mark": usable,
+                "_sessions_held": db_paper.session_span(trade.get("opened_at"), time.time()),
+            }
+        )
+    return out
+
+
+def _feed_quality(day: str) -> dict:
+    """What the data looked like on `day` — how many marks were taken, how many were refused and
+    why, and which decisions an execution gate held back."""
+    marks = db_paper.cmd_get_marks(argparse.Namespace(order_id=None, session_date=day, limit=5000))["marks"]
+    events = db_paper.cmd_get_management_events(
+        argparse.Namespace(order_id=None, session_date=day, limit=5000)
+    )["events"]
+
+    refusals: dict[str, int] = {}
+    for m in marks:
+        if not m.get("usable") and m.get("refusal"):
+            refusals[m["refusal"]] = refusals.get(m["refusal"], 0) + 1
+    gated: dict[str, int] = {}
+    for e in events:
+        if not e.get("executed") and e.get("gate"):
+            gated[e["gate"]] = gated.get(e["gate"], 0) + 1
+
+    return {
+        "marks": len(marks),
+        "usable": sum(1 for m in marks if m.get("usable")),
+        "refused": sum(1 for m in marks if not m.get("usable")),
+        "rest": sum(1 for m in marks if m.get("source") == "rest"),
+        "refusals": refusals,
+        "gated": gated,
+    }
+
+
 def _group_stats(trades: list[dict]) -> dict:
     """Win/loss/net/expectancy/profit-factor over a trade list, all net of costs
     (metrics.net_pnl subtracts entry+exit cost) -- the same numbers strategy_report.py reports."""
@@ -336,11 +398,12 @@ def _write_eod_report(day: str) -> Path:
 
     L = [f"# Earnings Paper Trading - EOD Report {day}", ""]
     L.append(
-        "_Deterministic forced-sampling paper book (strat_test). Defined-risk strategies only; "
-        "each position opens one afternoon and closes the next morning. Two sections, because the "
-        "two happen on different days: **Closed this session** is what settled this morning (realized "
-        "P&L, net of entry+exit costs); **Opened this session** is what was entered this afternoon and "
-        "is carried overnight (no P&L yet — capital at risk is the known max loss)._"
+        "_Deterministic forced-sampling paper book (strat_test). Defined-risk strategies only. "
+        "Positions are entered one afternoon and **managed** from there — a winner may be carried "
+        "up to three sessions, a loser closes on the first morning — so a position closing today "
+        "was not necessarily opened yesterday. **Closed this session** is what settled today "
+        "(realized P&L, net of entry+exit costs); **Still open** is everything carrying risk right "
+        "now, marked; **Opened this session** is what was entered this afternoon._"
     )
     L.append("")
     L.append("## Closed this session (realized P&L)")
@@ -399,12 +462,89 @@ def _write_eod_report(day: str) -> Path:
             )
         L.append("")
 
+    # Why each position closed --------------------------------------------------
+    # Under the managed lifecycle the reason is the finding: a session of profit targets and one of
+    # stops produce the same P&L line and mean completely different things. Every exit carries one,
+    # so this is a full accounting rather than a sample.
+    if trades:
+        by_reason: dict[str, list[dict]] = {}
+        for t in trades:
+            by_reason.setdefault(t.get("exit_reason") or "unrecorded", []).append(t)
+        L.append("## Why they closed")
+        L.append("| Reason | Trades | Net P&L | Avg hold (sessions) |")
+        L.append("|---|---|---|---|")
+        for reason, grp in sorted(by_reason.items(), key=lambda kv: -len(kv[1])):
+            holds = [t["hold_days"] for t in grp if t.get("hold_days") is not None]
+            avg_hold = f"{sum(holds) / len(holds):.1f}" if holds else "-"
+            net = sum(metrics.net_pnl(t) for t in grp)
+            L.append(f"| {reason} | {len(grp)} | {_money(round(net, 2))} | {avg_hold} |")
+        L.append("")
+
+    # Still open ----------------------------------------------------------------
+    # Positions were force-closed the next morning before the lifecycle change, so this section had
+    # nothing to say. Now a winner can be carried, and what it is worth mid-flight is the number
+    # that says whether carrying it was right -- reported from the latest usable mark, never from a
+    # refused one.
+    carried = _open_positions_with_marks()
+    if carried:
+        carried_risk = sum(t.get("capital_at_risk") or 0.0 for t in carried)
+        L.append("## Still open (carrying risk now)")
+        L.append(
+            f"- Positions: **{len(carried)}**, capital at risk **{_money(round(carried_risk, 2))}** "
+            "(defined max loss, summed)."
+        )
+        L.append("")
+        L.append("| Symbol | Strategy | Opened | Sessions held | Entry credit | Mark | Unrealized |")
+        L.append("|---|---|---|---|---|---|---|")
+        for t in sorted(carried, key=lambda x: (x["symbol"], x.get("strategy") or "")):
+            mark = t.get("_mark")
+            unreal = (
+                _money(round(mark["unrealized_pnl"], 2))
+                if mark and mark.get("unrealized_pnl") is not None
+                else "-"
+            )
+            debit = (
+                f"{mark['exit_debit']:.2f}" if mark and mark.get("exit_debit") is not None else "_unpriced_"
+            )
+            L.append(
+                f"| {t['symbol']} | {t.get('strategy', '-')} | {_open_session(t) or '-'} | "
+                f"{t.get('_sessions_held', '-')} | {_money(t.get('entry_credit'))} | {debit} | {unreal} |"
+            )
+        L.append("")
+
+    # Feed quality --------------------------------------------------------------
+    # A day with few marks is not the same as a quiet day, and without this line the two are
+    # indistinguishable in the report -- the same reason flies records a per-tick feed ledger.
+    feed = _feed_quality(day)
+    if feed["marks"]:
+        L.append("## Feed quality")
+        L.append(
+            f"- Marks taken: **{feed['marks']}** ({feed['usable']} usable, {feed['refused']} refused"
+            + (f"; {feed['rest']} priced through the broker" if feed["rest"] else "")
+            + ")."
+        )
+        if feed["refusals"]:
+            L.append(
+                "- Refusals: "
+                + ", ".join(
+                    f"{reason} x{n}" for reason, n in sorted(feed["refusals"].items(), key=lambda kv: -kv[1])
+                )
+                + "."
+            )
+        if feed["gated"]:
+            L.append(
+                "- Decisions held back by an execution gate: "
+                + ", ".join(
+                    f"{gate} x{n}" for gate, n in sorted(feed["gated"].items(), key=lambda kv: -kv[1])
+                )
+                + " (recorded, retried on the next tick)."
+            )
+        L.append("")
+
     # Opened this session ------------------------------------------------------
     # The entry pass runs ~6 hours after the close pass that first wrote this file, so this section
     # is empty in the morning and fills in when the afternoon entry pass regenerates the report.
-    # These are the positions actually carrying overnight risk tonight -- distinct from the closed
-    # block above, which is this morning's settlements.
-    L.append("## Opened this session (carried overnight)")
+    L.append("## Opened this session")
     if opened:
         open_risk = sum(t.get("capital_at_risk") or 0.0 for t in opened)
         open_cost = sum(t.get("entry_cost") or 0.0 for t in opened)
@@ -953,6 +1093,30 @@ def _parallel_scan(calendar, config, workers, symbol_timeout, budget_seconds):
     return out
 
 
+def _log_prefilter_skip(scan_date: str, symbol: str, reason: str) -> None:
+    """Record a name the morning scan disqualified, so a symbol missing from the evening's candidate
+    list is explained rather than simply absent. Best-effort: telemetry must never fail a scan."""
+    try:
+        db_paper.cmd_log_scan(
+            argparse.Namespace(
+                data=json.dumps(
+                    {
+                        "scan_date": scan_date,
+                        "symbol": symbol,
+                        "strategy": "_prefilter",
+                        "tier": "prefilter",
+                        "outcome": "skipped",
+                        "reason": reason,
+                        "logged_at": time.time(),
+                        "profile": TEST_PROFILE,
+                    }
+                )
+            )
+        )
+    except Exception:
+        pass
+
+
 def cmd_run_entries(args) -> dict:
     if not rank_strategies._ensure_dolt_running():
         return {"ok": False, "error": "dolt sql-server not available"}
@@ -970,6 +1134,16 @@ def cmd_run_entries(args) -> dict:
         return {"ok": False, "error": f"dolt calendar fetch exceeded {calendar_timeout}s"}
     scan_date = str(_date.today())
     _capture_market_context(scan_date)  # entry-evening VIX for the next close session's analysis
+
+    # Narrow the list using this morning's forward scan before paying for a live chain per name.
+    # Stable criteria only (winrate, average volume, market cap) and against the loosest floor, so a
+    # dropped name is one that could not have passed under any setting -- every survivor is still
+    # screened entirely on live data below. Measured cost is ~8s per symbol, so on a heavy night this
+    # is the difference between finishing inside the entry window and running past it.
+    calendar, prefiltered = symbol_watch.prefilter_symbols(calendar, config, session=scan_date)
+    if prefiltered:
+        for symbol, reason in prefiltered.items():
+            _log_prefilter_skip(scan_date, symbol, reason)
 
     opened: list[dict] = []
     skipped: list[dict] = []
@@ -1267,6 +1441,17 @@ def cmd_run_closes(args) -> dict:
                 exit_reason = decision.get("reason") or action
                 if action == "close_side":
                     exit_reason = f"{exit_reason}_close_all"
+            else:
+                overnight_manager = _OVERNIGHT_MANAGED.get(strategy_name)
+                if overnight_manager is not None:
+                    if strategy_name == "broken_wing_butterfly":
+                        decision = overnight_manager.evaluate_position(
+                            dict(trade), full_quotes, config, is_first_check_of_day=True
+                        )
+                    else:
+                        decision = overnight_manager.evaluate_position(dict(trade), full_quotes, config)
+                    if decision.get("action") == "close_all":
+                        exit_reason = decision.get("reason") or "close_all"
 
             exit_debit = scanner.compute_generic_exit_debit(legs, full_quotes)
             if exit_debit is None:

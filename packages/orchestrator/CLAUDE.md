@@ -248,7 +248,15 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   service it has no prior stamp for. The streamer is covered too, but only from its **healthy**
   branch (the stall path always wins) and never inside the `settling` window, so a config recycle can
   never become the restart loop that guard exists to prevent; producers stamp under their finding
-  label so two of them can coexist through a cutover.
+  label so two of them can coexist through a cutover. A producer has a **second** staleness axis on
+  the same file-versus-process gap: its underlyings come from the union of every module's stream
+  request and bind once, when it builds its streamer, so a module that starts needing a new symbol
+  writes its request file and the running producer never sees it. The launch stamp records that
+  subscription snapshot and later ticks compare — **growth only**, never a hash: a module that stops
+  needing a symbol leaves the producer over-subscribed, which is harmless, while treating that shrink
+  as staleness would recycle the feed every time a module whose request tracks its open positions
+  closed one. The union itself is read through `cherrypick.core.streamrequests`, the same code the
+  streamer subscribes from, so the two can never disagree about what was asked for.
 - **Every spawned process is headless.** The scheduled tasks run under `pythonw.exe` (no console), so
   any console-subsystem child launched without `CREATE_NO_WINDOW` pops a visible terminal window on the
   user's screen — on every watchdog tick, daemon restart, and desktop toast. Daemons and `services`

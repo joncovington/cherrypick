@@ -81,6 +81,7 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | module `paper`, `tick_interval_seconds` ≥ 60 | on | `<module>-paper` (short-lived tick) |
 | module `paper`, `tick_interval_seconds` < 60 | on | `<module>-paper` (the module's own resident `--interval` loop, in-session only, restarted on death and on `silence_seconds` of log silence) plus `<module>-paper-offsession` (60 s ticks outside the session, so settlement and retries keep their shape) |
 | module `paper` (kind `cherrypick_scheduled`) | on, entry 15:45 / exit 09:45 ET | `<module>-entry`, `<module>-exit` |
+| module `paper` (kind `self_healing`) | on, every `tick_interval_seconds` | `<module>-paper` (earnings uses this since 2026-08-12) |
 | `paper.dolt_service` | on | `<module>-dolt` (keep-alive) |
 | module `live` | **off** until armed | `<module>-live` |
 | `eod_digest` | **on**, event-driven (deadline backstop 16:45 ET) | *no job* — the watchdog fires it detached once every module's `paper-eod` exists |

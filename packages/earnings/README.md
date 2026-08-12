@@ -85,8 +85,8 @@ own. Inside the cherrypick suite it plays two roles:
   symbol's single best strategy. This is the only path that can place live orders, and only when you set
   `enable_live_trading: true`. The orchestrator never touches it.
 - **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator) package registers
-  and watchdogs two self-healing daily OS tasks — an entry task (15:45 ET) and an exit task (09:45 ET) —
-  that run this module's forced-sampling paper harness (`cherrypick/earnings/strategy_test_runner.py`, `run_entries` /
+  and watchdogs a single self-healing 60-second job that runs the managed paper loop —
+  that run this module's forced-sampling paper harness (`cherrypick/earnings/strat_test_harness.py`, `run_entries` /
   `run_closes`) into the isolated strat_test books, and reads the resulting `paper_trades.db` — which
   lives in the shared cherrypick data home (`~/.cherrypick/data/earnings` by default) — for
   cross-module reporting. This module has no scheduler of its own. The orchestrator drives it **by
@@ -162,7 +162,7 @@ Controlled by `enable_live_trading` in `config/config.json` (`false` by default)
 Two separate paper-testing programs exist, and can run concurrently since they write to
 isolated books:
 
-- **`/paper-start`** — forced-sampling strategy validation (`cherrypick/earnings/strategy_test_runner.py`):
+- **`/paper-start`** — forced-sampling strategy validation (`cherrypick/earnings/strat_test_harness.py`):
   opens every strategy that clears the screen on every viable symbol, not just each symbol's
   single best, so every strategy accumulates a usable sample size quickly. Writes to per-strategy
   strat_test books (`profile='strat_test:<strategy>'`, per `strat_test_portfolio`).
@@ -173,7 +173,7 @@ isolated books:
 
 The forced-sampling close pass writes a deterministic end-of-day file automatically
 (`~/.cherrypick/logs/earnings/paper-eod-<date>.md` by default); regenerate or backfill one with
-`python -m cherrypick.earnings.strategy_test_runner eod_report [--date YYYY-MM-DD]`. Track accumulated (multi-day)
+`python -m cherrypick.earnings.strat_test_harness eod_report [--date YYYY-MM-DD]`. Track accumulated (multi-day)
 results with `python -m cherrypick.earnings.strategy_report` (text) or `python -m cherrypick.earnings.strategy_dashboard`
 (self-contained HTML dashboard, written to `reports/`).
 

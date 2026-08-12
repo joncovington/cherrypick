@@ -63,7 +63,7 @@ both cleared their own bar — it is not itself a pass/fail gate.
 **Important caveat, directly from the code's own docstring**: this comparison is not
 risk-adjusted for how differently these strategies pay off (defined-risk credit vs. debit,
 different capital consumption per contract). That calibration is deferred until there's enough
-real trade data (via `strategy_test_runner.py`'s forced-sampling paper program) to justify a
+real trade data (via `strat_test_harness.py`'s forced-sampling paper program) to justify a
 specific adjustment — see [Strategy Optimization Research](./strategy-optimization.md) for the
 hypotheses queued to validate this properly.
 
@@ -122,7 +122,7 @@ threshold mentioned above lives under `strategies.<name>` in `config/config.json
 [Configuration Guide](./03-configuration.md) for the full parameter list per strategy, and
 `docs/strategy-optimization.md`'s "do not blind-tune" protocol before changing anything based on
 a single night's result: change one parameter, run a real sample through
-`strategy_test_runner.py`'s paper program, and compare cost-adjusted expectancy before deciding
+`strat_test_harness.py`'s paper program, and compare cost-adjusted expectancy before deciding
 it actually helped.
 
 ---

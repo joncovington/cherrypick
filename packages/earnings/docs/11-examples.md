@@ -79,7 +79,7 @@ mode would submit both via `tt.py execute_trade --live`.
 NVEX announces after close, gaps +10%.
 Next morning 09:15 ET (Step 3c): iron_condor's exit_debit computed from live quotes —
   profit came in under the 50% target, exit_debit stayed under the 1.5x stop → hold.
-09:45 ET (Step 3, unconditional close-window): still open → close regardless of P&L.
+09:41 ET (management): still open and winning short of target → hold; a loser would close here.
   Realized: -$310 net (defined risk — the wings capped it well short of the raw
   spread-width max loss).
 
@@ -166,11 +166,11 @@ On the same night, `/paper-start`'s forced-sampling program and the production
 difference is intentional:
 
 ```bash
-python -m cherrypick.earnings.strategy_test_runner run_entries --date 07/08/2026
+python -m cherrypick.earnings.strat_test_harness run_entries --date 07/08/2026
 ```
 
 If `NVEX` is accepted under both `iron_condor` and `directional_credit_spread`,
-`strategy_test_runner.py` opens **both** — each into its own per-strategy strat_test book
+`strat_test_harness.py` opens **both** — each into its own per-strategy strat_test book
 (`strat_test:iron_condor` and `strat_test:directional_credit_spread`) — so every strategy that
 qualifies gets its own sample and its own equity curve, not just the single best. Meanwhile that
 same night's `rank_strategies.py get_ranked_symbols` run would have picked only `iron_condor`

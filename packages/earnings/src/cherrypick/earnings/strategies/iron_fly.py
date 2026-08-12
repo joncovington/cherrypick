@@ -359,7 +359,7 @@ def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
     exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
     if exit_debit is None:
         return {"action": "hold"}
-    return scanner.evaluate_credit_spread_exit(position["entry_credit"], exit_debit, config)
+    return scanner.evaluate_credit_spread_exit(position["entry_credit"], exit_debit, _strategy_config(config))
 
 
 def cmd_get_candidates(args) -> dict:

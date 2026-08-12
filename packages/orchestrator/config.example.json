@@ -148,13 +148,19 @@
       "path": "../earnings",
       "keyring_service": "earningsagent",
       "paper": {
-        "_kind_note": "cherrypick_scheduled: one entry job at entry_time and one exit job at exit_time. Note this kind HARDCODES the launcher verbs (jobspec derives `run-<module>-entry` / `run-<module>-exit`), so there is deliberately no entry_argv/exit_argv here -- a module needing its own argv wants kind `self_healing`, whose tick_argv/once_argv are read. entry_task_name/exit_task_name are the only legacy-schtasks keys still read, for deleting the pre-cutover tasks by name.",
-        "kind": "cherrypick_scheduled",
+        "_kind_note": "self_healing since the 2026-08-12 lifecycle cutover, was cherrypick_scheduled. That kind registers exactly two daily jobs, an entry at entry_time and an exit at exit_time, which is the right shape for 'open one afternoon, close the next morning' and the wrong one for a position that is now MANAGED: a winner may be carried up to three sessions, a loser closes on the first reliable marks, and both need the book looked at every minute rather than twice a day. tick_interval_seconds is 60, so jobspec produces a single spawn-per-tick INTERVAL job (no resident process, MEIC's shape) -- the loop derives its own phase from the clock and no-ops outside the session, which is why it needs no window here. entry_time and entry_sla_grace_minutes are still read: the loop writes the same SLA heartbeats the scheduled verbs used to, so the watchdog's entry check and the dashboard cards are unchanged.",
+        "kind": "self_healing",
+        "tick_argv": [
+          "-m",
+          "cherrypick.earnings.paper_loop",
+          "once"
+        ],
+        "tick_interval_seconds": 60,
         "entry_task_name": "cherrypick-earnings-paper-entry",
         "exit_task_name": "cherrypick-earnings-paper-exit",
         "entry_time": "15:45",
         "exit_time": "09:45",
-        "_entry_sla_note": "OPTIONAL (default 35). Minutes past entry_time before the watchdog treats a missing entry heartbeat as CRITICAL. It is a grace, not a schedule: the entry job fires AT entry_time, its subprocess may run up to the 1800s CLI timeout, and the heartbeat is only written when it RETURNS -- so comparing against entry_time alone raised CRITICAL for a run that was merely still in progress. Raise it if this module's entry scan legitimately runs longer.",
+        "_entry_sla_note": "OPTIONAL (default 35). Minutes past entry_time before the watchdog treats a missing entry heartbeat as CRITICAL. It is a grace, not a schedule: the entry scan starts inside the entry window, may run up to twenty-five minutes, and the heartbeat is only written when it RETURNS -- so comparing against entry_time alone raised CRITICAL for a run that was merely still in progress. Raise it if this module's entry scan legitimately runs longer.",
         "entry_sla_grace_minutes": 35,
         "log": "earnings_paper.log",
         "paper_db": "~/.cherrypick/data/earnings/paper_trades.db",
@@ -562,7 +568,7 @@
     }
   },
   "symbol_watch": {
-    "_comment": "Earnings forward-preview scan (`python -m cherrypick.earnings.symbol_watch refresh`) - the source of scout's read-only Earnings page 'Upcoming' section (expected move, term structure, IV/RV ratio, winrate, historical move stats, and a recommended/near-miss/fail tier badge for symbols reporting in the next 'days' TRADING days, restricted to a liquid-enough universe - tastytrade's 'Liquid Symbols' + 'High Options Volume' + 'tasty Earnings' watchlists). Purely informational: never touches a paper/live ledger, never places an order. Writes a JSON snapshot into the earnings module's own data directory; scout reads it read-only. Its own daily task, deliberately OFF the watchdog tick - a multi-minute per-symbol broker-chain scan has no place on the reliability path. Only meaningful once the 'earnings' module itself is installed and enabled (this task shells into that module's own code). OFF by default; enable then re-run `install`.",
+    "_comment": "SUPERSEDED 2026-08-12 and must stay OFF. The earnings module now runs this scan itself, as the `forward_scan` phase of its own 60-second loop (`symbol_watch.enabled`/`at`/`days` in the EARNINGS config), because it feeds that module's entry pre-filter as well as the console's Upcoming surface -- and a scan whose output gates an entry belongs on the same clock as the entry. Enabling this block would run the same scan a second time: harmless to the data (the snapshot is rewritten wholesale) but a wasted multi-minute broker walk. Kept derivable only so an existing install that had it enabled keeps working until its config is updated.",
     "enabled": false,
     "task_name": "cherrypick-earnings-symbol-watch",
     "at": "06:30",

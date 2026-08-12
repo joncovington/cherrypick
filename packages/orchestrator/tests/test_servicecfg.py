@@ -260,3 +260,129 @@ def test_streamer_recycle_honours_auto_restart(wired, spy):
     finding = wd._recycle_streamer_if_stale("streamer", wired, svc, settling=False)
     assert spy == {"stop": 0, "start": 0}
     assert finding.status == wd.WARN and "stale config" in finding.title
+
+
+# --------------------------------------------------------------------------- stale subscriptions
+# A producer's underlyings bind once, when it builds its streamer. A module that starts needing a new
+# symbol writes its request file and the running process never sees it — the same file-versus-process
+# gap the config hash catches, on a different input.
+@pytest.fixture
+def requests(tmp_path, monkeypatch):
+    """An isolated stream_requests directory — these must never read the developer's real one."""
+    directory = tmp_path / "stream_requests"
+    directory.mkdir()
+    monkeypatch.setattr(sc._streamrequests, "requests_dir", lambda: directory)
+
+    def write(module, symbols=(), legs=(), window_hints=None):
+        (directory / f"{module}.json").write_text(
+            json.dumps(
+                {
+                    "symbols": list(symbols),
+                    "legs": list(legs),
+                    "leg_sources": [],
+                    "window_hints": window_hints or {},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    return write
+
+
+def _stamp_producer(wired, label="streamer"):
+    digest, source = sc.effective_config(STREAMER, wired)
+    sc.write_stamp(label, digest, source, sc.subscription_snapshot())
+    return digest
+
+
+def test_a_new_underlying_recycles_the_producer(wired, spy, requests):
+    """The gap issue #62 names: a module's symbol set changes and the running producer never re-reads."""
+    requests("earnings", symbols=["AAPL"])
+    _stamp_producer(wired)
+    requests("earnings", symbols=["AAPL", "MSFT"])
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 1, "start": 1}
+    assert "recycled onto new subscriptions" in finding.title
+    assert "MSFT" in finding.message
+    # The restarted process subscribed it, so the next tick is quiet.
+    assert sc.staleness(STREAMER, wired, "streamer", check_subscriptions=True)["stale"] is False
+
+
+def test_a_dropped_underlying_leaves_the_producer_alone(wired, spy, requests):
+    """Growth only. An over-subscribed producer serves every consumer correctly, and a restart costs a
+    settling window — so a module whose request tracks its open positions (rewritten as each one closes)
+    must not recycle the feed its own consumers are reading from."""
+    requests("earnings", symbols=["AAPL", "MSFT"])
+    _stamp_producer(wired)
+    requests("earnings", symbols=["AAPL"])
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK
+
+
+def test_a_widened_window_hint_recycles_the_producer(wired, spy, requests):
+    """The ATM window is sized when the symbol is subscribed, so a wider one needs the same restart."""
+    requests("flies", symbols=["XSP"], window_hints={"XSP": 40})
+    _stamp_producer(wired)
+    requests("flies", symbols=["XSP"], window_hints={"XSP": 90})
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 1, "start": 1}
+    assert "XSP=90" in finding.message
+
+
+def test_a_narrowed_window_hint_leaves_the_producer_alone(wired, spy, requests):
+    requests("flies", symbols=["XSP"], window_hints={"XSP": 90})
+    _stamp_producer(wired)
+    requests("flies", symbols=["XSP"], window_hints={"XSP": 40})
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK
+
+
+def test_changing_legs_never_recycles_the_producer(wired, spy, requests):
+    """Legs are re-read every subscription poll — a position opening or closing needs no restart, and
+    must not be made to look like a reason for one."""
+    requests("meic", symbols=["SPX"], legs=[".SPXW260812P6400"])
+    _stamp_producer(wired)
+    requests("meic", symbols=["SPX"], legs=[".SPXW260812P6400", ".SPXW260812C6500"])
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK
+
+
+def test_a_producer_stamped_before_subscriptions_were_tracked_adopts(wired, spy, requests):
+    """Same rule as an unstamped service: an unknown launch union is not evidence of staleness, so the
+    first tick after this ships records it rather than restarting every producer at once."""
+    requests("earnings", symbols=["AAPL"])
+    digest, source = sc.effective_config(STREAMER, wired)
+    sc.write_stamp("streamer", digest, source)  # old-shape stamp, no subscriptions
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK
+    assert sc.read_stamp("streamer")["subscriptions"]["symbols"] == ["AAPL"]
+
+
+def test_an_unreadable_request_set_is_not_treated_as_a_change(wired, spy, requests, monkeypatch):
+    """Same posture as an unreadable config: silence is an unknown, not "nobody wants anything"."""
+    requests("earnings", symbols=["AAPL"])
+    _stamp_producer(wired)
+    monkeypatch.setattr(
+        sc._streamrequests,
+        "subscription_snapshot",
+        lambda *_a, **_k: (_ for _ in ()).throw(OSError("gone")),
+    )
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK
+
+
+def test_a_plain_service_never_consults_the_registry(wired, spy, requests):
+    """Only a producer subscribes. A recorder's staleness has nothing to do with stream requests."""
+    requests("earnings", symbols=["AAPL"])
+    digest, source = sc.effective_config(SVC, wired)
+    sc.write_stamp(SVC["id"], digest, source)
+    requests("earnings", symbols=["AAPL", "MSFT"])
+
+    finding = wd._recycle_if_stale(SVC, wired, SVC["id"])
+    assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK

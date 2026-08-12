@@ -46,6 +46,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | `notify-test` | Fire a test notification through every configured channel. | — |
 | `notify-trades` | Push new paper entries/exits to the trade channels (also runs best-effort on each watchdog tick). | — |
 | `notify-follow` | Push new [tastylive Follow Feed](https://follow.tastylive.com) orders — other traders' fills, as shown on the platform's Follow page — to their own channel. **Off by default**; the only notifier that makes a network call, so it runs on its own task and *never* on the watchdog tick. Read-only, no auth, no broker. | — |
+| `notify-desk` | Card each manual-desk order on submit and again when it reaches a terminal state (filled / cancelled / rejected / expired). **Off by default**; like `notify-follow` it runs on its own task and *never* on the watchdog tick — it pushes a Discord card **and** asks the broker for order status. Reads the desk's audit journal as a file and never imports `cherrypick.desk`, so observing desk orders cannot make the submit path reachable from scheduled code. | — |
 
 ## Reporting & review (the read side)
 
@@ -67,7 +68,7 @@ See [reporting-and-dashboard.md](reporting-and-dashboard.md) for how these compo
 | Command | What it does |
 |---|---|
 | `run-earnings-entry` | Run the Earnings paper **entry** pass now (the daily ~15:45 ET job). |
-| `run-earnings-exit` | Run the Earnings paper **exit** pass now (the daily ~09:45 ET job). |
+| `run-earnings-exit` | Run the legacy Earnings paper **exit** sweep now. Manual/backfill only since the 2026-08-12 lifecycle cutover — the managed loop (`earnings-paper`, every 60s) owns exits. |
 | `run-earnings-symbol-watch` | Run the Earnings forward-preview scan now (`symbol_watch.py refresh`) — the source of scout's read-only Earnings page "Upcoming" section. Purely informational; off by default (`symbol_watch.enabled`). |
 | `ensure-dolt` | Start a module's declared Dolt server if down (the earnings keep-alive job). |
 
