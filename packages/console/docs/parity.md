@@ -97,8 +97,55 @@ console-only addition.
 
 ## Scout (was :5057, web app deleted)
 
-Done except narrative/describe prose. Console additions beyond scout: chain delta+OI picker,
-STO/BTO highlights, ±EM band, scope-gated real dry-run validation.
+Console additions beyond scout: chain delta+OI picker, STO/BTO highlights, ±EM band, scope-gated
+real dry-run validation.
+
+### Migration audit, 2026-08-12
+
+Route-by-route against scout's deleted API. Most of `services/` and `analytics/` is already
+re-implemented in TypeScript; what is left is narrower than the line count suggests.
+
+| scout route | console | status |
+|---|---|---|
+| `/api/symbol/{s}/candles` `/levels` | `GET /api/symbol/:symbol` (bars, overlays, levels, trend) | done |
+| `/api/symbol/{s}/chain` `/expirations` | `GET /api/chain/:symbol` | done |
+| `/api/symbol/{s}/quote` | `market/marketData.ts` | done |
+| `/api/symbol/{s}/template` | `services/builderTemplates.ts` | done |
+| `/api/symbol/{s}/income-grid` `/suggestions` | `GET /api/builder/{income-grid,suggestions}/:symbol` | done |
+| `/api/payoff` | `POST /api/payoff` | **partial** — curve, breakevens, max profit/loss, net greeks, slopes, POP, expected move. Missing every `describe.py` field |
+| `/api/screener` | `POST /api/screener/run` | done |
+| `/api/order/dry-run`, `/api/staged*` | `/api/orders/stage`, `/api/orders/staged` | done |
+| `/api/watchlist` | `/api/watchlist` | done |
+| `/api/earnings-upcoming` | `GET /api/earnings/upcoming` | done |
+| `/api/symbol/{s}/stats` | — | **missing** — `_compute_stats(bars)` plus iv_rank / iv_30d / liquidity / beta |
+| `/api/symbol/{s}/analysis` | — | **missing** — `narrative.py` |
+| `/api/symbol/{s}/warnings` | — | **missing** — `narrative.event_warnings` |
+
+**Superseded, delete rather than port**: `services/` `cache`, `candle_service`, `chain_service`,
+`metrics_service`, `quote_service`, `screener_service`, `staging`, `streamcache`, `session`,
+`watchlist`; `analytics/` `levels`, `payoff`, `pop`, `strategies`, `templates`, `trend`.
+
+**Still to port** — about 890 lines of Python, in two files:
+
+- `analytics/describe.py` (474) splits in half. **Numbers** console does not compute:
+  `raw_return`, `annualized_return`, `projected_yield_12m`, `score`, `probable_risk_2sd`,
+  `prob_worthless`, `bs_greeks` (the model-greeks fallback when a leg carries none),
+  `combo_spread_pct`, `direction`, `has_weekly_cadence`. **Prose**: `strategy_explanation`,
+  `greeks_explanation`, `short_put_suggestion`, `checklist`, `checklist_directional`.
+- `analytics/narrative.py` (414): `price_action`, `scan_headline`, `technical_bullet`,
+  `options_bullet`, `relative_strength_bullet`, `event_warnings`, `cci`, and their helpers.
+
+**The port is not the whole job.** Console's `SymbolPage` renders a chart and a levels card and
+nothing else — `useSymbolAnalysis` calls `/api/symbol/:symbol`, which returns no prose. So there is
+no panel waiting for this output: shipping it means new endpoints *and* the views that display them,
+on the symbol page and in the builder. Scale the estimate accordingly, and note the option of
+porting the `describe.py` **numbers** first (they slot into the existing payoff response with no new
+UI) and treating the prose as its own piece of work.
+
+**Also unresolved**: `calendar_service.py`, `earnings_metrics_service.py` and
+`earnings_watchlist_service.py` back scout's `/api/earnings-screens`, which has no console
+equivalent. `/api/earnings/upcoming` covers the *upcoming* half; whether the recorded-earnings screen
+is wanted at all is a product question, not a porting one.
 
 ## Per-arm portfolios: what the API serves and what is still missing (2026-08-11)
 
