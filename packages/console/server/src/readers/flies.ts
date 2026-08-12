@@ -807,7 +807,12 @@ export function readFliesHistory(
     const sc = scopeClause(filter);
     const legged = pnlRows(db, `${SETTLED} AND entry_mode = 'legged'${sc.and}`, sc.params);
     const all = pnlRows(db, `${SETTLED}${sc.and}`, sc.params);
-    const byArm = groupSummaries(legged, "arm", "arm").sort((a, b) => b.netPnl - a.netPnl);
+    // Sorted by NAME, not by net. A leaderboard over 3-8 sessions manufactures a ranking out of
+    // noise, and on 2026-08-11 it would have put a two-position arm on top -- the same mistake the
+    // EOD debrief made that day. The arms are deliberately-different single-variable twins, so the
+    // useful reading is a pair against its baseline, not a league table. Flies already states this
+    // discipline on "By entry window (deliberately unranked)"; this is the same call.
+    const byArm = groupSummaries(legged, "arm", "arm").sort((a, b) => a.arm.localeCompare(b.arm));
 
     const dailyMap = new Map<string, PnlRow[]>();
     for (const r of all) {
