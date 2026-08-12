@@ -74,8 +74,22 @@
   "entry_window_end": "15:55",
   "close_window_start": "09:45",
 
-  "_exit_after_announcement_note": "SAME-SESSION time backstop used by iron_fly, iron_condor and directional_credit_spread: minutes after entry before the position is closed unconditionally with reason 'iv_crush_backstop'. Evaluated BEFORE the profit/stop check, so it wins. TOP-LEVEL, not per-strategy: evaluate_position receives the whole project config (strat_test_harness passes scanner._load_config() straight through), so a copy inside a strategies.<name> block would be ignored. Stated explicitly here because it was previously absent from this file while the code default (240) ran anyway -- an 'overnight hold' could be force-closed four hours after entry with nothing in config to explain it. Raise it past the overnight gap to disable the behaviour in practice.",
+  "_exit_after_announcement_note": "SAME-SESSION time backstop used by iron_fly, iron_condor and directional_credit_spread: minutes after entry before the position is closed unconditionally with reason 'iv_crush_backstop'. SUPERSEDED for the managed loop by management.hold_winners_max_days -- 18 hours pass between a 15:45 entry and the first morning mark, so a 240-minute backstop would fire on every position before any management rule could be reached, and multi-day holds would be unreachable. management.py injects its own (deliberately unreachable) value when it calls a strategy's evaluate_position; this top-level value still applies to the agent-driven loop, which has no session cap of its own.",
   "exit_after_announcement_minutes": 240,
+
+  "_management_note": "The position lifecycle: entry, per-minute marking, managed exits (see docs/10-exits.md). Per-strategy overrides go in management.<strategy> and win over the common keys beside them. hold_winners_max_days is the session cap -- TRADING sessions, so a weekend cannot spend it -- after which an overnight structure closes whatever its verdict, because residual IV crush is spent by roughly the third session and what remains is direction. close_losers_first_morning is the PEAD gate: holding a winner past the first morning is worth about +1.4pp on average as the crush drains, while holding a LOSER fights post-earnings drift, which continues rather than reverting. exec_window_start and max_leg_spread_pct are execution gates, not decisions: a verdict reached before 09:40 or on quotes wider than the edge being managed is RECORDED and re-tried next tick rather than acted on -- opening-auction spreads can exceed the target itself, and a price computed off that mid is arithmetic. pin_guard_* closes any position still holding a short strike within pin_guard_dollars of spot in the last pin_guard_window_minutes of its expiration day; assignment is decided by the settlement print, so the guard fires on proximity rather than on being in the money. open_capital_warn is advisory only -- multi-day holds accumulate open risk that the pre-lifecycle book never carried, and this raises a warning rather than capping, since truncating carried winners would bias exactly the sample the hold policy exists to measure.",
+  "management": {
+    "hold_winners_max_days": 3,
+    "close_losers_first_morning": true,
+    "exec_window_start": "09:40",
+    "max_leg_spread_pct": 0.35,
+    "pin_guard_dollars": 1.00,
+    "pin_guard_window_minutes": 60,
+    "open_capital_warn": 15000,
+    "max_executions_per_tick": 3,
+    "quote_max_age_seconds": 300,
+    "spot_max_age_seconds": 600
+  },
 
   "_correlation_block_list_note": "Groups of names not to hold simultaneously — scanner.select_positions takes at most ONE per group, checking already-open positions too. Populated 2026-07-28; it had been empty since the module was written, so the one correlation guard that exists was never actually armed. The group below is the mega-cap index-weight cluster: these carry enough S&P/Nasdaq weight to move with the index and with each other, so holding several overnight is one factor bet wearing the costume of diversification. Deliberately DISTINCT from the per-name concentration decision (running every strategy on ONE accepted name is intended sampling and stays); stacking several CORRELATED names on one night is a different exposure and is what this blocks. A durable sector grouping rather than a dated one, so it keeps working past the week that prompted it. Still a PARTIAL mitigation: it does not measure correlation, it refuses a hand-listed cluster.",
   "correlation_block_list": [
@@ -115,8 +129,8 @@
       "wing_width_band_low_max": 1.25,
       "wing_width_band_mid_max": 1.75,
 
-      "_exit_note": "Step 3c (market-open-to-close-window) profit-target/stop-loss check via scanner.evaluate_credit_spread_exit, ahead of Step 3's unconditional close-window sweep. Calibrated against earnings-specific short-straddle/iron-butterfly research (not the generic weeks-long income-strategy conventions, which don't transfer to a ~16-hour overnight-gap trade): 50% of max profit as a target, stop at 1.5x credit received. Not backtested for this project specifically.",
-      "profit_target_pct": 0.50,
+      "_exit_note": "Managed exit via scanner.evaluate_credit_spread_exit, layered by management.py (session cap, PEAD gate, pin guard). RESEARCH-BACKED: an iron fly's max-profit zone is a POINT, not a range, so the convention manages it at 25% of credit rather than the 50% a condor's band supports -- this was 0.50 until the 2026-08-12 lifecycle cutover, which is a measurement break. Stop stays 1.5x credit; the wings are the real stop. Not backtested for this project specifically.",
+      "profit_target_pct": 0.25,
       "stop_loss_credit_multiple": 1.5,
 
       "_liquidity_note": "Shared liquidity gates (scanner.py's apply_liquidity_gates) -- reasoned starting points, not backtested for this strategy. max_bid_ask_spread_pct at 15% of mid is generous enough not to reject normal earnings-week widening but catches genuinely illiquid chains. min_market_cap at $2B (mid-cap floor) favors names liquid enough that options market-makers stay engaged around an earnings event. min_combined_option_volume (front-month chain-wide daily contract volume, same scope as min_combined_open_interest) is a conservative starting floor.",
@@ -149,8 +163,8 @@
       "max_realized_move_dispersion_pct": 0.15,
 
       "_exit_note": "Calibrated against published backtests/practitioner guidance, not backtested for this strategy specifically: profit target of 20-30% of max profit shows improved profitability and less time-at-risk in structured studies (25% used as the midpoint); 5-7 DTE front-month exit is described as non-negotiable since gamma risk on a short ATM option overwhelms theta benefit inside that window (5 used, not the looser 2-3 day figure); stop_loss_pct_of_debit is a whole-position backstop for when the spread's value round-trips back toward the entry debit, separate from leg_stop_delta_abs which handles a single threatened side.",
-      "profit_target_pct": 0.25,
-      "stop_loss_pct_of_debit": 1.0,
+      "profit_target_pct": 0.15,
+      "stop_loss_pct_of_debit": 0.50,
       "leg_stop_delta_abs": 0.45,
       "exit_days_before_front_expiration": 5,
 
@@ -185,7 +199,7 @@
       "wing_width_band_low_max": 1.25,
       "wing_width_band_mid_max": 1.75,
 
-      "_exit_note": "Step 3c (market-open-to-close-window) profit-target/stop-loss check via scanner.evaluate_credit_spread_exit, same convention and rationale as iron_fly's -- 50% of max profit target, 1.5x credit stop. Not backtested for this project specifically.",
+      "_exit_note": "Managed exit via scanner.evaluate_credit_spread_exit, layered by management.py (session cap, PEAD gate, pin guard). A condor profits across a BAND rather than at a point, so it keeps the 50%-of-credit target the fly gives up; practitioner guidance puts the earnings capture at 50-75% by mid-morning. A breached short side is closed whole -- no rolling, which is the standing convention for a binary-event structure once the event has resolved. Not backtested for this project specifically.",
       "profit_target_pct": 0.50,
       "stop_loss_credit_multiple": 1.5,
 
@@ -217,8 +231,8 @@
       "near_miss_min_winrate": 0.40,
 
       "_exit_note": "Same researched-convention shape as double_calendar's: profit target at 25-30% of max profit (midpoint of the 20-75% range described in practitioner guidance), stop when the debit has roughly doubled (stop_loss_pct_of_debit=1.0, matching evaluate_debit_spread_exit's convention -- note this is looser than expected_move_butterfly's 0.40 since a calendar's decay profile is slower-resolving), 5-day time-exit before front expiration for the same gamma-risk-overwhelms-theta reasoning as double_calendar's. Not backtested for this project specifically.",
-      "profit_target_pct": 0.30,
-      "stop_loss_pct_of_debit": 1.0,
+      "profit_target_pct": 0.15,
+      "stop_loss_pct_of_debit": 0.50,
       "exit_days_before_front_expiration": 5,
 
       "max_bid_ask_spread_pct": 0.15,
@@ -254,9 +268,9 @@
       "wing_width_band_low_max": 1.25,
       "wing_width_band_mid_max": 1.75,
 
-      "_exit_note": "Step 3c (market-open-to-close-window) profit-target/stop-loss check via scanner.evaluate_credit_spread_exit, same convention and rationale as iron_fly's/iron_condor's -- 50% of max profit target, 1.5x credit stop. Not backtested for this project specifically.",
+      "_exit_note": "Managed exit via scanner.evaluate_credit_spread_exit, layered by management.py (session cap, PEAD gate, pin guard). HOUSE RULE, not research: no published backtest of stop multiples for an OVERNIGHT earnings vertical was found, so 50% target / 2.0x stop is the generic credit-spread convention carried over, and the stop widened from 1.5x at the 2026-08-12 cutover to match it. Post-event this is a pure directional position with no vol edge left, which is why the PEAD gate matters more here than the threshold does. Not backtested for this project specifically.",
       "profit_target_pct": 0.50,
-      "stop_loss_credit_multiple": 1.5,
+      "stop_loss_credit_multiple": 2.0,
 
       "require_weekly_options": true,
       "min_combined_open_interest": 2000,
