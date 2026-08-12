@@ -13,6 +13,7 @@ import type { MarketDataService } from "../market/marketData.js";
 import { movingAverages, supportResistance } from "../analytics/levels.js";
 import { classifyTrend } from "../analytics/trend.js";
 import { buildRows } from "../services/ttWatchlists.js";
+import { buildSymbolAnalysis, buildEventWarnings } from "../services/symbolAnalysis.js";
 
 const SYMBOL_RE = /^[A-Z][A-Z0-9./]{0,9}$/;
 
@@ -52,6 +53,25 @@ export function registerScoutRoutes(
     const { symbol } = req.params as { symbol: string };
     const { expiration } = req.query as { expiration?: string };
     return readChain(config, symbol.toUpperCase(), expiration ?? null);
+  });
+
+  // The prose half of the symbol page: scan headline, one price-action observation, and up to
+  // three supporting bullets. Ported from scout's analytics/narrative.py.
+  app.get("/api/symbol/:symbol/analysis", async (req) => {
+    const { symbol } = req.params as { symbol: string };
+    return buildSymbolAnalysis(config, market, symbol.toUpperCase());
+  });
+
+  // Builder-facing: events landing inside a chosen expiration that change a ticket's risk
+  // character. An empty list means nothing was detected, which is itself a claim.
+  app.get("/api/symbol/:symbol/warnings", async (req, reply) => {
+    const { symbol } = req.params as { symbol: string };
+    const { expiration } = req.query as { expiration?: string };
+    if (!expiration || !/^\d{4}-\d{2}-\d{2}$/.test(expiration)) {
+      return reply.code(400).send({ error: "expiration=YYYY-MM-DD is required" });
+    }
+    const sym = symbol.toUpperCase();
+    return { symbol: sym, expiration, warnings: await buildEventWarnings(config, sym, expiration) };
   });
 
   app.get("/api/symbol/:symbol", async (req, reply) => {
