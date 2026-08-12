@@ -36,6 +36,9 @@ export interface ArmRailEntry {
   fills: number;
   sessionsSeen: number;
   sessionsWithFills: number;
+  /** MEIC only — flies has no two-sided structure to stop out twice. */
+  resolvedToday: number | null;
+  doubleStoppedToday: number | null;
   refusals: Record<string, number>;
   lastRefusal: string | null;
   lastAttemptTs: string | null;
@@ -268,6 +271,26 @@ export function ArmRail({
                 {a.sessionsWithFills > 0 && a.sessionsWithFills < a.sessionsSeen && (
                   <div className="muted" style={{ fontSize: 11, marginTop: "0.15rem" }}>
                     traded {a.sessionsWithFills} of {a.sessionsSeen} sessions
+                  </div>
+                )}
+
+                {/* Double stops: price crossed BOTH short strikes in one session, so both sides were
+                    paid to close and nothing was collected. A single-side stop is the design working
+                    and averages about -$15; a double averages -$149, and 4.5% of the sample era's
+                    trades carry 47% of every stop-related dollar lost. The most direct read on
+                    whether an arm's stop policy is working, and it was buried in deep analytics. */}
+                {a.doubleStoppedToday !== null && (a.resolvedToday ?? 0) > 0 && (
+                  <div
+                    style={{ fontSize: 11, marginTop: "0.15rem" }}
+                    className={a.doubleStoppedToday === 0 ? "muted" : undefined}
+                    title="Both short sides stopped in the same session — the whipsaw case, and the only outcome that can lose multiples of the credit."
+                  >
+                    <span style={a.doubleStoppedToday > 0 ? { color: COLOR_OF["gate_blocked"] } : undefined}>
+                      {a.doubleStoppedToday} double-stopped
+                    </span>{" "}
+                    of {a.resolvedToday} resolved
+                    {a.doubleStoppedToday > 0 &&
+                      ` · ${((a.doubleStoppedToday / (a.resolvedToday || 1)) * 100).toFixed(1)}%`}
                   </div>
                 )}
 

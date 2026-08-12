@@ -57,6 +57,14 @@ export interface ArmRailEntry {
    *  nothing for days: the failure the rail exists to catch, and one a single day cannot show. */
   sessionsSeen: number;
   sessionsWithFills: number;
+  /** MEIC only: resolved trades this arm holds today, and how many had BOTH short sides stopped.
+   *  A single-side stop is the design working and averages about -$15; a double stop means price
+   *  crossed both shorts in one session, paying to close both and collecting nothing, and averages
+   *  -$149. It is the number that most directly says whether an arm's stop policy is working, and
+   *  it was previously only reachable through the deep analytics. Null for flies, which has no
+   *  two-sided structure. */
+  resolvedToday: number | null;
+  doubleStoppedToday: number | null;
   /** Refusals by outcome — the shape the rail's "why is this arm quiet" read needs. */
   refusals: Record<string, number>;
   /** The most recent refusal reason, or null if the last thing it did was fill. */
@@ -197,6 +205,8 @@ export function readEntryAttempts(
           fills: 0,
           sessionsSeen: 0,
           sessionsWithFills: 0,
+          resolvedToday: null,
+          doubleStoppedToday: null,
           refusals: {},
           lastRefusal: null,
           lastAttemptTs: null,
@@ -264,6 +274,36 @@ export function readEntryAttempts(
       }
     } catch {
       // A ledger too old to group is not a reason to fail the rail.
+    }
+
+    // Double stops, per arm, for the day in view. MEIC only: flies has no two-sided structure to
+    // stop out twice. Read from the leg PAIR, the same definition analytics.break_even uses, so the
+    // rail and the arm scorecard cannot disagree.
+    if (module === "meic") {
+      try {
+        const pairs = db
+          .prepare<[string], { arm: string; resolved: number; doubles: number }>(
+            `SELECT risk_profile AS arm,
+                    COUNT(*) AS resolved,
+                    SUM(CASE WHEN put_status = 'stopped' AND call_status = 'stopped' THEN 1 ELSE 0 END) AS doubles
+               FROM (SELECT t.ic_order_id, t.risk_profile,
+                            MAX(CASE WHEN l.side = 'put' THEN l.status END) AS put_status,
+                            MAX(CASE WHEN l.side = 'call' THEN l.status END) AS call_status
+                       FROM ic_trades t JOIN ic_spread_legs l ON l.ic_order_id = t.ic_order_id
+                      WHERE t.trade_date = ? GROUP BY t.ic_order_id)
+              GROUP BY 1`,
+          )
+          .all(tradeDate);
+        for (const row of pairs) {
+          const entry = byArm.get(row.arm);
+          if (entry !== undefined) {
+            entry.resolvedToday = row.resolved;
+            entry.doubleStoppedToday = row.doubles;
+          }
+        }
+      } catch {
+        // An older ledger without ic_spread_legs is not a reason to fail the rail.
+      }
     }
 
     return {

@@ -793,10 +793,37 @@ export function readMeicAnalytics(
       };
     });
 
+    // Grouped on the LEG PAIR, not on ic_trades.exit_reason.
+    //
+    // That column carries only two values -- 'expired_settlement' and 'stopped+expired_settlement'
+    // -- and the second is three different outcomes wearing one label. In the sample era its 873
+    // rows are 637 put-stopped, 161 call-stopped and 75 where BOTH sides stopped, and those are not
+    // variations of each other: a single-side stop is the design working (eat one side, the other
+    // expires worthless) and averages about -$15, while a double stop means price crossed both
+    // short strikes in one session, paying to close both and collecting nothing. It averages
+    // -$149. Seventy-five trades, 4.5% of the era, carry 47% of every stop-related dollar lost --
+    // and the card that was supposed to show exits could not distinguish them at all.
+    //
+    // `analytics.break_even` in the module already reads the pair for exactly this reason ("stopped
+    // at the IC level also covers a single-side stop, the designed scratch"), so this uses the same
+    // definition rather than inventing a second one that could disagree with the arm scorecard.
     const exitReasons = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT COALESCE(exit_reason, 'open') AS reason, COUNT(*) AS count
-           FROM ic_trades WHERE ${RESOLVED}${sc.and} GROUP BY COALESCE(exit_reason, 'open') ORDER BY count DESC`,
+        `SELECT CASE
+                  WHEN put_status = 'stopped' AND call_status = 'stopped' THEN 'both sides stopped'
+                  WHEN put_status = 'stopped' THEN 'put side stopped'
+                  WHEN call_status = 'stopped' THEN 'call side stopped'
+                  WHEN put_status IS NULL AND call_status IS NULL THEN COALESCE(exit_reason, 'open')
+                  ELSE 'expired clean'
+                END AS reason,
+                COUNT(*) AS count
+           FROM (SELECT t.ic_order_id, t.exit_reason,
+                        MAX(CASE WHEN l.side = 'put' THEN l.status END) AS put_status,
+                        MAX(CASE WHEN l.side = 'call' THEN l.status END) AS call_status
+                   FROM (SELECT * FROM ic_trades WHERE ${RESOLVED}${sc.and}) t
+                   LEFT JOIN ic_spread_legs l ON l.ic_order_id = t.ic_order_id
+                  GROUP BY t.ic_order_id)
+          GROUP BY reason ORDER BY count DESC`,
       )
       .all(...sc.params)
       .map((r) => ({ reason: String(r["reason"]), count: Number(r["count"]) }));
