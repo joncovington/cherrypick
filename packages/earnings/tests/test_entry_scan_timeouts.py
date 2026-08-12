@@ -1,6 +1,6 @@
 """Bounded execution on the earnings entry scan.
 
-The scheduled entry run (`strategy_test_runner.py run_entries`) was killed twice at its 30-minute
+The scheduled entry run (`strat_test_harness.py run_entries`) was killed twice at its 30-minute
 external timeout because the Dolt query path has no client-side read timeout and Dolt does not honor
 MySQL's server-side ``max_execution_time`` — a cold-starting or compacting server made ``cur.execute()``
 block forever. These tests pin the bound that replaces that hang: a per-operation daemon-thread ceiling
@@ -14,7 +14,7 @@ import types
 import pytest
 
 from cherrypick.earnings import rank_strategies, scanner
-from cherrypick.earnings import strategy_test_runner as r
+from cherrypick.earnings import strat_test_harness as r
 
 
 # --------------------------------------------------------------------------- _run_bounded unit tests

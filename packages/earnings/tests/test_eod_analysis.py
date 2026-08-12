@@ -1,5 +1,5 @@
 """Unit tests for the earnings conversational EOD analysis report
-(strategy_test_runner._write_eod_analysis).
+(strat_test_harness._write_eod_analysis).
 
 No credentials/live connection: seed a temp paper book through db_paper's writers, point the metrics
 reader and the analysis writer at the temp DB/logs, and assert the markdown carries all seven sections,
@@ -15,7 +15,7 @@ import pytest
 
 from cherrypick.earnings import db_paper
 from cherrypick.earnings import strategy_metrics as metrics
-from cherrypick.earnings import strategy_test_runner as runner
+from cherrypick.earnings import strat_test_harness as runner
 
 
 def _ns(**kwargs):

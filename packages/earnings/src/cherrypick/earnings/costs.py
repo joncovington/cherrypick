@@ -2,7 +2,7 @@
 
 The tastytrade cost model (open-only commission, clearing/regulatory pass-throughs, and the slippage
 haircut off each leg's bid-ask width) now lives in the shared core so every suite module uses the same
-math. This module re-exports the API existing call sites import (strategy_test_runner, tests). See
+math. This module re-exports the API existing call sites import (strat_test_harness, tests). See
 cherrypick.core.fees for the implementation, source, and rationale.
 """
 

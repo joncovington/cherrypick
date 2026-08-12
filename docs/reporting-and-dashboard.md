@@ -62,7 +62,7 @@ agent/LLM/network** (so they run unattended on the reliability-adjacent daemon):
 Both reconcile with `report`'s numbers for the same day. Regenerate on demand:
 
 - MEIC: `python -m cherrypick.meic.paper_loop --eod-report [--date <d>]` (writes both) or `--eod-analysis` (analysis only).
-- Earnings: `python -m cherrypick.earnings.strategy_test_runner eod_report [--date <d>]` or `eod_analysis`.
+- Earnings: `python -m cherrypick.earnings.strat_test_harness eod_report [--date <d>]` or `eod_analysis`.
 
 A small **market-context snapshot** (VIX / VIX1D / per-symbol IV rank for MEIC; overnight VIX for
 earnings) is captured on the loop write path — stdlib/DB-only — so the market-context section is real.

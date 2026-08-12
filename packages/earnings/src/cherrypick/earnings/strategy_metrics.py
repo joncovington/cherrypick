@@ -11,7 +11,7 @@ of trades with positive net P&L -- not percent of positive calendar days
 (the QuantStats/period-return convention, which doesn't fit this book).
 
 Cost-adjusted ("net") P&L = trades.pnl - entry_cost - exit_cost. trades.pnl
-itself stays gross (see strategy_test_runner.py's docstring) so cost
+itself stays gross (see strat_test_harness.py's docstring) so cost
 impact is visible on its own, not silently baked into a number every other
 reader of the trades table has always assumed was gross.
 """
@@ -163,7 +163,7 @@ def iv_crush(trade: dict) -> float | None:
     """entry_iv - exit_iv for one trade -- positive means IV fell (the
     expected post-earnings crush), negative means it actually rose. Both
     are the average IV of this trade's Sell-to-Open leg(s) specifically
-    (see strategy_test_runner.py's _avg_sold_iv), fetched live from
+    (see strat_test_harness.py's _avg_sold_iv), fetched live from
     tastytrade's option-chain greeks at entry and exit. None if either
     side's IV wasn't captured (e.g. greeks were briefly unavailable) --
     a missing measurement, not a measured zero."""

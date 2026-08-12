@@ -11,7 +11,7 @@ re-derivation, no guesswork.
 
 ## Design principle: book = strategy
 
-The forced-sampling harness (`strategy_test_runner.py`) opens a paper trade for **every strategy
+The forced-sampling harness (`strat_test_harness.py`) opens a paper trade for **every strategy
 that clears the screen** on **every viable symbol** each night — deliberately more than the
 production loop would, so no strategy starves for a sample. Each of those paper trades is tagged
 with a `profile` value in the shared `paper_trades.db` that decides which **book** it lands in.
