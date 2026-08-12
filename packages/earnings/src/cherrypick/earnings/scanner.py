@@ -824,7 +824,7 @@ def fetch_liquid_symbols() -> set[str] | None:
     it, not a per-symbol cost. `None` means the fetch failed or returned nothing (a broker
     hiccup, or the watchlist genuinely came back empty) -- callers must treat that as "couldn't
     determine liquidity", never as "no symbol is liquid", the same discipline
-    packages/scout's `liquidity_service.py` uses for the identical watchlist. Not cached here:
+    the console's screening surfaces use for the identical watchlist. Not cached here:
     `symbol_watch.py` calls this once per scan pass and reuses the result, so a second layer of
     caching would only add staleness with no round-trip savings."""
     result = call_tt(["get_liquid_symbols"])

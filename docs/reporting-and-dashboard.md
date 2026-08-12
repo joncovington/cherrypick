@@ -140,7 +140,7 @@ invariant.
 
 The suite's **one read surface**: `packages/console`, a Node + TypeScript server and a React SPA on
 **127.0.0.1:5070**, composing every module's read models (overview/watchdog, MEIC, flies, earnings,
-GEX) plus the scout research surfaces. It reads module SQLite stores with `readonly: true` and their
+GEX) plus the research and screening surfaces. It reads module SQLite stores with `readonly: true` and their
 JSON state as files; its only writable store is `~/.cherrypick/data/console/`.
 
 **The supervisor keeps it up** as an always-on resident job — no clock window and no trading-day

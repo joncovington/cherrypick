@@ -160,8 +160,7 @@ read them:
 | [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) | The three strategy engines. |
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
-| [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models in one app. Read-only. |
-| [packages/scout](packages/scout) | The research services and cache behind the console's screening surfaces. |
+| [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |
 | [packages/desk](packages/desk) | ⚠️ **Experimental.** The manual trading desk — the only *discretionary* live-order path, driven by you per order. [Read the warning](#before-you-go-anywhere-near-live-trading). |
 
 ## Requirements

@@ -16,7 +16,6 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   config/gex.json                 # GEX dashboard config
   config/streamer.json            # standalone streamer config
   config/console.json             # unified console UI config
-  config/scout.json               # scout config
   config/desk.json                # manual trading desk config (own credential + PIN)
   data/marketdata/stream_cache.db # the canonical shared DXLink stream cache (quotes/greeks/OI) —
                                   #   written ONLY by the standalone streamer, read by every module
@@ -50,7 +49,6 @@ configure their own engine and nothing else:
 | `~/.cherrypick/config/gex.json` | GEX | `symbols`, the shared stream-cache source path, serve host/port, history DB path. |
 | `~/.cherrypick/config/streamer.json` | Streamer | Broker session settings and the stream-cache path it writes; the symbol set is not configured here — it is the union of every module's `state/stream_requests/` file. |
 | `~/.cherrypick/config/console.json` | Console | Serve host/port (`127.0.0.1:5070`) and which modules' read models to surface. No credential of its own — it reads the shared suite entry and never writes one. |
-| `~/.cherrypick/config/scout.json` | Scout | Screening parameters and serve host/port. |
 | `~/.cherrypick/config/desk.json` | Desk | Its own authorization for discretionary live orders — which module's keyring service to borrow a session from (`broker_keyring_service`), the allowed accounts, and the policy gates (defined-risk requirement, per-order cap). It stores no broker secrets; the PIN is kept only as a salted verifier. Deliberately independent of every module's `enable_live_trading`. |
 
 **Resolution rules:**

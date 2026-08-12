@@ -493,7 +493,11 @@ export function setPublicPin(config: ConsoleConfig, name: string, pinned: boolea
   }
 }
 
-/** One-way seed from scout's watchlist.json (read-only on scout's side). */
+/**
+ * One-way seed from the watchlist the retired scout package left behind
+ * (`~/.cherrypick/data/scout/watchlist.json`). The package went on 2026-08-12; the file is a
+ * one-time migration source, so a missing one imports nothing and is not an error.
+ */
 export function importScoutWatchlist(config: ConsoleConfig): { imported: number; symbols: string[] } {
   const p = path.join(config.paths.scoutDir, "watchlist.json");
   let symbols: string[] = [];

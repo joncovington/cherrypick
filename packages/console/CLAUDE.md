@@ -1,8 +1,8 @@
 # console (unified web UI)
 
 The suite's unified reactive web UI: one app covering every module's read models (overview/watchdog,
-MEIC, flies, earnings, GEX) plus scout's interactive surfaces (watchlist, screener, builder,
-payoff/POP, staged dry-run tickets). It **replaced** them on 2026-08-12: the suite dashboard, the
+MEIC, flies, earnings, GEX) plus the research surfaces inherited from the retired scout
+package (watchlist, screener, builder, payoff/POP, staged dry-run tickets). It **replaced** them on 2026-08-12: the suite dashboard, the
 MEIC/flies/GEX dashboards, the earnings strategy dashboard and scout's web app were deleted, and this
 is the suite's only read surface. It still touches none of their code — every module remains a
 producer this package reads. `pre-console-only` is the tag that still has them.

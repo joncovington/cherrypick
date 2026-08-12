@@ -3,7 +3,18 @@ import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb } from "./db.js";
 import type { Bar } from "../analytics/levels.js";
 
-/** Read-only over scout's own cache.db — the console is a reader, never the producer. */
+/**
+ * Read-only over the candle cache the retired scout package left behind
+ * (`~/.cherrypick/data/scout/cache.db`).
+ *
+ * **This is now a frozen legacy source.** The scout package was deleted on 2026-08-12 and nothing
+ * writes that file any more, so it only ever gets older. It is still read because it is free history
+ * that already exists on this machine — `services/candles.ts` tries the console's own cache first,
+ * falls back here, and backfills from DXLink for anything neither has. A missing or empty file is an
+ * ordinary outcome, not an error, which is why every read here degrades to `[]`.
+ *
+ * Deleting the file is safe; deleting this reader is safe once it stops returning anything useful.
+ */
 export function readDailyCandles(config: ConsoleConfig, symbol: string): Bar[] {
   const dbPath = path.join(config.paths.scoutDir, "cache.db");
   return withReadOnlyDb<Bar[]>(dbPath, [], (db) =>
