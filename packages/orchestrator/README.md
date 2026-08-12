@@ -32,7 +32,7 @@ python run.py doctor      # is everything ready? green/red, read-only, safe to r
 python run.py install     # register the one anchor task, start the supervisor, streamer, and services
 python run.py status      # what the supervisor is running, and when each job last ran
 python run.py report      # unified paper P&L across every module, gross and net of costs
-python run.py dashboard   # regenerate the status page (--serve for the live one)
+# The status page is the console: http://127.0.0.1:5070 (supervisor-managed; see /console)
 ```
 
 `doctor` is the one to reach for first when something looks wrong; it checks each module's paths,
@@ -45,14 +45,13 @@ against the code so it cannot quietly fall behind.
 
 ## Where things live
 
-Nothing runtime lands in this checkout. Config, state, logs, reports, and the dashboard all resolve
+Nothing runtime lands in this checkout. Config, state, logs and reports all resolve
 under **`~/.cherrypick`** (relocate the lot with `$CHERRYPICK_HOME`):
 
 ```
 ~/.cherrypick/config.json     # this package's config — start from config.example.json, which annotates every key
 ~/.cherrypick/logs/           # suite + per-module logs, EOD digests, insights
 ~/.cherrypick/state/          # supervisor job state, heartbeats, watchdog state
-~/.cherrypick/dashboard.html  # the static status page
 ```
 
 Module paths inside `config.json` resolve **relative to that file's directory**, so nothing hardcodes

@@ -75,7 +75,7 @@ loop uses (`scanner.compute_generic_exit_debit`), cost-adjusted.
 
 ```
 python -m cherrypick.earnings.strategy_report --since YYYY-MM-DD
-python -m cherrypick.earnings.strategy_dashboard --since YYYY-MM-DD
+# The console's Earnings page renders the same read models: http://127.0.0.1:5070/earnings
 ```
 `strategy_report.py` prints a per-strategy table (sample count vs targets, win rate, profit
 factor, expectancy, Sharpe, max drawdown, average IV crush, regime coverage) to stdout.

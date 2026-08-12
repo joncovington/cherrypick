@@ -1,6 +1,6 @@
 # cherrypick console
 
-Unified reactive web UI for the cherrypick suite: dashboards for every module plus scout's
+The cherrypick suite's one read surface: every module's read models plus scout's
 interactive tooling, in one app on `http://127.0.0.1:5070/`.
 
 ## Prerequisites
@@ -17,7 +17,8 @@ pnpm build
 python run.py dashboard --serve
 ```
 
-Or via the suite command: `/serve-dashboard --console`.
+Normally you do not run this by hand — the supervisor keeps it up as an always-on resident job, and
+`/console` opens it (and diagnoses it when it is down). Its log is `~/.cherrypick/logs/console/console.log`.
 
 ## Broker credential
 

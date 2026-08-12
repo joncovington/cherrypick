@@ -91,8 +91,8 @@ confirmation, a current status readout, and a visible way to stop.
    that `python packages/orchestrator/run.py status` shows the `flies-live` job enabled with a
    future `next_run`. Then report: the driver (supervisor job or legacy task), the armed-for
    date, the self-disarm time, the log to watch
-   (`tail -f ~/.cherrypick/logs/flies/flies_live.log`), the dashboard's live source
-   (http://127.0.0.1:5052/ → source: live), and how to stop early: `/live-flies-start --stop`,
+   (`tail -f ~/.cherrypick/logs/flies/flies_live.log`), the console's flies page with its
+   mode set to live (http://127.0.0.1:5070/flies), and how to stop early: `/live-flies-start --stop`,
    or create the halt flag (`~/.cherrypick/state/halt-live.flag` — stops new entries within one
    tick; open positions still follow their normal hold-to-settlement rules), or
    `python -m cherrypick.flies.live_loop --uninstall-task` directly. Also mention settlement: the loop

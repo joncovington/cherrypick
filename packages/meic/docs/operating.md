@@ -1,7 +1,7 @@
 # Operating the Agent
 
 **What this covers:** the day-to-day routine for running a MEIC session once it's set up —
-starting the loop, watching the dashboard, and checking status. Part of the
+starting the loop, watching the console, and checking status. Part of the
 [MEIC module](../README.md) in the cherrypick suite.
 
 ## Pre-market session setup
@@ -12,15 +12,16 @@ Run `/meic-start` before 9:30 ET — it verifies the shared market-data streamer
 /meic-start
 ```
 
-This does **not** launch the dashboard — it checks (and starts, if down) the standalone streamer
-producer (`packages/streamer`), then starts the agent loop directly. Open the dashboard separately
-with `/dashboard` if you want to watch the session (see below). The agent will not enter new trades before `entry_window_start` (default 10:00 ET) or after `entry_window_end` (default 14:30 ET). At end of day it force-closes non-cash-settled positions before the bell (`physical_settlement_force_close_time`/`force_close_time`) and leaves cash-settled positions to expire and settle in cash (`expiration_settlement_time`); either way, starting early is safe. On the first iteration of each trading day, the loop runs a **daily connection check** to verify the tastytrade broker session is live before any market assessment begins.
+This checks (and starts, if down) the standalone streamer producer (`packages/streamer`), then
+starts the agent loop directly. To watch the session, open the console with `/console` — it is
+already running. The agent will not enter new trades before `entry_window_start` (default 10:00 ET) or after `entry_window_end` (default 14:30 ET). At end of day it force-closes non-cash-settled positions before the bell (`physical_settlement_force_close_time`/`force_close_time`) and leaves cash-settled positions to expire and settle in cash (`expiration_settlement_time`); either way, starting early is safe. On the first iteration of each trading day, the loop runs a **daily connection check** to verify the tastytrade broker session is live before any market assessment begins.
 
 To start components individually instead:
 
-**Dashboard** — opens the browser at `http://localhost:5050`, auto-refreshes every 30 s:
+**Read surface** — opens the console at `http://127.0.0.1:5070/meic` (already running; the supervisor
+keeps it up):
 ```
-/dashboard
+/console
 ```
 
 **Loop** — begins the MEIC agent iterations:
@@ -52,7 +53,7 @@ Start a full unattended paper session:
 /paper-start
 ```
 
-This starts the shared DXLink streamer, launches the paper dashboard at `http://localhost:5051` (badged "Paper Mode — Simulated"), and registers a Windows scheduled task (`cherrypick-meic-paper-loop`) that runs `python -m cherrypick.meic.paper_loop --once` every 2 minutes — headless, time-gated to market hours, self-healing, and persistent across sessions. At the 16:00 ET settlement pass it writes both deterministic end-of-day files — `logs/meic/paper-eod-<date>.md` (metrics) and `logs/meic/eod-analysis-<date>.md` (the 7-section analysis).
+This starts the shared DXLink streamer and registers a Windows scheduled task (`cherrypick-meic-paper-loop`) that runs `python -m cherrypick.meic.paper_loop --once` every 2 minutes — headless, time-gated to market hours, self-healing, and persistent across sessions. At the 16:00 ET settlement pass it writes both deterministic end-of-day files — `logs/meic/paper-eod-<date>.md` (metrics) and `logs/meic/eod-analysis-<date>.md` (the 7-section analysis).
 
 Manage the session directly:
 
@@ -72,7 +73,7 @@ For a multi-day, profile-by-profile performance write-up (equity curves, risk-ad
 
 On non-Windows hosts, run `python -m cherrypick.meic.paper_loop` in a terminal or wire a cron job to `--once`. See [paper-trading.md](paper-trading.md) for the engine design, fee model, historical-replay accelerator, and graduation criteria.
 
-> **Inside the suite:** you don't have to manage this task yourself. The [orchestrator](../../orchestrator) registers and watchdogs the same `cherrypick-meic-paper-loop` task (via `cherrypick install`), restarts a stalled streamer, sends notifications, and adds the cross-module read side (`cherrypick report` / `dashboard` / `calibrate`). It drives this module by subprocess only — it never places live orders or edits this config. Running `/paper-start` here is the standalone equivalent, minus the watchdog and notifications.
+> **Inside the suite:** you don't have to manage this task yourself. The [orchestrator](../../orchestrator) registers and watchdogs the same `cherrypick-meic-paper-loop` task (via `cherrypick install`), restarts a stalled streamer, sends notifications, and adds the cross-module read side (`cherrypick report` / `calibrate` / the console). It drives this module by subprocess only — it never places live orders or edits this config. Running `/paper-start` here is the standalone equivalent, minus the watchdog and notifications.
 
 ---
 
@@ -86,21 +87,14 @@ Prints a live summary of open positions, today's P&L, and the last few loop acti
 
 ---
 
-## Dashboard
+## The read surface
 
-A local browser dashboard provides a live view of the trading session and historical analytics.
-
-```
-/dashboard
-```
-
-Or start it directly:
-
-```bash
-python -m cherrypick.meic.dashboard
-```
-
-Opens at `http://localhost:5050` and auto-refreshes every 30 seconds.
+The console is the suite's one read surface: `http://127.0.0.1:5070/meic`, opened with `/console`.
+The supervisor keeps it running, so there is nothing to start. It reads **both** ledgers and tags
+every row with the mode it came from — so paper and live are separated by the data rather than by
+which port you opened, which is what the old two-port arrangement (5050 live / 5051 paper) did.
+It also defaults to the module's own `CURRENT_ERA`, the way this module's analytics do, with earlier
+eras reachable through a visible scope control.
 
 **Today view**
 - Multi-period stats grid — Net P&L, total trades, wins, losses, and W/L ratio across today / this week / this month / this year / all-time (live trades only)
@@ -113,21 +107,13 @@ Opens at `http://localhost:5050` and auto-refreshes every 30 seconds.
 - Avg P&L by IV rank bucket
 - All-time fee drag summary
 
-The dashboard reads directly from `meic_trades.db` in the data home (`~/.cherrypick/data/meic/` by default) — no extra dependencies beyond what is already installed. Stop it by closing the terminal window it opened.
+The console reads `meic_trades.db` and `paper_trades.db` from the data home
+(`~/.cherrypick/data/meic/` by default), read-only. In paper scope the Performance view can be
+filtered by risk profile as well as by symbol.
 
-For paper trading, run the same dashboard against the paper database on a separate port so both can be open at once:
-
-```
-/serve-dashboard --meic --paper   # http://localhost:5051, badged "Paper Mode — Simulated"
-```
-
-Or directly: `python -m cherrypick.meic.dashboard --mode paper` (drives both the `paper_trades.db` path in the data home and the 5051 port). In paper mode the Performance view can be filtered by risk profile as well as by symbol.
-
-The suite dashboard renders a compact MEIC card without this server: `python -m cherrypick.meic.section --json`
-emits a `cherrypick.core.viz` section payload (net-of-fees P&L tiles + the cumulative daily P&L
-curve; `--symbol`/`--profile` filters, paper book by default) that the orchestrator subprocesses
-and renders generically — the same pattern as the gex, flies, and earnings cards. It reads through
-`dashboard.py`'s own query helpers, so the card and this dashboard can never disagree.
+The compact suite-dashboard card this module used to emit (`cherrypick.meic.section`) went with the
+suite dashboard on 2026-08-12. The console reads the ledger directly, so there is no payload to keep
+in sync any more — which is why deleting the card cost nothing.
 
 ---
 
@@ -183,9 +169,10 @@ The orchestrator's suite digest and (opt-in) AI insight build on these files —
 
 All loop actions are written to `logs/agent.log` as newline-delimited JSON via `python -m cherrypick.meic.notify log_event --level <LEVEL>`. Each entry includes a timestamp, level (typically `INFO`, `WARN` for conflicts, or `CRITICAL` for escalated failures like a missed force-close on a non-cash-settled symbol), message, and optional structured data. Review `WARN`/`CRITICAL` entries after EOD to identify conflict patterns and refine agent behavior.
 
-Every log file is size-capped with rotation (10 MB per file, 5 backups), so `agent.log`, `streamer.log`, `paper_loop.log`, and `dashboard.log` never grow without bound. The paper daemon logs to `logs/paper_loop.log` in a human-readable one-line-per-iteration format.
+Every log file is size-capped with rotation (10 MB per file, 5 backups), so `agent.log`, `streamer.log`, and `paper_loop.log` never grow without bound. The paper daemon logs to `logs/paper_loop.log` in a human-readable one-line-per-iteration format.
 
-The easiest way to watch the log live is the **Logs tab** in the dashboard — the live dashboard (`http://localhost:5050`) tails `agent.log` and the paper dashboard (`http://localhost:5051`) tails `paper_loop.log`; both color-code WARN/ERROR entries and auto-refresh every 10 seconds.
+The easiest way to watch the log live is the console's log card, which merges every module's tail
+with level filters.
 
 To tail from the terminal instead:
 

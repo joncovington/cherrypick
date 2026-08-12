@@ -205,7 +205,7 @@ If credentials aren't there or are stale, `python -m cherrypick.earnings.tt secr
 ```bash
 pytest                                  # unit tests
 python -m cherrypick.earnings.strategy_report           # per-strategy expectancy, win rate, IV crush
-python -m cherrypick.earnings.strategy_dashboard        # writes reports/strategy_dashboard.html
+# For the same numbers as a page, open the console: http://127.0.0.1:5070/earnings
 ```
 
 For accumulating a real sample across all 6 strategies before trusting any of the above, use

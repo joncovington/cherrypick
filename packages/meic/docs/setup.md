@@ -7,7 +7,7 @@ first time — the one-time setup you do before running any paper or live sessio
 ## Requirements
 
 - **Python 3.11+**
-- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — Anthropic's CLI coding assistant. The agent's decision loop and all the `/`-commands in this guide (`/setup`, `/meic-start`, `/paper-start`, `/serve-dashboard`, etc.) run inside Claude Code, driven by the operating instructions in `CLAUDE.md` and the skills in `.claude/commands/`. Install it with `npm install -g @anthropic-ai/claude-code`, then start it from the project directory by running `claude`.
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — Anthropic's CLI coding assistant. The agent's decision loop and all the `/`-commands in this guide (`/setup`, `/meic-start`, `/paper-start`, `/console`, etc.) run inside Claude Code, driven by the operating instructions in `CLAUDE.md` and the skills in `.claude/commands/`. Install it with `npm install -g @anthropic-ai/claude-code`, then start it from the project directory by running `claude`.
 - **tastytrade account** — live account or developer sandbox (tastytrade does not offer paper trading; the developer sandbox is a separate environment for testing without real capital)
 
 There is no separate MCP server to install — `cherrypick/meic/tt.py` talks to tastytrade directly via the official Python SDK (OAuth2).
@@ -124,7 +124,7 @@ writers on one cache and one account; MEIC's own streamer module is a disabled r
 for a box deliberately configured with `modules.meic.streamer.enabled: true`. Either producer
 maintains a persistent DXLink WebSocket so quote/greeks/chain reads are served from cache instead of
 a cold connection each time. `/meic-start` and `/paper-start` both check/start it automatically as
-their first step (see `.claude/commands/meic-start.md`) — neither launches a dashboard.
+their first step (see `.claude/commands/meic-start.md`); the console is already running.
 
 ### 7. Enable live trading (when ready)
 

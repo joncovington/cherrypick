@@ -10,13 +10,13 @@ One workspace holds the whole trading-tool suite as separate packages under `pac
 | Package | Role |
 |---|---|
 | `packages/core` | The shared **`cherrypick.core`** library — calendar, fees, profiles, GEX math, the streaming engine, auth, broker, db, viz, home resolution. Every other package installs it as an editable dependency; see below. |
-| `packages/orchestrator` | The **orchestrator** (`cherrypick`): scheduler, watchdog, notifications, onboarding, and the entire read side (report / calibrate / dashboard / EOD reports / archive). Drives the modules **by subprocess**, never by import. |
+| `packages/orchestrator` | The **orchestrator** (`cherrypick`): supervisor, watchdog, notifications, onboarding, and the file-side read commands (report / calibrate / EOD reports / archive). Drives the modules **by subprocess**, never by import. |
 | `packages/meic` | The **MEIC** 0DTE multiple-entry iron-condor engine. |
 | `packages/earnings` | The **Earnings** defined-risk earnings-play engine. |
-| `packages/gex` | The standalone **GEX** (gamma-exposure) dashboard, built on the shared GEX engine and embedded by the orchestrator. |
+| `packages/gex` | The **GEX** (gamma-exposure) engine and spot-trail recorder, built on the shared GEX math. It computes and records; the console renders it. |
 | `packages/flies` | The **Flies** 0DTE net-credit butterfly ("profit forest") paper engine — deliberately built so a negative result is usable (floors measured after fees, arm-based experiments). |
 | `packages/streamer` | The **standalone streamer** — the suite's single market-data producer, writing the canonical shared stream cache that every module reads; modules declare their symbols via `state/stream_requests/`. |
-| `packages/console` | The unified reactive **console** UI (Node + TypeScript, React SPA on `127.0.0.1:5070`): every module's read models plus scout's interactive surfaces in one app. Runs alongside the per-module dashboards while it grows into their replacement. Read-only over every other package's data, with its own store. It reads the shared suite credential and never writes credentials; it probes the token's scope at boot, so a read-only token disables its write-oriented functions. No order-placement code paths. |
+| `packages/console` | The reactive **console** UI (Node + TypeScript, React SPA on `127.0.0.1:5070`): every module's read models plus scout's interactive surfaces in one app. The suite's **only** read surface since 2026-08-12, and the supervisor keeps it running as an always-on resident job. Read-only over every other package's data, with its own store. It reads the shared suite credential and never writes credentials; it probes the token's scope at boot, so a read-only token disables its write-oriented functions. No order-placement code paths. |
 | `packages/scout` | **Scout** — interactive screening and strategy-exploration surfaces, now also surfaced through the console. |
 | `packages/desk` | ⚠️ **Experimental.** The **manual trading desk** — the suite's only *discretionary* live-order path (MEIC, earnings, and flies each have a live loop behind their own `enable_live_trading` gate; this one has no loop at all). A foreground, human-initiated CLI for discretionary live orders, authorized entirely on its own (own config, own keyring PIN, per-order ticket) so placing one order never requires flipping a module's `enable_live_trading`. Not a strategy module: no loop, no schedule, no ledger. Never scheduled, and no automated package may import it. |
 
@@ -88,7 +88,7 @@ Everything hangs off one config file per package. The orchestrator's `config.jso
   load-bearing.)
 - **Read side — look whenever you want.** `report.py` (cross-module paper P&L), `calibrate.py` (per-profile
   promotion advisor), `eod_digest.py` (one session's cross-module roll-up), `eod_insight.py` (opt-in AI
-  synthesis), `logrotate.py` (monthly archive), and `dashboard.py` (a static HTML page + a live server).
+  synthesis) and `logrotate.py` (monthly archive). The page that composed them is the console.
   These are **read-only and file-only** — they read paper DBs (SQLite read-only), watchdog state, logs,
   and report files; never the broker. See [reporting-and-dashboard.md](reporting-and-dashboard.md).
 
@@ -130,7 +130,6 @@ wholesale with `$CHERRYPICK_HOME`:
   logs/<module>/           # per-module logs + paper-eod / eod-analysis
   logs/archive/<YYYY-MM>/  # monthly zipped reports + rotated logs
   state/                   # watchdog state, heartbeats
-  dashboard.html           # the static dashboard render
 ```
 
 Nothing runtime lands in a source checkout. A relative module `path` in config (e.g. `../meic`) is
@@ -141,7 +140,7 @@ resolved against the config file's directory / the source anchor, not the home. 
 
 `graphify` and `agentmemory` are local authoring aids; their artifacts (`graphify-out/`, most of
 `.claude/`) are gitignored and are never a runtime dependency. The one tracked exception is
-`.claude/commands/` — checked-in slash commands are shared dev conveniences (e.g. `/serve-dashboard`).
+`.claude/commands/` — checked-in slash commands are shared dev conveniences (e.g. `/console`).
 The AI EOD **insight** (`cherrypick eod-insight`) is the single place AI is invoked in the product, and it
 is deliberately fenced off the reliability path — see
 [reporting-and-dashboard.md](reporting-and-dashboard.md) and

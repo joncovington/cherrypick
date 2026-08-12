@@ -213,27 +213,19 @@ _PORT_DOC = "docs/operations.md"
 #: "integers that look like ports": a generic scan reports every timeout and byte count in the
 #: repo, and a linter that cries wolf gets switched off (see this module's test file).
 #: Each entry is (source path, regex); every capture group is read as a port.
+#: Two servers survive the 2026-08-12 consolidation: the console (the one read surface) and the
+#: settings editor (the one mutating surface). The five module dashboards and their embed ports went
+#: with the code that served them.
 _PORT_DECLS: tuple[tuple[str, str], ...] = (
-    ("packages/orchestrator/src/cherrypick/orchestrator/serve.py", r'scfg\.get\("port",\s*(\d+)\)'),
     (
         "packages/orchestrator/src/cherrypick/orchestrator/settings_serve.py",
         r'scfg\.get\("port",\s*(\d+)\)',
     ),
-    (
-        "packages/meic/src/cherrypick/meic/dashboard.py",
-        r'port_arg or \((\d+) if mode == "paper" else (\d+)\)',
-    ),
-    ("packages/flies/src/cherrypick/flies/dashboard.py", r"DEFAULT_PORT\s*=\s*(\d+)"),
-    ("packages/gex/src/cherrypick/gex/config.py", r'"serve":\s*\{[^}]*?"port":\s*(\d+)'),
-    ("packages/scout/src/cherrypick/scout/config.py", r'"serve":\s*\{[^}]*?"port":\s*(\d+)'),
     ("packages/console/server/src/config.ts", r'serve\["port"\]\s*:\s*(\d+)'),
 )
-#: The orchestrator's embed ports live in config, not code.
-_PORT_EMBED_CONFIG = "packages/orchestrator/config.example.json"
 #: Ports the table documents that no source declares, each with the reason it cannot. Every entry
 #: carries a reason on purpose -- an allowlist without them is where drift hides.
 _PORT_DOC_ONLY = {
-    "5056": "gex WebSocket push -- derived as serve.port + 1, never declared on its own",
     "7699": "MEIC's optional REST sidecar -- off by default, no module-level constant",
     "3306": "Dolt's own default -- an external service the suite only keeps alive",
 }
@@ -250,6 +242,11 @@ def _check_ports() -> list[str]:
     it either. Separately the table simply omitted four surfaces (console, scout, settings, the gex
     WebSocket) while presenting itself as complete -- and `/uninstall` uses it to decide what to stop,
     so those four kept running after an "uninstall".
+
+    Most of those rows are gone now (2026-08-12: one read surface, one mutating one), which does not
+    retire the rule -- the failure it catches is a table that reads complete and is not, and a short
+    table is just as capable of that. It is the reason `/uninstall` can still be trusted to stop
+    everything.
 
     Checks presence in both directions and nothing else. It cannot tell whether the description beside
     a port is right, and it cannot see a port that only ever arrives as a `--port` argument.
@@ -268,16 +265,6 @@ def _check_ports() -> list[str]:
             return [f"{rel}: no port matched the declared pattern -- the port check cannot run"]
         for port in flat:
             declared[port] = rel
-    embed_cfg = ROOT / _PORT_EMBED_CONFIG
-    if embed_cfg.exists():
-        try:
-            cfg = json.loads(embed_cfg.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            cfg = {}
-        for embed in (cfg.get("dashboard") or {}).get("embeds") or []:
-            if isinstance(embed, dict) and embed.get("port"):
-                declared[str(embed["port"])] = _PORT_EMBED_CONFIG
-
     documented: set[str] = set()
     for cell in _PORT_ROW.findall(doc.read_text(encoding="utf-8")):
         documented.update(_PORT_NUM.findall(cell))

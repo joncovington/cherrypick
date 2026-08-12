@@ -154,13 +154,13 @@ The orchestrator's suite digest and (opt-in) AI insight build on these files —
 [reporting docs](../../../docs/reporting-and-dashboard.md).
 
 For accumulated (multi-day) results across the whole sample, use `python -m cherrypick.earnings.strategy_report`
-or the HTML `python -m cherrypick.earnings.strategy_dashboard` instead.
+or the console's Earnings page instead.
 
 To check accumulated results across many days:
 
 ```bash
 python -m cherrypick.earnings.strategy_report
-python -m cherrypick.earnings.strategy_dashboard   # writes reports/strategy_dashboard.html
+# The page version lives in the console: http://127.0.0.1:5070/earnings
 ```
 
 ---

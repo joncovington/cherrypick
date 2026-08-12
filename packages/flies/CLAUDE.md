@@ -49,10 +49,8 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `cherrypick/flies/book.py` | wires engine decisions to the paper DB; one book per (date, arm, symbol). |
 | `cherrypick/flies/db.py` | `fly_positions` (ledger) and `fly_books` (roll-up with the floor's price band). |
 | `cherrypick/flies/analytics.py` | the one query layer every read surface goes through. Read-only. |
-| `cherrypick/flies/dashboard.py` | loopback HTTP dashboard: Today / History / Performance. |
-| `cherrypick/flies/section.py` | the compact `cherrypick.core.viz` card for the suite dashboard. |
 | `cherrypick/flies/eod.py` | `paper-eod-<day>.md` and `eod-analysis-<day>.md`. |
-| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `dashboard` / `section`. |
+| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime`. |
 | `cherrypick/flies/live_loop.py` | The LIVE loop: a 1-min `--once --live` tick fired by the orchestrator's supervisor while the arm record (`state/flies-live-arm.json`, written per-day via `/live-flies-start`) is valid; self-disarms at `live.disarm_time` by deleting the record. Burst fill-watchers (`--watch-fills`) unchanged. `--once` (dry-run default) is the rung-0 smoke; `--status`, `--settle --price` for the official print. |
 | `cherrypick/flies/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. |
 | `cherrypick/flies/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). |
@@ -64,9 +62,10 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 ## The read side
 
 **Everything reads through `analytics.py`.** MEIC grew three call sites that disagree about what "net"
-means — its Today grid uses raw `pnl`, its profile comparison uses `pnl - fees` — so here the dashboard,
-the section card, and the EOD writer all share one layer and a test asserts the headline figure agrees
-across surfaces.
+means — its Today grid uses raw `pnl`, its profile comparison uses `pnl - fees` — so here the EOD
+writer and the console both read one layer, and a test asserts the report's headline figure is exactly
+what that layer returns. This module's own dashboard and its suite-dashboard card were deleted
+2026-08-12; `analytics.py` did not change, which is why nothing downstream did.
 
 **Two journal tables, deliberately.** `fly_decisions` records *why* every entry was made or refused,
 collapsing consecutive identical reasons into one counted run (a gate that blocked all morning is one
@@ -89,8 +88,7 @@ decision.
 
 - **Completion rate** — how often a leg-in actually became a fly. If this is near zero the strategy is
   short verticals wearing a costume, and no P&L on the completed ones changes that. Besides the
-  blended rate, `analytics.completion_trend` gives it per session, and the suite-dashboard card
-  (`section.py`) draws that trend as a timeseries — a blended rate can drift slowly while looking
+  blended rate, `analytics.completion_trend` gives it per session, and the console draws that trend — a blended rate can drift slowly while looking
   stable; the trend is what makes a deterioration (or a config change's effect) visible.
 - **The counterfactual** (`best_completing_debit`) — for misses, whether *the market never offered it*
   or *one of our own gates refused it*. Identical in the P&L, opposite remedies. Completion is gated
@@ -122,7 +120,7 @@ decision.
   arms vs `control` on wing width. Reading a structural identity as a finding is how the redundancy
   went unnoticed.
 
-**Everything past the completion rate lives on a time axis, so the dashboard has one.** `analytics.session_timeline`
+**Everything past the completion rate lives on a time axis, so the console's flies page has one.** `analytics.session_timeline`
 assembles the day from rows already written — spot and every arm's wanted centre on each iteration,
 entries and completions, and each leg-in as a span running to its completion, so latency is a length
 beside the drift that bought it. `settle_now` replays the book at each tick: what it would have been
@@ -136,8 +134,6 @@ per-position floor rule 3 exists to withhold. The rewind is exact, not approxima
 purchase is a 2-leg vertical, so the pre-completion fee is `vertical_open_fee` and the pre-completion
 net is the recorded `credit`.
 
-The dashboard binds to **127.0.0.1 only** and draws its charts with plain canvas — no CDN, so it works
-offline and adds no third-party dependency to a surface whose only job is reading a local SQLite file.
 Both charts refuse to smooth over what they do not know: the timeline **breaks its lines across a gap**
 in the record rather than interpolating a shape through it (the 2026-07-20 session has a 100-minute
 silence, and a straight segment across it would read as a calm market), and the payoff curve draws one

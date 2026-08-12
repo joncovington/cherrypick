@@ -1,13 +1,22 @@
 # cherrypick-scout
 
-**What this module does:** a self-hosted options research surface — a recorded-earnings-screen view,
+> **The web app is gone (2026-08-12).** `app.py`, `serve.py`, `sse.py`, `security.py`, `templates.py`,
+> `api/`, `static/` and `templates/` were deleted when the console became the suite's one read
+> surface — those surfaces live at <http://127.0.0.1:5070> now, and the console has already
+> re-implemented most of `services/` and `analytics/` in TypeScript. What remains here is the
+> services-and-cache half, pending a gap audit that ports whatever the console still needs
+> (`analytics/describe.py` and `analytics/narrative.py` at least) before this package is deleted
+> outright. **Much of what follows documents routes that no longer exist**; it is kept as the
+> reference that port reads from. The running code is at the `pre-console-only` tag.
+
+**What this module did:** a self-hosted options research surface — a recorded-earnings-screen view,
 a credit-spread/iron-condor screener, per-symbol candlestick charts, and a leg-list payoff builder.
 It is a **research surface with order staging, never order placement**: the builder can validate a
 ticket against the broker's dry-run API (buying-power effect, fees, warnings — no order is created)
 and save staged tickets locally for manual execution in the tastytrade platform. No code path in this
 package may submit a real order.
 
-Its universe is a user-curated watchlist plus earnings-calendar names, not the whole market. It is a
+Its universe is a user-curated watchlist plus earnings-calendar names, not the whole market. It was a
 fully standalone package — its own port, no orchestrator section/embed registration, and not on any
 reliability path.
 
@@ -36,7 +45,6 @@ python run.py watchlist remove NVDA               # remove symbols
 python run.py watchlist list                      # print the current watchlist
 python run.py cache stats                         # row counts per cache table
 python run.py cache clear                         # delete the local cache DB
-python run.py serve                               # -> http://127.0.0.1:5057
 
 python -m pytest                                  # tests (temp DB/home; no broker or network)
 ruff check . && ruff format .                     # lint/format
@@ -46,8 +54,9 @@ ruff check . && ruff format .                     # lint/format
 
 `config.json` (git-ignored, machine-local; falls back to `~/.cherrypick/config/scout.json`, then
 `config.example.json`, then built-in defaults). See `config.example.json` for the full shape:
-`serve.{host,port}`, `refresh.*` (per-service cache TTLs), `screener.*` (screening thresholds used
-from M5 onward), `dolt.{host,port,user,connect_timeout_seconds}` (the earnings-calendar Dolt read).
+`refresh.*` (per-service cache TTLs), `screener.*` (screening thresholds), and
+`dolt.{host,port,user,connect_timeout_seconds}` (the earnings-calendar Dolt read). The `serve` block
+went with the web app.
 
 Runtime data lives under the shared suite home (`cherrypick.core.home`, relocatable via
 `$CHERRYPICK_HOME`): `~/.cherrypick/data/scout/` (`cache.db`, `watchlist.json`) and
@@ -61,9 +70,7 @@ packages/scout/
   docs/             strategy-screening-parameters.md
   src/cherrypick/
     scout/
-      __init__.py  cli.py  config.py  app.py  serve.py  security.py  sse.py  templates.py
-      api/          __init__.py  watchlist.py  earnings.py  symbol.py  payoff.py
-                     builder.py  screener.py  orders.py
+      __init__.py  cli.py  config.py
       services/     __init__.py  cache.py  watchlist.py  session.py  metrics_service.py
                      calendar_service.py  candle_service.py  chain_service.py
                      earnings_watchlist_service.py  earnings_metrics_service.py  liquidity_service.py

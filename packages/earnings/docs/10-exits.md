@@ -257,7 +257,7 @@ The loop's own observability, and what each surface answers.
 | `management_events` | every verdict, including the ones a gate held back |
 | `loop_iterations` | is the loop alive — one row per in-session tick, `status` `ok` or the refusal |
 | `measurement_breaks` | which dates results must not be pooled across |
-| `~/.cherrypick/state/earnings_entry.last.json` / `_exit.last.json` | the SLA heartbeats the watchdog and dashboard read |
+| `~/.cherrypick/state/earnings_entry.last.json` / `_exit.last.json` | the SLA heartbeats the watchdog and the console read |
 | console → Earnings → **open** | positions, marks, loop health, management log |
 | `paper-eod-<day>.md` | *Why they closed*, *Still open*, *Feed quality* |
 

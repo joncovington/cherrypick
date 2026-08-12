@@ -63,7 +63,7 @@ policed by the watchdog:
 | Daemon | What | Supervision | Contract |
 |---|---|---|---|
 | **streamer** (`packages/streamer`, top-level `streamer` config block) | The suite's single producer: writes `~/.cherrypick/data/marketdata/stream_cache.db`, streaming the **union** of every `state/stream_requests/<module>.json` | Session-gated **09:15–16:00 ET**; restarted on *silence*, not just death (`stale_restart_seconds: 240` — the 2026-07-20 stall was a live-but-quiet socket) | `status_argv`/`start_argv`/`stop_argv` = `run.py --status` / `run.py` / `run.py --stop`. **`uninstall` deliberately leaves it running** (`cli.py`) |
-| **services** (top-level `services` block) — currently `gex-recorder` | The GEX spot-trail recorder: samples every symbol's spot ~15 s so the trail has no gaps whether or not a dashboard is open | Every watchdog tick (not session-gated) | Same argv contract; `status_argv` must print `{"running": bool}`. `uninstall` **stops** services (they are the orchestrator's own daemons) |
+| **services** (top-level `services` block) — currently `gex-recorder` | The GEX spot-trail recorder: samples every symbol's spot ~15 s so the trail has no gaps whether or not anyone is looking at it | Every watchdog tick (not session-gated) | Same argv contract; `status_argv` must print `{"running": bool}`. `uninstall` **stops** services (they are the orchestrator's own daemons) |
 
 `meic-sidecar` (the 127.0.0.1:7699 REST poller) is a declared-but-disabled third; enable only for
 MEIC's live/interactive loop fast-path.
@@ -103,18 +103,15 @@ directions).
 
 | Port | Surface |
 |---|---|
-| 8787 | Suite dashboard — `run.py dashboard --serve` (`dashboard.serve`) |
-| 8804 | Settings editor — `run.py settings` (`settings_serve.py`); the suite's only config-writing surface |
-| 5070 | Console UI (`packages/console/server/src/config.ts`, overridable via `config/console.json`) |
-| 5057 | Scout serve (`packages/scout/.../config.py`, `serve.port`) |
-| 8801 | MEIC dashboard as a suite embed (`dashboard.embeds`, PAPER mode forced) |
-| 8802 | gex full dashboard as a suite embed |
-| 8803 | flies dashboard as a suite embed (`dashboard.embeds`) |
-| 5050 / 5051 | MEIC dashboard run directly: live / paper (`python -m cherrypick.meic.dashboard`) |
-| 5052 | flies dashboard run directly (`dashboard.DEFAULT_PORT`) — **not** the embed port above |
-| 5055 (+5056) | gex standalone serve (`serve.port`; WebSocket push defaults to port+1) |
+| 5070 | **Console** — the suite's one read surface (`packages/console/server/src/config.ts`, overridable via `config/console.json`). Kept up by the supervisor as an always-on resident job |
+| 8804 | **Settings editor** — `run.py settings` (`settings_serve.py`); the suite's only config-writing surface, foreground-only and never scheduled |
 | 7699 | MEIC REST sidecar (optional, off) |
 | 3306 | Dolt SQL server (earnings data; the `earnings-dolt` supervisor job keeps it alive) |
+
+Two servers, one read and one write. Until 2026-08-12 there were seven: a suite dashboard on 8787,
+per-module dashboards on 5050/5051, 5052 and 5055 (+5056), scout on 5057, and three iframe embed
+ports at 8801–8803. All deleted — the console covers them, and anything still wanted from them is in
+the `pre-console-only` tag.
 
 ## Dependency order and the clock
 
@@ -206,7 +203,7 @@ Each open gap below is tracked as an issue — the entry here is the operator-fa
   every entry on a missing feed would be its own outage. What changed on 2026-08-06 is that it is no
   longer invisible: `python -m cherrypick.meic.gate_health` reports which gates are armed, which have
   stood down and why, and how many sessions ATR is still missing. Read-only and file-only.
-  **Remaining:** it is a command, not yet a dashboard card, so it still has to be asked.
+  **Remaining:** it is a command, not a console page, so it still has to be asked.
 - ~~**Thin pre-open margin.**~~ **Fixed 2026-08-06** ([#64](https://github.com/joncovington/cherrypick/issues/64)),
   **superseded 2026-08-09**: the dedicated `cherrypick-preopen` task (streamer liveness every 2 min,
   09:00–09:35) became the supervisor's `streamer-health` job — same check (`_check_streamer_health`
