@@ -5,7 +5,7 @@ description: Run one day's cycle of the strategy-testing paper book (see docs/st
 # /paper-start
 
 Runs one full open→close cycle of the forced-sampling strategy test
-(`cherrypick/earnings/strategy_test_runner.py`, see `docs/strategy-testing-plan.md`):
+(`cherrypick/earnings/strat_test_harness.py`, see `docs/strategy-testing-plan.md`):
 checks the dolt/tastytrade connections, opens every strategy that clears
 the screen on every viable symbol into the per-strategy strat_test paper
 books, then closes them all the following morning. Used both for the
@@ -43,7 +43,7 @@ sample).
 
 3. **At the entry window**, run:
    ```
-   python -m cherrypick.earnings.strategy_test_runner run_entries --date <today MM/DD/YYYY>
+   python -m cherrypick.earnings.strat_test_harness run_entries --date <today MM/DD/YYYY>
    ```
    Report the result clearly: how many (strategy, symbol) pairs opened,
    broken down by strategy, and how many were skipped with their reasons
@@ -57,7 +57,7 @@ sample).
 
 5. **At the close window**, run:
    ```
-   python -m cherrypick.earnings.strategy_test_runner run_closes
+   python -m cherrypick.earnings.strat_test_harness run_closes
    ```
    Report closed trades with P&L (gross and cost-adjusted per
    `entry_cost`/`exit_cost`), and any skips.

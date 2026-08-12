@@ -178,3 +178,34 @@ def test_doctor_legacy_leftover_task_warns(monkeypatch):
 
 def test_doctor_pre_cutover_box_has_no_supervisor_checks():
     assert doctor._supervisor_checks({}, fast=False) == []
+
+
+def test_a_self_healing_earnings_module_is_not_asked_for_entry_exit_jobs(no_schtasks):
+    """The lifecycle cutover replaced two daily jobs with one continuous loop that does entry and
+    exit from its own clock. Those jobs are now correctly ABSENT, so looking them up would raise a
+    CRITICAL every tick for a shape that is working as designed. entry_task_name survives in config
+    for deleting the pre-cutover scheduled tasks by name, so the kind is the discriminator."""
+    write_heartbeat()
+    write_jobs({"earnings-paper": {"enabled": True}})
+    mcfg = {
+        "paper": {
+            "kind": "self_healing",
+            "entry_task_name": "cherrypick-earnings-paper-entry",
+            "exit_task_name": "cherrypick-earnings-paper-exit",
+        }
+    }
+    findings = watchdog._check_earnings("earnings", mcfg, datetime(2026, 8, 10, 12, 0), is_trading=False)
+    assert not [f for f in findings if f.key.startswith("earnings.task.")]
+
+
+def test_the_entry_sla_survives_the_cutover(no_schtasks, monkeypatch):
+    """The loop writes the same heartbeat files the scheduled verb used to — the file and its shape
+    are the contract, not who writes it. So a missed scan is still CRITICAL under the new kind."""
+    write_heartbeat()
+    write_jobs({"earnings-paper": {"enabled": True}})
+    monkeypatch.setattr(watchdog, "_read_heartbeat", lambda path: {})
+    mcfg = {"paper": {"kind": "self_healing", "entry_time": "15:45", "entry_sla_grace_minutes": 35}}
+
+    findings = watchdog._check_earnings("earnings", mcfg, datetime(2026, 8, 10, 16, 30), is_trading=True)
+    sla = next(f for f in findings if f.key == "earnings.entry_sla")
+    assert sla.status == watchdog.CRITICAL

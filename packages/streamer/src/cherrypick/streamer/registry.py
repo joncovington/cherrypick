@@ -37,14 +37,12 @@ import sqlite3
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core import streamrequests as _streamrequests
 
 # A leg-source query gets a short read-only window; a locked/slow trades DB must not stall the poll.
 _LEG_QUERY_TIMEOUT_S = 2.0
 
-
-def requests_dir() -> Path:
-    """The directory holding one request file per module (``~/.cherrypick/state/stream_requests``)."""
-    return _home.state_dir() / "stream_requests"
+requests_dir = _streamrequests.requests_dir
 
 
 def request_path(module: str) -> Path:
@@ -96,42 +94,15 @@ def write_request(module: str, symbols, legs=None, leg_sources=None, window_hint
     return path
 
 
-def _read_all() -> list[dict]:
-    """Every module's request dict, skipping any file that is missing/half-written/corrupt (never fatal —
-    a bad request file must not be able to take the streamer down)."""
-    out: list[dict] = []
-    directory = requests_dir()
-    if directory.is_dir():
-        for f in sorted(directory.glob("*.json")):
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if isinstance(data, dict):
-                out.append(data)
-    return out
+_read_all = _streamrequests.read_all
 
-
-def union_symbols(seed_symbols=None) -> list[str]:
-    """Underlyings to stream: the union of every module's ``symbols`` plus operator-seeded base symbols."""
-    symbols: set[str] = set(_clean(seed_symbols, upper=True))
-    for data in _read_all():
-        symbols.update(_clean(data.get("symbols"), upper=True))
-    return sorted(symbols)
-
-
-def union_window_hints() -> dict[str, int]:
-    """Per-symbol widened ATM window requests: the MAX ``window_hints`` value for each symbol across
-    every module's file. A module's own need is never narrowed by another module's silence on that
-    symbol — e.g. flies escalating XSP after repeated ``missing_leg_quotes`` refusals must win even if
-    gex's request file doesn't mention a hint for XSP at all."""
-    hints: dict[str, int] = {}
-    for data in _read_all():
-        for symbol, count in (data.get("window_hints") or {}).items():
-            if isinstance(symbol, str) and symbol.strip() and isinstance(count, int) and count > 0:
-                key = symbol.strip().upper()
-                hints[key] = max(hints.get(key, 0), count)
-    return hints
+# The symbol/window-hint union is shared code, not a copy: the orchestrator unions the same files to
+# decide whether a *running* producer's subscriptions have gone stale (underlyings bind once, at
+# startup). Two implementations of "what did every module ask for" would recycle this daemon over a
+# difference it never sees, or leave it short of one it does. `union_legs` stays here — legs are re-read
+# every poll from module-declared DBs, which is this package's own sqlite concern, not core's.
+union_symbols = _streamrequests.union_symbols
+union_window_hints = _streamrequests.union_window_hints
 
 
 def union_legs() -> list[str]:
