@@ -42,6 +42,9 @@ interface MeicForest {
   mode: TradingMode;
   tradeDate: string | null;
   symbol: string | null;
+  tradesToday: number;
+  openPositions: number;
+  asEntered: ForestArm[];
   arms: ForestArm[];
   releasedStrikes: Array<{ profile: string; strike: number; right: "P" | "C"; at: string | null }>;
   lastSpot: number | null;
@@ -80,22 +83,29 @@ function path(prices: number[], pnl: number[], X: (v: number) => number, Y: (v: 
 export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?: string | null }) {
   const { data, isLoading } = useMeicForest(mode, date);
   const [showNested, setShowNested] = useState(true);
+  // A MEIC book resolves ENTIRELY at settlement — every trade ends stopped or expired — so after
+  // 16:00 there is no open book and an expiry-payoff curve has nothing left to describe. The card
+  // was simply blank every evening. Falling back to the day's book AS ENTERED keeps the session's
+  // accumulated structure readable, clearly labelled as geometry rather than outcome: a stopped
+  // side came off before expiry, and its realized P&L is not this curve.
+  const live = (data?.arms.length ?? 0) > 0;
+  const arms = live ? (data?.arms ?? []) : (data?.asEntered ?? []);
   const [hover, setHover] = useState<{ price: number } | null>(null);
 
-  const arms = (data?.arms ?? []).filter((a) => a.positions.length > 0 && a.prices.length > 0);
+  const shown = arms.filter((a) => a.positions.length > 0 && a.prices.length > 0);
 
   const width = 1150;
   const height = 320;
   const pad = { l: 66, r: 12, t: 20, b: 26 };
 
   let body = null;
-  if (arms.length > 0) {
-    const prices = arms[0]!.prices;
-    const xMin = Math.min(...arms.map((a) => a.prices[0] ?? 0));
-    const xMax = Math.max(...arms.map((a) => a.prices[a.prices.length - 1] ?? 0));
+  if (shown.length > 0) {
+    const prices = shown[0]!.prices;
+    const xMin = Math.min(...shown.map((a) => a.prices[0] ?? 0));
+    const xMax = Math.max(...shown.map((a) => a.prices[a.prices.length - 1] ?? 0));
     let yLo = 0;
     let yHi = 0;
-    for (const a of arms) {
+    for (const a of shown) {
       for (const v of a.pnl) {
         yLo = Math.min(yLo, v);
         yHi = Math.max(yHi, v);
@@ -108,7 +118,7 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
     const X = (v: number) => pad.l + ((v - xMin) / (xMax - xMin || 1)) * (width - pad.l - pad.r);
     const Y = (v: number) => height - pad.b - ((v - yMin) / (yMax - yMin || 1)) * (height - pad.t - pad.b);
     const colorOf = (profile: string) =>
-      ARM_COLORS[(data?.arms ?? []).findIndex((a) => a.profile === profile) % ARM_COLORS.length]!;
+      ARM_COLORS[arms.findIndex((a) => a.profile === profile) % ARM_COLORS.length]!;
 
     const hoverIdx =
       hover !== null
@@ -146,7 +156,7 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
 
         {/* Each IC's own curve, faint, behind the aggregate — the nesting made visible. */}
         {showNested &&
-          arms.flatMap((a) =>
+          shown.flatMap((a) =>
             a.perPosition.map((p) => (
               <path
                 key={`${a.profile}-${p.icOrderId}`}
@@ -159,7 +169,7 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
             )),
           )}
 
-        {arms.map((a) => (
+        {shown.map((a) => (
           <path key={a.profile} d={path(a.prices, a.pnl, X, Y)} fill="none" stroke={colorOf(a.profile)} strokeWidth={2} />
         ))}
 
@@ -188,7 +198,14 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
   return (
     <section className="card">
       <div className="panel-head-row">
-        <h2>Payoff at expiry — the profit forest{data?.tradeDate != null ? ` (${data.tradeDate})` : ""}</h2>
+        <h2>
+          Payoff at expiry — the profit forest{data?.tradeDate != null ? ` (${data.tradeDate})` : ""}
+          {!live && shown.length > 0 && (
+            <span className="chain-badge chain-badge-short" style={{ marginLeft: "0.5rem" }} title="No position is open: this book resolved at settlement. Shown as ENTERED — the structure the session accumulated, not what any trade realized. A stopped side came off before expiry and its P&L is not this curve.">
+              as entered
+            </span>
+          )}
+        </h2>
         <label className="muted lbl">
           <input type="checkbox" checked={showNested} onChange={(e) => setShowNested(e.target.checked)} /> show each
           condor
@@ -196,13 +213,17 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
       </div>
       {isLoading ? (
         <span className="skeleton skeleton-text" style={{ width: "50%" }} />
-      ) : arms.length === 0 ? (
-        <p className="muted">no open positions on this day</p>
+      ) : shown.length === 0 ? (
+        <p className="muted">
+          {(data?.tradesToday ?? 0) === 0
+            ? "no positions on this day"
+            : `${data?.tradesToday} trades on this day, none still open and none reconstructable — nothing to draw`}
+        </p>
       ) : (
         <>
           {body}
           <div className="legend-row" style={{ marginTop: "0.4rem" }}>
-            {arms.map((a, i) => (
+            {shown.map((a, i) => (
               <span key={a.profile} className="muted" style={{ fontSize: 11, marginRight: "0.9rem" }}>
                 <i
                   style={{
@@ -223,13 +244,22 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
                       )
                     ] ?? 0,
                   )}`}
-                {i === arms.length - 1 ? "" : ""}
+                {i === shown.length - 1 ? "" : ""}
               </span>
             ))}
           </div>
           <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
             Expiry payoff, not an intraday mark — nothing here is quoted live. Faint lines are the individual condors
             behind each arm's aggregate; dashed ticks on the axis are strikes a stop has released back for re-entry.
+            {!live && (
+              <>
+                {" "}
+                <strong>No position is open</strong> — a MEIC book resolves entirely at settlement, so this is the
+                day's {data?.tradesToday} trades drawn <strong>as entered</strong>. It shows the structure the session
+                built, not what it earned: a stopped side came off before expiry and its realized P&amp;L is not this
+                curve.
+              </>
+            )}
           </p>
         </>
       )}

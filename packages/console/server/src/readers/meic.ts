@@ -841,6 +841,15 @@ export interface MeicForest {
   mode: TradingMode;
   tradeDate: string | null;
   symbol: string | null;
+  /** How many trades this day holds, and how many are still open. A MEIC book resolves entirely at
+   *  settlement, so after 16:00 every trade is stopped or expired and an expiry-payoff curve has
+   *  nothing left to describe — the card must say that rather than render an empty chart. */
+  tradesToday: number;
+  openPositions: number;
+  /** The day's book drawn at ENTRY geometry, so a settled session still shows the structure it
+   *  accumulated. Explicitly not a claim about outcome: a stopped side came off before expiry and
+   *  its realized P&L is not this curve. */
+  asEntered: MeicForestArm[];
   arms: MeicForestArm[];
   /** Strikes released by a stop today: drawn as vacated so the forest and the
    *  occupancy map can never disagree about what the book still holds. */
@@ -903,7 +912,17 @@ export function readMeicForest(
 ): MeicForest {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
-  const empty: MeicForest = { mode, tradeDate: null, symbol: null, arms: [], releasedStrikes: [], lastSpot: null };
+  const empty: MeicForest = {
+    mode,
+    tradeDate: null,
+    symbol: null,
+    tradesToday: 0,
+    openPositions: 0,
+    asEntered: [],
+    arms: [],
+    releasedStrikes: [],
+    lastSpot: null,
+  };
 
   return withReadOnlyDb<MeicForest>(dbPath, empty, (db) => {
     const { and, params: scopeParams } = scopeSql(db, scope);
@@ -926,47 +945,66 @@ export function readMeicForest(
       )
       .all(tradeDate, ...scopeParams);
 
-    // Open positions build the curves; everything else is history for this day.
+    // Open positions build the live curves; the whole day builds the as-entered view.
     const open = rows.filter((r) => str(r["status"]) === "open");
-    const byProfile = new Map<string, typeof open>();
-    for (const r of open) {
-      const profile = str(r["risk_profile"]) ?? "?";
-      const list = byProfile.get(profile) ?? [];
-      list.push(r);
-      byProfile.set(profile, list);
-    }
+    const entered = rows.filter((r) => str(r["status"]) !== "cancelled");
+    // One builder, run over whichever row set is being drawn. The grid is derived from the SAME
+    // rows as the curves — a grid built from the open book while the curves came from the whole day
+    // would clip the as-entered view to whatever happened to still be open.
+    const buildArms = (source: Array<Record<string, unknown>>): MeicForestArm[] => {
+      if (source.length === 0) return [];
+      const byProfile = new Map<string, Array<Record<string, unknown>>>();
+      for (const r of source) {
+        const profile = str(r["risk_profile"]) ?? "?";
+        const list = byProfile.get(profile) ?? [];
+        list.push(r);
+        byProfile.set(profile, list);
+      }
+      const prices = forestGrid(
+        source.flatMap((r) => {
+          const w = num(r["wing_width"]) ?? 0;
+          const p = num(r["put_strike"]) ?? 0;
+          const c = num(r["call_strike"]) ?? 0;
+          return [p - w, p, c, c + w];
+        }),
+      );
+      return [...byProfile.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([profile, list]) => {
+          const positions = list.map((r) => ({
+            icOrderId: str(r["ic_order_id"]) ?? "",
+            putStrike: num(r["put_strike"]) ?? 0,
+            callStrike: num(r["call_strike"]) ?? 0,
+            wingWidth: num(r["wing_width"]) ?? 0,
+            netCredit: num(r["net_credit"]) ?? 0,
+            quantity: num(r["quantity"]) ?? 1,
+          }));
+          const perPosition = positions.map((pp) => ({
+            icOrderId: pp.icOrderId,
+            pnl: prices.map((sp) => payoffAt(icLegs(pp), sp) * pp.quantity),
+          }));
+          const pnl = prices.map((_, i) => perPosition.reduce((sum, pp) => sum + (pp.pnl[i] ?? 0), 0));
+          return { profile, positions, prices, pnl, perPosition };
+        });
+    };
 
-    const allStrikes = open.flatMap((r) => {
-      const w = num(r["wing_width"]) ?? 0;
-      const p = num(r["put_strike"]) ?? 0;
-      const c = num(r["call_strike"]) ?? 0;
-      return [p - w, p, c, c + w];
-    });
-    const prices = forestGrid(allStrikes);
-
-    const arms: MeicForestArm[] = [...byProfile.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([profile, list]) => {
-        const positions = list.map((r) => ({
-          icOrderId: str(r["ic_order_id"]) ?? "",
-          putStrike: num(r["put_strike"]) ?? 0,
-          callStrike: num(r["call_strike"]) ?? 0,
-          wingWidth: num(r["wing_width"]) ?? 0,
-          netCredit: num(r["net_credit"]) ?? 0,
-          quantity: num(r["quantity"]) ?? 1,
-        }));
-        const perPosition = positions.map((p) => ({
-          icOrderId: p.icOrderId,
-          pnl: prices.map((s) => payoffAt(icLegs(p), s) * p.quantity),
-        }));
-        const pnl = prices.map((_, i) => perPosition.reduce((sum, p) => sum + (p.pnl[i] ?? 0), 0));
-        return { profile, positions, prices, pnl, perPosition };
-      });
+    const arms = buildArms(open);
+    const asEntered = buildArms(entered);
 
     // A stopped side has released its strikes. Reported per side rather than per
     // trade: MEIC stops each side independently, so a trade can have given back
     // its calls while its puts are still on the book.
+    // Deduped: a settled session resolves every trade, and emitting a row per strike per trade put
+    // 2,840 entries in this array for one day. What a reader needs is the SET of strikes a stop
+    // handed back, per arm and side, not one entry per trade that touched them.
+    const releasedKeys = new Set<string>();
     const released: MeicForest["releasedStrikes"] = [];
+    const pushReleased = (profile: string, strike: number, right: "P" | "C") => {
+      const key = `${profile}|${right}|${strike}`;
+      if (releasedKeys.has(key)) return;
+      releasedKeys.add(key);
+      released.push({ profile, strike, right, at: null });
+    };
     for (const r of rows) {
       const status = str(r["status"]);
       if (status === "open") continue;
@@ -975,17 +1013,27 @@ export function readMeicForest(
       const p = num(r["put_strike"]);
       const c = num(r["call_strike"]);
       if (p !== null) {
-        released.push({ profile, strike: p, right: "P", at: null });
-        if (w) released.push({ profile, strike: p - w, right: "P", at: null });
+        pushReleased(profile, p, "P");
+        if (w) pushReleased(profile, p - w, "P");
       }
       if (c !== null) {
-        released.push({ profile, strike: c, right: "C", at: null });
-        if (w) released.push({ profile, strike: c + w, right: "C", at: null });
+        pushReleased(profile, c, "C");
+        if (w) pushReleased(profile, c + w, "C");
       }
     }
 
     const symbol = str(open[0]?.["symbol"] ?? rows[0]?.["symbol"]) ?? null;
     const lastSpot = num(rows[rows.length - 1]?.["underlying_price_entry"]);
-    return { mode, tradeDate, symbol, arms, releasedStrikes: released, lastSpot };
+    return {
+      mode,
+      tradeDate,
+      symbol,
+      tradesToday: rows.length,
+      openPositions: open.length,
+      asEntered,
+      arms,
+      releasedStrikes: released,
+      lastSpot,
+    };
   });
 }
