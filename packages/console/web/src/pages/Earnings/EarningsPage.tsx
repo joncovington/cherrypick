@@ -5,8 +5,11 @@ import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { TabStrip, Pager, usePage } from "../../components/ScopeBar";
 import { EarningsDetailCards } from "./EarningsDetail";
+import { EarningsLiveCard, EarningsManagementLog } from "./EarningsLive";
 
-const TABS = ["overview", "strategy detail", "upcoming"] as const;
+// "open" leads: with positions managed rather than force-closed the next morning, what is
+// carrying risk right now is the question the page is most often opened to answer.
+const TABS = ["open", "overview", "strategy detail", "upcoming"] as const;
 
 interface UpcomingRow {
   symbol: string;
@@ -101,6 +104,12 @@ export function EarningsPage() {
       </div>
 
       <div className="cards cards-wide">
+        {tab === "open" && (
+          <>
+            <EarningsLiveCard />
+            <EarningsManagementLog />
+          </>
+        )}
         {tab === "strategy detail" && <EarningsDetailCards mode="paper" />}
         {tab === "overview" && (
         <>
