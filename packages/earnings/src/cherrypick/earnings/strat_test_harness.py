@@ -306,6 +306,56 @@ def _open_session(trade: dict) -> str:
         return ""
 
 
+def _open_positions_with_marks() -> list[dict]:
+    """Open positions, each carrying its latest USABLE mark and how long it has been held.
+
+    Usable only: a refused mark records that we looked and could not price it, which is worth
+    keeping but is not a valuation. Reporting one as the position's worth would put a number in the
+    report that no quote ever supported.
+    """
+    out = []
+    for trade in metrics.load_open_trades():
+        marks = db_paper.cmd_get_marks(
+            argparse.Namespace(order_id=trade["order_id"], session_date=None, limit=50)
+        )["marks"]
+        usable = next((m for m in marks if m.get("usable")), None)
+        out.append(
+            {
+                **trade,
+                "_mark": usable,
+                "_sessions_held": db_paper.session_span(trade.get("opened_at"), time.time()),
+            }
+        )
+    return out
+
+
+def _feed_quality(day: str) -> dict:
+    """What the data looked like on `day` — how many marks were taken, how many were refused and
+    why, and which decisions an execution gate held back."""
+    marks = db_paper.cmd_get_marks(argparse.Namespace(order_id=None, session_date=day, limit=5000))["marks"]
+    events = db_paper.cmd_get_management_events(
+        argparse.Namespace(order_id=None, session_date=day, limit=5000)
+    )["events"]
+
+    refusals: dict[str, int] = {}
+    for m in marks:
+        if not m.get("usable") and m.get("refusal"):
+            refusals[m["refusal"]] = refusals.get(m["refusal"], 0) + 1
+    gated: dict[str, int] = {}
+    for e in events:
+        if not e.get("executed") and e.get("gate"):
+            gated[e["gate"]] = gated.get(e["gate"], 0) + 1
+
+    return {
+        "marks": len(marks),
+        "usable": sum(1 for m in marks if m.get("usable")),
+        "refused": sum(1 for m in marks if not m.get("usable")),
+        "rest": sum(1 for m in marks if m.get("source") == "rest"),
+        "refusals": refusals,
+        "gated": gated,
+    }
+
+
 def _group_stats(trades: list[dict]) -> dict:
     """Win/loss/net/expectancy/profit-factor over a trade list, all net of costs
     (metrics.net_pnl subtracts entry+exit cost) -- the same numbers strategy_report.py reports."""
@@ -348,11 +398,12 @@ def _write_eod_report(day: str) -> Path:
 
     L = [f"# Earnings Paper Trading - EOD Report {day}", ""]
     L.append(
-        "_Deterministic forced-sampling paper book (strat_test). Defined-risk strategies only; "
-        "each position opens one afternoon and closes the next morning. Two sections, because the "
-        "two happen on different days: **Closed this session** is what settled this morning (realized "
-        "P&L, net of entry+exit costs); **Opened this session** is what was entered this afternoon and "
-        "is carried overnight (no P&L yet — capital at risk is the known max loss)._"
+        "_Deterministic forced-sampling paper book (strat_test). Defined-risk strategies only. "
+        "Positions are entered one afternoon and **managed** from there — a winner may be carried "
+        "up to three sessions, a loser closes on the first morning — so a position closing today "
+        "was not necessarily opened yesterday. **Closed this session** is what settled today "
+        "(realized P&L, net of entry+exit costs); **Still open** is everything carrying risk right "
+        "now, marked; **Opened this session** is what was entered this afternoon._"
     )
     L.append("")
     L.append("## Closed this session (realized P&L)")
@@ -411,12 +462,79 @@ def _write_eod_report(day: str) -> Path:
             )
         L.append("")
 
+    # Why each position closed --------------------------------------------------
+    # Under the managed lifecycle the reason is the finding: a session of profit targets and one of
+    # stops produce the same P&L line and mean completely different things. Every exit carries one,
+    # so this is a full accounting rather than a sample.
+    if trades:
+        by_reason: dict[str, list[dict]] = {}
+        for t in trades:
+            by_reason.setdefault(t.get("exit_reason") or "unrecorded", []).append(t)
+        L.append("## Why they closed")
+        L.append("| Reason | Trades | Net P&L | Avg hold (sessions) |")
+        L.append("|---|---|---|---|")
+        for reason, grp in sorted(by_reason.items(), key=lambda kv: -len(kv[1])):
+            holds = [t["hold_days"] for t in grp if t.get("hold_days") is not None]
+            avg_hold = f"{sum(holds) / len(holds):.1f}" if holds else "-"
+            net = sum(metrics.net_pnl(t) for t in grp)
+            L.append(f"| {reason} | {len(grp)} | {_money(round(net, 2))} | {avg_hold} |")
+        L.append("")
+
+    # Still open ----------------------------------------------------------------
+    # Positions were force-closed the next morning before the lifecycle change, so this section had
+    # nothing to say. Now a winner can be carried, and what it is worth mid-flight is the number
+    # that says whether carrying it was right -- reported from the latest usable mark, never from a
+    # refused one.
+    carried = _open_positions_with_marks()
+    if carried:
+        carried_risk = sum(t.get("capital_at_risk") or 0.0 for t in carried)
+        L.append("## Still open (carrying risk now)")
+        L.append(
+            f"- Positions: **{len(carried)}**, capital at risk **{_money(round(carried_risk, 2))}** "
+            "(defined max loss, summed)."
+        )
+        L.append("")
+        L.append("| Symbol | Strategy | Opened | Sessions held | Entry credit | Mark | Unrealized |")
+        L.append("|---|---|---|---|---|---|---|")
+        for t in sorted(carried, key=lambda x: (x["symbol"], x.get("strategy") or "")):
+            mark = t.get("_mark")
+            unreal = _money(round(mark["unrealized_pnl"], 2)) if mark and mark.get("unrealized_pnl") is not None else "-"
+            debit = f"{mark['exit_debit']:.2f}" if mark and mark.get("exit_debit") is not None else "_unpriced_"
+            L.append(
+                f"| {t['symbol']} | {t.get('strategy', '-')} | {_open_session(t) or '-'} | "
+                f"{t.get('_sessions_held', '-')} | {_money(t.get('entry_credit'))} | {debit} | {unreal} |"
+            )
+        L.append("")
+
+    # Feed quality --------------------------------------------------------------
+    # A day with few marks is not the same as a quiet day, and without this line the two are
+    # indistinguishable in the report -- the same reason flies records a per-tick feed ledger.
+    feed = _feed_quality(day)
+    if feed["marks"]:
+        L.append("## Feed quality")
+        L.append(
+            f"- Marks taken: **{feed['marks']}** ({feed['usable']} usable, {feed['refused']} refused"
+            + (f"; {feed['rest']} priced through the broker" if feed["rest"] else "")
+            + ")."
+        )
+        if feed["refusals"]:
+            L.append(
+                "- Refusals: "
+                + ", ".join(f"{reason} x{n}" for reason, n in sorted(feed["refusals"].items(), key=lambda kv: -kv[1]))
+                + "."
+            )
+        if feed["gated"]:
+            L.append(
+                "- Decisions held back by an execution gate: "
+                + ", ".join(f"{gate} x{n}" for gate, n in sorted(feed["gated"].items(), key=lambda kv: -kv[1]))
+                + " (recorded, retried on the next tick)."
+            )
+        L.append("")
+
     # Opened this session ------------------------------------------------------
     # The entry pass runs ~6 hours after the close pass that first wrote this file, so this section
     # is empty in the morning and fills in when the afternoon entry pass regenerates the report.
-    # These are the positions actually carrying overnight risk tonight -- distinct from the closed
-    # block above, which is this morning's settlements.
-    L.append("## Opened this session (carried overnight)")
+    L.append("## Opened this session")
     if opened:
         open_risk = sum(t.get("capital_at_risk") or 0.0 for t in opened)
         open_cost = sum(t.get("entry_cost") or 0.0 for t in opened)

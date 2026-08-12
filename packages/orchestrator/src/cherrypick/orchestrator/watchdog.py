@@ -575,7 +575,26 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
     findings: list[Finding] = []
     paper = mcfg.get("paper", {})
 
-    # (a) entry/exit have a driver (supervisor job registry, or the scheduled tasks pre-cutover)
+    # (a) entry/exit have a driver (supervisor job registry, or the scheduled tasks pre-cutover).
+    #
+    # Only for the two-daily-jobs shape. A self-healing earnings module runs ONE continuous job
+    # (`<name>-paper`, checked by the generic module coverage) whose loop does entry and exit from
+    # its own clock — so looking up `earnings-entry` there would raise a CRITICAL for a job that is
+    # correctly absent, every tick. entry_task_name/exit_task_name are kept in config for deleting
+    # the pre-cutover scheduled tasks by name, so their presence is not the discriminator; the kind
+    # is.
+    if paper.get("kind") == "cherrypick_scheduled":
+        findings.extend(_check_scheduled_entry_exit_jobs(name, paper))
+
+    # (b) Dolt reachability (only meaningful on trading days)
+    findings.extend(_check_earnings_dolt(name, paper, is_trading))
+    # (c) entry SLA — unchanged by the cutover: the loop writes the same heartbeat files.
+    findings.extend(_check_earnings_entry_sla(name, mcfg, paper, now_et, is_trading))
+    return findings
+
+
+def _check_scheduled_entry_exit_jobs(name: str, paper: dict[str, Any]) -> list[Finding]:
+    findings: list[Finding] = []
     for tkey, label in (("entry_task_name", "entry"), ("exit_task_name", "exit")):
         tn = paper.get(tkey)
         if not tn:
@@ -605,8 +624,11 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
             )
         else:
             findings.append(Finding(f"{name}.task.{label}", OK, f"Earnings {label} task", "registered"))
+    return findings
 
-    # (b) Dolt reachability (only meaningful on trading days)
+
+def _check_earnings_dolt(name: str, paper: dict[str, Any], is_trading: bool) -> list[Finding]:
+    findings: list[Finding] = []
     if paper.get("requires_dolt") and is_trading:
         if _dolt_reachable(paper.get("dolt_host", "127.0.0.1"), paper.get("dolt_port", 3306)):
             findings.append(Finding(f"{name}.dolt", OK, "Dolt server", "reachable"))
@@ -620,11 +642,23 @@ def _check_earnings(name: str, mcfg: dict[str, Any], now_et: datetime, is_tradin
                 )
             )
 
-    # (c) entry SLA — after entry_time+grace on a trading day, the run must have happened.
-    # The grace matters: the entry task fires AT entry_time, its subprocess may run up to
-    # 30 minutes (cli timeout 1800s), and the heartbeat is only written after it returns —
-    # so a comparison against entry_time alone raised CRITICAL for a run that was simply
-    # still in progress (the same false-alarm class _check_settlement's grace fixed).
+    return findings
+
+
+def _check_earnings_entry_sla(
+    name: str, mcfg: dict[str, Any], paper: dict[str, Any], now_et: datetime, is_trading: bool
+) -> list[Finding]:
+    """After entry_time+grace on a trading day, the entry run must have happened.
+
+    Unchanged by the lifecycle cutover: the loop writes the same heartbeat files the scheduled verb
+    used to, so the file and its shape are the contract rather than who writes it.
+
+    The grace matters: the scan starts AT entry_time and may run for many minutes, and the
+    heartbeat is only written when it returns — so a comparison against entry_time alone raised
+    CRITICAL for a run that was simply still in progress (the same false-alarm class
+    _check_settlement's grace fixed).
+    """
+    findings: list[Finding] = []
     if is_trading and paper.get("entry_time"):
         try:
             eh, em = [int(x) for x in paper["entry_time"].split(":")]
