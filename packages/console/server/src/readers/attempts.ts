@@ -59,10 +59,20 @@ export interface ArmRailEntry {
   lastFillTs: string | null;
 }
 
+/** A reason two sessions cannot be pooled — a cadence change, an arm added mid-session. Recorded
+ *  by the modules themselves; surfaced here so a reader cannot pool across one unknowingly. */
+export interface MeasurementBreak {
+  arm: string;
+  reason: string;
+}
+
 export interface AttemptsPayload {
   mode: TradingMode;
   module: "meic" | "flies";
   tradeDate: string | null;
+  /** Flies records these in its decision journal; MEIC has no equivalent lane yet, so this is
+   *  empty there rather than fabricated. */
+  breaks: MeasurementBreak[];
   arms: ArmRailEntry[];
   /** Every attempt for the day, oldest first — the attempt timeline's source. */
   timeline: AttemptRow[];
@@ -135,7 +145,7 @@ export function readEntryAttempts(
 ): AttemptsPayload {
   const spec = SPECS[module];
   const dbPath = path.join(spec.dir(config), spec.file(mode));
-  const empty: AttemptsPayload = { mode, module, tradeDate: null, arms: [], timeline: [] };
+  const empty: AttemptsPayload = { mode, module, tradeDate: null, breaks: [], arms: [], timeline: [] };
 
   return withReadOnlyDb<AttemptsPayload>(dbPath, empty, (db) => {
     if (!hasColumn(db, spec.table, "outcome")) return empty;
@@ -199,10 +209,28 @@ export function readEntryAttempts(
       }
     }
 
+    // mode='cadence' is the lane this ledger keeps its measurement breaks in — one place to query
+    // for "why can these sessions not be pooled". Absent on MEIC, whose journal has no such lane.
+    let breaks: MeasurementBreak[] = [];
+    if (module === "flies") {
+      try {
+        breaks = db
+          .prepare<[string], { arm: string | null; reason: string | null }>(
+            "SELECT arm, reason FROM fly_decisions WHERE trade_date = ? AND mode = 'cadence'",
+          )
+          .all(tradeDate)
+          .map((r) => ({ arm: r.arm ?? "*", reason: r.reason ?? "" }))
+          .filter((b) => b.reason !== "");
+      } catch {
+        breaks = [];
+      }
+    }
+
     return {
       mode,
       module,
       tradeDate,
+      breaks,
       arms: [...byArm.values()].sort((a, b) => a.arm.localeCompare(b.arm)),
       timeline,
     };

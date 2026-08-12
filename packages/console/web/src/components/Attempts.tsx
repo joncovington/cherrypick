@@ -44,6 +44,7 @@ export interface AttemptsPayload {
   mode: TradingMode;
   module: "meic" | "flies";
   tradeDate: string | null;
+  breaks: Array<{ arm: string; reason: string }>;
   arms: ArmRailEntry[];
   timeline: AttemptRow[];
 }
@@ -167,6 +168,14 @@ export function ArmRail({
         <h2>Arms{data?.tradeDate != null ? ` (${data.tradeDate})` : ""}</h2>
         <span className="muted lbl">one portfolio each · unbounded capital · paced by cadence</span>
       </div>
+      {/* Measurement breaks, stated where the numbers are read rather than left in a journal
+          nobody opens. A cadence change or an arm added mid-session makes this day non-poolable
+          with its neighbours, and a reader comparing arms has no other way to know. */}
+      {(data?.breaks ?? []).map((b, i) => (
+        <p key={i} className="stale-note" style={{ marginTop: i === 0 ? 0 : "0.3rem" }}>
+          <strong>measurement break{b.arm !== "*" ? ` (${b.arm})` : ""}:</strong> {b.reason}
+        </p>
+      ))}
       {isLoading ? (
         <span className="skeleton skeleton-text" style={{ width: "60%" }} />
       ) : arms.length === 0 ? (
@@ -215,11 +224,28 @@ export function ArmRail({
                   )}
                 </div>
 
+                {/* Fills per OPPORTUNITY, not fills alone. With every arm on unbounded capital and
+                    the same market, this ratio and the rule that consumed the rest IS the
+                    experiment: on 2026-08-11 control took 9 of 1,505 and the binding rule was the
+                    duplicate check, not the cadence everyone assumed. */}
                 <div className="muted" style={{ fontSize: 11, marginTop: "0.25rem" }}>
+                  {a.fills} of {a.attempts.toLocaleString()} opportunities
+                  {a.attempts > 0 && ` · ${((a.fills / a.attempts) * 100).toFixed(1)}%`}
+                </div>
+
+                <div className="muted" style={{ fontSize: 11, marginTop: "0.15rem" }}>
                   {lastFill !== null
                     ? `last fill ${clockOf(a.lastFillTs)} · ${fmtGap((now - lastFill) / 1000)} ago`
                     : "no fill yet today"}
                 </div>
+
+                {/* The count that would have stopped a debrief calling a two-position arm a
+                    validated thesis. On the card, not in a tooltip. */}
+                {a.fills > 0 && a.fills < 5 && (
+                  <div style={{ fontSize: 11, marginTop: "0.15rem", color: COLOR_OF["no_fill"] }}>
+                    {a.fills} {a.fills === 1 ? "entry" : "entries"} — too few to read
+                  </div>
+                )}
 
                 {/* Refusals as a proportion bar: which rule is actually doing the
                     work on this arm today, at a glance and without a table. */}

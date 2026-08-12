@@ -165,6 +165,16 @@ export function FliesPage() {
 
       {tab === "today" && (
       <div className="cards cards-wide">
+        <ArmRail module="flies" mode={mode} date={filter.date} />
+
+        <AttemptTimeline module="flies" mode={mode} date={filter.date} />
+
+        <OccupancyMap module="flies" mode={mode} date={filter.date} />
+
+        {/* The aggregate sits BELOW the per-arm views, and that ordering is the point. Every arm is
+            an independent portfolio on unbounded capital, so a net summed across six deliberately
+            different strategies cannot move for any reason worth acting on. It is context, not the
+            headline. */}
         <section className="card">
           <h2>{a?.today.tradeDate !== null && a !== undefined ? `latest session — ${a.today.tradeDate}` : "latest session"}</h2>
           <div className="stats-grid">
@@ -203,11 +213,6 @@ export function FliesPage() {
           </div>
         </section>
 
-        <ArmRail module="flies" mode={mode} date={filter.date} />
-
-        <AttemptTimeline module="flies" mode={mode} date={filter.date} />
-
-        <OccupancyMap module="flies" mode={mode} date={filter.date} />
 
         <ForestCard mode={mode} filter={filter} />
 
