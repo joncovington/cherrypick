@@ -615,7 +615,12 @@ def cmd_status(args) -> dict:
     return {
         "ok": True,
         "session": session,
-        "phase": phase_for(datetime.now(ET), scanner._load_config(), entry_done=entry_already_ran(session)),
+        "phase": phase_for(
+            datetime.now(ET),
+            scanner._load_config(),
+            entry_done=entry_already_ran(session),
+            forward_scan_done=forward_scan_already_ran(session),
+        ),
         "last_iteration": iterations[0] if iterations else None,
         "open_positions": len(positions),
         "lock_held": lock_path().exists(),
