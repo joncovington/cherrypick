@@ -53,13 +53,16 @@ export function FliesPage() {
   // count as evidence. "ALL" reaches the XSP books too — a different trade at 1/5 the width and
   // 4x the fee drag — so widening is a stated choice, never the quiet default.
   const [era, setEra] = useState<string | null>(null);
+  // Only meaningful with era ALL — the current era is SPX alone, so the select hides itself
+  // rather than offering a one-option filter.
+  const [symbol, setSymbol] = useState<string | null>(null);
   const [tab, setTab] = useState<FliesTab>("today");
-  const filter: FliesFilter = { arm, date, era };
+  const filter: FliesFilter = { arm, date, symbol, era };
   const meta = useFliesMeta(mode, era);
   // Two tables on one payload, each with its own page — turning one leaves the
   // other where it was. Both reset when the filter changes underneath them.
-  const booksPage = usePage([mode, arm, date, era]);
-  const positionsPage = usePage([mode, arm, date, era]);
+  const booksPage = usePage([mode, arm, date, symbol, era]);
+  const positionsPage = usePage([mode, arm, date, symbol, era]);
   const { data, isLoading, isError, isPlaceholderData } = useFlies(mode, filter, booksPage.page, positionsPage.page);
   const analytics = useFliesAnalytics(mode, filter);
   const a = analytics.data;
@@ -71,7 +74,8 @@ export function FliesPage() {
     if (meta.data === undefined) return;
     if (arm !== null && !meta.data.arms.includes(arm)) setArm(null);
     if (date !== null && !meta.data.dates.includes(date)) setDate(null);
-  }, [meta.data, arm, date]);
+    if (symbol !== null && !meta.data.symbols.includes(symbol)) setSymbol(null);
+  }, [meta.data, arm, date, symbol]);
 
   return (
     <div className="page">
@@ -85,8 +89,10 @@ export function FliesPage() {
             </button>
           ))}
         </div>
-        {tab === "today" && (
-        <>
+        {/* Arm, symbol and era scope EVERY tab — a per-arm ranking on History or an equity curve on
+            Performance is exactly where a silently-pooled era does the most damage. Only the date
+            select stays Today-only: the multi-day views drop it, since pinning one session would
+            empty them. */}
         <select
           className="text-input"
           value={arm ?? ""}
@@ -100,6 +106,21 @@ export function FliesPage() {
             </option>
           ))}
         </select>
+        {(meta.data?.symbols.length ?? 0) > 1 && (
+          <select
+            className="text-input"
+            value={symbol ?? ""}
+            onChange={(e) => setSymbol(e.target.value === "" ? null : e.target.value)}
+            aria-label="symbol filter"
+          >
+            <option value="">all symbols</option>
+            {meta.data?.symbols.map((sym) => (
+              <option key={sym} value={sym}>
+                {sym}
+              </option>
+            ))}
+          </select>
+        )}
         <select
           className="text-input"
           value={era ?? ""}
@@ -110,6 +131,8 @@ export function FliesPage() {
           <option value="">SPX era (current)</option>
           <option value="ALL">all eras</option>
         </select>
+        {tab === "today" && (
+        <>
         <select
           className="text-input"
           value={date ?? ""}
@@ -131,13 +154,14 @@ export function FliesPage() {
       {tab === "history" && (
         <HistoryTab
           mode={mode}
+          filter={filter}
           onReplayDay={(d) => {
             setDate(d);
             setTab("today");
           }}
         />
       )}
-      {tab === "performance" && <PerformanceTab mode={mode} />}
+      {tab === "performance" && <PerformanceTab mode={mode} filter={filter} />}
 
       {tab === "today" && (
       <div className="cards cards-wide">

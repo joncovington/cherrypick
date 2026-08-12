@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { useFliesTradeLog } from "../../lib/api";
+import { useFliesTradeLog, fliesQuery, type FliesFilter } from "../../lib/api";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
 
@@ -26,11 +26,11 @@ interface History {
   dailyPnl: Array<{ date: string; trades: number; netPnl: number }>;
 }
 
-function useHistory(mode: TradingMode) {
+function useHistory(mode: TradingMode, filter: FliesFilter) {
   return useQuery<History>({
-    queryKey: ["flies-history", mode],
+    queryKey: ["flies-history", mode, filter.arm, filter.symbol, filter.era],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/history?mode=${mode}`);
+      const res = await fetch(`/api/flies/history?${fliesQuery(mode, { ...filter, date: null })}`);
       if (!res.ok) throw new Error(`history: HTTP ${res.status}`);
       return (await res.json()) as History;
     },
@@ -107,8 +107,18 @@ export function FliesCalendar({
 
 const OUTCOMES = ["all", "wins", "losses", "pinned", "risk-free"] as const;
 
-export function HistoryTab({ mode, onReplayDay }: { mode: TradingMode; onReplayDay: (date: string) => void }) {
-  const { data, isLoading } = useHistory(mode);
+export function HistoryTab({
+  mode,
+  filter,
+  onReplayDay,
+}: {
+  mode: TradingMode;
+  filter: FliesFilter;
+  onReplayDay: (date: string) => void;
+}) {
+  // `date` is dropped on purpose: this tab answers questions ACROSS sessions, so pinning the day
+  // selected on the Today tab would empty it.
+  const { data, isLoading } = useHistory(mode, filter);
   const [outcome, setOutcome] = useState<(typeof OUTCOMES)[number]>("all");
   const [search, setSearch] = useState("");
 

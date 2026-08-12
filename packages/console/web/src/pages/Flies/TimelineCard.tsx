@@ -24,9 +24,9 @@ interface Timeline {
 
 function useTimeline(mode: TradingMode, filter: FliesFilter) {
   return useQuery<Timeline>({
-    queryKey: ["flies-timeline", mode, filter.date, filter.era],
+    queryKey: ["flies-timeline", mode, filter.date, filter.symbol, filter.era],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/timeline?${fliesQuery(mode, { arm: null, date: filter.date, era: filter.era })}`);
+      const res = await fetch(`/api/flies/timeline?${fliesQuery(mode, { arm: null, date: filter.date, symbol: filter.symbol, era: filter.era })}`);
       if (!res.ok) throw new Error(`timeline: HTTP ${res.status}`);
       return (await res.json()) as Timeline;
     },

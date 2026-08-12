@@ -95,6 +95,8 @@ export function useMeic(mode: TradingMode, q: MeicTradeQuery) {
 export interface FliesFilter {
   arm: string | null;
   date: string | null;
+  /** null = every symbol in scope. Only meaningful with era "ALL" — the current era is SPX alone. */
+  symbol: string | null;
   /** null = the module's current era (SPX from 2026-08-01); "ALL" = every era, a stated choice. */
   era: string | null;
 }
@@ -103,6 +105,7 @@ export function fliesQuery(mode: TradingMode, filter: FliesFilter): string {
   const params = new URLSearchParams({ mode });
   if (filter.arm !== null) params.set("arm", filter.arm);
   if (filter.date !== null) params.set("date", filter.date);
+  if (filter.symbol !== null) params.set("symbol", filter.symbol);
   if (filter.era !== null) params.set("era", filter.era);
   return params.toString();
 }
@@ -165,10 +168,10 @@ export function useFliesTradeLog(mode: TradingMode, outcome: string, search: str
 /** The filter selects' own options, narrowed to the same era as the data — an option that selects
  *  nothing reads as "nothing happened" rather than "not in this era". */
 export function useFliesMeta(mode: TradingMode, era: string | null = null) {
-  return useQuery<{ arms: string[]; dates: string[] }>({
+  return useQuery<{ arms: string[]; dates: string[]; symbols: string[] }>({
     queryKey: ["flies-meta", mode, era],
     queryFn: () =>
-      getJson<{ arms: string[]; dates: string[] }>(
+      getJson<{ arms: string[]; dates: string[]; symbols: string[] }>(
         `/api/flies/meta?mode=${mode}${era !== null ? `&era=${era}` : ""}`,
       ),
     staleTime: 300_000,

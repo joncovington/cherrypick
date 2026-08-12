@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
+import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { fmtMoney } from "../../components/DataTable";
 
 interface Performance {
@@ -38,11 +39,13 @@ interface Performance {
 
 const GRANULARITIES = ["daily", "weekly", "monthly"] as const;
 
-function usePerformance(mode: TradingMode, granularity: string) {
+function usePerformance(mode: TradingMode, granularity: string, filter: FliesFilter) {
   return useQuery<Performance>({
-    queryKey: ["flies-performance", mode, granularity],
+    queryKey: ["flies-performance", mode, granularity, filter.arm, filter.symbol, filter.era],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/performance?mode=${mode}&granularity=${granularity}`);
+      const res = await fetch(
+        `/api/flies/performance?${fliesQuery(mode, { ...filter, date: null })}&granularity=${granularity}`,
+      );
       if (!res.ok) throw new Error(`performance: HTTP ${res.status}`);
       return (await res.json()) as Performance;
     },
@@ -146,10 +149,11 @@ function CompletionTrend({ trend }: { trend: Performance["completionTrend"] }) {
   );
 }
 
-export function PerformanceTab({ mode }: { mode: TradingMode }) {
+export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: FliesFilter }) {
   const [granularity, setGranularity] = useState<(typeof GRANULARITIES)[number]>("daily");
   const [cumulative, setCumulative] = useState(true);
-  const { data, isLoading } = usePerformance(mode, granularity);
+  // `date` dropped: an equity curve pinned to one day is a point.
+  const { data, isLoading } = usePerformance(mode, granularity, filter);
   const t = data?.tiles;
   const c = data?.completion;
   const lvp = data?.liveVsPaper ?? null;

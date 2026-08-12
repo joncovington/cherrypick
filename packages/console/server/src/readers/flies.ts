@@ -22,6 +22,8 @@ export const CURRENT_ERA = { symbol: "SPX", from: "2026-08-01" } as const;
 export interface FliesFilter {
   arm: string | null;
   date: string | null;
+  /** null = every symbol in scope. Only meaningful with era "ALL"; the current era is SPX alone. */
+  symbol: string | null;
   /** null = the current era; "ALL" = every era, deliberately. */
   era: string | null;
 }
@@ -44,6 +46,10 @@ function filterSql(filter: FliesFilter): { where: string; params: string[] } {
   if (filter.date !== null) {
     clauses.push("trade_date = ?");
     params.push(filter.date);
+  }
+  if (filter.symbol !== null) {
+    clauses.push("symbol = ?");
+    params.push(filter.symbol);
   }
   // Era last, so an explicit date the caller asked for is never silently overridden — asking for a
   // specific XSP-era day and getting an empty page would read as "nothing happened" rather than
@@ -161,25 +167,35 @@ export function readFliesMeta(
   config: ConsoleConfig,
   mode: TradingMode,
   era: string | null = null,
-): { arms: string[]; dates: string[] } {
+): { arms: string[]; dates: string[]; symbols: string[] } {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
   const scope = era === "ALL" ? "" : " AND symbol = ? AND trade_date >= ?";
   const params: string[] = era === "ALL" ? [] : [CURRENT_ERA.symbol, CURRENT_ERA.from];
-  return withReadOnlyDb<{ arms: string[]; dates: string[] }>(dbPath, { arms: [], dates: [] }, (db) => ({
-    arms: db
-      .prepare<string[], { arm: string }>(
-        `SELECT DISTINCT arm FROM fly_positions WHERE arm IS NOT NULL${scope} ORDER BY arm`,
-      )
-      .all(...params)
-      .map((r) => r.arm),
-    dates: db
-      .prepare<string[], { d: string }>(
-        `SELECT DISTINCT trade_date AS d FROM fly_positions WHERE 1=1${scope} ORDER BY trade_date DESC`,
-      )
-      .all(...params)
-      .map((r) => r.d),
-  }));
+  return withReadOnlyDb<{ arms: string[]; dates: string[]; symbols: string[] }>(
+    dbPath,
+    { arms: [], dates: [], symbols: [] },
+    (db) => ({
+      arms: db
+        .prepare<string[], { arm: string }>(
+          `SELECT DISTINCT arm FROM fly_positions WHERE arm IS NOT NULL${scope} ORDER BY arm`,
+        )
+        .all(...params)
+        .map((r) => r.arm),
+      dates: db
+        .prepare<string[], { d: string }>(
+          `SELECT DISTINCT trade_date AS d FROM fly_positions WHERE 1=1${scope} ORDER BY trade_date DESC`,
+        )
+        .all(...params)
+        .map((r) => r.d),
+      symbols: db
+        .prepare<string[], { s: string }>(
+          `SELECT DISTINCT symbol AS s FROM fly_positions WHERE symbol IS NOT NULL${scope} ORDER BY symbol`,
+        )
+        .all(...params)
+        .map((r) => r.s),
+    }),
+  );
 }
 
 /** The profit forest: per-arm book payoff curves for the latest (or given) day. */
@@ -753,13 +769,44 @@ export function readFliesTradeLog(
   });
 }
 
-export function readFliesHistory(config: ConsoleConfig, mode: TradingMode): FliesHistory {
+/**
+ * The multi-day views' scope: arm, symbol and era — deliberately NOT date.
+ *
+ * History and Performance answer questions ACROSS sessions, so pinning a day would empty them.
+ * They are otherwise narrowed exactly like the day views, and by the same era default: a per-arm
+ * ranking or an equity curve that silently pools the XSP books against the SPX ones is comparing
+ * two different trades at 5x different width and 4x different fee drag.
+ */
+function scopeClause(filter: FliesFilter): { and: string; params: string[] } {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (filter.arm !== null) {
+    clauses.push("arm = ?");
+    params.push(filter.arm);
+  }
+  if (filter.symbol !== null) {
+    clauses.push("symbol = ?");
+    params.push(filter.symbol);
+  }
+  if (filter.era !== "ALL") {
+    clauses.push("symbol = ? AND trade_date >= ?");
+    params.push(CURRENT_ERA.symbol, CURRENT_ERA.from);
+  }
+  return { and: clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "", params };
+}
+
+export function readFliesHistory(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  filter: FliesFilter,
+): FliesHistory {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
   const empty: FliesHistory = { mode, byArm: [], byEntryMode: [], byEntryWindow: [], feeDrag: [], dailyPnl: [] };
   return withReadOnlyDb<FliesHistory>(dbPath, empty, (db) => {
-    const legged = pnlRows(db, `${SETTLED} AND entry_mode = 'legged'`, []);
-    const all = pnlRows(db, SETTLED, []);
+    const sc = scopeClause(filter);
+    const legged = pnlRows(db, `${SETTLED} AND entry_mode = 'legged'${sc.and}`, sc.params);
+    const all = pnlRows(db, `${SETTLED}${sc.and}`, sc.params);
     const byArm = groupSummaries(legged, "arm", "arm").sort((a, b) => b.netPnl - a.netPnl);
 
     const dailyMap = new Map<string, PnlRow[]>();
@@ -835,7 +882,12 @@ function bucketKey(tradeDate: string, granularity: string): string {
 const ABORT_MIN_LIVE_ENTRIES = 30;
 const ABORT_COMPLETION_GAP = 0.15;
 
-export function readFliesPerformance(config: ConsoleConfig, mode: TradingMode, granularity: string): FliesPerformance {
+export function readFliesPerformance(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  granularity: string,
+  filter: FliesFilter,
+): FliesPerformance {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
   const empty: FliesPerformance = {
@@ -850,7 +902,8 @@ export function readFliesPerformance(config: ConsoleConfig, mode: TradingMode, g
     liveVsPaper: null,
   };
   const result = withReadOnlyDb<FliesPerformance>(dbPath, empty, (db) => {
-    const all = pnlRows(db, SETTLED, []);
+    const sc = scopeClause(filter);
+    const all = pnlRows(db, `${SETTLED}${sc.and}`, sc.params);
     const tilesBase = summarize(all.map(toPnl));
 
     const buckets = new Map<string, PnlRow[]>();
@@ -875,12 +928,12 @@ export function readFliesPerformance(config: ConsoleConfig, mode: TradingMode, g
     // completion_stats, legged: the counterfactual's floor split reads the
     // decisions journal (the engine's own recorded reason), never recomputed.
     const modeRows = db
-      .prepare<[], Record<string, unknown>>(
+      .prepare<string[], Record<string, unknown>>(
         `SELECT position_id, kind, credit, best_completing_debit, completion_latency_min,
                 underlying_at_entry, spot_at_completion
-           FROM fly_positions WHERE entry_mode = 'legged'`,
+           FROM fly_positions WHERE entry_mode = 'legged'${sc.and}`,
       )
-      .all();
+      .all(...sc.params);
     const floorGated = new Set(
       db
         .prepare<[], { position_id: string | null }>(
@@ -914,11 +967,11 @@ export function readFliesPerformance(config: ConsoleConfig, mode: TradingMode, g
       .filter((v): v is number => v !== null);
 
     const trend = db
-      .prepare<[], Record<string, unknown>>(
+      .prepare<string[], Record<string, unknown>>(
         `SELECT trade_date, COUNT(*) AS legged, SUM(CASE WHEN kind = 'fly' THEN 1 ELSE 0 END) AS completed
-           FROM fly_positions WHERE entry_mode = 'legged' GROUP BY trade_date ORDER BY trade_date`,
+           FROM fly_positions WHERE entry_mode = 'legged'${sc.and} GROUP BY trade_date ORDER BY trade_date`,
       )
-      .all()
+      .all(...sc.params)
       .map((r) => {
         const legged = Number(r["legged"]);
         const done = Number(r["completed"]);
