@@ -137,9 +137,8 @@ shared gates.
 
 **Exit:** a per-leg delta stop first (`leg_stop_delta_abs`, default **0.60**), then
 `evaluate_credit_spread_exit()` — the same function the credit strategies use, not the debit one.
-25% profit target; the stop is `stop_loss_credit_multiple`, unset in config so the **2.0× credit**
-default applies. The `stop_loss_pct_of_debit: 0.40` in this strategy's config block is **never
-read** by that function — see [Exit Strategy Guide](./10-exits.md).
+25% profit target; the stop is `stop_loss_credit_multiple`, set explicitly to **2.0× credit** in
+this strategy's config block — see [Exit Strategy Guide](./10-exits.md).
 
 ```
 Earnings expected to move down (put side richer)
