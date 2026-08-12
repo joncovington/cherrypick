@@ -326,6 +326,20 @@ def derive_jobs(
         ),
     )
 
+    # --- desk-notify (broker call + webhook → its own job, never on the watchdog tick)
+    dn = cfgmod.desk_notify_settings(cfg)
+    add(
+        "desk-notify",
+        lambda: JobSpec(
+            id="desk-notify",
+            argv=_run_py(pythonw, launcher, "notify-desk"),
+            kind=KIND_INTERVAL,
+            interval_seconds=int(dn["interval_minutes"]) * 60,
+            enabled=dn["enabled"],
+            enabled_reason="" if dn["enabled"] else "disabled in config (desk_notify)",
+        ),
+    )
+
     # --- per-module jobs
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         paper = mcfg.get("paper", {}) or {}

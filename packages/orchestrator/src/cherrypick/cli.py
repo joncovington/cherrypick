@@ -56,6 +56,7 @@ Subcommands:
   notify-test          Fire a test notification through all configured channels.
   notify-trades        Push new paper entries/exits to the trade channels (also runs on each watchdog tick).
   notify-follow        Push new tastylive Follow Feed orders to their own channel (own task, network call).
+  notify-desk          Card manual-desk orders and watch them to fill (own task, broker + network call).
   secrets-set          Store a slack/discord webhook URL in the OS keyring (--channel; --url or prompt).
   secrets-status       Show which push-channel webhooks are configured (secret-free).
   secrets-delete       Remove a stored webhook (--channel).
@@ -81,6 +82,7 @@ from cherrypick.orchestrator import (
     configedit,
     connect,
     dashboard,
+    desk_notifier,
     doctor,
     eod_digest,
     eod_insight,
@@ -832,6 +834,10 @@ def cmd_notify_follow(cfg) -> None:
     _emit(follow_notifier.run(cfg))
 
 
+def cmd_notify_desk(cfg) -> None:
+    _emit(desk_notifier.run(cfg))
+
+
 def _resolve_session(args) -> str | None:
     """The session an EOD-scoped command targets: an explicit --date wins, else --eod means today
     (ET), else None (the all-time cumulative view)."""
@@ -1073,6 +1079,7 @@ def main() -> None:
             "notify-test",
             "notify-trades",
             "notify-follow",
+            "notify-desk",
             "secrets-set",
             "secrets-status",
             "secrets-delete",
@@ -1198,6 +1205,7 @@ def main() -> None:
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),
         "notify-follow": lambda: cmd_notify_follow(cfg),
+        "notify-desk": lambda: cmd_notify_desk(cfg),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
         "run-earnings-symbol-watch": lambda: _run_earnings_symbol_watch(cfg),

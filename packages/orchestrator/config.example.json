@@ -428,6 +428,23 @@
     "task_name": "cherrypick-trade-notify",
     "interval_seconds": 30
   },
+  "desk_notify": {
+    "_comment": "Discord cards for MANUAL TRADING DESK orders (packages/desk), plus a fill watch. Posts a card when the desk submits an order and a second card when that order fills, cancels, is rejected, or expires. Reads the desk's append-only audit journal as a FILE and never imports cherrypick.desk - observing desk orders must never make the submit path reachable from scheduled code. It both calls the broker (read-only order status) and pushes a webhook, so like follow_feed it is its own scheduled job and is never called from the watchdog tick. OFF by default; set enabled=true, store the webhook (cherrypick secrets-set --channel discord), then re-run `install`.",
+    "_watch_note": "Fill detection is poll-first: the broker's order status is authoritative. The first pass after enabling SEEDS silently from the existing journal rather than backfilling a card for every order ever placed.",
+    "enabled": false,
+    "task_name": "cherrypick-desk-notify",
+    "interval_minutes": 1,
+    "channels": [
+      "log",
+      "discord"
+    ],
+    "journal_path": null,
+    "_journal_path_note": "Override the desk journal location. null uses the desk's own default, ~/.cherrypick/state/desk/journal.jsonl.",
+    "broker_keyring_service": "meicagent",
+    "account_number": null,
+    "_account_number_note": "Which account to resolve for order-status lookups. null uses the default account for those credentials."
+  },
+
   "follow_feed": {
     "_comment": "Push tastylive Follow Feed orders (other traders' fills, as shown on the platform's Follow page) to their own Discord channel. Reads two undocumented public GETs on https://follow.tastylive.com - no auth, no broker, read-only. UNLIKE every other notifier this one makes a NETWORK call, so it is its own scheduled task and is never called from the watchdog tick (the reliability path stays stdlib + OS shell only). A feed outage degrades to 'no notifications', never a failed tick. OFF by default; set enabled=true, store the webhook (cherrypick secrets-set --channel discord_follow), then re-run `install`.",
     "_filters_note": "All filters are optional and applied server-side by the feed itself; omit or leave empty for the whole feed. 'traders' are display names as they appear in /api/traders ('Jim Schultz', 'Katie'); 'underlying_symbols' an equity symbol list; 'earnings_only' true limits to earnings plays; 'open_close' is 'O' (opening orders only) or 'C' (closing only); 'strategy' matches one strategy name ('Vertical', 'Butterfly', 'Strangle').",

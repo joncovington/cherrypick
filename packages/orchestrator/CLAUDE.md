@@ -144,6 +144,16 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   task and is never called from the watchdog tick** — unlike `trade_notifier`, which is files-only and
   may ride the tick. Any future notifier that touches a network gets the same treatment: its own task,
   every request wrapped, an outage degrading to "no notifications" rather than a failed tick.
+  `desk_notifier.py` (`cherrypick notify-desk`, the `desk-notify` job) is the second such notifier and
+  gets the same treatment for two reasons rather than one — it pushes a Discord card *and* asks the
+  broker for order status. It cards each manual-desk order on submit and again when that order reaches
+  a terminal state (filled / cancelled / rejected / expired). Fill detection is **poll-first**: the
+  broker's own status is authoritative and an unreachable broker means "ask again next pass", never
+  "nothing happened". Critically it **reads the desk's audit journal as a file and never imports
+  `cherrypick.desk`** — observing desk orders must not make the submit path reachable from scheduled
+  code, which is the desk's own load-bearing invariant. Its first pass seeds from the existing journal
+  rather than backfilling a card per historical order (today's orders still join the watch list, since
+  an order placed minutes before the switch was flipped is exactly the one whose fill matters).
 - **Read surfaces read files, never the broker.** `report`/`calibrate`/`dashboard` read paper DBs (SQLite
   read-only), watchdog state, and logs. In particular the **static** `dashboard.py` render reads the
   **watchdog heartbeat** (`state/watchdog.last.json`) for health rather than re-running `doctor` (which

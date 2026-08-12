@@ -20,8 +20,23 @@ from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 _managers: dict[str, SessionManager] = {}
 
 
+def reset() -> None:
+    """Drop cached sessions so the next `get_session` builds a fresh one.
+
+    A session binds its async transport to the first event loop that drives it, and every
+    `asyncio.run` in the CLI creates *and closes* its own loop. A session cached across two such
+    calls therefore carries a transport bound to a closed loop, and the second call dies with
+    `RuntimeError: Event loop is closed` — which the desk reports as a preflight failure, making
+    `propose` impossible. Call this immediately before entering a new loop.
+    """
+    _managers.clear()
+
+
 def get_session(cfg: dict[str, Any]) -> Any:
     """A cached OAuth session for the configured broker keyring service.
+
+    The cache is only valid *within* one event loop — see `reset`, which every broker-touching CLI
+    helper calls before its `asyncio.run`.
 
     Falls back read-only to the suite-wide shared service (the single credential source), so a
     machine onboarded once needs no per-module entry — borrowing credentials is still not
