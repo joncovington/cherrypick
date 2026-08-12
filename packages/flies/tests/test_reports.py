@@ -408,3 +408,64 @@ def test_analysis_regime_section_survives_a_book_with_no_tags(conn):
     text = eodmod.build_eod_analysis(conn, DAY)
     assert "## What regimes did we trade into?" in text
     assert "No rows tagged yet for:" in text
+
+
+def test_paper_eod_carries_the_refusal_ledger_and_its_two_warnings(tmp_path):
+    """The refusals have to reach the deterministic file, because the EOD insight layer reads these
+    files and nothing else — a refusal recorded only in the database is invisible to the narrative.
+
+    Both warning lines are asserted because both come from specific failures: a debrief read a
+    two-position arm as a validated thesis, and an arm added mid-session was compared against a twin
+    that had traded all day.
+    """
+    conn = dbmod.connect(str(tmp_path / "paper_trades.db"))
+    for i in range(9):
+        dbmod.record_entry_attempt(
+            conn,
+            trade_date="2026-08-11",
+            arm="control",
+            symbol="SPX",
+            outcome="filled" if i < 6 else "cadence_blocked",
+            block_detail=None if i < 6 else "entry_cadence_wait",
+            seconds_until_cadence_clear=None if i < 6 else 120.0,
+        )
+    for _ in range(4):
+        dbmod.record_entry_attempt(
+            conn,
+            trade_date="2026-08-11",
+            arm="thin-arm",
+            symbol="SPX",
+            outcome="filled",
+        )
+    dbmod.record_decision(
+        conn,
+        trade_date="2026-08-11",
+        arm="thin-arm",
+        symbol="*",
+        mode="cadence",
+        reason="arm added mid-session; first session is PARTIAL",
+    )
+
+    text = eodmod.build_paper_eod(conn, "2026-08-11")
+    assert "## Entry attempts (the refusal ledger)" in text
+    # The counts an arm's own row must carry.
+    assert "| control | 9 | 6 | 3 |" in text.replace("  ", " ") or "| control | 9 | 6 | 3 " in text
+    assert "entry_cadence_wait x3" in text
+    assert "~120s avg" in text, "the cadence wait is the measured cost of the spacing"
+    # Six fills is a sample; four is not.
+    assert "Too few entries to read: thin-arm" in text
+    assert "control" not in text.split("Too few entries to read:")[1].split("\n")[0]
+    assert "Measurement break (thin-arm)" in text
+
+
+def test_the_refusal_ledger_degrades_on_a_pre_2026_08_11_ledger(tmp_path):
+    """A ledger written before the attempts table existed is a legitimate state, not an error — the
+    section says so rather than failing the whole report."""
+    import sqlite3
+
+    conn = dbmod.connect(str(tmp_path / "old.db"))
+    conn.execute("DROP TABLE fly_entry_attempts")
+    conn.commit()
+    text = eodmod.build_paper_eod(conn, "2026-08-11")
+    assert "a ledger written before 2026-08-11" in text
+    assert isinstance(text, str) and len(text) > 0

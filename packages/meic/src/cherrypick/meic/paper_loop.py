@@ -520,6 +520,88 @@ def _money(x):
     return _viz.fmt_money(x, none="-")
 
 
+def _entry_attempts_section(conn, day) -> list:
+    """The refusal ledger: every evaluated entry opportunity, by arm and outcome.
+
+    Added 2026-08-11, when each profile became an independent portfolio with unbounded capital.
+    Every arm now sees the same market with the same money, so the ONLY thing that differentiates
+    them is which entries the rules let through -- which makes the refusals the primary measurement
+    rather than a diagnostic. This is the section that carries them into the deterministic record,
+    and therefore into the EOD insight layer, which reads these files and nothing else.
+
+    Distinct from the Gate ledger above, which counts `gate_block` rows per stream. This is per
+    ATTEMPT: it can say how many opportunities an arm evaluated, how many it took, and how long it
+    spent waiting on its own cadence -- none of which a block count can express.
+
+    Also prints the LOW-SAMPLE line, and that is deliberate rather than decorative: a debrief read
+    a two-position arm as a validated thesis and wrote a tuning recommendation from it. An arm's
+    entry count is the fact that would have stopped it, so it goes in the record where the narrative
+    layer will see it.
+    """
+    L = ["## Entry attempts (the refusal ledger)"]
+    try:
+        rows = conn.execute(
+            "SELECT risk_profile, outcome, block_detail, COUNT(*) n, "
+            "       AVG(seconds_until_cadence_clear) avg_wait "
+            "  FROM entry_attempts WHERE trade_date=? GROUP BY 1, 2, 3",
+            (day,),
+        ).fetchall()
+    except sqlite3.Error:
+        L.append("_No `entry_attempts` table (a ledger written before 2026-08-11)._")
+        L.append("")
+        return L
+    if not rows:
+        L.append("_No entry attempts recorded today -- the loop did not reach its entry window._")
+        L.append("")
+        return L
+
+    by_arm = {}
+    for r in rows:
+        d = dict(r)
+        arm = by_arm.setdefault(d["risk_profile"], {"fills": 0, "refused": 0, "reasons": {}, "wait": []})
+        if d["outcome"] == "filled":
+            arm["fills"] += d["n"]
+        else:
+            arm["refused"] += d["n"]
+            key = d["block_detail"] or d["outcome"]
+            arm["reasons"][key] = arm["reasons"].get(key, 0) + d["n"]
+        if d["avg_wait"] is not None:
+            arm["wait"].append((d["avg_wait"], d["n"]))
+
+    L.append("| Arm | Evaluated | Filled | Refused | Dominant refusal | Cadence wait |")
+    L.append("|---|---|---|---|---|---|")
+    for name in sorted(by_arm):
+        a = by_arm[name]
+        total = a["fills"] + a["refused"]
+        top = max(a["reasons"].items(), key=lambda kv: kv[1]) if a["reasons"] else None
+        dominant = f"{top[0]} x{top[1]}" if top else "-"
+        if a["wait"]:
+            secs = sum(w * n for w, n in a["wait"]) / sum(n for _, n in a["wait"])
+            wait = f"~{secs:.0f}s avg"
+        else:
+            wait = "-"
+        L.append(f"| {name} | {total} | {a['fills']} | {a['refused']} | {dominant} | {wait} |")
+    L.append("")
+
+    thin = sorted(n for n, a in by_arm.items() if 0 < a["fills"] < 5)
+    flat = sorted(n for n, a in by_arm.items() if a["fills"] == 0)
+    if thin:
+        L.append(
+            f"**Too few entries to read: {', '.join(thin)}.** Under 5 fills is not a sample. Report "
+            "what these arms did; do not rank them, call them validated, or write a recommendation "
+            "from them."
+        )
+    if flat:
+        L.append(
+            f"**Took no entries: {', '.join(flat)}.** A gate held them out all session -- see the "
+            "dominant refusal above. Standing aside is a decision, not a gap, and an arm at zero "
+            "contributes no evidence about anything except the gate that refused it."
+        )
+    if thin or flat:
+        L.append("")
+    return L
+
+
 def _write_eod_report(day):
     """Write a deterministic end-of-day paper report for `day` to logs/paper-eod-<day>.md.
     Code-generated (no agent) so it runs unattended from the daemon's settlement pass. Uses
@@ -724,6 +806,8 @@ def _eod_supplement_lines(conn, day) -> list[str]:
     else:
         L.append("_No gate_block rows logged today (pre-Phase-1d data, or the loop didn't run)._")
     L.append("")
+
+    L += _entry_attempts_section(conn, day)
 
     # --- Stop-policy table: read-side derivations from `open`'s recorded paths, not separate
     # entry streams -- see stop_policies.py and analytics.stop_counterfactual. ---

@@ -317,3 +317,48 @@ def test_eod_analysis_reports_stops_that_actually_happened(tmp_path, monkeypatch
     # The attribution branch that was unreachable for the life of the ledger.
     assert "Put side did most of the stopping" in text
     assert "Put-side stops: 3" in text
+
+
+def test_paper_eod_carries_the_refusal_ledger(tmp_path, monkeypatch):
+    """Refusals have to reach the deterministic file: the EOD insight layer reads these files and
+    nothing else, so a refusal recorded only in the database is invisible to the narrative.
+
+    Also asserts the zero-entry line. `control` and `sign` took no trades on 2026-08-11 and a debrief
+    counted them as two independent confirmations of the IV-rank gate; they are one policy, and the
+    line says what an arm at zero actually contributes.
+
+    Builds its database through the REAL schema (`db.cmd_init_db`) rather than hand-rolled CREATE
+    TABLEs. A fixture that invents its own columns is how the "No side stops fired" bug survived its
+    own test for the life of the ledger; this file is not going to repeat that.
+    """
+    import sqlite3
+
+    db_path = tmp_path / "paper_trades.db"
+    monkeypatch.setenv("MEIC_DB_PATH", str(db_path))
+    monkeypatch.setattr(db, "_DB_PATH", str(db_path))
+    db.cmd_init_db(_ns())
+
+    con = sqlite3.connect(db_path)
+    for _ in range(7):
+        con.execute(
+            "INSERT INTO entry_attempts (ts, trade_date, risk_profile, symbol, outcome) "
+            "VALUES ('10:00', '2026-08-11', 'open', 'SPX', 'filled')"
+        )
+    for _ in range(12):
+        con.execute(
+            "INSERT INTO entry_attempts (ts, trade_date, risk_profile, symbol, outcome, block_detail) "
+            "VALUES ('10:00', '2026-08-11', 'control', 'SPX', 'gate_blocked', 'iv_rank_below_floor')"
+        )
+    con.commit()
+    con.close()
+
+    monkeypatch.setattr(paper_loop, "_PAPER_DB", str(db_path))
+    monkeypatch.setattr(paper_loop, "_LOG_FILE", tmp_path / "logs" / "paper_loop.log")
+    (tmp_path / "logs").mkdir(exist_ok=True)
+    paper_loop._write_eod_report("2026-08-11")
+    text = (tmp_path / "logs" / "paper-eod-2026-08-11.md").read_text(encoding="utf-8")
+
+    assert "## Entry attempts (the refusal ledger)" in text
+    assert "iv_rank_below_floor x12" in text
+    assert "Took no entries: control" in text
+    assert "Too few entries to read" not in text, "7 fills is a sample; the warning must not fire"
