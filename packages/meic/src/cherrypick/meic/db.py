@@ -293,6 +293,31 @@ CREATE TABLE IF NOT EXISTS entry_attempts (
     ic_order_id                 TEXT            -- set on the filled path, linking attempt to result
 );
 
+-- Why two sessions cannot be pooled: a cadence change, an arm added mid-session, a gate whose
+-- meaning moved. One row per break, written once and never again for the same change.
+--
+-- Added 2026-08-11. Flies has kept these as mode='cadence' rows in its decision journal since the
+-- tick-cadence cutover, and MEIC had no equivalent -- so on the day this module gained a universal
+-- entry cadence and two new arms, nothing in the ledger recorded that sessions either side of it are
+-- not comparable. A break that lives only in a commit message is invisible to every read surface and
+-- to whoever reads a per-arm ranking three weeks from now.
+--
+-- Deliberately its own table rather than a loop_log action: loop_log is per-iteration and rotates
+-- with volume, while a measurement break is a permanent property of the ledger and must outlive any
+-- retention policy applied to the iteration log.
+CREATE TABLE IF NOT EXISTS measurement_breaks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    break_date  TEXT NOT NULL,
+    scope       TEXT NOT NULL,   -- an arm/profile name, or '*' for the whole book
+    kind        TEXT NOT NULL,   -- 'cadence' | 'arm_added' | 'gate_changed' | ...
+    reason      TEXT NOT NULL,
+    detail      TEXT,
+    created_at  TEXT NOT NULL,
+    UNIQUE (break_date, scope, kind)
+);
+
+CREATE INDEX IF NOT EXISTS idx_measurement_breaks_date ON measurement_breaks (break_date);
+
 CREATE INDEX IF NOT EXISTS idx_entry_attempts_date ON entry_attempts (trade_date, risk_profile);
 CREATE INDEX IF NOT EXISTS idx_entry_attempts_outcome ON entry_attempts (trade_date, outcome);
 
@@ -1156,6 +1181,27 @@ def cmd_set_session_init(_args):
     _out({"ok": True, "session_init_at": now})
 
 
+def cmd_record_break(args):
+    """Record a measurement break -- a reason sessions either side of a date cannot be pooled.
+
+    Idempotent on (date, scope, kind), so a loop that notices the same change on every tick writes
+    one row. `scope` is an arm/profile name or '*' for the whole book.
+    """
+    now = str(_now_et())
+    conn = _connect()
+    conn.execute(
+        """INSERT INTO measurement_breaks (break_date, scope, kind, reason, detail, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(break_date, scope, kind) DO UPDATE SET
+             reason = excluded.reason,
+             detail = COALESCE(excluded.detail, detail)""",
+        (args.date or _today_et(), args.scope or "*", args.kind, args.reason, args.detail, now),
+    )
+    conn.commit()
+    conn.close()
+    _out({"ok": True, "date": args.date or _today_et(), "scope": args.scope or "*", "kind": args.kind})
+
+
 def cmd_rollup_daily_summary(args):
     """Recompute and store one session's numbers in `daily_summary`.
 
@@ -1401,6 +1447,7 @@ _COMMANDS = {
     "update_trade": cmd_update_trade,
     "save_daily_summary": cmd_save_daily_summary,
     "rollup_daily_summary": cmd_rollup_daily_summary,
+    "record_break": cmd_record_break,
     "save_market_context": cmd_save_market_context,
     "save_iteration_regime": cmd_save_iteration_regime,
     "record_stop_adjustment": cmd_record_stop_adjustment,
@@ -1532,6 +1579,13 @@ def main():
 
     p_getlegs = sub.add_parser("get_spread_legs")
     p_getlegs.add_argument("--ic_order_id", required=True)
+
+    p_brk = sub.add_parser("record_break")
+    p_brk.add_argument("--date")
+    p_brk.add_argument("--scope")
+    p_brk.add_argument("--kind", required=True)
+    p_brk.add_argument("--reason", required=True)
+    p_brk.add_argument("--detail")
 
     p_roll = sub.add_parser("rollup_daily_summary")
     p_roll.add_argument("--date")

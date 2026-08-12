@@ -7,6 +7,7 @@ import { Pager, usePage } from "../../components/ScopeBar";
 
 interface Summary {
   trades: number;
+  sessions: number;
   grossPnl: number;
   fees: number;
   netPnl: number;
@@ -41,16 +42,30 @@ function useHistory(mode: TradingMode, filter: FliesFilter) {
 function SummaryRows<T extends Summary>({ rows, label }: { rows: T[] | undefined; label: keyof T }) {
   return (
     <>
-      {rows?.map((r) => (
-        <tr key={String(r[label])}>
-          <td>{String(r[label])}</td>
-          <td>{r.trades}</td>
-          <td><PnlCell v={r.netPnl} /></td>
-          <td>{r.winRatePct !== null ? `${r.winRatePct.toFixed(0)}%` : "—"}</td>
-          <td>{r.avgPnl !== null ? fmtMoney(r.avgPnl) : "—"}</td>
-          <td>{r.profitFactor !== null ? r.profitFactor.toFixed(2) : "—"}</td>
-        </tr>
-      ))}
+      {rows?.map((r) => {
+        // Sessions are the unit of independence, so they decide whether the rest of the row means
+        // anything. Under 3 the net, win rate and profit factor are one or two days of weather;
+        // dimmed rather than hidden, because the row is still the honest record of what happened.
+        const thin = r.sessions < 3;
+        return (
+          <tr key={String(r[label])} style={thin ? { opacity: 0.55 } : undefined}>
+            <td>
+              {String(r[label])}
+              {thin && (
+                <span className="muted" style={{ fontSize: 10, marginLeft: 4 }} title="Fewer than 3 sessions — same-day trades share a regime, so this is one or two independent observations however many trades it holds.">
+                  thin
+                </span>
+              )}
+            </td>
+            <td>{r.trades}</td>
+            <td className={thin ? "muted" : undefined}>{r.sessions}</td>
+            <td><PnlCell v={r.netPnl} /></td>
+            <td>{r.winRatePct !== null ? `${r.winRatePct.toFixed(0)}%` : "—"}</td>
+            <td>{r.avgPnl !== null ? fmtMoney(r.avgPnl) : "—"}</td>
+            <td>{r.profitFactor !== null ? r.profitFactor.toFixed(2) : "—"}</td>
+          </tr>
+        );
+      })}
     </>
   );
 }
@@ -134,7 +149,10 @@ export function HistoryTab({
   const log = logQuery.data?.rows ?? [];
   const logTotal = logQuery.data?.total ?? 0;
 
-  const headers = ["", "trades", "net", "win %", "avg", "PF"];
+  // Sessions beside trades, everywhere. Same-day trades share a regime and are not independent
+  // observations — this module's own experiment docs put the effective N at the day count, so a
+  // per-arm net over 40 trades from 3 sessions is a 3-sample reading wearing a 40-sample coat.
+  const headers = ["", "trades", "sessions", "net", "win %", "avg", "PF"];
 
   return (
     <div className="cards cards-wide">

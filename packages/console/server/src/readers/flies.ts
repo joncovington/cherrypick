@@ -535,6 +535,8 @@ const SETTLED = "status = 'settled' AND void_reason IS NULL";
 
 export interface FliesSummary {
   trades: number;
+  /** Distinct settled sessions behind `trades` — the unit of independence. */
+  sessions: number;
   grossPnl: number;
   fees: number;
   netPnl: number;
@@ -550,9 +552,15 @@ interface PnlRow {
   gross: number;
   fees: number;
   pnl: number;
+  /** Carried so every summary can report SESSIONS beside trades. Same-day trades share a regime, so
+   *  they are not independent observations — this module's own experiment docs put the effective N
+   *  at the day count, and a per-arm net over 40 trades from 3 sessions is a 3-sample reading
+   *  wearing a 40-sample coat. */
+  day: string;
 }
 
 function summarize(rows: PnlRow[]): FliesSummary {
+  const sessions = new Set(rows.map((r) => r.day).filter((d) => d !== "")).size;
   const gross = rows.reduce((s, r) => s + r.gross, 0);
   const fees = rows.reduce((s, r) => s + r.fees, 0);
   const nets = rows.map((r) => r.pnl);
@@ -563,6 +571,7 @@ function summarize(rows: PnlRow[]): FliesSummary {
   const net = nets.reduce((s, n) => s + n, 0);
   return {
     trades: rows.length,
+    sessions,
     grossPnl: gross,
     fees,
     netPnl: net,
@@ -585,7 +594,12 @@ function pnlRows(db: import("better-sqlite3").Database, where: string, params: s
     .all(...params);
 }
 
-const toPnl = (r: Record<string, unknown>): PnlRow => ({ gross: Number(r["gross"]), fees: Number(r["fees"]), pnl: Number(r["pnl"]) });
+const toPnl = (r: Record<string, unknown>): PnlRow => ({
+  gross: Number(r["gross"]),
+  fees: Number(r["fees"]),
+  pnl: Number(r["pnl"]),
+  day: String(r["trade_date"] ?? ""),
+});
 
 function groupSummaries<T extends string>(rows: Array<Record<string, unknown>>, key: string, label: T): Array<Record<T, string> & FliesSummary> {
   const grouped = new Map<string, PnlRow[]>();

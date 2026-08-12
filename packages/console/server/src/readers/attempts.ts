@@ -70,8 +70,9 @@ export interface AttemptsPayload {
   mode: TradingMode;
   module: "meic" | "flies";
   tradeDate: string | null;
-  /** Flies records these in its decision journal; MEIC has no equivalent lane yet, so this is
-   *  empty there rather than fabricated. */
+  /** Flies records these as mode='cadence' rows in its decision journal; MEIC keeps a dedicated
+   *  `measurement_breaks` table. Different homes, one shape here — the pages should not have to
+   *  know which module stores it where. */
   breaks: MeasurementBreak[];
   arms: ArmRailEntry[];
   /** Every attempt for the day, oldest first — the attempt timeline's source. */
@@ -209,21 +210,29 @@ export function readEntryAttempts(
       }
     }
 
-    // mode='cadence' is the lane this ledger keeps its measurement breaks in — one place to query
-    // for "why can these sessions not be pooled". Absent on MEIC, whose journal has no such lane.
+    // Why sessions either side of this day cannot be pooled. Each module keeps these in its own
+    // home — flies as mode='cadence' rows in its decision journal, MEIC in a dedicated
+    // `measurement_breaks` table — and both degrade to none rather than failing the page, since a
+    // ledger predating either lane is a legitimate state.
     let breaks: MeasurementBreak[] = [];
-    if (module === "flies") {
-      try {
-        breaks = db
-          .prepare<[string], { arm: string | null; reason: string | null }>(
-            "SELECT arm, reason FROM fly_decisions WHERE trade_date = ? AND mode = 'cadence'",
-          )
-          .all(tradeDate)
-          .map((r) => ({ arm: r.arm ?? "*", reason: r.reason ?? "" }))
-          .filter((b) => b.reason !== "");
-      } catch {
-        breaks = [];
-      }
+    try {
+      breaks =
+        module === "flies"
+          ? db
+              .prepare<[string], { arm: string | null; reason: string | null }>(
+                "SELECT arm, reason FROM fly_decisions WHERE trade_date = ? AND mode = 'cadence'",
+              )
+              .all(tradeDate)
+              .map((r) => ({ arm: r.arm ?? "*", reason: r.reason ?? "" }))
+          : db
+              .prepare<[string], { arm: string | null; reason: string | null }>(
+                "SELECT scope AS arm, reason FROM measurement_breaks WHERE break_date = ? ORDER BY id",
+              )
+              .all(tradeDate)
+              .map((r) => ({ arm: r.arm ?? "*", reason: r.reason ?? "" }));
+      breaks = breaks.filter((b) => b.reason !== "");
+    } catch {
+      breaks = [];
     }
 
     return {
