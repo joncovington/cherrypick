@@ -21,7 +21,10 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   death and on a stale `state/console.heartbeat` (a wedged Node event loop stays alive). Read-only
   over every other package's data (its own store is `~/.cherrypick/data/console/`); reads the shared
   suite credential and never writes one, gating its write-oriented functions on the token's probed
-  scope; no order-placement code paths.
+  scope; no order-placement code paths. Its **Config page** is the one bounded exception to
+  read-only, and holds no write logic of its own: the live-trading halt toggle and a short
+  allow-list of frequently-changed settings, both applied by invoking the orchestrator's own config
+  editor as a subprocess, so the guarded live-trading fields stay unreachable from here.
 - **packages/review** — the suite's cross-module **end-of-day review**: one versioned fact set per
   session covering meic/flies/earnings together, plus the renders of it. Read-only over every other
   package (via `cherrypick.core.ledgers`, the single home for per-schema net/risk rules), writes only

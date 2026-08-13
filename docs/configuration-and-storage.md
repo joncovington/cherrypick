@@ -121,7 +121,7 @@ quantity, capital_at_risk (defined max loss), entry_cost/exit_cost, entry_contex
 
 `cherrypick settings` (loopback `:8804`, see [guardrails-and-modes.md](guardrails-and-modes.md) for the
 security posture) is a local web editor for every config file above, plus a keyring secrets manager. It
-is the suite's one config-writing surface outside `init`'s never-clobbers scaffold, so its write paths
+is the suite's one config-writing *engine* outside `init`'s never-clobbers scaffold, so its write paths
 are conservative by design:
 
 - **Field edits never re-serialize the file.** Every config here documents itself in its own data
@@ -144,6 +144,24 @@ are conservative by design:
   keys the example doesn't know about at the end, and changing no value. Dry-run by default; the applied
   write goes through the same backup/atomic path as any other save. This is what brought every shipped
   config (and this repo's `config.example.json` files) into the section layout above.
+
+### The console's Config page
+
+The console's Config page is a second **front-end** to that same engine, not a second engine. It
+reaches it as a subprocess (`python -m cherrypick.orchestrator.configcli` — one JSON request on
+stdin, one JSON response on stdout), so every property above holds there unchanged: the guarded
+fields are refused identically, each save is one backup and one atomic write, and a file that moved
+under the page comes back as a conflict rather than a clobber. The console holds no splicing or
+guard logic of its own, deliberately — a second copy of a live-safety rule is one that can drift.
+
+Two things are different, both about scope rather than mechanism. The page offers an **allow-list**
+of fields rather than the whole document — the settings that change between sessions (experiment
+arms and risk profiles, module enablement and symbols, entry windows and cadences, alert routing),
+because the rest are decided once and a page that offers everything equally makes the rare edit as
+easy to reach as the routine one. And it surfaces the **suite halt flag** as its headline control,
+with asymmetric friction: setting it is one click, clearing it takes a typed `RESUME LIVE`
+confirmation. Clearing it arms nothing on its own — every per-module gate still applies, and flies
+still needs its per-day arm record.
 
 ## Report & log files
 

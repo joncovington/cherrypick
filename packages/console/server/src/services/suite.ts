@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
 import { buildSuiteReport } from "./report.js";
+import { readModuleGate } from "./liveLock.js";
 
 function readJson(p: string): Record<string, unknown> | null {
   try {
@@ -39,14 +40,15 @@ export function readSystemPanel(config: ConsoleConfig): SystemPanel {
   const modulesRaw = cfg["modules"];
   const modules: SystemPanel["modules"] = [];
   const pushModule = (id: string, m: Record<string, unknown>) => {
-    const moduleCfg = readJson(path.join(config.paths.cherrypick, "config", `${id}.json`)) ?? {};
     modules.push({
       id,
       enabled: m["enabled"] === true,
       kind: typeof m["kind"] === "string" ? m["kind"] : null,
       streamer: typeof m["streamer"] === "boolean" ? m["streamer"] : null,
       champion: typeof m["champion"] === "string" ? m["champion"] : null,
-      liveTrading: typeof moduleCfg["enable_live_trading"] === "boolean" ? moduleCfg["enable_live_trading"] : null,
+      // Shared with the Config page's lock hero so the two can't disagree — and so flies' nested
+      // `live.enabled` is seen here too, which a top-level-only read misses entirely.
+      liveTrading: readModuleGate(config, id).liveEnabled,
     });
   };
   if (Array.isArray(modulesRaw)) {

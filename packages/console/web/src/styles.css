@@ -1357,3 +1357,347 @@ select.text-input {
 .note-rec-none {
   margin: 0;
 }
+
+/* ---- Config page ------------------------------------------------------------------------- */
+/* The suite's one write surface. The cherry accent is reserved for brand, live, and alert
+   moments — the live lock is exactly the third of those, and the only place on this page it
+   appears. Everything else stays in the ordinary card vocabulary, so the one control that stops
+   live trading is the one thing that looks urgent. */
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-group + .nav-group {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.nav-group-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.65;
+  padding: 0.15rem 1rem 0.25rem;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.nav-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex-shrink: 0;
+}
+
+.lock-hero {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  background: var(--bg-card);
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.lock-hero.halted {
+  border-color: rgba(210, 63, 87, 0.55);
+  border-left-color: var(--accent);
+  background: linear-gradient(to right, rgba(210, 63, 87, 0.08), var(--bg-card) 40%);
+}
+
+.lock-hero-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.lock-hero-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+
+.lock-hero.halted .lock-hero-title {
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.lock-hero-sub {
+  margin: 0;
+  max-width: 62ch;
+  line-height: 1.5;
+}
+
+.lock-hero-path {
+  font-family: var(--num-face);
+  font-size: 11px;
+  opacity: 0.6;
+  margin-top: 0.35rem;
+}
+
+.lock-hero-action {
+  flex-shrink: 0;
+}
+
+/* One click, and it looks like what it does. The safe direction is never behind a dialog. */
+.lock-btn-halt {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.55rem 1.4rem;
+}
+
+.lock-btn-halt:hover {
+  filter: brightness(1.1);
+  border-color: var(--accent);
+}
+
+/* The resuming direction is deliberately quieter than the halting one. */
+.lock-btn-resume {
+  padding: 0.45rem 1rem;
+}
+
+.lock-confirm {
+  margin-top: 0.9rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(210, 63, 87, 0.35);
+  background: rgba(210, 63, 87, 0.05);
+}
+
+.lock-confirm p {
+  margin: 0 0 0.6rem;
+  max-width: 72ch;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.lock-confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.lock-confirm-row .text-input {
+  width: 12rem;
+  font-family: var(--num-face);
+}
+
+.lock-error {
+  margin: 0.6rem 0 0;
+  color: var(--err);
+  font-size: 12px;
+}
+
+.lock-gates {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.lock-gate {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.lock-gate-name {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.cfg-section-blurb {
+  margin: 0 0 0.9rem;
+  line-height: 1.5;
+  max-width: 78ch;
+}
+
+.cfg-group + .cfg-group {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.cfg-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.cfg-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cfg-group-note {
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.cfg-fields {
+  display: flex;
+  flex-direction: column;
+}
+
+.cfg-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--row-line);
+}
+
+.cfg-row:last-child {
+  border-bottom: none;
+}
+
+.cfg-row-dirty {
+  background: rgba(217, 161, 59, 0.05);
+  box-shadow: inset 2px 0 0 var(--warn);
+  padding-left: 0.5rem;
+}
+
+.cfg-row-locked {
+  opacity: 0.85;
+}
+
+.cfg-row-label label {
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cfg-pointer {
+  display: block;
+  font-family: var(--num-face);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  margin-top: 0.1rem;
+}
+
+/* Inline, not a tooltip: what a field means is part of deciding what to type. */
+.cfg-help {
+  margin: 0.25rem 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  max-width: 68ch;
+}
+
+.cfg-dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.cfg-row-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.cfg-row-control .text-input,
+.cfg-row-control .num-input {
+  min-width: 8rem;
+}
+
+.cfg-locked {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  max-width: 26rem;
+}
+
+.cfg-locked .cfg-help {
+  text-align: right;
+}
+
+.cfg-revert {
+  font-size: 11px;
+}
+
+.cfg-savebar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgba(217, 161, 59, 0.4);
+  background: rgba(217, 161, 59, 0.06);
+}
+
+.cfg-savebar-changes strong {
+  font-size: 12px;
+}
+
+.cfg-savebar-changes ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.cfg-savebar-changes code {
+  font-family: var(--num-face);
+  font-size: 11px;
+}
+
+.cfg-savebar-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.cfg-save-error {
+  margin: 0.5rem 0 0;
+  color: var(--err);
+  font-size: 11.5px;
+  max-width: 70ch;
+}
+
+.cfg-saved-note {
+  margin: 0.5rem 0 0;
+  font-size: 11px;
+  font-family: var(--num-face);
+}
+
+.cfg-footnote {
+  margin-top: 1.25rem;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  font-size: 11.5px;
+  line-height: 1.55;
+  max-width: 86ch;
+}
