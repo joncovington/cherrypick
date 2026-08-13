@@ -298,6 +298,7 @@ def test_derive_full_suite_job_table():
         "log-archive",
         "review-provisional",
         "review-final",
+        "review-narrative",
     }
     assert by_id["watchdog"].interval_seconds == 600
     assert by_id["trade-notify"].interval_seconds == 30
@@ -444,3 +445,24 @@ def test_review_can_be_turned_off():
     by_id = {j.id: j for j in derive(cfg)[0]}
     assert not by_id["review-provisional"].enabled
     assert "disabled in config (review)" in by_id["review-provisional"].enabled_reason
+
+
+def test_the_narrative_is_off_by_default_and_tagged_ai():
+    """It shells out to Claude Code, which the suite does not otherwise depend on — so it stays off
+    until `claude` is on PATH and someone turns it on."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    job = by_id["review-narrative"]
+    assert not job.enabled
+    assert "review.narrative" in job.enabled_reason
+    assert "ai" in job.tags
+
+
+def test_the_narrative_runs_after_the_final_pass_never_with_it():
+    """It must only ever see a finalised session: a note written against numbers that will still
+    move records something that never happened."""
+    cfg = suite_cfg()
+    cfg["review"] = {"narrative": True}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert by_id["review-narrative"].enabled
+    assert by_id["review-narrative"].at_et > by_id["review-final"].at_et
+    assert by_id["review-narrative"].trading_days_only

@@ -22,6 +22,7 @@ Missed-fire policy (the schtasks behaviors we must consciously replace):
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any
@@ -47,6 +48,7 @@ CATCHUP_MINUTES = {
     # and a session with no artifact is a hole in the trend rather than a late report.
     "review-provisional": 180,
     "review-final": 240,
+    "review-narrative": 240,
 }
 
 
@@ -213,6 +215,13 @@ def resident_should_run(spec: JobSpec, now: datetime, holidays: set[str] | None 
 # --------------------------------------------------------------------------- derivation from config
 def _run_py(pythonw: str, launcher: str, *args: str) -> tuple[str, ...]:
     return (pythonw, launcher, *args)
+
+
+def _narrative_script(launcher: str) -> str:
+    """`scripts/eod_narrative.py` beside the launcher. Derived from the launcher rather than a
+    package path on purpose -- the narrative deliberately is not a package, so there is nothing
+    importable to resolve it from."""
+    return os.path.join(os.path.dirname(launcher), "scripts", "eod_narrative.py")
 
 
 def _module_tick_argv(paper: dict[str, Any]) -> list[str] | None:
@@ -481,6 +490,27 @@ def derive_jobs(
             trading_days_only=True,
             enabled=rv["enabled"],
             enabled_reason="" if rv["enabled"] else "disabled in config (review)",
+        ),
+    )
+    add(
+        "review-narrative",
+        lambda: JobSpec(
+            id="review-narrative",
+            # scripts/, not a package: the trading loops import packages/*, so nothing importable
+            # by a loop can reach an AI call. The supervisor only ever SPAWNS this, the way it
+            # spawns any job -- it is not on the watchdog's health tick, which is what the retired
+            # eod-insight trigger was.
+            argv=(pythonw, _narrative_script(launcher))
+            + (("--file-issues",) if rv.get("file_issues") else ()),
+            kind=KIND_DAILY,
+            at_et=rv["narrative_at"],
+            catchup_minutes=CATCHUP_MINUTES["review-narrative"],
+            trading_days_only=True,
+            enabled=rv["enabled"] and rv["narrative"],
+            enabled_reason=(
+                "" if (rv["enabled"] and rv["narrative"]) else "disabled in config (review.narrative)"
+            ),
+            tags=("ai",),
         ),
     )
     rs = cfgmod.reconcile_schedule_settings(cfg)
