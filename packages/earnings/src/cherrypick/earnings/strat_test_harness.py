@@ -1258,8 +1258,8 @@ def cmd_run_entries(args) -> dict:
                 continue
 
             # From here the candidate has passed the screen, so every remaining exit is an EXECUTION
-            # outcome. Those went unrecorded until now: 2,349 accepted screenings against 64 trades
-            # ever opened, with nothing saying what happened to the rest.
+            # outcome. Those went unrecorded until now -- a candidate that cleared the screen and then
+            # failed order building, sizing, the risk cap or quote availability left no trace at all.
             # Defaults bind this iteration's symbol/strategy/book -- `drop` is only ever called
             # within the iteration that defines it, but binding makes that independent of where a
             # future edit moves the call.
