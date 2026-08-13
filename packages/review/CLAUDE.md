@@ -42,6 +42,24 @@ report and the console's TypeScript port each computed flies' P&L from a differe
   session D+1. The narrative only ever runs on `final` sets, which is what lets it be written once
   and frozen as the record of what was concluded that day.
 
+## The arms are the experiment — never collapse them
+
+MEIC runs `open`, `width-5` and `width-10`, and flies runs `control`, `time_window`, `gex`,
+`debit-first` and others, **against the same underlying on the same sessions**. That is a paired
+comparison, which is worth considerably more than the raw session count suggests, and it is the
+reason those arms exist at all.
+
+A module-level row averages them and hides the finding. On 2026-08-12 MEIC's module total showed
+19.6% on risk; underneath it, `open` took **zero stops all session** and returned 21.6%, while
+`width-5` stopped 28% of its book and returned 16.7% — and on the down session, 08-11, the width
+arms stopped 91-93% of trades and lost more than `open` did. None of that is visible without the
+split, and the split is where every interesting question about these modules lives.
+
+So `by_profile` rides on every module block and every trend, grouped through
+`cherrypick.core.profiles.compare_profiles` — the helper the orchestrator's own per-profile
+reporting already uses, rather than a fourth hand-rolled grouping. The render shows the table only
+when a module has more than one arm, because a one-row comparison table implies a comparison.
+
 ## Trends stop at breaks, and suspected breaks get flagged
 
 A trend never crosses a journaled measurement break — results either side are not the same

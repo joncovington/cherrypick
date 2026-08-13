@@ -188,3 +188,71 @@ def test_a_ratio_on_trivial_counts_is_not_evidence():
     counts = {f"2026-07-{d:02d}": 6 for d in range(10, 20)}
     counts["2026-07-24"] = 2
     assert facts._suspected_break(_records(counts), "2026-07-24") is None
+
+
+# --------------------------------------------------------------------------- arms
+
+
+def _arm_session(session, arms: dict[str, tuple[int, float, int]], module="meic", breaks=None):
+    """arms: {name: (closed, net, wins)}"""
+    facts.write(
+        {
+            "session": session, "status": "final", "fact_version": facts.FACT_VERSION,
+            "modules": {module: {
+                "ok": True,
+                "results": {
+                    "closed": sum(a[0] for a in arms.values()),
+                    "net": sum(a[1] for a in arms.values()),
+                    "wins": sum(a[2] for a in arms.values()),
+                    "gross": 0, "cost": 0,
+                },
+                "return": {"capital_at_risk": None, "on_max_risk": None},
+                "carried_overnight": {"positions": 0, "capital_at_risk": None},
+                "expected_vs_observed": {"basis": "x", "expected": None, "observed": None},
+                "health": {"loop_ticked": True},
+                "sample": {"n": 0, "effective_n": 1, "breaks": breaks, "suspected_break": None},
+                "by_profile": {
+                    name: {
+                        "closed": c, "net": n, "wins": w, "gross": n, "cost": 0,
+                        "return": {"capital_at_risk": None, "on_max_risk": None},
+                        "sample": {"n": c, "effective_n": 1},
+                    }
+                    for name, (c, n, w) in arms.items()
+                },
+            }},
+        }
+    )
+
+
+def test_the_arm_split_survives_into_the_trend(store):
+    """The comparison between arms is the experiment. A module-level trend averages MEIC's
+    no-stop `open` together with the width arms that stop most of the book on a moving day."""
+    _arm_session("2026-08-11", {"open": (10, 100.0, 8), "width-5": (10, -50.0, 4)}, breaks=[])
+    _arm_session("2026-08-12", {"open": (10, 200.0, 9), "width-5": (10, -25.0, 5)}, breaks=[])
+    got = trends.trend("meic", "2026-08-12", window=5)["by_profile"]
+    assert got["open"]["net"] == 300.0 and got["open"]["sessions"] == 2
+    assert got["width-5"]["net"] == -75.0
+    assert got["open"]["win_rate"] == pytest.approx(0.85)
+
+
+def test_an_arm_that_appears_late_counts_only_its_own_sessions(store):
+    """control-drift took its first trades on one session; averaging it over a window it did not
+    trade in would understate it."""
+    _arm_session("2026-08-11", {"control": (4, 40.0, 4)}, breaks=[])
+    _arm_session("2026-08-12", {"control": (4, 40.0, 4), "control-drift": (3, 30.0, 3)}, breaks=[])
+    got = trends.trend("meic", "2026-08-12", window=5)["by_profile"]
+    assert got["control"]["sessions"] == 2
+    assert got["control-drift"]["sessions"] == 1 and got["control-drift"]["net"] == 30.0
+
+
+def test_the_render_shows_arms_when_a_module_has_more_than_one(store):
+    _arm_session("2026-08-12", {"open": (10, 100.0, 8), "width-5": (10, -50.0, 4)}, breaks=[])
+    out = render.render("2026-08-12")
+    assert "## By arm" in out
+    assert "| meic | open |" in out and "| meic | width-5 |" in out
+
+
+def test_the_render_omits_the_arm_table_for_a_single_arm_module(store):
+    """One arm is not a comparison, and a table of one row implies one."""
+    _arm_session("2026-08-12", {"default": (10, 100.0, 8)}, breaks=[])
+    assert "## By arm" not in render.render("2026-08-12")

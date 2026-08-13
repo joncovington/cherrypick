@@ -128,6 +128,36 @@ def render(session: str, window: int = _trends.DEFAULT_WINDOW) -> str:
     )
     L.append("")
 
+    # --- arms ----------------------------------------------------------------
+    # For MEIC and flies the comparison between arms IS the experiment: they run against the same
+    # underlying on the same sessions, which makes it a paired test. A module-level row averages
+    # them and hides it — MEIC's `open` takes no stops at all while its width arms stop most of
+    # the book on a moving day, and the module total shows none of that.
+    arm_blocks = {
+        n: m["by_profile"]
+        for n, m in (facts.get("modules") or {}).items()
+        if m.get("ok") and len(m.get("by_profile") or {}) > 1
+    }
+    if arm_blocks:
+        L.append("## By arm")
+        L.append("")
+        L.append(
+            "_Same underlying, same sessions — a paired comparison, which is why these are worth "
+            "more than their sample size alone suggests._"
+        )
+        L.append("")
+        L.append("| Module | Arm | Closed | Net | Capital at risk | Return on risk | Wins |")
+        L.append("|---|---|---:|---:|---:|---:|---:|")
+        for name, arms in arm_blocks.items():
+            for arm, g in sorted(arms.items(), key=lambda kv: -kv[1]["net"]):
+                ret = g.get("return") or {}
+                L.append(
+                    f"| {name} | {arm} | {_count(g['closed'])} | {_money(g['net'])} | "
+                    f"{_money(ret.get('capital_at_risk'))} | {_pct(ret.get('on_max_risk'))} | "
+                    f"{_count(g['wins'])} |"
+                )
+        L.append("")
+
     # --- expected vs observed ------------------------------------------------
     L.append("## Expected against observed")
     L.append("")
