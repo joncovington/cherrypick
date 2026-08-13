@@ -167,8 +167,8 @@ def test_a_screening_verdict_is_recorded_at_the_screen_stage(logged):
 
 
 def test_an_accepted_candidate_that_never_opened_is_recorded_too(logged):
-    """The gap this closes: 2,349 accepted screenings against 64 trades, with nothing recording what
-    happened to the rest."""
+    """The gap this closes: a candidate that cleared the screen and then failed order building,
+    sizing, the risk cap or quote availability left no record of having done so."""
     from cherrypick.earnings import strat_test_harness as harness
 
     harness._log_scan_row(

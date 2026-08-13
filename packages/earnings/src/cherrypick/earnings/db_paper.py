@@ -303,10 +303,10 @@ _MIGRATIONS = [
     ("trades", "entry_slippage", "ALTER TABLE trades ADD COLUMN entry_slippage REAL"),
     ("trades", "exit_slippage", "ALTER TABLE trades ADD COLUMN exit_slippage REAL"),
     ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
-    # A candidate's life has two stages and only the first was ever recorded: 2,349 screenings said
-    # "accepted" against 64 trades ever opened, and nothing said why the other ~97% never became a
-    # position. 'screen' rows carry the accept/reject verdict, 'execution' rows what happened after
-    # it. Defaulting historical rows to 'screen' is accurate -- that is the only stage that existed.
+    # A candidate's life has two stages and only the first was ever recorded: one that cleared the
+    # screen and then died in order building, sizing, the risk cap or a missing quote left no trace.
+    # 'screen' rows carry the accept/reject verdict, 'execution' rows what happened after it.
+    # Defaulting historical rows to 'screen' is accurate -- that is the only stage that existed.
     ("scan_log", "stage", "ALTER TABLE scan_log ADD COLUMN stage TEXT NOT NULL DEFAULT 'screen'"),
     # The measured value and the threshold it missed, per reason (scanner.explain_reject_reasons).
     # A reason name alone says a gate fired; it cannot say whether the name was one basis point or
