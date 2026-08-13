@@ -41,7 +41,7 @@ function readReviews(dbPath: string, mode: TradingMode): EntryReviewRow[] {
     return db
       .prepare<[], Record<string, unknown>>(
         `SELECT scan_date, symbol, timing, winrate, iv_rv_ratio, expected_move,
-                best_tier, selected, reason
+                selected, reason
            FROM entry_reviews ORDER BY id DESC`,
       )
       .all()
@@ -53,7 +53,6 @@ function readReviews(dbPath: string, mode: TradingMode): EntryReviewRow[] {
         winrate: num(r["winrate"]),
         ivRvRatio: num(r["iv_rv_ratio"]),
         expectedMove: num(r["expected_move"]),
-        bestTier: str(r["best_tier"]),
         selected: r["selected"] === 1,
         reason: str(r["reason"]),
       }));

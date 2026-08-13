@@ -879,18 +879,21 @@ def test_build_entry_review_spec_shape():
     assert spec["strategy"] == "iron_fly"
     assert spec["volume"] == 2_000_000
     assert spec["iv_rv_source"] == "tastytrade"
-    assert spec["best_tier"] == "accepted"
     assert spec["selected"] is True
     assert spec["composite_score"] == 0.42
     assert spec["logged_at"] == 123.0
     assert spec["criteria_json"] == criteria
 
 
-def test_build_entry_review_spec_rejected_best_tier():
+def test_build_entry_review_spec_carries_no_best_tier():
+    """best_tier was "accepted" if selected else "rejected" -- a verbatim restatement of the
+    `selected` boolean on the same row, rendered beside it in both the console and the EOD table.
+    The screening verdict itself lives in scan_log with its reasons."""
     spec = scanner.build_entry_review_spec(
         "2026-08-07", "MSFT", "Before market open", {}, None, False, "no edge"
     )
-    assert spec["best_tier"] == "rejected"
+    assert "best_tier" not in spec
+    assert spec["selected"] is False
     assert spec["selected"] is False
 
 

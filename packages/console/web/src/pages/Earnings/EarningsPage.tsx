@@ -289,7 +289,7 @@ export function EarningsPage() {
 
         <DataCard
           title={`Entry reviews (screened symbols) — ${(data?.reviews.total ?? 0).toLocaleString()} across both books`}
-          headers={["", "scan", "sym", "timing", "winrate", "IV/RV", "exp move", "tier", "selected", "reason"]}
+          headers={["", "scan", "sym", "timing", "winrate", "IV/RV", "exp move", "selected", "reason"]}
           numFrom={1}
           loading={isLoading}
           isError={isError}
@@ -317,7 +317,6 @@ export function EarningsPage() {
               <td>{fmtNum(r.winrate, 1)}</td>
               <td>{fmtNum(r.ivRvRatio, 2)}</td>
               <td>{fmtNum(r.expectedMove, 2)}</td>
-              <td>{r.bestTier ?? "—"}</td>
               <td>{r.selected ? "✓" : ""}</td>
               <td className="muted">{r.reason ?? "—"}</td>
             </tr>

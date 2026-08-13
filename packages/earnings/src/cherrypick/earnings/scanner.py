@@ -1427,7 +1427,6 @@ def build_entry_review_spec(
         "iv_rank": criteria.get("iv_rank"),
         "iv_percentile": criteria.get("iv_percentile"),
         "composite_score": composite_score,
-        "best_tier": "accepted" if selected else "rejected",
         "selected": selected,
         "reason": reason,
         "criteria_json": criteria,
