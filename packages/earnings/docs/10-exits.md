@@ -259,7 +259,7 @@ The loop's own observability, and what each surface answers.
 | `measurement_breaks` | which dates results must not be pooled across |
 | `~/.cherrypick/state/earnings_entry.last.json` / `_exit.last.json` | the SLA heartbeats the watchdog and the console read |
 | console → Earnings → **open** | positions, marks, loop health, management log |
-| `paper-eod-<day>.md` | *Why they closed*, *Still open*, *Feed quality* |
+| `data/review/eod-<day>.md` | What each module did, the arms, and the trend (suite review) |
 
 ```bash
 python -m cherrypick.earnings.paper_loop status        # phase, last tick, open positions, lock

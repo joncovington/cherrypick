@@ -26,7 +26,8 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/flies/paper_trades.db      # Flies paper ledger (fly_positions / fly_books)
   data/flies/live_trades.db       # Flies live ledger (the live pilot writes here; armed per day)
   data/gex/gex_history.db         # GEX spot trail + regime history
-  logs/                           # suite logs + eod-digest-<day>.md + eod-insight-<day>.md
+  logs/                           # suite logs
+  data/review/                    # eod-<day>.json fact sets + renders + notes
   logs/meic/  logs/earnings/  logs/flies/  logs/gex/  logs/streamer/   # per-module logs + EOD reports
   logs/archive/<YYYY-MM>/         # monthly zipped reports + rotated logs (one zip per scope)
   state/                          # watchdog state + heartbeats + advice/ + halt-live.flag (when set)
@@ -42,7 +43,7 @@ configure their own engine and nothing else:
 
 | Config | Owned by | Sets |
 |---|---|---|
-| `~/.cherrypick/config.json` | Orchestrator | Which modules are enabled + their `path` and `live_db`; the per-module `paper` block (`paper_db`, `trade_schema`, task names, entry/exit times) and `calibration`; the top-level `streamer` (the standalone producer) and `services` (background daemons like the gex recorder); `watchdog`, `trade_notify`, `eval_activity`, `notify`, `eod_digest`, `eod_insight`, `advise`, `data_epoch`, `log_archive`, `reconcile`, `dashboard`; timezone. |
+| `~/.cherrypick/config.json` | Orchestrator | Which modules are enabled + their `path` and `live_db`; the per-module `paper` block (`paper_db`, `trade_schema`, task names, entry/exit times) and `calibration`; the top-level `streamer` (the standalone producer) and `services` (background daemons like the gex recorder); `watchdog`, `trade_notify`, `eval_activity`, `notify`, `review`, `data_epoch`, `log_archive`, `reconcile`, `dashboard`; timezone. |
 | `~/.cherrypick/config/meic.json` | MEIC | `symbols`, delta/VIX bands, wing widths, credit floors, entry/exit windows, stop policy, regime thresholds, cash-settled set, deploy-limit pct (risk profiles live in the repo's `config.risk.json`). |
 | `~/.cherrypick/config/earnings.json` | Earnings | `available_capital_paper_mode`, position caps, entry/close windows, correlation block list, liquidity gates, per-strategy tuning, named profiles. |
 | `~/.cherrypick/config/flies.json` | Flies | `symbols`, wing/increment scaling, entry gates and floors, the experiment `arms`, and the `live` block for the narrow live pilot (armed per day via `/live-flies-start`, one arm / one symbol / one incomplete position, self-disarming at `live.disarm_time`). |
@@ -82,8 +83,7 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | module `paper` (kind `self_healing`) | on, every `tick_interval_seconds` | `<module>-paper` (earnings uses this since 2026-08-12) |
 | `paper.dolt_service` | on | `<module>-dolt` (keep-alive) |
 | module `live` | **off** until armed | `<module>-live` |
-| `eod_digest` | **on**, event-driven (deadline backstop 16:45 ET) | *no job* — the watchdog fires it detached once every module's `paper-eod` exists |
-| `eod_insight` | **off**, event-driven with the digest; needs Claude Code | *no job* (same event) |
+| `review` | **on** | `review-provisional` 16:30 ET, `review-final` 10:15 next morning, trading days only |
 | `advise` | **off twice** (suite + per-module), event-driven with the digest | *no job* (same event) |
 | `symbol_watch` | **off**, daily 06:30 when enabled | `symbol-watch` |
 | `log_archive` | **on**, day 1 @ 03:30 | `log-archive` (monthly) |
@@ -148,8 +148,7 @@ are conservative by design:
 ## Report & log files
 
 Deterministic per-session outputs (see [reporting-and-dashboard.md](reporting-and-dashboard.md)):
-`logs/<mod>/paper-eod-<day>.md`, `logs/<mod>/eod-analysis-<day>.md`, `logs/eod-digest-<day>.md`, and
-(opt-in) `logs/eod-insight-<day>.md`. Rotating `.log` files use size-based rotation (`*.log.N`); the
+`data/review/eod-<day>.json` and its renders. Rotating `.log` files use size-based rotation (`*.log.N`); the
 monthly `archive` task zips finished-month reports + rotated logs into `logs/archive/<YYYY-MM>/`.
 
 ## Credentials

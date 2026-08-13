@@ -205,13 +205,14 @@ Neither is live. See
 | Command | What you get |
 |---|---|
 | `python run.py report` | Win rate with **gross and net** P&L (net of commissions and slippage) across strategies and risk profiles. Add `--eod` (today) or `--date YYYY-MM-DD` for one day. |
-| `python run.py eod-digest` | An end-of-day write-up for one session across both tools, saved to `logs/eod-digest-<day>.md`. Runs automatically each afternoon (see below) — you rarely need to run it by hand. |
+| `python -m cherrypick.review build` | The end-of-day review for one session across every tool, saved to `data/review/eod-<day>.md` beside the fact set it renders. Runs automatically twice a day (see below) — you rarely need to run it by hand. |
 | the **console** at <http://127.0.0.1:5070> | Everything in your browser: overall status, per-strategy P&L, fee drag, a **GEX (gamma-exposure) view** (call/put walls and the gamma-flip point), recent activity, and health checks. The supervisor keeps it running — there is nothing to start. |
 | `python run.py calibrate` | Advice on whether a risk profile has collected enough good results to consider stepping up (advisory only — it never changes anything). |
 
-The end-of-day digest is **scheduled automatically when you install** and sends you a one-line summary
-each afternoon. If you'd rather not get it, set `"eod_digest": {"enabled": false}` in `~/.cherrypick/config.json` and
-re-run install (or uninstall).
+The end-of-day review is **scheduled automatically when you install**: a provisional pass after the
+close and a final one the next morning, once the overnight strategy has settled. If you'd rather not
+have it, set `"review": {"enabled": false}` in `~/.cherrypick/config.json` and re-run install (or
+uninstall).
 
 ---
 

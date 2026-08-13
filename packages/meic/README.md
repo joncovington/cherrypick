@@ -123,7 +123,7 @@ for the exact couplings.
 - **One read surface, both books** — the console tags every row with the mode it came from, so paper and live can never be confused for one another.
 - **Realistic fee modeling** — the paper engine charges tastytrade's exact broad-based-index-options fee schedule per leg (commission, clearing, ORF, per-symbol exchange fee, TAF on sells), so simulated P&L reflects real cost drag.
 - **Unattended, self-healing daemon** — the paper loop runs as a Windows scheduled task firing a short-lived process every 2 minutes: headless, time-gated to market hours, and persistent across sessions. It writes a deterministic end-of-day report automatically at the settlement pass.
-- **Automated end-of-day reports** — `/eod-report` reproduces the live report, the paper report, or both; the paper daemon also emits its report unattended each day. Bounded log rotation keeps every log file from growing without limit.
+- **Automated end-of-day reporting** — the suite review (`packages/review`) covers this module alongside flies and earnings, split by arm, on two daily passes. `/eod-report` still produces the agent-synthesized LIVE write-up. Bounded log rotation keeps every log file from growing without limit.
 
 ---
 
@@ -179,7 +179,7 @@ Before risking capital, run the parallel-shadow paper engine to build a performa
 ```
 /paper-start                              # streamer + unattended daemon
 /paper-report                             # weekly (or custom-range) profile comparison
-python -m cherrypick.meic.paper_loop --eod-report     # deterministic end-of-day report on demand
+python -m cherrypick.review build --session <date>    # the suite review for one session, all modules
 python -m cherrypick.meic.paper_loop --status         # daemon/task status + open-position count
 python -m cherrypick.meic.paper_loop --uninstall-task # stop the unattended session
 ```
@@ -280,7 +280,7 @@ cherrypick/
     │       ├── execute-entry.md     # Entry execution (Step 7 of the loop)
     │       ├── stop-management.md   # Per-side stop management (Step 5 of the loop)
     │       ├── paper-loop.md        # /paper-loop — one paper iteration
-    │       ├── eod-report.md        # /eod-report — live and/or paper EOD report
+    │       ├── eod-report.md        # /eod-report — the live EOD report
     │       ├── paper-report.md      # /paper-report — multi-day profile comparison
     │       ├── meic-status.md       # /meic-status — quick session status
     │       └── check-chain.md       # /check-chain — verify chain and strike selection
@@ -289,7 +289,6 @@ cherrypick/
         ├── streamer.log             # Streamer daemon log
         ├── paper_loop.log           # Paper daemon log
         ├── eod-<date>.md            # Daily live end-of-day report (agent-synthesized)
-        ├── paper-eod-<date>.md      # Daily paper end-of-day report (deterministic metrics)
         └── eod-analysis-<date>.md   # Daily paper 7-section conversational analysis (deterministic)
 ```
 

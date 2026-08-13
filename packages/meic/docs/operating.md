@@ -53,15 +53,14 @@ Start a full unattended paper session:
 /paper-start
 ```
 
-This starts the shared DXLink streamer and registers a Windows scheduled task (`cherrypick-meic-paper-loop`) that runs `python -m cherrypick.meic.paper_loop --once` every 2 minutes — headless, time-gated to market hours, self-healing, and persistent across sessions. At the 16:00 ET settlement pass it writes both deterministic end-of-day files — `logs/meic/paper-eod-<date>.md` (metrics) and `logs/meic/eod-analysis-<date>.md` (the 7-section analysis).
+This starts the shared DXLink streamer and registers a Windows scheduled task (`cherrypick-meic-paper-loop`) that runs `python -m cherrypick.meic.paper_loop --once` every 2 minutes — headless, time-gated to market hours, self-healing, and persistent across sessions. At the 16:00 ET settlement pass it rolls the session into `daily_summary`, which is what the suite review (`packages/review`) reads for this module. The module's own EOD reports were retired 2026-08-13.
 
 Manage the session directly:
 
 ```bash
 python -m cherrypick.meic.paper_loop --status          # task status + open-position count
 python -m cherrypick.meic.paper_loop --once            # run a single manual iteration
-python -m cherrypick.meic.paper_loop --eod-report      # regenerate both paper EOD files (metrics + analysis; --date to backfill)
-python -m cherrypick.meic.paper_loop --eod-analysis    # regenerate just the 7-section analysis
+python -m cherrypick.review build --session <date>     # the suite review for one session (all modules)
 python -m cherrypick.meic.paper_loop --uninstall-task  # stop the unattended session
 ```
 
@@ -154,13 +153,12 @@ You can also trigger it manually at any time. `/eod-report` accepts a scope argu
 The **live** report is a plain-English synthesis (agent-written). The **paper** side is deterministic and
 code-generated — two files per session in `~/.cherrypick/logs/meic/`:
 
-- `paper-eod-<date>.md` — the terse metrics report (per-profile table, exits-by-reason, per-symbol P&L
-  across all profiles).
-- `eod-analysis-<date>.md` — a conversational **7-section** read on the same session (executive snapshot,
-  position detail, trade log, risk metrics, market context, tax notes, notes/journal). Still rule-based,
-  no agent; regenerate just this one with `python -m cherrypick.meic.paper_loop --eod-analysis [--date <d>]`.
+**Both retired 2026-08-13.** `paper-eod-<date>.md` and `eod-analysis-<date>.md` were this module's
+own account of a session; the suite review (`packages/review`) now covers MEIC, flies and earnings in
+one versioned fact set, with MEIC split by arm — which is where the `open`/`width-5`/`width-10`
+comparison those arms exist to make actually lives. `python -m cherrypick.review build --session <d>`.
 
-The orchestrator's suite digest and (opt-in) AI insight build on these files — see the suite
+The suite review builds on the ledger directly — see the suite
 [reporting docs](../../../docs/reporting-and-dashboard.md).
 
 ---

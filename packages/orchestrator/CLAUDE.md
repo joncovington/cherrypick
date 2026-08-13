@@ -34,11 +34,7 @@ python run.py ensure-supervisor  # the anchor task's probe: restart a dead/stale
 python run.py streamer-health    # one streamer-liveness pass (the supervisor's 60s in-session job; whole-session successor to the retired cherrypick-preopen task)
 python run.py preopen-check  # deprecated alias for streamer-health (honors the legacy preopen enable flag)
 python run.py report         # unified cross-module paper P&L (read-only); --eod / --date YYYY-MM-DD scopes to one session; --live reads the live-tagged ledgers (modules' live_db) instead — a separate view that never feeds calibrate/promotion
-python run.py eod-digest     # write logs/eod-digest-<day>.md: one session's cross-module P&L + module paper-eod links
-python run.py notify-eod     # write the digest + push a one-line summary (the watchdog fires this, detached, once every module has settled)
 python run.py archive        # end-of-month rotation: zip each finished month's reports + rotated logs to logs/archive/ (--dry-run / --month YYYY-MM); scheduled monthly as cherrypick-log-archive
-python run.py eod-insight    # opt-in AI synthesis over the day's deterministic reports -> logs/eod-insight-<day>.md (needs Claude Code on PATH + eod_insight.enabled); watchdog-fired (detached) on the same completion event as the digest
-python run.py advise         # opt-in bounded next-session parameter proposals per module -> state/advice/<module>-<session>.json, validated by cherrypick.core.advice against each module's advice_bounds (needs Claude Code on PATH + advise.enabled + per-module enabled); watchdog-fired (detached) on the same completion event; loops re-validate and treat absent/stale/invalid as baseline
 python run.py settings       # local config editor + secrets manager, loopback:8804 -- the suite's one mutating surface; --organize [target] [--apply] reorders config(s) into their example's sections instead of serving
 python run.py calibrate      # per-profile calibration readings + promotion recommendations
 python run.py migrate-home   # dry-run: move config files into ~/.cherrypick + sweep leftovers (--apply to perform)
@@ -80,31 +76,36 @@ resolved **relative to the config file's directory** — never hardcode absolute
   window closes.
 - **Read side (look whenever you want):** `report.py` (cross-module paper P&L; `run(session=…)` scopes
   to one settlement day for the daily/EOD views), `calibrate.py` (per-profile promotion advisor),
-  `eod_digest.py` (one session's cross-module roll-up → `logs/eod-digest-<day>.md`, citing `report`'s
-  numbers so it can't drift, + links to each module's own `paper-eod-<day>.md` and conversational
-  `eod-analysis-<day>.md`). The page that composes all of it is the **console** (`packages/console`),
-  which this package no longer serves anything of its own alongside. These are **read-only and file-only**. The EOD digest is also surfaced through the notifier.
-  It is no longer a fixed-time task — the **watchdog fires it once every installed module has written its
-  `paper-eod-<day>.md`** (with an `eod_digest.deadline` backstop, ET, so a late or flat module can't skip
-  the day), launched **detached** so its notify push never runs on the reliability path. On by default;
-  opt out with `"eod_digest": {"enabled": false}`. `logrotate.py` (`cherrypick archive`) is the maintenance
+  and the per-schema ledger readers that both of those use, which now live in
+  **`cherrypick.core.ledgers`** (one home for the net/cost/capital/session rules across `meic_ic`,
+  `fly_book` and `earnings`). The page that composes all of it is the **console**
+  (`packages/console`), which this package no longer serves anything of its own alongside. These are
+  **read-only and file-only**.
+
+  **End-of-day reporting left this package on 2026-08-13.** `eod_digest.py`, `eod_insight.py` and
+  `advise.py` are gone, along with the watchdog's completion-triggered launch of them. The suite's
+  EOD answer is now **`packages/review`**, which builds one versioned fact set per session across
+  every module and renders from that — a module writing its own prose was a second, unreconciled
+  account of the same session, and the digest and its AI synthesis both read those prose files as
+  their input. This package's role is reduced to *scheduling* it: two supervisor jobs
+  (`review-provisional` 16:30 ET, `review-final` 10:15 the next morning, trading days only) invoke
+  `python -m cherrypick.review`. See `cfgmod.review_settings`; on by default, opt out with
+  `"review": {"enabled": false}`. `logrotate.py` (`cherrypick archive`) is the maintenance
   counterpart: a monthly `cherrypick-log-archive` task zips each finished month's reports + rotated logs
   into `logs/archive/<YYYY-MM>/<scope>.zip` and removes the originals (idempotent, never touches the
-  current month or an active `.log`) — also files-only and off the reliability path. `eod_insight.py`
-  (`cherrypick eod-insight`) and `advise.py` (`cherrypick advise`) are the two places AI is invoked, and
-  both are deliberately fenced: **opt-in and feature-detected** (their `enabled` flags + Claude Code on
-  PATH — off by default), piping the day's deterministic reports to `claude -p` in headless mode with
-  **no execution/edit/network tools**, and the orchestrator — never the agent — writes the output. The
-  watchdog **launches both detached** on the same completion event as the digest — never in the watchdog
-  process, so the `claude` calls stay off the reliability path. `eod-insight` writes prose
-  (`eod-insight-<day>.md`, surfaced on the console's EOD card). `advise` writes **bounded parameter
-  proposals** for the NEXT session (`state/advice/<module>-<session>.json`): every proposal must pass
-  `cherrypick.core.advice` against the module's `advice_bounds` manifest of closed legal ranges (one
-  violation rejects the whole set, the rejections written anyway for audit), the artifact is
-  single-session and expiring, and the module's paper loop re-validates with the **same core code** at
-  session start — absent/stale/invalid advice means baseline behavior, and advice can only ever narrow
-  into declared ranges. Both are enrichment surfaces, best-effort, paper-only — the deterministic
-  reports stay the source of record, so the "no AI on the reliability path" invariant holds.
+  current month or an active `.log`) — also files-only and off the reliability path.
+
+  **No AI is invoked from this package at all any more.** `eod_insight.py` and `advise.py` were the
+  two places it was, and both went with the EOD cutover. The narrative and the recommendations they
+  produced are now `packages/review`'s job, generated **outside every suite package** by a scheduled
+  agent reading review's fact set — so no package holds an API key or a network dependency, and the
+  "no AI on the reliability path" invariant holds by construction rather than by fencing.
+
+  **The advice CONSUMERS are still live and still correct.** `cherrypick.core.advice`, each module's
+  `advice_bounds` manifest, and the paper loops' session-start re-validation are untouched. With no
+  producer writing `state/advice/<module>-<session>.json`, every loop simply sees absent advice and
+  runs baseline — which is exactly the documented degrade, not a new failure mode. Re-pointing a
+  producer at those bounds later needs no change on the consumer side.
 
 **Per-schema dispatch.** Each module's paper DB has a different schema, selected by
 `paper.trade_schema` in config (`"meic_ic"` → MEIC's `ic_trades`; `"earnings"` → the Earnings module's
@@ -263,11 +264,10 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
 - **Account numbers are masked** to the last 4 digits (`****1234`) anywhere they surface in logs or
   output — never emit a full account number (suite-wide rule).
 - **Best-effort side calls never break the reliability path.** The watchdog tick fires
-  `trade_notifier.run` and the EOD digest/insight trigger inside `try/except`; a
-  hiccup must not fail the health check. The EOD trigger only *launches* `notify-eod`/`eod-insight` as
-  detached subprocesses — the digest's webhook push and the insight's `claude` call run in those children,
-  never here — so the tick itself stays stdlib + OS-shell only. Preserve this pattern when adding
-  tick-time work.
+  `trade_notifier.run` inside `try/except`; a hiccup must not fail the health check. The tick stays
+  stdlib + OS-shell only — preserve that when adding tick-time work. The EOD trigger that used to
+  live here was removed with the reports it fired: the review runs as two ordinary supervisor jobs,
+  so nothing EOD-shaped touches the watchdog any more.
 - **Opt-in AI/dev tooling is local-only and off every runtime path.** `graphify` / `agentmemory` are
   authoring aids; their artifacts (`graphify-out/`, `.claude/`) are gitignored and they are never a
   runtime dependency. The one tracked exception is `.claude/commands/` — checked-in slash commands are
