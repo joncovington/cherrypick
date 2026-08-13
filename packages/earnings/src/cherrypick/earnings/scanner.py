@@ -272,20 +272,37 @@ def fetch_historical_earnings_dates(symbol: str, before_date: str, limit: int, c
 
 
 def _nearest_close(symbol: str, date, direction: str, config: dict) -> dict | None:
-    """Nearest trading-day close from stocks.ohlcv. direction 'on_or_before' or 'after'."""
+    """Nearest trading-day close from stocks.ohlcv. direction 'on_or_before' or 'after'.
+
+    Bounded to `ohlcv_nearest_close_window_days` (default 10) either side of `date`, for the same
+    reason `fetch_avg_volume` is bounded: ohlcv leads its primary key with `date`, so this walks
+    the key away from the anchor until it finds a row for `symbol`, and a name with no data on
+    that side walks the entire 28.5M-row table. Measured on a sparse name (FAC, on_or_before
+    2026-05-01): 44.6s to return None -- and compute_winrate calls this twice per historical
+    quarter, up to `winrate_lookback_quarters` times per symbol.
+
+    The window also makes the answer more honest. This feeds `pre_and_reaction_closes`, whose
+    whole job is picking the closes immediately either side of an earnings print; the longest US
+    market closure on record is four days, so nothing legitimate sits ten days out. A close
+    further away than that was never a pre-earnings close -- returning None drops the quarter
+    from the winrate sample (logged, not silently dropped) instead of scoring the print against
+    a price from weeks away.
+    """
+    window = config.get("ohlcv_nearest_close_window_days", 10)
     conn = _dolt_connect(config, config.get("dolthub_stocks_database", "stocks"))
     try:
         cur = conn.cursor(dictionary=True)
         if direction == "on_or_before":
             cur.execute(
-                "SELECT date, close FROM ohlcv WHERE act_symbol = %s AND date <= %s "
+                "SELECT date, close FROM ohlcv WHERE act_symbol = %s AND date <= %s AND date >= %s "
                 "ORDER BY date DESC LIMIT 1",
-                (symbol, date),
+                (symbol, date, date - timedelta(days=window)),
             )
         else:
             cur.execute(
-                "SELECT date, close FROM ohlcv WHERE act_symbol = %s AND date > %s ORDER BY date ASC LIMIT 1",
-                (symbol, date),
+                "SELECT date, close FROM ohlcv WHERE act_symbol = %s AND date > %s AND date <= %s "
+                "ORDER BY date ASC LIMIT 1",
+                (symbol, date, date + timedelta(days=window)),
             )
         return cur.fetchone()
     finally:
@@ -613,19 +630,37 @@ def apply_common_signals(
 
 
 def fetch_avg_volume(symbol: str, config: dict, days: int = 30) -> float | None:
-    """30-day average daily volume from stocks.ohlcv. No broker dependency --
-    this is real trailing exchange volume, computable entirely from the
-    DoltHub stocks dataset already used for the winrate backtest.
+    """Average daily volume over the most recent `days` sessions in stocks.ohlcv, looking back at
+    most `avg_volume_lookback_days` calendar days. No broker dependency -- this is real trailing
+    exchange volume, computable entirely from the DoltHub stocks dataset already used for the
+    winrate backtest.
+
+    **The date bound is a performance requirement, not a filter.** `ohlcv` is keyed
+    PRIMARY KEY (date, act_symbol) -- date leads -- so a lookup by symbol alone cannot seek; the
+    engine walks the key backwards from the newest date and stops once it has `days` matching
+    rows. For a name trading every session that is ~`days` days of index. For a sparse name it is
+    unbounded: FAC holds 23 rows in the whole table (2026-06-08 to 2026-07-10), can never reach
+    30, and so scanned all 28.5M rows -- 95s, which on 2026-08-12 blew the 90s per-symbol ceiling
+    and cost the name its entire evaluation. Bounding the range terminates the walk at the window
+    edge instead (measured: 90.9s -> 0.2s, same figure). The cost fell hardest on illiquid names,
+    which is to say on names this average exists to reject.
+
+    A name whose last `days` sessions all predate the window averages the rows inside it, or
+    returns None if it has none -- deliberately, and a change from the old unbounded behavior: a
+    months-stale volume figure should not clear a liquidity floor just because it is the most
+    recent one on file.
     """
+    lookback_days = config.get("avg_volume_lookback_days", 120)
+    cutoff = (_date.today() - timedelta(days=lookback_days)).isoformat()
     conn = _dolt_connect(config, config.get("dolthub_stocks_database", "stocks"))
     try:
         cur = conn.cursor(dictionary=True)
         cur.execute(
             "SELECT AVG(volume) AS avg_volume FROM ("
-            "  SELECT volume FROM ohlcv WHERE act_symbol = %s "
+            "  SELECT volume FROM ohlcv WHERE act_symbol = %s AND date >= %s "
             "  ORDER BY date DESC LIMIT %s"
             ") recent",
-            (symbol, days),
+            (symbol, cutoff, days),
         )
         row = cur.fetchone()
     finally:

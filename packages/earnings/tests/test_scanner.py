@@ -1,8 +1,80 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
 from cherrypick.earnings import scanner
+
+
+class _FakeCursor:
+    """Captures the SQL and params a scanner query issues, and replays a canned row."""
+
+    def __init__(self, row):
+        self.row = row
+        self.sql = None
+        self.params = None
+
+    def execute(self, sql, params=None):
+        self.sql, self.params = sql, params
+
+    def fetchone(self):
+        return self.row
+
+    def fetchall(self):
+        return [self.row] if self.row else []
+
+
+class _FakeConn:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def cursor(self, dictionary=False):
+        return self._cursor
+
+    def close(self):
+        pass
+
+
+def _capture_dolt(monkeypatch, row):
+    cur = _FakeCursor(row)
+    monkeypatch.setattr(scanner, "_dolt_connect", lambda config, db: _FakeConn(cur))
+    return cur
+
+
+# --- ohlcv scan bounds ------------------------------------------------------
+# ohlcv is PRIMARY KEY (date, act_symbol) -- date leads, so a by-symbol lookup walks the key and a
+# sparse name walks the whole 28.5M-row table. Both queries below carry a date bound so the walk
+# terminates; without it, one name cost 95s and blew the 90s per-symbol evaluation ceiling.
+
+
+def test_avg_volume_bounds_the_scan_by_date(monkeypatch):
+    cur = _capture_dolt(monkeypatch, {"avg_volume": 1000.0})
+    assert scanner.fetch_avg_volume("FAC", {}) == 1000.0
+    assert "date >= %s" in cur.sql
+    symbol, cutoff, days = cur.params
+    assert symbol == "FAC" and days == 30
+    assert cutoff == (date.today() - timedelta(days=120)).isoformat()
+
+
+def test_avg_volume_lookback_window_is_configurable(monkeypatch):
+    cur = _capture_dolt(monkeypatch, {"avg_volume": 1.0})
+    scanner.fetch_avg_volume("FAC", {"avg_volume_lookback_days": 45})
+    assert cur.params[1] == (date.today() - timedelta(days=45)).isoformat()
+
+
+def test_nearest_close_on_or_before_bounds_how_far_back_it_walks(monkeypatch):
+    cur = _capture_dolt(monkeypatch, {"date": date(2026, 7, 10), "close": 121.31})
+    anchor = date(2026, 8, 1)
+    scanner._nearest_close("FAC", anchor, "on_or_before", {})
+    assert "date >= %s" in cur.sql
+    assert cur.params == ("FAC", anchor, anchor - timedelta(days=10))
+
+
+def test_nearest_close_after_bounds_how_far_forward_it_walks(monkeypatch):
+    cur = _capture_dolt(monkeypatch, None)
+    anchor = date(2026, 8, 1)
+    scanner._nearest_close("FAC", anchor, "after", {"ohlcv_nearest_close_window_days": 4})
+    assert "date <= %s" in cur.sql
+    assert cur.params == ("FAC", anchor, anchor + timedelta(days=4))
 
 # --- has_weekly_options -----------------------------------------------------
 
