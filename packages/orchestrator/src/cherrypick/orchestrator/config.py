@@ -273,6 +273,12 @@ def review_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # 10:15 is after earnings' 09:45 close window has had time to run.
         "provisional_at": rv.get("provisional_at", "16:30"),
         "final_at": rv.get("final_at", "10:15"),
+        # The narrative runs after the final pass, never with it: it must only ever see a finalised
+        # session. OFF by default because it shells out to Claude Code, which is a dependency the
+        # suite does not otherwise have -- turn it on once `claude` is on PATH.
+        "narrative": rv.get("narrative", False),
+        "narrative_at": rv.get("narrative_at", "10:45"),
+        "file_issues": rv.get("file_issues", False),
     }
 
 

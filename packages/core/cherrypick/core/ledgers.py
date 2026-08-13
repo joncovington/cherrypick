@@ -169,9 +169,14 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
     contrast the experiment exists to draw. Read straight off the row rather than against a known list,
     so an arm added on the module side (wide_wing joined gex / time_window / control on 2026-07-27)
     appears here without a change on this side."""
+    # center_reason arrived after the first release, so an older ledger simply has no centring
+    # provenance -- degrade to None rather than failing the whole read, the same way this file
+    # already treats slippage_dollars and the capital columns.
+    has_reason = "center_reason" in _table_cols(conn, "fly_positions")
+    reason_col = ", center_reason" if has_reason else ""
     where, params = _session_where("trade_date", start, end)
     rows = conn.execute(
-        "SELECT symbol, arm, entry_mode, center_reason, gross_pnl, fees, trade_date "
+        f"SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date{reason_col} "
         f"FROM fly_positions WHERE status = 'settled'{where}",
         params,
     ).fetchall()
@@ -188,7 +193,7 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
             # nothing was excluding them. On 2026-08-12 `gex-intrinsic` centred `atm` on all four
             # entries and reported results identical to `control` to the cent, which a reader
             # would otherwise take as two arms agreeing rather than one arm run twice.
-            "center_reason": r["center_reason"],
+            "center_reason": (r["center_reason"] if has_reason else None),
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
