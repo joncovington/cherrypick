@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AXIS_MUTED } from "../../components/Charts";
 
 export interface GexStrikeRow {
   strike: number;
@@ -149,7 +150,7 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
         x={10}
         y={m.t + (height - m.t - m.b) / 2}
         fontSize={9}
-        fill="#82878f"
+        fill={AXIS_MUTED}
         textAnchor="middle"
         transform={`rotate(-90 10 ${m.t + (height - m.t - m.b) / 2})`}
       >
@@ -160,7 +161,7 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
         const vals = values(r);
         return (
           <g key={r.strike}>
-            <text x={m.l - 6} y={yMid + 2.5} textAnchor="end" fontSize={8.5} fill="#82878f" fontFamily="Consolas, monospace">
+            <text x={m.l - 6} y={yMid + 2.5} textAnchor="end" fontSize={8.5} fill={AXIS_MUTED} fontFamily="Consolas, monospace">
               {r.strike}
             </text>
             {vals.map((v, j) => {
@@ -233,13 +234,13 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
               const x = m.l + frac * plotW;
               return (
                 <g key={label}>
-                  <line x1={x} y1={height - m.b} x2={x} y2={height - m.b + 4} stroke="#82878f" />
+                  <line x1={x} y1={height - m.b} x2={x} y2={height - m.b + 4} stroke={AXIS_MUTED} />
                   <text
                     x={x}
                     y={height - m.b + 14}
                     textAnchor={frac === 0 ? "start" : frac === 1 ? "end" : "middle"}
                     fontSize={9}
-                    fill="#82878f"
+                    fill={AXIS_MUTED}
                     fontFamily="Consolas, monospace"
                   >
                     {label}
@@ -363,7 +364,7 @@ export function StrikeBarsChart({
         return (
           <g key={r.strike}>
             {rowH >= 11 && (
-              <text x={m.l - 6} y={yMid + 3} textAnchor="end" fontSize={10} fill="#a6adb8" fontFamily="Consolas, monospace">
+              <text x={m.l - 6} y={yMid + 3} textAnchor="end" fontSize={10} fill={AXIS_MUTED} fontFamily="Consolas, monospace">
                 {r.strike}
               </text>
             )}
@@ -414,8 +415,8 @@ export function IvSkewChart({ series, spot, height = 240 }: { series: GexStrikeR
       )}
       <polyline points={line("call_iv")} fill="none" stroke="#43b57a" strokeWidth={1.6} />
       <polyline points={line("put_iv")} fill="none" stroke="#d95c4a" strokeWidth={1.6} />
-      <text x={m.l} y={height - 6} fontSize={10} fill="#a6adb8">{x0}</text>
-      <text x={width - m.r} y={height - 6} textAnchor="end" fontSize={10} fill="#a6adb8">{x1}</text>
+      <text x={m.l} y={height - 6} fontSize={10} fill={AXIS_MUTED}>{x0}</text>
+      <text x={width - m.r} y={height - 6} textAnchor="end" fontSize={10} fill={AXIS_MUTED}>{x1}</text>
       <text x={m.l} y={m.t + 8} fontSize={10} fill="#43b57a">call IV%</text>
       <text x={m.l + 60} y={m.t + 8} fontSize={10} fill="#d95c4a">put IV%</text>
     </svg>

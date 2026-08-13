@@ -60,6 +60,7 @@ body {
   text-decoration: none;
   padding: 0.45rem 1rem;
   border-left: 2px solid transparent;
+  transition: color 0.15s ease;
 }
 
 .nav-link:hover {
@@ -417,6 +418,7 @@ h2 {
   line-height: 1;
   padding: 0.28rem 0.45rem;
   cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
 }
 
 .pager-btn:hover:not(:disabled) {
@@ -452,6 +454,7 @@ h2 {
   color: var(--accent);
   text-decoration: underline;
   cursor: pointer;
+  transition: color 0.15s ease;
 }
 
 .link-button:hover {
@@ -493,6 +496,7 @@ h2 {
   font-size: 13px;
   font-family: var(--num-face);
   font-variant-numeric: tabular-nums;
+  transition: background-color 0.15s ease;
   /* Bucket labels and figures read on one line; a cell that genuinely needs
      to wrap sets white-space itself. */
   white-space: nowrap;
@@ -639,6 +643,7 @@ h2 {
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 0.28rem 0.8rem;
+  transition: border-color 0.15s ease;
 }
 
 .btn:hover {
@@ -688,6 +693,7 @@ h2 {
   color: var(--text-muted);
   text-decoration: none;
   border-bottom: 1px solid var(--border);
+  transition: color 0.15s ease;
 }
 
 .link:hover {

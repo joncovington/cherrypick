@@ -268,10 +268,19 @@ export function ChampionsPage() {
     refetchInterval: 120_000,
   });
 
-  const modules = data?.modules ?? [];
+  // Canonical order (matches Nav.tsx and ReviewPage.tsx) rather than trusting API payload order --
+  // Champions previously listed MEIC/Earnings/Flies, reshuffled from the order every other page
+  // that shows all three uses. Anything not in the list (a module added to calibrate later) sorts
+  // after the known ones rather than disappearing.
+  const CANONICAL_ORDER = ["meic", "flies", "earnings"];
+  const orderOf = (m: string) => {
+    const i = CANONICAL_ORDER.indexOf(m);
+    return i === -1 ? CANONICAL_ORDER.length : i;
+  };
+  const modules = [...(data?.modules ?? [])].sort((a, b) => orderOf(a.module) - orderOf(b.module));
   const [tab, setTab] = useState<string | null>(null);
-  // Tabs come from the payload, so a module added to calibrate shows up here
-  // without this page needing to know its name.
+  // Tabs come from the payload (now canonically sorted), so a module added to calibrate shows up
+  // here without this page needing to know its name.
   const active = modules.find((m) => m.module === tab) ?? modules[0];
 
   return (

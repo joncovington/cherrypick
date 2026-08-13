@@ -34,7 +34,8 @@ function useTimeline(mode: TradingMode, filter: FliesFilter) {
   });
 }
 
-const ARM_COLORS = ["#d23f57", "#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a", "#c9628a", "#6bd9c4"];
+// No brand accent (#d23f57) here -- reserved for brand/live/alert moments, not "just the first arm".
+const ARM_COLORS = ["#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a", "#c9628a", "#6bd9c4"];
 const SPOT_COLOR = "#d9a13b";
 
 const minuteOf = (ts: string): number => {

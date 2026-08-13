@@ -123,7 +123,14 @@ export function SymbolPage() {
             <TrendChip label="6M" grade={data.trend["6m"]} />
           </>
         )}
-        <Link to="/scout" className="link" style={{ marginLeft: "auto" }}>
+        <Link
+          to={`/scout/builder?symbol=${encodeURIComponent(sym)}`}
+          className="link"
+          style={{ marginLeft: "auto" }}
+        >
+          open in builder →
+        </Link>
+        <Link to="/scout" className="link">
           ← watchlist
         </Link>
       </div>
@@ -134,10 +141,7 @@ export function SymbolPage() {
         <section className="card">
           <h2>Daily — SMA 20/50/200, support/resistance</h2>
           {isError ? (
-            <p className="muted">
-              No cached candles for {sym}. Candles come from scout's cache today — open the symbol in
-              scout once to backfill, or wait for M5's own candle feed.
-            </p>
+            <p className="muted">No price history yet for {sym} — try again shortly.</p>
           ) : (
             <div ref={containerRef} className="chart-host">
               {isLoading && <span className="skeleton skeleton-text" style={{ width: "40%" }} />}

@@ -7,6 +7,7 @@ import { LiveQuoteRow } from "../../components/LiveQuote";
 import { SkeletonRows, sortRows, useSort } from "../../components/DataTable";
 import { TtWatchlistTable, EodCells, WatchlistHeadRow, WATCHLIST_SORT } from "../../components/TtWatchlistTable";
 import { CollectorBanner } from "../../components/CollectorBanner";
+import { TabStrip } from "../../components/ScopeBar";
 
 export function WatchlistPage() {
   const [search, setSearch] = useSearchParams();
@@ -45,28 +46,24 @@ export function WatchlistPage() {
 
       <CollectorBanner />
 
-      <div className="page-title-row" role="tablist" aria-label="watchlists">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "local"}
-          className={tab === "local" ? "btn" : "btn btn-quiet"}
-          onClick={() => setTab("local")}
-        >
-          Local
-        </button>
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.key}
-            className={tab === t.key ? "btn" : "btn btn-quiet"}
-            onClick={() => setTab(t.key)}
-          >
-            {t.name} <span className="muted">({t.count})</span>
-          </button>
-        ))}
+      <div className="page-title-row">
+        <TabStrip
+          tabs={["local", ...tabs.map((t) => t.key)]}
+          value={activeIsKnown ? tab : "local"}
+          onChange={setTab}
+          ariaLabel="watchlists"
+          labels={{
+            local: "Local",
+            ...Object.fromEntries(
+              tabs.map((t) => [
+                t.key,
+                <>
+                  {t.name} <span className="muted">({t.count})</span>
+                </>,
+              ]),
+            ),
+          }}
+        />
         <button type="button" className="btn btn-quiet" onClick={() => setPickerOpen((v) => !v)}>
           public lists…
         </button>

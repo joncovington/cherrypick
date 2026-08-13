@@ -180,15 +180,6 @@ export function MeicPage() {
             ))}
           </select>
         )}
-        {activeEra !== undefined && (
-          <span
-            className="chain-badge"
-            title="Everything on this page is scoped to this era. The pre-cutover 'book' era had an order-of-magnitude different selection intensity; pooling the two reads as one book when it is really two."
-          >
-            era: {activeEra}
-            {activeEraCount > 0 && ` · ${activeEraCount.toLocaleString()} trades`}
-          </span>
-        )}
         <TabStrip tabs={TABS} value={tab} onChange={setTab} />
         <ScopeSelect label="symbol" value={symbol} options={scope.data?.symbols} onChange={setSymbol} allLabel="all symbols" />
         <ScopeSelect label="profile" value={profile} options={scope.data?.profiles} onChange={setProfile} allLabel="all profiles" />

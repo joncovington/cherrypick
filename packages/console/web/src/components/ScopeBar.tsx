@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { FIRST_PAGE, PAGE_SIZES, type PageState } from "../lib/api";
 
 /** Page-wide scope selectors — the shape every module dashboard leads with. */
@@ -59,7 +59,7 @@ export function EraSelect({
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
       aria-label="era"
-      title="which era of trades counts as evidence"
+      title="Everything on this page is scoped to this era. The pre-cutover 'book' era had an order-of-magnitude different selection intensity; pooling the two reads as one book when it is really two."
     >
       <option value="">era {currentEra} · {currentCount}</option>
       {eras
@@ -79,16 +79,29 @@ export function TabStrip<T extends string>({
   tabs,
   value,
   onChange,
+  labels,
+  ariaLabel = "tabs",
 }: {
   tabs: readonly T[];
   value: T;
   onChange: (t: T) => void;
+  /** Optional per-tab display override (e.g. a name plus a count badge) -- a tab with no entry
+      here just renders its own key. */
+  labels?: Partial<Record<T, ReactNode>>;
+  ariaLabel?: string;
 }) {
   return (
-    <div className="mode-toggle" style={{ marginLeft: 0 }}>
+    <div className="mode-toggle" style={{ marginLeft: 0 }} role="tablist" aria-label={ariaLabel}>
       {tabs.map((t) => (
-        <button key={t} type="button" className={value === t ? "mode-btn active" : "mode-btn"} onClick={() => onChange(t)}>
-          {t}
+        <button
+          key={t}
+          type="button"
+          role="tab"
+          aria-selected={value === t}
+          className={value === t ? "mode-btn active" : "mode-btn"}
+          onClick={() => onChange(t)}
+        >
+          {labels?.[t] ?? t}
         </button>
       ))}
     </div>

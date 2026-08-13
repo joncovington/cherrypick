@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
+import { AXIS_MUTED } from "./Charts";
 
 /**
  * The entry-attempts surfaces: the arm rail and the attempt timeline.
@@ -67,7 +68,7 @@ const OUTCOMES = [
   { key: "cadence_blocked", label: "cadence", color: "#7aa2ff" },
   { key: "sign_rule_blocked", label: "sign rule", color: "#a06bd9" },
   { key: "duplicate_blocked", label: "duplicate", color: "#c9628a" },
-  { key: "gate_blocked", label: "gate", color: "#d23f57" },
+  { key: "gate_blocked", label: "gate", color: "#e88a5c" },
   { key: "window_blocked", label: "window", color: "#8a9c4a" },
   { key: "no_candidate", label: "no candidate", color: "#6c7480" },
   { key: "no_fill", label: "no fill", color: "#d9a13b" },
@@ -76,7 +77,10 @@ const OUTCOMES = [
 const COLOR_OF: Record<string, string> = Object.fromEntries(OUTCOMES.map((o) => [o.key, o.color]));
 const LABEL_OF: Record<string, string> = Object.fromEntries(OUTCOMES.map((o) => [o.key, o.label]));
 
-function useAttempts(module: "meic" | "flies", mode: TradingMode, date: string | null) {
+/** Exported for OccupancyMap, which needs the same day's timeline to derive which strikes
+    refused an entry -- sharing this hook (rather than a second near-identical query on the
+    same endpoint) means one interval, one in-flight request, one type. */
+export function useAttempts(module: "meic" | "flies", mode: TradingMode, date: string | null) {
   return useQuery<AttemptsPayload>({
     queryKey: ["attempts", module, mode, date],
     queryFn: async () => {
@@ -403,7 +407,7 @@ export function AttemptTimeline({
             {hourTicks.map((m) => (
               <g key={m}>
                 <line x1={X(m)} x2={X(m)} y1={pad.t - 4} y2={height - pad.b} stroke="#2a2f38" strokeWidth={1} />
-                <text x={X(m)} y={height - pad.b + 14} fontSize={10} fill="#6c7480" textAnchor="middle">
+                <text x={X(m)} y={height - pad.b + 14} fontSize={10} fill={AXIS_MUTED} textAnchor="middle">
                   {`${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`}
                 </text>
               </g>
@@ -412,7 +416,7 @@ export function AttemptTimeline({
               const y = pad.t + i * LANE_H;
               return (
                 <g key={arm}>
-                  <text x={pad.l - 8} y={y + LANE_H / 2 + 3} fontSize={11} fill="#9aa3ad" textAnchor="end">
+                  <text x={pad.l - 8} y={y + LANE_H / 2 + 3} fontSize={11} fill={AXIS_MUTED} textAnchor="end">
                     {arm}
                   </text>
                   <line

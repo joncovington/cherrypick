@@ -4,6 +4,7 @@ import type { TradingMode } from "@console/shared";
 import { useQuote } from "../../lib/useQuote";
 import { fmtMoney } from "../../components/DataTable";
 import { fliesQuery, type FliesFilter } from "../../lib/api";
+import { AXIS_MUTED } from "../../components/Charts";
 
 interface PayoffCurve {
   empty: boolean;
@@ -42,7 +43,8 @@ function useForest(mode: TradingMode, filter: FliesFilter) {
   });
 }
 
-const ARM_COLORS = ["#d23f57", "#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a", "#c9628a", "#6bd9c4"];
+// No brand accent (#d23f57) here -- reserved for brand/live/alert moments, not "just the first arm".
+const ARM_COLORS = ["#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a", "#c9628a", "#6bd9c4"];
 const SPOT_COLOR = "#d9a13b";
 
 /** A payoff is genuinely flat beyond its own scanned range — carry the floor to the window edges. */
@@ -202,7 +204,7 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
         {ticksFor(yMin, yMax, 5).map((v) => (
           <g key={`y${v}`}>
             <line x1={pad.l} y1={Y(v)} x2={width - pad.r} y2={Y(v)} stroke={Math.abs(v) < 1e-9 ? "#3d4653" : "#15181e"} />
-            <text x={4} y={Y(v) + 3} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">
+            <text x={4} y={Y(v) + 3} fontSize={9} fill={AXIS_MUTED} fontFamily="Consolas, monospace">
               {fmtMoney(v)}
             </text>
           </g>
@@ -210,19 +212,19 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
         {ticksFor(xMin, xMax, 6).map((v) => (
           <g key={`x${v}`}>
             <line x1={X(v)} y1={pad.t} x2={X(v)} y2={height - pad.b} stroke="#15181e" />
-            <text x={X(v)} y={height - 8} fontSize={9} fill="#82878f" textAnchor="middle" fontFamily="Consolas, monospace">
+            <text x={X(v)} y={height - 8} fontSize={9} fill={AXIS_MUTED} textAnchor="middle" fontFamily="Consolas, monospace">
               {v.toFixed(0)}
             </text>
           </g>
         ))}
-        <text x={width - pad.r} y={height - 8} fontSize={9} fill="#5c626d" textAnchor="end">
+        <text x={width - pad.r} y={height - 8} fontSize={9} fill={AXIS_MUTED} textAnchor="end">
           Strike Price
         </text>
         <text
           x={10}
           y={pad.t + (height - pad.t - pad.b) / 2}
           fontSize={9}
-          fill="#5c626d"
+          fill={AXIS_MUTED}
           textAnchor="middle"
           transform={`rotate(-90 10 ${pad.t + (height - pad.t - pad.b) / 2})`}
         >
@@ -334,7 +336,7 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
           </span>
         ))}
         <span>
-          <i className="forest-dash" style={{ background: "#82878f" }} /> centres
+          <i className="forest-dash" style={{ background: AXIS_MUTED }} /> centres
         </span>
         <span>
           <i style={{ background: SPOT_COLOR }} /> {settled !== null ? "settlement" : "spot now"}

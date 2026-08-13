@@ -401,10 +401,12 @@ export async function symbolCard(
     ivRank: m?.ivRank != null ? m.ivRank * 100 : null,
     ivIndex: m?.ivIndex != null ? m.ivIndex * 100 : null,
     liquidity: m?.liquidity ?? null,
-    pe: m?.pe ?? null,
+    // A provider zero means "not applicable" (an index has no P/E), not a real zero -- same
+    // not-a-real-value guard marketCap already has below.
+    pe: m?.pe != null && m.pe > 0 ? m.pe : null,
     // Dividend-yield convention is unverified against a live account; values
     // ≤ 1 are treated as fractions, larger ones as already percentage points.
-    divYield: m?.divYield != null ? (m.divYield <= 1 ? m.divYield * 100 : m.divYield) : null,
+    divYield: m?.divYield != null && m.divYield > 0 ? (m.divYield <= 1 ? m.divYield * 100 : m.divYield) : null,
     marketCap: m?.marketCap != null && m.marketCap > 0 ? m.marketCap : null,
     earningsDate: m?.earningsDate ?? null,
     trend1m: trend["1m"],

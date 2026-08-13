@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { fmtMoney } from "../../components/DataTable";
+import { AXIS_MUTED } from "../../components/Charts";
 
 /**
  * MEIC's profit forest: expiry payoff for each arm's open book.
@@ -50,7 +51,8 @@ interface MeicForest {
   lastSpot: number | null;
 }
 
-const ARM_COLORS = ["#d23f57", "#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a"];
+// No brand accent (#d23f57) here -- reserved for brand/live/alert moments, not "just the first arm".
+const ARM_COLORS = ["#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a"];
 
 function useMeicForest(mode: TradingMode, date: string | null) {
   return useQuery<MeicForest>({
@@ -143,13 +145,13 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
         {ticksFor(yMin, yMax, 5).map((v) => (
           <g key={`y${v}`}>
             <line x1={pad.l} x2={width - pad.r} y1={Y(v)} y2={Y(v)} stroke={v === 0 ? "#3a424e" : "#1e232b"} />
-            <text x={pad.l - 6} y={Y(v) + 3} fontSize={10} fill="#6c7480" textAnchor="end">
+            <text x={pad.l - 6} y={Y(v) + 3} fontSize={10} fill={AXIS_MUTED} textAnchor="end">
               {fmtMoney(v)}
             </text>
           </g>
         ))}
         {ticksFor(xMin, xMax, 8).map((v) => (
-          <text key={`x${v}`} x={X(v)} y={height - pad.b + 14} fontSize={10} fill="#6c7480" textAnchor="middle">
+          <text key={`x${v}`} x={X(v)} y={height - pad.b + 14} fontSize={10} fill={AXIS_MUTED} textAnchor="middle">
             {v.toFixed(0)}
           </text>
         ))}
@@ -182,7 +184,7 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
             x2={X(r.strike)}
             y1={height - pad.b - 6}
             y2={height - pad.b}
-            stroke="#6c7480"
+            stroke={AXIS_MUTED}
             strokeWidth={1}
             strokeDasharray="2 2"
           />
