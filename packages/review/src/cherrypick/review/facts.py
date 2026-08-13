@@ -39,7 +39,7 @@ from cherrypick.core.profiles import compare_profiles as _compare_profiles
 
 from cherrypick.review import paths as _paths
 
-FACT_VERSION = 4
+FACT_VERSION = 5
 
 STATUS_PROVISIONAL = "provisional"
 STATUS_FINAL = "final"
@@ -332,6 +332,9 @@ def _summarize(records: list[dict]) -> dict:
         "cost": round(cost, 2),
         "net": round(gross - cost, 2),
         "wins": sum(1 for r in records if (r.get("net_pnl") or 0) > 0),
+        # Losses counted separately rather than inferred as closed - wins: a trade that netted
+        # exactly zero is neither, and folding it into losses overstates them.
+        "losses": sum(1 for r in records if (r.get("net_pnl") or 0) < 0),
         "return": _returns(records),
         "sample": _sample(records),
         # Present only when every entry used one centring rule -- the tell for an arm that
@@ -418,7 +421,7 @@ def build_module_facts(module: str, session: str, db_path=None) -> dict:
         "book": "paper",
         "settles_intraday": spec["settles_intraday"],
         "health": health,
-        "results": {k: totals[k] for k in ("closed", "gross", "cost", "net", "wins")},
+        "results": {k: totals[k] for k in ("closed", "gross", "cost", "net", "wins", "losses")},
         # The arms, kept because for MEIC and flies the comparison between them IS the experiment.
         "by_profile": _by_profile(closed),
         "carried_overnight": {

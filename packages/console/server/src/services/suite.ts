@@ -119,17 +119,15 @@ export function readEod(config: ConsoleConfig): EodCard {
 
   const reports: EodCard["reports"] = [];
   if (session !== null) {
-    const logsRoot = path.join(config.paths.cherrypick, "logs");
-    for (const module of ["meic", "flies", "earnings"]) {
-      for (const [kind, name] of [
-        ["metrics", `paper-eod-${session}.md`],
-        ["analysis", `eod-analysis-${session}.md`],
-      ] as Array<[string, string]>) {
-        const inModule = path.join(logsRoot, module, name);
-        const atRoot = path.join(logsRoot, name);
-        const file = fs.existsSync(inModule) ? inModule : atRoot;
-        reports.push({ module, kind, file, exists: fs.existsSync(file) });
-      }
+    // The six per-module EOD files were retired 2026-08-13; this listed all of them and would now
+    // render six dead links. The session's record is the review's three artifacts.
+    for (const [kind, name] of [
+      ["facts", `eod-${session}.json`],
+      ["render", `eod-${session}.md`],
+      ["note", `eod-${session}.note.md`],
+    ] as Array<[string, string]>) {
+      const file = path.join(config.paths.reviewDir, name);
+      reports.push({ module: "review", kind, file, exists: fs.existsSync(file) });
     }
   }
 

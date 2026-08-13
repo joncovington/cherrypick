@@ -150,3 +150,67 @@ export interface GexPayload {
   /** Recent history (latest day) for the table, newest first. */
   recent: GexRegimeRow[];
 }
+
+// --------------------------------------------------------------------------- suite review
+// Shapes mirror `packages/review`'s fact set (data/review/eod-<day>.json). The console renders that
+// artifact and derives nothing from the ledgers, which is what keeps this page, the markdown render
+// and the narrative from holding different opinions about a session.
+
+export interface ReviewArm {
+  arm: string;
+  closed: number;
+  net: number;
+  wins: number;
+  capitalAtRisk: number | null;
+  onMaxRisk: number | null;
+  /** The centring rule when every entry used one — the tell for an arm that collapsed into another. */
+  centredBy: string | null;
+}
+
+export interface ReviewModule {
+  module: string;
+  ok: boolean;
+  reason: string | null;
+  loopTicked: boolean | null;
+  iterations: number | null;
+  errors: number | null;
+  closed: number;
+  net: number;
+  gross: number;
+  cost: number;
+  wins: number;
+  capitalAtRisk: number | null;
+  onMaxRisk: number | null;
+  n: number | null;
+  effectiveN: number | null;
+  /** null = the module tracks no breaks at all, which is weaker than an empty list, not stronger. */
+  breaks: string[] | null;
+  suspectedBreak: { ratio: number; trades: number; trailingMedian: number } | null;
+  expectedBasis: string | null;
+  expected: number | null;
+  observed: number | null;
+  carriedPositions: number;
+  carriedCapital: number | null;
+  arms: ReviewArm[];
+}
+
+export interface ReviewSession {
+  session: string;
+  status: string;
+  factVersion: number | null;
+  generatedAt: string | null;
+  modules: ReviewModule[];
+  note: string | null;
+}
+
+export interface ReviewPayload {
+  sessions: string[];
+  current: ReviewSession | null;
+  allTime: {
+    sessions: number;
+    from: string | null;
+    to: string | null;
+    netByModule: Record<string, number>;
+    closedByModule: Record<string, number>;
+  };
+}

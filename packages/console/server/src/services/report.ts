@@ -8,9 +8,11 @@
  * per-trade net, win rate, average.
  */
 
+import fs from "node:fs";
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb } from "../readers/db.js";
+import { listSessions } from "../readers/review.js";
 
 interface TradeNet {
   session: string;
@@ -78,6 +80,37 @@ function fliesNets(config: ConsoleConfig): TradeNet[] {
   );
 }
 
+
+interface FactModule {
+  net: number;
+  closed: number;
+  wins: number;
+  losses: number;
+}
+
+/** One session's per-module results, or null if the artifact is missing or unreadable. */
+function readFactSet(config: ConsoleConfig, session: string): Record<string, FactModule> | null {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(
+      fs.readFileSync(path.join(config.paths.reviewDir, `eod-${session}.json`), "utf-8"),
+    );
+  } catch {
+    return null;
+  }
+  const modules = parsed["modules"];
+  if (!modules || typeof modules !== "object") return null;
+  const out: Record<string, FactModule> = {};
+  for (const [name, raw] of Object.entries(modules as Record<string, unknown>)) {
+    const m = (raw ?? {}) as Record<string, unknown>;
+    if (m["ok"] !== true) continue;
+    const r = (m["results"] ?? {}) as Record<string, unknown>;
+    const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+    out[name] = { net: n(r["net"]), closed: n(r["closed"]), wins: n(r["wins"]), losses: n(r["losses"]) };
+  }
+  return out;
+}
+
 export interface SuiteReport {
   suite: { net: number; trades: number; wins: number; losses: number; winRatePct: number | null; avg: number | null };
   /** Sessions ascending; cumulative suite equity plus per-module cumulative lines. */
@@ -86,12 +119,19 @@ export interface SuiteReport {
 }
 
 export function buildSuiteReport(config: ConsoleConfig): SuiteReport {
-  const byModule: Record<string, TradeNet[]> = {
-    meic: meicNets(config),
-    earnings: earningsNets(config),
-    flies: fliesNets(config),
-  };
-
+  // Reads the review's fact sets, NOT the ledgers.
+  //
+  // The per-schema net rules used to be implemented here, hand-copied from the orchestrator's
+  // Python and flagged in this file's own docstring as "copied exactly" — and they had already
+  // drifted: the orchestrator reads flies from `fly_positions`, this port read `fly_books`. Two
+  // implementations of a rule that must not differ is one too many, so the rule now lives in
+  // `cherrypick.core.ledgers`, `packages/review` applies it once per session, and this function
+  // sums the resulting artifacts.
+  //
+  // The interface is unchanged, so nothing downstream had to move. What changed is depth: this is
+  // now exactly the sessions that have been built (2026-07-10 onward), not everything the ledgers
+  // hold. The review page states its own coverage; a caller wanting all-of-history from the raw
+  // ledgers should ask the orchestrator's `report`, which is the surface that still does that.
   const sessions = new Map<string, { net: number; byModule: Record<string, number> }>();
   const modules: SuiteReport["modules"] = {};
   let net = 0;
@@ -99,26 +139,28 @@ export function buildSuiteReport(config: ConsoleConfig): SuiteReport {
   let wins = 0;
   let losses = 0;
 
-  for (const [mod, nets] of Object.entries(byModule)) {
-    const m = { net: 0, trades: 0, wins: 0, losses: 0 };
-    for (const t of nets) {
-      m.net += t.net;
-      m.trades += 1;
-      if (t.net > 0) m.wins += 1;
-      else if (t.net < 0) m.losses += 1;
-      let s = sessions.get(t.session);
+  for (const session of listSessions(config)) {
+    const facts = readFactSet(config, session);
+    if (facts === null) continue;
+    for (const [mod, raw] of Object.entries(facts)) {
+      const m = (modules[mod] ??= { net: 0, trades: 0, wins: 0, losses: 0 });
+      m.net += raw.net;
+      m.trades += raw.closed;
+      m.wins += raw.wins;
+      m.losses += raw.losses;
+      net += raw.net;
+      trades += raw.closed;
+      wins += raw.wins;
+      losses += raw.losses;
+
+      let s = sessions.get(session);
       if (s === undefined) {
         s = { net: 0, byModule: {} };
-        sessions.set(t.session, s);
+        sessions.set(session, s);
       }
-      s.net += t.net;
-      s.byModule[mod] = (s.byModule[mod] ?? 0) + t.net;
+      s.net += raw.net;
+      s.byModule[mod] = (s.byModule[mod] ?? 0) + raw.net;
     }
-    modules[mod] = m;
-    net += m.net;
-    trades += m.trades;
-    wins += m.wins;
-    losses += m.losses;
   }
 
   let cumulative = 0;

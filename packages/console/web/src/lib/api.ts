@@ -12,6 +12,7 @@ import type {
   TtWatchlistPayload,
   TtWatchlistRow,
   SymbolCardPayload,
+  ReviewPayload,
 } from "@console/shared";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -56,6 +57,15 @@ export function useOverview() {
     queryKey: ["overview"],
     queryFn: () => getJson<OverviewPayload>("/api/overview"),
     refetchInterval: 15_000,
+  });
+}
+
+export function useReview(session?: string) {
+  return useQuery<ReviewPayload>({
+    queryKey: ["review", session ?? "latest"],
+    queryFn: () => getJson<ReviewPayload>(`/api/review${session ? `?session=${session}` : ""}`),
+    // The fact set changes twice a day, not continuously — polling it hard would be noise.
+    refetchInterval: 60_000,
   });
 }
 
