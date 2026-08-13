@@ -1080,3 +1080,21 @@ select.text-input {
   padding: 0 0.2rem;
   border-radius: 2px;
 }
+
+/* The narrative note. Prose, not data — so it wraps and gets a readable measure, unlike the
+   nowrap tables above it. `overflow-wrap` catches the long unbroken tokens a model sometimes
+   emits (a path, a symbol list) that would otherwise force a horizontal scrollbar on the card. */
+.note {
+  max-width: 74ch;
+  line-height: 1.55;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.note p {
+  margin: 0 0 0.85rem;
+}
+.note h3 {
+  margin: 1.2rem 0 0.5rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
