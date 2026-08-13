@@ -87,6 +87,35 @@ def trend(module: str, end_session: str, window: int = DEFAULT_WINDOW) -> dict:
     if slices:
         tracks_breaks = (slices[-1][1].get("sample") or {}).get("breaks") is not None
 
+    # Per arm across the same window. This is the number the arm experiments exist to produce, and
+    # a single session of it is nearly worthless -- MEIC's `open` beat both width arms on all four
+    # sessions so far, which is suggestive and nothing more until the window is longer than the
+    # gap between breaks.
+    by_profile: dict[str, dict] = {}
+    for _, entry in slices:
+        for arm, g in (entry.get("by_profile") or {}).items():
+            acc = by_profile.setdefault(
+                arm,
+                {"closed": 0, "net": 0.0, "wins": 0, "sessions": 0,
+                 "capital": 0.0, "capital_seen": False},
+            )
+            acc["closed"] += g["closed"]
+            acc["net"] += g["net"]
+            acc["wins"] += g["wins"]
+            acc["sessions"] += 1
+            capital = (g.get("return") or {}).get("capital_at_risk")
+            if capital:
+                acc["capital"] += capital
+                acc["capital_seen"] = True
+    for acc in by_profile.values():
+        acc["net"] = round(acc["net"], 2)
+        acc["win_rate"] = round(acc["wins"] / acc["closed"], 4) if acc["closed"] else None
+        acc["capital_at_risk"] = round(acc["capital"], 2) if acc["capital_seen"] else None
+        acc["on_max_risk"] = (
+            round(acc["net"] / acc["capital"], 6) if acc["capital_seen"] and acc["capital"] else None
+        )
+        del acc["capital"], acc["capital_seen"]
+
     return {
         "module": module,
         "end_session": end_session,
@@ -102,6 +131,7 @@ def trend(module: str, end_session: str, window: int = DEFAULT_WINDOW) -> dict:
         "effective_n": effective,
         "capital_at_risk": round(sum(capitals), 2) if capitals else None,
         "on_max_risk": round(net / sum(capitals), 6) if capitals else None,
+        "by_profile": by_profile,
     }
 
 

@@ -35,10 +35,11 @@ import statistics
 from datetime import UTC, date, datetime
 
 from cherrypick.core import ledgers as _ledgers
+from cherrypick.core.profiles import compare_profiles as _compare_profiles
 
 from cherrypick.review import paths as _paths
 
-FACT_VERSION = 2
+FACT_VERSION = 3
 
 STATUS_PROVISIONAL = "provisional"
 STATUS_FINAL = "final"
@@ -320,6 +321,40 @@ def _returns(records: list[dict]) -> dict:
     }
 
 
+def _summarize(records: list[dict]) -> dict:
+    """The per-group figures. Shared by the module total and each of its arms so the parts always
+    add up to the whole."""
+    gross = sum(r.get("gross_pnl") or 0.0 for r in records)
+    cost = sum(r.get("cost") or 0.0 for r in records)
+    return {
+        "closed": len(records),
+        "gross": round(gross, 2),
+        "cost": round(cost, 2),
+        "net": round(gross - cost, 2),
+        "wins": sum(1 for r in records if (r.get("net_pnl") or 0) > 0),
+        "return": _returns(records),
+        "sample": _sample(records),
+    }
+
+
+def _by_profile(records: list[dict]) -> dict:
+    """Split a module's session by its attribution tag — MEIC's risk_profile, flies' arm, earnings'
+    book. `cherrypick.core.ledgers` normalises all three onto `profile`.
+
+    Collapsing these away loses the experiment. MEIC currently runs `open`, `width-5` and `width-10`
+    against the same underlying on the same sessions, which is a paired comparison and the entire
+    reason three profiles exist; a single module row reports their average and hides that `open`
+    takes no stops at all while the other two stop 70-90% of trades on a moving day. Flies runs its
+    arms for exactly the same reason.
+
+    Grouped through `cherrypick.core.profiles.compare_profiles`, the helper the orchestrator's own
+    per-profile reporting already uses, rather than a fourth hand-rolled grouping.
+    """
+    if not records:
+        return {}
+    return _compare_profiles(records, tag_key="profile", summarize=_summarize)
+
+
 def build_module_facts(module: str, session: str, db_path=None) -> dict:
     """One module's slice of a session, or a structured reason it could not be read."""
     spec = MODULES[module]
@@ -359,20 +394,15 @@ def build_module_facts(module: str, session: str, db_path=None) -> dict:
     if suspected and breaks and session in breaks:
         suspected = None  # already journaled; nothing to flag
 
-    gross = sum(r.get("gross_pnl") or 0.0 for r in closed)
-    cost = sum(r.get("cost") or 0.0 for r in closed)
+    totals = _summarize(closed)
     return {
         "ok": True,
         "book": "paper",
         "settles_intraday": spec["settles_intraday"],
         "health": health,
-        "results": {
-            "closed": len(closed),
-            "gross": round(gross, 2),
-            "cost": round(cost, 2),
-            "net": round(gross - cost, 2),
-            "wins": sum(1 for r in closed if (r.get("net_pnl") or 0) > 0),
-        },
+        "results": {k: totals[k] for k in ("closed", "gross", "cost", "net", "wins")},
+        # The arms, kept because for MEIC and flies the comparison between them IS the experiment.
+        "by_profile": _by_profile(closed),
         "carried_overnight": {
             "positions": len(carried),
             "capital_at_risk": round(sum(r.get("capital_at_risk") or 0.0 for r in carried), 2)
