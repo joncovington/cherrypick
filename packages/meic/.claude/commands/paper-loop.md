@@ -20,7 +20,7 @@ For a full session that runs on its own without per-iteration invocation, use `/
 python -m cherrypick.meic.paper_loop --install-task    # register + fire the first run (recommended)
 python -m cherrypick.meic.paper_loop --status          # daemon/task status + open-position count
 python -m cherrypick.meic.paper_loop --uninstall-task  # stop the unattended session
-python -m cherrypick.meic.paper_loop --eod-report       # write logs/paper-eod-<date>.md now (--date to backfill)
+python -m cherrypick.review build --session <date>      # the suite review for one session (all modules)
 ```
 
 The daemon also writes that deterministic end-of-day report automatically, once, at the 16:00 settlement pass — a per-profile metrics table (trades, win rate, net P&L, expectancy, profit factor, max drawdown), an exits-by-reason breakdown, and per-symbol P&L. It's code-generated (no agent), distinct from the agent-synthesized `/paper-report`.

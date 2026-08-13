@@ -86,8 +86,10 @@ Everything hangs off one config file per package. The orchestrator's `config.jso
   mode. (A 34-hour silent stall from an external streamer dependency is why that rule is
   load-bearing.)
 - **Read side — look whenever you want.** `report.py` (cross-module paper P&L), `calibrate.py` (per-profile
-  promotion advisor), `eod_digest.py` (one session's cross-module roll-up), `eod_insight.py` (opt-in AI
-  synthesis) and `logrotate.py` (monthly archive). The page that composed them is the console.
+  promotion advisor) and `logrotate.py` (monthly archive), over the shared per-schema ledger readers in
+  `cherrypick.core.ledgers`. End-of-day reporting moved out to **`packages/review`** on 2026-08-13 —
+  one versioned fact set per session across every module, which every surface renders rather than
+  re-deriving. The page that composes them is the console.
   These are **read-only and file-only** — they read paper DBs (SQLite read-only), watchdog state, logs,
   and report files; never the broker. See [reporting-and-dashboard.md](reporting-and-dashboard.md).
 
@@ -125,8 +127,9 @@ wholesale with `$CHERRYPICK_HOME`:
   config.json              # orchestrator config
   config/<engine>.json     # per-module configs (meic.json, earnings.json)
   data/<module>/           # paper + live SQLite DBs, streamer cache
-  logs/                    # suite logs + eod-digest / eod-insight
-  logs/<module>/           # per-module logs + paper-eod / eod-analysis
+  logs/                    # suite logs
+  logs/<module>/           # per-module logs
+  data/review/             # eod-<day>.json fact sets + their renders
   logs/archive/<YYYY-MM>/  # monthly zipped reports + rotated logs
   state/                   # watchdog state, heartbeats
 ```
@@ -140,7 +143,7 @@ resolved against the config file's directory / the source anchor, not the home. 
 `graphify` and `agentmemory` are local authoring aids; their artifacts (`graphify-out/`, most of
 `.claude/`) are gitignored and are never a runtime dependency. The one tracked exception is
 `.claude/commands/` — checked-in slash commands are shared dev conveniences (e.g. `/console`).
-The AI EOD **insight** (`cherrypick eod-insight`) is the single place AI is invoked in the product, and it
-is deliberately fenced off the reliability path — see
-[reporting-and-dashboard.md](reporting-and-dashboard.md) and
+**No AI is invoked from any suite package.** The EOD narrative is generated outside them, by a
+scheduled agent reading `packages/review`'s fact set, so no package holds an API key or a network
+dependency — see [reporting-and-dashboard.md](reporting-and-dashboard.md) and
 [guardrails-and-modes.md](guardrails-and-modes.md).

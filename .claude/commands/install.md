@@ -31,7 +31,7 @@ Do this:
    entry/exit, dolt keep-alive, log-archive, opt-in reconcile/symbol-watch/follow-notify) is a
    **supervisor job derived from `~/.cherrypick/config.json`** — no per-job registration exists
    anymore. The **EOD digest and insight remain event-driven** (watchdog-fired once every module has
-   written its `paper-eod-<day>.md`, deadline backstop 16:45 ET) — they appear in no schedule, and
+   run as two daily jobs (`review-provisional`, `review-final`) — they appear in the schedule, and
    that is correct output, not a failure.
 
 3. **Verify**:

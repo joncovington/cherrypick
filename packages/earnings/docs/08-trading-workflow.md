@@ -135,18 +135,18 @@ exactly what the `hold_days` and excursion columns now let the reports answer.
 The forced-sampling close pass (`run_closes`, driven by the orchestrator's 09:45 ET exit task)
 writes **two** deterministic end-of-day files automatically to `~/.cherrypick/logs/earnings/`:
 
-- `paper-eod-<date>.md` — the terse metrics report: an account-wide net-P&L summary plus per-profile,
+- (retired 2026-08-13) `paper-eod-<date>.md` — the terse metrics report: an account-wide net-P&L summary plus per-profile,
   per-strategy, and per-symbol breakdowns, all net of costs.
 - `eod-analysis-<date>.md` — a conversational **7-section** read on the same session (executive
   snapshot, position detail, trade log, risk metrics, market context, tax notes, and a notes/journal
   with recommendations). Still fully deterministic/code-generated — no agent — just written in
   plain-English analysis language.
 
-Regenerate today's or backfill a past day on demand (`eod_report` writes both; `eod_analysis` writes just
+The module's own EOD reports were retired 2026-08-13; the suite review covers the session (`eod_report`/`eod_analysis` previously wrote just
 the analysis):
 
 ```
-python -m cherrypick.earnings.strat_test_harness eod_report [--date YYYY-MM-DD]
+python -m cherrypick.review build --session YYYY-MM-DD
 python -m cherrypick.earnings.strat_test_harness eod_analysis [--date YYYY-MM-DD]
 ```
 

@@ -94,13 +94,12 @@ the stdlib + the OS shell — no MCP, no HTTP client, no AI tooling — so it ha
 **34-hour silent stall** (2026-07-01, from an external streamer dependency) is why this rule exists. The
 modules' loop decisions depend only on their local tools + their instructions, for the same reason.
 
-- The AI **EOD insight** does not violate this: it's opt-in, feature-detected, and the watchdog fires it
-  **detached** on the module-completion event, strictly **off** the watchdog/paper path, best-effort. The
-  deterministic `eod-analysis` remains the guaranteed artifact.
-- **That insight run does make an outbound call, by default.** `eod_insight.research_events` defaults to
-  true, which grants the agent `WebSearch` (bounded turns) to research upcoming events. It is the one
-  sanctioned network exception in the suite, and it sits entirely off the reliability path — but it is
-  real, so do not read "no network" as covering it. `"research_events": false` makes the run offline.
+- **No AI runs inside any suite package**, which is stronger than the fencing this used to describe.
+  The EOD narrative is generated *outside* them by a scheduled agent reading `packages/review`'s fact
+  set, so no package holds an API key or a network dependency and a failed narrative cannot damage a
+  report. The deterministic fact set and its render are the guaranteed artifacts.
+- **The one sanctioned network exception is gone with it.** The retired `eod_insight` granted its
+  agent `WebSearch` by default; nothing in the suite does that now.
 
 **Read surfaces read files, never the broker.** `report`/`calibrate`/`dashboard`/EOD reports read paper
 DBs (SQLite read-only), watchdog state, logs, and report files. The static dashboard render reads the

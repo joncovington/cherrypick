@@ -22,14 +22,17 @@ strategy is defined-risk; naked strategies were removed.
 **DXLink** — tastytrade's streaming market-data feed. The streamer maintains a WebSocket to it and caches
 Quote/Greeks/Trade/Summary events in `stream_cache.db`.
 
-**EOD analysis** — The deterministic, code-generated **7-section** conversational report each module
-writes per session (`eod-analysis-<day>.md`) alongside the terse `paper-eod` metrics file.
+**Fact set** — `packages/review`'s daily artifact (`data/review/eod-<day>.json`): one versioned,
+deterministic record of what every module did that session, and the only thing any read surface reads.
+Replaced the per-module EOD reports, the suite digest and its AI synthesis on 2026-08-13.
 
-**EOD digest** — The orchestrator's cross-module session roll-up (`eod-digest-<day>.md`) with a snapshot,
-suite total, per-module table, and links to the module reports.
+**Provisional / final** — A session's fact set is provisional at the close (the 0DTE modules are
+complete, earnings is still carrying overnight) and final the next morning once earnings has settled.
+The narrative is only ever written against a final set.
 
-**EOD insight** — The **opt-in AI** synthesis (`eod-insight-<day>.md`) produced by Claude Code over the
-day's deterministic reports. Off by default; off the reliability path.
+**Effective sample** — The independent-observation count beside the raw trade count. Trades sharing a
+symbol and session share one market event, so a book with hundreds of trades on one name in one
+session has one event, not hundreds.
 
 **Expectancy** — Average net P&L per trade; a per-profile metric in the reports.
 

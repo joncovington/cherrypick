@@ -28,7 +28,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 
 | Command | What it does |
 |---|---|
-| `install` | Register the ONE `cherrypick-supervisor` anchor task, start the supervisor daemon (which derives every job — module paper loops, earnings entry/exit, Dolt keep-alive, watchdog, streamer-health, trade-notify, log-archive, opt-ins — from config each pass), delete every legacy per-job task, and start the streamer / services if down. Refuses while flies is live-armed today (`--force` overrides). The EOD digest/insight/advise remain event-driven (watchdog-fired). Full verified inventory: [operations.md](operations.md). |
+| `install` | Register the ONE `cherrypick-supervisor` anchor task, start the supervisor daemon (which derives every job — module paper loops, earnings entry/exit, Dolt keep-alive, watchdog, streamer-health, trade-notify, log-archive, opt-ins — from config each pass), delete every legacy per-job task, and start the streamer / services if down. Refuses while flies is live-armed today (`--force` overrides). The suite review runs as two daily jobs (`review-provisional`, `review-final`). Full verified inventory: [operations.md](operations.md). |
 | `uninstall` | Delete the anchor task first, stop the supervisor, remove any legacy per-job tasks, and stop the orchestrator's own background services. Recorded data and config are untouched. |
 | `status` | Supervisor liveness + per-job registry (last start/exit, next run) + heartbeats. File reads plus one anchor-task query; falls back to the OS-scheduler snapshot on a pre-cutover box. |
 | `supervise` | Run the supervisor daemon loop in the foreground (diagnostic; the anchor task keeps it alive normally). `--stop` asks a running daemon to exit via its stop file. |
@@ -54,10 +54,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 |---|---|---|
 | `report` | Unified cross-module paper P&L: totals + per-profile breakdown, **gross and net** of costs. | `--eod` (today ET), `--date YYYY-MM-DD` (one session; default all-time) |
 | `calibrate` | Per-profile calibration readings + advisory promotion recommendations (never changes risk settings). | — |
-| `eod-digest` | Write `logs/eod-digest-<day>.md`: one session's cross-module roll-up + a conversational snapshot + links to each module's paper-eod / eod-analysis files. | `--date` |
-| `notify-eod` | Write the digest **and** push a one-line summary through the notify channels (what the watchdog fires, detached, once every module has settled — or at the `eod_digest.deadline` backstop). | `--date` |
-| `eod-insight` | **Opt-in AI synthesis** over the day's deterministic reports → `logs/eod-insight-<day>.md`. Needs Claude Code on PATH + `eod_insight.enabled`; read-only, no dangerous tools, off the reliability path. Best-effort (prints `skipped`/`error` when absent/disabled). | `--date` |
-| `advise` | **Opt-in bounded parameter proposals** for the NEXT session → `state/advice/<module>-<session>.json`, validated by `cherrypick.core.advice` against each module's `advice_bounds` manifest of closed legal ranges (one violation rejects the whole set; rejections written for audit). Off by default **twice** (`advise.enabled` + per-module); needs Claude Code on PATH; all tools denied. The module's paper loop re-validates with the same core code at session start — absent/stale/invalid ⇒ baseline. Watchdog-fired detached on the same completion event as the digest. | `--date` |
+| `review` | Suite end-of-day review (`packages/review`): build one session's cross-module fact set and render it. `--final` marks the session final and re-runs reconciliation; without it the pass is provisional. Read-only over every module's ledger. What the two daily supervisor jobs run. | `--final` |
 | `archive` | End-of-month rotation: zip each finished month's dated reports + rotated log backups into `logs/archive/<YYYY-MM>/<scope>.zip` and remove the originals (idempotent; never touches the current month or an active `.log`). | `--month YYYY-MM`, `--dry-run` |
 
 There is no `dashboard` command. The suite's read surface is the **console** (`packages/console`, on
@@ -83,7 +80,7 @@ job that owns settlement. The modules' `--install-task` helpers remain only for 
 
 ## Global flags
 
-`--date YYYY-MM-DD` (report/eod-digest/notify-eod/eod-insight) · `--eod` (report — scope to one
+`--date YYYY-MM-DD` (report) · `--eod` (report — scope to one
 settlement session) · `--live` (report — read the modules' separate live ledgers instead of paper; a
 deliberately separate path calibrate can never reach) · `--fast` (doctor) ·
 `--module` / `--set` / `--clear` / `--yes` (connect/account) ·

@@ -172,8 +172,8 @@ isolated books:
   `enable_live_trading`), run through a full market session.
 
 The forced-sampling close pass writes a deterministic end-of-day file automatically
-(`~/.cherrypick/logs/earnings/paper-eod-<date>.md` by default); regenerate or backfill one with
-`python -m cherrypick.earnings.strat_test_harness eod_report [--date YYYY-MM-DD]`. Track accumulated (multi-day)
+The module's own EOD reports were retired 2026-08-13 — the suite review covers every module in one
+place: `python -m cherrypick.review build --session <date>`. Track accumulated (multi-day)
 results with `python -m cherrypick.earnings.strategy_report` (text) or `python -m cherrypick.earnings.strategy_dashboard`
 (self-contained HTML dashboard, written to `reports/`).
 

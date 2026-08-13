@@ -300,7 +300,7 @@ That's it. From here it collects data hands-off. `python run.py status` shows wh
 python run.py report              # win rate + gross/net P&L across strategies and risk profiles
 python run.py report --eod        # scope to one settlement session (--date YYYY-MM-DD for a past one)
 python run.py calibrate           # advice on when a risk profile has "earned" a step up
-python run.py eod-digest          # write today's cross-module digest to a file
+python -m cherrypick.review build # today's cross-module review: fact set + render
 ```
 
 To look rather than read: the **console** at <http://127.0.0.1:5070>. The supervisor keeps it running,

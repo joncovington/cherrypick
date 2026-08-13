@@ -42,16 +42,18 @@ Then write the analysis to the MEIC logs home as `eod-<YYYY-MM-DD>.md` (`~/.cher
 
 ## Section B — Paper EOD report (when scope is `paper` or `both`)
 
-The paper report is **deterministic and code-generated** (no synthesis needed) — just run the generator, which reads `~/.cherrypick/data/meic/paper_trades.db` and writes the file:
+**This module no longer writes its own paper EOD report** (retired 2026-08-13). The suite review
+covers the session across MEIC, flies and earnings in one place, with MEIC split by arm:
 
 ```bash
-python -m cherrypick.meic.paper_loop --eod-report [--date <YYYY-MM-DD>]
+python -m cherrypick.review build --session <YYYY-MM-DD> --final
 ```
 
-It writes **two** files to the MEIC logs home (`~/.cherrypick/logs/meic/` by default, or `$MEIC_LOGS_DIR`):
-- `paper-eod-<date>.md` — the terse per-portfolio/per-profile metrics table (trades, win rate, net P&L, expectancy, profit factor, max drawdown) across every enabled arm (`control`/`open`/`width-5`/`width-10`), exits-by-reason breakdown, and per-symbol P&L, plus (since 2026-08-07) an arm scorecard (the breakeven identity per stream), a gate ledger, a derived stop-policy table, regime coverage, and iteration duration/peak open positions — see `docs/paper-experiments.md`.
-- `eod-analysis-<date>.md` — a conversational 7-section read on the same session (executive snapshot, position-level detail, trade activity log, risk metrics, market context, tax/accounting notes, notes/journal). Still fully deterministic/code-generated (no agent), just written in plain-English analysis language. Regenerate only this one with `python -m cherrypick.meic.paper_loop --eod-analysis [--date <YYYY-MM-DD>]`.
+It writes `~/.cherrypick/data/review/eod-<date>.json` (the fact set) and `eod-<date>.md` (the render).
+Report those paths. MEIC's per-arm figures — `open` / `width-5` / `width-10`, each with its own net,
+capital at risk and return on risk — are in the render's **By arm** table, which is where the
+comparison those arms exist to make actually lives.
 
-Report the paths it prints; optionally show the user the file contents. (Both are distinct from `/paper-report`, which is the agent-synthesized multi-day write-up.)
-
-Note: the paper loop daemon already writes both files automatically at the 16:00 settlement pass; running it here just regenerates them on demand (or backfills a past `--date`).
+Note: the paper loop still rolls the session into `daily_summary` at the 16:00 settlement pass, and
+the review reads that for this module's expected-vs-observed. The two daily review passes run on
+their own schedule, so this command is only for regenerating or backfilling a day on demand.

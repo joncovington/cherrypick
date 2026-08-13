@@ -1,26 +1,36 @@
 # Reporting & the console (the read side)
 
 Everything the suite produces for you to *look at*. All of it is **read-only and file-only** — it reads
-paper DBs (SQLite read-only), watchdog state, logs, and report files, never the broker or the network
-(the one exception is the opt-in AI insight, which calls Claude Code — still off the reliability path).
+paper DBs (SQLite read-only), watchdog state, logs, and report files, never the broker and never the
+network. No AI runs inside any package: the EOD narrative is written outside them by a scheduled agent
+reading the fact set below.
 
 ## The reporting stack, layer by layer
 
 ```
-report.run(session=day)  ── unified cross-module P&L (gross/net, per profile)
+cherrypick.core.ledgers  ── the per-schema readers (meic_ic / fly_book / earnings):
+        │                     one home for the net, cost, capital and session rules
         │
-        ├── eod_digest ──►  logs/eod-digest-<day>.md   (suite roll-up + snapshot + links)
-        │                        cites report's numbers, so it can't drift
+        ├── report.run(session=day) ── unified cross-module P&L (gross/net, per profile)
         │
-        ├── each module writes (at settlement, deterministically):
-        │       logs/<mod>/paper-eod-<day>.md       terse metrics tables
-        │       logs/<mod>/eod-analysis-<day>.md    conversational 7-section read
-        │
-        ├── eod_insight ─►  logs/eod-insight-<day>.md  (opt-in AI synthesis over the above)
-        │
-        └── console ─────►  the reactive UI at 127.0.0.1:5070 (packages/console)
-                                 reads these files and every module's DB directly
+        └── packages/review ────────►  data/review/eod-<day>.json   THE FACT SET
+                    │                        one versioned record per session, and the
+                    │                        only thing any read surface reads
+                    │
+                    ├──►  eod-<day>.md        human render of those facts
+                    ├──►  eod-<day>.note.md   the narrative, written beside them by a
+                    │                          scheduled agent — never inside them
+                    └──►  console at 127.0.0.1:5070 (packages/console)
 ```
+
+**Nothing downstream re-derives.** That is the whole point of the fact set: the render, the console
+page and the narrative read the same artifact, so they cannot hold different opinions about a session.
+The arrangement this replaced had six report families and two normalisation layers, and they had
+already drifted — the orchestrator read flies from `fly_positions` while the console's hand-copied
+TypeScript port read `fly_books`.
+
+**Retired 2026-08-13**, all replaced by the above: each module's `paper-eod-<day>.md` and
+`eod-analysis-<day>.md`, the suite `eod-digest`, the opt-in `eod-insight` AI synthesis, and `advise`.
 
 `calibrate` sits alongside `report`, reading the same paper DBs to produce per-profile qualification
 readings. It compares a **champion** (the currently-live profile) against every other observed tag as a
@@ -47,38 +57,42 @@ option.) `--live` switches to a **separate** reader (`report.live_run`) over the
 it is a different function by design, so `calibrate` — which goes through `report.run` — can never see a
 live trade even by accident. Both are files-only and never touch the broker.
 
-This one function is the single source of truth the digest, dashboard EOD card, and calibration all
+This one function is the single source of truth the review's fact set, the console, and calibration all
 cite, so they can never disagree for the same day.
 
-## The two per-module EOD reports (deterministic)
+## The suite review (`packages/review`)
 
-Each module writes **two** files per session, at its settlement pass, **code-generated with no
-agent/LLM/network** (so they run unattended on the reliability-adjacent daemon):
+One versioned fact set per session across MEIC, flies and earnings, plus the renders of it. This
+replaced the six per-module and suite report families on 2026-08-13.
 
 | File | Content |
 |---|---|
-| `paper-eod-<day>.md` | Terse metrics: per-profile table (trades, win rate, net P&L, expectancy, profit factor, max drawdown), exits-by-reason, per-symbol P&L. |
-| `eod-analysis-<day>.md` | Conversational **7-section** read: (1) executive snapshot, (2) position-level detail, (3) trade activity log, (4) risk metrics, (5) market context, (6) tax/accounting notes *(informational)*, (7) notes/journal with heuristic recommendations. Reads like prose but is rule-based templating, not synthesis. |
+| `data/review/eod-<day>.json` | The facts. Per module: health (did the loop tick, entry attempts, gates), results, return on risk, expected-vs-observed against that module's own model, the per-arm split, and sample (raw n, effective n, measurement breaks). |
+| `data/review/eod-<day>.md` | Human render: what needs attention first, then what each module did, the arms, expected against observed, and the trend. |
+| `data/review/eod-<day>.note.md` | The narrative, written beside the facts by a scheduled agent — never inside them, so a failed or missing note cannot damage the record. |
 
-Both reconcile with `report`'s numbers for the same day. Regenerate on demand:
+Four properties the shape enforces, each of them a mistake this suite has already made:
 
-- MEIC: `python -m cherrypick.meic.paper_loop --eod-report [--date <d>]` (writes both) or `--eod-analysis` (analysis only).
-- Earnings: `python -m cherrypick.earnings.strat_test_harness eod_report [--date <d>]` or `eod_analysis`.
+- **`None` is not zero.** A field with no recorded value is null. Averaging "not recorded" as zero is
+  what once made a cost model look 90% cheaper than it was.
+- **Effective sample beside raw n.** Trades sharing a symbol and session share one market event —
+  673 MEIC trades in a session are one day, not 673 observations.
+- **Measurement breaks travel with the numbers**, and a trend never crosses one. A module that does
+  not track breaks reports `null` rather than `[]`, so no trend can quietly assume continuity.
+- **The arms are never collapsed.** MEIC's `open`/`width-5`/`width-10` and flies' arms run against the
+  same underlying on the same sessions — a paired comparison, and the reason those arms exist.
 
-A small **market-context snapshot** (VIX / VIX1D / per-symbol IV rank for MEIC; overnight VIX for
-earnings) is captured on the loop write path — stdlib/DB-only — so the market-context section is real.
+**Provisional then final.** MEIC and flies are 0DTE and complete at the close; earnings opens before
+it and settles the next morning. So the 16:30 pass writes a provisional set with earnings as carried
+overnight risk, and the 10:15 pass next morning finalises it. The narrative only ever runs on a final
+set, which is what lets it be written once and frozen.
 
-## The suite digest
+**Reconciliation is not optional.** `python -m cherrypick.review reconcile` re-counts every module
+with independent SQL — a different route to the same question than the readers took — and reports
+deltas rather than merely failing. It caught a real scope bug on its first run.
 
-`cherrypick eod-digest` writes `logs/eod-digest-<day>.md`: a conversational **Snapshot** (which module
-carried the day, cost drag as a share of gross, and the gross-vs-net win-rate gap — "costs flipped ~N
-trades from win to loss"; on an all-red day it names the least-bad and worst instead of a "carrier"), the
-suite total, a per-module table, and links to each module's `paper-eod` and `eod-analysis`. It cites
-`report`'s numbers rather than re-summing the DBs, so it can't drift. On by default and **event-driven,
-not scheduled**: the watchdog fires `notify-eod` (which writes the digest and pushes a one-line summary)
-as a detached subprocess once every installed module has written its `paper-eod-<day>.md`, with
-`eod_digest.deadline` as the backstop so a late or flat module can't skip the day. Detached because the
-push is a network call and the watchdog tick must stay stdlib-and-OS-shell only.
+Commands: `build [--session] [--final]`, `backfill [--since]`, `render [--session]`,
+`reconcile [--since]`. Two supervisor jobs run the first of these daily.
 
 ## Trade notifications (intraday)
 
@@ -106,35 +120,6 @@ decides how its events reach you:
 A digest line reads `MEIC digest 13:45 ET — SPX: 30 entries (open×10 width-10×10 width-5×10) · 2 exits
 net +$48 · day 7 trades net +$61`, with a matching Discord card. Arms are **counted, not listed** — a
 30-entry window would otherwise repeat the same three labels ten times each.
-
-## The AI EOD insight (opt-in)
-
-`cherrypick eod-insight` (`orchestrator/eod_insight.py`) is the one place AI is invoked in the product,
-and it's deliberately fenced:
-
-- **Feature-detected + opt-in.** Runs only if `eod_insight.enabled` is true **and** Claude Code
-  (`claude`) is on PATH; otherwise it skips silently. The deterministic `eod-analysis` stays the source
-  of record.
-- **Files in, text out, no dangerous tools.** It pipes the day's deterministic reports (each module's
-  `eod-analysis` + `paper-eod`, plus the suite digest) to `claude -p` in headless mode with
-  `--disallowed-tools Bash Edit Write NotebookEdit WebFetch Task` — so the agent can't run commands or
-  edit/write files. The **orchestrator** writes the output file; the agent never gets filesystem or
-  broker access.
-- **⚠️ It does reach the network by default.** `eod_insight.research_events` defaults to **true**, and
-  when it is on the run is granted **`WebSearch`** (bounded by `--max-turns 8`) so the debrief can
-  research upcoming macro and earnings events. That is the single deliberate exception to "no network".
-  Set `"research_events": false` to move WebSearch onto the disallowed list and make the run fully
-  offline. This does not touch the reliability-path invariant — the call is opt-in, detached, and
-  best-effort — but it is a real outbound call, and this page previously claimed the opposite.
-- **Off the reliability path.** Fired by the watchdog on the same module-completion event as the
-  digest and **launched detached**, so the `claude` call runs in that child and never in the watchdog
-  process. Best-effort, never on the paper loop.
-
-Output: `logs/eod-insight-<day>.md` — a genuine cross-module narrative (the "why", trends, concrete
-paper-tuning recommendations), clearly labelled AI-generated and not advice. Enable with
-`"eod_insight": {"enabled": true}` — it takes effect on the next watchdog tick, with no install step. See
-[guardrails-and-modes.md](guardrails-and-modes.md) for why this satisfies the no-AI-on-the-reliability-path
-invariant.
 
 ## The console
 
@@ -167,7 +152,7 @@ and each module's own dashboard (MEIC 5050/5051, flies 5052, GEX 5055, scout 505
 ## End-of-month log/report rotation
 
 `cherrypick archive` (`orchestrator/logrotate.py`) bundles each **finished** month's dated reports
-(paper-eod / eod-analysis / eod-digest / eod-insight / live eod) and rotated log backups (`*.log.N`) into
+(the review's dated fact sets and renders) and rotated log backups (`*.log.N`) into
 `logs/archive/<YYYY-MM>/<scope>.zip` — one zip per scope (the suite logs root + each module dir) — then
 removes the originals once the zip verifies (`testzip()`). It is idempotent and safe: it never touches the
 current month or an active `.log`, and a re-run (or a run after a missed month) converges. Registered as a

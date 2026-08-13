@@ -46,7 +46,7 @@ python run.py once --snapshot snapshot.json
 # the profit forest, the session timeline and the decision journal. This module's own dashboard and
 # its suite-dashboard card were retired 2026-08-12; every read still goes through analytics.py.
 python run.py regime                         # results grouped by the market regime each trade entered into
-python -m cherrypick.flies.paper_loop --eod-reports       # regenerates the day's end-of-day report
+python -m cherrypick.review build --session <date>        # the suite review (all modules, one place)
 ```
 
 `regime` reports coverage first — how much of the book carries each tag, and whether a tag ever took

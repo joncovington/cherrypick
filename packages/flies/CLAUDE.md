@@ -49,7 +49,7 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `cherrypick/flies/book.py` | wires engine decisions to the paper DB; one book per (date, arm, symbol). |
 | `cherrypick/flies/db.py` | `fly_positions` (ledger) and `fly_books` (roll-up with the floor's price band). |
 | `cherrypick/flies/analytics.py` | the one query layer every read surface goes through. Read-only. |
-| `cherrypick/flies/eod.py` | `paper-eod-<day>.md` and `eod-analysis-<day>.md`. |
+| `cherrypick/flies/eod.py` | Report builders, retired 2026-08-13 — the module no longer writes `paper-eod`/`eod-analysis`; `packages/review` reports the session across every module. `logs_dir()` is still the loops' path helper. |
 | `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime`. |
 | `cherrypick/flies/live_loop.py` | The LIVE loop: a 1-min `--once --live` tick fired by the orchestrator's supervisor while the arm record (`state/flies-live-arm.json`, written per-day via `/live-flies-start`) is valid; self-disarms at `live.disarm_time` by deleting the record. Burst fill-watchers (`--watch-fills`) unchanged. `--once` (dry-run default) is the rung-0 smoke; `--status`, `--settle --price` for the official print. |
 | `cherrypick/flies/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. |
@@ -670,7 +670,7 @@ These are the constraints the module exists to enforce. Breaking one makes the n
   hide as ~$12 of apparent slippage noise for a day.
 - **No AI, no MCP, and no network on any decision path.** `fly.py` and `engine.py` are pure functions
   over a pre-fetched snapshot. Learning happens offline in the orchestrator's read side (`report`,
-  `calibrate`, `eod-insight`) over closed rows — never inside the loop.
+  `calibrate`) and in `packages/review` over closed rows — never inside the loop.
 - **The streamer comes before API calls** whenever practical, for efficiency or latency: all pricing
   reads the shared stream cache, and cached quotes GATE broker calls (a resting entry order is only
   cancelled/replaced when the cached evaluation moved; fill-status polls fire only when cached quotes

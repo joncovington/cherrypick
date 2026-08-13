@@ -46,9 +46,14 @@ DST-correct, and no longer bound by the OS scheduler's 1-minute floor.
 Missed-fire policy after sleep/hibernate: interval jobs fire once immediately and resume cadence
 (never a burst); daily/monthly jobs fire inside their catchup window, else record `missed` and skip.
 
-**Still deliberately absent from any schedule**: `eod-digest` / `eod-insight` / `advise` remain
-**event-driven** — the watchdog fires them (detached, off the reliability path) once every installed
-module has written its `paper-eod-<day>.md`, with `eod_digest.deadline` (16:45 ET) as the backstop.
+**End-of-day reporting is two ordinary supervisor jobs** since 2026-08-13: `review-provisional`
+(16:30 ET) and `review-final` (10:15 the next morning), trading days only. They run
+`python -m cherrypick.review`, which reads every module's ledger read-only and writes only into
+`~/.cherrypick/data/review`. The provisional pass captures the 0DTE modules complete with earnings
+still carrying overnight; the final pass closes that session out once earnings has settled, and
+re-runs reconciliation. Failures are WARNING, never CRITICAL — a bad pass costs a report, not a
+trade. The event-driven `eod-digest`/`eod-insight`/`advise` trigger that used to live in the
+watchdog was removed with those commands.
 
 **Rollback** (documented for one transition window): `git tag pre-supervisor` marks the last
 schtasks-driven commit. To roll back: `run.py uninstall` (new code), check out the tag, `run.py
@@ -135,7 +140,8 @@ Time constants, each with its source:
 | 09:30–16:00 | flies loop RTH; hard `no_entry_before: 10:00`; settle 16:20 | `flies/src/cherrypick/flies/paper_loop.py`, flies config |
 | 09:45 / 15:45 | earnings exit / entry runs; entry SLA goes CRITICAL if it hasn't run by 16:20 | orchestrator config + watchdog |
 | 16:00 | `MARKET_CLOSE`; cash-settled MEIC positions settle | `orchestrator/timeutil.py` |
-| 16:45 | EOD digest deadline backstop (event-fired earlier when every module's paper-eod exists) | `eod_digest.deadline` |
+| 16:30 | suite review, provisional pass (0DTE complete; earnings still overnight) | `review.provisional_at` |
+| 10:15 (next day) | suite review, final pass for the prior session + reconciliation | `review.final_at` |
 
 ## The 09:00 ET checklist
 
@@ -165,7 +171,8 @@ Five commands; what "good" looks like is quoted from real runs (2026-07-29).
 
 Expected — do not chase:
 
-- `eod-digest` / `eod-insight` missing from `status`: by design (event-driven, see above).
+- `review-provisional` / `review-final` showing as not-yet-run before their times: by design — they
+  are daily jobs, trading days only, and skip weekends entirely.
 - Freshness "not checked" and streamer WARNs **outside** 09:15–16:00 ET: supervision is
   session-gated; an overnight streamer with `stale_warning: true` and a huge event age is idle, not
   broken.
