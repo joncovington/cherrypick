@@ -15,6 +15,7 @@ import sys
 
 from cherrypick.review import facts as _facts
 from cherrypick.review import reconcile as _reconcile
+from cherrypick.review import render as _render
 
 
 def cmd_build(args) -> dict:
@@ -22,7 +23,9 @@ def cmd_build(args) -> dict:
     status = _facts.STATUS_FINAL if args.final else _facts.STATUS_PROVISIONAL
     built = _facts.build(session, status=status)
     target = _facts.write(built)
-    return {"ok": True, "session": session, "status": status, "written": str(target)}
+    rendered = _render.write(session)
+    return {"ok": True, "session": session, "status": status,
+            "written": str(target), "rendered": str(rendered)}
 
 
 def cmd_backfill(args) -> dict:
@@ -35,9 +38,15 @@ def cmd_backfill(args) -> dict:
     for session in sorted(sessions):
         # Backfilled sessions are final by definition: everything that was going to settle has.
         _facts.write(_facts.build(session, status=_facts.STATUS_FINAL))
+        _render.write(session)
         written.append(session)
     return {"ok": True, "sessions": len(written), "first": written[0] if written else None,
             "last": written[-1] if written else None}
+
+
+def cmd_render(args) -> dict:
+    session = args.session or _facts.today()
+    return {"ok": True, "session": session, "rendered": str(_render.write(session))}
 
 
 def cmd_reconcile(args) -> dict:
@@ -58,8 +67,12 @@ def main() -> None:
     p_rec = sub.add_parser("reconcile")
     p_rec.add_argument("--since", default=None)
 
+    p_render = sub.add_parser("render")
+    p_render.add_argument("--session", default=None)
+
     args = parser.parse_args()
-    result = {"build": cmd_build, "backfill": cmd_backfill, "reconcile": cmd_reconcile}[args.command](args)
+    result = {"build": cmd_build, "backfill": cmd_backfill, "reconcile": cmd_reconcile,
+              "render": cmd_render}[args.command](args)
     json.dump(result, sys.stdout, indent=2, default=str)
     print()
 
