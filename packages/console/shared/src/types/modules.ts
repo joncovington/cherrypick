@@ -120,7 +120,6 @@ export interface EntryReviewRow {
   winrate: number | null;
   ivRvRatio: number | null;
   expectedMove: number | null;
-  bestTier: string | null;
   selected: boolean;
   reason: string | null;
 }

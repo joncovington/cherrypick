@@ -939,9 +939,9 @@ def _write_eod_analysis(day: str) -> Path:
         )
         L.append("")
         L.append(
-            "| Symbol | Decision | Price | Volume | Winrate | IV/RV | Term struct | Market cap | Tier | Reason |"
+            "| Symbol | Decision | Price | Volume | Winrate | IV/RV | Term struct | Market cap | Reason |"
         )
-        L.append("|---|---|---|---|---|---|---|---|---|---|")
+        L.append("|---|---|---|---|---|---|---|---|---|")
         for rv in reviews:
             price = f"${rv['price']:,.2f}" if rv.get("price") is not None else "-"
             vol = f"{int(rv['volume']):,}" if rv.get("volume") is not None else "-"
@@ -958,7 +958,7 @@ def _write_eod_analysis(day: str) -> Path:
             symbol = rv["symbol"] + (" †" if rv.get("timing_assumed") else "")
             L.append(
                 f"| {symbol} | {decision} | {price} | {vol} | {wr} | {ivrv} | {term} | "
-                f"{mcap} | {rv.get('best_tier') or '-'} | {rv.get('reason') or '-'} |"
+                f"{mcap} | {rv.get('reason') or '-'} |"
             )
         if any(rv.get("timing_assumed") for rv in reviews):
             L.append("")
@@ -1121,15 +1121,19 @@ def _log_scan_row(
     stage: str,
     outcome: str,
     reason: str | None,
-    tier: str | None = None,
     reject_details: list | None = None,
 ) -> None:
     """Append one scan_log row. Best-effort: telemetry must never fail a scan.
 
-    `stage` separates the two halves of a candidate's life -- 'screen' for the accept/reject
-    verdict, 'execution' for what became of an accepted one. Both are recorded for every
-    (symbol, strategy) that gets that far, so the funnel from calendar to open position can be
-    read off this table alone rather than inferred from what is missing.
+    `stage` separates the halves of a candidate's life -- 'prefilter', 'screen' for the
+    accept/reject verdict, 'execution' for what became of an accepted one, 'exit' for a close.
+    All are recorded for every (symbol, strategy) that gets that far, so the funnel from calendar
+    to open position can be read off this table alone rather than inferred from what is missing.
+
+    Deliberately writes no `tier`. That column only ever restated `outcome`, except for the
+    'close_sweep' literal that marked an exit row -- which `stage` now says directly. It stays in
+    the schema because the historical rows need it: the retired graded ladder is only identifiable
+    by its own tier/outcome vocabulary (see screen_metrics.classify).
     """
     try:
         db_paper.cmd_log_scan(
@@ -1139,7 +1143,6 @@ def _log_scan_row(
                         "scan_date": scan_date,
                         "symbol": symbol,
                         "strategy": strategy,
-                        "tier": tier if tier is not None else outcome,
                         "outcome": outcome,
                         "reason": reason,
                         "stage": stage,
@@ -1167,7 +1170,6 @@ def _log_prefilter_skip(scan_date: str, symbol: str, reason: str) -> None:
             stage="prefilter",
             outcome="skipped",
             reason=reason,
-            tier="prefilter",
         )
     except Exception:
         pass
@@ -1406,7 +1408,10 @@ def _log_close_decision(trade: dict, outcome: str, reason: str | None) -> None:
                         "scan_date": _date.today().isoformat(),
                         "strategy": trade.get("strategy"),
                         "symbol": trade.get("symbol"),
-                        "tier": "close_sweep",
+                        # A close is not a screening decision. It used to be marked by
+                        # tier='close_sweep', which is why `tier` survived at all; `stage` says it
+                        # properly now, and screen_metrics still reads the old marker for history.
+                        "stage": "exit",
                         "outcome": outcome,
                         "reason": reason,
                         "logged_at": time.time(),

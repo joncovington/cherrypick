@@ -59,8 +59,13 @@ STAGE_EXECUTION = "execution"
 #              Genuine screening decisions, but tuning a threshold for a strategy that cannot
 #              trade is wasted effort.
 LEGACY_TIER_OUTCOMES = ("Reject", "Near Miss", "Tier 1", "Tier 2")
-EXIT_TIERS = ("close_sweep",)
 CURRENT_SCREEN_OUTCOMES = ("accepted", "rejected")
+
+# A close used to be marked by tier='close_sweep'; it is stage='exit' now. Both are recognised,
+# because the old marker is the only thing identifying the 24 historical close rows -- which is
+# also why `scan_log.tier` is no longer written but still read.
+STAGE_EXIT = "exit"
+LEGACY_EXIT_TIERS = ("close_sweep",)
 
 # Kept as a literal, the way strategy_report.py keeps STRATEGY_NAMES, rather than importing the
 # registry -- a report module should not drag in every strategy's broker-facing machinery.
@@ -83,7 +88,7 @@ def classify(row: dict) -> str:
         return "prefilter"
     if row.get("strategy") in PSEUDO_STRATEGIES:
         return "bookkeeping"
-    if row.get("tier") in EXIT_TIERS or row.get("outcome") == "closed":
+    if stage == STAGE_EXIT or row.get("tier") in LEGACY_EXIT_TIERS or row.get("outcome") == "closed":
         return "exit"
     if stage == STAGE_EXECUTION:
         return "execution"
