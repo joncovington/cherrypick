@@ -92,15 +92,17 @@ CREATE TABLE IF NOT EXISTS trade_legs (
 );
 
 CREATE TABLE IF NOT EXISTS scan_log (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    scan_date   TEXT NOT NULL,
-    strategy    TEXT NOT NULL DEFAULT 'iron_fly',
-    symbol      TEXT NOT NULL,
-    tier        TEXT,
-    outcome     TEXT,
-    reason      TEXT,
-    logged_at   REAL,
-    profile     TEXT NOT NULL DEFAULT 'default'
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_date      TEXT NOT NULL,
+    strategy       TEXT NOT NULL DEFAULT 'iron_fly',
+    symbol         TEXT NOT NULL,
+    tier           TEXT,
+    outcome        TEXT,
+    reason         TEXT,
+    stage          TEXT NOT NULL DEFAULT 'screen',
+    reject_details TEXT,
+    logged_at      REAL,
+    profile        TEXT NOT NULL DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS daily_summary (
@@ -162,6 +164,11 @@ _MIGRATIONS = [
     ("trades", "entry_iv", "ALTER TABLE trades ADD COLUMN entry_iv REAL"),
     ("trades", "exit_iv", "ALTER TABLE trades ADD COLUMN exit_iv REAL"),
     ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+    # See db_paper.py's copies of these two for the full reasoning: 'screen' rows carry the
+    # accept/reject verdict, 'execution' rows what happened to an accepted candidate afterwards;
+    # reject_details carries each reason's measured value and the threshold it missed.
+    ("scan_log", "stage", "ALTER TABLE scan_log ADD COLUMN stage TEXT NOT NULL DEFAULT 'screen'"),
+    ("scan_log", "reject_details", "ALTER TABLE scan_log ADD COLUMN reject_details TEXT"),
     # Nullable and deliberately not backfilled -- NULL means "predates the distinction", which is
     # the truth; see db_paper.py's copy of this migration for the full reasoning.
     ("entry_reviews", "timing_assumed", "ALTER TABLE entry_reviews ADD COLUMN timing_assumed INTEGER"),
@@ -326,8 +333,8 @@ def cmd_log_scan(args) -> dict:
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, logged_at, profile) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, stage, "
+            "reject_details, logged_at, profile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["scan_date"],
                 spec.get("strategy", "iron_fly"),
@@ -335,6 +342,8 @@ def cmd_log_scan(args) -> dict:
                 spec.get("tier"),
                 spec.get("outcome"),
                 spec.get("reason"),
+                spec.get("stage", "screen"),
+                json.dumps(spec["reject_details"]) if spec.get("reject_details") else None,
                 spec.get("logged_at", time.time()),
                 spec.get("profile", "default"),
             ),
