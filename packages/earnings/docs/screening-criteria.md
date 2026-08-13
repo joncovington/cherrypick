@@ -57,6 +57,8 @@ A gate's name says which bar a candidate missed. It never said by how much, whic
 
 Rejections are also recorded **per stage**, because acceptance used to be the last thing written down: 2,349 accepted screenings sit against 64 trades ever opened, and nothing recorded what happened to the other ~97%. `scan_log.stage` is `prefilter` → `screen` → `execution`, so the full funnel — calendar row, morning pre-filter, accept/reject, then order build / sizing / risk cap / quote availability — reads off one table.
 
+`python -m cherrypick.earnings.screen_report` reads all of this back: the funnel, which gates fired, which ones fired *alone* (the only rejections a threshold change can rescue), how far each fell short, and `--what-if REASON=THRESHOLD` for how many more names a different bar would have admitted. It counts candidates, never P&L — a name that was never traded has no outcome to attribute.
+
 Two cautions for anyone analysing this data. The reason vocabulary drifts: `avg_volume_below_near_miss` has 1,036 historical rows and no producer in the source any more, so a reason the current map doesn't recognise is recorded as a bare name rather than dropped. And a `*_unverified` reason is not a screening result at all — it means the value could not be measured, which is a data-pipeline problem wearing a rejection's clothes. `iv_rv_ratio_unverified` (252) and `winrate_unverified` (240) should be read as coverage gaps, not as names that failed.
 
 ## The accept/reject decision
