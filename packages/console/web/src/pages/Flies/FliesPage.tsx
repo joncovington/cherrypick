@@ -15,7 +15,7 @@ import { HistoryTab } from "./HistoryTab";
 import { JournalCard } from "./JournalCard";
 import { DivergenceCard } from "./DivergenceCard";
 import { PerformanceTab } from "./PerformanceTab";
-import { HelpTab } from "./HelpTab";
+import { ExperimentGuideView } from "../../components/ExperimentGuide";
 
 interface FliesAnalytics {
   today: {
@@ -173,7 +173,13 @@ export function FliesPage() {
         />
       )}
       {tab === "performance" && <PerformanceTab mode={mode} filter={filter} />}
-      {tab === "help" && <HelpTab mode={mode} />}
+      {tab === "help" && (
+        <ExperimentGuideView
+          url="/api/flies/arms"
+          mode={mode}
+          intro="Every arm is an independent portfolio trading the same market with the same money, so the only thing separating them is which entries their rules allow. Each description below is the module's own — read from the deployed config — and 'what makes it different' is derived from the arm's settings: the values it does not share with the defaults or with most of its siblings."
+        />
+      )}
 
       {tab === "today" && (
       <div className="cards cards-wide">
