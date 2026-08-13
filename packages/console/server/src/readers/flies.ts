@@ -1,5 +1,15 @@
 import path from "node:path";
-import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
+import fs from "node:fs";
+import type {
+  FliesPayload,
+  FliesBookRow,
+  FliesPositionRow,
+  FliesArmGuide,
+  FliesArmGuideEntry,
+  FliesArmOverride,
+  Paged,
+  TradingMode,
+} from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, num, str } from "./db.js";
 import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
@@ -1385,4 +1395,153 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
 
     return { mode, today, byArm, feeDrag };
   });
+}
+
+// ---------------------------------------------------------------------------------------------
+// The arm guide
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * What each arm is, what makes it different, and how it got there.
+ *
+ * Assembled from the three places that already know, rather than from prose written a second time
+ * here: the deployed config's own `_note`/`_history_note` entries (the suite documents its configs
+ * in their own data, so this is the module's description of itself, not the console's); the diff
+ * between an arm's overrides and the shared `defaults`, which is mechanically what the arm changes
+ * and therefore what it is testing; and the ledger, for when it actually traded.
+ *
+ * An arm description maintained in the UI would be wrong the first time someone retunes an arm and
+ * forgets the page — and a retuned arm whose description still reads the old way is worse than none,
+ * because it would be trusted.
+ */
+function armNotes(block: Record<string, unknown>): Array<{ key: string; text: string }> {
+  const notes: Array<{ key: string; text: string }> = [];
+  for (const [k, v] of Object.entries(block)) {
+    if (!k.startsWith("_") || typeof v !== "string" || v.trim() === "") continue;
+    // `_note` is the definition and leads; everything else keeps config order behind it.
+    notes.push({ key: k.replace(/^_/, ""), text: v });
+  }
+  notes.sort((a, b) => Number(b.key === "note") - Number(a.key === "note"));
+  return notes;
+}
+
+export function readFliesArmGuide(config: ConsoleConfig, mode: TradingMode): FliesArmGuide {
+  const empty: FliesArmGuide = { mode, groupNotes: [], breaks: [], arms: [], configMissing: true };
+
+  let doc: Record<string, unknown>;
+  try {
+    doc = JSON.parse(fs.readFileSync(config.paths.fliesConfig, "utf-8")) as Record<string, unknown>;
+  } catch {
+    return empty;
+  }
+  const armsBlock = (doc["arms"] ?? {}) as Record<string, unknown>;
+  const defaults = (doc["defaults"] ?? {}) as Record<string, unknown>;
+
+  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.fliesDir, file);
+
+  // When an arm traded, from the ledger — the config says what an arm IS, only the book says
+  // whether it ever ran.
+  const ledger = withReadOnlyDb<Map<string, { first: string; last: string; n: number }>>(
+    dbPath,
+    new Map(),
+    (db) => {
+      const out = new Map<string, { first: string; last: string; n: number }>();
+      for (const r of db
+        .prepare<[], Record<string, unknown>>(
+          `SELECT arm, MIN(trade_date) AS first, MAX(trade_date) AS last, COUNT(*) AS n
+             FROM fly_positions WHERE arm IS NOT NULL GROUP BY arm`,
+        )
+        .all()) {
+        out.set(String(r["arm"]), {
+          first: str(r["first"]) ?? "",
+          last: str(r["last"]) ?? "",
+          n: Number(r["n"] ?? 0),
+        });
+      }
+      return out;
+    },
+  );
+
+  const breaks = withReadOnlyDb<FliesArmGuide["breaks"]>(dbPath, [], (db) =>
+    db
+      .prepare<[], Record<string, unknown>>(
+        "SELECT break_date, scope, kind, reason FROM measurement_breaks ORDER BY break_date",
+      )
+      .all()
+      .map((r) => ({
+        date: str(r["break_date"]) ?? "",
+        scope: str(r["scope"]) ?? "*",
+        kind: str(r["kind"]) ?? "",
+        reason: str(r["reason"]) ?? "",
+      })),
+  );
+
+  // The (key, value) pairs MOST arms state identically. These may differ from `defaults` while
+  // separating an arm from almost nothing — eleven of the twelve share one `entry_windows` — so
+  // showing them as what makes an arm different buries the one or two settings that do.
+  //
+  // Majority rather than unanimity, deliberately: one arm departing from the house convention is
+  // precisely what makes that departure interesting, and a unanimity test would let that single
+  // dissenter suppress the convention for everybody.
+  const armBlocks = Object.entries(armsBlock).filter(
+    ([n, v]) => !n.startsWith("_") && typeof v === "object" && v !== null,
+  ) as Array<[string, Record<string, unknown>]>;
+  const shared = new Map<string, string>();
+  if (armBlocks.length > 2) {
+    const tally = new Map<string, number>();
+    for (const [, b] of armBlocks) {
+      for (const [k, v] of Object.entries(b)) {
+        if (k.startsWith("_") || k === "enabled") continue;
+        tally.set(`${k}␟${JSON.stringify(v)}`, (tally.get(`${k}␟${JSON.stringify(v)}`) ?? 0) + 1);
+      }
+    }
+    for (const [id, n] of tally) {
+      if (n * 2 <= armBlocks.length) continue;
+      const cut = id.indexOf("␟");
+      shared.set(id.slice(0, cut), id.slice(cut + 1));
+    }
+  }
+
+  const arms: FliesArmGuideEntry[] = [];
+  for (const [name, block] of armBlocks) {
+    const overrides: FliesArmOverride[] = [];
+    for (const [k, v] of Object.entries(block)) {
+      if (k.startsWith("_") || k === "enabled") continue;
+      const inDefaults = Object.prototype.hasOwnProperty.call(defaults, k);
+      const encoded = JSON.stringify(v);
+      overrides.push({
+        key: k,
+        value: v,
+        fallback: inDefaults ? defaults[k] : null,
+        inDefaults,
+        // Kept and labelled rather than dropped: "width-5 sets wing_width 5, same as the default"
+        // is the answer to why that arm shows no width, and silence would just look like a bug.
+        matchesDefault: inDefaults && JSON.stringify(defaults[k]) === encoded,
+        sharedByMostArms: shared.get(k) === encoded,
+      });
+    }
+    const seen = ledger.get(name);
+    const enabled = block["enabled"] === true;
+    // Mirrors engine.select_center: `center_rule` if the arm sets one, else the arm's own name.
+    const explicitRule = typeof block["center_rule"] === "string" ? block["center_rule"] : null;
+    arms.push({
+      arm: name,
+      enabled,
+      centring: (explicitRule ?? name) === "gex" ? "gex" : "atm",
+      centringFromName: explicitRule === null,
+      retired: !enabled && seen !== undefined,
+      notes: armNotes(block),
+      overrides,
+      firstSession: seen?.first ?? null,
+      lastSession: seen?.last ?? null,
+      positions: seen?.n ?? 0,
+    });
+  }
+
+  // Running arms first, then the finished experiments; each group in config order, which is the
+  // order the module itself lists them in.
+  arms.sort((a, b) => Number(b.enabled) - Number(a.enabled));
+
+  return { mode, groupNotes: armNotes(armsBlock), breaks, arms, configMissing: false };
 }

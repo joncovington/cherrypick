@@ -15,6 +15,7 @@ import { HistoryTab } from "./HistoryTab";
 import { JournalCard } from "./JournalCard";
 import { DivergenceCard } from "./DivergenceCard";
 import { PerformanceTab } from "./PerformanceTab";
+import { HelpTab } from "./HelpTab";
 
 interface FliesAnalytics {
   today: {
@@ -43,7 +44,7 @@ function useFliesAnalytics(mode: TradingMode, filter: FliesFilter) {
   });
 }
 
-type FliesTab = "today" | "history" | "performance";
+type FliesTab = "today" | "history" | "performance" | "help";
 
 /**
  * Why a per-arm table is empty. Both tables count settled positions, so an open session shows
@@ -93,7 +94,7 @@ export function FliesPage() {
         <h1>Flies</h1>
         <PaperLiveBadge mode={mode} />
         <div className="mode-toggle" style={{ marginLeft: 0 }}>
-          {(["today", "history", "performance"] as FliesTab[]).map((t) => (
+          {(["today", "history", "performance", "help"] as FliesTab[]).map((t) => (
             <button key={t} type="button" className={tab === t ? "mode-btn active" : "mode-btn"} onClick={() => setTab(t)}>
               {t}
             </button>
@@ -172,6 +173,7 @@ export function FliesPage() {
         />
       )}
       {tab === "performance" && <PerformanceTab mode={mode} filter={filter} />}
+      {tab === "help" && <HelpTab mode={mode} />}
 
       {tab === "today" && (
       <div className="cards cards-wide">

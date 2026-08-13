@@ -214,3 +214,68 @@ export interface ReviewPayload {
     closedByModule: Record<string, number>;
   };
 }
+
+/**
+ * The flies arm guide: what each experiment arm is, what distinguishes it, and how it got here.
+ *
+ * Every field is derived from what the module actually runs off — the deployed config's own notes,
+ * the diff between an arm's overrides and the shared defaults, and the ledger — rather than being
+ * written out a second time in the UI. An arm's description that lives only in the console is one
+ * that goes stale the first time someone retunes the arm and not the page.
+ */
+export interface FliesArmNote {
+  /** The config key the text came from (`_note`, `_history_note`, …), minus the leading underscore. */
+  key: string;
+  text: string;
+}
+
+export interface FliesArmOverride {
+  key: string;
+  value: unknown;
+  /** The shared default this replaces, or null when the key has no entry in `defaults`. */
+  fallback: unknown;
+  inDefaults: boolean;
+  /** The arm states this but it equals the shared default — it changes nothing. */
+  matchesDefault: boolean;
+  /**
+   * Most arms state this key at this same value. It may differ from `defaults` while separating
+   * this arm from almost nothing — eleven of the twelve arms share one `entry_windows` — so it is a
+   * house convention rather than a distinguisher, which is the question this view exists to answer.
+   * The one arm that departs from the convention still gets it as a difference, which is right:
+   * that departure is exactly what `time_window` is testing.
+   */
+  sharedByMostArms: boolean;
+}
+
+export interface FliesArmGuideEntry {
+  arm: string;
+  enabled: boolean;
+  /**
+   * The centring the engine will actually use, derived exactly as `engine.select_center` derives
+   * it: `center_rule` when the arm sets one, otherwise the arm's OWN NAME. Without this the headline
+   * comparison is invisible — the `gex` arm carries no `center_rule` key, so a pure config diff
+   * reports nothing separating it from `control` when the centring rule is the whole experiment.
+   */
+  centring: "gex" | "atm";
+  /** True when the centring came from the arm's name rather than an explicit `center_rule`. */
+  centringFromName: boolean;
+  /** Disabled but present in the ledger — a finished experiment, not a typo. */
+  retired: boolean;
+  notes: FliesArmNote[];
+  /** What this arm changes relative to `defaults`. This IS the arm's hypothesis, mechanically. */
+  overrides: FliesArmOverride[];
+  firstSession: string | null;
+  lastSession: string | null;
+  positions: number;
+}
+
+export interface FliesArmGuide {
+  mode: TradingMode;
+  /** Notes attached to the arms block as a whole (e.g. the retired width sweep). */
+  groupNotes: FliesArmNote[];
+  /** Dates either side of which sessions must not be pooled, from the module's own record. */
+  breaks: Array<{ date: string; scope: string; kind: string; reason: string }>;
+  arms: FliesArmGuideEntry[];
+  /** True when the deployed config could not be read — the page says so rather than showing none. */
+  configMissing: boolean;
+}
