@@ -227,18 +227,27 @@ def _note_cadence_change(conn, interval_seconds: int) -> None:
         if prev == interval_seconds:
             return
         day = provider.now_et().date().isoformat()
+        reason = (
+            f"tick_interval {prev}s->{interval_seconds}s (supervisor cutover); "
+            "completion rate not comparable across this date"
+        )
+        detail = json.dumps({"old_seconds": prev, "new_seconds": interval_seconds})
         dbmod.record_decision(
             conn,
             trade_date=day,
             arm="*",
             symbol="*",
             mode="cadence",
-            reason=(
-                f"tick_interval {prev}s->{interval_seconds}s (supervisor cutover); "
-                "completion rate not comparable across this date"
-            ),
+            reason=reason,
             accepted=False,
-            detail=json.dumps({"old_seconds": prev, "new_seconds": interval_seconds}),
+            detail=detail,
+        )
+        # Also to `measurement_breaks`, where every cross-module read surface looks. The decision
+        # journal is this module's own narrative and a reader has to know to grep it for mode
+        # 'cadence'; the suite review asks each ledger a uniform question, and a break recorded only
+        # in prose or only in a module-shaped table is invisible to it.
+        dbmod.record_measurement_break(
+            conn, break_date=day, scope="*", kind="cadence", reason=reason, detail=detail
         )
         with open(state_path, "w", encoding="utf-8") as fh:
             json.dump({"seconds": interval_seconds, "since": day}, fh)
