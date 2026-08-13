@@ -213,10 +213,14 @@ export function MeicPage() {
         </p>
       )}
 
-      {tab === "performance" && <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />}
+      {tab === "performance" && (
+        <div className="view-fade">
+          <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />
+        </div>
+      )}
 
       {tab === "history" && (
-        <div className="cards cards-wide">
+        <div className="cards cards-wide view-fade">
           <MeicDeepCards mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />
           <DataCard
             title="Daily summaries"
@@ -243,7 +247,7 @@ export function MeicPage() {
       )}
 
       {tab === "today" && (
-        <div className="cards cards-wide">
+        <div className="cards cards-wide view-fade">
           <ArmRail module="meic" mode={mode} date={day} />
 
           <AttemptTimeline module="meic" mode={mode} date={day} />

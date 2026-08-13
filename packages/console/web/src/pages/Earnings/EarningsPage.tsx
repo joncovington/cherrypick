@@ -86,7 +86,7 @@ function useEarningsAnalytics() {
 }
 
 export function EarningsPage() {
-  const [tab, setTab] = useState<(typeof TABS)[number]>("overview");
+  const [tab, setTab] = useState<(typeof TABS)[number]>("open");
   const tradesPage = usePage();
   const reviewsPage = usePage();
   const { data, isLoading, isError, isPlaceholderData } = useEarnings(tradesPage.page, reviewsPage.page);

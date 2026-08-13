@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createChart, LineSeries, type IChartApi, type UTCTimestamp } from "lightweight-charts";
 import { fmtMoney } from "../../components/DataTable";
+import { useFlashOnChange } from "../../lib/useFlashOnChange";
 
 interface SuiteReport {
   suite: { net: number; trades: number; wins: number; losses: number; winRatePct: number | null; avg: number | null };
@@ -46,10 +47,9 @@ export function EquityCard() {
     chartRef.current = chart;
     const t = (session: string) => (Date.parse(session + "T00:00:00Z") / 1000) as UTCTimestamp;
 
-    const suite = chart.addSeries(LineSeries, { color: "#d23f57", lineWidth: 2, title: "suite" });
-    suite.setData(data.daily.map((d) => ({ time: t(d.session), value: d.cumulative })));
-
-    // Top modules by |total| get their own cumulative lines.
+    // No combined "suite" line: these books differ in scale by more than an order of magnitude
+    // (see Review's own note), so a summed line would describe the largest one and imply it
+    // described all three. Per-module lines only.
     const totals = Object.entries(data.modules).sort((a, b) => Math.abs(b[1].net) - Math.abs(a[1].net)).slice(0, 3);
     for (const [mod] of totals) {
       const running: Array<{ time: UTCTimestamp; value: number }> = [];
@@ -75,19 +75,20 @@ export function EquityCard() {
   }, [data]);
 
   const s = data?.suite;
+  const tradesFlash = useFlashOnChange<HTMLSpanElement>(s?.trades);
+  const avgFlash = useFlashOnChange<HTMLSpanElement>(s?.avg);
   return (
     <section className="card">
       <h2>suite equity — paper ({data?.daily.length ?? 0} sessions · cumulative net P&L)</h2>
       <div className="stats-grid" style={{ marginBottom: "0.7rem" }}>
-        <div className="stat-tile">
-          <span className="stat-label">net</span>
-          <span className={`stat-value ${s !== undefined && s.net >= 0 ? "pnl-pos" : "pnl-neg"}`}>
-            {s !== undefined ? fmtMoney(s.net) : "—"}
-          </span>
-        </div>
+        {/* No combined "suite net" tile, deliberately -- see the chart's own note: these books
+            differ in scale by more than an order of magnitude, so a summed dollar figure would
+            describe the largest one (MEIC) and imply it described all three. Per-module net is
+            one line-hover away on the chart below; count/rate aggregates here are honest sums,
+            not scale-dominated the same way a dollar total is. */}
         <div className="stat-tile">
           <span className="stat-label">trades</span>
-          <span className="stat-value">{s?.trades ?? "—"}</span>
+          <span ref={tradesFlash} className="stat-value">{s?.trades ?? "—"}</span>
         </div>
         <div className="stat-tile">
           <span className="stat-label">win rate</span>
@@ -97,7 +98,7 @@ export function EquityCard() {
         </div>
         <div className="stat-tile">
           <span className="stat-label">avg / trade</span>
-          <span className="stat-value">{s?.avg != null ? fmtMoney(s.avg) : "—"}</span>
+          <span ref={avgFlash} className="stat-value">{s?.avg != null ? fmtMoney(s.avg) : "—"}</span>
         </div>
       </div>
       <div ref={hostRef} style={{ height: "16rem" }}>
