@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import statistics
 
 from cherrypick.earnings import screen_metrics as sm
 from cherrypick.earnings import strategy_metrics as _sm
@@ -153,6 +154,46 @@ def print_coverage_gaps(rows: list[dict]) -> None:
     print()
 
 
+def print_cost_to_risk(trades: list[dict], gates: list[float]) -> None:
+    """Cost as a fraction of capital at risk -- record-only, gating nothing."""
+    if not trades:
+        return
+    judged = [t for t in trades if t["entry_cost_to_risk"] is not None]
+    if not judged:
+        return
+    print("-- Cost to risk " + "-" * 62)
+    print("  Modelled cost as a fraction of the capital a position puts at risk. Entry-side is")
+    print("  what a gate could read at order-build time; the round trip is only known afterwards.")
+    print("  Nothing is gated on this -- it is recorded so a gate can be argued for or against.")
+    print()
+    by: dict[str, list[dict]] = {}
+    for t in judged:
+        by.setdefault(t["strategy"], []).append(t)
+    print(f"  {'strategy':28}{'n':>4}{'entry':>9}{'round trip':>12}{'net P&L':>11}")
+    for strategy, ts in sorted(by.items(), key=lambda kv: -statistics.mean(
+        t["entry_cost_to_risk"] for t in kv[1]
+    )):
+        entry = statistics.mean(t["entry_cost_to_risk"] for t in ts)
+        rt = statistics.mean(
+            t["round_trip_cost_to_risk"] for t in ts if t["round_trip_cost_to_risk"] is not None
+        )
+        print(f"  {strategy:28}{len(ts):>4}{_pct(entry):>9}{_pct(rt):>12}"
+              f"{sum(t['net_pnl'] for t in ts):>11.2f}")
+    print()
+    for gate in gates:
+        cf = sm.cost_gate_counterfactual(judged, gate)
+        print(f"  A ceiling at {_pct(gate)} would have excluded {cf['excluded']} of {cf['judged']} "
+              f"trades (net {cf['net_pnl_excluded']:+.2f}), keeping {cf['kept']} "
+              f"(net {cf['net_pnl_kept']:+.2f})")
+        if cf["strategies_excluded"]:
+            print(f"     excluded: {', '.join(cf['strategies_excluded'])}")
+    print()
+    print("  These trades were all actually taken, so unlike the screening what-if above this")
+    print("  section can report P&L honestly. With ~14 independent earnings events on file, read")
+    print("  the sign as a hint and the magnitude as noise.")
+    print()
+
+
 def print_what_if(rows: list[dict], specs: list[str]) -> None:
     print("-- What-if " + "-" * 67)
     print("  Counts candidates a different bar would have admitted. It cannot show P&L: a name")
@@ -198,6 +239,15 @@ def main() -> None:
     parser.add_argument("--since", default=None, help="YYYY-MM-DD, only scans on/after this date")
     parser.add_argument("--limit", type=int, default=20, help="rows per table (default 20)")
     parser.add_argument(
+        "--cost-gate",
+        action="append",
+        type=float,
+        default=[],
+        metavar="FRACTION",
+        help="Entry-side cost-to-risk ceiling to evaluate, e.g. 0.10. Record-only; gates nothing. "
+        "Repeatable. Defaults to 0.05/0.10/0.15.",
+    )
+    parser.add_argument(
         "--what-if",
         action="append",
         default=[],
@@ -230,6 +280,10 @@ def main() -> None:
     print_distances(rows, args.limit)
     print_cooccurrence(rows, min(args.limit, 12))
     print_coverage_gaps(rows)
+    print_cost_to_risk(
+        sm.load_trade_costs(db_path, profile=profile, strategy=args.strategy, since=args.since),
+        args.cost_gate or [0.05, 0.10, 0.15],
+    )
     if args.what_if:
         print_what_if(rows, args.what_if)
 

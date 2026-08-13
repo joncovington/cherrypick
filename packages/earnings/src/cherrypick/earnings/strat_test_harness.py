@@ -195,11 +195,45 @@ def _per_contract_credit(order: dict) -> float:
 
 
 def _entry_context(criteria: dict, composite_score) -> dict:
+    """The conditions this position was opened into, for slicing outcomes by regime later.
+
+    Deliberately wider than it was. The original five keys omitted `bid_ask_spread_pct` entirely --
+    0 of 64 trades carried it -- which is the single field the cost analysis most wants, since
+    modelled slippage is 91% of cost and slippage is a function of spread. Regime data is the one
+    thing that cannot be backfilled: a condition not captured at entry is gone, so the bar for
+    including a field here is "might we ever want to slice on it", not "do we have a use today".
+    With ~14 independent earnings events on file, that day is a long way off either way.
+
+    Everything here is already in `criteria` at entry -- no extra fetch, no broker call. Costs are
+    NOT duplicated in: `entry_cost`, `entry_slippage` and `capital_at_risk` are their own columns
+    on `trades`, so cost-to-risk is a query over what is already stored rather than a stored field.
+    Market-wide regime is likewise not copied here; `market_context` records VIX per scan_date and
+    joins on it.
+    """
     return {
+        # Signal strength at entry
         "iv_rv_ratio": criteria.get("iv_rv_ratio"),
+        "term_structure": criteria.get("term_structure"),
+        "expected_move_pct": criteria.get("expected_move_pct"),
+        "iv_rank": criteria.get("iv_rank"),
+        "iv_percentile": criteria.get("iv_percentile"),
+        # Implied vs this name's own realized history -- the edge these plays actually harvest
+        "implied_vs_avg_actual": criteria.get("implied_vs_avg_actual"),
         "dispersion": criteria.get("realized_move_dispersion_pct"),
+        "move_tail_veto": criteria.get("move_tail_veto"),
+        # Execution quality: what the fill was up against
+        "bid_ask_spread_pct": criteria.get("bid_ask_spread_pct"),
+        "net_combo_spread_pct": criteria.get("net_combo_spread_pct"),
+        "front_expiration_days": criteria.get("front_expiration_days"),
+        # Liquidity band
+        "market_cap": criteria.get("market_cap"),
+        "avg_volume": criteria.get("avg_volume"),
+        "combined_open_interest": criteria.get("combined_open_interest"),
+        "combined_option_volume": criteria.get("combined_option_volume"),
+        # Sample quality -- a winrate means little without the size behind it
         "skew_abs": criteria.get("skew_abs"),
         "winrate": criteria.get("winrate"),
+        "winrate_sample_size": criteria.get("winrate_sample_size"),
         "composite_score": composite_score,
     }
 

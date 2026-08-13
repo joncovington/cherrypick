@@ -196,3 +196,86 @@ def test_cooccurrence_shows_when_one_gate_never_fires_without_another():
     assert pair["together"] == 3
     assert pair["a_alone"] == 0  # front_expiration never fires on its own
     assert pair["b_alone"] == 1
+
+
+# --------------------------------------------------------------------------- cost to risk
+
+
+def _costed(strategy="iron_fly", risk=1000.0, entry=30.0, exit_=30.0, pnl=100.0, symbol="AAA"):
+    return {
+        "symbol": symbol,
+        "strategy": strategy,
+        "capital_at_risk": risk,
+        "entry_cost_to_risk": entry / risk,
+        "round_trip_cost_to_risk": (entry + exit_) / risk,
+        "gross_pnl": pnl,
+        "net_pnl": pnl - entry - exit_,
+    }
+
+
+def test_the_cost_gate_judges_on_the_entry_side_ratio():
+    """A gate can only read what is known when the order is built. Exit cost depends on the spread
+    hours later, so a ceiling defined on the round trip could not be enforced."""
+    trades = [_costed(entry=40.0, exit_=400.0)]  # round trip 44%, entry 4%
+    cf = sm.cost_gate_counterfactual(trades, 0.05)
+    assert cf["excluded"] == 0 and cf["kept"] == 1
+
+
+def test_the_cost_gate_reports_the_pnl_of_what_it_would_have_dropped():
+    """These trades were taken, so the excluded set has real outcomes -- the one counterfactual in
+    this module that may honestly speak about P&L."""
+    trades = [
+        _costed(strategy="atm_calendar", entry=150.0, pnl=-200.0, symbol="LOSER"),
+        _costed(strategy="iron_fly", entry=10.0, pnl=300.0, symbol="WINNER"),
+    ]
+    cf = sm.cost_gate_counterfactual(trades, 0.05)
+    assert cf["excluded"] == 1 and cf["strategies_excluded"] == ["atm_calendar"]
+    assert cf["net_pnl_excluded"] == -380.0  # -200 gross less 150 entry and 30 exit
+    assert cf["kept"] == 1
+
+
+def test_the_cost_gate_skips_trades_it_cannot_judge():
+    trades = [_costed(), {**_costed(symbol="NORISK"), "entry_cost_to_risk": None}]
+    cf = sm.cost_gate_counterfactual(trades, 0.05)
+    assert cf["judged"] == 1
+
+
+def test_load_trade_costs_derives_the_ratio_from_stored_columns(tmp_path):
+    """No column is added for this. entry_cost, exit_cost and capital_at_risk are already on
+    `trades`, which is also why it answers retroactively for every trade on file."""
+    import sqlite3
+
+    db = tmp_path / "paper.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE trades (symbol TEXT, strategy TEXT, profile TEXT, capital_at_risk REAL,"
+        " entry_cost REAL, exit_cost REAL, pnl REAL, opened_at REAL, closed_at REAL)"
+    )
+    conn.execute(
+        "INSERT INTO trades VALUES ('CSCO','iron_fly','strat_test:iron_fly',1000.0,40.0,60.0,250.0,1,2)"
+    )
+    conn.commit()
+    conn.close()
+
+    rows = sm.load_trade_costs(db)
+    assert len(rows) == 1
+    assert rows[0]["entry_cost_to_risk"] == 0.04
+    assert rows[0]["round_trip_cost_to_risk"] == 0.10
+    assert rows[0]["net_pnl"] == 150.0
+
+
+def test_load_trade_costs_ignores_positions_with_no_risk_recorded(tmp_path):
+    """capital_at_risk is the denominator; without it the ratio is not a number, and a zero would
+    read as free rather than unknown."""
+    import sqlite3
+
+    db = tmp_path / "paper.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE trades (symbol TEXT, strategy TEXT, profile TEXT, capital_at_risk REAL,"
+        " entry_cost REAL, exit_cost REAL, pnl REAL, opened_at REAL, closed_at REAL)"
+    )
+    conn.execute("INSERT INTO trades VALUES ('X','iron_fly','p',0.0,40.0,60.0,250.0,1,2)")
+    conn.commit()
+    conn.close()
+    assert sm.load_trade_costs(db) == []
