@@ -320,29 +320,51 @@ h2 {
   white-space: nowrap;
 }
 
+/* .signed-bar (components/Charts.tsx SignedBar) is the track itself; .netbar-row wraps it with a
+   label and a value column for a standalone row. Review's per-arm table uses just the bar, sized
+   via the .signed-bar-compact modifier, with no row/label/value wrapper of its own. */
 .netbar-track {
-  position: relative;
   flex: 1;
+}
+
+.signed-bar {
+  position: relative;
+  display: block;
   height: 12px;
   background: var(--row-line);
   border-radius: 2px;
+  overflow: hidden;
+}
+
+.signed-bar-compact {
+  height: 6px;
+  border-radius: 1px;
 }
 
 /* Shared zero line — the reason the bars can be read against each other. */
-.netbar-zero {
+.signed-bar-zero {
   position: absolute;
   left: 50%;
-  top: -1px;
-  bottom: -1px;
+  top: 0;
+  bottom: 0;
   width: 1px;
   background: var(--border);
 }
 
-.netbar-fill {
+.signed-bar-fill {
   position: absolute;
   top: 0;
   bottom: 0;
   border-radius: 2px;
+  opacity: 0.75;
+}
+
+.signed-bar-pos {
+  background: var(--ok);
+}
+
+.signed-bar-neg {
+  background: var(--err);
 }
 
 .netbar-value {
@@ -1176,29 +1198,6 @@ select.text-input {
 .arm-bar-cell {
   width: 6rem;
   min-width: 6rem;
-}
-
-.arm-bar {
-  display: block;
-  height: 6px;
-  background: var(--row-line);
-  border-radius: 1px;
-  overflow: hidden;
-}
-
-.arm-bar-fill {
-  display: block;
-  height: 100%;
-}
-
-.arm-bar-pos {
-  background: var(--ok);
-  opacity: 0.75;
-}
-
-.arm-bar-neg {
-  background: var(--err);
-  opacity: 0.75;
 }
 
 .review-expected {

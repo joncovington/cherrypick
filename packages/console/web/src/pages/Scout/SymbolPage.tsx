@@ -5,6 +5,8 @@ import {
   CandlestickSeries,
   LineSeries,
   type IChartApi,
+  type ISeriesApi,
+  type IPriceLine,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useSymbolAnalysis } from "../../lib/api";
@@ -41,10 +43,17 @@ export function SymbolPage() {
   const quote = useQuote(sym);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const candlesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const overlaysRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+  const priceLinesRef = useRef<IPriceLine[]>([]);
 
+  // Chart + candlestick series mount/teardown, once — separate from the data effect below so a
+  // refetch updates the existing series in place (setData / price-line refresh) instead of tearing
+  // down and rebuilding the whole chart, which previously discarded the viewer's pan/zoom on every
+  // poll.
   useEffect(() => {
     const el = containerRef.current;
-    if (el === null || data === undefined) return;
+    if (el === null) return;
     const chart = createChart(el, {
       autoSize: true,
       layout: { background: { color: "transparent" }, textColor: "#a6adb8" },
@@ -53,14 +62,28 @@ export function SymbolPage() {
       timeScale: { borderColor: "#23262d" },
     });
     chartRef.current = chart;
-
-    const candles = chart.addSeries(CandlestickSeries, {
+    candlesRef.current = chart.addSeries(CandlestickSeries, {
       upColor: "#43b57a",
       downColor: "#d95c4a",
       borderVisible: false,
       wickUpColor: "#43b57a",
       wickDownColor: "#d95c4a",
     });
+    return () => {
+      chart.remove();
+      chartRef.current = null;
+      candlesRef.current = null;
+      overlaysRef.current.clear();
+      priceLinesRef.current = [];
+    };
+  }, []);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const candles = candlesRef.current;
+    if (chart === null || candles === null || data === undefined) return;
+    const hadNoBarsYet = candles.data().length === 0;
+
     candles.setData(
       data.bars.map((b) => ({
         time: b.t as UTCTimestamp,
@@ -71,13 +94,27 @@ export function SymbolPage() {
       })),
     );
 
+    // SMA overlays are a fixed name set in practice (SMA_COLORS), but diffed by name anyway rather
+    // than assumed, the same way EquityCard's per-module lines are.
+    const overlays = overlaysRef.current;
+    const wanted = new Set(Object.keys(data.overlays));
+    for (const [name, series] of overlays) {
+      if (!wanted.has(name)) {
+        chart.removeSeries(series);
+        overlays.delete(name);
+      }
+    }
     for (const [name, values] of Object.entries(data.overlays)) {
-      const series = chart.addSeries(LineSeries, {
-        color: SMA_COLORS[name] ?? "#82878f",
-        lineWidth: 1,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
+      let series = overlays.get(name);
+      if (series === undefined) {
+        series = chart.addSeries(LineSeries, {
+          color: SMA_COLORS[name] ?? "#82878f",
+          lineWidth: 1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+        overlays.set(name, series);
+      }
       series.setData(
         values
           .map((v, i) => (v === null ? null : { time: data.bars[i]!.t as UTCTimestamp, value: v }))
@@ -85,23 +122,25 @@ export function SymbolPage() {
       );
     }
 
-    // Support/resistance as horizontal price lines on the candle series.
-    for (const level of data.levels.filter((l) => l.touches >= 2)) {
-      candles.createPriceLine({
-        price: level.price,
-        color: level.kind === "support" ? "#43b57a66" : "#d95c4a66",
-        lineWidth: 1,
-        lineStyle: 2,
-        axisLabelVisible: false,
-        title: `${level.kind} ×${level.touches}`,
-      });
-    }
+    // Support/resistance as horizontal price lines on the candle series. No setData equivalent for
+    // price lines, but they're cheap -- clear and re-add rather than diff by level identity.
+    for (const line of priceLinesRef.current) candles.removePriceLine(line);
+    priceLinesRef.current = data.levels
+      .filter((l) => l.touches >= 2)
+      .map((level) =>
+        candles.createPriceLine({
+          price: level.price,
+          color: level.kind === "support" ? "#43b57a66" : "#d95c4a66",
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: false,
+          title: `${level.kind} ×${level.touches}`,
+        }),
+      );
 
-    chart.timeScale().fitContent();
-    return () => {
-      chart.remove();
-      chartRef.current = null;
-    };
+    // Only fit the view the first time bars arrive -- on every later refetch, keep whatever
+    // pan/zoom the viewer set rather than snapping back to fitContent().
+    if (hadNoBarsYet) chart.timeScale().fitContent();
   }, [data]);
 
   const mid =

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useReview } from "../../lib/api";
 import type { ReviewArm, ReviewModule } from "@console/shared";
 import { NoteMarkdown } from "./NoteMarkdown";
+import { SignedBar } from "../../components/Charts";
 
 /**
  * The suite review. Renders the fact set and computes nothing.
@@ -101,12 +102,7 @@ function collapsedArms(m: ReviewModule): string[] {
  * alternative scales losses against wins and makes a bad arm look small.
  */
 function ArmBar({ net, peak }: { net: number; peak: number }) {
-  const width = peak > 0 ? Math.max(2, (Math.abs(net) / peak) * 100) : 0;
-  return (
-    <span className="arm-bar" aria-hidden>
-      <span className={`arm-bar-fill ${net < 0 ? "arm-bar-neg" : "arm-bar-pos"}`} style={{ width: `${width}%` }} />
-    </span>
-  );
+  return <SignedBar value={net} maxAbs={peak} compact />;
 }
 
 function ModuleCard({ m }: { m: ReviewModule }) {

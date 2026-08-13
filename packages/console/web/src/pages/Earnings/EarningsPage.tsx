@@ -4,6 +4,7 @@ import { useEarnings } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { TabStrip, Pager, usePage } from "../../components/ScopeBar";
+import { BarChart } from "../../components/Charts";
 import { EarningsDetailCards } from "./EarningsDetail";
 import { EarningsLiveCard, EarningsManagementLog } from "./EarningsLive";
 
@@ -93,7 +94,6 @@ export function EarningsPage() {
   const upcoming = useUpcoming();
   const analytics = useEarningsAnalytics();
   const a = analytics.data;
-  const maxWeek = Math.max(...(a?.weekly.map((w) => Math.abs(w.net)) ?? [0]), 1);
 
   return (
     <div className="page">
@@ -144,19 +144,8 @@ export function EarningsPage() {
             </div>
           </div>
           {a !== undefined && a.weekly.length > 0 && (
-            <div style={{ display: "flex", gap: 4, alignItems: "flex-end", marginTop: "0.8rem", height: "3.6rem" }}>
-              {a.weekly.slice(-16).map((w) => (
-                <div key={w.week} title={`${w.week}: ${fmtMoney(w.net)}`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%" }}>
-                  <div
-                    style={{
-                      height: `${Math.max(6, (Math.abs(w.net) / maxWeek) * 100)}%`,
-                      background: w.net >= 0 ? "var(--ok)" : "var(--err)",
-                      borderRadius: 2,
-                      opacity: 0.75,
-                    }}
-                  />
-                </div>
-              ))}
+            <div style={{ marginTop: "0.8rem" }}>
+              <BarChart bars={a.weekly.slice(-16).map((w) => ({ x: w.week, y: w.net }))} height={140} />
             </div>
           )}
         </section>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { createChart, LineSeries, type IChartApi, type UTCTimestamp } from "lightweight-charts";
+import { createChart, LineSeries, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import { fmtMoney } from "../../components/DataTable";
 import { useFlashOnChange } from "../../lib/useFlashOnChange";
 
@@ -33,10 +33,15 @@ export function EquityCard() {
   const { data } = useSuiteReport();
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
+  // Chart mount/teardown, once — separate from the data effect below so a 60s refetch (a new
+  // object reference every time, even when values are unchanged) updates the existing series in
+  // place via setData() rather than tearing down and rebuilding the whole chart, which previously
+  // discarded any pan/zoom the viewer had set every single poll.
   useEffect(() => {
     const el = hostRef.current;
-    if (el === null || data === undefined || data.daily.length === 0) return;
+    if (el === null) return;
     const chart = createChart(el, {
       autoSize: true,
       layout: { background: { color: "transparent" }, textColor: "#a6adb8" },
@@ -45,12 +50,34 @@ export function EquityCard() {
       timeScale: { borderColor: "#23262d" },
     });
     chartRef.current = chart;
+    return () => {
+      chart.remove();
+      chartRef.current = null;
+      seriesRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (chart === null || data === undefined || data.daily.length === 0) return;
     const t = (session: string) => (Date.parse(session + "T00:00:00Z") / 1000) as UTCTimestamp;
+    const series = seriesRef.current;
+    const hadNoSeriesYet = series.size === 0;
 
     // No combined "suite" line: these books differ in scale by more than an order of magnitude
     // (see Review's own note), so a summed line would describe the largest one and imply it
     // described all three. Per-module lines only.
     const totals = Object.entries(data.modules).sort((a, b) => Math.abs(b[1].net) - Math.abs(a[1].net)).slice(0, 3);
+    const wantedMods = new Set(totals.map(([mod]) => mod));
+
+    // The top-3-by-|net| set can change membership between polls -- drop a line that fell out.
+    for (const [mod, line] of series) {
+      if (!wantedMods.has(mod)) {
+        chart.removeSeries(line);
+        series.delete(mod);
+      }
+    }
+
     for (const [mod] of totals) {
       const running: Array<{ time: UTCTimestamp; value: number }> = [];
       let cum = 0;
@@ -58,20 +85,21 @@ export function EquityCard() {
         cum += d.byModule[mod] ?? 0;
         running.push({ time: t(d.session), value: cum });
       }
-      chart
-        .addSeries(LineSeries, {
+      let line = series.get(mod);
+      if (line === undefined) {
+        line = chart.addSeries(LineSeries, {
           color: MODULE_COLORS[mod] ?? "#82878f",
           lineWidth: 1,
           title: mod,
           priceLineVisible: false,
-        })
-        .setData(running);
+        });
+        series.set(mod, line);
+      }
+      line.setData(running);
     }
-    chart.timeScale().fitContent();
-    return () => {
-      chart.remove();
-      chartRef.current = null;
-    };
+    // Only fit the view the first time data arrives -- on every later poll, an already-open chart
+    // keeps whatever pan/zoom the viewer set rather than snapping back to fitContent().
+    if (hadNoSeriesYet) chart.timeScale().fitContent();
   }, [data]);
 
   const s = data?.suite;

@@ -155,6 +155,37 @@ export function BarChart({
   );
 }
 
+/**
+ * A zero-centered diverging bar: a loss and a win of the same size read as the same visual weight
+ * in opposite colors, off a shared zero tick, rather than scaling losses against wins (which makes
+ * a bad result look smaller than it is). Shared by Champions' arm comparison and Review's per-arm
+ * table -- those two used to solve the identical stated problem with two different bar mechanics
+ * (a zero-centered track vs. a plain 0-100% left-anchored one with no zero reference at all).
+ * `compact` fits inside a table cell (Review); the default size matches a standalone row (Champions).
+ */
+export function SignedBar({
+  value,
+  maxAbs,
+  compact = false,
+  className = "",
+}: {
+  value: number;
+  maxAbs: number;
+  compact?: boolean;
+  className?: string;
+}) {
+  const half = maxAbs > 0 ? Math.min(50, (Math.abs(value) / maxAbs) * 50) : 0;
+  return (
+    <span className={`signed-bar ${compact ? "signed-bar-compact" : ""} ${className}`} aria-hidden>
+      <span className="signed-bar-zero" />
+      <span
+        className={`signed-bar-fill ${value >= 0 ? "signed-bar-pos" : "signed-bar-neg"}`}
+        style={value >= 0 ? { left: "50%", width: `${half}%` } : { right: "50%", width: `${half}%` }}
+      />
+    </span>
+  );
+}
+
 export function SeriesLegend({ items }: { items: Array<{ label: string; color: string }> }) {
   return (
     <div className="forest-legend">
